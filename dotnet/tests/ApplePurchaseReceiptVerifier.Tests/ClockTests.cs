@@ -1,135 +1,137 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using ApplePurchaseReceiptVerifier.Jws;
-using ApplePurchaseReceiptVerifier.Receipt;
+using System.Threading;
+using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// What the injected clock drives (the endpoint's request_date), and what it
-/// must never be able to reach. The JWS and receipt verifiers take no clock,
-/// and no payload is rejected for its age (PLAN.md D5).
+/// What the config clock drives, and what it must never be able to reach.
+/// The clock answers "what time is it now?" and is read in two places only:
+/// the chain instant when the input states no signing date, and the
+/// endpoint's <c>request_date</c> (design, Setup). No payload is rejected
+/// for its age.
 /// </summary>
 public class ClockTests
 {
-    // The shared fixture is signed at 2024-08-06T12:00:00Z.
-    private static readonly DateTimeOffset SignedAt = new(2024, 8, 6, 12, 0, 0, TimeSpan.Zero);
+    /// <summary>2099-01-01T00:00:00Z, far past every chain the fixtures carry.</summary>
+    private const long Year2099Ms = 4070908800000L;
 
-    private static IReadOnlyList<X509Certificate2> JwsRoots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("jws-root")) };
-
-    /// <summary>Freshness is the caller's decision: a 2024 payload still verifies.</summary>
+    /// <summary>
+    /// Freshness is the caller's decision: a payload that states its signing
+    /// date is judged at that date, so a clock far past the chain's end does
+    /// not reject it.
+    /// </summary>
     [Fact]
-    public void APayloadIsNeverRejectedForItsAge()
+    public void AStatedSigningDateIsNeverOverriddenByTheClock()
     {
-        using JwsVerifier verifier = new(JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox });
-        Assert.Equal(
-            SignedAt.ToUnixTimeMilliseconds(),
-            verifier.VerifyTransaction(Fixtures.Text("transaction")).SignedDate);
+        CountingClock clock = new(Year2099Ms);
+        IVerifier verifier = Verifier.Create(TestPki.FixtureConfig("jws-root", clock.Read));
+        Assert.True(verifier.VerifySignedData(Fixtures070.ForSignedData("transaction")).Verified);
+
+        IVerifier receipts = Verifier.Create(TestPki.FixtureConfig("receipt-root", clock.Read));
+        Assert.True(receipts.VerifyReceipt(Fixtures070.ForReceipt("receipt")).Verified);
+
+        Assert.Equal(0, clock.Reads);
     }
 
+    /// <summary>The clock stands in for a missing date, and is read once for it.</summary>
     [Fact]
-    public void TheJwsVerifierTakesNoClock()
+    public void TheClockIsReadOnlyWhenTheInputStatesNoDate()
     {
-        foreach (System.Reflection.ConstructorInfo constructor in typeof(JwsVerifier).GetConstructors())
-        {
-            Assert.DoesNotContain(constructor.GetParameters(), p => p.ParameterType == typeof(IClock));
-            Assert.DoesNotContain(constructor.GetParameters(), p => p.ParameterType == typeof(TimeSpan?));
-        }
+        CountingClock clock = new(TestPki.SignedAtMs);
+        IVerifier verifier = Verifier.Create(TestPki.FixtureConfig("divergence-jws-root", clock.Read));
+        Assert.True(verifier.VerifySignedData(Fixtures070.ForSignedData("transaction-no-signed-date")).Verified);
+        Assert.Equal(1, clock.Reads);
+
+        CountingClock receiptClock = new(TestPki.SignedAtMs);
+        IVerifier receipts = Verifier.Create(TestPki.FixtureConfig("divergence-receipt-root", receiptClock.Read));
+        Assert.True(receipts.VerifyReceipt(Fixtures070.ForReceipt("receipt-no-creation-date")).Verified);
+        Assert.Equal(1, receiptClock.Reads);
+    }
+
+    /// <summary>Input that fails its own checks never reaches the clock.</summary>
+    [Fact]
+    public void MalformedInputNeverReadsTheClock()
+    {
+        CountingClock clock = new(TestPki.SignedAtMs);
+        IVerifier verifier = Verifier.Create(TestPki.FixtureConfig("receipt-root", clock.Read));
+        Assert.Equal(VerificationReason.Malformed, verifier.VerifyReceipt("not base64").Failure?.Reason);
+        Assert.Equal(VerificationReason.Malformed, verifier.VerifySignedData("a.b").Failure?.Reason);
+        Assert.Equal(0, clock.Reads);
     }
 
     /// <summary>
-    /// A payload stating no signing time is judged at the system clock, where
-    /// this chain (valid until 2050) is live.
+    /// A request carries exactly one request date: the endpoint reads the
+    /// clock once per call, and a dateless receipt is judged at that same
+    /// reading rather than at a second one.
     /// </summary>
     [Fact]
-    public void APayloadWithoutASignedDateVerifies()
+    public void TheEndpointReadsTheClockOncePerRequest()
     {
-        using JwsVerifier verifier = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("divergence-jws-root")) },
-            "com.example.app",
-            new[] { AppleEnvironment.Sandbox });
-        Assert.Null(verifier.VerifyTransaction(Fixtures.Text("transaction-no-signed-date")).SignedDate);
-    }
+        CountingClock clock = new(TestPki.SignedAtMs);
+        IVerifier verifier = Verifier.Create(TestPki.FixtureConfig("divergence-receipt-root", clock.Read));
+        string body = "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt-no-creation-date") + "\"}";
 
-    [Fact]
-    public void APayloadSignedAfterItsChainExpiredIsRejected()
-    {
-        // expired-cert-fresh is signed after its chain expired.
-        using JwsVerifier verifier = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("jws-expired-root")) },
-            "com.example.app",
-            new[] { AppleEnvironment.Sandbox });
-        Assert.Equal(
-            VerificationReason.InvalidChain,
-            Assert.Throws<VerificationException>(
-                () => verifier.VerifyTransaction(Fixtures.Text("expired-cert-fresh"))).Reason);
-    }
-
-    [Fact]
-    public void TheEndpointStampsRequestDateFromTheInjectedClock()
-    {
-        DateTimeOffset now = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        using VerifyReceiptEndpoint endpoint = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) },
-            AppleEnvironment.Sandbox,
-            new FixedClock(now));
-
-        Dictionary<string, object?> body = new(StringComparer.Ordinal)
-        {
-            ["receipt-data"] = Convert.ToBase64String(Fixtures.Bytes("receipt")),
-        };
-        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceiptResult(body).ToResponse();
-        IReadOnlyDictionary<string, object?> receipt =
-            (IReadOnlyDictionary<string, object?>)response["receipt"]!;
-
-        Assert.Equal("1735689600000", receipt["request_date_ms"]);
-        Assert.Equal("2025-01-01 00:00:00 Etc/GMT", receipt["request_date"]);
-        Assert.Equal("2024-12-31 16:00:00 America/Los_Angeles", receipt["request_date_pst"]);
+        string answer = verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, body);
+        Assert.StartsWith("{\"status\":0,", answer, StringComparison.Ordinal);
+        Assert.Contains("\"request_date_ms\":\"1722945600000\"", answer, StringComparison.Ordinal);
+        Assert.Equal(1, clock.Reads);
     }
 
     [Fact]
     public void TheDefaultClockIsTheSystemClock()
     {
-        Assert.True(
-            Math.Abs((SystemClock.Instance.UtcNow - DateTimeOffset.UtcNow).TotalSeconds) < 5);
+        IVerifier verifier = Verifier.Create(
+            Config.CreateBuilder().Roots(new[] { TestPki.FixtureCertificate("receipt-root") }).Build());
+        string answer = verifier.VerifyReceiptEndpoint(
+            AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt") + "\"}");
 
-        using VerifyReceiptEndpoint endpoint = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) },
-            AppleEnvironment.Sandbox);
-        Dictionary<string, object?> body = new(StringComparer.Ordinal)
-        {
-            ["receipt-data"] = Convert.ToBase64String(Fixtures.Bytes("receipt")),
-        };
-        IReadOnlyDictionary<string, object?> receipt =
-            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceiptResult(body).ToResponse()["receipt"]!;
+        OrderedMap receipt = (OrderedMap)Json.ParseObject(answer)["receipt"]!;
         long stamped = long.Parse((string)receipt["request_date_ms"]!, System.Globalization.CultureInfo.InvariantCulture);
         Assert.True(Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - stamped) < 60_000);
     }
 
+    /// <summary>
+    /// A clock that throws is the host's fault, not the input's: it is an
+    /// internal error with the clock's exception as the cause, never
+    /// MALFORMED (which would blame the input) and never a throw. The Java
+    /// reference's <c>CallClock</c> pins the same.
+    /// </summary>
     [Fact]
-    public void AFixedClockNormalisesToUtc()
+    public void AFailingClockIsAnInternalErrorNotABlameOnTheInput()
     {
-        FixedClock clock = new(new DateTimeOffset(2025, 1, 1, 5, 0, 0, TimeSpan.FromHours(5)));
-        Assert.Equal(TimeSpan.Zero, clock.UtcNow.Offset);
-        Assert.Equal(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero), clock.UtcNow);
+        InvalidOperationException broken = new("broken clock");
+        long Throwing() => throw broken;
+
+        IVerifier jws = Verifier.Create(TestPki.FixtureConfig("divergence-jws-root", Throwing));
+        Failure jwsFailure = jws.VerifySignedData(Fixtures070.ForSignedData("transaction-no-signed-date")).Failure!;
+        Assert.Equal(VerificationReason.InternalError, jwsFailure.Reason);
+        Assert.Same(broken, jwsFailure.Cause);
+
+        IVerifier receipts = Verifier.Create(TestPki.FixtureConfig("divergence-receipt-root", Throwing));
+        Failure receiptFailure = receipts.VerifyReceipt(Fixtures070.ForReceipt("receipt-no-creation-date")).Failure!;
+        Assert.Equal(VerificationReason.InternalError, receiptFailure.Reason);
+        Assert.Same(broken, receiptFailure.Cause);
+
+        Assert.Equal(
+            "{\"status\":21009}",
+            receipts.VerifyReceiptEndpoint(
+                AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt") + "\"}"));
     }
 
     /// <summary>
     /// The seam cannot be bypassed by accident: the library reads the system
-    /// clock at exactly the two documented certificate-validity fallbacks, and
-    /// nowhere else.
+    /// clock at exactly one site, the default clock in <c>Config</c>, and
+    /// everything else goes through the config clock.
     /// </summary>
     [Fact]
-    public void TheSystemClockIsReadAtExactlyTheDocumentedSites()
+    public void TheSystemClockIsReadAtExactlyOneSite()
     {
         List<string> hits = new();
-        string sourceRoot = SourceRoot();
-        foreach (string file in Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
+        foreach (string file in Directory.GetFiles(SourceRoot(), "*.cs", SearchOption.AllDirectories))
         {
             string[] lines = File.ReadAllLines(file);
             for (int i = 0; i < lines.Length; i++)
@@ -138,27 +140,23 @@ public class ClockTests
                 if (code.StartsWith("//", StringComparison.Ordinal)
                     || code.StartsWith("*", StringComparison.Ordinal))
                 {
-                    // Comments explain why the fallback reads real time; only
-                    // executable lines count.
                     continue;
                 }
 
                 if (lines[i].Contains("DateTime.UtcNow", StringComparison.Ordinal)
                     || lines[i].Contains("DateTime.Now", StringComparison.Ordinal)
                     || lines[i].Contains("DateTimeOffset.Now", StringComparison.Ordinal)
-                    || lines[i].Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal))
+                    || lines[i].Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal)
+                    || lines[i].Contains("Environment.TickCount", StringComparison.Ordinal)
+                    || lines[i].Contains("Stopwatch", StringComparison.Ordinal))
                 {
-                    hits.Add(Path.GetFileName(file) + ":" + (i + 1) + " " + lines[i].Trim());
+                    hits.Add(Path.GetFileName(file) + ":" + (i + 1) + " " + code);
                 }
             }
         }
 
-        // IClock.cs (SystemClock itself), JwsVerifier.cs (the no-signedDate
-        // fallback) and ReceiptVerifier.cs (the no-attribute-12 fallback).
-        Assert.Equal(3, hits.Count);
-        Assert.Contains(hits, h => h.StartsWith("IClock.cs:", StringComparison.Ordinal));
-        Assert.Contains(hits, h => h.StartsWith("JwsVerifier.cs:", StringComparison.Ordinal));
-        Assert.Contains(hits, h => h.StartsWith("ReceiptVerifier.cs:", StringComparison.Ordinal));
+        string hit = Assert.Single(hits);
+        Assert.StartsWith("Config.cs:", hit, StringComparison.Ordinal);
     }
 
     private static string SourceRoot()
@@ -166,8 +164,7 @@ public class ClockTests
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            string candidate = Path.Combine(
-                directory.FullName, "dotnet", "src", "ApplePurchaseReceiptVerifier");
+            string candidate = Path.Combine(directory.FullName, "dotnet", "src", "ApplePurchaseReceiptVerifier");
             if (Directory.Exists(candidate))
             {
                 return candidate;
@@ -177,5 +174,22 @@ public class ClockTests
         }
 
         throw new InvalidOperationException("could not locate the library sources");
+    }
+
+    /// <summary>A test-side clock that counts its reads; the library itself has no such hook.</summary>
+    private sealed class CountingClock
+    {
+        private readonly long _now;
+        private int _reads;
+
+        internal CountingClock(long now) => _now = now;
+
+        internal int Reads => Volatile.Read(ref _reads);
+
+        internal long Read()
+        {
+            Interlocked.Increment(ref _reads);
+            return _now;
+        }
     }
 }

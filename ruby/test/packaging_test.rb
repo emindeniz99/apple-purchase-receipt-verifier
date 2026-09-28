@@ -36,7 +36,7 @@ class PackagingTest < Minitest::Test
     REQUIRED_FILES.each { |path| assert_includes spec.files, path }
     assert_empty spec.runtime_dependencies, "the library must have no runtime dependencies"
     assert_equal APRV::VERSION, spec.version.to_s
-    assert_equal Gem::Requirement.new(">= 3.1.0"), spec.required_ruby_version
+    assert_equal Gem::Requirement.new(">= 3.3.0"), spec.required_ruby_version
   end
 
   def test_the_gemspec_ships_no_test_or_tooling_files

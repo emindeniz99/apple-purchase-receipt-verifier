@@ -1,12 +1,13 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -30,14 +31,16 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Contract containment for hostile receipts. BouncyCastle's ASN.1 and CMS
- * entry points report malformed input with UNCHECKED exceptions, which the
- * declared {@code throws VerificationException} does not cover, so a caller
- * that handles the declared contract is still reachable by a raw
- * {@code IllegalArgumentException} from a few bytes of attacker input.
+ * entry points report malformed input with UNCHECKED exceptions, so a few
+ * bytes of attacker input can raise a raw {@code IllegalArgumentException}
+ * deep inside verification.
  *
  * <p>These tests pin the contract itself rather than any one BouncyCastle
- * exception type: the set of types a parser can throw is not knowable, so the
- * assertion is "nothing but VerificationException escapes".</p>
+ * exception type: the set of types a parser can throw is not knowable. The
+ * verifier never throws, and its last-resort catch reports an escaped
+ * exception as INTERNAL_ERROR ("alert, do not retry"), which hostile input
+ * must never be able to raise at will. So the assertion is: nothing escapes,
+ * and no hostile receipt is answered INTERNAL_ERROR.</p>
  */
 class HostileReceiptInputTest {
 
@@ -46,13 +49,13 @@ class HostileReceiptInputTest {
     private static final byte[] OPAQUE = {1, 2, 3, 4, 5, 6, 7, 8};
 
     private static TestPki pki;
-    private static ReceiptVerifier verifier;
+    private static Verifier verifier;
     private static byte[] receiptDer;
 
     @BeforeAll
     static void setUp() throws Exception {
         pki = TestPki.receipt();
-        verifier = new ReceiptVerifier(Collections.singleton(pki.root), BUNDLE);
+        verifier = Checks.verifier(pki);
         String creationDate = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString();
         receiptDer = pki.signReceipt(TestPki.receiptPayload(
                 BUNDLE,
@@ -72,26 +75,26 @@ class HostileReceiptInputTest {
     @Test
     void containsBitStringPadFailureFromElevenCharactersOfBase64() {
         // Reaches BC's ASN1BitString before any crypto runs: "invalid pad bits detected".
-        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verify("MIADAggAAAA="));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason());
+        VerificationException e = assertThrows(VerificationException.class, () -> verify("MIADAggAAAA="));
+        assertEquals(Reason.MALFORMED, e.reason());
     }
 
     @Test
     void containsInvalidUtf8AttributeValue() throws Exception {
         // A UTF8String whose single content byte is 0xFF: ASN1UTF8String.getString()
-        // rejects it with IllegalArgumentException, the same shape as the receipt
-        // date that overflowed epoch millis. The signer is trusted, so it is
-        // INTERNAL_ERROR, never a leaked runtime exception.
-        byte[] receipt = pki.signReceipt(TestPki.singleAttributePayload(2, new byte[] {0x0c, 0x01, (byte) 0xff}));
-        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verify(receipt));
-        assertEquals(Reason.INTERNAL_ERROR, e.reason());
+        // rejects it with IllegalArgumentException. That must not leak: the
+        // bundle id decodes to null and its octets are still returned.
+        byte[] value = {0x0c, 0x01, (byte) 0xff};
+        ReceiptPayload payload = verify(pki.signReceipt(TestPki.singleAttributePayload(2, value)));
+        assertNull(payload.bundleId());
+        assertArrayEquals(value, payload.bundleIdBytes());
     }
 
     @Test
-    void onlyVerificationExceptionEscapesStructurallyHostileBlobs() throws Exception {
+    void nothingEscapesStructurallyHostileBlobs() throws Exception {
         for (Map.Entry<String, byte[]> blob : hostileBlobs().entrySet()) {
             try {
-                verifier.verify(blob.getValue());
+                verify(blob.getValue());
                 throw new AssertionError("verify() accepted " + blob.getKey());
             } catch (VerificationException expected) {
                 // The whole contract: every rejection arrives as this type.
@@ -102,7 +105,7 @@ class HostileReceiptInputTest {
     }
 
     @Test
-    void onlyVerificationExceptionEscapesMutationsOfAGenuineReceipt() {
+    void nothingEscapesMutationsOfAGenuineReceipt() {
         // The review that found this defect measured the leak rate by mutating a
         // genuine receipt; a fixed seed keeps any future failure replayable.
         Random random = new Random(20260822L);
@@ -112,7 +115,7 @@ class HostileReceiptInputTest {
                 mutated[random.nextInt(mutated.length)] = (byte) random.nextInt(256);
             }
             try {
-                verifier.verify(mutated);
+                verify(mutated);
             } catch (VerificationException expected) {
                 // A mutation that lands in a region nothing reads may still verify,
                 // so only the escaping type is asserted, not the rejection.
@@ -121,6 +124,24 @@ class HostileReceiptInputTest {
                         "mutation " + i + " leaked " + e.getClass().getName(), e);
             }
         }
+    }
+
+    private static ReceiptPayload verify(byte[] der) throws VerificationException {
+        return verify(Base64.getEncoder().encodeToString(der));
+    }
+
+    /**
+     * The public call, with a failure thrown back as by {@link Checks}. An
+     * INTERNAL_ERROR is the outer catch having caught what the checks should
+     * have contained, so it fails the test as a leak.
+     */
+    private static ReceiptPayload verify(String base64) throws VerificationException {
+        VerificationResult<ReceiptPayload> result = verifier.verifyReceipt(base64);
+        if (!result.verified() && result.failure().reason() == Reason.INTERNAL_ERROR) {
+            throw new AssertionError(
+                    "leaked " + result.failure().message(), result.failure().cause());
+        }
+        return Checks.unwrap(result);
     }
 
     /** Blobs that are hostile in shape rather than in content. */

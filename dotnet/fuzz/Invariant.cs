@@ -29,27 +29,15 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
         }
 
         /// <summary>
-        /// The containment rule: the only thing a public entry point may throw
-        /// is the library's own <see cref="VerificationException"/>.
+        /// The 0.7 containment rule: a public entry point never throws at
+        /// all — it returns a <c>VerificationResult</c> — so any exception
+        /// reaching a target's own try/catch is itself the invariant failure.
+        /// Every target throws <see cref="InvariantException"/> directly from
+        /// that catch instead of routing through here.
         /// </summary>
-        /// <remarks>
-        /// Stated categorically rather than as a deny-list of
-        /// <c>IndexOutOfRangeException</c> / <c>NullReferenceException</c> /
-        /// <c>CryptographicException</c>: the interesting leak is always the
-        /// type nobody thought to list — <c>AsnContentException</c> derives
-        /// from <see cref="Exception"/> and not from
-        /// <c>CryptographicException</c>, which is exactly how a type-by-type
-        /// catch springs a leak.
-        /// </remarks>
         internal static void Contained(string entryPoint, Exception e)
         {
-            if (e is VerificationException)
-            {
-                return;
-            }
-
-            throw new InvariantException(
-                $"{entryPoint} escaped as {e.GetType().FullName}: {e.Message}");
+            throw new InvariantException($"{entryPoint} escaped as {e.GetType().FullName}: {e.Message}");
         }
     }
 }

@@ -1,37 +1,38 @@
 #!/usr/bin/env node
 /**
- * Lints fixtures/cases.json — the normative cross-language conformance vectors.
+ * Lints fixtures/cases.json — the normative cross-language conformance vectors
+ * (schema version 2, the 0.7 API).
  *
  *   node tools/lint-cases.mjs
  *
  * Dependency-free by design (Node >= 20, no npm packages): it carries a small
  * validator covering exactly the JSON Schema keywords fixtures/cases.schema.json
- * uses, plus the checks a schema cannot express.
+ * uses, plus the checks a schema cannot express. The port runners re-hash the
+ * fixtures they use, but none validates the file against its schema or looks
+ * for files nothing registers, so this stays the one place that does.
  *
  * It fails, listing EVERY problem rather than the first, when:
  *   - cases.json does not match cases.schema.json structurally
  *   - a registered fixture file is missing, or its contentSha256 is wrong
- *   - a file under fixtures/generated/, fixtures/public-receipts/ or
- *     fixtures/limits/ is not registered
+ *   - a file under fixtures/generated-0.7/ or fixtures/public-receipts/ is
+ *     not registered
  *   - a fixture with role "input" is referenced by no case
  *   - two cases share an id
  *   - a case references an unregistered fixture
- *   - an expected reason is outside the canonical vocabulary
- *   - a verifyReceiptBase64 case names a fixture whose codec is not "text"
+ *   - an expected reason, or a oneOf outcome, is outside the 0.7 Reason set,
+ *     or is INTERNAL_ERROR, which no correct library answers to any input
+ *   - a requestBody fixture's codec is not "text"
  *   - a decodeBase64 case lists a decoder twice, lists a spelling another
  *     decodeBase64 case already lists, or holds a spelling whose answer
  *     disagrees with the base64 rule as stated here independently
  *
- * SCOPE NOTE — fixtures/apple-official/ is deliberately NOT scanned for
- * unregistered files. That tier is vendored verbatim from Apple's
- * app-store-server-library-java and carries material this project draws no
- * expectation from (the testInvalid* certificates, mock_signed_data/legacyTransaction,
- * and xcode/xcode-app-receipt-with-transaction, whose bytes are registered already as
- * public-receipts/receipt-xcode-with-purchases.b64). Only the apple-official files that cases.json
- * actually uses are registered; the rest stay unregistered on purpose, and adding a
- * new one there will not be flagged here. Every file under generated/ and
- * public-receipts/ IS required to be registered, because those two tiers exist
- * solely to feed these vectors.
+ * SCOPE NOTE — only generated-0.7/ and public-receipts/ are scanned for
+ * unregistered files, because those two tiers exist solely to feed these
+ * vectors. fixtures/generated/ also keeps 0.6-era receipts that port unit
+ * tests, fuzz harnesses and smoke programs read directly; fixtures/limits/
+ * keeps inputs for the port bounds tests; fixtures/apple-official/ is
+ * vendored verbatim from Apple's app-store-server-library-java. Only the
+ * files from those three that cases.json uses are registered.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -43,14 +44,16 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES_DIR = join(REPO, 'fixtures');
 const CASES_PATH = join(FIXTURES_DIR, 'cases.json');
 const SCHEMA_PATH = join(FIXTURES_DIR, 'cases.schema.json');
-const SCANNED_TIERS = ['generated', 'public-receipts', 'limits'];
+const SCANNED_TIERS = ['generated-0.7', 'public-receipts'];
 
+// The 0.7 Reason set (docs/design/0.7-api.md, Result). INTERNAL_ERROR is a
+// reason a port can return, but never one a case may expect.
 const REASONS = [
-  'INVALID_JWS_FORMAT', 'INVALID_CERTIFICATE', 'INVALID_CERTIFICATE_PURPOSE',
-  'INVALID_CHAIN', 'INVALID_SIGNATURE', 'WRONG_BUNDLE_ID', 'WRONG_ENVIRONMENT',
-  'WRONG_APP_APPLE_ID', 'INVALID_RECEIPT_FORMAT', 'DEVICE_HASH_MISMATCH',
+  'MALFORMED', 'TOO_LARGE', 'INVALID_SIGNATURE', 'UNTRUSTED_CHAIN',
+  'INVALID_CERTIFICATE', 'INVALID_CERTIFICATE_PURPOSE', 'UNREADABLE_PAYLOAD',
   'INTERNAL_ERROR',
 ];
+const EXPECTABLE = REASONS.filter((reason) => reason !== 'INTERNAL_ERROR');
 
 const problems = [];
 const fail = (where, message) => problems.push(`${where}: ${message}`);
@@ -59,7 +62,8 @@ const fail = (where, message) => problems.push(`${where}: ${message}`);
 /* A small JSON Schema (draft 2020-12) subset validator.               */
 /* Supported: $ref (local), type, enum, const, required, properties,   */
 /* additionalProperties, propertyNames, minProperties, minItems,       */
-/* minLength, pattern, items, oneOf, allOf, if/then, minimum.          */
+/* uniqueItems, minLength, pattern, items, oneOf, allOf, if/then/else, */
+/* minimum, maximum.                                                    */
 /* Anything else in the schema is ignored, so an unsupported keyword   */
 /* silently weakens the check rather than crashing — keep the schema    */
 /* inside this subset.                                                  */
@@ -125,9 +129,15 @@ function validate(value, schema, root, path, errors) {
   if (typeof value === 'number' && s.minimum !== undefined && value < s.minimum) {
     errors.push(`${path}: ${value} is below the minimum ${s.minimum}`);
   }
+  if (typeof value === 'number' && s.maximum !== undefined && value > s.maximum) {
+    errors.push(`${path}: ${value} is above the maximum ${s.maximum}`);
+  }
   if (Array.isArray(value)) {
     if (s.minItems !== undefined && value.length < s.minItems) {
       errors.push(`${path}: has ${value.length} items, fewer than minItems ${s.minItems}`);
+    }
+    if (s.uniqueItems === true && new Set(value.map((item) => JSON.stringify(item))).size !== value.length) {
+      errors.push(`${path}: items are not unique`);
     }
     if (s.items !== undefined) {
       value.forEach((item, i) => validate(item, s.items, root, `${path}[${i}]`, errors));
@@ -349,21 +359,18 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
       }
     }
 
-    if (testCase.operation === 'verifyReceiptBase64') {
-      const codec = fixtures[testCase.input?.fixture]?.codec;
-      if (codec !== 'text') {
-        fail(where, `verifyReceiptBase64 hands the fixture to the string entry point verbatim, so its fixture must `
-          + `have codec "text" (got ${JSON.stringify(codec)}) -- any other codec makes the runner decode it first`);
-      }
-    }
-
     if (testCase.operation === 'decodeBase64') lintDecodeBase64(where, testCase);
 
     const expected = testCase.expected;
-    if (typeOf(expected) === 'object' && expected.status === 'error') {
-      if (!REASONS.includes(expected.reason)) {
-        fail(where, `expected reason ${JSON.stringify(expected.reason)} is outside the canonical vocabulary `
-          + `(${REASONS.join(', ')})`);
+    const outcomes = [];
+    if (typeOf(expected) === 'object' && expected.status === 'error') outcomes.push(expected.reason);
+    if (typeOf(expected) === 'object' && Array.isArray(expected.oneOf)) {
+      outcomes.push(...expected.oneOf.filter((outcome) => outcome !== 'ok'));
+    }
+    for (const reason of outcomes) {
+      if (!EXPECTABLE.includes(reason)) {
+        fail(where, `expected outcome ${JSON.stringify(reason)} is not one a case may expect `
+          + `(${EXPECTABLE.join(', ')})`);
       }
     }
   });

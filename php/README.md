@@ -35,29 +35,58 @@ repository pointing at the repository root:
 }
 ```
 
+Requires **PHP 8.2+** (64-bit), `ext-openssl` and `ext-json`. One runtime
+dependency: `psr/clock`, the PSR-20 clock interface — a single interface, no
+code, no transitive dependencies.
+
+## Quick start
+
+One `Verifier`, built from a `Config`, exposes the three entry points. It is
+immutable and reusable once constructed, and none of its `verify*` methods
+throw: each returns a `VerificationResult` (or, for the endpoint, a JSON
+string) that reports failure instead of raising.
+
 ```php
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
-// Legacy PKCS#7 app receipt — DER bytes or the base64 the client sends.
-$receipt = (new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'com.example.app'))
-    ->verify($receiptBase64);
-echo $receipt->receiptType, ' ', count($receipt->inAppPurchases), "\n";
-
-// StoreKit 2 signed transaction.
-$transaction = (new JwsVerifier(
-    AppleRootCerts::jwsRoots(),
-    'com.example.app',
-    [Environment::Production, Environment::Sandbox],
-))->verifyTransaction($jws);
-echo $transaction->productId, ' ', $transaction->expiresDate, "\n";
+$verifier = Verifier::create(Config::defaults());  // Apple's three pinned roots, system clock
 ```
 
-Requires **PHP 8.1+** (64-bit), `ext-openssl` and `ext-json`. One runtime
-dependency: `psr/clock`, which is the PSR-20 clock interface — a single
-interface, no code, no transitive dependencies.
+**StoreKit 2 signed transaction or renewal info (compact JWS):**
+
+```php
+$result = $verifier->verifySignedData($jws);
+if (!$result->verified()) {
+    throw new RuntimeException("{$result->failure->reason->value}: {$result->failure->message}");
+}
+$payload = json_decode($result->payload->json, true);  // the verified claims, as an array
+```
+
+**Legacy PKCS#7 app receipt (base64):**
+
+```php
+$result = $verifier->verifyReceipt($receiptBase64);
+if (!$result->verified()) {
+    throw new RuntimeException("{$result->failure->reason->value}: {$result->failure->message}");
+}
+$receipt = $result->payload;  // a ReceiptPayload
+echo $receipt->bundleId, ' ', count($receipt->inApp), "\n";
+```
+
+**A `verifyReceipt`-shaped request body, verified offline:**
+
+```php
+use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
+
+$responseJson = $verifier->verifyReceiptEndpoint(Environment::Production, $requestBody);
+```
+
+`$requestBody` is the raw JSON body Apple's endpoint would have received
+(`{"receipt-data": "...", "password": "..."}`); `$responseJson` is the JSON
+string Apple's endpoint would have answered, `status` field included. See
+"The verifyReceipt-compatible endpoint" below for the raw-body caveat and the
+status table.
 
 ## Why offline
 
@@ -66,396 +95,261 @@ purchase can be honoured immediately and reconciled against the App Store
 Server API afterwards. Refunds and revocations still need that reconciliation
 pass — a signature proves what Apple signed, not what happened since.
 
-This is one of several implementations sharing a single fixture suite,
-including Apple's own official test fixtures, which are required to agree byte
-for byte. See the [project README](../README.md) for the full picture and
+This is one of nine implementations sharing a single fixture suite, including
+Apple's own official test fixtures, on which they are required to agree on
+every verdict and every decoded value. See the [project README](../README.md) for the full picture and
 [COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
 libraries.
 
-## The three entry points
-
-### `JwsVerifier` — StoreKit 2 and Server Notifications V2
-
-```php
-new JwsVerifier(
-    array $trustedRoots,              // DER bytes or PEM text
-    string $bundleId,
-    array $acceptedEnvironments,      // Environment[]
-    ?int $appAppleId = null,
-);
-```
-
-- `verifyTransaction(string $jws): TransactionPayload` — checks bundle id and
-  environment.
-- `verifyAppTransaction(string $jws): AppTransactionPayload` — checks bundle
-  id, environment (`receiptType`) and, in Production, the app Apple id.
-- `verifyRaw(string $jws): array` — chain and signature only, all claims
-  returned. For payload types with no model of their own: renewal info,
-  notification envelopes. **It enforces no claim** — you check `bundleId` and
-  `environment` yourself.
-
-Include `Environment::Sandbox` in the accept set on any endpoint App Review
-can reach: App Review runs production builds against sandbox, so a
-single-environment hard fail rejects purchases during review.
-
-**Entitlement is your rule.** There is no "is active" helper, as in Apple's
-own libraries; read the signed fields:
-
-```php
-$nowMillis = (int) (microtime(true) * 1000);
-$entitled = $payload->revocationDate === null
-    && ($payload->expiresDate === null || $payload->expiresDate > $nowMillis);
-```
-
-That is only what the payload said when it was signed. A billing grace
-period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
-after signing are yours to handle; App Store Server Notifications V2 or the
-App Store Server API give the live status. `isActiveAt()` is gone.
-
-**Freshness is your call.** No payload is rejected for its age, as in Apple's
-own App Store Server Libraries: `signedDate` only decides the instant the
-chain is judged at. The right limit depends on the endpoint (Apple retries a
-server notification for days, and a device may present an old but genuine
-payload), so apply one yourself where it fits:
-`$tooOld = (int) (microtime(true) * 1000) - ($payload->signedDate ?? 0) > 300_000;`.
-The `maxSignedAgeSeconds` and `$clock` arguments are gone, and passing them
-positionally throws `InvalidArgumentException` rather than being ignored.
-
-**Dates in a JWS payload are epoch milliseconds, exactly as Apple ships them**
-(`signedDate`, `purchaseDate`, `expiresDate`, `revocationDate`, …). That is
-contractual across every port of this library. Receipt attributes are the
-opposite case and become `DateTimeImmutable`.
-
-Every claim Apple sent, modelled or not, stays reachable through
-`$payload->claims`.
-
-### `ReceiptVerifier` — legacy PKCS#7 app receipts
-
-```php
-new ReceiptVerifier(
-    array $trustedRoots,
-    string $bundleId,
-    int $nodeBudget = 20000,
-);
-```
-
-The receipt size limit is the fixed constant `ReceiptVerifier::MAX_RECEIPT_BYTES`
-(3 MiB); see [Defensive bounds](#defensive-bounds).
-
-- `verify(string $receipt, ?string $deviceGuid = null): AppReceipt`.
-  `$receipt` is the DER bytes or their base64 — a value starting with the DER
-  `SEQUENCE` tag (`0x30`) is taken as DER, anything else is base64 decoded
-  first, so both transport forms work with and without a device GUID.
-- `ReceiptVerifier::verifyReceiptCore(string $receipt, array $trustedRoots): AppReceipt`
-  is public and **skips the bundle-id check** — the primitive the endpoint
-  needs. If you call it, compare `$receipt->bundleId` yourself.
-
-`$deviceGuid` is **raw GUID bytes, not hex**. Passing a hex string is the most
-likely misuse and produces a plain `DEVICE_HASH_MISMATCH` with no hint — use
-`hex2bin($guidHex)`. The same applies to every byte-valued property
-(`opaqueValue`, `sha1Hash`, `bundleIdBytes`, and the values in
-`unknownAttributes`): PHP spells bytes and text both `string`, so `AppReceipt`
-and `InAppPurchase` each publish a `BINARY_PROPERTIES` constant naming which
-is which.
-
-Attribute types this library does not model are exposed raw and undecoded in
-`$receipt->unknownAttributes`, keyed by type, so a field Apple adds later stays
-reachable without a library release.
-
-**`ReceiptVerifier` takes no clock.** See "What the clock can move" below.
-
-### `VerifyReceiptEndpoint` — the deprecated endpoint, locally
-
-```php
-$endpoint = new VerifyReceiptEndpoint(
-    AppleRootCerts::receiptRoots(),
-    Environment::Production,          // or Environment::Sandbox
-);
-
-// The decoded body as an array, or the raw JSON body as a string.
-$result = $endpoint->verifyReceiptResult((string) $request->getBody());
-$body = $result->toResponse();                   // Apple's body as an array
-$response->getBody()->write($result->toJson());  // Apple's body as JSON
-
-// The same as verifyReceiptResult($json)->toJson().
-$json = $endpoint->verifyReceiptJson((string) $request->getBody());
-// receipt-data alone, with no request envelope.
-$bare = $endpoint->verifyReceiptData($base64Receipt);
-```
-
-**No endpoint method throws on a request.** Like Apple's endpoint, a failure
-is a `status` in the body:
-
-| Condition | `status` |
-|---|---|
-| raw body over 3 MiB (`REQUEST_TOO_LARGE`; Apple answers HTTP 413) | `21002` |
-| body not an object or nested past 64 levels, or `receipt-data` missing / not a string / empty / undecodable | `21002` |
-| the receipt's CMS envelope is malformed | `21002` |
-| the receipt fails to authenticate | `21003` |
-| endpoint is Production and the receipt is not a production one | `21007` |
-| endpoint is Sandbox and the receipt is a production one | `21008` |
-| the receipt authenticated but its signed content cannot be read, or anything unexpected: not the client's fault, so alert and retry or escalate rather than deny | `21009` |
-| otherwise | `0`, plus `environment` and `receipt` |
-
-Environment routing fails closed: only receipt types `Production` and
-`ProductionVPP` count as production. `ProductionVPPSandbox`, `Xcode`, a type
-Apple adds later, and a missing attribute all route as non-production.
-
-A `VerifyReceiptResult` is one verification:
-
-- `status()` is the answer for the endpoint's own environment.
-- `receipt()` is the verified `AppReceipt` whenever the receipt bytes
-  verified, 21007 and 21008 included.
-- `failureReason()` is a `Reason` saying why there is no receipt. Exactly
-  one of `receipt()` and `failureReason()` is non-null.
-- `isVerified()` is `true` exactly when `receipt()` is non-null. That
-  includes 21007 and 21008, so it is not the same check as
-  `status() === 0`: `status() === 0` asks whether this endpoint's
-  environment accepts the receipt, `isVerified()` asks whether the receipt
-  verified at all.
-- `failureCause()` is what is behind an `INTERNAL_ERROR`, for logging: the
-  parser's error for signed content that could not be read, or the
-  unexpected `Throwable`.
-- `requestDate()` is the `DateTimeImmutable` rendered as `request_date`.
-
-The result is immutable, and only the endpoint creates one. The response is
-built when `toResponse()` or `toJson()` is called.
-
-**Retrying in the other environment costs no second verification.**
-`toResponse($environment)` and `toJson($environment)` render what an endpoint
-of that environment would answer, recomputing the status from the receipt's
-own type:
-
-| receipt | on `Environment::Production` | on `Environment::Sandbox` |
-|---|---|---|
-| `Production`, `ProductionVPP` | 0 | 21008 |
-| any other type, or none | 21007 | 0 |
-| failed verification | its own status | its own status |
-
-```php
-$result = $production->verifyReceiptResult($body);
-$json = $result->status() === VerifyReceiptEndpoint::STATUS_SANDBOX_RECEIPT_ON_PRODUCTION
-    ? $result->toJson(Environment::Sandbox)
-    : $result->toJson();
-```
-
-A sandbox receipt never renders as a production 0, whichever endpoint
-verified it. Any other environment throws `\InvalidArgumentException`, as
-the constructor does.
-
-| `failureReason()` | status | when |
-|---|---|---|
-| `Reason::RequestTooLarge` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 bytes); Apple answers HTTP 413 here, see [Defensive bounds](#defensive-bounds) |
-| `Reason::MalformedRequest` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `Reason::InvalidReceiptFormat` | 21002 | `receipt-data` is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple), is over `ReceiptVerifier::MAX_RECEIPT_BYTES` (3,145,728 bytes), or its CMS envelope does not parse |
-| `Reason::InvalidChain`, `Reason::InvalidSignature`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `Reason::InternalError` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read, or an unexpected `Throwable`; `failureCause()` holds what is behind it. Alert and retry or escalate; do not deny the user |
-
-**`request_date`.** `verifyReceiptResult()` and `verifyReceiptData()` take an
-optional `?DateTimeImmutable $now`, which becomes `request_date` in place of
-the endpoint's clock. Without it the clock is read once, when the call is
-made. `$now` reaches `request_date` and nothing else: certificate validity
-never sees it (see "What the clock can move" below).
-
-Like Apple's endpoint, this does **not** check the bundle id: compare
-`$result->receipt()->bundleId` (or `receipt.bundle_id` in the body)
-yourself before granting anything, or use `ReceiptVerifier`, which checks it
-for you. `password` and `exclude-old-transactions` are accepted for wire
-compatibility and never read. `21000`, `21004`, `21005`, `21006`, `21010`,
-the `21100`–`21199` range and `is_retryable` are never produced; see
-[COMPARISON.md](../COMPARISON.md).
-
-Migrating: `verifyReceipt(mixed $body): array` is removed. Use
-`verifyReceiptResult($body)->toResponse()`.
-
-## The error vocabulary
-
-Every failure is a `VerificationException` carrying a `Reason`. **The reason is
-a value, never a message string** — `match` on it, never parse text:
-
-```php
-use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
-
-try {
-    $transaction = $verifier->verifyTransaction($jws);
-} catch (VerificationException $e) {
-    return match ($e->reason) {
-        Reason::WrongBundleId, Reason::WrongEnvironment => $this->reject($e->reason->value),
-        default                                         => $this->flagAsForged($e->reason->value),
-    };
-}
-```
-
-Eleven reasons, and the vocabulary is closed: a twelfth would be a change to
-every port of this library in one go. `$e->reason->value` is the canonical
-`SCREAMING_SNAKE` token, byte-identical to the other ports', so a log line and
-a metrics label read the same in every language.
-
-| Case | `->value` | Means |
-|---|---|---|
-| `Reason::InvalidJwsFormat` | `INVALID_JWS_FORMAT` | not three segments, bad base64url/JSON, wrong `alg`, malformed `x5c` |
-| `Reason::InvalidCertificate` | `INVALID_CERTIFICATE` | an `x5c` entry is not a parseable certificate |
-| `Reason::InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks the Apple marker OID its position requires |
-| `Reason::InvalidChain` | `INVALID_CHAIN` | the chain does not reach a pinned anchor, or is not valid at the signing instant |
-| `Reason::InvalidSignature` | `INVALID_SIGNATURE` | the signature does not check out |
-| `Reason::WrongBundleId` | `WRONG_BUNDLE_ID` | the payload's bundle id is not the configured one |
-| `Reason::WrongEnvironment` | `WRONG_ENVIRONMENT` | the environment is outside the accepted set |
-| `Reason::WrongAppAppleId` | `WRONG_APP_APPLE_ID` | a Production AppTransaction does not name the configured app Apple id |
-| `Reason::InvalidReceiptFormat` | `INVALID_RECEIPT_FORMAT` | the receipt is not a parseable CMS SignedData |
-| `Reason::DeviceHashMismatch` | `DEVICE_HASH_MISMATCH` | the device binding does not hold |
-| `Reason::InternalError` | `INTERNAL_ERROR` | the receipt's chain and signature verified, but its attribute set does not parse (`getPrevious()` is the parser's error); or a verified JWS carries a modelled claim of the wrong JSON type (`verifyTransaction` / `verifyAppTransaction` only). Not the client's fault: alert and retry or escalate, do not deny |
-
-**Order of the receipt checks.** CMS parse → the creation date alone
-(attribute 12; nothing else in the payload is decoded yet) → chain at that
-date, or at the system clock when the date is missing, empty, unreadable or
-stated twice → receipt-signing marker OID → CMS signature → full payload
-parse → bundle id → device hash. Nothing is trusted before the chain and
-the signature, so reading the date never rejects. The chain comes first so
-the attacker's own key is never run before it is trusted. A payload that
-fails the full parse was signed by a trusted signer, so it is
-`INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
-
-`Reason` also has `MalformedRequest` (`MALFORMED_REQUEST`) and
-`RequestTooLarge` (`REQUEST_TOO_LARGE`), but only as
-`VerifyReceiptResult::failureReason()` values. No `VerificationException` is
-ever thrown with either, so a `match` over a caught exception's reason
-never sees them. A `match` over `failureReason()` without a `default` arm
-needs a `Reason::RequestTooLarge` arm.
-
-The exception message is `"REASON: detail"` for readability only. It is not
-part of the API, nothing should parse it, and it never contains receipt bytes,
-claim values or key material — the reason code is the entire observability
-surface. This library does no logging, emits no metrics and takes no callbacks.
-
-**Misconfiguration is not a verdict.** An empty trust-anchor list, an empty
-bundle id, an empty accept set, a non-Production/Sandbox endpoint environment:
-all raise `\InvalidArgumentException`. A `catch (VerificationException)` must
-never swallow your own bug as "the receipt was bad".
-
 ## Integrating: from verified payload to entitlement
 
-The backend flow these calls sit inside is written out once in the
-[project README](../README.md#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
+Verification proves Apple signed the bytes. It does not prove the presenter
+owns them, and it says nothing about what happened after the signature. The
+[project README](../README.md#integrating-from-verified-payload-to-entitlement)
+lays out the full flow once, with a reason-to-next-step table; here are its
+two branches in this port's 0.7 API.
 
-A StoreKit 2 signed transaction:
+Both branches follow the same shape: verify, deny on any failure, then run
+the post-verification checklist below yourself — 0.7 has no
+constructor-supplied bundle id or environment allowlist to do it for you.
 
 ```php
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
+// Branch A: StoreKit 2 signed transaction
+$result = $verifier->verifySignedData($jws);
+if (!$result->verified()) {
+    log($result->failure->reason->value);  // deny; nothing partial is returned
+    return;
+}
+$payload = json_decode($result->payload->json, true);
+if (($payload['bundleId'] ?? null) !== 'com.example.app') {
+    return;  // step 1 of the checklist below
+}
+$environment = Environment::fromJwsEnvironment($payload['environment'] ?? null);
+if (($payload['revocationDate'] ?? null) !== null) {
+    return;  // refunded or revoked as of signing time
+}
+$expires = $payload['expiresDate'] ?? null;
+if ($expires !== null && $expires <= $nowMs) {
+    return;  // subscription term had ended
+}
+grant($payload['productId'], $environment, $payload['transactionId']);  // idempotent on transactionId
+
+// Branch B: legacy PKCS#7 app receipt
+$result = $verifier->verifyReceipt($receiptBase64);
+if (!$result->verified()) {
+    log($result->failure->reason->value);
+    return;
+}
+$receipt = $result->payload;
+if ($receipt->bundleId !== 'com.example.app') {
+    return;
+}
+$environment = Environment::fromReceiptType($receipt->receiptType);
+foreach ($receipt->inApp as $purchase) {
+    if ($purchase->cancellationDateMs !== null) {
+        continue;
+    }
+    if ($purchase->expiresDateMs !== null && $purchase->expiresDateMs <= $nowMs) {
+        continue;
+    }
+    grant($purchase->productId, $environment, $purchase->transactionId);
+}
+```
+
+**Freshness is your call.** Neither method rejects a payload for its age; the
+signing instant (`signedDate` / the receipt's creation date) only decides
+what certificate-validity window the chain is judged against. The right
+freshness limit depends on the endpoint (Apple retries a server notification
+for days, and a device may legitimately present an old but genuine receipt),
+so apply one yourself where it fits.
+
+## Post-verification checklist
+
+A verified payload is only proof of what Apple signed. Nothing here checks
+whether it applies to *your* app or has already been used. Every caller does
+these four things with the signed fields before granting anything:
+
+1. **Bundle id.** Compare it against your app's bundle id yourself.
+   Legacy: `$receipt->bundleId`. JWS: `$payload['bundleId']`.
+2. **Environment.** `Environment::fromReceiptType($receipt->receiptType)` for
+   a legacy receipt, `Environment::fromJwsEnvironment($payload['environment'] ?? null)`
+   for a JWS payload. Decide whether you accept `Sandbox` here; both return
+   `null` for a receipt type or environment claim you don't recognise, which
+   fails closed if you require a specific `Environment`.
+3. **Product id.** Compare `productId` / `$payload['productId']` against the
+   catalogue of products you actually sell: a signature proves Apple signed
+   it, not that it's a product your server still grants.
+4. **Idempotency.** Key your own bookkeeping on the transaction id
+   (`transactionId` / `$payload['transactionId']`) so a replayed or retried
+   JWS/receipt is not granted twice.
+
+None of this is checked by `verifyReceipt()`, `verifySignedData()` or
+`verifyReceiptEndpoint()` themselves: 0.7 dropped constructor-supplied policy
+(bundle id, allowed environments) entirely; every check above is read off
+the returned payload by the caller, every time.
+
+## Device hash
+
+Legacy receipts carry a device-binding hash (attribute 5,
+`ReceiptPayload::$sha1Hash`) that Apple's on-device code computes as
+`SHA-1(device_id ‖ opaque_value ‖ bundle_id_bytes)`. The library does not run
+this check itself: the design treats it as a caller decision, since
+`device_id` is something only the caller has (the app supplies its own device
+identifier bytes; there is no single canonical source across platforms).
+
+```php
+$expected = hash('sha1', $deviceIdBytes . $receipt->opaqueValue . $receipt->bundleIdBytes, true);
+if (!hash_equals((string) $expected, (string) $receipt->sha1Hash)) {
+    throw new RuntimeException('receipt was not issued for this device');
+}
+```
+
+`opaqueValue` and `bundleIdBytes` are the raw attribute value octets, not the
+decoded string, because the hash is defined over the DER bytes Apple signed.
+Use `hash_equals()`, not `===`, when comparing hashes — a straight string
+comparison is not constant-time.
+
+## App Store Server Notifications V2
+
+A V2 notification body is itself a compact JWS whose decoded payload carries
+further compact JWS strings nested inside it (`data.signedTransactionInfo`,
+`data.signedRenewalInfo`). Verify the outer envelope, then verify each nested
+one the same way:
+
+```php
+$outer = $verifier->verifySignedData($requestBody);
+if (!$outer->verified()) {
+    throw new RuntimeException("{$outer->failure->reason->value}: {$outer->failure->message}");
+}
+$notification = json_decode($outer->payload->json, true);
+
+$data = $notification['data'] ?? [];
+foreach (['signedTransactionInfo', 'signedRenewalInfo'] as $key) {
+    $nestedJws = $data[$key] ?? null;
+    if ($nestedJws === null) {
+        continue;
+    }
+    $nested = $verifier->verifySignedData($nestedJws);
+    if (!$nested->verified()) {
+        throw new RuntimeException("{$key}: {$nested->failure->reason->value}: {$nested->failure->message}");
+    }
+    // json_decode($nested->payload->json, true) is the transaction or renewal
+    // info: run the post-verification checklist above on it before acting.
+}
+```
+
+Each nested JWS is checked against the same pinned roots as the outer one;
+there is nothing notification-specific about `verifySignedData()` itself.
+
+## The verifyReceipt-compatible endpoint
+
+`verifyReceiptEndpoint()` is a stateless, one-shot replacement for Apple's
+deprecated endpoint: same request body, same response body, same status
+codes, verified offline against the pinned roots instead of by calling
+Apple. It never throws. Fields that only Apple's own server-side database can
+supply (`latest_receipt_info`, `pending_renewal_info`) are not produced. Like
+Apple's own endpoint, it checks no bundle id: compare
+`json_decode($response, true)['receipt']['bundle_id']` yourself.
+
+| status | meaning |
+|---|---|
+| 0 | Valid. `environment` and `receipt` are present in the response. |
+| 21002 | `receipt-data` is missing, not a string, too large, or the body isn't valid JSON. |
+| 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired or wrong-purpose certificate). |
+| 21007 | A sandbox receipt was sent to `Environment::Production`. |
+| 21008 | A production receipt was sent to `Environment::Sandbox`. |
+| 21009 | Internal data access error: the receipt authenticated but its signed content does not parse, or the library itself failed. Deterministic; alert, don't retry. |
+
+No other `verifyReceipt` status (21000, 21001, 21004, 21005, 21006, 21010,
+21100-21199) is ever returned: those describe HTTP-method, shared-secret and
+Apple-server-side conditions this offline replacement cannot produce. See
+`AppleStatus` for the named constants behind each code.
+
+**Read the raw body.** A web framework that parses
+`application/x-www-form-urlencoded` bodies rebuilds the request from parsed
+fields, which is not byte-for-byte the JSON Apple's endpoint contract
+expects. Read the raw request body and pass it straight through:
+
+```php
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 
-$verifier = new JwsVerifier(
-    AppleRootCerts::jwsRoots(),
-    'com.example.app',
-    [Environment::Production, Environment::Sandbox],
-);
+// $responseFactory and $streamFactory are your framework's PSR-17 factories.
+function handleVerifyReceipt(
+    ServerRequestInterface $request,
+    Verifier $verifier,
+    ResponseFactoryInterface $responseFactory,
+    StreamFactoryInterface $streamFactory,
+): ResponseInterface {
+    $rawBody = (string) $request->getBody();
+    $responseJson = $verifier->verifyReceiptEndpoint(Environment::Production, $rawBody);
 
-function redeemTransaction(JwsVerifier $verifier, string $userId, string $jws): string
-{
-    try {
-        $payload = $verifier->verifyTransaction($jws);            // step 2
-    } catch (VerificationException $e) {
-        error_log('purchase rejected: ' . $e->reason->value);
-        return 'denied';
-    }
-
-    if ($payload->revocationDate !== null) {                       // step 3
-        return 'denied';
-    }
-
-    // step 4, your call: past the window, ask the client for a fresh
-    // jwsRepresentation, or fetch one from the App Store Server API and
-    // verify that instead
-    if ((int) (microtime(true) * 1000) - ($payload->signedDate ?? 0) > 300_000) {
-        return 'refresh';
-    }
-
-    $id = $payload->transactionId;                                 // step 5
-    if (Grants::exists($id)) {
-        return 'denied';
-    }
-    Grants::record($id, $payload->originalTransactionId, $userId);
-
-    grant($userId, $payload->productId);
-    return 'granted';
+    return $responseFactory->createResponse(200)
+        ->withHeader('Content-Type', 'application/json')
+        ->withBody($streamFactory->createStream($responseJson));
 }
 ```
 
-The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
+## Decode rules
 
-```php
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
+Reading a legacy receipt's attributes follows a few fixed rules, the same in
+every port:
 
-$receipts = new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'com.example.app');
+- **First occurrence wins.** If Apple's payload repeats an attribute type
+  (it shouldn't, but the parser doesn't assume that), the first occurrence
+  decides the field; later copies are kept raw in `unknownAttributes`. This
+  applies to the receipt creation date too, since it anchors the
+  certificate-validity check.
+- **Dates** are `YYYY-MM-DDTHH:MM:SSZ` exactly (RFC 3339, UTC, no fractional
+  seconds, no offset); anything else leaves the field `null` rather than
+  failing the receipt, and a non-empty string that does not parse is kept
+  raw. An empty date string means "not set". Decoded dates are epoch
+  milliseconds (always ending in `000`, since receipts carry whole seconds).
+- **Strings** are `UTF8String` or `IA5String` only; `IA5String` bytes ≥ 0x80
+  fail to decode (7-bit ASCII, by definition). A string that fails to decode
+  leaves the field `null` (or, for `bundleId`, only `bundleIdBytes` is set,
+  see below) rather than failing the receipt.
+- **`unknownAttributes`** holds the raw value octets of every attribute that
+  does not end up in a named field, keyed by attribute type, in receipt
+  order: a type the payload doesn't model, a later copy of a known one, and
+  a known one whose value does not parse. A field Apple adds later is never
+  silently dropped. `bundleId` (attribute 2) is the one exception: a decode
+  failure there does not also appear in `unknownAttributes`, because
+  `bundleIdBytes` already carries the raw value unconditionally.
+- **64-bit ids** (`appItemId`, `downloadId`, `versionExternalIdentifier`,
+  `webOrderLineItemId`) are plain PHP `int`; `ReceiptPayload::toJson()`
+  renders them as JSON strings (JSON numbers lose precision above 2^53) and
+  everything else as JSON numbers, through `json_encode()`: the same value
+  every other port writes, though the bytes may differ.
 
-// Same policy keyed on the receipt's own dates. `verify` takes the base64 the
-// client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
-// answering Apple's `verifyReceipt` JSON shape with a `status` instead.
-function redeemReceipt(ReceiptVerifier $receipts, string $userId, string $data, string $productId): string
-{
-    $receipt = $receipts->verify($data);                            // step 2
-    $now = new DateTimeImmutable('now');
+## Upgrading from 0.6
 
-    $purchase = null;
-    foreach ($receipt->inAppPurchases as $candidate) {
-        if ($candidate->productId === $productId) {
-            $purchase = $candidate;
-        }
-    }
-    if ($purchase === null || $purchase->cancellationDate !== null) {   // step 3
-        return 'denied';
-    }
-    if ($purchase->expiresDate !== null && $purchase->expiresDate <= $now) {
-        return 'denied';
-    }
+0.7 is a breaking change: `JwsVerifier` and `ReceiptVerifier` are gone,
+policy checks (bundle id, allowed environments) are no longer constructor
+arguments, and every failure is a `VerificationResult`/`Failure` instead of a
+thrown `VerificationException`.
 
-    // step 4: the same caller-side check, on the creation date. Past
-    // the window, ask the client to refresh its receipt, or call the App Store
-    // Server API by transactionId and verify the JWS it returns.
-    if ($receipt->creationDate === null
-        || $now->getTimestamp() - $receipt->creationDate->getTimestamp() > 300) {
-        return 'refresh';
-    }
-
-    if (Grants::exists($purchase->transactionId)) {                 // step 5
-        return 'denied';
-    }
-    Grants::record($purchase->transactionId, $purchase->originalTransactionId, $userId);
-
-    grant($userId, $purchase->productId);
-    return 'granted';
-}
-```
-
-## What the clock can move
-
-`VerifyReceiptEndpoint` takes an optional PSR-20 `ClockInterface`; omitted,
-`SystemClock` is installed. It drives exactly one thing: the `request_date` /
-`_ms` / `_pst` triple, read once per call and only when no explicit `$now` is
-passed.
-
-**Certificate validity is never judged by an injected clock.** It is judged at
-the payload's own `signedDate` / `receiptCreationDate`, or at the receipt's
-attribute-12 creation date — and where the input states neither, at the system
-clock, read directly. A caller injecting a clock to pin `request_date`, or to
-work around skew, must not thereby be able to accept an expired chain or
-expire a live one.
-
-That is also why **`JwsVerifier` and `ReceiptVerifier` have no clock parameter
-at all**: it would have no consumer, and an option with no consumer is an invitation to wire it
-into the one place it must never reach.
-
-`SystemClock` is public API, and any PSR-20 implementation drops in —
-`symfony/clock`'s `MockClock`, `lcobucci/clock`, or four lines of your own.
+| 0.6 | 0.7 |
+|---|---|
+| `new ReceiptVerifier($roots, $bundleId)->verify($b64)` | `Verifier::create(Config::builder()->roots($roots)->build())->verifyReceipt($b64)`, then compare `$result->payload->bundleId` yourself |
+| `new JwsVerifier($roots, $bundleId, $environments)->verifyTransaction($jws)` | `Verifier::create(Config::builder()->roots($roots)->build())->verifySignedData($jws)`, then compare `$payload['bundleId']` / `$payload['environment']` yourself |
+| `AppleRootCerts::receiptRoots()` / `AppleRootCerts::jwsRoots()` | `AppleRootCerts::pinnedRoots()` (one method, one pinned set, for both paths) |
+| thrown `VerificationException` with `->reason` | `VerificationResult::$failure` (`Failure::$reason`, `->message`, `->cause`); nothing throws |
+| `Reason::InvalidReceiptFormat`, `::InvalidJwsFormat` | `Reason::Malformed` |
+| `Reason::RequestTooLarge` | `Reason::TooLarge` |
+| `Reason::InvalidChain` | `Reason::UntrustedChain` |
+| `$endpoint->verifyReceiptResult($body)->toResponse()` | `Verifier::create(...)->verifyReceiptEndpoint($environment, $body)` (returns the JSON string directly; no `VerifyReceiptResult`, no environment re-render without re-verifying) |
+| `VerifyReceiptEndpoint::MAX_REQUEST_BYTES` | 3 MiB (3,145,728 bytes), no longer a public constant — see "Input limits" below |
+| `ReceiptVerifier::MAX_RECEIPT_BYTES` | 3 MiB (3,145,728 bytes), no longer a public constant |
+| `JwsVerifier::MAX_JWS_BYTES` | 256 KiB (262,144 bytes), no longer a public constant |
+| `TransactionPayload::$expiresDate` / `->$revocationDate` | read the same keys straight off `json_decode($result->payload->json, true)` (there is no longer a typed JWS model, only the verified JSON text) |
+| `$receiptVerifier->verify($receipt, $deviceGuid)` | verify, then compute the device hash yourself (see "Device hash" above) |
+| `ReceiptVerifier::verifyReceiptCore()` | gone — `verifyReceipt()` is the one entry point, and it never filtered by bundle id to begin with |
+| PHP 8.1+ | PHP 8.2+ |
 
 ## Trust model
 
@@ -471,155 +365,208 @@ into the one place it must never reach.
   Revocation checking is disabled by design; that is the accepted trade-off
   for offline verification, and it is what Apple's own libraries do in offline
   mode.
+- **The chain is walked top-down.** A certificate's signature is checked only
+  against a key a pinned root has already vouched for; an untrusted
+  candidate's key is never decoded, let alone used to verify anything, so a
+  stranger certificate sitting among the embedded ones costs nothing beyond
+  being counted and ignored.
 - **Apple marker OIDs are mandatory.** The JWS leaf must carry
   `1.2.840.113635.100.6.11.1` and the intermediate `1.2.840.113635.100.6.2.1`
-  with `CA:TRUE`; the receipt signer must carry `1.2.840.113635.100.6.11.1`.
-  Without the receipt check, any Apple developer's own distribution
-  certificate — which chains through the same WWDR intermediate to the same
-  root — could sign a fully forged receipt.
+  with `CA:TRUE`; the receipt signer must carry `1.2.840.113635.100.6.11.1`
+  and its intermediate the WWDR marker too. Without the receipt check, any
+  Apple developer's own distribution certificate — which chains through the
+  same WWDR intermediate to the same root — could sign a fully forged
+  receipt.
 - **Validity at signing time.** Apple's signing certificates rotate and
-  expire; a receipt is valid if its chain was valid when Apple signed it. Every
-  chain function takes that instant as a required parameter with no default.
-- **All three published Apple roots are pinned**, in both sets. Apple
-  documents the JWS chain as ending in "an Apple root certificate" without
-  naming one, so anchoring on a single root would break silently if Apple ever
-  re-anchored a path.
-- **Reject rather than repair.** A parser that cannot represent an input fails
-  it; it never substitutes a sentinel. An attribute type outside
-  `[0, 2^31-1]`, a rolled-over date, a negative integer, trailing bytes after
-  the CMS blob: all rejected.
-- **Only `VerificationException` escapes** a public entry point. Containment is
-  categorical, not a list of expected types.
+  expire; a receipt is valid if its chain was valid when Apple signed it, or,
+  when the receipt or JWS states no signing time, at the configured clock
+  (see "What the clock can move" below).
+- **Any receipt signer algorithm Apple has used.** RSA PKCS#1 v1.5 and
+  ECDSA over P-256/P-384, with MD5 through SHA-512 digests — no
+  algorithm allowlist beyond what the trusted chain and OpenSSL itself can
+  verify. A relabel — a `signatureAlgorithm` naming a different hash than
+  `digestAlgorithm` — is refused.
+- **No RSA-PSS receipt signers.** A SignerInfo signed with RSASSA-PSS fails
+  as `INVALID_SIGNATURE`, even when the signature is genuine. Apple has never
+  signed a receipt with PSS. PHP's `openssl_verify()` has no PSS mode, so
+  supporting it would take hand-written EMSA-PSS padding checks, and the
+  signer chooses its own algorithm, so that code would sit on the forgery
+  path. This port does not hand-write crypto. The other ports may verify PSS
+  signers; the shared conformance case leaves it to each port. Certificate
+  chain links are unaffected: OpenSSL checks those itself, PSS included.
+- **Several SignerInfos, and several certificates claiming the same
+  identity.** A receipt with more than one SignerInfo verifies when at least
+  one does, tried in order; when more than one embedded certificate carries a
+  SignerInfo's issuer and serial, each is tried in turn, and a key is used
+  only after its own chain and marker checks pass.
+- **All three published Apple roots are pinned**, in one shared set for both
+  verification paths. Apple documents the JWS chain as ending in "an Apple
+  root certificate" without naming one, so anchoring on a single root would
+  break silently if Apple ever re-anchored a path.
+- **Reject rather than repair.** A parser that cannot represent an input
+  fails it; it never substitutes a sentinel. An attribute type outside
+  `[0, 2^31-1]`, trailing bytes after the CMS blob: both rejected. A
+  negative INTEGER value is reported as the signed number it encodes. A
+  date or a known attribute's value that does not decode is kept raw and
+  the receipt still verifies — decode failures are not trust
+  failures — but the top-level attribute SET itself must be well formed.
+- **Only a `VerificationResult` failure escapes** a public entry point.
+  Containment is categorical, not a list of expected types.
 
-You can pass your own anchors instead of the bundled ones — that is what the
-constructor argument is for — at your own risk.
+You can pass your own anchors instead of the bundled ones — that is what
+`Config::builder()->roots(...)` is for — at your own risk.
 
-## Defensive bounds
+## What the clock can move
 
-Everything this library parses is attacker-controlled, and PHP has no
-zero-copy slice: every `substr()` allocates and every ASN.1 node is a real
-object. Measured on PHP 8.4, a megabyte of minimal two-byte DER nodes costs
-about 72 MB of parser state, against a `php.ini-production` default
-`memory_limit` of 128M. So:
+`Config` carries a PSR-20 `ClockInterface`; omitted, `SystemClock` is
+installed. It reaches exactly two things:
 
-| Bound | Default | Why |
-|---|---|---|
-| ASN.1 nesting depth | 32 | PHP gained `zend.max_allowed_stack_size` in 8.3; on 8.1 an unbounded recursive parser segfaults rather than raising |
-| ASN.1 nodes per parse | 20,000 | the largest genuine fixture — a 79 KB receipt with 187 in-app purchases — decodes to under 3,000 |
-| ASN.1 retained bytes per parse | 48 MiB | a receipt at the 3 MiB cap retains 42 MiB (14 times its DER), that same fixture 967 KB; see below for why bounding node count is not enough |
-| Receipt size (`ReceiptVerifier::MAX_RECEIPT_BYTES`) | 3 MiB | Apple's request limit, see below; no receipt Apple accepts is larger than the request carrying it |
-| JWS size | 256 KiB | every JWS in the corpus, Apple's own mock notification data included, is under 2.5 KB |
-| raw JSON request body (`verifyReceiptResult(string)`, `verifyReceiptJson`; `VerifyReceiptEndpoint::MAX_REQUEST_BYTES`) | 3 MiB | Apple's own limit, see below |
-| JSON nesting of a request body | 64 levels | `json_decode` recurses once per level |
-| Embedded certificates | 10 | enforced *before* any certificate is decoded, because decoding and RSA-checking candidate issuers is the expensive half |
-| Chain path length | 6 | well past any Apple chain |
+- **`request_date`** in `verifyReceiptEndpoint()`'s response, read once per
+  call.
+- **The chain-validity instant**, but only when the receipt or JWS states no
+  signing time of its own — a receipt with no attribute 12, or a JWS payload
+  with no `signedDate` (or one that does not parse). When the input states a
+  time, the chain is judged at that time regardless of what the clock reads.
 
-The node budget is a constructor argument if your corpus is unusual. The rest
-are not: they are security properties, and the two size limits are Apple's.
+This is a deliberate change from 0.6, where the clock reached `request_date`
+only and a dateless input was always judged at real time. 0.7 makes the
+fallback instant configurable too, so a test can pin "now" for a dateless
+input the same way it pins `request_date`, without reaching for a
+process-wide time mock. A caller injecting a clock to work around skew, or to
+pin `request_date` in a test, must still not thereby be able to accept a
+chain that is not valid at the instant it actually cares about.
 
-**Apple's limits.** The request and receipt limits are fixed constants in
-every port of this library, not options. Measured on 2026-09-23 against both
-of Apple's verifyReceipt endpoints (production and sandbox), a request body of
-3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP 413.
-Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of `é`, only
-1,572,874 characters, also got 413. A PHP string is bytes, so `strlen()` is
-that count, and this port measures a raw body, a base64 receipt and the DER
-with it. Never compare `mb_strlen()` against these limits.
-`fixtures/cases.json` holds every port to these numbers from both sides.
+`SystemClock` is public API, and any PSR-20 implementation drops in —
+`symfony/clock`'s `MockClock`, `lcobucci/clock`, or four lines of your own.
 
-- A raw body over `VerifyReceiptEndpoint::MAX_REQUEST_BYTES` answers 21002 with
-  `Reason::RequestTooLarge`, decided before the body is parsed, so a huge
-  malformed body is `REQUEST_TOO_LARGE`, not `MALFORMED_REQUEST`. A body
-  already decoded to an array is not measured.
-- A `receipt-data`, or a receipt passed to `ReceiptVerifier`, over
-  `ReceiptVerifier::MAX_RECEIPT_BYTES` is `INVALID_RECEIPT_FORMAT`, checked on
-  the base64 string before it is decoded and again on the DER. The
-  retained-byte budget is sized so a receipt at the cap is parsed: its CMS
-  envelope retains 14 times its DER, 42 MiB at 3 MiB, under the 48 MiB budget.
-  Verifying the 3,145,728-byte `receipt-at-der-cap` fixture peaks about 40 MB
-  above the baseline on PHP 8.4.19. The largest genuine receipt in the corpus
-  is 79 KB.
+## Input limits
 
-**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
-send the status Apple sends. The body is Apple's 21002 either way:
+Base64 decoding and JSON parsing both allocate a multiple of their input
+before any signature is checked, so the input is measured first. The byte
+limits are Apple's, fixed in every port of this library, not `Config`
+options.
 
-```php
-$result = $endpoint->verifyReceiptResult((string) $request->getBody());
-$status = $result->failureReason() === Reason::RequestTooLarge ? 413 : 200;
-// $streams: any PSR-17 StreamFactoryInterface.
-return $response->withStatus($status)->withBody($streams->createStream($result->toJson()));
-```
+- **Receipt size** (3 MiB, 3,145,728 bytes): the base64 text given to
+  `verifyReceipt()`, in UTF-8 bytes, before decoding. A larger receipt is
+  `Reason::TooLarge`.
+- **Request body size** (3 MiB, 3,145,728 bytes): the request body given to
+  `verifyReceiptEndpoint()`, before it is parsed. A larger body is
+  `Reason::TooLarge` (status 21002).
+- **JWS size** (256 KiB, 262,144 bytes): the compact JWS text given to
+  `verifySignedData()`, before it is split into segments. A larger JWS is
+  `Reason::TooLarge`.
+- **JSON nesting depth 64**, member names to 50,000 characters and numbers
+  to 1,000 characters: checked before any JSON is parsed — by a manual byte
+  scan, not `json_decode()`'s own depth parameter, which bounds nesting only
+  — in the request body, the JWS header and the JWS payload alike. Outside
+  any of those is `Reason::Malformed` for the request body and the JWS
+  header. A JWS payload is carried to the signature check: it is
+  `Reason::UnreadablePayload` if the signature verifies,
+  `Reason::InvalidSignature` if not.
+- **ASN.1 nesting depth 32**, 20,000 nodes and 48 MiB of retained parser
+  state per parse: checked before any certificate is decoded. Outside any of
+  those is `Reason::Malformed` in the CMS envelope and
+  `Reason::UnreadablePayload` in the signed receipt content.
+- **10 embedded certificates, 4 SignerInfos**, enforced before any
+  certificate is decoded or any signature is checked.
 
-A web server or framework that caps request bodies itself (nginx's
-`client_max_body_size` defaults to 1m) has to allow at least 3 MiB, or it
-refuses bodies Apple would answer.
+`fixtures/cases.json` holds every port to these same numbers, from both
+sides of each boundary.
 
-**`memory_limit` headroom.** The request cap bounds what `json_decode` can be
-handed, not what it allocates. A genuine body at the cap, a real receipt
-padded to 3 MiB, peaks at about 8 MB. A hostile body at the cap costs far
-more: the costliest shape measured, chains of arrays nested 60 deep, peaks at
-about 331 MB on PHP 8.4.19 and about 561 MB on PHP 8.1.34, because every
-level is two bytes of JSON and a whole PHP array, and PHP 8.1's packed arrays
-take twice the memory per slot that 8.2 and later do; the flat `[[]]` bomb peaks at about 155 MB. Both are over the
-`php.ini-production` default of 128M, and running out of memory is a fatal
-error no `catch` can answer (below). Give a worker that passes raw bodies to
-the endpoint a `memory_limit` of at least 384M on PHP 8.2 or later and 640M
-on PHP 8.1, more if the rest of the request holds much at the same time;
-`MemoryExhaustionTest` runs that vector at those limits. Decoding the body yourself does not avoid the cost, it only moves the
-same `json_decode` out of this library.
+### Why PHP needs its own headroom
 
-**Why a node budget is not enough on its own.** Depth and node count bound
-different axes, and the cost is their *product*: a value nested N levels deep is
-copied N times on the way down, so retained parser state is roughly
-`2 × depth × input`. Deep-but-large nesting is cheap on both bounded axes — 600
-sibling chains of 31 `SEQUENCE`s around 3 KB each is 19,201 nodes at depth 31 in
-1.9 MB of input, inside the node budget, the depth ceiling and the receipt cap
-alike — and cost 92 MB of parser state. The retained-byte budget bounds that
-product; it brings the same input down to 38 MB, and the same shape grown to
-the 3 MiB receipt cap peaks at about 46 MB.
+PHP has no zero-copy slice: every `substr()` allocates and every ASN.1 node
+is a real object, so a `Der` parse retains roughly `2 × depth × input` bytes
+— a megabyte of minimal two-byte DER nodes costs about 72 MB of parser state
+without the node budget above. Against a `php.ini-production` default
+`memory_limit` of 128M, that turns a megabyte of attacker bytes into a fatal
+out-of-memory error, which is **not a `Throwable`**: no `catch` in this
+library, nor in yours, can turn a fatal error into a verdict, and the worker
+dies with no answer at all. Every "never throws" promise in this README
+holds only because the input is bounded before it is allocated — the 48 MiB
+retained-byte budget above exists specifically because bounding depth and
+node count separately is not enough (a shape nested deep but built of many
+small siblings can be cheap on both of those axes and still cost tens of
+megabytes; the retained-byte budget bounds the product instead).
 
-**These are correctness bounds, not tuning knobs.** Running out of memory in PHP
-raises a *fatal error*, and a fatal error is not a `Throwable`: no `catch` in
-this library can turn one into a verdict, so the worker dies with no answer at
-all. Every promise made about which errors escape — `verifyReceiptCore` raising
-only `VerificationException`, `VerifyReceiptEndpoint` never throwing — holds
-only because the input is bounded before it is allocated.
+Give a worker that hands raw request bodies to `verifyReceiptEndpoint()` a
+`memory_limit` of at least 384M — `MemoryExhaustionTest` runs the costliest
+vectors this library knows about at that limit and asserts the process
+survives every one of them. Decoding the body yourself before calling the
+library does not avoid the cost, it only moves the same `json_decode` out of
+this library and back into your own code, unmeasured.
+
+## Measured worst-case CPU
+
+Measured on 2026-09-27 with `php bench/bench.php --worst-case`, which times
+every shared case in `fixtures/cases.json` that carries a time budget:
+oversized untrusted keys, a cross-signed certificate mesh, and the encoding
+oddities inside certificates. PHP 8.4.19 CLI (NTS, no OPcache) with OpenSSL
+3.0.13, one thread, on a shared 4-vCPU KVM guest (Intel Xeon Processor @
+2.10GHz); one second of warm-up, then ten samples of at least 100 ms each.
+
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 10 ms | 12 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 5.0 ms | 6.3 ms |
+| Slowest hostile JWS: `signed-data/intermediate-with-a-non-minimal-certificate-length-does-not-crash` | 2.1 ms | 2.6 ms |
+| Every other budgeted case | under 3.3 ms | under 4.3 ms |
+| For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 13 ms | 14 ms |
+| For scale: `verifyReceiptEndpoint` on the same receipt | 21 ms | 22 ms |
+
+No hostile input in the shared suite costs more than an ordinary large
+receipt, though the slowest comes closest in this port: the cost of a call
+follows the size of the input, which the limits above bound, not the
+structure an attacker chooses. The machine was shared with other work, and
+a repeat run moved the genuine receipt's median by up to a third, so treat
+these as an order of magnitude. Run `php bench/bench.php --worst-case` for
+the hostile cases on your own hardware, and `php bench/bench.php` for the
+genuine receipts.
 
 ## Known platform caveats
 
-- **64-bit only.** Apple ships epoch-millisecond timestamps (~1.7×10¹²), which
-  a 32-bit `int` cannot hold — `json_decode` would return floats and every date
-  comparison would silently drift. The constructors refuse a 32-bit build with
-  a `\RuntimeException` rather than drifting.
+- **64-bit only.** Apple ships epoch-millisecond timestamps (~1.7×10¹²),
+  which a 32-bit `int` cannot hold — `json_decode` would return floats and
+  every date comparison would silently drift. `Verifier::create()` refuses a
+  32-bit build with a `\RuntimeException` rather than drifting.
 - **Known issue: genuine legacy receipts fail on RHEL 9.** The legacy Apple
   receipt chain and its CMS signature are SHA-1, and RHEL 9's DEFAULT crypto
   policy (also Alma and Rocky) makes the system OpenSSL refuse SHA-1
   signatures. `ext-openssl` uses that OpenSSL, so a genuine legacy receipt is
-  `INVALID_CHAIN`. Observed on AlmaLinux 9.8 on 2026-09-24. Newer receipts
-  (SHA-256 chains) and every JWS are unaffected; FIPS mode is untested. Until
-  the fix ships, run `update-crypto-policies --set DEFAULT:SHA1` on that host.
-  The planned fix checks SHA-1 signatures on Apple's pinned legacy chain only,
-  through phpseclib, and adds an AlmaLinux 9 CI job (ROADMAP.md).
+  `Reason::UntrustedChain`. Observed on AlmaLinux 9.8 on 2026-09-24. Newer
+  receipts (SHA-256 chains) and every JWS are unaffected; FIPS mode is
+  untested. Until the fix ships, run
+  `update-crypto-policies --set DEFAULT:SHA1` on that host. The planned fix
+  checks SHA-1 signatures on Apple's pinned legacy chain only, through
+  phpseclib, and adds an AlmaLinux 9 CI job (ROADMAP.md).
 - **`ext-openssl` is not literally universal.** It is bundled everywhere in
   practice, but a hardened build without it exists. The `"ext-openssl": "*"`
   requirement turns that into a Composer error rather than a runtime fatal.
 
+## Debugging a receipt by hand
+
+See the [project README](../README.md#debugging-a-receipt-by-hand) for the
+`openssl` commands that open a receipt or a JWS payload without verifying it
+(useful when a verification fails and you want to see what arrived).
+
 ## Development
 
 ```bash
-composer install                        # installs composer.lock
-vendor/bin/phpunit                      # everything
-vendor/bin/phpunit --testsuite conformance   # the shared cross-language vectors
-vendor/bin/phpunit --group mutation          # the mutation pass
+composer install                             # installs composer.lock
+vendor/bin/phpunit                            # everything
+vendor/bin/phpunit --testsuite conformance    # the shared cross-language vectors
+vendor/bin/phpunit --group mutation           # the mutation pass
 vendor/bin/phpstan analyse
-fuzz/run.sh all 60                      # the six coverage-guided fuzz targets
+vendor/bin/php-cs-fixer fix
+fuzz/run.sh all 60                            # the six coverage-guided fuzz targets
 ```
 
 `fuzz/` holds coverage-guided targets over the DER, CMS and X.509 readers and
-the three public verifiers, run with a pinned `nikic/php-fuzzer` phar that the
-run script downloads and digest-checks. It is not a Composer dependency, and
-deliberately so — see `fuzz/README.md`, which also lists the targets and the
-invariant each one asserts beyond "nothing but a verdict escapes".
+the `Verifier`'s three entry points, run with a pinned `nikic/php-fuzzer`
+phar that the run script downloads and digest-checks. It is not a Composer
+dependency, and deliberately so — see `fuzz/README.md`, which also lists the
+targets and the invariant each one asserts beyond "nothing but a verdict
+escapes".
 
 `php/certs/` is a checked copy of the repository-root `certs/`, and
 `src/Internal/RootsData.php` is generated from that copy by
@@ -630,16 +577,8 @@ php php/tools/gen-roots.php
 ```
 
 `composer.lock` is committed and CI installs from it, so no run resolves a
-version range. Making one lock serve PHP 8.1 through 8.5 takes one setting:
-`config.platform.php` is `8.1.0` in `composer.json`, so `composer update`
-resolves as the floor would and picks PHPUnit 10.5, the only line whose `php`
-constraint spans the whole matrix. Every locked package's constraint was
-checked against all five versions before the file was committed.
-
-The cost is that no leg runs the newer PHPUnit lines the `require-dev`
-constraint still admits. The constraint stays open because a consumer of this
-package resolves it themselves; the lock binds only this repository's own CI.
-The `php-lowest` job is the one leg that still resolves, which is its purpose.
+version range. `config.platform.php` is `8.2.0` in `composer.json`, matching
+the 8.2+ floor.
 
 ## Licence
 

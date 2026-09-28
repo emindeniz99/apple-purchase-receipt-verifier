@@ -5,21 +5,21 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
+use EminDeniz99\ApplePurchaseReceiptVerifier\ConfigBuilder;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Failure;
+use EminDeniz99\ApplePurchaseReceiptVerifier\InAppPurchase;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Certificate;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\AppTransactionPayload;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\TransactionPayload;
+use EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\AppReceipt;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\InAppPurchase;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptEndpoint;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\VerifyReceiptResult;
+use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\SystemClock;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
+use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationResult;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use Error;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversNothing;
@@ -36,35 +36,28 @@ use ReflectionClass;
 final class ApiShapeTest extends TestCase
 {
     /**
-     * The eleven reasons, read out of `fixtures/cases.schema.json` rather
-     * than restated here. The schema is the source of truth for the
-     * vocabulary, so a typo in a case name — or a twelfth reason added
-     * without a cross-port change — fails here.
-     *
-     * The enum also carries the two reasons every port's VerifyReceiptResult
-     * shares, MALFORMED_REQUEST and REQUEST_TOO_LARGE. They are not in the
-     * schema's `reason` because no verifier throws them; the schema lists
-     * them under `resultReason`, and they are the only extras.
-     * INTERNAL_ERROR is thrown (signed content that cannot be read), so it
-     * is in `reason`.
+     * The eight reasons, read out of `fixtures/cases.schema.json` rather
+     * than restated here — a typo in a case name, or a ninth reason added
+     * without a cross-port change, fails here. 0.7 has a single unified
+     * vocabulary (docs/design/0.7-api.md, "Result"): every path returns a
+     * {@see VerificationResult}, so there is no separate "thrown" versus
+     * "result-only" split the way 0.6's schema had one.
      */
     public function testTheReasonVocabularyIsExactlyTheOneTheSchemaDefines(): void
     {
-        /** @var array{'$defs': array{reason: array{enum: list<string>}, resultReason: array{oneOf: array{0: mixed, 1: array{enum: list<string>}}}}} $schema */
+        /** @var array{'$defs': array{reason: array{enum: list<string>}}} $schema */
         $schema = json_decode(
-            (string) file_get_contents(Fixtures::directory() . '/cases.schema.json'),
+            (string) file_get_contents(Fixtures07::directory() . '/cases.schema.json'),
             true,
             64,
             JSON_THROW_ON_ERROR,
         );
-        $resultOnly = $schema['$defs']['resultReason']['oneOf'][1]['enum'];
-        $expected = [...$schema['$defs']['reason']['enum'], ...$resultOnly];
+        $expected = $schema['$defs']['reason']['enum'];
         $actual = array_map(static fn (Reason $r): string => $r->value, Reason::cases());
         sort($expected);
         sort($actual);
 
-        self::assertCount(11, $schema['$defs']['reason']['enum']);
-        self::assertSame(['MALFORMED_REQUEST', 'REQUEST_TOO_LARGE'], $resultOnly);
+        self::assertCount(8, $schema['$defs']['reason']['enum']);
         self::assertSame($expected, $actual, 'the Reason vocabulary drifted from the schema');
     }
 
@@ -77,122 +70,122 @@ final class ApiShapeTest extends TestCase
         }
     }
 
+    /**
+     * The schema's wire vocabulary is SCREAMING_SNAKE (`PRODUCTION`,
+     * `SANDBOX`); {@see Environment}'s own backing values are Title Case
+     * (`Production`, `Sandbox`, matching the receipt/JWS claim spellings it
+     * also parses). The two vocabularies are related by the conformance
+     * harness's own mapping, not by string equality, so this checks case
+     * count and coverage rather than raw backing values.
+     */
     public function testTheEnvironmentVocabularyIsExactlyTheOneTheSchemaDefines(): void
     {
-        /** @var array{'$defs': array{environment: array{enum: list<string>}}} $schema */
+        /** @var array{'$defs': array{endpointConfig: array{properties: array{environment: array{enum: list<string>}}}}} $schema */
         $schema = json_decode(
-            (string) file_get_contents(Fixtures::directory() . '/cases.schema.json'),
+            (string) file_get_contents(Fixtures07::directory() . '/cases.schema.json'),
             true,
             64,
             JSON_THROW_ON_ERROR,
         );
 
-        $expected = $schema['$defs']['environment']['enum'];
-        $actual = array_map(static fn (Environment $e): string => $e->value, Environment::cases());
+        $expected = $schema['$defs']['endpointConfig']['properties']['environment']['enum'];
         sort($expected);
-        sort($actual);
+        self::assertSame(['PRODUCTION', 'SANDBOX'], $expected);
+        self::assertCount(count($expected), Environment::cases());
 
-        self::assertSame($expected, $actual);
+        foreach ($expected as $wire) {
+            $mapped = match ($wire) {
+                'PRODUCTION' => Environment::Production,
+                'SANDBOX' => Environment::Sandbox,
+            };
+            self::assertInstanceOf(Environment::class, $mapped);
+        }
     }
 
-    public function testTheExceptionCarriesTheReasonAsAValueAndFormatsItsMessagePredictably(): void
+    /**
+     * A {@see VerificationResult} carries exactly one of payload and
+     * failure; constructing it any other way is a programming error, not a
+     * verdict about a payload.
+     */
+    public function testAVerificationResultRequiresExactlyOneOfPayloadAndFailure(): void
     {
-        $e = new VerificationException(Reason::InvalidChain, 'some detail');
+        $this->expectException(InvalidArgumentException::class);
+        new VerificationResult();
+    }
 
-        self::assertSame(Reason::InvalidChain, $e->reason);
-        self::assertSame('INVALID_CHAIN: some detail', $e->getMessage());
-        self::assertInstanceOf(\RuntimeException::class, $e);
+    public function testAVerificationResultCannotCarryBoth(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new VerificationResult(payload: 'x', failure: new Failure(Reason::Malformed, 'x'));
     }
 
     /**
      * Detail strings get logged by integrators, so they must not carry
-     * receipt bytes, claim values or key material (PLAN.md D11). This walks
-     * the real failure paths and checks the message against the secrets the
-     * input actually contained.
+     * receipt bytes, claim values or key material. This walks a real
+     * failure path and checks the message against the secrets the input
+     * actually contained.
      */
     public function testFailureMessagesDoNotEchoTheInputBack(): void
     {
         $pki = MintedPki::get();
         $secretBundle = 'com.secret.internal.build';
-        $verifier = new ReceiptVerifier([$pki->foreignRootDer], 'com.example.app');
+        $payload = TestPki::payload(
+            TestPki::utf8Attribute(2, $secretBundle),
+            TestPki::dateAttribute(12, '2024-08-06T12:00:00Z'),
+        );
+        $receipt = $pki->receipt($payload);
 
-        $receipt = $pki->receipt(Support\TestPki::payload(
-            Support\TestPki::utf8Attribute(2, $secretBundle),
-            Support\TestPki::dateAttribute(12, '2024-08-06T12:00:00Z'),
-        ));
+        $verifier = Verifier::create(Config::builder()->roots([$pki->foreignRootDer])->build());
+        $result = $verifier->verifyReceipt(base64_encode($receipt));
 
-        try {
-            $verifier->verify($receipt);
-            self::fail('expected a rejection');
-        } catch (VerificationException $e) {
-            self::assertStringNotContainsString($secretBundle, $e->getMessage());
-            self::assertStringNotContainsString(base64_encode($receipt), $e->getMessage());
-            self::assertLessThan(200, strlen($e->getMessage()), 'a detail string this long is carrying data');
-        }
+        self::assertFalse($result->verified());
+        $message = $result->failure->message;
+        self::assertStringNotContainsString($secretBundle, $message);
+        self::assertStringNotContainsString(base64_encode($receipt), $message);
+        self::assertLessThan(200, strlen($message), 'a detail string this long is carrying data');
     }
 
     /** @return iterable<string, array{callable(): mixed}> */
     public static function misconfigurationProvider(): iterable
     {
-        $root = static fn (): string => MintedPki::get()->rootDer;
-
-        yield 'jws: empty roots' => [
-            static fn () => new JwsVerifier([], 'com.example.app', [Environment::Sandbox]),
+        yield 'empty roots' => [
+            static fn () => Verifier::create(Config::builder()->roots([])->build()),
         ];
-        yield 'jws: empty bundle id' => [
-            static fn () => new JwsVerifier([$root()], '', [Environment::Sandbox]),
+        yield 'an empty-string root' => [
+            static fn () => Verifier::create(Config::builder()->roots([''])->build()),
         ];
-        yield 'jws: empty accept set' => [
-            static fn () => new JwsVerifier([$root()], 'com.example.app', []),
+        yield 'an unparseable root' => [
+            static fn () => Verifier::create(Config::builder()->roots(['not a certificate'])->build()),
         ];
-        yield 'jws: a non-Environment in the accept set' => [
+        yield 'a non-string root' => [
             /** @phpstan-ignore-next-line deliberate misuse */
-            static fn () => new JwsVerifier([$root()], 'com.example.app', ['Sandbox']),
-        ];
-        yield 'receipt: empty roots' => [static fn () => new ReceiptVerifier([], 'com.example.app')];
-        yield 'receipt: empty bundle id' => [static fn () => new ReceiptVerifier([$root()], '')];
-        yield 'receipt: a zero node budget' => [
-            static fn () => new ReceiptVerifier([$root()], 'com.example.app', 0),
-        ];
-        yield 'endpoint: empty roots' => [
-            static fn () => new VerifyReceiptEndpoint([], Environment::Sandbox),
-        ];
-        yield 'endpoint: the Xcode environment' => [
-            static fn () => new VerifyReceiptEndpoint([$root()], Environment::Xcode),
-        ];
-        yield 'core: empty roots' => [
-            static fn () => ReceiptVerifier::verifyReceiptCore(MintedPki::get()->receipt(), []),
+            static fn () => Verifier::create(Config::builder()->roots([123])->build()),
         ];
     }
 
     /**
-     * Misconfiguration is a programming error, not a verdict about a payload.
-     * It must be a different type from `VerificationException`, or a caller's
-     * `catch (VerificationException)` swallows its own bug as "the receipt
-     * was bad".
+     * Misconfiguration is a programming error, not a verdict about a
+     * payload: it is a different type (`InvalidArgumentException`) from
+     * anything `VerificationResult` carries, so a caller who only checks
+     * `$result->verified()` cannot mistake its own bug for a rejected
+     * receipt.
      *
      * @param callable(): mixed $construct
      */
     #[DataProvider('misconfigurationProvider')]
     public function testMisconfigurationRaisesAnArgumentErrorNotAVerdict(callable $construct): void
     {
-        try {
-            $construct();
-            self::fail('misconfiguration was accepted');
-        } catch (VerificationException $e) {
-            self::fail('misconfiguration surfaced as a verification verdict: ' . $e->getMessage());
-        } catch (InvalidArgumentException) {
-            $this->addToAssertionCount(1);
-        }
+        $this->expectException(InvalidArgumentException::class);
+        $construct();
     }
 
     /** @return iterable<string, array{class-string}> */
     public static function publicClassProvider(): iterable
     {
         foreach ([
-            JwsVerifier::class, TransactionPayload::class, AppTransactionPayload::class,
-            ReceiptVerifier::class, AppReceipt::class, InAppPurchase::class,
-            VerifyReceiptEndpoint::class, VerifyReceiptResult::class, VerificationException::class,
+            Verifier::class, Config::class, ConfigBuilder::class,
+            ReceiptPayload::class, InAppPurchase::class, JsonPayload::class,
+            VerificationResult::class, Failure::class, Reason::class, Environment::class,
             AppleRootCerts::class, SystemClock::class,
         ] as $class) {
             yield $class => [$class];
@@ -200,9 +193,9 @@ final class ApiShapeTest extends TestCase
     }
 
     /**
-     * Every public class is final. A subclass of a verifier or of a value
-     * object is a way to produce a partially-verified result that still
-     * passes an `instanceof` check.
+     * Every public class is final (enums are implicitly final). A subclass
+     * of the verifier or of a value object is a way to produce a
+     * partially-verified result that still passes an `instanceof` check.
      *
      * @param class-string $class
      */
@@ -223,8 +216,6 @@ final class ApiShapeTest extends TestCase
     {
         $reflection = new ReflectionClass($class);
         foreach (['__wakeup', '__unserialize', '__destruct', '__call', '__get', '__set', '__invoke'] as $magic) {
-            // Inherited only counts against the parent — \Exception itself
-            // declares __wakeup(), and that is not ours to remove.
             $declared = $reflection->hasMethod($magic)
                 && $reflection->getMethod($magic)->getDeclaringClass()->getName() === $class;
             self::assertFalse($declared, $class . ' declares ' . $magic . '()');
@@ -233,45 +224,29 @@ final class ApiShapeTest extends TestCase
 
     public function testValueObjectsAreReadOnly(): void
     {
-        $receipt = (new ReceiptVerifier([MintedPki::get()->rootDer], 'com.example.app'))
-            ->verify(MintedPki::get()->receipt());
+        $result = Verifier::create(Config::builder()->roots([MintedPki::get()->rootDer])->build())
+            ->verifyReceipt(base64_encode(MintedPki::get()->receipt()));
+        self::assertTrue($result->verified());
 
         $this->expectException(Error::class);
         $this->expectExceptionMessageMatches('/readonly/');
         /** @phpstan-ignore-next-line deliberate misuse */
-        $receipt->bundleId = 'com.attacker.app';
+        $result->payload->bundleId = 'com.attacker.app';
     }
 
     public function testAVerifiedReceiptSurvivesASerializationRoundTrip(): void
     {
-        $receipt = (new ReceiptVerifier([MintedPki::get()->rootDer], 'com.example.app'))
-            ->verify(MintedPki::get()->receipt());
+        $result = Verifier::create(Config::builder()->roots([MintedPki::get()->rootDer])->build())
+            ->verifyReceipt(base64_encode(MintedPki::get()->receipt()));
+        self::assertTrue($result->verified());
+        $receipt = $result->payload;
 
-        /** @var AppReceipt $restored */
+        /** @var ReceiptPayload $restored */
         $restored = unserialize(serialize($receipt));
 
         self::assertEquals($receipt, $restored);
         self::assertSame($receipt->bundleId, $restored->bundleId);
-        self::assertEquals($receipt->creationDate, $restored->creationDate);
-    }
-
-    /**
-     * `verifyReceiptCore` is public in every port of this library (contract
-     * C4), so the endpoint does not have to build a wildcard-bundle-id
-     * verifier to reach it. No conformance vector can hold this, so it lives
-     * here.
-     */
-    public function testVerifyReceiptCoreIsPartOfThePublicSurface(): void
-    {
-        $method = (new ReflectionClass(ReceiptVerifier::class))->getMethod('verifyReceiptCore');
-
-        self::assertTrue($method->isPublic());
-        self::assertTrue($method->isStatic());
-        self::assertStringContainsString(
-            'check `$receipt->bundleId` yourself',
-            (string) $method->getDocComment(),
-            'the bundle-id caveat must be documented on the method itself',
-        );
+        self::assertSame($receipt->receiptCreationDateMs, $restored->receiptCreationDateMs);
     }
 
     public function testEverySourceFileDeclaresStrictTypes(): void
@@ -288,8 +263,8 @@ final class ApiShapeTest extends TestCase
     }
 
     /**
-     * D11: the reason code is the entire observability surface. No logging,
-     * no metrics, no callbacks, and nothing that writes to output.
+     * The reason code is the entire observability surface. No logging, no
+     * metrics, no callbacks, and nothing that writes to output.
      */
     public function testTheLibraryNeverWritesAnywhere(): void
     {
@@ -312,6 +287,27 @@ final class ApiShapeTest extends TestCase
     }
 
     /**
+     * 64-bit ids and epoch-millisecond dates are load-bearing throughout
+     * this library (docs/design/0.7-api.md's port table: "64-bit ids =
+     * int"), so `Verifier::create()` must refuse a 32-bit build rather than
+     * silently letting `json_decode` degrade a date past `PHP_INT_MAX` to a
+     * float. This machine's PHP is 64-bit, so the guard cannot be exercised
+     * by actually calling `create()`; this pins its presence in the source
+     * instead, the same way {@see testTheLibraryNeverWritesAnywhere} pins an
+     * absence.
+     */
+    public function testCreateRefusesA32BitBuild(): void
+    {
+        $source = (string) file_get_contents(__DIR__ . '/../src/Verifier.php');
+
+        self::assertMatchesRegularExpression(
+            '/PHP_INT_SIZE\s*<\s*8/',
+            $source,
+            'Verifier::create() must guard against a 32-bit PHP build',
+        );
+    }
+
+    /**
      * The compiled-in roots must be byte-identical to `php/certs/`, which CI
      * separately diffs against the repository-root `certs/`. Otherwise the
      * package could ship trust anchors nobody reviewed.
@@ -322,20 +318,19 @@ final class ApiShapeTest extends TestCase
         $files = ['AppleIncRootCertificate.cer', 'AppleRootCA-G2.cer', 'AppleRootCA-G3.cer'];
         $onDisk = array_map(static fn (string $f): string => (string) file_get_contents($dir . '/' . $f), $files);
 
-        self::assertSame($onDisk, AppleRootCerts::jwsRoots());
-        self::assertSame($onDisk, AppleRootCerts::receiptRoots());
+        self::assertSame($onDisk, AppleRootCerts::pinnedRoots());
     }
 
     /**
-     * D15: all three published Apple roots, in both sets. Do not "optimise"
-     * either set down — Apple documents the JWS chain as ending in "an Apple
-     * root certificate" without naming one.
+     * All three published Apple roots, one shared set for both verification
+     * paths in 0.7 (docs/design/0.7-api.md, "Setup"). Do not "optimise" the
+     * set down — Apple documents the JWS chain as ending in "an Apple root
+     * certificate" without naming one.
      */
-    public function testBothRootSetsCarryAllThreePublishedAppleRoots(): void
+    public function testThePinnedRootsCarryAllThreePublishedAppleRoots(): void
     {
-        $roots = AppleRootCerts::receiptRoots();
+        $roots = AppleRootCerts::pinnedRoots();
         self::assertCount(3, $roots);
-        self::assertSame(AppleRootCerts::jwsRoots(), $roots);
 
         $subjects = array_map(
             static fn (string $der): string => Certificate::parse($der)->subjectDer,

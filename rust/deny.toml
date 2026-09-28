@@ -54,7 +54,7 @@ ignore = [
     # never signs. The only `rsa` API it touches is `RsaPublicKey::verify`
     # over a public key taken out of a certificate, with no secret anywhere
     # in the process and no oracle to time — the only observable is a
-    # `VerificationError` the caller already gets.
+    # `Failure` the caller already gets.
     #
     # This is asserted, not merely written down: the native suite's
     # `no_source_file_constructs_an_rsa_private_key` fails the build if

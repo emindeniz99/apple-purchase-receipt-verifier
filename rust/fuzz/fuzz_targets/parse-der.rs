@@ -6,7 +6,7 @@
 //! it. The invariant is the module's own: one well-formed value or an
 //! `Asn1Error`, never a panic.
 
-use apple_purchase_receipt_verifier::asn1::parse_exact;
+use apple_purchase_receipt_verifier::__internal::asn1::parse_exact;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

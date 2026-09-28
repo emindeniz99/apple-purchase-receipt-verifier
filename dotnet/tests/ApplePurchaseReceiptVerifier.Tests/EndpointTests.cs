@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using System.Security.Cryptography.X509Certificates;
-using ApplePurchaseReceiptVerifier.Receipt;
+using System.Text;
+using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
@@ -10,70 +13,54 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// <summary>The verifyReceipt wire contract: statuses, renderings, and never throwing.</summary>
 public class EndpointTests
 {
-    private static IReadOnlyList<X509Certificate2> Roots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) };
+    /// <summary>2025-01-01T00:00:00Z.</summary>
+    private const long Now = 1735689600000L;
 
-    private static VerifyReceiptEndpoint Endpoint(
-        AppleEnvironment environment = AppleEnvironment.Sandbox, IClock? clock = null) =>
-        new(Roots(), environment, clock);
+    private static IVerifier Endpoint(string root = "receipt-root", long now = Now) =>
+        TestPki.FixtureVerifier(root, now);
 
-    private static Dictionary<string, object?> Body(params (string Key, object? Value)[] entries)
+    private static string Body(string receiptData)
     {
-        Dictionary<string, object?> body = new(StringComparer.Ordinal);
-        foreach ((string key, object? value) in entries)
-        {
-            body[key] = value;
-        }
-
-        return body;
+        OrderedMap body = new();
+        body.Set("receipt-data", receiptData);
+        return Json.Write(body);
     }
 
-    private static long Status(IReadOnlyDictionary<string, object?> response) =>
-        Convert.ToInt64(response["status"], System.Globalization.CultureInfo.InvariantCulture);
+    private static long Status(string answer) =>
+        Convert.ToInt64(Json.ParseObject(answer)["status"], CultureInfo.InvariantCulture);
 
     // --- the 21002 family ----------------------------------------------------
 
+    /// <summary>A null body is input, like an empty one: 21002, not a throw.</summary>
     [Fact]
-    public void AMissingReceiptDataPropertyAnswers21002()
+    public void ANullRequestBodyAnswers21002()
     {
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult(Body()).ToResponse()));
-        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult((IReadOnlyDictionary<string, object?>?)null).ToResponse()));
+        Assert.Equal("{\"status\":21002}", Endpoint().VerifyReceiptEndpoint(AppleEnvironment.Sandbox, null!));
+        Assert.Equal("{\"status\":21002}", Endpoint().VerifyReceiptEndpoint(AppleEnvironment.Production, null!));
+    }
+
+    [Theory]
+    [InlineData("{\"receipt-data\":null}")]
+    [InlineData("{\"receipt-data\":[]}")]
+    [InlineData("{\"receipt-data\":{}}")]
+    [InlineData("{\"receipt-data\":true}")]
+    [InlineData("{\"Receipt-Data\":\"AAAA\"}")]
+    public void AReceiptDataPropertyThatIsNotAStringAnswers21002(string body)
+    {
+        Assert.Equal("{\"status\":21002}", Endpoint().VerifyReceiptEndpoint(AppleEnvironment.Sandbox, body));
     }
 
     [Theory]
     [InlineData("")]
-    [InlineData("!!!!")]
-    [InlineData("not base64 at all")]
-    public void AnUnusableReceiptDataPropertyAnswers21002(string value)
-    {
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult(Body(("receipt-data", value))).ToResponse()));
-    }
-
-    [Fact]
-    public void ANonStringReceiptDataPropertyAnswers21002()
-    {
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult(Body(("receipt-data", 7L))).ToResponse()));
-        Assert.Equal(21002, Status(endpoint.VerifyReceiptResult(Body(("receipt-data", null))).ToResponse()));
-        Assert.Equal(
-            21002,
-            Status(endpoint.VerifyReceiptResult(Body(("receipt-data", new List<object?>()))).ToResponse()));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("null")]
-    [InlineData("[]")]
-    [InlineData("3")]
+    [InlineData(" ")]
     [InlineData("\"receipt\"")]
     [InlineData("{")]
     [InlineData("{\"receipt-data\":}")]
+    [InlineData("{\"receipt-data\":\"AAAA\"")]
+    [InlineData("not json")]
     public void ARequestBodyThatIsNotAJsonObjectAnswers21002(string json)
     {
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        Assert.Equal("{\"status\":21002}", endpoint.VerifyReceiptJson(json));
+        Assert.Equal("{\"status\":21002}", Endpoint().VerifyReceiptEndpoint(AppleEnvironment.Sandbox, json));
     }
 
     /// <summary>
@@ -86,132 +73,60 @@ public class EndpointTests
     [Fact]
     public void ARequestBodyWithAMalformedUnicodeEscapeAnswers21002()
     {
-        string base64 = Convert.ToBase64String(Fixtures.Bytes("receipt"));
-        using VerifyReceiptEndpoint endpoint = Endpoint();
+        string base64 = Fixtures070.ForReceipt("receipt");
+        IVerifier endpoint = Endpoint();
 
         // The control: the same body spelled correctly is served.
         Assert.StartsWith(
             "{\"status\":0,",
-            endpoint.VerifyReceiptJson("{\"receipt-data\":\"" + base64 + "\"}"),
+            endpoint.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + base64 + "\"}"),
             StringComparison.Ordinal);
 
         // "receipt\u 02ddata": the four-character window is " 02d", which
         // NumberStyles.HexNumber reads as 0x02D — a hyphen.
         Assert.Equal(
             "{\"status\":21002}",
-            endpoint.VerifyReceiptJson("{\"receipt\\u 02ddata\":\"" + base64 + "\"}"));
-    }
-
-    [Fact]
-    public void AMalformedReceiptAnswers21002AndAnUnauthenticatedOneAnswers21003()
-    {
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        Assert.Equal(
-            21002,
-            Status(endpoint.VerifyReceiptResult(Body(("receipt-data", Convert.ToBase64String(new byte[] { 1, 2, 3 })))).ToResponse()));
-        Assert.Equal(
-            21003,
-            Status(endpoint.VerifyReceiptResult(
-                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt-foreign"))))).ToResponse()));
-    }
-
-    // --- compatibility fields ------------------------------------------------
-
-    [Fact]
-    public void PasswordAndExcludeOldTransactionsAreAcceptedAndIgnored()
-    {
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        IReadOnlyDictionary<string, object?> withExtras = endpoint.VerifyReceiptResult(Body(
-            ("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))),
-            ("password", "a-shared-secret"),
-            ("exclude-old-transactions", true))).ToResponse();
-        IReadOnlyDictionary<string, object?> without = endpoint.VerifyReceiptResult(Body(
-            ("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse();
-
-        Assert.Equal(0, Status(withExtras));
-        Assert.Equal(0, Status(without));
-    }
-
-    /// <summary>Apple renders every receipt number as a string.</summary>
-    [Fact]
-    public void NumbersAreRenderedAsStrings()
-    {
-        IReadOnlyDictionary<string, object?> receipt = SuccessfulReceipt();
-        List<object?> inApp = (List<object?>)receipt["in_app"]!;
-        IReadOnlyDictionary<string, object?> first = (IReadOnlyDictionary<string, object?>)inApp[0]!;
-
-        Assert.IsType<string>(first["quantity"]);
-        Assert.Equal("1", first["quantity"]);
-        Assert.IsType<string>(receipt["receipt_creation_date_ms"]);
+            endpoint.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, "{\"receipt\\u 02ddata\":\"" + base64 + "\"}"));
     }
 
     /// <summary>
-    /// The three app-level ids are the exception to that rule: Apple sends
-    /// them as JSON numbers, attribute 1 under both of its names, and renders
-    /// 1713 exactly as it renders 1719. The raw bytes are what is asserted,
-    /// because <c>download_id</c> is 2^63-1 — anything that routed the value
-    /// through a double would print ...488 here.
+    /// Every unsuccessful answer carries the status and nothing else: no
+    /// receipt, no environment, whatever the reason.
     /// </summary>
     [Fact]
-    public void TheLegacyIdsAreEmittedAsBareNumbersWithTheirExactDigits()
+    public void AnUnsuccessfulAnswerCarriesNothingButTheStatus()
     {
-        string body = IdsAnswer();
-
-        Assert.Contains("\"adam_id\":1234567890", body, StringComparison.Ordinal);
-        Assert.Contains("\"app_item_id\":1234567890", body, StringComparison.Ordinal);
-        Assert.Contains("\"download_id\":9223372036854775807", body, StringComparison.Ordinal);
-        Assert.Contains("\"version_external_identifier\":456789012", body, StringComparison.Ordinal);
-        Assert.Contains("\"is_trial_period\":\"false\"", body, StringComparison.Ordinal);
-        Assert.Contains("\"is_trial_period\":\"true\"", body, StringComparison.Ordinal);
+        IVerifier endpoint = Endpoint();
+        Assert.Equal("{\"status\":21007}", endpoint.VerifyReceiptEndpoint(AppleEnvironment.Production, Body(Fixtures070.ForReceipt("receipt"))));
+        Assert.Equal("{\"status\":21002}", endpoint.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, Body("AAAA")));
+        Assert.Equal("{\"status\":21003}", endpoint.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, Body(Fixtures070.ForReceipt("receipt-foreign"))));
+        Assert.Equal(
+            "{\"status\":21009}",
+            Endpoint("verification-order-root").VerifyReceiptEndpoint(AppleEnvironment.Sandbox, Body(Fixtures070.ForReceipt("receipt-unreadable-entry"))));
     }
+
+    // --- renderings ----------------------------------------------------------
 
     /// <summary>Apple's own key order, which a reader diffing the two answers reads in.</summary>
     [Fact]
-    public void TheLegacyIdsAreEmittedInApplesKeyOrder()
+    public void TheAppLevelKeysAreEmittedInApplesKeyOrder()
     {
-        string body = IdsAnswer();
+        string body = Endpoint("receipt-ids-root").VerifyReceiptEndpoint(
+            AppleEnvironment.Production, Body(Fixtures070.ForReceipt("receipt-ids")));
         string[] keys =
         {
             "\"receipt_type\"", "\"adam_id\"", "\"app_item_id\"", "\"bundle_id\"",
             "\"application_version\"", "\"download_id\"", "\"version_external_identifier\"",
-            "\"original_application_version\"",
+            "\"original_application_version\"", "\"receipt_creation_date\"", "\"request_date\"", "\"in_app\"",
         };
 
+        Assert.StartsWith("{\"status\":0,\"environment\":\"Production\",\"receipt\":{", body, StringComparison.Ordinal);
         for (int i = 1; i < keys.Length; i++)
         {
-            Assert.True(
-                body.IndexOf(keys[i - 1], StringComparison.Ordinal)
-                    < body.IndexOf(keys[i], StringComparison.Ordinal),
-                $"{keys[i - 1]} must precede {keys[i]} in {body}");
+            int previous = body.IndexOf(keys[i - 1], StringComparison.Ordinal);
+            int next = body.IndexOf(keys[i], StringComparison.Ordinal);
+            Assert.True(previous >= 0 && previous < next, $"{keys[i - 1]} must precede {keys[i]} in {body}");
         }
-    }
-
-    [Fact]
-    public void TheLegacyIdKeysAreAbsentWhenTheReceiptCarriesNone()
-    {
-        // Absent, not JSON null: the shared sandbox receipt carries none of
-        // the four, so none of their keys is in the answer at all.
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        string body = endpoint.VerifyReceiptJson(
-            "{\"receipt-data\":\"" + Convert.ToBase64String(Fixtures.Bytes("receipt")) + "\"}");
-
-        Assert.StartsWith("{\"status\":0,", body, StringComparison.Ordinal);
-        foreach (string key in new[]
-        {
-            "adam_id", "app_item_id", "download_id", "version_external_identifier", "is_trial_period",
-        })
-        {
-            Assert.DoesNotContain("\"" + key + "\"", body, StringComparison.Ordinal);
-        }
-    }
-
-    [Fact]
-    public void TheDateTripleUsesApplesExactRendering()
-    {
-        IReadOnlyDictionary<string, object?> receipt = SuccessfulReceipt();
-        Assert.Equal("2024-08-06 12:00:00 Etc/GMT", receipt["receipt_creation_date"]);
-        Assert.Equal("1722945600000", receipt["receipt_creation_date_ms"]);
-        Assert.Equal("2024-08-06 05:00:00 America/Los_Angeles", receipt["receipt_creation_date_pst"]);
     }
 
     /// <summary>
@@ -226,182 +141,156 @@ public class EndpointTests
     [InlineData("2024-03-10T10:00:00Z", "2024-03-10 03:00:00 America/Los_Angeles")]
     public void RequestDatePstFollowsDaylightSaving(string utc, string expected)
     {
-        DateTimeOffset now = DateTimeOffset.Parse(utc, System.Globalization.CultureInfo.InvariantCulture);
-        using VerifyReceiptEndpoint endpoint = Endpoint(AppleEnvironment.Sandbox, new FixedClock(now));
-        IReadOnlyDictionary<string, object?> receipt =
-            (IReadOnlyDictionary<string, object?>)endpoint.VerifyReceiptResult(
-                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse()["receipt"]!;
+        long now = DateTimeOffset.Parse(utc, CultureInfo.InvariantCulture).ToUnixTimeMilliseconds();
+        OrderedMap receipt = (OrderedMap)Json.ParseObject(
+            Endpoint(now: now).VerifyReceiptEndpoint(AppleEnvironment.Sandbox, Body(Fixtures070.ForReceipt("receipt"))))["receipt"]!;
 
         Assert.Equal(expected, receipt["request_date_pst"]);
+    }
+
+    /// <summary>
+    /// A date the receipt grammar accepts renders, whatever its year: the
+    /// grammar takes years 0000 to 9999, and year 0000 is before the first
+    /// instant <see cref="DateTimeOffset"/> can hold. The text is what the
+    /// Java reference prints (<c>yyyy</c> is year-of-era there, so year 0000
+    /// prints as 0001, and Pacific time that far back is local mean time).
+    /// </summary>
+    [Fact]
+    public void EveryDateTheGrammarAcceptsRendersAtTheEndpoint()
+    {
+        IVerifier verifier = Endpoint("owner-receipt-root");
+        string receiptData = Fixtures070.ForReceipt("owner-receipt-date-grammar");
+        ReceiptPayload payload = verifier.VerifyReceipt(receiptData).Payload!;
+        AppleEnvironment environment =
+            AppleEnvironments.FromReceiptType(payload.ReceiptType) ?? AppleEnvironment.Sandbox;
+
+        string answer = verifier.VerifyReceiptEndpoint(environment, Body(receiptData));
+        Assert.Equal(0, Status(answer));
+
+        OrderedMap yearZero = InApp(answer, "70000000000201");
+        Assert.Equal("-62167219200000", yearZero["purchase_date_ms"]);
+        Assert.Equal("0001-01-01 00:00:00 Etc/GMT", yearZero["purchase_date"]);
+
+        // tzdb's local mean time, -07:52:58, as Java prints it, on every
+        // platform: Windows' own zone data has no local mean time and would
+        // give -08:00 (16:00:00) if the system zone were asked this far back.
+        Assert.Equal("0002-12-31 16:07:02 America/Los_Angeles", yearZero["purchase_date_pst"]);
+
+        OrderedMap lastSecond = InApp(answer, "70000000000202");
+        Assert.Equal("253402300799000", lastSecond["purchase_date_ms"]);
+        Assert.Equal("9999-12-31 23:59:59 Etc/GMT", lastSecond["purchase_date"]);
+        Assert.Equal("9999-12-31 15:59:59 America/Los_Angeles", lastSecond["purchase_date_pst"]);
     }
 
     /// <summary>Equal inputs serialize to equal bytes.</summary>
     [Fact]
     public void JsonOutputIsDeterministic()
     {
-        FixedClock clock = new(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        string request = "{\"receipt-data\":\"" + Convert.ToBase64String(Fixtures.Bytes("receipt")) + "\"}";
-
-        using VerifyReceiptEndpoint first = Endpoint(AppleEnvironment.Sandbox, clock);
-        using VerifyReceiptEndpoint second = Endpoint(AppleEnvironment.Sandbox, clock);
-        string a = first.VerifyReceiptJson(request);
-        string b = second.VerifyReceiptJson(request);
+        string request = Body(Fixtures070.ForReceipt("receipt"));
+        string a = Endpoint().VerifyReceiptEndpoint(AppleEnvironment.Sandbox, request);
+        string b = Endpoint().VerifyReceiptEndpoint(AppleEnvironment.Sandbox, request);
 
         Assert.Equal(a, b);
         Assert.StartsWith("{\"status\":0,\"environment\":\"Sandbox\",\"receipt\":{", a, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void AnUnsuccessfulAnswerCarriesNothingButTheStatus()
-    {
-        using VerifyReceiptEndpoint endpoint = Endpoint(AppleEnvironment.Production);
-        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceiptResult(
-            Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse();
-
-        Assert.Equal(21007, Status(response));
-        Assert.Single(response);
-        Assert.False(response.ContainsKey("receipt"));
-        Assert.False(response.ContainsKey("environment"));
-    }
-
     /// <summary>
     /// Environment routing fails closed: only <c>Production</c> and
-    /// <c>ProductionVPP</c> count as production.
+    /// <c>ProductionVPP</c> count as production; a receipt_type Apple does not
+    /// document, or one in another letter case, is non-production.
     /// </summary>
     [Theory]
-    [InlineData("Production", true)]
-    [InlineData("ProductionVPP", true)]
-    [InlineData("ProductionSandbox", false)]
-    [InlineData("ProductionVPPSandbox", false)]
-    [InlineData("Xcode", false)]
-    [InlineData("SomethingApplePublishesLater", false)]
-    [InlineData(null, false)]
-    public void EnvironmentRoutingFailsClosed(string? receiptType, bool production)
+    [InlineData("Xcode")]
+    [InlineData("SomethingApplePublishesLater")]
+    [InlineData("production")]
+    [InlineData("")]
+    public void EnvironmentRoutingFailsClosed(string receiptType)
     {
-        (byte[] receipt, X509Certificate2 root) = MintReceipt(receiptType);
+        TestPki.ReceiptChain chain = TestPki.SharedReceipt.Value;
+        byte[] payload = TestPki.AttributeSet(new (BigInteger, byte[])[]
+        {
+            (0, TestPki.Utf8(receiptType)),
+            (2, TestPki.Utf8("com.example.app")),
+            (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
+        });
+        string body = Body(chain.SignBase64(payload));
+        IVerifier verifier = chain.Verifier();
 
-        using VerifyReceiptEndpoint onProduction = new(new[] { root }, AppleEnvironment.Production);
-        using VerifyReceiptEndpoint onSandbox = new(new[] { root }, AppleEnvironment.Sandbox);
-        Dictionary<string, object?> body = Body(("receipt-data", Convert.ToBase64String(receipt)));
-
-        Assert.Equal(production ? 0 : 21007, Status(onProduction.VerifyReceiptResult(body).ToResponse()));
-        Assert.Equal(production ? 21008 : 0, Status(onSandbox.VerifyReceiptResult(body).ToResponse()));
+        Assert.Equal("{\"status\":21007}", verifier.VerifyReceiptEndpoint(AppleEnvironment.Production, body));
+        Assert.Equal(0, Status(verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, body)));
     }
 
-    [Fact]
-    public void ADisposedEndpointAnswers21009RatherThanThrowing()
-    {
-        VerifyReceiptEndpoint endpoint = Endpoint();
-        endpoint.Dispose();
-        Assert.Equal(
-            21009,
-            Status(endpoint.VerifyReceiptResult(
-                Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse()));
-    }
-
-    [Fact]
-    public void TheEndpointDoesNotCheckTheBundleIdAtAll()
-    {
-        // Like Apple's endpoint: the caller compares receipt.bundle_id itself.
-        IReadOnlyDictionary<string, object?> receipt = SuccessfulReceipt();
-        Assert.Equal("com.example.app", receipt["bundle_id"]);
-    }
+    // --- the endpoint and verifyReceipt agree ---------------------------------
 
     /// <summary>
-    /// The endpoint calls the receipt verifier's internal core with the
-    /// anchors it copied at construction, not the public
-    /// <see cref="ReceiptVerifier.VerifyReceiptCore"/>, which copies every
-    /// anchor again on each call (about 150 µs per root on OpenSSL 3.0, so
-    /// some 450 µs per request with the three Apple roots). That shortcut is
-    /// only sound while both give the same verdict for the same roots, so
-    /// this compares them on a pass, a foreign chain, a broken signature and
-    /// a malformed blob.
+    /// The endpoint runs <c>verifyReceipt</c> and renders the result, so for
+    /// every receipt the repository registers — the base64 contract strings
+    /// verbatim included — its status is the one the design's table assigns
+    /// to what <c>verifyReceipt</c> answers, in both environments. The corpus
+    /// reaches every status the endpoint can return.
     /// </summary>
     [Fact]
-    public void TheEndpointGivesThePublicPrimitivesVerdictForEveryReceipt()
+    public void TheEndpointAnswersWhatVerifyReceiptDecidedForEveryReceiptFixture()
     {
-        byte[] receipt = Fixtures.Bytes("receipt");
-        byte[] tampered = (byte[])receipt.Clone();
-        tampered[tampered.Length - 16] ^= 0x01;
-        byte[][] inputs =
-        {
-            receipt,
-            Fixtures.Bytes("receipt-foreign"),
-            tampered,
-            receipt[..(receipt.Length / 2)],
-        };
+        List<string> ids = TestPki.ReceiptFixtureIds().ToList();
+        List<X509Certificate2> roots = AppleRootCertificates.Bundled().ToList();
+        roots.AddRange(TestPki.RootFixtureIds.Select(TestPki.FixtureCertificate));
+        IVerifier verifier = TestPki.Verifier(roots, Now);
+        Assert.True(ids.Count > 100, "only " + ids.Count + " receipts");
 
-        List<VerificationReason?> verdicts = new();
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        foreach (byte[] input in inputs)
+        HashSet<long> statuses = new();
+        foreach (string id in ids)
         {
-            VerificationReason? expected = null;
-            try
+            string data = Fixtures070.ForReceipt(id);
+            VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(data);
+            string body = Body(data);
+            foreach (AppleEnvironment environment in new[] { AppleEnvironment.Production, AppleEnvironment.Sandbox })
             {
-                ReceiptVerifier.VerifyReceiptCore(input, Roots());
+                long expected = Encoding.UTF8.GetByteCount(body) > EndpointCore.MaxRequestBytes
+                    ? AppleStatus.MalformedReceiptData
+                    : ExpectedStatus(result, environment);
+                string answer = verifier.VerifyReceiptEndpoint(environment, body);
+                Assert.True(
+                    expected == Status(answer),
+                    $"{id} on {environment}: verifyReceipt said {result.Failure?.ToString() ?? "verified"}, "
+                    + $"so {expected} was due, the endpoint answered {answer.Substring(0, Math.Min(80, answer.Length))}");
+                statuses.Add(expected);
             }
-            catch (VerificationException e)
-            {
-                expected = e.Reason;
-            }
-
-            VerifyReceiptResult result = endpoint.VerifyReceiptData(Convert.ToBase64String(input));
-            Assert.Equal(expected is null, result.IsVerified);
-            Assert.Equal(expected, result.FailureReason);
-            verdicts.Add(expected);
         }
 
-        Assert.Equal(
-            new VerificationReason?[]
+        Assert.Equal(new HashSet<long> { 0, 21002, 21003, 21007, 21008, 21009 }, statuses);
+    }
+
+    /// <summary>The design's status table, restated here so the endpoint is checked against it, not against itself.</summary>
+    private static long ExpectedStatus(VerificationResult<ReceiptPayload> result, AppleEnvironment environment)
+    {
+        if (result.Verified)
+        {
+            bool production = AppleEnvironments.FromReceiptType(result.Payload.ReceiptType) == AppleEnvironment.Production;
+            return (environment, production) switch
             {
-                null,
-                VerificationReason.InvalidChain,
-                VerificationReason.InvalidSignature,
-                VerificationReason.InvalidReceiptFormat,
-            },
-            verdicts);
-    }
-
-    /// <summary>The raw answer for the receipt that carries all four attributes.</summary>
-    private static string IdsAnswer()
-    {
-        using VerifyReceiptEndpoint endpoint = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-ids-root")) },
-            AppleEnvironment.Production);
-        return endpoint.VerifyReceiptJson(
-            "{\"receipt-data\":\"" + Convert.ToBase64String(Fixtures.Bytes("receipt-ids")) + "\"}");
-    }
-
-    private static IReadOnlyDictionary<string, object?> SuccessfulReceipt()
-    {
-        using VerifyReceiptEndpoint endpoint = Endpoint();
-        IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceiptResult(
-            Body(("receipt-data", Convert.ToBase64String(Fixtures.Bytes("receipt"))))).ToResponse();
-        Assert.Equal(0, Status(response));
-        return (IReadOnlyDictionary<string, object?>)response["receipt"]!;
-    }
-
-    /// <summary>Mints a receipt with a chosen (or missing) receipt-type attribute.</summary>
-    private static (byte[] Receipt, X509Certificate2 Root) MintReceipt(string? receiptType)
-    {
-        X509Certificate2 root = TestPki.RsaRoot();
-        X509Certificate2 intermediate = TestPki.RsaChild(root, "CN=Fake WWDR", true);
-        X509Certificate2 signer = TestPki.RsaChild(
-            intermediate, "CN=Fake Receipt Signing", false, TestPki.LeafOid);
-
-        List<(BigInteger, byte[])> attributes = new()
-        {
-            (2, TestPki.Utf8("com.example.app")),
-            (3, TestPki.Utf8("1.2.3")),
-            (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
-        };
-        if (receiptType is not null)
-        {
-            attributes.Insert(0, (0, TestPki.Utf8(receiptType)));
+                (AppleEnvironment.Production, false) => 21007,
+                (AppleEnvironment.Sandbox, true) => 21008,
+                _ => 0,
+            };
         }
 
-        byte[] receipt = TestPki.SignReceipt(
-            TestPki.AttributeSet(attributes), signer, new[] { intermediate, root });
-        return (receipt, TestPki.Public(root));
+        return result.Failure.Reason switch
+        {
+            VerificationReason.Malformed or VerificationReason.TooLarge => 21002,
+            VerificationReason.InvalidSignature
+                or VerificationReason.UntrustedChain
+                or VerificationReason.InvalidCertificate
+                or VerificationReason.InvalidCertificatePurpose => 21003,
+            _ => 21009,
+        };
+    }
+
+    private static OrderedMap InApp(string answer, string transactionId)
+    {
+        OrderedMap receipt = (OrderedMap)Json.ParseObject(answer)["receipt"]!;
+        return ((List<object?>)receipt["in_app"]!)
+            .Cast<OrderedMap>()
+            .Single(p => (string?)p["transaction_id"] == transactionId);
     }
 }

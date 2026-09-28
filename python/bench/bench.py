@@ -1,4 +1,4 @@
-"""The cross-port benchmark: the same six operations on the same two genuine
+"""The cross-port benchmark: the same operations on the same two genuine
 sandbox receipts in every port, named after the Java JMH benchmarks in
 java-bench/ (BENCHMARKS.md at the repository root has the table).
 
@@ -10,6 +10,14 @@ benchmark warms up for one second, then takes ten samples of at least 100 ms
 each, with the garbage collector left on as it is in every other port; the
 JSON on stdout carries the median, minimum and maximum microseconds per
 operation over those samples.
+
+    uv run --locked python bench/bench.py --worst-case
+
+times, the same way, every shared case in fixtures/cases.json that carries a
+maxMillis budget: the hostile inputs (oversized untrusted keys, certificate
+meshes, encoding oddities inside certificates) the shared suite bounds in
+time. Each call is run once first and must give the answer the case expects.
+The README's worst-case CPU figure comes from this mode.
 """
 
 from __future__ import annotations
@@ -28,24 +36,20 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from apple_purchase_receipt_verifier import (
-    Reason,
-    ReceiptVerifier,
-    VerificationError,
-    VerifyReceiptEndpoint,
-    apple_receipt_roots,
-    verify_receipt_core,
-)
+from apple_purchase_receipt_verifier import Config, Environment, Verifier
 
 # The library's own receipt-data decoder, which the package does not export.
 from apple_purchase_receipt_verifier._receipt_base64 import decode_receipt_base64
+from apple_purchase_receipt_verifier.receipt import verify_receipt_der
+from cryptography import x509
 
 WARMUP_S = 1.0
 SAMPLES = 10
 MIN_SAMPLE_S = 0.1
 
-# Any fixed instant (2026-01-01T00:00:00Z): it only feeds request_date.
-NOW = 1767225600.0
+# Any fixed instant (2026-01-01T00:00:00Z), in epoch milliseconds: it only
+# feeds request_date.
+NOW_MS = 1767225600000
 
 # File under fixtures/public-receipts, and the bundle id, in-app count and
 # digest fixtures/cases.json pins for it.
@@ -94,63 +98,120 @@ def tamper(der: bytes) -> bytes:
     java-bench's flipSignatureByte flips. In both fixtures the signature is a
     256-byte OCTET STRING that ends the DER (openssl asn1parse shows it), so
     its middle byte is 128 from the end; setup proves the flip landed there
-    by requiring INVALID_SIGNATURE."""
+    by requiring a failed verification."""
     tampered = bytearray(der)
     tampered[-128] ^= 0x01
     return bytes(tampered)
 
 
-def reject(der: bytes, roots: list[Any]) -> object:
-    try:
-        return verify_receipt_core(der, roots)
-    except VerificationError as error:
-        return error
+def fixture_bytes(fixtures_dir: Path, entry: dict[str, str]) -> bytes:
+    """A registered fixture's logical bytes, per its codec (the same rules
+    the conformance adapter in tests/ applies)."""
+    raw = (fixtures_dir / entry["path"]).read_bytes()
+    codec = entry["codec"]
+    if codec in ("raw", "text"):
+        return raw
+    if codec == "base64":
+        return base64.b64decode(b"".join(raw.split()))
+    if codec == "utf8":
+        return raw.decode("utf-8").strip().encode("utf-8")
+    raise ValueError(f"unknown fixture codec {codec!r}")
 
 
-def retry_in_sandbox(production: VerifyReceiptEndpoint, request: dict[str, str]) -> str:
-    return production.verify_receipt_result(request).to_json("Sandbox")
+def worst_case() -> list[dict[str, Any]]:
+    fixtures_dir = Path(__file__).resolve().parents[2] / "fixtures"
+    file = json.loads((fixtures_dir / "cases.json").read_text(encoding="utf-8"))
+    registry = file["fixtures"]
+    results = []
+    for case in file["cases"]:
+        if "maxMillis" not in case:
+            continue
+        trusted = case["config"]["trustedRoots"]
+        roots = None
+        if trusted["source"] == "fixtures":
+            roots = [
+                x509.load_der_x509_certificate(fixture_bytes(fixtures_dir, registry[i]))
+                for i in trusted["fixtures"]
+            ]
+        verifier = Verifier(Config.create(roots=roots, clock=lambda: NOW_MS))
+        entry = registry[case["input"]["fixture"]]
+        data = fixture_bytes(fixtures_dir, entry)
+        operation = case["operation"]
+        if operation == "verifyReceipt":
+            text = (
+                base64.b64encode(data).decode("ascii")
+                if entry["codec"] in ("raw", "base64")
+                else data.decode("utf-8")
+            )
+            op = partial(verifier.verify_receipt, text)
+        elif operation == "verifySignedData":
+            op = partial(verifier.verify_signed_data, data.decode("utf-8"))
+        else:
+            raise ValueError(f"{case['id']}: no adapter for operation {operation}")
+
+        # The answer the case expects, before anything is timed.
+        result = op()
+        outcome = "ok" if result.verified else result.failure.reason.name
+        expected = case["expected"]
+        if "oneOf" in expected:
+            assert outcome in expected["oneOf"], f"{case['id']} answered {outcome}"
+        else:
+            want = "ok" if expected["status"] == "ok" else expected["reason"]
+            assert outcome == want, f"{case['id']} answered {outcome}"
+        results.append(measure(operation, case["id"], op))
+    return results
 
 
-def main() -> None:
+def cross_port() -> list[dict[str, Any]]:
     fixtures_dir = Path(__file__).resolve().parents[2] / "fixtures" / "public-receipts"
-    roots = apple_receipt_roots()
+    roots = list(Config.defaults().roots)
     results = []
     for name, bundle_id, in_app_count, sha256 in FIXTURES:
         der = base64.b64decode((fixtures_dir / f"{name}.b64").read_text(encoding="ascii"))
         assert hashlib.sha256(der).hexdigest() == sha256, f"{name} digest"
         text = base64.b64encode(der).decode("ascii")
-        request = {"receipt-data": text}
-        request_json = json.dumps(request)
-        tampered = tamper(der)
-        verifier = ReceiptVerifier(roots, bundle_id)
-        sandbox = VerifyReceiptEndpoint(roots, "Sandbox", clock=lambda: NOW)
-        production = VerifyReceiptEndpoint(roots, "Production", clock=lambda: NOW)
+        request_json = json.dumps({"receipt-data": text})
+        tampered = base64.b64encode(tamper(der)).decode("ascii")
+        clock = lambda: NOW_MS  # noqa: E731
+        verifier = Verifier(Config.create(roots=roots, clock=clock))
+        sandbox_endpoint = partial(verifier.verify_receipt_endpoint, Environment.SANDBOX)
+        production_endpoint = partial(verifier.verify_receipt_endpoint, Environment.PRODUCTION)
 
         # Every call once, with the answer the conformance suite expects, so
         # no benchmark can time a fast failure by accident.
         assert decode_receipt_base64(text) == der
-        for receipt in (verify_receipt_core(der, roots), verifier.verify(text)):
+        for receipt in (
+            verify_receipt_der(der, roots, clock),
+            verifier.verify_receipt(text).payload,
+        ):
+            assert receipt is not None
             assert receipt.bundle_id == bundle_id
-            assert len(receipt.in_app_purchases) == in_app_count
-        ok = json.loads(sandbox.verify_receipt_json(request_json))
+            assert len(receipt.in_app) == in_app_count
+        ok = json.loads(sandbox_endpoint(request_json))
         assert ok["status"] == 0 and len(ok["receipt"]["in_app"]) == in_app_count
-        retry = json.loads(production.verify_receipt_result(request).to_json("Sandbox"))
-        assert (retry["status"], retry["environment"]) == (0, "Sandbox")
-        rejected = reject(tampered, roots)
-        assert isinstance(rejected, VerificationError)
-        assert rejected.reason == Reason.INVALID_SIGNATURE
+        rejected = json.loads(production_endpoint(json.dumps({"receipt-data": tampered})))
+        assert rejected["status"] == 21003
 
         results += [
             measure("decodeBase64", name, partial(decode_receipt_base64, text)),
-            measure("core", name, partial(verify_receipt_core, der, roots)),
-            measure("verifierBase64", name, partial(verifier.verify, text)),
-            measure("endpointJson", name, partial(sandbox.verify_receipt_json, request_json)),
-            measure("retryViaResult", name, partial(retry_in_sandbox, production, request)),
-            measure("rejectTamperedSignature", name, partial(reject, tampered, roots)),
+            measure("core", name, partial(verify_receipt_der, der, roots, clock)),
+            measure("verifierBase64", name, partial(verifier.verify_receipt, text)),
+            measure("endpointJson", name, partial(sandbox_endpoint, request_json)),
+            measure(
+                "rejectTamperedSignature",
+                name,
+                partial(production_endpoint, json.dumps({"receipt-data": tampered})),
+            ),
         ]
+    return results
+
+
+def main() -> None:
+    worst = "--worst-case" in sys.argv[1:]
+    results = worst_case() if worst else cross_port()
     report = {
         "port": "python",
-        "tool": "bench/bench.py (timeit)",
+        "tool": f"bench/bench.py {'worst-case' if worst else 'cross-port'} (timeit)",
         "runtime": f"{platform.python_implementation()} {platform.python_version()}",
         "settings": {"warmup_s": WARMUP_S, "samples": SAMPLES, "min_sample_s": MIN_SAMPLE_S},
         "results": results,

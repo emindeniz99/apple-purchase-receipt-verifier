@@ -10,6 +10,9 @@
 //! re-encoded before it is verified, so the bytes checked are always the
 //! bytes parsed.
 
+// Every length and offset here comes from attacker bytes: no silent wrap.
+#![deny(clippy::arithmetic_side_effects)]
+
 use crate::asn1::{decode_oid, encode_oid, parse_exact, tag, Asn1Error, Tlv};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -31,7 +34,7 @@ pub const KEY_CERT_SIGN_BIT: usize = 5;
 ///
 /// Every field is an owned copy, so a `Certificate` never aliases the
 /// caller's input buffer: a caller reusing that buffer cannot mutate an
-/// already-parsed certificate (contract rule S13).
+/// already-parsed certificate.
 #[derive(Debug, Clone)]
 pub struct Certificate {
     der: Vec<u8>,
@@ -46,12 +49,15 @@ pub struct Certificate {
     public_key_curve_oid: Option<String>,
     public_key_bits: Vec<u8>,
     signature_algorithm_oid: String,
+    signature_algorithm_params: Option<Vec<u8>>,
     signature_value: Vec<u8>,
     is_ca: bool,
     key_usage: Option<Vec<bool>>,
     subject_key_id: Option<Vec<u8>>,
     authority_key_id: Option<Vec<u8>>,
     authority_cert_serial: Option<Vec<u8>>,
+    /// The OIDs of the extensions marked critical, dotted.
+    critical_extensions: Vec<String>,
     extension_oids: Vec<Vec<u8>>,
 }
 
@@ -86,20 +92,6 @@ impl Certificate {
         &self.subject_der
     }
 
-    /// `notBefore` as epoch milliseconds, or `None` when the encoded time is
-    /// not one this parser can represent — in which case the certificate is
-    /// valid at no instant at all.
-    #[must_use]
-    pub const fn not_before(&self) -> Option<i64> {
-        self.not_before
-    }
-
-    /// `notAfter` as epoch milliseconds; see [`Certificate::not_before`].
-    #[must_use]
-    pub const fn not_after(&self) -> Option<i64> {
-        self.not_after
-    }
-
     /// The `SubjectPublicKeyInfo` TLV.
     #[must_use]
     pub fn spki(&self) -> &[u8] {
@@ -128,6 +120,13 @@ impl Certificate {
     #[must_use]
     pub fn signature_algorithm_oid(&self) -> &str {
         &self.signature_algorithm_oid
+    }
+
+    /// The `signature` `AlgorithmIdentifier`'s parameters TLV, as the TBS
+    /// states it, when present.
+    #[must_use]
+    pub fn signature_algorithm_params(&self) -> Option<&[u8]> {
+        self.signature_algorithm_params.as_deref()
     }
 
     /// `signatureValue`, unused-bits octet removed.
@@ -168,6 +167,12 @@ impl Certificate {
         self.authority_cert_serial.as_deref()
     }
 
+    /// The dotted OIDs of the extensions this certificate marks critical.
+    #[must_use]
+    pub fn critical_extensions(&self) -> &[String] {
+        &self.critical_extensions
+    }
+
     /// Whether the certificate carries an extension with this OID.
     #[must_use]
     pub fn has_extension(&self, oid: &str) -> bool {
@@ -205,18 +210,11 @@ impl Certificate {
     pub fn from_pem(pem: &str) -> Result<Certificate, Asn1Error> {
         const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
         const END: &str = "-----END CERTIFICATE-----";
-        let start = pem
-            .find(BEGIN)
+        let (_, rest) = pem
+            .split_once(BEGIN)
             .ok_or(Asn1Error("no PEM CERTIFICATE block"))?;
-        let body_start = start + BEGIN.len();
-        let rest = pem
-            .get(body_start..)
-            .ok_or(Asn1Error("no PEM CERTIFICATE block"))?;
-        let end = rest
-            .find(END)
-            .ok_or(Asn1Error("unterminated PEM CERTIFICATE block"))?;
-        let body = rest
-            .get(..end)
+        let (body, _) = rest
+            .split_once(END)
             .ok_or(Asn1Error("unterminated PEM CERTIFICATE block"))?;
         let der = crate::base64::decode_lenient(body);
         Certificate::from_der(&der)
@@ -234,34 +232,36 @@ fn time_millis(node: &Tlv<'_>) -> Result<Option<i64>, Asn1Error> {
     // string, so such a certificate parses and only fails later, when the
     // validity comparison can never be true. None here produces exactly
     // that — the certificate is valid at no instant.
-    let year_digits = if node.tag == tag::UTC_TIME { 2 } else { 4 };
+    let (year_digits, length) = if node.tag == tag::UTC_TIME {
+        (2, 13)
+    } else {
+        (4, 15)
+    };
     let bytes = text.as_bytes();
-    if bytes.len() != year_digits + 11 || bytes.last() != Some(&b'Z') {
+    if bytes.len() != length || bytes.last() != Some(&b'Z') {
         return Ok(None);
     }
-    let field = |from: usize, len: usize| -> Option<i64> {
-        let slice = bytes.get(from..from + len)?;
-        let mut value = 0i64;
-        for byte in slice {
-            if !byte.is_ascii_digit() {
-                return None;
-            }
-            value = value * 10 + i64::from(byte - b'0');
-        }
-        Some(value)
+    let Some((year_text, rest)) = bytes.split_at_checked(year_digits) else {
+        return Ok(None);
+    };
+    let digits = |slice: Option<&[u8]>| -> Option<i64> {
+        slice?.iter().try_fold(0i64, |value, byte| {
+            let digit = char::from(*byte).to_digit(10)?;
+            value.checked_mul(10)?.checked_add(i64::from(digit))
+        })
     };
     let (Some(mut year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
-        field(0, year_digits),
-        field(year_digits, 2),
-        field(year_digits + 2, 2),
-        field(year_digits + 4, 2),
-        field(year_digits + 6, 2),
-        field(year_digits + 8, 2),
+        digits(Some(year_text)),
+        digits(rest.get(0..2)),
+        digits(rest.get(2..4)),
+        digits(rest.get(4..6)),
+        digits(rest.get(6..8)),
+        digits(rest.get(8..10)),
     ) else {
         return Ok(None);
     };
     if node.tag == tag::UTC_TIME {
-        year += if year >= 50 { 1900 } else { 2000 };
+        year = year.saturating_add(if year >= 50 { 1900 } else { 2000 });
     }
     let iso = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z");
     Ok(crate::datetime::parse_rfc3339(&iso))
@@ -274,20 +274,28 @@ fn bit_string_bits(contents: &[u8]) -> Result<Vec<bool>, Asn1Error> {
     }
     let body = contents.get(1..).unwrap_or(&[]);
     let mut bits = Vec::new();
-    for (index, byte) in body.iter().enumerate() {
-        let last = index + 1 == body.len();
-        let count = if last { 8 - unused } else { 8 };
-        for bit in 0..count {
-            bits.push(byte & (0x80u8 >> bit) != 0);
+    if let Some((last, leading)) = body.split_last() {
+        for byte in leading {
+            push_bits(&mut bits, *byte, 8);
         }
+        push_bits(&mut bits, *last, 8usize.saturating_sub(unused));
     }
     Ok(bits)
+}
+
+/// The first `count` bits of `byte`, most significant first.
+fn push_bits(bits: &mut Vec<bool>, byte: u8, count: usize) {
+    for bit in 0..count {
+        bits.push(byte & (0x80u8 >> bit) != 0);
+    }
 }
 
 #[allow(clippy::too_many_lines)]
 fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
     let cert = parse_exact(der)?;
-    if cert.tag != tag::SEQUENCE || cert.children().len() < 3 {
+    // Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm,
+    // signatureValue }: exactly three, as a certificate decoder reads it.
+    if cert.tag != tag::SEQUENCE || cert.children().len() != 3 {
         return Err(Asn1Error("not an X.509 certificate"));
     }
     let tbs = cert.child(0).ok_or(Asn1Error("not an X.509 certificate"))?;
@@ -318,12 +326,10 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         index = 1;
     }
     let bad = Asn1Error("unexpected TBSCertificate layout");
-    let serial = fields.get(index).ok_or(bad)?;
-    let inner_signature = fields.get(index + 1).ok_or(bad)?;
-    let issuer = fields.get(index + 2).ok_or(bad)?;
-    let validity = fields.get(index + 3).ok_or(bad)?;
-    let subject = fields.get(index + 4).ok_or(bad)?;
-    let spki = fields.get(index + 5).ok_or(bad)?;
+    let Some([serial, inner_signature, issuer, validity, subject, spki, ..]) = fields.get(index..)
+    else {
+        return Err(bad);
+    };
     if serial.tag != tag::INTEGER
         || issuer.tag != tag::SEQUENCE
         || validity.tag != tag::SEQUENCE
@@ -383,8 +389,18 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
     }
     let signature_algorithm_oid =
         decode_oid(outer_algorithm.contents).ok_or(Asn1Error("malformed signature OID"))?;
+    // The parameters come from the copy inside the signed TBS, so an
+    // algorithm that has parameters (RSASSA-PSS) is checked under the ones
+    // the signature covers.
+    let signature_algorithm_params = inner_signature.child(1).map(|node| node.full.to_vec());
     if signature_node.tag != tag::BIT_STRING || signature_node.contents.len() < 2 {
         return Err(Asn1Error("unexpected signatureValue layout"));
+    }
+    // Every signature algorithm here produces whole octets, so a
+    // signatureValue with unused bits is not one: the certificate does not
+    // decode.
+    if signature_node.contents.first() != Some(&0) {
+        return Err(Asn1Error("signatureValue is not octet-aligned"));
     }
 
     let mut extensions: Option<&Tlv<'_>> = None;
@@ -399,8 +415,15 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
     };
     let mut by_oid: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut extension_oids: Vec<Vec<u8>> = Vec::new();
+    let mut critical_extensions: Vec<String> = Vec::new();
     for extension in extension_nodes {
         let parts = extension.children();
+        // Extension ::= SEQUENCE { extnID, critical BOOLEAN DEFAULT FALSE,
+        // extnValue }: the flag, when present, sits between the two.
+        let critical = match parts {
+            [_, flag, _] if flag.tag == tag::BOOLEAN => boolean(flag)?,
+            _ => false,
+        };
         let oid_node = parts
             .first()
             .ok_or(Asn1Error("malformed certificate extension"))?;
@@ -412,6 +435,9 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         }
         extension_oids.push(oid_node.contents.to_vec());
         let oid = decode_oid(oid_node.contents).ok_or(Asn1Error("malformed extension OID"))?;
+        if critical {
+            critical_extensions.push(oid.clone());
+        }
         let value: Cow<'_, [u8]> = value_node
             .octet_string_value()
             .ok_or(Asn1Error("malformed certificate extension"))?;
@@ -435,8 +461,8 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         Some(raw) => {
             let value = parse_exact(raw)?;
             match value.child(0) {
-                Some(first) => first.tag == tag::BOOLEAN && first.contents.first() != Some(&0x00),
-                None => false,
+                Some(first) if first.tag == tag::BOOLEAN => boolean(first)?,
+                _ => false,
             }
         }
         None => false,
@@ -474,6 +500,7 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         public_key_curve_oid,
         public_key_bits: key_bits_node.contents.get(1..).unwrap_or(&[]).to_vec(),
         signature_algorithm_oid,
+        signature_algorithm_params,
         signature_value: signature_node.contents.get(1..).unwrap_or(&[]).to_vec(),
         is_ca: basic_constraints_ca && cert_sign_allowed,
         key_usage,
@@ -481,5 +508,69 @@ fn parse_certificate(der: &[u8]) -> Result<Certificate, Asn1Error> {
         authority_key_id,
         authority_cert_serial,
         extension_oids,
+        critical_extensions,
     })
+}
+
+/// A BOOLEAN's value: exactly one content octet, zero for false and any
+/// other value for true. A BOOLEAN without that one octet is no BOOLEAN,
+/// and the certificate carrying it does not decode.
+fn boolean(node: &Tlv<'_>) -> Result<bool, Asn1Error> {
+    match node.contents {
+        [value] => Ok(*value != 0x00),
+        _ => Err(Asn1Error("malformed BOOLEAN")),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::{boolean, Certificate};
+    use crate::asn1::parse_exact;
+
+    #[test]
+    fn a_certificate_is_exactly_three_elements() {
+        let genuine: &[u8] = include_bytes!("../certs/AppleRootCA-G3.cer");
+        let outer = parse_exact(genuine).unwrap();
+        // The same three elements and a fourth, NULL, in a new SEQUENCE.
+        let mut body = outer.contents.to_vec();
+        body.extend_from_slice(&[0x05, 0x00]);
+        let mut four = vec![0x30, 0x82];
+        four.extend_from_slice(&u16::try_from(body.len()).unwrap().to_be_bytes());
+        four.extend_from_slice(&body);
+        assert!(Certificate::from_der(&four).is_err());
+    }
+
+    #[test]
+    fn a_boolean_is_exactly_one_octet() {
+        let read = |der: &[u8]| boolean(&parse_exact(der).unwrap());
+        assert_eq!(read(&[0x01, 0x01, 0xff]), Ok(true));
+        // Not DER, but the one octet is there: any non-zero value is true.
+        assert_eq!(read(&[0x01, 0x01, 0x01]), Ok(true));
+        assert_eq!(read(&[0x01, 0x01, 0x00]), Ok(false));
+        assert!(read(&[0x01, 0x00]).is_err());
+        assert!(read(&[0x01, 0x02, 0xff, 0xff]).is_err());
+    }
+
+    #[test]
+    fn critical_extensions_are_read() {
+        // Apple's roots mark basicConstraints and keyUsage critical.
+        let root = Certificate::from_der(include_bytes!("../certs/AppleRootCA-G3.cer")).unwrap();
+        let critical = root.critical_extensions();
+        assert!(critical.iter().any(|oid| oid == "2.5.29.19"));
+        assert!(critical.iter().any(|oid| oid == "2.5.29.15"));
+    }
+
+    #[test]
+    fn a_signature_value_with_unused_bits_does_not_decode() {
+        let genuine: &[u8] = include_bytes!("../certs/AppleRootCA-G3.cer");
+        assert!(Certificate::from_der(genuine).is_ok());
+        // signatureValue is the last field, so its unused-bits octet sits
+        // exactly its contents' length from the end.
+        let outer = parse_exact(genuine).unwrap();
+        let signature_contents = outer.children().last().unwrap().contents.len();
+        let mut unaligned = genuine.to_vec();
+        unaligned[genuine.len() - signature_contents] = 1;
+        assert!(Certificate::from_der(&unaligned).is_err());
+    }
 }

@@ -1,43 +1,38 @@
 using System;
 using System.Collections.Generic;
 using System.Formats.Asn1;
-using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using ApplePurchaseReceiptVerifier.Jws;
-using ApplePurchaseReceiptVerifier.Receipt;
+using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
 /// The mutation sweep. Hostile bytes go into every public entry point and the
-/// assertion is categorical: only <see cref="VerificationException"/> may
-/// escape, and the endpoint may not throw at all.
+/// assertion is categorical: the verify methods never throw, and a failure
+/// caused by the input is never INTERNAL_ERROR.
 /// </summary>
 /// <remarks>
 /// Containment has to be categorical because the platform's failure surface is
 /// not: <c>AsnContentException</c> derives from <see cref="Exception"/> and not
-/// from <c>CryptographicException</c>, and which types <c>SignedCms</c> raises
-/// is undocumented and varies by platform. Enumerating them is exactly how an
-/// unexpected type escapes a declared contract.
+/// from <c>CryptographicException</c>, and which types the platform decoders
+/// raise is undocumented and varies by platform. Enumerating them is exactly
+/// how an unexpected type escapes a declared contract.
 /// </remarks>
 public class HostileInputTests
 {
-    private const string ReceiptBundleId = "com.example.app";
+    private static byte[] Receipt => Fixtures070.Bytes("receipt");
 
-    private static byte[] Receipt => Fixtures.Bytes("receipt");
+    private static byte[] GenuineReceipt => Fixtures070.Bytes("public-receipt-sandbox-g5");
 
-    private static byte[] GenuineReceipt => Fixtures.Bytes("public-receipt-sandbox-g5");
+    private static string Jws => Fixtures070.ForSignedData("transaction");
 
-    private static string Jws => Fixtures.Text("transaction");
+    private static readonly Lazy<IVerifier> ReceiptVerifier = new(() => TestPki.FixtureVerifier("receipt-root"));
 
-    private static IReadOnlyList<X509Certificate2> ReceiptRoots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) };
-
-    private static IReadOnlyList<X509Certificate2> JwsRoots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("jws-root")) };
+    private static readonly Lazy<IVerifier> JwsVerifier = new(() => TestPki.FixtureVerifier("jws-root"));
 
     // --- receipt sweeps ------------------------------------------------------
 
@@ -47,9 +42,7 @@ public class HostileInputTests
         int checkedInputs = 0;
         for (int length = 0; length < Receipt.Length; length += 13)
         {
-            byte[] truncated = new byte[length];
-            Buffer.BlockCopy(Receipt, 0, truncated, 0, length);
-            Assert.False(Accepts(truncated), $"a {length}-byte truncation was accepted");
+            Assert.False(Accepts(Receipt[..length]), $"a {length}-byte truncation was accepted");
             checkedInputs++;
         }
 
@@ -64,7 +57,7 @@ public class HostileInputTests
     /// A blanket "every flip is rejected" would be false, and falsely so: some
     /// bytes of a CMS blob are load-bearing for nobody. The receipt's own copy
     /// of a root certificate is a candidate issuer the walk never needs,
-    /// because trust comes from the caller's anchor; the SignerInfo version
+    /// because trust comes from the configured roots; the SignerInfo version
     /// field, the SignedData <c>digestAlgorithms</c> set and a certificate's
     /// outer algorithm <em>parameters</em> are likewise read by no check here
     /// or in any other port. What must hold is the property that matters: an
@@ -73,7 +66,7 @@ public class HostileInputTests
     [Fact]
     public void NoByteFlipCanChangeWhatAnAcceptedReceiptSays()
     {
-        AppReceipt genuine = Verify(Receipt);
+        string genuine = ReceiptVerifier.Value.VerifyReceipt(Convert.ToBase64String(Receipt)).Payload!.ToJson();
         int checkedInputs = 0;
         int rejected = 0;
         for (int index = 0; index < Receipt.Length; index += 7)
@@ -81,49 +74,21 @@ public class HostileInputTests
             byte[] mutated = (byte[])Receipt.Clone();
             mutated[index] ^= 0xFF;
 
-            AppReceipt? result;
-            try
-            {
-                result = Verify(mutated);
-            }
-            catch (VerificationException)
+            VerificationResult<ReceiptPayload> result = Contained(mutated);
+            checkedInputs++;
+            if (!result.Verified)
             {
                 rejected++;
-                checkedInputs++;
                 continue;
             }
-            catch (Exception e)
-            {
-                throw new InvalidOperationException(
-                    $"{e.GetType().FullName} escaped for a flip at offset {index}", e);
-            }
 
-            AssertSameContent(genuine, result, index);
-            checkedInputs++;
+            Assert.True(
+                genuine == result.Payload.ToJson(),
+                $"a flip at offset {index} was accepted with different content");
         }
 
         Assert.True(checkedInputs >= 450, $"only {checkedInputs} byte flips were exercised");
         Assert.True(rejected > checkedInputs / 2, $"only {rejected} of {checkedInputs} flips were rejected");
-    }
-
-    private static void AssertSameContent(AppReceipt expected, AppReceipt actual, int offset)
-    {
-        Assert.Equal(expected.ReceiptType, actual.ReceiptType);
-        Assert.Equal(expected.BundleId, actual.BundleId);
-        Assert.Equal(expected.AppVersion, actual.AppVersion);
-        Assert.Equal(expected.OriginalAppVersion, actual.OriginalAppVersion);
-        Assert.Equal(expected.CreationDate, actual.CreationDate);
-        Assert.Equal(expected.ExpirationDate, actual.ExpirationDate);
-        Assert.Equal(expected.InAppPurchases.Count, actual.InAppPurchases.Count);
-        Assert.True(
-            expected.OpaqueValue.AsSpan().SequenceEqual(actual.OpaqueValue),
-            $"a flip at offset {offset} was accepted with a different opaque value");
-    }
-
-    private static AppReceipt Verify(byte[] blob)
-    {
-        using ReceiptVerifier verifier = new(ReceiptRoots(), ReceiptBundleId);
-        return verifier.Verify(blob);
     }
 
     /// <summary>
@@ -147,16 +112,15 @@ public class HostileInputTests
     }
 
     [Fact]
-    public void EveryByteFlipInTheGenuineReceiptOnlyEverRaisesAVerificationException()
+    public void EveryByteFlipInTheGenuineReceiptIsContained()
     {
+        IVerifier verifier = Verifier.Create(Config.Defaults());
         int checkedInputs = 0;
         for (int index = 0; index < GenuineReceipt.Length; index += 11)
         {
             byte[] mutated = (byte[])GenuineReceipt.Clone();
             mutated[index] ^= 0x80;
-            using ReceiptVerifier verifier = new(
-                AppleRootCertificates.ReceiptRoots(), "dev.bonzer.weeka.app");
-            OnlyVerificationExceptions(() => verifier.Verify(mutated));
+            Contained(verifier, mutated);
             checkedInputs++;
         }
 
@@ -175,17 +139,6 @@ public class HostileInputTests
         }
     }
 
-    [Fact]
-    public void TrailingBytesAfterTheCmsBlobAreRejected()
-    {
-        foreach (int extra in new[] { 1, 3, 64, 1024 * 1024 })
-        {
-            byte[] padded = new byte[Receipt.Length + extra];
-            Buffer.BlockCopy(Receipt, 0, padded, 0, Receipt.Length);
-            Assert.Equal(VerificationReason.InvalidReceiptFormat, ReasonFor(padded));
-        }
-    }
-
     // --- named killers -------------------------------------------------------
 
     /// <summary>
@@ -193,285 +146,120 @@ public class HostileInputTests
     /// declared contract in the Java port. The C# equivalent is
     /// <c>AsnContentException</c>, which is not a <c>CryptographicException</c>.
     /// </summary>
-    [Fact]
-    public void TheElevenCharacterBase64ThatBrokeBouncyCastleIsContained()
-    {
-        using ReceiptVerifier verifier = new(ReceiptRoots(), ReceiptBundleId);
-        VerificationException error = Assert.Throws<VerificationException>(() => verifier.Verify("MAsGCSqGSIb3"));
-        Assert.Equal(VerificationReason.InvalidReceiptFormat, error.Reason);
-    }
-
     [Theory]
-    [InlineData("")]
-    [InlineData("!!!!")]
+    [InlineData("MAsGCSqGSIb3")]
     [InlineData("MA==")]
-    [InlineData("AA")]
-    public void MalformedBase64ReceiptsAreContained(string input)
+    [InlineData("MIA=")]
+    [InlineData("MIAwgA==")]
+    public void ShortCmsFragmentsAreMalformed(string input)
     {
-        using ReceiptVerifier verifier = new(ReceiptRoots(), ReceiptBundleId);
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => verifier.Verify(input)).Reason);
+        Assert.Equal(VerificationReason.Malformed, ReceiptVerifier.Value.VerifyReceipt(input).Failure?.Reason);
     }
 
+    /// <summary>A null input string is input, not a programming error: MALFORMED, never a throw.</summary>
     [Fact]
-    public void NullInputsAreContained()
+    public void NullInputsAreMalformed()
     {
-        using ReceiptVerifier receipts = new(ReceiptRoots(), ReceiptBundleId);
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => receipts.Verify((byte[])null!)).Reason);
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => receipts.Verify((string)null!)).Reason);
-
-        using JwsVerifier jws = new(JwsRoots(), ReceiptBundleId, new[] { AppleEnvironment.Sandbox });
-        Assert.Equal(
-            VerificationReason.InvalidJwsFormat,
-            Assert.Throws<VerificationException>(() => jws.VerifyTransaction(null!)).Reason);
-    }
-
-    /// <summary>An attribute type wider than the 32-bit signed range fails the receipt.</summary>
-    [Fact]
-    public void AnAttributeTypeAboveTheThirtyTwoBitRangeIsRejected()
-    {
-        Assert.Equal(
-            VerificationReason.InternalError,
-            PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[]
-            {
-                (BigInteger.Pow(2, 64), TestPki.Utf8("x")),
-                (2, TestPki.Utf8(ReceiptBundleId)),
-            })));
-    }
-
-    [Fact]
-    public void ANegativeAttributeTypeIsRejected()
-    {
-        Assert.Equal(
-            VerificationReason.InternalError,
-            PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[] { (-1, TestPki.Utf8("x")) })));
-    }
-
-    [Fact]
-    public void AnAttributeSequenceWithTwoFieldsIsRejected()
-    {
-        AsnWriter writer = new(AsnEncodingRules.DER);
-        using (writer.PushSetOf())
-        {
-            using (writer.PushSequence())
-            {
-                writer.WriteInteger(2);
-                writer.WriteInteger(1);
-            }
-        }
-
-        Assert.Equal(VerificationReason.InternalError, PayloadReason(writer.Encode()));
-    }
-
-    [Fact]
-    public void ASetContainingANonSequenceIsRejected()
-    {
-        AsnWriter writer = new(AsnEncodingRules.DER);
-        using (writer.PushSetOf())
-        {
-            writer.WriteInteger(7);
-        }
-
-        Assert.Equal(VerificationReason.InternalError, PayloadReason(writer.Encode()));
-    }
-
-    [Fact]
-    public void ADateOutsideTheRepresentableRangeIsRejected()
-    {
-        Assert.Equal(
-            VerificationReason.InternalError,
-            PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[]
-            {
-                (2, TestPki.Utf8(ReceiptBundleId)),
-                (12, TestPki.Ia5("+1000000000-01-01T00:00:00Z")),
-            })));
-    }
-
-    [Fact]
-    public void ADateWithoutATimezoneDesignatorIsRejected()
-    {
-        // A naive date would be read as the host's local time, and the creation
-        // date is the instant the chain's validity is judged at — the same
-        // receipt would verify on one host and fail on another.
-        Assert.Equal(
-            VerificationReason.InternalError,
-            PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[]
-            {
-                (2, TestPki.Utf8(ReceiptBundleId)),
-                (12, TestPki.Ia5("2024-08-06T12:00:00")),
-            })));
-    }
-
-    [Fact]
-    public void AStringAttributeThatIsNotAStringIsRejected()
-    {
-        Assert.Equal(
-            VerificationReason.InternalError,
-            PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[] { (2, TestPki.Integer(7)) })));
-    }
-
-    [Fact]
-    public void AUtf8StringWholeContentIsAnInvalidByteIsRejected()
-    {
-        // 0xFF is not a legal UTF-8 byte anywhere.
-        AsnWriter writer = new(AsnEncodingRules.DER);
-        writer.WriteOctetString(new byte[] { 0xFF });
-        byte[] octets = writer.Encode();
-        octets[0] = 0x0C; // retag OCTET STRING as UTF8String
-
-        Assert.Equal(
-            VerificationReason.InternalError,
-            PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[] { (2, octets) })));
-    }
-
-    [Fact]
-    public void AnAttributeValueWithTrailingDataIsRejected()
-    {
-        byte[] value = TestPki.Utf8("com.example.app");
-        byte[] padded = new byte[value.Length + 2];
-        Buffer.BlockCopy(value, 0, padded, 0, value.Length);
-        padded[value.Length] = 0x05;
-        padded[value.Length + 1] = 0x00;
-
-        Assert.Equal(
-            VerificationReason.InternalError,
-            PayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[] { (2, padded) })));
+        Assert.Equal(VerificationReason.Malformed, ReceiptVerifier.Value.VerifyReceipt(null!).Failure?.Reason);
+        Assert.Equal(VerificationReason.Malformed, JwsVerifier.Value.VerifySignedData(null!).Failure?.Reason);
+        Assert.Equal(VerificationReason.Malformed, JwsVerifier.Value.VerifySignedData(string.Empty).Failure?.Reason);
     }
 
     /// <summary>
-    /// A payload swapped for the attacker's own, under the genuine
-    /// certificates and the genuine SignerInfo: the shape a forger reaches
-    /// without a private key.
+    /// A negative attribute type is outside the 32-bit signed type space the
+    /// grammar has, so the whole Apple-signed payload is unreadable, the same
+    /// verdict as a type above <c>int.MaxValue</c>.
     /// </summary>
     [Fact]
-    public void AForgedPayloadUnderGenuineCertificatesIsRejected()
+    public void ANegativeAttributeTypeMakesThePayloadUnreadable()
     {
-        byte[] forged = ReplacePayload(Receipt, TestPki.StandardPayload("com.attacker.app"));
-        using ReceiptVerifier verifier = new(ReceiptRoots(), "com.attacker.app");
         Assert.Equal(
-            VerificationReason.InvalidSignature,
-            Assert.Throws<VerificationException>(() => verifier.Verify(forged)).Reason);
+            VerificationReason.UnreadablePayload,
+            SignedPayloadReason(TestPki.AttributeSet(new (BigInteger, byte[])[]
+            {
+                (2, TestPki.Utf8("com.example.app")),
+                (-1, TestPki.Utf8("x")),
+            })));
+    }
+
+    /// <summary>
+    /// A string attribute value holds one DER value. Bytes after it are not
+    /// part of the string, so the typed field is null and the octets are kept
+    /// raw, exactly as for any other value that does not parse.
+    /// </summary>
+    [Fact]
+    public void AnAttributeValueWithTrailingDataDoesNotParse()
+    {
+        byte[] value = TestPki.Utf8("com.example.app");
+        byte[] padded = value.Concat(new byte[] { 0x05, 0x00 }).ToArray();
+        byte[] version = TestPki.Utf8("1.2.3").Concat(new byte[] { 0x05, 0x00 }).ToArray();
+
+        ReceiptPayload payload = SignedPayload(TestPki.AttributeSet(new (BigInteger, byte[])[]
+        {
+            (2, padded),
+            (3, version),
+            (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
+        }));
+
+        Assert.Null(payload.BundleId);
+        Assert.Equal(padded, payload.BundleIdBytes);
+        Assert.Null(payload.ApplicationVersion);
+        Assert.Equal(version, Assert.Single(payload.UnknownAttributes[3]));
     }
 
     // --- JWS sweeps ----------------------------------------------------------
 
     [Theory]
-    [InlineData("")]
     [InlineData(".")]
-    [InlineData("..")]
     [InlineData("...")]
     [InlineData("a.b")]
-    [InlineData("a.b.c.d")]
     [InlineData("a.b.c.d.e")]
-    public void JwsSegmentShapesOutsideThreeAreRejected(string jws)
+    [InlineData("no dots at all")]
+    public void JwsSegmentShapesOutsideThreeAreMalformed(string jws)
     {
-        Assert.Equal(VerificationReason.InvalidJwsFormat, JwsReason(jws));
+        Assert.Equal(VerificationReason.Malformed, JwsVerifier.Value.VerifySignedData(jws).Failure?.Reason);
     }
 
     [Theory]
     [InlineData("none")]
     [InlineData("HS256")]
-    [InlineData("RS256")]
     [InlineData("ES384")]
+    [InlineData("es256")]
     [InlineData("")]
-    public void AlgorithmsOtherThanEs256AreRejected(string algorithm)
+    public void AlgorithmsOtherThanEs256AreMalformed(string algorithm)
     {
-        X509Certificate2 root = TestPki.EcRoot();
-        X509Certificate2 intermediate = TestPki.EcChild(root, "CN=WWDR", true, TestPki.IntermediateOid);
-        X509Certificate2 leaf = TestPki.EcChild(intermediate, "CN=Signing", false, TestPki.LeafOid);
-        string jws = TestPki.SignJws(
-            leaf,
-            new[] { leaf, intermediate, root },
-            "{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}",
-            algorithm);
-
-        using JwsVerifier verifier = new(
-            new[] { TestPki.Public(root) }, "com.example.app", new[] { AppleEnvironment.Sandbox });
+        TestPki.JwsChain chain = TestPki.SharedJws.Value;
         Assert.Equal(
-            VerificationReason.InvalidJwsFormat,
-            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
+            VerificationReason.Malformed,
+            chain.Verifier().VerifySignedData(chain.Sign(TestPki.Payload, algorithm)).Failure?.Reason);
     }
 
     [Theory]
     [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
     [InlineData(4)]
-    public void AnX5cThatIsNotExactlyThreeCertificatesIsRejected(int count)
+    public void AnX5cThatIsNotExactlyThreeCertificatesIsMalformed(int count)
     {
-        X509Certificate2 root = TestPki.EcRoot();
-        X509Certificate2 intermediate = TestPki.EcChild(root, "CN=WWDR", true, TestPki.IntermediateOid);
-        X509Certificate2 leaf = TestPki.EcChild(intermediate, "CN=Signing", false, TestPki.LeafOid);
-        X509Certificate2[] all = { leaf, intermediate, root, root };
-        X509Certificate2[] x5c = new X509Certificate2[count];
-        Array.Copy(all, x5c, count);
+        TestPki.JwsChain chain = TestPki.SharedJws.Value;
+        X509Certificate2[] all = { chain.Leaf, chain.Intermediate, chain.Root, chain.Root };
+        string jws = TestPki.SignJws(chain.Leaf, all.Take(count).ToArray(), TestPki.Payload);
 
-        string jws = TestPki.SignJws(
-            leaf, x5c, "{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}");
-        using JwsVerifier verifier = new(
-            new[] { TestPki.Public(root) }, "com.example.app", new[] { AppleEnvironment.Sandbox });
-        Assert.Equal(
-            VerificationReason.InvalidJwsFormat,
-            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
+        Assert.Equal(VerificationReason.Malformed, chain.Verifier().VerifySignedData(jws).Failure?.Reason);
     }
 
     [Fact]
-    public void AnX5cEntryThatIsNotACertificateIsRejected()
+    public void AnX5cEntryInPemRatherThanDerIsAnInvalidCertificate()
     {
-        string header = "{\"alg\":\"ES256\",\"x5c\":[\"" + Convert.ToBase64String(new byte[] { 1, 2, 3 })
-            + "\",\"" + Convert.ToBase64String(new byte[] { 4, 5, 6 }) + "\",\"AAAA\"]}";
-        string jws = TestPki.Base64Url(Encoding.UTF8.GetBytes(header))
-            + "." + TestPki.Base64Url(Encoding.UTF8.GetBytes("{}"))
-            + "." + TestPki.Base64Url(new byte[64]);
-
-        Assert.Equal(VerificationReason.InvalidCertificate, JwsReason(jws));
-    }
-
-    /// <summary>
-    /// RFC 5280 §4.2: a certificate MUST NOT include more than one instance
-    /// of a particular extension. The platform decoder takes such a
-    /// certificate, and every reader downstream — the CA flag, the key usage,
-    /// the marker-OID lookup — then answers from the copy this library
-    /// happened to keep. The verdict is a defect of the certificate, which is
-    /// what the shared vector transaction/reject-x5c-duplicate-extension pins.
-    /// </summary>
-    [Fact]
-    public void AnX5cCertificateCarryingOneExtensionTwiceIsRejected()
-    {
-        X509Certificate2 root = TestPki.EcRoot();
-        X509Certificate2 intermediate = TestPki.EcChild(root, "CN=WWDR", true, TestPki.IntermediateOid);
-        X509Certificate2 leaf = TestPki.EcChildWithDuplicateExtension(
-            intermediate, "CN=Signing", TestPki.LeafOid);
-
-        string jws = TestPki.SignJws(
-            leaf,
-            new[] { leaf, intermediate, root },
-            "{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}");
-        using JwsVerifier verifier = new(
-            new[] { TestPki.Public(root) }, "com.example.app", new[] { AppleEnvironment.Sandbox });
-
-        Assert.Equal(
-            VerificationReason.InvalidCertificate,
-            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
-    }
-
-    [Fact]
-    public void AnX5cEntryInPemRatherThanDerIsRejected()
-    {
-        X509Certificate2 root = TestPki.EcRoot();
+        TestPki.JwsChain chain = TestPki.SharedJws.Value;
         string pem = "-----BEGIN CERTIFICATE-----\n"
-            + Convert.ToBase64String(root.RawData) + "\n-----END CERTIFICATE-----";
-        string header = "{\"alg\":\"ES256\",\"x5c\":[\"" + pem.Replace("\n", "\\n") + "\",\"AAAA\",\"AAAA\"]}";
+            + Convert.ToBase64String(chain.Leaf.RawData) + "\n-----END CERTIFICATE-----";
+        string header = "{\"alg\":\"ES256\",\"x5c\":[\"" + pem.Replace("\n", "\\n", StringComparison.Ordinal) + "\",\""
+            + Convert.ToBase64String(chain.Intermediate.RawData) + "\",\""
+            + Convert.ToBase64String(chain.Root.RawData) + "\"]}";
         string jws = TestPki.Base64Url(Encoding.UTF8.GetBytes(header))
-            + "." + TestPki.Base64Url(Encoding.UTF8.GetBytes("{}"))
+            + "." + TestPki.Base64Url(Encoding.UTF8.GetBytes(TestPki.Payload))
             + "." + TestPki.Base64Url(new byte[64]);
 
-        Assert.Equal(VerificationReason.InvalidCertificate, JwsReason(jws));
+        Assert.Equal(VerificationReason.InvalidCertificate, chain.Verifier().VerifySignedData(jws).Failure?.Reason);
     }
 
     [Fact]
@@ -504,28 +292,6 @@ public class HostileInputTests
         Assert.True(checkedInputs >= 400, $"only {checkedInputs} JWS mutations were exercised");
     }
 
-    /// <summary>
-    /// Every boundary is categorical, including the raw-JSON one: neither the
-    /// reader nor the writer may escape a method documented as never throwing.
-    /// </summary>
-    [Fact]
-    public void TheRawJsonEndpointContainsEveryFailureAsAStatus()
-    {
-        using VerifyReceiptEndpoint endpoint = new(ReceiptRoots(), AppleEnvironment.Sandbox);
-        Random random = new(20260904);
-        for (int i = 0; i < 200; i++)
-        {
-            char[] chars = new char[random.Next(0, 64)];
-            for (int j = 0; j < chars.Length; j++)
-            {
-                chars[j] = "{}[]\":,\\\"0aA \n\t\u0000\uD800".ToCharArray()[random.Next(16)];
-            }
-
-            string answer = endpoint.VerifyReceiptJson(new string(chars));
-            Assert.StartsWith("{\"status\":", answer, StringComparison.Ordinal);
-        }
-    }
-
     [Fact]
     public void HeaderAndPayloadSwappedIsRejected()
     {
@@ -537,37 +303,67 @@ public class HostileInputTests
     [InlineData("~~~~")]
     [InlineData("a")]
     [InlineData("QQ+/")]
-    public void NonBase64UrlSegmentsAreRejected(string segment)
+    [InlineData("QQ==")]
+    public void NonBase64UrlSegmentsAreMalformed(string segment)
     {
-        Assert.Equal(VerificationReason.InvalidJwsFormat, JwsReason(segment + ".e30.AAAA"));
+        Assert.Equal(
+            VerificationReason.Malformed,
+            JwsVerifier.Value.VerifySignedData(segment + ".e30.AAAA").Failure?.Reason);
     }
 
     // --- the endpoint never throws ------------------------------------------
 
+    /// <summary>
+    /// Every boundary is categorical, including the raw-JSON one: neither the
+    /// reader nor the writer may escape a method documented as never throwing.
+    /// </summary>
+    [Fact]
+    public void TheEndpointContainsEveryHostileRequestBodyAsAStatus()
+    {
+        IVerifier endpoint = ReceiptVerifier.Value;
+        Random random = new(20260904);
+        char[] alphabet = "{}[]\":,\\\"0aA \n\t\u0000\uD800".ToCharArray();
+        for (int i = 0; i < 200; i++)
+        {
+            char[] chars = new char[random.Next(0, 64)];
+            for (int j = 0; j < chars.Length; j++)
+            {
+                chars[j] = alphabet[random.Next(alphabet.Length)];
+            }
+
+            string answer = endpoint.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, new string(chars));
+            Assert.StartsWith("{\"status\":", answer, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void TheEndpointNeverThrowsForTheWholeHostileCorpus()
     {
-        using VerifyReceiptEndpoint endpoint = new(ReceiptRoots(), AppleEnvironment.Sandbox);
+        IVerifier endpoint = ReceiptVerifier.Value;
         Random random = new(20260904);
         int answered = 0;
 
         foreach (byte[] blob in HostileBlobs(random))
         {
-            IReadOnlyDictionary<string, object?> body = Body(Convert.ToBase64String(blob));
-            IReadOnlyDictionary<string, object?> response = endpoint.VerifyReceiptResult(body).ToResponse();
-            Assert.True(response.ContainsKey("status"));
+            string body = "{\"receipt-data\":\"" + Convert.ToBase64String(blob)
+                + "\",\"password\":\"ignored\",\"exclude-old-transactions\":true}";
+            string answer = endpoint.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, body);
+            Assert.StartsWith("{\"status\":", answer, StringComparison.Ordinal);
+            Assert.NotEqual("{\"status\":21009}", answer);
             answered++;
         }
 
         foreach (string raw in new[] { "", "!!!!", "not base64", "e30", new string('A', 10_000) })
         {
-            Assert.True(endpoint.VerifyReceiptResult(Body(raw)).ToResponse().ContainsKey("status"));
+            Assert.Equal(
+                "{\"status\":21002}",
+                endpoint.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + raw + "\"}"));
             answered++;
         }
 
         foreach (string json in new[] { "", "null", "[]", "3", "\"x\"", "{", "{\"a\":", "{}" })
         {
-            Assert.StartsWith("{\"status\":", endpoint.VerifyReceiptJson(json), StringComparison.Ordinal);
+            Assert.Equal("{\"status\":21002}", endpoint.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, json));
             answered++;
         }
 
@@ -578,9 +374,7 @@ public class HostileInputTests
     {
         for (int length = 0; length < Receipt.Length; length += 17)
         {
-            byte[] truncated = new byte[length];
-            Buffer.BlockCopy(Receipt, 0, truncated, 0, length);
-            yield return truncated;
+            yield return Receipt[..length];
         }
 
         for (int index = 0; index < Receipt.Length; index += 23)
@@ -598,70 +392,16 @@ public class HostileInputTests
         }
     }
 
-    // --- helpers -------------------------------------------------------------
-
-    private static IReadOnlyDictionary<string, object?> Body(string receiptData)
-    {
-        Dictionary<string, object?> body = new(StringComparer.Ordinal)
-        {
-            ["receipt-data"] = receiptData,
-            ["password"] = "ignored",
-            ["exclude-old-transactions"] = true,
-        };
-        return body;
-    }
-
-    private static bool Accepts(byte[] blob)
-    {
-        using ReceiptVerifier verifier = new(ReceiptRoots(), ReceiptBundleId);
-        return OnlyVerificationExceptions(() => verifier.Verify(blob));
-    }
-
-    private static bool AcceptsJws(string jws)
-    {
-        using JwsVerifier verifier = new(
-            JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox });
-        return OnlyVerificationExceptions(() => verifier.VerifyTransaction(jws));
-    }
-
-    /// <summary>
-    /// Runs <paramref name="action"/> and asserts that nothing but a
-    /// <see cref="VerificationException"/> escapes it.
-    /// </summary>
-    /// <returns><see langword="true"/> when the call succeeded.</returns>
-    private static bool OnlyVerificationExceptions(Action action)
-    {
-        try
-        {
-            action();
-            return true;
-        }
-        catch (VerificationException)
-        {
-            return false;
-        }
-        catch (Exception e)
-        {
-            throw new InvalidOperationException(
-                $"{e.GetType().FullName} escaped a public entry point: {e.Message}", e);
-        }
-    }
-
-    private static VerificationReason ReasonFor(byte[] blob)
-    {
-        using ReceiptVerifier verifier = new(ReceiptRoots(), ReceiptBundleId);
-        return Assert.Throws<VerificationException>(() => verifier.Verify(blob)).Reason;
-    }
+    // --- the signer is judged from the receipt's own bytes -------------------
 
     /// <summary>
     /// The two signer mutations are condemned from the receipt's own bytes,
-    /// by this library's DER reader, before <c>SignedCms</c> is handed
-    /// anything. That is the whole reason the verdict is the same on every
-    /// operating system: materialising the certificate bag is a platform call,
-    /// macOS's certificate parser refuses both of these certificates outright,
-    /// and while the decision waited for it the receipt came out as
-    /// INVALID_RECEIPT_FORMAT there and as INVALID_CERTIFICATE everywhere
-    /// else (receipt/reject-signer-certificate-version-11,
+    /// by this library's DER reader, not by the platform certificate decoder.
+    /// That is the whole reason the verdict is the same on every operating
+    /// system: macOS's certificate parser refuses both of these certificates
+    /// outright, and while the decision waited for it the receipt came out as
+    /// a format error there and as INVALID_CERTIFICATE everywhere else
+    /// (receipt/reject-signer-certificate-version-11,
     /// receipt/reject-signer-with-a-corrupt-extension).
     /// </summary>
     [Theory]
@@ -669,90 +409,37 @@ public class HostileInputTests
     [InlineData("receipt-signer-corrupt-extension")]
     public void TheSignerCertificateIsCondemnedFromTheReceiptsOwnBytes(string fixture)
     {
-        byte[] receipt = Fixtures.Bytes(fixture);
+        byte[] receipt = Fixtures070.Bytes(fixture);
+        CmsParsed cms = Cms.Parse(receipt);
+        CmsSignerInfo info = Assert.Single(cms.SignerInfos);
 
-        byte[]? signer = Internals.FindSignerCertificate(receipt, MaximumEmbeddedCertificates);
-        Assert.True(signer is not null, "the pre-scan could not name the certificate the SignerInfo names");
-
-        (int Version, bool Duplicate, bool Undecodable)? shape = Internals.CertificateShape(signer!);
-        Assert.True(shape is not null, "the named signer did not parse at all");
+        CertificateFields? signer = cms.CertificateEntries
+            .Select(CertificateFields.TryParse)
+            .SingleOrDefault(f => f is not null
+                && f.SerialNumberRaw.AsSpan().SequenceEqual(info.SerialRaw!)
+                && f.IssuerRaw.AsSpan().SequenceEqual(info.IssuerRaw!));
+        Assert.True(signer is not null, "the library's own reader could not name the certificate the SignerInfo names");
         Assert.True(
-            shape!.Value.Version is < 1 or > 3
-                || shape.Value.Duplicate
-                || shape.Value.Undecodable,
+            signer!.Version is < 1 or > 3 || signer.HasDuplicateExtension || signer.HasUndecodableExtension,
             "nothing in the signer's own bytes condemns it, so the verdict would be the host's");
-
-        using ReceiptVerifier verifier = new(SignerFixtureRoots(), ReceiptBundleId);
-        Assert.Equal(
-            VerificationReason.InvalidCertificate,
-            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
-    }
-
-    /// <summary>
-    /// An entry in the bag that is not the signer and does not decode stays a
-    /// verdict about the receipt. The bag is unsigned, so an entry the library
-    /// cannot read has to be fatal — but fatal as the blob, not as a judgement
-    /// on a certificate this receipt was never signed by. It is the line the
-    /// signer pre-check must not cross, and go pins the same one in
-    /// certbag_test.go.
-    /// </summary>
-    [Fact]
-    public void AnUnreadableCertificateThatIsNotTheSignerIsAFormatError()
-    {
-        byte[] receipt = WithExtraCertificate(Receipt, JunkCertificate());
-        using ReceiptVerifier verifier = new(ReceiptRoots(), ReceiptBundleId);
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
     }
 
     /// <summary>
     /// The ordering, proved without a mac. A bag entry the platform decoder
     /// refuses sits beside a signer this library condemns: on its own that
-    /// entry is INVALID_RECEIPT_FORMAT (the test above), so INVALID_CERTIFICATE
-    /// here can only have been reached BEFORE the decoder ran. It is the exact
-    /// position macOS is in for the signer certificate itself, where its own
-    /// parser is the thing that refuses — and it is the ordering the two
-    /// vectors failed on there while the check waited for <c>SignedCms</c>.
+    /// entry is MALFORMED (receipt/reject-a-stranger-whose-signature-bit-string-is-unaligned),
+    /// so INVALID_CERTIFICATE here can only have been reached because a broken
+    /// signer outranks a broken stranger.
     /// </summary>
     [Theory]
     [InlineData("receipt-signer-version-11")]
     [InlineData("receipt-signer-corrupt-extension")]
-    public void TheSignerIsJudgedBeforeADecoderThatWouldRefuseTheBag(string fixture)
+    public void TheSignerIsJudgedBeforeAStrangerTheDecoderRefuses(string fixture)
     {
-        byte[] receipt = WithExtraCertificate(Fixtures.Bytes(fixture), JunkCertificate());
-        using ReceiptVerifier verifier = new(SignerFixtureRoots(), ReceiptBundleId);
+        byte[] receipt = TestPki.WithExtraCertificates(Fixtures070.Bytes(fixture), JunkCertificate());
         Assert.Equal(
             VerificationReason.InvalidCertificate,
-            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
-    }
-
-    /// <summary>
-    /// A signer key that reads perfectly well and is simply not RSA is a
-    /// verdict about the signature, not about the certificate: go
-    /// (<c>signer.PublicKey.(*rsa.PublicKey)</c>) and php
-    /// (<c>publicKeyType() !== OPENSSL_KEYTYPE_RSA</c>) both answer it there.
-    /// The unreadable-key check ahead of it must therefore not swallow this
-    /// input — the two are different defects with different answers, which is
-    /// what receipt/reject-signer-on-an-unimplemented-curve turns on.
-    /// </summary>
-    [Fact]
-    public void AReadableSignerKeyThatIsNotRsaIsASignatureVerdict()
-    {
-        using X509Certificate2 root = TestPki.RsaRoot();
-        using X509Certificate2 intermediate = TestPki.RsaChild(root, "CN=Fake WWDR", true);
-        using X509Certificate2 leaf = TestPki.EcChild(
-            intermediate, "CN=Fake Receipt Signing", false, ReceiptVerifier.ReceiptSignerOid);
-
-        byte[] receipt = TestPki.SignReceipt(
-            TestPki.StandardPayload(ReceiptBundleId),
-            leaf,
-            new[] { intermediate, TestPki.Public(root) });
-
-        using ReceiptVerifier verifier = new(new[] { TestPki.Public(root) }, ReceiptBundleId);
-        Assert.Equal(
-            VerificationReason.InvalidSignature,
-            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
+            TestPki.FixtureVerifier("receipt-signer-root").VerifyReceipt(Convert.ToBase64String(receipt)).Failure?.Reason);
     }
 
     /// <summary>
@@ -763,27 +450,17 @@ public class HostileInputTests
     /// transaction/reject-x5c-corrupt-extension pins.
     /// </summary>
     [Fact]
-    public void AnX5cCertificateWithBytesLeftOverInAnExtensionIsRejected()
+    public void AnX5cCertificateWithBytesLeftOverInAnExtensionIsAnInvalidCertificate()
     {
-        using X509Certificate2 root = TestPki.EcRoot();
-        using X509Certificate2 intermediate = TestPki.EcChild(
-            root, "CN=WWDR", true, TestPki.IntermediateOid);
-        using X509Certificate2 leaf = TestPki.EcChildWithTrailingBytesInAnExtension(
-            intermediate, "CN=Signing", TestPki.LeafOid);
+        TestPki.JwsChain chain = TestPki.SharedJws.Value;
+        X509Certificate2 leaf = TestPki.EcChildWithTrailingBytesInAnExtension(
+            chain.Intermediate, "CN=Signing", TestPki.LeafOid);
+        string jws = TestPki.SignJws(leaf, new[] { leaf, chain.Intermediate, chain.Root }, TestPki.Payload);
 
-        string jws = TestPki.SignJws(
-            leaf,
-            new[] { leaf, intermediate, root },
-            "{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\"}");
-        using JwsVerifier verifier = new(
-            new[] { TestPki.Public(root) }, "com.example.app", new[] { AppleEnvironment.Sandbox });
-
-        Assert.Equal(
-            VerificationReason.InvalidCertificate,
-            Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason);
+        Assert.Equal(VerificationReason.InvalidCertificate, chain.Verifier().VerifySignedData(jws).Failure?.Reason);
     }
 
-    private const int MaximumEmbeddedCertificates = 10;
+    // --- helpers -------------------------------------------------------------
 
     /// <summary>A SEQUENCE of two INTEGERs: well-formed ASN.1, no certificate.</summary>
     private static byte[] JunkCertificate()
@@ -798,183 +475,67 @@ public class HostileInputTests
         return writer.Encode();
     }
 
-    private static IReadOnlyList<X509Certificate2> SignerFixtureRoots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-signer-root")) };
+    private static bool Accepts(byte[] blob) => Contained(blob).Verified;
 
-    /// <summary>Rebuilds the CMS blob with one more entry in the certificate bag.</summary>
-    private static byte[] WithExtraCertificate(byte[] der, byte[] certificate)
-    {
-        Asn1Tag explicitTag = new(TagClass.ContextSpecific, 0, true);
-        AsnReader contentInfo = new AsnReader(der, AsnEncodingRules.BER).ReadSequence();
-        string oid = contentInfo.ReadObjectIdentifier();
-        AsnReader signedData = contentInfo.ReadSequence(explicitTag).ReadSequence();
+    private static VerificationResult<ReceiptPayload> Contained(byte[] blob) => Contained(ReceiptVerifier.Value, blob);
 
-        List<byte[]> before = new();
-        List<byte[]> certificates = new();
-        List<byte[]> after = new();
-        while (signedData.HasData)
-        {
-            if (signedData.PeekTag() == explicitTag)
-            {
-                AsnReader bag = signedData.ReadSetOf(skipSortOrderValidation: true, explicitTag);
-                while (bag.HasData)
-                {
-                    certificates.Add(bag.ReadEncodedValue().ToArray());
-                }
-
-                continue;
-            }
-
-            (certificates.Count == 0 ? before : after).Add(signedData.ReadEncodedValue().ToArray());
-        }
-
-        certificates.Add(certificate);
-
-        // BER, not DER: the fixture uses indefinite lengths, and a DER writer
-        // refuses to re-emit those encoded values.
-        AsnWriter writer = new(AsnEncodingRules.BER);
-        using (writer.PushSequence())
-        {
-            writer.WriteObjectIdentifier(oid);
-            using (writer.PushSequence(explicitTag))
-            {
-                using (writer.PushSequence())
-                {
-                    foreach (byte[] element in before)
-                    {
-                        writer.WriteEncodedValue(element);
-                    }
-
-                    using (writer.PushSetOf(explicitTag))
-                    {
-                        foreach (byte[] element in certificates)
-                        {
-                            writer.WriteEncodedValue(element);
-                        }
-                    }
-
-                    foreach (byte[] element in after)
-                    {
-                        writer.WriteEncodedValue(element);
-                    }
-                }
-            }
-        }
-
-        return writer.Encode();
-    }
-
-    private static VerificationReason JwsReason(string jws)
-    {
-        using JwsVerifier verifier = new(
-            JwsRoots(), "com.example.app", new[] { AppleEnvironment.Sandbox });
-        return Assert.Throws<VerificationException>(() => verifier.VerifyTransaction(jws)).Reason;
-    }
-
-    /// <summary>The reason a receipt carrying <paramref name="payload"/> fails with.</summary>
     /// <summary>
-    /// The verdict on <paramref name="payload"/> signed for real under a test
-    /// PKI the verifier trusts. The full payload parse runs only after the
-    /// chain and the signature pass, so a payload spliced into another
-    /// receipt without re-signing would stop at INVALID_SIGNATURE and never
-    /// reach the parser these tests are about.
+    /// Verifies <paramref name="blob"/> and asserts the call was contained: it
+    /// returned, and a failure the input caused is not INTERNAL_ERROR.
     /// </summary>
-    private static VerificationReason PayloadReason(byte[] payload)
+    private static VerificationResult<ReceiptPayload> Contained(IVerifier verifier, byte[] blob)
     {
-        X509Certificate2 root = TestPki.RsaRoot();
-        X509Certificate2 signer = TestPki.RsaChild(root, "CN=Signer", false, TestPki.LeafOid);
-        byte[] receipt = TestPki.SignReceipt(payload, signer, new[] { root });
-        using ReceiptVerifier verifier = new(new[] { TestPki.Public(root) }, ReceiptBundleId);
-        return Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason;
+        VerificationResult<ReceiptPayload> result;
+        try
+        {
+            result = verifier.VerifyReceipt(Convert.ToBase64String(blob));
+        }
+        catch (Exception e)
+        {
+            throw new InvalidOperationException($"{e.GetType().FullName} escaped VerifyReceipt: {e.Message}", e);
+        }
+
+        Assert.NotEqual(VerificationReason.InternalError, result.Failure?.Reason);
+        return result;
+    }
+
+    private static bool AcceptsJws(string jws)
+    {
+        VerificationResult<JsonPayload> result;
+        try
+        {
+            result = JwsVerifier.Value.VerifySignedData(jws);
+        }
+        catch (Exception e)
+        {
+            throw new InvalidOperationException($"{e.GetType().FullName} escaped VerifySignedData: {e.Message}", e);
+        }
+
+        Assert.NotEqual(VerificationReason.InternalError, result.Failure?.Reason);
+        return result.Verified;
+    }
+
+    /// <summary>The verdict on <paramref name="payload"/> signed for real under a test PKI the verifier trusts.</summary>
+    private static VerificationReason? SignedPayloadReason(byte[] payload)
+    {
+        TestPki.ReceiptChain chain = TestPki.SharedReceipt.Value;
+        return chain.Verifier().VerifyReceipt(chain.SignBase64(payload)).Failure?.Reason;
+    }
+
+    private static ReceiptPayload SignedPayload(byte[] payload)
+    {
+        TestPki.ReceiptChain chain = TestPki.SharedReceipt.Value;
+        VerificationResult<ReceiptPayload> result = chain.Verifier().VerifyReceipt(chain.SignBase64(payload));
+        Assert.True(result.Verified, result.Failure?.ToString());
+        return result.Payload;
     }
 
     /// <summary>Where the encapsulated content sits inside the CMS blob.</summary>
     private static (int Offset, int Length) PayloadRange(byte[] der)
     {
-        int offset = IndexOf(der, ExpectedPayload(der));
+        byte[] content = Cms.Parse(der).Content;
+        int offset = der.AsSpan().IndexOf(content);
         Assert.True(offset > 0, "could not locate the encapsulated payload");
-        return (offset, ExpectedPayload(der).Length);
-    }
-
-    private static byte[] ExpectedPayload(byte[] der)
-    {
-        System.Security.Cryptography.Pkcs.SignedCms cms = new();
-        cms.Decode(der);
-        return cms.ContentInfo.Content;
-    }
-
-    /// <summary>Rebuilds the blob with a different encapsulated payload.</summary>
-    private static byte[] ReplacePayload(byte[] der, byte[] payload)
-    {
-        // Re-encode rather than splice when the length changes: the enclosing
-        // definite lengths would otherwise be wrong.
-        AsnReader reader = new(der, AsnEncodingRules.BER);
-        AsnReader contentInfo = reader.ReadSequence();
-        string oid = contentInfo.ReadObjectIdentifier();
-        Asn1Tag explicitTag = new(TagClass.ContextSpecific, 0, true);
-        AsnReader signedData = contentInfo.ReadSequence(explicitTag).ReadSequence();
-
-        byte[] version = signedData.ReadEncodedValue().ToArray();
-        byte[] digestAlgorithms = signedData.ReadEncodedValue().ToArray();
-        signedData.ReadEncodedValue(); // encapContentInfo, replaced below
-        List<byte[]> rest = new();
-        while (signedData.HasData)
-        {
-            rest.Add(signedData.ReadEncodedValue().ToArray());
-        }
-
-        // BER, not DER: the fixture uses indefinite lengths, and a DER writer
-        // refuses to re-emit those encoded values.
-        AsnWriter writer = new(AsnEncodingRules.BER);
-        using (writer.PushSequence())
-        {
-            writer.WriteObjectIdentifier(oid);
-            using (writer.PushSequence(explicitTag))
-            {
-                using (writer.PushSequence())
-                {
-                    writer.WriteEncodedValue(version);
-                    writer.WriteEncodedValue(digestAlgorithms);
-                    using (writer.PushSequence())
-                    {
-                        writer.WriteObjectIdentifier("1.2.840.113549.1.7.1");
-                        using (writer.PushSequence(explicitTag))
-                        {
-                            writer.WriteOctetString(payload);
-                        }
-                    }
-
-                    foreach (byte[] element in rest)
-                    {
-                        writer.WriteEncodedValue(element);
-                    }
-                }
-            }
-        }
-
-        return writer.Encode();
-    }
-
-    private static int IndexOf(byte[] haystack, byte[] needle)
-    {
-        for (int i = 0; i + needle.Length <= haystack.Length; i++)
-        {
-            bool match = true;
-            for (int j = 0; j < needle.Length; j++)
-            {
-                if (haystack[i + j] != needle[j])
-                {
-                    match = false;
-                    break;
-                }
-            }
-
-            if (match)
-            {
-                return i;
-            }
-        }
-
-        return -1;
+        return (offset, content.Length);
     }
 }

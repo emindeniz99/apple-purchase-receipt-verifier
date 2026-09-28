@@ -3,15 +3,15 @@
  *
  * The BEAM has no FFI of its own. Every native call from Elixir goes through
  * a NIF: a C function the emulator loads and calls directly. So an Elixir
- * consumer of this library needs exactly one piece of C, and this is it —
+ * consumer of this library needs exactly one piece of C, and this is it:
  * it converts Erlang terms to the arguments in
  * include/apple_purchase_receipt_verifier.h and back, and does nothing else.
  * No verification logic lives here.
  *
  * MEMORY. Two owned things cross the boundary and both are released here.
  *
- *   - A handle from aprv_*_new*() is stored in an ErlNifResourceType whose
- *     destructor calls the matching aprv_*_free(). The garbage collector
+ *   - The handle from aprv_verifier_new() is stored in an ErlNifResourceType
+ *     whose destructor calls aprv_verifier_free(). The garbage collector
  *     runs that destructor when the last Elixir reference to the handle is
  *     dropped, so a caller cannot leak one and cannot free one twice.
  *   - AprvResult.json and the endpoint response are copied into an Erlang
@@ -30,14 +30,9 @@
  * so a binary holding an embedded NUL is truncated at it, exactly as it
  * would be for a C caller.
  *
- * THREE SENTINELS keep the shim at nine functions instead of one per export.
- * An empty roots list means "the bundled Apple roots", so one NIF covers both
- * aprv_*_new and aprv_*_new_with_roots; an empty device GUID means "do not
- * check the device hash", so one NIF covers each receipt call and its
- * _with_device_guid variant; a nil clock means "read the system clock", so
- * one NIF covers the endpoint's _and_clock constructor as well. Every export
- * is still reached, because a clock reaches the _and_clock call only when a
- * caller actually pins one.
+ * TWO SENTINELS mirror the ABI's own: an empty roots list means "the bundled
+ * Apple roots" (NULL, NULL, 0), and a nil clock means "read the system
+ * clock" (a NULL clock pointer).
  */
 
 #include <erl_nif.h>
@@ -47,9 +42,7 @@
 
 /* --- resources ---------------------------------------------------------- */
 
-static ErlNifResourceType *jws_verifier_type = NULL;
-static ErlNifResourceType *receipt_verifier_type = NULL;
-static ErlNifResourceType *endpoint_type = NULL;
+static ErlNifResourceType *verifier_type = NULL;
 
 static ERL_NIF_TERM atom_ok;
 static ERL_NIF_TERM atom_error;
@@ -57,55 +50,17 @@ static ERL_NIF_TERM atom_invalid_argument;
 static ERL_NIF_TERM atom_nil;
 
 typedef struct {
-  void *handle;
+  AprvVerifier *handle;
 } aprv_resource;
 
-static void free_jws(void *handle) { aprv_verifier_free_jws((AprvJwsVerifier *)handle); }
-
-static void free_receipt(void *handle) {
-  aprv_verifier_free_receipt((AprvReceiptVerifier *)handle);
-}
-
-static void free_endpoint(void *handle) { aprv_endpoint_free((AprvReceiptEndpoint *)handle); }
-
-static void destroy_jws(ErlNifEnv *env, void *object) {
+static void destroy_verifier(ErlNifEnv *env, void *object) {
   (void)env;
-  free_jws(((aprv_resource *)object)->handle);
+  aprv_verifier_free(((aprv_resource *)object)->handle);
 }
 
-static void destroy_receipt(ErlNifEnv *env, void *object) {
-  (void)env;
-  free_receipt(((aprv_resource *)object)->handle);
-}
-
-static void destroy_endpoint(ErlNifEnv *env, void *object) {
-  (void)env;
-  free_endpoint(((aprv_resource *)object)->handle);
-}
-
-/* `{:ok, resource}`, or `{:error, :invalid_argument}` for the NULL the ABI
- * returns when it refuses a configuration. */
-static ERL_NIF_TERM wrap_handle(ErlNifEnv *env, ErlNifResourceType *type, void *handle,
-                                void (*release)(void *)) {
-  if (handle == NULL) {
-    return enif_make_tuple2(env, atom_error, atom_invalid_argument);
-  }
-  aprv_resource *resource = enif_alloc_resource(type, sizeof(aprv_resource));
-  if (resource == NULL) {
-    release(handle);
-    return enif_make_tuple2(env, atom_error, atom_invalid_argument);
-  }
-  resource->handle = handle;
-  ERL_NIF_TERM term = enif_make_resource(env, resource);
-  /* The term holds the only reference from here on; the GC runs the
-   * destructor when it is dropped. */
-  enif_release_resource(resource);
-  return enif_make_tuple2(env, atom_ok, term);
-}
-
-static void *handle_of(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifResourceType *type) {
+static AprvVerifier *handle_of(ErlNifEnv *env, ERL_NIF_TERM term) {
   aprv_resource *resource = NULL;
-  if (!enif_get_resource(env, term, type, (void **)&resource)) {
+  if (!enif_get_resource(env, term, verifier_type, (void **)&resource)) {
     return NULL;
   }
   return resource->handle;
@@ -147,21 +102,6 @@ static ERL_NIF_TERM make_result(ErlNifEnv *env, int32_t status, char *json) {
     return enif_make_tuple2(env, atom_ok, payload);
   }
   return enif_make_tuple3(env, atom_error, enif_make_int(env, status), payload);
-}
-
-/* A pinned clock as the `const int64_t *` the ABI takes: nil is NULL, which
- * the ABI reads as "the system clock". `storage` must outlive the call. */
-static int clock_of(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifSInt64 *storage,
-                    const int64_t **clock) {
-  if (enif_is_identical(term, atom_nil)) {
-    *clock = NULL;
-    return 1;
-  }
-  if (!enif_get_int64(env, term, storage)) {
-    return 0;
-  }
-  *clock = (const int64_t *)storage;
-  return 1;
 }
 
 typedef struct {
@@ -215,179 +155,89 @@ static int anchors_load(ErlNifEnv *env, ERL_NIF_TERM list, anchors *loaded) {
   return 1;
 }
 
-/* --- constructors ------------------------------------------------------- */
+/* --- the verifier ------------------------------------------------------- */
 
-static ERL_NIF_TERM nif_jws_verifier_new(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+/* `verifier_new(roots, clock)`: `{:ok, verifier}`, or
+ * `{:error, :invalid_argument}` for the NULL the ABI returns when it refuses
+ * a configuration. */
+static ERL_NIF_TERM nif_verifier_new(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
   (void)argc;
-  unsigned int environments = 0;
-  ErlNifUInt64 app_apple_id = 0;
-  if (!enif_get_uint(env, argv[1], &environments) ||
-      !enif_get_uint64(env, argv[2], &app_apple_id)) {
-    return enif_make_badarg(env);
-  }
-  char *bundle_id = cstring(env, argv[0]);
-  if (bundle_id == NULL) {
-    return enif_make_badarg(env);
-  }
-  anchors roots;
-  if (!anchors_load(env, argv[3], &roots)) {
-    enif_free(bundle_id);
-    return enif_make_badarg(env);
-  }
-  AprvJwsVerifier *handle =
-      roots.count == 0
-          ? aprv_verifier_new_jws(bundle_id, (uint32_t)environments, app_apple_id)
-          : aprv_verifier_new_jws_with_roots(bundle_id, (uint32_t)environments, app_apple_id,
-                                             (const uint8_t *const *)roots.ders, roots.lens,
-                                             roots.count);
-  anchors_free(&roots);
-  enif_free(bundle_id);
-  return wrap_handle(env, jws_verifier_type, handle, free_jws);
-}
-
-static ERL_NIF_TERM nif_receipt_verifier_new(ErlNifEnv *env, int argc,
-                                             const ERL_NIF_TERM argv[]) {
-  (void)argc;
-  char *bundle_id = cstring(env, argv[0]);
-  if (bundle_id == NULL) {
-    return enif_make_badarg(env);
-  }
-  anchors roots;
-  if (!anchors_load(env, argv[1], &roots)) {
-    enif_free(bundle_id);
-    return enif_make_badarg(env);
-  }
-  AprvReceiptVerifier *handle =
-      roots.count == 0 ? aprv_verifier_new_receipt(bundle_id)
-                       : aprv_verifier_new_receipt_with_roots(
-                             bundle_id, (const uint8_t *const *)roots.ders, roots.lens,
-                             roots.count);
-  anchors_free(&roots);
-  enif_free(bundle_id);
-  return wrap_handle(env, receipt_verifier_type, handle, free_receipt);
-}
-
-static ERL_NIF_TERM nif_endpoint_new(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-  (void)argc;
-  unsigned int environment = 0;
-  if (!enif_get_uint(env, argv[0], &environment)) {
-    return enif_make_badarg(env);
-  }
   ErlNifSInt64 clock_millis = 0;
   const int64_t *clock = NULL;
-  if (!clock_of(env, argv[2], &clock_millis, &clock)) {
-    return enif_make_badarg(env);
+  if (!enif_is_identical(argv[1], atom_nil)) {
+    if (!enif_get_int64(env, argv[1], &clock_millis)) {
+      return enif_make_badarg(env);
+    }
+    clock = (const int64_t *)&clock_millis;
   }
   anchors roots;
-  if (!anchors_load(env, argv[1], &roots)) {
+  if (!anchors_load(env, argv[0], &roots)) {
     return enif_make_badarg(env);
   }
-  AprvReceiptEndpoint *handle =
-      clock != NULL
-          ? aprv_endpoint_new_with_roots_and_clock((uint32_t)environment,
-                                                   (const uint8_t *const *)roots.ders,
-                                                   roots.lens, roots.count, clock)
-      : roots.count == 0
-          ? aprv_endpoint_new((uint32_t)environment)
-          : aprv_endpoint_new_with_roots((uint32_t)environment,
-                                         (const uint8_t *const *)roots.ders, roots.lens,
-                                         roots.count);
+  AprvVerifier *handle =
+      aprv_verifier_new((const uint8_t *const *)roots.ders, roots.lens, roots.count, clock);
   anchors_free(&roots);
-  return wrap_handle(env, endpoint_type, handle, free_endpoint);
+  if (handle == NULL) {
+    return enif_make_tuple2(env, atom_error, atom_invalid_argument);
+  }
+  aprv_resource *resource = enif_alloc_resource(verifier_type, sizeof(aprv_resource));
+  if (resource == NULL) {
+    aprv_verifier_free(handle);
+    return enif_make_tuple2(env, atom_error, atom_invalid_argument);
+  }
+  resource->handle = handle;
+  ERL_NIF_TERM term = enif_make_resource(env, resource);
+  /* The term holds the only reference from here on; the GC runs the
+   * destructor when it is dropped. */
+  enif_release_resource(resource);
+  return enif_make_tuple2(env, atom_ok, term);
 }
 
-/* --- verification ------------------------------------------------------- */
+typedef int32_t (*verify_call)(const AprvVerifier *, const char *, AprvResult *);
 
-typedef int32_t (*jws_call)(const AprvJwsVerifier *, const char *, AprvResult *);
-
-static ERL_NIF_TERM verify_jws(ErlNifEnv *env, const ERL_NIF_TERM argv[], jws_call call) {
-  AprvJwsVerifier *verifier = handle_of(env, argv[0], jws_verifier_type);
+static ERL_NIF_TERM verify(ErlNifEnv *env, const ERL_NIF_TERM argv[], verify_call call) {
+  AprvVerifier *verifier = handle_of(env, argv[0]);
   if (verifier == NULL) {
     return enif_make_badarg(env);
   }
-  char *jws = cstring(env, argv[1]);
-  if (jws == NULL) {
+  char *input = cstring(env, argv[1]);
+  if (input == NULL) {
     return enif_make_badarg(env);
   }
   AprvResult result = {0, NULL};
-  call(verifier, jws, &result);
-  enif_free(jws);
+  call(verifier, input, &result);
+  enif_free(input);
   return make_result(env, result.status, result.json);
 }
 
-static ERL_NIF_TERM nif_verify_transaction(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+static ERL_NIF_TERM nif_verify_receipt(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
   (void)argc;
-  return verify_jws(env, argv, aprv_verify_transaction);
+  return verify(env, argv, aprv_verify_receipt);
 }
 
-static ERL_NIF_TERM nif_verify_app_transaction(ErlNifEnv *env, int argc,
-                                               const ERL_NIF_TERM argv[]) {
+static ERL_NIF_TERM nif_verify_signed_data(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
   (void)argc;
-  return verify_jws(env, argv, aprv_verify_app_transaction);
-}
-
-static ERL_NIF_TERM nif_verify_raw(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-  (void)argc;
-  return verify_jws(env, argv, aprv_verify_raw);
-}
-
-static ERL_NIF_TERM nif_verify_receipt_der(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-  (void)argc;
-  AprvReceiptVerifier *verifier = handle_of(env, argv[0], receipt_verifier_type);
-  ErlNifBinary der;
-  ErlNifBinary guid;
-  if (verifier == NULL || !enif_inspect_binary(env, argv[1], &der) ||
-      !enif_inspect_binary(env, argv[2], &guid)) {
-    return enif_make_badarg(env);
-  }
-  AprvResult result = {0, NULL};
-  if (guid.size == 0) {
-    aprv_verify_receipt_der(verifier, der.data, der.size, &result);
-  } else {
-    aprv_verify_receipt_der_with_device_guid(verifier, der.data, der.size, guid.data, guid.size,
-                                             &result);
-  }
-  return make_result(env, result.status, result.json);
-}
-
-static ERL_NIF_TERM nif_verify_receipt_base64(ErlNifEnv *env, int argc,
-                                              const ERL_NIF_TERM argv[]) {
-  (void)argc;
-  AprvReceiptVerifier *verifier = handle_of(env, argv[0], receipt_verifier_type);
-  ErlNifBinary guid;
-  if (verifier == NULL || !enif_inspect_binary(env, argv[2], &guid)) {
-    return enif_make_badarg(env);
-  }
-  char *receipt = cstring(env, argv[1]);
-  if (receipt == NULL) {
-    return enif_make_badarg(env);
-  }
-  AprvResult result = {0, NULL};
-  if (guid.size == 0) {
-    aprv_verify_receipt_base64(verifier, receipt, &result);
-  } else {
-    aprv_verify_receipt_base64_with_device_guid(verifier, receipt, guid.data, guid.size, &result);
-  }
-  enif_free(receipt);
-  return make_result(env, result.status, result.json);
+  return verify(env, argv, aprv_verify_signed_data);
 }
 
 /* The endpoint never reports a verdict through the return value: every
  * verdict is the `status` field inside the body it answers. A non-zero
  * return means the call itself was malformed, and *response is untouched. */
-static ERL_NIF_TERM nif_verify_receipt_endpoint_json(ErlNifEnv *env, int argc,
-                                                     const ERL_NIF_TERM argv[]) {
+static ERL_NIF_TERM nif_verify_receipt_endpoint(ErlNifEnv *env, int argc,
+                                                const ERL_NIF_TERM argv[]) {
   (void)argc;
-  AprvReceiptEndpoint *endpoint = handle_of(env, argv[0], endpoint_type);
-  if (endpoint == NULL) {
+  AprvVerifier *verifier = handle_of(env, argv[0]);
+  unsigned int environment = 0;
+  if (verifier == NULL || !enif_get_uint(env, argv[1], &environment)) {
     return enif_make_badarg(env);
   }
-  char *request = cstring(env, argv[1]);
+  char *request = cstring(env, argv[2]);
   if (request == NULL) {
     return enif_make_badarg(env);
   }
   char *response = NULL;
-  int32_t status = aprv_verify_receipt_endpoint_json(endpoint, request, &response);
+  int32_t status =
+      aprv_verify_receipt_endpoint(verifier, (uint32_t)environment, request, &response);
   enif_free(request);
   if (status != APRV_REASON_OK) {
     return enif_make_tuple2(env, atom_error, enif_make_int(env, status));
@@ -409,13 +259,9 @@ static ERL_NIF_TERM nif_version(ErlNifEnv *env, int argc, const ERL_NIF_TERM arg
 static int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
   (void)priv_data;
   (void)load_info;
-  jws_verifier_type = enif_open_resource_type(env, NULL, "aprv_jws_verifier", destroy_jws,
-                                              ERL_NIF_RT_CREATE, NULL);
-  receipt_verifier_type = enif_open_resource_type(env, NULL, "aprv_receipt_verifier",
-                                                  destroy_receipt, ERL_NIF_RT_CREATE, NULL);
-  endpoint_type = enif_open_resource_type(env, NULL, "aprv_receipt_endpoint", destroy_endpoint,
+  verifier_type = enif_open_resource_type(env, NULL, "aprv_verifier", destroy_verifier,
                                           ERL_NIF_RT_CREATE, NULL);
-  if (jws_verifier_type == NULL || receipt_verifier_type == NULL || endpoint_type == NULL) {
+  if (verifier_type == NULL) {
     return 1;
   }
   atom_ok = enif_make_atom(env, "ok");
@@ -425,20 +271,14 @@ static int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
   return 0;
 }
 
-/* Everything that parses is dirty: the constructors read DER certificates
+/* Everything that parses is dirty: the constructor reads DER certificates
  * and the verify calls walk a chain and check a signature. */
 static ErlNifFunc funcs[] = {
     {"version", 0, nif_version, 0},
-    {"jws_verifier_new", 4, nif_jws_verifier_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"receipt_verifier_new", 2, nif_receipt_verifier_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"endpoint_new", 3, nif_endpoint_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"verify_transaction", 2, nif_verify_transaction, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"verify_app_transaction", 2, nif_verify_app_transaction, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"verify_raw", 2, nif_verify_raw, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"verify_receipt_der", 3, nif_verify_receipt_der, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"verify_receipt_base64", 3, nif_verify_receipt_base64, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"verify_receipt_endpoint_json", 2, nif_verify_receipt_endpoint_json,
-     ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"verifier_new", 2, nif_verifier_new, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"verify_receipt", 2, nif_verify_receipt, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"verify_signed_data", 2, nif_verify_signed_data, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"verify_receipt_endpoint", 3, nif_verify_receipt_endpoint, ERL_NIF_DIRTY_JOB_CPU_BOUND},
 };
 
 ERL_NIF_INIT(Elixir.AppleReceiptExample.Native, funcs, load, NULL, NULL, NULL)

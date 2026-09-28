@@ -9,7 +9,7 @@ import (
 )
 
 // The base64 entry points are the untrusted-network surface: the
-// endpoint emulates Apple's verifyReceipt host, and VerifyBase64 takes
+// endpoint emulates Apple's verifyReceipt host, and VerifyReceipt takes
 // the string a client sends. MaxReceiptBytes is documented as rejecting
 // larger inputs BEFORE decoding and BEFORE parsing: it caps the base64
 // string's length as well as the DER, so it bounds the decode too, not
@@ -36,25 +36,21 @@ func allocatedBy(f func()) uint64 {
 
 func TestEndpointDoesNotDecodeBeyondItsCeiling(t *testing.T) {
 	const ceiling = applereceipt.MaxReceiptBytes
-	endpoint, err := applereceipt.NewVerifyReceiptEndpoint(applereceipt.VerifyReceiptEndpointOptions{
-		TrustedRoots: applereceipt.AppleReceiptRoots(),
-		Environment:  applereceipt.EnvironmentProduction,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	verifier := verifierFor(t, applereceipt.AppleRoots())
 	body := oversizedBase64()
-	var response applereceipt.VerifyReceiptResponse
+	request := `{"receipt-data":"` + body + `"}`
+	var response string
 	allocated := allocatedBy(func() {
-		response = endpoint.VerifyReceipt(applereceipt.VerifyReceiptRequest{ReceiptData: body}).Response()
+		response = verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentProduction, request)
 	})
-	if response.Status != applereceipt.StatusMalformed {
-		t.Fatalf("status = %d, want %d", response.Status, applereceipt.StatusMalformed)
+	if !strings.HasPrefix(response, `{"status":21002`) {
+		t.Fatalf("response = %.80s, want a 21002 status", response)
 	}
 	t.Logf("%d base64 chars, ceiling %d: allocated %d bytes", len(body), ceiling, allocated)
 	// The answer needs at most the ceiling plus a byte to know the input
 	// is over it. Anything near the 48 MiB the body decodes to means the
-	// decode ran to completion before the ceiling was consulted.
+	// decode ran to completion before the ceiling was consulted, or the
+	// request-body cap ran before the receipt-data cap could.
 	if allocated > 4*ceiling {
 		t.Errorf("a %d-char body allocated %d bytes against a %d byte ceiling; "+
 			"MaxReceiptBytes must bound the decode, not only the parse",
@@ -62,36 +58,17 @@ func TestEndpointDoesNotDecodeBeyondItsCeiling(t *testing.T) {
 	}
 }
 
-func TestVerifyBase64DoesNotDecodeBeyondItsCeiling(t *testing.T) {
+func TestVerifyReceiptDoesNotDecodeBeyondItsCeiling(t *testing.T) {
 	const ceiling = applereceipt.MaxReceiptBytes
 	pki := newReceiptPKI(t)
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: pki.anchors(),
-		BundleID:     "com.example.app",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	verifier := verifierFor(t, pki.anchors())
 	body := oversizedBase64()
-	for _, entry := range []struct {
-		name string
-		call func() error
-	}{
-		{"VerifyBase64", func() error { _, err := verifier.VerifyBase64(body); return err }},
-		{"VerifyBase64WithDeviceGUID", func() error {
-			_, err := verifier.VerifyBase64WithDeviceGUID(body, []byte("guid"))
-			return err
-		}},
-	} {
-		t.Run(entry.name, func(t *testing.T) {
-			var got error
-			allocated := allocatedBy(func() { got = entry.call() })
-			requireReason(t, got, applereceipt.ReasonInvalidReceiptFormat)
-			t.Logf("allocated %d bytes against a %d byte ceiling", allocated, ceiling)
-			if allocated > 4*ceiling {
-				t.Errorf("a %d-char body allocated %d bytes against a %d byte ceiling",
-					len(body), allocated, ceiling)
-			}
-		})
+	var got error
+	allocated := allocatedBy(func() { _, got = verifier.VerifyReceipt(body) })
+	requireReason(t, got, applereceipt.ReasonTooLarge)
+	t.Logf("allocated %d bytes against a %d byte ceiling", allocated, ceiling)
+	if allocated > 4*ceiling {
+		t.Errorf("a %d-char body allocated %d bytes against a %d byte ceiling",
+			len(body), allocated, ceiling)
 	}
 }

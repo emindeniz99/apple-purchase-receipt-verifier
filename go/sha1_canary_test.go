@@ -27,7 +27,7 @@ func TestSHA1CertificateSignaturesAreStillAcceptedByCheckSignature(t *testing.T)
 	// The genuine legacy chain, out of the public fixture, is the only
 	// honest sample: a synthesized SHA-1 chain would prove less.
 	receipt := fixtureBytes(t, "public-receipt-sandbox-legacy")
-	if _, err := applereceipt.VerifyReceiptCore(receipt, applereceipt.AppleReceiptRoots()); err != nil {
+	if _, err := verifierFor(t, applereceipt.AppleRoots()).VerifyReceipt(applereceiptBase64(receipt)); err != nil {
 		t.Fatalf("the genuine SHA-1 legacy receipt no longer verifies. If this is a "+
 			"toolchain change rather than a code change, the documented fallback is to "+
 			"replace Certificate.CheckSignature with rsa.VerifyPKCS1v15(pub, crypto.SHA1, "+

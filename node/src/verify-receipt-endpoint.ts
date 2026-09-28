@@ -1,166 +1,208 @@
-import { normalizeRoots, type RootInput } from './chain.js';
-import { normalizeClock, type Clock } from './jws-claims.js';
-import { MAX_REQUEST_BYTES } from './limits.js';
-import { decodeReceiptDataString, verifyReceiptCore, type AppReceipt } from './receipt.js';
-import {
-  failedResult,
-  malformedRequest,
-  parseRequestJson,
-  receiptDataOf,
-  requestInstant,
-  requestTooLarge,
-  requireEndpointEnvironment,
-  verifiedResult,
-  type EndpointEnvironment,
-  type VerifyReceiptResult as SharedVerifyReceiptResult,
-} from './verify-receipt-result.js';
-
-export {
-  Status,
-  type VerifyReceiptRequestBody,
-  type VerifyReceiptResponseBody,
-} from './verify-receipt-result.js';
-
 /**
- * Drop-in local replacement for Apple's deprecated `verifyReceipt` endpoint:
- * same request body, same response body shape, same status codes — but
- * verified offline against the pinned Apple root instead of by calling
- * Apple. Field-by-field fidelity and the unavoidable gaps (fields that only
- * exist in Apple's server-side subscription database, like
- * `latest_receipt_info` / `pending_renewal_info`) are documented in
- * COMPARISON.md.
+ * `verifyReceiptEndpoint(environment, requestJson)`: a local stand-in for
+ * Apple's deprecated verifyReceipt endpoint. Same request body, same
+ * response body, same status codes, but verified offline against the
+ * pinned roots instead of by calling Apple. Fields that exist only in
+ * Apple's server-side database (`latest_receipt_info`,
+ * `pending_renewal_info`, `latest_receipt`) are never produced
+ * (COMPARISON.md). Like Apple's endpoint, this checks no bundle id — the
+ * caller compares `receipt.bundle_id`.
  *
- * Like Apple's endpoint, this does NOT check the bundle id — the caller
- * compares `receipt.bundle_id`, exactly as with the real endpoint.
+ * The response is assembled by hand rather than through `JSON.stringify`:
+ * `adam_id`, `app_item_id`, `download_id` and `version_external_identifier`
+ * are Apple's own JSON *numbers*, and this library's ids are decimal
+ * strings precisely so no digit is lost to a `number` — writing them
+ * unquoted here keeps every digit on the wire the way Apple's own endpoint
+ * does.
  */
+import { formatGmt, formatPacific } from './apple-date.js';
+import { callClock } from './call-clock.js';
+import { AppleStatus, Environment, environmentFromReceiptType } from './environment.js';
+import { Reason, VerificationError } from './errors.js';
+import { JsonError, asString, parseOneValue } from './json.js';
+import { MAX_REQUEST_BYTES, utf8LengthExceeds } from './limits.js';
+import type { InAppPurchase, ReceiptPayload } from './receipt-payload.js';
+import { verifyReceipt } from './receipt.js';
+import type { ParsedCertificate } from './x509.js';
 
-/**
- * The outcome of one {@link VerifyReceiptEndpoint} call. `if
- * (result.verified)` narrows `result.receipt` to the verified
- * {@link AppReceipt}; otherwise `result.failureReason` says why there is
- * none.
- */
-export type VerifyReceiptResult = SharedVerifyReceiptResult<AppReceipt>;
+export { MAX_REQUEST_BYTES };
 
-export interface VerifyReceiptEndpointOptions {
-  /** Pinned roots (production: `appleReceiptRoots()`). */
-  trustedRoots: RootInput[];
-  /** Which environment this endpoint instance emulates (21007/21008 routing). */
-  environment: 'Production' | 'Sandbox';
-  /**
-   * Optional source of "now", the same option the JWS verifier takes.
-   * The only wall-clock-dependent output here is the `request_date*` triple
-   * (the instant the request was answered), so that is what it drives.
-   * Omitted, the system clock is used.
-   */
-  clock?: Clock | null;
+function statusForReason(reason: Reason): number {
+  switch (reason) {
+    case Reason.MALFORMED:
+    case Reason.TOO_LARGE:
+      return AppleStatus.MALFORMED_RECEIPT_DATA;
+    case Reason.INVALID_SIGNATURE:
+    case Reason.UNTRUSTED_CHAIN:
+    case Reason.INVALID_CERTIFICATE:
+    case Reason.INVALID_CERTIFICATE_PURPOSE:
+      return AppleStatus.RECEIPT_NOT_AUTHENTICATED;
+    default: // UNREADABLE_PAYLOAD, INTERNAL_ERROR
+      return AppleStatus.INTERNAL_DATA_ACCESS_ERROR;
+  }
 }
 
-export class VerifyReceiptEndpoint {
-  /**
-   * Ceiling on a raw JSON request body, in UTF-8 bytes, checked before it is
-   * parsed: 3,145,728, Apple's own limit (measured 2026-09-23; one byte more
-   * gets HTTP 413 there). A larger body answers 21002 with
-   * `REQUEST_TOO_LARGE`, which an HTTP layer can map to 413. A fixed
-   * constant, the same in every port. A body passed as an object is not
-   * measured.
-   */
-  static readonly MAX_REQUEST_BYTES = MAX_REQUEST_BYTES;
-
-  #roots: RootInput[];
-  #environment: EndpointEnvironment;
-  #clock: Clock;
-
-  constructor({ trustedRoots, environment, clock = null }: VerifyReceiptEndpointOptions) {
-    normalizeRoots(trustedRoots); // validate eagerly
-    requireEndpointEnvironment(environment);
-    this.#roots = trustedRoots;
-    this.#environment = environment;
-    this.#clock = normalizeClock(clock);
+/**
+ * The `receipt-data` string of a request body. A body over
+ * {@link MAX_REQUEST_BYTES} is TOO_LARGE; a body that is not a JSON object
+ * (unparseable, empty, an array, a scalar), or that nests deeper than 64,
+ * and a `receipt-data` that is missing or not a string, are MALFORMED.
+ * `password` and `exclude-old-transactions` are read and ignored — by not
+ * being read at all. The last `receipt-data` member wins, as in a map;
+ * anything after the top-level object is not read.
+ */
+function receiptDataOf(requestJson: string): string {
+  if (requestJson === '') {
+    throw new VerificationError(Reason.MALFORMED, 'request body is empty');
   }
-
-  /**
-   * Handles one verifyReceipt request: the request body as an object, or
-   * as the raw JSON text an HTTP framework hands over. Never throws; a
-   * failure is the result's `failureReason` and `status`.
-   *
-   * A request that is not an object, a string that is not a JSON object
-   * (unparseable, `null`, an array, a scalar), and a `receipt-data` that is
-   * missing, empty or not a string fail with `MALFORMED_REQUEST`, status
-   * 21002. So does a string body nesting JSON more than 64 levels deep,
-   * before it is parsed. A string body over {@link MAX_REQUEST_BYTES} UTF-8
-   * bytes fails with `REQUEST_TOO_LARGE`, also 21002, before anything else
-   * looks at it; Apple answers HTTP 413 there. A `receipt-data` over
-   * `ReceiptVerifier.MAX_RECEIPT_BYTES` UTF-8 bytes fails with
-   * `INVALID_RECEIPT_FORMAT`, also 21002, before it is decoded.
-   *
-   * `requestDate`, when given, becomes `request_date` in place of the
-   * endpoint's clock. It reaches `request_date` and nothing else: receipt
-   * chain validity is judged at the receipt's own creation date.
-   */
-  verifyReceiptResult(requestBody: unknown, requestDate: Date | null = null): VerifyReceiptResult {
-    let at: number | undefined;
-    try {
-      at = requestInstant(requestDate, this.#clock);
-      const tooLarge = requestTooLarge(this.#environment, requestBody, at);
-      if (tooLarge !== null) {
-        return tooLarge;
-      }
-      const body = typeof requestBody === 'string' ? parseRequestJson(requestBody) : requestBody;
-      return this.#verify(receiptDataOf(body), at);
-    } catch (error) {
-      return failedResult(this.#environment, error, at ?? Date.now());
+  if (utf8LengthExceeds(requestJson, MAX_REQUEST_BYTES)) {
+    throw new VerificationError(
+      Reason.TOO_LARGE,
+      `request body exceeds the maximum of ${MAX_REQUEST_BYTES} bytes`,
+    );
+  }
+  let value;
+  try {
+    ({ value } = parseOneValue(requestJson));
+  } catch (cause) {
+    if (cause instanceof JsonError) {
+      throw new VerificationError(Reason.MALFORMED, 'request body is not valid JSON', cause);
     }
+    throw cause;
   }
+  if (value.kind !== 'object') {
+    throw new VerificationError(Reason.MALFORMED, 'request body is not a JSON object');
+  }
+  const receiptData = asString(value.members.get('receipt-data'));
+  if (receiptData === null) {
+    throw new VerificationError(Reason.MALFORMED, 'receipt-data is missing or not a string');
+  }
+  return receiptData;
+}
 
-  /**
-   * Verifies a bare base64 receipt, the value a request body would carry as
-   * `receipt-data`, with no envelope around it. Never throws; a missing or
-   * empty string fails with `MALFORMED_REQUEST`, as a missing
-   * `receipt-data` does. `requestDate` as in {@link verifyReceiptResult}.
-   */
-  verifyReceiptData(receiptData: unknown, requestDate: Date | null = null): VerifyReceiptResult {
-    let at: number | undefined;
-    try {
-      at = requestInstant(requestDate, this.#clock);
-      return this.#verify(receiptData, at);
-    } catch (error) {
-      return failedResult(this.#environment, error, at ?? Date.now());
+export function respond(
+  environment: Environment,
+  requestJson: string,
+  anchors: readonly ParsedCertificate[],
+  rawClock: () => number,
+): string {
+  // One memoized clock for the whole call, shared with the internal
+  // verifyReceipt so a receipt with no creation date and `request_date`
+  // see the same instant, and read at most once.
+  const clock = callClock(rawClock);
+  let status: number;
+  let receipt: ReceiptPayload | null = null;
+  let requestDateMs = 0;
+  try {
+    const receiptData = receiptDataOf(typeof requestJson === 'string' ? requestJson : '');
+    receipt = verifyReceipt(receiptData, anchors, clock);
+    status = statusForEnvironment(environment, receipt);
+    if (status === AppleStatus.OK) {
+      requestDateMs = clock();
     }
+  } catch (cause) {
+    // Never let an unexpected error escape the endpoint; it always answers
+    // a status, never throws.
+    status =
+      cause instanceof VerificationError
+        ? statusForReason(cause.reason)
+        : AppleStatus.INTERNAL_DATA_ACCESS_ERROR;
   }
+  return renderResponse(status, environment, receipt, requestDateMs);
+}
 
-  /**
-   * Handles one verifyReceipt request body in its raw wire form: the JSON
-   * request body in, the JSON response body out, so an HTTP framework's
-   * body can be piped straight through without a DTO in between. The same
-   * as `verifyReceiptResult(body).toJson()` for a string body; anything
-   * that is not a string answers `{"status":21002}`.
-   *
-   * Output is deterministic — the response object preserves insertion
-   * order, so equal inputs serialize to equal bytes. Key order is not part
-   * of the JSON contract.
-   *
-   * The four id keys come out with every digit intact
-   * (`"download_id":9223372036854775807`), which no `JSON.stringify` of the
-   * object form can do on Node 20.
-   */
-  verifyReceiptJson(body: string): string {
-    return this.verifyReceiptResult(typeof body === 'string' ? body : undefined).toJson();
+function statusForEnvironment(environment: Environment, receipt: ReceiptPayload): number {
+  const productionReceipt =
+    environmentFromReceiptType(receipt.receiptType) === Environment.PRODUCTION;
+  if (environment === Environment.PRODUCTION && !productionReceipt) {
+    return AppleStatus.SANDBOX_RECEIPT_ON_PRODUCTION;
   }
+  if (environment === Environment.SANDBOX && productionReceipt) {
+    return AppleStatus.PRODUCTION_RECEIPT_ON_SANDBOX;
+  }
+  return AppleStatus.OK;
+}
 
-  /**
-   * The one verification path every entry point ends in. Callers catch
-   * what it throws: a VerificationError is that reason, anything else is
-   * INTERNAL_ERROR.
-   */
-  #verify(receiptData: unknown, at: number): VerifyReceiptResult {
-    if (typeof receiptData !== 'string' || receiptData.length === 0) {
-      return malformedRequest(this.#environment, at);
-    }
-    // The primitive itself, not a ReceiptVerifier built around a wildcard
-    // bundle id: like Apple's endpoint, no bundle-id claim is checked here
-    // (callers compare receipt.bundle_id).
-    const receipt = verifyReceiptCore(decodeReceiptDataString(receiptData), this.#roots);
-    return verifiedResult(this.#environment, receipt, at);
+function jsonString(value: string | null): string | null {
+  return value === null ? null : JSON.stringify(value);
+}
+
+/** `value` is already a clean base-10 integer (or null); embedded unquoted, it is a JSON number. */
+function jsonRawNumber(value: string | null): string | null {
+  return value;
+}
+
+function field(key: string, jsonValue: string | null): string | null {
+  return jsonValue === null ? null : `${JSON.stringify(key)}:${jsonValue}`;
+}
+
+/** Apple's three date renderings: `x` (GMT), `x_ms`, `x_pst`. Omitted together when `ms` is null. */
+function appleDateFields(prefix: string, ms: number | null): (string | null)[] {
+  if (ms === null) {
+    return [];
   }
+  const date = new Date(ms);
+  return [
+    field(prefix, jsonString(formatGmt(date))),
+    field(`${prefix}_ms`, jsonString(String(ms))),
+    field(`${prefix}_pst`, jsonString(formatPacific(date))),
+  ];
+}
+
+function objectOf(parts: readonly (string | null)[]): string {
+  return `{${parts.filter((p): p is string => p !== null).join(',')}}`;
+}
+
+function purchaseJson(purchase: InAppPurchase): string {
+  return objectOf([
+    field('quantity', jsonString(purchase.quantity === null ? null : String(purchase.quantity))),
+    field('product_id', jsonString(purchase.productId)),
+    field('transaction_id', jsonString(purchase.transactionId)),
+    field('original_transaction_id', jsonString(purchase.originalTransactionId)),
+    ...appleDateFields('purchase_date', purchase.purchaseDateMs),
+    ...appleDateFields('original_purchase_date', purchase.originalPurchaseDateMs),
+    ...appleDateFields('expires_date', purchase.expiresDateMs),
+    ...appleDateFields('cancellation_date', purchase.cancellationDateMs),
+    // Apple omits the key when attribute 1711 is 0, as it does for consumables.
+    purchase.webOrderLineItemId !== null && purchase.webOrderLineItemId !== '0'
+      ? field('web_order_line_item_id', jsonString(purchase.webOrderLineItemId))
+      : null,
+    purchase.isTrialPeriod !== null
+      ? field('is_trial_period', jsonString(String(purchase.isTrialPeriod)))
+      : null,
+    purchase.isInIntroOfferPeriod !== null
+      ? field('is_in_intro_offer_period', jsonString(String(purchase.isInIntroOfferPeriod)))
+      : null,
+  ]);
+}
+
+function receiptJson(receipt: ReceiptPayload, requestDateMs: number): string {
+  return objectOf([
+    field('receipt_type', jsonString(receipt.receiptType)),
+    // Apple echoes attribute 1 under both names as JSON numbers.
+    field('adam_id', jsonRawNumber(receipt.appItemId)),
+    field('app_item_id', jsonRawNumber(receipt.appItemId)),
+    field('bundle_id', jsonString(receipt.bundleId)),
+    field('application_version', jsonString(receipt.applicationVersion)),
+    field('download_id', jsonRawNumber(receipt.downloadId)),
+    field('version_external_identifier', jsonRawNumber(receipt.versionExternalIdentifier)),
+    field('original_application_version', jsonString(receipt.originalApplicationVersion)),
+    ...appleDateFields('receipt_creation_date', receipt.receiptCreationDateMs),
+    ...appleDateFields('request_date', requestDateMs),
+    ...appleDateFields('original_purchase_date', receipt.originalPurchaseDateMs),
+    ...appleDateFields('expiration_date', receipt.expirationDateMs),
+    `"in_app":[${receipt.inApp.map(purchaseJson).join(',')}]`,
+  ]);
+}
+
+function renderResponse(
+  status: number,
+  environment: Environment,
+  receipt: ReceiptPayload | null,
+  requestDateMs: number,
+): string {
+  if (status !== AppleStatus.OK || receipt === null) {
+    return `{"status":${status}}`;
+  }
+  return `{"status":${status},"environment":${JSON.stringify(environment)},"receipt":${receiptJson(receipt, requestDateMs)}}`;
 }

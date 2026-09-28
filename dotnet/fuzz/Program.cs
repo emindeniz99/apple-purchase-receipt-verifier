@@ -22,8 +22,8 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
     /// execution, never here.</strong> SharpFuzz's instrumentation makes the
     /// library's methods write edge counters through a shared-memory pointer
     /// that <c>Fuzzer.LibFuzzer.Run</c> installs; calling instrumented code
-    /// before that — an eager <c>AppleRootCertificates.ReceiptRoots()</c> in
-    /// <c>Main</c> did exactly this — dereferences a pointer that does not
+    /// before that — an eager <c>AppleRootCertificates.Bundled()</c> in
+    /// <c>Main</c> is enough — dereferences a pointer that does not
     /// exist yet and kills the process with an
     /// <c>AccessViolationException</c> that looks like a library crash and is
     /// not one. The setup still happens once, just one execution later.</para>

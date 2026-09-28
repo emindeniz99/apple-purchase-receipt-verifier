@@ -10,7 +10,8 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::{apple_receipt_roots, ReceiptVerifier};
+use apple_purchase_receipt_verifier::__internal::base64_encode;
+use apple_purchase_receipt_verifier::{Config, Verifier};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -46,21 +47,20 @@ fn verification_allocates_a_bounded_multiple_of_the_input() {
     // Warm every lazily initialised thing first — the anchors are parsed
     // once behind a OnceLock, and that cost belongs to neither verification.
     let legacy = common::read_base64_fixture("public-receipts/receipt-sandbox-legacy.b64");
-    let verifier = ReceiptVerifier::builder()
-        .trusted_roots(apple_receipt_roots().iter().cloned())
-        .bundle_id("com.nutcall.alert")
-        .build()
-        .unwrap();
-    verifier.verify(&legacy).unwrap();
+    let base64 = base64_encode(&legacy);
+    let verifier = Verifier::new(Config::defaults());
+    verifier.verify_receipt(&base64).unwrap();
 
     // The largest genuine receipt in the corpus: 79 KB, 187 in-app
     // purchases, 208 attributes.
-    let (receipt, bytes) = measure(|| verifier.verify(&legacy).unwrap());
-    assert_eq!(receipt.in_app_purchases.len(), 187);
-    // Measured: 2,149,060 bytes for a 79,104-byte receipt — 27 times the
-    // input, which is what a tree parser costs on 208 attributes and 187
-    // nested purchases. The ceiling is set just above it, so a regression
-    // shows up as a failure rather than as a slow leak.
+    let (receipt, bytes) = measure(|| verifier.verify_receipt(&base64).unwrap());
+    assert_eq!(receipt.in_app.len(), 187);
+    // Measured in 0.6, from DER: 2,149,060 bytes for a 79,104-byte receipt,
+    // 27 times the input, which is what a tree parser costs on 208
+    // attributes and 187 nested purchases. 0.7 takes base64 and decodes it
+    // once more, one more copy of the input. The ceiling is set just above
+    // that, so a regression shows up as a failure rather than as a slow
+    // leak.
     let ceiling = legacy.len() * 32;
     assert!(
         bytes < ceiling,
@@ -69,16 +69,17 @@ fn verification_allocates_a_bounded_multiple_of_the_input() {
     );
 
     // And rejecting junk must cost far less than verifying something real:
-    // a megabyte of zeros is refused by the reader, not decoded.
-    let junk = vec![0u8; 1024 * 1024];
-    let (_, junk_bytes) = measure(|| verifier.verify(&junk).unwrap_err());
+    // a megabyte of zeros is decoded once and refused by the reader, not
+    // parsed into a tree.
+    let junk = base64_encode(&vec![0u8; 1024 * 1024]);
+    let (_, junk_bytes) = measure(|| verifier.verify_receipt(&junk).unwrap_err());
     assert!(
-        junk_bytes < 64 * 1024,
+        junk_bytes < 1024 * 1024 + 64 * 1024,
         "rejecting a megabyte of junk allocated {junk_bytes} bytes"
     );
 
     // Repeating a verification must not grow: nothing is cached per input.
-    let (_, second) = measure(|| verifier.verify(&legacy).unwrap());
+    let (_, second) = measure(|| verifier.verify_receipt(&base64).unwrap());
     assert!(
         second <= bytes + bytes / 8,
         "second verification allocated {second} against {bytes}"

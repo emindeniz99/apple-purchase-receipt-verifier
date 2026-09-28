@@ -4,23 +4,25 @@ import X509
 import XCTest
 @testable import ApplePurchaseReceiptVerifier
 
-/// Trust reaches this library through exactly one door: the `trustedRoots`
-/// argument. Not through Security.framework, not through swift-certificates'
-/// `CertificateStore.systemTrustRoots`, not through a CA bundle on disk, not
-/// through the network.
+/// Trust reaches this library through exactly one door: the roots of the
+/// `Config` a `Verifier` is built from. Not through Security.framework, not
+/// through swift-certificates' `CertificateStore.systemTrustRoots`, not
+/// through a CA bundle on disk, not through the network.
 ///
 /// Every other port pins this — go's `systemtrust_test.go`, rust's
 /// `trust_pinning.rs`, php's `PinnedAnchorsTest.php`, ruby's
 /// `hostile_input_test.rb` — and swift is where it is easiest to lose. On
-/// Linux `CertificateStore.systemTrustRoots` is one word away from the
-/// `CertificateStore(roots)` this library passes to `Verifier`, and on Darwin
-/// `SecTrustEvaluateWithError` is the answer every Apple-platform tutorial
-/// gives. So the rule is asserted three ways: structurally over the sources
-/// and the dependency set (the half that holds on Darwin, where the tests
-/// cannot install anything); behaviourally, on chains that are well-formed in
-/// every respect except their anchor; and against this machine's real trust
-/// store, which is loaded, effective in this very process, and still moves no
-/// verdict.
+/// Linux `CertificateStore.systemTrustRoots` is one word away from a
+/// `CertificateStore(roots)`, and on Darwin `SecTrustEvaluateWithError` is
+/// the answer every Apple-platform tutorial gives. So the rule is asserted
+/// three ways: structurally over the sources and the dependency set (the half
+/// that holds on Darwin, where the tests cannot install anything);
+/// behaviourally, on chains that are well-formed in every respect except
+/// their anchor; and against this machine's real trust store, which is
+/// loaded, effective in this very process, and still moves no verdict.
+///
+/// No shared case can say any of this: a vector names its anchors, so it
+/// cannot test what happens with anchors nobody named.
 final class TrustStoreIsolationTests: XCTestCase {
     // MARK: - the structural half
 
@@ -49,8 +51,7 @@ final class TrustStoreIsolationTests: XCTestCase {
                 XCTAssertFalse(
                     code.contains(needle),
                     "\(file.lastPathComponent) names \"\(needle)\": anchors come from the "
-                        + "caller's trustedRoots and bytes come from the caller, never from "
-                        + "the platform")
+                        + "caller's Config and bytes come from the caller, never from the platform")
             }
         }
     }
@@ -77,82 +78,67 @@ final class TrustStoreIsolationTests: XCTestCase {
 
     // MARK: - the behavioural half
 
-    /// The positive proof that the anchor set is exactly the argument: the
-    /// same bytes are accepted under the anchor that signed them and refused
-    /// under every other, Apple's own production roots included. Nothing about
-    /// the material changes between the two halves — only the argument does.
-    func testAVerdictFollowsTheAnchorArgumentAndNothingElse() async throws {
-        let receipt = try fixture("generated", "receipt.der")
-        let receiptRoot = try fixture("generated", "receipt-root.der")
-        let jwsRoot = try fixture("generated", "jws-root.der")
+    /// The positive proof that the anchor set is exactly the configured one:
+    /// the same bytes are accepted under the anchor that signed them and
+    /// refused under every other, Apple's own roots included. Nothing about
+    /// the material changes between the two halves — only the configuration.
+    func testAVerdictFollowsTheConfiguredRootsAndNothingElse() throws {
+        let receipt = standardBase64Encode(try TestFixtures.bytes(TestFixtures.receipt))
+        let accepted = try TestFixtures.verifier(roots: [TestFixtures.receiptRoot]).verifyReceipt(base64: receipt)
+        XCTAssertEqual(accepted.payload?.bundleId, "com.example.app")
 
-        let accepted = try await ReceiptVerifier.verifyCore(
-            receipt: receipt, trustedRoots: [receiptRoot])
-        XCTAssertEqual("com.example.app", accepted.bundleId)
-
-        // Explicit types throughout: Swift 6.1 (the CI floor) infers less from
-        // these literals than 6.3 does.
-        let wrongAnchorSets: [[Data]] = [[jwsRoot], appleReceiptRoots()]
-        for anchors in wrongAnchorSets {
-            await assertInvalidChain {
-                try await ReceiptVerifier.verifyCore(receipt: receipt, trustedRoots: anchors)
-            }
+        let wrongAnchors: [ApplePurchaseReceiptVerifier.Verifier] = [
+            try TestFixtures.verifier(roots: [TestFixtures.jwsRoot]),
+            ApplePurchaseReceiptVerifier.Verifier(config: .defaults()),
+        ]
+        for verifier in wrongAnchors {
+            XCTAssertEqual(verifier.verifyReceipt(base64: receipt).failure?.reason, .untrustedChain)
         }
 
-        // The same on the JWS path, which builds its own CertificateStore.
-        let (leaf, intermediate) = try Self.chainOf(try text("generated", "transaction.jws"))
-        let signedAt = Date(timeIntervalSince1970: 1_722_945_600)  // manifest.json
-        let jwsRootCert = try Certificate(derEncoded: [UInt8](jwsRoot))
-        let receiptRootCert = try Certificate(derEncoded: [UInt8](receiptRoot))
-        try await JwsVerifier.validateChain(
-            leaf: leaf, intermediate: intermediate, roots: [jwsRootCert], at: signedAt)
-
-        let appleRoots: [Certificate] = try appleJwsRoots().map {
-            try Certificate(derEncoded: [UInt8]($0))
-        }
-        let wrongChainAnchors: [[Certificate]] = [appleRoots, [receiptRootCert]]
-        for anchors in wrongChainAnchors {
-            await assertInvalidChain {
-                try await JwsVerifier.validateChain(
-                    leaf: leaf, intermediate: intermediate, roots: anchors, at: signedAt)
-            }
+        // The same on the JWS path, down to the pair check itself.
+        let jws = try TestFixtures.text(TestFixtures.jws)
+        XCTAssertTrue(try TestFixtures.verifier(roots: [TestFixtures.jwsRoot]).verifySignedData(jws: jws).verified)
+        let (leaf, intermediate) = try Self.chainOf(jws)
+        let signedAt: Int64 = 1_722_945_600_000  // generated/manifest.json
+        let jwsRoot = try Certificate(derEncoded: try TestFixtures.bytes(TestFixtures.jwsRoot))
+        XCTAssertNoThrow(try validatePair(leaf: leaf, intermediate: intermediate, anchors: [jwsRoot], atMillis: signedAt))
+        let receiptRoot = try Certificate(derEncoded: try TestFixtures.bytes(TestFixtures.receiptRoot))
+        for anchors in [Config.defaults().roots, [receiptRoot]] {
+            XCTAssertThrowsError(
+                try validatePair(leaf: leaf, intermediate: intermediate, anchors: anchors, atMillis: signedAt)
+            ) { XCTAssertEqual(($0 as? Failure)?.reason, .untrustedChain) }
         }
     }
 
-    /// This machine's entire trust store, handed to the library as its anchor
-    /// set: 100-odd certificate authorities that every TLS client on the host
+    /// This machine's entire trust store, handed to the library as its roots:
+    /// 100-odd certificate authorities that every TLS client on the host
     /// accepts, and they verify nothing here, because they issued nothing
     /// here. The complement of the pinning test — and the assertion that would
     /// start failing the day the bundled Apple roots were sourced from the
     /// host rather than from `Sources/.../certs`.
-    func testThisMachinesOwnTrustRootsConferNoStanding() async throws {
+    func testThisMachinesOwnTrustRootsConferNoStanding() throws {
         let hostRoots = Self.systemTrustRootDERs()
         try XCTSkipIf(hostRoots.isEmpty, "no CA bundle on this host to read real public roots from")
         XCTAssertGreaterThan(hostRoots.count, 1)
 
-        let bundled = appleReceiptRoots()
+        let bundled = Config.defaults().roots
         for root in hostRoots {
             XCTAssertFalse(
-                bundled.contains(root),
+                bundled.contains(try Certificate(derEncoded: root)),
                 "a root from this host's trust store is among the bundled Apple anchors")
         }
 
         // The premise: genuinely Apple-signed material that this library does
         // accept, so the refusals below are about the anchors and not about
         // the receipt.
-        let genuine = try XCTUnwrap(
-            Data(
-                base64Encoded: try text("public-receipts", "receipt-sandbox-g5.b64"),
-                options: [.ignoreUnknownCharacters]))
-        _ = try await ReceiptVerifier.verifyCore(
-            receipt: genuine, trustedRoots: appleReceiptRoots())
+        let genuine = try TestFixtures.text("public-receipts/receipt-sandbox-g5.b64")
+        XCTAssertTrue(ApplePurchaseReceiptVerifier.Verifier(config: .defaults()).verifyReceipt(base64: genuine).verified)
 
         // And the conclusion, on genuine and on fixture material alike.
-        let refused: [Data] = [genuine, try fixture("generated", "receipt.der")]
-        for receipt in refused {
-            await assertInvalidChain {
-                try await ReceiptVerifier.verifyCore(receipt: receipt, trustedRoots: hostRoots)
-            }
+        let hostVerifier = ApplePurchaseReceiptVerifier.Verifier(
+            config: try Config.builder().roots(hostRoots).build())
+        for receipt in [genuine, standardBase64Encode(try TestFixtures.bytes(TestFixtures.receipt))] {
+            XCTAssertEqual(hostVerifier.verifyReceipt(base64: receipt).failure?.reason, .untrustedChain)
         }
     }
 
@@ -160,22 +146,24 @@ final class TrustStoreIsolationTests: XCTestCase {
     /// aimed squarely at the swift-specific mistake: prove that
     /// swift-certificates' system trust store is loaded and *effective in this
     /// very process* — a certificate validates through it — and then show that
-    /// with an empty pinned set this library trusts nothing at all. A library
-    /// that had folded the system store in, by using
+    /// with no pinned roots at all this library trusts nothing. A library that
+    /// had folded the system store in, by using
     /// `CertificateStore.systemTrustRoots` or by appending to it, would accept
     /// something here; there is no ambient set to fall back on.
+    ///
+    /// `ConfigBuilder.build()` refuses an empty root set, so the empty set is
+    /// handed to the internal verify functions the `Verifier` wraps.
     func testTheSystemTrustStoreIsLiveInThisProcessAndStillUnreachable() async throws {
         let hostRoots = Self.systemTrustRootDERs()
         try XCTSkipIf(hostRoots.isEmpty, "no CA bundle on this host")
 
-        var systemVerifier = Verifier(rootCertificates: CertificateStore.systemTrustRoots) {
+        var systemVerifier = X509.Verifier(rootCertificates: CertificateStore.systemTrustRoots) {
             RFC5280Policy()
         }
         var reachedThroughTheSystemStore = false
         for der in hostRoots {
-            guard let root = try? Certificate(derEncoded: [UInt8](der)) else { continue }
-            let result = await systemVerifier.validate(
-                leaf: root, intermediates: CertificateStore())
+            guard let root = try? Certificate(derEncoded: der) else { continue }
+            let result = await systemVerifier.validate(leaf: root, intermediates: CertificateStore())
             if case .validCertificate = result {
                 reachedThroughTheSystemStore = true
                 break
@@ -188,61 +176,31 @@ final class TrustStoreIsolationTests: XCTestCase {
                 + "the system store is live cannot be established on this host")
 
         // The system store is live, populated and accepting chains. None of
-        // that reaches these two calls.
-        let receipt = try fixture("generated", "receipt.der")
-        await assertInvalidChain {
-            try await ReceiptVerifier.verifyCore(receipt: receipt, roots: [])
+        // that reaches these calls.
+        XCTAssertThrowsError(try Config.builder().roots([]).build(), "an empty root set is a startup error")
+        let receipt = standardBase64Encode(try TestFixtures.bytes(TestFixtures.receipt))
+        let genuine = try TestFixtures.text("public-receipts/receipt-sandbox-g5.b64")
+        for base64 in [receipt, genuine] {
+            XCTAssertEqual(
+                verifyReceipt(base64: base64, roots: [], clock: { 0 }).failure?.reason, .untrustedChain)
         }
-        let (leaf, intermediate) = try Self.chainOf(try text("generated", "transaction.jws"))
-        await assertInvalidChain {
-            try await JwsVerifier.validateChain(
-                leaf: leaf, intermediate: intermediate, roots: [],
-                at: Date(timeIntervalSince1970: 1_722_945_600))
-        }
+        let (leaf, intermediate) = try Self.chainOf(try TestFixtures.text(TestFixtures.jws))
+        XCTAssertThrowsError(
+            try validatePair(leaf: leaf, intermediate: intermediate, anchors: [], atMillis: 1_722_945_600_000)
+        ) { XCTAssertEqual(($0 as? Failure)?.reason, .untrustedChain) }
     }
 
     // MARK: - helpers
 
-    private func fixture(_ segments: String...) throws -> Data {
-        try Data(
-            contentsOf: segments.reduce(VerifierTests.fixturesDir) {
-                $0.appendingPathComponent($1)
-            })
-    }
-
-    private func text(_ segments: String...) throws -> String {
-        try String(
-            contentsOf: segments.reduce(VerifierTests.fixturesDir) {
-                $0.appendingPathComponent($1)
-            }, encoding: .utf8
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func assertInvalidChain<T>(
-        _ body: () async throws -> T, file: StaticString = #filePath, line: UInt = #line
-    ) async {
-        do {
-            _ = try await body()
-            XCTFail("expected INVALID_CHAIN but the material was accepted", file: file, line: line)
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidChain, error.description, file: file, line: line)
-        } catch {
-            XCTFail("expected VerificationError, got \(error)", file: file, line: line)
-        }
-    }
-
-    /// The leaf and intermediate out of a compact JWS's `x5c` header — the two
-    /// certificates `JwsVerifier.validateChain` judges.
-    private static func chainOf(_ jws: String) throws -> (Certificate, Certificate) {
+    /// The leaf and intermediate out of a compact JWS's `x5c` header, sliced
+    /// — the two certificates `validatePair` judges.
+    private static func chainOf(_ jws: String) throws -> (CertificateSlices, CertificateSlices) {
         let segments = jws.components(separatedBy: ".")
-        let headerData = try XCTUnwrap(base64URLDecode(segments[0]))
         let header = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: headerData) as? [String: Any])
+            try JSONSerialization.jsonObject(with: Data(XCTUnwrap(decodeBase64URLStrict(segments[0]))))
+                as? [String: Any])
         let x5c = try XCTUnwrap(header["x5c"] as? [String])
-        let leaf = try Certificate(derEncoded: [UInt8](try XCTUnwrap(Data(base64Encoded: x5c[0]))))
-        let intermediate = try Certificate(
-            derEncoded: [UInt8](try XCTUnwrap(Data(base64Encoded: x5c[1]))))
-        return (leaf, intermediate)
+        return (try sliceX5cCertificate(x5c[0]), try sliceX5cCertificate(x5c[1]))
     }
 
     /// The two paths swift-certificates itself reads for
@@ -258,15 +216,15 @@ final class TrustStoreIsolationTests: XCTestCase {
     /// Every root in this host's trust store as DER, or an empty list where no
     /// bundle exists. Entries this X.509 parser cannot read are dropped rather
     /// than failing the test: the point is the anchors, not the bundle.
-    private static func systemTrustRootDERs() -> [Data] {
+    private static func systemTrustRootDERs() -> [[UInt8]] {
         for path in systemTrustBundlePaths {
             guard let bundle = try? String(contentsOfFile: path, encoding: .utf8),
                 let documents = try? PEMDocument.parseMultiple(pemString: bundle)
             else { continue }
-            var roots: [Data] = []
+            var roots: [[UInt8]] = []
             for document in documents where document.discriminator == "CERTIFICATE" {
                 if (try? Certificate(derEncoded: document.derBytes)) != nil {
-                    roots.append(Data(document.derBytes))
+                    roots.append(document.derBytes)
                 }
             }
             if !roots.isEmpty { return roots }
@@ -284,17 +242,11 @@ final class TrustStoreIsolationTests: XCTestCase {
     }
 
     private static var packageManifest: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // ApplePurchaseReceiptVerifierTests
-            .deletingLastPathComponent()  // Tests
-            .deletingLastPathComponent()  // swift
-            .deletingLastPathComponent()  // project root
-            .appendingPathComponent("Package.swift")
+        TestFixtures.directory.deletingLastPathComponent().appendingPathComponent("Package.swift")
     }
 
     private static func sourceFiles() -> [URL] {
-        let enumerator = FileManager.default.enumerator(
-            at: sourcesDir, includingPropertiesForKeys: nil)
+        let enumerator = FileManager.default.enumerator(at: sourcesDir, includingPropertiesForKeys: nil)
         var files: [URL] = []
         while let url = enumerator?.nextObject() as? URL {
             if url.pathExtension == "swift" { files.append(url) }

@@ -40,10 +40,10 @@ so they are comparable between runs but not with the Rust port's.
 |---|---|---|
 | `parse-der` | `der.js`: `parse` on raw bytes, then `octetStringValue`, `tbsParts`, `hasExtension` | failures are `ParseError`, never `TypeError`/`RangeError` |
 | `parse-cms` | `cms.js`: `parseCms`, `findSignerCertIndex`, and the two signed-attribute readers | `parseCms` fails only as `VerificationError` |
-| `verify-receipt` | `verifyReceiptCore`: CMS, payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
-| `verify-receipt-base64` | `ReceiptVerifier.verify` on the string a client sends | failures are `VerificationError` |
-| `verify-transaction` | the three `JwsVerifier` entry points | a JWS `verifyRaw` accepts under the fixture root fails under Apple's roots |
-| `endpoint-json` | `VerifyReceiptEndpoint.verifyReceiptJson` on a request body | it never throws, and the answer is always JSON with a numeric `status` |
+| `verify-receipt` | `verifyReceipt` on raw DER re-encoded as canonical base64: CMS, payload, chain, signature | it never throws or answers `INTERNAL_ERROR`, and an accepted receipt fails against an unrelated anchor set |
+| `verify-receipt-base64` | `verifyReceipt` on the string a client sends | it never throws or answers `INTERNAL_ERROR` |
+| `verify-transaction` | `verifySignedData`: segments, JSON, `x5c`, chain, ES256 | it never throws or answers `INTERNAL_ERROR`, and a JWS accepted under the fixture root fails under Apple's roots |
+| `endpoint-json` | `verifyReceiptEndpoint` on a request body | it never throws, the answer is always JSON with a numeric `status`, and never 21009 |
 
 The anchor-set invariant is the one that lets a fuzzer find "accepts what it
 should not" rather than only crashes: without it, an input that verifies tells

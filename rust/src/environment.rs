@@ -1,71 +1,57 @@
-//! The four App Store environments, spelled as Apple's claims spell them.
+//! Apple's two environments, and the mapping from the strings Apple uses
+//! for them.
 
-use crate::error::ConfigError;
 use core::fmt;
 
-/// An App Store environment.
-///
-/// The spelling is Apple's: these are the exact strings that appear in a
-/// transaction's `environment` claim and an `AppTransaction`'s
-/// `receiptType` claim.
+/// Which of Apple's two `verifyReceipt` URLs a call imitates, and what a
+/// receipt's `receipt_type` or a JWS `environment` claim names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Environment {
     /// `Production`
     Production,
     /// `Sandbox`
     Sandbox,
-    /// `Xcode` — `StoreKit` Testing in Xcode; not Apple-signed.
-    Xcode,
-    /// `LocalTesting` — `StoreKit` Test in a simulator.
-    LocalTesting,
 }
 
 impl Environment {
-    /// The claim spelling.
+    /// Apple's spelling, as the endpoint response writes it.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Environment::Production => "Production",
             Environment::Sandbox => "Sandbox",
-            Environment::Xcode => "Xcode",
-            Environment::LocalTesting => "LocalTesting",
         }
     }
 
-    /// Every environment.
+    /// What a receipt's `receipt_type` means: `Production` and
+    /// `ProductionVPP` are [`Environment::Production`],
+    /// `ProductionSandbox` and `ProductionVPPSandbox` are
+    /// [`Environment::Sandbox`], anything else (`Xcode`, a missing value) is
+    /// `None`. It states what Apple's value means and decides nothing; the
+    /// endpoint routes 21007 and 21008 on the same rule.
     #[must_use]
-    pub const fn all() -> &'static [Environment] {
-        &[
-            Environment::Production,
-            Environment::Sandbox,
-            Environment::Xcode,
-            Environment::LocalTesting,
-        ]
+    pub fn from_receipt_type(receipt_type: Option<&str>) -> Option<Environment> {
+        match receipt_type? {
+            "Production" | "ProductionVPP" => Some(Environment::Production),
+            "ProductionSandbox" | "ProductionVPPSandbox" => Some(Environment::Sandbox),
+            _ => None,
+        }
     }
 
-    /// Parses a claim spelling, returning `None` for anything else.
+    /// What a JWS `environment` claim means: `Production` and `Sandbox`,
+    /// anything else `None`.
     #[must_use]
-    pub fn from_claim(claim: &str) -> Option<Environment> {
-        for environment in Environment::all() {
-            if environment.as_str() == claim {
-                return Some(*environment);
-            }
+    pub fn from_jws_environment(environment: Option<&str>) -> Option<Environment> {
+        match environment? {
+            "Production" => Some(Environment::Production),
+            "Sandbox" => Some(Environment::Sandbox),
+            _ => None,
         }
-        None
     }
 }
 
 impl fmt::Display for Environment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
-    }
-}
-
-impl core::str::FromStr for Environment {
-    type Err = ConfigError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Environment::from_claim(s)
-            .ok_or_else(|| ConfigError::new(format!("unknown environment: {s}")))
     }
 }

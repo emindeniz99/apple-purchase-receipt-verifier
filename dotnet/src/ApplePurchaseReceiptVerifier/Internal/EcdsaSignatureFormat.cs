@@ -13,7 +13,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// signature is already P1363 (RFC 7515) and is passed straight through; an
     /// X.509 certificate signature is DER <c>SEQUENCE { r, s }</c> and must be
     /// converted first. Getting this backwards is a silent
-    /// <c>INVALID_CHAIN</c> on every ECDSA-signed certificate.</para>
+    /// <c>UNTRUSTED_CHAIN</c> on every ECDSA-signed certificate.</para>
     /// <para>The <c>DSASignatureFormat</c> overloads that would do this exist
     /// only from net5.0, so the conversion is hand-written once and used on
     /// both target frameworks.</para>

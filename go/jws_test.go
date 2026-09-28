@@ -12,58 +12,41 @@ import (
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
 
-func jwsVerifierFor(t *testing.T, roots []*x509.Certificate, mutate func(*applereceipt.JWSVerifierOptions)) *applereceipt.JWSVerifier {
+func jwsHeaderFor(t *testing.T, pki jwsPKI) []byte {
 	t.Helper()
-	options := applereceipt.JWSVerifierOptions{
-		TrustedRoots: roots,
-		BundleID:     "com.example.app",
-		AcceptedEnvironments: []applereceipt.Environment{
-			applereceipt.EnvironmentSandbox, applereceipt.EnvironmentProduction,
-		},
+	chain := []string{
+		base64.StdEncoding.EncodeToString(pki.leaf.der),
+		base64.StdEncoding.EncodeToString(pki.intermediate.der),
+		base64.StdEncoding.EncodeToString(pki.root.der),
 	}
-	if mutate != nil {
-		mutate(&options)
-	}
-	verifier, err := applereceipt.NewJWSVerifier(options)
+	header, err := json.Marshal(map[string]any{"alg": "ES256", "x5c": chain})
 	if err != nil {
-		t.Fatalf("NewJWSVerifier: %v", err)
+		t.Fatal(err)
 	}
-	return verifier
+	return header
 }
 
-func transactionClaims() map[string]any {
-	return map[string]any{
-		"bundleId":      "com.example.app",
-		"environment":   "Sandbox",
-		"productId":     "com.example.app.pro",
-		"transactionId": "2000000000000001",
-		"quantity":      1,
-		"signedDate":    time.Now().UnixMilli(),
-	}
-}
-
-func TestSynthesizedTransactionVerifies(t *testing.T) {
+func TestSynthesizedJWSVerifies(t *testing.T) {
 	pki := newJWSPKI(t)
-	payload, err := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil).
-		VerifyTransaction(pki.sign(t, transactionClaims()))
+	payload, err := verifierFor(t, pki.anchorSlice()).VerifySignedData(pki.sign(t, transactionClaims()))
 	if err != nil {
-		t.Fatalf("a well-formed synthesized transaction must verify: %v", err)
+		t.Fatalf("a well-formed synthesized JWS must verify: %v", err)
 	}
-	if payload.BundleID != "com.example.app" || payload.ProductID != "com.example.app.pro" {
-		t.Fatalf("decoded claims are wrong: %+v", payload)
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(payload.JSON()), &decoded); err != nil {
+		t.Fatalf("payload.JSON() must be the exact signed JSON: %v", err)
 	}
-	if payload.Quantity == nil || *payload.Quantity != 1 {
-		t.Fatalf("quantity: %v", payload.Quantity)
+	if decoded["bundleId"] != "com.example.app" || decoded["productId"] != "com.example.app.pro" {
+		t.Fatalf("decoded claims are wrong: %+v", decoded)
 	}
-	// The escape hatch must carry every claim, modelled or not.
-	if payload.Claims["productId"] != "com.example.app.pro" {
-		t.Fatalf("Claims must carry the raw payload: %v", payload.Claims)
+	if payload.String() != payload.JSON() {
+		t.Fatal("String() must be JSON()")
 	}
 }
 
 func TestJWSShapeRejections(t *testing.T) {
 	pki := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
+	verifier := verifierFor(t, pki.anchorSlice())
 	good := pki.sign(t, transactionClaims())
 	parts := strings.Split(good, ".")
 
@@ -74,36 +57,27 @@ func TestJWSShapeRejections(t *testing.T) {
 		input string
 		want  applereceipt.Reason
 	}{
-		{"empty string", "", applereceipt.ReasonInvalidJWSFormat},
-		{"one segment", parts[0], applereceipt.ReasonInvalidJWSFormat},
-		{"two segments", parts[0] + "." + parts[1], applereceipt.ReasonInvalidJWSFormat},
-		{"four segments", good + ".extra", applereceipt.ReasonInvalidJWSFormat},
-		{"header is not JSON", "bm90anNvbg." + parts[1] + "." + parts[2], applereceipt.ReasonInvalidJWSFormat},
+		{"empty string", "", applereceipt.ReasonMalformed},
+		{"one segment", parts[0], applereceipt.ReasonMalformed},
+		{"two segments", parts[0] + "." + parts[1], applereceipt.ReasonMalformed},
+		{"four segments", good + ".extra", applereceipt.ReasonMalformed},
+		{"header is not canonical base64url", "!!!." + parts[1] + "." + parts[2], applereceipt.ReasonMalformed},
+		{"header is not JSON", "bm90anNvbg." + parts[1] + "." + parts[2], applereceipt.ReasonMalformed},
 		{
 			"header is a JSON array",
 			base64.RawURLEncoding.EncodeToString([]byte(`[1,2]`)) + "." + parts[1] + "." + parts[2],
-			applereceipt.ReasonInvalidJWSFormat,
-		},
-		{
-			"payload is a JSON array",
-			parts[0] + "." + base64.RawURLEncoding.EncodeToString([]byte(`["a"]`)) + "." + parts[2],
-			applereceipt.ReasonInvalidJWSFormat,
-		},
-		{
-			"payload is not JSON",
-			parts[0] + ".bm90anNvbg." + parts[2],
-			applereceipt.ReasonInvalidJWSFormat,
+			applereceipt.ReasonMalformed,
 		},
 		{
 			"a segment far above the input bound",
 			longSegment + "." + longSegment + "." + longSegment,
-			applereceipt.ReasonInvalidJWSFormat,
+			applereceipt.ReasonTooLarge,
 		},
 	}
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			_, err := verifier.VerifyTransaction(test.input)
+			_, err := verifier.VerifySignedData(test.input)
 			requireReason(t, err, test.want)
 		})
 	}
@@ -111,7 +85,7 @@ func TestJWSShapeRejections(t *testing.T) {
 
 func TestJWSHeaderRejections(t *testing.T) {
 	pki := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
+	verifier := verifierFor(t, pki.anchorSlice())
 	good := pki.sign(t, transactionClaims())
 	parts := strings.Split(good, ".")
 	chain := []string{
@@ -125,23 +99,23 @@ func TestJWSHeaderRejections(t *testing.T) {
 		header map[string]any
 		want   applereceipt.Reason
 	}{
-		{"alg none", map[string]any{"alg": "none", "x5c": chain}, applereceipt.ReasonInvalidJWSFormat},
-		{"alg RS256", map[string]any{"alg": "RS256", "x5c": chain}, applereceipt.ReasonInvalidJWSFormat},
-		{"alg ES384", map[string]any{"alg": "ES384", "x5c": chain}, applereceipt.ReasonInvalidJWSFormat},
-		{"alg missing", map[string]any{"x5c": chain}, applereceipt.ReasonInvalidJWSFormat},
-		{"alg is not a string", map[string]any{"alg": 256, "x5c": chain}, applereceipt.ReasonInvalidJWSFormat},
-		{"x5c missing", map[string]any{"alg": "ES256"}, applereceipt.ReasonInvalidJWSFormat},
-		{"x5c is not an array", map[string]any{"alg": "ES256", "x5c": chain[0]}, applereceipt.ReasonInvalidJWSFormat},
-		{"x5c of length 2", map[string]any{"alg": "ES256", "x5c": chain[:2]}, applereceipt.ReasonInvalidJWSFormat},
+		{"alg none", map[string]any{"alg": "none", "x5c": chain}, applereceipt.ReasonMalformed},
+		{"alg RS256", map[string]any{"alg": "RS256", "x5c": chain}, applereceipt.ReasonMalformed},
+		{"alg ES384", map[string]any{"alg": "ES384", "x5c": chain}, applereceipt.ReasonMalformed},
+		{"alg missing", map[string]any{"x5c": chain}, applereceipt.ReasonMalformed},
+		{"alg is not a string", map[string]any{"alg": 256, "x5c": chain}, applereceipt.ReasonMalformed},
+		{"x5c missing", map[string]any{"alg": "ES256"}, applereceipt.ReasonMalformed},
+		{"x5c is not an array", map[string]any{"alg": "ES256", "x5c": chain[0]}, applereceipt.ReasonMalformed},
+		{"x5c of length 2", map[string]any{"alg": "ES256", "x5c": chain[:2]}, applereceipt.ReasonMalformed},
 		{
 			"x5c of length 4",
 			map[string]any{"alg": "ES256", "x5c": append(append([]string{}, chain...), chain[0])},
-			applereceipt.ReasonInvalidJWSFormat,
+			applereceipt.ReasonMalformed,
 		},
 		{
 			"x5c entry is not a string",
 			map[string]any{"alg": "ES256", "x5c": []any{1, 2, 3}},
-			applereceipt.ReasonInvalidJWSFormat,
+			applereceipt.ReasonMalformed,
 		},
 		{
 			"x5c entry is base64 of garbage",
@@ -160,14 +134,14 @@ func TestJWSHeaderRejections(t *testing.T) {
 			// before a single certificate is decoded.
 			"x5c of length 200",
 			map[string]any{"alg": "ES256", "x5c": repeatStrings(chain[0], 200)},
-			applereceipt.ReasonInvalidJWSFormat,
+			applereceipt.ReasonMalformed,
 		},
 	}
 	for _, test := range headers {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			header := jsonSegment(t, test.header)
-			_, err := verifier.VerifyTransaction(header + "." + parts[1] + "." + parts[2])
+			_, err := verifier.VerifySignedData(header + "." + parts[1] + "." + parts[2])
 			requireReason(t, err, test.want)
 		})
 	}
@@ -183,7 +157,7 @@ func repeatStrings(value string, n int) []string {
 
 func TestJWSSignatureRejections(t *testing.T) {
 	pki := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
+	verifier := verifierFor(t, pki.anchorSlice())
 	good := pki.sign(t, transactionClaims())
 	parts := strings.Split(good, ".")
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
@@ -195,53 +169,93 @@ func TestJWSSignatureRejections(t *testing.T) {
 		tampered := jsonSegment(t, map[string]any{
 			"bundleId": "com.example.app", "environment": "Sandbox", "productId": "evil",
 		})
-		_, err := verifier.VerifyTransaction(parts[0] + "." + tampered + "." + parts[2])
+		_, err := verifier.VerifySignedData(parts[0] + "." + tampered + "." + parts[2])
 		requireReason(t, err, applereceipt.ReasonInvalidSignature)
 	})
 	t.Run("tampered signature", func(t *testing.T) {
 		flipped := append([]byte(nil), signature...)
 		flipped[0] ^= 0xff
-		_, err := verifier.VerifyTransaction(
+		_, err := verifier.VerifySignedData(
 			parts[0] + "." + parts[1] + "." + base64.RawURLEncoding.EncodeToString(flipped))
 		requireReason(t, err, applereceipt.ReasonInvalidSignature)
 	})
 	t.Run("63-byte signature", func(t *testing.T) {
-		_, err := verifier.VerifyTransaction(
+		_, err := verifier.VerifySignedData(
 			parts[0] + "." + parts[1] + "." + base64.RawURLEncoding.EncodeToString(signature[:63]))
 		requireReason(t, err, applereceipt.ReasonInvalidSignature)
 	})
 	t.Run("65-byte signature", func(t *testing.T) {
-		_, err := verifier.VerifyTransaction(
+		_, err := verifier.VerifySignedData(
 			parts[0] + "." + parts[1] + "." + base64.RawURLEncoding.EncodeToString(append(signature, 0)))
 		requireReason(t, err, applereceipt.ReasonInvalidSignature)
 	})
 	t.Run("all-zero signature (r = s = 0)", func(t *testing.T) {
-		_, err := verifier.VerifyTransaction(
+		_, err := verifier.VerifySignedData(
 			parts[0] + "." + parts[1] + "." + base64.RawURLEncoding.EncodeToString(make([]byte, 64)))
 		requireReason(t, err, applereceipt.ReasonInvalidSignature)
 	})
 	t.Run("empty signature segment", func(t *testing.T) {
-		_, err := verifier.VerifyTransaction(parts[0] + "." + parts[1] + ".")
+		_, err := verifier.VerifySignedData(parts[0] + "." + parts[1] + ".")
 		requireReason(t, err, applereceipt.ReasonInvalidSignature)
 	})
 }
 
-func TestJWSMarkerOIDsAreCheckedBeforeTheChain(t *testing.T) {
-	// A leaf with no marker OID must report INVALID_CERTIFICATE_PURPOSE
-	// even when the chain is otherwise perfect — and, more importantly,
-	// even when the chain is NOT (the roots here anchor nothing), because
-	// on the JWS path the OID check runs first.
-	root := issueCert(t, certSpec{commonName: "Root", isCA: true}, nil)
-	intermediate := issueCert(t, certSpec{
-		commonName: "WWDR", isCA: true, markerOIDs: []asn1.ObjectIdentifier{oidAppleWWDR},
-	}, root)
-	unmarkedLeaf := issueCert(t, certSpec{commonName: "Unmarked leaf"}, intermediate)
-	other := newJWSPKI(t)
+// Once the signature is genuinely valid and the chain genuinely reaches a
+// pinned root, an unparseable or non-object payload is UNREADABLE_PAYLOAD,
+// not a shape rejection: Apple's signature already vouches for the bytes.
+func TestPayloadNotAnObjectIsUnreadableOnceSignatureVerifies(t *testing.T) {
+	pki := newJWSPKI(t)
+	verifier := verifierFor(t, pki.anchorSlice())
+	header := jwsHeaderFor(t, pki)
 
-	jws := signJWS(t, unmarkedLeaf,
-		[][]byte{unmarkedLeaf.der, intermediate.der, root.der}, transactionClaims())
-	_, err := jwsVerifierFor(t, []*x509.Certificate{other.root.cert}, nil).VerifyTransaction(jws)
-	requireReason(t, err, applereceipt.ReasonInvalidCertificatePurpose)
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{"a JSON array", `[1,2,3]`},
+		{"not JSON at all", `not json`},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			jws := signRawJWS(t, pki.leaf, header, []byte(test.payload))
+			_, err := verifier.VerifySignedData(jws)
+			requireReason(t, err, applereceipt.ReasonUnreadablePayload)
+		})
+	}
+}
+
+// The chain is checked before the marker OIDs on both paths (owner,
+// 2026-09-27): a chain that does not reach a pinned root is
+// UNTRUSTED_CHAIN even when the leaf is also unmarked, and only once the
+// chain is trusted does an unmarked leaf report
+// INVALID_CERTIFICATE_PURPOSE.
+func TestJWSMarkerOIDsAreCheckedAfterTheChain(t *testing.T) {
+	t.Run("untrusted chain reports UNTRUSTED_CHAIN, not the marker", func(t *testing.T) {
+		root := issueCert(t, certSpec{commonName: "Root", isCA: true}, nil)
+		intermediate := issueCert(t, certSpec{
+			commonName: "WWDR", isCA: true, markerOIDs: []asn1.ObjectIdentifier{oidAppleWWDR},
+		}, root)
+		unmarkedLeaf := issueCert(t, certSpec{commonName: "Unmarked leaf"}, intermediate)
+		other := newJWSPKI(t)
+
+		jws := signJWS(t, unmarkedLeaf,
+			[][]byte{unmarkedLeaf.der, intermediate.der, root.der}, transactionClaims())
+		_, err := verifierFor(t, other.anchorSlice()).VerifySignedData(jws)
+		requireReason(t, err, applereceipt.ReasonUntrustedChain)
+	})
+	t.Run("trusted chain with an unmarked leaf reports the marker", func(t *testing.T) {
+		root := issueCert(t, certSpec{commonName: "Root", isCA: true}, nil)
+		intermediate := issueCert(t, certSpec{
+			commonName: "WWDR", isCA: true, markerOIDs: []asn1.ObjectIdentifier{oidAppleWWDR},
+		}, root)
+		unmarkedLeaf := issueCert(t, certSpec{commonName: "Unmarked leaf"}, intermediate)
+
+		jws := signJWS(t, unmarkedLeaf,
+			[][]byte{unmarkedLeaf.der, intermediate.der, root.der}, transactionClaims())
+		_, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws)
+		requireReason(t, err, applereceipt.ReasonInvalidCertificatePurpose)
+	})
 }
 
 func TestJWSIntermediateNeedsTheWWDRMarker(t *testing.T) {
@@ -251,211 +265,115 @@ func TestJWSIntermediateNeedsTheWWDRMarker(t *testing.T) {
 		commonName: "Leaf", markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
 	}, intermediate)
 	jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, transactionClaims())
-	_, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws)
+	_, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws)
 	requireReason(t, err, applereceipt.ReasonInvalidCertificatePurpose)
 }
 
 // x5c[2] is never trusted and never compared, so swapping in a stranger's
 // root must change nothing — but it must still BE a certificate. The two
 // halves are the whole of what the third entry means: identity irrelevant,
-// readability required (transaction/reject-x5c-root-that-is-not-a-certificate).
+// readability required.
 func TestThirdX5CEntryIsUntrustedButMustParse(t *testing.T) {
 	pki := newJWSPKI(t)
 	attacker := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
+	verifier := verifierFor(t, pki.anchorSlice())
 
 	swapped := signJWS(t, pki.leaf,
 		[][]byte{pki.leaf.der, pki.intermediate.der, attacker.root.der}, transactionClaims())
-	if _, err := verifier.VerifyTransaction(swapped); err != nil {
+	if _, err := verifier.VerifySignedData(swapped); err != nil {
 		t.Fatalf("x5c[2] is not a trust anchor; swapping it must change nothing: %v", err)
 	}
 	garbage := signJWS(t, pki.leaf,
 		[][]byte{pki.leaf.der, pki.intermediate.der, []byte("not a certificate")}, transactionClaims())
-	_, err := verifier.VerifyTransaction(garbage)
+	_, err := verifier.VerifySignedData(garbage)
 	requireReason(t, err, applereceipt.ReasonInvalidCertificate)
 }
 
-func TestClaimChecksRunInTheDocumentedOrder(t *testing.T) {
-	pki := newJWSPKI(t)
-	roots := []*x509.Certificate{pki.root.cert}
-
-	t.Run("bundle id is checked before environment", func(t *testing.T) {
-		// Both claims are wrong; the bundle id must be the one reported.
-		claims := transactionClaims()
-		claims["bundleId"] = "com.other.app"
-		claims["environment"] = "Xcode"
-		verifier := jwsVerifierFor(t, roots, func(o *applereceipt.JWSVerifierOptions) {
-			o.AcceptedEnvironments = []applereceipt.Environment{applereceipt.EnvironmentSandbox}
-		})
-		_, err := verifier.VerifyTransaction(pki.sign(t, claims))
-		requireReason(t, err, applereceipt.ReasonWrongBundleID)
-	})
-	t.Run("an unknown environment is rejected", func(t *testing.T) {
-		claims := transactionClaims()
-		claims["environment"] = "Martian"
-		_, err := jwsVerifierFor(t, roots, nil).VerifyTransaction(pki.sign(t, claims))
-		requireReason(t, err, applereceipt.ReasonWrongEnvironment)
-	})
-	t.Run("a missing environment claim is rejected", func(t *testing.T) {
-		claims := transactionClaims()
-		delete(claims, "environment")
-		_, err := jwsVerifierFor(t, roots, nil).VerifyTransaction(pki.sign(t, claims))
-		requireReason(t, err, applereceipt.ReasonWrongEnvironment)
-	})
-}
-
-func TestAppTransactionAppleIDBinding(t *testing.T) {
-	pki := newJWSPKI(t)
-	roots := []*x509.Certificate{pki.root.cert}
-	appAppleID := int64(123456789)
-
-	production := map[string]any{
-		"bundleId": "com.example.app", "receiptType": "Production",
-		"appAppleId": appAppleID, "applicationVersion": "1.2.3",
-	}
-
-	t.Run("production without a configured app Apple id", func(t *testing.T) {
-		verifier := jwsVerifierFor(t, roots, func(o *applereceipt.JWSVerifierOptions) {
-			o.AcceptedEnvironments = []applereceipt.Environment{applereceipt.EnvironmentProduction}
-		})
-		_, err := verifier.VerifyAppTransaction(pki.sign(t, production))
-		requireReason(t, err, applereceipt.ReasonWrongAppAppleID)
-	})
-	t.Run("production with a mismatched app Apple id", func(t *testing.T) {
-		other := int64(999)
-		verifier := jwsVerifierFor(t, roots, func(o *applereceipt.JWSVerifierOptions) {
-			o.AcceptedEnvironments = []applereceipt.Environment{applereceipt.EnvironmentProduction}
-			o.AppAppleID = &other
-		})
-		_, err := verifier.VerifyAppTransaction(pki.sign(t, production))
-		requireReason(t, err, applereceipt.ReasonWrongAppAppleID)
-	})
-	t.Run("production whose payload omits the claim", func(t *testing.T) {
-		claims := map[string]any{
-			"bundleId": "com.example.app", "receiptType": "Production",
-		}
-		verifier := jwsVerifierFor(t, roots, func(o *applereceipt.JWSVerifierOptions) {
-			o.AcceptedEnvironments = []applereceipt.Environment{applereceipt.EnvironmentProduction}
-			o.AppAppleID = &appAppleID
-		})
-		_, err := verifier.VerifyAppTransaction(pki.sign(t, claims))
-		requireReason(t, err, applereceipt.ReasonWrongAppAppleID)
-	})
-	t.Run("sandbox needs no app Apple id", func(t *testing.T) {
-		claims := map[string]any{"bundleId": "com.example.app", "receiptType": "Sandbox"}
-		verifier := jwsVerifierFor(t, roots, func(o *applereceipt.JWSVerifierOptions) {
-			o.AcceptedEnvironments = []applereceipt.Environment{applereceipt.EnvironmentSandbox}
-		})
-		if _, err := verifier.VerifyAppTransaction(pki.sign(t, claims)); err != nil {
-			t.Fatalf("the app Apple id binding is a Production rule only: %v", err)
-		}
-	})
-}
-
-func TestVerifyRawEnforcesNoClaims(t *testing.T) {
-	pki := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, func(o *applereceipt.JWSVerifierOptions) {
-		o.BundleID = "com.nothing.matches.this"
-		o.AcceptedEnvironments = []applereceipt.Environment{applereceipt.EnvironmentLocalTesting}
-	})
-	claims, err := verifier.VerifyRaw(pki.sign(t, map[string]any{
-		"notificationType": "TEST", "bundleId": "com.example.app", "environment": "Sandbox",
-	}))
-	if err != nil {
-		t.Fatalf("VerifyRaw enforces no claim: %v", err)
-	}
-	if claims["notificationType"] != "TEST" {
-		t.Fatalf("every claim must come back: %v", claims)
-	}
-}
-
-// VerifyRaw skips the claim checks but never the signature.
-func TestVerifyRawStillChecksTheSignature(t *testing.T) {
-	pki := newJWSPKI(t)
-	other := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, []*x509.Certificate{other.root.cert}, nil)
-	_, err := verifier.VerifyRaw(pki.sign(t, transactionClaims()))
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
-}
-
-// A JSON number is a value, not a spelling. json.Number.Int64 parses the
-// literal, so `1722945600000.0` and `1.7229456e12` were refused while the
-// bare integer was accepted -- and refusing them was not a rejection but a
-// silence: signedDate read as absent moved certificate validity onto the
-// current-time fallback, and expiresDate read as absent left a lapsed
-// subscription entitled forever. php/tests/JsonNumberClaimTest.php pins the
-// same three spellings; node, java, python and swift all read the value.
-func TestEverySpellingOfADateClaimIsRead(t *testing.T) {
-	pki := newJWSPKI(t)
+// A JSON number is a value, not a spelling: signedDate steers which
+// instant the chain is judged valid at, so all three spellings must be
+// read the same way. php/tests/JsonNumberClaimTest.php pins the same
+// three spellings; every port reads the value.
+func TestEverySpellingOfASignedDateIsRead(t *testing.T) {
 	const signedAt int64 = 1722945600000 // 2024-08-06T12:00:00Z
+	past := time.UnixMilli(signedAt).Add(-time.Hour)
+	root := issueCert(t, certSpec{
+		commonName: "Old Root", isCA: true, notBefore: past, notAfter: past.Add(48 * time.Hour),
+	}, nil)
+	intermediate := issueCert(t, certSpec{
+		commonName: "Old WWDR", isCA: true, markerOIDs: []asn1.ObjectIdentifier{oidAppleWWDR},
+		notBefore: past, notAfter: past.Add(48 * time.Hour),
+	}, root)
+	leaf := issueCert(t, certSpec{
+		commonName: "Old Leaf", markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
+		notBefore: past, notAfter: past.Add(48 * time.Hour),
+	}, intermediate)
+	verifier := verifierFor(t, []*x509.Certificate{root.cert})
+
 	for _, spelling := range []string{"1722945600000", "1722945600000.0", "1.7229456e12"} {
-		claims := transactionClaims()
-		claims["signedDate"] = json.Number(spelling)
-		claims["expiresDate"] = json.Number(spelling)
-		verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
-		payload, err := verifier.VerifyTransaction(pki.sign(t, claims))
+		payload := []byte(`{"bundleId":"com.example.app","signedDate":` + spelling + `}`)
+		header, err := json.Marshal(map[string]any{
+			"alg": "ES256",
+			"x5c": []string{
+				base64.StdEncoding.EncodeToString(leaf.der),
+				base64.StdEncoding.EncodeToString(intermediate.der),
+				base64.StdEncoding.EncodeToString(root.der),
+			},
+		})
 		if err != nil {
-			t.Fatalf("signedDate spelled %s: %v", spelling, err)
+			t.Fatal(err)
 		}
-		if payload.SignedDate == nil || *payload.SignedDate != signedAt {
-			t.Fatalf("signedDate spelled %s read as %v", spelling, payload.SignedDate)
-		}
-		if payload.ExpiresDate == nil || *payload.ExpiresDate != signedAt {
-			t.Fatalf("expiresDate spelled %s read as %v", spelling, payload.ExpiresDate)
+		jws := signRawJWS(t, leaf, header, payload)
+		if _, err := verifier.VerifySignedData(jws); err != nil {
+			t.Fatalf("signedDate spelled %s: the chain is only valid at that instant: %v", spelling, err)
 		}
 	}
 }
 
-// The other half: a number that names no instant an int64 can hold is not a
-// date whatever its spelling, and it is a chain failure rather than a silence
-// -- reporting it absent would let an attacker choose the instant the
-// certificate windows are judged at.
-func TestADateClaimOutsideTheInt64RangeIsAChainFailure(t *testing.T) {
+// A signedDate no int64 can hold (1e300) counts as not stated, the same
+// treatment absence gets: the clock stands in for it (owner, 2026-09-27),
+// rather than failing the chain outright. The chain here is valid now and
+// would still be, whatever a representable signedDate said; the point is
+// only that an unrepresentable one does not itself cause a failure.
+func TestUnrepresentableSignedDateFallsBackToTheClock(t *testing.T) {
 	pki := newJWSPKI(t)
+	verifier := verifierFor(t, pki.anchorSlice())
 	for _, spelling := range []string{"1e300", "-1e300", "123456789012345678901234567890"} {
 		claims := transactionClaims()
 		claims["signedDate"] = json.Number(spelling)
-		verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
-		_, err := verifier.VerifyTransaction(pki.sign(t, claims))
-		requireReason(t, err, applereceipt.ReasonInvalidChain)
+		if _, err := verifier.VerifySignedData(pki.sign(t, claims)); err != nil {
+			t.Fatalf("signedDate spelled %s must fall back to the clock, not fail: %v", spelling, err)
+		}
 	}
 }
 
-// A modelled claim of the wrong JSON type is INTERNAL_ERROR, not a silent
-// zero value: Apple signed it, so it is not the client's fault, and reading
-// it as absent would drop a quantity or an expiry on the floor. The shared
-// cases pin strings, objects and 1.5; these are the Go-specific edges.
-func TestModelledClaimOfTheWrongTypeIsAnInternalError(t *testing.T) {
-	pki := newJWSPKI(t)
-	verifier := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil)
-	for name, value := range map[string]any{
-		"a boolean":                 true,
-		"a whole number past int64": json.Number("1e19"),
-		"an array":                  []any{1},
-	} {
-		claims := transactionClaims()
-		claims["quantity"] = value
-		_, err := verifier.VerifyTransaction(pki.sign(t, claims))
-		requireReason(t, err, applereceipt.ReasonInternalError)
-		if !strings.Contains(err.Error(), "quantity") {
-			t.Fatalf("%s: the detail must name the claim: %v", name, err)
-		}
-		// VerifyRaw has no model and stays untyped.
-		if _, err := verifier.VerifyRaw(pki.sign(t, claims)); err != nil {
-			t.Fatalf("%s: VerifyRaw must not type the claims: %v", name, err)
-		}
-	}
+// The contrasting case: a signedDate that IS representable is used
+// literally, even when it names an instant outside the chain's validity
+// window and the clock ("now") would have let the chain through.
+func TestSignedDateOutsideTheChainWindowIsAChainFailure(t *testing.T) {
+	now := time.Now()
+	root := issueCert(t, certSpec{
+		commonName: "Root", isCA: true, notBefore: now.Add(-time.Hour), notAfter: now.Add(time.Hour),
+	}, nil)
+	intermediate := issueCert(t, certSpec{
+		commonName: "WWDR", isCA: true, markerOIDs: []asn1.ObjectIdentifier{oidAppleWWDR},
+		notBefore: now.Add(-time.Hour), notAfter: now.Add(time.Hour),
+	}, root)
+	leaf := issueCert(t, certSpec{
+		commonName: "Leaf", markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
+		notBefore: now.Add(-time.Hour), notAfter: now.Add(time.Hour),
+	}, intermediate)
 
-	claims := transactionClaims()
-	claims["quantity"] = json.Number("2.0")
-	payload, err := verifier.VerifyTransaction(pki.sign(t, claims))
-	if err != nil || payload.Quantity == nil || *payload.Quantity != 2 {
-		t.Fatalf("2.0 is a whole number and must read as 2: %v %v", payload, err)
+	claims := map[string]any{
+		"bundleId": "com.example.app", "environment": "Sandbox",
+		"signedDate": now.Add(-100 * 365 * 24 * time.Hour).UnixMilli(),
 	}
+	jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, claims)
+	_, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws)
+	requireReason(t, err, applereceipt.ReasonInvalidCertificate)
 }
 
 // A payload stating no date of its own is judged at the system clock, so
-// a chain that has since expired is INVALID_CHAIN.
+// a chain that has since expired is INVALID_CERTIFICATE.
 func TestDatelessPayloadIsJudgedAtTheSystemClock(t *testing.T) {
 	past := time.Now().Add(-10 * 365 * 24 * time.Hour)
 	root := issueCert(t, certSpec{
@@ -476,8 +394,8 @@ func TestDatelessPayloadIsJudgedAtTheSystemClock(t *testing.T) {
 	claims := map[string]any{"bundleId": "com.example.app", "environment": "Sandbox"}
 	jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, claims)
 
-	_, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws)
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
+	_, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws)
+	requireReason(t, err, applereceipt.ReasonInvalidCertificate)
 }
 
 func TestHistoricalPayloadUnderAnExpiredChainStillVerifies(t *testing.T) {
@@ -498,82 +416,25 @@ func TestHistoricalPayloadUnderAnExpiredChainStillVerifies(t *testing.T) {
 	claims["signedDate"] = past.Add(time.Hour).UnixMilli()
 	jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, claims)
 
-	if _, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws); err != nil {
+	if _, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws); err != nil {
 		t.Fatalf("a payload signed while the chain was valid must still verify: %v", err)
 	}
 }
 
-// Apple ships date claims as epoch milliseconds and this port keeps them
-// that way, contractually: a native date type would lose the raw claim.
-func TestJWSDateClaimsStayEpochMilliseconds(t *testing.T) {
+// The payload is returned exactly as signed: large integers and their
+// exact digits survive, because there is no typed model reading them
+// through a float on the way out.
+func TestPayloadJSONIsPassedThroughVerbatim(t *testing.T) {
 	pki := newJWSPKI(t)
 	claims := transactionClaims()
-	claims["expiresDate"] = int64(1893456000000)
-	claims["revocationDate"] = int64(1893456000001)
-	payload, err := jwsVerifierFor(t, []*x509.Certificate{pki.root.cert}, nil).
-		VerifyTransaction(pki.sign(t, claims))
+	claims["transactionId"] = "2000000000000001"
+	claims["webOrderLineItemId"] = json.Number("9223372036854775807")
+	payload, err := verifierFor(t, pki.anchorSlice()).VerifySignedData(pki.sign(t, claims))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if payload.ExpiresDate == nil || *payload.ExpiresDate != 1893456000000 {
-		t.Fatalf("expiresDate: %v", payload.ExpiresDate)
-	}
-	if payload.RevocationDate == nil || *payload.RevocationDate != 1893456000001 {
-		t.Fatalf("revocationDate: %v", payload.RevocationDate)
-	}
-	// A JSON round-trip keeps them integers too.
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(encoded), `"expiresDate":1893456000000`) {
-		t.Fatalf("marshalled payload: %s", encoded)
-	}
-}
-
-func TestConstructorRejectsMisconfiguration(t *testing.T) {
-	pki := newJWSPKI(t)
-	roots := []*x509.Certificate{pki.root.cert}
-
-	tests := []struct {
-		name    string
-		options applereceipt.JWSVerifierOptions
-	}{
-		{"no trust anchors", applereceipt.JWSVerifierOptions{
-			BundleID: "x", AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-		}},
-		{"a nil certificate among the anchors", applereceipt.JWSVerifierOptions{
-			TrustedRoots: []*x509.Certificate{nil}, BundleID: "x",
-			AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-		}},
-		{"empty bundle id", applereceipt.JWSVerifierOptions{
-			TrustedRoots:         roots,
-			AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-		}},
-		{"empty accept set", applereceipt.JWSVerifierOptions{
-			TrustedRoots: roots, BundleID: "x",
-		}},
-		{"unknown environment in the accept set", applereceipt.JWSVerifierOptions{
-			TrustedRoots: roots, BundleID: "x",
-			AcceptedEnvironments: []applereceipt.Environment{"Martian"},
-		}},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			verifier, err := applereceipt.NewJWSVerifier(test.options)
-			if err == nil {
-				t.Fatal("expected a configuration error")
-			}
-			if verifier != nil {
-				t.Fatal("a failed constructor must not return a verifier")
-			}
-			// Misconfiguration is a programming bug, not a verdict about
-			// a receipt: a caller switching on Reason must never see it.
-			if _, ok := applereceipt.ReasonOf(err); ok {
-				t.Fatalf("misconfiguration must not carry a Reason: %v", err)
-			}
-		})
+	if !strings.Contains(payload.JSON(), `"webOrderLineItemId":9223372036854775807`) {
+		t.Fatalf("exact digits were not preserved: %s", payload.JSON())
 	}
 }
 
@@ -583,9 +444,9 @@ func TestTrustAnchorsAreCopiedAtConstruction(t *testing.T) {
 	pki := newJWSPKI(t)
 	attacker := newJWSPKI(t)
 	roots := []*x509.Certificate{pki.root.cert}
-	verifier := jwsVerifierFor(t, roots, nil)
+	verifier := verifierFor(t, roots)
 	roots[0] = attacker.root.cert
-	if _, err := verifier.VerifyTransaction(pki.sign(t, transactionClaims())); err != nil {
+	if _, err := verifier.VerifySignedData(pki.sign(t, transactionClaims())); err != nil {
 		t.Fatalf("the verifier must hold its own copy of the anchors: %v", err)
 	}
 }

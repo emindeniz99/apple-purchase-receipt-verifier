@@ -1,16 +1,9 @@
-// Runtime-portability smoke: the same three checks every non-Node JavaScript
+// Runtime-portability smoke: the same checks every non-Node JavaScript
 // runtime must pass (Bun, Deno, Cloudflare workerd). Pure: no filesystem
 // access, so the same module runs where `node:fs` does not exist. Fixture
 // bytes come in from the runner (node-like.mjs reads files, worker.mjs gets
 // them embedded by workerd.capnp).
-import {
-  JwsVerifier,
-  ReceiptVerifier,
-  VerificationError,
-  appleReceiptRoots,
-} from '../dist/index.js';
-
-const BUNDLE = 'com.example.app';
+import { createConfig, createVerifier, defaultConfig } from '../dist/index.js';
 
 /**
  * @param {{ appleRootDer: Uint8Array, sandboxReceiptB64: string,
@@ -21,44 +14,38 @@ const BUNDLE = 'com.example.app';
 export function run(fx) {
   const out = [];
 
-  // appleReceiptRoots() must not touch the filesystem: the roots are
-  // inlined at build time so a bundled runtime can call it.
-  const builtin = new ReceiptVerifier({
-    trustedRoots: appleReceiptRoots(),
-    bundleId: 'dev.bonzer.weeka.app',
-  });
-  if (builtin.verify(fx.sandboxReceiptB64.trim()).receiptType !== 'ProductionSandbox') {
-    throw new Error('builtin roots did not verify the genuine receipt');
+  // defaultConfig() must not touch the filesystem: the roots are inlined
+  // at build time so a bundled runtime can call it.
+  const builtin = createVerifier(defaultConfig());
+  const builtinResult = builtin.verifyReceipt(fx.sandboxReceiptB64.trim());
+  if (!builtinResult.verified || builtinResult.payload.receiptType !== 'ProductionSandbox') {
+    throw new Error('the bundled roots did not verify the genuine receipt');
   }
-  out.push('appleReceiptRoots() works without a filesystem');
+  out.push('defaultConfig() works without a filesystem');
 
-  const receipts = new ReceiptVerifier({
-    trustedRoots: [fx.appleRootDer],
-    bundleId: 'dev.bonzer.weeka.app',
-  });
-  const receipt = receipts.verify(fx.sandboxReceiptB64.trim());
-  if (receipt.receiptType !== 'ProductionSandbox')
-    throw new Error(`receiptType ${receipt.receiptType}`);
+  const receipts = createVerifier(createConfig({ roots: [fx.appleRootDer] }));
+  const receiptResult = receipts.verifyReceipt(fx.sandboxReceiptB64.trim());
+  if (!receiptResult.verified || receiptResult.payload.receiptType !== 'ProductionSandbox') {
+    throw new Error(`receiptType ${receiptResult.payload?.receiptType}`);
+  }
   out.push('genuine sandbox receipt verifies against the real Apple root');
 
-  const jws = new JwsVerifier({
-    trustedRoots: [fx.jwsRootDer],
-    bundleId: BUNDLE,
-    acceptedEnvironments: ['Sandbox'],
-  });
-  const tx = jws.verifyTransaction(fx.transactionJws.trim());
-  if (tx.transactionId !== '2000000000000001') throw new Error(`transactionId ${tx.transactionId}`);
+  const jws = createVerifier(createConfig({ roots: [fx.jwsRootDer] }));
+  const tx = jws.verifySignedData(fx.transactionJws.trim());
+  if (!tx.verified) {
+    throw new Error(`shared JWS transaction fixture failed: ${tx.failure.reason}`);
+  }
+  const claims = JSON.parse(tx.payload.json);
+  if (claims.transactionId !== '2000000000000001') {
+    throw new Error(`transactionId ${claims.transactionId}`);
+  }
   out.push('shared JWS transaction fixture verifies');
 
-  let reason = 'none';
-  try {
-    receipts.verify(fx.foreignReceiptDer);
-  } catch (e) {
-    if (!(e instanceof VerificationError)) throw e;
-    reason = e.reason;
+  const foreign = receipts.verifyReceipt(fx.foreignReceiptDer.toString('base64'));
+  if (foreign.verified || foreign.failure.reason !== 'UNTRUSTED_CHAIN') {
+    throw new Error(`foreign receipt reason ${foreign.verified ? 'none' : foreign.failure.reason}`);
   }
-  if (reason !== 'INVALID_CHAIN') throw new Error(`foreign receipt reason ${reason}`);
-  out.push('foreign receipt fails with INVALID_CHAIN');
+  out.push('foreign receipt fails with UNTRUSTED_CHAIN');
 
   return out;
 }

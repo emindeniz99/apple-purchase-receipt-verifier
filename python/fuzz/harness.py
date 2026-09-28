@@ -34,72 +34,78 @@ def _fixture(*segments: str) -> bytes:
 
 
 with atheris.instrument_imports():
-    from apple_purchase_receipt_verifier import (
-        JwsVerifier,
-        ReceiptVerifier,
-        VerificationError,
-        VerifyReceiptEndpoint,
-        apple_jws_roots,
-        apple_receipt_roots,
-        verify_receipt_core,
-    )
-    from apple_purchase_receipt_verifier.receipt import _parse_payload
+    from apple_purchase_receipt_verifier import Config, Environment, Verifier
+    from apple_purchase_receipt_verifier._errors import VerificationError
+    from apple_purchase_receipt_verifier.receipt import _parse_payload, verify_receipt_der
+    from apple_purchase_receipt_verifier.receipt import _PayloadFormatError as PayloadFormatError
     from cryptography import x509
 
-#: The receipt anchor set: the pinned Apple roots plus the generated fixture
-#: root, so both the shared fixture receipts and the two public Apple receipts
-#: get past the chain check and the fuzzer can explore what lies beyond it.
-#: Parsed once — re-reading the DER on every execution would cost more than
-#: the code under test.
+#: The receipt anchor set: the pinned Apple roots plus the generated 0.7
+#: fixture root, so both the shared fixture receipt and the two public Apple
+#: receipts get past the chain check and the fuzzer can explore what lies
+#: beyond it. Parsed once: re-reading the DER on every execution would cost
+#: more than the code under test.
 RECEIPT_ANCHORS = [
-    *apple_receipt_roots(),
-    x509.load_der_x509_certificate(_fixture("generated", "receipt-root.der")),
+    *Config.defaults().roots,
+    x509.load_der_x509_certificate(_fixture("generated-0.7", "receipt-root.der")),
 ]
 
-#: The unrelated anchor set the accept-invariant re-runs against: the fixture
-#: *JWS* root, which certified nothing in the receipt world.
+#: The unrelated anchor set the accept-invariant re-runs against: the
+#: fixture *JWS* root, which certified nothing in the receipt world.
 UNRELATED_ANCHORS = [x509.load_der_x509_certificate(_fixture("generated", "jws-root.der"))]
 
-#: The bundle id the generated receipt fixtures carry.
-BUNDLE_ID = "com.example.app"
-
-#: ``ReceiptVerifier.verify`` on a string — the form a client actually sends.
-RECEIPT_VERIFIER = ReceiptVerifier(RECEIPT_ANCHORS, BUNDLE_ID)
+#: ``Verifier.verify_receipt`` on a string (the form a client actually sends).
+RECEIPT_VERIFIER = Verifier(Config.create(roots=RECEIPT_ANCHORS))
 
 #: Anchored on the fixture JWS root, so the generated ``.jws`` fixtures verify.
-JWS_VERIFIER = JwsVerifier(UNRELATED_ANCHORS, BUNDLE_ID, ["Sandbox"])
+JWS_VERIFIER = Verifier(Config.create(roots=UNRELATED_ANCHORS))
 
-#: The same verifier anchored on Apple's production roots — the unrelated set
-#: for the JWS accept-invariant.
-APPLE_JWS_VERIFIER = JwsVerifier(apple_jws_roots(), BUNDLE_ID, ["Sandbox"])
+#: The same shape of verifier anchored on Apple's production roots: the
+#: unrelated set for the JWS accept-invariant.
+APPLE_JWS_VERIFIER = Verifier(Config.defaults())
 
-#: One environment's worth of verifyReceipt emulation.
-ENDPOINT = VerifyReceiptEndpoint(RECEIPT_ANCHORS, "Sandbox")
+#: One environment's worth of verifyReceipt emulation, and the environment
+#: `endpoint_json.py` renders it for.
+ENDPOINT_VERIFIER = RECEIPT_VERIFIER
+ENDPOINT_ENVIRONMENT = Environment.SANDBOX
 
 #: The hand-written receipt-attribute reader, re-exported under a name that
 #: says what it is. It walks the payload SET, decodes UTF8String/IA5String
 #: values and parses the RFC 3339 dates, all on bytes that have not been
 #: authenticated yet — so it gets a target of its own rather than only being
-#: reached through the CMS path.
+#: reached through the CMS path. It raises ``PayloadFormatError`` for a
+#: structural defect (module-internal, distinct from the public
+#: ``VerificationError`` the wrapping entry points raise).
 parse_receipt_payload = _parse_payload
 
-#: What a target may import. ``verify_receipt_core`` is re-exported rather
+
+def receipt_der(der: bytes, roots: "list[x509.Certificate]") -> Any:
+    """``verify_receipt_der`` (module-internal: the public API takes only a
+    base64 string) with a fixed clock, so the DER path is fuzzed directly
+    without base64 diluting coverage."""
+    return verify_receipt_der(der, roots, lambda: 1767225600000)
+
+
+#: What a target may import. ``Config``/``Verifier`` are re-exported rather
 #: than imported directly by the targets for the reason in the module
 #: docstring: the package must be loaded under the instrumentation block.
 __all__ = [
     "APPLE_JWS_VERIFIER",
-    "BUNDLE_ID",
-    "ENDPOINT",
+    "ENDPOINT_ENVIRONMENT",
+    "ENDPOINT_VERIFIER",
     "JWS_VERIFIER",
     "RECEIPT_ANCHORS",
     "RECEIPT_VERIFIER",
     "UNRELATED_ANCHORS",
     "InvariantViolation",
+    "PayloadFormatError",
+    "VerificationError",
     "as_text",
     "parse_receipt_payload",
+    "receipt_der",
+    "require_no_exception",
     "require_verification_error",
     "run",
-    "verify_receipt_core",
 ]
 
 
@@ -109,20 +115,31 @@ class InvariantViolation(AssertionError):
 
 
 def require_verification_error(error: BaseException, what: str) -> None:
-    """Every failure a caller can see must be the library's own
-    :class:`VerificationError`.
-
-    A ``TypeError``, an ``OverflowError`` or an ``asn1crypto`` internal error
-    escaping means hostile input reached a call site that was not expecting
-    it, which is the class of bug these targets exist to find — so it is
-    reported, not tolerated.
-    """
-    if isinstance(error, VerificationError):
+    """For the module-internal primitives (``verify_receipt_der``, the raw
+    attribute reader) that still raise on their own contract, unlike the
+    public ``Verifier``: every failure a caller can see from them must be
+    the library's own error type, never a foreign one that reached a call
+    site not expecting it."""
+    if isinstance(error, (VerificationError, PayloadFormatError)):
         return
     raise InvariantViolation(f"{what} escaped as {type(error).__name__}: {error}") from error
 
 
-def as_text(data: bytes) -> str | None:
+def require_no_exception(call: "Callable[[], Any]", what: str) -> Any:
+    """0.7's ``Verifier`` never raises for any input
+    (docs/design/0.7-api.md): every result comes back as a
+    ``VerificationResult``, or a JSON string for the endpoint. Anything
+    escaping as an exception (a ``TypeError``, an ``OverflowError``, an
+    ``asn1crypto`` internal error) means hostile input reached a call site
+    that was not expecting it, which is the class of bug these targets
+    exist to find, so it is reported rather than tolerated."""
+    try:
+        return call()
+    except Exception as error:
+        raise InvariantViolation(f"{what} escaped as {type(error).__name__}: {error}") from error
+
+
+def as_text(data: bytes) -> "str | None":
     """The string an API taking ``str`` would actually receive, or ``None``
     when the bytes are not UTF-8.
 

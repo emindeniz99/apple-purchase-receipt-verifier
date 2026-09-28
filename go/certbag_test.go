@@ -1,6 +1,7 @@
 package applereceipt_test
 
 import (
+	"bytes"
 	"encoding/base64"
 	"math/big"
 	"os"
@@ -13,20 +14,24 @@ import (
 )
 
 // The CMS certificate bag is the one region of a receipt the SignerInfo
-// signature does not cover, so it is exactly where an attacker can
-// rewrite a genuine receipt for free. A verifier that cannot parse an
-// entry there must reject the receipt, not skip past it: skipping means
-// answering "verified" about bytes the library could not read, and it is
-// what the other four ports refuse to do.
+// signature does not cover. Two different kinds of "bad" entry live
+// there, and they get different verdicts (owner, 2026-09-27, matching
+// the shared conformance cases):
 //
-//	Node   cms.certificates.map((raw) => new X509Certificate(raw)) inside
-//	       the try that becomes INVALID_RECEIPT_FORMAT
-//	Python x509.load_der_x509_certificate(raw) inside _parse_cms's broad
-//	       except -> INVALID_RECEIPT_FORMAT
-//	Swift  try Certificate(derEncoded: der) in the CMS parser
-//	Java   converter.getCertificate(holder) for every holder, throwing
-//	       GeneralSecurityException
-func TestUnparseableEmbeddedCertificateIsFatal(t *testing.T) {
+//   - An entry that genuinely fails to parse as a certificate (garbage,
+//     a truncated copy, the wrong ASN.1 shape) is exactly the kind of
+//     stranger no pinned root ever vouches for. Unless its raw bytes name
+//     the SignerInfo's own signer, it is simply excluded from the
+//     top-down walk (Q16), the same as a certificate that parses fine but
+//     names nobody real, never fatal on its own.
+//   - An entry that DOES parse, but whose signature BIT STRING is not
+//     canonically encoded, is fatal wherever it sits, signer or stranger:
+//     crypto/x509 parses it anyway, silently reinterpreting the
+//     signature bytes as something other than what was actually signed
+//     (see certificateSignatureIsCanonicallyEncoded in receipt.go), which
+//     is exactly the platform-parser leniency this library refuses to
+//     trust.
+func TestUnparseableStrangerCertificateIsTolerated(t *testing.T) {
 	pki := newReceiptPKI(t)
 	junk := derSequence(derInt(42), derInt(43)) // a SEQUENCE, not a Certificate
 	receipt := buildCMS(t, cmsSpec{
@@ -35,45 +40,101 @@ func TestUnparseableEmbeddedCertificateIsFatal(t *testing.T) {
 		certificates:    [][]byte{pki.leaf.der, pki.intermediate.der, junk},
 		withSignedAttrs: true,
 	})
-	if _, err := applereceipt.VerifyReceiptCore(receipt, pki.anchors()); err == nil {
-		t.Fatal("a receipt carrying an undecodable certificate was verified; " +
-			"the bag is unsigned, so anything in it that cannot be parsed must be fatal")
-	} else {
-		requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
-	}
-
-	// Control: the same receipt without the junk entry verifies, so the
-	// rejection above is about the junk and nothing else.
-	clean := buildCMS(t, cmsSpec{
-		content:         receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
-		signer:          pki.leaf,
-		certificates:    pki.embedded(),
-		withSignedAttrs: true,
-	})
-	if _, err := applereceipt.VerifyReceiptCore(clean, pki.anchors()); err != nil {
-		t.Fatalf("control receipt did not verify: %v", err)
+	if _, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(receipt)); err != nil {
+		t.Fatalf("a genuinely undecodable stranger, not named by any SignerInfo, "+
+			"must not be blamed on the receipt: %v", err)
 	}
 }
 
-// The same thing on a genuine, Apple-signed receipt. Byte 4044 of this
-// fixture is inside its third embedded certificate; flipping it leaves
-// the signed payload untouched, so a verifier that skips the entry
-// happily returns a fully populated AppReceipt. Node rejects this exact
-// mutant with INVALID_RECEIPT_FORMAT.
-func TestCorruptedCertificateInGenuineReceiptIsFatal(t *testing.T) {
-	const corruptOffset = 4044
+// signatureBitStringOffset locates the "unused bits" octet of an RSA-2048
+// certificate's outer signatureValue BIT STRING: Certificate ::= SEQUENCE
+// { tbsCertificate, signatureAlgorithm, signatureValue BIT STRING } always
+// puts it last, so its 257-byte content (1 unused-bits octet + 256
+// signature bytes) ends exactly at len(der), long-form length-encoded as
+// 03 82 01 01.
+func signatureBitStringOffset(t *testing.T, der []byte) int {
+	t.Helper()
+	header := []byte{0x03, 0x82, 0x01, 0x01}
+	at := len(der) - len(header) - 257
+	if at < 0 || !bytes.Equal(der[at:at+len(header)], header) {
+		t.Fatalf("could not locate a 2048-bit RSA signature BIT STRING at the expected offset")
+	}
+	return at + len(header)
+}
+
+// withNonCanonicalSignature returns a copy of an RSA-2048 certificate's
+// DER whose signature BIT STRING declares one unused bit where zero is
+// canonical, the fault the shared conformance cases pin
+// (fault: stranger-certificate-signature-unaligned, x5c-leaf-signature-unaligned).
+func withNonCanonicalSignature(t *testing.T, der []byte) []byte {
+	t.Helper()
+	at := signatureBitStringOffset(t, der)
+	if der[at] != 0x00 {
+		t.Fatalf("signature BIT STRING at %d already declares %d unused bits", at, der[at])
+	}
+	mutated := bytes.Clone(der)
+	mutated[at] = 0x01
+	// crypto/x509 additionally requires the padding bit it is about to
+	// discard to already be zero-valued (DER's own rule for unused bits),
+	// and refuses to parse the certificate at all otherwise: a random
+	// RSA signature has that bit set about half the time. Clearing it
+	// keeps this deterministic: crypto/x509 accepts the certificate
+	// (silently right-aligning every byte of cert.Signature by one bit,
+	// same as a genuine 1-unused-bit encoding would), so it is this
+	// package's own canonicality check, not crypto/x509's parse, that is
+	// under test.
+	mutated[len(mutated)-1] &^= 0x01
+	return mutated
+}
+
+func TestNonCanonicalCertificateSignatureIsFatalAtEveryPosition(t *testing.T) {
+	pki := newReceiptPKI(t)
+	nonCanonicalIntermediate := withNonCanonicalSignature(t, pki.intermediate.der)
+	nonCanonicalLeaf := withNonCanonicalSignature(t, pki.leaf.der)
+	positions := map[string][][]byte{
+		"as a stranger, first": {nonCanonicalIntermediate, pki.leaf.der, pki.intermediate.der},
+		"as a stranger, last":  {pki.leaf.der, pki.intermediate.der, nonCanonicalIntermediate},
+		// The same issuer and serial as the genuine leaf (only the
+		// trailing signature bytes, well after the TBS, are touched), so
+		// it is found by identity as the signer, and must still be
+		// fatal, not merely dropped as a stranger.
+		"as the signer's own copy, replacing it": {nonCanonicalLeaf, pki.intermediate.der},
+	}
+	for name, certificates := range positions {
+		t.Run(name, func(t *testing.T) {
+			receipt := buildCMS(t, cmsSpec{
+				content: receiptPayload(standardReceiptAttributes(
+					"com.example.app", "ProductionSandbox", time.Now())...),
+				signer:          pki.leaf,
+				certificates:    certificates,
+				withSignedAttrs: true,
+			})
+			_, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(receipt))
+			requireReason(t, err, applereceipt.ReasonMalformed)
+		})
+	}
+}
+
+// The same thing on a genuine, Apple-signed receipt, and its converse: a
+// corrupted NON-essential embedded certificate (this fixture carries a
+// redundant copy of the root, which is not on the trust path since the
+// path is built from the pinned AppleRoots(), not from the bag) does not
+// stop the receipt verifying. Corrupting the actual signer still does.
+func TestCorruptedCertificateInGenuineReceipt(t *testing.T) {
+	const nonEssentialOffset = 4044
 	receipt := genuineSandboxG5(t)
-	if _, err := applereceipt.VerifyReceiptCore(receipt, applereceipt.AppleReceiptRoots()); err != nil {
+	verifier := verifierFor(t, applereceipt.AppleRoots())
+	if _, err := verifier.VerifyReceipt(applereceiptBase64(receipt)); err != nil {
 		t.Fatalf("the genuine fixture must verify first: %v", err)
 	}
-	mutant := append([]byte(nil), receipt...)
-	mutant[corruptOffset] ^= 0xff
-	result, err := applereceipt.VerifyReceiptCore(mutant, applereceipt.AppleReceiptRoots())
-	if err == nil {
-		t.Fatalf("a receipt with a corrupted embedded certificate verified as %q; "+
-			"every other port rejects it", result.BundleID)
-	}
-	requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
+	t.Run("a non-essential embedded certificate", func(t *testing.T) {
+		mutant := append([]byte(nil), receipt...)
+		mutant[nonEssentialOffset] ^= 0xff
+		if _, err := verifier.VerifyReceipt(applereceiptBase64(mutant)); err != nil {
+			t.Fatalf("corrupting a certificate the trust path never uses must not "+
+				"stop a genuinely signed receipt from verifying: %v", err)
+		}
+	})
 }
 
 func genuineSandboxG5(t *testing.T) []byte {
@@ -91,14 +152,19 @@ func genuineSandboxG5(t *testing.T) []byte {
 }
 
 // The bag is unsigned wherever the entry sits, so position must not
-// matter, and the shape of the junk must not matter either: anything
-// x509 cannot decode is fatal.
-func TestUnparseableCertificateIsFatalAtEveryPosition(t *testing.T) {
+// matter, and the shape of the junk must not matter either: none of
+// these ever names the real signer, so none of them is ever blamed on
+// the receipt. Q16 tolerance holds regardless of position or shape.
+func TestUnparseableStrangerCertificateIsToleratedAtEveryPosition(t *testing.T) {
 	pki := newReceiptPKI(t)
+	// A truncated copy of a real certificate is deliberately not one of
+	// these shapes: cutting DER mid-value can corrupt the outer CMS SET's
+	// own boundary, which is a different failure (MALFORMED, from the
+	// structural parse) than an embedded certificate merely failing to
+	// decode on its own.
 	junk := map[string][]byte{
 		"a SEQUENCE that is not a Certificate": derSequence(derInt(42), derInt(43)),
 		"an empty SEQUENCE":                    derSequence(),
-		"a truncated copy of the real leaf":    derSequence(pki.leaf.der[2 : len(pki.leaf.der)/2]),
 		"an OCTET STRING of random bytes":      derOctetString([]byte("not a certificate at all")),
 	}
 	positions := map[string]func(entry []byte) [][]byte{
@@ -116,11 +182,9 @@ func TestUnparseableCertificateIsFatalAtEveryPosition(t *testing.T) {
 					certificates:    arrange(entry),
 					withSignedAttrs: true,
 				})
-				_, err := applereceipt.VerifyReceiptCore(receipt, pki.anchors())
-				if err == nil {
-					t.Fatal("an undecodable certificate in the bag was tolerated")
+				if _, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(receipt)); err != nil {
+					t.Fatalf("an undecodable stranger, not named by the SignerInfo, must not be fatal: %v", err)
 				}
-				requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
 			})
 		}
 	}
@@ -129,7 +193,7 @@ func TestUnparseableCertificateIsFatalAtEveryPosition(t *testing.T) {
 // Rejecting an undecodable entry must not move the cheap bound that
 // protects it: the certificate COUNT is still checked before anything in
 // the bag is decoded, so a bag stuffed with junk costs a count comparison
-// and reports INVALID_CHAIN, not a thousand failed parses.
+// and reports MALFORMED, not a thousand failed parses.
 func TestCertificateCountIsStillCheckedBeforeDecoding(t *testing.T) {
 	pki := newReceiptPKI(t)
 	bag := make([][]byte, 0, 64)
@@ -143,8 +207,8 @@ func TestCertificateCountIsStillCheckedBeforeDecoding(t *testing.T) {
 		certificates:    bag,
 		withSignedAttrs: true,
 	})
-	_, err := applereceipt.VerifyReceiptCore(receipt, pki.anchors())
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
+	_, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(receipt))
+	requireReason(t, err, applereceipt.ReasonMalformed)
 }
 
 // A receipt naming a signer it does not carry is a defect of the RECEIPT,
@@ -167,16 +231,16 @@ func TestAnAbsentSignerIsNotBlamedOnAMalformedStranger(t *testing.T) {
 		certificates:    [][]byte{pki.intermediate.der, junk},
 		withSignedAttrs: true,
 	})
-	_, err := applereceipt.VerifyReceiptCore(receipt, pki.anchors())
-	requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
+	_, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(receipt))
+	requireReason(t, err, applereceipt.ReasonMalformed)
 }
 
 // The other side of the same rule: when the unreadable entry IS the one the
 // SignerInfo names, the verdict is about the certificate, exactly as it is
-// for an unreadable x5c entry on the JWS path (receipt/reject-signer-*).
-// The entry below is not a certificate — everything after the identity is
-// missing — but the identity itself is intact, which is all that matching
-// it to the SignerInfo needs.
+// for an unreadable x5c entry on the JWS path. The entry below is not a
+// certificate (everything after the identity is missing), but the
+// identity itself is intact, which is all that matching it to the
+// SignerInfo needs.
 func TestAMalformedSignerIsACertificateDefect(t *testing.T) {
 	pki := newReceiptPKI(t)
 	namedButUnreadable := derSequence(
@@ -194,6 +258,6 @@ func TestAMalformedSignerIsACertificateDefect(t *testing.T) {
 		certificates:    [][]byte{namedButUnreadable, pki.intermediate.der},
 		withSignedAttrs: true,
 	})
-	_, err := applereceipt.VerifyReceiptCore(receipt, pki.anchors())
+	_, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(receipt))
 	requireReason(t, err, applereceipt.ReasonInvalidCertificate)
 }

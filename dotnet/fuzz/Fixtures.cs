@@ -20,7 +20,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
         internal static readonly string Root = Find();
 
         /// <summary>The generated fake-Apple receipt root.</summary>
-        internal static X509Certificate2 ReceiptRoot() => Load("generated/receipt-root.der");
+        internal static X509Certificate2 ReceiptRoot() => Load("generated-0.7/receipt-root.der");
 
         /// <summary>The generated fake-Apple JWS root.</summary>
         internal static X509Certificate2 JwsRoot() => Load("generated/jws-root.der");

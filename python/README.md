@@ -10,294 +10,336 @@ root certificates.
 pip install apple-purchase-receipt-verifier
 ```
 
-```python
-from apple_purchase_receipt_verifier import (
-    JwsVerifier,
-    ReceiptVerifier,
-    apple_jws_roots,
-    apple_receipt_roots,
-)
-
-# Legacy PKCS#7 app receipt
-receipt = ReceiptVerifier(apple_receipt_roots(), "com.example.app").verify(receipt_b64)
-print(receipt.receipt_type, len(receipt.in_app_purchases))
-
-# StoreKit 2 signed transaction
-transaction = JwsVerifier(
-    apple_jws_roots(), "com.example.app", ["Production", "Sandbox"]
-).verify_transaction(jws)
-print(transaction.product_id, transaction.expires_date)
-```
-
 The import package is `apple_purchase_receipt_verifier`; the distribution is
 `apple-purchase-receipt-verifier`. Requires Python 3.10+.
 
+## Quick start
+
+One `Verifier`, built from a `Config`, exposes the three entry points. It is
+immutable and thread-safe once constructed, and none of its `verify_*`
+methods raise: each returns a `VerificationResult` (or, for the endpoint, a
+JSON string) that reports failure instead of throwing.
+
+```python
+from apple_purchase_receipt_verifier import Config, Environment, Verifier
+
+verifier = Verifier(Config.defaults())  # Apple's three pinned roots, system clock
+```
+
+**StoreKit 2 signed transaction or renewal info (compact JWS):**
+
+```python
+result = verifier.verify_signed_data(jws)
+if not result.verified:
+    raise ValueError(f"{result.failure.reason}: {result.failure.message}")
+payload = json.loads(result.payload.json)  # the verified claims, as a dict
+```
+
+**Legacy PKCS#7 app receipt (base64):**
+
+```python
+result = verifier.verify_receipt(receipt_b64)
+if not result.verified:
+    raise ValueError(f"{result.failure.reason}: {result.failure.message}")
+receipt = result.payload  # a ReceiptPayload
+print(receipt.bundle_id, len(receipt.in_app))
+```
+
+**A `verifyReceipt`-shaped request body, verified offline:**
+
+```python
+response_json = verifier.verify_receipt_endpoint(Environment.PRODUCTION, request_body)
+```
+
+`request_body` is the raw JSON body Apple's endpoint would have received
+(`{"receipt-data": "...", "password": "..."}`); `response_json` is the JSON
+string Apple's endpoint would have answered, `status` field included. See
+"The verifyReceipt-compatible endpoint" below for the raw-body caveat and the
+status table.
+
 ## Integrating: from verified payload to entitlement
 
-The backend flow these calls sit inside is written out once in the
-[project README](../README.md#integrating-from-verified-payload-to-entitlement):
-verify offline, deny on any failure, check the refund field, refresh a payload
-past the freshness window, guard against replay on the transaction id, then
-grant. That section also carries the policy table saying what each reason
-means and which ones are worth an alert. Here are its two branches in this
-port's API.
+Verification proves Apple signed the bytes. It does not prove the presenter
+owns them, and it says nothing about what happened after the signature. The
+[project README](../README.md#integrating-from-verified-payload-to-entitlement)
+lays out the full flow once, with a reason-to-next-step table; here are its
+two branches in this port's 0.7 API.
 
-**Freshness is your call.** `JwsVerifier` rejects no payload for its age, as
-in Apple's own App Store Server Libraries: `signedDate` only decides the
-instant the chain is judged at. The right limit depends on the endpoint
-(Apple retries a server notification for days, and a device may present an
-old but genuine payload), so apply one yourself where it fits:
-`if time.time() * 1000 - payload["signedDate"] > 5 * 60 * 1000: ...`.
-
-**Entitlement is your rule too.** There is no "is active" helper, as in
-Apple's own libraries; read the signed fields:
+Both branches now follow the same shape: verify, deny on any failure, then
+run the [post-verification checklist](#post-verification-checklist) below
+yourself: 0.7 has no constructor-supplied bundle id or environment allowlist
+to do it for you.
 
 ```python
-now = time.time() * 1000
+# Branch A: StoreKit 2 signed transaction
+result = verifier.verify_signed_data(jws)
+if not result.verified:
+    log(result.failure.reason)  # deny; nothing partial is returned
+    return
+payload = json.loads(result.payload.json)
+if payload.get("bundleId") != "com.example.app":
+    return  # step 1 of the checklist below
+environment = Environment.from_jws_environment(payload.get("environment"))
+if payload.get("revocationDate") is not None:
+    return  # refunded or revoked as of signing time
 expires = payload.get("expiresDate")
-entitled = payload.get("revocationDate") is None and (expires is None or expires > now)
+if expires is not None and expires <= now_ms:
+    return  # subscription term had ended
+grant(payload["productId"], environment, payload["transactionId"])  # idempotent on transactionId
+
+# Branch B: legacy PKCS#7 app receipt
+result = verifier.verify_receipt(receipt_b64)
+if not result.verified:
+    log(result.failure.reason)
+    return
+receipt = result.payload
+if receipt.bundle_id != "com.example.app":
+    return
+environment = Environment.from_receipt_type(receipt.receipt_type)
+for purchase in receipt.in_app:
+    if purchase.cancellation_date_ms is not None:
+        continue
+    if purchase.expires_date_ms is not None and purchase.expires_date_ms <= now_ms:
+        continue
+    grant(purchase.product_id, environment, purchase.transaction_id)
 ```
 
-That is only what the payload said when it was signed. A billing grace
-period (it lives in the renewal info), an upgrade (`isUpgraded`) and a refund
-after signing are yours to handle; App Store Server Notifications V2 or the
-App Store Server API give the live status. `is_transaction_active_at` is
-gone.
+**Freshness is your call.** Neither method rejects a payload for its age;
+the signing instant (`signedDate` / the receipt's creation date) only
+decides what certificate-validity window the chain is judged against. The
+right freshness limit depends on the endpoint (Apple retries a server
+notification for days, and a device may legitimately present an old but
+genuine receipt), so apply one yourself where it fits.
 
-A StoreKit 2 signed transaction:
+## Post-verification checklist
+
+A verified payload is only proof of what Apple signed. Nothing here checks
+whether it applies to *your* app or has already been used. Every caller does
+these four things with the signed fields before granting anything:
+
+1. **Bundle id.** Compare it against your app's bundle id yourself.
+   Legacy: `receipt.bundle_id`. JWS: `payload["bundleId"]`.
+2. **Environment.** `Environment.from_receipt_type(receipt.receipt_type)` for
+   a legacy receipt, `Environment.from_jws_environment(payload.get("environment"))`
+   for a JWS payload. Decide whether you accept `SANDBOX` here; both return
+   `None` for a receipt type or environment claim you don't recognise, which
+   fails closed if you require a specific `Environment`.
+3. **Product id.** Compare `product_id` / `payload["productId"]` against
+   the catalogue of products you actually sell: a signature proves Apple
+   signed it, not that it's a product your server still grants.
+4. **Idempotency.** Key your own bookkeeping on the transaction id
+   (`transaction_id` / `payload["transactionId"]`) so a replayed or retried
+   JWS/receipt is not granted twice.
+
+None of this is checked by `verify_receipt`, `verify_signed_data` or
+`verify_receipt_endpoint` themselves: 0.7 dropped constructor-supplied
+policy (bundle id, allowed environments) entirely; every check above is read
+off the returned payload by the caller, every time.
+
+## Device hash
+
+Legacy receipts carry a device-binding hash (attribute 5,
+`ReceiptPayload.sha1_hash`) that Apple's on-device code computes as
+`SHA-1(device_id + opaque_value + bundle_id_bytes)`. The library does not
+call this check itself: the design (0.7) treats it as a caller decision,
+since `device_id` is something only the caller has (the app supplies its own
+device identifier bytes; there is no single canonical source across
+platforms). `device_hash` computes the formula for you:
 
 ```python
-import time
+from apple_purchase_receipt_verifier.receipt import device_hash
 
-from apple_purchase_receipt_verifier import (
-    JwsVerifier,
-    VerificationError,
-    apple_jws_roots,
-)
-
-verifier = JwsVerifier(apple_jws_roots(), "com.example.app", ["Production", "Sandbox"])
-
-
-def redeem_transaction(user_id: str, jws: str) -> str:
-    try:
-        payload = verifier.verify_transaction(jws)  # step 2
-    except VerificationError as error:
-        log.warning("purchase rejected: %s", error.reason)
-        return "denied"
-
-    if payload.get("revocationDate") is not None:  # step 3
-        return "denied"
-
-    # step 4, your call: past the window, ask the client for a fresh
-    # jwsRepresentation, or fetch one from the App Store Server API and
-    # verify that instead
-    if time.time() * 1000 - (payload.get("signedDate") or 0) > 5 * 60 * 1000:
-        return "refresh"
-
-    transaction_id = payload["transactionId"]  # step 5
-    if grants.exists(transaction_id):
-        return "denied"
-    grants.record(transaction_id, payload.get("originalTransactionId"), user_id)
-
-    grant(user_id, payload["productId"])
-    return "granted"
+expected = device_hash(device_id_bytes, receipt.opaque_value, receipt.bundle_id_bytes)
+if expected != receipt.sha1_hash:
+    raise ValueError("receipt was not issued for this device")
 ```
 
-The legacy PKCS#7 app receipt is the same policy on the other input, the one
-StoreKit 1 apps and older SDKs still send:
+`opaque_value` and `bundle_id_bytes` are the raw attribute value octets, not
+the decoded strings, because the hash is defined over the DER bytes Apple
+signed.
+
+## App Store Server Notifications V2
+
+A V2 notification body is itself a compact JWS whose decoded payload carries
+further compact JWS strings nested inside it (`data.signedTransactionInfo`,
+`data.signedRenewalInfo`). Verify the outer envelope, then verify each
+nested one the same way:
 
 ```python
-from datetime import datetime, timedelta, timezone
+import json
 
-from apple_purchase_receipt_verifier import ReceiptVerifier, apple_receipt_roots
+outer = verifier.verify_signed_data(request_body)
+if not outer.verified:
+    raise ValueError(f"{outer.failure.reason}: {outer.failure.message}")
+notification = json.loads(outer.payload.json)
 
-receipts = ReceiptVerifier(apple_receipt_roots(), "com.example.app")
-
-
-# Same policy keyed on the receipt's own dates. `verify` takes the base64 the
-# client sends or the DER bytes; VerifyReceiptEndpoint is the alternative,
-# answering Apple's `verifyReceipt` JSON shape with a `status` instead.
-def redeem_receipt(user_id: str, receipt_data: str, product_id: str) -> str:
-    receipt = receipts.verify(receipt_data)  # step 2
-    now = datetime.now(timezone.utc)
-    purchase = next((p for p in receipt.in_app_purchases if p.product_id == product_id), None)
-    if purchase is None or purchase.cancellation_date is not None:  # step 3
-        return "denied"
-    if purchase.expires_date is not None and purchase.expires_date <= now:
-        return "denied"
-
-    # step 4: the same caller-side check, on the creation date. Past
-    # the window, ask the client to refresh its receipt, or call the App Store
-    # Server API by purchase.transaction_id and verify the JWS it returns.
-    if now - receipt.creation_date > timedelta(minutes=5):
-        return "refresh"
-
-    if grants.exists(purchase.transaction_id):  # step 5
-        return "denied"
-    grants.record(purchase.transaction_id, purchase.original_transaction_id, user_id)
-
-    grant(user_id, purchase.product_id)
-    return "granted"
+data = notification.get("data", {})
+for key in ("signedTransactionInfo", "signedRenewalInfo"):
+    nested_jws = data.get(key)
+    if nested_jws is None:
+        continue
+    nested = verifier.verify_signed_data(nested_jws)
+    if not nested.verified:
+        raise ValueError(f"{key}: {nested.failure.reason}: {nested.failure.message}")
+    # json.loads(nested.payload.json) is the transaction or renewal info:
+    # run the post-verification checklist above on it before acting.
 ```
+
+Each nested JWS is checked against the same pinned roots as the outer one;
+there is nothing notification-specific about `verify_signed_data` itself.
 
 ## The verifyReceipt-compatible endpoint
 
-`VerifyReceiptEndpoint` answers Apple's deprecated `verifyReceipt` request
-with the same response body, verified offline. One instance emulates one
-environment, `"Production"` or `"Sandbox"`.
+`verify_receipt_endpoint` is a stateless, one-shot replacement for Apple's
+deprecated endpoint: same request body, same response body, same status
+codes, verified offline against the pinned roots instead of by calling
+Apple. It never raises. Fields that only Apple's own server-side database
+can supply (`latest_receipt_info`, `pending_renewal_info`) are not produced.
+Like Apple's own endpoint, it checks no bundle id: compare
+`json.loads(response)["receipt"]["bundle_id"]` yourself.
+
+| status | meaning |
+|---|---|
+| 0 | Valid. `environment` and `receipt` are present in the response. |
+| 21002 | `receipt-data` is missing, not a string, too large, or the body isn't valid JSON. |
+| 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired or wrong-purpose certificate). |
+| 21007 | A sandbox receipt was sent to `Environment.PRODUCTION`. |
+| 21008 | A production receipt was sent to `Environment.SANDBOX`. |
+| 21009 | Internal data access error: the receipt authenticated but its signed content does not parse, or the library itself failed. Deterministic; alert, don't retry. |
+
+No other `verifyReceipt` status (21000, 21001, 21004, 21005, 21006, 21010,
+21100-21199) is ever returned: those describe HTTP-method, shared-secret and
+Apple-server-side conditions this offline replacement cannot produce. See
+`apple_status` for the named constants behind each code.
+
+**Read the raw body.** A web framework that parses
+`application/x-www-form-urlencoded` bodies rebuilds the request from parsed
+fields, which is not byte-for-byte the JSON Apple's endpoint contract
+expects. Read the raw request body and pass it straight through:
 
 ```python
-from apple_purchase_receipt_verifier import VerifyReceiptEndpoint, apple_receipt_roots
-
-endpoint = VerifyReceiptEndpoint(apple_receipt_roots(), "Production")
-
-# The request body as a dict, or the raw JSON text.
-result = endpoint.verify_receipt_result(request_body)
-response = result.to_response()  # Apple's body as a dict
-json_body = result.to_json()  # Apple's body as JSON
-
-# The same as verify_receipt_result(raw_body).to_json().
-json_body = endpoint.verify_receipt_json(raw_body)
-# receipt-data alone, with no request envelope.
-bare = endpoint.verify_receipt_data(receipt_b64)
+@app.post("/verifyReceipt")
+async def handle_verify_receipt(request: Request) -> Response:
+    raw_body = (await request.body()).decode("utf-8")
+    response_json = verifier.verify_receipt_endpoint(Environment.PRODUCTION, raw_body)
+    return Response(response_json, media_type="application/json")
 ```
 
-No endpoint method raises on a request: the Apple status is part of the
-result, for every input, including a body that is not JSON
-(`{"status":21002}`). The statuses it can produce are 0, 21002, 21003,
-21007, 21008 and 21009, and no others, because the rest describe conditions
-that only exist on Apple's servers. Local 21007/21008 routing fails closed:
-only receipt types `Production` and `ProductionVPP` count as production.
+## Decode rules
 
-A `VerifyReceiptResult` is one verification:
+Reading a legacy receipt's attributes follows a few fixed rules, the same in
+every port:
 
-- `status` is the answer for the endpoint's own environment.
-- `receipt` is the verified `AppReceipt` whenever the receipt bytes
-  verified, 21007 and 21008 included.
-- `failure_reason` is a `Reason` value saying why there is no receipt.
-  Exactly one of `receipt` and `failure_reason` is set.
-- `verified` is `True` exactly when `receipt` is set. That includes 21007
-  and 21008, so it is not the same check as `status == 0`: `status == 0`
-  asks whether this endpoint's environment accepts the receipt, `verified`
-  asks whether the receipt verified at all.
-- `failure_cause` is what is behind an `INTERNAL_ERROR`, for logging: the
-  parser's exception for signed content that could not be read, or the
-  unexpected exception the endpoint caught.
-- `request_date` is the UTC `datetime` rendered as `request_date`.
+- **First occurrence wins.** If Apple's payload repeats an attribute type
+  (it shouldn't, but the parser doesn't assume that), the first occurrence
+  decides the field; later copies are kept raw in `unknown_attributes`.
+  This applies to the receipt creation date too, since it anchors the
+  certificate-validity check.
+- **Dates** are `YYYY-MM-DDTHH:MM:SSZ` exactly (RFC 3339, UTC, no fractional
+  seconds); anything else leaves the field `None` rather than raising, and
+  a non-empty string that does not parse is kept raw. An empty date string
+  means "not set". Decoded dates are epoch milliseconds (always ending in
+  `000`, since receipts carry whole seconds).
+- **Strings** are `UTF8String` or `IA5String` only; `IA5String` bytes ≥ 0x80
+  fail to decode (7-bit ASCII, by definition). A string that fails to decode
+  leaves the field `None` (or, for `bundle_id`, only `bundle_id_bytes` is
+  set, see below) rather than raising.
+- **`unknown_attributes`** holds the raw value octets of every attribute
+  that does not end up in a named field, keyed by attribute type, in
+  receipt order: a type the payload doesn't model, a later copy of a known
+  one, and a known one whose value does not parse. A field Apple adds later
+  is never silently dropped. `bundle_id` (attribute 2) is the one exception: a decode failure there
+  does not also appear in `unknown_attributes`, because `bundle_id_bytes`
+  already carries the raw value unconditionally.
+- **64-bit ids** (`app_item_id`, `download_id`, `version_external_identifier`,
+  `web_order_line_item_id`) are plain Python `int`; `ReceiptPayload.to_json()`
+  renders them as JSON strings (JSON numbers lose precision above 2^53) and
+  everything else as JSON numbers, the same value every other port
+  writes (the bytes may differ).
 
-The result is immutable and only the endpoint creates one. Each response is
-rendered the first time it is asked for and reused after that.
+## Upgrading from 0.6
 
-**Retrying in the other environment costs no second verification.**
-`to_response(environment)` and `to_json(environment)` render what an endpoint
-of that environment would answer, recomputing the status from the receipt's
-own type:
+0.7 is a breaking change: the two verifier classes are gone, policy checks
+(bundle id, allowed environments) are no longer constructor arguments, and
+every failure is a `VerificationResult`/`Failure` instead of a raised
+`VerificationError`.
 
-| receipt | on `"Production"` | on `"Sandbox"` |
-|---|---|---|
-| `Production`, `ProductionVPP` | 0 | 21008 |
-| any other type, or none | 21007 | 0 |
-| failed verification | its own status | its own status |
+| 0.6 | 0.7 |
+|---|---|
+| `ReceiptVerifier(roots, bundle_id).verify(b64)` | `Verifier(Config.create(roots=roots)).verify_receipt(b64)`, then compare `result.payload.bundle_id` yourself |
+| `JwsVerifier(roots, bundle_id, environments).verify_transaction(jws)` | `Verifier(Config.create(roots=roots)).verify_signed_data(jws)`, then compare `payload["bundleId"]` / `payload["environment"]` yourself |
+| `apple_receipt_roots()` / `apple_jws_roots()` | `default_roots()` (one function, one pinned set, for both paths) |
+| raised `VerificationError` with `.reason` | `VerificationResult.failure` (`Failure.reason`, `.message`, `.cause`); nothing raises |
+| `Reason.INVALID_RECEIPT_FORMAT`, `.INVALID_JWS_FORMAT` | `Reason.MALFORMED` |
+| `Reason.REQUEST_TOO_LARGE` | `Reason.TOO_LARGE` |
+| `Reason.INVALID_CHAIN` | `Reason.UNTRUSTED_CHAIN` |
+| `endpoint.verify_receipt_result(body).to_response()` | `Verifier(...).verify_receipt_endpoint(environment, body)` (returns the JSON string directly; no `VerifyReceiptResult`, no environment re-render without re-verifying) |
+| `VerifyReceiptEndpoint.MAX_REQUEST_BYTES` | `apple_purchase_receipt_verifier.endpoint.MAX_REQUEST_BYTES` |
+| `ReceiptVerifier.MAX_RECEIPT_BYTES` | `apple_purchase_receipt_verifier.receipt.MAX_RECEIPT_BYTES` |
+| `JwsVerifier.MAX_JWS_BYTES` | `apple_purchase_receipt_verifier.jws.MAX_JWS_BYTES` |
+| transaction's `expires_date` / `.revocation_date` attributes | read the same keys straight off `json.loads(payload.json)` (there is no longer a typed JWS model, only the verified JSON text) |
+| device-hash check built into `ReceiptVerifier` | `apple_purchase_receipt_verifier.receipt.device_hash(...)`, called by you (see "Device hash" above) |
 
-```python
-result = production.verify_receipt_result(request_body)
-if result.status == 21007:
-    json_body = result.to_json("Sandbox")
-```
+## Measured worst-case CPU
 
-A sandbox receipt never renders as a production 0, whichever endpoint
-verified it. Any environment other than `"Production"` or `"Sandbox"` raises
-`ValueError`, as the constructor does.
+Measured on 2026-09-27 with `bench/bench.py --worst-case`, which times every
+shared case in `fixtures/cases.json` that carries a time budget: oversized
+untrusted keys, a cross-signed certificate mesh, and the encoding oddities
+inside certificates. CPython 3.11.15 with cryptography 50.0.1, one thread,
+on a shared 4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); one second of
+warm-up, then ten samples of at least 100 ms each, garbage collector on.
 
-| `failure_reason` | status | when |
-|---|---|---|
-| `REQUEST_TOO_LARGE` | 21002 | the raw body is over `MAX_REQUEST_BYTES` (3,145,728 UTF-8 bytes); Apple answers HTTP 413 here, see [Input limits](#input-limits) |
-| `MALFORMED_REQUEST` | 21002 | the body is not a JSON object or nests past 64 levels, or `receipt-data` is missing, empty or not a string |
-| `INVALID_RECEIPT_FORMAT` | 21002 | `receipt-data` is over `MAX_RECEIPT_BYTES`, is not canonical standard base64 (whitespace, base64url and omitted or extra padding all count, as at Apple) or its CMS envelope does not parse |
-| `INVALID_CHAIN`, `INVALID_SIGNATURE`, other certificate reasons | 21003 | the receipt did not authenticate |
-| `INTERNAL_ERROR` | 21009 | not the client's fault: the receipt authenticated but its signed content cannot be read, or an unexpected exception inside the endpoint; `failure_cause` holds what is behind it. Alert and retry or escalate; do not deny the user |
+| Call | Median | Slowest sample |
+|---|---:|---:|
+| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 2.3 ms | 3.2 ms |
+| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 2.3 ms | 2.6 ms |
+| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.5 ms | 1.7 ms |
+| Every other budgeted case | under 1.1 ms | under 1.4 ms |
+| For scale: `verify_receipt` on the genuine 187-purchase legacy receipt | 16 ms | 17 ms |
+| For scale: `verify_receipt_endpoint` on the same receipt | 24 ms | 28 ms |
 
-`MALFORMED_REQUEST` and `REQUEST_TOO_LARGE` only ever appear on a result. No
-`VerificationError` is raised with either. `INTERNAL_ERROR` is also raised
-by `ReceiptVerifier` and `verify_receipt_core`, with the parser's exception
-as its `__cause__`.
+No hostile input in the shared suite costs more than an ordinary large
+receipt: the cost of a call follows the size of the input, which the caps
+below bound, not the structure an attacker chooses. The smaller cross-port
+fixture (2 in-app purchases) verifies in about 0.9 ms. The machine was
+shared with other work, so treat these as an order of magnitude. Run
+`uv run --locked python bench/bench.py --worst-case` for the hostile cases
+on your own hardware, and the same command without `--worst-case` for the
+genuine receipts; `../BENCHMARKS.md` compares all nine ports.
 
-**Order of the receipt checks.** CMS parse → the creation date alone
-(attribute 12; nothing else in the payload is decoded yet) → chain at that
-date, or at the system clock when the date is missing, empty, unreadable or
-stated twice → receipt-signing marker OID → CMS signature → full payload
-parse → bundle id → device hash. Nothing is trusted before the chain and
-the signature, so reading the date never rejects. The chain comes first so
-the attacker's own key is never run before it is trusted. A payload that
-fails the full parse was signed by a trusted signer, so it is
-`INTERNAL_ERROR`, not `INVALID_RECEIPT_FORMAT`.
+## Debugging a receipt by hand
 
-**`request_date`.** `verify_receipt_result` and `verify_receipt_data` take
-a keyword-only `now`, a timezone-aware `datetime` that becomes
-`request_date` in place of the endpoint's clock. Without it the clock is
-read once, when the call is made.
-`now` reaches `request_date` and nothing else: certificate validity never
-sees it. A naive `datetime` raises `ValueError`.
-
-Like Apple's endpoint, this does **not** check the bundle id: compare
-`result.receipt.bundle_id` yourself before granting anything, or use
-`ReceiptVerifier`, which checks it for you.
-
-Migrating from 0.5: `endpoint.verify_receipt(body)` is removed; use
-`endpoint.verify_receipt_result(body).to_response()`.
+See the [project README](../README.md#debugging-a-receipt-by-hand) for the
+`openssl` commands that open a receipt or a JWS payload without verifying
+it (useful when a verification fails and you want to see what arrived).
 
 ## Input limits
 
 Base64 decoding and JSON parsing both allocate a multiple of their input
 before any signature is checked, so the input is measured first. The byte
 limits are Apple's, fixed constants in every port of this library, not
-constructor options. Measured on 2026-09-23 against both of Apple's
-verifyReceipt endpoints (production and sandbox), a request body of
-3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP
-413. Apple counts UTF-8 bytes, not characters: 3,145,729 bytes of `é`, only
-1,572,874 characters, also got 413. `fixtures/cases.json` holds every port
-to these numbers from both sides.
+`Config` options.
 
-- **`VerifyReceiptEndpoint.MAX_REQUEST_BYTES` (3 MiB, 3,145,728 bytes).**
-  Applied to a raw JSON body before it is parsed: a `str` in UTF-8 bytes, a
-  `bytes` body by its length. A larger body answers 21002 with
-  `REQUEST_TOO_LARGE`, before the parse and the depth check. A body already
-  decoded to a dict is not measured.
-- **`ReceiptVerifier.MAX_RECEIPT_BYTES` (3 MiB, 3,145,728 bytes).** Applied
-  to the base64 string at `ReceiptVerifier.verify` and at the endpoint's
-  `receipt-data`, in UTF-8 bytes, before decoding, and to the DER at every
-  entry point that takes bytes, `verify_receipt_core` included. No receipt
-  Apple accepts can be larger than the request that carries it. A larger
-  receipt is `INVALID_RECEIPT_FORMAT`.
-- **JSON nesting depth 64.** `json.loads` has no depth option and recurses
-  once per level, so the depth is counted before it runs. A deeper body
-  answers 21002 with `MALFORMED_REQUEST`. A verifyReceipt body is a flat
-  object of strings.
-- **`JwsVerifier.MAX_JWS_BYTES` (256 KiB).** Applied to the compact JWS
-  string in characters, before it is split into segments or any segment is
-  decoded. A larger JWS is `INVALID_JWS_FORMAT`. The header and payload JSON
-  are also capped at nesting depth 64, checked before `json.loads` runs, for
-  the same reason as the request body above. Apple's JWS payloads are a few
-  KB at most.
+- **`receipt.MAX_RECEIPT_BYTES`** (3 MiB, 3,145,728 bytes): the base64 text
+  given to `verify_receipt`, in UTF-8 bytes, before decoding. A larger
+  receipt is `Reason.TOO_LARGE`.
+- **`endpoint.MAX_REQUEST_BYTES`** (3 MiB, 3,145,728 bytes): the request
+  body given to `verify_receipt_endpoint`, before it is parsed. A larger
+  body is `Reason.TOO_LARGE` (status 21002).
+- **`jws.MAX_JWS_BYTES`** (256 KiB, 262,144 bytes): the compact JWS text
+  given to `verify_signed_data`, before it is split into segments. A larger
+  JWS is `Reason.TOO_LARGE`.
+- **JSON nesting depth 64**: checked before any JSON is parsed, in the
+  request body, the JWS header and the JWS payload alike. A deeper request
+  body or JWS header is `Reason.MALFORMED`. A deeper JWS payload is carried
+  to the signature check: `Reason.UNREADABLE_PAYLOAD` if the signature
+  verifies, `Reason.INVALID_SIGNATURE` if not.
+- **ASN.1 nesting depth 32**: checked before any certificate is decoded.
+  Deeper input is `Reason.MALFORMED` in the CMS envelope and
+  `Reason.UNREADABLE_PAYLOAD` in the signed receipt content.
 
-A `str` holds code points, one to four UTF-8 bytes each, so its length
-decides most checks without encoding it: more code points than the limit is
-over it, four times the code points within the limit is within it, and an
-ASCII string is exactly its length. Only a non-ASCII string between those
-bounds is encoded to be counted, a copy of at most four times the limit. A
-lone surrogate counts as three bytes.
-
-**Answering 413 like Apple.** `REQUEST_TOO_LARGE` exists so an HTTP layer can
-send the status Apple sends. The body is Apple's 21002 either way:
-
-```python
-result = endpoint.verify_receipt_result(raw_request_body)
-http_status = 413 if result.failure_reason == Reason.REQUEST_TOO_LARGE else 200
-return Response(result.to_json(), status=http_status, media_type="application/json")
-```
-
-A framework that caps request bodies itself has to allow at least 3 MiB, or
-it refuses bodies Apple would answer.
+`fixtures/cases.json` holds every port to these same numbers, from both
+sides of each boundary.
 
 ## Known issue: legacy receipts on RHEL 9
 
@@ -305,9 +347,9 @@ The legacy Apple receipt chain and its CMS signature are SHA-1. The
 `cryptography` wheel from PyPI bundles its own OpenSSL and is not affected.
 The distro package (`python3-cryptography` on RHEL 9, Alma or Rocky) uses the
 system OpenSSL, which the DEFAULT crypto policy stops from verifying SHA-1
-signatures, so with it a genuine legacy receipt is `INVALID_CHAIN`. Observed
-on AlmaLinux 9.8 on 2026-09-24. Newer receipts (SHA-256 chains) and every JWS
-are unaffected; FIPS mode is untested.
+signatures, so with it a genuine legacy receipt is `Reason.UNTRUSTED_CHAIN`.
+Observed on AlmaLinux 9.8 on 2026-09-24. Newer receipts (SHA-256 chains) and
+every JWS are unaffected; FIPS mode is untested.
 
 Until the fix ships, install `cryptography` from PyPI, or run
 `update-crypto-policies --set DEFAULT:SHA1` on that host. The planned fix
@@ -324,7 +366,7 @@ pass — a signature proves what Apple signed, not what happened since.
 
 This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
 Rust, PHP, .NET) that share a single fixture suite, including Apple's own official test fixtures, and are
-required to agree byte for byte. See the
+required to agree on every verdict and every decoded value. See the
 [project README](../README.md) for the full picture and
 [COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
 libraries.

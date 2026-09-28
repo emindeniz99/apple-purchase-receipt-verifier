@@ -55,13 +55,13 @@ run_one() {
   local seeds
   case "$name" in
     receipt-der | receipt-payload)
-      seeds=("$fixtures/generated" "$fixtures/apple-official/certs") ;;
+      seeds=("$fixtures/generated-0.7" "$fixtures/generated" "$fixtures/apple-official/certs") ;;
     readers)
       seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts") ;;
     receipt-base64)
       seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
     jws)
-      seeds=("$fixtures/generated" "$fixtures/apple-official/mock_signed_data" "$fixtures/apple-official/xcode") ;;
+      seeds=("$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/mock_signed_data" "$fixtures/apple-official/xcode") ;;
     endpoint-json)
       seeds=("$here/seeds/endpoint-json" "$generated") ;;
     *) echo "unknown target: $name" >&2; exit 2 ;;
