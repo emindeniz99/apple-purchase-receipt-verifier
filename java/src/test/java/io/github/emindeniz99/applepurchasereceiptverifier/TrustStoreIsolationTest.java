@@ -504,7 +504,7 @@ class TrustStoreIsolationTest {
             // can hand it an empty one; its only caller must pass PROVIDER.
             boolean probe = source.getFileName().toString().equals("DefaultVerifier.java");
             if (probe) {
-                probeGetsTheLibrarysProvider = code.contains("probeRuntime(BouncyCastle.PROVIDER)");
+                probeGetsTheLibrarysProvider = code.contains("probeRuntime(BouncyCastle.PROVIDER,");
             }
             Matcher matcher = lookup.matcher(code);
             while (matcher.find()) {

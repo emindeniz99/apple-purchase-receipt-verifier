@@ -23,7 +23,7 @@ final class EndpointResponse {
 
     // Locale.ROOT, so the JVM's default locale never reaches the rendering.
     private static final DateTimeFormatter FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
+            DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
 
     // Jackson's own generator defaults: short escapes for \n and the like,
@@ -46,7 +46,10 @@ final class EndpointResponse {
         if (status != AppleStatus.OK || receipt == null) {
             return status(status);
         }
-        StringWriter out = new StringWriter(1024 + 1024 * receipt.inApp().size());
+        // A size hint only; clamped, so a cap-sized receipt does not reserve
+        // tens of megabytes up front or overflow the multiplication.
+        StringWriter out =
+                new StringWriter((int) Math.min(1024 + 1024L * receipt.inApp().size(), 1 << 20));
         try (JsonGenerator json = JSON.createGenerator(out)) {
             json.writeStartObject();
             json.writeNumberField("status", status);
