@@ -8,33 +8,23 @@ The compiled harness in ../examples/cpp is the primary one; this exists for
 two reasons the C++ one cannot serve.
 
 First, it is the evidence for the "any FFI-capable language" claim. Nothing
-here is generated, pre-decoded or pre-flattened: it opens the same
-cases.json every port reads, hashes the fixtures itself, and calls the same
-exported symbols a C compiler would — through ctypes, from a language with
-no compiler in the loop at all.
+here is generated, pre-decoded or pre-flattened: it opens the same vector
+file every port reads, hashes the fixtures itself, and calls the same
+exported symbols a C compiler would, through ctypes, from a language with no
+compiler in the loop at all.
 
-Second, it checks the field paths C++ cannot reach. `receipt.bundle_id`,
-`inAppPurchases[productId=com.example.app.vip].expiresDate`,
-`unknownAttributes[9999][0]` and `inAppPurchases.length` all resolve here,
-against a real JSON parser, so the 51 paths the manifest generator drops for
-the C++ harness are covered rather than lost.
+Second, it checks the pointers C++ cannot reach. `/receipt/bundle_id`,
+`/in_app/[product_id=com.example.app.vip]/expires_date_ms` and
+`/unknown_attributes/9999/0` all resolve here, against a real JSON parser,
+so the nested pointers the manifest generator drops for the C++ harness are
+covered rather than lost.
 
 Every case in the file runs, this harness and the C++ one alike, except the
 `decodeBase64` groups: they call a port's base64 decoders directly, and the
 ABI exposes no decoder, only whole verifications. Those are counted and
-printed as not reachable, never as passed. The endpoint cases that pin a
-clock go through `aprv_endpoint_new_with_roots_and_clock`, which takes the
-instant as epoch milliseconds rather than a callback. Any other case this adapter cannot run
-raises rather than being counted as a skip, and after the run every case id
-in the file must have run or be one of those counted groups.
-
-An endpoint case with `input.requestBody` sends that fixture's bytes, as
-they are, as the whole request body. An endpoint case's
-`expected.failureReason` is not asserted: the ABI's endpoint call answers
-Apple's response JSON only, which carries the status and no reason token.
-Its `fields` (the status among them) are asserted as for every other case,
-and the run prints how many failureReason expectations the ABI could not
-check.
+printed as not reachable, never as passed. Any other case this adapter
+cannot run raises rather than being counted as a skip, and after the run
+every case id in the file must have run or be one of those counted groups.
 """
 
 from __future__ import annotations
@@ -44,6 +34,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 from base64 import b64decode, b64encode
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,29 +42,19 @@ from pathlib import Path
 # --- status codes, mirroring include/apple_purchase_receipt_verifier.h -----
 
 OK = 0
-# The ABI's reason codes, pinned as the header declares them. 11 was
-# STALE_PAYLOAD: retired, so INTERNAL_ERROR stays 12.
+# The ABI's reason codes, pinned as the header declares them.
 REASON_CODES = {
-    "INVALID_JWS_FORMAT": 1,
+    "MALFORMED": 13,
+    "TOO_LARGE": 14,
+    "INVALID_SIGNATURE": 5,
+    "UNTRUSTED_CHAIN": 15,
     "INVALID_CERTIFICATE": 2,
     "INVALID_CERTIFICATE_PURPOSE": 3,
-    "INVALID_CHAIN": 4,
-    "INVALID_SIGNATURE": 5,
-    "WRONG_BUNDLE_ID": 6,
-    "WRONG_ENVIRONMENT": 7,
-    "WRONG_APP_APPLE_ID": 8,
-    "INVALID_RECEIPT_FORMAT": 9,
-    "DEVICE_HASH_MISMATCH": 10,
+    "UNREADABLE_PAYLOAD": 16,
     "INTERNAL_ERROR": 12,
 }
 
-ENVIRONMENT_BITS = {"Production": 1, "Sandbox": 2, "Xcode": 4, "LocalTesting": 8}
-
-# verifyRaw enforces no claim, so its cases may omit both, and the ABI still
-# demands them. These match nothing any fixture carries, so a claim check
-# that leaked into verify_raw fails the case rather than passing it.
-UNMATCHABLE_BUNDLE_ID = "conformance.unset.bundle.id"
-UNMATCHABLE_ENVIRONMENTS = ENVIRONMENT_BITS["LocalTesting"]
+ENDPOINT_ENVIRONMENTS = {"PRODUCTION": 1, "SANDBOX": 2}
 
 LIBRARY_NAMES = [
     "libapple_purchase_receipt_verifier_ffi.so",
@@ -83,112 +64,40 @@ LIBRARY_NAMES = [
 
 
 class AprvResult(ctypes.Structure):
-    # `json` is a void pointer rather than a c_char_p because ctypes turns a
-    # c_char_p return into bytes and throws the pointer away — and the
-    # pointer is what aprv_string_free needs.
+    # A void pointer, not c_char_p: ctypes would turn a c_char_p into bytes
+    # and drop the pointer, and the pointer is what aprv_string_free needs.
     _fields_ = [("status", ctypes.c_int32), ("json", ctypes.c_void_p)]
 
 
 def load_library(directory: Path) -> ctypes.CDLL:
     for name in LIBRARY_NAMES:
-        candidate = directory / name
-        if candidate.is_file():
+        if (directory / name).is_file():
+            lib = ctypes.CDLL(str(directory / name))
             break
     else:
-        raise SystemExit(
-            f"no shared library in {directory}; expected one of {', '.join(LIBRARY_NAMES)}. "
-            "Run: cargo build --locked --manifest-path rust/ffi/Cargo.toml"
-        )
-
-    lib = ctypes.CDLL(str(candidate))
+        raise SystemExit(f"no shared library in {directory}")
     u8p = ctypes.POINTER(ctypes.c_uint8)
-    u8pp = ctypes.POINTER(u8p)
-    sizep = ctypes.POINTER(ctypes.c_size_t)
-    result = ctypes.POINTER(AprvResult)
-
-    lib.aprv_version.argtypes = []
     lib.aprv_version.restype = ctypes.c_char_p
-
-    lib.aprv_verifier_new_jws.argtypes = [
-        ctypes.c_char_p,
-        ctypes.c_uint32,
-        ctypes.c_uint64,
-    ]
-    lib.aprv_verifier_new_jws.restype = ctypes.c_void_p
-    lib.aprv_verifier_new_jws_with_roots.argtypes = [
-        ctypes.c_char_p,
-        ctypes.c_uint32,
-        ctypes.c_uint64,
-        u8pp,
-        sizep,
-        ctypes.c_size_t,
-    ]
-    lib.aprv_verifier_new_jws_with_roots.restype = ctypes.c_void_p
-    lib.aprv_verifier_free_jws.argtypes = [ctypes.c_void_p]
-    lib.aprv_verifier_free_jws.restype = None
-
-    lib.aprv_verifier_new_receipt.argtypes = [ctypes.c_char_p]
-    lib.aprv_verifier_new_receipt.restype = ctypes.c_void_p
-    lib.aprv_verifier_new_receipt_with_roots.argtypes = [
-        ctypes.c_char_p,
-        u8pp,
-        sizep,
-        ctypes.c_size_t,
-    ]
-    lib.aprv_verifier_new_receipt_with_roots.restype = ctypes.c_void_p
-    lib.aprv_verifier_free_receipt.argtypes = [ctypes.c_void_p]
-    lib.aprv_verifier_free_receipt.restype = None
-
-    lib.aprv_endpoint_new.argtypes = [ctypes.c_uint32]
-    lib.aprv_endpoint_new.restype = ctypes.c_void_p
-    lib.aprv_endpoint_new_with_roots.argtypes = [ctypes.c_uint32, u8pp, sizep, ctypes.c_size_t]
-    lib.aprv_endpoint_new_with_roots.restype = ctypes.c_void_p
-    lib.aprv_endpoint_new_with_roots_and_clock.argtypes = [
-        ctypes.c_uint32,
-        u8pp,
-        sizep,
+    lib.aprv_verifier_new.argtypes = [
+        ctypes.POINTER(u8p),
+        ctypes.POINTER(ctypes.c_size_t),
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_int64),
     ]
-    lib.aprv_endpoint_new_with_roots_and_clock.restype = ctypes.c_void_p
-    lib.aprv_endpoint_free.argtypes = [ctypes.c_void_p]
-    lib.aprv_endpoint_free.restype = None
-
-    for name in ("aprv_verify_transaction", "aprv_verify_app_transaction", "aprv_verify_raw"):
+    lib.aprv_verifier_new.restype = ctypes.c_void_p
+    lib.aprv_verifier_free.argtypes = [ctypes.c_void_p]
+    for name in ("aprv_verify_receipt", "aprv_verify_signed_data"):
         function = getattr(lib, name)
-        function.argtypes = [ctypes.c_void_p, ctypes.c_char_p, result]
+        function.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(AprvResult)]
         function.restype = ctypes.c_int32
-
-    lib.aprv_verify_receipt_der.argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t, result]
-    lib.aprv_verify_receipt_der.restype = ctypes.c_int32
-    lib.aprv_verify_receipt_der_with_device_guid.argtypes = [
+    lib.aprv_verify_receipt_endpoint.argtypes = [
         ctypes.c_void_p,
-        u8p,
-        ctypes.c_size_t,
-        u8p,
-        ctypes.c_size_t,
-        result,
-    ]
-    lib.aprv_verify_receipt_der_with_device_guid.restype = ctypes.c_int32
-    lib.aprv_verify_receipt_base64.argtypes = [ctypes.c_void_p, ctypes.c_char_p, result]
-    lib.aprv_verify_receipt_base64.restype = ctypes.c_int32
-    lib.aprv_verify_receipt_base64_with_device_guid.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_char_p,
-        u8p,
-        ctypes.c_size_t,
-        result,
-    ]
-    lib.aprv_verify_receipt_base64_with_device_guid.restype = ctypes.c_int32
-    lib.aprv_verify_receipt_endpoint_json.argtypes = [
-        ctypes.c_void_p,
+        ctypes.c_uint32,
         ctypes.c_char_p,
         ctypes.POINTER(ctypes.c_void_p),
     ]
-    lib.aprv_verify_receipt_endpoint_json.restype = ctypes.c_int32
-
+    lib.aprv_verify_receipt_endpoint.restype = ctypes.c_int32
     lib.aprv_string_free.argtypes = [ctypes.c_void_p]
-    lib.aprv_string_free.restype = None
     return lib
 
 
@@ -199,12 +108,6 @@ def take_string(lib: ctypes.CDLL, pointer: int | None) -> str:
     text = ctypes.cast(pointer, ctypes.c_char_p).value or b""
     lib.aprv_string_free(ctypes.c_void_p(pointer))
     return text.decode("utf-8")
-
-
-def byte_array(data: bytes):
-    """A `const uint8_t *` over `data`, valid while the returned buffer is."""
-    buffer = (ctypes.c_uint8 * max(len(data), 1)).from_buffer_copy(data + b"\0")
-    return buffer, ctypes.cast(buffer, ctypes.POINTER(ctypes.c_uint8))
 
 
 # --- the vector file ------------------------------------------------------
@@ -244,13 +147,16 @@ def fixture_bytes(directory: Path, registry: dict, name: str) -> bytes:
     return data
 
 
-def clock_millis(case: dict):
-    """The case's pinned instant as epoch milliseconds, or `None`.
+def receipt_string(directory: Path, registry: dict, name: str) -> bytes:
+    """What verifyReceipt gets, and the endpoint's receipt-data: a text
+    fixture verbatim, exactly as a client sent it; any other fixture holds
+    DER, encoded as canonical base64."""
+    data = fixture_bytes(directory, registry, name)
+    return data if registry[name]["codec"] == "text" else b64encode(data)
 
-    The ABI takes the instant itself rather than a callback, so this is the
-    whole of the conversion. Every `clock.now` in cases.json is a UTC
-    ISO-8601 timestamp ending in `Z`, which `fromisoformat` reads only once
-    it is spelled as an offset."""
+
+def clock_millis(case: dict):
+    """The case's pinned instant as epoch milliseconds, or `None`."""
     spec = case.get("clock")
     if not spec:
         return None
@@ -264,248 +170,157 @@ def clock_millis(case: dict):
     return round(moment.timestamp() * 1000)
 
 
-# --- language-neutral field paths ----------------------------------------
-
-
-def path_steps(path: str) -> list:
-    """`bundleId`, `inAppPurchases.length`, `unknownAttributes[9999][0]`,
-    `inAppPurchases[productId=com.example.app.vip].expiresDate`. Bracket
-    contents hold dots and equals signs, so a plain split is wrong."""
-    steps: list = []
-    current = ""
-    index = 0
-    while index < len(path):
-        char = path[index]
-        if char == ".":
-            if current:
-                steps.append(("name", current))
-                current = ""
-        elif char == "[":
-            if current:
-                steps.append(("name", current))
-                current = ""
-            close = path.index("]", index)
-            steps.append(("bracket", path[index + 1 : close]))
-            index = close
-        else:
-            current += char
-        index += 1
-    if current:
-        steps.append(("name", current))
-    if not steps:
-        raise SystemExit(f'unparseable field path "{path}"')
-    return steps
-
+# --- pointers -------------------------------------------------------------
 
 MISSING = object()
 
 
-def resolve_path(root, path: str):
+def resolve(root, pointer: str):
+    """An RFC 6901 pointer with one extension: a token `[key=value]` selects
+    the single array element whose member `key` is the JSON string `value`,
+    and the case fails unless exactly one matches."""
+    if not pointer.startswith("/"):
+        raise SystemExit(f'"{pointer}" is not a pointer')
     current = root
-    for kind, step in path_steps(path):
-        if current is None:
-            return None
-        if kind == "name":
-            if step == "length" and isinstance(current, list):
-                return len(current)
-            if not isinstance(current, dict) or step not in current:
-                return MISSING
-            current = current[step]
-            continue
-        if "=" in step and not step.startswith("="):
-            key, _, wanted = step.partition("=")
+    for raw in pointer[1:].split("/"):
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if token.startswith("[") and token.endswith("]") and "=" in token:
+            key, value = token[1:-1].split("=", 1)
             if not isinstance(current, list):
-                raise SystemExit(f"{path}: [{step}] does not select from a list")
-            matches = [item for item in current if isinstance(item, dict) and item.get(key) == wanted]
+                return MISSING
+            matches = [e for e in current if isinstance(e, dict) and e.get(key) == value]
             if len(matches) != 1:
-                raise SystemExit(
-                    f"{path}: [{step}] must select exactly one element, selected {len(matches)}"
-                )
+                raise ValueError(f"{token} matches {len(matches)} elements")
             current = matches[0]
-            continue
-        if isinstance(current, list):
-            index = int(step)
-            if index >= len(current):
+        elif isinstance(current, list):
+            if not token.isdigit() or int(token) >= len(current):
                 return MISSING
-            current = current[index]
+            current = current[int(token)]
+        elif isinstance(current, dict):
+            if token not in current:
+                return MISSING
+            current = current[token]
         else:
-            if not isinstance(current, dict) or step not in current:
-                return MISSING
-            current = current[step]
+            return MISSING
     return current
+
+
+def same_value(actual, wanted) -> bool:
+    """null means absent or JSON null; numbers compare by value and integers
+    exactly (json.loads keeps every integer's digits); booleans are not
+    numbers."""
+    if wanted is None:
+        return actual is MISSING or actual is None
+    if isinstance(wanted, bool) or isinstance(actual, bool):
+        return actual is wanted
+    if isinstance(wanted, (int, float)) and isinstance(actual, (int, float)):
+        return actual == wanted
+    return actual == wanted
 
 
 # --- one case -------------------------------------------------------------
 
 
-def anchors_for(directory: Path, registry: dict, spec: dict):
-    """The `(ders, lens, count, keepalive)` quadruple, or `None` for the
-    bundled Apple roots."""
-    if spec["source"] == "builtin":
-        if spec.get("name") not in ("apple-jws-roots", "apple-receipt-roots"):
-            raise SystemExit(f'unknown builtin root set {spec.get("name")!r}')
-        return None
-    if spec["source"] != "fixtures":
-        raise SystemExit(f'unknown trustedRoots source "{spec["source"]}"')
-    blobs = [fixture_bytes(directory, registry, name) for name in spec["fixtures"]]
-    keepalive = [(ctypes.c_uint8 * len(blob)).from_buffer_copy(blob) for blob in blobs]
-    ders = (ctypes.POINTER(ctypes.c_uint8) * len(blobs))(
-        *[ctypes.cast(buffer, ctypes.POINTER(ctypes.c_uint8)) for buffer in keepalive]
-    )
-    lens = (ctypes.c_size_t * len(blobs))(*[len(blob) for blob in blobs])
-    return ders, lens, len(blobs), keepalive
+def verifier_for(lib, directory: Path, registry: dict, case: dict):
+    """The verifier a case's config describes, and the buffers it borrowed."""
+    roots = case["config"]["trustedRoots"]
+    keep = []
+    if roots["source"] == "defaults":
+        ders, lens, count = None, None, 0
+    elif roots["source"] == "fixtures":
+        names = roots["fixtures"]
+        buffers = []
+        for name in names:
+            data = fixture_bytes(directory, registry, name)
+            buffers.append((ctypes.c_uint8 * len(data)).from_buffer_copy(data))
+        keep.extend(buffers)
+        u8p = ctypes.POINTER(ctypes.c_uint8)
+        ders = (u8p * len(buffers))(*[ctypes.cast(b, u8p) for b in buffers])
+        lens = (ctypes.c_size_t * len(buffers))(*[len(b) for b in buffers])
+        count = len(buffers)
+    else:
+        raise SystemExit(f'{case["id"]}: unknown trustedRoots source {roots["source"]}')
+    millis = clock_millis(case)
+    clock = None if millis is None else ctypes.byref(ctypes.c_int64(millis))
+    verifier = lib.aprv_verifier_new(ders, lens, count, clock)
+    if not verifier:
+        raise SystemExit(f'{case["id"]}: aprv_verifier_new refused the configuration')
+    return verifier, keep
 
 
 def run_case(lib, directory: Path, registry: dict, case: dict):
-    """Returns `(status, parsed_json)`; raises SystemExit on a harness fault."""
-    config = case["config"]
-    operation = case["operation"]
-    anchors = anchors_for(directory, registry, config["trustedRoots"])
-    request_body = case["input"].get("requestBody")
-    if request_body is not None and operation != "verifyReceiptEndpoint":
-        raise SystemExit(f'{case["id"]}: input.requestBody on operation "{operation}"')
-    data = fixture_bytes(
-        directory, registry, request_body if request_body is not None else case["input"]["fixture"]
-    )
-
-    bundle_id = (config.get("bundleId") or UNMATCHABLE_BUNDLE_ID).encode("utf-8")
-    mask = 0
-    for name in config.get("acceptedEnvironments") or []:
-        mask |= ENVIRONMENT_BITS[name]
-    mask = mask or UNMATCHABLE_ENVIRONMENTS
-    app_apple_id = config.get("appAppleId") or 0
-    guid = bytes.fromhex(config["deviceGuidHex"]) if config.get("deviceGuidHex") else b""
-    # NULL is "no clock given", which is the system clock — the behaviour of
-    # every constructor that predates the clock argument.
-    millis = clock_millis(case)
-    clock = None if millis is None else ctypes.byref(ctypes.c_int64(millis))
-    ders, lens, count = (None, None, 0) if anchors is None else anchors[:3]
-
-    result = AprvResult()
-
-    if operation in ("verifyTransaction", "verifyAppTransaction", "verifyRaw"):
-        if clock is not None:
-            raise SystemExit(f'{case["id"]}: the JWS verifier has no clock seam, but the case pins one')
-        if anchors is None:
-            handle = lib.aprv_verifier_new_jws(bundle_id, mask, app_apple_id)
-        else:
-            handle = lib.aprv_verifier_new_jws_with_roots(
-                bundle_id, mask, app_apple_id, ders, lens, count
+    """(status, raw JSON text) for one case."""
+    verifier, _keep = verifier_for(lib, directory, registry, case)
+    try:
+        operation = case["operation"]
+        source = case["input"]
+        if operation == "verifyReceiptEndpoint":
+            if "requestBody" in source:
+                body = fixture_bytes(directory, registry, source["requestBody"])
+            else:
+                receipt = receipt_string(directory, registry, source["fixture"]).decode("utf-8")
+                body = json.dumps({"receipt-data": receipt}).encode("utf-8")
+            environment = ENDPOINT_ENVIRONMENTS[case["config"]["environment"]]
+            response = ctypes.c_void_p()
+            status = lib.aprv_verify_receipt_endpoint(
+                verifier, environment, body, ctypes.byref(response)
             )
-        if not handle:
-            raise SystemExit(f'{case["id"]}: aprv_verifier_new_jws refused the configuration')
-        call = {
-            "verifyTransaction": lib.aprv_verify_transaction,
-            "verifyAppTransaction": lib.aprv_verify_app_transaction,
-            "verifyRaw": lib.aprv_verify_raw,
-        }[operation]
-        call(handle, data, ctypes.byref(result))
-        lib.aprv_verifier_free_jws(handle)
-
-    elif operation in ("verifyReceipt", "verifyReceiptBase64"):
-        # The receipt verifier takes no clock in any port: an injected one
-        # must never be able to accept an expired chain. A case pinning one
-        # here would be a change to the vectors, so it stops the run.
-        if clock is not None:
-            raise SystemExit(
-                f'{case["id"]}: the receipt verifier has no clock seam, but the case pins one'
-            )
-        if anchors is None:
-            handle = lib.aprv_verifier_new_receipt(bundle_id)
-        else:
-            handle = lib.aprv_verifier_new_receipt_with_roots(bundle_id, ders, lens, count)
-        if not handle:
-            raise SystemExit(f'{case["id"]}: aprv_verifier_new_receipt refused the configuration')
-        guid_buffer, guid_pointer = byte_array(guid)
+            if status != OK:
+                raise SystemExit(f'{case["id"]}: the endpoint call itself failed with {status}')
+            return OK, take_string(lib, response.value)
         if operation == "verifyReceipt":
-            payload_buffer, payload_pointer = byte_array(data)
-            if guid:
-                lib.aprv_verify_receipt_der_with_device_guid(
-                    handle, payload_pointer, len(data), guid_pointer, len(guid), ctypes.byref(result)
-                )
-            else:
-                lib.aprv_verify_receipt_der(
-                    handle, payload_pointer, len(data), ctypes.byref(result)
-                )
-            del payload_buffer
+            text = receipt_string(directory, registry, source["fixture"])
+            call = lib.aprv_verify_receipt
+        elif operation == "verifySignedData":
+            text = fixture_bytes(directory, registry, source["fixture"])
+            call = lib.aprv_verify_signed_data
         else:
-            if guid:
-                lib.aprv_verify_receipt_base64_with_device_guid(
-                    handle, data, guid_pointer, len(guid), ctypes.byref(result)
-                )
-            else:
-                lib.aprv_verify_receipt_base64(handle, data, ctypes.byref(result))
-        del guid_buffer
-        lib.aprv_verifier_free_receipt(handle)
-
-    elif operation == "verifyReceiptEndpoint":
-        environment = ENVIRONMENT_BITS[config["environment"]]
-        if clock is not None:
-            handle = lib.aprv_endpoint_new_with_roots_and_clock(
-                environment, ders, lens, count, clock
-            )
-        elif anchors is None:
-            handle = lib.aprv_endpoint_new(environment)
-        else:
-            handle = lib.aprv_endpoint_new_with_roots(environment, ders, lens, count)
-        if not handle:
-            raise SystemExit(f'{case["id"]}: aprv_endpoint_new refused the configuration')
-        if request_body is not None:
-            # The whole raw request body, verbatim: not wrapped, not trimmed.
-            # The ABI takes a NUL-terminated string, so a body holding a NUL
-            # could not be sent whole; no vector has one.
-            if b"\0" in data:
-                raise SystemExit(f'{case["id"]}: the request body holds a NUL byte')
-            body = data
-        else:
-            # A "text" fixture carries the exact string a client sent; raw
-            # and base64 fixtures have no client-facing string of their own,
-            # so they are re-encoded as canonical base64. Same rule as every
-            # other port.
-            codec = registry[case["input"]["fixture"]]["codec"]
-            receipt_data = (
-                data.decode("utf-8") if codec == "text" else b64encode(data).decode("ascii")
-            )
-            body = json.dumps({"receipt-data": receipt_data}).encode("utf-8")
-        response = ctypes.c_void_p()
-        status = lib.aprv_verify_receipt_endpoint_json(handle, body, ctypes.byref(response))
-        lib.aprv_endpoint_free(handle)
-        if status != OK:
-            raise SystemExit(f'{case["id"]}: the endpoint call failed with status {status}')
-        return OK, json.loads(take_string(lib, response.value))
-
-    else:
-        raise SystemExit(f'no adapter for operation "{operation}"')
-
-    text = take_string(lib, result.json)
-    return result.status, (json.loads(text) if text else None)
+            raise SystemExit(f'{case["id"]}: no adapter for operation {operation}')
+        result = AprvResult()
+        status = call(verifier, text, ctypes.byref(result))
+        return status, take_string(lib, result.json)
+    finally:
+        lib.aprv_verifier_free(verifier)
 
 
-def check(case: dict, status: int, payload) -> str:
-    """The failure message, or an empty string."""
+def check(case: dict, status: int, text: str) -> str:
+    """An empty string when the case passes, else what went wrong."""
     expected = case["expected"]
-    if expected["status"] == "error":
-        wanted = REASON_CODES.get(expected["reason"])
-        if wanted is None:
-            return f'unknown expected reason {expected["reason"]}'
+    if "oneOf" in expected:
+        # A panic answers INTERNAL_ERROR, which no list holds.
+        allowed = [OK if o == "ok" else REASON_CODES[o] for o in expected["oneOf"]]
+        return "" if status in allowed else f'expected one of {expected["oneOf"]}, got status {status}: {text}'
+    if case["operation"] != "verifyReceiptEndpoint" and expected.get("status") == "error":
+        wanted = REASON_CODES[expected["reason"]]
         if status != wanted:
-            return f'reason: expected {expected["reason"]} ({wanted}), got status {status} {payload}'
-        if not isinstance(payload, dict) or payload.get("reason") != expected["reason"]:
-            return f'the error body does not name {expected["reason"]}: {payload}'
+            return f'expected {expected["reason"]} ({wanted}), got status {status}: {text}'
+        if json.loads(text).get("reason") != expected["reason"]:
+            return f'the error body does not name {expected["reason"]}: {text}'
         return ""
-
     if status != OK:
-        return f"expected success, got status {status} {payload}"
-    for path, wanted in (expected.get("fields") or {}).items():
-        found = resolve_path(payload, path)
-        if wanted is None:
-            if found not in (MISSING, None):
-                return f"{path}: expected absent, got {found!r}"
-            continue
-        if found is MISSING:
-            return f"{path}: expected {wanted!r}, got nothing"
-        if found != wanted:
-            return f"{path}: expected {wanted!r}, got {found!r}"
+        return f"expected success, got status {status}: {text}"
+    # Same value, not same bytes. Re-encoding both sides with sorted keys
+    # ignores key order and escaping but, unlike ==, tells true from 1.
+    if "toJson" in expected and json.dumps(json.loads(text), sort_keys=True) != json.dumps(
+        json.loads(expected["toJson"]), sort_keys=True
+    ):
+        return f"toJson value differs: got {text}"
+    document = json.loads(text)
+    for pointer, wanted in (expected.get("fields") or {}).items():
+        try:
+            actual = resolve(document, pointer)
+        except ValueError as error:
+            return f"{pointer}: {error}"
+        if not same_value(actual, wanted):
+            shown = "nothing" if actual is MISSING else json.dumps(actual)
+            return f"{pointer}: expected {json.dumps(wanted)}, got {shown}"
+    for pointer, wanted in (expected.get("lengths") or {}).items():
+        try:
+            actual = resolve(document, pointer)
+        except ValueError as error:
+            return f"{pointer}: {error}"
+        if not isinstance(actual, list) or len(actual) != wanted:
+            return f"{pointer}: expected length {wanted}, got {actual!r}"
     return ""
 
 
@@ -516,13 +331,13 @@ def main() -> int:
     lib = load_library(Path(sys.argv[1]))
     directory = fixtures_dir(Path(__file__).parent)
     file = json.loads((directory / "cases.json").read_text(encoding="utf-8"))
-    if file["schemaVersion"] != 1:
-        raise SystemExit(f'cases.json is schemaVersion {file["schemaVersion"]}, this adapter is 1')
+    if file["schemaVersion"] != 2:
+        raise SystemExit(f'cases.json is schemaVersion {file["schemaVersion"]}, this adapter is 2')
     registry = file["fixtures"]
 
     print(
-        f'apple-purchase-receipt-verifier {lib.aprv_version().decode()} '
-        "— C ABI conformance over ctypes"
+        f"apple-purchase-receipt-verifier {lib.aprv_version().decode()}: "
+        "C ABI conformance over ctypes"
     )
 
     # The whole registry first: a fixture no case references would otherwise
@@ -530,46 +345,44 @@ def main() -> int:
     for name in registry:
         fixture_bytes(directory, registry, name)
 
-    passed = failed = skipped = 0
+    passed = failed = 0
     ran: set[str] = set()
     not_reachable: set[str] = set()
     pinned_clocks = 0
-    unchecked_reasons = 0
-    checked_fields = 0
+    checked = 0
     for case in file["cases"]:
-        # Nothing is skipped: an endpoint case that pins a clock is built
-        # through the _and_clock constructor, and one this adapter cannot run raises out
-        # of run_case rather than being counted away.
         if case["operation"] == "decodeBase64":
             # The ABI has no base64 decoder to call, and a decoded string
-            # that is not a receipt fails verification as
-            # INVALID_RECEIPT_FORMAT whichever way the decoder answered, so
-            # no ABI call could tell a right answer from a wrong one here.
+            # that is not a receipt fails verification as MALFORMED whichever
+            # way the decoder answered, so no ABI call could tell a right
+            # answer from a wrong one here.
             not_reachable.add(case["id"])
             continue
         ran.add(case["id"])
         if case.get("clock"):
             pinned_clocks += 1
-        checked_fields += len(case["expected"].get("fields") or {})
-        if "failureReason" in case["expected"]:
-            unchecked_reasons += 1
-        status, payload = run_case(lib, directory, registry, case)
-        problem = check(case, status, payload)
+        expected = case["expected"]
+        checked += len(expected.get("fields") or {}) + len(expected.get("lengths") or {})
+        budget = case.get("maxMillis")
+        if budget is not None:
+            # The denial-of-service cases: one warm-up run of the same case,
+            # then the timed run whose outcome is checked.
+            run_case(lib, directory, registry, case)
+            start = time.perf_counter()
+        status, text = run_case(lib, directory, registry, case)
+        problem = check(case, status, text)
+        if budget is not None and not problem:
+            millis = (time.perf_counter() - start) * 1000
+            if millis > budget:
+                problem = f"took {millis:.0f} ms, over the {budget} ms budget"
         if problem:
             print(f'FAIL  {case["id"]}: {problem}', file=sys.stderr)
             failed += 1
         else:
             passed += 1
 
-    print(
-        f"{passed} passed, {failed} failed, {skipped} skipped "
-        f"({pinned_clocks} pin a clock, and every one of them ran)"
-    )
-    print(f"{checked_fields} expected fields checked, nested paths included")
-    print(
-        f"{unchecked_reasons} endpoint failureReason expectations not checked: "
-        "the ABI answers Apple's response JSON, which carries no reason"
-    )
+    print(f"{passed} passed, {failed} failed, 0 skipped ({pinned_clocks} pin a clock)")
+    print(f"{checked} expected fields and lengths checked, nested pointers included")
     print(
         f"{len(not_reachable)} decodeBase64 groups not reachable: the ABI exposes no base64 decoder"
     )

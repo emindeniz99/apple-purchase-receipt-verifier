@@ -207,7 +207,7 @@ class FixtureGeneratorTest {
         write("receipt-no-signer-oid.der", noSignerOidPki.signReceipt(payload, new Date(SIGNED_DATE)));
 
         // Receipt signed by a now-expired cert: historical (creation date in
-        // the cert window) verifies; fresh (creation date now) fails INVALID_CHAIN.
+        // the cert window) verifies; fresh (creation date now) fails INVALID_CERTIFICATE.
         TestPki expiredReceiptPki = TestPki.receipt(new Date(OLD_NOT_BEFORE), new Date(OLD_NOT_AFTER), true);
         write("receipt-expired-root.der", expiredReceiptPki.root.getEncoded());
         byte[] oldPayload =
@@ -239,7 +239,7 @@ class FixtureGeneratorTest {
                         "expectHistorical",
                         "verifies",
                         "expectFresh",
-                        "INVALID_CHAIN"),
+                        "INVALID_CERTIFICATE"),
                 "receipt",
                 TestPki.claims(
                         "receiptType",
@@ -261,7 +261,7 @@ class FixtureGeneratorTest {
                         "vipExpiresDate",
                         "2030-02-01T09:30:00Z",
                         "expectForeign",
-                        "INVALID_CHAIN"));
+                        "UNTRUSTED_CHAIN"));
         ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
         write("manifest.json", mapper.writeValueAsBytes(manifest));
     }

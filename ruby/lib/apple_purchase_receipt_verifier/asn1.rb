@@ -19,9 +19,13 @@ module ApplePurchaseReceiptVerifier
     # escapes the library.
     class Error < StandardError; end
 
-    # Apple's deepest genuine structure is about 8 levels. 32 leaves room for
-    # anything real while keeping the recursive tree builder below far from
-    # Ruby's stack limit.
+    # Apple's deepest genuine structure is about 9 levels. 32 is the shared
+    # 0.7 bound (docs/design/0.7-api.md, Bounds): 32 constructed values are
+    # accepted and 33 refused in every port, counting the outermost value
+    # parsed on its own (the CMS envelope from its ContentInfo, the signed
+    # content from its attribute SET) as 1. It leaves room for anything real
+    # while keeping the recursive tree builder below far from Ruby's stack
+    # limit.
     MAX_DEPTH = 32
 
     # A ceiling on how much work one blob can ask for. The 79 KB / 187-purchase
@@ -205,6 +209,37 @@ module ApplePurchaseReceiptVerifier
       def parse_scanned(bytes, depth_limit: MAX_DEPTH)
         node, = read_node(bytes, 0, bytes.bytesize, 0, depth_limit)
         node
+      end
+
+      # The dotted-decimal string an OBJECT IDENTIFIER's content octets
+      # encode, e.g. `"2.16.840.1.101.3.4.2.1"`. Shared by {Cms} and
+      # {Signature}, the two readers that compare algorithm OIDs.
+      #
+      # @param contents [String] the OID's content octets (not the TLV)
+      # @return [String]
+      # @raise [Error] on a structurally invalid OID
+      def oid_string(contents)
+        raise Error, "empty OBJECT IDENTIFIER" if contents.empty?
+
+        first = contents.getbyte(0) #: Integer
+        parts = [[first / 40, 2].min]
+        parts << (first - (parts[0] * 40))
+        value = 0
+        started = false
+        contents.each_byte.with_index do |byte, index|
+          next if index.zero?
+
+          value = (value << 7) | (byte & 0x7F)
+          started = true
+          next unless (byte & 0x80).zero?
+
+          parts << value
+          value = 0
+          started = false
+        end
+        raise Error, "truncated OBJECT IDENTIFIER" if started
+
+        parts.join(".")
       end
 
       private

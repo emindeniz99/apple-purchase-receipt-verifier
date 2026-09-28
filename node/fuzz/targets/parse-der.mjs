@@ -3,12 +3,13 @@
  * through a structure walk; this one hands it arbitrary bytes directly so a
  * length or depth bug shows up without a CMS or certificate shape around it.
  *
- * The X.509 helpers `der.ts` hand-writes are exercised on the same bytes.
- * They slice the input a second time from offsets parsing chose, which is
- * exactly the state a mutated length can leave wrong. (The certificate
- * *template* is not fuzzed here: the Node build parses certificates with
- * `node:crypto`'s `X509Certificate`, i.e. OpenSSL, not with code from this
- * repository — that is the one Rust target with no Node counterpart.)
+ * The X.509 helpers `der.ts`/`x509.ts` hand-write are exercised on the same
+ * bytes. They slice the input a second time from offsets parsing chose,
+ * which is exactly the state a mutated length can leave wrong. Since 0.7
+ * both builds parse certificate structure with this repository's own
+ * `x509.ts` (no `node:crypto` `X509Certificate`), `parseCertificate` is
+ * fuzzed here too — the one target the Node port now shares with Rust and
+ * the web build rather than delegating to OpenSSL.
  *
  * Invariant: one well-formed value or a `ParseError`, never a `TypeError`
  * or a `RangeError` from indexing past the end of the input.
@@ -21,6 +22,7 @@ import {
   parse,
   tbsParts,
 } from '../../dist/der.js';
+import { parseCertificate } from '../../dist/x509.js';
 import { PARSE_ERRORS, requireTypedError } from '../harness.mjs';
 
 // The Apple receipt-signing marker OID, i.e. the extension lookup the
@@ -42,6 +44,7 @@ export function fuzz(data) {
     if (node.tag === Tag.SEQUENCE) {
       tbsParts(data);
       hasExtension(data, RECEIPT_SIGNER_OID);
+      parseCertificate(data);
     }
   } catch (error) {
     requireTypedError(error, 'der accessors', PARSE_ERRORS);

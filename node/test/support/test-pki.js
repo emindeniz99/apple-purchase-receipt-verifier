@@ -1,7 +1,7 @@
 // A receipt PKI minted at test time, for tests whose subject is the payload
 // parser. The full payload parse runs only after the chain and the CMS
 // signature have passed, so a payload spliced into a genuine receipt stops
-// at INVALID_SIGNATURE (or at INVALID_CHAIN when the splice makes the
+// at INVALID_SIGNATURE (or at a chain failure when the splice makes the
 // creation date unusable) and never reaches the parser. Signing it here, under
 // a chain the test then trusts, is what lets such a test keep reaching it.
 //
@@ -45,6 +45,8 @@ const OID_COMMON_NAME = Buffer.from('550403', 'hex');
 const OID_BASIC_CONSTRAINTS = Buffer.from('551d13', 'hex');
 // 1.2.840.113635.100.6.11.1, the Apple receipt-signing marker.
 const OID_RECEIPT_SIGNER = Buffer.from('2a864886f76364060b01', 'hex');
+// 1.2.840.113635.100.6.2.1, the Apple WWDR intermediate marker 0.7 checks.
+const OID_WWDR = Buffer.from('2a864886f76364060201', 'hex');
 
 const SHA256_RSA = tlv(SEQUENCE, tlv(OID, OID_SHA256_RSA), tlv(NULL));
 const name = (commonName) =>
@@ -73,6 +75,7 @@ const CA_TRUE = tlv(
   tlv(OCTET_STRING, tlv(SEQUENCE, tlv(BOOLEAN, Buffer.from([0xff])))),
 );
 const RECEIPT_SIGNER = tlv(SEQUENCE, tlv(OID, OID_RECEIPT_SIGNER), tlv(OCTET_STRING, tlv(NULL)));
+const WWDR = tlv(SEQUENCE, tlv(OID, OID_WWDR), tlv(OCTET_STRING, tlv(NULL)));
 
 let nextSerial = 1;
 
@@ -87,7 +90,7 @@ function certificate({ subject, issuer, subjectKey, issuerKey, extension }) {
     VALIDITY,
     name(subject),
     subjectKey.publicKey.export({ type: 'spki', format: 'der' }),
-    extensions(extension),
+    extensions(...[extension].flat()),
   );
   return {
     der: tlv(
@@ -103,8 +106,8 @@ function certificate({ subject, issuer, subjectKey, issuerKey, extension }) {
 const rsaKey = () => generateKeyPairSync('rsa', { modulusLength: 2048 });
 
 /**
- * A root, an intermediate and a receipt-signing leaf carrying the Apple
- * marker OID, all valid 2024-2049. `root` is the anchor to trust; `sign`
+ * A root, an intermediate carrying the Apple WWDR marker OID and a
+ * receipt-signing leaf carrying the receipt marker OID, all valid 2024-2049. `root` is the anchor to trust; `sign`
  * wraps a payload in a CMS SignedData the leaf really signed (no signed
  * attributes, SHA-256 with RSA, as Apple's receipts are shaped).
  */
@@ -122,7 +125,7 @@ export function mintReceiptPki() {
     issuer: 'Test Receipt Root',
     subjectKey: intermediateKey,
     issuerKey: rootKey,
-    extension: CA_TRUE,
+    extension: [CA_TRUE, WWDR],
   });
   const leaf = certificate({
     subject: 'Test Receipt Signing',

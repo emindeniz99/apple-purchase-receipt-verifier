@@ -3,42 +3,24 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import {
-  JwsVerifier,
-  ReceiptVerifier,
-  VerificationError,
-  VerifyReceiptEndpoint,
-  appleJwsRoots,
-  appleReceiptRoots,
-} from '../dist/index.js';
-// The decodeBase64 groups call the two decoders directly: the receipt-data
-// decoder of each build, and the x5c-entry decoder both builds share.
-import { decodeReceiptDataString } from '../dist/receipt.js';
-import { decodeReceiptDataString as webDecodeReceiptDataString } from '../dist/web/receipt.js';
-import { x5cBase64Decode } from '../dist/bytes.js';
 
 // Runs fixtures/cases.json — the normative cross-language conformance
-// vectors — against this implementation. The adapter below knows nothing
-// about any individual case: it loads the file, resolves fixture ids to
-// bytes, builds a verifier from the generic config, dispatches on
-// "operation", normalizes the result and reads the reason off a failure.
-// A vector that disagrees with the library is a bug report against one of
-// the two; it is never something to special-case here.
+// vectors for the 0.7 API — against BOTH builds (the default Node entry
+// point and the WebCrypto-only /web entry point), through the same
+// adapter, so a vector that disagrees with either build is a bug report
+// against one of the two, never something special-cased here.
+
+import * as nodeBuild from '../dist/index.js';
+import * as webBuild from '../dist/web/index.js';
 
 const fixtureUrl = (path) => fileURLToPath(new URL(`../../fixtures/${path}`, import.meta.url));
 
-// `JSON.parse` reads every number as a double, so the download id the
-// receipt-ids vectors pin — 9223372036854775807, a nineteen-digit, eight-byte
-// integer a double rounds to 9223372036854775808 — would arrive here rounded
-// and the expectation would be a value no port ever produces. Node 20, this
-// package's engines floor, has neither `JSON.rawJSON` nor a reviver that can
-// see the source text, so the lift happens before the parse: every number
-// literal outside a string that is an integer a double cannot hold is
-// rewritten into a tagged string, and the reviver turns it back into a
-// BigInt. Every other literal is handed to `JSON.parse` untouched.
-// `assert.equal` then compares a BigInt against the library's BigInt
-// exactly — and against a number
-// mathematically, so a rounded value cannot compare equal to this one.
+// `JSON.parse` reads every number as a double, so an id past 2^53 (the
+// endpoint's download_id, up to 9223372036854775807) would arrive rounded.
+// Every number literal outside a string that a double cannot hold exactly is
+// rewritten into a tagged string before parsing, then turned back into a
+// BigInt by a reviver; every other literal is handed to `JSON.parse`
+// untouched.
 const BIG_INT_TAG = '__bigint__:';
 const JSON_STRING_OR_NUMBER = /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
 
@@ -55,11 +37,11 @@ function parseWithBigInts(text) {
   );
 }
 
-const CASES_TEXT = readFileSync(fixtureUrl('cases.json'), 'utf8');
-const CASES = parseWithBigInts(CASES_TEXT);
+const CASES = parseWithBigInts(readFileSync(fixtureUrl('cases.json'), 'utf8'));
 
-/** Decodes a registered fixture to its logical bytes (fixture.codec). */
-function decodeFixture(entry) {
+const FIXTURE_CACHE = new Map();
+
+function decodeFixtureFile(entry) {
   const raw = readFileSync(fixtureUrl(entry.path));
   switch (entry.codec) {
     case 'raw':
@@ -69,23 +51,14 @@ function decodeFixture(entry) {
     case 'utf8':
       return Buffer.from(raw.toString('utf8').trim(), 'utf8');
     case 'text':
-      // The file bytes verbatim, untrimmed — several vectors are about
-      // whitespace, and one is 0 bytes, so this must NOT trim like utf8.
+      // The file bytes verbatim, untrimmed.
       return raw;
     default:
       throw new Error(`harness error: unknown fixture codec "${entry.codec}"`);
   }
 }
 
-/**
- * The decoded bytes of a registered fixture, checked against the digest the
- * registry records for them. contentSha256 is the anti-drift guarantee for
- * the vectors: a fixture that is regenerated, re-encoded or silently edited
- * changes the bytes every port verifies, and the expected fields would then
- * be pinned to something no other port ever saw. Verifying it here is what
- * makes that guarantee load-bearing rather than documentary — the digest is
- * over the LOGICAL bytes (post-codec), the same bytes handed to the library.
- */
+/** The decoded bytes of a registered fixture, checked against its recorded digest. */
 function fixtureBytes(id) {
   const entry = CASES.fixtures[id];
   if (entry === undefined) {
@@ -95,26 +68,18 @@ function fixtureBytes(id) {
   if (cached !== undefined) {
     return cached;
   }
-  const bytes = decodeFixture(entry);
-  if (typeof entry.contentSha256 !== 'string') {
-    throw new Error(`fixture "${id}" (${entry.path}) records no contentSha256`);
-  }
+  const bytes = decodeFixtureFile(entry);
   const actual = createHash('sha256').update(bytes).digest('hex');
   if (actual !== entry.contentSha256) {
     throw new Error(
       `fixture "${id}" (${entry.path}, codec ${entry.codec}) has drifted: ` +
-        `cases.json records contentSha256 ${entry.contentSha256}, ` +
-        `the decoded bytes hash to ${actual}`,
+        `cases.json records contentSha256 ${entry.contentSha256}, decoded bytes hash to ${actual}`,
     );
   }
   FIXTURE_CACHE.set(id, bytes);
   return bytes;
 }
 
-const FIXTURE_CACHE = new Map();
-
-// Read before any case runs: a fixture no case happens to reference would
-// otherwise drift unnoticed, and the registry is the thing being guarded.
 test('every fixture cases.json registers matches its recorded contentSha256', () => {
   const ids = Object.keys(CASES.fixtures);
   assert.ok(ids.length > 0, 'cases.json must register fixtures');
@@ -123,11 +88,6 @@ test('every fixture cases.json registers matches its recorded contentSha256', ()
   }
 });
 
-// Guarded the way the fixture digests are, and for the same reason: a vector
-// that pins an integer past 2^53 is pinning its digits, and a plain
-// `JSON.parse` would round them into an expectation no port can meet — one
-// that a port rounding the same way would nonetheless "pass". Finding none
-// at all means the lift above stopped working, not that the vectors changed.
 test('cases.json expectations keep the integers a double cannot hold', () => {
   const big = [];
   const walk = (value) => {
@@ -141,278 +101,277 @@ test('cases.json expectations keep the integers a double cannot hold', () => {
   };
   walk(CASES);
   assert.ok(big.length > 0, 'no vector pins an integer past 2^53 any more');
-  for (const value of big) {
-    assert.ok(!Number.isSafeInteger(Number(value)), `${value} fits in a double after all`);
-    assert.ok(CASES_TEXT.includes(String(value)), `${value} is not what cases.json says`);
-  }
 });
 
-const BUILTIN_ROOTS = {
-  'apple-jws-roots': appleJwsRoots,
-  'apple-receipt-roots': appleReceiptRoots,
-};
+// --- field paths ---------------------------------------------------------
 
-function trustedRoots(spec) {
-  if (spec.source === 'builtin') {
-    const roots = BUILTIN_ROOTS[spec.name];
-    if (roots === undefined) {
-      throw new Error(`harness error: unknown builtin root set "${spec.name}"`);
-    }
-    return roots();
+// JSON Pointer (RFC 6901): a leading "/" starts the path, then "/"-joined
+// tokens; empty string means the whole document.
+function pointerSteps(pointer) {
+  if (pointer === '') {
+    return [];
   }
-  return spec.fixtures.map(fixtureBytes);
+  if (!pointer.startsWith('/')) {
+    throw new Error(`harness error: not a JSON Pointer: "${pointer}"`);
+  }
+  return pointer
+    .slice(1)
+    .split('/')
+    .map((token) => token.replace(/~1/g, '/').replace(/~0/g, '~'));
 }
 
-// verifyRaw enforces no claim, so its cases may omit bundleId and
-// acceptedEnvironments — but this constructor still demands both. The
-// placeholders match nothing the fixtures carry, so a claim check that
-// leaked into verifyRaw would surface as a failure, not as a pass.
-const UNMATCHABLE_BUNDLE_ID = 'conformance.unset.bundle.id';
-const UNMATCHABLE_ENVIRONMENTS = ['LocalTesting'];
-
-function jwsVerifier(config, clock) {
-  requireNoClock(clock, 'JwsVerifier');
-  return new JwsVerifier({
-    trustedRoots: trustedRoots(config.trustedRoots),
-    bundleId: config.bundleId ?? UNMATCHABLE_BUNDLE_ID,
-    acceptedEnvironments: config.acceptedEnvironments ?? UNMATCHABLE_ENVIRONMENTS,
-    appAppleId: config.appAppleId ?? null,
-  });
-}
-
-// Each operation takes the case's clock (null when it pins none) and hands
-// it to the library's `clock` option. Only the endpoint has one; an
-// operation whose API has no clock seam rejects a case that pins one instead of silently running on the
-// system clock. `fixture` is the input's registry entry (codec included),
-// needed only by the two operations whose wire form depends on it; `spec` is
-// the case's `input`, which only the endpoint reads (for `requestBody`).
-const OPERATIONS = {
-  verifyTransaction: (config, input, clock) =>
-    jwsVerifier(config, clock).verifyTransaction(input.toString('utf8')),
-  verifyAppTransaction: (config, input, clock) =>
-    jwsVerifier(config, clock).verifyAppTransaction(input.toString('utf8')),
-  verifyRaw: (config, input, clock) => jwsVerifier(config, clock).verifyRaw(input.toString('utf8')),
-  verifyReceipt: (config, input, clock) => {
-    requireNoClock(clock, 'verifyReceipt');
-    const verifier = new ReceiptVerifier({
-      trustedRoots: trustedRoots(config.trustedRoots),
-      bundleId: config.bundleId,
-    });
-    const guid =
-      config.deviceGuidHex === undefined ? null : Buffer.from(config.deviceGuidHex, 'hex');
-    return verifier.verify(input, guid);
-  },
-  // The string entry point: the fixture must be a text fixture (the raw
-  // characters a client sent), handed to verify() as a string, never
-  // pre-decoded by this harness — that decoding is exactly what this
-  // operation pins.
-  verifyReceiptBase64: (config, input, clock, fixture) => {
-    requireNoClock(clock, 'verifyReceiptBase64');
-    if (fixture.codec !== 'text') {
-      throw new Error('harness error: verifyReceiptBase64 case must name a text fixture');
-    }
-    const verifier = new ReceiptVerifier({
-      trustedRoots: trustedRoots(config.trustedRoots),
-      bundleId: config.bundleId,
-    });
-    const guid =
-      config.deviceGuidHex === undefined ? null : Buffer.from(config.deviceGuidHex, 'hex');
-    return verifier.verify(input.toString('utf8'), guid);
-  },
-  // Returns the result itself: runCase reads failureReason off it and then
-  // checks the fields against its response.
-  verifyReceiptEndpoint: (config, input, clock, fixture, spec) => {
-    const endpoint = new VerifyReceiptEndpoint({
-      trustedRoots: trustedRoots(config.trustedRoots),
-      environment: config.environment,
-      clock,
-    });
-    if (spec.requestBody !== undefined) {
-      // The whole raw body, verbatim, through the entry point that parses
-      // it: never wrapped in an envelope, never trimmed.
-      return endpoint.verifyReceiptResult(input.toString('utf8'));
-    }
-    return endpoint.verifyReceiptResult({
-      // A text fixture's bytes ARE the client-sent string, verbatim; a
-      // raw/base64 fixture is DER, which this harness re-encodes as
-      // canonical base64 the way a normal client would.
-      'receipt-data': fixture.codec === 'text' ? input.toString('utf8') : input.toString('base64'),
-    });
-  },
-};
-
-function requireNoClock(clock, operation) {
-  if (clock !== null) {
-    throw new Error(`harness error: ${operation} has no clock seam, but the case pins one`);
-  }
-}
-
-// --- result normalization ----------------------------------------------
-
-/** ISO-8601 UTC, dropping milliseconds when they are zero. */
-const isoUtc = (date) => date.toISOString().replace(/\.000Z$/, 'Z');
-
-const isBytes = (value) => Buffer.isBuffer(value) || value instanceof Uint8Array;
-
-/**
- * Renders a returned object into the language-neutral shape the field paths
- * are written against: dates as ISO-8601 UTC, binary as lowercase hex (also
- * under `<name>Hex`, the spelling cases.json uses for a byte field), maps as
- * plain objects keyed by the stringified key.
- */
-function normalize(value) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (value instanceof Date) {
-    return isoUtc(value);
-  }
-  if (isBytes(value)) {
-    return Buffer.from(value).toString('hex');
-  }
-  if (Array.isArray(value)) {
-    return value.map(normalize);
-  }
-  if (value instanceof Map) {
-    return Object.fromEntries([...value].map(([key, v]) => [String(key), normalize(v)]));
-  }
-  if (typeof value === 'object') {
-    const out = {};
-    for (const [key, v] of Object.entries(value)) {
-      out[key] = normalize(v);
-      if (isBytes(v)) {
-        out[`${key}Hex`] = out[key];
-      }
-    }
-    return out;
-  }
-  return value;
-}
-
-// --- field paths --------------------------------------------------------
-
-// A path step is either a name (`bundleId`, `length`) or a bracket
-// (`[9999]`, `[0]`, `[productId=com.example.app.vip]`). Bracket contents may
-// hold dots, so the split cannot be a plain `.split('.')`.
-const PATH_STEP = /\.?([^.[\]]+)|\[([^\]]+)\]/g;
-
-function pathSteps(path) {
-  const steps = [];
-  let consumed = 0;
-  for (const match of path.matchAll(PATH_STEP)) {
-    if (match.index !== consumed) {
-      throw new Error(`harness error: unparseable field path "${path}"`);
-    }
-    consumed += match[0].length;
-    steps.push(
-      match[1] === undefined
-        ? { bracket: true, value: match[2] }
-        : { bracket: false, value: match[1] },
-    );
-  }
-  if (consumed !== path.length) {
-    throw new Error(`harness error: unparseable field path "${path}"`);
-  }
-  return steps;
-}
-
-function resolvePath(root, path) {
+function resolvePointer(root, pointer) {
   let current = root;
-  for (const step of pathSteps(path)) {
+  for (const token of pointerSteps(pointer)) {
     if (current === null || current === undefined) {
       return undefined;
     }
-    if (!step.bracket) {
-      current =
-        step.value === 'length' && Array.isArray(current) ? current.length : current[step.value];
+    const bracketMatch = /^\[(.*)]$/.exec(token);
+    if (bracketMatch) {
+      const inner = bracketMatch[1];
+      const eq = inner.indexOf('=');
+      if (eq > 0) {
+        const key = inner.slice(0, eq);
+        const wanted = inner.slice(eq + 1);
+        assert.ok(Array.isArray(current), `[${inner}] does not select from a list`);
+        const matches = current.filter(
+          (element) =>
+            element !== null && typeof element === 'object' && String(element[key]) === wanted,
+        );
+        assert.equal(
+          matches.length,
+          1,
+          `[${inner}] must select exactly one element, selected ${matches.length}`,
+        );
+        current = matches[0];
+        continue;
+      }
+      current = Array.isArray(current) ? current[Number(inner)] : current[inner];
       continue;
     }
-    const separator = step.value.indexOf('=');
-    if (separator > 0) {
-      const key = step.value.slice(0, separator);
-      const wanted = step.value.slice(separator + 1);
-      assert.ok(Array.isArray(current), `${path}: [${step.value}] does not select from a list`);
-      const matches = current.filter(
-        (element) => element !== null && typeof element === 'object' && element[key] === wanted,
-      );
-      assert.equal(
-        matches.length,
-        1,
-        `${path}: [${step.value}] must select exactly one element, selected ${matches.length}`,
-      );
-      current = matches[0];
-    } else {
-      current = Array.isArray(current) ? current[Number(step.value)] : current[step.value];
+    if (token === 'length' && Array.isArray(current)) {
+      current = current.length;
+      continue;
     }
+    current = current[token];
   }
   return current;
 }
 
-// --- decodeBase64 -------------------------------------------------------
+// --- input construction ---------------------------------------------------
 
-// Each decoder a decodeBase64 group can name, with the reason its refusal
-// carries. An error group states INVALID_RECEIPT_FORMAT, the receipt-data
-// answer; x5c answers INVALID_CERTIFICATE. x5cBase64Decode throws a plain
-// Error that both JWS verifiers turn into INVALID_CERTIFICATE, so that
-// translation happens here.
-const BASE64_DECODERS = {
-  'receipt-data': [
-    { build: 'node', decode: decodeReceiptDataString, refusal: 'INVALID_RECEIPT_FORMAT' },
-    { build: 'web', decode: webDecodeReceiptDataString, refusal: 'INVALID_RECEIPT_FORMAT' },
-  ],
-  x5c: [
-    {
-      build: 'node+web',
-      decode: (text) => {
-        try {
-          return x5cBase64Decode(text);
-        } catch (error) {
-          throw new VerificationError('INVALID_CERTIFICATE', error.message);
-        }
-      },
-      refusal: 'INVALID_CERTIFICATE',
-    },
-  ],
-};
+function receiptInputString(fixtureId) {
+  const entry = CASES.fixtures[fixtureId];
+  const bytes = fixtureBytes(fixtureId);
+  if (entry.codec === 'raw' || entry.codec === 'base64') {
+    return bytes.toString('base64');
+  }
+  return bytes.toString('utf8');
+}
+
+function jwsInputString(fixtureId) {
+  return fixtureBytes(fixtureId).toString('utf8');
+}
+
+function endpointRequestBody(input) {
+  if (input.requestBody !== undefined) {
+    return fixtureBytes(input.requestBody).toString('utf8');
+  }
+  return JSON.stringify({ 'receipt-data': receiptInputString(input.fixture) });
+}
+
+// --- clock -----------------------------------------------------------------
+
+function caseClockMs(kase) {
+  if (kase.clock === undefined) {
+    return null;
+  }
+  const ms = Date.parse(kase.clock.now);
+  if (Number.isNaN(ms)) {
+    throw new Error(`harness error: unparseable clock "${kase.clock.now}"`);
+  }
+  return ms;
+}
+
+// --- roots -------------------------------------------------------------
+
+function trustedRootsOption(build, spec) {
+  if (spec === undefined || spec.source === 'defaults') {
+    return undefined;
+  }
+  return spec.fixtures.map((id) => Buffer.from(fixtureBytes(id)));
+}
+
+// --- per-build adapter ---------------------------------------------------
 
 /**
- * Runs every text of a decodeBase64 group through every decoder it names and
- * reports every text that got the wrong answer, by case id, decoder, index
- * and quoted text, rather than stopping at the first.
+ * Runs one target build (Node or web) against every case, as its own set of
+ * `node:test` subtests. `sync` is false for the web build, whose
+ * `createConfig`/`createVerifier` calls all return Promises.
  */
-function runDecodeBase64(kase) {
-  const { texts } = kase.input;
-  assert.ok(Array.isArray(texts) && texts.length > 0, 'harness error: input.texts is empty');
-  assert.ok(Array.isArray(kase.decoders) && kase.decoders.length > 0, 'harness error: no decoders');
-  const { status, bytesHex, reason } = kase.expected;
-  if (status === 'error') {
-    assert.equal(
-      reason,
-      'INVALID_RECEIPT_FORMAT',
-      'harness error: an error group states the receipt-data reason',
-    );
-  }
-  const failures = [];
-  for (const name of kase.decoders) {
-    const decoders = BASE64_DECODERS[name];
-    if (decoders === undefined) {
-      throw new Error(`harness error: no decoder "${name}"`);
+function defineTargetTests(name, build, async_) {
+  const ENV = { PRODUCTION: build.Environment.PRODUCTION, SANDBOX: build.Environment.SANDBOX };
+
+  async function verifierForCase(kase) {
+    const opts = {};
+    const roots = trustedRootsOption(name, kase.config?.trustedRoots);
+    if (roots !== undefined) {
+      opts.roots = roots;
     }
-    for (const { build, decode, refusal } of decoders) {
+    const clockMs = caseClockMs(kase);
+    if (clockMs !== null) {
+      opts.clock = () => clockMs;
+    }
+    const cfg = async_ ? await build.createConfig(opts) : build.createConfig(opts);
+    return build.createVerifier(cfg);
+  }
+
+  async function callOperation(kase) {
+    const verifier = await verifierForCase(kase);
+    switch (kase.operation) {
+      case 'verifyReceipt': {
+        const input = receiptInputString(kase.input.fixture);
+        return verifier.verifyReceipt(input);
+      }
+      case 'verifySignedData': {
+        const input = jwsInputString(kase.input.fixture);
+        return verifier.verifySignedData(input);
+      }
+      case 'verifyReceiptEndpoint': {
+        const body = endpointRequestBody(kase.input);
+        const env = ENV[kase.config.environment];
+        if (env === undefined) {
+          throw new Error(
+            `harness error: unknown endpoint environment "${kase.config.environment}"`,
+          );
+        }
+        const text = await verifier.verifyReceiptEndpoint(env, body);
+        return { endpointText: text };
+      }
+      default:
+        throw new Error(`harness error: no adapter for operation "${kase.operation}"`);
+    }
+  }
+
+  function checkFields(actualDoc, fields) {
+    for (const [pointer, expected] of Object.entries(fields)) {
+      const value = resolvePointer(actualDoc, pointer);
+      if (expected === null) {
+        assert.ok(
+          value === null || value === undefined,
+          `${pointer}: expected absent, got ${String(value)}`,
+        );
+      } else if (typeof value === 'bigint' || typeof expected === 'bigint') {
+        assert.equal(String(value), String(expected), pointer);
+      } else {
+        assert.deepEqual(value, expected, pointer);
+      }
+    }
+  }
+
+  function checkLengths(actualDoc, lengths) {
+    for (const [pointer, expected] of Object.entries(lengths)) {
+      const value = resolvePointer(actualDoc, pointer);
+      assert.ok(Array.isArray(value), `${pointer}: expected an array to measure its length`);
+      assert.equal(value.length, expected, `${pointer} length`);
+    }
+  }
+
+  async function runVerifyCase(kase) {
+    let result = await callOperation(kase);
+    if (kase.operation === 'verifyReceiptEndpoint') {
+      const text = result.endpointText;
+      assert.equal(
+        kase.expected.status,
+        undefined,
+        'harness error: endpoint cases have no status field',
+      );
+      const doc = parseWithBigInts(text);
+      if (kase.expected.fields) {
+        checkFields(doc, kase.expected.fields);
+      }
+      if (kase.expected.lengths) {
+        checkLengths(doc, kase.expected.lengths);
+      }
+      return;
+    }
+    if (kase.expected.oneOf) {
+      // Port-defined within a list: "ok" or the reason must be listed. A
+      // crash would have thrown from callOperation already.
+      const outcome = result.verified ? 'ok' : result.failure.reason;
+      assert.ok(
+        kase.expected.oneOf.includes(outcome),
+        `answered ${outcome}, want one of ${kase.expected.oneOf}`,
+      );
+      return;
+    }
+    if (kase.expected.status === 'error') {
+      assert.equal(
+        result.verified,
+        false,
+        `expected ${kase.expected.reason} but the call verified`,
+      );
+      assert.equal(result.failure.reason, kase.expected.reason, 'reason');
+      if (kase.expected.messageMustNotContain) {
+        for (const codePoint of kase.expected.messageMustNotContain) {
+          assert.ok(
+            !result.failure.message.includes(String.fromCodePoint(codePoint)),
+            `message must not contain U+${codePoint.toString(16)}: ${JSON.stringify(result.failure.message)}`,
+          );
+        }
+      }
+      return;
+    }
+    assert.equal(
+      result.verified,
+      true,
+      `expected ok but failed: ${result.failure && result.failure.reason}`,
+    );
+    const json = kase.operation === 'verifyReceipt' ? result.payload.toJson() : result.payload.json;
+    const doc = parseWithBigInts(json);
+    if (kase.expected.toJson !== undefined) {
+      // Same value, not same bytes: whitespace, key order and escaping
+      // style are free (docs/design/0.7-api.md "Our JSON").
+      assert.deepStrictEqual(doc, parseWithBigInts(kase.expected.toJson), 'toJson value');
+    }
+    if (kase.expected.fields) {
+      checkFields(doc, kase.expected.fields);
+    }
+    if (kase.expected.lengths) {
+      checkLengths(doc, kase.expected.lengths);
+    }
+  }
+
+  // --- decodeBase64 -------------------------------------------------------
+
+  const DECODERS = {
+    'receipt-data': { decode: build.decodeReceiptBase64, refusal: 'MALFORMED' },
+    x5c: { decode: build.decodeX5cEntry, refusal: 'INVALID_CERTIFICATE' },
+  };
+
+  function runDecodeBase64Case(kase) {
+    const { texts } = kase.input;
+    const { status, bytesHex } = kase.expected;
+    const failures = [];
+    for (const name2 of kase.decoders) {
+      const decoder = DECODERS[name2];
+      if (decoder === undefined) {
+        throw new Error(`harness error: no decoder "${name2}"`);
+      }
       texts.forEach((text, index) => {
-        const where = `${kase.id}: ${name} (${build}) texts[${index}] ${JSON.stringify(text)}`;
+        const where = `${kase.id}: ${name2} texts[${index}] ${JSON.stringify(text)}`;
         let decoded;
         try {
-          decoded = Buffer.from(decode(text)).toString('hex');
+          decoded = Buffer.from(decoder.decode(text)).toString('hex');
         } catch (error) {
-          if (!(error instanceof VerificationError)) {
+          if (!(error instanceof build.VerificationError)) {
             failures.push(
               `${where}: harness error: threw ${error?.constructor?.name} (${error?.message})`,
             );
           } else if (status === 'ok') {
             failures.push(`${where} was refused (${error.reason}), want ${bytesHex}`);
-          } else if (error.reason !== refusal) {
-            failures.push(`${where}: reason ${error.reason}, want ${refusal}`);
+          } else if (error.reason !== decoder.refusal) {
+            failures.push(`${where}: reason ${error.reason}, want ${decoder.refusal}`);
           }
           return;
         }
@@ -423,119 +382,52 @@ function runDecodeBase64(kase) {
         }
       });
     }
+    assert.deepEqual(failures, [], failures.join('\n'));
   }
-  assert.deepEqual(failures, [], failures.join('\n'));
-}
 
-// --- one case -----------------------------------------------------------
+  // --- run every case ------------------------------------------------------
 
-/**
- * The case's pinned instant as the library's `clock` option, or null when
- * the case does not pin one (then the library uses the system clock).
- */
-function caseClock(kase) {
-  if (kase.clock === undefined) {
-    return null;
-  }
-  const now = new Date(kase.clock.now);
-  if (Number.isNaN(now.getTime())) {
-    throw new Error(`harness error: unparseable clock "${kase.clock.now}"`);
-  }
-  return () => now;
-}
+  const RAN = new Set();
 
-function runCase(kase) {
-  if (kase.operation === 'decodeBase64') {
-    runDecodeBase64(kase);
-    return;
+  for (const kase of CASES.cases) {
+    test(`${name} ${kase.id}`, async () => {
+      RAN.add(kase.id);
+      if (kase.operation === 'decodeBase64') {
+        runDecodeBase64Case(kase);
+        return;
+      }
+      if (kase.maxMillis !== undefined) {
+        await runVerifyCase(kase); // warm-up
+        const start = performance.now();
+        await runVerifyCase(kase);
+        const elapsed = performance.now() - start;
+        assert.ok(
+          elapsed <= kase.maxMillis,
+          `${kase.id} took ${elapsed.toFixed(1)}ms, over the ${kase.maxMillis}ms budget`,
+        );
+        return;
+      }
+      await runVerifyCase(kase);
+    });
   }
-  const operation = OPERATIONS[kase.operation];
-  if (operation === undefined) {
-    throw new Error(`harness error: no adapter for operation "${kase.operation}"`);
-  }
-  // A requestBody names a fixture too: the whole raw request body.
-  const fixtureId = kase.input.requestBody ?? kase.input.fixture;
-  const input = fixtureBytes(fixtureId);
-  const fixture = CASES.fixtures[fixtureId];
-  let result;
-  try {
-    result = operation(kase.config, input, caseClock(kase), fixture, kase.input);
-  } catch (error) {
-    // Only a VerificationError carries a canonical Reason. Anything else is
-    // a defect in the library or in this harness, and must never be read as
-    // one of the expected reasons.
-    if (!(error instanceof VerificationError)) {
-      throw new Error(
-        `harness error: ${kase.operation} threw ` +
-          `${error?.constructor?.name ?? typeof error} (${error?.message}), ` +
-          'which is not a VerificationError',
-        { cause: error },
-      );
-    }
-    assert.equal(kase.expected.status, 'error', `expected success but threw ${error.reason}`);
-    assert.equal(error.reason, kase.expected.reason, 'reason');
-    return;
-  }
-  assert.equal(
-    kase.expected.status,
-    'ok',
-    `expected ${kase.expected.reason} but the call returned a value`,
+
+  const TEST_FILTER = [...process.execArgv, ...process.argv].find((arg) =>
+    /^--test-(name-pattern|skip-pattern|only)\b/.test(arg),
   );
-  if (kase.operation === 'verifyReceiptEndpoint') {
-    // failureReason is not on Apple's wire, so an endpoint case pins it
-    // beside the wire fields rather than among them.
-    if (kase.expected.failureReason !== undefined) {
-      assert.equal(result.failureReason, kase.expected.failureReason, 'failureReason');
-    }
-    result = result.toResponse();
-  }
-  const actual = normalize(result);
-  for (const [path, expected] of Object.entries(kase.expected.fields)) {
-    const value = resolvePath(actual, path);
-    if (expected === null) {
-      // null means "absent or unset".
-      assert.ok(
-        value === null || value === undefined,
-        `${path}: expected absent, got ${String(value)}`,
-      );
-    } else if (typeof value === 'bigint' || typeof expected === 'bigint') {
-      // Compared as digits: an id past 2^53 arrives as a BigInt, the vector
-      // pins a BigInt or a plain number depending on its size, and the
-      // strict `assert.equal` would call 1234567890n and 1234567890
-      // different ids. Rounding still fails — "9223372036854775808" is not
-      // "9223372036854775807".
-      assert.equal(String(value), String(expected), path);
-    } else {
-      assert.equal(value, expected, path);
-    }
-  }
-}
 
-// Which case ids actually ran, so the coverage check below is a fact rather
-// than a loop-shaped assumption.
-const RAN = new Set();
-
-for (const kase of CASES.cases) {
-  test(`cases.json ${kase.id}`, () => {
-    RAN.add(kase.id);
-    runCase(kase);
+  test(`${name}: every case in cases.json ran`, (t) => {
+    if (TEST_FILTER !== undefined) {
+      t.diagnostic(`${TEST_FILTER} filters tests; the coverage self-check needs a full run`);
+      return;
+    }
+    const missing = CASES.cases.map((k) => k.id).filter((id) => !RAN.has(id));
+    assert.deepEqual(
+      missing,
+      [],
+      `${missing.length} of ${CASES.cases.length} cases did not run (${name})`,
+    );
   });
 }
 
-// A test filter on the command line is the one thing that may legitimately
-// leave cases unrun, so the check stands down for it and says so.
-const TEST_FILTER = [...process.execArgv, ...process.argv].find((arg) =>
-  /^--test-(name-pattern|skip-pattern|only)\b/.test(arg),
-);
-
-// Coverage self-check: every case in the file ran, compared against the
-// parsed file and never against a literal count, so a case the loop above
-// stopped reaching, or an operation that quietly returned early, fails here.
-test('cases.json every case ran', (t) => {
-  if (TEST_FILTER !== undefined) {
-    t.diagnostic(`${TEST_FILTER} filters tests; the coverage self-check needs a full run`);
-    return;
-  }
-  const missing = CASES.cases.map((kase) => kase.id).filter((id) => !RAN.has(id));
-  assert.deepEqual(missing, [], `${missing.length} of ${CASES.cases.length} cases did not run`);
-});
+defineTargetTests('node', nodeBuild, false);
+defineTargetTests('web', webBuild, true);

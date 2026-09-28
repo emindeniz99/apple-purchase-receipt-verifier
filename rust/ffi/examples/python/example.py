@@ -19,7 +19,6 @@ import json
 import sys
 from pathlib import Path
 
-APRV_ENVIRONMENT_SANDBOX = 2
 LIBRARY_NAMES = [
     "libapple_purchase_receipt_verifier_ffi.so",
     "libapple_purchase_receipt_verifier_ffi.dylib",
@@ -42,29 +41,20 @@ def load(directory: Path) -> ctypes.CDLL:
         raise SystemExit(f"no shared library in {directory}")
     u8p = ctypes.POINTER(ctypes.c_uint8)
     lib.aprv_version.restype = ctypes.c_char_p
-    lib.aprv_verifier_new_jws_with_roots.argtypes = [
-        ctypes.c_char_p,
-        ctypes.c_uint32,
-        ctypes.c_uint64,
+    lib.aprv_verifier_new.argtypes = [
         ctypes.POINTER(u8p),
         ctypes.POINTER(ctypes.c_size_t),
         ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_int64),
     ]
-    lib.aprv_verifier_new_jws_with_roots.restype = ctypes.c_void_p
-    lib.aprv_verify_transaction.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_char_p,
-        ctypes.POINTER(AprvResult),
-    ]
-    lib.aprv_verifier_free_jws.argtypes = [ctypes.c_void_p]
-    lib.aprv_verifier_new_receipt.argtypes = [ctypes.c_char_p]
-    lib.aprv_verifier_new_receipt.restype = ctypes.c_void_p
-    lib.aprv_verify_receipt_base64.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_char_p,
-        ctypes.POINTER(AprvResult),
-    ]
-    lib.aprv_verifier_free_receipt.argtypes = [ctypes.c_void_p]
+    lib.aprv_verifier_new.restype = ctypes.c_void_p
+    for name in ("aprv_verify_receipt", "aprv_verify_signed_data"):
+        getattr(lib, name).argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(AprvResult),
+        ]
+    lib.aprv_verifier_free.argtypes = [ctypes.c_void_p]
     lib.aprv_string_free.argtypes = [ctypes.c_void_p]
     return lib
 
@@ -92,19 +82,19 @@ def main(library_dir: str) -> int:
         ctypes.cast(root_buffer, ctypes.POINTER(ctypes.c_uint8))
     )
     lens = (ctypes.c_size_t * 1)(len(root))
-    jws_verifier = lib.aprv_verifier_new_jws_with_roots(
-        b"com.example.app", APRV_ENVIRONMENT_SANDBOX, 0, ders, lens, 1
-    )
+    # A verifier pinned to the fixture root, and one on the bundled Apple
+    # roots. A NULL clock reads the system clock.
+    fixture_verifier = lib.aprv_verifier_new(ders, lens, 1, None)
     transaction = AprvResult()
-    lib.aprv_verify_transaction(jws_verifier, jws, ctypes.byref(transaction))
+    lib.aprv_verify_signed_data(fixture_verifier, jws, ctypes.byref(transaction))
     failures += show(lib, "transaction", transaction)
-    lib.aprv_verifier_free_jws(jws_verifier)
+    lib.aprv_verifier_free(fixture_verifier)
 
-    receipt_verifier = lib.aprv_verifier_new_receipt(b"dev.bonzer.weeka.app")
+    apple_verifier = lib.aprv_verifier_new(None, None, 0, None)
     app_receipt = AprvResult()
-    lib.aprv_verify_receipt_base64(receipt_verifier, receipt, ctypes.byref(app_receipt))
+    lib.aprv_verify_receipt(apple_verifier, receipt, ctypes.byref(app_receipt))
     failures += show(lib, "receipt", app_receipt)
-    lib.aprv_verifier_free_receipt(receipt_verifier)
+    lib.aprv_verifier_free(apple_verifier)
 
     return 0 if failures == 0 else 1
 

@@ -18,20 +18,17 @@ attacker:
 
 | Input | Entry point |
 |---|---|
-| Legacy PKCS#7 receipt bytes | `ReceiptVerifier.verify(bytes)` |
-| The base64 string a client sends as `receipt-data` | `ReceiptVerifier.verify(string)` |
-| Compact JWS (transaction, app transaction, renewal info, notification) | `JwsVerifier.verifyTransaction` / `verifyAppTransaction` / `verifyRaw` |
+| A legacy PKCS#7 receipt, as the base64 string a client sends as `receipt-data` | `Verifier.verifyReceipt(base64)` |
+| Compact JWS (transaction, app transaction, renewal info, notification) | `Verifier.verifySignedData(jws)` |
 | The `x5c` chain, and the certificates in a receipt's CMS `SignedData` | reached from the above |
-| A whole `verifyReceipt` JSON request body | `VerifyReceiptEndpoint.verifyReceiptJson` |
-| A device GUID a caller forwards from a client | `verifyWithDeviceGuid` |
+| A whole `verifyReceipt` JSON request body | `Verifier.verifyReceiptEndpoint(environment, requestJson)` |
 
 Trusted input comes from the integrator, not the network: the three pinned
 Apple roots in [`certs/`](./certs) (PLAN.md D15; each port bundles its own
-copy and never reads it from disk at call time), or anchors the caller injects
-instead at their own risk (PLAN.md D12); the
-verifier config (expected `bundleId`, accepted-environment set, `appAppleId`);
-and the host clock, used only as a fallback when the
-payload carries no date of its own. Nothing trusted derives from anything
+copy and never reads it from disk at call time), or roots the caller puts in
+its `Config` instead at their own risk (PLAN.md D12); and the `Config` clock,
+used for the chain instant only when the payload carries no usable date of
+its own, and for `request_date` at the endpoint. Nothing trusted derives from anything
 attacker-controlled. The third certificate in `x5c` in particular is parsed
 but never trusted: only the intermediate being signed by a pinned anchor
 counts (PLAN.md §2.1 step 4).
@@ -54,7 +51,7 @@ a code path that can reach the platform store or the network. PLAN.md D16
 lists that as one reason the readers are hand-written.
 
 *Proof.* `transaction/reject-foreign-root`, `receipt/reject-foreign-root`
-(both `INVALID_CHAIN`), `endpoint/foreign-root-answers-21003`, and Apple's own
+(both `UNTRUSTED_CHAIN`), `endpoint/foreign-root-answers-21003`, and Apple's own
 Xcode receipts rejected against the real roots
 (`receipt/reject-xcode-app-receipt-against-apple-roots`,
 `receipt/reject-xcode-signed-public-receipt`). That the OS store is
@@ -72,91 +69,94 @@ Chaining to a pinned Apple root is not enough: any Apple developer's own
 distribution leaf chains through the same WWDR intermediate. So the JWS leaf
 must carry `1.2.840.113635.100.6.11.1` and the intermediate
 `1.2.840.113635.100.6.2.1` with `CA: true`, and the receipt signer leaf must
-carry `1.2.840.113635.100.6.11.1`, checked after chain validation so a foreign
-chain still reports `INVALID_CHAIN` first (PLAN.md D13, §2.1 step 3, §2.2
-step 3). *Proof:* `transaction/reject-leaf-without-apple-marker-oid`,
-`transaction/reject-intermediate-without-wwdr-marker-oid` and
-`receipt/reject-signer-without-receipt-signing-oid`, all
+carry `1.2.840.113635.100.6.11.1` and, since 0.7, its intermediate
+`1.2.840.113635.100.6.2.1` as well. Both are checked after chain validation
+so a foreign chain still reports `UNTRUSTED_CHAIN` first (PLAN.md D13, §2.1
+step 3, §2.2 step 3). *Proof:* `transaction/reject-leaf-without-apple-marker-oid`,
+`transaction/reject-intermediate-without-wwdr-marker-oid`,
+`receipt/reject-signer-without-receipt-signing-oid` and
+`receipt/reject-intermediate-without-wwdr-marker-oid`, all
 `INVALID_CERTIFICATE_PURPOSE`.
 
-### 3.3 Signature over the exact bytes, then claim binding
+### 3.3 Signature over the exact bytes; the claims are the caller's
 
 ES256 over `ASCII(header + "." + payload)` for JWS. For receipts, the CMS
-signature over the content. Eight ports require an RSA signer key and match
-the digest OID from the `SignerInfo` against a SHA-1/SHA-256 allow-list; Java
-has no algorithm or key-type allow-list since 0.6.0 (owner decision: a signer
-pinned to an Apple root and carrying Apple's marker is trusted whatever it
-signs with, so a change on Apple's side cannot reject genuine receipts; an RSA
-signature binds its hash algorithm in the DigestInfo, and a weak hash helps
-only an attacker holding an Apple signature over it). No
-port re-encodes the input first: the readers keep input slices, one reason
-library parsers that normalise to DER were rejected (PLAN.md D16). Only once
-that passes are claims checked: `bundleId` must match, `environment` must be
-in the accepted set, and in Production `appAppleId` must match (PLAN.md §2.1
-step 6). The environment is a *set* deliberately, because App Review runs
-production builds against sandbox and a single-environment hard fail would
-reject genuine purchases during review (PLAN.md D3).
+signature over the content. Since 0.7 (#160) no port restricts the signer's
+key type, digest or signature algorithm (owner decision: a signer pinned to
+an Apple root and carrying Apple's marker is trusted whatever it signs with,
+so a change on Apple's side cannot reject genuine receipts; an RSA signature
+binds its hash algorithm in the DigestInfo, and a weak hash helps only an
+attacker holding an Apple signature over it). No port re-encodes the input
+first: the readers keep input slices, one reason library parsers that
+normalise to DER were rejected (PLAN.md D16).
+
+Since 0.7 the library checks no claim. Bundle id, environment, app Apple id
+and device binding are the caller's to compare on the payload it gets back
+(docs/design/0.7-api.md, Principles), so attacker goals 2 and 3 of §2 are
+defeated in the caller's code, and the library's part is to return exactly
+what Apple signed. Each port README lists those checks; the environment
+check accepts a set, because App Review runs production builds against
+sandbox (PLAN.md D3).
 
 A legacy receipt is verified in a fixed order, the same in all nine ports:
 
-1. Parse the CMS. Trailing bytes after it, absent content or no
-   `SignerInfo` are `INVALID_RECEIPT_FORMAT`.
+1. Decode the base64 and parse the CMS. Bad base64, trailing bytes, absent
+   content, no `SignerInfo` or more than four are `MALFORMED`.
 2. Read the receipt creation date, attribute 12, and nothing else: walk the
    top-level attribute SET, read each entry's type, decode only the value of
-   type 12. No usable date means the chain is judged at the system clock.
-   This step never rejects.
-3. Build the chain to the pinned roots at that instant and check the
-   receipt-signing marker OID (`INVALID_CHAIN`, `INVALID_CERTIFICATE`,
+   the first type 12. No usable date means the chain is judged at the
+   `Config` clock. This step never rejects.
+3. Build the chain top-down from the pinned roots at that instant, with each
+   certificate's validity window, then check the marker OIDs on the signer
+   and the WWDR intermediate (`UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`,
    `INVALID_CERTIFICATE_PURPOSE`).
 4. Check the CMS signature with the now-trusted signer key
-   (`INVALID_SIGNATURE`).
-5. Parse the whole payload. A failure here is `INTERNAL_ERROR`.
-
-Then the bundle id and, when asked, the device hash.
+   (`INVALID_SIGNATURE`); at least one `SignerInfo` must verify.
+5. Parse the whole payload. A failure here is `UNREADABLE_PAYLOAD`.
 
 Nothing is trusted before steps 3 and 4, so step 2 reads as little as it
 can and blames no one: an unreadable date only moves the chain instant to
-"now". The chain comes before the signature on purpose. Checking the
+the clock. The chain comes before the signature on purpose. Checking the
 signature first would run the attacker's own key, with an RSA size and
 exponent the attacker chose, before anything about that key is trusted,
 which is CPU spent on demand for free. A failure in step 5 means a trusted
 signer signed content this library cannot read: a gap in the library or a
 format Apple added, not a defect of the client's request. It is therefore
-`INTERNAL_ERROR`, status 21009 at the endpoint, and never
-`INVALID_RECEIPT_FORMAT`, whose 21002 would tell an app server to deny a
-paying user. An integrator should alert and retry or escalate on it, not
-deny.
+`UNREADABLE_PAYLOAD`, status 21009 at the endpoint, and never `MALFORMED`,
+whose 21002 would tell an app server to deny a paying user. An integrator
+should alert and escalate on it, not deny.
 
-A JWS follows the same rule. After the chain and the signature pass,
-`verifyTransaction` and `verifyAppTransaction` read the claims their
-typed model carries, before the bundle-id and environment checks. A
-claim that is absent or JSON null reads as null. A string field takes
-only a JSON string and an integer field only a whole number that fits,
-so `1.0` is 1. Anything else is `INTERNAL_ERROR`: Apple signed it, so it
-is not the client's fault, and reading it as null would be worse, since a
-null `expiresDate` can look like a purchase that never expires. Claims
-the model does not carry are ignored whatever their type, and
-`verifyRaw` stays untyped. A runtime that lacks an algorithm no input
-chooses (the device-hash SHA-1, a PKIX implementation) is
-`INTERNAL_ERROR` too. A key or signature algorithm the certificate
-names keeps its input reason, because a missing algorithm and a hostile
-certificate cannot be told apart there.
+A JWS follows the same rule. Before the signature only `signedDate` is read,
+to pick the chain instant. A payload that is not a JSON object is carried
+past the chain and signature checks: `INVALID_SIGNATURE` if the signature
+fails, `UNREADABLE_PAYLOAD` if it verifies. After that nothing is read:
+`verifySignedData` returns the payload JSON as signed, so a claim of an
+unexpected type is a question for the caller's parser, not a verdict. A
+runtime that lacks an algorithm no input chooses (a PKIX implementation) is
+`INTERNAL_ERROR`. A key or signature algorithm the certificate names keeps
+its input reason, because a missing algorithm and a hostile certificate
+cannot be told apart there.
 
 *Proof.* Tampering: `transaction/reject-tampered-payload` and
 `receipt/reject-tampered-payload`, both `INVALID_SIGNATURE`. Order:
 `receipt/reject-unreadable-creation-date-under-a-foreign-chain` (the chain
-answers, not the payload), `receipt/unreadable-creation-date-is-judged-at-now`,
-`receipt/reject-garbage-in-app-purchase-under-a-trusted-chain`,
+answers, not the payload), `receipt/unreadable-creation-date-decodes-to-null`,
 `receipt/reject-unreadable-entry-under-a-trusted-chain`,
-`receipt/reject-empty-encapsulated-content` and the two attribute-type
-ceilings (all `INTERNAL_ERROR`), and
-`endpoint/unreadable-signed-content-answers-21009`. JWS claim types: the
-six `internal-error-on-*` cases, `transaction/accept-null-and-unmodelled-claims`
-and `raw/return-claims-of-any-type`. Claims:
-`transaction/reject-wrong-bundle-id`, `receipt/reject-wrong-bundle-id`,
-`transaction/reject-apple-official-wrong-bundle-id` (Apple's own negative
-fixture), `transaction/reject-environment-outside-accept-set` and
-`app-transaction/reject-production-with-wrong-apple-id`.
+`receipt/reject-empty-encapsulated-content`,
+`receipt/unreadable-payload-under-a-valid-signature` and the two
+attribute-type ceilings (all `UNREADABLE_PAYLOAD`),
+`receipt/unreadable-payload-under-a-broken-signature` (`INVALID_SIGNATURE`),
+and `endpoint/unreadable-payload-answers-21009`. JWS:
+`signed-data/unreadable-json-array-payload` and
+`signed-data/unreadable-empty-payload`, and the six claim-type cases such as
+`transaction/return-bundle-id-claim-as-a-number`, which verify and return
+the payload as signed, with `raw/return-claims-of-any-type`. The claims left
+to the caller, returned rather than judged (tag `policy-flip`):
+`transaction/return-bundle-id-for-the-caller`,
+`receipt/return-bundle-id-for-the-caller`,
+`transaction/return-apple-official-wrong-bundle-id` (Apple's own negative
+fixture), `transaction/return-environment-for-the-caller` and
+`app-transaction/return-app-apple-id-for-the-caller`.
 
 ### 3.4 Environment routing fails closed
 
@@ -164,7 +164,7 @@ At the `verifyReceipt`-compatible endpoint only `Production` and
 `ProductionVPP` receipt types count as production. Sandbox variants,
 `ProductionVPPSandbox` included, `Xcode`, and a missing attribute all route as
 non-production (PLAN.md D10), a tightening driven by a VPP-sandbox misroute
-found in adversarial review. *Proof:* the ten `endpoint/*` routing cases,
+found in adversarial review. *Proof:* the `endpoint/*` routing cases,
 including `endpoint/vpp-sandbox-receipt-on-production-answers-21007`,
 `endpoint/vpp-receipt-on-sandbox-answers-21008` and
 `endpoint/missing-receipt-type-on-production-answers-21007`.
@@ -173,68 +173,77 @@ including `endpoint/vpp-sandbox-receipt-on-production-answers-21007`,
 
 Apple's signing certificates rotate, so a receipt signed under a since-expired
 certificate is still genuine. The validity window is checked at the payload's
-`signedDate` or the receipt's creation date, falling back to the system clock
-when the input carries neither (PLAN.md §2.1 step 4, §2.2 step 2). For a
-receipt, a creation date that is empty, unreadable, stated twice, or sits
-beside a top-level entry the walk cannot read counts as carried by nothing:
-the chain is judged at the system clock and the date is refused later, by
-the full parse, if the signer turns out to be trusted. No verifier judges
-how old a genuinely signed payload may be: that limit depends on the
-endpoint (Apple retries a server notification for days, and a device may
-present an old but genuine payload), so the caller applies it to `signedDate`
-or the receipt creation date, as Apple's own App Store Server Libraries leave
-it to their callers (PLAN.md D5). The one injected clock left, on
-`VerifyReceiptEndpoint`, stamps `request_date` and never reaches chain
-authentication. A freshness limit would not be replay protection either.
+`signedDate` or the receipt's creation date, falling back to the `Config`
+clock when the input carries neither (docs/design/0.7-api.md, Setup). For a
+receipt, a creation date that is empty, outside the exact
+`YYYY-MM-DDTHH:MM:SSZ` grammar, or sits beside a top-level entry the walk
+cannot read counts as carried by nothing, and the chain is judged at the
+clock; a repeated attribute 12 uses its first copy. A JWS `signedDate` that
+is not a representable instant falls back to the clock the same way. No
+verifier judges how old a genuinely signed payload may be: that limit
+depends on the endpoint (Apple retries a server notification for days, and
+a device may present an old but genuine payload), so the caller applies it
+to `signedDate` or the receipt creation date, as Apple's own App Store
+Server Libraries leave it to their callers (PLAN.md D5). A freshness limit
+would not be replay protection either.
 
 *Proof.* Signing-time validity, accepted then rejected:
 `transaction/accept-historical-payload-under-expired-chain`,
 `receipt/accept-historical-creation-date-under-expired-chain`,
 `transaction/reject-fresh-payload-under-expired-chain`,
 `receipt/reject-fresh-creation-date-under-expired-chain`. An unusable
-creation date judged at now: `receipt/accept-missing-creation-date`,
-`receipt/unreadable-creation-date-is-judged-at-now`,
-`receipt/reject-unreadable-creation-date-under-an-expired-chain`,
-`receipt/creation-date-twice-is-judged-at-now` and
+creation date judged at the clock: `receipt/accept-missing-creation-date`,
+`receipt/unreadable-creation-date-decodes-to-null`,
+`receipt/creation-date-outside-the-grammar-leaves-the-chain-to-the-clock`,
+`receipt/reject-unreadable-creation-date-under-an-expired-chain` and
 `receipt/reject-unreadable-entry-under-an-expired-chain`; the trusted test
 PKI they use is valid 2024-01-01 to 2050-01-01 and the expired one 2020-01-01
-to 2021-01-01, so every answer is fixed until 2050. A dateless payload
-judged at now, both directions:
+to 2021-01-01, so every answer is fixed until 2050. The first copy of a
+repeated date: `receipt/creation-date-twice-uses-the-first`. A dateless
+payload judged at the clock, both directions:
 `transaction/reject-dateless-payload-under-an-expired-chain`,
-`transaction/accept-payload-without-a-signed-date`. The endpoint clock, both
-directions: `endpoint/injected-clock-cannot-authenticate-an-expired-chain`,
-`endpoint/injected-clock-cannot-expire-a-valid-chain`.
+`transaction/accept-payload-without-a-signed-date`, and
+`transaction/signed-date-out-of-range-falls-back-to-the-clock`. The clock
+moves the verdict of a dateless receipt, both directions:
+`endpoint/clock-inside-the-window-verifies-a-dateless-receipt`,
+`endpoint/clock-past-the-window-rejects-a-dateless-receipt`.
 
-### 3.6 Device binding, when the caller has the GUID
+### 3.6 Device binding, when the caller has the device id
 
-Optional and off by default: `SHA1(guid ‖ opaqueValue ‖ bundleIdRawBytes)`
-must equal receipt attribute 5 (PLAN.md §2.2 step 6, D4). Optional because
-requiring it forces a client change; sound because each device carries its own
-receipt with its own GUID. *Proof:* `receipt/verify-shared-with-device-hash`
-accepts, `receipt/reject-wrong-device-guid` is `DEVICE_HASH_MISMATCH`.
+Since 0.7 the library takes no device id and checks no device hash. It
+returns `opaqueValue`, `sha1Hash` and `bundleIdBytes` as the octets Apple
+signed, so a caller holding the device id compares
+`SHA1(deviceId ‖ opaqueValue ‖ bundleIdBytes)` with `sha1Hash` itself; each
+port README shows it (PLAN.md D4). Optional because requiring it forces a
+client change; sound because each device carries its own receipt with its
+own id. *Proof:* `receipt/return-device-hash-inputs` pins the three octet
+strings the hash is computed from.
 
 ### 3.7 Hostile bytes: bounds, no unbounded recursion, no trailing garbage
 
-Every hand-written reader caps nesting depth (32 in rust, php, ruby and node),
-refuses bytes after the outermost value, and caps how many certificates a
-receipt may embed (10 in rust and node). Before the signer is trusted the
-payload is read only as far as attribute 12 (§3.3), so the attacker's bytes
-reach the full payload grammar only under a trusted signature; a bound hit
-there is `INTERNAL_ERROR`, since only a trusted signer could have put the
-bytes in front of it. Rust, go, ruby and php also cap the
-decoded node count, and rust, php and go the input size; §5 records that those
-two are not yet uniform. Failures surface as the library's own error type,
-never as a language-level crash.
+Every port applies the same bounds (docs/design/0.7-api.md, Bounds): ASN.1
+nesting depth 32, counted in each value parsed on its own; JSON depth 64; at
+most 10 certificates embedded in a receipt and 4 SignerInfos; and fixed
+input caps of 3,145,728 UTF-8 bytes for receipt base64 and request bodies
+and 262,144 for a JWS. Readers refuse bytes after the outermost value.
+Before the signer is trusted the payload is read only as far as attribute
+12 (§3.3), so the attacker's bytes reach the full payload grammar only
+under a trusted signature; a bound hit there is `UNREADABLE_PAYLOAD`, since
+only a trusted signer could have put the bytes in front of it. Several
+ports also cap the decoded node count. Failures surface as the library's
+own result, never as a language-level crash.
 
 *Proof.* Trailing bytes: `parse_exact` in `rust/src/asn1.rs`,
 `ErrTrailingBytes` in `go/internal/der/der.go`, `node/src/der.ts`.
 Amplification, size bounds and certificate flooding:
 `go/internal/der/amplification_test.go`, `go/sizebound_test.go`,
 `php/tests/MemoryExhaustionTest.php`, `php/tests/ResourceBoundsTest.php`,
-`node/test/certificate-flood.test.js`, `ruby/test/certificate_flood_test.rb`.
+`ruby/test/certificate_flood_test.rb`. Depth, as shared vectors:
+`receipt/unreadable-signed-content-nested-33-deep` and
+`signed-data/unreadable-payload-nested-65-deep`.
 Hostile-input suites: `java/src/test/.../HostileReceiptInputTest.java`,
 `php/tests/HostileInputTest.php`, `ruby/test/hostile_input_test.rb`,
-`node/test/web-hostile.test.js`. Malformed structure, as shared vectors:
+`node/test/hostile-input.test.js`. Malformed structure, as shared vectors:
 `receipt/reject-attribute-type-above-int32-max`,
 `receipt/reject-attribute-type-that-truncates-to-a-modelled-type`,
 `transaction/reject-x5c-leaf-that-is-not-a-certificate`,
@@ -270,7 +279,7 @@ carrying exactly the canonical `=` padding for its length, with nothing else in
 the string. Whitespace anywhere (a trailing line feed, line breaks at 64 or 76
 columns, a leading space), the base64url alphabet, omitted, partial or extra
 padding, anything after the padding and the empty string are all
-`INVALID_RECEIPT_FORMAT`, which is 21002 at the endpoint. The one freedom left
+`MALFORMED`, which is 21002 at the endpoint. The one freedom left
 is the unused low bits of the last data character, which Apple accepts, so
 every port accepts them too. Every port decodes with its standard library's
 base64 decoder (the `base64` crate in Rust) behind a shape check for whatever
@@ -354,13 +363,16 @@ Not defended against here, by decision rather than omission.
   signed by, three ports ACCEPTED such a receipt outright (node, ruby,
   dotnet) and the other six answered about the receipt or the chain instead
   of about the certificate. `receipt/reject-signer-*` pins all four as
-  `INVALID_CERTIFICATE`, decided before the chain is built and before the
-  signature is checked. An embedded certificate that is not the signer keeps
+  rejected before the signature is checked: the signer that does not decode
+  as `INVALID_CERTIFICATE` or `MALFORMED`, which ports may choose between
+  (docs/design/0.7-api.md), and the key on an unimplemented curve as
+  `INVALID_CERTIFICATE`. An embedded certificate that is not the signer keeps
   its old verdict: the bag is unsigned, so bytes that cannot be read there
-  are a defect of the receipt (`INVALID_RECEIPT_FORMAT`), not of a
-  certificate. Java is narrower since 0.6.0: it decodes a public key only
-  once a pinned root vouches for its certificate, so a stranger whose only
-  defect is its key is never read and the receipt is judged without it.
+  are a defect of the receipt (`MALFORMED`), not of a certificate. Since
+  0.7 every port decodes a public key only once a pinned root vouches for
+  its certificate, so a stranger whose only defect is its key is never read
+  and the receipt is judged without it
+  (`receipt/verify-with-a-stranger-whose-key-is-unreadable`).
   Telling the two apart means resolving the SignerInfo's issuer
   and serial against every entry's raw DER, before any entry is judged —
   python, rust, java, php and ruby instead blamed whichever entry would not
@@ -371,9 +383,9 @@ Not defended against here, by decision rather than omission.
   nor replaced.** Last release 1.5.1, March 2022. Owner decision: keep it, pin
   the tested range, let the Python fuzz target run through it (PLAN.md D16,
   ROADMAP.md item 5).
-- **`jackson-databind` in Java** carries a CVE history a consumer's scanner
-  will surface. The payloads are small and flat and the dependency is
-  maintained, but the noise is real (PLAN.md D16).
+- **`jackson-core` in Java** is the one JSON dependency left: 0.7 dropped
+  `jackson-databind` and `jackson-annotations`, and with them the databind
+  CVE history a consumer's scanner used to surface (PLAN.md D16).
 - **Java does not follow the host's security policy.** It parses
   certificates, builds and validates chains, and checks signatures and
   digests with its own pinned BouncyCastle instance, never through the JVM's
@@ -383,7 +395,7 @@ Not defended against here, by decision rather than omission.
   JDK's PKIX code refuse every genuine legacy receipt. The cost is that an
   administrator cannot restrict this library through that policy; what it
   accepts is set by the library and the caller's roots (java/README.md, "One
-  platform caveat worth knowing").
+  platform caveat: BouncyCastle, not the JDK's PKIX").
 - **The C ABI reintroduces `unsafe`, and moves memory discipline to the
   caller.** The library target is `#![forbid(unsafe_code)]`; `rust/ffi` cannot
   be, because a C boundary is raw pointers. Two consequences are the caller's

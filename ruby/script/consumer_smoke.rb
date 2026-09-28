@@ -10,30 +10,34 @@
 #   GEM_HOME=/tmp/consumer gem install --no-document apple-purchase-receipt-verifier-*.gem
 #   GEM_HOME=/tmp/consumer ruby ruby/script/consumer_smoke.rb path/to/fixtures
 
+require "json"
 require "apple_purchase_receipt_verifier"
 require "apple-purchase-receipt-verifier"
 
+APRV = ApplePurchaseReceiptVerifier
+
 fixtures = ARGV[0] || File.expand_path("../../fixtures", __dir__)
 
-roots = ApplePurchaseReceiptVerifier.apple_receipt_roots
+roots = APRV::Config.defaults.roots
 abort "expected three bundled Apple roots, got #{roots.size}" unless roots.size == 3
 
 receipt_path = File.join(fixtures, "public-receipts", "receipt-sandbox-legacy.b64")
 abort "fixture not found: #{receipt_path}" unless File.file?(receipt_path)
 
-verifier = ApplePurchaseReceiptVerifier::ReceiptVerifier.new(
-  trusted_roots: roots, bundle_id: "com.nutcall.alert"
-)
-receipt = verifier.verify_base64(File.read(receipt_path))
-unless receipt.in_app_purchases.size == 187
-  abort "expected 187 in-app purchases, got #{receipt.in_app_purchases.size}"
+verifier = APRV::Verifier.create(APRV::Config.new(roots: roots))
+base64 = File.read(receipt_path)
+result = verifier.verify_receipt(base64)
+unless result.verified?
+  abort "receipt did not verify: #{result.failure&.reason} (#{result.failure&.message})"
+end
+unless result.payload.in_app.size == 187
+  abort "expected 187 in-app purchases, got #{result.payload.in_app.size}"
 end
 
-endpoint = ApplePurchaseReceiptVerifier::VerifyReceiptEndpoint.new(
-  trusted_roots: roots, environment: ApplePurchaseReceiptVerifier::Environment::SANDBOX
-)
-result = endpoint.verify_receipt_data(File.read(receipt_path).gsub(/\s+/, ""))
-abort "endpoint answered #{result.status}" unless result.verified? && result.status.zero?
+request = JSON.generate({ "receipt-data" => base64.gsub(/\s+/, "") })
+response_json = verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, request)
+status = JSON.parse(response_json)["status"]
+abort "endpoint answered #{status}" unless status.zero?
 
-puts "ok: apple-purchase-receipt-verifier #{ApplePurchaseReceiptVerifier::VERSION} " \
+puts "ok: apple-purchase-receipt-verifier #{APRV::VERSION} " \
      "verified a genuine receipt from an installed gem"

@@ -13,20 +13,19 @@ declare(strict_types=1);
  * pointing at php/src/ resolves once the package sits under vendor/, and
  * that the bundled Apple roots survive the trip.
  *
- * Two verifications, one per entry point, both against fixtures the shared
- * cases.json pins: a genuine Apple-signed sandbox receipt against the real
- * pinned Apple roots, and the generated StoreKit 2 transaction against its
- * own generated root. Digests are checked the way php/tests/Support/
- * Fixtures.php checks them, because a smoke that verifies fixture bytes
- * nobody pinned proves nothing.
+ * Two verifications, one per verify method, both against fixtures the
+ * shared cases.json pins: a genuine Apple-signed sandbox receipt against the
+ * real pinned Apple roots (Config::defaults()), and the generated StoreKit 2
+ * transaction against its own generated root. Digests are checked the way
+ * php/tests/Support/Fixtures07.php checks them, because a smoke that
+ * verifies fixture bytes nobody pinned proves nothing.
  *
  * Usage: php php-consumer-smoke.php <vendor/autoload.php> <fixtures dir>
  */
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Jws\JwsVerifier;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
 if ($argc !== 3) {
     fwrite(STDERR, "usage: php php-consumer-smoke.php <vendor/autoload.php> <fixtures dir>\n");
@@ -51,6 +50,7 @@ $fixture = static function (string $id) use ($registry, $fixturesDir): string {
         'raw' => $raw,
         'base64' => (string) base64_decode((string) preg_replace('/\s+/', '', $raw), true),
         'utf8' => trim($raw),
+        'text' => $raw,
         default => throw new RuntimeException("unhandled codec {$entry['codec']} for {$id}"),
     };
     $actual = hash('sha256', $bytes);
@@ -79,29 +79,30 @@ if (!str_contains((string) $reflected, '/vendor/')) {
     fwrite(STDERR, "php-consumer-smoke: AppleRootCerts loaded from {$reflected}, not from vendor/\n");
     exit(1);
 }
-$check('bundled Apple roots', count(AppleRootCerts::receiptRoots()), 3);
+$check('bundled Apple roots', count(Config::defaults()->roots), 3);
 
 // receipt/verify-genuine-sandbox-g5-against-apple-roots.
-$receipt = (new ReceiptVerifier(AppleRootCerts::receiptRoots(), 'dev.bonzer.weeka.app'))
-    ->verify($fixture('public-receipt-sandbox-g5'));
+$receiptResult = Verifier::create(Config::defaults())
+    ->verifyReceipt(base64_encode($fixture('public-receipt-sandbox-g5')));
+$check('receipt verified', $receiptResult->verified(), true);
+$receipt = $receiptResult->payload;
 $check('receiptType', $receipt->receiptType, 'ProductionSandbox');
 $check('bundleId', $receipt->bundleId, 'dev.bonzer.weeka.app');
-$check('inAppPurchases count', count($receipt->inAppPurchases), 2);
+$check('inApp count', count($receipt->inApp), 2);
 
-// transaction/verify-shared-sandbox.
-$transaction = (new JwsVerifier(
-    [$fixture('jws-root')],
-    'com.example.app',
-    [Environment::Sandbox],
-))->verifyTransaction($fixture('transaction'));
-$check('transaction bundleId', $transaction->bundleId, 'com.example.app');
-$check('transaction environment', $transaction->environment, 'Sandbox');
-$check('transaction productId', $transaction->productId, 'com.example.app.pro');
-$check('transaction transactionId', $transaction->transactionId, '2000000000000001');
-$check('transaction signedDate', $transaction->signedDate, 1722945600000);
+// The shared transaction, under its own generated root.
+$jwsResult = Verifier::create(Config::builder()->roots([$fixture('jws-root')])->build())
+    ->verifySignedData($fixture('transaction'));
+$check('transaction verified', $jwsResult->verified(), true);
+$transaction = json_decode($jwsResult->payload->json, true, 64, JSON_THROW_ON_ERROR);
+$check('transaction bundleId', $transaction['bundleId'], 'com.example.app');
+$check('transaction environment', $transaction['environment'], 'Sandbox');
+$check('transaction productId', $transaction['productId'], 'com.example.app.pro');
+$check('transaction transactionId', $transaction['transactionId'], '2000000000000001');
+$check('transaction signedDate', $transaction['signedDate'], 1722945600000);
 
 echo "php-consumer-smoke: OK\n";
 echo "  autoloaded from {$reflected}\n";
 echo "  receipt  {$receipt->receiptType} {$receipt->bundleId}, "
-    . count($receipt->inAppPurchases) . " in-app purchases\n";
-echo "  jws      {$transaction->productId} {$transaction->environment} {$transaction->transactionId}\n";
+    . count($receipt->inApp) . " in-app purchases\n";
+echo "  jws      {$transaction['productId']} {$transaction['environment']} {$transaction['transactionId']}\n";

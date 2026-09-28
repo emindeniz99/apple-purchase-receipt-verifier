@@ -1,44 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/fixtures/cases.schema.json",
-  "title": "Apple purchase receipt verifier — cross-language conformance vectors",
-  "description": "Schema for fixtures/cases.json. Every implementation (java, node, python, swift) runs the same cases against the same fixture bytes and must produce the same verdict.",
+  "title": "Apple purchase receipt verifier: cross-language conformance vectors for the 0.7 API",
+  "description": "Schema for fixtures/cases.json (schema version 2). Every port runs the same cases against the same fixture bytes through the three 0.7 methods of docs/design/0.7-api.md and must produce the same answer. The file's comment defines how runners hand inputs over and evaluate expectations.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "$schema",
-    "schemaVersion",
-    "comment",
-    "fixtures",
-    "cases"
-  ],
+  "required": ["$schema", "schemaVersion", "comment", "fixtures", "cases"],
   "properties": {
-    "$schema": {
-      "type": "string"
-    },
-    "schemaVersion": {
-      "const": 1
-    },
-    "comment": {
-      "type": "string",
-      "minLength": 1
-    },
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 2 },
+    "comment": { "type": "string", "minLength": 1 },
     "fixtures": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {
-        "$ref": "#/$defs/fixtureId"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/fixture"
-      }
+      "propertyNames": { "$ref": "#/$defs/fixtureId" },
+      "additionalProperties": { "$ref": "#/$defs/fixture" }
     },
     "cases": {
       "type": "array",
       "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/case"
-      }
+      "items": { "$ref": "#/$defs/case" }
     }
   },
   "$defs": {
@@ -49,79 +30,39 @@
     "fixture": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "path",
-        "role",
-        "codec",
-        "contentSha256"
-      ],
+      "required": ["path", "role", "codec", "contentSha256"],
       "properties": {
         "path": {
           "type": "string",
-          "description": "Path relative to fixtures/.",
-          "pattern": "^(generated|public-receipts|apple-official|limits)/[A-Za-z0-9._/-]+$"
+          "description": "Path relative to fixtures/. generated-0.7/ holds the receipts re-minted for 0.7 and the inputs new in 0.7.",
+          "pattern": "^(generated|generated-0\\.7|public-receipts|apple-official|limits)/[A-Za-z0-9._/-]+$"
         },
         "role": {
-          "description": "input = bytes handed to the operation; trust-anchor = certificate the verifier is configured with; support = neither, kept registered so the tier stays fully accounted for.",
-          "enum": [
-            "input",
-            "trust-anchor",
-            "support"
-          ]
+          "description": "input = bytes handed to an operation; trust-anchor = a certificate the verifier is configured with; support = neither, kept registered so the tier stays accounted for.",
+          "enum": ["input", "trust-anchor", "support"]
         },
         "codec": {
-          "description": "How the file encodes its logical bytes. raw = the file bytes are the bytes; base64 = base64 text (whitespace stripped) decoding to the bytes; utf8 = text whose trimmed UTF-8 encoding is the bytes; text = the file bytes verbatim, untrimmed, handed to a STRING-taking entry point as text -- the codec for pinning how a port decodes what a client sent, whitespace and all.",
-          "enum": [
-            "raw",
-            "base64",
-            "utf8",
-            "text"
-          ]
+          "description": "How the file encodes its logical bytes. raw = the file bytes; base64 = base64 text (whitespace stripped) decoding to the bytes; utf8 = text whose trimmed UTF-8 encoding is the bytes; text = the file bytes verbatim, untrimmed, handed to a string-taking method as the exact string a client sent.",
+          "enum": ["raw", "base64", "utf8", "text"]
         },
         "contentSha256": {
           "type": "string",
-          "description": "SHA-256, lowercase hex, of the DECODED logical bytes — not of the file as stored.",
+          "description": "SHA-256, lowercase hex, of the decoded logical bytes, not of the file as stored.",
           "pattern": "^[0-9a-f]{64}$"
         }
       }
     },
     "reason": {
-      "description": "The canonical error vocabulary. Java's VerificationException.Reason is the source of truth; the other ports mirror it. INTERNAL_ERROR (status 21009 at the endpoint) is not the client's fault: either the library failed unexpectedly or a trusted signer signed receipt content the library cannot read, found only after the chain and the signature passed.",
+      "description": "The 0.7 Reason set (docs/design/0.7-api.md, Result).",
       "enum": [
-        "INVALID_JWS_FORMAT",
+        "MALFORMED",
+        "TOO_LARGE",
+        "INVALID_SIGNATURE",
+        "UNTRUSTED_CHAIN",
         "INVALID_CERTIFICATE",
         "INVALID_CERTIFICATE_PURPOSE",
-        "INVALID_CHAIN",
-        "INVALID_SIGNATURE",
-        "WRONG_BUNDLE_ID",
-        "WRONG_ENVIRONMENT",
-        "WRONG_APP_APPLE_ID",
-        "INVALID_RECEIPT_FORMAT",
-        "DEVICE_HASH_MISMATCH",
+        "UNREADABLE_PAYLOAD",
         "INTERNAL_ERROR"
-      ]
-    },
-    "resultReason": {
-      "description": "What VerifyReceiptResult.failureReason can hold: every reason a verifier throws, plus the two that only an endpoint result reports and nothing ever throws. MALFORMED_REQUEST: the envelope is unusable (not a JSON object, nested deeper than 64, receipt-data missing, empty or not a string). REQUEST_TOO_LARGE: the raw body is over 3,145,728 UTF-8 bytes. INTERNAL_ERROR is a verifier reason too, and the endpoint also reports it for an unexpected exception; either way it is status 21009.",
-      "oneOf": [
-        {
-          "$ref": "#/$defs/reason"
-        },
-        {
-          "enum": [
-            "MALFORMED_REQUEST",
-            "REQUEST_TOO_LARGE"
-          ]
-        }
-      ]
-    },
-    "environment": {
-      "description": "Spelled as the JWS claim spells it; runners map onto their own enum.",
-      "enum": [
-        "Sandbox",
-        "Production",
-        "Xcode",
-        "LocalTesting"
       ]
     },
     "trustedRoots": {
@@ -129,87 +70,71 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "source",
-            "name"
-          ],
-          "properties": {
-            "source": {
-              "const": "builtin"
-            },
-            "name": {
-              "enum": [
-                "apple-receipt-roots",
-                "apple-jws-roots"
-              ]
-            }
-          }
+          "required": ["source"],
+          "description": "The roots of Config.defaults(): the three bundled, pinned Apple roots.",
+          "properties": { "source": { "const": "defaults" } }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "source",
-            "fixtures"
-          ],
+          "required": ["source", "fixtures"],
+          "description": "Roots read from registered trust-anchor fixtures.",
           "properties": {
-            "source": {
-              "const": "fixtures"
-            },
+            "source": { "const": "fixtures" },
             "fixtures": {
               "type": "array",
               "minItems": 1,
-              "items": {
-                "$ref": "#/$defs/fixtureId"
-              }
+              "items": { "$ref": "#/$defs/fixtureId" }
             }
           }
         }
       ]
     },
-    "input": {
+    "verifyConfig": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "fixture"
-      ],
+      "required": ["trustedRoots"],
+      "properties": { "trustedRoots": { "$ref": "#/$defs/trustedRoots" } }
+    },
+    "endpointConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trustedRoots", "environment"],
       "properties": {
-        "fixture": {
-          "$ref": "#/$defs/fixtureId"
+        "trustedRoots": { "$ref": "#/$defs/trustedRoots" },
+        "environment": {
+          "description": "The Environment passed to verifyReceiptEndpoint: which of Apple's two URLs the call imitates.",
+          "enum": ["PRODUCTION", "SANDBOX"]
         }
-      },
-      "description": "One registered fixture. A verifyReceiptBase64 case must name a text fixture; a verifyReceiptEndpoint case whose fixture is text hands that text to receipt-data verbatim, where a raw or base64 fixture is re-encoded as canonical base64."
+      }
+    },
+    "fixtureInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixture"],
+      "properties": { "fixture": { "$ref": "#/$defs/fixtureId" } },
+      "description": "One registered fixture. For verifyReceipt and the endpoint's receipt-data a text fixture is the string verbatim and a raw or base64 fixture is DER the runner encodes as canonical base64."
     },
     "endpointInput": {
       "oneOf": [
-        {
-          "$ref": "#/$defs/input"
-        },
+        { "$ref": "#/$defs/fixtureInput" },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "requestBody"
-          ],
-          "properties": {
-            "requestBody": {
-              "$ref": "#/$defs/fixtureId"
-            }
-          },
-          "description": "A text fixture that is the WHOLE raw request body. The runner hands its bytes, as text, to the port's raw-body entry point (the one that parses JSON) instead of wrapping receipt-data itself."
+          "required": ["requestBody"],
+          "properties": { "requestBody": { "$ref": "#/$defs/fixtureId" } },
+          "description": "A text fixture that is the whole request body, handed to verifyReceiptEndpoint verbatim."
         }
       ]
     },
     "clock": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "now"
-      ],
+      "required": ["now"],
       "properties": {
         "now": {
           "type": "string",
-          "description": "Verification time, ISO-8601 UTC. Required whenever the verdict moves with time.",
+          "description": "The instant the Config clock answers, ISO-8601 UTC. Required whenever the verdict or an asserted field moves with the clock.",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
         }
       }
@@ -217,530 +142,259 @@
     "tags": {
       "type": "array",
       "minItems": 1,
-      "items": {
-        "type": "string",
-        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
-      }
+      "items": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" }
     },
     "caseId": {
       "type": "string",
       "description": "Stable, unique, kebab-case, \"<area>/<what>\".",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*/[a-z0-9]+(-[a-z0-9]+)*$"
     },
-    "fieldValue": {
-      "type": [
-        "string",
-        "number",
-        "boolean",
-        "null"
-      ]
+    "legacyId": {
+      "$ref": "#/$defs/caseId",
+      "description": "The id of the 0.6 case (schema version 1 of fixtures/cases.json) this one replaces. Absent on a case new in 0.7."
     },
+    "description": { "type": "string", "minLength": 1 },
+    "maxMillis": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "A wall-clock budget in milliseconds for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds this. Set on the DoS cases and the oneOf cases; the file comment gives the shared figure."
+    },
+    "fault": {
+      "type": "string",
+      "description": "The one intentional defect of a negative case. Documentation, never asserted.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "pointer": {
+      "type": "string",
+      "description": "A JSON Pointer (RFC 6901), with one extension: a reference token [key=value] selects the single element of an array whose member key is the JSON string value.",
+      "pattern": "^(/([^/~]|~[01])*)+$"
+    },
+    "fieldValue": { "type": ["string", "number", "boolean", "null"] },
     "fields": {
       "type": "object",
       "minProperties": 1,
-      "description": "Language-neutral field paths to their pinned values. See the file's comment for the path syntax.",
-      "additionalProperties": {
-        "$ref": "#/$defs/fieldValue"
-      }
+      "description": "Pointer to pinned value. null means absent or JSON null; numbers compare by value.",
+      "propertyNames": { "$ref": "#/$defs/pointer" },
+      "additionalProperties": { "$ref": "#/$defs/fieldValue" }
     },
-    "expectedOk": {
+    "lengths": {
       "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "status",
-        "fields"
-      ],
-      "properties": {
-        "status": {
-          "const": "ok"
-        },
-        "fields": {
-          "$ref": "#/$defs/fields"
-        }
-      }
+      "minProperties": 1,
+      "description": "Pointer to the length of the array there.",
+      "propertyNames": { "$ref": "#/$defs/pointer" },
+      "additionalProperties": { "type": "integer", "minimum": 0 }
     },
     "expectedError": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "status",
-        "reason"
-      ],
+      "required": ["status", "reason"],
       "properties": {
-        "status": {
-          "const": "error"
-        },
-        "reason": {
-          "$ref": "#/$defs/reason"
+        "status": { "const": "error" },
+        "reason": { "$ref": "#/$defs/reason" },
+        "messageMustNotContain": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Code points the failure message must not contain, so it can go into a log line as is. The runner checks the message the port exposes (Failure.message() or its equivalent).",
+          "items": { "type": "integer", "minimum": 0, "maximum": 1114111 }
         }
       }
     },
-    "expectedVerify": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/expectedOk"
-        },
-        {
-          "$ref": "#/$defs/expectedError"
-        }
-      ]
-    },
-    "expectedEndpoint": {
-      "description": "The verifyReceipt-compatible endpoint never raises: it always answers a body, and the Apple status code is a field of that body.",
+    "expectedOneOf": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "status",
-        "fields"
-      ],
+      "required": ["oneOf"],
+      "description": "A case whose outcome is port-defined within a list: the port's outcome, \"ok\" when the call verified (no field is checked) or else its reason, must be one of these. INTERNAL_ERROR is never listed, and no exception or panic may escape the call; it must finish within maxMillis when the case sets one.",
       "properties": {
-        "status": {
-          "const": "ok"
-        },
-        "fields": {
-          "type": "object",
-          "minProperties": 1,
-          "required": [
-            "status"
-          ],
-          "additionalProperties": {
-            "$ref": "#/$defs/fieldValue"
-          },
-          "properties": {
-            "status": {
-              "enum": [
-                0,
-                21002,
-                21003,
-                21007,
-                21008,
-                21009
-              ]
-            }
+        "oneOf": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ok",
+              "MALFORMED",
+              "TOO_LARGE",
+              "INVALID_SIGNATURE",
+              "UNTRUSTED_CHAIN",
+              "INVALID_CERTIFICATE",
+              "INVALID_CERTIFICATE_PURPOSE",
+              "UNREADABLE_PAYLOAD"
+            ]
           }
-        },
-        "failureReason": {
-          "$ref": "#/$defs/resultReason",
-          "description": "When present, the reason the result carries. Not part of Apple's wire body, so it sits beside fields rather than in them."
         }
+      }
+    },
+    "expectedReceiptOk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "description": "Evaluated on JSON.parse(ReceiptPayload.toJson()).",
+      "properties": {
+        "status": { "const": "ok" },
+        "fields": { "$ref": "#/$defs/fields" },
+        "lengths": { "$ref": "#/$defs/lengths" },
+        "toJson": {
+          "type": "string",
+          "minLength": 2,
+          "description": "One valid output of toJson(). The runner parses this string and the port's toJson() output as JSON and compares the parsed values (deep equality; numbers as numbers, strings as strings). No byte comparison: whitespace, key order and escaping style are free."
+        }
+      }
+    },
+    "expectedSignedDataOk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "description": "Evaluated on JSON.parse(JsonPayload.json()).",
+      "properties": {
+        "status": { "const": "ok" },
+        "fields": { "$ref": "#/$defs/fields" },
+        "lengths": { "$ref": "#/$defs/lengths" }
+      }
+    },
+    "expectedEndpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fields"],
+      "description": "verifyReceiptEndpoint never fails: it returns Apple's response body, evaluated as JSON. /status is always pinned.",
+      "properties": {
+        "fields": {
+          "allOf": [
+            { "$ref": "#/$defs/fields" },
+            {
+              "type": "object",
+              "required": ["/status"],
+              "properties": {
+                "/status": { "enum": [0, 21002, 21003, 21007, 21008, 21009] }
+              }
+            }
+          ]
+        },
+        "lengths": { "$ref": "#/$defs/lengths" }
       }
     },
     "faultRequiredOnError": {
       "if": {
         "type": "object",
-        "required": [
-          "expected"
-        ],
+        "required": ["expected"],
         "properties": {
           "expected": {
             "type": "object",
-            "required": [
-              "status"
-            ],
-            "properties": {
-              "status": {
-                "const": "error"
-              }
-            }
+            "required": ["status"],
+            "properties": { "status": { "const": "error" } }
           }
         }
       },
-      "then": {
-        "required": [
-          "fault"
-        ]
+      "then": { "required": ["fault"] },
+      "else": {
+        "if": {
+          "type": "object",
+          "required": ["expected"],
+          "properties": { "expected": { "type": "object", "required": ["oneOf"] } }
+        },
+        "then": { "required": ["fault"] }
       }
-    },
-    "fault": {
-      "type": "string",
-      "description": "The ONE intentional fault of a negative case. Documentation, never asserted.",
-      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
     },
     "case": {
       "type": "object",
       "oneOf": [
         {
-          "title": "verifyTransaction / verifyAppTransaction",
+          "title": "verifyReceipt(base64): legacy PKCS#7 receipt",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "description",
-            "operation",
-            "input",
-            "config",
-            "expected",
-            "tags"
-          ],
-          "allOf": [
-            {
-              "$ref": "#/$defs/faultRequiredOnError"
-            }
-          ],
+          "required": ["id", "description", "operation", "input", "config", "expected", "tags"],
+          "allOf": [{ "$ref": "#/$defs/faultRequiredOnError" }],
           "properties": {
-            "id": {
-              "$ref": "#/$defs/caseId"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1
-            },
-            "operation": {
-              "enum": [
-                "verifyTransaction",
-                "verifyAppTransaction"
+            "id": { "$ref": "#/$defs/caseId" },
+            "legacyId": { "$ref": "#/$defs/legacyId" },
+            "description": { "$ref": "#/$defs/description" },
+            "operation": { "const": "verifyReceipt" },
+            "input": { "$ref": "#/$defs/fixtureInput" },
+            "config": { "$ref": "#/$defs/verifyConfig" },
+            "maxMillis": { "$ref": "#/$defs/maxMillis" },
+            "clock": { "$ref": "#/$defs/clock" },
+            "expected": {
+              "oneOf": [
+                { "$ref": "#/$defs/expectedReceiptOk" },
+                { "$ref": "#/$defs/expectedError" },
+                { "$ref": "#/$defs/expectedOneOf" }
               ]
             },
-            "input": {
-              "$ref": "#/$defs/input"
-            },
-            "config": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "trustedRoots",
-                "bundleId",
-                "acceptedEnvironments"
-              ],
-              "properties": {
-                "trustedRoots": {
-                  "$ref": "#/$defs/trustedRoots"
-                },
-                "bundleId": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "acceptedEnvironments": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "$ref": "#/$defs/environment"
-                  }
-                },
-                "appAppleId": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              }
-            },
-            "expected": {
-              "$ref": "#/$defs/expectedVerify"
-            },
-            "fault": {
-              "$ref": "#/$defs/fault"
-            },
-            "tags": {
-              "$ref": "#/$defs/tags"
-            }
+            "fault": { "$ref": "#/$defs/fault" },
+            "tags": { "$ref": "#/$defs/tags" }
           }
         },
         {
-          "title": "verifyRaw — chain and signature only, no claim is enforced",
+          "title": "verifySignedData(jws): any Apple JWS",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "description",
-            "operation",
-            "input",
-            "config",
-            "expected",
-            "tags"
-          ],
-          "allOf": [
-            {
-              "$ref": "#/$defs/faultRequiredOnError"
-            }
-          ],
+          "required": ["id", "description", "operation", "input", "config", "expected", "tags"],
+          "allOf": [{ "$ref": "#/$defs/faultRequiredOnError" }],
           "properties": {
-            "id": {
-              "$ref": "#/$defs/caseId"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1
-            },
-            "operation": {
-              "const": "verifyRaw"
-            },
-            "input": {
-              "$ref": "#/$defs/input"
-            },
-            "config": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "trustedRoots"
-              ],
-              "properties": {
-                "trustedRoots": {
-                  "$ref": "#/$defs/trustedRoots"
-                },
-                "bundleId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "description": "Configured but deliberately ignored by verifyRaw; present so a case can prove it is ignored."
-                },
-                "acceptedEnvironments": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "$ref": "#/$defs/environment"
-                  }
-                }
-              }
-            },
+            "id": { "$ref": "#/$defs/caseId" },
+            "legacyId": { "$ref": "#/$defs/legacyId" },
+            "description": { "$ref": "#/$defs/description" },
+            "operation": { "const": "verifySignedData" },
+            "input": { "$ref": "#/$defs/fixtureInput" },
+            "config": { "$ref": "#/$defs/verifyConfig" },
+            "maxMillis": { "$ref": "#/$defs/maxMillis" },
+            "clock": { "$ref": "#/$defs/clock" },
             "expected": {
-              "$ref": "#/$defs/expectedVerify"
+              "oneOf": [
+                { "$ref": "#/$defs/expectedSignedDataOk" },
+                { "$ref": "#/$defs/expectedError" },
+                { "$ref": "#/$defs/expectedOneOf" }
+              ]
             },
-            "fault": {
-              "$ref": "#/$defs/fault"
-            },
-            "tags": {
-              "$ref": "#/$defs/tags"
-            }
+            "fault": { "$ref": "#/$defs/fault" },
+            "tags": { "$ref": "#/$defs/tags" }
           }
         },
         {
-          "title": "verifyReceipt — legacy PKCS#7 app receipt",
+          "title": "verifyReceiptEndpoint(environment, requestJson): Apple's verifyReceipt response",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "description",
-            "operation",
-            "input",
-            "config",
-            "expected",
-            "tags"
-          ],
-          "allOf": [
-            {
-              "$ref": "#/$defs/faultRequiredOnError"
-            }
-          ],
-          "description": "No \"clock\": ReceiptVerifier takes none in any port. Its only \"now\" is the certificate-validity instant a receipt without a creation date falls back to, and an injected clock must not be able to move that — so a clock here is a schema error, not a runner detail.",
+          "required": ["id", "description", "operation", "input", "config", "expected", "tags"],
           "properties": {
-            "id": {
-              "$ref": "#/$defs/caseId"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1
-            },
-            "operation": {
-              "const": "verifyReceipt"
-            },
-            "input": {
-              "$ref": "#/$defs/input"
-            },
-            "config": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "trustedRoots",
-                "bundleId"
-              ],
-              "properties": {
-                "trustedRoots": {
-                  "$ref": "#/$defs/trustedRoots"
-                },
-                "bundleId": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "deviceGuidHex": {
-                  "type": "string",
-                  "pattern": "^([0-9a-f]{2})+$"
-                }
-              }
-            },
-            "expected": {
-              "$ref": "#/$defs/expectedVerify"
-            },
-            "fault": {
-              "$ref": "#/$defs/fault"
-            },
-            "tags": {
-              "$ref": "#/$defs/tags"
-            }
+            "id": { "$ref": "#/$defs/caseId" },
+            "legacyId": { "$ref": "#/$defs/legacyId" },
+            "description": { "$ref": "#/$defs/description" },
+            "operation": { "const": "verifyReceiptEndpoint" },
+            "input": { "$ref": "#/$defs/endpointInput" },
+            "config": { "$ref": "#/$defs/endpointConfig" },
+            "clock": { "$ref": "#/$defs/clock" },
+            "expected": { "$ref": "#/$defs/expectedEndpoint" },
+            "fault": { "$ref": "#/$defs/fault" },
+            "tags": { "$ref": "#/$defs/tags" }
           }
         },
         {
-          "title": "verifyReceiptBase64 -- the legacy receipt through the base64 TEXT entry point",
+          "title": "decodeBase64: internal hook, one group of base64 spellings through the named decoders",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "description",
-            "operation",
-            "input",
-            "config",
-            "expected",
-            "tags"
-          ],
-          "allOf": [
-            {
-              "$ref": "#/$defs/faultRequiredOnError"
-            }
-          ],
-          "description": "The string form of verifyReceipt: verify_base64 / VerifyBase64 / verify(String). Pins how a port turns what a client sent into DER, which verifyReceipt cannot, because runners decode base64 fixtures themselves. No clock, for the same reason as verifyReceipt.",
+          "required": ["id", "description", "operation", "decoders", "input", "expected", "tags"],
           "properties": {
-            "id": {
-              "$ref": "#/$defs/caseId"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1
-            },
-            "operation": {
-              "const": "verifyReceiptBase64"
-            },
-            "input": {
-              "$ref": "#/$defs/input"
-            },
-            "config": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "trustedRoots",
-                "bundleId"
-              ],
-              "properties": {
-                "trustedRoots": {
-                  "$ref": "#/$defs/trustedRoots"
-                },
-                "bundleId": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "deviceGuidHex": {
-                  "type": "string",
-                  "pattern": "^([0-9a-f]{2})+$"
-                }
-              }
-            },
-            "expected": {
-              "$ref": "#/$defs/expectedVerify"
-            },
-            "fault": {
-              "$ref": "#/$defs/fault"
-            },
-            "tags": {
-              "$ref": "#/$defs/tags"
-            }
-          }
-        },
-        {
-          "title": "verifyReceiptEndpoint — Apple verifyReceipt wire contract",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "id",
-            "description",
-            "operation",
-            "input",
-            "config",
-            "expected",
-            "tags"
-          ],
-          "properties": {
-            "id": {
-              "$ref": "#/$defs/caseId"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1
-            },
-            "operation": {
-              "const": "verifyReceiptEndpoint"
-            },
-            "input": {
-              "$ref": "#/$defs/endpointInput"
-            },
-            "config": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "trustedRoots",
-                "environment"
-              ],
-              "properties": {
-                "trustedRoots": {
-                  "$ref": "#/$defs/trustedRoots"
-                },
-                "environment": {
-                  "description": "Which environment this endpoint instance emulates; drives 21007/21008 routing.",
-                  "enum": [
-                    "Sandbox",
-                    "Production"
-                  ]
-                }
-              }
-            },
-            "clock": {
-              "$ref": "#/$defs/clock"
-            },
-            "expected": {
-              "$ref": "#/$defs/expectedEndpoint"
-            },
-            "fault": {
-              "$ref": "#/$defs/fault"
-            },
-            "tags": {
-              "$ref": "#/$defs/tags"
-            }
-          }
-        },
-        {
-          "title": "decodeBase64 -- one group of base64 spellings, each run through the named decoders called directly",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "id",
-            "description",
-            "operation",
-            "decoders",
-            "input",
-            "expected",
-            "tags"
-          ],
-          "properties": {
-            "id": {
-              "$ref": "#/$defs/caseId"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1
-            },
-            "operation": {
-              "const": "decodeBase64"
-            },
+            "id": { "$ref": "#/$defs/caseId" },
+            "legacyId": { "$ref": "#/$defs/legacyId" },
+            "description": { "$ref": "#/$defs/description" },
+            "operation": { "const": "decodeBase64" },
             "decoders": {
-              "description": "The decoders every text of the group runs through, each called directly rather than through a verifier. \"receipt-data\" is the port's receipt-data decoder (the one ReceiptVerifier's string entry point and the verifyReceipt endpoint use): a refusal from it is INVALID_RECEIPT_FORMAT. \"x5c\" is the port's decoder for one JWS x5c entry: a refusal from it is INVALID_CERTIFICATE. An error group states INVALID_RECEIPT_FORMAT and a runner maps it to INVALID_CERTIFICATE for x5c; the mapping is defined here and in the cases.json comment, never per case. No decoder may be listed twice (tools/lint-cases.mjs checks it).",
+              "description": "Each decoder called directly from the port's test code, not through a public method. \"receipt-data\" refuses with MALFORMED; \"x5c\" refuses with INVALID_CERTIFICATE. An error group states MALFORMED and the runner maps it for x5c. No decoder may be listed twice.",
               "type": "array",
               "minItems": 1,
-              "items": {
-                "enum": [
-                  "receipt-data",
-                  "x5c"
-                ]
-              }
+              "uniqueItems": true,
+              "items": { "enum": ["receipt-data", "x5c"] }
             },
             "input": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "texts"
-              ],
+              "required": ["texts"],
               "properties": {
                 "texts": {
-                  "description": "The spellings, as the exact strings a client or a JWS header carries. Every one must get the group's answer. Any JSON string is allowed, the empty string and control characters included; a spelling appears in one group only (tools/lint-cases.mjs checks it). A runner that finds a text answered wrongly names the case id, the index and the escaped text.",
+                  "description": "The spellings, as the exact strings a client or a JWS header carries. Every one must get the group's answer.",
                   "type": "array",
                   "minItems": 1,
-                  "items": {
-                    "type": "string"
-                  }
+                  "items": { "type": "string" }
                 }
               }
             },
@@ -749,14 +403,9 @@
                 {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "status",
-                    "bytesHex"
-                  ],
+                  "required": ["status", "bytesHex"],
                   "properties": {
-                    "status": {
-                      "const": "ok"
-                    },
+                    "status": { "const": "ok" },
                     "bytesHex": {
                       "description": "The bytes every text decodes to, as lowercase hex.",
                       "type": "string",
@@ -767,25 +416,15 @@
                 {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "status",
-                    "reason"
-                  ],
+                  "required": ["status", "reason"],
                   "properties": {
-                    "status": {
-                      "const": "error"
-                    },
-                    "reason": {
-                      "description": "The receipt-data decoder's answer. The x5c decoder's answer is INVALID_CERTIFICATE; see decoders.",
-                      "const": "INVALID_RECEIPT_FORMAT"
-                    }
+                    "status": { "const": "error" },
+                    "reason": { "const": "MALFORMED" }
                   }
                 }
               ]
             },
-            "tags": {
-              "$ref": "#/$defs/tags"
-            }
+            "tags": { "$ref": "#/$defs/tags" }
           }
         }
       ]

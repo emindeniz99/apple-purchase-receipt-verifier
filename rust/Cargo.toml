@@ -19,16 +19,18 @@ exclude = ["tests/**", "examples/bench.rs", "fuzz/**", "ffi/**", "RELEASE.md", "
 name = "apple_purchase_receipt_verifier"
 path = "src/lib.rs"
 
-[features]
-default = ["endpoint"]
-endpoint = []
-
 # Nine crates, all of them primitives. Every byte of attacker-supplied
-# ASN.1 — certificates, CMS, receipt payloads, keys, signatures — is parsed
-# by this crate's own bounded reader, so no third-party parser decides what a
-# key or a signature is. What is delegated is arithmetic: modular
-# exponentiation, two curves, three digests, and the base64 decode of
-# `receipt-data` and `x5c` entries (`src/base64.rs`).
+# ASN.1 (certificates, CMS, receipt payloads, the ASN.1 around keys and
+# signatures) is parsed by this crate's own bounded reader, and the JSON it
+# reads (a JWS header and payload, the endpoint request body) goes through
+# its own bounded reader as well. What is delegated is arithmetic (modular
+# exponentiation, two curves, the digests), the SEC1 decoding of an EC point
+# inside p256 and p384, and the base64 decode of `receipt-data` and `x5c`
+# entries (`src/base64.rs`).
+#
+# `md-5` is here because a receipt signer and a certificate under a pinned
+# root may use any digest the crypto crates verify. It is only ever applied
+# to bytes a pinned chain signed.
 #
 # `deny.toml` bans, as a build-breaking rule, every crate that could bring a
 # system trust store or a network client into the tree.
@@ -42,46 +44,26 @@ rsa = { version = "0.9.10", default-features = false, features = ["std", "u64_di
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
 p384 = { version = "0.13.1", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
 sha1 = { version = "0.10.7", default-features = false, features = ["oid"] }
+md-5 = { version = "0.10.6", default-features = false, features = ["oid"] }
 sha2 = { version = "0.10.9", default-features = false, features = ["oid"] }
 digest = "0.10.7"
 subtle = "2.6"
-serde_json = "1"
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+serde_json = "1"
 
 [dev-dependencies]
 libtest-mimic = "0.8.2"
 hex = "0.4.3"
 sha2 = "0.10.9"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 
-# The conformance suite drives all five operations, and one of them is the
-# verifyReceipt endpoint. Declaring the requirement here rather than
-# #[cfg]-ing the cases away keeps a `--no-default-features` run honest: the
-# suite is not silently reduced, it is visibly not built.
+# The conformance suite reports one line per shared case, so it runs its own
+# harness.
 [[test]]
 name = "conformance"
 harness = false
-required-features = ["endpoint"]
-
-[[test]]
-name = "endpoint"
-required-features = ["endpoint"]
-
-[[test]]
-name = "public_receipts"
-required-features = ["endpoint"]
-
-[[test]]
-name = "input_size_caps"
-required-features = ["endpoint"]
-
-[[test]]
-name = "verify_receipt_result"
-required-features = ["endpoint"]
 
 # The cross-port benchmark (BENCHMARKS.md). It reads ../fixtures, like the
 # tests, so it is excluded from the package above.
 [[example]]
 name = "bench"
-required-features = ["endpoint"]

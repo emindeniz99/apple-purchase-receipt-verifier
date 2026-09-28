@@ -9,8 +9,8 @@ import PackageDescription
 // Applied to every target, dependencies included: coverage instrumentation
 // has to reach swift-asn1 and swift-certificates for the fuzzer to steer
 // into them, and `-enable-testing` is what lets FuzzSupport reach the
-// library's internal readers (`decodeReceiptBase64`, `base64URLDecode`)
-// that no public entry point exposes on their own. The flags are passed on
+// library's internal readers (`decodeReceiptBase64`, `decodeBase64URLStrict`,
+// `parseReceiptPayload`) that no public entry point exposes on their own. The flags are passed on
 // the command line by run.sh rather than pinned here so the sanitizer set
 // stays switchable (`fuzzer` vs `fuzzer,address`) without editing this file.
 let package = Package(
@@ -22,10 +22,6 @@ let package = Package(
         // Dependabot checks the repository out as "repo", so its weekly
         // swift/fuzz run died on an unknown package (2026-09-19).
         .package(name: "apple-purchase-receipt-verifier", path: "../.."),
-        // The splice in FuzzSupport needs a BER reader to find the payload
-        // node it replaces. Same version range as the root manifest, so
-        // SwiftPM resolves one copy for both packages.
-        .package(url: "https://github.com/apple/swift-asn1.git", from: "1.2.0"),
     ],
     targets: [
         .target(
@@ -33,8 +29,7 @@ let package = Package(
             dependencies: [
                 .product(
                     name: "ApplePurchaseReceiptVerifier",
-                    package: "apple-purchase-receipt-verifier"),
-                .product(name: "SwiftASN1", package: "swift-asn1"),
+                    package: "apple-purchase-receipt-verifier")
             ]),
         .executableTarget(name: "receipt-der", dependencies: ["FuzzSupport"]),
         .executableTarget(name: "receipt-base64", dependencies: ["FuzzSupport"]),

@@ -3,7 +3,6 @@ package applereceipt_test
 import (
 	"bytes"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -12,7 +11,7 @@ import (
 )
 
 // A deterministic mutation pass over the genuine receipts and the genuine
-// transaction JWS.
+// JWS.
 //
 // Fuzzing is the other half of this (see fuzz_test.go), but a fuzzer that
 // runs for sixty seconds in CI is not a regression test: it explores a
@@ -22,13 +21,13 @@ import (
 //
 // Two invariants, and the second is the interesting one:
 //
-//  1. Nothing but a *VerificationError ever escapes, and nothing panics.
-//  2. A mutation may leave the answer unchanged — a few bytes of a CMS
-//     blob are genuinely not consulted, see
-//     TestSignatureAlgorithmIdentifierIsNotConsulted — but it may never
-//     change what a verified receipt says. "Nothing forged is ever
-//     accepted" is the property; "every mutation is rejected" would be a
-//     claim about the encoding rather than about security.
+//  1. Nothing but a *Failure ever escapes, and nothing panics.
+//  2. A mutation may leave the answer unchanged (a few bytes of a CMS
+//     blob are genuinely not consulted, see the CMS signature-algorithm
+//     tests), but it may never change what a verified receipt says.
+//     "Nothing forged is ever accepted" is the property; "every mutation
+//     is rejected" would be a claim about the encoding rather than about
+//     security.
 
 type mutationTarget struct {
 	name        string
@@ -50,24 +49,15 @@ func receiptMutationTargets() []mutationTarget {
 		},
 		{
 			name: "genuine sandbox receipt (SHA-256 chain)", fixture: "public-receipt-sandbox-g5",
-			roots:      func(t *testing.T) []*x509.Certificate { return applereceipt.AppleReceiptRoots() },
+			roots:      func(t *testing.T) []*x509.Certificate { return applereceipt.AppleRoots() },
 			flipStride: 11, cutStride: 61, spliceStrid: 97,
 		},
 		{
 			name: "genuine legacy receipt (SHA-1 chain)", fixture: "public-receipt-sandbox-legacy",
-			roots:      func(t *testing.T) []*x509.Certificate { return applereceipt.AppleReceiptRoots() },
+			roots:      func(t *testing.T) []*x509.Certificate { return applereceipt.AppleRoots() },
 			flipStride: 211, cutStride: 1021, spliceStrid: 2039,
 		},
 	}
-}
-
-func parseFixtureCertificate(t testing.TB, id string) *x509.Certificate {
-	t.Helper()
-	cert, err := x509.ParseCertificate(fixtureBytes(t, id))
-	if err != nil {
-		t.Fatalf("fixture %q is not a certificate: %v", id, err)
-	}
-	return cert
 }
 
 // mutations builds the deterministic mutation set for one input: single
@@ -106,32 +96,26 @@ func TestMutatedReceiptsNeverChangeTheAnswer(t *testing.T) {
 		t.Run(target.name, func(t *testing.T) {
 			input := fixtureBytes(t, target.fixture)
 			roots := target.roots(t)
-			genuine, err := applereceipt.VerifyReceiptCore(input, roots)
+			verifier := verifierFor(t, roots)
+			genuine, err := verifier.VerifyReceipt(applereceiptBase64(input))
 			if err != nil {
 				t.Fatalf("the unmutated fixture must verify: %v", err)
 			}
-			want, err := json.Marshal(genuine)
-			if err != nil {
-				t.Fatal(err)
-			}
+			want := genuine.ToJSON()
 
 			cases := mutations(input, target)
 			localAccepted := 0
 			for i, mutated := range cases {
-				result, err := verifyReceiptSafely(mutated, roots)
+				result, err := verifyReceiptSafely(verifier, mutated)
 				if err != nil {
-					var verr *applereceipt.VerificationError
-					if !errors.As(err, &verr) {
+					var failure *applereceipt.Failure
+					if !errors.As(err, &failure) {
 						t.Fatalf("mutation %d escaped as %T: %v", i, err, err)
 					}
 					continue
 				}
 				localAccepted++
-				got, marshalErr := json.Marshal(result)
-				if marshalErr != nil {
-					t.Fatal(marshalErr)
-				}
-				if !bytes.Equal(got, want) {
+				if got := result.ToJSON(); got != want {
 					t.Fatalf("mutation %d verified with a DIFFERENT receipt:\n%s\n%s", i, want, got)
 				}
 			}
@@ -147,73 +131,59 @@ func TestMutatedReceiptsNeverChangeTheAnswer(t *testing.T) {
 // verifyReceiptSafely turns a panic into an error so the mutation loop can
 // report which input caused it instead of taking the run down. The
 // library contains its own panics; this is the harness proving it.
-func verifyReceiptSafely(input []byte, roots []*x509.Certificate) (result *applereceipt.AppReceipt, err error) {
+func verifyReceiptSafely(verifier *applereceipt.Verifier, input []byte) (result *applereceipt.ReceiptPayload, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = nil
 			err = fmt.Errorf("PANIC escaped the library: %v", r)
 		}
 	}()
-	return applereceipt.VerifyReceiptCore(input, roots)
+	return verifier.VerifyReceipt(applereceiptBase64(input))
 }
 
-func TestMutatedTransactionsNeverVerify(t *testing.T) {
+func TestMutatedJWSNeverVerify(t *testing.T) {
 	input := fixtureBytes(t, "transaction")
 	root := parseFixtureCertificate(t, "jws-root")
-	verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-		TrustedRoots:         []*x509.Certificate{root},
-		BundleID:             "com.example.app",
-		AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-	})
+	verifier := verifierFor(t, []*x509.Certificate{root})
+	genuine, err := verifier.VerifySignedData(string(input))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("the unmutated JWS must verify: %v", err)
 	}
-	genuine, err := verifier.VerifyTransaction(string(input))
-	if err != nil {
-		t.Fatalf("the unmutated transaction must verify: %v", err)
-	}
-	want, err := json.Marshal(genuine)
-	if err != nil {
-		t.Fatal(err)
-	}
+	want := genuine.JSON()
 
 	cases := mutations(input, mutationTarget{flipStride: 3, cutStride: 13, spliceStrid: 23})
 	accepted := 0
 	for i, mutated := range cases {
-		result, err := verifyTransactionSafely(verifier, string(mutated))
+		result, err := verifyJWSSafely(verifier, string(mutated))
 		if err != nil {
-			var verr *applereceipt.VerificationError
-			if !errors.As(err, &verr) {
+			var failure *applereceipt.Failure
+			if !errors.As(err, &failure) {
 				t.Fatalf("mutation %d escaped as %T: %v", i, err, err)
 			}
 			continue
 		}
 		accepted++
-		got, marshalErr := json.Marshal(result)
-		if marshalErr != nil {
-			t.Fatal(marshalErr)
-		}
-		if !bytes.Equal(got, want) {
+		if got := result.JSON(); got != want {
 			t.Fatalf("mutation %d verified with a DIFFERENT payload:\n%s\n%s", i, want, got)
 		}
 	}
 	t.Logf("%d JWS mutations; %d left the answer byte-identical", len(cases), accepted)
-	// A JWS is signed end to end: unlike a CMS blob it has no
-	// unconsulted structural fields, so every mutation of these bytes
-	// must be rejected outright.
+	// A JWS is signed end to end: unlike a CMS blob it has no unconsulted
+	// structural fields, so every mutation of these bytes must be
+	// rejected outright.
 	if accepted != 0 {
 		t.Fatalf("%d JWS mutations verified; every byte of a compact JWS is covered", accepted)
 	}
 }
 
-func verifyTransactionSafely(verifier *applereceipt.JWSVerifier, input string) (result *applereceipt.TransactionPayload, err error) {
+func verifyJWSSafely(verifier *applereceipt.Verifier, input string) (result *applereceipt.JSONPayload, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = nil
 			err = fmt.Errorf("PANIC escaped the library: %v", r)
 		}
 	}()
-	return verifier.VerifyTransaction(input)
+	return verifier.VerifySignedData(input)
 }
 
 // The forged-receipt matrix: a receipt whose payload has been swapped for
@@ -245,7 +215,7 @@ func TestForgedReceiptsAreRejected(t *testing.T) {
 		if bytes.Equal(real, forged) {
 			t.Skip("the payload could not be located in the blob")
 		}
-		_, err := applereceipt.VerifyReceiptCore(forged, genuine.anchors())
+		_, err := verifierFor(t, genuine.anchors()).VerifyReceipt(applereceiptBase64(forged))
 		if err == nil {
 			t.Fatal("a swapped payload must never verify")
 		}
@@ -255,11 +225,11 @@ func TestForgedReceiptsAreRejected(t *testing.T) {
 			content: payload, signer: attacker.leaf,
 			certificates: attacker.embedded(), withSignedAttrs: true,
 		})
-		_, err := applereceipt.VerifyReceiptCore(forged, genuine.anchors())
-		requireReason(t, err, applereceipt.ReasonInvalidChain)
+		_, err := verifierFor(t, genuine.anchors()).VerifyReceipt(applereceiptBase64(forged))
+		requireReason(t, err, applereceipt.ReasonUntrustedChain)
 	})
 	t.Run("attacker leaf under the genuine root, without the marker OID", func(t *testing.T) {
-		// The forgery hole PLAN.md D13 closed: a developer certificate
+		// The forgery hole a developer certificate would otherwise open: it
 		// chains through the same intermediate to the same root.
 		developer := issueCert(t, certSpec{
 			commonName: "Apple Distribution: Some Developer", rsa: true,
@@ -269,7 +239,7 @@ func TestForgedReceiptsAreRejected(t *testing.T) {
 			certificates:    [][]byte{developer.der, genuine.intermediate.der},
 			withSignedAttrs: true,
 		})
-		_, err := applereceipt.VerifyReceiptCore(forged, genuine.anchors())
+		_, err := verifierFor(t, genuine.anchors()).VerifyReceipt(applereceiptBase64(forged))
 		requireReason(t, err, applereceipt.ReasonInvalidCertificatePurpose)
 	})
 }

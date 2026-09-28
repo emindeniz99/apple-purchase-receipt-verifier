@@ -7,15 +7,16 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Fuzz;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Certificate;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Cms;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\ParseException;
-use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\VerificationException;
 
 /**
  * The CMS `SignedData` walk, plus the readers a parsed structure feeds: the
  * two signed-attribute readers, the embedded certificates, and the signer
- * lookup that compares issuer and serial. This is the walk the probe that
- * preceded the port found an out-of-bounds panic in by mutating a genuine
- * receipt, so it gets its own target rather than only being reached through
- * `verify-receipt`.
+ * lookup that compares issuer and serial across every SignerInfo (0.7
+ * accepts multiple, docs/design/0.7-api.md §1, "Several SignerInfos"). This
+ * is the walk the probe that preceded the port found an out-of-bounds panic
+ * in by mutating a genuine receipt, so it gets its own target rather than
+ * only being reached through `verify-receipt`.
  *
  * `Cms::parse` converts every decoding failure to `VerificationException`;
  * the attribute readers below are internal and are documented to raise
@@ -41,10 +42,11 @@ $config->setTarget(static function (string $input): void {
             // too: a receipt may carry one alongside the one it needs.
         }
     }
-    $cms->findSignerIndex($embedded);
-
-    if ($cms->signedAttrs !== null) {
-        $cms->messageDigestAttribute();
-        $cms->signedAttrsSignedBytes();
+    foreach ($cms->signerInfos as $signer) {
+        Cms::findSignerIndices($signer, $embedded);
+        if ($signer->signedAttrs !== null) {
+            $cms->messageDigestAttribute($signer);
+            Cms::signedAttrsSignedBytes($signer);
+        }
     }
 });

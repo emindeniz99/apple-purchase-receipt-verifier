@@ -1,24 +1,28 @@
 """Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7
-receipts) with zero Apple server calls. See the project PLAN.md for the
-normative algorithms; this package mirrors the Java implementation."""
+receipts) with zero Apple server calls. docs/design/0.7-api.md is the
+normative spec this package mirrors."""
 
-from .exceptions import ENVIRONMENTS, Reason, VerificationError
-from .jws import JwsVerifier
-from .receipt import AppReceipt, InAppPurchase, ReceiptVerifier, verify_receipt_core
-from .roots import apple_jws_roots, apple_receipt_roots
-from .verify_receipt_endpoint import VerifyReceiptEndpoint, VerifyReceiptResult
+from . import apple_status
+from .config import Config
+from .environment import Environment
+from .reason import Reason
+from .receipt_payload import InAppPurchase, JsonPayload, ReceiptPayload
+from .result import Failure, VerificationResult
+from .roots import default_roots
+from .verifier import Verifier
+from .version import CURRENT as VERSION
 
 __all__ = [
-    "ENVIRONMENTS",
-    "AppReceipt",
+    "VERSION",
+    "Config",
+    "Environment",
+    "Failure",
     "InAppPurchase",
-    "JwsVerifier",
+    "JsonPayload",
     "Reason",
-    "ReceiptVerifier",
-    "VerificationError",
-    "VerifyReceiptEndpoint",
-    "VerifyReceiptResult",
-    "apple_jws_roots",
-    "apple_receipt_roots",
-    "verify_receipt_core",
+    "ReceiptPayload",
+    "VerificationResult",
+    "Verifier",
+    "apple_status",
+    "default_roots",
 ]

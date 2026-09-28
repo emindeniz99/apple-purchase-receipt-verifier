@@ -42,7 +42,14 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
  */
 final class Der
 {
-    /** Nesting depth ceiling. Also what keeps recursion off PHP 8.1's unguarded stack. */
+    /**
+     * Nesting depth ceiling: at most this many constructed values inside one
+     * another, the outermost included. Also what keeps recursion off PHP's
+     * unguarded stack. 32 in every 0.7 port (docs/design/0.7-api.md,
+     * "Bounds"); measured independently on the CMS envelope and on the
+     * signed content's attribute SET, since {@see parse()} resets the count
+     * for each top-level call.
+     */
     public const MAX_DEPTH = 32;
 
     /**
@@ -66,9 +73,9 @@ final class Der
      * The budget is sized by the receipt cap: the CMS envelope parse retains
      * 14 times the DER (measured on `receipt-byte-floor` and on
      * `receipt-at-der-cap`, whose 3,145,728 bytes retain 44,028,800), so
-     * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Receipt\ReceiptVerifier::MAX_RECEIPT_BYTES}
-     * of 3 MiB needs 42 MiB. 48 MiB covers a receipt of up to about 3.43 MiB
-     * of DER, so every receipt the cap lets through is parsed. The costliest
+     * the receipt cap of 3 MiB (`Verifier::MAX_RECEIPT_BYTES`) needs
+     * 42 MiB. 48 MiB covers a receipt of up to about 3.43 MiB of DER, so
+     * every receipt the cap lets through is parsed. The costliest
      * hostile shape at the cap, chains of SEQUENCEs 31 deep, still stops at a
      * peak of about 46 MB on PHP 8.4, under half of a 128M `memory_limit`.
      */
@@ -87,8 +94,6 @@ final class Der
     public const TAG_SEQUENCE = 0x30;
     public const TAG_SET = 0x31;
     public const TAG_CONTEXT_0 = 0xa0;
-    public const TAG_CONTEXT_1 = 0xa1;
-    public const TAG_CONTEXT_2 = 0xa2;
     public const TAG_CONTEXT_3 = 0xa3;
 
     /**
@@ -105,7 +110,10 @@ final class Der
     ): Asn1Node {
         $remaining = $nodeBudget;
         $bytes = $byteBudget;
-        [$node, $end] = self::readNode($buf, 0, 0, $remaining, $bytes);
+        // The outermost value counts as depth 1 (docs/design/0.7-api.md,
+        // "Bounds": "the outermost one as 1"), so 32 nested values are
+        // accepted and a 33rd is refused.
+        [$node, $end] = self::readNode($buf, 0, 1, $remaining, $bytes);
         if ($end !== strlen($buf)) {
             throw new ParseException('trailing bytes after ASN.1 value (' . (strlen($buf) - $end) . ')');
         }
@@ -123,9 +131,6 @@ final class Der
      */
     private static function readNode(string $buf, int $off, int $depth, int &$budget, int &$byteBudget): array
     {
-        if ($depth > self::MAX_DEPTH) {
-            throw new ParseException('maximum ASN.1 nesting depth exceeded');
-        }
         if ($budget <= 0) {
             throw new ParseException('ASN.1 node budget exceeded');
         }
@@ -140,6 +145,13 @@ final class Der
             throw new ParseException('multi-byte ASN.1 tags are not supported');
         }
         $constructed = ($tag & 0x20) !== 0;
+        // Only constructed values count toward the depth bound (docs/design/
+        // 0.7-api.md, "Bounds": "counts constructed values"); a primitive
+        // leaf sitting at the bottom of a deep tree is not itself a nesting
+        // level.
+        if ($constructed && $depth > self::MAX_DEPTH) {
+            throw new ParseException('maximum ASN.1 nesting depth exceeded');
+        }
         $pos = $off + 1;
         $lenByte = ord($buf[$pos]);
         ++$pos;

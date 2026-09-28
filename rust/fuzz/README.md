@@ -13,13 +13,13 @@ rustup toolchain install nightly --profile minimal   # sanitizer flags
 
 | target | what it reaches | invariant beyond "no panic" |
 |---|---|---|
-| `parse-der` | `asn1::parse_exact` on raw bytes | — |
-| `parse-certificate` | `x509::Certificate::from_der`, then every accessor | — |
-| `parse-cms` | `cms::parse_cms` and the two signed-attribute readers | — |
-| `verify-receipt` | `verify_receipt_core`: CMS, payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
-| `verify-receipt-base64` | `ReceiptVerifier::verify_base64`, the string a client sends | — |
-| `verify-transaction` | the three `JwsVerifier` entry points | a JWS `verify_raw` accepts under the fixture root fails under Apple's roots |
-| `endpoint-json` | `VerifyReceiptEndpoint::verify_receipt_json` on a request body | the answer is always JSON with a `status` |
+| `parse-der` | `asn1::parse_exact` on raw bytes | none |
+| `parse-certificate` | `x509::Certificate::from_der`, then every accessor | none |
+| `parse-cms` | `cms::parse_cms` and the two signed-attribute readers, for every `SignerInfo` | none |
+| `verify-receipt` | `Verifier::verify_receipt` on the base64 of arbitrary DER: CMS, chain, signature, payload | never `INTERNAL_ERROR`; an accepted receipt fails against an unrelated anchor set |
+| `verify-receipt-base64` | `Verifier::verify_receipt`, the string a client sends | none |
+| `verify-transaction` | `Verifier::verify_signed_data` | a JWS accepted under the fixture root fails under Apple's roots |
+| `endpoint-json` | `Verifier::verify_receipt_endpoint` on a request body | the answer is always a body that starts with `status` |
 
 The anchor-set invariant is the one that lets a fuzzer find "accepts what
 it should not" rather than only crashes: without it an input that verifies

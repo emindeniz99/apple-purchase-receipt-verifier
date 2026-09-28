@@ -1,24 +1,21 @@
 package io.github.emindeniz99.applepurchasereceiptverifier.interop
 
-import io.github.emindeniz99.applepurchasereceiptverifier.{AppleRootCerts, Environment, VerificationException}
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier
-import org.junit.jupiter.api.Assertions.{assertEquals, assertNull}
+import io.github.emindeniz99.applepurchasereceiptverifier.{Config, Environment, Failure, Reason, VerificationResult, Verifier}
+import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertNull, assertTrue, fail}
 import org.junit.jupiter.api.Test
 
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 import java.security.cert.{CertificateFactory, X509Certificate}
-import java.util.EnumSet
 import scala.jdk.CollectionConverters.*
 
 /** Proves the library is usable from Scala 3 exactly as a Scala consumer
-  * would use it: idiomatic try/catch on [[VerificationException]], an
-  * exhaustive `match` over [[Reason]], and the same three checks the Java,
-  * Node, Python and Swift suites run against fixtures/. See
-  * jvm-interop/README.md for why this module exists and is not published.
+  * would use it: a [[VerificationResult]] turned into an `Option` or an
+  * `Either`, an exhaustive `match` over [[Reason]], and the same three
+  * checks the Java, Node, Python and Swift suites run against fixtures/.
+  * See jvm-interop/README.md for why this module exists and is not
+  * published.
   */
 class ScalaInteropTest:
 
@@ -40,62 +37,72 @@ class ScalaInteropTest:
       .generateCertificate(new ByteArrayInputStream(generatedBytes(name)))
       .asInstanceOf[X509Certificate]
 
+  // The idiomatic Scala view of a result: exactly one of payload() and
+  // failure() is set, which is what Either expresses.
+  extension [T](result: VerificationResult[T])
+    private def toEither: Either[Failure, T] =
+      if result.verified() then Right(result.payload()) else Left(result.failure())
+
   @Test
   def verifiesTheGenuineSandboxReceiptAgainstTheBuiltInAppleRoots(): Unit =
-    val verifier = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app")
-    val receipt = verifier.verify(receiptBase64("receipt-sandbox-g5"))
-    assertEquals("ProductionSandbox", receipt.receiptType())
-    assertEquals(2, receipt.inAppPurchases().size())
+    val verifier = Verifier.create(Config.defaults())
+    verifier.verifyReceipt(receiptBase64("receipt-sandbox-g5")).toEither match
+      case Right(receipt) =>
+        assertEquals("ProductionSandbox", receipt.receiptType())
+        assertEquals("dev.bonzer.weeka.app", receipt.bundleId())
+        assertEquals(2, receipt.inApp().size())
+      case Left(failure) => fail(s"expected a verified receipt, got $failure")
 
   @Test
   def verifiesTheSharedJwsTransactionFixture(): Unit =
     val root = cert("jws-root.der")
-    // Scala's Predef conversions don't reach java.util.Set the way
+    // Scala's Predef conversions don't reach java.util.Collection the way
     // scala.jdk.CollectionConverters does — .asJava is the idiomatic Scala
-    // 3 way to hand a Scala Set to a Java API expecting java.util.Set.
-    val verifier = new JwsVerifier(Set(root).asJava, "com.example.app", EnumSet.of(Environment.SANDBOX))
-    val payload = verifier.verifyTransaction(generatedText("transaction.jws"))
-    assertEquals("2000000000000001", payload.transactionId())
-    assertEquals("com.example.app.pro", payload.productId())
+    // 3 way to hand a Scala Set to a Java API expecting a Java collection.
+    val verifier = Verifier.create(Config.builder().roots(Set(root).asJava).build())
+    val json = verifier.verifySignedData(generatedText("transaction.jws")).toEither match
+      case Right(payload) => payload.json()
+      case Left(failure)  => fail(s"expected a verified JWS, got $failure")
+    // The library returns the signed JSON unchanged; parsing it is the
+    // caller's job, so a substring check stands in for a JSON library.
+    assertTrue(json.contains("\"transactionId\":\"2000000000000001\""), json)
+    assertTrue(json.contains("\"productId\":\"com.example.app.pro\""), json)
 
   @Test
-  def aFailingVerificationSurfacesItsReasonThroughIdiomaticTryCatch(): Unit =
-    val verifier = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "*")
-    var caught: Reason = null
-    try verifier.verify(receiptBase64("receipt-xcode-with-purchases"))
-    catch case e: VerificationException => caught = e.reason()
-    assertEquals(Reason.INVALID_CHAIN, caught)
+  def aFailingVerificationSurfacesItsReasonThroughTheResult(): Unit =
+    val verifier = Verifier.create(Config.defaults())
+    val result = verifier.verifyReceipt(receiptBase64("receipt-xcode-with-purchases"))
+    assertFalse(result.verified())
+    val reason = result.toEither.left.map(_.reason())
+    assertEquals(Left(Reason.UNTRUSTED_CHAIN), reason)
 
   @Test
-  def nullSafetyAtTheJavaBoundaryOnAppReceiptAccessors(): Unit =
-    val verifier = new ReceiptVerifier(AppleRootCerts.receiptRoots(), "dev.bonzer.weeka.app")
-    val receipt = verifier.verify(receiptBase64("receipt-sandbox-g5"))
-    // expirationDate() is really null here (attribute 21 is VPP-only and
-    // absent from this fixture) — Scala has no platform-type distinction
-    // for Java return values the way Kotlin does, so the boundary risk is
-    // a plain possible-NPE unless the caller checks, which this does.
-    val expirationDate = receipt.expirationDate()
-    assertNull(expirationDate)
+  def nullSafetyAtTheJavaBoundaryOnReceiptPayloadAccessors(): Unit =
+    val result = Verifier.create(Config.defaults()).verifyReceipt(receiptBase64("receipt-sandbox-g5"))
+    // Scala has no platform-type distinction for Java return values the way
+    // Kotlin does, so the boundary risk is a plain possible-NPE unless the
+    // caller checks. Option(...) is the idiomatic check.
+    val receipt = Option(result.payload()).getOrElse(fail("expected a verified receipt"))
+    assertNull(result.failure())
+    // expirationDateMs() is really null here (attribute 21 is VPP-only and
+    // absent from this fixture).
+    assertEquals(None, Option(receipt.expirationDateMs()))
+    assertEquals(Some(Environment.SANDBOX), Option(Environment.fromReceiptType(receipt.receiptType())))
     assertEquals("dev.bonzer.weeka.app", receipt.bundleId())
 
   @Test
   def reasonIsMatchedExhaustivelyInAMatchExpression(): Unit =
-    val e = new VerificationException(Reason.WRONG_BUNDLE_ID, "test")
+    val failure = new Failure(Reason.UNTRUSTED_CHAIN, "test", null)
     // No wildcard case below: relies on Scala 3's exhaustivity check for
     // Java enums. See jvm-interop/README.md for whether the compiler
     // actually enforced this (warning vs. error) as observed here.
-    val description = e.reason() match
-      case Reason.INVALID_JWS_FORMAT           => "bad jws"
-      case Reason.INVALID_CERTIFICATE          => "bad cert"
-      case Reason.INVALID_CERTIFICATE_PURPOSE  => "wrong purpose"
-      case Reason.INVALID_CHAIN                => "bad chain"
-      case Reason.INVALID_SIGNATURE            => "bad signature"
-      case Reason.WRONG_BUNDLE_ID              => "wrong bundle"
-      case Reason.WRONG_ENVIRONMENT            => "wrong environment"
-      case Reason.WRONG_APP_APPLE_ID           => "wrong app id"
-      case Reason.INVALID_RECEIPT_FORMAT       => "bad receipt"
-      case Reason.DEVICE_HASH_MISMATCH         => "device mismatch"
-      case Reason.MALFORMED_REQUEST            => "malformed request"
-      case Reason.INTERNAL_ERROR               => "internal error"
-      case Reason.REQUEST_TOO_LARGE            => "request too large"
-    assertEquals("wrong bundle", description)
+    val description = failure.reason() match
+      case Reason.MALFORMED                   => "malformed"
+      case Reason.TOO_LARGE                   => "too large"
+      case Reason.INVALID_SIGNATURE           => "bad signature"
+      case Reason.UNTRUSTED_CHAIN             => "untrusted chain"
+      case Reason.INVALID_CERTIFICATE         => "bad cert"
+      case Reason.INVALID_CERTIFICATE_PURPOSE => "wrong purpose"
+      case Reason.UNREADABLE_PAYLOAD          => "unreadable payload"
+      case Reason.INTERNAL_ERROR              => "internal error"
+    assertEquals("untrusted chain", description)

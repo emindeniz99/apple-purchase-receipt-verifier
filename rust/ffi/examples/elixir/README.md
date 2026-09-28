@@ -18,13 +18,9 @@ of this library is a shim in C, `c_src/aprv_nif.c`, written against the
 committed header in `../../include`. It converts Erlang terms to the
 arguments the ABI takes and back, and holds no verification logic.
 
-The shim is 9 NIFs over the ABI's exports. An empty roots list means the
-bundled Apple roots, so one NIF covers both `aprv_verifier_new_jws` and
-`aprv_verifier_new_jws_with_roots`; an empty device GUID means no device hash
-check, so one NIF covers each receipt call and its `_with_device_guid`
-variant; a `nil` clock means the system clock, so one NIF covers the
-endpoint's `_and_clock` constructor too. Every export is still reached, because a clock
-reaches the `_and_clock` call only when a caller pins one.
+The shim is 5 NIFs, one per export that takes arguments, plus `version`.
+An empty roots list means the bundled Apple roots and a `nil` clock means the
+system clock, the same two sentinels the ABI itself takes.
 
 ## Build and run
 
@@ -51,21 +47,23 @@ cdylib, for a debug build or a relocated `CARGO_TARGET_DIR`.
 `AppleReceiptExample.Native` is the raw NIF surface, one function per entry
 point in the shim. `AppleReceiptExample` is the layer a real application
 would write: environments as atoms, status codes as reason atoms, and the
-JSON decoded into a map.
+JSON decoded into a map. The library checks the chain and the signature and
+hands back the whole payload; the caller judges the claims.
 
 ```elixir
-{:ok, verifier} = AppleReceiptExample.jws_verifier("com.example.app", [:sandbox])
+{:ok, verifier} = AppleReceiptExample.verifier()
 
-case AppleReceiptExample.verify_transaction(verifier, jws) do
-  {:ok, claims} -> claims["productId"]
-  {:error, :wrong_bundle_id, _body} -> :rejected
+case AppleReceiptExample.verify_signed_data(verifier, jws) do
+  {:ok, %{"bundleId" => "com.example.app"} = claims} -> claims["productId"]
+  {:ok, _other_app} -> :rejected
+  {:error, :untrusted_chain, _body} -> :rejected
 end
 ```
 
 ### Handles are released by the garbage collector
 
-Each handle from `aprv_*_new*` lives in an `ErlNifResourceType` whose
-destructor calls the matching `aprv_*_free`. When the last Elixir reference
+The handle from `aprv_verifier_new` lives in an `ErlNifResourceType` whose
+destructor calls `aprv_verifier_free`. When the last Elixir reference
 to a verifier is dropped, the destructor runs. A caller cannot leak a handle
 and cannot free one twice, so the API has no close function.
 
@@ -83,20 +81,27 @@ emulator runs it on a dirty scheduler instead.
 
 ### JSON
 
-The ABI hands back one UTF-8 JSON document per call, and `JSON.decode!/1`
-from Elixir's own standard library reads it. That is why `mix.exs` claims
+The ABI hands back one UTF-8 JSON document per call, and `JSON` from
+Elixir's own standard library reads it. That is why `mix.exs` claims
 Elixir 1.18: `JSON` arrived there, and taking it as the floor keeps the
 example's dependency count at zero without a hand-written reader.
 
+It is not read with `JSON.decode!/1`, though. A JWS payload comes back
+exactly as signed, repeated member names included, and the verifier takes
+the last of them, as `JSON.parse` does: a payload with two `signedDate`s is
+judged at the second. `JSON.decode!/1` keeps the first, so it would report a
+signing date the chain was never checked against. `decode_json!/1` passes
+`JSON.decode/3` an `object_finish` that lets the last member win, and every
+call in the example, and the conformance run, decodes through it.
+
 ### The clock
 
-`endpoint/2` takes a `:clock_unix_millis` option, which becomes the ABI's
+`verifier/1` takes a `:clock_unix_millis` option, which becomes the ABI's
 `fixed_clock_unix_millis` pointer; leaving it out passes `nil`, the NULL that
-means the system clock. It exists for the conformance vectors that pin one,
-and it moves the endpoint's `request_date` only. `jws_verifier/3` and
-`receipt_verifier/2` have no such option because the ABI has none: an
-injected clock must never be able to accept an expired chain, and no payload
-is rejected for its age.
+means the system clock. It exists for tests and the conformance vectors that
+pin one. The clock is read where every 0.7 port reads it: the
+certificate-validity instant when the input states no usable signing date,
+and the endpoint's `request_date`. No payload is rejected for its age.
 
 ## The conformance run
 
@@ -105,15 +110,17 @@ is rejected for its age.
 case in it through the NIF:
 
 ```
-apple-purchase-receipt-verifier <version> — C ABI conformance over NIFs
+apple-purchase-receipt-verifier <version>: C ABI conformance over NIFs
 <N> passed, 0 failed, 0 skipped (<C> pin a clock, and every one of them ran)
 <F> expected fields checked here, nested paths left to conformance.py
 ```
 
-`<N>` is the number of cases in `cases.json`, `<C>` the ones among them that
-pin a clock, and `<F>` the expected fields this harness checks.
+`<N>` is the number of cases in `cases.json` the ABI can reach (every
+one but the `decodeBase64` groups), `<C>` the ones among them that pin a
+clock, and `<F>` the expected fields and lengths this harness checks.
 
-Nothing is skipped: the endpoint cases that pin a clock are built through
-the `_and_clock` constructor. A case the manifest marks unsupported fails the
-run rather than shrinking it. The counts match `examples/cpp/conformance.cpp`
-exactly, because both read the same manifest.
+Nothing is skipped: a case that pins a clock passes the instant to
+`aprv_verifier_new`, and a case with a `maxMillis` budget runs once to warm
+up and fails if the second run takes longer. A case the manifest marks
+unsupported fails the run rather than shrinking it. The counts match
+`examples/cpp/conformance.cpp` exactly, because both read the same manifest.

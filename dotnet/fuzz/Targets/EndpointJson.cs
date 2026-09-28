@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using ApplePurchaseReceiptVerifier.Receipt;
+using ApplePurchaseReceiptVerifier;
 
 namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
 {
     /// <summary>
-    /// <c>VerifyReceiptEndpoint.VerifyReceiptJson</c> — the one entry point
-    /// that takes a request body rather than a receipt: JSON parse,
+    /// <c>IVerifier.VerifyReceiptEndpoint</c> — the one entry point that
+    /// takes a request body rather than a receipt: JSON parse,
     /// <c>receipt-data</c> extraction, the base64 rule, then the DER path.
     /// </summary>
     /// <remarks>
@@ -19,12 +19,11 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
     /// </remarks>
     internal sealed class EndpointJson : IDisposable
     {
-        private readonly VerifyReceiptEndpoint _endpoint;
+        private readonly IVerifier _verifier;
 
         internal EndpointJson()
         {
-            _endpoint = new VerifyReceiptEndpoint(
-                AppleRootCertificates.ReceiptRoots(), AppleEnvironment.Sandbox);
+            _verifier = Verifier.Create(Config.CreateBuilder().Roots(AppleRootCertificates.Bundled()).Build());
         }
 
         internal void Run(ReadOnlySpan<byte> data)
@@ -42,12 +41,12 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
             string response;
             try
             {
-                response = _endpoint.VerifyReceiptJson(body);
+                response = _verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, body);
             }
             catch (Exception e)
             {
                 throw new InvariantException(
-                    $"VerifyReceiptJson is documented as never throwing, but threw "
+                    $"VerifyReceiptEndpoint is documented as never throwing, but threw "
                     + $"{e.GetType().FullName}: {e.Message}");
             }
 
@@ -69,6 +68,8 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
                 $"the endpoint answers with a numeric status: {response}");
         }
 
-        public void Dispose() => _endpoint.Dispose();
+        public void Dispose()
+        {
+        }
     }
 }

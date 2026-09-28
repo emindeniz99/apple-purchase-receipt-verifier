@@ -19,6 +19,10 @@ class MutationTest < Minitest::Test
   RECEIPT_MUTATIONS = Integer(ENV.fetch("APRV_MUTATIONS", "1000"))
   JWS_MUTATIONS = Integer(ENV.fetch("APRV_JWS_MUTATIONS", "500"))
 
+  def clock
+    APRV::ClockOnce.new(-> { Time.now.to_i * 1000 })
+  end
+
   def mutate(random, bytes)
     copy = bytes.dup
     if random.rand < 0.15
@@ -34,12 +38,13 @@ class MutationTest < Minitest::Test
 
   # Runs `count` mutations and returns the reason histogram. Any escape is a
   # failure naming the seed, the iteration and the concrete class.
-  # Value objects reduced to primitives, so two results can be compared.
+  # Value objects reduced to primitives (Data#to_h), so two results can be
+  # compared.
   def deep(value)
     case value
     when Array then value.map { |element| deep(element) }
     when Hash then value.to_h { |key, element| [key, deep(element)] }
-    else value.respond_to?(:to_h) && !value.is_a?(Time) ? deep(value.to_h) : value
+    else value.is_a?(Data) ? deep(value.to_h) : value
     end
   end
 
@@ -80,55 +85,52 @@ class MutationTest < Minitest::Test
   end
 
   def test_mutations_of_the_genuine_legacy_receipt_never_escape
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: APRV.apple_receipt_roots,
-                                         bundle_id: "com.nutcall.alert")
+    roots = APRV::Config.defaults.roots
     bytes = TestSupport.fixture_bytes("public-receipt-sandbox-legacy")
-    histogram = sweep("legacy receipt", bytes, RECEIPT_MUTATIONS) { |m| verifier.verify_der(m) }
+    histogram = sweep("legacy receipt", bytes, RECEIPT_MUTATIONS) do |m|
+      APRV::Receipt.verify([m].pack("m0"), roots, clock)
+    end
     assert_equal histogram.values.sum, RECEIPT_MUTATIONS
-    assert_operator histogram[:INVALID_RECEIPT_FORMAT] + histogram[:INVALID_SIGNATURE] +
-                    histogram[:INVALID_CHAIN], :>, 0
+    assert_operator histogram[:MALFORMED] + histogram[:INVALID_SIGNATURE] +
+                    histogram[:UNTRUSTED_CHAIN], :>, 0
   end
 
   def test_mutations_of_the_genuine_sandbox_receipt_never_escape
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: APRV.apple_receipt_roots,
-                                         bundle_id: "dev.bonzer.weeka.app")
+    roots = APRV::Config.defaults.roots
     bytes = TestSupport.fixture_bytes("public-receipt-sandbox-g5")
-    histogram = sweep("g5 receipt", bytes, RECEIPT_MUTATIONS) { |m| verifier.verify_der(m) }
+    histogram = sweep("g5 receipt", bytes, RECEIPT_MUTATIONS) do |m|
+      APRV::Receipt.verify([m].pack("m0"), roots, clock)
+    end
     assert_equal RECEIPT_MUTATIONS, histogram.values.sum
   end
 
   def test_mutations_of_a_generated_receipt_never_escape
     pki = TestPki.receipt_pki
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app")
     bytes = TestPki.sign_receipt(pki, TestPki.default_payload)
-    histogram = sweep("generated receipt", bytes, RECEIPT_MUTATIONS) { |m| verifier.verify_der(m) }
+    histogram = sweep("generated receipt", bytes, RECEIPT_MUTATIONS) do |m|
+      APRV::Receipt.verify([m].pack("m0"), [pki.root], clock)
+    end
     assert_equal RECEIPT_MUTATIONS, histogram.values.sum
   end
 
   def test_mutations_of_the_shared_transaction_jws_never_escape
-    verifier = APRV::JwsVerifier.new(
-      trusted_roots: [TestSupport.fixture_certificate("jws-root")],
-      bundle_id: "com.example.app", accepted_environments: [APRV::Environment::SANDBOX]
-    )
+    roots = [TestSupport.fixture_certificate("jws-root")]
     bytes = TestSupport.fixture_bytes("transaction")
     histogram = sweep("transaction jws", bytes, JWS_MUTATIONS) do |m|
-      verifier.verify_transaction(m.force_encoding(Encoding::UTF_8))
+      APRV::Jws.verify(m.dup.force_encoding(Encoding::UTF_8), roots, clock)
     end
     assert_equal JWS_MUTATIONS, histogram.values.sum
   end
 
   def test_segment_swaps_and_reorderings_of_a_jws_never_escape
-    verifier = APRV::JwsVerifier.new(
-      trusted_roots: [TestSupport.fixture_certificate("jws-root")],
-      bundle_id: "com.example.app", accepted_environments: [APRV::Environment::SANDBOX]
-    )
+    roots = [TestSupport.fixture_certificate("jws-root")]
     header, payload, signature = TestSupport.fixture_bytes("transaction")
                                             .force_encoding(Encoding::UTF_8).strip.split(".")
     [header, payload, signature].permutation.each do |a, b, c|
       combined = "#{a}.#{b}.#{c}"
       next if combined == "#{header}.#{payload}.#{signature}"
 
-      error = assert_raises(APRV::VerificationError) { verifier.verify_transaction(combined) }
+      error = assert_raises(APRV::VerificationError) { APRV::Jws.verify(combined, roots, clock) }
       assert_includes APRV::Reason::ALL, error.reason
     end
   end
@@ -137,15 +139,14 @@ class MutationTest < Minitest::Test
   # the payload it returns must then be identical to the unmutated one.
   def test_a_mutation_that_still_verifies_returns_an_identical_payload
     pki = TestPki.receipt_pki
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app")
     bytes = TestPki.sign_receipt(pki, TestPki.default_payload)
-    baseline = verifier.verify_der(bytes).to_h
+    baseline = APRV::Receipt.verify([bytes].pack("m0"), [pki.root], clock).to_h
     random = Random.new(SEED)
     accepted = 0
     400.times do
       mutated = mutate(random, bytes)
       begin
-        assert_equal baseline, verifier.verify_der(mutated).to_h
+        assert_equal baseline, APRV::Receipt.verify([mutated].pack("m0"), [pki.root], clock).to_h
         accepted += 1
       rescue APRV::VerificationError
         next
@@ -157,13 +158,12 @@ class MutationTest < Minitest::Test
   end
 
   def test_random_bytes_never_escape
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: APRV.apple_receipt_roots,
-                                         bundle_id: "com.example.app")
+    roots = APRV::Config.defaults.roots
     random = Random.new(SEED)
     2000.times do |iteration|
       bytes = random.bytes(random.rand(0..512))
       begin
-        verifier.verify_der(bytes)
+        APRV::Receipt.verify([bytes].pack("m0"), roots, clock)
       rescue APRV::VerificationError => e
         assert_includes APRV::Reason::ALL, e.reason
       rescue Exception => e # rubocop:disable Lint/RescueException
@@ -173,16 +173,13 @@ class MutationTest < Minitest::Test
   end
 
   def test_random_strings_never_escape_the_jws_path
-    verifier = APRV::JwsVerifier.new(
-      trusted_roots: APRV.apple_jws_roots, bundle_id: "com.example.app",
-      accepted_environments: [APRV::Environment::SANDBOX]
-    )
+    roots = APRV::Config.defaults.roots
     random = Random.new(SEED)
     2000.times do |iteration|
       text = random.bytes(random.rand(0..128)).unpack1("H*")
       candidate = [text[0, 20], text[20, 60], text[60..]].compact.join(".")
       begin
-        verifier.verify_raw(candidate)
+        APRV::Jws.verify(candidate, roots, clock)
       rescue APRV::VerificationError => e
         assert_includes APRV::Reason::ALL, e.reason
       rescue Exception => e # rubocop:disable Lint/RescueException
@@ -192,13 +189,13 @@ class MutationTest < Minitest::Test
   end
 
   def test_the_endpoint_never_raises_across_the_same_sweep
-    endpoint = APRV::VerifyReceiptEndpoint.new(trusted_roots: APRV.apple_receipt_roots,
-                                               environment: APRV::Environment::SANDBOX)
+    verifier = APRV::Verifier.create(APRV::Config.new(roots: APRV::Config.defaults.roots))
     bytes = TestSupport.fixture_bytes("public-receipt-sandbox-g5")
     random = Random.new(SEED)
     500.times do |iteration|
       mutated = mutate(random, bytes)
-      response = endpoint.verify_receipt_result({ "receipt-data" => [mutated].pack("m0") }).to_response
+      request = JSON.generate({ "receipt-data" => [mutated].pack("m0") })
+      response = JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, request))
       assert_includes [0, 21_002, 21_003, 21_007, 21_008, 21_009], response["status"],
                       "iteration #{iteration}"
     end
