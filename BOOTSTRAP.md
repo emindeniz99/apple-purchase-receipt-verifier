@@ -27,7 +27,8 @@ credentials are expected to work, an authentication error is a real one. So do
 a section completely rather than partly.
 
 Already bootstrapped, nothing to do: **npm**, **PyPI**, **Maven Central**.
-**SwiftPM** never needed a bootstrap; it consumes the git tag.
+**SwiftPM** and the **Go module proxy** need no bootstrap; both consume
+the git tag.
 
 ## RubyGems
 
@@ -127,29 +128,22 @@ publish.
 4. Merge the next release pull request and let `publish-nuget` cut that
    version. After this, no NuGet API key exists anywhere in the repository.
 
-## Go module proxy
+## Go module proxy — already served, nothing to do
 
 There is no registry account, no token and no OIDC. `proxy.golang.org` serves
 the module from this repository, and `release.yml`'s `tag-go-module` job
-creates the `go/vX.Y.Z` tag that publishes it. Three preconditions, and only
-the third needs doing:
+creates the `go/vX.Y.Z` tag that publishes it. Both preconditions hold: the
+repository is public, and `go/go.mod` declares the final module path,
+`github.com/emindeniz99/apple-purchase-receipt-verifier/go`. The proxy has
+served every Go tag since `go/v0.4.0`; on 2026-09-28 it listed `v0.4.0`,
+`v0.5.1` and `v0.6.0`:
 
-1. The repository must be public. `proxy.golang.org` cannot fetch a private
-   repository.
-2. `go/go.mod` must declare the final module path on the tagged commit. It
-   does: `github.com/emindeniz99/apple-purchase-receipt-verifier/go`.
-3. Verify the module resolves once, by hand, without burning a tag — a
-   pseudo-version needs no tag at all:
+```sh
+curl https://proxy.golang.org/github.com/emindeniz99/apple-purchase-receipt-verifier/go/@v/list
+```
 
-   ```sh
-   GOPROXY=direct go list -m \
-     github.com/emindeniz99/apple-purchase-receipt-verifier/go@<commit-sha>
-   ```
-
-   That proves the module path, the subdirectory prefix and the zip contents.
-
-Then, and only after the first `go/v*` tag exists, add the pkg.go.dev badge to
-`README.md`; it renders only after the first proxy fetch.
+Because the proxy has fetched the module, a pkg.go.dev badge in `README.md`
+would now render.
 
 **A published Go version is immutable and its hash is recorded in
 `sum.golang.org` forever.** Deleting or re-pointing a `go/v*` tag does not
