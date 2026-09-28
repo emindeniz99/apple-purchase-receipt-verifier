@@ -294,6 +294,17 @@ elsewhere in this file.
   the 0.7 cases: BER-encoded content and detached content.
 - **Trailing JSON tokens** after the request object are accepted. Measure
   what Apple's endpoint does with them, then match it.
+- **A result accessor that cannot be misread**: a `payloadOrThrow()`-style
+  method, or a Verified/Failed pair of result types. Today callers write
+  `verified()` and then read a nullable `payload()`. Decision deferred by
+  the owner; if it comes, it lands in every port at once after 0.7.0 so
+  the ports stay in parity.
+- **JWS `crit` and `typ` headers**: every port ignores header members it
+  does not know, while RFC 7515 §4.1.11 says a `crit` naming a parameter
+  the recipient does not understand must be rejected. Apple's signed data
+  carries only `alg` and `x5c`. No code before 0.7.0; if added, it is a
+  cross-port change with a shared case in `fixtures/cases.json`. The Java
+  review item below asks the same for Java alone.
 - **From the final blind Java reviews (2026-09-24):**
   - Build the CMS signer verifier per call instead of sharing it, if the
     benchmark allows.

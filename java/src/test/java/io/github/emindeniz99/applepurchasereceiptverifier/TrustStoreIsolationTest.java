@@ -223,9 +223,9 @@ class TrustStoreIsolationTest {
             // And the refusals: the same bytes, under the bundled Apple
             // anchors, while the JVM around them trusts the roots that signed
             // them.
-            requireInvalidChain(
+            requireUntrustedChain(
                     () -> Checks.receipt(apple, receipt), "a receipt whose root is in the JVM's trust store");
-            requireInvalidChain(
+            requireUntrustedChain(
                     () -> Checks.signedData(apple, jws), "a transaction whose root is in the JVM's trust store");
             String response = apple.verifyReceiptEndpoint(
                     Environment.SANDBOX,
@@ -262,7 +262,7 @@ class TrustStoreIsolationTest {
             }
         }
 
-        private static void requireInvalidChain(Body body, String what) {
+        private static void requireUntrustedChain(Body body, String what) {
             try {
                 body.run();
             } catch (VerificationException e) {
@@ -336,9 +336,9 @@ class TrustStoreIsolationTest {
                 Checks.receipt(Verifier.create(Config.defaults()), genuine).bundleId());
 
         Verifier underCacerts = Verifier.create(Config.builder().roots(cacerts).build());
-        assertInvalidChain(() -> Checks.receipt(underCacerts, genuine));
-        assertInvalidChain(() -> Checks.receipt(underCacerts, SyntheticReceipts.der()));
-        assertInvalidChain(() -> Checks.signedData(underCacerts, fixtureText("generated", "transaction.jws")));
+        assertUntrustedChain(() -> Checks.receipt(underCacerts, genuine));
+        assertUntrustedChain(() -> Checks.receipt(underCacerts, SyntheticReceipts.der()));
+        assertUntrustedChain(() -> Checks.signedData(underCacerts, fixtureText("generated", "transaction.jws")));
 
         // And a public root gains nothing from sitting next to Apple's in the
         // caller's list: the anchor still has to have issued the chain.
@@ -347,7 +347,7 @@ class TrustStoreIsolationTest {
         mixed.add(cacerts.iterator().next());
         Verifier underMixed = Verifier.create(Config.builder().roots(mixed).build());
         assertEquals(GENUINE_BUNDLE, Checks.receipt(underMixed, genuine).bundleId());
-        assertInvalidChain(() -> Checks.receipt(underMixed, SyntheticReceipts.der()));
+        assertUntrustedChain(() -> Checks.receipt(underMixed, SyntheticReceipts.der()));
     }
 
     /**
@@ -595,7 +595,7 @@ class TrustStoreIsolationTest {
                             Environment.SANDBOX,
                             "{\"receipt-data\":\"" + Base64.getEncoder().encodeToString(receipt) + "\"}")
                     .startsWith("{\"status\":0,"));
-            assertInvalidChain(() -> Checks.receipt(Checks.verifier(jwsRoot), receipt));
+            assertUntrustedChain(() -> Checks.receipt(Checks.verifier(jwsRoot), receipt));
         });
         assertEquals(Collections.emptyList(), requests, "the receipt verifier asked the JVM's provider list");
     }
@@ -608,7 +608,7 @@ class TrustStoreIsolationTest {
         Verifier passed = Checks.verifier(receiptRoot, cert("generated", "jws-root.der"));
         List<String> requests = hostProviderRequestsDuring(() -> {
             assertTrue(Checks.signedData(passed, jws).json().contains(BUNDLE));
-            assertInvalidChain(() -> Checks.signedData(Checks.verifier(receiptRoot), jws));
+            assertUntrustedChain(() -> Checks.signedData(Checks.verifier(receiptRoot), jws));
         });
         assertEquals(Collections.emptyList(), requests, "the JWS verifier asked the JVM's provider list");
     }
@@ -684,7 +684,7 @@ class TrustStoreIsolationTest {
         void run() throws Exception;
     }
 
-    private static void assertInvalidChain(Body body) {
+    private static void assertUntrustedChain(Body body) {
         try {
             body.run();
         } catch (VerificationException e) {
