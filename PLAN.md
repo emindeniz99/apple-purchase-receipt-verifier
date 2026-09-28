@@ -171,7 +171,8 @@ recorded here.
     sentence exists for App Store JWS or receipts.
   What still holds from D12: anchors ship pinned (never fetched at
   runtime), the weekly watch diffs both the pinned bytes and the PKI
-  page's root listing, and callers can inject their own anchors.
+  page's root listing, and callers can inject their own anchors. 0.7
+  merged the two sets into the one `Config.defaults()` holds.
 - **D16 — Hand-written ASN.1/CMS readers stay, and are fuzzed; library
   parsers are used where a maintained one fits** (owner decision,
   2026-09-05, after a per-language research pass; extends D8 to every
@@ -222,10 +223,13 @@ recorded here.
   Python's `asn1crypto` is the one exception to "maintained": last
   release 1.5.1, 2022-03, though at ~155M downloads a month it is about
   as widely exercised as a parser gets. Owner decision: keep it, pin the
-  tested range, and let the python fuzz target run through it. Java keeps
-  `jackson-databind`: maintained, widely deployed, and the payloads are
-  small and flat; the CVE history it carries is scanner noise, not a
-  weakness in how it is used here.
+  tested range, and let the python fuzz target run through it. Java kept
+  `jackson-databind` until 0.7: maintained, widely deployed, and the
+  payloads are small and flat; the CVE history it carries is scanner
+  noise, not a weakness in how it is used here. **Superseded in 0.7**
+  ([docs/design/0.7-api.md](./docs/design/0.7-api.md), "Removed in 0.7"):
+  Java dropped `jackson-databind` and `jackson-annotations` and keeps only
+  `jackson-core`'s streaming parser and generator.
 
 ## 1. Existing solutions (research, 2026-08)
 
@@ -272,6 +276,9 @@ G3 among them) and a clock.
      (Apple in-app-purchase / receipt signing marker);
    - intermediate must carry OID `1.2.840.113635.100.6.2.1`
      (Apple WWDR CA marker) and `CA: true`.
+   Checked **after** the path validation of step 4, so a chain that does
+   not reach a pinned root is `UNTRUSTED_CHAIN` whatever markers it
+   carries.
 4. Path-validate leaf → intermediate → **our pinned root** (standard PKIX:
    signatures, issuer/subject chaining, basic constraints, validity window),
    **revocation disabled** (no OCSP — offline by design). The chain must
@@ -306,10 +313,10 @@ and the `Config`: trusted roots (Apple Inc. Root CA among them) and a clock.
      Apple's receipt-signing certs expire and rotate; a receipt is valid if
      its chain was valid when Apple signed it. Only that date is read before
      trust: walk the top-level attribute SET, read each entry's type, decode
-     the value of type 12 alone. Missing, empty, unreadable, present more
-     than once, or a walk that fails on any entry: judge the chain at the
-     `Config` clock instead. Reading the date never rejects a receipt. (Since
-     0.7 the first copy of a repeated attribute 12 is used.)
+     the value of type 12 alone. Missing, empty, unreadable, or a walk that
+     fails on any entry: judge the chain at the `Config` clock instead.
+     Reading the date never rejects a receipt. Since 0.7 the first copy of a
+     repeated attribute 12 is used.
    - The chain is checked before the signature (step 4) on purpose: the
      signature check would otherwise run the attacker's own key, with an
      RSA size and exponent of their choosing, before anything is trusted.
@@ -361,9 +368,10 @@ and the `Config`: trusted roots (Apple Inc. Root CA among them) and a clock.
   must fail; only `certs/*.cer` count.
 - **Marker OIDs** stop "valid Apple-issued cert, wrong purpose" attacks on
   **both** paths: the JWS leaf must carry `…6.11.1` and the intermediate
-  `…6.2.1`; the receipt signer leaf must carry `…6.11.1`. Without the receipt
-  check, any developer cert chaining to the pinned root could sign a forged
-  receipt (a real hole found by adversarial review, 2026-08-06, now closed).
+  `…6.2.1`; the receipt signer leaf must carry `…6.11.1` and, since 0.7, its
+  intermediate `…6.2.1`. Without the receipt check, any developer cert
+  chaining to the pinned root could sign a forged receipt (a real hole
+  found by adversarial review, 2026-08-06, now closed).
 - **No revocation checking** is the accepted trade-off for offline
   verification (Apple's official offline mode does the same). Compromised
   signing certs are handled by Apple rotating them; consumers concerned

@@ -30,8 +30,8 @@ re-encoding of the DER.
 
 The names are the Java JMH names; each port spells the calls in its own
 casing. Some ports report more: Python, Ruby and Rust still also emit the
-0.6 names `core` and `verifierBase64`, both of which now time
-`verifyReceipt` over the base64; Ruby and Rust emit `retryViaResult` as a
+0.6 names `core` and `verifierBase64`. Both time `verifyReceipt` over the
+base64, except Python's `core`, which times its internal DER path; Ruby and Rust emit `retryViaResult` as a
 `PRODUCTION` call answering 21007 followed by the `SANDBOX` call; Java adds
 `endpointWrongEnv` and a `verifySignedData` benchmark. Swift reports no
 `decodeBase64` (see below). In both fixtures the signature is a 256-byte OCTET STRING at the very end

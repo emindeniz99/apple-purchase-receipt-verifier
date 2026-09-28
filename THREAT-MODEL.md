@@ -363,8 +363,10 @@ Not defended against here, by decision rather than omission.
   signed by, three ports ACCEPTED such a receipt outright (node, ruby,
   dotnet) and the other six answered about the receipt or the chain instead
   of about the certificate. `receipt/reject-signer-*` pins all four as
-  `INVALID_CERTIFICATE`, decided before the chain is built and before the
-  signature is checked. An embedded certificate that is not the signer keeps
+  rejected before the signature is checked: the signer that does not decode
+  as `INVALID_CERTIFICATE` or `MALFORMED`, which ports may choose between
+  (docs/design/0.7-api.md), and the key on an unimplemented curve as
+  `INVALID_CERTIFICATE`. An embedded certificate that is not the signer keeps
   its old verdict: the bag is unsigned, so bytes that cannot be read there
   are a defect of the receipt (`MALFORMED`), not of a certificate. Since
   0.7 every port decodes a public key only once a pinned root vouches for
@@ -393,7 +395,7 @@ Not defended against here, by decision rather than omission.
   JDK's PKIX code refuse every genuine legacy receipt. The cost is that an
   administrator cannot restrict this library through that policy; what it
   accepts is set by the library and the caller's roots (java/README.md, "One
-  platform caveat worth knowing").
+  platform caveat: BouncyCastle, not the JDK's PKIX").
 - **The C ABI reintroduces `unsafe`, and moves memory discipline to the
   caller.** The library target is `#![forbid(unsafe_code)]`; `rust/ffi` cannot
   be, because a C boundary is raw pointers. Two consequences are the caller's
