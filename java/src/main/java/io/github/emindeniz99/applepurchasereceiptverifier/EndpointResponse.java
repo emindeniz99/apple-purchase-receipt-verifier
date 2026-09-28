@@ -23,7 +23,7 @@ final class EndpointResponse {
 
     // Locale.ROOT, so the JVM's default locale never reaches the rendering.
     private static final DateTimeFormatter FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
+            DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
 
     // Jackson's own generator defaults: short escapes for \n and the like,
