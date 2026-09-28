@@ -303,15 +303,14 @@ elsewhere in this file.
   does not know, while RFC 7515 §4.1.11 says a `crit` naming a parameter
   the recipient does not understand must be rejected. Apple's signed data
   carries only `alg` and `x5c`. No code before 0.7.0; if added, it is a
-  cross-port change with a shared case in `fixtures/cases.json`. The Java
-  review item below asks the same for Java alone.
+  cross-port change with a shared case in `fixtures/cases.json`.
 - **From the final blind Java reviews (2026-09-24):**
   - Build the CMS signer verifier per call instead of sharing it, if the
     benchmark allows.
   - Comment reflow damage and dated facts ("measured on", "checked in
     BouncyCastle 1.86") that will go stale.
-  - JWS `crit` header handling (RFC 7515), and an explanation of why x5c
-    entries skip the canonical re-encode check the other segments get.
+  - An explanation of why x5c entries skip the canonical re-encode check
+    the other segments get. (`crit` handling is the cross-port item above.)
 
 ## Decided for 0.7, still open (owner, 2026-09-24)
 
