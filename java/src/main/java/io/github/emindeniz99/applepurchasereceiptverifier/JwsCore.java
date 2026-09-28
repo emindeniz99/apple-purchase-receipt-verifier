@@ -5,8 +5,6 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
@@ -183,15 +181,10 @@ final class JwsCore {
         Long[] signedDate = {null};
         readObject(payload, Reason.UNREADABLE_PAYLOAD, "signed payload", (name, value, parser) -> {
             if ("signedDate".equals(name)) {
-                signedDate[0] = instant(parser, value);
+                signedDate[0] = JsonFields.instant(parser, value);
             }
         });
         return signedDate[0];
-    }
-
-    /** Called with each member's name and first value token; may consume the value. */
-    private interface FieldVisitor {
-        void field(String name, JsonToken value, JsonParser parser) throws IOException;
     }
 
     /**
@@ -199,20 +192,15 @@ final class JwsCore {
      * after it, handing each top-level member to {@code visitor}; anything
      * else is {@code reason}.
      */
-    private static void readObject(byte[] bytes, Reason reason, String what, FieldVisitor visitor)
+    private static void readObject(byte[] bytes, Reason reason, String what, JsonFields.Visitor visitor)
             throws VerificationException {
-        String text = jsonText(bytes);
+        String text = JsonFields.text(bytes);
         if (text == null) {
             throw notAnObject(reason, what, "not UTF-8 JSON text", null);
         }
         try (JsonParser parser = JSON.createParser(text.toCharArray())) {
-            if (parser.nextToken() != JsonToken.START_OBJECT) {
+            if (!JsonFields.read(parser, visitor)) {
                 throw notAnObject(reason, what, "not an object", null);
-            }
-            while (parser.nextToken() == JsonToken.FIELD_NAME) {
-                String name = parser.currentName();
-                visitor.field(name, parser.nextToken(), parser);
-                parser.skipChildren();
             }
             if (parser.nextToken() != null) {
                 throw notAnObject(reason, what, "content after the object", null);
@@ -225,40 +213,6 @@ final class JwsCore {
     private static VerificationException notAnObject(
             Reason reason, String what, String problem, @Nullable Exception cause) {
         return new VerificationException(reason, what + " is not a JSON object: " + problem, cause);
-    }
-
-    /**
-     * A number as epoch milliseconds, the way Jackson's tree model converts
-     * it: an integer must fit a long, and a fraction or exponent is read as
-     * a double and truncated when it lies within the long range (2^63
-     * saturates). Null for anything else, 1e300 included.
-     */
-    private static @Nullable Long instant(JsonParser parser, JsonToken value) {
-        try {
-            if (value == JsonToken.VALUE_NUMBER_INT) {
-                return parser.getLongValue();
-            }
-            if (value == JsonToken.VALUE_NUMBER_FLOAT) {
-                double number = parser.getDoubleValue();
-                return number >= Long.MIN_VALUE && number <= Long.MAX_VALUE ? (long) number : null;
-            }
-        } catch (IOException e) {
-            // An integer no long holds.
-        }
-        return null;
-    }
-
-    /** Strict UTF-8 with no byte order mark (RFC 8259 8.1), or null; Jackson would guess UTF-16 or UTF-32. */
-    private static @Nullable String jsonText(byte[] bytes) {
-        try {
-            String text = StandardCharsets.UTF_8
-                    .newDecoder()
-                    .decode(ByteBuffer.wrap(bytes))
-                    .toString();
-            return text.startsWith("\uFEFF") ? null : text;
-        } catch (CharacterCodingException e) {
-            return null;
-        }
     }
 
     /**
