@@ -473,7 +473,7 @@ one pull request.
 
 | Reason | When |
 |---|---|
-| `MALFORMED` | base64, ASN.1, CMS or JWS structure is broken, or input is over a size bound |
+| `MALFORMED` | base64, ASN.1, CMS or JWS structure is broken, or a structural bound is exceeded (nesting depth, embedded certificates, SignerInfos) |
 | `TOO_LARGE` | input is over a fixed cap — see [Input limits](#input-limits) |
 | `INVALID_SIGNATURE` | the signature does not match the content |
 | `UNTRUSTED_CHAIN` | the chain does not reach a pinned root |

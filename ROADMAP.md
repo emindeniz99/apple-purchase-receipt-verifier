@@ -87,11 +87,13 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   for a genuine production receipt, which stays out of the repository):
   type 1 is `adam_id`/`app_item_id`, 15 is `download_id`, 16 is
   `version_external_identifier`, 1713 is `is_trial_period`, across all nine
-  ports. `web_order_line_item_id` stays in the output when 1711 is zero on
-  a non-subscription: Apple's live answer omitted it for a consumable, but
-  Apple's response reference lists the field without a product-type
+  ports. `web_order_line_item_id` stayed in 0.6's output when 1711 is zero
+  on a non-subscription: Apple's live answer omitted it for a consumable,
+  but Apple's response reference lists the field without a product-type
   condition, and the owner chose the reference over the observed answer
-  (2026-09-21). With those, the emulation matches Apple on 30 of 31 fields;
+  (2026-09-21). 0.7 omits it, as Apple's endpoint does
+  (docs/design/0.7-api.md). With those, the emulation matches Apple on 30
+  of 31 fields;
   the last, `in_app_ownership_type`, is family sharing state that no
   receipt carries. Synthetic fixtures from the generator, four conformance
   vectors. Type 11 stays unmodelled: only TPInAppReceipt names it
@@ -358,9 +360,6 @@ or JWS through. Kept here so they are not lost with the review reports.
   change a verdict" is overstated, because BouncyCastle still reads JVM-wide
   `org.bouncycastle.*` properties (`rsa.max_size`, `rsa.max_mr_tests`,
   `x509.max_cert_path_build_nodes`).
-- **The README Spring controller is untested:** `samples/spring-boot-smoke`
-  has no `spring-boot-starter-web`, so the raw-body read, the form content
-  type and the 413 mapping never run. Add a MockMvc test.
 - **Performance leftovers:** the receipt payload is parsed twice; each chain
   signature is verified twice (top-down walk, then PKIX); JCA factories are
   looked up per call.
@@ -506,9 +505,9 @@ Still worth filing as issues:
     on a small receipt, but it is process-wide mutable state, which the
     thread-safety design and `ConcurrencyTest` avoid on purpose.
 - **PHP worst-case JSON body memory**: a 3 MiB request body of arrays
-  nested 60 deep peaks at about 331 MB inside `json_decode` on PHP 8.4 and
-  about 561 MB on PHP 8.1, so php/README.md tells you to give a worker at
-  least 384M of `memory_limit` (640M on 8.1). A pre-scan of the raw body could reject that shape before
+  nested 60 deep peaks at about 331 MB inside `json_decode` on PHP 8.4, so
+  php/README.md tells you to give a worker at least 384M of
+  `memory_limit`. A pre-scan of the raw body could reject that shape before
   `json_decode` runs. Not queued.
 - **.NET fixed cost per receipt, a trust-model decision**: what remains
   after the caps work is OpenSSL 3.0 decoding each certificate (about 150

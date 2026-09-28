@@ -97,7 +97,7 @@ period. Read the CHANGELOG before you bump the minor version, and pin it.
 
 **C and C++ have no registry entry and are not meant to.** The C ABI in
 [`rust/ffi/`](rust/ffi/) is built from source against the Rust port: a
-`cdylib`/`staticlib` and a generated header, twenty-one symbols, JSON as the
+`cdylib`/`staticlib` and a generated header, seven functions, JSON as the
 interchange. Prebuilt binaries per OS and architecture are a later step, not
 a shipped one. See [rust/ffi/README.md](rust/ffi/README.md). Three example
 consumers call it, one of each kind: C++17 through the header in

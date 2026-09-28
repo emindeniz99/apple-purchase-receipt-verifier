@@ -10,9 +10,9 @@
 #   GEM_HOME=/tmp/gems ruby <repo>/.github/smoke/rubygems-smoke.rb
 #
 # `ruby/script/consumer_smoke.rb` covers the same ground for a locally built
-# gem in the ruby-gem CI job, but it also calls Apple's verifyReceipt endpoint,
-# which a post-publish job must not depend on. This one is offline and matches
-# the other smoke programs: same fixture, same assertions.
+# gem in the ruby-gem CI job, on the legacy receipt and through the library's
+# own verify_receipt_endpoint. This one matches the other smoke programs: same
+# fixture, same assertions. Neither calls Apple.
 
 require "apple_purchase_receipt_verifier"
 # Both entry points ship; the dashed one is what `gem install` users type.

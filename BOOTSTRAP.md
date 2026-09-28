@@ -191,13 +191,14 @@ What landed:
   and the generated StoreKit 2 transaction through `vendor/autoload.php`.
   Both run in the `php-static` job.
 
-The archive is 30 files: the two manifests, the two licences,
-`php/README.md`, the three pinned roots and 22 PHP sources. The open question
+The archive is 38 files: the two manifests, the two licences,
+`php/README.md`, the three pinned roots and 30 PHP sources. The open question
 the old text flagged is closed. `git archive` honours `export-ignore`,
 reproduced by the guard on every run, and GitHub's **zipball** honours it
 too: on 2026-09-06 the branch archive at
-`archive/refs/heads/feat/packagist-root-manifest.zip` listed exactly those 30
-paths (plus their directory entries) under one top-level directory, 72 KB.
+`archive/refs/heads/feat/packagist-root-manifest.zip` listed exactly the 30
+paths the package had then (plus their directory entries) under one
+top-level directory, 72 KB.
 If a later GitHub change ever stops applying the rules, Composer ships the
 whole repository instead, about 1 MB, and nothing else about the layout
 changes; the guard only sees `git archive`, so that would show up as a

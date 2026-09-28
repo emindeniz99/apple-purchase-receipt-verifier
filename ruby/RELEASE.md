@@ -31,11 +31,11 @@ three bundled roots — the check that catches `certs/` falling out of
 signature.
 
 It is a new program rather than `ruby/script/consumer_smoke.rb`, which this
-file used to name, for two reasons: `consumer_smoke.rb` calls Apple's
-`verifyReceipt` endpoint, and a post-publish job must not depend on Apple being
-up; and the four other smoke programs all live in `.github/smoke/` and share
-one fixture and one pair of assertions. `consumer_smoke.rb`
-still runs in the `ruby-gem` CI job against a locally built gem.
+file used to name, because the other smoke programs all live in
+`.github/smoke/` and share one fixture and one pair of assertions.
+`consumer_smoke.rb` still runs in the `ruby-gem` CI job against a locally
+built gem, on the legacy receipt and through the library's own
+`verify_receipt_endpoint`. Neither program calls Apple.
 
 The leg is gated on the `registries` input, so it skips rather than fails while
 RubyGems is unbootstrapped (`BOOTSTRAP.md`).
