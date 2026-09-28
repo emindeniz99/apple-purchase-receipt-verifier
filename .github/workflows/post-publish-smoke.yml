@@ -7,6 +7,11 @@
 # installs by name/coordinates from the real registry, into a directory outside
 # the checkout, and verifies a genuine Apple-signed receipt with it.
 #
+# ci.yml's smoke-* jobs run the same programs on every push against artifacts
+# built from the checkout, so a program broken by an API change fails there,
+# before a release, and this workflow is left to catch what only a registry
+# can get wrong.
+#
 # Registries do not publish atomically, so each job polls for the version to
 # appear. Maven Central's sync is the slow one and gets the longest budget.
 #

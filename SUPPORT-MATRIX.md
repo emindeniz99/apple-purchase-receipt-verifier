@@ -34,7 +34,7 @@ the last column names the job.
 
 | Line | Type | Status | Ends | CI |
 |---|---|---|---|---|
-| 8.0 | LTS | active | 2026-11-10 | `dotnet` (ubuntu, windows, macOS) |
+| 8.0 | LTS | active | 2026-11-10 | `dotnet` (ubuntu, windows, macOS), `smoke-nuget` |
 | 9.0 | STS | active | 2026-11-10 | `dotnet`, `dotnet-trim` |
 | 10.0 | LTS | active | 2028-11-14 | `dotnet`, `dotnet-fuzz` |
 | netstandard2.0 | floor | n/a | while the library ships it | `dotnet-mono` |
@@ -45,7 +45,7 @@ the last column names the job.
 
 | Line | Type | Status | Ends | CI |
 |---|---|---|---|---|
-| 20 | floor | EOL 2026-04-30 | kept | `node` |
+| 20 | floor | EOL 2026-04-30 | kept | `node`, `smoke-npm` |
 | 22 | LTS | security | 2027-04-30 | `node`, `node-runtimes` (node, bun, deno, workerd), `node-runtimes-fastly`, `node-fuzz` |
 | 24 | LTS | active | 2028-04-30 | `node` |
 | 26 | LTS | active | 2029-04-30 | `node` |
@@ -54,7 +54,7 @@ the last column names the job.
 
 | Line | Status | Ends | CI |
 |---|---|---|---|
-| 3.10 | floor, security | 2026-10-31 | `python` |
+| 3.10 | floor, security | 2026-10-31 | `python`, `smoke-pypi` |
 | 3.11 | security | 2027-10-31 | `python` |
 | 3.12 | security | 2028-10-31 | `python` |
 | 3.13 | active | 2029-10-31 | `python`, `python-tools`, `python-fuzz` |
@@ -72,7 +72,7 @@ support for longer; the floor stays regardless.
 | 8 | floor | EOL at Oracle | kept | `java-runtime-8` (the artifact runs on a JDK 8 JVM) |
 | 11 | LTS | EOL at Oracle 2023-09-30 | kept | `java` |
 | 17 | LTS | active | 2026-09-30 | `java` |
-| 21 | LTS | active | 2028-09-30 | `java`, `java-fuzz`, `jvm-interop` |
+| 21 | LTS | active | 2028-09-30 | `java`, `java-fuzz`, `jvm-interop`, `smoke-maven` |
 | 25 | LTS | active | 2030-09-30 | `java` |
 | 27 | feature | active | 2027-03-31 | `java` |
 
@@ -100,7 +100,7 @@ Go supports the two newest minors only.
 
 | Line | Status | Ends | CI |
 |---|---|---|---|
-| 1.22 to 1.25 | floor and EOL lines | kept | `go` |
+| 1.22 to 1.25 | floor and EOL lines | kept | `go`, `smoke-go` (1.22) |
 | 1.26 | active | when 1.28 ships | `go` |
 | 1.27 | active | when 1.29 ships | `go`, `go-platforms` (macOS, windows), `go-race`, `go-lint`, `go-fuzz` |
 
@@ -110,7 +110,7 @@ Go 1.28 ships in February 2027.
 
 | Line | Status | Ends | CI |
 |---|---|---|---|
-| 3.3 | floor, security | 2027-03-31 | `ruby`, `ruby-gem`, `ruby-fuzz` |
+| 3.3 | floor, security | 2027-03-31 | `ruby`, `ruby-gem`, `ruby-fuzz`, `smoke-rubygems` |
 | 3.4 | active | 2028-03-31 | `ruby`, `ruby-macos`, `ruby-tools` |
 | 4.0 | active | 2029-03-31 | `ruby`, `ruby-gem` |
 
@@ -136,7 +136,7 @@ Rust supports the current stable only.
 | Line | Status | CI |
 |---|---|---|
 | 1.85.0 | floor (`rust-version`) | `rust` |
-| stable (1.98 today) | active | `rust`, `rust-lint`, `rust-supply-chain`, `rust-fuzz` (nightly) |
+| stable (1.98 today) | active | `rust`, `rust-lint`, `rust-supply-chain`, `rust-fuzz` (nightly), `smoke-crates` |
 | beta | next stable | `rust` |
 
 #### The C ABI (`rust/ffi`)
@@ -162,7 +162,7 @@ release. The floor is the oldest toolchain that builds the package.
 
 | Line | Status | CI |
 |---|---|---|
-| 6.1 | floor | `swift` (Linux container) |
+| 6.1 | floor | `swift` (Linux container), `smoke-swiftpm` |
 | 6.2 | superseded | `swift` |
 | 6.3 | current | `swift`, `swift-macos`, `swift-format`, `swift-fuzz` |
 

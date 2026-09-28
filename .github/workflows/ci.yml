@@ -413,6 +413,12 @@ jobs:
         working-directory: java
       - run: mvn -B test
         working-directory: jvm-interop
+      # java-bench/ is another consumer of that installed coordinate, and
+      # otherwise only benchmark.yml builds it, by hand. compile runs JMH's
+      # annotation processor over it, so an API change that breaks a
+      # benchmark fails here; compile stops short of packaging the JMH jar,
+      # and nothing is measured. version.txt as in benchmark.yml.
+      - run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
 
   # A consumer on Spring Boot 4 imports the Boot BOM, which overrides the
   # library's Jackson 2 pin with its own and adds Jackson 3 (tools.jackson)
@@ -805,6 +811,13 @@ jobs:
       # not API and exists for this step.
       - run: bundle exec steep check
         working-directory: ruby
+      # bench/bench.rb otherwise runs only in benchmark.yml, by hand. Loading
+      # it requires the library and defines the benchmark module, but main
+      # runs only when the file is the program itself, so nothing is timed.
+      # A moved require or a renamed module-level constant fails here; calls
+      # inside its methods are only checked by running it.
+      - run: ruby -Ilib -e 'load "bench/bench.rb"'
+        working-directory: ruby
 
   # The toolchains come from the rustup already on the runner, so this port
   # pins no action beyond the checkout and caches nothing: a clean debug build
@@ -1089,6 +1102,10 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
+      # dotnet/bench sits outside the .sln for the same reason fuzz does, so
+      # nothing else on push builds it; benchmark.yml runs it only by hand.
+      # A build, as benchmark.yml does it, and no run.
+      - run: dotnet build -c Release dotnet/bench
       - run: ./run.sh all 60
         working-directory: dotnet/fuzz
 
@@ -1239,6 +1256,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # swift/bench is a package of its own on the same path dependency, so
+      # neither the `swift` matrix nor this job's fuzz build compiles it;
+      # benchmark.yml builds it only by hand. A debug build: the point is that
+      # it still compiles against the library, not how fast it runs.
+      - run: swift build --package-path swift/bench --force-resolved-versions
       - run: ./run.sh all 60
         working-directory: swift/fuzz
 
@@ -1396,6 +1418,10 @@ jobs:
       # php/composer.json is only the development one. Both get validated.
       - run: composer validate --strict --no-check-lock composer.json
       - run: vendor/bin/phpstan analyse --no-progress
+        working-directory: php
+      # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
+      # a syntax check and nothing more: PHPStan's paths are src and tests.
+      - run: php -l bench/bench.php
         working-directory: php
       # php/certs/ is a copy of the repository-root certs/, and
       # src/Internal/RootsData.php is generated from that copy. A roots change
@@ -1603,6 +1629,30 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts && npm run lint && npm run format:check
         working-directory: node
+      # bench/bench.mjs otherwise runs only in benchmark.yml, by hand. oxlint
+      # above already parses it; this links it against the built dist, so an
+      # export it imports that was renamed or removed fails here. Linking
+      # resolves every import without evaluating the benchmark itself, so
+      # nothing is timed.
+      - run: npm run build
+        working-directory: node
+      - name: link bench/bench.mjs against dist without running it
+        working-directory: node
+        run: |
+          node --no-warnings --experimental-vm-modules --input-type=module -e '
+            import vm from "node:vm";
+            import { readFileSync } from "node:fs";
+            import { pathToFileURL } from "node:url";
+            const url = pathToFileURL("bench/bench.mjs");
+            const bench = new vm.SourceTextModule(readFileSync(url, "utf8"), { identifier: url.href });
+            await bench.link(async (specifier) => {
+              const ns = await import(new URL(specifier, url).href);
+              const names = Object.keys(ns);
+              return new vm.SyntheticModule(names, function () {
+                for (const name of names) this.setExport(name, ns[name]);
+              });
+            });
+          '
 
   # ruff and mypy for the Python port. One job, not a matrix: ruff pins the
   # language level with target-version = "py310" and mypy is told
@@ -1637,6 +1687,13 @@ jobs:
       - run: uv run --locked --extra dev ruff format --check .
         working-directory: python
       - run: uv run --locked --extra dev mypy
+        working-directory: python
+      # bench/bench.py otherwise runs only in benchmark.yml, by hand. Run as a
+      # module that is not __main__, it resolves every import (the package's
+      # private helpers included) without calling main(), so nothing is
+      # timed. mypy stays off it: pyproject limits mypy to the package and
+      # the tests, and under strict it reports three errors in the bench.
+      - run: uv run --locked --extra dev python -c "import runpy; runpy.run_path('bench/bench.py')"
         working-directory: python
       # ty, Astral's type checker, is ADVISORY and must stay that way for
       # now: it is 0.0.x preview software, and mypy above remains the gate.
@@ -1747,3 +1804,238 @@ jobs:
         working-directory: php
       - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
         working-directory: php
+
+  # The consumer smoke programs under .github/smoke/, run against this
+  # checkout. post-publish-smoke.yml runs the same programs after a release
+  # against what each registry serves, and until these jobs existed that was
+  # the only place they ran: a smoke program broken by an API change showed
+  # up after the release it was meant to check. Each job below builds the
+  # artifact the way release.yml does (pack, build, install), installs it
+  # outside the checkout on the same runtime floor as its post-publish leg,
+  # and runs the program unchanged. What only a registry can get wrong (a
+  # version that never indexes, a slow sync) stays post-publish's job.
+  smoke-npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          package-manager-cache: false
+      # npm pack runs prepack (tsc), so the tarball carries a fresh dist/.
+      - run: |
+          npm ci --ignore-scripts
+          mkdir -p "$RUNNER_TEMP/npm-pack"
+          npm pack --pack-destination "$RUNNER_TEMP/npm-pack"
+        working-directory: node
+      # The tarball is a file this job just built, not a registry fetch.
+      - name: install the packed tarball outside the checkout # zizmor: ignore[adhoc-packages]
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/npm-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/npm-smoke.mjs "$SMOKE/"
+          cd "$SMOKE"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/npm-pack/*.tgz
+          node npm-smoke.mjs
+
+  smoke-pypi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      # pip builds a wheel from python/ with the same backend release.yml's
+      # `python -m build` uses and installs that wheel, not the source tree.
+      - name: install the package from the checkout into a venv outside it
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/pypi-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/pypi-smoke.py "$SMOKE/"
+          python3 -m venv "$SMOKE/venv"
+          "$SMOKE/venv/bin/pip" install "$GITHUB_WORKSPACE/python"
+          cd "$SMOKE"
+          venv/bin/python pypi-smoke.py
+
+  smoke-maven:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # install puts the jar in ~/.m2, which Maven reads before any remote,
+      # so the smoke pom resolves this build and never Central's.
+      - run: mvn -B install -DskipTests
+        working-directory: java
+      - name: resolve the installed jar outside the checkout
+        run: |
+          set -euo pipefail
+          VERSION="$(mvn -q -f java/pom.xml help:evaluate -Dexpression=project.version -DforceStdout)"
+          SMOKE="$RUNNER_TEMP/maven-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/maven-smoke/pom.xml .github/smoke/maven-smoke/Smoke.java "$SMOKE/"
+          cd "$SMOKE"
+          mvn -B -q -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath
+          javac -cp "$(cat cp.txt)" Smoke.java -d .
+          java -cp ".:$(cat cp.txt)" Smoke
+
+  smoke-swiftpm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The post-publish leg's image: the manifest's 6.1 floor.
+    container: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # SMOKE_PATH makes the smoke manifest depend on the checkout by path
+      # instead of on the published tag by URL. The tag is the artifact for
+      # SwiftPM, so this proves the program and the manifest at the root,
+      # not a tag; post-publish-smoke still resolves the tag itself.
+      - name: build and run against the checkout, outside it
+        # The swift image's /bin/sh is dash, which has no `pipefail`.
+        shell: bash
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/swiftpm-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/swiftpm-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          export SMOKE_PATH="$GITHUB_WORKSPACE"
+          cd "$SMOKE"
+          swift run Smoke
+
+  smoke-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.22"
+          cache: false
+      # A replace directive points the module path at go/; the path is read
+      # from go/go.mod, since a fork's GITHUB_REPOSITORY would not match it.
+      - name: build against the checkout's module, outside it
+        env:
+          GOTOOLCHAIN: local
+          GOFLAGS: -mod=mod
+        run: |
+          set -euo pipefail
+          MODULE="$(go -C "$GITHUB_WORKSPACE/go" list -m)"
+          SMOKE="$RUNNER_TEMP/go-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/go-smoke/main.go "$SMOKE/"
+          cd "$SMOKE"
+          go mod init smoke
+          go mod edit -require="$MODULE@v0.0.0" -replace="$MODULE=$GITHUB_WORKSPACE/go"
+          go run .
+
+  smoke-rubygems:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+      - run: gem build apple-purchase-receipt-verifier.gemspec --output "$RUNNER_TEMP/aprv.gem"
+        working-directory: ruby
+      # A scratch GEM_HOME and --local: the gem just built is the only copy
+      # of the library on the load path, and nothing is fetched.
+      - name: install the built gem outside the checkout # zizmor: ignore[adhoc-packages]
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/rubygems-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/rubygems-smoke.rb "$SMOKE/"
+          cd "$SMOKE"
+          export GEM_HOME="$SMOKE/gems"
+          gem install --local --no-document "$RUNNER_TEMP/aprv.gem"
+          ruby rubygems-smoke.rb
+
+  smoke-crates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      # The smoke depends on the unpacked .crate, not on rust/: Cargo.toml's
+      # `exclude` makes the published file set differ from the repository's,
+      # and that difference is what the smoke exists to catch.
+      - run: cargo +stable package --locked --no-verify
+        working-directory: rust
+      - name: depend on the packaged crate, outside the checkout
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/crates-smoke"
+          mkdir -p "$SMOKE/crate"
+          tar -xzf rust/target/package/apple-purchase-receipt-verifier-*.crate -C "$SMOKE/crate"
+          cp -R .github/smoke/crates-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          cargo +stable add apple-purchase-receipt-verifier --path "$(echo crate/apple-purchase-receipt-verifier-*)"
+          cargo +stable run
+
+  smoke-nuget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # 10.0 packs (it is the SDK that wrote packages.lock.json, see
+      # dotnet-mono); 8.0 is the runtime the net8.0 smoke runs on.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet pack src/ApplePurchaseReceiptVerifier -c Release -o "$RUNNER_TEMP/nupkg"
+        working-directory: dotnet
+      # The pack folder is added as a source beside nuget.org (the package's
+      # own dependencies come from there), and NUGET_PACKAGES is a scratch
+      # folder so a same-version package cached by an earlier restore on
+      # the runner cannot stand in for the one just packed.
+      - name: restore the packed package outside the checkout
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/nuget-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/nuget-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          nupkg="$(echo "$RUNNER_TEMP"/nupkg/ApplePurchaseReceiptVerifier.*.nupkg)"
+          VERSION="${nupkg##*/ApplePurchaseReceiptVerifier.}"
+          VERSION="${VERSION%.nupkg}"
+          export NUGET_PACKAGES="$SMOKE/packages"
+          dotnet restore "-p:SmokeVersion=$VERSION" \
+            --source "$RUNNER_TEMP/nupkg" --source https://api.nuget.org/v3/index.json
+          dotnet run --no-restore "-p:SmokeVersion=$VERSION"
