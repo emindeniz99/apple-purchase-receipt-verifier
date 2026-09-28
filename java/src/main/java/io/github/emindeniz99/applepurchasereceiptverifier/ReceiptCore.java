@@ -270,10 +270,13 @@ final class ReceiptCore {
 
     private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
             throws VerificationException {
-        // No algorithm allowlist: the signer is pinned to an Apple root and
-        // carries Apple's marker, so an algorithm change on Apple's side
-        // cannot reject genuine receipts. An RSA signature binds its hash in
-        // the DigestInfo, so the signatureAlgorithm label is not trusted.
+        // No algorithm allowlist of our own: the signer is pinned to an
+        // Apple root and carries Apple's marker, so any algorithm
+        // BouncyCastle can verify is accepted. One it has no verifier for is
+        // refused below as INVALID_SIGNATURE, so a genuine receipt signed
+        // with such an algorithm is rejected until BouncyCastle supports it.
+        // An RSA signature binds its hash in the DigestInfo, so the
+        // signatureAlgorithm label is not trusted.
         try {
             boolean valid = signer.verify(signerVerifier(signerCert));
             if (!valid) {
