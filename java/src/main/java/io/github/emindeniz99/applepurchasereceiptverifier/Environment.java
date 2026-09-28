@@ -9,7 +9,9 @@ import org.jspecify.annotations.Nullable;
  * decision.
  */
 public enum Environment {
+    /** The live App Store, and the buy.itunes.apple.com verifyReceipt URL. */
     PRODUCTION("Production"),
+    /** Apple's test environment, and the sandbox.itunes.apple.com verifyReceipt URL. */
     SANDBOX("Sandbox");
 
     private final String value;

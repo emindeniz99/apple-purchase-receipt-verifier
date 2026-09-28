@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.Provider;
+import java.security.ProviderException;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -577,6 +578,28 @@ class VerifierApiTest {
         IllegalStateException e = assertThrows(IllegalStateException.class, () -> DefaultVerifier.probeRuntime(empty));
         assertTrue(e.getMessage().startsWith("this runtime cannot verify Apple signatures"), e.getMessage());
         assertNotNull(e.getCause());
+    }
+
+    /**
+     * A FIPS or stripped provider can throw ProviderException, which is
+     * unchecked. Verifier.create promises IllegalStateException for a runtime
+     * that cannot verify, so the probe must not let it escape as it is.
+     */
+    @Test
+    void aProviderThatThrowsUncheckedFailsTheProbeAsIllegalState() {
+        ProviderException boom = new ProviderException("boom");
+        Provider throwing = new Provider("Throwing", 1.0, "throws on every lookup") {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public synchronized Service getService(String type, String algorithm) {
+                throw boom;
+            }
+        };
+        IllegalStateException e =
+                assertThrows(IllegalStateException.class, () -> DefaultVerifier.probeRuntime(throwing));
+        assertTrue(e.getMessage().startsWith("this runtime cannot verify Apple signatures"), e.getMessage());
+        assertEquals(boom, e.getCause());
     }
 
     /** The probe is on unless turned off, and turning it off still builds a verifier. */
