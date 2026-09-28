@@ -271,12 +271,24 @@ fields, which is not byte-for-byte the JSON Apple's endpoint contract
 expects. Read the raw request body and pass it straight through:
 
 ```php
-function handleVerifyReceipt(ServerRequestInterface $request, Verifier $verifier): ResponseInterface
-{
+use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+
+// $responseFactory and $streamFactory are your framework's PSR-17 factories.
+function handleVerifyReceipt(
+    ServerRequestInterface $request,
+    Verifier $verifier,
+    ResponseFactoryInterface $responseFactory,
+    StreamFactoryInterface $streamFactory,
+): ResponseInterface {
     $rawBody = (string) $request->getBody();
     $responseJson = $verifier->verifyReceiptEndpoint(Environment::Production, $rawBody);
 
-    return $response->withStatus(200)
+    return $responseFactory->createResponse(200)
         ->withHeader('Content-Type', 'application/json')
         ->withBody($streamFactory->createStream($responseJson));
 }
