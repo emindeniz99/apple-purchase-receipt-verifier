@@ -88,8 +88,8 @@ if (transaction.bundleId !== 'com.example.app') {
 The other seven ports have the same three methods, in their own casing:
 [Python](python/README.md), [Swift](swift/README.md), [Go](go/README.md),
 [Ruby](ruby/README.md), [Rust](rust/README.md), [PHP](php/README.md) and
-[.NET](dotnet/README.md). [Java](java/README.md) and [Node](node/README.md)
-have the full API.
+[.NET](dotnet/README.md). The [Java](java/README.md) and [Node](node/README.md)
+READMEs document the full API.
 
 ## Installing
 
