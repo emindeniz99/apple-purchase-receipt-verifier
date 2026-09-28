@@ -28,7 +28,7 @@
     "historicalSignedDate" : 1590969600000,
     "freshSignedDate" : 1722945600000,
     "expectHistorical" : "verifies",
-    "expectFresh" : "INVALID_CHAIN"
+    "expectFresh" : "INVALID_CERTIFICATE"
   },
   "receipt" : {
     "receiptType" : "ProductionSandbox",
@@ -40,6 +40,6 @@
     "opaqueHex" : "0102030405060708",
     "inAppProductIds" : [ "com.example.app.coins100", "com.example.app.vip" ],
     "vipExpiresDate" : "2030-02-01T09:30:00Z",
-    "expectForeign" : "INVALID_CHAIN"
+    "expectForeign" : "UNTRUSTED_CHAIN"
   }
 }
