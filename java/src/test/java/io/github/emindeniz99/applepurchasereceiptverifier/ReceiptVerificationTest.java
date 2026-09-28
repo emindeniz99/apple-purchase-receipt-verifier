@@ -391,9 +391,9 @@ class ReceiptVerificationTest {
     @Test
     void rejectsAPathOneHopOverTheMaximumLength() throws Exception {
         // Seven certificates below the anchor. Every other port stops the walk
-        // after six and raises InvalidChain; the reason code is the contract,
-        // so this pins that java reaches the same verdict rather than a
-        // format or signature complaint.
+        // after six and answers UNTRUSTED_CHAIN; the reason code is the
+        // contract, so this pins that java reaches the same verdict rather
+        // than a format or signature complaint.
         TestPki deep = TestPki.deepReceipt(6, 0);
         byte[] tooLong = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, tooLong));
