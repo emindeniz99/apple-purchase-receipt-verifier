@@ -96,8 +96,8 @@ Server API afterwards. Refunds and revocations still need that reconciliation
 pass — a signature proves what Apple signed, not what happened since.
 
 This is one of nine implementations sharing a single fixture suite, including
-Apple's own official test fixtures, which are required to agree byte for
-byte. See the [project README](../README.md) for the full picture and
+Apple's own official test fixtures, on which they are required to agree on
+every verdict and every decoded value. See the [project README](../README.md) for the full picture and
 [COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
 libraries.
 

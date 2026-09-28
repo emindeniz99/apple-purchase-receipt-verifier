@@ -16,8 +16,8 @@ a replacement for the deprecated `verifyReceipt` endpoint. Cryptographically
 proves that purchase data a client presents (StoreKit 2 signed JWS
 transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
 validating the certificate chain against pinned Apple root CAs. Nine
-implementations, one normative algorithm, one shared fixture set they all
-verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
+implementations, one normative algorithm, one shared fixture set on which
+they agree on every verdict and every decoded value: **Java** (8+), **Node** (20+, zero runtime deps),
 **Python** (3.10+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.3+),
 **Rust** (1.85+), **PHP** (8.2+) and **.NET** (netstandard2.0 and net8.0) —
 plus **C and C++ via a C ABI over the Rust port**, which any FFI-capable

@@ -478,7 +478,8 @@ happened since.
 
 This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
 Rust, PHP, .NET) that share a single fixture suite, including Apple's own
-official test fixtures, and are required to agree byte for byte. See the
+official test fixtures, and are required to agree on every verdict and
+every decoded value. See the
 [project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#readme)
 for the full picture and
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
