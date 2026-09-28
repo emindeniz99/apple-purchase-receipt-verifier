@@ -41,8 +41,12 @@ public class ResourceBoundTests
         VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(flood);
         stopwatch.Stop();
 
+        // The budget is half the 2,000 ms the shared hostile cases allow: the
+        // macOS runner runs the net8, net9 and net10 test hosts at once and
+        // measured 725 ms here, while the materialising port took over a
+        // second on an idle machine.
         Assert.Equal(VerificationReason.Malformed, result.Failure?.Reason);
-        Assert.True(stopwatch.ElapsedMilliseconds < 250, $"took {stopwatch.ElapsedMilliseconds} ms");
+        Assert.True(stopwatch.ElapsedMilliseconds < 1_000, $"took {stopwatch.ElapsedMilliseconds} ms");
     }
 
     /// <summary>
