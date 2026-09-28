@@ -552,22 +552,78 @@ in front of `verifyReceiptEndpoint`, load balancer, reverse proxy, servlet
 container, must accept at least that much, or it refuses receipts Apple
 would have answered.
 
-## Capacity
+## Running in production
 
-Cold start is slow; a warm JVM is not. Measured on 0.6.0 with a genuine
-production receipt, three fresh JVMs: loading the bundled trust anchors took
-about 290 ms, the first verification 200 to 260 ms, the tenth about 5 ms,
-and calls reached about 1 ms only after roughly a thousand of them. At 10
-requests a second that is minutes of slower answers after every deploy.
-Build the `Verifier` at startup, not lazily on first request, and verify a
-known receipt a couple of thousand times before the instance takes traffic.
+A checklist for a service that puts this library behind an HTTP endpoint.
+Figures marked approximate were measured on OpenJDK 21, one thread,
+BouncyCastle 1.86; expect yours to differ by machine.
+
+**Self-test at startup, then keep it running as a canary.** Verify a
+known-good Apple-signed receipt and a known-good Apple-signed JWS at startup,
+and fail readiness unless both are `verified()`. Repeat every minute. The
+two receipts `receipt-sandbox-legacy.b64` and `receipt-sandbox-g5.b64` under
+[`fixtures/public-receipts/`](../fixtures/public-receipts/) chain to the real
+Apple roots and keep verifying, because validity is judged at their own
+signing date. The repository has no JWS signed by a real Apple root (the
+vendored Apple JWS fixtures are signed by a test CA), so keep one from your
+own sandbox, such as a transaction you bought there. Why: a runtime that
+cannot construct a crypto engine answers `INTERNAL_ERROR`, but an unchecked
+exception BouncyCastle throws while parsing is reported as a verdict on the
+input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
+is by design, so hostile input cannot page you. It also means a broken host
+and an attack wave look alike in the counters. A known-good input that must
+verify is what tells them apart.
+
+**Bound body size and concurrency at the edge.** Reject bodies above
+3 MiB (3,145,728 bytes, the library's cap; see
+[Resource bounds](#resource-bounds)), or lower if your product never sees
+large receipts. Put a `Semaphore` (or a bounded executor) of about twice the
+core count around the verify call. Why: memory, not CPU, is the limit. A
+1 MB genuine receipt costs about 30 ms and about 30 MB of allocation per
+call, a cap-sized one about 70 ms and 75 MB (approximate), so 100 such calls
+at once exhaust a normal heap. Hostile input is cheap to reject, a 1 MB
+forgery about 5 ms, because nothing expensive runs before the chain is
+trusted.
+
+**Warm up before taking traffic.** Build the `Verifier` at startup, not
+lazily on the first request. `Verifier.create` takes about 450 ms cold, the
+first receipt about 150 ms and the first JWS about 75 ms (approximate), and
+calls settle only after about 1,000 to 2,000 of them, when the JIT has
+compiled the hot paths. At 10 requests a second that is minutes of slower
+answers after every deploy, so verify a known receipt and JWS that many
+times before the instance reports ready.
+
+**Export metrics and alert on the right ones.** Count results per `Reason`,
+and keep a latency histogram and an input-size histogram. Page on
+`INTERNAL_ERROR` and `UNREADABLE_PAYLOAD` (both status 21009 from the
+endpoint): each is deterministic and points at the host, the library or a
+change in Apple's format, not at the client. Alert, without paging, on a shift in the ratio of
+`MALFORMED` (21002) and of 21003: that is either a client bug or someone
+probing.
+
+**Enforce the dependency set in the service build.** BouncyCastle
+`bcpkix`, `bcprov` and `bcutil` at one version, and no duplicate
+`org.bouncycastle` classes: a `jdk15on` jar and a `jdk18on` jar on one
+classpath make `verifyReceipt` fail with a `LinkageError`, which the
+never-throws contract does not cover. `jackson-core` 2.16 or newer. Make
+the build fail on a violation rather than relying on review. See
+[Vendoring](#vendoring) for why each floor exists.
+
+**Write down the residual risk.** Revocation is not checked, and the
+validity instant is the payload's own date. A leaked historical Apple leaf
+key would therefore verify a payload back-dated into that key's validity
+window. Apple's own libraries behave the same. Watch this repository's
+weekly [`apple-root-watch`](../.github/workflows/apple-root-watch.yml)
+workflow, which fails when Apple's published roots change, and own the root
+set in service config through `Config.builder().roots(...)` so a new root is
+a config change, not a dependency bump.
+
+**Prefer Java 17 or 21.** Java 8 is supported, but there
+`Provider.getService` is synchronized, and every call makes several lookups
+on the library's private BouncyCastle provider, so concurrent calls
+serialise on it.
 
 The worst-case CPU for one call is measured in the next section.
-
-Memory, not CPU, is usually the limit: every concurrent call can hold tens
-of megabytes when the input is near its size cap, so bound how many
-verifications run at once (a `Semaphore`, or a bounded executor) rather than
-relying on CPU headroom alone.
 
 ## Measured worst-case CPU
 
@@ -592,9 +648,10 @@ comes from `ReceiptBenchmark` (the same settings, two forks).
 No hostile input in the shared suite costs more than an ordinary large
 receipt: the cost of a call follows the size of the input, which the caps in
 [Resource bounds](#resource-bounds) limit, not the structure an attacker
-chooses. These are warm-JVM figures; see [Capacity](#capacity) for the cold
-start. The machine was shared with other work, so treat them as an order of
-magnitude. For numbers on your own hardware, build as in
+chooses. These are warm-JVM figures; see
+[Running in production](#running-in-production) for the cold start. The
+machine was shared with other work, so treat them as an order of magnitude.
+For numbers on your own hardware, build as in
 [java-bench/README.md](../java-bench/README.md), then run
 
 ```bash
@@ -748,16 +805,12 @@ BouncyCastle `bcprov` and `bcpkix` 1.86, the version the code was checked
 against.
 
 **What to re-check on a BouncyCastle upgrade.** The code relies on a few
-BouncyCastle behaviours that are not API contracts:
+BouncyCastle behaviours that are not API contracts. Thread safety is not
+one of them: apart from the provider instance, every BouncyCastle object is
+built per call, including the CMS verifier builder, the PKIX validator and
+path builder (it keeps per-build counters), the `CertificateFactory` (it
+keeps stream state between calls) and every `Signature`.
 
-- One `JcaSignerInfoVerifierBuilder` is shared by every thread
-  (`ReceiptCore.signerVerifier`). That is safe only because its `build`
-  writes no state and makes a new content-verifier provider per
-  certificate; read `build` again after an upgrade.
-- One PKIX `CertPathValidator` is shared too (`JwsCore.PKIX`): its SPI holds
-  only final fields. The `CertificateFactory` (it keeps stream state between
-  calls), the `CertPathBuilder` (it keeps per-build counters) and every
-  `Signature` stay per call.
 - BouncyCastle's own ASN.1 depth bound (`org.bouncycastle.asn1.max_cons_depth`)
   applies to indefinite lengths only, which is why `Asn1Depth` exists; if
   that changes, the explicit check still stays, because its bound (32) is

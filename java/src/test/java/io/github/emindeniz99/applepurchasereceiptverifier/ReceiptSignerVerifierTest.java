@@ -15,11 +15,11 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link ReceiptCore#signerVerifier} reuses one
- * {@code JcaSignerInfoVerifierBuilder} instead of a fresh
- * {@code JcaSimpleSignerInfoVerifierBuilder} per receipt. The CMS signature is
- * the check that makes a receipt Apple's, so the reused builder's verifier has
- * to reach the same verdict as a fresh one on every receipt: genuine,
+ * {@link ReceiptCore#signerVerifier} builds a
+ * {@code JcaSignerInfoVerifierBuilder} over a digest provider of its own
+ * instead of using {@code JcaSimpleSignerInfoVerifierBuilder}. The CMS
+ * signature is the check that makes a receipt Apple's, so its verifier has
+ * to reach the same verdict as the simple builder's on every receipt: genuine,
  * generated, and corrupted in the signature, the signed content or anywhere
  * else a parse still survives.
  */

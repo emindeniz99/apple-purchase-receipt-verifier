@@ -20,8 +20,8 @@ negative) and the `xcode/*` receipts/payloads (pinning rejection).
 registers those bytes once, under the public-receipts entry.
 `mock_signed_data/legacyTransaction` (the pre-2018 purchase-info format)
 is not in `cases.json`; the Java suite pins its rejection
-(`ReceiptVerifierTest`) and the Node suite rejects it as a JWS in
-`web-parity.test.js`. The `certs/testInvalid*` variants are vendored for
+(`ReceiptVerificationTest`), and the Rust suite pins it as `MALFORMED`
+and status 21002 (`tests/public_receipts.rs`). The `certs/testInvalid*` variants are vendored for
 potential future use but are **not** referenced by any test yet.
 
 These complement (not replace) the generated fake-Apple-PKI fixtures in

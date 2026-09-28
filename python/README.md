@@ -66,8 +66,9 @@ lays out the full flow once, with a reason-to-next-step table; here are its
 two branches in this port's 0.7 API.
 
 Both branches now follow the same shape: verify, deny on any failure, then
-run the post-verification checklist above yourself: 0.7 has no
-constructor-supplied bundle id or environment allowlist to do it for you.
+run the [post-verification checklist](#post-verification-checklist) below
+yourself: 0.7 has no constructor-supplied bundle id or environment allowlist
+to do it for you.
 
 ```python
 # Branch A: StoreKit 2 signed transaction
@@ -77,7 +78,7 @@ if not result.verified:
     return
 payload = json.loads(result.payload.json)
 if payload.get("bundleId") != "com.example.app":
-    return  # step 1 of the checklist above
+    return  # step 1 of the checklist below
 environment = Environment.from_jws_environment(payload.get("environment"))
 if payload.get("revocationDate") is not None:
     return  # refunded or revoked as of signing time
@@ -204,7 +205,7 @@ Like Apple's own endpoint, it checks no bundle id: compare
 | 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired or wrong-purpose certificate). |
 | 21007 | A sandbox receipt was sent to `Environment.PRODUCTION`. |
 | 21008 | A production receipt was sent to `Environment.SANDBOX`. |
-| 21009 | Internal data access error (the library's own code faulted); alert, don't retry. |
+| 21009 | Internal data access error: the receipt authenticated but its signed content does not parse, or the library itself failed. Deterministic; alert, don't retry. |
 
 No other `verifyReceipt` status (21000, 21001, 21004, 21005, 21006, 21010,
 21100-21199) is ever returned: those describe HTTP-method, shared-secret and
@@ -231,20 +232,23 @@ every port:
 
 - **First occurrence wins.** If Apple's payload repeats an attribute type
   (it shouldn't, but the parser doesn't assume that), the first occurrence
-  decides the field; later ones are ignored. This applies to the receipt
-  creation date too, since it anchors the certificate-validity check.
+  decides the field; later copies are kept raw in `unknown_attributes`.
+  This applies to the receipt creation date too, since it anchors the
+  certificate-validity check.
 - **Dates** are `YYYY-MM-DDTHH:MM:SSZ` exactly (RFC 3339, UTC, no fractional
-  seconds); anything else leaves the field `None` rather than raising.
-  Decoded dates are epoch milliseconds (always ending in `000`, since
-  receipts carry whole seconds).
+  seconds); anything else leaves the field `None` rather than raising, and
+  a non-empty string that does not parse is kept raw. An empty date string
+  means "not set". Decoded dates are epoch milliseconds (always ending in
+  `000`, since receipts carry whole seconds).
 - **Strings** are `UTF8String` or `IA5String` only; `IA5String` bytes ≥ 0x80
   fail to decode (7-bit ASCII, by definition). A string that fails to decode
   leaves the field `None` (or, for `bundle_id`, only `bundle_id_bytes` is
   set, see below) rather than raising.
 - **`unknown_attributes`** holds the raw value octets of every attribute
-  type the payload doesn't model as a named field, keyed by attribute type,
-  in receipt order, so a field Apple adds later is never silently dropped.
-  `bundle_id` (attribute 2) is the one exception: a decode failure there
+  that does not end up in a named field, keyed by attribute type, in
+  receipt order: a type the payload doesn't model, a later copy of a known
+  one, and a known one whose value does not parse. A field Apple adds later
+  is never silently dropped. `bundle_id` (attribute 2) is the one exception: a decode failure there
   does not also appear in `unknown_attributes`, because `bundle_id_bytes`
   already carries the raw value unconditionally.
 - **64-bit ids** (`app_item_id`, `download_id`, `version_external_identifier`,
@@ -326,10 +330,13 @@ limits are Apple's, fixed constants in every port of this library, not
   given to `verify_signed_data`, before it is split into segments. A larger
   JWS is `Reason.TOO_LARGE`.
 - **JSON nesting depth 64**: checked before any JSON is parsed, in the
-  request body, the JWS header and the JWS payload alike. Deeper input is
-  `Reason.MALFORMED`.
+  request body, the JWS header and the JWS payload alike. A deeper request
+  body or JWS header is `Reason.MALFORMED`. A deeper JWS payload is carried
+  to the signature check: `Reason.UNREADABLE_PAYLOAD` if the signature
+  verifies, `Reason.INVALID_SIGNATURE` if not.
 - **ASN.1 nesting depth 32**: checked before any certificate is decoded.
-  Deeper input is `Reason.MALFORMED`.
+  Deeper input is `Reason.MALFORMED` in the CMS envelope and
+  `Reason.UNREADABLE_PAYLOAD` in the signed receipt content.
 
 `fixtures/cases.json` holds every port to these same numbers, from both
 sides of each boundary.
@@ -359,7 +366,7 @@ pass — a signature proves what Apple signed, not what happened since.
 
 This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
 Rust, PHP, .NET) that share a single fixture suite, including Apple's own official test fixtures, and are
-required to agree byte for byte. See the
+required to agree on every verdict and every decoded value. See the
 [project README](../README.md) for the full picture and
 [COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
 libraries.

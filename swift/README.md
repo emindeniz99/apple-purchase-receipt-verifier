@@ -340,7 +340,15 @@ gone. The library returns the data, and you compare it yourself (see
 | `VerifyReceiptEndpoint(trustedRoots:environment:clock:)` | `Verifier(config:)`, pass `environment` per call |
 | `.verifyReceiptResult(_:)` / `.verifyReceiptJSON(_:)` | `verifier.verifyReceiptEndpoint(environment:requestJson:)` |
 | `appleReceiptRoots()` / `appleJwsRoots()` | `Config.defaults()` (one root set for both) |
-| n/a | `Reason.invalidCertificatePurpose` split out from the old `INVALID_CERTIFICATE_PURPOSE`-shaped failures; `Reason.unreadablePayload` split out from `INTERNAL_ERROR` for a payload Apple signed but this library cannot parse |
+
+| 0.6 `VerificationError.Reason` | 0.7 `Reason` |
+|---|---|
+| `.invalidJwsFormat`, `.invalidReceiptFormat`, `.malformedRequest` | `.malformed` |
+| `.requestTooLarge` | `.tooLarge` |
+| `.invalidChain` | `.untrustedChain`, or `.invalidCertificate` for a certificate outside its validity window |
+| `.invalidCertificate`, `.invalidCertificatePurpose`, `.invalidSignature` | same names |
+| `.internalError` for signed content that does not parse | `.unreadablePayload` |
+| `.wrongBundleId`, `.wrongEnvironment`, `.wrongAppAppleId`, `.deviceHashMismatch` | gone: the caller's own checks |
 
 ## Licence
 

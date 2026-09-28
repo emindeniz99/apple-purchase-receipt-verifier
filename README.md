@@ -16,8 +16,8 @@ a replacement for the deprecated `verifyReceipt` endpoint. Cryptographically
 proves that purchase data a client presents (StoreKit 2 signed JWS
 transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
 validating the certificate chain against pinned Apple root CAs. Nine
-implementations, one normative algorithm, one shared fixture set they all
-verify byte-for-byte: **Java** (8+), **Node** (20+, zero runtime deps),
+implementations, one normative algorithm, one shared fixture set on which
+they agree on every verdict and every decoded value: **Java** (8+), **Node** (20+, zero runtime deps),
 **Python** (3.10+), **Swift** (6.1+), **Go** (1.22+), **Ruby** (3.3+),
 **Rust** (1.85+), **PHP** (8.2+) and **.NET** (netstandard2.0 and net8.0) —
 plus **C and C++ via a C ABI over the Rust port**, which any FFI-capable
@@ -80,7 +80,7 @@ endpoint, the Java 8 floor and the zero-dependency Node build.
 
 ## Installing
 
-Four of the nine implementations are published today, all as
+Five of the nine implementations are published today, all as
 **`apple-purchase-receipt-verifier`**, in lockstep versions cut from this
 repository's tags.
 
@@ -94,10 +94,11 @@ period. Read the CHANGELOG before you bump the minor version, and pin it.
 | [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier';` |
 | [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import Config, Verifier` |
 | [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")` | `import ApplePurchaseReceiptVerifier` |
+| [Go module proxy](https://pkg.go.dev/github.com/emindeniz99/apple-purchase-receipt-verifier/go) | `go get github.com/emindeniz99/apple-purchase-receipt-verifier/go` | `import applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"` |
 
 **C and C++ have no registry entry and are not meant to.** The C ABI in
 [`rust/ffi/`](rust/ffi/) is built from source against the Rust port: a
-`cdylib`/`staticlib` and a generated header, twenty-one symbols, JSON as the
+`cdylib`/`staticlib` and a generated header, seven functions, JSON as the
 interchange. Prebuilt binaries per OS and architecture are a later step, not
 a shipped one. See [rust/ffi/README.md](rust/ffi/README.md). Three example
 consumers call it, one of each kind: C++17 through the header in
@@ -110,14 +111,15 @@ The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`) — one name everywhere.
 
-**The five newer ports are not installable from a registry yet.** Go, Ruby,
-Rust and .NET are wired into `release.yml` and are waiting on one owner action
+**Four newer ports are not installable from a registry yet.** Ruby, Rust
+and .NET are wired into `release.yml` and are waiting on one owner action
 each: a pending trusted publisher for RubyGems, a first manual publish for
-crates.io and NuGet, a public repository for the Go module proxy. Those
-actions, per registry and in order, are in [BOOTSTRAP.md](./BOOTSTRAP.md); the
-rows above gain entries once the first release goes out.
+crates.io and NuGet. Those actions, per registry and in order, are in
+[BOOTSTRAP.md](./BOOTSTRAP.md); the rows above gain entries once the first
+release goes out. Go, the fifth newer port, needed no such action:
+`proxy.golang.org` has served it since `go/v0.4.0`.
 
-PHP is the fifth, and its install path is:
+PHP is the fourth, and its install path is:
 
 ```bash
 composer require emindeniz99/apple-purchase-receipt-verifier

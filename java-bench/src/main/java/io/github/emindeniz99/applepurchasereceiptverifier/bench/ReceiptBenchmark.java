@@ -64,7 +64,7 @@ public class ReceiptBenchmark {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
     /**
-     * The library's own receipt-data decoder, {@code ReceiptBase64.decode},
+     * The library's own receipt-data decoder, {@code StrictBase64.decode},
      * which is package-private. Bound once by reflection so the cross-port
      * {@code decodeBase64} benchmark (BENCHMARKS.md) can time it alone; a
      * static final handle costs nothing per call once compiled.
@@ -212,12 +212,15 @@ public class ReceiptBenchmark {
 
     private static MethodHandle decodeHandle() {
         try {
-            Method decode = Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.ReceiptBase64")
-                    .getDeclaredMethod("decode", String.class);
+            Method decode = Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.StrictBase64")
+                    .getDeclaredMethod("decode", String.class, Reason.class, String.class);
             decode.setAccessible(true);
-            return MethodHandles.lookup().unreflect(decode);
+            // The arguments ReceiptCore passes for receipt-data.
+            return MethodHandles.insertArguments(
+                    MethodHandles.lookup().unreflect(decode), 1, Reason.MALFORMED, "receipt");
         } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("ReceiptBase64.decode(String) is not where this expects it", e);
+            throw new IllegalStateException(
+                    "StrictBase64.decode(String, Reason, String) is not where this expects it", e);
         }
     }
 

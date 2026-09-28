@@ -336,6 +336,15 @@ Not defended against here, by decision rather than omission.
 - **Certificate revocation.** No OCSP, no CRL. Offline verification is the
   point, and Apple handles compromised signing certs by rotating them
   (PLAN.md §2.3).
+
+  What that leaves open: the chain is judged valid at the payload's own
+  date (`signedDate`, or the receipt's creation date), so if a historical
+  Apple leaf key ever leaked, a payload back-dated into that certificate's
+  validity window would verify, in every port. Apple's own library does the
+  same with its online checks off. A consumer's defence today is the weekly
+  `apple-root-watch` workflow and owning the root set in `Config`. If that
+  day comes, the answer is a per-certificate distrust list in `Config`;
+  it is deliberately not built (ROADMAP.md, "Later / hardening").
 - **Observability.** No logging, metrics or callbacks: machine-readable reason
   codes and nothing else, with alert policy left to the integrator
   (PLAN.md D11).
@@ -363,8 +372,10 @@ Not defended against here, by decision rather than omission.
   signed by, three ports ACCEPTED such a receipt outright (node, ruby,
   dotnet) and the other six answered about the receipt or the chain instead
   of about the certificate. `receipt/reject-signer-*` pins all four as
-  `INVALID_CERTIFICATE`, decided before the chain is built and before the
-  signature is checked. An embedded certificate that is not the signer keeps
+  rejected before the signature is checked: the signer that does not decode
+  as `INVALID_CERTIFICATE` or `MALFORMED`, which ports may choose between
+  (docs/design/0.7-api.md), and the key on an unimplemented curve as
+  `INVALID_CERTIFICATE`. An embedded certificate that is not the signer keeps
   its old verdict: the bag is unsigned, so bytes that cannot be read there
   are a defect of the receipt (`MALFORMED`), not of a certificate. Since
   0.7 every port decodes a public key only once a pinned root vouches for
@@ -393,7 +404,7 @@ Not defended against here, by decision rather than omission.
   JDK's PKIX code refuse every genuine legacy receipt. The cost is that an
   administrator cannot restrict this library through that policy; what it
   accepts is set by the library and the caller's roots (java/README.md, "One
-  platform caveat worth knowing").
+  platform caveat: BouncyCastle, not the JDK's PKIX").
 - **The C ABI reintroduces `unsafe`, and moves memory discipline to the
   caller.** The library target is `#![forbid(unsafe_code)]`; `rust/ffi` cannot
   be, because a C boundary is raw pointers. Two consequences are the caller's

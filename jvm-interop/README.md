@@ -114,8 +114,9 @@ This module has no source under `src/main/`, exists only to compile and run
 tests against the real published artifact coordinates, and is deliberately
 excluded from every release mechanism in this repo:
 
-- Not listed in `release-please-config.json` (which only tracks
-  `java/pom.xml`, `node/package.json`, `python/pyproject.toml`).
+- `release-please-config.json` lists its `pom.xml` only so the
+  `library.version` property it resolves the library by moves with each
+  release; the module's own version is never bumped.
 - Not a `<module>` of any aggregator pom — there isn't one in this repo;
   every language directory already builds independently.
 - Its own `pom.xml` has no `central` profile, no `<distributionManagement>`,

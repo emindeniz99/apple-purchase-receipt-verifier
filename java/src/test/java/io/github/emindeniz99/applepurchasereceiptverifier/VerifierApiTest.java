@@ -529,9 +529,9 @@ class VerifierApiTest {
 
     /**
      * Static state built on first use (the bounded Jackson factories, the
-     * shared BouncyCastle verifier builder) is built by Verifier.create, so a
-     * dependency below its floor fails there and not inside a verify method
-     * documented never to throw.
+     * BouncyCastle provider) is built by Verifier.create, so a dependency
+     * below its floor fails there and not inside a verify method documented
+     * never to throw.
      */
     @Test
     void aClassWhoseStaticStateFailsFailsConstructionWithTheDependencyFloor() {

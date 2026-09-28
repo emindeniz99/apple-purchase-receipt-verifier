@@ -108,9 +108,8 @@ class ConcurrencyTest {
      * from a second fresh set used by one thread.
      *
      * <p>Class-level state (the shared BouncyCastle provider, the JSON
-     * factories, the signer-verifier builder) is cold only when this class is
-     * the first to run in its JVM, for example with
-     * {@code -Dtest=ConcurrencyTest}.</p>
+     * factories) is cold only when this class is the first to run in its
+     * JVM, for example with {@code -Dtest=ConcurrencyTest}.</p>
      */
     @Test
     void freshInstancesAnswerTheirFirstConcurrentCallsAsOneThreadWould() throws Exception {

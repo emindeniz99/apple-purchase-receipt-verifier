@@ -343,12 +343,13 @@ def create
 end
 ```
 
-**A raw request body is form-encoded, not JSON, on the wire clients actually
-use.** Apple's own client libraries POST
-`application/x-www-form-urlencoded` bodies to some integrations; if yours
-does, extract the JSON payload (or build `{"receipt-data": "..."}` yourself)
-before calling `verify_receipt_endpoint` — passing the raw form body through
-unchanged answers `21002` (`MALFORMED_RECEIPT_DATA`), not a verified receipt.
+**Pass the raw JSON body.** Apple's `verifyReceipt` contract is a JSON
+body, `{"receipt-data": "..."}`, and `verify_receipt_endpoint` parses JSON
+only. If your own clients, or a proxy in front of your handler, send
+`application/x-www-form-urlencoded` instead, build `{"receipt-data": "..."}`
+yourself before calling `verify_receipt_endpoint`: passing a form body
+through unchanged answers `21002` (`MALFORMED_RECEIPT_DATA`), not a verified
+receipt.
 
 One method takes the whole request and returns the whole response, both as
 JSON text — unlike 0.6's `VerifyReceiptResult`, there is no typed result
@@ -448,8 +449,9 @@ answers status 21002 in place of the 413 an HTTP layer would send — route it
 yourself if you need Apple's exact status code:
 
 ```ruby
-response = JSON.parse(VERIFIER.verify_receipt_endpoint(env, request.body.read))
-status = response["status"] == 21_002 && request.body.read.bytesize > 3_145_728 ? 413 : 200
+body = request.body.read
+response = JSON.parse(VERIFIER.verify_receipt_endpoint(env, body))
+status = response["status"] == 21_002 && body.bytesize > 3_145_728 ? 413 : 200
 ```
 
 A framework or proxy that caps request bodies itself has to allow at least
@@ -473,7 +475,7 @@ one pull request.
 
 | Reason | When |
 |---|---|
-| `MALFORMED` | base64, ASN.1, CMS or JWS structure is broken, or input is over a size bound |
+| `MALFORMED` | base64, ASN.1, CMS or JWS structure is broken, or a structural bound is exceeded (nesting depth, embedded certificates, SignerInfos) |
 | `TOO_LARGE` | input is over a fixed cap — see [Input limits](#input-limits) |
 | `INVALID_SIGNATURE` | the signature does not match the content |
 | `UNTRUSTED_CHAIN` | the chain does not reach a pinned root |

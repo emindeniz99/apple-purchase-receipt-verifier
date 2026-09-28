@@ -18,7 +18,8 @@ supports, and the rule that decides both. Snapshot taken 2026-09-28 from
    directive, the Java release level. A floor stays until it costs something:
    a dependency that needs a newer line, a runner image that disappears, or a
    language feature the port needs. Raising a floor is a breaking change for
-   that port and gets a major bump.
+   that port: a major bump after 1.0.0, a minor bump before it, as 0.7 did
+   for Ruby and PHP.
 3. **A new major joins the matrix in the first pull request after its GA.**
    Early-access and release-candidate builds are not tested.
 4. **Dependabot bumps the tool pins, not the matrices.** Adding or dropping a

@@ -245,7 +245,7 @@ if (Date.now() - (payload.signedDate ?? 0) > 5 * 60 * 1000) { /* too old here */
 **The device hash** is yours too, when you have the device's identifier:
 
 ```js
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 const expected = createHash('sha1')
   .update(deviceIdBytes)
@@ -398,7 +398,9 @@ bytes gets HTTP 413. Apple counts UTF-8 bytes, not characters.
   the body's length before the call to do the same).
 - **the compact JWS**: 262,144 UTF-8 bytes (`MAX_JWS_BYTES`), `TOO_LARGE`.
 - **JSON nesting depth 64.** Counted while parsing, since `JSON.parse` has
-  no depth option. A deeper request body or JWS is `MALFORMED`.
+  no depth option. A deeper request body or JWS header is `MALFORMED`. A
+  deeper JWS payload is carried to the signature check: `UNREADABLE_PAYLOAD`
+  if the signature verifies, `INVALID_SIGNATURE` if not.
 
 A JavaScript string holds UTF-16 units, so strings are measured in UTF-8
 bytes without being encoded: more units than the cap is over it, three
@@ -500,7 +502,8 @@ happened since.
 
 This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
 Rust, PHP, .NET) that share a single fixture suite, including Apple's own
-official test fixtures, and are required to agree byte for byte. See the
+official test fixtures, and are required to agree on every verdict and
+every decoded value. See the
 [project README](https://github.com/emindeniz99/apple-purchase-receipt-verifier#readme)
 for the full picture and
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)

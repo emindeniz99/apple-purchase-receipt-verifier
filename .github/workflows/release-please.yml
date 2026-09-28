@@ -89,7 +89,7 @@ jobs:
       # cache poisoning. `uv lock` resolves from the index either way; the
       # only thing the cache saves is a download.
       - if: ${{ steps.release-branch.outputs.name != '' }}
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: false
       - name: bring the lockfiles in step with the release version

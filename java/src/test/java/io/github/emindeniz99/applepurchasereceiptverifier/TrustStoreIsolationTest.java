@@ -520,10 +520,10 @@ class TrustStoreIsolationTest {
                                 + statement);
             }
         }
-        // Certificate factory (twice), path builder, cert store, path
-        // validator, ES256 signature and the root-pinning digest; the
-        // certificate converter and the CMS verifier builders.
-        assertTrue(lookups >= 7, "only " + lookups + " JCA lookups were found, so the scan is not reading the code");
+        // Certificate factory, path builder, cert store, path validator,
+        // ES256 signature and the root-pinning digest; the certificate
+        // converter and the CMS verifier builders.
+        assertTrue(lookups >= 6, "only " + lookups + " JCA lookups were found, so the scan is not reading the code");
         assertTrue(builders >= 3, "only " + builders + " JCA builders were found, so the scan is not reading the code");
     }
 

@@ -28,7 +28,13 @@ def _internal_error(e: Exception) -> Failure:
 
 class Verifier:
     """Immutable, thread-safe once constructed. The verify methods never
-    raise for any input: an unexpected exception is caught and reported as
+    raise for any input. An exception the library did not anticipate is
+    reported by where it happened: before a signature has verified it is
+    :attr:`~.reason.Reason.MALFORMED`, because it came from input nobody has
+    vouched for and must not let a caller raise an alert at will; while the
+    signed receipt content is parsed after the signature it is
+    :attr:`~.reason.Reason.UNREADABLE_PAYLOAD`. Only a configured clock that
+    raises, or a fault in the library outside those two stages, is
     :attr:`~.reason.Reason.INTERNAL_ERROR`.
 
     :raises ValueError: if ``config.roots`` is empty: a verifier with no
