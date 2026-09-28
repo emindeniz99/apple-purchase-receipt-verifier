@@ -126,6 +126,21 @@ class SignedDataTest {
     }
 
     @Test
+    void aVerifierTheRuntimeCannotBuildIsAnInternalErrorNotASignatureVerdict() {
+        // INVALID_SIGNATURE tells the caller the JWS is forged; a runtime that
+        // cannot even construct the ES256 engine has judged nothing, so that
+        // verdict would turn a host fault into a refusal of a genuine
+        // transaction. The receipt path answers INTERNAL_ERROR for the same
+        // fault. The fault is simulated by naming an engine no provider has,
+        // which is what Signature.getInstance meets on such a runtime.
+        VerificationException e = assertThrows(
+                VerificationException.class,
+                () -> JwsCore.verifyEs256(pki.leaf, "e30.e30", new byte[64], "SHA256withNO-SUCH-ENGINE"));
+        assertEquals(Reason.INTERNAL_ERROR, e.reason());
+        assertEquals("ES256 verifier could not be constructed", e.getMessage());
+    }
+
+    @Test
     void rejectsNonEs256Algorithm() throws Exception {
         Map<String, Object> header = new LinkedHashMap<String, Object>();
         header.put("alg", "RS256");
