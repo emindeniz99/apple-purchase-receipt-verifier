@@ -82,6 +82,29 @@ class ReceiptDecoderTest {
         assertArrayEquals(padded, purchase.unknownAttributes().get(1701).get(0));
     }
 
+    /**
+     * An in-app SET that BouncyCastle refuses with an unchecked exception
+     * costs that one purchase, kept raw, not the receipt. Here an
+     * indefinite-length SET holds a BIT STRING claiming a pad bit with no
+     * data byte, which BouncyCastle 1.86 rejects with an
+     * IllegalArgumentException that its definite-length path would wrap.
+     */
+    @Test
+    void anInAppSetThatBouncyCastleRefusesUncheckedIsKeptRaw() throws Exception {
+        byte[] refused = {0x31, (byte) 0x80, 0x03, 0x01, 0x01, 0x00, 0x00};
+        byte[] good = set(attribute(1703, new DERUTF8String("1000").getEncoded()));
+        byte[] payload =
+                set(attribute(3, new DERUTF8String("1.0").getEncoded()), attribute(17, refused), attribute(17, good));
+
+        ReceiptPayload receipt = ReceiptDecoder.parse(payload);
+
+        assertEquals("1.0", receipt.applicationVersion());
+        assertEquals(1, receipt.inApp().size());
+        assertEquals("1000", receipt.inApp().get(0).transactionId());
+        assertEquals(1, receipt.unknownAttributes().get(17).size());
+        assertArrayEquals(refused, receipt.unknownAttributes().get(17).get(0));
+    }
+
     /** The receipt date grammar (owner, 2026-09-27, Q20a), at every edge of it. */
     @Test
     void aReceiptDateIsExactlyTheOneForm() {

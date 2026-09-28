@@ -116,9 +116,11 @@ public final class InAppPurchase {
     }
 
     /**
-     * Raw value octets of the attribute types not modelled above, by type, in
-     * receipt order, so a field Apple adds later is not lost. A fresh copy on
-     * each call, arrays included.
+     * Raw value octets, by type, in receipt order, of the attribute types not
+     * modelled above, of a modelled attribute whose value did not decode, and
+     * of every copy of a modelled attribute after the first, so nothing Apple
+     * signed is lost. The attribute's {@code version} integer is not kept. A
+     * fresh copy on each call, arrays included.
      */
     public Map<Integer, List<byte[]>> unknownAttributes() {
         return RawAttributes.copy(unknownAttributes);

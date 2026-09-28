@@ -119,9 +119,9 @@ decides whether a certificate is expired when the input states a date; see
 not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
-notice until production. `Verifier.create` also builds the library's static state (the
-bounded Jackson readers, the shared BouncyCastle signature verifier), so a
-jackson-core below 2.16 or a BouncyCastle that does not load throws
+notice until production. `Verifier.create` also builds the bounded Jackson
+readers and touches the BouncyCastle provider and a bcpkix class, so a
+jackson-core below 2.16 or a missing BouncyCastle jar throws
 `IllegalStateException` there rather than on the first call.
 
 ## Which method to call
@@ -811,10 +811,13 @@ built per call, including the CMS verifier builder, the PKIX validator and
 path builder (it keeps per-build counters), the `CertificateFactory` (it
 keeps stream state between calls) and every `Signature`.
 
-- BouncyCastle's own ASN.1 depth bound (`org.bouncycastle.asn1.max_cons_depth`)
-  applies to indefinite lengths only, which is why `Asn1Depth` exists; if
-  that changes, the explicit check still stays, because its bound (32) is
-  stricter than BouncyCastle's default (64).
+- BouncyCastle bounds the nesting of every constructed value, definite or
+  indefinite length, at 64 by default (`org.bouncycastle.asn1.max_cons_depth`).
+  `Asn1Depth` is stricter (32) and is applied to the envelope, the payload
+  and each x5c entry before BouncyCastle parses them. Nesting inside a
+  primitive value that BouncyCastle decodes eagerly (an extension value
+  inside a certificate, for example) is guarded by BouncyCastle's bound
+  alone, which is why that bound must still exist after an upgrade.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
   `ReceiptCertificates.decode`).
