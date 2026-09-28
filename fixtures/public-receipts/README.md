@@ -9,7 +9,7 @@ These are **real Apple-signed bytes** — the strongest fixture tier:
 |---|---|
 | `receipt-sandbox-g5.b64` | Genuine sandbox receipt (newer G5 signing chain) verifies |
 | `receipt-sandbox-legacy.b64` | Genuine legacy receipt with a full SHA-1 chain and **187 in-app purchases** verifies (stress test; exposed a Python SHA-1 chain-helper gap now fixed) |
-| `receipt-xcode-with-purchases.b64` | Xcode-signed receipt is REJECTED (INVALID_CHAIN) against real Apple roots |
+| `receipt-xcode-with-purchases.b64` | Xcode-signed receipt is REJECTED (UNTRUSTED_CHAIN) against real Apple roots |
 
 ## Why there is no production receipt here
 
@@ -35,7 +35,7 @@ Relations intermediates: `receipt-sandbox-legacy` through WWDR G1 (SHA-1)
 and `receipt-sandbox-g5` through WWDR G5 (SHA-256),
 per [RECEIPT-FIELDS.md](../../RECEIPT-FIELDS.md#what-was-measured-and-how).
 The third file, `receipt-xcode-with-purchases`, is not Apple-signed and is
-there to be rejected (`INVALID_CHAIN`). So the pinned-root verification is
+there to be rejected (`UNTRUSTED_CHAIN`). So the pinned-root verification is
 still exercised against real Apple-signed bytes on both intermediates. What
 is no longer covered is the
 `receiptType == "Production"` field value and production-only attribute

@@ -6,9 +6,9 @@
 //! self-referential. They cover both transitions in both directions under
 //! both the pre-2007 and the current US rules.
 
-use apple_purchase_receipt_verifier::datetime::{
-    format_etc_gmt, format_pacific, pacific_offset_seconds, parse_rfc3339, system_time_from_millis,
-    to_rfc3339_utc, unix_millis_of,
+use apple_purchase_receipt_verifier::__internal::datetime::{
+    format_etc_gmt, format_pacific, pacific_offset_seconds, parse_receipt_date, parse_rfc3339,
+    system_time_from_millis, to_rfc3339_utc, unix_millis_of,
 };
 
 /// `(epoch millis, expected US-Pacific rendering)`, from IANA via
@@ -136,6 +136,61 @@ fn system_time_round_trips_through_epoch_millis() {
             unix_millis_of(system_time_from_millis(millis)),
             millis,
             "at {millis}"
+        );
+    }
+}
+
+/// The receipt date grammar (owner, 2026-09-27, Q20a): exactly
+/// `YYYY-MM-DDTHH:MM:SSZ`, at every edge of it.
+#[test]
+fn a_receipt_date_is_exactly_the_one_form() {
+    assert_eq!(
+        parse_receipt_date("2024-08-06T12:00:00Z"),
+        Some(1_722_945_600_000)
+    );
+    assert_eq!(
+        parse_receipt_date("0000-01-01T00:00:00Z"),
+        Some(-62_167_219_200_000)
+    );
+    assert_eq!(
+        parse_receipt_date("9999-12-31T23:59:59Z"),
+        Some(253_402_300_799_000)
+    );
+    assert!(parse_receipt_date("2024-02-29T00:00:00Z").is_some());
+    assert!(parse_receipt_date("2000-02-29T00:00:00Z").is_some());
+    assert!(
+        parse_receipt_date("0000-02-29T00:00:00Z").is_some(),
+        "0000 is a leap year"
+    );
+    for text in [
+        "2024-08-06t12:00:00Z",
+        "2024-08-06T12:00:00z",
+        "2024-08-06T12:00:00.000Z",
+        "2024-08-06T12:00:00.5Z",
+        "2024-08-06T12:00:00+00:00",
+        "2024-08-06T12:00:00-07:00",
+        "2024-08-06T12:00:00",
+        "2024-08-06T12:00:60Z",
+        "2024-08-06T12:60:00Z",
+        "2024-08-06T24:00:00Z",
+        "2023-02-29T00:00:00Z",
+        "1900-02-29T00:00:00Z",
+        "2024-04-31T00:00:00Z",
+        "2024-00-06T12:00:00Z",
+        "2024-13-06T12:00:00Z",
+        "2024-08-00T12:00:00Z",
+        "10000-01-01T00:00:00Z",
+        "+2024-08-06T12:00:00Z",
+        "-0001-08-06T12:00:00Z",
+        "2024-08-06 12:00:00Z",
+        " 2024-08-06T12:00:00Z",
+        "2024-08-06T12:00:00Z ",
+        "2024-8-06T12:00:00Z",
+        "",
+    ] {
+        assert!(
+            parse_receipt_date(text).is_none(),
+            "{text:?} must be refused"
         );
     }
 }

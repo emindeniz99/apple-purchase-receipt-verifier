@@ -39,9 +39,9 @@ import org.bouncycastle.cert.X509CertificateHolder;
  * guessing. Node, Swift and Go resolve the SignerInfo's issuer and serial
  * against every entry's raw DER before judging any entry, so the malformed
  * stranger cannot be mistaken for the absent signer and the verdict is
- * {@code INVALID_RECEIPT_FORMAT} — a defect of the receipt. Python, Rust,
- * Java, PHP and Ruby used to answer {@code INVALID_CERTIFICATE} here, which
- * says the signer was found and was bad. The stranger's identity is legible
+ * {@code MALFORMED} — a defect of the receipt. Python, Rust, Java, PHP and
+ * Ruby used to answer {@code INVALID_CERTIFICATE} here, which says the
+ * signer was found and was bad. The stranger's identity is legible
  * on purpose: a port cannot pass this by failing to read identities at all,
  * only by reading them and comparing.</p>
  *

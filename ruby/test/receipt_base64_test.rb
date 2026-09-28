@@ -2,20 +2,17 @@
 
 require_relative "helper"
 
-# The spellings Receipt.decode_base64 must accept and refuse are the
-# decodeBase64 groups of fixtures/cases.json, which conformance_test.rb runs
-# against both the receipt-data and the x5c decoder. What stays here is what a
-# shared vector cannot hold: a string that is not UTF-8 at all, which JSON text
-# cannot carry, and why neither of Ruby's own decoders is the rule alone.
+# The spellings Receipt.decode_canonical_base64 must accept and refuse are the
+# decodeBase64 groups of fixtures/cases.json, which conformance_test.rb
+# runs against both the receipt-data and the x5c decoder. What stays here is
+# what a shared vector cannot hold: bytes outside the base64 alphabet
+# entirely (which JSON text cannot carry either), and why neither of Ruby's
+# own decoders is the rule alone.
 class ReceiptBase64Test < Minitest::Test
   Receipt = ApplePurchaseReceiptVerifier::Receipt
-  VerificationError = ApplePurchaseReceiptVerifier::VerificationError
-  Reason = ApplePurchaseReceiptVerifier::Reason
 
-  def test_a_string_that_is_not_utf8_is_invalid_receipt_format
+  def test_bytes_outside_the_base64_alphabet_are_refused
     text = "QU\xffD".b
-    error = assert_raises(VerificationError, text.inspect) { Receipt.decode_base64(text) }
-    assert_equal Reason::INVALID_RECEIPT_FORMAT, error.reason
     assert_nil Receipt.decode_canonical_base64(text)
   end
 

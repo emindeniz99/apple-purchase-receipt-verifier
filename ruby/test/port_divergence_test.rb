@@ -4,13 +4,20 @@ require_relative "helper"
 require_relative "test_pki"
 
 # Inputs where this port was found to answer differently from the shipped
-# node, java, python and swift ports. Nothing in fixtures/cases.json reaches
-# them — every fixture date ends in `Z`, and no fixture encodes an attribute
-# value as a BER-chunked OCTET STRING — so they are pinned here instead.
+# node, java, python and swift ports, or where 0.7 changed the rule and the
+# old divergence stopped applying.
 #
-# Each test names the ports it is holding this port to. Where the four shipped
-# ports disagree among themselves the test pins the fail-closed answer and
-# says so, rather than inventing a fifth behaviour.
+# 0.6's lenient receipt-date grammar (timezone offsets, leap seconds,
+# fractional seconds, civil-date rollover) is the reason most of this file
+# used to exist. 0.7 replaced all of it with one exact grammar,
+# `YYYY-MM-DDTHH:MM:SSZ` (docs/design/0.7-api.md), and anything else is kept
+# raw rather than parsed leniently or rejected — there is no longer a
+# port-divergent lenient parse to pin. That "kept raw" behaviour is covered
+# in receipt_test.rb (`test_dates_outside_the_exact_grammar_are_kept_raw_
+# not_an_error`), not here. What remains here is the BER-chunked-attribute
+# parity (still a real cross-port disagreement) and the JWS `signedDate`
+# numeric edge cases (still real, and 0.7 changed the answer: a `signedDate`
+# no instant can hold is now "not stated", not a failure).
 class PortDivergenceTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
 
@@ -18,22 +25,18 @@ class PortDivergenceTest < Minitest::Test
     @pki = TestPki.receipt_pki
   end
 
-  def verifier
-    APRV::ReceiptVerifier.new(trusted_roots: [@pki.root], bundle_id: "com.example.app")
+  def clock
+    APRV::ClockOnce.new(-> { Time.now.to_i * 1000 })
+  end
+
+  def verify_der(der, roots: [@pki.root])
+    APRV::Receipt.verify([der].pack("m0"), roots, clock)
   end
 
   def assert_reason(reason, &)
     error = assert_raises(APRV::VerificationError, &)
     assert_equal reason, error.reason, "wrong reason: #{error.message}"
     error
-  end
-
-  def receipt_with(attributes)
-    TestPki.sign_receipt(@pki, TestPki.receipt_payload(attributes))
-  end
-
-  def date_receipt(text)
-    receipt_with([[2, TestPki.utf8("com.example.app")], [12, TestPki.ia5(text)]])
   end
 
   # A definite-length TLV, used to build encodings OpenSSL::ASN1 will not emit.
@@ -69,7 +72,7 @@ class PortDivergenceTest < Minitest::Test
   def test_a_ber_chunked_attribute_value_reads_as_its_concatenation
     value = TestPki.utf8("com.example.app")
     attribute = tlv(0x30, TestPki.integer(2) + TestPki.integer(1) + chunked_octet_string(value))
-    receipt = verifier.verify_der(TestPki.sign_receipt(@pki, tlv(0x31, attribute)))
+    receipt = verify_der(TestPki.sign_receipt(@pki, tlv(0x31, attribute)))
 
     assert_equal "com.example.app", receipt.bundle_id
   end
@@ -81,144 +84,65 @@ class PortDivergenceTest < Minitest::Test
       attribute = tlv(0x30, TestPki.integer(3) + TestPki.integer(1) + encoded)
       payload = tlv(0x31, tlv(0x30, TestPki.integer(2) + TestPki.integer(1) +
                                     tlv(0x04, TestPki.utf8("com.example.app"))) + attribute)
-      receipt = verifier.verify_der(TestPki.sign_receipt(@pki, payload))
+      receipt = verify_der(TestPki.sign_receipt(@pki, payload))
 
-      assert_equal "1.2.3", receipt.app_version
+      assert_equal "1.2.3", receipt.application_version
     end
   end
 
-  # The chunks are still bounded ASN.1: a chunk that is not an OCTET STRING,
-  # or a value that is not a chunk container at all, is refused. A trusted
-  # signer signed it, so the refusal is INTERNAL_ERROR.
-  def test_a_ber_chunked_attribute_value_is_still_parsed_strictly
+  # `octet_value` concatenates every chunk's content bytes regardless of the
+  # chunk's own tag (asn1.rb): a chunk that is not itself an OCTET STRING is
+  # not a structural error, it just contributes bytes that make the
+  # concatenation not a well-formed value for this attribute type — kept
+  # raw, same as any other attribute value this port cannot decode.
+  def test_a_ber_chunked_attribute_value_with_a_non_octet_string_chunk_is_kept_raw
     bad = tlv(0x24, tlv(0x04, "ab") + tlv(0x02, "\x01".b))
     attribute = tlv(0x30, TestPki.integer(2) + TestPki.integer(1) + bad)
 
-    assert_reason(:INTERNAL_ERROR) do
-      verifier.verify_der(TestPki.sign_receipt(@pki, tlv(0x31, attribute)))
-    end
+    receipt = verify_der(TestPki.sign_receipt(@pki, tlv(0x31, attribute)))
+    assert_nil receipt.bundle_id
+    assert_equal "ab\x01".b, receipt.bundle_id_bytes
   end
 
-  # The offset is arithmetic on the chain-validity instant, so an unchecked
-  # one moves it by days. node, java, python and swift all reject an offset
-  # whose hour field is 24 or more; node, java and swift also reject a minute
-  # field of 60 or more (python accepts it, being the outlier).
-  def test_rejects_a_timezone_offset_outside_a_real_one
-    ["2024-08-06T12:00:00+99:99", "2024-08-06T12:00:00-45:00",
-     "2024-08-06T12:00:00+24:00", "2024-08-06T12:00:00+00:99"].each do |text|
-      assert_reason(:INTERNAL_ERROR) { verifier.verify_der(date_receipt(text)) }
-    end
-  end
-
-  def test_accepts_the_largest_real_timezone_offsets
-    { "2024-08-06T12:00:00+14:00" => Time.utc(2024, 8, 5, 22, 0, 0),
-      "2024-08-06T12:00:00-12:00" => Time.utc(2024, 8, 7, 0, 0, 0),
-      "2024-08-06T12:00:00+23:59" => Time.utc(2024, 8, 5, 12, 1, 0) }.each do |text, expected|
-      assert_equal expected, verifier.verify_der(date_receipt(text)).creation_date
-    end
-  end
-
-  # A leap second: node, python and swift reject it; java clamps it back to
-  # :59. This port used to roll it FORWARD to the next minute, which is the
-  # one answer no other port gives. Rejecting is the fail-closed choice and
-  # matches three of the four.
-  def test_rejects_a_leap_second
-    assert_reason(:INTERNAL_ERROR) { verifier.verify_der(date_receipt("2024-06-30T23:59:60Z")) }
-  end
-
-  # An ambiguity the shipped ports do not resolve, pinned so it is a decision
-  # rather than an accident: an overflowing day (February 30th) rolls forward
-  # in node and here, and is rejected by java and python. Two against two, and
-  # this port already matched node, so it keeps matching node. The same holds
-  # for hour 24, which every port but python reads as the following midnight.
-  def test_an_overflowing_day_rolls_forward_the_way_node_does
-    { "2024-02-30T00:00:00Z" => Time.utc(2024, 3, 1),
-      "2024-08-06T24:00:00Z" => Time.utc(2024, 8, 7) }.each do |text, expected|
-      assert_equal expected, verifier.verify_der(date_receipt(text)).creation_date
-    end
-  end
-
-  # The components around those two stay refused, which is what keeps the
-  # rolling narrow.
-  def test_out_of_range_date_components_are_still_refused
-    ["2024-08-06T25:00:00Z", "2024-08-06T12:60:00Z", "2024-13-06T12:00:00Z",
-     "2024-00-06T12:00:00Z", "2024-08-00T12:00:00Z"].each do |text|
-      assert_reason(:INTERNAL_ERROR) { verifier.verify_der(date_receipt(text)) }
-    end
-  end
-
-  # Fractional seconds are kept, but only to the nanosecond — the finest
-  # precision any port represents (java's `Instant.parse` ceiling; node
-  # truncates to milliseconds and python to microseconds). Digits past that
-  # are dropped rather than turned into an exact Rational, which is what made
-  # a long fraction superlinear.
-  def test_keeps_fractional_seconds_to_the_nanosecond_and_drops_the_rest
-    exact = verifier.verify_der(date_receipt("2024-08-06T12:00:00.123456789Z")).creation_date
-
-    assert_equal 123_456_789, exact.nsec
-    assert_equal Time.utc(2024, 8, 6, 12, 0, 0).to_i, exact.to_i
-
-    truncated = verifier.verify_der(date_receipt("2024-08-06T12:00:00.1234567891Z")).creation_date
-
-    assert_equal 123_456_789, truncated.nsec
-
-    short = verifier.verify_der(date_receipt("2024-08-06T12:00:00.5Z")).creation_date
-
-    assert_equal 500_000_000, short.nsec
-
-    long = verifier.verify_der(date_receipt("2024-08-06T12:00:00.#{"1" * 5_000}Z")).creation_date
-
-    assert_equal 111_111_111, long.nsec
-  end
-
-  # `signedDate` and `receiptCreationDate` are JSON numbers, and a JSON number
-  # is not necessarily an integer. node (`typeof === 'number'`), java
-  # (`canConvertToLong`), python (`isinstance(..., (int, float))`) and swift
-  # (`as? Double`) all use a non-integer value; dropping it silently would
-  # judge the chain at "now" instead.
+  # `signedDate` is a JSON number, and a JSON number is not necessarily an
+  # integer. node (`typeof === 'number'`), java (`canConvertToLong`), python
+  # (`isinstance(..., (int, float))`) and swift (`as? Double`) all use a
+  # non-integer value; dropping it silently would judge the chain at "now"
+  # instead.
   def test_a_non_integer_signed_date_still_drives_the_chain_instant
     pki = TestPki.jws_pki(not_before: Time.utc(2020, 1, 1), not_after: Time.utc(2035, 1, 1))
-    verifier = APRV::JwsVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app",
-                                     accepted_environments: [APRV::Environment::SANDBOX])
     jws = TestPki.sign_jws(pki, TestPki.default_claims("signedDate" => 1.5))
 
-    error = assert_raises(APRV::VerificationError) { verifier.verify_transaction(jws) }
-    assert_equal :INVALID_CHAIN, error.reason, error.message
+    error = assert_raises(APRV::VerificationError) { APRV::Jws.verify(jws, [pki.root], clock) }
+    assert_equal :INVALID_CERTIFICATE, error.reason, error.message
   end
 
-  # A claim this port declined to read would also vanish from what the caller
-  # judges freshness on.
-  #
-  # `TransactionPayload#signed_date` reads this whole number as an Integer: the
-  # payload models Apple's wire contract, where these claims are Integer epoch
-  # milliseconds, and a fractional one is refused as INTERNAL_ERROR by the
-  # typed read. What changed is the verifier, which now judges the payload at
-  # the stated instant like the other four ports.
-  def test_a_non_integer_signed_date_is_reported
+  # The claim itself is not truncated or rewritten: `json` is Apple's payload
+  # text unchanged, so a caller reading `signedDate` with its own JSON
+  # library sees exactly what Apple signed.
+  def test_a_non_integer_signed_date_is_reported_unchanged_in_the_payload
     pki = TestPki.jws_pki
     claims = TestPki.default_claims("signedDate" => 1_722_945_600_000.0)
     jws = TestPki.sign_jws(pki, claims)
 
-    verifier = APRV::JwsVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app",
-                                     accepted_environments: [APRV::Environment::SANDBOX])
-    assert_in_delta 1_722_945_600_000.0, verifier.verify_transaction(jws)["signedDate"], 0
+    result = APRV::Jws.verify(jws, [pki.root], clock)
+    assert_in_delta 1_722_945_600_000.0, JSON.parse(result.json)["signedDate"], 0
   end
 
   # A JSON number can also be non-finite (`1e400` parses to Infinity) or
-  # outside anything Time can hold. Those must stay VerificationErrors rather
-  # than escaping as FloatDomainError or RangeError.
-  def test_a_non_finite_or_out_of_range_signed_date_stays_a_verification_error
+  # outside anything a 64-bit instant can hold. 0.7 treats every one of these
+  # as "signedDate not stated" rather than a failure (owner, 2026-09-27,
+  # jws.rb): the chain falls back to the configured clock, and a JWS that is
+  # otherwise genuine still verifies.
+  def test_a_non_finite_or_out_of_range_signed_date_falls_back_to_the_clock
     pki = TestPki.jws_pki
-    verifier = APRV::JwsVerifier.new(trusted_roots: [pki.root], bundle_id: "com.example.app",
-                                     accepted_environments: [APRV::Environment::SANDBOX])
-    ["1e400", "-1e400", "1e300", "-1e300", (2**70).to_s, (-(2**70)).to_s,
-     "0", "-1"].each do |literal|
+    ["1e400", "-1e400", "1e300", "-1e300", (2**70).to_s, (-(2**70)).to_s].each do |literal|
       claims = TestPki.default_claims.merge("signedDate" => 0)
       json = JSON.generate(claims).sub('"signedDate":0', "\"signedDate\":#{literal}")
       jws = TestPki.sign_jws(pki, claims, payload_json: json)
-      error = assert_raises(APRV::VerificationError) { verifier.verify_transaction(jws) }
 
-      assert_includes APRV::Reason::ALL, error.reason, "unmapped reason for #{literal}"
+      result = APRV::Jws.verify(jws, [pki.root], clock)
+      assert_includes result.json, "\"signedDate\":#{literal}", literal
     end
   end
 end

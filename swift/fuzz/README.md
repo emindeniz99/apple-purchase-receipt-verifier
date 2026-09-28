@@ -28,7 +28,7 @@ public func fuzz(_ start: UnsafePointer<UInt8>?, _ count: Int) -> CInt
 then *is* a libFuzzer binary and takes libFuzzer's corpus directories and
 flags directly, which is why `run.sh` is close to a copy of
 `rust/fuzz/run.sh`. The flag is passed to every target in the graph, not only
-to the five that define an entry point: coverage instrumentation has to reach
+to the six that define an entry point: coverage instrumentation has to reach
 swift-asn1 and swift-certificates for the fuzzer to steer into them.
 `-enable-testing` goes with it, so `Sources/FuzzSupport` can
 `@testable import` the library and drive its internal readers.
@@ -67,10 +67,7 @@ run, since they only link with the sanitizer flags above.
 So `swift/fuzz/Package.swift` is a package of its own that depends on the
 library by path (`.package(path: "../..")`). The root manifest is unchanged
 by this directory, and `swift test` at the root neither builds nor knows
-about any of it. The one visible cost is that a path dependency does not
-re-export its own dependencies' products: the payload splice below needs a
-BER reader, so this manifest declares swift-asn1 directly, at the same
-version range the root manifest uses so SwiftPM resolves a single copy.
+about any of it.
 
 `Package.resolved` here is its own, and pins its own versions — the same
 arrangement as `rust/fuzz/Cargo.lock`. It resolves independently of the root
@@ -83,72 +80,57 @@ with `--force-resolved-versions`, so this package builds the revisions its own
 
 | target | what it reaches | invariant beyond "nothing traps" |
 |---|---|---|
-| `receipt-der` | `ReceiptVerifier.verifyCore`: the BER-tolerant CMS walk, the payload parse, the certificate-bag walk, chain building, the RSA check | an accepted receipt fails against an unrelated anchor set |
-| `receipt-base64` | `ReceiptVerifier.verify(base64Receipt:)` — the receipt-base64 rule, then the whole DER path, then the bundle-id check | the same anchor-set invariant, through the transport form a client sends |
-| `jws` | `verifyTransaction`, `verifyAppTransaction`, `verifyRaw`: segment split, strict base64url, header and payload JSON, `x5c`, marker OIDs, chain at the signed date, ES256 | a JWS `verifyRaw` accepts under the fixture root is refused under Apple's production roots |
-| `endpoint-json` | `VerifyReceiptEndpoint.verifyReceiptJSON` on a request body, through to the response rendering | it never throws, and the answer is always a JSON object with a numeric `status` |
-| `receipt-payload` | the attribute-SET walk and the string/integer/date decoders under it, on every execution | the walk fails only as a `VerificationError` |
-| `readers` | `decodeReceiptBase64`, `base64URLDecode`, `isRepresentableAsCertificateValidationTime` | each reader's own documented rule, restated independently — see below |
+| `receipt-der` | `Verifier.verifyReceipt` on the base64 of the input bytes: the BER-tolerant CMS walk, the unverified creation-date read, the certificate-bag walk, the top-down chain check, the marker OIDs, the signer signature, then the payload parse | an accepted receipt fails against an unrelated anchor set |
+| `receipt-base64` | `Verifier.verifyReceipt(base64:)` on the input text — the receipt-base64 rule, then the whole DER path | the same anchor-set invariant, through the transport form a client sends |
+| `jws` | `Verifier.verifySignedData`: segment split, strict base64url, header and payload JSON under their bounds, `x5c`, chain at the signed date, marker OIDs, ES256 | a JWS accepted under the fixture root is refused under Apple's pinned roots |
+| `endpoint-json` | `Verifier.verifyReceiptEndpoint` on a request body, through to the response rendering | the answer is always a JSON object with a numeric `status` from the 0.7 status table |
+| `receipt-payload` | the payload parser (attribute-SET walk, string/integer/date decoders) and the unverified creation-date read, called directly | a parse failure is `PayloadError`, and the creation-date read agrees with the parsed `receiptCreationDateMs` |
+| `readers` | `decodeReceiptBase64`, `decodeBase64URLStrict` | each reader's own documented rule, restated independently — see below |
 
-Every target also requires that a failure is a `VerificationError`. That is
-not the free assertion it looks like in a language with checked exceptions:
-Swift's `throws` is untyped, so any error from Foundation or a dependency can
-travel out of these entry points, and a caller who wrote
-`catch let error as VerificationError` would not catch it. In Swift the
-"nothing traps" half is worth as much again, because `fatalError`, a
-force-unwrap of `nil`, an out-of-range index and an arithmetic overflow all
-abort the process rather than throw — none of them are catchable, and all of
-them are reachable from a parser handed hostile bytes.
+The verify methods never throw in 0.7, so every verifier target instead
+requires that the answer is never `INTERNAL_ERROR`: input must not be able to
+raise the internal-error alarm, and no target configures the one thing that
+legitimately produces it (an empty root set). In Swift the "nothing traps"
+half is worth as much again, because `fatalError`, a force-unwrap of `nil`,
+an out-of-range index and an arithmetic overflow all abort the process rather
+than throw — none of them are catchable, and all of them are reachable from a
+parser handed hostile bytes.
 
 The anchor-set invariant is what lets a fuzzer find "accepts what it should
 not" rather than only crashes: without it, an input that verifies tells you
 nothing about *why* it verified. The receipt targets anchor on the pinned
-Apple receipt roots plus `fixtures/generated/receipt-root.der`, so the shared
-fixture receipts and the two public Apple receipts get past the chain check
-and the fuzzer can explore what lies beyond it; the unrelated set is the
-fixture *JWS* root — a real anchor from the same generator that signed none
-of them.
+Apple roots (read from the repository's `certs/`) plus
+`fixtures/generated-0.7/receipt-root.der`, so the shared 0.7 fixture receipts
+and the two public Apple receipts get past the chain check and the fuzzer can
+explore what lies beyond it; the unrelated set is the fixture *JWS* root — a
+real anchor from the same generator that signed none of them. The 0.6
+receipts under `fixtures/generated/` stay in the seed set, but their
+intermediates lack the WWDR marker 0.7 requires, so they stop at that check.
 
 ### What `readers` restates
 
-Each of the three internal readers has a documented rule, and the target
-re-derives that rule rather than re-running the implementation:
+Each internal reader has a documented rule, and the target re-derives that
+rule rather than re-running the implementation:
 
 - `decodeReceiptBase64`: an accepted string decodes to exactly as many bytes
   as its data characters encode (four characters carry three bytes; a
   trailing group of two or three carries one or two), so no padding rule can
   drop or invent a byte.
-- `base64URLDecode`: re-encoding an accepted segment's bytes reproduces the
-  segment character for character — the canonicity claim, which is what gives
-  a segment whose last character carries non-zero unused bits somewhere to
-  fail.
-- `isRepresentableAsCertificateValidationTime`: `false` for every instant
-  outside 0001-01-01…9999-12-31, NaN and the infinities included. The input's
-  first eight bytes are read as a raw `Double` bit pattern so the fuzzer can
-  steer at those, not only at instants a date string can spell.
+- `decodeBase64URLStrict`: re-encoding an accepted segment's bytes reproduces
+  the segment character for character — the canonicity claim, which is what
+  gives a segment whose last character carries non-zero unused bits somewhere
+  to fail.
 
-### Reaching the attribute-SET walk
+### Reaching the payload parser
 
-`parseAttributeSet` and the `decodeString` / `decodeInteger` / `decodeDate`
-readers under it are file-private inside `ReceiptVerifier.swift`, so not even
-`@testable` reaches them, and `receipt-der` only stumbles into them once it
-has grown an input into a valid CMS envelope. The `receipt-payload` target
-splices the fuzzer's bytes in as a genuine receipt's payload instead, so
-every execution reaches the walk. That works because of the order inside
-`verifyCore`: the payload is parsed *before* the chain and signature checks,
-deliberately, since chain validity is judged at the receipt's own creation
-date. A spliced receipt can never verify afterwards — the CMS `messageDigest`
-no longer matches the content — but everything the parser decides has already
-happened, on bytes the fuzzer chose. The fixtures are BER with indefinite
-lengths from the CMS SEQUENCE down to that OCTET STRING, so replacing the one
-primitive node needs no ancestor length fixups; `PortDivergenceTests` relies
-on the same property.
-
-It is a target of its own rather than a fourth check inside `readers` because
-reaching the walk costs a certificate-bag walk, a chain build and an RSA
-verification on every execution — none of which it is about, and none of
-which the public API can skip. Sharing an execution with the base64 readers
-would hold those to this target's rate for nothing.
+In 0.7 the full payload parse runs only after the chain and a signer
+signature have verified, so the verifier targets reach it only for inputs
+that verify. `receipt-payload` therefore calls the parser directly, through
+the `@testable` shim in `Sources/FuzzSupport`, and drives the one read that
+does run on unverified bytes — the attribute-12 creation date that picks the
+chain instant — on the same input. The two must agree whenever the set
+parses: both take the first attribute 12, and a disagreement would judge the
+chain at an instant other than the date the caller is handed.
 
 ## Seeds, corpus, crashers
 

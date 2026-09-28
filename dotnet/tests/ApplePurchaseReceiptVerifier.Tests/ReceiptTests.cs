@@ -1,413 +1,213 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Formats.Asn1;
 using System.Numerics;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using ApplePurchaseReceiptVerifier.Internal;
-using ApplePurchaseReceiptVerifier.Receipt;
 using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
-/// <summary>The receipt path's own rules: the attribute grammar and the device binding.</summary>
+/// <summary>The receipt path's own rules: the attribute grammar and what the payload hands out.</summary>
 public class ReceiptTests
 {
-    private static IReadOnlyList<X509Certificate2> Roots() =>
-        new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-root")) };
-
-    [Fact]
-    public void EveryInputFormIsReachableWithAndWithoutTheDeviceGuid()
+    private static ReceiptPayload Verified(byte[] payload)
     {
-        byte[] der = Fixtures.Bytes("receipt");
-        string base64 = Convert.ToBase64String(der);
-        byte[] guid = Convert.FromHexString("112233445566778899aabbccddeeff00");
-
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        Assert.Equal("com.example.app", verifier.Verify(der).BundleId);
-        Assert.Equal("com.example.app", verifier.Verify(der, guid).BundleId);
-        Assert.Equal("com.example.app", verifier.Verify(base64).BundleId);
-        Assert.Equal("com.example.app", verifier.Verify(base64, guid).BundleId);
+        TestPki.ReceiptChain chain = TestPki.SharedReceipt.Value;
+        VerificationResult<ReceiptPayload> result = chain.Verifier().VerifyReceipt(chain.SignBase64(payload));
+        Assert.True(result.Verified, result.Failure?.ToString());
+        return result.Payload;
     }
 
-    [Fact]
-    public void ABase64ReceiptWithLineBreaksIsRefusedAsAppleRefusesIt()
-    {
-        // Apple's verifyReceipt answers 21002 to line-wrapped base64
-        // (measured 2026-09-23), so the same receipt is not accepted here.
-        string wrapped = string.Join(
-            "\n",
-            Chunks(Convert.ToBase64String(Fixtures.Bytes("receipt")), 64));
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => verifier.Verify(wrapped)).Reason);
-    }
-
-    [Fact]
-    public void TheWrongDeviceGuidIsADeviceHashMismatch()
-    {
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        Assert.Equal(
-            VerificationReason.DeviceHashMismatch,
-            Assert.Throws<VerificationException>(
-                () => verifier.Verify(Fixtures.Bytes("receipt"), new byte[16])).Reason);
-    }
-
-    [Fact]
-    public void AReceiptLackingTheDeviceHashAttributesIsADeviceHashMismatch()
-    {
-        (byte[] receipt, X509Certificate2 root) = Mint(new (BigInteger, byte[])[]
-        {
-            (2, TestPki.Utf8("com.example.app")),
-            (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
-        });
-
-        using ReceiptVerifier verifier = new(new[] { root }, "com.example.app");
-        Assert.Equal(
-            VerificationReason.DeviceHashMismatch,
-            Assert.Throws<VerificationException>(() => verifier.Verify(receipt, new byte[16])).Reason);
-    }
-
-    [Fact]
-    public void TheDeviceHashIsSha1OfGuidThenOpaqueValueThenBundleIdBytes()
-    {
-        byte[] guid = { 0xAA, 0xBB, 0xCC, 0xDD };
-        byte[] opaque = { 1, 2, 3, 4, 5, 6, 7, 8 };
-        byte[] bundleIdValue = TestPki.Utf8("com.example.app");
-        byte[] expected;
-        using (SHA1 sha1 = SHA1.Create())
-        {
-            expected = sha1.ComputeHash(guid.Concat(opaque).Concat(bundleIdValue).ToArray());
-        }
-
-        (byte[] receipt, X509Certificate2 root) = Mint(new (BigInteger, byte[])[]
-        {
-            (2, bundleIdValue),
-            (4, opaque),
-            (5, expected),
-            (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
-        });
-
-        using ReceiptVerifier verifier = new(new[] { root }, "com.example.app");
-        Assert.Equal("com.example.app", verifier.Verify(receipt, guid).BundleId);
-    }
-
+    /// <summary>
+    /// The device-hash inputs are handed out as copies: a caller hashing, or
+    /// scribbling on, what it was given cannot change what the next reader of
+    /// the same payload sees.
+    /// </summary>
     [Fact]
     public void ByteFieldsHandedToTheCallerAreCopies()
     {
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        AppReceipt receipt = verifier.Verify(Fixtures.Bytes("receipt"));
+        ReceiptPayload receipt = TestPki.FixtureVerifier("receipt-root")
+            .VerifyReceipt(Fixtures070.ForReceipt("receipt")).Payload!;
 
-        byte[] first = receipt.OpaqueValue!;
-        first[0] ^= 0xFF;
-        Assert.NotEqual(first[0], receipt.OpaqueValue![0]);
+        foreach (System.Func<byte[]?> field in new System.Func<byte[]?>[]
+                 { () => receipt.OpaqueValue, () => receipt.Sha1Hash, () => receipt.BundleIdBytes })
+        {
+            byte[] first = field()!;
+            byte original = first[0];
+            first[0] ^= 0xFF;
+            Assert.Equal(original, field()![0]);
+        }
     }
 
-    [Fact]
-    public void MutatingTheCallersBufferAfterVerificationDoesNotChangeTheReceipt()
-    {
-        byte[] input = (byte[])Fixtures.Bytes("receipt").Clone();
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        AppReceipt receipt = verifier.Verify(input);
-        string bundleId = receipt.BundleId!;
-        byte[] opaque = receipt.OpaqueValue!;
-
-        Array.Clear(input);
-
-        Assert.Equal(bundleId, receipt.BundleId);
-        Assert.Equal(opaque, receipt.OpaqueValue);
-    }
-
+    /// <summary>
+    /// Nothing Apple signed is lost: attribute types the library does not
+    /// model are kept raw, each under its type, every repeat in receipt order.
+    /// </summary>
     [Fact]
     public void UnknownAttributesArePreservedInOrderWithTheirRepeats()
     {
-        (byte[] receipt, X509Certificate2 root) = Mint(new (BigInteger, byte[])[]
+        ReceiptPayload parsed = Verified(TestPki.AttributeSet(new (BigInteger, byte[])[]
         {
             (2, TestPki.Utf8("com.example.app")),
             (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
             (9999, new byte[] { 1, 2, 3 }),
-            (9999, new byte[] { 4, 5 }),
             (31337, new byte[] { 9 }),
-        });
+            (9999, new byte[] { 4, 5 }),
+        }));
 
-        using ReceiptVerifier verifier = new(new[] { root }, "com.example.app");
-        AppReceipt parsed = verifier.Verify(receipt);
-
-        Assert.Equal(new byte[] { 1, 2, 3 }, parsed.UnknownAttributes[9999][0]);
-        Assert.Equal(new byte[] { 4, 5 }, parsed.UnknownAttributes[9999][1]);
-        Assert.Equal(new byte[] { 9 }, parsed.UnknownAttributes[31337][0]);
-    }
-
-    [Fact]
-    public void AnEmptyDateStringMeansTheAttributeIsAbsent()
-    {
-        (byte[] receipt, X509Certificate2 root) = Mint(new (BigInteger, byte[])[]
-        {
-            (2, TestPki.Utf8("com.example.app")),
-            (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
-            (21, TestPki.Ia5(string.Empty)),
-        });
-
-        using ReceiptVerifier verifier = new(new[] { root }, "com.example.app");
-        Assert.Null(verifier.Verify(receipt).ExpirationDate);
-    }
-
-    [Fact]
-    public void DatesAreReadAsUtcRegardlessOfTheOffsetTheyCarry()
-    {
-        (byte[] receipt, X509Certificate2 root) = Mint(new (BigInteger, byte[])[]
-        {
-            (2, TestPki.Utf8("com.example.app")),
-            (12, TestPki.Ia5("2024-08-06T14:00:00+02:00")),
-        });
-
-        using ReceiptVerifier verifier = new(new[] { root }, "com.example.app");
-        AppReceipt parsed = verifier.Verify(receipt);
-        Assert.Equal(new DateTimeOffset(2024, 8, 6, 12, 0, 0, TimeSpan.Zero), parsed.CreationDate);
-        Assert.Equal(TimeSpan.Zero, parsed.CreationDate!.Value.Offset);
-    }
-
-    [Fact]
-    public void AWebOrderLineItemIdWiderThanThirtyTwoBitsIsPreserved()
-    {
-        byte[] inApp = TestPki.AttributeSet(new (BigInteger, byte[])[]
-        {
-            (1702, TestPki.Utf8("com.example.app.pro")),
-            (1711, TestPki.Integer(1_000_000_000_000L)),
-        });
-        (byte[] receipt, X509Certificate2 root) = Mint(new (BigInteger, byte[])[]
-        {
-            (2, TestPki.Utf8("com.example.app")),
-            (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
-            (17, inApp),
-        });
-
-        using ReceiptVerifier verifier = new(new[] { root }, "com.example.app");
-        Assert.Equal(1_000_000_000_000L, verifier.Verify(receipt).InAppPurchases[0].WebOrderLineItemId);
-    }
-
-    [Fact]
-    public void TheLegacyIdAttributesAreDecoded()
-    {
-        AppReceipt receipt = IdsReceipt();
-
-        Assert.Equal(1234567890L, receipt.AppItemId);
-        // 2^63-1: the exact digits are the point. Apple's download_id runs to
-        // eighteen of them, past what a double can hold.
-        Assert.Equal(9223372036854775807L, receipt.DownloadId);
-        Assert.Equal(456789012L, receipt.VersionExternalIdentifier);
-        Assert.Equal(0L, ByProduct(receipt, "com.example.app.coins100").IsTrialPeriod);
-        Assert.Equal(1L, ByProduct(receipt, "com.example.app.vip").IsTrialPeriod);
-    }
-
-    [Fact]
-    public void TheLegacyIdAttributesLeaveTheUnknownAttributeMap()
-    {
-        // Modelled now, so they are gone from the map they all used to land
-        // in — while 9999 stays, proving the map itself still works.
-        AppReceipt receipt = IdsReceipt();
-
-        Assert.False(receipt.UnknownAttributes.ContainsKey(1));
-        Assert.False(receipt.UnknownAttributes.ContainsKey(15));
-        Assert.False(receipt.UnknownAttributes.ContainsKey(16));
-        Assert.True(receipt.UnknownAttributes.ContainsKey(9999));
-        Assert.False(ByProduct(receipt, "com.example.app.vip").UnknownAttributes.ContainsKey(1713));
-    }
-
-    [Fact]
-    public void TheLegacyIdAttributesAreNullWhenTheReceiptDoesNotCarryThem()
-    {
-        // Absent is not zero: the shared sandbox receipt carries none of the
-        // four, and 0 is what Apple sends when it does carry them.
-        using ReceiptVerifier verifier = new(Roots(), "com.example.app");
-        AppReceipt receipt = verifier.Verify(Fixtures.Bytes("receipt"));
-
-        Assert.Null(receipt.AppItemId);
-        Assert.Null(receipt.DownloadId);
-        Assert.Null(receipt.VersionExternalIdentifier);
-        Assert.Null(ByProduct(receipt, "com.example.app.coins100").IsTrialPeriod);
-    }
-
-    [Fact]
-    public void AnIntegerAttributeWiderThanSixtyFourBitsIsRejected()
-    {
-        byte[] inApp = TestPki.AttributeSet(new (BigInteger, byte[])[]
-        {
-            (1702, TestPki.Utf8("com.example.app.pro")),
-            (1701, TestPki.Integer(BigInteger.Pow(2, 100))),
-        });
-
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(
-                () => ReceiptPayload.Parse(TestPki.AttributeSet(new (BigInteger, byte[])[]
-                {
-                    (2, TestPki.Utf8("com.example.app")),
-                    (17, inApp),
-                }))).Reason);
-    }
-
-    [Fact]
-    public void ANegativeIntegerAttributeIsRejected()
-    {
-        byte[] inApp = TestPki.AttributeSet(new (BigInteger, byte[])[] { (1701, TestPki.Integer(-1)) });
-
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(
-                () => ReceiptPayload.Parse(TestPki.AttributeSet(new (BigInteger, byte[])[]
-                {
-                    (2, TestPki.Utf8("com.example.app")),
-                    (17, inApp),
-                }))).Reason);
-    }
-
-    [Fact]
-    public void ADoubleWrappedPayloadIsUnwrappedExactlyOnce()
-    {
-        // The Xcode shape: the attribute set inside an extra OCTET STRING.
-        System.Formats.Asn1.AsnWriter writer = new(System.Formats.Asn1.AsnEncodingRules.DER);
-        writer.WriteOctetString(TestPki.StandardPayload());
-        AppReceipt parsed = ReceiptPayload.Parse(writer.Encode());
-        Assert.Equal("com.example.app", parsed.BundleId);
-
-        System.Formats.Asn1.AsnWriter twice = new(System.Formats.Asn1.AsnEncodingRules.DER);
-        twice.WriteOctetString(writer.Encode());
-        Assert.Throws<VerificationException>(() => ReceiptPayload.Parse(twice.Encode()));
-    }
-
-    [Fact]
-    public void AReceiptSignedWithAnUnsupportedDigestIsRejected()
-    {
-        X509Certificate2 root = TestPki.RsaRoot();
-        X509Certificate2 signer = TestPki.RsaChild(root, "CN=Signer", false, TestPki.LeafOid);
-        byte[] receipt = TestPki.SignReceipt(
-            TestPki.StandardPayload(), signer, new[] { root }, "2.16.840.1.101.3.4.2.3"); // SHA-512
-
-        using ReceiptVerifier verifier = new(new[] { TestPki.Public(root) }, "com.example.app");
-        Assert.Equal(
-            VerificationReason.InvalidReceiptFormat,
-            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
-    }
-
-    [Fact]
-    public void ASha1SignedReceiptIsAccepted()
-    {
-        X509Certificate2 root = TestPki.RsaRoot();
-        X509Certificate2 signer = TestPki.RsaChild(root, "CN=Signer", false, TestPki.LeafOid);
-        byte[] receipt = TestPki.SignReceipt(
-            TestPki.StandardPayload(), signer, new[] { root }, "1.3.14.3.2.26");
-
-        using ReceiptVerifier verifier = new(new[] { TestPki.Public(root) }, "com.example.app");
-        Assert.Equal("com.example.app", verifier.Verify(receipt).BundleId);
-    }
-
-    [Fact]
-    public void AReceiptSignedWithAnEcKeyIsRejected()
-    {
-        X509Certificate2 root = TestPki.EcRoot();
-        X509Certificate2 signer = TestPki.EcChild(root, "CN=Signer", false, TestPki.LeafOid);
-        byte[] receipt = TestPki.SignReceipt(TestPki.StandardPayload(), signer, new[] { root });
-
-        using ReceiptVerifier verifier = new(new[] { TestPki.Public(root) }, "com.example.app");
-        Assert.Equal(
-            VerificationReason.InvalidSignature,
-            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
+        Assert.Equal(2, parsed.UnknownAttributes.Count);
+        Assert.Equal(new[] { new byte[] { 1, 2, 3 }, new byte[] { 4, 5 } }, parsed.UnknownAttributes[9999]);
+        Assert.Equal(new byte[] { 9 }, Assert.Single(parsed.UnknownAttributes[31337]));
+        OrderedMap unknown = (OrderedMap)Json.ParseObject(parsed.ToJson())["unknown_attributes"]!;
+        Assert.Equal(new object?[] { "AQID", "BAU=" }, (List<object?>)unknown["9999"]!);
+        Assert.Equal(new object?[] { "CQ==" }, (List<object?>)unknown["31337"]!);
     }
 
     /// <summary>
-    /// The receipt path checks the marker OID <em>after</em> the chain, so a
-    /// foreign chain reports INVALID_CHAIN and not INVALID_CERTIFICATE_PURPOSE.
-    /// The JWS path is the other way round.
+    /// A date attribute whose string is empty means "not set": the typed field
+    /// is null and nothing is kept raw, so Apple's empty 1712 values leave no
+    /// trace. An empty string that is not a date is the value "".
     /// </summary>
     [Fact]
-    public void AForeignChainWithoutTheMarkerOidReportsTheChainFailure()
+    public void AnEmptyDateStringMeansTheAttributeIsAbsent()
     {
-        X509Certificate2 pinned = TestPki.RsaRoot("CN=Pinned");
-        X509Certificate2 foreign = TestPki.RsaRoot("CN=Foreign");
-        X509Certificate2 signer = TestPki.RsaChild(foreign, "CN=Signer", false);
-        byte[] receipt = TestPki.SignReceipt(TestPki.StandardPayload(), signer, new[] { foreign });
-
-        using ReceiptVerifier verifier = new(new[] { TestPki.Public(pinned) }, "com.example.app");
-        Assert.Equal(
-            VerificationReason.InvalidChain,
-            Assert.Throws<VerificationException>(() => verifier.Verify(receipt)).Reason);
-    }
-
-    [Fact]
-    public void VerifyReceiptCoreSkipsTheBundleIdCheck()
-    {
-        AppReceipt receipt = ReceiptVerifier.VerifyReceiptCore(Fixtures.Bytes("receipt"), Roots());
-        Assert.Equal("com.example.app", receipt.BundleId);
-
-        using ReceiptVerifier verifier = new(Roots(), "com.somebody.else");
-        Assert.Equal(
-            VerificationReason.WrongBundleId,
-            Assert.Throws<VerificationException>(() => verifier.Verify(Fixtures.Bytes("receipt"))).Reason);
-    }
-
-    // --- the genuine public receipts ----------------------------------------
-
-    [Fact]
-    public void TheGenuineSandboxReceiptVerifiesAgainstTheBundledAppleRoots()
-    {
-        using ReceiptVerifier verifier = new(
-            AppleRootCertificates.ReceiptRoots(), "dev.bonzer.weeka.app");
-        AppReceipt receipt = verifier.Verify(Fixtures.Bytes("public-receipt-sandbox-g5"));
-        Assert.Equal("ProductionSandbox", receipt.ReceiptType);
-        Assert.Equal(2, receipt.InAppPurchases.Count);
-    }
-
-    [Fact]
-    public void TheGenuineLegacySha1ReceiptVerifiesAgainstTheBundledAppleRoots()
-    {
-        using ReceiptVerifier verifier = new(
-            AppleRootCertificates.ReceiptRoots(), "com.nutcall.alert");
-        AppReceipt receipt = verifier.Verify(Fixtures.Bytes("public-receipt-sandbox-legacy"));
-        Assert.Equal(187, receipt.InAppPurchases.Count);
-        Assert.All(receipt.InAppPurchases, p => Assert.NotNull(p.ProductId));
-    }
-
-    [Fact]
-    public void AnXcodeSignedReceiptIsNotAppleSigned()
-    {
-        using ReceiptVerifier verifier = new(AppleRootCertificates.ReceiptRoots(), "*");
-        Assert.Equal(
-            VerificationReason.InvalidChain,
-            Assert.Throws<VerificationException>(
-                () => verifier.Verify(Fixtures.Bytes("public-receipt-xcode-with-purchases"))).Reason);
-    }
-
-    private static AppReceipt IdsReceipt()
-    {
-        using ReceiptVerifier verifier = new(
-            new[] { X509CertificateLoader.LoadCertificate(Fixtures.Bytes("receipt-ids-root")) },
-            "com.example.app");
-        return verifier.Verify(Fixtures.Bytes("receipt-ids"));
-    }
-
-    private static InAppPurchase ByProduct(AppReceipt receipt, string productId) =>
-        receipt.InAppPurchases.Single(p => p.ProductId == productId);
-
-    private static IEnumerable<string> Chunks(string value, int size)
-    {
-        for (int i = 0; i < value.Length; i += size)
+        byte[] inApp = TestPki.AttributeSet(new (BigInteger, byte[])[]
         {
-            yield return value.Substring(i, Math.Min(size, value.Length - i));
-        }
+            (1702, TestPki.Utf8("com.example.app.pro")),
+            (1712, TestPki.Ia5(string.Empty)),
+        });
+        ReceiptPayload parsed = Verified(TestPki.AttributeSet(new (BigInteger, byte[])[]
+        {
+            (2, TestPki.Utf8("com.example.app")),
+            (12, TestPki.Ia5("2024-08-06T12:00:00Z")),
+            (19, TestPki.Utf8(string.Empty)),
+            (21, TestPki.Ia5(string.Empty)),
+            (17, inApp),
+        }));
+
+        Assert.Null(parsed.ExpirationDateMs);
+        Assert.Equal(string.Empty, parsed.OriginalApplicationVersion);
+        Assert.Empty(parsed.UnknownAttributes);
+        InAppPurchase purchase = Assert.Single(parsed.InApp);
+        Assert.Null(purchase.CancellationDateMs);
+        Assert.Empty(purchase.UnknownAttributes);
     }
 
-    private static (byte[] Receipt, X509Certificate2 Root) Mint(
-        IEnumerable<(BigInteger Type, byte[] Value)> attributes)
+    /// <summary>
+    /// Xcode receipts wrap the attribute SET in one extra OCTET STRING
+    /// (receipt/accept-double-wrapped-payload); exactly one unwrap is taken,
+    /// so a payload wrapped twice is Apple-signed content that does not parse.
+    /// </summary>
+    [Fact]
+    public void ADoubleWrappedPayloadIsUnwrappedExactlyOnce()
     {
-        X509Certificate2 root = TestPki.RsaRoot();
-        X509Certificate2 intermediate = TestPki.RsaChild(root, "CN=Fake WWDR", true);
-        X509Certificate2 signer = TestPki.RsaChild(
-            intermediate, "CN=Fake Receipt Signing", false, TestPki.LeafOid);
-        byte[] receipt = TestPki.SignReceipt(
-            TestPki.AttributeSet(attributes), signer, new[] { intermediate, root });
-        return (receipt, TestPki.Public(root));
+        AsnWriter once = new(AsnEncodingRules.DER);
+        once.WriteOctetString(TestPki.StandardPayload());
+        Assert.Equal("com.example.app", Verified(once.Encode()).BundleId);
+
+        AsnWriter twice = new(AsnEncodingRules.DER);
+        twice.WriteOctetString(once.Encode());
+        TestPki.ReceiptChain chain = TestPki.SharedReceipt.Value;
+        Assert.Equal(
+            VerificationReason.UnreadablePayload,
+            chain.Verifier().VerifyReceipt(chain.SignBase64(twice.Encode())).Failure?.Reason);
+    }
+
+    /// <summary>
+    /// A payload built by hand is a snapshot: a caller that keeps and later
+    /// changes the arrays, the purchase list or the attribute map it passed
+    /// in cannot change what the payload reports or what ToJson writes.
+    /// </summary>
+    [Fact]
+    public void AHandBuiltPayloadDoesNotChangeWhenItsInputsDo()
+    {
+        byte[] bundleIdBytes = { 0x0c, 0x01, 0x61 };
+        byte[] opaque = { 1, 2 };
+        byte[] sha1 = { 3, 4 };
+        byte[] raw = { 5, 6 };
+        List<byte[]> rawValues = new() { raw };
+        Dictionary<int, IReadOnlyList<byte[]>> purchaseUnknown = new() { [1799] = rawValues };
+        InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, purchaseUnknown);
+        List<InAppPurchase> inApp = new() { purchase };
+        Dictionary<int, IReadOnlyList<byte[]>> unknown = new() { [9999] = new List<byte[]> { raw } };
+        ReceiptPayload payload = new(
+            "Production", null, "a", bundleIdBytes, null, opaque, sha1, null, null, null,
+            inApp, null, null, null, unknown);
+        string before = payload.ToJson();
+
+        bundleIdBytes[0] = 0xff;
+        opaque[0] = 0xff;
+        sha1[0] = 0xff;
+        raw[0] = 0xff;
+        rawValues.Add(new byte[] { 7 });
+        purchaseUnknown[42] = new List<byte[]> { new byte[] { 8 } };
+        inApp.Add(purchase);
+        unknown[1] = new List<byte[]> { new byte[] { 9 } };
+
+        Assert.Equal(before, payload.ToJson());
+        Assert.Equal(new byte[] { 0x0c, 0x01, 0x61 }, payload.BundleIdBytes);
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.UnknownAttributes[9999]));
+        InAppPurchase onlyPurchase = Assert.Single(payload.InApp);
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(onlyPurchase.UnknownAttributes[1799]));
+        Assert.Single(onlyPurchase.UnknownAttributes);
+    }
+
+    /// <summary>
+    /// What a payload hands out cannot be recast and edited in place: the
+    /// purchase list and the attribute collections are read-only wrappers.
+    /// </summary>
+    [Fact]
+    public void AHandBuiltPayloadsCollectionsAreReadOnly()
+    {
+        ReceiptPayload payload = new(
+            null, null, null, null, null, null, null, null, null, null,
+            new List<InAppPurchase>(), null, null, null,
+            new Dictionary<int, IReadOnlyList<byte[]>> { [9999] = new List<byte[]> { new byte[] { 1 } } });
+
+        Assert.False(payload.InApp is List<InAppPurchase> || payload.InApp is InAppPurchase[]);
+        Assert.False(payload.UnknownAttributes is Dictionary<int, IReadOnlyList<byte[]>>);
+        Assert.True(((ICollection<byte[]>)payload.UnknownAttributes[9999]).IsReadOnly);
+    }
+
+    /// <summary>
+    /// A read-only wrapper still hands out the byte arrays inside it, so every
+    /// getter that reaches bytes returns a fresh copy (as the Java port
+    /// does): a caller editing what it read, say to zero it after use, must
+    /// not change the verified payload, what it logs, or the next reader.
+    /// </summary>
+    [Fact]
+    public void EditingWhatAGetterReturnedDoesNotChangeTheNextRead()
+    {
+        Dictionary<int, IReadOnlyList<byte[]>> Attributes() => new() { [9999] = new List<byte[]> { new byte[] { 5, 6 } } };
+        InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, Attributes());
+        ReceiptPayload payload = new(
+            "Production", null, "a", new byte[] { 0x0c, 0x01, 0x61 }, null, new byte[] { 1, 2 }, new byte[] { 3, 4 },
+            null, null, null, new List<InAppPurchase> { purchase }, null, null, null, Attributes());
+        string before = payload.ToJson();
+
+        payload.BundleIdBytes![0] = 0xff;
+        payload.OpaqueValue![0] = 0xff;
+        payload.Sha1Hash![0] = 0xff;
+        payload.UnknownAttributes[9999][0][0] = 0xff;
+        payload.InApp[0].UnknownAttributes[9999][0][0] = 0xff;
+
+        Assert.Equal(new byte[] { 0x0c, 0x01, 0x61 }, payload.BundleIdBytes);
+        Assert.Equal(new byte[] { 1, 2 }, payload.OpaqueValue);
+        Assert.Equal(new byte[] { 3, 4 }, payload.Sha1Hash);
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.UnknownAttributes[9999]));
+        Assert.Equal(new byte[] { 5, 6 }, Assert.Single(payload.InApp[0].UnknownAttributes[9999]));
+        Assert.Equal(before, payload.ToJson());
+    }
+
+    [Fact]
+    public void AHandBuiltPayloadRefusesNullCollections()
+    {
+        Assert.Throws<System.ArgumentNullException>(() => new InAppPurchase(
+            null, null, null, null, null, null, null, null, null, null, null, null!));
+        Assert.Throws<System.ArgumentNullException>(() => new ReceiptPayload(
+            null, null, null, null, null, null, null, null, null, null,
+            null!, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>()));
+        Assert.Throws<System.ArgumentNullException>(() => new ReceiptPayload(
+            null, null, null, null, null, null, null, null, null, null,
+            new List<InAppPurchase> { null! }, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>()));
     }
 }

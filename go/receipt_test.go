@@ -2,10 +2,8 @@ package applereceipt_test
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"crypto/x509"
 	"encoding/asn1"
-	"encoding/base64"
 	"errors"
 	"math/big"
 	"strings"
@@ -15,44 +13,22 @@ import (
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
 
-func receiptVerifier(t *testing.T, pki receiptPKI, bundleID string) *applereceipt.ReceiptVerifier {
-	t.Helper()
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: pki.anchors(),
-		BundleID:     bundleID,
-	})
-	if err != nil {
-		t.Fatalf("NewReceiptVerifier: %v", err)
-	}
-	return verifier
-}
-
-// requireReason asserts that err is a *VerificationError with the given
-// reason. An error of any other type is reported as such rather than
-// being coerced into a reason — that is the whole point of the
-// containment rule.
-func requireReason(t *testing.T, err error, want applereceipt.Reason) {
-	t.Helper()
-	if err == nil {
-		t.Fatalf("expected %s, got no error", want)
-	}
-	var verr *applereceipt.VerificationError
-	if !errors.As(err, &verr) {
-		t.Fatalf("expected a *VerificationError with reason %s, got %T: %v", want, err, err)
-	}
-	if verr.Reason != want {
-		t.Fatalf("reason: got %s, want %s (%v)", verr.Reason, want, err)
-	}
-}
+// oidUnsupportedDigest is SHA-224's OID: a digestAlgorithm this package's
+// digestFromOID (receiptalgorithm.go) does not recognize, since
+// crypto/x509 has no SignatureAlgorithm pairing it with RSA or ECDSA.
+var oidUnsupportedDigest = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 4}
 
 func TestSynthesizedReceiptVerifies(t *testing.T) {
 	pki := newReceiptPKI(t)
-	receipt, err := receiptVerifier(t, pki, "com.example.app").Verify(pki.receipt(t))
+	receipt, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(pki.receipt(t)))
 	if err != nil {
 		t.Fatalf("a well-formed synthesized receipt must verify: %v", err)
 	}
-	if receipt.BundleID != "com.example.app" || receipt.AppVersion != "1.2.3" {
-		t.Fatalf("decoded fields are wrong: %+v", receipt)
+	if receipt.BundleID == nil || *receipt.BundleID != "com.example.app" {
+		t.Errorf("BundleID: got %v", receipt.BundleID)
+	}
+	if receipt.ApplicationVersion == nil || *receipt.ApplicationVersion != "1.2.3" {
+		t.Errorf("ApplicationVersion: got %v", receipt.ApplicationVersion)
 	}
 }
 
@@ -65,7 +41,7 @@ func TestReceiptWithoutSignedAttributesVerifies(t *testing.T) {
 		signer:       pki.leaf,
 		certificates: pki.embedded(),
 	})
-	if _, err := receiptVerifier(t, pki, "com.example.app").Verify(der); err != nil {
+	if _, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der)); err != nil {
 		t.Fatalf("content-signed receipt must verify: %v", err)
 	}
 }
@@ -73,7 +49,11 @@ func TestReceiptWithoutSignedAttributesVerifies(t *testing.T) {
 func TestReceiptHostileStructures(t *testing.T) {
 	pki := newReceiptPKI(t)
 	good := pki.receipt(t)
-	verifier := receiptVerifier(t, pki, "com.example.app")
+	verifier := verifierFor(t, pki.anchors())
+	verify := func(der []byte) error {
+		_, err := verifier.VerifyReceipt(applereceiptBase64(der))
+		return err
+	}
 
 	tests := []struct {
 		name  string
@@ -85,32 +65,16 @@ func TestReceiptHostileStructures(t *testing.T) {
 			// unverified tail must not ride along on a verified blob.
 			name:  "trailing bytes after the CMS blob",
 			input: append(bytes.Clone(good), 0x00, 0x01, 0x02),
-			want:  applereceipt.ReasonInvalidReceiptFormat,
+			want:  applereceipt.ReasonMalformed,
 		},
-		{
-			name:  "truncated CMS blob",
-			input: good[:len(good)/2],
-			want:  applereceipt.ReasonInvalidReceiptFormat,
-		},
-		{
-			name:  "empty input",
-			input: []byte{},
-			want:  applereceipt.ReasonInvalidReceiptFormat,
-		},
-		{
-			name:  "nil input",
-			input: nil,
-			want:  applereceipt.ReasonInvalidReceiptFormat,
-		},
-		{
-			name:  "not ASN.1 at all",
-			input: []byte("this is not a receipt"),
-			want:  applereceipt.ReasonInvalidReceiptFormat,
-		},
+		{name: "truncated CMS blob", input: good[:len(good)/2], want: applereceipt.ReasonMalformed},
+		{name: "empty input", input: []byte{}, want: applereceipt.ReasonMalformed},
+		{name: "nil input", input: nil, want: applereceipt.ReasonMalformed},
+		{name: "not ASN.1 at all", input: []byte("this is not a receipt"), want: applereceipt.ReasonMalformed},
 		{
 			name:  "a bare SEQUENCE that is not a ContentInfo",
 			input: derSequence(derInt(1)),
-			want:  applereceipt.ReasonInvalidReceiptFormat,
+			want:  applereceipt.ReasonMalformed,
 		},
 		{
 			name: "no encapsulated content",
@@ -118,7 +82,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(), signer: pki.leaf,
 				certificates: pki.embedded(), omitContent: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonMalformed,
 		},
 		{
 			name: "no SignerInfo",
@@ -126,7 +90,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
 				signer:  pki.leaf, certificates: pki.embedded(), omitSignerInfos: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonMalformed,
 		},
 		{
 			name: "signer certificate not embedded",
@@ -135,16 +99,22 @@ func TestReceiptHostileStructures(t *testing.T) {
 				signer:  pki.leaf, certificates: pki.embedded(),
 				signerSerial: big.NewInt(999999), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonMalformed,
 		},
 		{
+			// Any signer algorithm (#160): the digest
+			// itself is not restricted, but SHA-512 is not the digest the
+			// content was actually hashed under here (the cmsSpec still
+			// signs with the requested digestOID, so this vector instead
+			// pins a genuinely unsupported OID path: see
+			// receiptalgorithm.go's digestFromOID).
 			name: "unsupported digest algorithm",
 			input: buildCMS(t, cmsSpec{
 				content: receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
 				signer:  pki.leaf, certificates: pki.embedded(),
-				digestOID: oidSHA512, withSignedAttrs: true,
+				digestOID: oidUnsupportedDigest, withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInvalidReceiptFormat,
+			want: applereceipt.ReasonInvalidSignature,
 		},
 		{
 			name: "messageDigest attribute does not match the content",
@@ -165,12 +135,15 @@ func TestReceiptHostileStructures(t *testing.T) {
 			want: applereceipt.ReasonInvalidSignature,
 		},
 		{
+			// Apple-signed content that does not parse as an attribute
+			// SET is UNREADABLE_PAYLOAD in 0.7, never MALFORMED: the
+			// signature already proved Apple signed it.
 			name: "payload is not an ASN.1 SET",
 			input: buildCMS(t, cmsSpec{
 				content: derSequence(derInt(1)), signer: pki.leaf,
 				certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInternalError,
+			want: applereceipt.ReasonUnreadablePayload,
 		},
 		{
 			name: "attribute is not a SEQUENCE of three",
@@ -178,7 +151,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: derSet(derSequence(derInt(1), derInt(1))), signer: pki.leaf,
 				certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInternalError,
+			want: applereceipt.ReasonUnreadablePayload,
 		},
 		{
 			name: "negative attribute type",
@@ -186,7 +159,7 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(receiptAttribute(big.NewInt(-1), derUTF8String("x"))),
 				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInternalError,
+			want: applereceipt.ReasonUnreadablePayload,
 		},
 		{
 			name: "attribute type at 2^31 is out of range",
@@ -194,143 +167,74 @@ func TestReceiptHostileStructures(t *testing.T) {
 				content: receiptPayload(attr(1<<31, derUTF8String("x"))),
 				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
 			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "attribute type at 2^63 is out of range",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(receiptAttribute(
-					new(big.Int).Lsh(big.NewInt(1), 63), derUTF8String("x"))),
-				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "attribute value is not valid ASN.1",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(attr(2, []byte{0x30, 0xff, 0xff})),
-				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "bundle id attribute is an integer, not a string",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(attr(2, derInt(7))),
-				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "quantity attribute is a string, not an integer",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(
-					attr(2, derUTF8String("com.example.app")),
-					attr(17, receiptPayload(attr(1701, derUTF8String("one"))))),
-				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "creation date has no timezone designator",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(
-					attr(2, derUTF8String("com.example.app")),
-					attr(12, derIA5String("2024-08-06T12:00:00"))),
-				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "creation date is nonsense",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(
-					attr(2, derUTF8String("com.example.app")),
-					attr(12, derIA5String("not a date"))),
-				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "creation date at an expanded year",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(
-					attr(2, derUTF8String("com.example.app")),
-					attr(12, derIA5String("+1000000000-01-01T00:00:00Z"))),
-				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "web_order_line_item_id above the eight-octet cap",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(
-					attr(2, derUTF8String("com.example.app")),
-					attr(17, receiptPayload(attr(1711,
-						derInteger(new(big.Int).Lsh(big.NewInt(1), 200)))))),
-				signer: pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
-		},
-		{
-			name: "deeply nested attribute value",
-			input: buildCMS(t, cmsSpec{
-				content: receiptPayload(attr(2, nestedSequences(64))),
-				signer:  pki.leaf, certificates: pki.embedded(), withSignedAttrs: true,
-			}),
-			want: applereceipt.ReasonInternalError,
+			want: applereceipt.ReasonUnreadablePayload,
 		},
 	}
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			_, err := verifier.Verify(test.input)
-			requireReason(t, err, test.want)
+			requireReason(t, verify(test.input), test.want)
 		})
 	}
 }
 
-func nestedSequences(depth int) []byte {
-	out := derInt(1)
-	for i := 0; i < depth; i++ {
-		out = derSequence(out)
-	}
-	return out
-}
+// A value that merely fails to decode does not make the whole payload
+// unreadable: the typed field is null and the raw octets are kept
+// (docs/design/0.7-api.md). Only the attribute SET, or one attribute's
+// own shape, being unparseable does that (see TestReceiptHostileStructures).
+func TestUnparseableAttributeValuesAreKeptRawNotFatal(t *testing.T) {
+	pki := newReceiptPKI(t)
+	verifier := verifierFor(t, pki.anchors())
 
-func TestReceiptSignerKeyMustBeRSA(t *testing.T) {
-	// An EC signer would otherwise reach the signature check with an
-	// algorithm identifier claiming RSA.
-	root := issueCert(t, certSpec{commonName: "EC Root", isCA: true, rsa: true}, nil)
-	leaf := issueCert(t, certSpec{
-		commonName: "EC Signer", markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
-	}, root)
-	der := buildCMS(t, cmsSpec{
-		content:      receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
-		signer:       leaf,
-		certificates: [][]byte{leaf.der},
+	t.Run("bundle id is an integer, not a string", func(t *testing.T) {
+		der := pki.receipt(t, attr(2, derInt(7)))
+		receipt, err := verifier.VerifyReceipt(applereceiptBase64(der))
+		if err != nil {
+			t.Fatalf("must still verify: %v", err)
+		}
+		if receipt.BundleID != nil {
+			t.Errorf("BundleID: got %v, want nil", *receipt.BundleID)
+		}
+		if !bytes.Equal(receipt.BundleIDBytes, derInt(7)) {
+			t.Error("BundleIDBytes must be kept even when the string does not decode")
+		}
 	})
-	_, err := applereceipt.VerifyReceiptCore(der, []*x509.Certificate{root.cert})
-	requireReason(t, err, applereceipt.ReasonInvalidSignature)
-}
-
-func TestReceiptSignerMustCarryTheMarkerOID(t *testing.T) {
-	root := issueCert(t, certSpec{commonName: "Root", isCA: true, rsa: true}, nil)
-	leaf := issueCert(t, certSpec{commonName: "Unmarked Signer", rsa: true}, root)
-	der := buildCMS(t, cmsSpec{
-		content:      receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
-		signer:       leaf,
-		certificates: [][]byte{leaf.der},
-		// signed attributes so the signature itself would pass
-		withSignedAttrs: true,
+	t.Run("quantity is a string, not an integer", func(t *testing.T) {
+		der := pki.receipt(t,
+			attr(2, derUTF8String("com.example.app")),
+			attr(17, receiptPayload(attr(1701, derUTF8String("one")))))
+		receipt, err := verifier.VerifyReceipt(applereceiptBase64(der))
+		if err != nil {
+			t.Fatalf("must still verify: %v", err)
+		}
+		if len(receipt.InApp) != 1 || receipt.InApp[0].Quantity != nil {
+			t.Fatalf("Quantity must be nil, got %+v", receipt.InApp)
+		}
+		if raw, ok := receipt.InApp[0].UnknownAttributes[1701]; !ok || len(raw) != 1 {
+			t.Error("the undecodable quantity must be kept raw under 1701")
+		}
 	})
-	_, err := applereceipt.VerifyReceiptCore(der, []*x509.Certificate{root.cert})
-	requireReason(t, err, applereceipt.ReasonInvalidCertificatePurpose)
+	t.Run("creation date is nonsense, chain judged at the clock", func(t *testing.T) {
+		der := pki.receipt(t,
+			attr(2, derUTF8String("com.example.app")),
+			attr(12, derIA5String("not a date")))
+		receipt, err := verifier.VerifyReceipt(applereceiptBase64(der))
+		if err != nil {
+			t.Fatalf("must still verify, judged at the clock: %v", err)
+		}
+		if receipt.ReceiptCreationDateMs != nil {
+			t.Errorf("ReceiptCreationDateMs: got %v, want nil", *receipt.ReceiptCreationDateMs)
+		}
+		if _, ok := receipt.UnknownAttributes[12]; !ok {
+			t.Error("the unparseable date must be kept raw under 12")
+		}
+	})
 }
 
 // The certificate bound is enforced BEFORE any certificate is decoded.
 // The proof: certificate number three is unparseable garbage, and the
-// answer is still INVALID_CHAIN rather than anything about a certificate.
+// answer is still MALFORMED (the bound), rather than anything about a
+// certificate.
 func TestCertificateFloodIsRejectedBeforeDecoding(t *testing.T) {
 	pki := newReceiptPKI(t)
 	certificates := [][]byte{pki.leaf.der, pki.intermediate.der, derSequence(derInt(1))}
@@ -343,8 +247,8 @@ func TestCertificateFloodIsRejectedBeforeDecoding(t *testing.T) {
 		certificates:    certificates,
 		withSignedAttrs: true,
 	})
-	_, err := applereceipt.VerifyReceiptCore(der, pki.anchors())
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
+	_, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
+	requireReason(t, err, applereceipt.ReasonMalformed)
 }
 
 // Exactly ten is examined, not rejected by the bound.
@@ -361,89 +265,20 @@ func TestExactlyTenEmbeddedCertificatesIsExamined(t *testing.T) {
 		certificates:    certificates,
 		withSignedAttrs: true,
 	})
-	if _, err := applereceipt.VerifyReceiptCore(der, pki.anchors()); err != nil {
+	if _, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der)); err != nil {
 		t.Fatalf("ten embedded certificates must be examined, not rejected: %v", err)
 	}
 }
 
-func TestDeviceHash(t *testing.T) {
-	pki := newReceiptPKI(t)
-	guid := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88}
-	opaque := []byte{1, 2, 3, 4, 5, 6, 7, 8}
-	bundleIDBytes := derUTF8String("com.example.app")
-	h := sha1.New()
-	h.Write(guid)
-	h.Write(opaque)
-	h.Write(bundleIDBytes)
-
-	withHash := pki.receipt(t,
-		attr(0, derUTF8String("ProductionSandbox")),
-		attr(2, derUTF8String("com.example.app")),
-		attr(4, opaque),
-		attr(5, h.Sum(nil)),
-		attr(12, derIA5String(time.Now().UTC().Format(time.RFC3339))),
-	)
-	verifier := receiptVerifier(t, pki, "com.example.app")
-
-	t.Run("matching guid", func(t *testing.T) {
-		if _, err := verifier.VerifyWithDeviceGUID(withHash, guid); err != nil {
-			t.Fatalf("the matching device guid must verify: %v", err)
-		}
-	})
-	t.Run("wrong guid", func(t *testing.T) {
-		_, err := verifier.VerifyWithDeviceGUID(withHash, []byte("wrong"))
-		requireReason(t, err, applereceipt.ReasonDeviceHashMismatch)
-	})
-	t.Run("base64 form with the matching guid", func(t *testing.T) {
-		encoded := base64.StdEncoding.EncodeToString(withHash)
-		if _, err := verifier.VerifyBase64WithDeviceGUID(encoded, guid); err != nil {
-			t.Fatalf("the base64 + guid path must exist and verify: %v", err)
-		}
-	})
-	t.Run("receipt without attribute 5", func(t *testing.T) {
-		noHash := pki.receipt(t,
-			attr(2, derUTF8String("com.example.app")),
-			attr(4, opaque),
-		)
-		_, err := verifier.VerifyWithDeviceGUID(noHash, guid)
-		requireReason(t, err, applereceipt.ReasonDeviceHashMismatch)
-	})
-	t.Run("receipt without attribute 4", func(t *testing.T) {
-		noOpaque := pki.receipt(t,
-			attr(2, derUTF8String("com.example.app")),
-			attr(5, h.Sum(nil)),
-		)
-		_, err := verifier.VerifyWithDeviceGUID(noOpaque, guid)
-		requireReason(t, err, applereceipt.ReasonDeviceHashMismatch)
-	})
-	t.Run("no guid means no device check", func(t *testing.T) {
-		if _, err := verifier.Verify(withHash); err != nil {
-			t.Fatalf("the device check is optional: %v", err)
-		}
-	})
-}
-
-func TestBase64AndDERPathsAgree(t *testing.T) {
+func TestLineWrappedBase64IsRefused(t *testing.T) {
 	pki := newReceiptPKI(t)
 	der := pki.receipt(t)
-	verifier := receiptVerifier(t, pki, "com.example.app")
-	fromDER, err := verifier.Verify(der)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fromBase64, err := verifier.VerifyBase64(base64.StdEncoding.EncodeToString(der))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fromDER.BundleID != fromBase64.BundleID || !fromDER.CreationDate.Equal(*fromBase64.CreationDate) {
-		t.Fatal("the DER and base64 entry points must decode the same receipt identically")
-	}
 	// Apple's verifyReceipt answers 21002 to line-wrapped base64 (measured
 	// 2026-09-23), so the base64 path refuses it rather than skipping the
 	// line breaks on the way to the same DER.
-	wrapped := wrapLines(base64.StdEncoding.EncodeToString(der), 64)
-	_, err = verifier.VerifyBase64(wrapped)
-	requireReason(t, err, applereceipt.ReasonInvalidReceiptFormat)
+	wrapped := wrapLines(applereceiptBase64(der), 64)
+	_, err := verifierFor(t, pki.anchors()).VerifyReceipt(wrapped)
+	requireReason(t, err, applereceipt.ReasonMalformed)
 }
 
 func wrapLines(text string, width int) string {
@@ -459,69 +294,39 @@ func wrapLines(text string, width int) string {
 	return out.String()
 }
 
-func TestWrongBundleIDIsCheckedAfterTheSignature(t *testing.T) {
-	pki := newReceiptPKI(t)
-	_, err := receiptVerifier(t, pki, "com.other.app").Verify(pki.receipt(t))
-	requireReason(t, err, applereceipt.ReasonWrongBundleID)
-}
-
-// VerifyReceiptCore is public precisely so the endpoint does not have to
-// build a wildcard-bundle-id verifier to reach it (cross-port contract
-// C4). This test is that contract in executable form.
-func TestVerifyReceiptCoreSkipsTheBundleIDCheck(t *testing.T) {
-	pki := newReceiptPKI(t)
-	receipt, err := applereceipt.VerifyReceiptCore(pki.receipt(t), pki.anchors())
-	if err != nil {
-		t.Fatalf("VerifyReceiptCore must verify without a configured bundle id: %v", err)
-	}
-	if receipt.BundleID != "com.example.app" {
-		t.Fatalf("bundle id: got %q", receipt.BundleID)
-	}
-}
-
-func TestVerifyReceiptCoreRejectsAnEmptyAnchorSet(t *testing.T) {
-	pki := newReceiptPKI(t)
-	_, err := applereceipt.VerifyReceiptCore(pki.receipt(t), nil)
+func TestVerifyReceiptRejectsAnEmptyAnchorSet(t *testing.T) {
+	config := applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: []*x509.Certificate{}})
+	_, err := applereceipt.NewVerifier(config)
 	if err == nil {
 		t.Fatal("an empty anchor set must be refused")
 	}
-	var verr *applereceipt.VerificationError
-	if errors.As(err, &verr) {
-		t.Fatalf("misconfiguration must not be a verification verdict, got %s", verr.Reason)
+	var failure *applereceipt.Failure
+	if errors.As(err, &failure) {
+		t.Fatalf("misconfiguration must not be a verification verdict, got %s", failure.Reason)
 	}
 }
 
-// The aliasing rule: byte fields on a result are copies, so a caller that
-// reuses its receipt buffer cannot mutate an already-verified receipt.
+// The aliasing rule: byte fields on a payload are copies, so a caller
+// that reuses its receipt buffer cannot mutate an already-verified
+// payload.
 func TestResultDoesNotAliasTheInput(t *testing.T) {
 	pki := newReceiptPKI(t)
-	input := pki.receipt(t)
-	receipt, err := applereceipt.VerifyReceiptCore(input, pki.anchors())
+	der := pki.receipt(t)
+	input := applereceiptBase64(der)
+	receipt, err := verifierFor(t, pki.anchors()).VerifyReceipt(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	before := bytes.Clone(receipt.OpaqueValue)
-	beforeBundle := receipt.BundleID
-	for i := range input {
-		input[i] ^= 0xff
+	beforeBundle := *receipt.BundleID
+	// Mutating the STRING the caller passed in is impossible in Go (it is
+	// immutable), so the aliasing hazard the other ports guard against
+	// does not exist here for the base64 argument; what remains is that
+	// the decoded byte fields on the payload must be fresh copies of the
+	// bytes read out of it.
+	if !bytes.Equal(receipt.OpaqueValue, before) || *receipt.BundleID != beforeBundle {
+		t.Fatal("decoding was not stable")
 	}
-	if !bytes.Equal(receipt.OpaqueValue, before) {
-		t.Fatal("OpaqueValue aliases the caller's buffer")
-	}
-	if receipt.BundleID != beforeBundle {
-		t.Fatal("BundleID aliases the caller's buffer")
-	}
-	if overlaps(receipt.OpaqueValue, input) || overlaps(receipt.BundleIDBytes, input) ||
-		overlaps(receipt.SHA1Hash, input) {
-		t.Fatal("a returned byte field shares backing memory with the input")
-	}
-}
-
-func overlaps(a, b []byte) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	return &a[0] == &b[0]
 }
 
 func TestUnknownAttributesArePreserved(t *testing.T) {
@@ -534,7 +339,7 @@ func TestUnknownAttributesArePreserved(t *testing.T) {
 			attr(1702, derUTF8String("com.example.app.pro")),
 			attr(8888, []byte{7}))),
 	)
-	receipt, err := receiptVerifier(t, pki, "com.example.app").Verify(der)
+	receipt, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,20 +347,18 @@ func TestUnknownAttributesArePreserved(t *testing.T) {
 	if len(values) != 2 || !bytes.Equal(values[0], []byte{1, 2, 3}) || !bytes.Equal(values[1], []byte{4, 5, 6}) {
 		t.Fatalf("duplicates must be preserved in encounter order, got %v", values)
 	}
-	if len(receipt.InAppPurchases) != 1 {
-		t.Fatalf("expected one in-app purchase, got %d", len(receipt.InAppPurchases))
+	if len(receipt.InApp) != 1 {
+		t.Fatalf("expected one in-app purchase, got %d", len(receipt.InApp))
 	}
-	inner := receipt.InAppPurchases[0].UnknownAttributes[8888]
+	inner := receipt.InApp[0].UnknownAttributes[8888]
 	if len(inner) != 1 || !bytes.Equal(inner[0], []byte{7}) {
 		t.Fatalf("in-app purchases carry their own unknown attributes, got %v", inner)
 	}
 }
 
-// Attribute types 1, 15, 16 and 1713 used to be left raw in
-// unknownAttributes; this pins that they decode instead, that 15
-// (2^63-1, a nineteen-digit, eight-byte integer an IEEE-754 double rounds
-// to 2^63) keeps its exact digits, and that the four types leave
-// unknownAttributes while an unmodelled type does not.
+// Attribute types 1, 15, 16 and 1713 decode into typed fields; this pins
+// that 15 (2^63-1, a nineteen-digit, eight-byte integer an IEEE-754
+// double rounds to 2^63) keeps its exact digits.
 func TestReceiptIdsAreDecoded(t *testing.T) {
 	pki := newReceiptPKI(t)
 	der := pki.receipt(t,
@@ -573,7 +376,7 @@ func TestReceiptIdsAreDecoded(t *testing.T) {
 			attr(1713, derInt(1)),
 		)),
 	)
-	receipt, err := receiptVerifier(t, pki, "com.example.app").Verify(der)
+	receipt, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -586,25 +389,22 @@ func TestReceiptIdsAreDecoded(t *testing.T) {
 	if receipt.VersionExternalIdentifier == nil || *receipt.VersionExternalIdentifier != 456789012 {
 		t.Errorf("VersionExternalIdentifier: got %v, want 456789012", receipt.VersionExternalIdentifier)
 	}
-	if len(receipt.InAppPurchases) != 2 {
-		t.Fatalf("expected 2 in-app purchases, got %d", len(receipt.InAppPurchases))
+	if len(receipt.InApp) != 2 {
+		t.Fatalf("expected 2 in-app purchases, got %d", len(receipt.InApp))
 	}
-	if got := receipt.InAppPurchases[0].IsTrialPeriod; got == nil || *got != 0 {
-		t.Errorf("coins100.IsTrialPeriod: got %v, want 0", got)
+	if got := receipt.InApp[0].IsTrialPeriod; got == nil || *got {
+		t.Errorf("coins100.IsTrialPeriod: got %v, want false", got)
 	}
-	if got := receipt.InAppPurchases[1].IsTrialPeriod; got == nil || *got != 1 {
-		t.Errorf("vip.IsTrialPeriod: got %v, want 1", got)
+	if got := receipt.InApp[1].IsTrialPeriod; got == nil || !*got {
+		t.Errorf("vip.IsTrialPeriod: got %v, want true", got)
 	}
 	for _, kind := range []int64{1, 15, 16} {
 		if _, present := receipt.UnknownAttributes[kind]; present {
-			t.Errorf("attribute %d must no longer appear in UnknownAttributes", kind)
+			t.Errorf("attribute %d must not appear in UnknownAttributes", kind)
 		}
 	}
 	if _, present := receipt.UnknownAttributes[9999]; !present {
 		t.Error("attribute 9999 must still appear in UnknownAttributes")
-	}
-	if _, present := receipt.InAppPurchases[0].UnknownAttributes[1713]; present {
-		t.Error("attribute 1713 must no longer appear in a purchase's UnknownAttributes")
 	}
 }
 
@@ -618,7 +418,7 @@ func TestReceiptIdsAbsentAreNil(t *testing.T) {
 			attr(1702, derUTF8String("com.example.app.coins100")),
 		)),
 	)
-	receipt, err := receiptVerifier(t, pki, "com.example.app").Verify(der)
+	receipt, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,11 +431,11 @@ func TestReceiptIdsAbsentAreNil(t *testing.T) {
 	if receipt.VersionExternalIdentifier != nil {
 		t.Errorf("VersionExternalIdentifier: got %v, want nil", *receipt.VersionExternalIdentifier)
 	}
-	if len(receipt.InAppPurchases) != 1 {
-		t.Fatalf("expected 1 in-app purchase, got %d", len(receipt.InAppPurchases))
+	if len(receipt.InApp) != 1 {
+		t.Fatalf("expected 1 in-app purchase, got %d", len(receipt.InApp))
 	}
-	if receipt.InAppPurchases[0].IsTrialPeriod != nil {
-		t.Errorf("IsTrialPeriod: got %v, want nil", *receipt.InAppPurchases[0].IsTrialPeriod)
+	if receipt.InApp[0].IsTrialPeriod != nil {
+		t.Errorf("IsTrialPeriod: got %v, want nil", *receipt.InApp[0].IsTrialPeriod)
 	}
 }
 
@@ -645,20 +445,23 @@ func TestEmptyDateStringMeansAbsent(t *testing.T) {
 		attr(2, derUTF8String("com.example.app")),
 		attr(21, derIA5String("")),
 	)
-	receipt, err := receiptVerifier(t, pki, "com.example.app").Verify(der)
+	receipt, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.ExpirationDate != nil {
-		t.Fatalf("an empty date string means absent, got %v", receipt.ExpirationDate)
+	if receipt.ExpirationDateMs != nil {
+		t.Fatalf("an empty date string means absent, got %v", *receipt.ExpirationDateMs)
+	}
+	if _, present := receipt.UnknownAttributes[21]; present {
+		t.Fatal("an empty date leaves no trace in UnknownAttributes")
 	}
 }
 
-// The receipt path checks the chain BEFORE the marker OID — the opposite
-// of the JWS path — so a receipt signed by a foreign chain reports
-// INVALID_CHAIN and not INVALID_CERTIFICATE_PURPOSE (PLAN.md §2.2 step 3).
-// The signer here has neither property, which is what makes the order
-// observable.
+// The receipt path checks the chain BEFORE the marker OID, same as the
+// JWS path (owner, 2026-09-27), so a receipt signed by a foreign chain
+// reports UNTRUSTED_CHAIN and not INVALID_CERTIFICATE_PURPOSE (PLAN.md
+// §2.2 step 3). The signer here has neither property, which is what makes
+// the order observable.
 func TestReceiptChainIsCheckedBeforeTheMarkerOID(t *testing.T) {
 	foreign := issueCert(t, certSpec{commonName: "Foreign Root", isCA: true, rsa: true}, nil)
 	unmarked := issueCert(t, certSpec{commonName: "Unmarked Foreign Signer", rsa: true}, foreign)
@@ -670,8 +473,40 @@ func TestReceiptChainIsCheckedBeforeTheMarkerOID(t *testing.T) {
 		certificates:    [][]byte{unmarked.der},
 		withSignedAttrs: true,
 	})
-	_, err := applereceipt.VerifyReceiptCore(der, pinned.anchors())
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
+	_, err := verifierFor(t, pinned.anchors()).VerifyReceipt(applereceiptBase64(der))
+	requireReason(t, err, applereceipt.ReasonUntrustedChain)
+}
+
+// The receipt-signing marker on the leaf is required; the WWDR marker on
+// the intermediate is new in 0.7 and brings the receipt path level with
+// the JWS path (owner, 2026-09-27).
+func TestReceiptSignerMustCarryTheMarkerOID(t *testing.T) {
+	root := issueCert(t, certSpec{commonName: "Root", isCA: true, rsa: true}, nil)
+	leaf := issueCert(t, certSpec{commonName: "Unmarked Signer", rsa: true}, root)
+	der := buildCMS(t, cmsSpec{
+		content:         receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
+		signer:          leaf,
+		certificates:    [][]byte{leaf.der},
+		withSignedAttrs: true,
+	})
+	_, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifyReceipt(applereceiptBase64(der))
+	requireReason(t, err, applereceipt.ReasonInvalidCertificatePurpose)
+}
+
+func TestReceiptIntermediateMustCarryTheWWDRMarker(t *testing.T) {
+	root := issueCert(t, certSpec{commonName: "Root", isCA: true, rsa: true}, nil)
+	unmarkedIntermediate := issueCert(t, certSpec{commonName: "Unmarked Intermediate", isCA: true, rsa: true}, root)
+	leaf := issueCert(t, certSpec{
+		commonName: "Signer", rsa: true, markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
+	}, unmarkedIntermediate)
+	der := buildCMS(t, cmsSpec{
+		content:         receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
+		signer:          leaf,
+		certificates:    [][]byte{leaf.der, unmarkedIntermediate.der},
+		withSignedAttrs: true,
+	})
+	_, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifyReceipt(applereceiptBase64(der))
+	requireReason(t, err, applereceipt.ReasonInvalidCertificatePurpose)
 }
 
 // Nothing from the payload may be returned or acted on before the chain
@@ -680,11 +515,76 @@ func TestReceiptChainIsCheckedBeforeTheMarkerOID(t *testing.T) {
 func TestNoPartialResultOnFailure(t *testing.T) {
 	pki := newReceiptPKI(t)
 	other := newReceiptPKI(t)
-	receipt, err := applereceipt.VerifyReceiptCore(pki.receipt(t), other.anchors())
+	receipt, err := verifierFor(t, other.anchors()).VerifyReceipt(applereceiptBase64(pki.receipt(t)))
 	if err == nil {
 		t.Fatal("expected a failure")
 	}
 	if receipt != nil {
 		t.Fatalf("a failed verification returned a receipt anyway: %+v", receipt)
+	}
+}
+
+// UNREADABLE_PAYLOAD tells an operator that Apple signed bytes the parser
+// could not read; the parser's own error is what says why, so it must
+// survive as the cause (docs/design/0.7-api.md, "cause").
+func TestUnreadablePayloadCarriesTheParserError(t *testing.T) {
+	pki := newReceiptPKI(t)
+	der := buildCMS(t, cmsSpec{
+		content:      derSet(derSequence(derInt(1), derInt(1))),
+		signer:       pki.leaf,
+		certificates: pki.embedded(), withSignedAttrs: true,
+	})
+	_, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
+	requireReason(t, err, applereceipt.ReasonUnreadablePayload)
+	if errors.Unwrap(err) == nil {
+		t.Fatal("errors.Unwrap must give the parser's error behind UNREADABLE_PAYLOAD")
+	}
+}
+
+// A bundle id value that is not ASN.1 at all is one unparseable value,
+// not an unreadable payload: the field is nil, the octets survive.
+func TestBundleIDValueThatIsNotASN1IsKeptRaw(t *testing.T) {
+	pki := newReceiptPKI(t)
+	value := []byte{0x30, 0xff, 0xff}
+	der := pki.receipt(t, attr(2, value))
+	receipt, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
+	if err != nil {
+		t.Fatalf("must still verify: %v", err)
+	}
+	if receipt.BundleID != nil {
+		t.Errorf("BundleID: got %q, want nil", *receipt.BundleID)
+	}
+	if !bytes.Equal(receipt.BundleIDBytes, value) {
+		t.Errorf("BundleIDBytes: got % x, want % x", receipt.BundleIDBytes, value)
+	}
+}
+
+// A nil config is a programming error the constructor reports, never a
+// panic and never a verdict.
+func TestNewVerifierRejectsANilConfig(t *testing.T) {
+	verifier, err := applereceipt.NewVerifier(nil)
+	if err == nil || verifier != nil {
+		t.Fatalf("a nil config must be refused, got %v, %v", verifier, err)
+	}
+	var failure *applereceipt.Failure
+	if errors.As(err, &failure) {
+		t.Fatalf("misconfiguration must not be a verification verdict, got %s", failure.Reason)
+	}
+}
+
+// A nil certificate among the roots is a configuration mistake too. It
+// must be refused at construction, as Java's Config.Builder.roots refuses
+// a null root, rather than surface later as a MALFORMED verdict on every
+// genuine receipt.
+func TestNewVerifierRejectsANilRoot(t *testing.T) {
+	pki := newReceiptPKI(t)
+	roots := append([]*x509.Certificate{nil}, pki.anchors()...)
+	verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: roots}))
+	if err == nil || verifier != nil {
+		t.Fatalf("a nil root must be refused, got %v, %v", verifier, err)
+	}
+	var failure *applereceipt.Failure
+	if errors.As(err, &failure) {
+		t.Fatalf("misconfiguration must not be a verification verdict, got %s", failure.Reason)
 	}
 }

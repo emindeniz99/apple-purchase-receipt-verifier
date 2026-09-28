@@ -7,9 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.emindeniz99.applepurchasereceiptverifier.VerificationException.Reason;
-import io.github.emindeniz99.applepurchasereceiptverifier.jws.JwsVerifier;
-import io.github.emindeniz99.applepurchasereceiptverifier.receipt.ReceiptVerifier;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -20,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Sequence;
@@ -39,13 +35,12 @@ import org.junit.jupiter.api.Test;
  * cannot use with an unchecked exception from wherever that is, often inside
  * the path builder or validator. Both verifiers read both right after parsing
  * every certificate, so such a certificate gets the verdict for an unreadable
- * certificate in its position, and never an exception outside
- * {@link VerificationException}. On the JWS path that is INVALID_CERTIFICATE,
+ * certificate in its position, and never an unexpected exception. On the JWS path that is INVALID_CERTIFICATE,
  * as the shared suite pins for {@code transaction/reject-x5c-unimplemented-curve};
  * the JWS case below is the input java-fuzz found. On the receipt path it is
  * INVALID_CERTIFICATE for the signer
  * ({@code receipt/reject-signer-on-an-unimplemented-curve}) and
- * INVALID_RECEIPT_FORMAT for any other entry, exactly as for an entry whose
+ * MALFORMED for any other entry, exactly as for an entry whose
  * X.509 structure does not parse: the bag is unsigned, so what cannot be read
  * there is a defect of the receipt.</p>
  *
@@ -94,38 +89,36 @@ class CertificateDecodeTest {
      */
     @Test
     void aNonSignerCertificateWithAnUnreadableKeyIsIgnored() throws Exception {
-        byte[] genuine = Files.readAllBytes(GENERATED.resolve("receipt.der"));
-        X509Certificate receiptRoot = root("receipt-root.der");
+        byte[] genuine = SyntheticReceipts.der();
+        X509Certificate receiptRoot = SyntheticReceipts.root();
 
         CMSSignedData withBadKey =
                 new CMSSignedData(Files.readAllBytes(GENERATED.resolve("receipt-signer-unimplemented-curve.der")));
         byte[] padded = receiptWithExtraCertificates(
                 genuine, withBadKey.getCertificates().getMatches(null));
 
-        assertNotNull(ReceiptVerifier.verifyReceiptCore(padded, Collections.singleton(receiptRoot)));
+        assertNotNull(Checks.receipt(Checks.verifier(receiptRoot), padded));
     }
 
     @Test
     void aNonSignerCertificateWithAnUnalignedSignatureIsInvalidReceiptFormat() throws Exception {
-        byte[] genuine = Files.readAllBytes(GENERATED.resolve("receipt.der"));
-        X509Certificate receiptRoot = root("receipt-root.der");
+        byte[] genuine = SyntheticReceipts.der();
+        X509Certificate receiptRoot = SyntheticReceipts.root();
         byte[] tampered = receiptWithExtraCertificates(
                 genuine,
                 Collections.singletonList(new X509CertificateHolder(withUnalignedSignature(receiptRoot.getEncoded()))));
 
-        VerificationException e = assertThrows(
-                VerificationException.class,
-                () -> ReceiptVerifier.verifyReceiptCore(tampered, Collections.singleton(receiptRoot)));
-        assertEquals(Reason.INVALID_RECEIPT_FORMAT, e.reason(), e.getMessage());
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(receiptRoot), tampered));
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
     }
 
     @Test
     void anX5cLeafWithAnUnalignedSignatureIsInvalidCertificate() throws Exception {
         String jws =
                 new String(Files.readAllBytes(GENERATED.resolve("transaction.jws")), StandardCharsets.US_ASCII).trim();
-        JwsVerifier verifier = new JwsVerifier(
-                Collections.singleton(root("jws-root.der")), "com.example.app", EnumSet.of(Environment.SANDBOX));
-        assertNotNull(verifier.verifyTransaction(jws));
+        Verifier verifier = Checks.verifier(root("jws-root.der"));
+        assertNotNull(Checks.signedData(verifier, jws));
 
         String[] parts = jws.split("\\.");
         ObjectNode header = (ObjectNode) MAPPER.readTree(Base64.getUrlDecoder().decode(parts[0]));
@@ -135,7 +128,8 @@ class CertificateDecodeTest {
         String tampered = Base64.getUrlEncoder().withoutPadding().encodeToString(MAPPER.writeValueAsBytes(header)) + "."
                 + parts[1] + "." + parts[2];
 
-        VerificationException e = assertThrows(VerificationException.class, () -> verifier.verifyTransaction(tampered));
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.signedData(verifier, tampered));
         assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), e.getMessage());
     }
 }

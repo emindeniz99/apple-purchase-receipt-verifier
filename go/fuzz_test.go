@@ -2,7 +2,6 @@ package applereceipt_test
 
 import (
 	"crypto/x509"
-	"encoding/base64"
 	"errors"
 	"testing"
 
@@ -16,7 +15,7 @@ import (
 // The invariants are the same three everywhere:
 //
 //   - nothing panics;
-//   - a non-nil error is always a *VerificationError;
+//   - a non-nil error is always a *Failure;
 //   - a nil error means the chain actually reached a pinned anchor,
 //     asserted by re-running against a different anchor set and requiring
 //     failure. Without that third one a fuzz target can only find crashes,
@@ -45,23 +44,27 @@ func fuzzFixture(f *testing.F, id string) []byte {
 	return fixtureBytes(f, id)
 }
 
+// FuzzVerifyReceipt fuzzes the receipt-data string every real entry point
+// takes: base64 in, either a genuine seed or whatever the fuzzer mutated
+// it into.
 func FuzzVerifyReceipt(f *testing.F) {
 	for _, seed := range receiptSeeds(f) {
-		f.Add(seed)
+		f.Add(applereceiptBase64(seed))
 	}
-	f.Add([]byte(nil))
-	f.Add([]byte{0x30, 0x80})
+	f.Add("")
+	f.Add("!!!!not base64!!!!")
 
-	roots := applereceipt.AppleReceiptRoots()
+	roots := applereceipt.AppleRoots()
+	verifier := verifierFor(f, roots)
 	// A second, unrelated anchor set, used to prove that an accepted
 	// receipt was accepted because of the anchors and not despite them.
-	other := []*x509.Certificate{fuzzRoot(f)}
+	other := verifierFor(f, []*x509.Certificate{fuzzRoot(f)})
 
-	f.Fuzz(func(t *testing.T, input []byte) {
-		result, err := applereceipt.VerifyReceiptCore(input, roots)
+	f.Fuzz(func(t *testing.T, input string) {
+		result, err := verifier.VerifyReceipt(input)
 		if err != nil {
-			var verr *applereceipt.VerificationError
-			if !errors.As(err, &verr) {
+			var failure *applereceipt.Failure
+			if !errors.As(err, &failure) {
 				t.Fatalf("escaped as %T: %v", err, err)
 			}
 			return
@@ -69,37 +72,14 @@ func FuzzVerifyReceipt(f *testing.F) {
 		if result == nil {
 			t.Fatal("a nil error must come with a receipt")
 		}
-		if _, err := applereceipt.VerifyReceiptCore(input, other); err == nil {
+		if _, err := other.VerifyReceipt(input); err == nil {
 			t.Fatal("this input verifies against an unrelated anchor set too, " +
 				"so the anchors are not being enforced")
 		}
 	})
 }
 
-func FuzzVerifyReceiptBase64(f *testing.F) {
-	for _, seed := range receiptSeeds(f) {
-		f.Add(base64.StdEncoding.EncodeToString(seed))
-	}
-	f.Add("")
-	f.Add("!!!!not base64!!!!")
-
-	verifier, err := applereceipt.NewReceiptVerifier(applereceipt.ReceiptVerifierOptions{
-		TrustedRoots: applereceipt.AppleReceiptRoots(), BundleID: "dev.bonzer.weeka.app",
-	})
-	if err != nil {
-		f.Fatal(err)
-	}
-	f.Fuzz(func(t *testing.T, input string) {
-		if _, err := verifier.VerifyBase64(input); err != nil {
-			var verr *applereceipt.VerificationError
-			if !errors.As(err, &verr) {
-				t.Fatalf("escaped as %T: %v", err, err)
-			}
-		}
-	})
-}
-
-func FuzzVerifyTransaction(f *testing.F) {
+func FuzzVerifySignedData(f *testing.F) {
 	for _, id := range []string{
 		"transaction", "transaction-no-leaf-oid", "transaction-no-intermediate-oid",
 		"app-transaction", "app-transaction-production", "expired-cert-historical",
@@ -113,46 +93,21 @@ func FuzzVerifyTransaction(f *testing.F) {
 	f.Add("a.b.c")
 
 	root := fuzzRoot(f)
-	verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-		TrustedRoots:         []*x509.Certificate{root},
-		BundleID:             "com.example.app",
-		AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-	})
-	if err != nil {
-		f.Fatal(err)
-	}
-	unrelated, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-		TrustedRoots:         applereceipt.AppleJWSRoots(),
-		BundleID:             "com.example.app",
-		AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-	})
-	if err != nil {
-		f.Fatal(err)
-	}
+	verifier := verifierFor(f, []*x509.Certificate{root})
+	unrelated := verifierFor(f, applereceipt.AppleRoots())
 
 	f.Fuzz(func(t *testing.T, input string) {
-		for _, call := range []struct {
-			name string
-			run  func(string) (any, error)
-		}{
-			{"VerifyTransaction", func(s string) (any, error) { return verifier.VerifyTransaction(s) }},
-			{"VerifyAppTransaction", func(s string) (any, error) { return verifier.VerifyAppTransaction(s) }},
-			{"VerifyRaw", func(s string) (any, error) { return verifier.VerifyRaw(s) }},
-		} {
-			_, err := call.run(input)
-			if err == nil {
-				continue
+		_, err := verifier.VerifySignedData(input)
+		if err != nil {
+			var failure *applereceipt.Failure
+			if !errors.As(err, &failure) {
+				t.Fatalf("escaped as %T: %v", err, err)
 			}
-			var verr *applereceipt.VerificationError
-			if !errors.As(err, &verr) {
-				t.Fatalf("%s escaped as %T: %v", call.name, err, err)
-			}
+			return
 		}
-		if _, err := verifier.VerifyRaw(input); err == nil {
-			if _, err := unrelated.VerifyRaw(input); err == nil {
-				t.Fatal("this input verifies against Apple's roots too, " +
-					"so the anchors are not being enforced")
-			}
+		if _, err := unrelated.VerifySignedData(input); err == nil {
+			t.Fatal("this input verifies against Apple's roots too, " +
+				"so the anchors are not being enforced")
 		}
 	})
 }

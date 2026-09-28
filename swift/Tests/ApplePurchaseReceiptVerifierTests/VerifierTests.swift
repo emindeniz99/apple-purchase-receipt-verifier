@@ -5,13 +5,9 @@ import X509
 import XCTest
 @testable import ApplePurchaseReceiptVerifier
 
-/// Behaviour over the shared fixture sets that fixtures/cases.json does not
-/// pin: the tampering negatives, the clock seam itself, and the bundled Apple
-/// roots.
-final class VerifierTests: XCTestCase {
-    static let bundle = "com.example.app"
-
-    static var fixturesDir: URL {
+/// The fixture tree and the verifiers the tests below build from it.
+enum TestFixtures {
+    static var directory: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // ApplePurchaseReceiptVerifierTests
             .deletingLastPathComponent()  // Tests
@@ -20,734 +16,245 @@ final class VerifierTests: XCTestCase {
             .appendingPathComponent("fixtures")
     }
 
-    func fixture(_ segments: String...) throws -> Data {
-        try Data(
-            contentsOf: segments.reduce(Self.fixturesDir) {
-                $0.appendingPathComponent($1)
-            })
+    static func bytes(_ path: String) throws -> [UInt8] {
+        [UInt8](try Data(contentsOf: directory.appendingPathComponent(path)))
     }
 
-    func text(_ segments: String...) throws -> String {
-        String(
-            data: try Data(
-                contentsOf: segments.reduce(Self.fixturesDir) {
-                    $0.appendingPathComponent($1)
-                }), encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// A text fixture without its trailing newline.
+    static func text(_ path: String) throws -> String {
+        String(decoding: try Data(contentsOf: directory.appendingPathComponent(path)), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func jwsVerifier(
-        root: String = "jws-root.der",
-        bundleId: String = VerifierTests.bundle,
-        environments: Set<AppleEnvironment> = [.sandbox],
-        appAppleId: Int64? = nil
-    ) throws -> JwsVerifier {
-        try JwsVerifier(
-            trustedRoots: [try fixture("generated", root)], bundleId: bundleId,
-            acceptedEnvironments: environments, appAppleId: appAppleId)
+    /// A verifier anchored on the DER fixtures at `roots`, reading a fixed
+    /// clock when one is given.
+    static func verifier(roots: [String], clock: Int64? = nil) throws -> ApplePurchaseReceiptVerifier.Verifier {
+        var builder = try Config.builder().roots(roots.map { try bytes($0) })
+        if let clock { builder = builder.clock { clock } }
+        return ApplePurchaseReceiptVerifier.Verifier(config: try builder.build())
     }
 
-    func assertReason<T>(
-        _ reason: VerificationError.Reason,
-        _ body: () async throws -> T
-    ) async {
-        do {
-            _ = try await body()
-            XCTFail("expected \(reason.rawValue) but no error was thrown")
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, reason, error.description)
-        } catch {
-            XCTFail("expected VerificationError, got \(error)")
-        }
-    }
+    /// The generated 0.7 receipt and the root that anchors it. Its bag holds
+    /// signer, WWDR intermediate and root, in that order.
+    static let receipt = "generated-0.7/receipt.der"
+    static let receiptRoot = "generated-0.7/receipt-root.der"
+    static let jws = "generated/transaction.jws"
+    static let jwsRoot = "generated/jws-root.der"
 
-    // MARK: shared fixtures
-
-    func testVerifiesSharedTransactionFixture() async throws {
-        let payload = try await jwsVerifier().verifyTransaction(try text("generated", "transaction.jws"))
-        XCTAssertEqual(Self.bundle, payload.bundleId)
-        XCTAssertNil(payload.revocationDate)
-    }
-
-    // MARK: negatives
-
-    func testRejectsTamperedPayload() async throws {
-        let segments = try text("generated", "transaction.jws").components(separatedBy: ".")
-        var claims =
-            try JSONSerialization.jsonObject(
-                with: base64URLDecode(segments[1])!) as! [String: Any]
-        claims["productId"] = "\(Self.bundle).premium_forever"
-        let forged = try JSONSerialization.data(withJSONObject: claims)
-            .base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        await assertReason(.invalidSignature) {
-            try await self.jwsVerifier().verifyTransaction(
-                "\(segments[0]).\(forged).\(segments[2])")
-        }
-    }
-
-    /// An x5c entry starting with U+FEFF is outside the base64 alphabet and
-    /// must be INVALID_CERTIFICATE, like any other character there. A header
-    /// parsed with `JSONSerialization` loses that leading mark (always on
-    /// Darwin), the genuine leaf decodes, and the answer becomes whatever
-    /// the signature check says; for a header signed in its mutated state,
-    /// that would be a verified JWS. Here the header is not re-signed, so
-    /// the old parse answers INVALID_SIGNATURE and only the reason tells the
-    /// two apart.
-    func testRejectsAnX5cEntryStartingWithAByteOrderMark() async throws {
-        let segments = try text("generated", "transaction.jws").components(separatedBy: ".")
-        var header = String(decoding: try XCTUnwrap(base64URLDecode(segments[0])), as: UTF8.self)
-        let x5c = try XCTUnwrap(header.range(of: "\"x5c\""))
-        let firstEntry = try XCTUnwrap(header.range(of: "\"", range: x5c.upperBound..<header.endIndex))
-        header.insert("\u{FEFF}", at: firstEntry.upperBound)
-        let mutated = Data(header.utf8).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        await assertReason(.invalidCertificate) {
-            try await self.jwsVerifier().verifyTransaction(
-                "\(mutated).\(segments[1]).\(segments[2])")
-        }
-    }
-
-    func testNeverRejectsAPayloadForItsAgeButRejectsGarbage() async throws {
-        // Freshness is the caller's decision (PLAN.md D5): a payload signed in
-        // 2024 still verifies, and its signedDate is there for the caller.
-        let jws = try text("generated", "transaction.jws")
-        let payload = try await jwsVerifier().verifyTransaction(jws)
-        XCTAssertEqual(1_722_945_600_000, payload.signedDate)
-        await assertReason(.invalidJwsFormat) {
-            try await self.jwsVerifier().verifyTransaction("not-a-jws")
-        }
-    }
-
-    func testRejectsTamperedReceiptAndGarbage() async throws {
-        let verifier = try ReceiptVerifier(
-            trustedRoots: [try fixture("generated", "receipt-root.der")], bundleId: Self.bundle)
-        var tampered = try fixture("generated", "receipt.der")
-        let needle = Data(Self.bundle.utf8)
-        let range = tampered.range(of: needle)!
-        tampered[range.lowerBound] ^= 0x01
-        await assertReason(.invalidSignature) {
-            try await verifier.verify(receipt: tampered)
-        }
-
-        await assertReason(.invalidReceiptFormat) {
-            try await verifier.verify(receipt: Data([1, 2, 3, 4]))
-        }
-    }
-
-    // MARK: time
-
-    func testCertificateValidityIsJudgedAtTheSignedDate() async throws {
-        // Chain validity is judged at the payload's signedDate (PLAN.md 2.1
-        // step 4): the historical payload verifies under a chain that has
-        // since expired, and the one signed after it expired does not.
-        let historical = try text("generated", "expired-cert-historical.jws")
-        let freshPayload = try text("generated", "expired-cert-fresh.jws")
-        let payload = try await jwsVerifier(root: "jws-expired-root.der")
-            .verifyTransaction(historical)
-        XCTAssertEqual(1_590_969_600_000, payload.signedDate)
-        await assertReason(.invalidChain) {
-            try await self.jwsVerifier(root: "jws-expired-root.der")
-                .verifyTransaction(freshPayload)
-        }
-    }
-
-    func testBundledAppleRootsAreAllThreePublishedRoots() {
-        // Both sets carry all three published Apple roots (PLAN D15).
-        for roots in [appleJwsRoots(), appleReceiptRoots()] {
-            XCTAssertEqual(3, roots.count)
-            for root in roots {
-                XCTAssertFalse(root.isEmpty)
-            }
-        }
+    /// The `status` of an endpoint response, read as a value: key order in
+    /// the response is free.
+    static func status(_ response: String) -> Int? {
+        (try? JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])?["status"] as? Int
     }
 }
 
-/// verifyReceipt-compat semantics over the shared receipt fixture.
-final class VerifyReceiptEndpointTests: XCTestCase {
-    func fixture(_ segments: String...) throws -> Data {
-        try Data(
-            contentsOf: segments.reduce(VerifierTests.fixturesDir) {
-                $0.appendingPathComponent($1)
-            })
+func base64URL(_ bytes: [UInt8]) -> String {
+    Data(bytes).base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "=", with: "")
+}
+
+/// What the shared cases in fixtures/cases.json do not pin: reader
+/// details a vector file cannot express, the bundled roots, and dependency
+/// regressions that need more than one call to show.
+final class VerifierTests: XCTestCase {
+    /// An x5c entry starting with U+FEFF is outside the base64 alphabet and
+    /// must be INVALID_CERTIFICATE, like any other character there. A header
+    /// parsed by a reader that drops a leading mark from a string value
+    /// (Foundation's `JSONSerialization` does, always on Darwin) decodes the
+    /// genuine leaf behind it, and the answer becomes whatever the signature
+    /// check says; for a header signed in its mutated state, that would be a
+    /// verified JWS. Here the header is not re-signed, so such a reader
+    /// answers INVALID_SIGNATURE and only the reason tells the two apart.
+    func testRejectsAnX5cEntryStartingWithAByteOrderMark() throws {
+        let segments = try TestFixtures.text(TestFixtures.jws).components(separatedBy: ".")
+        var header = String(decoding: try XCTUnwrap(decodeBase64URLStrict(segments[0])), as: UTF8.self)
+        let x5c = try XCTUnwrap(header.range(of: "\"x5c\""))
+        let firstEntry = try XCTUnwrap(header.range(of: "\"", range: x5c.upperBound..<header.endIndex))
+        header.insert("\u{FEFF}", at: firstEntry.upperBound)
+        let jws = "\(base64URL(Array(header.utf8))).\(segments[1]).\(segments[2])"
+        let result = try TestFixtures.verifier(roots: [TestFixtures.jwsRoot]).verifySignedData(jws: jws)
+        XCTAssertEqual(result.failure?.reason, .invalidCertificate, result.failure?.message ?? "verified")
     }
 
-    func endpoint(_ environment: AppleEnvironment) throws -> VerifyReceiptEndpoint {
-        try VerifyReceiptEndpoint(
-            trustedRoots: [try fixture("generated", "receipt-root.der")],
-            environment: environment)
+    /// An `x5c[1]` whose 262,144-bit RSA key BoringSSL refuses, under a root
+    /// nobody pinned (the top-down walk, #161). The
+    /// shared case `signed-data/reject-untrusted-oversized-x5c` pins the
+    /// verdict, UNTRUSTED_CHAIN; this pins why it is that verdict. Building
+    /// the certificate decodes its key and fails, so the answer could only
+    /// have been INVALID_CERTIFICATE had the key been decoded: its slices are
+    /// all the chain check read, and no pinned root verified them.
+    func testAnUntrustedX5cIntermediateIsNeverBuilt() throws {
+        let jws = try TestFixtures.text("generated-0.7/jws-untrusted-oversized-x5c.jws")
+        let header = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(XCTUnwrap(decodeBase64URLStrict(jws.components(separatedBy: ".")[0])))) as? [String: Any])
+        let x5c = try XCTUnwrap(header["x5c"] as? [String])
+        let intermediate = try sliceX5cCertificate(x5c[1])
+        XCTAssertNil(try? Certificate(derEncoded: intermediate.der), "the premise: building it decodes a refused key")
+        let roots = try Config.builder().roots([try TestFixtures.bytes("generated-0.7/hardening-jws-root.der")]).build()
+        XCTAssertFalse(roots.roots.contains { signatureVerifies(intermediate, by: $0) })
+        let result = ApplePurchaseReceiptVerifier.Verifier(config: roots).verifySignedData(jws: jws)
+        XCTAssertEqual(result.failure?.reason, .untrustedChain)
     }
 
-    func request() throws -> [String: Any] {
-        ["receipt-data": try fixture("generated", "receipt.der").base64EncodedString()]
-    }
-
-    func testAnswersLikeVerifyReceiptForValidSandboxReceipt() async throws {
-        let response = await (try endpoint(.sandbox)).verifyReceiptResult(try request()).response()
-        XCTAssertEqual(response["status"] as? Int, 0)
-        let receipt = response["receipt"] as! [String: Any]
-        let inApp = receipt["in_app"] as! [[String: Any]]
-        XCTAssertEqual(inApp[0]["quantity"] as? String, "1")
-        XCTAssertEqual(inApp[0]["web_order_line_item_id"] as? String, "42")
-        XCTAssertNotNil(receipt["request_date"])
-        XCTAssertNotNil(receipt["request_date_ms"])
-        XCTAssertNotNil(receipt["request_date_pst"])
-        let coins = inApp.first { ($0["product_id"] as? String) == "com.example.app.coins100" }!
-        XCTAssertNotNil(coins["purchase_date"])
-        XCTAssertNotNil(coins["purchase_date_ms"])
-        XCTAssertNotNil(coins["purchase_date_pst"])
-        let vip = inApp.first { ($0["product_id"] as? String) == "com.example.app.vip" }!
-        XCTAssertNotNil(vip["expires_date_ms"])
-        XCTAssertNotNil(vip["expires_date_pst"])
-    }
-
-    /// `request_date` is the response's one wall-clock field — Apple stamps
-    /// it with the time the request was served, so the clock drives it. It
-    /// moves no verdict.
-    func testInjectedClockStampsRequestDateAndMovesNoVerdict() async throws {
-        let now = Date(timeIntervalSince1970: 1_735_689_600)  // 2025-01-01T00:00:00Z
-        let pinned = try VerifyReceiptEndpoint(
-            trustedRoots: [try fixture("generated", "receipt-root.der")],
-            environment: .sandbox,
-            clock: { now })
-        let response = await pinned.verifyReceiptResult(try request()).response()
-        let receipt = response["receipt"] as! [String: Any]
-        XCTAssertEqual(receipt["request_date_ms"] as? String, "1735689600000")
-        XCTAssertEqual(receipt["request_date"] as? String, "2025-01-01 00:00:00 Etc/GMT")
-
-        // Same request through the default (system-clock) endpoint: identical
-        // status and identical verified fields, only request_date differs.
-        let live = await (try endpoint(.sandbox)).verifyReceiptResult(try request()).response()
-        XCTAssertEqual(response["status"] as? Int, live["status"] as? Int)
-        let liveReceipt = live["receipt"] as! [String: Any]
-        XCTAssertNotEqual(
-            liveReceipt["request_date_ms"] as? String,
-            receipt["request_date_ms"] as? String)
-        // Compared as sorted-key JSON: Swift dictionaries have no order, so
-        // describing them would compare orderings rather than content.
-        func withoutRequestDate(_ json: [String: Any]) throws -> String {
-            let kept = json.filter { !$0.key.hasPrefix("request_date") }
-            return String(
-                decoding: try JSONSerialization.data(
-                    withJSONObject: kept,
-                    options: [.sortedKeys]),
-                as: UTF8.self)
+    /// `Config.defaults()` carries all three published Apple roots (PLAN
+    /// D15): Apple's guidance is to trust every root on its PKI page, and a
+    /// chain re-anchored on the one a trimmed set left out would fail closed,
+    /// silently, in production.
+    func testTheDefaultsCarryAllThreePublishedAppleRoots() throws {
+        let roots = Config.defaults().roots
+        XCTAssertEqual(roots.count, 3)
+        let fromCerts = try ["AppleIncRootCertificate.cer", "AppleRootCA-G2.cer", "AppleRootCA-G3.cer"].map {
+            try Certificate(
+                derEncoded: [UInt8](
+                    Data(
+                        contentsOf: TestFixtures.directory
+                            .deletingLastPathComponent().appendingPathComponent("certs").appendingPathComponent($0))))
         }
+        XCTAssertEqual(Set(roots.map(\.subject.description)), Set(fromCerts.map(\.subject.description)))
+        for root in fromCerts {
+            XCTAssertTrue(roots.contains(root), "\(root.subject) is not among the defaults")
+        }
+    }
+
+    /// One byte of the signer certificate's modulus, made even. The DER stays
+    /// well formed so swift-asn1 passes it through to BoringSSL, which
+    /// rejects the key — and swift-crypto before 4.5.1 freed the EVP_PKEY in
+    /// its catch block and again in deinit, corrupting the heap and aborting
+    /// the process before any chain or signature check. This test crashes the
+    /// whole runner rather than failing if that floor is ever lowered, which
+    /// is the loudest signal available for a double free.
+    ///
+    /// Repeated because a double free does not abort every time: a single
+    /// call returns cleanly often enough that a one-shot test reports success
+    /// against a vulnerable dependency (0.6 measured it: with the floor
+    /// lowered to swift-crypto 3.15.1 the one-shot version passed and this
+    /// one killed the runner with signal 5). The shared case
+    /// `receipt/reject-signer-on-an-unimplemented-curve` pins the verdict for
+    /// an unusable signer key once; this pins the absence of the double free.
+    func testASignerWhoseRsaKeyBoringSSLRefusesIsAVerdictNotACrash() throws {
+        var mutated = try TestFixtures.bytes(TestFixtures.receipt)
+        XCTAssertEqual(mutated[1121], 0x89, "fixture layout changed; re-locate the signer's last modulus byte")
+        XCTAssertEqual(Array(mutated[1122..<1127]), [0x02, 0x03, 0x01, 0x00, 0x01], "the exponent follows it")
+        mutated[1121] = 0x00
+        let base64 = standardBase64Encode(mutated)
+        let verifier = try TestFixtures.verifier(roots: [TestFixtures.receiptRoot])
+        for _ in 0..<200 {
+            let result = verifier.verifyReceipt(base64: base64)
+            XCTAssertEqual(result.failure?.reason, .invalidCertificate)
+        }
+    }
+
+    /// A SEQUENCE holding only the SignedData OID, the input that used to be
+    /// an uncatchable out-of-range trap in the CMS walk: MALFORMED, and 21002
+    /// at the endpoint.
+    func testATruncatedContentInfoIsMalformedNotATrap() throws {
+        let truncated: [UInt8] = [0x30, 0x0B, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02]
+        let verifier = try TestFixtures.verifier(roots: [TestFixtures.receiptRoot])
+        let base64 = standardBase64Encode(truncated)
+        XCTAssertEqual(verifier.verifyReceipt(base64: base64).failure?.reason, .malformed)
         XCTAssertEqual(
-            try withoutRequestDate(liveReceipt), try withoutRequestDate(receipt),
-            "a verified field moved with the clock")
+            verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: #"{"receipt-data":"\#(base64)"}"#),
+            #"{"status":21002}"#)
+    }
+}
+
+/// verifyReceipt-compatible answers the shared endpoint cases do not spell
+/// out.
+final class VerifyReceiptEndpointTests: XCTestCase {
+    func verifier() throws -> ApplePurchaseReceiptVerifier.Verifier {
+        try TestFixtures.verifier(roots: [TestFixtures.receiptRoot])
     }
 
-    func testReportsMalformedRequestsAs21002() async throws {
-        let endpoint = try endpoint(.sandbox)
-        let empty = await endpoint.verifyReceiptResult([:]).response()
-        XCTAssertEqual(empty["status"] as? Int, 21002)
-        let missing = await endpoint.verifyReceiptResult(nil).response()
-        XCTAssertEqual(missing["status"] as? Int, 21002)
-        let garbage = await endpoint.verifyReceiptResult(["receipt-data": "AQIDBA=="]).response()
-        XCTAssertEqual(garbage["status"] as? Int, 21002)
+    func receiptBase64() throws -> String {
+        standardBase64Encode(try TestFixtures.bytes(TestFixtures.receipt))
     }
 
-    func requestJSON() throws -> String {
-        let base64 = try fixture("generated", "receipt.der").base64EncodedString()
-        return "{\"receipt-data\":\"\(base64)\"}"
-    }
-
-    /// request_date is "now": two calls legitimately disagree on it.
-    func withoutRequestDate(_ response: [String: Any]) -> [String: Any] {
-        var copy = response
-        if var receipt = copy["receipt"] as? [String: Any] {
-            for key in ["request_date", "request_date_ms", "request_date_pst"] {
-                receipt.removeValue(forKey: key)
-            }
-            copy["receipt"] = receipt
-        }
-        return copy
-    }
-
-    func testVerifyReceiptJSONPinsTheWireTypes() async throws {
-        let body = await (try endpoint(.sandbox)).verifyReceiptJSON(try requestJSON())
-        // Raw bytes, not just the parse: status is a JSON number and every
-        // number-shaped receipt field is a JSON string, as Apple sends them.
-        XCTAssertTrue(body.contains("\"status\":0"), body)
-        XCTAssertTrue(body.contains("\"quantity\":\"1\""), body)
-        XCTAssertTrue(body.contains("\"web_order_line_item_id\":\"42\""), body)
-        let parsed = try XCTUnwrap(
-            try JSONSerialization.jsonObject(
-                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
-        XCTAssertTrue(parsed["status"] is NSNumber)
-        XCTAssertEqual(parsed["environment"] as? String, "Sandbox")
-        let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
-        XCTAssertTrue(receipt["receipt_creation_date_ms"] is String)
-        XCTAssertTrue(receipt["request_date_ms"] is String)
-        for purchase in try XCTUnwrap(receipt["in_app"] as? [[String: Any]]) {
-            XCTAssertTrue(purchase["quantity"] is String)
-            XCTAssertTrue(purchase["web_order_line_item_id"] is String)
-            XCTAssertTrue(purchase["purchase_date_ms"] is String)
-        }
-    }
-
-    func testVerifyReceiptJSONRendersIsInIntroOfferPeriodAsAString() async throws {
-        let receiptData = try String(
-            contentsOf: VerifierTests.fixturesDir
-                .appendingPathComponent("public-receipts")
-                .appendingPathComponent("receipt-sandbox-g5.b64"),
-            encoding: .utf8
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
-        let endpoint = try VerifyReceiptEndpoint(
-            trustedRoots: appleReceiptRoots(), environment: .sandbox)
-        let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(receiptData)\"}")
-        XCTAssertTrue(body.contains("\"is_in_intro_offer_period\":\"false\""), body)
-        let parsed = try XCTUnwrap(
-            try JSONSerialization.jsonObject(
-                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+    /// Apple sends `is_in_intro_offer_period` as the string "true" or
+    /// "false", not a JSON boolean; a client decoding Apple's response type
+    /// breaks on a boolean. The shared endpoint cases pin `is_trial_period`
+    /// this way but not this key.
+    func testRendersIsInIntroOfferPeriodAsAString() throws {
+        let receiptData = try TestFixtures.text("public-receipts/receipt-sandbox-g5.b64")
+        let verifier = ApplePurchaseReceiptVerifier.Verifier(config: .defaults())
+        let body = verifier.verifyReceiptEndpoint(
+            environment: .sandbox, requestJson: #"{"receipt-data":"\#(receiptData)"}"#)
+        XCTAssertTrue(body.contains(#""is_in_intro_offer_period":"false""#), body)
+        let parsed = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
         let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
         let purchases = try XCTUnwrap(receipt["in_app"] as? [[String: Any]])
         XCTAssertFalse(purchases.isEmpty)
         for purchase in purchases {
-            XCTAssertTrue(purchase["is_in_intro_offer_period"] is String)
+            XCTAssertTrue(purchase["is_in_intro_offer_period"] is String, purchase.description)
         }
     }
 
-    func testVerifyReceiptJSONOmitsReceiptAndEnvironmentOnNonZeroStatus() async throws {
-        let body = await (try endpoint(.production)).verifyReceiptJSON(try requestJSON())
-        XCTAssertEqual(body, "{\"status\":21007}")
-    }
-
-    func testVerifyReceiptJSONAnswers21002ForABodyThatIsNotAnObject() async throws {
-        let endpoint = try endpoint(.sandbox)
-        for body in [
-            "", "not json", "{", "[]", "[{\"receipt-data\":\"x\"}]",
-            "null", "3", "\"receipt\"", "true",
-        ] {
-            let response = await endpoint.verifyReceiptJSON(body)
-            XCTAssertEqual(response, "{\"status\":21002}", body)
+    /// Bodies that are not a JSON object at all, beyond the array, null and
+    /// scalar the shared cases carry: empty, not JSON, truncated, and an
+    /// object wrapped in an array. Each is a client error, 21002, and never
+    /// an answer about a receipt.
+    func testAnswers21002ForABodyThatIsNotAnObject() throws {
+        let verifier = try verifier()
+        for body in ["", "not json", "{", "[{\"receipt-data\":\"x\"}]", "\"receipt\"", "true"] {
+            XCTAssertEqual(
+                verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: body), #"{"status":21002}"#, body)
         }
     }
 
     /// Apple answers 21002 to a receipt-data string that starts with a
     /// byte-order mark (docs/evidence/2026-09-23-verifyreceipt-base64.md).
-    /// `JSONSerialization` drops that mark from a string value (always on
-    /// Darwin, and on Linux with the Swift 6.3 toolchain), which let the
-    /// genuine base64 behind it verify. The escaped spelling is the same
-    /// string once parsed, so it must get the same answer.
-    func testVerifyReceiptJSONRefusesReceiptDataStartingWithAByteOrderMark() async throws {
-        let endpoint = try endpoint(.sandbox)
-        let base64 = try fixture("generated", "receipt.der").base64EncodedString()
-        for mark in ["\u{FEFF}", "\\ufeff", "\\uFEFF"] {
-            let result = await endpoint.verifyReceiptResult("{\"receipt-data\":\"\(mark)\(base64)\"}")
-            XCTAssertEqual(result.status, 21002, mark)
-            XCTAssertEqual(result.failureReason, .invalidReceiptFormat, mark)
-        }
-    }
-
-    /// Two `receipt-data` keys: the endpoint reads the FIRST, as
-    /// `JSONDecoder` does. Apple reads the last (measured 2026-09-23), and so
-    /// did this port while it parsed with `JSONSerialization`; no shared case
-    /// pins either, and a body with a duplicate key is not one a genuine
-    /// client sends. Pinned so a change of parser shows up here.
-    func testVerifyReceiptJSONReadsTheFirstOfTwoReceiptDataKeys() async throws {
-        let endpoint = try endpoint(.sandbox)
-        let base64 = try fixture("generated", "receipt.der").base64EncodedString()
-        let genuineFirst = await endpoint.verifyReceiptResult(
-            "{\"receipt-data\":\"\(base64)\",\"receipt-data\":\"AQIDBA==\"}")
-        XCTAssertEqual(genuineFirst.status, 0)
-        let genuineLast = await endpoint.verifyReceiptResult(
-            "{\"receipt-data\":\"AQIDBA==\",\"receipt-data\":\"\(base64)\"}")
-        XCTAssertEqual(genuineLast.status, 21002)
-        XCTAssertEqual(genuineLast.failureReason, .invalidReceiptFormat)
-        let wrongTypeFirst = await endpoint.verifyReceiptResult(
-            "{\"receipt-data\":3,\"receipt-data\":\"\(base64)\"}")
-        XCTAssertEqual(wrongTypeFirst.status, 21002)
-        XCTAssertEqual(wrongTypeFirst.failureReason, .malformedRequest)
-    }
-
-    /// The decode reads one field and ignores the rest, whatever they hold.
-    func testVerifyReceiptJSONIgnoresUnknownFieldsAndRefusesAWrongTypedReceiptData() async throws {
-        let endpoint = try endpoint(.sandbox)
-        let base64 = try fixture("generated", "receipt.der").base64EncodedString()
-        let extra = await endpoint.verifyReceiptResult(
-            "{\"password\":\"s\",\"exclude-old-transactions\":true,\"x\":{\"y\":[1,null]},\"receipt-data\":\"\(base64)\"}")
-        XCTAssertEqual(extra.status, 0)
-        for value in ["3", "[]", "{}", "true"] {
-            let result = await endpoint.verifyReceiptResult("{\"receipt-data\":\(value)}")
-            XCTAssertEqual(result.status, 21002, value)
-            XCTAssertEqual(result.failureReason, .malformedRequest, value)
-        }
-        for body in ["{\"receipt-data\":null}", "{}"] {
-            let result = await endpoint.verifyReceiptResult(body)
-            XCTAssertEqual(result.status, 21002, body)
-            XCTAssertEqual(result.failureReason, .malformedRequest, body)
-        }
-    }
-
-    func testVerifyReceiptJSONMatchesTheDictionaryApi() async throws {
-        let endpoint = try endpoint(.sandbox)
-        let viaDictionary = await endpoint.verifyReceiptResult(try request()).response()
-        let body = await endpoint.verifyReceiptJSON(try requestJSON())
-        let viaJSON = try XCTUnwrap(
-            try JSONSerialization.jsonObject(
-                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
+    /// The shared case writes the mark as raw UTF-8; a JSON escape is the same
+    /// string once parsed, so both escaped spellings must get the same
+    /// answer. A reader that drops the mark (Foundation's does) lets the
+    /// genuine base64 behind it verify.
+    func testRefusesReceiptDataStartingWithAnEscapedByteOrderMark() throws {
+        let verifier = try verifier()
+        let base64 = try receiptBase64()
         XCTAssertEqual(
-            withoutRequestDate(viaJSON) as NSDictionary,
-            withoutRequestDate(viaDictionary) as NSDictionary)
-    }
-}
-
-/// Attribute types 1, 15, 16 and 1713 — the four that used to reach callers
-/// only as raw bytes in `unknownAttributes`. None of them is on Apple's
-/// archived Receipt Fields chapter; their meaning was established by lining a
-/// genuine production receipt's attributes up against the answer Apple's
-/// verifyReceipt endpoint gives for the same receipt (measured 2026-09-21).
-/// fixtures/generated/receipt-ids.der carries all four, and its download id is
-/// 2^63-1 — a nineteen-digit, eight-byte integer an IEEE-754 double rounds
-/// to 2^63, which is what makes the exact digits below an assertion rather
-/// than a formality.
-final class ReceiptIdAttributesTests: XCTestCase {
-    static let downloadId: Int64 = 9_223_372_036_854_775_807  // 2^63 - 1
-
-    func fixture(_ name: String) throws -> Data {
-        try Data(
-            contentsOf: VerifierTests.fixturesDir
-                .appendingPathComponent("generated")
-                .appendingPathComponent(name))
-    }
-
-    func receiptWithIds() async throws -> AppReceipt {
-        try await ReceiptVerifier(
-            trustedRoots: [try fixture("receipt-ids-root.der")],
-            bundleId: "com.example.app"
-        ).verify(receipt: try fixture("receipt-ids.der"))
-    }
-
-    func sandboxReceipt() async throws -> AppReceipt {
-        try await ReceiptVerifier(
-            trustedRoots: [try fixture("receipt-root.der")],
-            bundleId: "com.example.app"
-        ).verify(receipt: try fixture("receipt.der"))
-    }
-
-    func testDecodesTheFourAttributes() async throws {
-        let receipt = try await receiptWithIds()
-        XCTAssertEqual(1_234_567_890, receipt.appItemId)
-        XCTAssertEqual(Self.downloadId, receipt.downloadId)
-        // Spelled again as digits, because `9_223_372_036_854_775_807` typed as
-        // a Double would round to the value one below it: the literal above
-        // is the assertion only while it stays an Int64.
-        XCTAssertEqual("9223372036854775807", receipt.downloadId.map(String.init))
-        XCTAssertEqual(456_789_012, receipt.versionExternalIdentifier)
-
-        let coins = try XCTUnwrap(
-            receipt.inAppPurchases.first { $0.productId == "com.example.app.coins100" })
-        let vip = try XCTUnwrap(
-            receipt.inAppPurchases.first { $0.productId == "com.example.app.vip" })
-        XCTAssertEqual(0, coins.isTrialPeriod)
-        XCTAssertEqual(1, vip.isTrialPeriod)
-        // The neighbouring integer attribute still decodes as it did.
-        XCTAssertEqual(42, coins.webOrderLineItemId)
-    }
-
-    func testReportsTheFourAttributesAbsentWhenTheReceiptCarriesNone() async throws {
-        let receipt = try await sandboxReceipt()
-        XCTAssertNil(receipt.appItemId)
-        XCTAssertNil(receipt.downloadId)
-        XCTAssertNil(receipt.versionExternalIdentifier)
-        XCTAssertFalse(receipt.inAppPurchases.isEmpty)
-        for purchase in receipt.inAppPurchases {
-            XCTAssertNil(purchase.isTrialPeriod, purchase.productId ?? "")
-        }
-    }
-
-    /// The four leave `unknownAttributes` — that is what modelling them means —
-    /// while a type the library still does not model stays there.
-    func testTheFourAttributesLeaveTheUnknownMapAnd9999Stays() async throws {
-        let receipt = try await receiptWithIds()
-        for type in [1, 15, 16] {
-            XCTAssertNil(receipt.unknownAttributes[type], "app-level attribute \(type)")
-        }
-        XCTAssertNotNil(receipt.unknownAttributes[9999], "the unmodelled attribute must stay")
-        for purchase in receipt.inAppPurchases {
-            XCTAssertNil(purchase.unknownAttributes[1713], purchase.productId ?? "")
-        }
-    }
-
-    /// The endpoint's wire types: the three ids are bare JSON numbers with
-    /// exact digits (not strings, not a rounded double), and 1713 is the
-    /// string "true"/"false" like 1719.
-    func testEndpointJSONEchoesApplesKeysWithExactDigits() async throws {
-        let endpoint = try VerifyReceiptEndpoint(
-            trustedRoots: [try fixture("receipt-ids-root.der")], environment: .production)
-        let base64 = try fixture("receipt-ids.der").base64EncodedString()
-        let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(base64)\"}")
-        XCTAssertTrue(body.contains("\"download_id\":9223372036854775807"), body)
-        XCTAssertFalse(body.contains("9223372036854775808"), "the download id was rounded: \(body)")
-        XCTAssertTrue(body.contains("\"adam_id\":1234567890"), body)
-        XCTAssertTrue(body.contains("\"app_item_id\":1234567890"), body)
-        XCTAssertTrue(body.contains("\"version_external_identifier\":456789012"), body)
-        XCTAssertTrue(body.contains("\"is_trial_period\":\"false\""), body)
-        XCTAssertTrue(body.contains("\"is_trial_period\":\"true\""), body)
-
-        let parsed = try XCTUnwrap(
-            try JSONSerialization.jsonObject(
-                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
-        let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
-        XCTAssertEqual("9223372036854775807", (receipt["download_id"] as? NSNumber)?.stringValue)
-        for key in ["adam_id", "app_item_id", "download_id", "version_external_identifier"] {
-            XCTAssertTrue(receipt[key] is NSNumber, key)
-            XCTAssertFalse(receipt[key] is String, key)
-        }
-        let purchases = try XCTUnwrap(receipt["in_app"] as? [[String: Any]])
-        for purchase in purchases {
-            XCTAssertTrue(purchase["is_trial_period"] is String, purchase.description)
-        }
-    }
-
-    /// Absent means the key is OUT, never JSON null — what the endpoint's
-    /// other optional keys already do.
-    func testEndpointOmitsTheKeysForAReceiptCarryingNoneOfTheFour() async throws {
-        let endpoint = try VerifyReceiptEndpoint(
-            trustedRoots: [try fixture("receipt-root.der")], environment: .sandbox)
-        let base64 = try fixture("receipt.der").base64EncodedString()
-        let body = await endpoint.verifyReceiptJSON("{\"receipt-data\":\"\(base64)\"}")
-        XCTAssertFalse(body.contains("null"), body)
-        let parsed = try XCTUnwrap(
-            try JSONSerialization.jsonObject(
-                with: XCTUnwrap(body.data(using: .utf8))) as? [String: Any])
-        let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any])
-        for key in ["adam_id", "app_item_id", "download_id", "version_external_identifier"] {
-            XCTAssertNil(receipt[key], key)
-            XCTAssertFalse(receipt.keys.contains(key), key)
-        }
-        let purchases = try XCTUnwrap(receipt["in_app"] as? [[String: Any]])
-        XCTAssertFalse(purchases.isEmpty)
-        for purchase in purchases {
-            XCTAssertFalse(purchase.keys.contains("is_trial_period"), purchase.description)
-        }
-    }
-}
-
-/// Regression tests for the adversarial-review findings + PLAN D10.
-final class ReviewFixesTests: XCTestCase {
-    func fixture(_ segments: String...) throws -> Data {
-        try Data(
-            contentsOf: segments.reduce(VerifierTests.fixturesDir) {
-                $0.appendingPathComponent($1)
-            })
-    }
-
-    func testRejectsTrailingBytesAfterCms() async throws {
-        let verifier = try ReceiptVerifier(
-            trustedRoots: [try fixture("generated", "receipt-root.der")],
-            bundleId: "com.example.app")
-        var padded = try fixture("generated", "receipt.der")
-        padded.append(contentsOf: [0x00, 0xde, 0xad, 0xbe])
-        do {
-            _ = try await verifier.verify(receipt: padded)
-            XCTFail("expected INVALID_RECEIPT_FORMAT")
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidReceiptFormat)
-        }
-    }
-
-    func testRejectsAReceiptDateOutsideTheRepresentableRange() async throws {
-        // Attribute 12 = "999999-12-31T23:59:59Z", the payload the blob below
-        // carries. Before trust it is only "no usable date, judge the chain at
-        // now"; the grammar refuses it, and never by trapping.
-        let payload: [UInt8] =
-            [0x31, 0x22, 0x30, 0x20, 0x02, 0x01, 0x0C, 0x02, 0x01, 0x01, 0x04, 0x18, 0x16, 0x16]
-            + Array("999999-12-31T23:59:59Z".utf8)
-        XCTAssertNil(readCreationDate(payload))
-        do {
-            _ = try parsePayload(payload)
-            XCTFail("expected INVALID_RECEIPT_FORMAT")
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidReceiptFormat)
-        }
-
-        // Through the verifier the blob's own chain is judged at now, and it
-        // does not reach this root: the chain answers, before any payload
-        // grammar is consulted.
-        let verifier = try ReceiptVerifier(
-            trustedRoots: [try fixture("generated", "receipt-root.der")],
-            bundleId: "com.example.app")
-        do {
-            _ = try await verifier.verify(receipt: Self.outOfRangeDateReceipt)
-            XCTFail("expected INVALID_CHAIN")
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidChain)
-        }
-    }
-
-    /// The representable-range guard on the values a range check is worst at.
-    ///
-    /// Found by the `readers` fuzz target (swift/fuzz), which restates the
-    /// documented window independently and disagreed on NaN: the guard was
-    /// written as `date >= lower && date <= upper` on `Date`s, and `Date` gets
-    /// `>=` and `<=` from `Comparable` as the negation of `<`. Every `<`
-    /// involving a NaN is false, so both negations were true and a NaN instant
-    /// was reported REPRESENTABLE — the exact opposite of what the guard
-    /// exists to say, and the value that would then be handed to
-    /// `RFC5280Policy` and trap inside X509's `Time`.
-    ///
-    /// No public entry point can produce a NaN today (`ISO8601DateFormatter`
-    /// never returns one, and `JSONSerialization` refuses NaN and overflowing
-    /// exponents outright), which is exactly why only a direct test holds this:
-    /// the guard is a fail-closed backstop, so it has to be right about the
-    /// input it will never be handed until the day something changes upstream.
-    func testRepresentableRangeGuardFailsClosedOnNonFiniteInstants() {
-        for (name, seconds) in [
-            ("NaN", Double.nan), ("-NaN", -Double.nan),
-            ("+infinity", Double.infinity), ("-infinity", -Double.infinity),
-        ] {
-            XCTAssertFalse(
-                isRepresentableAsCertificateValidationTime(
-                    Date(timeIntervalSince1970: seconds)), name)
-        }
-        // The window itself, unchanged: 0001-01-01T00:00:00Z through
-        // 9999-12-31T23:59:59Z inclusive, and one second outside each end.
-        for (name, seconds, expected) in [
-            ("lower bound", -62_135_596_800.0, true),
-            ("below the lower bound", -62_135_596_801.0, false),
-            ("upper bound", 253_402_300_799.0, true),
-            ("above the upper bound", 253_402_300_800.0, false),
-            ("the epoch", 0.0, true),
-        ] {
+            TestFixtures.status(
+                verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: #"{"receipt-data":"\#(base64)"}"#)),
+            0, "the control must verify")
+        for mark in ["\u{FEFF}", "\\ufeff", "\\uFEFF"] {
             XCTAssertEqual(
-                isRepresentableAsCertificateValidationTime(
-                    Date(timeIntervalSince1970: seconds)), expected, name)
+                verifier.verifyReceiptEndpoint(
+                    environment: .sandbox, requestJson: "{\"receipt-data\":\"\(mark)\(base64)\"}"),
+                #"{"status":21002}"#, mark)
         }
-    }
-
-    func testRejectsAnEmbeddedCertificateWhoseRsaKeyIsUnparseable() async throws {
-        // One byte of the signer certificate's modulus, made even. The DER
-        // stays well formed so swift-asn1 passes it through to BoringSSL,
-        // which rejects it — and swift-crypto before 4.5.1 freed the EVP_PKEY
-        // in its catch block and again in deinit, corrupting the heap and
-        // aborting the process before any chain or signature check. This test
-        // crashes the whole runner rather than failing if that floor is ever
-        // lowered, which is the loudest signal available for a double free.
-        let verifier = try ReceiptVerifier(
-            trustedRoots: [try fixture("generated", "receipt-root.der")],
-            bundleId: "com.example.app")
-        var mutated = try fixture("generated", "receipt.der")
-        XCTAssertEqual(mutated[1121], 0x35, "fixture layout changed; re-locate the modulus byte")
-        mutated[1121] = 0x00
-        // Repeated because a double free does not abort every time: a single
-        // call returns cleanly often enough that a one-shot test reports
-        // success against a vulnerable dependency. Verified: with the floor
-        // lowered to swift-crypto 3.15.1 the one-shot version passed and this
-        // one kills the runner with signal 5.
-        for _ in 0..<200 {
-            do {
-                _ = try await verifier.verify(receipt: mutated)
-                XCTFail("expected a verification failure")
-            } catch is VerificationError {
-                // Throwing is the whole assertion.
-            }
-        }
-    }
-
-    /// A receipt whose creation date is `999999-12-31T23:59:59Z`, carrying the
-    /// shared fixture's own signer certificate so the parse reaches the policy.
-    /// `ISO8601DateFormatter` accepts a six-digit year; GeneralizedTime holds
-    /// only four, and X509's `Time` converts with `try!`, so before the range
-    /// check this aborted the process instead of throwing. Rebuilt from
-    /// fixtures/generated/receipt.der with the payload replaced; the signature
-    /// no longer matches, which is the point — the crash came first.
-    static let outOfRangeDateReceipt = Data(
-        base64Encoded:
-            "MIIFGQYJKoZIhvcNAQcCoIIFCjCCBQYCAQExDTALBglghkgBZQMEAgEwMwYJKoZIhvcNAQcBoCYEJDEiMCACAQwC"
-            + "AQEEGBYWOTk5OTk5LTEyLTMxVDIzOjU5OjU5WqCCAtkwggLVMIIBvaADAgECAgEPMA0GCSqGSIb3DQEBCwUAMBcx"
-            + "FTATBgNVBAMMDEZha2UgV1dEUiBDQTAgFw0yNDAxMDEwMDAwMDBaGA8yMDUwMDEwMTAwMDAwMFowHzEdMBsGA1UE"
-            + "AwwURmFrZSBSZWNlaXB0IFNpZ25pbmcwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDayocrktbzriQR"
-            + "/EwHhZzvxW48pcwOXjx2nCj0zviFJ2xdfzMb8ODpl6LXXn8BZ5j2JKWC4/92Xfq9nu2yZLDptV6Nx+m2P1hk/Vib"
-            + "zHQJ5qQ3uaU354/aH/TPA/w6B7ogeAuXSDDytaV/Z/uhuX61KKpsBg6YtxwoHU1hHMaLDgZLR3m0hUAUO10NVR+r"
-            + "1mirmldsLjzvSVq69fWAZdl5uQV2SUXz5Hk8oRmFjxNEv6Xmg/uDVhHz/bGP2DtMVRVNjVNPvRfeSBfw3QsFaprV"
-            + "jSCWroAzbOvM7r7JvMapZae8f7FCOBb6ru/9LN5ezyogkT4LYngNiNMPCFWZt881AgMBAAGjIjAgMAwGA1UdEwEB"
-            + "/wQCMAAwEAYKKoZIhvdjZAYLAQQCBQAwDQYJKoZIhvcNAQELBQADggEBADTcnfH4cgNVcLPXFZatM5kYitrSKpS8"
-            + "x/+6osJ2RetV+NbElY2lGzKORIoXLiPIPG9qO+WmP5VahwWI9ejG7jprXUsFzSvNCMvLGQEGLMQSeKaBp3c99s1W"
-            + "ackBfq8+zYinv4zGAnvGKMrpBex3Oi5yHHQojwT1qvnVRuLtgPAQohaZiFighN8xHmytRWskWL1x2fo4h59c7S2W"
-            + "cSZcrqauQEp8DlkYQqbEhm1MMGXI2rTpOQQCkmnKgyWEDTCdAXtjiYsqCLJ24BMDvjrbeerrRBo0nPBat08QT4a4"
-            + "DRAaTz1mA279uU2eV6+RdPhEA1/pF0rD80yQrzLcnwvpzhwxggHeMIIB2gIBATAcMBcxFTATBgNVBAMMDEZha2Ug"
-            + "V1dEUiBDQQIBDzALBglghkgBZQMEAgGggZYwGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx"
-            + "DxcNMjQwODA2MTIwMDAwWjArBgkqhkiG9w0BCTQxHjAcMAsGCWCGSAFlAwQCAaENBgkqhkiG9w0BAQsFADAvBgkq"
-            + "hkiG9w0BCQQxIgQgOCEqyt40p6ah5MLX+ax9VU9h268QnUyap2QqkBSOKDAwDQYJKoZIhvcNAQELBQAEggEApVar"
-            + "k1HGF6nVTye/RnLd7LPCIZgS5Nc8fe+y19KFuRNDIZxe1rcy0En38maFSZODlHLlfwpoIGlsQ6EDfakf49+2miip"
-            + "IKgl3gjNYvgQ2m4y4YSReQ1SRURS5R2etwjaK3G3Vcnl7tJKYbXFKMtDyQusulapF6jr/M4sfqgY/Kmuler+X5Dj"
-            + "xTZfkS4i4o0KMl4phduGec0yS8GNQUob0J4BfukJdZhgqtnbaiaOeUy0JBHqqtmWgxkYUV8qHqoC4R7tXO5HOCuc"
-            + "5gdP4u4lW+vYNoFuTHgwsKz0NVqb5y4HDPL1ApFKQU70Inrd1ia53sdtPhfDuOyCYNuYUfU8yw==")!
-}
-
-/// Anti-forgery controls, signing-time behaviour, and malformed-input safety.
-final class ParityTests: XCTestCase {
-    static let bundle = "com.example.app"
-    func fx(_ n: String) throws -> Data {
-        try Data(contentsOf: VerifierTests.fixturesDir.appendingPathComponent("generated").appendingPathComponent(n))
-    }
-    func expect(_ reason: VerificationError.Reason, _ body: () async throws -> Void) async {
-        do { try await body(); XCTFail("expected \(reason.rawValue)") } catch let e as VerificationError {
-            XCTAssertEqual(e.reason, reason, e.description)
-        } catch { XCTFail("unexpected \(error)") }
-    }
-
-    func testMalformedReceiptThrowsInsteadOfCrashing() async throws {
-        // SEQUENCE containing only the CMS OID — previously an uncatchable trap.
-        let malformed = Data([0x30, 0x0B, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02])
-        let v = try ReceiptVerifier(trustedRoots: [try fx("receipt-root.der")], bundleId: Self.bundle)
-        await expect(.invalidReceiptFormat) { _ = try await v.verify(receipt: malformed) }
-        let ep = try VerifyReceiptEndpoint(trustedRoots: [try fx("receipt-root.der")], environment: .sandbox)
-        let resp = await ep.verifyReceiptResult(["receipt-data": malformed.base64EncodedString()]).response()
-        XCTAssertEqual(resp["status"] as? Int, 21002)
     }
 }
 
-// MARK: - chain-building bound
+// MARK: - the top-down walk over the certificate bag
 
-/// The bound on chain building. A receipt's embedded certificates are
-/// attacker-supplied and reach chain building before any signature is checked,
-/// and swift-certificates' Verifier searches whatever candidate pool it is
-/// handed, so both what goes into that pool and how much of it there can be
-/// are load-bearing. Every receipt here is the genuine
-/// fixtures/generated/receipt.der with a different certificate bag spliced in:
-/// the file is BER with indefinite lengths, so the splice needs no ancestor
-/// length fixups, and the CMS signature covers the signed attributes rather
+/// The certificate bag is unsigned and reaches the chain walk before any
+/// signature is checked, so what the walk takes from it, and how much of it
+/// it looks at, is load-bearing. Every receipt here is the genuine
+/// fixtures/generated-0.7/receipt.der with a different certificate bag
+/// spliced in: the file is BER with indefinite lengths, so the splice needs
+/// no ancestor length fixups, and the CMS signature covers the content rather
 /// than the bag.
 final class ChainBuildingBoundTests: XCTestCase {
     static let notValidBefore = Date(timeIntervalSince1970: 1_577_836_800)  // 2020-01-01
     static let notValidAfter = Date(timeIntervalSince1970: 2_051_222_400)  // 2035-01-01
 
-    func verifier() throws -> ReceiptVerifier {
-        try ReceiptVerifier(
-            trustedRoots: [
-                try Data(
-                    contentsOf: VerifierTests.fixturesDir
-                        .appendingPathComponent("generated")
-                        .appendingPathComponent("receipt-root.der"))
-            ],
-            bundleId: VerifierTests.bundle)
+    func verify(_ receipt: [UInt8]) throws -> ApplePurchaseReceiptVerifier.VerificationResult<ReceiptPayload> {
+        try TestFixtures.verifier(roots: [TestFixtures.receiptRoot]).verifyReceipt(base64: standardBase64Encode(receipt))
     }
 
-    func genuineReceipt() throws -> Data {
-        try Data(
-            contentsOf: VerifierTests.fixturesDir
-                .appendingPathComponent("generated").appendingPathComponent("receipt.der"))
-    }
+    func genuineReceipt() throws -> [UInt8] { try TestFixtures.bytes(TestFixtures.receipt) }
 
     // MARK: certificate bag surgery
 
     private static let contextZero = ASN1Identifier(tagWithNumber: 0, tagClass: .contextSpecific)
 
+    private static func children(_ node: ASN1Node) throws -> [ASN1Node] {
+        guard case .constructed(let nodes) = node.content else { throw CocoaError(.formatting) }
+        return Array(nodes)
+    }
+
     /// The SignedData `certificates [0]` node of a receipt.
     private static func certificatesNode(_ receipt: [UInt8]) throws -> ASN1Node {
-        func children(_ node: ASN1Node) throws -> [ASN1Node] {
-            guard case .constructed(let nodes) = node.content else {
-                throw CocoaError(.formatting)
-            }
-            return Array(nodes)
-        }
         let contentInfo = try children(try BER.parse(receipt))
         let signedData = try children(try children(contentInfo[1])[0])
         guard
@@ -758,11 +265,8 @@ final class ChainBuildingBoundTests: XCTestCase {
         return node
     }
 
-    static func embeddedCertificates(of receipt: Data) throws -> [Certificate] {
-        guard case .constructed(let nodes) = try certificatesNode([UInt8](receipt)).content else {
-            throw CocoaError(.formatting)
-        }
-        return try nodes.map { try Certificate(derEncoded: [UInt8]($0.encodedBytes)) }
+    static func embeddedCertificates(of receipt: [UInt8]) throws -> [Certificate] {
+        try children(try certificatesNode(receipt)).map { try Certificate(derEncoded: [UInt8]($0.encodedBytes)) }
     }
 
     /// - Parameter appendingRawDER: extra elements written into the
@@ -770,12 +274,9 @@ final class ChainBuildingBoundTests: XCTestCase {
     ///   Well-formed ASN.1 that is not a certificate goes in this way — a
     ///   `Certificate` value cannot express it.
     static func replacingCertificates(
-        of receipt: Data,
-        with certificates: [Certificate],
-        appendingRawDER rawDER: [[UInt8]] = []
-    ) throws -> Data {
-        let bytes = [UInt8](receipt)
-        let range = try certificatesNode(bytes).encodedBytes
+        of receipt: [UInt8], with certificates: [Certificate], appendingRawDER rawDER: [[UInt8]] = []
+    ) throws -> [UInt8] {
+        let range = try certificatesNode(receipt).encodedBytes
         var serializer = DER.Serializer()
         try serializer.appendConstructedNode(identifier: contextZero) { certs in
             for certificate in certificates {
@@ -785,19 +286,14 @@ final class ChainBuildingBoundTests: XCTestCase {
                 certs.serializeRawBytes(der)
             }
         }
-        // Explicit Arrays: Swift 6.1 (the CI container) cannot type
+        // Explicit Arrays: Swift 6.1 (the CI floor) cannot type
         // ArraySlice + [UInt8] + ArraySlice, 6.3 can.
-        return Data(
-            Array(bytes[..<range.startIndex]) + serializer.serializedBytes
-                + Array(bytes[range.endIndex...]))
+        return Array(receipt[..<range.startIndex]) + serializer.serializedBytes + Array(receipt[range.endIndex...])
     }
 
     static func certificate(
-        subject: DistinguishedName, issuer: DistinguishedName,
-        serial: Certificate.SerialNumber,
-        key: Certificate.PrivateKey,
-        signedBy issuerKey: Certificate.PrivateKey,
-        dnsName: String? = nil
+        subject: DistinguishedName, issuer: DistinguishedName, serial: Certificate.SerialNumber,
+        key: Certificate.PrivateKey, signedBy issuerKey: Certificate.PrivateKey, dnsName: String? = nil
     ) throws -> Certificate {
         try Certificate(
             version: .v3, serialNumber: serial, publicKey: key.publicKey,
@@ -815,161 +311,96 @@ final class ChainBuildingBoundTests: XCTestCase {
         try DistinguishedName { CommonName(commonName) }
     }
 
-    /// A bag whose certificates all claim to be issued by `issuer` and all
-    /// share one key, so each is a signature-valid parent of every other, told
-    /// apart only by a SubjectAlternativeName — which is the one field
-    /// swift-certificates' loop detection compares beyond subject and key.
-    /// The leaf keeps the genuine signer's issuer and serial so the CMS signer
-    /// id still resolves to it.
+    /// Self-signed padding no anchor vouches for.
+    static func padding(_ count: Int, serialPrefix: UInt8) throws -> [Certificate] {
+        try (0..<count).map { index in
+            let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
+            return try certificate(
+                subject: try name("Padding \(index)"), issuer: try name("Padding \(index)"),
+                serial: .init(bytes: [serialPrefix, UInt8(index)]), key: key, signedBy: key)
+        }
+    }
+
+    /// A leaf carrying the genuine signer's issuer and serial, so the CMS
+    /// signer id resolves to it, followed by `count` certificates that all
+    /// claim that issuer's name and share one key, so each is a
+    /// signature-valid parent of every other.
     static func fanout(count: Int, signerOf genuine: [Certificate]) throws -> [Certificate] {
         let shared = Certificate.PrivateKey(P256.Signing.PrivateKey())
         let leaf = try certificate(
-            subject: try name("Fanout Leaf"), issuer: genuine[0].issuer,
-            serial: genuine[0].serialNumber,
+            subject: try name("Fanout Leaf"), issuer: genuine[0].issuer, serial: genuine[0].serialNumber,
             key: Certificate.PrivateKey(P256.Signing.PrivateKey()), signedBy: shared)
         return [leaf]
-            + (0..<count).map { index in
-                try! certificate(
+            + (try (0..<count).map { index in
+                try certificate(
                     subject: genuine[0].issuer, issuer: genuine[0].issuer,
-                    serial: .init(bytes: [0x10, UInt8(index)]),
-                    key: shared, signedBy: shared,
+                    serial: .init(bytes: [0x10, UInt8(index)]), key: shared, signedBy: shared,
                     dnsName: "ca\(index).example")
-            }
+            })
     }
 
     // MARK: the bounds
 
-    /// The certificate count bound, from every side: eleven certificates are
-    /// rejected before any of them is walked, with a message naming the bound,
-    /// the genuine three-certificate receipt still verifies, and so does a bag
-    /// of exactly ten. Red if the bound stops firing (raise it and the first
-    /// part fails), red if it is tightened below a genuine chain (lower it to
-    /// 2 and the second fails), and red if the comparison tightens by one
-    /// (`<` for `<=` fails the third).
-    ///
-    /// The bound is not what makes the walk cheap — the walk costs at most one
-    /// signature check per embedded certificate with or without it, measured
-    /// under `maximumEmbeddedCertificates`. It is what stops an unauthenticated
-    /// caller choosing how much of that work happens at all, at the same 10 as
-    /// node, python and java.
-    func testTheCertificateCountBoundFiresAndStillClearsAGenuineReceipt() async throws {
+    /// The certificate count is judged before any entry is decoded: ten
+    /// genuine-shaped certificates and an eleventh that is well-formed ASN.1
+    /// and not a certificate answer with the bound's message, not the
+    /// unreadable-entry one. Both are MALFORMED, so only the message tells
+    /// which check ran first; a decode-first order would spend decoding work
+    /// on a bag that is refused anyway.
+    func testTheCountBoundIsAppliedBeforeAnyCertificateIsDecoded() throws {
         let genuine = try genuineReceipt()
-        let flooded = try Self.replacingCertificates(
-            of: genuine,
-            with: try Self.fanout(
-                count: 10,
-                signerOf: try Self.embeddedCertificates(of: genuine)))
-        do {
-            _ = try await verifier().verify(receipt: flooded)
-            XCTFail("expected INVALID_CHAIN")
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidChain)
-            XCTAssertTrue(error.message.contains("11 certificates"), error.message)
-            XCTAssertTrue(
-                error.message.contains("maximum of \(ReceiptVerifier.maximumEmbeddedCertificates)"),
-                error.message)
-        }
-
-        _ = try await verifier().verify(receipt: genuine)
-
-        // Exactly the bound: seven self-signed certificates the walk never
-        // takes, ahead of the genuine three.
-        let genuineCertificates = try Self.embeddedCertificates(of: genuine)
-        let padding = try
-            (0..<(ReceiptVerifier.maximumEmbeddedCertificates
-            - genuineCertificates.count)).map { index -> Certificate in
-                let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
-                return try Self.certificate(
-                    subject: try Self.name("Padding \(index)"), issuer: try Self.name("Padding \(index)"),
-                    serial: .init(bytes: [0x9A, UInt8(index)]), key: key, signedBy: key)
-            }
-        let exactly = padding + genuineCertificates
-        XCTAssertEqual(exactly.count, ReceiptVerifier.maximumEmbeddedCertificates)
-        _ = try await verifier().verify(
-            receipt: try Self.replacingCertificates(of: genuine, with: exactly))
-    }
-
-    /// The bound is applied to the number of embedded certificates, before any
-    /// of them is decoded — so an oversized bag costs no decoding work, and a
-    /// malformed entry inside one cannot change the verdict. This receipt
-    /// carries ten genuine-shaped certificates and an eleventh that is
-    /// well-formed ASN.1 and not a certificate at all: the answer must be the
-    /// bound's `.invalidChain`, naming eleven. Red if the count check moves
-    /// back after the decoding loop, which answered `.invalidReceiptFormat`
-    /// ("malformed CMS structure") here instead — a parse verdict on a receipt
-    /// that never had to be parsed.
-    func testTheCountBoundIsAppliedBeforeAnyCertificateIsDecoded() async throws {
-        let genuine = try genuineReceipt()
-        let genuineCertificates = try Self.embeddedCertificates(of: genuine)
-        let padding = try
-            (0..<(ReceiptVerifier.maximumEmbeddedCertificates
-            - genuineCertificates.count)).map { index -> Certificate in
-                let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
-                return try Self.certificate(
-                    subject: try Self.name("Padding \(index)"), issuer: try Self.name("Padding \(index)"),
-                    serial: .init(bytes: [0x9B, UInt8(index)]), key: key, signedBy: key)
-            }
-        let ten = padding + genuineCertificates
-        XCTAssertEqual(ten.count, ReceiptVerifier.maximumEmbeddedCertificates)
+        let certificates = try Self.embeddedCertificates(of: genuine)
+        let ten = try Self.padding(maxEmbeddedCertificates - certificates.count, serialPrefix: 0x9B) + certificates
+        XCTAssertEqual(ten.count, maxEmbeddedCertificates)
+        XCTAssertTrue(try verify(Self.replacingCertificates(of: genuine, with: ten)).verified, "ten must verify")
         // SEQUENCE { OCTET STRING } — parses as ASN.1, decodes as nothing.
         let garbage: [UInt8] = [0x30, 0x06, 0x04, 0x04, 0xDE, 0xAD, 0xBE, 0xEF]
-        let receipt = try Self.replacingCertificates(
-            of: genuine, with: ten, appendingRawDER: [garbage])
-        do {
-            _ = try await verifier().verify(receipt: receipt)
-            XCTFail("expected INVALID_CHAIN")
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidChain)
-            XCTAssertTrue(error.message.contains("11 certificates"), error.message)
-            XCTAssertTrue(
-                error.message.contains("maximum of \(ReceiptVerifier.maximumEmbeddedCertificates)"),
-                error.message)
-        }
+        let failure = try verify(Self.replacingCertificates(of: genuine, with: ten, appendingRawDER: [garbage])).failure
+        XCTAssertEqual(failure?.reason, .malformed)
+        XCTAssertTrue(failure?.message.contains("embeds 11 certificates") == true, failure?.message ?? "")
     }
 
-    /// An embedded entry that is an empty SEQUENCE has no first child, and the
-    /// identity read that lets an unreadable signer be named used to index
-    /// `[0]` into it and trap — found by the `receipt-der` fuzz target on
-    /// CI. Every identity read is now a throwing access, so the entry is what
-    /// it always should have been: an unreadable stranger the SignerInfo
-    /// does not name, answered as a malformed receipt rather than a crash.
-    func testAnEmptySequenceInTheCertificateBagIsAMalformedReceiptNotATrap() async throws {
+    /// The same order, seen from the other side: a bag over the bound that
+    /// also omits the signer answers with the bound, not with "signer
+    /// certificate not embedded".
+    func testTheCountGuardRunsBeforeTheSignerIsResolved() throws {
         let genuine = try genuineReceipt()
-        let genuineCertificates = try Self.embeddedCertificates(of: genuine)
+        let failure = try verify(
+            Self.replacingCertificates(of: genuine, with: Self.padding(maxEmbeddedCertificates + 1, serialPrefix: 0x70))
+        ).failure
+        XCTAssertEqual(failure?.reason, .malformed)
+        XCTAssertTrue(
+            failure?.message.contains("maximum of \(maxEmbeddedCertificates)") == true, failure?.message ?? "")
+    }
+
+    /// An embedded entry that is an empty or childless SEQUENCE: the
+    /// identity read that lets an unreadable signer be named used to index
+    /// `[0]` into it and trap (found by the `receipt-der` fuzz target). It is
+    /// an unreadable stranger the SignerInfo does not name: MALFORMED.
+    func testAnEmptySequenceInTheCertificateBagIsAMalformedReceiptNotATrap() throws {
+        let genuine = try genuineReceipt()
+        let certificates = try Self.embeddedCertificates(of: genuine)
         for entry: [UInt8] in [[0x30, 0x00], [0x30, 0x02, 0x30, 0x00], [0x30, 0x02, 0x05, 0x00]] {
-            let receipt = try Self.replacingCertificates(
-                of: genuine, with: genuineCertificates, appendingRawDER: [entry])
-            do {
-                _ = try await verifier().verify(receipt: receipt)
-                XCTFail("expected INVALID_RECEIPT_FORMAT for entry \(entry)")
-            } catch let error as VerificationError {
-                XCTAssertEqual(error.reason, .invalidReceiptFormat, "entry \(entry): \(error.message)")
-            }
+            let receipt = try Self.replacingCertificates(of: genuine, with: certificates, appendingRawDER: [entry])
+            XCTAssertEqual(try verify(receipt).failure?.reason, .malformed, "entry \(entry)")
         }
     }
 
-    /// A receipt whose bag stops at the intermediate, with the root coming
-    /// from the pinned store, verifies. Node, Python and Java all accept this
-    /// shape — their path builders stop as soon as the current certificate is
-    /// issued by a pinned anchor — and so did this library before the walk
-    /// existed. Red if the walk ever grows a fixed chain length again.
-    func testAcceptsAReceiptWhoseEmbeddedBagStopsAtTheIntermediate() async throws {
+    /// A bag that stops at the intermediate, with the root coming from the
+    /// pinned set, verifies: the path ends as soon as the current
+    /// certificate is issued by a pinned anchor, as in every other port.
+    func testAcceptsAReceiptWhoseEmbeddedBagStopsAtTheIntermediate() throws {
         let genuine = try genuineReceipt()
         let certificates = try Self.embeddedCertificates(of: genuine)
         XCTAssertEqual(certificates.count, 3)
-        let receipt = try Self.replacingCertificates(
-            of: genuine,
-            with: Array(certificates.prefix(2)))
-        _ = try await verifier().verify(receipt: receipt)
+        let result = try verify(Self.replacingCertificates(of: genuine, with: Array(certificates.prefix(2))))
+        XCTAssertTrue(result.verified, result.failure?.description ?? "")
     }
 
     /// A self-signed certificate that merely borrows the intermediate's
     /// subject name must not displace the real intermediate, at any position
-    /// in the bag. This is what forces the walk to select by signature: a
-    /// name-only match takes whichever collides first, and this VALID receipt
-    /// is then rejected from bag index 0 and 1 (measured: accepted at 2 and 3,
-    /// rejected at 0 and 1, when the walk matched on the name alone).
-    func testAcceptsAGenuineReceiptCarryingAnIssuerNameCollisionAtAnyIndex() async throws {
+    /// in the bag: the walk selects by signature, not by name.
+    func testAcceptsAGenuineReceiptCarryingAnIssuerNameCollisionAtAnyIndex() throws {
         let genuine = try genuineReceipt()
         let certificates = try Self.embeddedCertificates(of: genuine)
         let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
@@ -979,181 +410,67 @@ final class ChainBuildingBoundTests: XCTestCase {
         for index in 0...certificates.count {
             var bag = certificates
             bag.insert(decoy, at: index)
-            let receipt = try Self.replacingCertificates(of: genuine, with: bag)
-            do {
-                _ = try await verifier().verify(receipt: receipt)
-            } catch {
-                XCTFail("decoy at index \(index) flipped a valid receipt: \(error)")
-            }
+            let result = try verify(Self.replacingCertificates(of: genuine, with: bag))
+            XCTAssertTrue(result.verified, "decoy at index \(index): \(result.failure?.description ?? "")")
         }
     }
 
-    /// The other half of the walk's predicate. A decoy that borrows the real
-    /// intermediate's public KEY under a different name did, as far as a
-    /// signature check can tell, sign the leaf — so a walk that selected by
-    /// signature alone would take it from ahead of the real intermediate,
-    /// hand the Verifier a path whose names do not chain, and reject this
-    /// VALID receipt from bag index 0 and 1. The `$0.subject == tip.issuer`
-    /// clause is what skips it; delete the clause and this goes red there.
-    func testAcceptsAGenuineReceiptCarryingAKeyOnlyCloneAtAnyIndex() async throws {
-        let genuine = try genuineReceipt()
-        let certificates = try Self.embeddedCertificates(of: genuine)
-        let attacker = Certificate.PrivateKey(P256.Signing.PrivateKey())
-        let clone = try Certificate(
-            version: .v3, serialNumber: .init(bytes: [0xC1, 0x0F]),
-            publicKey: certificates[1].publicKey,
-            notValidBefore: Self.notValidBefore, notValidAfter: Self.notValidAfter,
-            issuer: try Self.name("Attacker Root"), subject: try Self.name("Key Clone"),
-            extensions: try Certificate.Extensions {
-                BasicConstraints.isCertificateAuthority(maxPathLength: nil)
-            },
-            issuerPrivateKey: attacker)
-        for index in 0...certificates.count {
-            var bag = certificates
-            bag.insert(clone, at: index)
-            let receipt = try Self.replacingCertificates(of: genuine, with: bag)
-            do {
-                _ = try await verifier().verify(receipt: receipt)
-            } catch {
-                XCTFail("key clone at index \(index) flipped a valid receipt: \(error)")
-            }
-        }
-    }
-
-    /// The attack the certificate count cannot bound: ten certificates, inside
-    /// the count bound, and at about 4,300 bytes smaller than the genuine
-    /// 79,104-byte legacy fixture, so no caller-side size limit reaches it
-    /// either. Handing that bag to swift-certificates as intermediates cost
-    /// 148.8 s through this same entry point on a release build, against
-    /// 4.0 ms with the walk in place.
-    ///
-    /// What this pins is that the walk takes each subject at most ONCE.
-    /// Deduplicating by certificate instead — the obvious simplification —
-    /// puts all nine of these self-issued certificates in the store, where
-    /// they are once again each other's parents: measured under that mutation
-    /// this test takes 268.4 s on the debug build CI runs and 147.4 s on a
-    /// release build, against 0.009 s debug / 0.004 s release as written. That
-    /// puts the 2 s budget 222x above the working debug cost — a CI runner two
-    /// orders of magnitude slower than this laptop still passes — and 134x
-    /// below the broken one, which no runner is fast enough to sneak under.
-    ///
-    /// A sibling test ran the same fanout hidden behind a decoy chain. It went
-    /// red under this mutation and no other, and its own 2 s budget did not
-    /// survive it: measured just before it was removed, it PASSED in 1.855 s
-    /// under the mutation on a release build (3.08 s debug, a 1.5x margin) — a
-    /// green test over broken code. Deleted rather than re-budgeted, because
-    /// this test covers that mutation with the margins above and
-    /// `testAcceptsAGenuineReceiptCarryingAnIssuerNameCollisionAtAnyIndex`
-    /// already covers the walk stepping past a name-matching non-signer.
-    func testRejectsAFanoutOfSelfIssuedCertificatesWithoutSearchingIt() async throws {
-        let genuine = try genuineReceipt()
-        let receipt = try Self.replacingCertificates(
-            of: genuine,
-            with: try Self.fanout(
-                count: 9,
-                signerOf: try Self.embeddedCertificates(of: genuine)))
-        let started = Date()
-        do {
-            _ = try await verifier().verify(receipt: receipt)
-            XCTFail("expected INVALID_CHAIN")
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidChain)
-        }
-        XCTAssertLessThan(-started.timeIntervalSinceNow, 2.0)
-    }
-
-    /// The count guard runs before anything else touches the bag. Moving it
-    /// down to just before the `Verifier` is built still rejects a flooded
-    /// receipt, and left every other test in this file green (measured), so
-    /// nothing else pins the position. This bag separates the two: it is over
-    /// the bound AND omits the signer certificate, so the guard where it is
-    /// reports the bound, while a guard that runs after `signerIndex()`
-    /// tells the caller the receipt is malformed instead.
-    func testTheCountGuardRunsBeforeTheSignerIsResolved() async throws {
-        let genuine = try genuineReceipt()
-        let certificates = try Self.embeddedCertificates(of: genuine)
-        let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
-        let bag = try (0...ReceiptVerifier.maximumEmbeddedCertificates).map { index in
-            try Self.certificate(
-                subject: certificates[0].issuer, issuer: certificates[0].issuer,
-                serial: .init(bytes: [0x70, UInt8(index)]), key: key, signedBy: key)
-        }
-        let receipt = try Self.replacingCertificates(of: genuine, with: bag)
-        do {
-            _ = try await verifier().verify(receipt: receipt)
-            XCTFail("expected INVALID_CHAIN")
-        } catch let error as VerificationError {
-            XCTAssertEqual(error.reason, .invalidChain)
-            XCTAssertTrue(
-                error.message.contains("maximum of \(ReceiptVerifier.maximumEmbeddedCertificates)"),
-                error.message)
-        }
-    }
-
-    /// The one verdict the walk moved. A decoy that borrows the real
-    /// intermediate's DN *and* its public key satisfies the walk's predicate —
-    /// the key it carries really did sign the leaf — so the walk takes it and
-    /// stops instead of backtracking to the real intermediate. Measured on a
-    /// release build: with the whole certificate bag handed to the Verifier
-    /// this receipt was accepted at all four positions; it is now rejected
-    /// from the two ahead of the real intermediate and still accepted from the
-    /// two behind it. That is position for position what node and python
-    /// answer on the same four receipts (measured); java accepts all four, a
-    /// java-vs-node/python split that predates this walk. Only a receipt whose
-    /// signer the attacker controls has this shape, so no genuine receipt pays
-    /// for it — but the record should not claim the walk moves nothing.
-    func testAKeyCloningDecoyDisplacesTheIntermediateOnlyFromAheadOfIt() async throws {
+    /// Decoys that carry the real intermediate's public KEY, under another
+    /// name or under its very name, issued by an attacker's root. Each did,
+    /// as far as a signature check can tell, sign the leaf. 0.6 walked up
+    /// from the leaf and took the name-and-key clone when it sat ahead of the
+    /// real intermediate, rejecting this valid receipt from bag positions 0
+    /// and 1. The top-down walk admits a certificate only once a pinned root
+    /// has vouched for it, and no pinned root vouches for either clone, so
+    /// the genuine receipt verifies at every position — the answer Java
+    /// always gave.
+    func testAcceptsAGenuineReceiptCarryingAKeyCloneAtAnyIndex() throws {
         let genuine = try genuineReceipt()
         let certificates = try Self.embeddedCertificates(of: genuine)
         XCTAssertEqual(certificates[0].issuer, certificates[1].subject)
         let attacker = Certificate.PrivateKey(P256.Signing.PrivateKey())
-        let clone = try Certificate(
-            version: .v3, serialNumber: .init(bytes: [0xC1, 0x0E]),
-            publicKey: certificates[1].publicKey,
-            notValidBefore: Self.notValidBefore, notValidAfter: Self.notValidAfter,
-            issuer: try Self.name("Attacker Root"), subject: certificates[1].subject,
-            extensions: try Certificate.Extensions {
-                BasicConstraints.isCertificateAuthority(maxPathLength: nil)
-            },
-            issuerPrivateKey: attacker)
-
-        for index in 0...certificates.count {
-            var bag = certificates
-            bag.insert(clone, at: index)
-            let receipt = try Self.replacingCertificates(of: genuine, with: bag)
-            do {
-                _ = try await verifier().verify(receipt: receipt)
-                XCTAssertGreaterThan(index, 1, "clone at index \(index) was not taken")
-            } catch let error as VerificationError {
-                XCTAssertLessThan(index, 2, "clone at index \(index) was taken: \(error)")
-                XCTAssertEqual(error.reason, .invalidChain)
+        for (label, subject) in [("key only", try Self.name("Key Clone")), ("name and key", certificates[1].subject)] {
+            let clone = try Certificate(
+                version: .v3, serialNumber: .init(bytes: [0xC1, 0x0F]), publicKey: certificates[1].publicKey,
+                notValidBefore: Self.notValidBefore, notValidAfter: Self.notValidAfter,
+                issuer: try Self.name("Attacker Root"), subject: subject,
+                extensions: try Certificate.Extensions { BasicConstraints.isCertificateAuthority(maxPathLength: nil) },
+                issuerPrivateKey: attacker)
+            for index in 0...certificates.count {
+                var bag = certificates
+                bag.insert(clone, at: index)
+                let result = try verify(Self.replacingCertificates(of: genuine, with: bag))
+                XCTAssertTrue(result.verified, "\(label) clone at index \(index): \(result.failure?.description ?? "")")
             }
         }
     }
 
-    /// A signature cycle among the embedded certificates is rejected, in both
-    /// shapes it comes in: leaf signed by A, A signed by B, B signed by A. With
-    /// the issuer names chaining inside the bag, `subjectsTaken` stops the walk
-    /// at B, whose issuer names a subject already taken. With the issuer names
-    /// pointing outside the bag, no subject the walk records is ever an issuer
-    /// it tests, that guard never fires, and the count clause stops the walk at
-    /// the size of the bag instead. Before the count clause existed, deleting
-    /// the `$0.subject == tip.issuer` clause made the second shape loop forever
-    /// (measured: the run was killed at 120 s, against 0.004 s as shipped), so
-    /// the mutation surfaced as a hang rather than a red test — and a test
-    /// that fails by hanging takes the machine down with it. Neither shape can
-    /// loop past the bag now; what the two pin is the verdict.
-    func testRejectsASignatureCycleAmongTheEmbeddedCertificates() async throws {
+    /// Nine self-issued certificates sharing one key, each a signature-valid
+    /// parent of every other, under a leaf that claims the genuine signer's
+    /// identity. Handed to a bottom-up path search as intermediates, a bag
+    /// like this cost 148.8 s through 0.6's entry point before its walk was
+    /// bounded. No pinned root vouches for any of them, so the top-down walk
+    /// admits none and the answer is UNTRUSTED_CHAIN without a search.
+    func testRejectsAFanoutOfSelfIssuedCertificatesWithoutSearchingIt() throws {
+        let genuine = try genuineReceipt()
+        let receipt = try Self.replacingCertificates(
+            of: genuine, with: Self.fanout(count: 9, signerOf: Self.embeddedCertificates(of: genuine)))
+        let started = Date()
+        XCTAssertEqual(try verify(receipt).failure?.reason, .untrustedChain)
+        XCTAssertLessThan(-started.timeIntervalSinceNow, 2.0)
+    }
+
+    /// A signature cycle among the embedded certificates, in both shapes it
+    /// comes in: leaf signed by A, A signed by B, B signed by A, with the
+    /// issuer names chaining inside the bag or pointing outside it. Neither
+    /// reaches a pinned root, so neither can loop and both are refused.
+    func testRejectsASignatureCycleAmongTheEmbeddedCertificates() throws {
         let genuine = try genuineReceipt()
         let certificates = try Self.embeddedCertificates(of: genuine)
         let keyA = Certificate.PrivateKey(P256.Signing.PrivateKey())
         let keyB = Certificate.PrivateKey(P256.Signing.PrivateKey())
-        // The leaf keeps the genuine signer's issuer and serial so the CMS
-        // signer id still resolves to it, and A carries that same issuer name
-        // as its subject so the walk takes one real step before the cycle.
         let leaf = try Self.certificate(
-            subject: try Self.name("Cycle Leaf"), issuer: certificates[0].issuer,
-            serial: certificates[0].serialNumber,
+            subject: try Self.name("Cycle Leaf"), issuer: certificates[0].issuer, serial: certificates[0].serialNumber,
             key: Certificate.PrivateKey(P256.Signing.PrivateKey()), signedBy: keyA)
         let insideTheBag = [
             leaf,
@@ -1173,44 +490,9 @@ final class ChainBuildingBoundTests: XCTestCase {
                 subject: try Self.name("Cycle B"), issuer: try Self.name("Cycle B Issuer"),
                 serial: .init(bytes: [0x44]), key: keyB, signedBy: keyA),
         ]
-
         for (shape, bag) in [("inside", insideTheBag), ("outside", outsideTheBag)] {
-            let receipt = try Self.replacingCertificates(of: genuine, with: bag)
-            do {
-                _ = try await verifier().verify(receipt: receipt)
-                XCTFail("expected INVALID_CHAIN for the cycle chaining \(shape) the bag")
-            } catch let error as VerificationError {
-                XCTAssertEqual(error.reason, .invalidChain, shape)
-            }
+            XCTAssertEqual(
+                try verify(Self.replacingCertificates(of: genuine, with: bag)).failure?.reason, .untrustedChain, shape)
         }
-    }
-}
-
-// The typed claim read at its edges the shared cases do not reach: a boolean
-// is not an integer, and a whole number wider than the field is refused
-// rather than wrapped. The decoder alone is not trusted with either.
-final class TypedClaimReadTests: XCTestCase {
-    private func reason(_ json: String) -> VerificationError.Reason? {
-        do {
-            _ = try JSONDecoder().decode(TransactionPayload.self, from: Data(json.utf8))
-            return nil
-        } catch {
-            return (error as? VerificationError)?.reason
-        }
-    }
-
-    func testIntegerClaimsTakeWholeNumbersOnly() throws {
-        let whole = try JSONDecoder().decode(
-            TransactionPayload.self, from: Data(#"{"quantity":1.0,"price":9007199254740993}"#.utf8))
-        XCTAssertEqual(whole.quantity, 1)
-        XCTAssertEqual(whole.price, 9_007_199_254_740_993)
-        XCTAssertEqual(reason(#"{"price":1.5}"#), .internalError)
-        XCTAssertEqual(reason(#"{"quantity":true}"#), .internalError)
-        XCTAssertEqual(reason(#"{"signedDate":9223372036854775808}"#), .internalError)
-    }
-
-    func testStringClaimsTakeStringsOnly() {
-        XCTAssertEqual(reason(#"{"bundleId":true}"#), .internalError)
-        XCTAssertNil(reason(#"{"bundleId":null,"unmodelled":[1,{"a":false}]}"#))
     }
 }

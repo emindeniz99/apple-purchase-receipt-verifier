@@ -7,8 +7,8 @@ import _CryptoExtras
 /// A receipt PKI minted at test time, for tests whose subject is the payload
 /// grammar. The full payload parse runs only after the chain and the CMS
 /// signature have passed, so a payload spliced into a genuine receipt stops at
-/// INVALID_SIGNATURE (or INVALID_CHAIN, when the splice makes the creation
-/// date unusable) and never reaches the parser. Signing it here, under a chain
+/// INVALID_SIGNATURE (or INVALID_CERTIFICATE, when the splice moves the
+/// creation date outside the chain's window) and never reaches the parser. Signing it here, under a chain
 /// the test then trusts, is what lets such a test keep reaching it.
 ///
 /// Valid 2024-01-01 to 2050-01-01, the window the shared generated fixtures
@@ -33,11 +33,16 @@ struct TestReceiptPki {
             extensions: try Certificate.Extensions {
                 Critical(BasicConstraints.isCertificateAuthority(maxPathLength: nil))
             })
+        // 1.2.840.113635.100.6.2.1, the Apple WWDR intermediate marker, which
+        // 0.7 requires on the receipt path's intermediate.
+        var intermediateExtensions = try Certificate.Extensions {
+            Critical(BasicConstraints.isCertificateAuthority(maxPathLength: nil))
+        }
+        try intermediateExtensions.append(
+            Certificate.Extension(oid: [1, 2, 840, 113635, 100, 6, 2, 1], critical: false, value: [0x05, 0x00]))
         intermediate = try Self.certificate(
             subject: intermediateName, issuer: rootName, serial: 2, key: intermediateKey, signedBy: rootKey,
-            extensions: try Certificate.Extensions {
-                Critical(BasicConstraints.isCertificateAuthority(maxPathLength: nil))
-            })
+            extensions: intermediateExtensions)
         // 1.2.840.113635.100.6.11.1, the Apple receipt-signing marker.
         var leafExtensions = Certificate.Extensions()
         try leafExtensions.append(

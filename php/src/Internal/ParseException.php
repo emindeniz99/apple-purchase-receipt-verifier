@@ -8,8 +8,8 @@ use RuntimeException;
 
 /**
  * Internal ASN.1 / X.509 decoding failure. Never escapes the library: every
- * public entry point converts it into a
- * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\VerificationException}.
+ * public entry point converts it into a failed
+ * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\VerificationResult}.
  *
  * @internal
  */

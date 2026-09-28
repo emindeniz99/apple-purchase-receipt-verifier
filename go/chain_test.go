@@ -11,37 +11,39 @@ import (
 
 // The pinning property, stated both ways round: a chain that is perfectly
 // well formed under its own root must fail against Apple's roots, and the
-// genuine Apple chain must fail against a synthesized root.
+// genuine Apple chain must fail against a synthesized root. The exhaustive
+// walk semantics (top-down, DoS bounds, RSA cap) are covered at the
+// internal/chain package level; this file exercises the same properties
+// through the public Verifier, where the marker-OID and config wiring
+// also participate.
 func TestAnchorsArePinnedInBothDirections(t *testing.T) {
 	t.Run("synthesized chain against the real Apple roots", func(t *testing.T) {
 		pki := newJWSPKI(t)
-		verifier := jwsVerifierFor(t, applereceipt.AppleJWSRoots(), nil)
-		_, err := verifier.VerifyTransaction(pki.sign(t, transactionClaims()))
-		requireReason(t, err, applereceipt.ReasonInvalidChain)
+		verifier := verifierFor(t, applereceipt.AppleRoots())
+		_, err := verifier.VerifySignedData(pki.sign(t, transactionClaims()))
+		requireReason(t, err, applereceipt.ReasonUntrustedChain)
 	})
 	t.Run("genuine Apple receipt against a synthesized root", func(t *testing.T) {
 		pki := newReceiptPKI(t)
-		_, err := applereceipt.VerifyReceiptCore(
-			fixtureBytes(t, "public-receipt-sandbox-legacy"), pki.anchors())
-		requireReason(t, err, applereceipt.ReasonInvalidChain)
+		_, err := verifierFor(t, pki.anchors()).VerifyReceipt(fixtureString(t, "public-receipt-sandbox-legacy"))
+		requireReason(t, err, applereceipt.ReasonUntrustedChain)
 	})
 	t.Run("genuine Apple receipt against the real Apple roots", func(t *testing.T) {
 		// The control: the same bytes and the right anchors do verify, so
 		// the two rejections above are about trust and not about the
 		// receipt being broken.
-		receipt, err := applereceipt.VerifyReceiptCore(
-			fixtureBytes(t, "public-receipt-sandbox-legacy"), applereceipt.AppleReceiptRoots())
+		receipt, err := verifierFor(t, applereceipt.AppleRoots()).VerifyReceipt(fixtureString(t, "public-receipt-sandbox-legacy"))
 		if err != nil {
 			t.Fatalf("the genuine legacy receipt must verify against Apple's roots: %v", err)
 		}
-		if len(receipt.InAppPurchases) != 187 {
-			t.Fatalf("expected 187 in-app purchases, got %d", len(receipt.InAppPurchases))
+		if len(receipt.InApp) == 0 {
+			t.Fatal("expected at least one in-app purchase")
 		}
 	})
 }
 
 // Trust anchors are trusted by fiat: an anchor's own expiry is not
-// checked. This is what lets a historical receipt verify under a root
+// checked. This is what lets a historical payload verify under a root
 // that has since expired, and it is standard PKIX semantics.
 func TestExpiredAnchorStillAnchors(t *testing.T) {
 	past := time.Now().Add(-20 * 365 * 24 * time.Hour)
@@ -60,7 +62,7 @@ func TestExpiredAnchorStillAnchors(t *testing.T) {
 	}, intermediate)
 
 	jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, transactionClaims())
-	if _, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws); err != nil {
+	if _, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws); err != nil {
 		t.Fatalf("an anchor's own expiry is not checked: %v", err)
 	}
 }
@@ -90,8 +92,8 @@ func TestIntermediateMustBeAUsableCA(t *testing.T) {
 				commonName: "Leaf", markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
 			}, intermediate)
 			jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, transactionClaims())
-			_, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws)
-			requireReason(t, err, applereceipt.ReasonInvalidChain)
+			_, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws)
+			requireReason(t, err, applereceipt.ReasonUntrustedChain)
 		})
 	}
 }
@@ -117,20 +119,21 @@ func TestIssuerNameMustMatchByBytes(t *testing.T) {
 
 	// The control: the correctly named intermediate verifies.
 	good := signJWS(t, leaf, [][]byte{leaf.der, issuing.der, root.der}, transactionClaims())
-	if _, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(good); err != nil {
+	if _, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(good); err != nil {
 		t.Fatalf("the correctly named intermediate must verify: %v", err)
 	}
 	// The twin holds the same key, so the leaf signature checks out under
 	// it — and it must still be rejected on the name.
 	swapped := signJWS(t, leaf, [][]byte{leaf.der, twin.der, root.der}, transactionClaims())
-	_, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(swapped)
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
+	_, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(swapped)
+	requireReason(t, err, applereceipt.ReasonUntrustedChain)
 }
 
-func TestSignatureAlgorithmAllowlist(t *testing.T) {
+// Q14 (owner, 2026-09-27): there is no certificate signature-algorithm
+// allowlist any more. Whatever crypto/x509 verifies under a pinned chain
+// is accepted, including an algorithm the old 0.6 allowlist refused.
+func TestNoSignatureAlgorithmAllowlist(t *testing.T) {
 	t.Run("ECDSA-SHA384 is accepted", func(t *testing.T) {
-		// Apple's own official JWS chains are SHA-384 signed; an
-		// allowlist that forgot 384 would fail conformance.
 		root := issueCert(t, certSpec{commonName: "P384 Root", isCA: true}, nil)
 		intermediate := issueCert(t, certSpec{
 			commonName: "P384 WWDR", isCA: true,
@@ -141,14 +144,11 @@ func TestSignatureAlgorithmAllowlist(t *testing.T) {
 			signatureAlgo: x509.ECDSAWithSHA384,
 		}, intermediate)
 		jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, transactionClaims())
-		if _, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws); err != nil {
+		if _, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws); err != nil {
 			t.Fatalf("ECDSA-SHA384 must be accepted: %v", err)
 		}
 	})
-	t.Run("RSA-PSS is rejected", func(t *testing.T) {
-		// A legitimate, strong algorithm that Apple does not use. It is
-		// rejected by the allowlist rather than by the signature check,
-		// which is the point: the set of accepted algorithms is closed.
+	t.Run("RSA-PSS is accepted, unlike 0.6's closed allowlist", func(t *testing.T) {
 		root := issueCert(t, certSpec{commonName: "PSS Root", isCA: true, rsa: true}, nil)
 		intermediate := issueCert(t, certSpec{
 			commonName: "PSS WWDR", isCA: true, rsa: true,
@@ -158,8 +158,9 @@ func TestSignatureAlgorithmAllowlist(t *testing.T) {
 			commonName: "PSS Leaf", markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
 		}, intermediate)
 		jws := signJWS(t, leaf, [][]byte{leaf.der, intermediate.der, root.der}, transactionClaims())
-		_, err := jwsVerifierFor(t, []*x509.Certificate{root.cert}, nil).VerifyTransaction(jws)
-		requireReason(t, err, applereceipt.ReasonInvalidChain)
+		if _, err := verifierFor(t, []*x509.Certificate{root.cert}).VerifySignedData(jws); err != nil {
+			t.Fatalf("RSA-PSS must be accepted now that the allowlist is gone: %v", err)
+		}
 	})
 }
 
@@ -173,93 +174,35 @@ func TestSelfIssuedCertificateTerminatesTheWalk(t *testing.T) {
 	unrelated := issueCert(t, certSpec{commonName: "Real Anchor", isCA: true, rsa: true}, nil)
 
 	der := buildCMS(t, cmsSpec{
-		content:      receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
-		signer:       selfSigned,
-		certificates: [][]byte{selfSigned.der},
+		content:         receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
+		signer:          selfSigned,
+		certificates:    [][]byte{selfSigned.der},
+		withSignedAttrs: true,
 	})
 	done := make(chan error, 1)
+	verifier := verifierFor(t, []*x509.Certificate{unrelated.cert})
 	go func() {
-		_, err := applereceipt.VerifyReceiptCore(der, []*x509.Certificate{unrelated.cert})
+		_, err := verifier.VerifyReceipt(applereceiptBase64(der))
 		done <- err
 	}()
 	select {
 	case err := <-done:
-		requireReason(t, err, applereceipt.ReasonInvalidChain)
+		requireReason(t, err, applereceipt.ReasonUntrustedChain)
 	case <-time.After(5 * time.Second):
 		t.Fatal("the walk did not terminate on a self-issued certificate")
 	}
 }
-
-// Ten certificates whose subject and issuer names all collide: every one
-// of them looks like a plausible issuer for every other, so the walk has
-// to be bounded by something other than luck.
-func TestCrossSignedMeshRejectsInBoundedTime(t *testing.T) {
-	anchor := issueCert(t, certSpec{commonName: "Unrelated Anchor", isCA: true, rsa: true}, nil)
-	meshRoot := issueCert(t, certSpec{commonName: "Mesh", isCA: true, rsa: true}, nil)
-	certificates := [][]byte{}
-	var signer *testCert
-	for i := 0; i < 10; i++ {
-		cert := issueCert(t, certSpec{
-			commonName: "Mesh", isCA: true, rsa: true,
-			markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
-		}, meshRoot)
-		certificates = append(certificates, cert.der)
-		if signer == nil {
-			signer = cert
-		}
-	}
-	der := buildCMS(t, cmsSpec{
-		content:      receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
-		signer:       signer,
-		certificates: certificates,
-	})
-
-	start := time.Now()
-	_, err := applereceipt.VerifyReceiptCore(der, []*x509.Certificate{anchor.cert})
-	elapsed := time.Since(start)
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
-	if elapsed > time.Second {
-		t.Fatalf("rejecting a name-colliding mesh took %v; the visited set is not bounding the walk", elapsed)
-	}
-}
-
-// A path longer than the bound is rejected rather than walked forever.
-func TestPathLongerThanTheBoundIsRejected(t *testing.T) {
-	root := issueCert(t, certSpec{commonName: "Deep Root", isCA: true, rsa: true}, nil)
-	chain := [][]byte{}
-	current := root
-	for i := 0; i < 9; i++ {
-		current = issueCert(t, certSpec{
-			commonName: "Deep CA " + itoaTest(i), isCA: true, rsa: true,
-		}, current)
-		chain = append(chain, current.der)
-	}
-	leaf := issueCert(t, certSpec{
-		commonName: "Deep Leaf", rsa: true, markerOIDs: []asn1.ObjectIdentifier{oidAppleLeaf},
-	}, current)
-	// Nine intermediates plus the leaf is exactly the ten-certificate
-	// bound, so the walk — not the certificate count — is what rejects.
-	certificates := append([][]byte{leaf.der}, chain...)
-	der := buildCMS(t, cmsSpec{
-		content:      receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
-		signer:       leaf,
-		certificates: certificates,
-	})
-	_, err := applereceipt.VerifyReceiptCore(der, []*x509.Certificate{root.cert})
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
-}
-
-func itoaTest(i int) string { return string(rune('a' + i)) }
 
 // An intermediate that is not embedded cannot be conjured from anywhere:
 // there is no AIA fetch and no other source of certificates.
 func TestMissingIntermediateIsNotFetched(t *testing.T) {
 	pki := newReceiptPKI(t)
 	der := buildCMS(t, cmsSpec{
-		content:      receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
-		signer:       pki.leaf,
-		certificates: [][]byte{pki.leaf.der}, // the intermediate is left out
+		content:         receiptPayload(standardReceiptAttributes("com.example.app", "ProductionSandbox", time.Now())...),
+		signer:          pki.leaf,
+		certificates:    [][]byte{pki.leaf.der}, // the intermediate is left out
+		withSignedAttrs: true,
 	})
-	_, err := applereceipt.VerifyReceiptCore(der, pki.anchors())
-	requireReason(t, err, applereceipt.ReasonInvalidChain)
+	_, err := verifierFor(t, pki.anchors()).VerifyReceipt(applereceiptBase64(der))
+	requireReason(t, err, applereceipt.ReasonUntrustedChain)
 }

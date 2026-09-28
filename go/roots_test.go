@@ -2,7 +2,6 @@ package applereceipt_test
 
 import (
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/hex"
 	"os"
 	"path/filepath"
@@ -24,82 +23,66 @@ var appleRootFingerprints = map[string]string{
 }
 
 func TestBundledRootsAreTheThreePublishedAppleRoots(t *testing.T) {
-	for _, set := range []struct {
-		name  string
-		roots []*x509.Certificate
-	}{
-		{"AppleJWSRoots", applereceipt.AppleJWSRoots()},
-		{"AppleReceiptRoots", applereceipt.AppleReceiptRoots()},
-	} {
-		set := set
-		t.Run(set.name, func(t *testing.T) {
-			if len(set.roots) != len(appleRootFingerprints) {
-				t.Fatalf("got %d roots, want %d", len(set.roots), len(appleRootFingerprints))
-			}
-			seen := map[string]bool{}
-			for _, root := range set.roots {
-				name := root.Subject.CommonName
-				want, known := appleRootFingerprints[name]
-				if !known {
-					t.Errorf("unexpected bundled root %q", name)
-					continue
-				}
-				sum := sha256.Sum256(root.Raw)
-				if got := hex.EncodeToString(sum[:]); got != want {
-					t.Errorf("%s: fingerprint %s, want %s", name, got, want)
-				}
-				seen[name] = true
-				if !root.IsCA {
-					t.Errorf("%s is not a CA", name)
-				}
-				// Self-signed, as a root must be. The signature itself is
-				// never verified in production — a self-signature proves
-				// nothing about trust — but the naming must be right.
-				if root.Subject.String() != root.Issuer.String() {
-					t.Errorf("%s is not self-issued", name)
-				}
-			}
-			for name := range appleRootFingerprints {
-				if !seen[name] {
-					t.Errorf("bundled set is missing %q", name)
-				}
-			}
-		})
+	roots := applereceipt.AppleRoots()
+	if len(roots) != len(appleRootFingerprints) {
+		t.Fatalf("got %d roots, want %d", len(roots), len(appleRootFingerprints))
 	}
-}
-
-// Both sets carry all three roots (PLAN.md D15). Apple documents the JWS
-// chain as ending in "an Apple root certificate" without naming one, so
-// anchoring either path on a single root would break silently if Apple
-// re-anchored a path.
-func TestBothRootSetsAreTheSame(t *testing.T) {
-	jws := fingerprintsOf(applereceipt.AppleJWSRoots())
-	receipt := fingerprintsOf(applereceipt.AppleReceiptRoots())
-	if strings.Join(jws, ",") != strings.Join(receipt, ",") {
-		t.Fatalf("the two sets differ:\n%v\n%v", jws, receipt)
-	}
-}
-
-func fingerprintsOf(roots []*x509.Certificate) []string {
-	out := make([]string, 0, len(roots))
+	seen := map[string]bool{}
 	for _, root := range roots {
+		name := root.Subject.CommonName
+		want, known := appleRootFingerprints[name]
+		if !known {
+			t.Errorf("unexpected bundled root %q", name)
+			continue
+		}
 		sum := sha256.Sum256(root.Raw)
-		out = append(out, hex.EncodeToString(sum[:]))
+		if got := hex.EncodeToString(sum[:]); got != want {
+			t.Errorf("%s: fingerprint %s, want %s", name, got, want)
+		}
+		seen[name] = true
+		if !root.IsCA {
+			t.Errorf("%s is not a CA", name)
+		}
+		// Self-signed, as a root must be. The signature itself is never
+		// verified in production (a self-signature proves nothing about
+		// trust), but the naming must be right.
+		if root.Subject.String() != root.Issuer.String() {
+			t.Errorf("%s is not self-issued", name)
+		}
 	}
-	sort.Strings(out)
-	return out
+	for name := range appleRootFingerprints {
+		if !seen[name] {
+			t.Errorf("bundled set is missing %q", name)
+		}
+	}
+}
+
+// AppleRoots panics, the same as DefaultConfig's equivalent of
+// Config.defaults() throwing at startup, when a bundled root fails its
+// pinned fingerprint.
+// mustAppleRoots is unexported, so this pins the observable half: the
+// fingerprints above must be exactly what ships, or this whole suite
+// would already be failing every other test that calls AppleRoots or
+// DefaultConfig.
+func TestBundledRootsMatchTheirPinnedFingerprints(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("AppleRoots panicked: %v", r)
+		}
+	}()
+	_ = applereceipt.DefaultConfig()
 }
 
 // Each call hands back its own slice. Appending to or reordering what a
 // caller got must not reach the next caller — a Go aliasing hazard the
 // other ports do not have.
 func TestRootAccessorsReturnIndependentSlices(t *testing.T) {
-	first := applereceipt.AppleReceiptRoots()
+	first := applereceipt.AppleRoots()
 	first[0] = nil
 	first = append(first, nil)
 	_ = first
 
-	second := applereceipt.AppleReceiptRoots()
+	second := applereceipt.AppleRoots()
 	if len(second) != len(appleRootFingerprints) {
 		t.Fatalf("the second call returned %d roots", len(second))
 	}
@@ -107,6 +90,16 @@ func TestRootAccessorsReturnIndependentSlices(t *testing.T) {
 		if root == nil {
 			t.Fatalf("root %d was nilled out by a previous caller", i)
 		}
+	}
+}
+
+// Config.Roots() is documented as an unmodifiable copy too.
+func TestConfigRootsReturnsIndependentSlices(t *testing.T) {
+	config := applereceipt.DefaultConfig()
+	roots := config.Roots()
+	roots[0] = nil
+	if config.Roots()[0] == nil {
+		t.Fatal("mutating the returned slice reached the Config")
 	}
 }
 

@@ -6,12 +6,11 @@ import FuzzSupport
 // fuzzed upstream; what is hand-written here — and therefore what this
 // target is for — is the glue on top of it.
 //
-// One execution drives all three, because they take the same bytes from
-// different angles and none of them costs enough to be worth its own
-// process. The fourth hand-written reader — the attribute-SET walk and the
-// decoders under it — is the `receipt-payload` target instead: reaching it
-// costs a chain build and an RSA verification per execution, and sharing an
-// execution with these would drag them down to that rate for nothing.
+// One execution drives both, because they take the same bytes from
+// different angles and neither costs enough to be worth its own process.
+// The third hand-written reader — the attribute-SET walk and the decoders
+// under it — is the `receipt-payload` target instead, since its inputs are
+// ASN.1 rather than text.
 //
 //  1. `decodeReceiptBase64` — the receipt transport rule: canonical standard
 //     base64 and nothing else. Invariant:
@@ -22,21 +21,14 @@ import FuzzSupport
 //     segment's bytes reproduces the segment character for character. That is
 //     the canonicity claim restated independently, so a segment whose final
 //     character carries non-zero unused bits has somewhere to fail.
-//  3. `isRepresentableAsCertificateValidationTime` — the guard that keeps an
-//     unverified date from reaching a certificate policy and trapping inside
-//     X509's `Time`. Invariant: it answers `false` for every instant outside
-//     the GeneralizedTime window, NaN and the infinities included.
 
 @_cdecl("LLVMFuzzerTestOneInput")
 public func fuzzReaders(_ start: UnsafePointer<UInt8>?, _ count: Int) -> CInt {
     guard let start else { return 0 }
-    let bytes = fuzzInput(start, count)
-
     if let text = fuzzText(start, count) {
         checkReceiptBase64(text)
         checkBase64URL(text)
     }
-    checkValidationTimeWindow(bytes)
     return 0
 }
 
@@ -60,7 +52,7 @@ private func checkReceiptBase64(_ text: String) {
 
 private func checkBase64URL(_ segment: String) {
     guard let decoded = Readers.base64URLDecode(segment) else { return }
-    let reencoded = decoded.base64EncodedString()
+    let reencoded = Data(decoded).base64EncodedString()
         .replacingOccurrences(of: "=", with: "")
         .replacingOccurrences(of: "+", with: "-")
         .replacingOccurrences(of: "/", with: "_")
@@ -68,24 +60,5 @@ private func checkBase64URL(_ segment: String) {
         fail(
             "base64URLDecode accepted the non-canonical segment \(segment.debugDescription), "
                 + "which re-encodes as \(reencoded.debugDescription)")
-    }
-}
-
-/// The window is 0001-01-01 to 9999-12-31 inclusive, in seconds since the
-/// epoch. The input's first eight bytes are read as a raw `Double` bit
-/// pattern so the fuzzer can steer at the boundaries — and at NaN and the
-/// infinities — instead of only at instants a date string can spell.
-private func checkValidationTimeWindow(_ bytes: [UInt8]) {
-    guard bytes.count >= 8 else { return }
-    let lower = -62_135_596_800.0
-    let upper = 253_402_300_799.0
-    let seconds = Double(bitPattern: bytes.prefix(8).reduce(UInt64(0)) { $0 << 8 | UInt64($1) })
-    let answer = Readers.isRepresentableAsCertificateValidationTime(
-        Date(timeIntervalSince1970: seconds))
-    let expected = seconds >= lower && seconds <= upper
-    guard answer == expected else {
-        fail(
-            "isRepresentableAsCertificateValidationTime answered \(answer) for "
-                + "\(seconds) seconds since the epoch, expected \(expected)")
     }
 }

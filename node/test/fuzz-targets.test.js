@@ -70,8 +70,23 @@ function* mutationsOf(label, bytes) {
   }
 }
 
-/** Reduced crashers found by the fuzzer. Empty is the honest state today. */
-const CRASHERS = [];
+/** Reduced crashers found by the fuzzer. */
+const CRASHERS = [
+  // parse-cms, reduced from a jazzer crasher by dropping DER children while
+  // the failure held: a SignedData skeleton with empty INTEGERs and one
+  // SignerInfo whose signedAttrs hold a single attribute of type `06 00`, an
+  // empty OBJECT IDENTIFIER. requireAttributeSetSyntax checked only the tag,
+  // so it admitted the set and signedAttributeValues then threw decoding the
+  // type. The unreduced crasher had the same shape with a type ending mid-arc.
+  [
+    'parse-cms: signedAttrs attribute type is an empty OID',
+    Buffer.from(
+      '303f06092a864886f70d010702a03230300200310030060600a0022400a000312030' +
+        '1e02003004300002003003060160a0083006060031020400300306012a0400',
+      'hex',
+    ),
+  ],
+];
 
 function runTarget(name, fuzz, seeds) {
   let checked = 0;

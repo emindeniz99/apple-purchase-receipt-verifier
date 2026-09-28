@@ -91,19 +91,11 @@ func TestSystemTrustStoreIsNeverConsulted(t *testing.T) {
 		name  string
 		roots []*x509.Certificate
 	}{
-		{"the bundled Apple roots", applereceipt.AppleJWSRoots()},
+		{"the bundled Apple roots", applereceipt.AppleRoots()},
 		{"an unrelated generated root", newJWSPKI(t).anchorSlice()},
 	} {
-		verifier, err := applereceipt.NewJWSVerifier(applereceipt.JWSVerifierOptions{
-			TrustedRoots:         anchors.roots,
-			BundleID:             "com.example.app",
-			AcceptedEnvironments: []applereceipt.Environment{applereceipt.EnvironmentSandbox},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = verifier.VerifyTransaction(jws)
-		requireReason(t, err, applereceipt.ReasonInvalidChain)
+		_, err := verifierFor(t, anchors.roots).VerifySignedData(jws)
+		requireReason(t, err, applereceipt.ReasonUntrustedChain)
 	}
 
 	// And the receipt path, which is the one with a path builder.
@@ -122,6 +114,6 @@ func TestSystemTrustStoreIsNeverConsulted(t *testing.T) {
 		certificates:    [][]byte{receiptLeaf.der},
 		withSignedAttrs: true,
 	})
-	_, receiptErr := applereceipt.VerifyReceiptCore(der, applereceipt.AppleReceiptRoots())
-	requireReason(t, receiptErr, applereceipt.ReasonInvalidChain)
+	_, receiptErr := verifierFor(t, applereceipt.AppleRoots()).VerifyReceipt(applereceiptBase64(der))
+	requireReason(t, receiptErr, applereceipt.ReasonUntrustedChain)
 }

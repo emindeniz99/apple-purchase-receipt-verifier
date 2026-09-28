@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "json"
 require "openssl"
 
 module ApplePurchaseReceiptVerifier
@@ -9,365 +8,248 @@ module ApplePurchaseReceiptVerifier
   # Apple marker OID carried by the Worldwide Developer Relations intermediate.
   INTERMEDIATE_MARKER_OID = "1.2.840.113635.100.6.2.1"
 
-  # Verifies Apple-signed JWS payloads — StoreKit 2 `jwsRepresentation`,
-  # `signedTransactionInfo` / `signedRenewalInfo`, App Store Server
-  # Notifications V2 — entirely offline, against trust anchors the caller
-  # pins. Nothing here reaches the network or the operating system's trust
-  # store (PLAN.md 2.1).
+  # @api private
   #
-  #   verifier = ApplePurchaseReceiptVerifier::JwsVerifier.new(
-  #     trusted_roots: ApplePurchaseReceiptVerifier.apple_jws_roots,
-  #     bundle_id: "com.example.app",
-  #     accepted_environments: [ApplePurchaseReceiptVerifier::Environment::PRODUCTION,
-  #                             ApplePurchaseReceiptVerifier::Environment::SANDBOX],
-  #     app_apple_id: 123456789
-  #   )
-  #   payload = verifier.verify_transaction(jws)
-  class JwsVerifier
-    # Ceiling on a compact JWS, in characters. A longer one is
-    # {Reason::INVALID_JWS_FORMAT} before it is split or decoded: splitting
-    # copies it, base64url decoding allocates three quarters of it again and
-    # JSON parsing a multiple of that, none of it behind a signature check.
-    # The number is the Java and PHP ports'. Every JWS in the shared corpus,
-    # Apple's own mock notification data included, is under 2.5 KB, and a
-    # compact JWS is base64url and dots, so for any input that could verify
-    # its characters and its bytes are the same count. The header and payload
-    # JSON may also nest at most 64 levels deep.
+  # {Verifier#verify_signed_data}: any Apple-signed compact JWS (StoreKit 2
+  # `jwsRepresentation`, App Store Server `signedTransactionInfo` /
+  # `signedRenewalInfo`, app transactions, Server Notifications V2), verified
+  # entirely offline against trust anchors the caller pins.
+  #
+  # ES256 only, exactly three `x5c` certificates, the chain to a pinned root
+  # at the payload's `signedDate` (the clock when it states none), Apple's
+  # marker OIDs on leaf and intermediate, then the signature. The order of
+  # the checks is observable: an input that fails an early check reports
+  # that check's reason, and the shared cases pin it.
+  module Jws
+    # Ceiling on a compact JWS, in UTF-8 bytes (docs/design/0.7-api.md,
+    # Bounds). A longer one is MALFORMED before it is split or decoded:
+    # splitting copies it, base64url decoding allocates three quarters of it
+    # again and JSON parsing a multiple of that, none of it behind a
+    # signature check.
     MAX_JWS_BYTES = 262_144
 
-    # @param trusted_roots [Array<OpenSSL::X509::Certificate, String>] pinned
-    #   anchors; in production {ApplePurchaseReceiptVerifier.apple_jws_roots}
-    # @param bundle_id [String] the bundle id every payload must carry
-    # @param accepted_environments [Array<String>] see {Environment}. Include
-    #   Sandbox on endpoints App Review can reach (PLAN.md D3).
-    # @param app_apple_id [Integer, nil] required to accept Production
-    #   AppTransactions
-    #
-    # No payload is rejected for its age: how old a signed payload may be is
-    # the caller's decision, made on its `signed_date` (PLAN.md D5).
-    def initialize(trusted_roots:, bundle_id:, accepted_environments:,
-                   app_apple_id: nil)
-      @roots = Chain.normalize_roots(trusted_roots)
+    # A JSON number as epoch milliseconds: an integer must fit a signed
+    # 64-bit range; a number with a fraction or exponent is read as a float
+    # and truncated when it lies within that range (2^63 itself saturates to
+    # the largest representable instant, matching a `f64 as i64` cast);
+    # anything else, `1e300` say, is no instant.
+    I64_MIN = -(2**63)
+    I64_MAX = (2**63) - 1
 
-      unless bundle_id.is_a?(String) && !bundle_id.empty?
-        raise ArgumentError,
-              "bundle_id must be a non-empty String"
+    class << self
+      # @param jws [String]
+      # @param roots [Array<OpenSSL::X509::Certificate>]
+      # @param clock [ClockOnce]
+      # @return [JsonPayload]
+      # @raise [VerificationError]
+      def verify(jws, roots, clock)
+        contained do
+          verify_signature(jws, roots, clock)
+        end
       end
 
-      unless accepted_environments.is_a?(Array) && !accepted_environments.empty? &&
-             accepted_environments.all? { |e| Environment::ALL.include?(e) }
-        raise ArgumentError,
-              "accepted_environments must be a non-empty Array of #{Environment::ALL.join(", ")}"
+      private
+
+      # Only VerificationError escapes an exported entry point —
+      # categorically, not by listing types. `SystemStackError` is named
+      # explicitly because it is not a `StandardError` and would otherwise
+      # walk straight through a caller's `rescue`.
+      def contained
+        yield
+      rescue VerificationError
+        raise
+      rescue SystemStackError
+        raise VerificationError.new(Reason::MALFORMED, "input nesting exhausted the stack")
+      rescue StandardError => e
+        raise VerificationError.new(Reason::MALFORMED, "malformed JWS: #{e.class}")
       end
 
-      unless app_apple_id.nil? || app_apple_id.is_a?(Integer)
-        raise ArgumentError, "app_apple_id must be an Integer or nil"
+      def verify_signature(jws, roots, clock)
+        header_b64, payload_b64, signature_b64 = split_segments(jws)
+        header = read_header(base64url_decode(header_b64, "header"))
+
+        unless header["alg"] == "ES256"
+          raise VerificationError.new(Reason::MALFORMED,
+                                      "alg must be ES256, got #{SafeText.quote(header["alg"])}")
+        end
+
+        x5c = header["x5c"]
+        unless x5c.is_a?(Array) && x5c.size == 3 && x5c.all?(String)
+          raise VerificationError.new(Reason::MALFORMED, "x5c must contain exactly 3 certificates")
+        end
+
+        leaf = parse_x5c_certificate(x5c[0])
+        intermediate = parse_x5c_certificate(x5c[1])
+        # Parsed and then dropped: the third entry is trusted by nobody, and
+        # reading it decides only whether it IS a certificate
+        # (transaction/reject-x5c-root-that-is-not-a-certificate).
+        parse_x5c_certificate(x5c[2])
+
+        # Never raises: a payload that does not read as a JSON object is
+        # carried past the chain and signature checks, with the clock
+        # standing in for the missing date, and decided only afterwards.
+        payload_text, signed_date_millis, payload_ok = read_payload(base64url_decode(payload_b64,
+                                                                                     "payload"))
+
+        # Chain validity is judged at signing time, so payloads Apple signed
+        # with a since-rotated certificate keep verifying.
+        at_millis = signed_date_millis || clock.millis
+        # The chain, top-down (#161): the intermediate against a pinned
+        # anchor first, and only once that has vouched for it, the leaf
+        # against the intermediate's key.
+        Chain.validate_pair(leaf, intermediate, roots, at_millis)
+
+        # Checked after the chain: a chain to a foreign root whose
+        # certificates lack the markers is UNTRUSTED_CHAIN, not this.
+        if leaf.find_extension(LEAF_MARKER_OID).nil?
+          raise VerificationError.new(Reason::INVALID_CERTIFICATE_PURPOSE,
+                                      "leaf certificate lacks Apple marker OID #{LEAF_MARKER_OID}")
+        end
+        if intermediate.find_extension(INTERMEDIATE_MARKER_OID).nil?
+          raise VerificationError.new(
+            Reason::INVALID_CERTIFICATE_PURPOSE,
+            "intermediate certificate lacks Apple marker OID #{INTERMEDIATE_MARKER_OID}"
+          )
+        end
+
+        verify_es256(leaf, "#{header_b64}.#{payload_b64}", base64url_decode(signature_b64, "signature"))
+
+        return JsonPayload.new(json: payload_text) if payload_ok
+
+        raise VerificationError.new(Reason::UNREADABLE_PAYLOAD, "signed payload is not a JSON object")
       end
 
-      @bundle_id = bundle_id.dup.freeze
-      @accepted_environments = accepted_environments.dup.freeze
-      @app_apple_id = app_apple_id
-      freeze
-    end
+      def split_segments(jws)
+        unless jws.is_a?(String) && !jws.empty?
+          raise VerificationError.new(Reason::MALFORMED, "jws must be a non-empty String")
+        end
+        if jws.bytesize > MAX_JWS_BYTES
+          raise VerificationError.new(Reason::TOO_LARGE,
+                                      "jws exceeds the maximum accepted size of #{MAX_JWS_BYTES} bytes")
+        end
 
-    # Verifies a signed transaction and enforces bundle id and environment.
-    #
-    # @param jws [String]
-    # @return [TransactionPayload]
-    # @raise [VerificationError]
-    def verify_transaction(jws)
-      contained do
-        payload = TransactionPayload.read(verify_signature(jws))
-        require_bundle_id(payload.bundle_id)
-        require_accepted_environment(payload.environment)
-        payload
-      end
-    end
+        parts = jws.split(".", -1)
+        unless parts.size == 3
+          raise VerificationError.new(Reason::MALFORMED,
+                                      "expected 3 dot-separated segments, got #{parts.size}")
+        end
 
-    # Verifies a signed AppTransaction and enforces bundle id, environment
-    # (`receiptType`) and — in Production — the app Apple id.
-    #
-    # @param jws [String]
-    # @return [AppTransactionPayload]
-    # @raise [VerificationError]
-    def verify_app_transaction(jws)
-      contained do
-        payload = AppTransactionPayload.read(verify_signature(jws))
-        require_bundle_id(payload.bundle_id)
-        environment = require_accepted_environment(payload.receipt_type)
-        require_app_apple_id(environment, payload.app_apple_id)
-        payload
-      end
-    end
-
-    # Verifies the chain and signature only and returns every claim — for
-    # payload types this library does not model (renewal info, notification
-    # envelopes). **No claim is enforced**: the caller checks bundle id,
-    # environment and app Apple id itself.
-    #
-    # @param jws [String]
-    # @return [Hash{String => Object}] frozen
-    # @raise [VerificationError]
-    def verify_raw(jws)
-      contained { verify_signature(jws) }
-    end
-
-    private
-
-    # Only VerificationError escapes an exported entry point — categorically,
-    # not by listing types. `SystemStackError` is named explicitly because it
-    # is not a `StandardError` and would otherwise walk straight through a
-    # caller's `rescue`, killing their request.
-    def contained
-      yield
-    rescue VerificationError
-      raise
-    rescue SystemStackError
-      raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "input nesting exhausted the stack")
-    rescue StandardError => e
-      raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "malformed JWS: #{e.class}")
-    end
-
-    def verify_signature(jws)
-      header_b64, payload_b64, signature_b64 = split_segments(jws)
-      header = json_segment(header_b64, "header")
-
-      unless header["alg"] == "ES256"
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT,
-                                    "alg must be ES256, got #{header["alg"].inspect}")
+        [parts[0], parts[1], parts[2]] #: [String, String, String]
       end
 
-      x5c = header["x5c"]
-      unless x5c.is_a?(Array) && x5c.size == 3 && x5c.all?(String)
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT,
-                                    "x5c must contain exactly 3 certificates")
+      # Strict base64url: the JWS alphabet only, no padding, no whitespace,
+      # no standard-base64 `+` or `/`. A lenient decoder that skips what it
+      # does not recognise turns a corrupted segment into a differently
+      # corrupted one.
+      def base64url_decode(segment, what)
+        unless segment.match?(/\A[A-Za-z0-9_-]*\z/) && (segment.bytesize % 4) != 1
+          raise VerificationError.new(Reason::MALFORMED, "#{what} is not base64url")
+        end
+
+        padded = segment.tr("-_", "+/")
+        padded += "=" * ((4 - (padded.bytesize % 4)) % 4)
+        begin
+          padded.unpack1("m0") #: String
+        rescue ArgumentError
+          raise VerificationError.new(Reason::MALFORMED, "#{what} is not base64url")
+        end
       end
 
-      leaf, intermediate = certificates(x5c) #: [OpenSSL::X509::Certificate, OpenSSL::X509::Certificate]
-
-      if leaf.find_extension(LEAF_MARKER_OID).nil?
-        raise VerificationError.new(Reason::INVALID_CERTIFICATE_PURPOSE,
-                                    "leaf certificate lacks Apple marker OID #{LEAF_MARKER_OID}")
-      end
-      if intermediate.find_extension(INTERMEDIATE_MARKER_OID).nil?
-        raise VerificationError.new(
-          Reason::INVALID_CERTIFICATE_PURPOSE,
-          "intermediate certificate lacks Apple marker OID #{INTERMEDIATE_MARKER_OID}"
-        )
+      # The header is outer structure, so anything that stops the read is
+      # MALFORMED: bytes that are not strict UTF-8, a byte-order mark (RFC
+      # 8259 8.1 forbids one), and anything but whitespace after the object.
+      def read_header(bytes)
+        Json.parse_whole_object(bytes)
+      rescue Json::Error => e
+        raise VerificationError.new(Reason::MALFORMED, "header is not a JSON object: #{e.message}")
       end
 
-      claims = json_segment(payload_b64, "payload")
+      # The payload text and its last top-level `signedDate`, or why it is
+      # not a JSON object in UTF-8. Reading it never raises: a `signedDate`
+      # that is not a number, or a number no instant can hold (`1e300`),
+      # counts as not stated (owner, 2026-09-27) and the clock stands in.
+      #
+      # @return [Array(String, Integer?, bool)] the payload text verbatim,
+      #   the signing instant in epoch milliseconds (or nil), and whether the
+      #   payload read as a JSON object at all
+      def read_payload(bytes)
+        text = bytes.dup.force_encoding(Encoding::UTF_8)
+        return [text, nil, false] unless text.valid_encoding?
 
-      # Chain validity is judged at signing time, so payloads Apple signed with
-      # a since-rotated certificate keep verifying. When the payload states no
-      # date, the fallback is the system clock.
-      signed_at_millis = signed_at_millis_of(claims) #: (Integer | Float)?
-      instant = signed_at_millis.nil? ? Time.now.utc : Time.at(signed_at_millis / 1000.0).utc
-      Chain.validate_pair(leaf, intermediate, @roots, instant)
-
-      verify_es256(leaf, "#{header_b64}.#{payload_b64}", signature_b64)
-
-      claims
-    end
-
-    def split_segments(jws)
-      unless jws.is_a?(String) && !jws.empty?
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "jws must be a non-empty String")
-      end
-      if jws.length > MAX_JWS_BYTES
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT,
-                                    "jws exceeds the maximum accepted size of #{MAX_JWS_BYTES} characters")
+        object = Json.parse_whole_object(text)
+        [text, numeric_instant(object["signedDate"]), true]
+      rescue Json::Error
+        [bytes.dup.force_encoding(Encoding::UTF_8), nil, false]
       end
 
-      parts = jws.split(".", -1)
-      unless parts.size == 3
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT,
-                                    "expected 3 dot-separated segments, got #{parts.size}")
+      def numeric_instant(value)
+        case value
+        when Integer
+          value if value.between?(I64_MIN, I64_MAX)
+        when Float
+          return nil unless value.finite? && value >= I64_MIN.to_f && value <= I64_MAX.to_f + 1024.0
+
+          truncated = value.truncate
+          [truncated, I64_MAX].min
+        end
       end
 
-      parts #: [String, String, String]
-    end
-
-    # Strict base64url: the JWS alphabet only, no padding, no whitespace, no
-    # standard-base64 `+` or `/`. A lenient decoder that skips what it does not
-    # recognise turns a corrupted segment into a differently corrupted one.
-    def base64url_decode(segment, what)
-      unless segment.match?(/\A[A-Za-z0-9_-]*\z/) && (segment.bytesize % 4) != 1
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "#{what} is not base64url")
-      end
-
-      padded = segment.tr("-_", "+/")
-      padded += "=" * ((4 - (padded.bytesize % 4)) % 4)
-      begin
-        padded.unpack1("m0") #: String
-      rescue ArgumentError
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "#{what} is not base64url")
-      end
-    end
-
-    def json_segment(segment, what)
-      bytes = base64url_decode(segment, what)
-      begin
-        parsed = JsonLimits.parse(bytes)
-      rescue JSON::ParserError, EncodingError
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT, "#{what} is not valid JSON")
-      end
-      unless parsed.is_a?(Hash)
-        raise VerificationError.new(Reason::INVALID_JWS_FORMAT,
-                                    "#{what} is not a JSON object")
-      end
-
-      parsed.freeze
-    end
-
-    # All three entries are read; only the first two are returned. `x5c[2]`
-    # is trusted by nobody — only "the intermediate is signed by one of our
-    # pinned anchors" counts, so an attacker swapping in their own third
-    # element still changes nothing. Reading it settles the other question:
-    # an entry that is not a certificate is INVALID_CERTIFICATE at every
-    # index (transaction/reject-x5c-root-that-is-not-a-certificate).
-    def certificates(x5c)
-      x5c.map do |entry|
-        # An x5c entry is standard base64 (RFC 7515 4.1.6) with canonical
-        # padding, the receipt-data rule: no junk, no whitespace, no
-        # base64url "-" or "_", no omitted or extra "=".
+      # All three entries are read; only the first two are returned. `x5c[2]`
+      # is trusted by nobody. {CertificateStructure} settles what OpenSSL
+      # decodes more leniently than this library assumes, for every entry.
+      # The public key is deliberately NOT touched here (#161): a curve
+      # this build does not implement is judged only once a pinned anchor
+      # has vouched for the certificate (Chain.decode_public_key!).
+      def parse_x5c_certificate(entry)
         der = Receipt.decode_canonical_base64(entry)
         raise VerificationError.new(Reason::INVALID_CERTIFICATE, "x5c entry is not base64") if der.nil?
 
         begin
           certificate = OpenSSL::X509::Certificate.new(der)
-          # Three things OpenSSL decodes more leniently than the checks that
-          # follow assume, settled here so all three are INVALID_CERTIFICATE:
-          #
-          #   - the version, which it keeps as whatever integer it found.
-          #     X.509 defines v1, v2 and v3 (0, 1, 2) and nothing else, and
-          #     nothing downstream reads the field, so without this a
-          #     certificate claiming version 11 verifies like any other.
-          #   - a repeated extension, which RFC 5280 4.2 forbids. OpenSSL
-          #     hands the list back with both copies in it and every reader
-          #     picks one, so without this the marker-OID lookup, the CA check
-          #     and another port's answer can be about different copies.
-          #   - the public key, which it decodes lazily, so a namedCurve this
-          #     build does not implement would otherwise surface in the issuer
-          #     check and be reported as a chain failure.
-          unless (0..2).cover?(certificate.version)
-            raise VerificationError.new(Reason::INVALID_CERTIFICATE,
-                                        "x5c entry has an unknown X.509 version")
-          end
-
-          oids = certificate.extensions.map(&:oid)
-          unless oids.uniq.size == oids.size
-            raise VerificationError.new(Reason::INVALID_CERTIFICATE,
-                                        "x5c entry carries a duplicate extension")
-          end
-
-          #   - the extension VALUES, which it never looks inside, so one that
-          #     stops decoding partway through is the difference between
-          #     parsing a certificate and scanning it for a marker OID.
-          certificate.extensions.each do |extension|
-            OpenSSL::ASN1.decode(OpenSSL::ASN1.decode(extension.to_der).value.last.value)
-          end
-
-          certificate.public_key
-          certificate
         rescue OpenSSL::OpenSSLError
-          raise VerificationError.new(Reason::INVALID_CERTIFICATE,
-                                      "x5c entry is not a valid certificate")
+          raise VerificationError.new(Reason::INVALID_CERTIFICATE, "x5c entry is not a valid certificate")
         end
-      end
-    end
-
-    # P-256 order; r and s outside [1, n-1] are not a signature.
-    EC_ORDER = OpenSSL::BN.new(
-      "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16
-    ).freeze
-    private_constant :EC_ORDER
-
-    def verify_es256(leaf, signing_input, signature_b64)
-      key = leaf.public_key
-      unless key.is_a?(OpenSSL::PKey::EC) && key.group.curve_name == "prime256v1" # steep:ignore NoMethod
-        raise VerificationError.new(Reason::INVALID_SIGNATURE, "leaf key is not a P-256 EC key")
-      end
-
-      signature = base64url_decode(signature_b64, "signature")
-      unless signature.bytesize == 64
-        raise VerificationError.new(Reason::INVALID_SIGNATURE,
-                                    "ES256 signature must be 64 bytes, got #{signature.bytesize}")
-      end
-
-      r = OpenSSL::BN.new(signature.byteslice(0, 32), 2) # steep:ignore ArgumentTypeMismatch
-      s = OpenSSL::BN.new(signature.byteslice(32, 32), 2) # steep:ignore ArgumentTypeMismatch
-      if r.zero? || s.zero? || r >= EC_ORDER || s >= EC_ORDER
-        raise VerificationError.new(Reason::INVALID_SIGNATURE, "ES256 signature scalar out of range")
-      end
-
-      der = OpenSSL::ASN1::Sequence.new(
-        [OpenSSL::ASN1::Integer.new(r), OpenSSL::ASN1::Integer.new(s)]
-      ).to_der
-      # No input chooses the digest, so a failure to create it is the runtime's.
-      digest = begin
-        OpenSSL::Digest.new("SHA256")
-      rescue OpenSSL::OpenSSLError
-        raise VerificationError.new(Reason::INTERNAL_ERROR, "SHA-256 unavailable")
-      end
-      ok = begin
-        key.verify(digest, der, signing_input.b)
-      rescue OpenSSL::OpenSSLError
-        false
-      end
-      return if ok
-
-      raise VerificationError.new(Reason::INVALID_SIGNATURE, "ES256 signature check failed")
-    end
-
-    # When the payload says it was signed, in epoch milliseconds:
-    # `signedDate` for transactions, `receiptCreationDate` for AppTransactions.
-    #
-    # A JSON number is not necessarily an integer, and every other port takes a
-    # fractional one: node tests `typeof === 'number'`, java `canConvertToLong`,
-    # python `isinstance(..., (int, float))`, swift `as? Double`. Treating it as
-    # absent would judge the chain at "now" rather than at the stated instant.
-    #
-    # A non-finite number gets that same treatment for the same reason and in
-    # the other direction: Ruby's JSON parser turns `1e400` into Infinity, and
-    # quietly reading it back as "no claim" would reinterpret a stated signing
-    # time as absence, so it is a malformed payload instead. (node and python
-    # also refuse it; java reads it as absent.) Left alone it would reach
-    # `Time.at` as a FloatDomainError.
-    def signed_at_millis_of(claims)
-      [claims["signedDate"], claims["receiptCreationDate"]].each do |value|
-        next unless value.is_a?(Numeric)
-
-        unless value.is_a?(Integer) || value.finite?
-          raise VerificationError.new(Reason::INVALID_JWS_FORMAT,
-                                      "payload signing date is not a finite number")
+        unless CertificateStructure.sound?(certificate)
+          raise VerificationError.new(Reason::INVALID_CERTIFICATE, "x5c entry is not a valid certificate")
         end
 
-        return value
+        certificate
       end
-      nil
-    end
 
-    def require_bundle_id(actual)
-      return if actual == @bundle_id
+      # P-256 order; r and s outside [1, n-1] are not a signature.
+      EC_ORDER = OpenSSL::BN.new(
+        "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16
+      ).freeze
+      private_constant :EC_ORDER
 
-      raise VerificationError.new(Reason::WRONG_BUNDLE_ID,
-                                  "payload bundle id does not match the configured one")
-    end
+      def verify_es256(leaf, signing_input, signature)
+        key = Chain.decode_public_key!(leaf)
+        unless key.is_a?(OpenSSL::PKey::EC) && key.group.curve_name == "prime256v1" # steep:ignore NoMethod
+          raise VerificationError.new(Reason::INVALID_SIGNATURE, "leaf key is not a P-256 EC key")
+        end
+        unless signature.bytesize == 64
+          raise VerificationError.new(Reason::INVALID_SIGNATURE,
+                                      "ES256 signature must be 64 bytes, got #{signature.bytesize}")
+        end
 
-    def require_accepted_environment(claim)
-      return claim if claim.is_a?(String) && @accepted_environments.include?(claim)
+        r = OpenSSL::BN.new(signature.byteslice(0, 32), 2) # steep:ignore ArgumentTypeMismatch
+        s = OpenSSL::BN.new(signature.byteslice(32, 32), 2) # steep:ignore ArgumentTypeMismatch
+        if r.zero? || s.zero? || r >= EC_ORDER || s >= EC_ORDER
+          raise VerificationError.new(Reason::INVALID_SIGNATURE, "ES256 signature scalar out of range")
+        end
 
-      raise VerificationError.new(Reason::WRONG_ENVIRONMENT,
-                                  "payload environment #{claim.inspect} is not in the accepted set")
-    end
+        der = OpenSSL::ASN1::Sequence.new(
+          [OpenSSL::ASN1::Integer.new(r), OpenSSL::ASN1::Integer.new(s)]
+        ).to_der
+        ok = begin
+          key.verify("SHA256", der, signing_input.b) # steep:ignore ArgumentTypeMismatch
+        rescue OpenSSL::OpenSSLError
+          false
+        end
+        return if ok
 
-    def require_app_apple_id(environment, actual)
-      return unless environment == Environment::PRODUCTION
-      return if !@app_apple_id.nil? && @app_apple_id == actual
-
-      raise VerificationError.new(Reason::WRONG_APP_APPLE_ID,
-                                  "payload app Apple id does not match the configured one")
+        raise VerificationError.new(Reason::INVALID_SIGNATURE, "ES256 signature check failed")
+      end
     end
   end
 end

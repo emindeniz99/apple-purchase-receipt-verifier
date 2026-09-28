@@ -1,37 +1,53 @@
 /**
- * The CMS `SignedData` walk, plus the signer lookup and the two
- * signed-attribute readers a parsed structure feeds. It gets its own target
- * rather than only being reached through `verify-receipt` because this is
- * the walk that reads child lists positionally — `signedData[2]`,
- * `fields[index]` — on attacker-supplied shapes.
+ * The CMS `SignedData` walk, plus the signed-attribute readers each
+ * SignerInfo feeds. It gets its own target rather than only being reached
+ * through `verify-receipt` because this is the walk that reads child lists
+ * positionally on attacker-supplied shapes, for every SignerInfo a receipt
+ * carries (0.7 allows up to four).
  *
- * Invariant: `parseCms` fails only as a `VerificationError`; the attribute
- * readers, which the receipt path calls inside its own wrapping try, may
- * also fail as a `ParseError`. Nothing else may escape.
+ * Invariant: `parseCms` and `requireAttributeSetSyntax` fail only as a
+ * `ParseError`; `signedAttributeValues` and `signedAttrsSignedBytes` never
+ * throw for a signedAttrs that already passed `requireAttributeSetSyntax`.
+ * Nothing else may escape.
  */
 import {
-  findMessageDigestAttribute,
-  findSignerCertIndex,
   parseCms,
+  requireAttributeSetSyntax,
+  signedAttributeValues,
   signedAttrsSignedBytes,
 } from '../../dist/cms.js';
-import { CMS_ERRORS, requireTypedError } from '../harness.mjs';
+import { ParseError } from '../../dist/der.js';
+import { PARSE_ERRORS, requireTypedError } from '../harness.mjs';
 
 export function fuzz(data) {
   let cms;
   try {
     cms = parseCms(data);
   } catch (error) {
-    requireTypedError(error, 'parseCms');
+    requireTypedError(error, 'parseCms', PARSE_ERRORS);
     return;
   }
-  try {
-    findSignerCertIndex(cms);
-    if (cms.signerInfo.signedAttrs !== null) {
-      findMessageDigestAttribute(cms.signerInfo.signedAttrs);
-      signedAttrsSignedBytes(cms.signerInfo.signedAttrs);
+  for (const info of cms.signerInfos) {
+    if (info.signedAttrs === null) {
+      continue;
     }
-  } catch (error) {
-    requireTypedError(error, 'signed-attribute readers', CMS_ERRORS);
+    try {
+      requireAttributeSetSyntax(info.signedAttrs);
+    } catch (error) {
+      requireTypedError(error, 'requireAttributeSetSyntax', PARSE_ERRORS);
+      continue;
+    }
+    try {
+      signedAttributeValues(info.signedAttrs);
+      signedAttrsSignedBytes(info.signedAttrs.raw);
+    } catch (error) {
+      if (error instanceof ParseError) {
+        throw new Error(
+          'a signedAttrs that passed requireAttributeSetSyntax must not fail the readers',
+          { cause: error },
+        );
+      }
+      throw error;
+    }
   }
 }

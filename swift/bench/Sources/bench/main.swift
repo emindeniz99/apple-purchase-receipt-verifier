@@ -8,6 +8,14 @@
 // 100 ms each; the JSON on stdout carries the median, minimum and maximum
 // microseconds per operation over those samples.
 //
+//     swift run -c release --package-path swift/bench bench --worst-case
+//
+// times, the same way, every shared case in fixtures/cases.json that
+// carries a `maxMillis` budget: the hostile inputs (oversized untrusted keys,
+// certificate meshes, encoding oddities inside certificates) the shared
+// suite bounds in time. Each call is run once first and must give the answer
+// the case expects. The README's worst-case CPU figure comes from this mode.
+//
 // decodeBase64 is the one operation missing here: the library's receipt-data
 // decoder is internal, and reaching it would take `-enable-testing`, which
 // changes how the library itself is compiled and so what every other number
@@ -21,7 +29,7 @@ let sampleCount = 10
 let minSample = Duration.milliseconds(100)
 
 /// Any fixed instant (2026-01-01T00:00:00Z): it only feeds request_date.
-let now = Date(timeIntervalSince1970: 1_767_225_600)
+let nowMillis: Int64 = 1_767_225_600_000
 
 /// File under fixtures/public-receipts, and the bundle id and in-app count
 /// fixtures/cases.json pins for it.
@@ -62,12 +70,12 @@ func microseconds(_ duration: Duration) -> Double {
 /// Keeps a small value from each call observable so none is optimized away.
 nonisolated(unsafe) var sink = 0
 
-func measure(_ benchmark: String, _ fixture: String, _ op: () async throws -> Int) async throws -> Result {
+func measure(_ benchmark: String, _ fixture: String, _ op: () -> Int) -> Result {
     let clock = ContinuousClock()
     let start = clock.now
     var warmupOps = 0
     while clock.now - start < warmup {
-        sink &+= try await op()
+        sink &+= op()
         warmupOps += 1
     }
     let perOp = microseconds(clock.now - start) / Double(warmupOps)
@@ -76,7 +84,7 @@ func measure(_ benchmark: String, _ fixture: String, _ op: () async throws -> In
     for _ in 0..<sampleCount {
         let sampleStart = clock.now
         for _ in 0..<ops {
-            sink &+= try await op()
+            sink &+= op()
         }
         samples.append(microseconds(clock.now - sampleStart) / Double(ops))
     }
@@ -86,7 +94,7 @@ func measure(_ benchmark: String, _ fixture: String, _ op: () async throws -> In
         Data(
             (benchmark.padding(toLength: 24, withPad: " ", startingAt: 0) + " "
                 + fixture.padding(toLength: 24, withPad: " ", startingAt: 0)
-                + String(format: " %12.1f us/op\n", median)).utf8))
+                + String(format: " %12.1f us/op (max %.1f)\n", median, samples[sampleCount - 1])).utf8))
     return Result(
         benchmark: benchmark, fixture: fixture, us_per_op_median: median,
         us_per_op_min: samples[0], us_per_op_max: samples[sampleCount - 1], ops_per_sample: ops)
@@ -107,83 +115,147 @@ func jsonObject(_ body: String) throws -> [String: Any] {
     try JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any] ?? [:]
 }
 
-func rejectionReason(_ der: Data, _ roots: [Data]) async -> VerificationError.Reason? {
-    do {
-        _ = try await ReceiptVerifier.verifyCore(receipt: der, trustedRoots: roots)
-        return nil
-    } catch let error as VerificationError {
-        return error.reason
-    } catch {
-        return nil
-    }
-}
+/// The failure a verify call answered with, or nil when it verified.
+func reason<T>(_ result: VerificationResult<T>) -> Reason? { result.failure?.reason }
 
 /// Prepares one fixture's inputs, checks every answer, then times the
-/// operations. A function rather than top-level code so its locals are not
-/// main-actor state shared with the library's nonisolated methods.
-func run(_ fixture: (name: String, bundleId: String, inAppCount: Int), repository: URL, roots: [Data]) async throws -> [Result] {
+/// operations.
+func run(
+    _ fixture: (name: String, bundleId: String, inAppCount: Int), repository: URL, verifier: Verifier
+) throws -> [Result] {
     let path = repository.appendingPathComponent("fixtures/public-receipts/\(fixture.name).b64")
     guard let der = Data(base64Encoded: try Data(contentsOf: path), options: .ignoreUnknownCharacters) else {
         throw SetupFailure(description: "\(fixture.name) is not base64")
     }
     let base64 = der.base64EncodedString()
-    let request: [String: Any] = ["receipt-data": base64]
     let requestJSON = "{\"receipt-data\":\"\(base64)\"}"
-    let tampered = tamper(der)
-    let verifier = try ReceiptVerifier(trustedRoots: roots, bundleId: fixture.bundleId)
-    let fixed = now
-    let sandbox = try VerifyReceiptEndpoint(trustedRoots: roots, environment: .sandbox, clock: { fixed })
-    let production = try VerifyReceiptEndpoint(trustedRoots: roots, environment: .production, clock: { fixed })
+    let tampered = tamper(der).base64EncodedString()
 
     // Every call once, with the answer the conformance suite expects, so no
     // benchmark can time a fast failure by accident.
-    for receipt in [
-        try await ReceiptVerifier.verifyCore(receipt: der, trustedRoots: roots),
-        try await verifier.verify(base64Receipt: base64),
-    ] {
-        try check(receipt.bundleId == fixture.bundleId && receipt.inAppPurchases.count == fixture.inAppCount, "receipt")
-    }
-    let ok = try jsonObject(await sandbox.verifyReceiptJSON(requestJSON))
+    let verified = verifier.verifyReceipt(base64: base64)
+    try check(
+        verified.payload?.bundleId == fixture.bundleId && verified.payload?.inApp.count == fixture.inAppCount,
+        "verifyReceipt")
+    let ok = try jsonObject(verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: requestJSON))
     try check(
         ok["status"] as? Int == 0
             && ((ok["receipt"] as? [String: Any])?["in_app"] as? [Any])?.count == fixture.inAppCount,
         "endpointJson")
-    let retry = try jsonObject(await production.verifyReceiptResult(request).json(for: .sandbox))
-    try check(retry["status"] as? Int == 0 && retry["environment"] as? String == "Sandbox", "retryViaResult")
-    try check(await rejectionReason(tampered, roots) == .invalidSignature, "rejectTamperedSignature")
+    try check(reason(verifier.verifyReceipt(base64: tampered)) == .invalidSignature, "rejectTamperedSignature")
 
     return [
-        try await measure("core", fixture.name) {
-            try await ReceiptVerifier.verifyCore(receipt: der, trustedRoots: roots).inAppPurchases.count
+        measure("verifyReceipt", fixture.name) {
+            verifier.verifyReceipt(base64: base64).payload?.inApp.count ?? -1
         },
-        try await measure("verifierBase64", fixture.name) {
-            try await verifier.verify(base64Receipt: base64).inAppPurchases.count
+        measure("endpointJson", fixture.name) {
+            verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: requestJSON).utf8.count
         },
-        try await measure("endpointJson", fixture.name) {
-            await sandbox.verifyReceiptJSON(requestJSON).utf8.count
-        },
-        try await measure("retryViaResult", fixture.name) {
-            try await production.verifyReceiptResult(request).json(for: .sandbox).utf8.count
-        },
-        try await measure("rejectTamperedSignature", fixture.name) {
-            await rejectionReason(tampered, roots) == nil ? 0 : 1
+        measure("rejectTamperedSignature", fixture.name) {
+            reason(verifier.verifyReceipt(base64: tampered)) == nil ? 0 : 1
         },
     ]
+}
+
+// MARK: - worst case: the shared cases with a time budget
+
+/// A registered fixture's logical bytes, per its codec (the same rules the
+/// conformance adapter in swift/Tests applies).
+func fixtureBytes(_ id: String, registry: [String: [String: Any]], fixturesDirectory: URL) throws -> [UInt8] {
+    guard let entry = registry[id], let path = entry["path"] as? String, let codec = entry["codec"] as? String
+    else { throw SetupFailure(description: "cases.json registers no fixture \"\(id)\"") }
+    let raw = try Data(contentsOf: fixturesDirectory.appendingPathComponent(path))
+    switch codec {
+    case "raw", "text":
+        return [UInt8](raw)
+    case "base64":
+        guard let decoded = Data(base64Encoded: raw, options: [.ignoreUnknownCharacters]) else {
+            throw SetupFailure(description: "fixture \"\(id)\" is not base64")
+        }
+        return [UInt8](decoded)
+    case "utf8":
+        return [UInt8](String(decoding: raw, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).utf8)
+    default:
+        throw SetupFailure(description: "fixture \"\(id)\" has unknown codec \"\(codec)\"")
+    }
+}
+
+func worstCase(repository: URL) throws -> [Result] {
+    let fixturesDirectory = repository.appendingPathComponent("fixtures")
+    let file = try JSONSerialization.jsonObject(
+        with: Data(contentsOf: fixturesDirectory.appendingPathComponent("cases.json")))
+    guard let file = file as? [String: Any], let registry = file["fixtures"] as? [String: [String: Any]],
+        let cases = file["cases"] as? [[String: Any]]
+    else { throw SetupFailure(description: "cases.json is not the expected JSON object") }
+
+    var results: [Result] = []
+    for kase in cases where kase["maxMillis"] != nil {
+        guard let id = kase["id"] as? String, let operation = kase["operation"] as? String,
+            let input = kase["input"] as? [String: Any], let fixtureId = input["fixture"] as? String,
+            let config = kase["config"] as? [String: Any], let expected = kase["expected"] as? [String: Any],
+            let trusted = config["trustedRoots"] as? [String: Any]
+        else { throw SetupFailure(description: "a budgeted case is not in the shape this bench reads") }
+        var builder = Config.builder().clock { nowMillis }
+        if trusted["source"] as? String == "fixtures" {
+            let ids = trusted["fixtures"] as? [String] ?? []
+            builder = try builder.roots(
+                ids.map { try fixtureBytes($0, registry: registry, fixturesDirectory: fixturesDirectory) })
+        }
+        let verifier = Verifier(config: try builder.build())
+        let bytes = try fixtureBytes(fixtureId, registry: registry, fixturesDirectory: fixturesDirectory)
+        let codec = registry[fixtureId]?["codec"] as? String
+
+        // The answer the case expects, before anything is timed.
+        let want = expected["reason"] as? String
+        let got: Reason?
+        let op: () -> Int
+        switch operation {
+        case "verifyReceipt":
+            let base64 =
+                codec == "raw" || codec == "base64"
+                ? Data(bytes).base64EncodedString() : String(decoding: bytes, as: UTF8.self)
+            got = reason(verifier.verifyReceipt(base64: base64))
+            op = { reason(verifier.verifyReceipt(base64: base64)) == nil ? 0 : 1 }
+        case "verifySignedData":
+            let jws = String(decoding: bytes, as: UTF8.self)
+            got = reason(verifier.verifySignedData(jws: jws))
+            op = { reason(verifier.verifySignedData(jws: jws)) == nil ? 0 : 1 }
+        default:
+            throw SetupFailure(description: "\(id): no adapter for operation \(operation)")
+        }
+        if let oneOf = expected["oneOf"] as? [String] {
+            let outcome = got?.rawValue ?? "ok"
+            try check(oneOf.contains(outcome), "\(id) answered \(outcome), not one of \(oneOf)")
+        } else if expected["status"] as? String == "ok" {
+            try check(got == nil, "\(id) expected to verify, got \(got?.rawValue ?? "?")")
+        } else {
+            try check(got?.rawValue == want, "\(id) expected \(want ?? "?"), got \(got?.rawValue ?? "ok")")
+        }
+        results.append(measure(operation, id, op))
+    }
+    return results
 }
 
 let repository = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     .deletingLastPathComponent().deletingLastPathComponent()
-let roots = appleReceiptRoots()
 var results: [Result] = []
-for fixture in fixtures {
-    results += try await run(fixture, repository: repository, roots: roots)
+let mode: String
+if CommandLine.arguments.dropFirst().contains("--worst-case") {
+    mode = "worst-case"
+    results = try worstCase(repository: repository)
+} else {
+    mode = "cross-port"
+    let verifier = Verifier(config: try Config.builder().clock { nowMillis }.build())
+    for fixture in fixtures {
+        results += try run(fixture, repository: repository, verifier: verifier)
+    }
 }
 
 let encoder = JSONEncoder()
 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
 let report = Report(
-    port: "swift", tool: "swift/bench (ContinuousClock)",
+    port: "swift", tool: "swift/bench \(mode) (ContinuousClock)",
     settings: [
         "warmup_s": 1, "samples": Double(sampleCount), "min_sample_s": 0.1,
     ],

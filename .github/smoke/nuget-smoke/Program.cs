@@ -1,22 +1,25 @@
 // Smoke-tests the package as published to nuget.org. Everything it touches —
-// the verifier, the exception type, the bundled root certificates — comes from
+// the verifier, the result types, the bundled root certificates — comes from
 // the restored package, so a nupkg missing an asset or its embedded certs fails
 // here rather than in a user's build.
 using ApplePurchaseReceiptVerifier;
-using ApplePurchaseReceiptVerifier.Receipt;
 
 string receiptB64 = File.ReadAllText("receipt-sandbox-g5.b64").Trim();
 
-var roots = AppleRootCertificates.ReceiptRoots();
-if (roots.Count != 3)
+// Config.Defaults() throws if the bundled roots are missing or unreadable; the
+// count catches a package that lost one of them.
+Config config = Config.Defaults();
+if (config.Roots.Count != 3)
 {
-    throw new Exception($"expected three bundled Apple roots, got {roots.Count}");
+    throw new Exception($"expected three bundled Apple roots, got {config.Roots.Count}");
 }
+IVerifier verifier = Verifier.Create(config);
 
 // A real Apple-signed receipt against the real pinned root: exercises the
 // packaged certs, the DER reader, the chain build and the signature check.
-using var verifier = new ReceiptVerifier(roots, "dev.bonzer.weeka.app");
-AppReceipt receipt = verifier.Verify(receiptB64);
+VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(receiptB64);
+ReceiptPayload receipt = result.Payload
+    ?? throw new Exception($"verification failed: {result.Failure}");
 if (receipt.ReceiptType != "ProductionSandbox")
 {
     throw new Exception($"ReceiptType was {receipt.ReceiptType}, expected ProductionSandbox");
@@ -27,24 +30,17 @@ if (receipt.BundleId != "dev.bonzer.weeka.app")
 }
 
 // And the negative direction, so a verifier that accepted everything would fail
-// here too.
-bool rejected = false;
-using (var other = new ReceiptVerifier(roots, "com.other.app"))
+// here too: the same receipt with one bit flipped in its signature, the byte
+// 128 from the end of the DER (BENCHMARKS.md).
+byte[] der = Convert.FromBase64String(receiptB64);
+der[der.Length - 128] ^= 0x01;
+Failure? failure = verifier.VerifyReceipt(Convert.ToBase64String(der)).Failure;
+if (failure?.Reason != VerificationReason.InvalidSignature)
 {
-    try
-    {
-        other.Verify(receiptB64);
-    }
-    catch (VerificationException error)
-    {
-        rejected = error.Reason == VerificationReason.WrongBundleId;
-    }
-}
-if (!rejected)
-{
-    throw new Exception("a receipt for another bundle id was not rejected");
+    throw new Exception(
+        $"a tampered signature was not rejected as InvalidSignature: {failure?.ToString() ?? "verified"}");
 }
 
 Console.WriteLine(
     $"nuget: published package verified a genuine Apple receipt ({receipt.BundleId}, "
-    + $"{receipt.InAppPurchases.Count} purchases) and rejected a foreign bundle id");
+    + $"{receipt.InApp.Count} purchases) and rejected a tampered signature");

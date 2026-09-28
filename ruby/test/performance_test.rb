@@ -26,40 +26,34 @@ class PerformanceTest < Minitest::Test
     assert_operator milliseconds, :<, budget, "#{label} took #{milliseconds.round(2)}ms"
   end
 
+  def verifier(roots)
+    APRV::Verifier.create(APRV::Config.new(roots: roots))
+  end
+
   # 79 KB, 187 in-app purchases, SHA-1 chain end to end.
   def test_the_largest_genuine_receipt_stays_inside_its_budget
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: APRV.apple_receipt_roots,
-                                         bundle_id: "com.nutcall.alert")
-    bytes = TestSupport.fixture_bytes("public-receipt-sandbox-legacy")
-    report("legacy receipt, 79 KB / 187 purchases", cpu_ms { verifier.verify_der(bytes) }, 150)
+    v = verifier(APRV::Config.defaults.roots)
+    base64 = [TestSupport.fixture_bytes("public-receipt-sandbox-legacy")].pack("m0")
+    report("legacy receipt, 79 KB / 187 purchases", cpu_ms { v.verify_receipt(base64) }, 150)
   end
 
   def test_a_typical_receipt_stays_inside_its_budget
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: APRV.apple_receipt_roots,
-                                         bundle_id: "dev.bonzer.weeka.app")
-    bytes = TestSupport.fixture_bytes("public-receipt-sandbox-g5")
-    report("sandbox receipt, 5.6 KB", cpu_ms(50) { verifier.verify_der(bytes) }, 25)
+    v = verifier(APRV::Config.defaults.roots)
+    base64 = [TestSupport.fixture_bytes("public-receipt-sandbox-g5")].pack("m0")
+    report("sandbox receipt, 5.6 KB", cpu_ms(50) { v.verify_receipt(base64) }, 25)
   end
 
   def test_a_transaction_jws_stays_inside_its_budget
-    verifier = APRV::JwsVerifier.new(
-      trusted_roots: [TestSupport.fixture_certificate("jws-root")],
-      bundle_id: "com.example.app", accepted_environments: [APRV::Environment::SANDBOX]
-    )
-    jws = TestSupport.fixture_bytes("transaction").force_encoding(Encoding::UTF_8)
-    report("transaction JWS", cpu_ms(50) { verifier.verify_transaction(jws) }, 15)
+    v = verifier([TestSupport.fixture_certificate("jws-root")])
+    jws = TestSupport.fixture_bytes("transaction").dup.force_encoding(Encoding::UTF_8)
+    report("transaction JWS", cpu_ms(50) { v.verify_signed_data(jws) }, 15)
   end
 
   # Rejecting hostile input must not cost more than accepting genuine input.
   def test_rejecting_a_nesting_bomb_costs_almost_nothing
-    verifier = APRV::ReceiptVerifier.new(trusted_roots: APRV.apple_receipt_roots,
-                                         bundle_id: "com.example.app")
-    bomb = "\x30\x80".b * 500_000
-    milliseconds = cpu_ms(20) do
-      verifier.verify_der(bomb)
-    rescue APRV::VerificationError
-      nil
-    end
+    v = verifier(APRV::Config.defaults.roots)
+    bomb = ["\x30\x80".b * 500_000].pack("m0")
+    milliseconds = cpu_ms(20) { v.verify_receipt(bomb) }
     report("2 MB indefinite-length nesting bomb", milliseconds, 10)
   end
 end
