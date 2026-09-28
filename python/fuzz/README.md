@@ -78,7 +78,10 @@ well-formed; here it gets the payload bytes directly.
 
 ## What the targets found
 
-Five escapes, all on the JWS path, all fixed and pinned as regression tests in
+Five escapes, all on the JWS path, found and fixed before 0.7, so the table
+uses the 0.6 reason and function names. 0.7 treats the out-of-range
+`signedDate` as missing and judges the chain at the clock instead. All five
+are pinned as regression tests in
 `../tests/test_verifiers.py::JwsHostileInputTest`. The receipt path had none:
 it already contains hostile input by category (`verify_receipt_core` wraps
 everything that is not a `VerificationError`), and its own hostile-input tests
