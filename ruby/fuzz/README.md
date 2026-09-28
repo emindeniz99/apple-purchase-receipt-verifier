@@ -34,12 +34,12 @@ would only fuzz OpenSSL.
 
 The anchor-set invariant is the one that lets a fuzzer find "accepts what it
 should not" rather than only crashes: without it an input that verifies tells
-you nothing about *why*. `verify_receipt` pins the Apple receipt roots plus
+you nothing about *why*. `verify_receipt` pins Apple's three bundled roots plus
 `fixtures/generated-0.7/receipt-root.der`, so both the generated fixtures and the
 two public Apple receipts get past the chain check and the fuzzer can explore
 what lies beyond it; the unrelated set it must then fail against is the
 fixture *JWS* root. `verify_transaction` is the mirror image: the fixture JWS
-root trusted, Apple's JWS roots unrelated.
+root trusted, Apple's bundled roots unrelated.
 
 "Nothing escapes" is stricter than it sounds. Every entry point is called
 through `FuzzSupport.call`, which rescues `Exception`, not `StandardError`:
