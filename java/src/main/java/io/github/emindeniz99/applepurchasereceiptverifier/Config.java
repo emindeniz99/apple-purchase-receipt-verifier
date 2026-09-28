@@ -41,6 +41,7 @@ public final class Config {
         return builder().build();
     }
 
+    /** A builder that starts from the {@link #defaults()}. */
     public static Builder builder() {
         return new Builder();
     }
@@ -50,6 +51,7 @@ public final class Config {
         return roots;
     }
 
+    /** The clock read once per call; see the class comment for what it decides. */
     public Clock clock() {
         return clock;
     }
@@ -76,6 +78,10 @@ public final class Config {
             return this;
         }
 
+        /**
+         * Replaces the clock, which must be safe to call from several threads.
+         * Leaving it unset means {@link Clock#systemUTC()}.
+         */
         public Builder clock(Clock clock) {
             this.clock = Objects.requireNonNull(clock, "clock");
             return this;

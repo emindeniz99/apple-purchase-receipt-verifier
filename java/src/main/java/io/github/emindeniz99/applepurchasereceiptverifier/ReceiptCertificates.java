@@ -70,7 +70,10 @@ final class ReceiptCertificates {
         return certificates;
     }
 
-    /** The first embedded certificate carrying the issuer and serial {@code signer} names. */
+    /**
+     * The first embedded certificate that {@code signer}'s SignerId matches,
+     * by issuer and serial number or by subjectKeyIdentifier.
+     */
     X509Certificate signer(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();
         for (int i = 0; i < holders.size(); i++) {
