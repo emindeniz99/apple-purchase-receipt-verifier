@@ -386,8 +386,8 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   | A payload string whose length takes more than four octets | kept raw | kept raw (aligned 2026-09-29) | kept raw | The payload is DER; 0.7's header rules restored | `receipt/bundle-id-with-a-five-octet-length-is-kept-raw` |
   | A fourth attribute field that is, or holds, an invalid primitive (BOOLEAN of two octets, padded INTEGER, UTCTime under 13 or GeneralizedTime under 15 octets, a constructed INTEGER, a primitive SEQUENCE, an end-of-contents in a definite length) | ok | `UNREADABLE_PAYLOAD` | as Java | Not valid ASN.1 in BER either (X.690 8.1.5, 8.2, 8.3, 8.9.1; a time that short names no time). OpenSSL's `ANY` decoder refuses each as the field itself and keeps a SEQUENCE around it whole, so the header walk applies the same rules at every depth (round-2 review F3): the primitives OpenSSL checks, constructed BOOLEAN, INTEGER, NULL, OID and ENUMERATED, strings of seven levels, and each outermost constructed string handed to OpenSSL whole | `receipt/unreadable-fourth-field-boolean-of-two-octets`, `receipt/unreadable-fourth-field-sequence-holding-a-padded-integer`, `receipt/unreadable-fourth-field-sequence-holding-{a-short-utctime,a-short-generalizedtime,a-constructed-integer,a-primitive-sequence,an-end-of-contents}` |
   | An invalid primitive inside an unsigned envelope value | ok | `MALFORMED` for a short UTCTime one SEQUENCE deep; others not measured | `MALFORMED` | As above, over the envelope | `receipt/reject-an-unsigned-value-sequence-holding-a-short-utctime`, `rust/tests/envelope_bounds.rs` |
-  | A string of 7 or more constructed levels one SEQUENCE deep, in a fourth field or an unsigned envelope value | ok | ok | `UNREADABLE_PAYLOAD` / `MALFORMED` | OpenSSL refuses the string as a value and keeps the SEQUENCE around it whole; the walk refuses it at every depth, so the verdict does not follow the depth. Fails closed, not Apple-signed | `receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string`, `receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string` |
-  | A constructed UTCTime of 13 joined octets one SEQUENCE deep in a fourth field (BER) | ok | `UNREADABLE_PAYLOAD` | ok | BER allows a constructed string, OpenSSL joins it and the walk agrees; Java refuses it | `receipt/accept-fourth-field-sequence-holding-a-constructed-utctime` |
+  | A string of 7 or more constructed levels one SEQUENCE deep, in a fourth field or an unsigned envelope value | `UNREADABLE_PAYLOAD` / `MALFORMED` (aligned 2026-09-29) | ok | `UNREADABLE_PAYLOAD` / `MALFORMED` | OpenSSL refuses the string as a value and keeps the SEQUENCE around it whole; the walk refuses it at every depth, so the verdict does not follow the depth. Fails closed, not Apple-signed | `receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string`, `receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string` |
+  | A constructed UTCTime of 13 joined octets one SEQUENCE deep in a fourth field (BER) | ok (aligned 2026-09-29: Java joins the strings BouncyCastle cannot build before it parses the payload) | `UNREADABLE_PAYLOAD` | ok | BER allows a constructed string, OpenSSL joins it and the walk agrees; Java refuses it | `receipt/accept-fourth-field-sequence-holding-a-constructed-utctime` |
 
   Java was aligned on the four rows marked above in its own code (lane
   J-align, 2026-09-29). Divergences that lane found and left for the
@@ -400,6 +400,13 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   an extension value); and a receipt whose path to the eContent uses a
   length of more than four octets, where Java's byte walk gives up and
   its 6-level and 32-depth checks are skipped.
+  Round 2 (2026-09-29) aligned Java on the two rows above; one more
+  divergence stays open for the differential campaign: a constructed
+  string of a type other than OCTET or BIT STRING inside the envelope
+  (an unsigned attribute value holding a constructed UTCTime), which
+  Java answers `MALFORMED` because BouncyCastle cannot build it and the
+  core accepts; proposed case: an unsigned attribute value SEQUENCE
+  holding a constructed UTCTime, expected ok.
 
 ---
 
