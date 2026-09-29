@@ -27,7 +27,7 @@ payload, err := verifier.VerifySignedData(jws)
 fmt.Println(payload.JSON())
 ```
 
-Go 1.22 or newer, no third-party dependencies.
+Go 1.22 or newer, one dependency (wazero, which has none), no cgo.
 
 The library answers one question: did Apple sign this? It checks the chain
 to a pinned root, Apple's marker OIDs and the signature, and hands back
@@ -37,20 +37,35 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
 
 ## Runtime and version floor
 
-- **Go 1.22**, declared as `go 1.22` in `go.mod` and proven by CI: the whole
+- **Go 1.22**, declared as `go 1.22.0` in `go.mod` (wazero v1.9.0's own
+  floor, the newest release that builds on 1.22) and proven by CI: the whole
   suite, conformance included, runs on `go1.22` through `go1.27` with
   `GOTOOLCHAIN=local`, so the floor is what actually compiles rather than
   what a newer toolchain silently upgrades to.
-- **No third-party dependencies.** `go.mod` has no `require` block and no
-  `go.sum`. Every byte of attacker-supplied ASN.1 (certificates, CMS,
-  receipt payloads) and every byte of JSON (a JWS header and payload, the
-  endpoint request body) is read by this module's own bounded readers
-  (`internal/der`, `encoding.go`), so no third-party parser decides what a
-  key, a signature or a claim is. What is delegated to the standard library
-  is arithmetic: `crypto/rsa`, `crypto/ecdsa`, `crypto/x509`.
-- **No I/O, no goroutines started, no global state beyond the bundled
-  roots.** Every entry point is synchronous, and `*Verifier` is immutable
-  after construction and safe for concurrent use by multiple goroutines.
+- **No cgo.** `CGO_ENABLED=0` builds, cross-compiles (Linux, macOS, Windows;
+  amd64 and arm64) and runs from a `FROM scratch` image. The one dependency,
+  [wazero](https://wazero.io), is a WebAssembly runtime written in Go and
+  has no dependencies of its own.
+- **The verification is one WebAssembly module.** `aprv.wasm`, the same file
+  every port of this library runs (Node, Python, Java, Swift, Ruby, .NET),
+  is embedded with `go:embed` and run by wazero, so a fix in the core reaches
+  Go in the next release and Go cannot disagree with the others about a
+  verdict. This package holds no verification logic: it reads the clock,
+  moves bytes in and JSON out, and turns the answer into Go values. Its
+  SHA-256 is checked against `internal/wasm/aprv.wasm.sha256` when the package
+  loads, and CI checks that file against the release build.
+- **The module is sandboxed.** It has one import, `random-get`, answered from
+  `crypto/rand`; it cannot read a file, the network or the clock. A hostile
+  receipt that breaks the parser inside it stays in the module's 256 MiB of
+  linear memory, and an instance that traps is discarded.
+- **Memory and start-up.** The first `NewVerifier` in a process compiles the
+  module, about a second on a 4-core machine; later ones take milliseconds. A
+  `Verifier` keeps a small pool of instances (one per goroutine that is
+  verifying at that moment, at least one kept), each a few MiB, and
+  releases them when it is garbage collected. There is nothing to close.
+- **No I/O, no goroutines started, no global state beyond the compiled
+  module and the bundled roots.** `*Verifier` is safe for concurrent use by
+  multiple goroutines.
 
 ## What it will never do
 
@@ -58,24 +73,24 @@ These are the properties the library exists to hold, and each is asserted by
 a test rather than only documented.
 
 - **It never reads the operating system's trust store.** Anchors come from
-  the caller's `Config` or from `DefaultConfig()`, which holds `go:embed`-ed
-  copies of Apple's three published roots, so they work unchanged in a
-  `FROM scratch` container. `internal/chain`'s path builder is hand-written
-  precisely so `x509.Certificate.Verify` is never called. With a nil
-  `VerifyOptions.Roots` it falls back to the platform verifier.
+  the caller's `Config` or from `DefaultConfig()`, which means Apple's three
+  published roots, compiled into the module. The module cannot read a file,
+  so nothing in the environment can add a root.
 - **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
   download. Revocation checking is disabled by design; an integrator who
   needs it must layer it on top.
-- **It never uses a key no pinned root vouched for.** Certificate signatures
-  are checked from the roots down, so a certificate carrying an attacker's
-  key (their choice of size and exponent) is never used to check anything
-  ([Stranger certificates](#stranger-certificates)).
+- **It never uses a key no pinned root vouched for.** The chain is walked
+  from the roots down, so a certificate carrying an attacker's key is never
+  used to check anything.
 - **It never returns anything partial.** A failure returns a `*Failure` and
   a `nil` payload; a success returns only data that passed every check, in
   fresh slices that do not alias the input.
 - **It never logs, meters or calls back into your code** except for the
   clock you give it. `Reason` is the whole observability surface, and a
   failure message never quotes the input.
+- **It never turns a broken module into a verdict.** A trap, an answer this
+  package cannot read, or a clock that panics is `INTERNAL_ERROR`, never a
+  pass and never a guess at what the module meant.
 
 ## The API
 
@@ -94,7 +109,10 @@ verifier, err := applereceipt.NewVerifier(pinned)
 A nil `*Config`, or one with no trust anchors, is a plain `error` from
 `NewVerifier`, never a `*Failure`: a verifier with no roots would reject
 everything, and nobody would notice until production, and a caller
-switching on `Reason` must never see a misconfiguration.
+switching on `Reason` must never see a misconfiguration. So is a trust anchor
+the module refuses (one that is not a certificate). `DefaultConfig()` and
+`NewConfig` with no `Roots` send the module an empty list, which means the
+three Apple roots compiled into it.
 
 ### `Verifier`: three methods
 
@@ -138,8 +156,9 @@ bytes may differ.
 
 ### `Failure` and `Reason`
 
-`*Failure` implements `error`, with `Cause` holding the parser's error for
-`UNREADABLE_PAYLOAD`. Match on `failure.Reason`; never parse
+`*Failure` implements `error`. `Cause` is nil for a verdict of the module;
+it names the machinery when `INTERNAL_ERROR` comes from the wrapper (a trap,
+an unreadable answer, the clock). Match on `failure.Reason`; never parse
 `failure.Message`.
 
 | `Reason` | Token | Raised when | Endpoint |
@@ -151,7 +170,7 @@ bytes may differ.
 | `ReasonInvalidCertificate` | `INVALID_CERTIFICATE` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
 | `ReasonInvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `ReasonUnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
-| `ReasonInternalError` | `INTERNAL_ERROR` | the library failed (a contained panic after the signature), or the configured clock panicked; no input makes a correct library answer it | 21009 |
+| `ReasonInternalError` | `INTERNAL_ERROR` | the library failed after the signature held, the module trapped or gave an answer this package cannot read, or the configured clock panicked or answered a time before 1970; no input makes a correct library answer it | 21009 |
 
 `errors.As(err, &failure)` is the canonical read; `errors.Is(err,
 applereceipt.ReasonUntrustedChain)` is sugar for the single-reason case, and
@@ -203,9 +222,9 @@ into different byte strings that carry the same signed content.
 
 ## The clock
 
-`Config`'s clock is a `func() int64` (epoch milliseconds), read at most once
-per call, memoised for the rest of that call, and only when one of these
-needs it, after the input has passed every check that comes before:
+`Config`'s clock is a `func() int64` (epoch milliseconds), read once per
+call, before the input is looked at, and handed to the module, which uses it
+in two places:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
@@ -214,112 +233,45 @@ needs it, after the input has passed every check that comes before:
 - **`request_date`** in the endpoint's response.
 
 A certificate outside its validity window at that instant is
-`INVALID_CERTIFICATE`. A clock that panics is contained as `INTERNAL_ERROR`
-(21009 at the endpoint), with a fixed message that never carries the
-panic's own text.
+`INVALID_CERTIFICATE`. A clock that panics, or answers a time before 1970,
+is `INTERNAL_ERROR` (21009 at the endpoint) whatever the input is, with a
+fixed message that never carries the panic's own text.
 
 ## What the checks are, and in what order
 
 The order is observable and is part of the contract: an input that fails an
-early check reports that check's reason, not a later one.
+early check reports that check's reason, not a later one. The core module
+makes these checks, and [`docs/design/0.7-api.md`](../docs/design/0.7-api.md)
+is where they are written down; the shared cases in `fixtures/cases.json`
+pin them, and this package's conformance test runs every one.
 
-**JWS (`VerifySignedData`).** Size cap → three segments, each strict
-base64url → header JSON (strict UTF-8, no byte order mark, nothing but
-whitespace after the object) → `alg` `ES256` and exactly three `x5c`
-entries → the certificates decode → the chain at `signedDate` (or the
-clock), the intermediate checked against the pinned roots **before** the
-leaf is checked against the intermediate → **leaf marker OID**
-`1.2.840.113635.100.6.11.1` → **intermediate marker OID**
-`1.2.840.113635.100.6.2.1` → ES256 signature. A chain that does not reach a
-pinned root is `UNTRUSTED_CHAIN` whatever markers it carries. The marker
-checks run only once the chain is trusted. The payload is read before the
-chain, for `signedDate`, but a payload that does not parse (trailing
-content included) is reported only after the signature:
-`UNREADABLE_PAYLOAD` if the signature holds, `INVALID_SIGNATURE` if not, so
-nothing unsigned decides which a caller sees.
+**JWS (`VerifySignedData`).** Size cap, three strict base64url segments, the
+header (`alg` `ES256`, the `x5c` chain), the chain at `signedDate` (or the
+clock), Apple's marker OIDs on the leaf and the intermediate, and last the
+signature. A chain that does not reach a pinned root is `UNTRUSTED_CHAIN`
+whatever markers it carries. A payload that does not parse is reported only
+after the signature, so nothing unsigned decides which reason a caller sees.
 
-**Receipt (`VerifyReceipt`).** Size cap → strict base64 → CMS parse,
-including the shape of every `SignerInfo`'s `signedAttrs`, whatever its
-position → at most four `SignerInfo`s and ten embedded certificates → any
-certificate that parses but whose signature is not canonically encoded is
-fatal, wherever it sits → the creation date alone (nothing else in the
-payload is read yet) → for each `SignerInfo`, every embedded certificate
-matching its issuer and serial number, tried in bag order: the chain,
-top-down from the pinned roots, at the creation date or the clock →
-**signer marker OID** → **WWDR marker OID on the intermediate** → the CMS
-signature. A candidate's key is used only once its own chain has passed, so
-a stranger certificate that merely claims the genuine signer's identity
-cannot shadow it. One candidate of one `SignerInfo` passing is enough; when
-none does, the first failure is the verdict. Then the full payload parse,
-where any failure is `UNREADABLE_PAYLOAD`.
+**Receipt (`VerifyReceipt`).** Size cap, strict base64, the PKCS#7 structure,
+the signer's chain at the receipt's creation date (or the clock), the signer
+and WWDR marker OIDs, the signature, and only then the payload's attributes.
+A candidate's key is used only once its own chain has passed, so a certificate
+that merely claims the genuine signer's identity cannot shadow it. Certificates
+in the bag that no pinned root vouches for are ignored, never trusted.
 
-The receipt signer may use any algorithm `crypto/rsa` and `crypto/ecdsa`
-verify: RSA PKCS#1 v1.5 or ECDSA, over MD5 (via `crypto/rsa.VerifyPKCS1v15`
-directly, since `crypto/x509` refuses to check an MD5 signature at all),
-SHA-1 or the SHA-2 family, and RSA-PSS. A signer that chains to a pinned
-root and carries Apple's marker is trusted whatever it signs with. There is
-no certificate signature-algorithm allowlist beyond what `crypto/x509`
-itself verifies under a pinned chain, so a change on Apple's side does not
-reject genuine receipts. A `signatureAlgorithm` that names a hash
-(`sha256WithRSAEncryption`, `ecdsa-with-SHA384`, the RSA-PSS parameters)
-must name the `SignerInfo`'s `digestAlgorithm`, or the signature is
-`INVALID_SIGNATURE`; `rsaEncryption` and `id-ecPublicKey` name none and take
-the digest.
-
-The bundled roots are checked against their published SHA-256 fingerprints
-when they load, all three or none; a mismatch panics inside `AppleRoots()`
-(and so inside `DefaultConfig()`) rather than silently answering
-`UNTRUSTED_CHAIN` for everything.
-
-`x5c[2]` is never compared to an anchor and never trusted, and neither is a
-receipt's embedded copy of its root: the chain terminates at an anchor the
-caller pinned. Trust anchors are trusted by fiat, so **an anchor's own
-expiry is not checked**, which is what lets a receipt signed years ago
-under a since-expired chain verify at its own creation date.
-
-A certificate on the path (not the anchor) that marks critical an
-extension `crypto/x509` does not itself process (`Certificate
-.UnhandledCriticalExtensions`) makes the path `UNTRUSTED_CHAIN`, per RFC
-5280 §4.2. In `signedAttrs`, `contentType` or `messageDigest` twice, or a
-`contentType` that differs from the `eContentType`, is `INVALID_SIGNATURE`
-(RFC 5652 §5.3, §11.1).
-
-### Stranger certificates
-
-A receipt's certificate bag is not signed, so anyone can add to it.
-
-- A certificate that genuinely fails to parse, and whose raw bytes do not
-  name the `SignerInfo`'s own signer, is exactly the kind of stranger no
-  pinned root ever vouches for: it is simply excluded from the top-down
-  walk, the same as a certificate that parses fine but names nobody real.
-  A genuine receipt padded with such certificates still verifies.
-- A certificate that DOES parse, but whose signature is not canonically
-  encoded, is fatal wherever it sits, signer or stranger:
-  `crypto/x509.ParseCertificate` parses it anyway, silently
-  reinterpreting the signature bytes as something other than what was
-  actually signed, which is exactly the platform-parser leniency this
-  library refuses to trust.
-- An unreadable entry whose raw bytes DO name the signer is
-  `INVALID_CERTIFICATE`, the same as an unreadable `x5c` entry on the JWS
-  path.
-
-The walk starts at the roots, so the cost of a stranger is a name
-comparison, however large or broken its key: an 8,192-bit RSA modulus cap
-is checked before any modulus is handed to `crypto/rsa`, so an
-attacker-chosen oversized key is never the thing that gets slow. The shared
-denial-of-service cases pin this with a time budget, and the tests assert
-it directly through a seam that records every key used.
+Trust anchors are trusted by fiat, so **an anchor's own expiry is not
+checked**, which is what lets a receipt signed years ago under a since-expired
+chain verify at its own creation date.
 
 ## Defensive parsing
 
-Everything this module parses is attacker-supplied, so the bounds are part
-of the design rather than a configuration. ASN.1 (`internal/der`): nesting
-depth 32 constructed values, a 100,000-node budget per parse, indefinite
-(BER) lengths only on constructed values, trailing bytes refused. JSON:
-nesting depth 64, numbers of at most 1,000 digits, member names of at most
-50,000 characters, applied to the JWS header, the JWS payload and the
-endpoint request body alike. Chains: at most six certificates below the
-anchor. RSA keys: at most 8,192 bits, refused before any arithmetic.
+Everything the module parses is attacker-supplied, so its bounds are part of
+the design rather than a configuration, and the core owns every one: this
+package adds none. JSON nesting depth 64, numbers of at most 1,000 digits and
+member names of at most 50,000 characters apply to the JWS header, the JWS
+payload and the endpoint request body alike; ASN.1 nesting depth 32; at most
+ten embedded certificates, four `SignerInfo`s, and six certificates below the
+anchor.
 
 Input size is capped before anything is decoded, and the caps are Apple's
 own (measured on 2026-09-23 against both `verifyReceipt` endpoints):
@@ -335,41 +287,38 @@ standard base64 with canonical `=` padding and nothing else. `x5c` entries
 are standard base64, JWS segments unpadded canonical base64url, so one
 signed payload has one accepted spelling.
 
-Every verify method contains its own panics: before a signature has
-verified it is `MALFORMED` (21002), as input nobody vouched for must not be
-able to raise the internal-error alarm at will; while the signed receipt
-payload is decoded it is `UNREADABLE_PAYLOAD`; after that it is
-`INTERNAL_ERROR` (21009). The fixed message never carries the panic's own
-text.
+The verify methods never panic for any input. What goes wrong inside the
+module is reported by the module: `MALFORMED` before a signature has
+verified, as input nobody vouched for must not be able to raise the
+internal-error alarm at will, `UNREADABLE_PAYLOAD` while signed content is
+read, `INTERNAL_ERROR` (21009 at the endpoint) after that. A module that
+traps is `INTERNAL_ERROR` too, its instance is discarded, and the next call
+gets a fresh one. A message never carries the trap's own text; the `Cause`
+does.
 
-## Measured worst-case CPU
+## Speed
 
-Measured on 2026-09-27 with `BenchmarkWorstCase`, which times every shared
-case in `fixtures/cases.json` that carries a time budget: oversized
-untrusted keys, a cross-signed certificate mesh, and the encoding oddities
-inside certificates. Go 1.24.7, `GOMAXPROCS=1` (`-cpu 1`), on a shared
-4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); each call is run once
-and checked first, then `testing.B` calibrates its iteration count, and the
-table gives the median and slowest of ten runs of at least 500 ms each.
+Measured with `go test -bench` on a shared 4-vCPU guest (Intel Xeon
+Processor @ 2.80GHz, Go 1.24.7, wazero v1.9.0's compiler), one goroutine, on
+the ABI stand-in module of 2026-09-29 while other jobs kept the machine
+busy, so treat the figures as a floor:
 
-| Call | Median | Slowest run |
+| Call | Per second | Time per call |
 |---|---:|---:|
-| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 1.2 ms | 1.5 ms |
-| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.0 ms | 1.2 ms |
-| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 0.76 ms | 0.88 ms |
-| Every other budgeted case | under 0.30 ms | under 0.32 ms |
-| For scale: `VerifyReceipt` on the genuine 187-purchase legacy receipt | 2.4 ms | 2.7 ms |
-| For scale: `VerifyReceiptEndpoint` on the same receipt | 5.9 ms | 6.2 ms |
+| `VerifyReceipt`, the genuine sandbox G5 receipt | about 200 | 5.0 ms |
+| `VerifySignedData`, a StoreKit 2 transaction | about 60 | 15.9 ms |
+| `NewVerifier`, after the first | | 2.5 ms |
+| the first `NewVerifier` in a process (compiles the module) | | about 1.3 s |
 
-No hostile input in the shared suite costs more than an ordinary large
-receipt: the cost of a call follows the size of the input, which the caps
-above bound, not the structure an attacker chooses. The machine was shared
-with other work, so treat these as an order of magnitude. For numbers on
-your own hardware, run
+A quiet machine measured 238 receipts and 77 JWS per second on wazero
+v1.12.0 in the canonical-ABI round. The pool gives each goroutine its own
+instance, so throughput grows with cores. The cost of a call follows the
+size of the input, which the caps below bound, not the structure an
+attacker chooses. For numbers on your own hardware:
 
 ```sh
-go test -run '^$' -bench '^BenchmarkWorstCase$' -benchtime 500ms -count 10 -cpu 1 .
-go test -run '^$' -bench '^BenchmarkCrossPort$/^(verifyReceipt|endpointJson)/receipt-sandbox-legacy$' -benchtime 500ms -count 10 -cpu 1 .
+go test -run '^$' -bench . -benchtime 3s -cpu 1,4 .              # through the API (needs the release module)
+go test -run '^$' -bench . -benchtime 3s ./internal/host         # the module and the ABI alone
 ```
 
 ## The endpoint
@@ -424,25 +373,17 @@ the returned payload.
 ## Vendoring
 
 To build the module from a copy rather than `go get`, copy the `go/`
-directory whole, including `roots/certs/`: `go generate`'s copy of the
-repository's canonical root certificates in the root `certs/`, embedded
-with `go:embed`. An embed pattern cannot reach outside its module
-directory, so the copy exists precisely so `go build` needs nothing
-outside `go/`.
+directory whole. Two things are embedded and must come along:
 
-**Rotating or adding a root** touches, together:
-
-- the `.cer` file in the repository's `certs/` (and `go/roots/certs/`,
-  regenerated with `go generate ./...` and checked byte for byte by a
-  test and by CI's `go-generate-check` job);
-- the fingerprint in `roots.go`'s `appleRootFingerprints`, the SHA-256
-  Apple publishes for the file (check it with `sha256sum` on the DER);
-- the fingerprint and count tests in `roots_test.go`.
-
-The roots load all together or not at all, so a file that does not match
-its fingerprint panics inside `AppleRoots()` / `DefaultConfig()` at
-startup, loudly, rather than leaving every call to answer
-`UNTRUSTED_CHAIN`.
+- `internal/wasm/aprv.wasm` and `aprv.wasm.sha256`, the verification module
+  and its hash. Never replace one without the other; the package refuses to
+  load when they disagree.
+- `roots/certs/`, `go generate`'s copy of the repository's canonical root
+  certificates in the root `certs/`, which `AppleRoots()` and
+  `DefaultConfig().Roots()` return. An embed pattern cannot reach outside its
+  module directory, so the copy exists precisely so `go build` needs nothing
+  outside `go/`. The roots the module verifies against are compiled into the
+  module itself.
 
 **The tests need the shared fixtures.** They look for `fixtures/` with
 `cases.json` above the module directory, or read `APRV_FIXTURES_DIR`
@@ -462,29 +403,40 @@ cross-language vector file every port of this library answers, as one
 named test per case, and fails unless every case ran. The adapter carries
 no case-specific knowledge: it checks each fixture against the digest the
 registry records, builds a `Config` from the case, dispatches on the
-operation and evaluates the expected JSON Pointers on the result. The
-`decodeBase64` cases call the two base64 decoders directly through
-test-only exported hooks (`export_test.go`), and a case with a `maxMillis`
-budget is timed after a warm-up call, with the SPKI of every key a
-certificate-signature check used recorded through
-`internal/chain.KeysUsedDuring` and checked against the DoS budget
-directly, not only against a clock.
+operation and evaluates the expected JSON Pointers on the result. 0.7 has no
+public base64 decoder, so the `decodeBase64` groups run through
+`VerifyReceipt` and through a JWS whose `x5c` carries the text, and check
+which side of the base64 rule each text lands on. A case with a `maxMillis`
+budget is timed after a warm-up call.
 
-The native suite beyond conformance covers hostile and malformed input, the
-resource bounds above, the public API's shape (`apisurface_test.go`), the
-module's forbidden-import and forbidden-identifier gates, the trust-pinning
-rule from three directions (`systemtrust_test.go` plants a root in the OS
-trust store in a subprocess and proves it is still never consulted), the
-SHA-1 `CheckSignature`/`CheckSignatureFrom` asymmetry the legacy path
-depends on (`sha1_canary_test.go`), stranger certificates and their key
-cost, every signer and certificate algorithm, US-Pacific date rendering,
-FIPS-140-only mode not crashing the caller (`fips_test.go`), and a
-mutation pass over the genuine receipts (`mutation_test.go`). The mutation
-pass asserts the invariant that matters: a mutated receipt is either
-rejected or produces an identical result.
+Beyond conformance (this package holds no verification logic to test):
 
-Two seed-corpus fuzz targets, `FuzzVerifyReceipt` and `FuzzVerifySignedData`
-(plus `internal/der`'s own `FuzzParseDER`), run on every `go test` and are
-additionally run by CI with `-fuzz` for a fixed budget on every push; a
-crasher it finds is written under `testdata/fuzz/` and becomes a permanent
-regression case once committed.
+- `facade_test.go` runs the wrapper over `testdata/mirror/mirror.wasm`, a
+  test double of the module's ABI that answers with its own input, so a test
+  chooses the module's answer: every field of a verified receipt, each of the
+  eight reasons, answers that are not the wire (an unknown member, a reason
+  outside the eight, an id that is not a decimal integer) which must be
+  `INTERNAL_ERROR`, a trap and recovery, the clock read once per call and
+  before the input, and the six outcomes of the ABI (verified, failed,
+  misuse, ABI mismatch, trap, unreadable answer);
+- `concurrency_test.go` answers every case once, then again on several
+  goroutines through the same Verifiers, under `-race` in CI;
+- `internal/host` runs the ABI tests of the canonical-ABI round (`env` 2, 255
+  and 2^32-1 trap; verify before `init` and a second `init` trap; a failing
+  `random-get` traps; a trap in one instance leaves another verifying; 2,000
+  calls leave memory the same size) and tests the pool: a trapped instance is
+  never reused, an abandoned pool releases its instances, a module of another
+  ABI version or with an import beyond `random-get` is refused, and a hostile
+  module cannot grow past 256 MiB;
+- `internal/wasm` refuses a module that differs from its hash file by one
+  byte;
+- `apisurface_test.go` locks the public API's shape and keeps verification
+  packages (`encoding/asn1`, `crypto/ecdsa`, `math/big`, and the rest) out of
+  the library;
+- two seed-corpus fuzz targets, `FuzzVerifyReceipt` and `FuzzVerifySignedData`,
+  run on every `go test` and are run by CI with `-fuzz` for a fixed budget; a
+  crasher is written under `testdata/fuzz/` and becomes a permanent
+  regression case once committed.
+
+`go run ./internal/corpusrun CALLS.jsonl` runs a calls file through the same
+host layer for the corpus parity check (see `CI-NOTES.md`).

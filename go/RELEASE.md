@@ -13,7 +13,16 @@ proxy" — that section is current and this file no longer repeats it. The
 exists as a copy of the repo-root MIT text, the same reason `node/LICENSE`
 does, and why the fixtures stay at the repository root and never move inside
 `go/`: the tests reference `../fixtures`, which a consumer does not have and
-never needs, keeping the zip to a few tens of kilobytes.
+never needs.
+
+The subtree carries `internal/wasm/aprv.wasm`, the verification module (about
+2.9 MB, roughly 1 MB in the zip), and `aprv.wasm.sha256` beside it. The Go
+module is published from a git tag, so both files are committed, and they
+change together: the release job refreshes the pair on the release branch, CI
+checks the pair against the release build's SHA-256, and the package refuses
+to load a module that differs from its hash file. A release whose committed
+module is stale would ship a verifier nobody built, so that check is not
+optional.
 
 `go/tools/` is a separate module, so its `go.mod` excludes that subtree from
 the library module entirely; staticcheck and govulncheck can never enter a
