@@ -157,5 +157,20 @@ G1d (the final module, `4e9d2d85...c9dd`, 384 cases): `dotnet test` project 599 
     host or the runtime grows the live set with time, not with calls. Then the
     verdict should subtract that control too; that change waits for the figure.
   - dropped results still alive: a caller-visible object graph is retained.
+  The third run (net8.0 arm64) printed 3,460.9 B per call for the wrapper
+  against 0.0 B for both controls, with the native call alone at 95.6 B, the
+  reading alone at -5.5 B, no result retained, the same pooled instance and
+  constant store caches. Every piece measured small once the wrapper had failed,
+  so the growth sits either in a piece not yet measured (the clock, the UTF-8
+  encoding, taking and returning an instance, the lowering, the call with a
+  pre-lowered input) or in the cold start of the first measurement. The linear
+  memory of 262,144 B is the stub module's four pages, on every platform, not a
+  platform reading. The failure message now measures all of those pieces one at
+  a time and the whole path a second time, warm. The warm-up before the rounds
+  is now at least 500 calls and 400 ms, because tiered compilation starts
+  counting calls only after 100 ms and recompiles on a background thread, and
+  the old 50 calls (about 2 ms on a Mac) left that inside the measured rounds;
+  that is a hypothesis the "whole path again" figure will confirm or refute, not
+  a finding.
   If none is conclusive, this test is the one justified red for the pull
   request to main, with the run's figures attached.
