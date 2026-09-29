@@ -63,11 +63,10 @@ Verifier separateProcess = Verifier.create(config,
               .cacheDirectory(Paths.get("/var/cache/aprv")));
 ```
 
-**The server engine is not available yet.** Its API compiles and is
-documented, but `Verifier.create` throws
-`UnsupportedOperationException("server engine: pending")` for it, and so
-does `Verifier.create(config)` on Java 8. It lands in a later step of the
-0.8.0 work.
+A verifier on the server engine owns a process or a connection pool, so
+it implements `Closeable`: close it when you are done with it. One you
+forget is closed when it becomes unreachable, and every open one is
+closed when the JVM exits.
 
 ### Endive
 
@@ -97,7 +96,9 @@ method and no call that loads native code.
 
 `Engine.server(ServerSource...)` tries its sources in the order you give
 and uses the first that works. With none, it uses `maven()` then
-`github()`.
+`github()`. A source that fails gives its reason and the next one is
+tried; when none works, `Verifier.create` throws `IllegalStateException`
+with every source's reason, in order.
 
 | Source | What it does |
 |---|---|
@@ -107,12 +108,70 @@ and uses the first that works. With none, it uses `maven()` then
 | `github()` | downloads the binary for this platform from this project's GitHub Release over HTTPS |
 | `download(url, sha256)` | downloads from your mirror and accepts only a file with that SHA-256 |
 
-A binary from `maven()`, `github()` or `download()` is checked against a
-pinned SHA-256 before it is made executable and again before every start;
-one that does not match is never run. They are kept in the cache directory
-(`cacheDirectory(path)`). **A directory mounted `noexec` cannot run
-them.** On such a host (many container platforms mount `/tmp` that way),
-use `url()` or `executable()`, which extract nothing.
+`maven()` needs the classifier jar for your platform beside this one:
+
+```xml
+<dependency>
+  <groupId>io.github.emindeniz99</groupId>
+  <artifactId>apple-purchase-receipt-verifier-wasm</artifactId>
+  <version>0.7.0</version> <!-- x-release-please-version -->
+  <classifier>linux-x86_64</classifier> <!-- or linux-aarch64 -->
+</dependency>
+```
+
+Each classifier jar holds one static Linux binary at
+`io/github/emindeniz99/applepurchasereceiptverifier/server/aprv-<target>`
+(`x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl`): about
+12 MB extracted, 4 MB as a jar. On macOS and Windows use `github()`, `download()`, `executable()`
+or `url()`. `github()` fetches the release asset `aprv-<target>` (`.exe`
+on Windows) of this version.
+
+**The cache directory.** A binary from `maven()`, `github()` or
+`download()` is written to the cache directory as a temporary file,
+hashed while it streams, and made executable (owner read and execute
+only) and renamed to `aprv-<sha256>` only when the hash is the one pinned
+in this jar (`maven()`, `github()`) or given to `download()`. One that
+does not match is deleted and never run, and that source fails. The
+installed file is hashed again before every start. A file lock makes one
+download per machine however many threads and JVMs start at once.
+
+The default directory is `~/.cache/aprv` on Linux,
+`~/Library/Caches/aprv` on macOS and `%USERPROFILE%\AppData\Local\aprv\cache`
+on Windows; `cacheDirectory(path)` sets another. It is created
+owner-only, and one that others can write, that another user owns, or
+that is a symbolic link is refused.
+
+**A directory mounted `noexec` cannot run a binary.** On such a host
+(many container platforms mount `/tmp` or the home directory that way)
+the source fails with a message that says so. Use `url()`, or
+`executable()` with a binary on a mount that allows it, or a
+`cacheDirectory` on one.
+
+### The server process
+
+For every source but `url()`, this JVM runs `aprv serve --managed` as a
+child process and supervises it:
+
+- A fresh 256-bit token and your roots go to the child on its standard
+  input, never on its command line or in its environment. The child
+  listens on `127.0.0.1` only, on a port it picks and reports.
+- A child that dies is started again by the next call. One that died 10
+  times within a minute is not; calls answer `INTERNAL_ERROR` until you
+  create the verifier again.
+- The child stops on `close()`, when the verifier becomes unreachable, and
+  when the JVM exits. When the JVM is killed with `kill -9`, the child
+  sees its standard input close and exits by itself.
+- Each call is one HTTP request on a kept-alive loopback connection. The
+  config's clock is read once per call and sent with it.
+
+**Failures.** A verdict answers exactly as on Endive. A problem the
+server reports (a trap in the module, an ABI error, a refused token) is
+`INTERNAL_ERROR` (21009 from the endpoint) with a `ServerProblem` as
+`Failure.cause()`, whose message names the HTTP status and the server's
+code. A server that cannot be started or reached is `INTERNAL_ERROR`
+with a `ServerProcessFailure` as the cause, so it is never mistaken for
+a trap. An input over the 3 MiB cap is `TOO_LARGE` (21002). Both cause
+classes are internal; tell them apart by `getClass().getName()` in logs.
 
 ## The runtime probe
 
@@ -124,9 +183,16 @@ roots, and keeps that instance for the first call. `create` then throws
 have the interface this library binds, and `IllegalArgumentException` if
 the module refuses one of your roots.
 
+On the server engine, the probe resolves the sources: `create` starts
+the child (or reaches the `url()` server), asks it for `/v1/info`, and
+refuses a server that trusts other roots than your `Config`, since it
+would answer for another trust anchor. On Java 8 the default
+`Verifier.create(config)` therefore returns a verifier whose server is
+already running.
+
 With the probe off, `create` does none of that and the first call pays
-for it; a module that cannot run, or a root it refuses, then answers
-`INTERNAL_ERROR` on every call.
+for it; a module that cannot run, a root it refuses, or a server source
+that does not work then answers `INTERNAL_ERROR` on every call.
 
 ## Differences from the main artifact
 
@@ -137,11 +203,20 @@ for it; a module that cannot run, or a root it refuses, then answers
   `UNREADABLE_PAYLOAD` included. It is set for the `INTERNAL_ERROR`s this
   library raises itself: a trap, a runtime failure, a clock that threw.
 - **Dependencies.** `run.endive:runtime` and `run.endive:wasm` (Apache-2.0,
-  pure Java 11 bytecode) and `jackson-core`. No BouncyCastle.
+  pure Java 11 bytecode) and `jackson-core`. No BouncyCastle. The server
+  engine adds nothing: its HTTP client and JSON reader are in this jar.
 - **Class files.** The API, the engine choice and the server client are
   Java 8 bytecode. The Endive engine and its compiled module are Java 11
   bytecode and load only when that engine is chosen, so the jar sits on a
   Java 8 classpath harmlessly.
+
+## Building
+
+`aprv.wasm` is not in git: copy the release's `aprv.wasm` to
+`src/main/wasm/aprv.wasm` (the build checks it against
+`src/main/wasm/aprv.wasm.sha256`), or pass `-Daprv.wasm=PATH`. The
+classifier jars come from `-Daprv.server.linux-x86_64=PATH` and
+`-Daprv.server.linux-aarch64=PATH`; see [CI-NOTES.md](CI-NOTES.md).
 
 ## Licence
 
