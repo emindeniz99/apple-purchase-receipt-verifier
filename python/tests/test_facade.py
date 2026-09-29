@@ -8,6 +8,8 @@ import contextlib
 import gc
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,6 +33,7 @@ from apple_purchase_receipt_verifier import (
     _wire,
 )
 
+import _support
 from _support import TESTS, double_runtime, double_verifier
 
 ROOT = b"\x30\x00"
@@ -229,44 +232,100 @@ class AbiMismatchTest(unittest.TestCase):
 
 
 class ModuleFileTest(unittest.TestCase):
-    """The module is not committed: it is read from the package or from
-    ``APRV_WASM``, checked against ``aprv.wasm.sha256``, and a missing or
-    swapped file is an error that says so."""
+    """The module is not committed. The library loads only the ``aprv.wasm``
+    bundled in the package, checked against ``aprv.wasm.sha256``; it reads no
+    environment variable to pick another file. Test and build tooling may pass
+    an explicit path to the internal loader."""
 
-    def run_import(self, override: "str | None") -> "subprocess.CompletedProcess[str]":
-        package_root = str(Path(__file__).resolve().parents[1])
-        environment = {k: v for k, v in os.environ.items() if k != "APRV_WASM"}
-        environment["PYTHONPATH"] = package_root
-        if override is not None:
-            environment["APRV_WASM"] = override
-        return subprocess.run(
-            [sys.executable, "-c", "import apple_purchase_receipt_verifier"],
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
+    PACKAGE = Path(__file__).resolve().parents[1] / "apple_purchase_receipt_verifier"
 
-    def test_a_missing_module_is_a_clear_error_naming_the_variable(self) -> None:
-        done = self.run_import("/nonexistent/aprv.wasm")
-        self.assertNotEqual(0, done.returncode)
-        self.assertIn("APRV_WASM", done.stderr)
-        self.assertIn("not found", done.stderr)
-
-    def test_the_variable_overrides_the_package_path(self) -> None:
+    def run_in_copy(
+        self, script: str, wasm: "bytes | None", env: "dict[str, str] | None" = None
+    ) -> "subprocess.CompletedProcess[str]":
+        """Runs ``script`` against a copy of the package whose ``aprv.wasm`` is
+        ``wasm`` (absent when None)."""
         with tempfile.TemporaryDirectory() as directory:
-            copy = Path(directory) / "elsewhere.wasm"
-            copy.write_bytes(_host._WASM)
-            self.assertEqual(0, self.run_import(str(copy)).returncode)
+            copy = Path(directory) / "apple_purchase_receipt_verifier"
+            shutil.copytree(
+                self.PACKAGE, copy, ignore=shutil.ignore_patterns("__pycache__", "aprv.wasm")
+            )
+            if wasm is not None:
+                (copy / "aprv.wasm").write_bytes(wasm)
+            environment = {k: v for k, v in os.environ.items() if k != "APRV_WASM"}
+            environment.update(env or {})
+            environment["PYTHONPATH"] = directory
+            # The working directory leads sys.path for ``-c``: make it the copy.
+            check = (
+                "import apple_purchase_receipt_verifier as p;"
+                f"assert p.__file__.startswith({directory!r}), p.__file__;"
+            )
+            return subprocess.run(
+                [sys.executable, "-c", check + script],
+                env=environment,
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+
+    LOAD = "from apple_purchase_receipt_verifier import _host; _host.read_pinned_module()"
+    START = (
+        "from apple_purchase_receipt_verifier import Config, Verifier, default_roots;"
+        "Verifier(Config.create(roots=default_roots()))"
+    )
+
+    def test_a_missing_module_is_a_clear_error(self) -> None:
+        done = self.run_in_copy(self.LOAD, None)
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("not found", done.stderr)
+        self.assertIn("copy the module into the package directory", done.stderr)
 
     def test_a_module_that_does_not_match_the_recorded_hash_is_refused(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            other = Path(directory) / "other.wasm"
-            other.write_bytes(_host._WASM + b"\x00")
-            done = self.run_import(str(other))
+        done = self.run_in_copy(self.LOAD, _support.WASM + b"\x00")
         self.assertNotEqual(0, done.returncode)
         self.assertIn("SHA-256", done.stderr)
+
+    def test_the_variable_does_not_swap_the_module_in_the_library(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            other = Path(directory) / "other.wasm"
+            other.write_bytes(_support.WASM + b"\x00")
+            for value in (str(other), "/nonexistent/aprv.wasm"):
+                done = self.run_in_copy(self.START, _support.WASM, {"APRV_WASM": value})
+                self.assertEqual(0, done.returncode, done.stderr)
+
+    def test_the_variable_does_not_supply_a_missing_module(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            elsewhere = Path(directory) / "elsewhere.wasm"
+            elsewhere.write_bytes(_support.WASM)
+            done = self.run_in_copy(self.START, None, {"APRV_WASM": str(elsewhere)})
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("not found", done.stderr)
+
+    def test_the_internal_loader_takes_an_explicit_path_and_checks_its_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            good = Path(directory) / "good.wasm"
+            good.write_bytes(_support.WASM)
+            bad = Path(directory) / "bad.wasm"
+            bad.write_bytes(_support.WASM + b"\x00")
+            self.assertEqual(_support.WASM, _host.read_pinned_module(good))
+            with self.assertRaisesRegex(RuntimeError, "SHA-256"):
+                _host.read_pinned_module(bad)
+            with self.assertRaisesRegex(RuntimeError, "not found"):
+                _host.read_pinned_module(Path(directory) / "missing.wasm")
+
+    def test_the_package_sources_name_no_module_variable(self) -> None:
+        """Only test and build tooling may read ``APRV_WASM``; the package may
+        name ``APRV_WASM_CACHE_DIR`` and nothing else that begins with it, and
+        only ``_cache.py`` reads variables about the cache or the platform."""
+        pattern = re.compile(r"APRV_WASM(?!_CACHE_DIR\b)")
+        sources = sorted(self.PACKAGE.glob("*.py"))
+        self.assertGreater(len(sources), 10)
+        for source in sources:
+            text = source.read_text(encoding="utf-8")
+            self.assertIsNone(pattern.search(text), f"{source.name} names APRV_WASM")
+            if source.name != "_cache.py":
+                self.assertNotRegex(text, r"os\.environ|getenv", source.name)
 
 
 class TrapAndInternalFailureTest(unittest.TestCase):

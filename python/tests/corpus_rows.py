@@ -28,6 +28,8 @@ import time
 
 from apple_purchase_receipt_verifier import _host, _wire
 
+from _support import use_module_from_environment
+
 _POOL_SIZE = 2
 
 
@@ -36,6 +38,7 @@ def now_ms() -> int:
 
 
 def main(path: str) -> int:
+    use_module_from_environment()
     runtime = _host.default_runtime()
     pools: dict[str, _host.Pool | str] = {}  # a str is init's refusal
     rows = traps = 0

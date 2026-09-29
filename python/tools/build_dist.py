@@ -13,7 +13,7 @@ uses this script, and its check step, instead. Needs the ``build`` package.
 
 The module is not in git: the release job hands it over and names it in
 ``APRV_WASM``. ``build`` copies that file into the package, writes its SHA-256
-beside it (``aprv.wasm.sha256``, which the package checks at import) and stops
+beside it (``aprv.wasm.sha256``, which the package checks at start) and stops
 when the variable is unset or the file is missing.
 """
 

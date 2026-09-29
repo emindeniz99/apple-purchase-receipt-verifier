@@ -5,8 +5,10 @@ Actions: the only interpreter in the lane's environment was CPython 3.11 on
 glibc x86_64, and the results in the hand-back say which leg ran where.
 
 Every command runs in `python/`. `aprv.wasm` is git-ignored: every job copies
-the module into `apple_purchase_receipt_verifier/aprv.wasm` (or sets `APRV_WASM`)
-before anything imports the package; a missing file is an error at import.
+the module into `apple_purchase_receipt_verifier/aprv.wasm` before the tests run, or
+sets `APRV_WASM` for them (only `tests/_support.py`, `tests/corpus_rows.py` and
+`tools/build_dist.py` read it; the package never does, and a test greps for that).
+A missing or mismatched file is an error at the first `Verifier`.
 While it is the stand-in, the file to copy is the round-13
 `aprv-cabi.core.wasm` (SHA-256 in `aprv.wasm.sha256`). The package has one runtime dependency,
 `wasmtime>=49`; the `dev` extra adds ruff, mypy and setuptools (the
@@ -138,7 +140,7 @@ echo "$RELEASE_SHA256  aprv.wasm" | (cd "$ARTIFACTS" && sha256sum -c -)
 ```
 
 `build_dist.py` writes `aprv.wasm.sha256` from the module it copies, and the
-package refuses to import when the two disagree. `tests/_support.py` recognises
+package refuses to start when the two disagree. `tests/_support.py` recognises
 the stand-in by its SHA-256, so the release module must not carry it. The
 module is not committed on this branch; only `go/` and the Swift package commit
 the real one, once, at integration (DECISIONS.md R14).

@@ -16,12 +16,12 @@ handle at start and never frees it.
 """
 
 import hashlib
-import os
 import secrets
 import struct
 import threading
 from collections.abc import Callable
 from importlib import resources
+from pathlib import Path
 from typing import TypeVar
 
 import wasmtime
@@ -71,37 +71,25 @@ class Fault(Exception):
     instance involved is discarded; ``__cause__`` names what happened."""
 
 
-#: The environment variable that names the module file, instead of the one
-#: inside the package. Developers and CI copy the file into place; it is not
-#: committed (it is git-ignored), and a release wheel carries the release's.
-MODULE_ENV_VAR = "APRV_WASM"
-
-
-def _read_pinned_module() -> bytes:
-    """The module (``$APRV_WASM``, else ``aprv.wasm`` inside the package),
-    checked against the SHA-256 in the package's ``aprv.wasm.sha256``, so a
-    corrupted or swapped file stops the import instead of running. A missing
-    file is an error that says where it looked."""
+def read_pinned_module(path: "Path | None" = None) -> bytes:
+    """The module, checked against the SHA-256 in the package's
+    ``aprv.wasm.sha256``, so a corrupted or swapped file is refused instead of
+    run. With no ``path`` it is the ``aprv.wasm`` bundled in the package, the
+    only file the library itself ever loads: it reads no environment variable
+    to pick another. An explicit ``path`` is for test and build tooling. A
+    missing file is an error that says where it looked."""
     package = resources.files(__package__)
-    override = os.environ.get(MODULE_ENV_VAR)
     try:
-        if override:
-            with open(override, "rb") as handle:
-                wasm = handle.read()
-        else:
-            wasm = package.joinpath("aprv.wasm").read_bytes()
+        wasm = path.read_bytes() if path is not None else package.joinpath("aprv.wasm").read_bytes()
     except OSError as error:
         raise RuntimeError(
-            f"aprv.wasm not found ({override or 'inside the package'}): copy the module into "
-            f"the package directory, or set {MODULE_ENV_VAR} to its path"
+            f"aprv.wasm not found ({path or 'inside the package'}): "
+            "copy the module into the package directory"
         ) from error
     recorded = package.joinpath("aprv.wasm.sha256").read_text(encoding="ascii").split()
     if not recorded or hashlib.sha256(wasm).hexdigest() != recorded[0]:
         raise RuntimeError("aprv.wasm does not match the SHA-256 in aprv.wasm.sha256")
     return wasm
-
-
-_WASM = _read_pinned_module()
 
 
 def _describe(
@@ -202,7 +190,7 @@ def default_runtime() -> Runtime:
     global _default
     with _default_lock:
         if _default is None:
-            _default = Runtime(_WASM)
+            _default = Runtime(read_pinned_module())
         return _default
 
 

@@ -2,6 +2,7 @@
 the record of what the stand-in module is known to answer differently."""
 
 import hashlib
+import os
 import unittest
 from collections.abc import Callable
 from pathlib import Path
@@ -20,7 +21,22 @@ FIXTURES = TESTS.parents[1] / "fixtures"
 #: some of what these tests expect of 0.7's wire shape cannot hold yet.
 STANDIN_SHA256 = "da786ac853464e7b837c5483f9b04a27a3a5c2ff0340fa526f60482fd80fdb68"
 
-MODULE_SHA256 = hashlib.sha256(_host._WASM).hexdigest()
+
+def use_module_from_environment() -> bytes:
+    """Test tooling, never the library: when ``APRV_WASM`` names a file, the
+    process-wide runtime is built from it (through the internal loader, still
+    checked against ``aprv.wasm.sha256``); otherwise from the bundled file. The
+    package itself reads no such variable. Returns the module's bytes."""
+    override = os.environ.get("APRV_WASM")
+    if not override:
+        return _host.read_pinned_module()
+    wasm = _host.read_pinned_module(Path(override))
+    _host._default = _host.Runtime(wasm)
+    return wasm
+
+
+WASM = use_module_from_environment()
+MODULE_SHA256 = hashlib.sha256(WASM).hexdigest()
 IS_STANDIN = MODULE_SHA256 == STANDIN_SHA256
 
 
