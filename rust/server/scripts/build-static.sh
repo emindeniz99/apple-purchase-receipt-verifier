@@ -34,7 +34,8 @@ targetdir=${CARGO_TARGET_DIR:-$here/target}
 mkdir -p "$out"
 exe=
 case "$target" in *-windows-*) exe=.exe ;; esac
-sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -c1-64; }
+# stdin, not a name: sha256sum escapes a name holding a backslash (Windows).
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum < "$1"; else shasum -a 256 < "$1"; fi | cut -c1-64; }
 
 got=$(sha256 "$component")
 if [ -n "${COMPONENT_SHA256:-}" ] && [ "$got" != "$COMPONENT_SHA256" ]; then
