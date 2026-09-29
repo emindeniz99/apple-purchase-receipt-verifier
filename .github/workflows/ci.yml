@@ -620,6 +620,9 @@ jobs:
           docker run --rm -v "$GITHUB_WORKSPACE:/w" -w /w/python \
             -e HOME=/tmp/home -e UV_PYTHON_PREFERENCE=only-system -e UV_PYTHON_DOWNLOADS=never \
             "$IMAGE" sh -euc '
+              # wasmtime-py'"'"'s musllinux wheel links libgcc_s, which Alpine
+              # leaves out of its base image; a musl deployment installs it too.
+              apk add --no-cache libgcc
               uv sync --locked --extra dev
               uv run --locked --extra dev python -c "import platform, sys; print(sys.version, platform.libc_ver())"
               uv run --locked --extra dev python -m unittest discover -s tests
