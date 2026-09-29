@@ -604,7 +604,7 @@ See the [project README](../README.md#debugging-a-receipt-by-hand) for the
 composer install                              # installs composer.lock
 export APRV_BIN=/path/to/aprv                 # the suite runs against the real binary
 vendor/bin/phpunit                            # everything
-vendor/bin/phpunit --testsuite conformance    # the 311 shared cases: CLI transport, then HTTP against a local aprv serve
+vendor/bin/phpunit --testsuite conformance    # the 338 shared cases: CLI transport, then HTTP against a local aprv serve
 vendor/bin/phpstan analyse
 vendor/bin/php-cs-fixer fix
 fuzz/run.sh all 60                            # the four coverage-guided fuzz targets

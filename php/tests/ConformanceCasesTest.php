@@ -9,7 +9,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Aprv;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
-/** The 311 cases through the default transport: one `aprv` process per call. */
+/** The 338 cases through the default transport: one `aprv` process per call. */
 final class ConformanceCasesTest extends ConformanceBase
 {
     protected static function verifierFor(Config $config): Verifier

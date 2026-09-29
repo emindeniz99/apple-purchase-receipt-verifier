@@ -11,7 +11,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
 /**
- * The 311 cases over HTTP against a locally started `aprv serve`. The
+ * The 338 cases over HTTP against a locally started `aprv serve`. The
  * server's roots are fixed at its start, so one server runs per distinct
  * root set (the case's roots, or the built-in ones), and `Verifier::create`
  * checks each against the fingerprints `GET /v1/info` reports.

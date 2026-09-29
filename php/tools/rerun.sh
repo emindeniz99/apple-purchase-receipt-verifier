@@ -1,6 +1,6 @@
 #!/bin/sh
 # Re-runs the whole PHP lane against one aprv binary: the phpunit suites (the
-# 311 cases through the CLI and over HTTP, the façade, transport and installer
+# 338 cases through the CLI and over HTTP, the façade, transport and installer
 # tests), then the corpus through the façade over both transports, compared
 # with the module's own rows.
 #

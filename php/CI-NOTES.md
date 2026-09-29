@@ -19,8 +19,8 @@ and in `benchmark.yml`.
   before. **`openssl` is no longer needed** by the package or the suite; leave it
   out of one leg (8.2) to prove it.
 - **The binary must carry the release component** (the 0.7 core). The suite
-  has no allowance for any other: every one of the 311 cases must pass through
-  both transports. A binary that embeds the old 0.6 stand-in fails 214 of them.
+  has no allowance for any other: every one of the 338 cases must pass through
+  both transports. A binary that embeds an older core fails some of them.
 - No secrets.
 
 ## Job `php` (matrix 8.2, 8.3, 8.4, 8.5)
@@ -30,10 +30,10 @@ Working directory `php`:
 ```sh
 composer install --no-scripts --no-progress --no-interaction --prefer-dist
 vendor/bin/phpunit --exclude-testsuite conformance   # façade, transports, installer, gates: no network
-vendor/bin/phpunit tests/ConformanceCasesTest.php    # the 311 cases through the CLI transport
+vendor/bin/phpunit tests/ConformanceCasesTest.php    # the 338 cases through the CLI transport
 ```
 
-**One leg (8.4) also runs the 311 cases over HTTP** against a locally started
+**One leg (8.4) also runs the 338 cases over HTTP** against a locally started
 `aprv serve` (one server per root set, each on a free loopback port):
 
 ```sh
