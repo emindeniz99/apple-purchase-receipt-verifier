@@ -565,7 +565,7 @@ work.
   the server binary's own dependencies (not in the classifier jars),
   the first real `java-wasm-s390x` run, the WasmKit and Wasmi upstream
   reports, the `macos-15-intel` label check before tagging.
-- PR #187 checks (2026-09-29 17:40Z): the review bots' findings fixed
+- PR #187 checks (2026-09-29 17:25Z): the review bots' findings fixed
   and merged with real merge commits. CodeQL's one high (a Ruby PEM
   regex) replaced by a linear scan (fac0f38); the evidence spikes taken
   out of CodeQL's scope and the release workflows' checkouts pinned to
@@ -579,10 +579,25 @@ work.
   the Node dev tree overrides weval to 0.5.0 to drop `decompress`
   (Socket's critical CVE; jco is dev-only, nothing of it ships, and
   `jco transpile` never loads it), after which Socket reports all alerts
-  resolved (0998f3f). Still open: the .NET macOS arm64 growth test (the
-  one justified red; the next macOS run's diagnostics decide) and the
-  `github-advanced-security` check, which is Copilot Autofix failing on
-  its own side, not a finding.
+  resolved (0998f3f). Later the same hour: Ruby's thread bench asserts
+  1.5x at 4 threads, best of three trials, after a shared 4-vCPU runner
+  gave 1.94x against the former 2.0x, and a held GVL still fails it at
+  about 1.0x (3fef38c); the other Rust crates' test directories join
+  the CodeQL exclusions after two cleartext-logging highs on a test
+  assertion message (724b813); the post-publish smoke jobs fetch the
+  validated release tag in a run step instead of handing it to
+  `actions/checkout`, which answers CodeQL's untrusted-checkout and
+  cache-poisoning alerts on that workflow (45815dc); and the .NET growth
+  test's diagnostics on macOS arm64 decided the last red: .NET 8 and 9
+  read 1.5 to 3.5 kB per call in the first window after the warm-up and
+  0 B when the same path was measured again, no piece retained
+  anything, and .NET 10 passed, so the growth was a warm-up tail, and
+  the test now judges the steady state over up to three consecutive
+  windows, still with the 256 B budget and no skip; injected leaks of
+  256 and 1,500 B per call fail every window on Linux (dotnet lane).
+  All fifteen CodeQL review threads on the pull request are answered
+  and resolved. Still open: the `github-advanced-security` check, which
+  is Copilot Autofix failing on its own side, not a finding.
 - Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
   merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
   SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
@@ -612,10 +627,10 @@ hand-back.
 
 | Gate | State |
 |---|---|
-| G1 | open |
-| G2 | open |
-| G3 | open |
-| G4 | open |
-| G5 | open |
-| G6 | open |
-| G7 | open |
+| G1 | closed 2026-09-29: the core and `aprv.wasm` pass the 384 cases and the corpus, the module imports exactly `random-get`, the WIT reads back unchanged, the hash is reproduced, the ABI tests pass, `init` is measured and the server pools by default (OD-15) |
+| G2 | closed on the branch's CI (the server on every platform it ships for); its post-publish smoke runs on the 0.8.0 release |
+| G3 | closed on the branch's CI (both Java artifacts on Java 8, 11, 17, 21, the JVM legs); its Maven Central smoke runs on the 0.8.0 release |
+| G4 | closed on the branch's CI (Node and Go); the npm and Go proxy smokes run on the 0.8.0 release |
+| G5 | closed on the branch's CI (Python, Swift, Ruby, .NET); the registry smokes run on the 0.8.0 release, NuGet once bootstrapped |
+| G6 | closed on the branch's CI (PHP through the server); the Packagist smoke runs once the owner submits the repository |
+| G7 | open: the owner merges PR #187 with a real merge commit and release-please opens 0.8.0 |
