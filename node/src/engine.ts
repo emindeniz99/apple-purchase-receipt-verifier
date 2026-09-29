@@ -39,9 +39,13 @@ export class AbiMismatchError extends Error {
 
 /** `init` refused the configuration: a root that is not a certificate. */
 export class InitRefusedError extends Error {
-  constructor(message: string) {
+  /** `init`'s answer, exactly as the module wrote it. */
+  readonly answer: string;
+
+  constructor(message: string, answer: string) {
     super(message);
     this.name = 'InitRefusedError';
+    this.answer = answer;
   }
 }
 
@@ -133,7 +137,7 @@ function initAnswer(text: string): void {
       return;
     }
     if (ok === false && typeof message === 'string') {
-      throw new InitRefusedError(message);
+      throw new InitRefusedError(message, text);
     }
   }
   throw new Error('init answered neither {"ok":true} nor {"ok":false,"message":...}');

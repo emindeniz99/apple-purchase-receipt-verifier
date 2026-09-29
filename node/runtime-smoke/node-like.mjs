@@ -29,6 +29,6 @@ for (const [name, api] of [
   ['./web', web],
 ]) {
   for (const line of await run(api, fx)) {
-    console.log(`${line.startsWith('SKIP') ? '#' : 'ok -'} ${name}: ${line}`);
+    console.log(`ok - ${name}: ${line}`);
   }
 }

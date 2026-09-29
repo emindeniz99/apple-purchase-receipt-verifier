@@ -77,7 +77,7 @@ for (const name of names.length > 0 ? names : ['chromium']) {
       console.log(`not ok - ${result.error}`);
     }
     for (const line of result.out ?? []) {
-      console.log(`${line.includes('SKIP') ? '#' : 'ok -'} ${line}`);
+      console.log(`ok - ${line}`);
     }
   } finally {
     await browser.close(); // oxlint-disable-line no-await-in-loop

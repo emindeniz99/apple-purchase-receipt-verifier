@@ -96,5 +96,5 @@ await entry.evaluate();
 
 console.log('# @edge-runtime/vm (Vercel Edge runtime)');
 for (const line of edge.context.result) {
-  console.log(`${line.includes('SKIP') ? '#' : 'ok -'} ${line}`);
+  console.log(`ok - ${line}`);
 }

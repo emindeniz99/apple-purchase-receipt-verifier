@@ -17,7 +17,7 @@ export default {
     ]) {
       // oxlint-disable-next-line no-await-in-loop -- one entry point after the other
       for (const line of await run(api, fx)) {
-        console.log(`${line.startsWith('SKIP') ? '#' : 'ok -'} ${name}: ${line}`);
+        console.log(`ok - ${name}: ${line}`);
       }
     }
   },

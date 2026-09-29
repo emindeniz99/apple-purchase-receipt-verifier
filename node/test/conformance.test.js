@@ -359,9 +359,13 @@ function defineTargetTests(name, build, async_) {
   // through verifyReceipt, and an `x5c` text runs through verifySignedData
   // as the first x5c entry of a JWS that is otherwise well formed. A text
   // the rule accepts decodes to bytes that are no receipt and no
-  // certificate, so both groups fail; what tells them apart is whether the
-  // failure is the base64 refusal (the decoder's reason, and a message that
-  // names base64) or a later one.
+  // certificate, so both groups fail, and the two are told apart this way:
+  //
+  // - an accepted text must get exactly the answer the canonical base64 of
+  //   the case's bytesHex gets: the same bytes reached the parser;
+  // - a refused text must get the decoder's reason with a message about the
+  //   text itself (it names base64, or says the text is empty), never a
+  //   parser's.
 
   const DECODERS = {
     'receipt-data': {
@@ -393,10 +397,17 @@ function defineTargetTests(name, build, async_) {
           continue;
         }
         const { reason, message } = result.failure;
-        const refused = reason === decoder.refusal && /base64/i.test(message);
-        if (status === 'ok' && refused) {
-          failures.push(`${where} was refused by the base64 rule (${reason}: ${message})`);
-        } else if (status === 'error' && !refused) {
+        if (status === 'ok') {
+          const canonical = Buffer.from(kase.expected.bytesHex, 'hex').toString('base64');
+          // oxlint-disable-next-line no-await-in-loop -- as above
+          const same = await decoder.run(verifier, canonical);
+          if (reason !== same.failure?.reason || message !== same.failure?.message) {
+            failures.push(
+              `${where} answered ${reason}: ${message}; the canonical ${JSON.stringify(canonical)} ` +
+                `answered ${same.failure?.reason}: ${same.failure?.message}`,
+            );
+          }
+        } else if (reason !== decoder.refusal || !/base64|empty/i.test(message)) {
           failures.push(`${where} got past the base64 rule (${reason}: ${message})`);
         }
       }

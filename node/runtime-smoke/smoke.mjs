@@ -4,11 +4,9 @@
 // package's entry module in as `api` (the default one or /web; both are
 // awaited, so one script serves both).
 //
-// The genuine receipt is checked through the endpoint, whose answer is
-// Apple's own JSON; the verifyReceipt and verifySignedData checks run in
-// full when the loaded module answers the 0.7 wire (the release module) and
-// report themselves skipped when it does not (the 0.6-core stand-in the
-// package carries until the Rust core lands).
+// The genuine receipt is checked through verifyReceipt and through the
+// endpoint, whose answer is Apple's own JSON, and the shared transaction
+// fixture through verifySignedData.
 
 /**
  * @param {object} api the package entry point
@@ -35,11 +33,6 @@ export async function run(api, fx) {
   }
   out.push('the same receipt on the production endpoint is 21007');
 
-  const wire07 = (await apple.verifyReceipt('')).failure?.reason === 'MALFORMED';
-  if (!wire07) {
-    out.push('SKIP verifyReceipt and verifySignedData: the module does not answer the 0.7 wire');
-    return out;
-  }
   const receipt = await apple.verifyReceipt(g5);
   if (!receipt.verified || receipt.payload.bundleId !== 'dev.bonzer.weeka.app') {
     throw new Error(`verifyReceipt: ${receipt.failure?.reason}`);
