@@ -13955,7 +13955,7 @@
     },
     {
       "id": "receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks",
-      "description": "The shared receipt with its first embedded certificate's outer signature, outside the signed TBS, written as a constructed BIT STRING of two primitive chunks, 03 01 00 and the signature octets. BER allows a constructed BIT STRING and OpenSSL joins the chunks to the same signature, so the chain still verifies. The header walk used to judge each chunk as a value of its own, reading the signature's first octet as an unused-bits count, and answered MALFORMED whenever it was above 7.",
+      "description": "The shared receipt with its first embedded certificate's outer signature, outside the signed TBS, written as a constructed BIT STRING of two primitive chunks, 03 01 00 and the raw signature octets. Port-defined (owner's orchestrator, 2026-09-29): OpenSSL joins the chunks' contents and then reads the first octet as the unused-bits count, so the core recovers the original signature and verifies; X.690 8.6.4 gives every segment its own unused-bits octet, so a BER-exact reader such as BouncyCastle sees 150 unused bits in the second chunk and answers MALFORMED. Apple's certificates are DER and never chunk a signature, so both readings are safe: the chain is judged either way and nothing unsigned is accepted. A port must answer one of the two, must not crash, and must finish within maxMillis. The X.690 spelling, with an unused-bits octet in each chunk, is the reverse (the core refuses it, Java verifies it) and is recorded in DECISIONS R20, not pinned here.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-r3-certificate-signature-in-two-chunks"
@@ -13969,19 +13969,21 @@
         }
       },
       "expected": {
-        "status": "ok",
-        "fields": {
-          "/bundle_id": "com.example.app"
-        }
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
+      "fault": "certificate-signature-bit-string-in-two-chunks",
+      "maxMillis": 2000,
       "tags": [
         "receipt",
         "pkcs7",
         "der",
-        "positive",
         "core-review",
         "core-review-3",
-        "new-in-0-7"
+        "new-in-0-7",
+        "port-defined"
       ]
     }
   ]
