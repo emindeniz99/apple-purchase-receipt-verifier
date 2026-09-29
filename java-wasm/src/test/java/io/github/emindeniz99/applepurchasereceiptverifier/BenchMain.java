@@ -68,11 +68,27 @@ public final class BenchMain {
                 + ",\"first_instance_ms\":" + firstMicros / 1000.0 + ",\"later_instance_median_ms\":"
                 + later[later.length / 2] / 1000.0 + ",\"first_g5_call_ms\":" + firstCallMicros / 1000.0
                 + ",\"since_main_ms\":" + (System.nanoTime() - jvmStart) / 1_000_000 + "}");
+        // Memory: one instance's linear memory after the g5 call, and the heap
+        // this JVM holds after a GC with the module loaded and that instance live.
+        EndiveGuest measured = new EndiveGuest(new SecureRandom());
+        measured.init(none);
+        long linearAfterInit = measured.linearMemoryBytes();
+        measured.verifyReceipt(now, g5);
+        long linearAfterG5 = measured.linearMemoryBytes();
+        for (int i = 0; i < 3; i++) {
+            System.gc();
+        }
+        Runtime runtime = Runtime.getRuntime();
+        System.out.println("{\"bench\":\"memory\",\"instance_linear_after_init_mib\":" + mib(linearAfterInit)
+                + ",\"instance_linear_after_g5_mib\":" + mib(linearAfterG5) + ",\"heap_used_after_gc_mib\":"
+                + mib(runtime.totalMemory() - runtime.freeMemory()) + ",\"rss_mib\":" + procStatus("VmRSS")
+                + "}");
 
         for (int threads : threadCounts) {
             System.out.println(run("g5", threads, seconds, factory, none, now, g5, false));
             System.out.println(run("jws", threads, seconds, factory, jwsConfig, now, jws, true));
         }
+        System.out.println("{\"bench\":\"peak\",\"peak_rss_mib\":" + procStatus("VmHWM") + "}");
     }
 
     private static String run(
@@ -123,6 +139,26 @@ public final class BenchMain {
         } finally {
             pool.shutdown();
         }
+    }
+
+    private static double mib(long bytes) {
+        return Math.round(bytes / 1048576.0 * 10) / 10.0;
+    }
+
+    /** A {@code /proc/self/status} size in MiB, or null where there is none. */
+    private static String procStatus(String key) {
+        try {
+            for (String line : java.nio.file.Files.readAllLines(java.nio.file.Paths.get("/proc/self/status"))) {
+                if (line.startsWith(key + ":")) {
+                    long kib = Long.parseLong(
+                            line.substring(key.length() + 1).replace("kB", "").trim());
+                    return String.valueOf(mib(kib * 1024));
+                }
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            // not Linux
+        }
+        return "null";
     }
 
     private static void call(Guest guest, boolean jws, long now, byte[] input) {

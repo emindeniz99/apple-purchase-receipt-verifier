@@ -213,4 +213,9 @@ final class EndiveGuest implements Guest {
     public String verifyReceiptEndpoint(int env, long nowMs, byte[] requestJson) {
         return call("verify-receipt-endpoint", env, nowMs, requestJson);
     }
+
+    /** The instance's linear memory in bytes, for the benchmark's memory figures. */
+    long linearMemoryBytes() {
+        return (long) memory.pages() * Memory.PAGE_SIZE;
+    }
 }

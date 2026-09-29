@@ -13,7 +13,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 java=${JAVA:-java}
 cp="$here/target/bench-classpath.txt"
 [ -s "$cp" ] || mvn -q -f "$here/pom.xml" dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile="$cp" >/dev/null
-jar=$(ls "$here"/target/apple-purchase-receipt-verifier-wasm-*.jar | grep -v -e sources -e javadoc | head -1)
+jar=$(ls "$here"/target/apple-purchase-receipt-verifier-wasm-*.jar | grep -v -e sources -e javadoc -e linux- | head -1)
 echo "# $(date -u +%FT%TZ) load $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo unknown), $(nproc 2>/dev/null || echo '?') CPUs"
 cd "$here"
 "$java" -cp "$jar:$here/target/test-classes:$(cat "$cp")" \
