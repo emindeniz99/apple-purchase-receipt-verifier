@@ -46,7 +46,7 @@ compile = ["wasmtime/cranelift"]
 # cache, WAT parser, async, GC, threads, profiling or pooling allocator.
 wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std", "component-model"] }
 getrandom = "0.3"
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 # Only for the roots configuration: base64 DER lines (or PEM bodies) are
 # decoded to take each root's SHA-256 fingerprint for `GET /v1/info`.
 base64 = { version = "0.22", default-features = false, features = ["std"] }
@@ -57,7 +57,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "sync",
 http-body-util = "0.1"
 
 [build-dependencies]
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 serde_json = "1"
 # Reads openapi.yaml at build time; the binary serves it as JSON.
 serde_yaml_ng = "0.10"
