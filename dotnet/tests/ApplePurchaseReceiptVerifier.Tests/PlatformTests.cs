@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Formats.Asn1;
 using System.Linq;
-using System.Numerics;
 using System.Threading.Tasks;
 using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
@@ -24,97 +22,82 @@ public sealed class ProcessWideCollection
 }
 
 /// <summary>
-/// The parts of this port that no cross-language vector can reach: the ECDSA
-/// encoding conversion, thread safety, retention, and the conformance
-/// harness's own resolver.
+/// The parts of this port that no cross-language vector can reach: thread
+/// safety, retention, and the conformance harness's own resolver.
 /// </summary>
 [Collection(ProcessWideCollection.Name)]
 public class PlatformTests
 {
-    // --- DER to IEEE P1363 ---------------------------------------------------
-
-    /// <summary>
-    /// The three shapes that break a naive converter: a value with leading
-    /// zeros, one whose top bit is set (so DER prepends a 0x00), and one at
-    /// full field width.
-    /// </summary>
-    [Theory]
-    [InlineData("01", "01")]
-    [InlineData("ff", "ff")]
-    [InlineData("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "01")]
-    [InlineData("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "80")]
-    public void DerSignaturesConvertToFixedWidthP1363(string r, string s)
-    {
-        byte[] der = Der(Big(r), Big(s));
-        byte[]? p1363 = EcdsaSignatureFormat.DerToP1363(der, 32);
-
-        Assert.NotNull(p1363);
-        Assert.Equal(64, p1363!.Length);
-        Assert.Equal(Big(r), new BigInteger(p1363.AsSpan(0, 32), isUnsigned: true, isBigEndian: true));
-        Assert.Equal(Big(s), new BigInteger(p1363.AsSpan(32, 32), isUnsigned: true, isBigEndian: true));
-    }
-
-    [Fact]
-    public void AValueWiderThanTheFieldIsAFailedConversionNotATruncatedOne()
-    {
-        byte[] der = Der(
-            Big("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), BigInteger.One);
-        Assert.Null(EcdsaSignatureFormat.DerToP1363(der, 16));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("00")]
-    [InlineData("3000")]
-    [InlineData("300602010102010101")]
-    public void MalformedDerSignaturesConvertToNull(string hex)
-    {
-        Assert.Null(EcdsaSignatureFormat.DerToP1363(Convert.FromHexString(hex), 32));
-    }
-
-    [Fact]
-    public void ANonPositiveComponentIsRejected()
-    {
-        Assert.Null(EcdsaSignatureFormat.DerToP1363(Der(BigInteger.Zero, BigInteger.One), 32));
-        Assert.Null(EcdsaSignatureFormat.DerToP1363(Der(BigInteger.MinusOne, BigInteger.One), 32));
-    }
-
-    [Fact]
-    public void TrailingDataAfterTheSequenceIsRejected()
-    {
-        byte[] der = Der(BigInteger.One, BigInteger.One);
-        byte[] padded = der.Concat(new byte[] { 0x05, 0x00 }).ToArray();
-        Assert.Null(EcdsaSignatureFormat.DerToP1363(padded, 32));
-    }
-
     // --- thread safety and retention -----------------------------------------
 
-    /// <summary>The design's promise: one verifier is immutable and thread-safe.</summary>
+    /// <summary>
+    /// The design's promise: one verifier is immutable and thread-safe. Four
+    /// threads share one verifier, each takes an instance of its own from the
+    /// pool, and every call gives what a single thread gives: the same result
+    /// for a receipt, a JWS and the endpoint.
+    /// </summary>
     [Fact]
-    public void OneVerifierServesManyThreads()
+    public void OneVerifierServesFourThreads()
     {
-        IVerifier receipts = TestPki.FixtureVerifier("receipt-root");
-        IVerifier jws = TestPki.FixtureVerifier("jws-root");
+        IVerifier receipts = TestRoots.FixtureVerifier("receipt-root", TestRoots.SignedAtMs);
+        IVerifier jws = TestRoots.FixtureVerifier("jws-root", TestRoots.SignedAtMs);
         string receipt = Fixtures070.ForReceipt("receipt");
         string transaction = Fixtures070.ForSignedData("transaction");
-        string expected = receipts.VerifyReceipt(receipt).Payload!.ToJson();
-        string expectedJws = jws.VerifySignedData(transaction).Payload!.Json;
+        string body = "{\"receipt-data\":\"" + receipt + "\"}";
 
-        ConcurrentBag<string> failures = new();
-        Parallel.For(0, 512, _ =>
+        string Round()
         {
-            try
-            {
-                Assert.Equal(expected, receipts.VerifyReceipt(receipt).Payload?.ToJson());
-                Assert.Equal(expectedJws, jws.VerifySignedData(transaction).Payload?.Json);
-            }
-            catch (Exception e)
-            {
-                failures.Add(e.ToString());
-            }
-        });
+            VerificationResult<ReceiptPayload> r = receipts.VerifyReceipt(receipt);
+            VerificationResult<JsonPayload> j = jws.VerifySignedData(transaction);
+            return (r.Verified ? r.Payload.ToJson() : r.Failure.ToString()) + "|"
+                + (j.Verified ? j.Payload.Json : j.Failure.ToString()) + "|"
+                + receipts.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, body);
+        }
 
+        string expected = Round();
+        ConcurrentBag<string> failures = new();
+        Task[] threads = new Task[4];
+        for (int t = 0; t < threads.Length; t++)
+        {
+            threads[t] = Task.Factory.StartNew(
+                () =>
+                {
+                    for (int i = 0; i < 50; i++)
+                    {
+                        try
+                        {
+                            Assert.Equal(expected, Round());
+                        }
+                        catch (Exception e)
+                        {
+                            failures.Add(e.ToString());
+                        }
+                    }
+                },
+                TaskCreationOptions.LongRunning);
+        }
+
+        Task.WaitAll(threads);
         Assert.Empty(failures);
+    }
+
+    /// <summary>
+    /// Two calls that overlap never share an instance: each gets its own from
+    /// the pool, and both come back, up to what the pool keeps.
+    /// </summary>
+    [Fact]
+    public void ConcurrentCallsNeverShareAnInstance()
+    {
+        AprvRuntime runtime = new(new StubModule().ToWasm(), null);
+        InstancePool pool = new(runtime, System.Text.Encoding.UTF8.GetBytes("{}"));
+        AprvInstance first = pool.Rent();
+        AprvInstance second = pool.Rent();
+        Assert.NotSame(first, second);
+        pool.Return(first);
+        pool.Return(second);
+        AprvInstance again = pool.Rent();
+        Assert.True(ReferenceEquals(again, first) || ReferenceEquals(again, second));
+        pool.Return(again);
     }
 
     /// <summary>The verifications each measured round performs.</summary>
@@ -139,9 +122,10 @@ public class PlatformTests
     private const int LiveSetBudgetPerVerification = 256;
 
     /// <summary>
-    /// Repeated verification must not grow unboundedly: each call materialises
-    /// certificates behind unmanaged handles, and a leak there is invisible
-    /// until a server falls over.
+    /// Repeated verification must not grow unboundedly: each call moves bytes
+    /// through unmanaged memory and reads a payload back, and a leak there is
+    /// invisible until a server falls over. A module answering a full payload
+    /// isolates the wrapper's own retention from the real module's.
     /// </summary>
     /// <remarks>
     /// The bound is a budget per verification rather than a flat ceiling, so it
@@ -157,11 +141,13 @@ public class PlatformTests
     [Fact]
     public void RepeatedVerificationDoesNotGrowUnboundedly()
     {
-        IVerifier verifier = TestPki.FixtureVerifier("receipt-root");
-        string receipt = Fixtures070.ForReceipt("receipt");
+        AprvRuntime runtime = new(
+            new StubModule { ReceiptAnswer = SyntheticAnswers.Verified(SyntheticAnswers.Receipt()) }.ToWasm(), null);
+        IVerifier verifier = new VerifierImpl(Config.Defaults(), runtime);
+        string receipt = "x";
 
-        // Warm up: first-call statics, JIT and the ASN.1 reader's pools are a
-        // one-off cost, not per-call retention.
+        // Warm up: first-call statics and JIT are a one-off cost, not
+        // per-call retention.
         for (int i = 0; i < 50; i++)
         {
             Assert.True(verifier.VerifyReceipt(receipt).Verified);
@@ -231,20 +217,5 @@ public class PlatformTests
         Assert.ThrowsAny<Exception>(() => JsonPointer070.Resolve(model, "/list/[id=missing]"));
         Assert.ThrowsAny<Exception>(() => JsonPointer070.Resolve(model, "list"));
         Assert.ThrowsAny<Exception>(() => JsonPointer070.Length(model, "/list/0"));
-    }
-
-    private static BigInteger Big(string hex) =>
-        new(Convert.FromHexString(hex.Length % 2 == 0 ? hex : "0" + hex), isUnsigned: true, isBigEndian: true);
-
-    private static byte[] Der(BigInteger r, BigInteger s)
-    {
-        AsnWriter writer = new(AsnEncodingRules.DER);
-        using (writer.PushSequence())
-        {
-            writer.WriteInteger(r);
-            writer.WriteInteger(s);
-        }
-
-        return writer.Encode();
     }
 }
