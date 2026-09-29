@@ -28,7 +28,7 @@ work.
 | C dotnet | `lane/host-dotnet` | step 5.6 | **G1b green and merged into `rust-core`** 2026-09-29 (head 28cf377): on the review-fixed module 551 of 551 tests on .NET 8 and 10 with 338 of 338 cases, Floor 9 of 9, corpus 6,179 of 6,179; on the first module (head 220b5bf): on the real module 524 of 524 tests on .NET 8, 9 and 10 with 311 of 311 cases, Floor 9 of 9, corpus 6,179 of 6,179 identical with 0 traps, SharpFuzz 5 targets clean, trimmed publish clean, `dotnet format` clean, nupkg 2,124,630 B with a clean consumer, stand-in list deleted, one-command re-run in the evidence folder; the only fix was the adapter's base64 judgement; on a loaded machine: compile 6 to 12 s (0.9 s idle earlier), later instance plus `init` 3 to 7 ms (stand-in 0.07 to 0.4 ms), g5 215 to 524 per second, JWS 55 to 106 per second, 32 instances 205 MiB resident; evidence note `2026-09-29-dotnet-host`; Windows, macOS, Alpine and Mono are CI's |
 | D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | **merged** 2026-09-29 (head cff064d); actionlint and zizmor at 0; jobs gated on the other lanes' files, see `.github/CI-NOTES.md` |
 | E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | handed back 2026-09-29 (head 87b0ab4 after the blob rewrite); parked until the real module: 380 tests green on JDK 21 and 379 on Temurin 8; the 311 cases through the server engine 93 pass / 218 stand-in on both; the spike's 31 checks pass; classifier jar built for x86_64 (4,179,407 B); `jvm-interop` and the Spring Boot smoke take the artifact as a property |
-| F php | `lane/php` | Phase 6 | handed back 2026-09-29 (head 37868a0); parked until the real module: 817 tests green with the stand-in's 214 differences asserted per transport (97 of 311 pass), phpstan max 0, php-cs-fixer clean, installer proven against a local server with the right and a wrong hash, `composer validate --strict` on both manifests; only PHP 8.4 here |
+| F php | `lane/php` | Phase 6 | **G1 green** 2026-09-29 (head bfafe80, `rust-core` merged back for G1b): on the server rebuilt with the real component 817 tests, 311 of 311 cases through the CLI and 311 of 311 over HTTP (the decodeBase64 cases are expressible through the façade), corpus 6,152 identical plus the 27 over-cap rows per transport, the stand-in list deleted, installer tests on the new binary, fuzz targets clean, phpstan and php-cs-fixer clean, one-command re-run `php/tools/rerun.sh`; g5 through the façade CLI 38 ms and HTTP 9 ms on a loaded machine; G1b waits for the server's rebuilt binary; earlier: 817 tests green with the stand-in's 214 differences asserted per transport (97 of 311 pass), phpstan max 0, php-cs-fixer clean, installer proven against a local server with the right and a wrong hash, `composer validate --strict` on both manifests; only PHP 8.4 here |
 
 ## Decisions taken by the orchestrator (owner to read at the end)
 
@@ -382,6 +382,25 @@ work.
   the first module; the only host-side changes were each runner's
   base64 judgement (the core refuses an empty text before decoding) and
   Swift's Guest calling `_initialize`.
+- Review round 2 (2026-09-29 12:00Z to 12:35Z): two reviewers read the
+  fix commits and the ABI crate, which round 1 had not covered. Fix
+  commits: 0 blocking, 3 fix before merge (the shallow decode of the
+  `certificates`, `crls` and `signerInfos` sets still runs before the
+  100,000-value budget, so 1.17 M tiny entries cost 0.6 to 0.95 s and
+  114 MB before refusal; two remaining anchor-selection cases with
+  custom same-named or look-alike roots, failing closed; the walk checks
+  fewer primitive rules than OpenSSL's ANY decoder one SEQUENCE deeper),
+  4 notes. ABI crate: 0 blocking, 4 fix before merge (`build.sh` does not
+  pin the compiler when run from the repository root, which every CI and
+  release job does; wrappers copy an oversized input into linear memory
+  before the core's cap, so a 256 MiB input grows the instance to 258 MiB
+  and 2 GiB traps as INTERNAL_ERROR instead of TOO_LARGE; the C ABI takes
+  C strings, so an embedded NUL truncates the input; the C ABI's failure
+  document fails the wire schemas), 7 notes. Lane A-fix2 takes the core
+  items on `lane/core-fix2`; lane A3 takes the ABI crate's items with its
+  C ABI step; every wrapper gets a length cap of 3,145,729 bytes before
+  the copy (the core's own answer is then byte-identical); the round-2
+  section of REVIEW-LOG.md follows the fixes.
 - G1b started 2026-09-29 11:55Z on the review-fixed module (lane/core
   c4410c7, merged): `rust-core` was merged back into each idle lane
   branch (a real merge commit each) so their runners read the 338 cases,
