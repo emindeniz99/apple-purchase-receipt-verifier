@@ -19,6 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -81,6 +82,102 @@ class WasmVerifierTest {
                 return "test";
             }
         };
+    }
+
+    /** A real Endive guest that records the longest input it was handed and its memory afterwards. */
+    private static GuestFactory recording(AtomicInteger longest, AtomicLong memory) {
+        return new GuestFactory() {
+            @Override
+            public Guest newGuest() {
+                EndiveGuest guest = new EndiveGuest(new SecureRandom());
+                return new Guest() {
+                    @Override
+                    public String init(byte[] configJson) {
+                        return guest.init(configJson);
+                    }
+
+                    @Override
+                    public String verifyReceipt(long nowMs, byte[] input) {
+                        longest.accumulateAndGet(input.length, Math::max);
+                        String answer = guest.verifyReceipt(nowMs, input);
+                        memory.accumulateAndGet(guest.linearMemoryBytes(), Math::max);
+                        return answer;
+                    }
+
+                    @Override
+                    public String verifySignedData(long nowMs, byte[] input) {
+                        longest.accumulateAndGet(input.length, Math::max);
+                        String answer = guest.verifySignedData(nowMs, input);
+                        memory.accumulateAndGet(guest.linearMemoryBytes(), Math::max);
+                        return answer;
+                    }
+
+                    @Override
+                    public String verifyReceiptEndpoint(int env, long nowMs, byte[] input) {
+                        longest.accumulateAndGet(input.length, Math::max);
+                        String answer = guest.verifyReceiptEndpoint(env, nowMs, input);
+                        memory.accumulateAndGet(guest.linearMemoryBytes(), Math::max);
+                        return answer;
+                    }
+                };
+            }
+
+            @Override
+            public String describe() {
+                return "recording";
+            }
+        };
+    }
+
+    private static String repeat(char c, int n) {
+        char[] chars = new char[n];
+        java.util.Arrays.fill(chars, c);
+        return new String(chars);
+    }
+
+    /**
+     * An input far over the cap is cut to one byte over it before it enters
+     * the module, and the core answers exactly as for the whole input:
+     * TOO_LARGE with its own message, 21002 from the endpoint. The instance
+     * does not grow to the input's size.
+     */
+    @Test
+    void anInputOverTheCapReachesTheModuleOneByteOverIt() {
+        AtomicInteger longest = new AtomicInteger();
+        AtomicLong memory = new AtomicLong();
+        WasmVerifier verifier = new WasmVerifier(DEFAULTS, recording(longest, memory));
+        String fourMib = repeat('A', 4 << 20);
+        Failure receipt = verifier.verifyReceipt(fourMib).failure();
+        assertEquals(Reason.TOO_LARGE, receipt.reason());
+        assertEquals("receipt exceeds the maximum accepted size of 3145728 bytes", receipt.message());
+        assertEquals(WasmVerifier.MAX_INPUT_BYTES, longest.get());
+        assertEquals(
+                Reason.TOO_LARGE, verifier.verifySignedData(fourMib).failure().reason());
+        assertEquals(
+                "{\"status\":21002}",
+                verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + fourMib + "\"}"));
+        // Two-byte characters: the cut may fall inside one; the core still sees a body over the cap.
+        assertEquals(
+                "{\"status\":21002}",
+                verifier.verifyReceiptEndpoint(
+                        Environment.SANDBOX, "{\"receipt-data\":\"" + repeat('\u00e9', 2 << 20) + "\"}"));
+        assertEquals(WasmVerifier.MAX_INPUT_BYTES, longest.get());
+        assertTrue(memory.get() < 16L << 20, "linear memory stayed small: " + memory.get());
+    }
+
+    /** An input at the cap is passed whole: nothing an unchanged input could answer is cut. */
+    @Test
+    void anInputAtTheCapIsPassedWhole() {
+        AtomicInteger longest = new AtomicInteger();
+        WasmVerifier verifier = new WasmVerifier(DEFAULTS, recording(longest, new AtomicLong()));
+        String atCap = repeat('A', 3_145_728);
+        Failure failure = verifier.verifyReceipt(atCap).failure();
+        assertEquals(3_145_728, longest.get());
+        assertTrue(failure.reason() != Reason.TOO_LARGE, "at the cap is not over it: " + failure);
+        assertEquals(3_145_728, WasmVerifier.bytes(atCap).length);
+        assertEquals(WasmVerifier.MAX_INPUT_BYTES, WasmVerifier.bytes(atCap + "A").length);
+        assertEquals(WasmVerifier.MAX_INPUT_BYTES, WasmVerifier.bytes(repeat('\u20ac', 1_100_000)).length);
+        assertEquals("a?b", new String(WasmVerifier.bytes("a\ud800b"), java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private static String g5() throws Exception {

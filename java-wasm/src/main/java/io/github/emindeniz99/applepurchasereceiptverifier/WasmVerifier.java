@@ -1,9 +1,13 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.Set;
@@ -127,8 +131,39 @@ final class WasmVerifier implements Verifier {
     }
 
     /** The input's UTF-8 bytes; {@code null} is the empty input, which the module answers as malformed. */
-    private static byte[] bytes(@Nullable String text) {
-        return text == null ? new byte[0] : text.getBytes(StandardCharsets.UTF_8);
+    /**
+     * The most bytes of an input copied into the module's memory: one over the
+     * core's largest cap (3,145,728 bytes, the receipt and endpoint body
+     * cap), so an input over it still reaches the core over it and the core
+     * itself answers TOO_LARGE (21002 from the endpoint), as it does for the
+     * whole input. Copying all of a larger input would grow the instance's
+     * linear memory to the input's size for the instance's life, and past
+     * about 2 GiB trap as INTERNAL_ERROR instead.
+     */
+    static final int MAX_INPUT_BYTES = 3_145_729;
+
+    /**
+     * The input's UTF-8 bytes, or its first {@link #MAX_INPUT_BYTES} of them.
+     * Only what is kept is encoded, so a huge input costs no huge array
+     * either. Lone surrogates become {@code ?}, as {@link String#getBytes}
+     * makes them.
+     */
+    static byte[] bytes(@Nullable String text) {
+        if (text == null) {
+            return new byte[0];
+        }
+        if (text.length() <= MAX_INPUT_BYTES / 3) {
+            return text.getBytes(StandardCharsets.UTF_8); // at most 3 bytes per char: under the limit
+        }
+        // Room for one more character, so a stop at a character boundary is
+        // never short of the limit.
+        ByteBuffer out = ByteBuffer.allocate(MAX_INPUT_BYTES + 3);
+        StandardCharsets.UTF_8
+                .newEncoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE)
+                .encode(CharBuffer.wrap(text), out, true);
+        return Arrays.copyOf(out.array(), Math.min(out.position(), MAX_INPUT_BYTES));
     }
 
     private static Failure moduleFailure(GuestFailure e) {
