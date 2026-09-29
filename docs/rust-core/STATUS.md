@@ -446,8 +446,34 @@ work.
   REVIEW-LOG.md is merged (476b866). The server's rebuild on the final
   component is merged (6318cfa: binary 11,535,280 B sha256 `f0d4784e…`,
   every expressible case on HTTP and the CLI, 6,152 identical plus the
-  27 over-cap rows on three transports); PHP and Java's server engine
-  run on that binary next.
+  27 over-cap rows on three transports); Java's server engine on that
+  binary is merged (14da2c5: 377 of 377 and 6,179 of 6,179 on JDK 21
+  and Temurin 8, 850 tests on JDK 21, 448 on the Java 8 leg with the
+  server tests); PHP runs on it now.
+- Review round 3 (2026-09-29 14:58Z, one reviewer, c0a6e15..b863252:
+  lane A-fix2's and lane A3's own commits, which rounds 1 and 2 had not
+  read): 0 blocking, 2 fix before merge, 7 notes, plus the four round-2
+  notes re-checked. The two fixes: per-anchor path validation fixed the
+  choice among anchors but not among same-named bag certificates
+  without key identifiers, so a decoy placed first still refuses a
+  genuine receipt under custom anchors (Apple's roots carry key
+  identifiers and are unaffected; fails closed); and the walk checks
+  each chunk inside a constructed string on its own where OpenSSL joins
+  them unchecked, so a re-chunked signature BIT STRING is MALFORMED
+  instead of verified (fails closed). Lane A-fix3 (`lane/core-fix3`,
+  brief `core-fix3.md`) takes every finding and the four round-2 notes
+  (guest-side range guard, trap-host coverage, tighter wire schemas,
+  tests for the compiler pin and the failure cleanup), then rebuilds the
+  module; the pins move once more (G1d) before integration. The
+  findings file stays out of the repository; REVIEW-LOG.md gets its
+  round-3 section after the fixes.
+- Phase 7 steps 1, 2 and 5 (lane P7-code, `lane/phase7-code`, brief
+  `phase7-code.md`) started 2026-09-29 15:02Z: the seven cert copies
+  and generated root tables out, `Config.defaults()` keeps its meaning
+  through an empty `init` list, `check-cert-copies.mjs` down to
+  `rust/certs`, the one-implementation gate to `--enforce all`, the 78
+  inventory rows proposed or declared moot, the Elixir example moved
+  to the byte-range calls; PHP last, after its G1c merge.
 - Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
   merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
   SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
