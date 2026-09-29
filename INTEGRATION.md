@@ -6,7 +6,7 @@ The full flow from a verified payload to a granted purchase. The
 
 Verification proves Apple signed the bytes. It does not prove the presenter
 owns them, and it says nothing about what happened after the signature. The
-flow below is the shape this library is meant to sit inside. Each port's
+flow below is the shape this library is meant to sit inside. Each package's
 README carries the same steps written in its own API.
 
 There are two branches because clients send two things, and both are

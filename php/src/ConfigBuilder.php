@@ -16,8 +16,8 @@ use Psr\Clock\ClockInterface;
  */
 final class ConfigBuilder
 {
-    /** @var list<string> */
-    private array $roots = [];
+    /** @var list<string>|null */
+    private ?array $roots = null;
 
     private ClockInterface $clock;
 
@@ -26,7 +26,12 @@ final class ConfigBuilder
         $this->clock = new SystemClock();
     }
 
-    /** @param iterable<string> $roots DER bytes of the trust anchors; an empty set means the module's built-in Apple roots */
+    /**
+     * Not calling this keeps the module's built-in Apple roots. An empty set
+     * given here is refused by {@see Verifier::create()}, not read as "built-in".
+     *
+     * @param iterable<string> $roots DER bytes of the trust anchors
+     */
     public function roots(iterable $roots): self
     {
         $this->roots = is_array($roots) ? array_values($roots) : iterator_to_array($roots, false);

@@ -45,15 +45,15 @@ Three things the grammar implies and the tables below depend on:
 - `version` is in every attribute and Apple never says what it means. Every
   attribute in the fixture corpus is version 1 except app-level type 4
   (opaque value), which is version 2 in both genuine sandbox receipts. This
-  library ignores the field: every port reads index 0 and index 2 of the
-  SEQUENCE and never index 1.
+  library ignores the field: the Rust core and the Java implementation read
+  index 0 and index 2 of the SEQUENCE and never index 1.
 
 ## App-level attribute types
 
 "Apple" cites the archived
 [Receipt Fields](https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html)
 chapter. "Seen" is what the fixture measurement below found. "Modelled" names
-the accessor on Java's `ReceiptPayload` (the other ports use the same names in
+the accessor on Java's `ReceiptPayload` (the other packages use the same names in
 their own casing); blank means the value is reachable only through
 `ReceiptPayload.unknownAttributes()`.
 
@@ -103,7 +103,7 @@ reachable only through `InAppPurchase.unknownAttributes()`.
 | 1709 | unknown | UTF8String | no | genuine | | Empty string throughout the fixture corpus. TPInAppReceipt names it `unknown_1709` (no further meaning given). |
 | 1710 | unknown | INTEGER | no | genuine | | `0` throughout the fixture corpus. TPInAppReceipt names it `unknown_1710`. A genuine production receipt (2026-09-21, not committed) carried a nonzero value there — still unnamed beyond that. It is 0 in every sandbox receipt examined and a ten-digit integer in both production ones, but unlike type 11 the two production values differ from each other, so it varies per receipt or per purchase rather than per developer (2026-09-22, not committed). |
 | 1711 | web order line item id | INTEGER | **yes** | genuine | `webOrderLineItemId()` | |
-| 1712 | cancellation date | IA5String, RFC 3339 | **yes** | genuine | `cancellationDateMs()` | Empty string throughout the corpus, which is how an absent date is encoded. Every port decodes an empty date string to null for exactly this, and keeps nothing raw. |
+| 1712 | cancellation date | IA5String, RFC 3339 | **yes** | genuine | `cancellationDateMs()` | Empty string throughout the corpus, which is how an absent date is encoded. Both implementations decode an empty date string to null for exactly this, and keep nothing raw. |
 | 1713 | is_trial_period | INTEGER | no | genuine | `isTrialPeriod()` | Apple's Receipt Fields chapter documents "Subscription Trial Period", JSON key `is_trial_period`, with "ASN.1 Field Type (none)" written out. TPInAppReceipt names 1713 `subscriptionTrialPeriod`. It is present on all 189 genuine in-app entries in the fixture corpus, value `0`, sitting immediately beside 1712 and 1719 whose numbers Apple does confirm. Confirmed by comparing a genuine production receipt with Apple's own `verifyReceipt` answer for it (2026-09-21, receipt not committed): 1713 rendered as `is_trial_period`. Carried as an integer like 1719, which Apple's endpoint renders as the JSON string `"true"`/`"false"`; this library's endpoint does the same. |
 | 1714 | unknown | UTF8String | no | genuine | | Empty string throughout. TPInAppReceipt names it `unknown_1714`. |
 | 1715 | unknown | UTF8String | no | genuine | | Empty string throughout. TPInAppReceipt names it `unknown_1715`. |
@@ -318,7 +318,8 @@ decoded form. No attribute was skipped and no type was inferred from a name.
 Apple's five steps are from "Validating the receipt" and "Verify the
 certificate chain of trust" on the page quoted above. The Java classes named
 are in `java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/`;
-every port follows the same order (THREAT-MODEL.md §3.3).
+the Rust core, which every other package runs, follows the same order
+(THREAT-MODEL.md §3.3).
 
 | Apple's step | This implementation | Verdict |
 |---|---|---|
@@ -330,12 +331,13 @@ every port follows the same order (THREAT-MODEL.md §3.3).
 | 2e. Support SHA-256 and SHA-1 signing | Since 0.7 (#160) any digest and signature algorithm the pinned signer's key can verify is accepted, SHA-1 and SHA-256 included. Certificate signature algorithms are checked by the pinned BouncyCastle provider, so a JVM policy that bans SHA-1 does not reach them; `java/README.md` "One platform caveat: BouncyCastle, not the JDK's PKIX" states the trade-off. | Matches |
 | 3. Verify the bundle identifier (type 2) against your app's | **The caller's check since 0.7.** `bundleId()` and `bundleIdBytes()` return the value; the library takes no expected bundle id. | Caller's responsibility |
 | 4. Verify the version identifier (type 3) against your app's | **Not performed.** Type 3 is decoded and exposed (`applicationVersion()`) but never compared, and nothing takes an expected version. | Deviates, see below |
-| 5. Compute SHA-1(device GUID, opaque value, bundle id bytes) and compare with type 5 | **The caller's check since 0.7.** `opaqueValue()`, `bundleIdBytes()` and `sha1Hash()` return the octets the hash is over; each port README shows the comparison. | Caller's responsibility, optional |
+| 5. Compute SHA-1(device GUID, opaque value, bundle id bytes) and compare with type 5 | **The caller's check since 0.7.** `opaqueValue()`, `bundleIdBytes()` and `sha1Hash()` return the octets the hash is over; each package README shows the comparison. | Caller's responsibility, optional |
 | (beyond Apple) signer purpose | `AppleTrust` requires the Apple receipt-signing marker OID `1.2.840.113635.100.6.11.1` on the leaf and, since 0.7, the WWDR marker `1.2.840.113635.100.6.2.1` on the intermediate. Apple's procedure does not ask for this; without it any Apple developer certificate chaining through the same WWDR intermediate could sign a forged receipt. | Stricter than Apple |
 
 ### Step 4, stated plainly
 
-Apple's step 4 is not implemented in any of the nine ports. On a server the
+Apple's step 4 is not implemented in either implementation, so no package
+performs it. On a server the
 check is weaker than it is on-device: the server cannot see which binary is
 running, so the only version it could compare against is one the client
 supplies, which an attacker supplies too. What the check buys on-device, and
@@ -349,8 +351,8 @@ A caller that needs the check can do it: `ReceiptPayload.applicationVersion()`
 returns the decoded type 3 value.
 
 The same shape applies to type 21, the Volume Purchase Program expiration
-date: every port decodes it (`ReceiptPayload.expirationDateMs()`) and the endpoint
-echoes it as `expiration_date`, but no port compares it with a clock. The
+date: every package decodes it (`ReceiptPayload.expirationDateMs()`) and the endpoint
+echoes it as `expiration_date`, but none compares it with a clock. The
 objc.io walkthrough does compare it, on-device, against the current time. On
 a server the caller owns the clock, so the comparison is theirs to make; the
 verifier reports the date and stops there.
@@ -371,7 +373,7 @@ Every certificate in the legacy chain below the root expired on 2023-02-07,
 and the g5 leaf expired on 2026-08-23. Both receipts are expected to verify,
 in `fixtures/cases.json` cases `receipt/verify-genuine-legacy-sha1-chain` and
 `receipt/verify-genuine-sandbox-g5-against-apple-roots`, and neither case
-pins a clock. A port that checked validity at verification time would fail
+pins a clock. An implementation that checked validity at verification time would fail
 both. The synthetic pair
 `receipt/accept-historical-creation-date-under-expired-chain` and
 `receipt/reject-fresh-creation-date-under-expired-chain` covers the same rule
@@ -380,7 +382,8 @@ in both directions without depending on wall-clock time.
 ### Root pinning, verified against Apple
 
 Downloaded from Apple PKI on 2026-09-21 and compared with the repository's
-`certs/`, which every port bundles or compiles in:
+`certs/`, which the Rust core compiles in (from its copy in `rust/certs/`)
+and the Java implementation carries as constants:
 
 | Root | SHA-256 | Bundled file |
 |---|---|---|

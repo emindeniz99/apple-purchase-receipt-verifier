@@ -644,8 +644,9 @@ calls the binding.
   of Docker.
 - **Limits.** 256 MiB of linear memory and one instance per store
   (`StoreLimits`, `trap_on_grow_failure`); a worker semaphore of N
-  concurrent verifications, N = CPU count; the 3 MiB body cap. A guest time
-  limit (epoch interruption) is open (THREAT-MODEL.md §5).
+  concurrent verifications, N = CPU count; the 3 MiB body cap; a guest time
+  limit of 10 s per call by default, by epoch interruption
+  (`--time-limit-ms`, rust/server/README.md).
 - **Lifecycle.** A fresh store and instance, with `init`, per request;
   `--lifecycle pool` keeps instances and destroys one on any trap or ABI
   error, never sharing one between two requests (§5).

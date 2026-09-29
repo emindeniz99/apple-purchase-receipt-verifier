@@ -409,6 +409,7 @@ and `-- --worst-case` for the hostile cases on your own hardware.
   `InvalidOperationException`. The module imports exactly one function,
   `random-get`, answered from `RandomNumberGenerator`; anything else it asks
   for is refused.
+- **Input cap.** At most 3,145,729 bytes of an input (one over the largest cap) are copied into the module's memory; the core decides every cap on the length, so a longer input gets the `TooLarge` answer (21002 at the endpoint) it would get whole.
 - **Instances.** One compiled module per process. Each `IVerifier` owns a
   small pool of instances, each in a `Store` of its own limited to one
   instance and 256 MiB of linear memory. A call takes an idle instance or a
@@ -433,6 +434,16 @@ and `-- --worst-case` for the hostile cases on your own hardware.
   (`gcompat`). This has not been run here. Alpine users take `aprv-server`,
   the same module in a static binary that ships for musl, and call it over
   HTTP.
+- **Windows and CET.** An application built with the .NET 9 or later SDK has
+  the hardware shadow stack (CET) flag in its apphost. Under it Wasmtime's
+  recovery from a guest trap ends the process (exit code -1073740791,
+  `0xC0000409`) instead of surfacing the trap, so the wrapper cannot turn it
+  into `INTERNAL_ERROR`. This library's own Windows CI showed it (net8.0
+  apphosts do not), and it is reported upstream
+  (bytecodealliance/wasmtime-dotnet#374). A trap is a defect in the module or a
+  misused ABI and none of the shared corpora causes one; an application that
+  wants the wrapper to survive one sets `<CETCompat>false</CETCompat>`. Not
+  run here: there is no Windows machine.
 - **.NET Framework, Mono and Unity.** The netstandard2.0 asset compiles and
   is exercised on modern .NET; whether .NET Framework or Mono find the native
   library under `runtimes/` depends on the consuming project, and was not run.

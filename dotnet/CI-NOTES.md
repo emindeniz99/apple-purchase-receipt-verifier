@@ -3,7 +3,7 @@
 For the integrator. This lane does not edit `.github/`; these are the
 changes `dotnet/` needs there and in the root documents. Results quoted
 here were measured on Linux x86-64 with the release module (the 0.7 core,
-lane/core c4410c7, 3,009,278 bytes), and are in
+rust-core b863252, 2,760,476 bytes), and are in
 `docs/evidence/2026-09-29-dotnet-host.md`. `docs/evidence/2026-09-29-dotnet-host/scripts/g1.sh`
 runs the whole re-check for a new module as one command.
 
@@ -19,7 +19,7 @@ runs the whole re-check for a new module as one command.
   embeds `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm`, which is
   in `dotnet/.gitignore`, or the file `APRV_WASM` names instead; a missing
   file is a build error that says so. `wasm/aprv.wasm.sha256` (`sha256sum`
-  format, the 0.7 core module, 3,009,278 bytes) is committed and names
+  format, the 0.7 core module, 2,760,476 bytes) is committed and names
   the file that belongs there. Two ways to put the release's build in place:
   - copy it to that path and refresh the hash with
     `sha256sum aprv.wasm > aprv.wasm.sha256`; or
@@ -45,7 +45,7 @@ runs the whole re-check for a new module as one command.
 
 | Job | Change |
 |---|---|
-| `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. With the release module all 338 conformance cases pass and so do the other 213 tests (551 in all), on .NET 8 and 10 (.NET 9 was last run at 524 of 524 with the 311 cases of G1). Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
+| `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. With the release module all 377 conformance cases pass and so do the other 217 tests (594 in all), on .NET 8 and 10 (.NET 9 was last run at 524 of 524 with the 311 cases of G1). Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
 | `dotnet-mono` | Unchanged and still meaningful only as far as it goes: `monop` reflects the netstandard2.0 assembly, which proves it loads and not that it runs. Running the wrapper on Mono needs Mono to find `libwasmtime` (it does not read NuGet's `runtimes/` folders), which was not tried; a job for it should copy `runtimes/linux-x64/native/libwasmtime.so` beside the test binary and set `LD_LIBRARY_PATH`. No Mono here |
 | `dotnet-roots` | Unchanged until Phase 7: `AppleRootData.cs` and `tools/GenerateRootData` stay for `AppleRootCertificates.Bundled()` and are untouched |
 | `dotnet-trim` | Unchanged command. The sample was rewritten to read verdicts from the endpoint's `status` and passes here: `dotnet publish samples/TrimAotSmoke -c Release -warnaserror` (net9.0, self-contained, trimmed, `linux-x64`) then running it prints `trimmed smoke ok`. Wasmtime is trim-clean under `-warnaserror` in that configuration |
@@ -83,3 +83,37 @@ G5 receipt from a local feed on .NET 10.
 - `BENCHMARKS.md`: the .NET column loses `decodeBase64`.
 - The CHANGELOG entry comes from the lane's `feat(dotnet)!:` commit and its
   `BREAKING CHANGE:` footer.
+
+## The first Windows and macOS runs (run 36581848218)
+
+- **`dotnet (windows-latest)`: the net9.0 and net10.0 test hosts exited with
+  -1073740791 (`0xC0000409`).** Diagnosis from the logs and the upstream
+  report (bytecodealliance/wasmtime-dotnet#374): since .NET 9 the SDK marks the
+  generated apphost `/CETCOMPAT`, which turns on the hardware shadow stack, and
+  Wasmtime's Windows trap recovery restores a thread context the shadow stack
+  does not know, so Windows fail-fasts the process on the first guest trap.
+  The log fits: net8.0 (apphost without the flag) passes the same tests with
+  the same traps, the Floor tests (no trap anywhere) pass on all three
+  runtimes, the crashed hosts ran 2.9 s and 8.4 s against 14.5 s for the passing
+  net8.0 host, and the summary counts only 635 passed tests (594 of net8.0 and 27
+  of the Floor runs, so 14 from the two crashed hosts). Several tests make the
+  module trap on purpose (`AbiTests`, `FacadeTests`). Fix: `<CETCompat>false</CETCompat>` in
+  `ApplePurchaseReceiptVerifier.Tests.csproj`; the flag lands in the apphost, so
+  a build that reuses an old apphost needs `--no-incremental` to see it. Not
+  established: no Windows machine here, so the fix is untested and the fail-fast
+  sub-code was not seen. If the next run still crashes, run the net10.0 host
+  under WER/ProcDump for the faulting address; the README documents the
+  limitation for consumers.
+- **`dotnet (macos-latest)`, net10.0 arm64:
+  `PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly`.** Not
+  established whether it was retention. Linux measures 0 B per call over
+  500 to 8,000 calls on net8.0 and net10.0 with 26,280 B allocated per call,
+  and the managed code is the same everywhere, but the collector is not. The
+  test now judges the marginal growth per call (a 2,000-call round minus a
+  500-call round), takes out what a control that allocates the same bytes and
+  keeps none reports, and prints every figure and the runtime id when it fails.
+  It still fails a wrapper that keeps 256 B per call (injected leaks of 64, 256
+  and 1,730 B per call read 85, 277 and 1,763 B), passes on Linux under seven
+  GC and JIT settings, and a fixed cost or a platform's share of allocated
+  bytes that the control reproduces no longer counts. If macOS still fails,
+  its message says which of the two it is.

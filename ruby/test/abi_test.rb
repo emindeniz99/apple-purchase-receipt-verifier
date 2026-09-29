@@ -183,4 +183,29 @@ class AbiTest < Minitest::Test
     assert_includes instance.call("verify-receipt", [NOW], big), '"verified":false'
     assert_includes instance.call("verify-receipt", [NOW], receipt_base64), '"verified":true'
   end
+
+  # An input is never copied into linear memory beyond one byte over the
+  # cap: the module answers TOO_LARGE itself, with the same answer and the
+  # same memory use as for an input of exactly that length.
+  def test_an_input_over_the_cap_is_cut_to_one_byte_over_and_the_module_answers_too_large
+    cut = guest
+    exact = guest
+    huge = "A" * (4 * 1024 * 1024)
+    answer = JSON.parse(cut.call("verify-receipt", [NOW], huge))
+    assert_same false, answer["verified"]
+    assert_equal "TOO_LARGE", answer["reason"]
+    assert_equal exact.call("verify-receipt", [NOW], huge.byteslice(0, 3_145_729)),
+                 cut.call("verify-receipt", [NOW], huge)
+    assert_equal exact.instance_variable_get(:@store).max_linear_memory_consumed,
+                 cut.instance_variable_get(:@store).max_linear_memory_consumed
+    endpoint = JSON.parse(cut.call("verify-receipt-endpoint", [1, NOW], huge))
+    assert_equal 21_002, endpoint["status"]
+  end
+
+  def test_an_input_of_exactly_the_cap_is_passed_whole
+    instance = guest
+    answer = JSON.parse(instance.call("verify-receipt", [NOW], "A" * 3_145_728))
+    assert_same false, answer["verified"]
+    refute_equal "TOO_LARGE", answer["reason"], "3,145,728 bytes is the cap itself, not over it"
+  end
 end

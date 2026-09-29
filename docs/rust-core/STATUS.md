@@ -28,7 +28,7 @@ work.
 | C swift | `lane/host-swift` | step 5.4 | **G1b green and merged into `rust-core`** 2026-09-29 (head 81b06d7): on the review-fixed module 338 of 338 cases, 57 tests with 0 failures (both port-only tests now pass; the modulus one expects the shared case's answer), corpus 6,179 of 6,179; on the first module (head 96674de): on the real module 311 of 311 cases, corpus 6,179 of 6,179 identical with 0 traps, pin updated, the Guest now calls `_initialize`, one-command re-run `swift/scripts/gate.sh`; 2 port-only tests still fail and both are the core's: root selection depends on order when two pinned roots share a subject (a verdict bug, sent to lane A-fix with two fixture cases), and an even RSA modulus answers `UNTRUSTED_CHAIN` where 0.7 Swift said `INVALID_CERTIFICATE` (a reason divergence, fixture case plus the Java oracle); on a saturated machine g5 24 to 30 ms and JWS 102 to 108 ms per call, the JWS margin about 1.0 times the floor (the plan's 1.7 to 1.9 came from a quieter machine), linear memory flat at 2 MiB; iOS, macOS and the fuzz job are CI's |
 | C dotnet | `lane/host-dotnet` | step 5.6 | **G1b green and merged into `rust-core`** 2026-09-29 (head 28cf377): on the review-fixed module 551 of 551 tests on .NET 8 and 10 with 338 of 338 cases, Floor 9 of 9, corpus 6,179 of 6,179; on the first module (head 220b5bf): on the real module 524 of 524 tests on .NET 8, 9 and 10 with 311 of 311 cases, Floor 9 of 9, corpus 6,179 of 6,179 identical with 0 traps, SharpFuzz 5 targets clean, trimmed publish clean, `dotnet format` clean, nupkg 2,124,630 B with a clean consumer, stand-in list deleted, one-command re-run in the evidence folder; the only fix was the adapter's base64 judgement; on a loaded machine: compile 6 to 12 s (0.9 s idle earlier), later instance plus `init` 3 to 7 ms (stand-in 0.07 to 0.4 ms), g5 215 to 524 per second, JWS 55 to 106 per second, 32 instances 205 MiB resident; evidence note `2026-09-29-dotnet-host`; Windows, macOS, Alpine and Mono are CI's |
 | D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | **merged** 2026-09-29 (head cff064d); actionlint and zizmor at 0; jobs gated on the other lanes' files, see `.github/CI-NOTES.md` |
-| D2 CI integration | `lane/ci-integration` | the checklist applied to the workflows after the merges | started 2026-09-29 12:58Z |
+| D2 CI integration | `lane/ci-integration` | the checklist applied to the workflows after the merges | **merged into `rust-core`** 2026-09-29 15:10Z (head 068dfe7, draft PR #185 as the CI vehicle): `rust-wasm` builds the module and every host job places it (`.github/scripts/place-module.sh`), `aprv-server-linux` supplies the static binary to PHP and the Java server engine, `tools/refresh-wasm-pins.sh` for the release branch, `tools/check-licence-copies.mjs` with `licenses/wasm/` as the one source, the per-file allowlist in the one-implementation checker, the Packagist post-publish leg, the nightly corpus matrix behind `APRV_CORPUS_URL` and `APRV_CORPUS_SHA256`, dependabot and release-please entries for `java-wasm`; four jobs retired on their lanes' notes (`node-runtimes-web`, `node-runtimes-fastly`, `node-fuzz`, `php-mutation`), `smoke-crates` gated on `APRV_PUBLISH_CRATES`; last PR run 150 green, 15 red, every red a lane finding dispatched to its lane: the Python install-refusal test on Windows (its host simulation cannot work there), the .NET test host fail-fast on Windows x64 for net9 and net10 and the growth test on macOS net10 arm64, the Swift release xctest crash on macOS in the init-retry test, the ffi exported-symbols test under beta cargo's build-dir layout, the tiny-attribute cost test on 1.85.0, shellcheck on `differential.sh`, one WebKit trap in `createVerifier`; left: `java-wasm-s390x`, a CodeQL build of `java-wasm`, the licence texts in the -wasm jar, the three repository variables, the `macos-15-intel` label |
 | E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | **G1b green and merged into `rust-core`** 2026-09-29 (head 8dd1c9f): on the rebuilt server 338 of 338 cases on JDK 21 and Temurin 8, 409 tests on Temurin 8, corpus 6,152 plus the 27 over-cap rows on JDK 21 at 1 and 4 threads and on Temurin 8; on the first server (head 07fc745): on the server rebuilt with the real component 716 tests on JDK 21 with the server tests and 382 on Temurin 8, the 311 cases through the server engine 311 of 311 on both, the spike's 31 checks and the noexec case on the real binary, corpus through the managed child 6,179 of 6,179 (6,152 plus the 27 over-cap rows answered as the core answers them) on JDK 21 at 1 and 4 threads and on Temurin 8, two wrapper fixes (the 413 answer and a refused root now read from the child), the server stand-in list deleted, g5 round trip 8.2 ms on Temurin 8 under load, classifier jar 4,210,771 B; earlier: 380 tests green on JDK 21 and 379 on Temurin 8; the 311 cases through the server engine 93 pass / 218 stand-in on both; the spike's 31 checks pass; classifier jar built for x86_64 (4,179,407 B); `jvm-interop` and the Spring Boot smoke take the artifact as a property |
 | F php | `lane/php` | Phase 6 | **G1b green and merged into `rust-core`** 2026-09-29 (head 432b09b): on the review-fixed server 871 tests with 338 of 338 cases through the CLI and over HTTP, corpus 6,152 identical plus the 27 over-cap rows per transport, phpstan and php-cs-fixer clean, no façade change; on the first component (head bfafe80): on the server rebuilt with the real component 817 tests, 311 of 311 cases through the CLI and 311 of 311 over HTTP (the decodeBase64 cases are expressible through the façade), corpus 6,152 identical plus the 27 over-cap rows per transport, the stand-in list deleted, installer tests on the new binary, fuzz targets clean, phpstan and php-cs-fixer clean, one-command re-run `php/tools/rerun.sh`; g5 through the façade CLI 38 ms and HTTP 9 ms on a loaded machine; G1b waits for the server's rebuilt binary; earlier: 817 tests green with the stand-in's 214 differences asserted per transport (97 of 311 pass), phpstan max 0, php-cs-fixer clean, installer proven against a local server with the right and a wrong hash, `composer validate --strict` on both manifests; only PHP 8.4 here |
 
@@ -420,6 +420,77 @@ work.
   its rows. Expected: 338 of 338 (the server: every expressible case)
   and 6,179 of 6,179. Lanes are merged into `rust-core` as they come back
   green.
+- G1c started 2026-09-29 13:50Z on the final module (rust-core b863252,
+  with lanes A3 and A-fix2 merged; aprv.wasm 2,760,476 B sha256
+  `a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1`,
+  component 2,762,918 B sha256
+  `84fe428c9458c923407e5539234fe5ea4aa3212ce704249f323036059b836adf`,
+  WIT unchanged, `name` section stripped). Staging checks: the trap host
+  runs 377 of 377 cases with 0 traps, `tools/check-wasm.sh` passes, and
+  against G1b's rows 6,134 are identical and 45 differ in the message
+  only (the fuzz mutants the round-2 evidence note lists). `rust-core`
+  was merged back into every lane branch (a real merge each) so their
+  runners read the 377 cases. Each lane adds the ABI review's wrapper
+  input cap (at most 3,145,729 bytes copied into linear memory; Java
+  already had it), moves its pin, and re-runs its one-command check;
+  the server rebuilds on the new component first, then Java's server
+  engine and PHP run on that binary. Lanes are merged into `rust-core`
+  as they come back green. Merged by 14:10Z, each with 377 of 377
+  cases, 6,179 of 6,179 corpus rows and the input cap tested at 4 MiB
+  and at the 3,145,728-byte edge: python (head 85467ec), go (b81f29d,
+  `-race` clean, memory within 8 MiB on a 64 MiB input), ruby (cb708d7),
+  dotnet (b8f085a, 594 tests on .NET 8 and 10), node (3dc6822, 810
+  tests, smokes on Node, workerd, Bun, Deno, edge-runtime and Chromium,
+  the pin is the component's), swift (90b8160), java's Endive half
+  (10c9511, JDK 21, 17 and 11, 1 and 4 threads). The round-2 section of
+  REVIEW-LOG.md is merged (476b866). The server's rebuild on the final
+  component is merged (6318cfa: binary 11,535,280 B sha256 `f0d4784e…`,
+  every expressible case on HTTP and the CLI, 6,152 identical plus the
+  27 over-cap rows on three transports); Java's server engine on that
+  binary is merged (14da2c5: 377 of 377 and 6,179 of 6,179 on JDK 21
+  and Temurin 8, 850 tests on JDK 21, 448 on the Java 8 leg with the
+  server tests); PHP runs on it now.
+- Review round 3 (2026-09-29 14:58Z, one reviewer, c0a6e15..b863252:
+  lane A-fix2's and lane A3's own commits, which rounds 1 and 2 had not
+  read): 0 blocking, 2 fix before merge, 7 notes, plus the four round-2
+  notes re-checked. The two fixes: per-anchor path validation fixed the
+  choice among anchors but not among same-named bag certificates
+  without key identifiers, so a decoy placed first still refuses a
+  genuine receipt under custom anchors (Apple's roots carry key
+  identifiers and are unaffected; fails closed); and the walk checks
+  each chunk inside a constructed string on its own where OpenSSL joins
+  them unchecked, so a re-chunked signature BIT STRING is MALFORMED
+  instead of verified (fails closed). Lane A-fix3 (`lane/core-fix3`,
+  brief `core-fix3.md`) takes every finding and the four round-2 notes
+  (guest-side range guard, trap-host coverage, tighter wire schemas,
+  tests for the compiler pin and the failure cleanup), then rebuilds the
+  module; the pins move once more (G1d) before integration. The
+  findings file stays out of the repository; REVIEW-LOG.md gets its
+  round-3 section after the fixes.
+- Phase 7 steps 1, 2 and 5 (lane P7-code, `lane/phase7-code`, brief
+  `phase7-code.md`) started 2026-09-29 15:02Z: the seven cert copies
+  and generated root tables out, `Config.defaults()` keeps its meaning
+  through an empty `init` list, `check-cert-copies.mjs` down to
+  `rust/certs`, the one-implementation gate to `--enforce all`, the 78
+  inventory rows proposed or declared moot, the Elixir example moved
+  to the byte-range calls; PHP last, after its G1c merge.
+- Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
+  merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
+  SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
+  superseded for the eight packages), README.md, BENCHMARKS.md,
+  BOOTSTRAP.md, SECURITY.md, INTENT.md, ROADMAP.md, COMPARISON.md,
+  INTEGRATION.md, RECEIPT-FIELDS.md describe the one-core tree; three
+  plan sentences corrected (server time limit 10 s, Swift's software
+  bounds checks, the WasmKit 0.4.1 floor). They describe the end state:
+  the sentences about the cert copies, the `--enforce all` gate and the
+  committed Go and Swift module copies become true when lane P7-code and
+  the final integration land; the CI job names assume lane D2's wiring.
+  Two decisions taken from its hand-back: OD-15, `aprv-server` defaults
+  to `--lifecycle pool` (R23's rule was met by the init-cost note; lane
+  B flips it); OD-16, PHP refuses an explicitly empty root list at
+  `Verifier::create` like every other package (null means the built-in
+  roots). Owner items it recorded as the working rule: the Maven budget
+  of 5 releases a month (OD-07, to confirm).
 
 ## Merge policy on this branch
 

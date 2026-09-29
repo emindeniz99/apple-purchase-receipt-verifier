@@ -20,7 +20,16 @@ wit-bindgen, and the cargo of `rust/rust-toolchain.toml` with
 reactor start file, wasi-libc's four emulation libraries and
 `wasi-none.c`, then wraps the module with `wasm-tools component new` (no
 adapter). It writes `aprv.wasm`, `aprv.component.wasm`, `aprv.wit` and
-`SHA256SUMS` into `<out-dir>`, and fails when:
+`SHA256SUMS` into `<out-dir>`, first removing those four files there, so a
+build that stops at any check leaves none of an earlier run's behind. It
+refuses to start when the compiler cargo would run is not the channel
+`rust/rust-toolchain.toml` pins: that compiler is `RUSTC` or
+`CARGO_BUILD_RUSTC` when set, and `rustc` on `PATH` otherwise, and cargo is
+handed it by path, so a `build.rustc` in a cargo configuration cannot swap
+it. A compiler wrapper (`RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER` or their
+`CARGO_BUILD_` forms) is refused, since it may run any compiler, and cargo
+runs with none. `tools/test/build-sh.test.mjs` holds the pin and the
+cleanup without building anything. It fails when:
 
 - the module imports anything but `aprv:verifier/host@1.0.0` `random-get`;
 - it exports anything but the four `@1.0.0` operations, their
@@ -42,11 +51,13 @@ The module ships without its `name` section (review round 2, F11). On the
 2026-09-29 build that section was 256,982 of 3,013,162 bytes (8.5%; 71 KB
 of 990 KB gzipped); the stripped module passed `tools/check-wasm.sh`, all
 360 shared cases and the ABI tests of `tools/wasm-trap-host.mjs`, and
-answered 811 hostile-corpus calls byte for byte as the named one. What
-the section bought was trap stack frames with Rust names: without it a
-frame reads `wasm-function[33]:0xa956` instead of
-`aprv_abi.wasm.aprv:verifier/verify@1.0.0#verify-receipt`. Stripping moves
-no code, so the index and offset are the same in the named module cargo
+answered 811 hostile-corpus calls byte for byte as the named one. What the
+section bought was trap stack frames with Rust names: without it a frame
+reads `wasm-function[33]:0xa956` instead of
+`aprv_abi.wasm.aprv:verifier/verify@1.0.0#verify-receipt`, and the Java
+engine's stack traces and JFR recordings carry the index too (Endive can
+name its compiled methods only from this section). Stripping moves no
+code, so the index and offset are the same in the named module cargo
 leaves at `$CARGO_TARGET_DIR/wasm32-wasip1/wasm/aprv_abi.wasm`, and
 `wasm-tools print` of it names the function; the build is reproducible, so
 rebuilding a release's commit gives that module back. `producers` and
@@ -76,25 +87,26 @@ and every such path ends in a trap: the hook's write to stderr traps in
 `wasi-none.c`, and the abort is `unreachable`.
 
 A `list<u8>` argument is the host's to place: the canonical ABI requires
-the range to come from `cabi_realloc`, and the module does not check it.
-Every cap is decided on the input's length before a byte of it is read (a
-length over the input cap, 3,145,728 bytes for a receipt or an endpoint
-body and 262,144 for a JWS, is `TOO_LARGE` or `{"status":21002}`), so a
-host may lower at most 3,145,729 bytes of any input and get the answer
-the whole input would get, without copying the rest into linear memory.
+the range to come from `cabi_realloc`. Every cap is decided on the input's
+length before a byte of it is read (a length over the input cap, 3,145,728
+bytes for a receipt or an endpoint body and 262,144 for a JWS, is
+`TOO_LARGE` or `{"status":21002}`), so a host may lower at most 3,145,729
+bytes of any input and get the answer the whole input would get, without
+copying the rest into linear memory.
 
-A range that did not come from `cabi_realloc` is the host's bug, and the
-module does not turn it into a trap. One that runs past the end of linear
-memory or wraps 32 bits may answer a value (the length alone decided it:
-`TOO_LARGE` for a length of `0xFFFFFFF8`), trap on the first byte read
-outside memory, or corrupt the instance's heap: after the call the list is
-freed with the module's allocator, which on a pointer it never allocated
-corrupts the heap or traps. The same holds for the answer to `random-get`:
-its length is checked (any length but the one asked traps before a byte is
-read), its pointer is not. `cabi_realloc` itself accepts any old pointer
-and alignment. Component runtimes check ranges, and every wrapper in this
-repository lowers through `cabi_realloc`; a hand-rolled host that cannot
-vouch for a call discards the instance after it.
+A range that did not come from `cabi_realloc` is the host's bug. One that
+runs past the end of linear memory, or wraps 32 bits, traps as each export
+starts, before a byte is read and before the list is freed; the same holds
+for the answer to `random-get`, whose length is also checked (any length
+but the one asked traps). Without that check the length alone would have
+decided the answer (`TOO_LARGE` for a length of `0xFFFFFFF8`), and freeing
+a pointer the allocator never returned corrupts the instance's heap. A
+range inside memory that `cabi_realloc` never returned is not caught: the
+list is read and freed as if it had been, which may corrupt the heap.
+`cabi_realloc` itself accepts any old pointer and alignment. Component
+runtimes check ranges, and every wrapper in this repository lowers through
+`cabi_realloc`; a hand-rolled host that cannot vouch for a call discards
+the instance after it.
 
 `_initialize` need not be called: each export runs the module's one
 constructor on its first call. Calling it first is harmless; calling it
