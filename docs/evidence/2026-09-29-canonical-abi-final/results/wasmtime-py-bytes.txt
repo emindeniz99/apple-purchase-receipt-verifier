@@ -1,0 +1,6 @@
+# wasmtime-py 49.0.0: verify-signed-data on n bytes of 'A' (rejected by the guest at once), median of 5
+n=        0 bytes:      0.07 ms per call  ({"message":"expected 3 dot-separated segments, got 1","reaso)
+n=    1,000 bytes:      1.12 ms per call  ({"message":"expected 3 dot-separated segments, got 1","reaso)
+n=   10,000 bytes:     12.21 ms per call  ({"message":"expected 3 dot-separated segments, got 1","reaso)
+n=  100,000 bytes:    107.00 ms per call  ({"message":"expected 3 dot-separated segments, got 1","reaso)
+n=1,000,000 bytes:   1203.81 ms per call  ({"message":"jws exceeds the maximum accepted size of 262144 )

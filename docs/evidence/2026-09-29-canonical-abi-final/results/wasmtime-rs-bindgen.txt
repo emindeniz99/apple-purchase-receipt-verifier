@@ -1,0 +1,1 @@
+bindgen! output for wit/aprv.wit (rustfmt-ed by the macro): 377 lines, 262 non-blank non-comment, 14808 bytes

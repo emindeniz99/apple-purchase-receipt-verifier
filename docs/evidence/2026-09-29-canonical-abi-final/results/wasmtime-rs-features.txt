@@ -1,0 +1,25 @@
+# precompiled files across feature sets, 2026-09-29 (Wasmtime 49.0.1, Config::new() everywhere; one run each, not a timing)
+## aprv-wt-rt-core (runtime + std, no component-model: aprv-server B's features) + aprv-abi1.no-cm.cwasm, embedded (aprv-server B today)
+{"engine_and_load_ms":8.58,"first_g5_ms":4.83,"in_process_to_first_result_ms":14.0,"instantiate_and_init_ms":0.49,"module":"ABI v1 core .cwasm","second_g5_ms":3.25}
+exit 0
+## aprv-wt-rt-core + aprv-abi1.cwasm (written by an engine with component_model on), from a file
+Error: Module was compiled with support for WebAssembly feature `component_model` but it is not enabled for the host
+exit 1
+## aprv-wt-rt-component (runtime + std + component-model, NO Cranelift) + aprv-abi1.cwasm, embedded
+{"engine_and_load_ms":9.29,"first_g5_ms":6.07,"in_process_to_first_result_ms":16.0,"instantiate_and_init_ms":0.56,"module":"ABI v1 core .cwasm","second_g5_ms":3.41}
+exit 0
+## aprv-wt-rt-component + aprv-abi1.no-cm.cwasm (component_model off), from a file
+{"engine_and_load_ms":17.26,"first_g5_ms":5.33,"in_process_to_first_result_ms":23.0,"instantiate_and_init_ms":0.71,"module":"ABI v1 core .cwasm","second_g5_ms":3.33}
+exit 0
+## aprv-wt-rt-component + aprv-cabi.ccwasm (the component, precompiled), embedded
+{"engine_and_load_ms":9.0,"first_g5_ms":4.92,"in_process_to_first_result_ms":14.0,"instantiate_and_init_ms":0.53,"module":"canonical-ABI component .ccwasm","second_g5_ms":3.45}
+exit 0
+## aprv-wt-rt-component + aprv-cabi.ccwasm, from a file
+{"engine_and_load_ms":17.73,"first_g5_ms":5.07,"in_process_to_first_result_ms":23.0,"instantiate_and_init_ms":0.51,"module":"canonical-ABI component .ccwasm","second_g5_ms":3.34}
+exit 0
+## aprv-wt-rt-component + the component .wasm (not precompiled)
+Error: this build has no compiler: it loads only a precompiled component
+exit 1
+## aprv-wt-rt-core asked for the component
+Error: this build has no component-model
+exit 1

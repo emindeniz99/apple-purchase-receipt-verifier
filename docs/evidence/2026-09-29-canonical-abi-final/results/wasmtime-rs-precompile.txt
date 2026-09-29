@@ -1,0 +1,6 @@
+aprv-cabi.ccwasm: 8483936 bytes from 2969558 bytes of wasm, precompiled in 3841 ms
+aprv-abi1.cwasm: 8449864 bytes from 2952613 bytes of wasm, precompiled in 3895 ms
+aprv-abi1.no-cm.cwasm: 8449864 bytes from 2952613 bytes of wasm, precompiled in 3777 ms
+f7cc44785addc3c3fced07a27ab45317b6cb9f19a30c31c61ca533fc40287dc7  $SCRATCH/r13/wt/aprv-cabi.ccwasm
+09e684a12ffef7a23891e8ae4efeaebdfa96b67a9e430f97afa8b5605a836d5a  $SCRATCH/r13/wt/aprv-abi1.cwasm
+6990958dd419a205ac3ec9365c37ad6d0899deeddd6e2131abd7d08a24c4ad32  $SCRATCH/r13/wt/aprv-abi1.no-cm.cwasm

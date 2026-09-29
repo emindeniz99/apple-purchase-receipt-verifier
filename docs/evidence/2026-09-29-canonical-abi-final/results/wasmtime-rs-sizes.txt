@@ -1,0 +1,9 @@
+file                            bytes     gzip-9
+aprv-wt-full                 11818344    4182732
+aprv-wt-rt-component         18343240    6138788
+aprv-wt-rt-core               9530392    3241921
+aprv-wt-rt-component-noembed    1409064     645299
+aprv-wt-rt-core-noembed       1080536     501666
+aprv-cabi.ccwasm              8483936    2754364
+aprv-abi1.cwasm               8449864    2738872
+aprv-abi1.no-cm.cwasm         8449864    2738879

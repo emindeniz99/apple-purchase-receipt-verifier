@@ -1,0 +1,7 @@
+aprv-wt-full (--features compile,component): built in 387 s; 11818344 bytes
+aprv-wt-rt-component (--features component,embed): built in 105 s; 18343240 bytes
+aprv-wt-rt-core (--features embed): built in 56 s; 9530392 bytes
+aprv-wt-rt-component: features: compile=false component=true embed=true
+aprv-wt-rt-core: features: compile=false component=false embed=true
+aprv-wt-rt-component-noembed (--features component): built in 23 s; 1409064 bytes
+aprv-wt-rt-core-noembed (--features ): built in 17 s; 1080536 bytes

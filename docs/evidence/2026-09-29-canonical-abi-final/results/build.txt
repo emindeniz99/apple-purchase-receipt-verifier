@@ -1,0 +1,35 @@
+# build.sh, 2026-09-29; rustc 1.98.1 (48a229cea 2026-09-01); wasi-sdk 34.0 clang: clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141); wasm-tools 1.259.0 (7fc33f279 2026-09-10); wit-bindgen-cli 0.62.0
+wire_view.rs: identical to ABI v1's
+core module built in 27 s
+component new: OK (no adapter)
+ABI v1 module (b14e14b2): 2952613 bytes, sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+    imports: aprv :: clock_now_ms;aprv :: random_get;
+    exports: memory;aprv_abi_version;aprv_alloc;aprv_call;aprv_dealloc;aprv_result_free;aprv_result_len;aprv_result_ptr;_initialize;
+    custom sections:  custom "name" | 0x2933d9 - 0x2d0c43 | 252010 bytes | 1 count; custom "producers" | 0x2d0c50 - 0x2d0cfe | 174 bytes | 1 count; custom "target_features" | 0x2d0d11 - 0x2d0da5 | 148 bytes | 1 count;
+canonical-ABI core module: 2967116 bytes, sha256 da786ac853464e7b837c5483f9b04a27a3a5c2ff0340fa526f60482fd80fdb68
+    imports: aprv:verifier/host@1.0.0 :: random-get;
+    exports: memory;aprv:verifier/verify@1.0.0#init;aprv:verifier/verify@1.0.0#verify-receipt;aprv:verifier/verify@1.0.0#verify-receipt-endpoint;aprv:verifier/verify@1.0.0#verify-signed-data;aprv_clock_now_ms;aprv_random_get;cabi_post_aprv:verifier/verify@1.0.0#init;cabi_realloc_wit_bindgen_0_62_0;cabi_realloc;cabi_post_aprv:verifier/verify@1.0.0#verify-receipt;cabi_post_aprv:verifier/verify@1.0.0#verify-receipt-endpoint;cabi_post_aprv:verifier/verify@1.0.0#verify-signed-data;_initialize;
+    custom sections:  custom "component-type:wit-bindgen:0.62.0:aprv:verifier@1.0.0:aprv:encoded world" | 0x296633 - 0x2967e2 | 431 bytes | 1 count; custom "name" | 0x2967eb - 0x2d44ea | 253183 bytes | 1 count; custom "producers" | 0x2d44f7 - 0x2d45a5 | 174 bytes | 1 count; custom "target_features" | 0x2d45b8 - 0x2d464c | 148 bytes | 1 count;
+component: 2969558 bytes, sha256 d507c2b2918d23a30f93eb265261fb90fe9c5d82ea1fb337f9add3e58e86ed30
+component wit:
+    package root:component;
+    
+    world root {
+      import aprv:verifier/host@1.0.0;
+    
+      export aprv:verifier/verify@1.0.0;
+    }
+    package aprv:verifier@1.0.0 {
+      interface host {
+        random-get: func(len: u32) -> list<u8>;
+      }
+      interface verify {
+        init: func(config-json: list<u8>) -> string;
+    
+        verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
+    
+        verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
+    
+        verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+      }
+    }

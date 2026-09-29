@@ -1,0 +1,17 @@
+# host lines, 2026-09-29 (non-blank, non-comment)
+## hand-rolled canonical ABI (core module, no component support): the whole marked region
+wazero (Go)                                    85 lines  Guest type, random-get import, signature table, lower, Call
+Endive (Java)                                  57 lines  fields, random-get import, instance builder (5 lines), signature table, lower, call
+WasmKit (Swift)                                79 lines  error type, random-get import, instantiate, bounds-checked read/write (WasmKit aborts on OOB), signature table, lower, call
+## of which the generic lowering helper and the call
+wazero (Go): sigs + lower + Call               66 lines  
+Endive (Java): SIGS + lower + call             35 lines  
+WasmKit (Swift): sigs + lower + call           37 lines  
+## typed hosts (component): the whole marked region
+jco (Node, Deno, Bun), generated glue           8 lines  glue import, core-module loader, random-get
+wasmtime-py, run-time typed                    15 lines  instantiate, export lookup, call, random-get
+Rust Wasmtime 49, bindgen!                     24 lines  bindgen! call, random-get (Host trait), linker, Guest (store + instantiate)
+## generated code
+jco 1.35.0: aprv.js                          3800 lines  all lines; 132241 bytes (plus aprv.d.ts and two small core shim modules)
+Wasmtime bindgen! (rustfmt-ed)                255 lines  377 lines in all; 14808 bytes
+wasmtime-py                                     0 lines  no generator: types come from the component at run time

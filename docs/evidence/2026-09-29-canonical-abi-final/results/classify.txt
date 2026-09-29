@@ -1,0 +1,67 @@
+# py/classify.py per host against ABI v1's Node rows, then py/cross_host.py (2026-09-29). Examples: the first host only.
+wazero cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+wazero hostile: identical 810, init-refusal 1
+wazero algorithms: identical 22
+wazero substrate: identical 193
+wazero fuzz: identical 5000
+wazero all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+  [clock-moves-chain (endpoint, pinned clock)] endpoint/injected-clock-cannot-authenticate-an-expired-chain
+      ABI v1 : {"status":21003}
+      new    : {"environment":"Sandbox","receipt":{"application_version":"1.2.3","bundle_id":"com.example.app","in_app":[],"original_application_version":"1.0","orig
+  [clock-moves-chain (endpoint, pinned clock)] endpoint/injected-clock-cannot-expire-a-valid-chain
+      ABI v1 : {"environment":"Sandbox","receipt":{"application_version":"1.2.3","bundle_id":"com.example.app","in_app":[],"original_application_version":"1.0","orig
+      new    : {"status":21003}
+  [init-refusal] hostile/ctor/root-not-a-cert
+      ABI v1 : {"error":"INVALID_TEST_ENVELOPE"}
+      new    : {"message":"roots[0]: trust anchor is not a certificate","ok":false}
+endive cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+endive hostile: identical 810, init-refusal 1
+endive algorithms: identical 22
+endive substrate: identical 193
+endive fuzz: identical 5000
+endive all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+wasmkit cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+wasmkit hostile: identical 810, init-refusal 1
+wasmkit algorithms: identical 22
+wasmkit substrate: identical 193
+wasmkit fuzz: identical 5000
+wasmkit all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+jco-node cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+jco-node hostile: identical 810, init-refusal 1
+jco-node algorithms: identical 22
+jco-node substrate: identical 193
+jco-node fuzz: identical 5000
+jco-node all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+jco-deno cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+jco-deno hostile: identical 810, init-refusal 1
+jco-deno algorithms: identical 22
+jco-deno substrate: identical 193
+jco-deno fuzz: identical 5000
+jco-deno all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+jco-bun cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+jco-bun hostile: identical 810, init-refusal 1
+jco-bun algorithms: identical 22
+jco-bun substrate: identical 193
+jco-bun fuzz: identical 5000
+jco-bun all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+wasmtime-py cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+wasmtime-py hostile: identical 810, init-refusal 1
+wasmtime-py algorithms: identical 22
+wasmtime-py substrate: identical 193
+wasmtime-py fuzz: identical 5000
+wasmtime-py all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+wasmtime-rs cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+wasmtime-rs hostile: identical 810, init-refusal 1
+wasmtime-rs algorithms: identical 22
+wasmtime-rs substrate: identical 193
+wasmtime-rs fuzz: identical 5000
+wasmtime-rs all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+
+# cross-host: each host's rows against wazero's (request_date* masked on unpinned endpoint rows)
+endive vs wazero: 6179 identical, 0 different
+wasmkit vs wazero: 6179 identical, 0 different
+jco-node vs wazero: 6179 identical, 0 different
+jco-deno vs wazero: 6179 identical, 0 different
+jco-bun vs wazero: 6179 identical, 0 different
+wasmtime-py vs wazero: 6179 identical, 0 different
+wasmtime-rs vs wazero: 6179 identical, 0 different

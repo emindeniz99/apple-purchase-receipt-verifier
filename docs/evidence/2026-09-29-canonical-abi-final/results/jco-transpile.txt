@@ -1,0 +1,25 @@
+# jco 1.35.0 transpile aprv-cabi.component.wasm --name aprv --instantiation async, 2026-09-29
+2966655 ./aprv.core.wasm
+    186 ./aprv.core2.wasm
+    181 ./aprv.core3.wasm
+   1800 ./aprv.d.ts
+ 132241 ./aprv.js
+    103 ./interfaces/aprv-verifier-host.d.ts
+    362 ./interfaces/aprv-verifier-verify.d.ts
+3101528 total
+## what aprv.js imports (none means it runs on any runtime with WebAssembly)
+(no import statements)
+## out/aprv.d.ts (ImportObject)
+export interface ImportObject {
+  'aprv:verifier/host@1.0.0': typeof AprvVerifierHost,
+}
+## out/interfaces/*.d.ts
+/** @module Interface aprv:verifier/host@1.0.0 **/
+export function randomGet(len: number): Uint8Array;
+/** @module Interface aprv:verifier/verify@1.0.0 **/
+export function init(configJson: Uint8Array): string;
+export function verifyReceipt(nowMs: bigint, receiptBase64: Uint8Array): string;
+export function verifySignedData(nowMs: bigint, jws: Uint8Array): string;
+export function verifyReceiptEndpoint(env: number, nowMs: bigint, requestJson: Uint8Array): string;
+## the import key the glue reads
+imports['aprv:verifier/host']

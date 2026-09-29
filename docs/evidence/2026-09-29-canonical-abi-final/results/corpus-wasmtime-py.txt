@@ -1,0 +1,11 @@
+# wasmtime-py: 2026-09-29; load before: 0.74 0.82 0.61
+    wasmtime-py: 151 of 153 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime-py 49.0.0 (wasmtime.component)", "rows": 153, "traps": 0, "instances_left": 27} 47 s wall
+    wasmtime-py: 810 of 811 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime-py 49.0.0 (wasmtime.component)", "rows": 811, "traps": 0, "instances_left": 3} 16 s wall
+    wasmtime-py: 22 of 22 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime-py 49.0.0 (wasmtime.component)", "rows": 22, "traps": 0, "instances_left": 22} 2 s wall
+    wasmtime-py: 193 of 193 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime-py 49.0.0 (wasmtime.component)", "rows": 193, "traps": 0, "instances_left": 74} 5 s wall
+    wasmtime-py: 5000 of 5000 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host": "wasmtime-py 49.0.0 (wasmtime.component)", "rows": 5000, "traps": 0, "instances_left": 96} 156 s wall

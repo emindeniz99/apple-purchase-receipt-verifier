@@ -1,0 +1,1 @@
+endive build: 13819 ms for mvn package (offline, both modules); jar 3519348 bytes; aprv-cabi.core.wasm sha256 da786ac853464e7b837c5483f9b04a27a3a5c2ff0340fa526f60482fd80fdb68; openjdk version "21.0.10" 2026-01-20

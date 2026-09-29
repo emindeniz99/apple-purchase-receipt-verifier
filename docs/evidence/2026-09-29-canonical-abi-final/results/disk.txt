@@ -1,0 +1,19 @@
+# disk, 2026-09-29
+## at the start of the round: 5.3 GB free on /. Freed first (earlier rounds' scratch, regenerable): $SCRATCH/dn7/work (.NET build output, 298 MB) and $SCRATCH/wd/node_modules (npm install of workerd + wrangler, 485 MB): 6.1 GB free
+## lowest point: 4.8 GB free (Rust full build)
+## before cleanup
+/: 5.5G free of 252G
+7.5M	$SCRATCH/r13/aprv-wazero
+5.7M	$SCRATCH/r13/art
+239M	$SCRATCH/r13/calls
+26M	$SCRATCH/r13/endive-work
+56K	$SCRATCH/r13/guest
+3.2M	$SCRATCH/r13/jco
+57M	$SCRATCH/r13/run
+4.0K	$SCRATCH/r13/wasi-none.o
+149M	$SCRATCH/r13/wasmkit
+44K	$SCRATCH/r13/wazero
+65M	$SCRATCH/r13/wt
+## after cleanup (kept: art/, the core module and the component)
+/: 6.0G free of 252G
+5.7M	$SCRATCH/r13/art

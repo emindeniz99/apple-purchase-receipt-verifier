@@ -1,0 +1,24 @@
+engine + compile: 1193.5 ms
+PASS init(b"") answers {"ok":true}: 
+PASS verify-receipt(genuine g5) verifies: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c14646576
+PASS verify before init traps: WasmtimeError: error while executing at wasm backtrace:
+PASS a second init traps: WasmtimeError: error while executing at wasm backtrace:
+PASS   ... and the trapped instance refuses further calls: WasmtimeError: wasm trap: cannot enter component instance
+PASS a JWS that is not UTF-8 reaches the guest and is a value (ABI v1's answer): {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+PASS endpoint env 1 (sandbox) answers status 0: sion_external_identifier":0},"status":0}
+PASS endpoint env 2 traps: WasmtimeError: error while executing at wasm backtrace:
+     instance afterwards: WasmtimeError: wasm trap: cannot enter component instance
+PASS a str where the WIT says list<u8> is refused by the binding: TypeError: expected bytes value
+     instance afterwards: usable
+RECORD endpoint env -1 (wraps to 4294967295: the guest traps): WasmtimeError: error while executing at wasm backtrace:
+     instance afterwards: WasmtimeError: wasm trap: cannot enter component instance
+RECORD endpoint env 2**32 + 1 (wraps to 1: sandbox): {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bonzer.weeka.
+     instance afterwards: usable
+RECORD now-ms -1 (wraps to 2^64 - 1): {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c14646576
+     instance afterwards: usable
+RECORD now-ms 2^64 (wraps to 0): {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c14646576
+     instance afterwards: usable
+PASS 2,000 calls under a 4 MiB memory limit, no post_return in host code (the runtime frees the results): {"verified":true,"payload":{"appItemId":0,"appVersion":"2","
+PASS random-get answering the wrong length traps: WasmtimeError: error while executing at wasm backtrace:
+PASS isolation: a trap (env 2) in one instance leaves another verifying: 
+summary: 0 failed

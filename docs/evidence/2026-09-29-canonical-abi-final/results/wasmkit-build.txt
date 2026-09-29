@@ -1,0 +1,2 @@
+wasmkit host: release build 97 s wall; Swift version 6.3.3 (swift-6.3.3-RELEASE); WasmKit 0.4.0
+(the line above is the second build, with a warm .build; the first, cold build took 158 s wall, resolving WasmKit 0.4.0 from the local SwiftPM cache)

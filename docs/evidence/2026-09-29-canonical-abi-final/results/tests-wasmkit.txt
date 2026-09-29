@@ -1,0 +1,23 @@
+## aprv-cabi tests (WasmKit 0.4.0, 2026-09-29)
+PASS init(empty) answers {"ok":true}: 
+PASS verify before init traps: TRAP/ERROR trap("Trap: unreachable\n    0: (0x559069ea28d0) _RNvCs5xTJfMuMyqB_14aprv_wasm_cabi7anchors\n    1: (0x7ffffd63f828) aprv:verifier/verify@1.0.0#verify-receipt\n    2: (0x559069e29560) unknown")
+PASS a second init traps: TRAP/ERROR trap("Trap: unreachable\n    0: (0x7ffffd63f828) aprv:verifier/verify@1.0.0#init\n    1: (0x4531306442525554) unknown")
+PASS a config that is not JSON is {"ok":false}, and init can be retried: {"message":"config is not JSON: key must be a string at line 1 column 2","ok":false}
+PASS verify-receipt(genuine g5) verifies: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c146465762e626f6e7a65722e7765656b612e617070","bundleIdBytesHex":"0c146465762e626f6e7a65722e7765656b612e617070
+PASS verify-signed-data(shared-sandbox JWS, its test roots) verifies: {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHASED","originalPurchaseDate":1722945600000,"originalTransactionId":"2000000000000001","productId":"com.example.a
+PASS verify-receipt-endpoint(env 1 = sandbox, g5) answers status 0: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bonzer.weeka.app","download_id":0,"in_app":[{"expires_date":"2025-12-26 18:19:07 Etc/GMT","expires_date_ms":"1766
+PASS a JWS that is not UTF-8 reaches the guest and is a value (ABI v1's answer): {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+PASS the lowering helper refuses a UInt32 where the WIT says u64 (loud host error, no call): TRAP/ERROR usage("verify-receipt: argument 0 is UInt32, the WIT type is d")
+PASS the lowering helper refuses a UInt64 where the WIT says u32: TRAP/ERROR usage("verify-receipt-endpoint: argument 0 is UInt64, the WIT type is w")
+PASS the lowering helper refuses an Int where the WIT says list<u8>: TRAP/ERROR usage("verify-receipt: argument 1 is Int, the WIT type is b")
+PASS the lowering helper refuses a wrong argument count: TRAP/ERROR usage("verify-receipt: unknown export or wrong argument count")
+PASS   ... and the instance still verifies g5: 
+PASS endpoint with env 2 traps: TRAP/ERROR trap("Trap: unreachable\n    0: (0x7ffffd63f828) aprv:verifier/verify@1.0.0#verify-receipt-endpoint")
+PASS endpoint with env 255 traps: TRAP/ERROR trap("Trap: unreachable\n    0: (0x7ffffd63f828) aprv:verifier/verify@1.0.0#verify-receipt-endpoint\n    1: (0x7f085b8052f0) unknown")
+PASS endpoint with env 4294967295 traps: TRAP/ERROR trap("Trap: unreachable\n    0: (0x7ffffd63f828) aprv:verifier/verify@1.0.0#verify-receipt-endpoint\n    1: (0x7f085b8052f0) unknown")
+RECORD double post-return on one result: first: results []; second: results []; the instance verifies g5 afterwards: true
+RECORD post-return with a foreign pointer (a heap block no export returned): TRAP/ERROR Trap: out of bounds memory access; the instance verifies g5 afterwards: true
+PASS random-get answering the wrong length traps: TRAP/ERROR trap("Trap: unreachable\n    0: (0x55906b4c5478) aprv_random_get\n    1: (0x55906b4ca928) __imported_wasi_snapshot_preview1_random_get\n    2: (0x55906b46f170) __wasi_random_get\n    3: (0x55906b4d1cb0) __gete
+PASS isolation: a trap (env 2) in one instance leaves another verifying: TRAP/ERROR trap("Trap: unreachable\n    0: (0x7ffffd63f828) aprv:verifier/verify@1.0.0#verify-receipt-endpoint\n    1: (0x7f085b804b20) unknown")
+RECORD the trapped instance itself, called again (a host should discard it): {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c146465762e626f6e7a65722e7765656b612e617070","bundleIdBytesHex":"0c146465762e626f6e7a65722e7765656b612e617070","creationDate":"2025-12-26T18:39:47Z",
+summary: 0 failed

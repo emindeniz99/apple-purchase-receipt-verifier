@@ -1,0 +1,25 @@
+## startup-endive.txt
+  ABI v1 (n=7): uptime_at_main_ms 90, instantiate_and_init_ms 908.7, first_g5_ms 938.2, second_g5_ms 292.5, uptime_at_first_result_ms 2709, process_wall_ms 3192
+  canonical ABI (n=7): uptime_at_main_ms 93, instantiate_and_init_ms 899.8, first_g5_ms 906.1, second_g5_ms 255.3, uptime_at_first_result_ms 2776, process_wall_ms 3108
+  delta canonical ABI vs ABI v1: uptime_at_main_ms +3.0 (+3.3%), instantiate_and_init_ms -8.9 (-1.0%), first_g5_ms -32.1 (-3.4%), second_g5_ms -37.2 (-12.7%), uptime_at_first_result_ms +67.0 (+2.5%), process_wall_ms -84.0 (-2.6%)
+## startup-jco-bun.txt
+  ABI v1 (n=7): at_entry_ms 31.7, load_compile_instantiate_ms 90.7, first_g5_ms 170.6, second_g5_ms 53.9, at_first_result_ms 344.2, process_wall_ms 415
+  canonical ABI (n=7): at_entry_ms 30.9, load_compile_instantiate_ms 102.6, first_g5_ms 151.8, second_g5_ms 57.5, at_first_result_ms 338.4, process_wall_ms 430
+  delta canonical ABI vs ABI v1: at_entry_ms -0.8 (-2.5%), load_compile_instantiate_ms +11.9 (+13.1%), first_g5_ms -18.8 (-11.0%), second_g5_ms +3.6 (+6.7%), at_first_result_ms -5.8 (-1.7%), process_wall_ms +15.0 (+3.6%)
+## startup-jco-deno.txt
+  ABI v1 (n=7): at_entry_ms 41.1, load_compile_instantiate_ms 41.7, first_g5_ms 86.9, second_g5_ms 10, at_first_result_ms 388.6, process_wall_ms 444
+  canonical ABI (n=7): at_entry_ms 35.6, load_compile_instantiate_ms 50.3, first_g5_ms 88.9, second_g5_ms 8.9, at_first_result_ms 397.1, process_wall_ms 443
+  delta canonical ABI vs ABI v1: at_entry_ms -5.5 (-13.4%), load_compile_instantiate_ms +8.6 (+20.6%), first_g5_ms +2.0 (+2.3%), second_g5_ms -1.1 (-11.0%), at_first_result_ms +8.5 (+2.2%), process_wall_ms -1.0 (-0.2%)
+## startup-jco-node.txt
+  ABI v1 (n=7): at_entry_ms 61.4, load_compile_instantiate_ms 26.9, first_g5_ms 70.5, second_g5_ms 11.3, at_first_result_ms 348.6, process_wall_ms 384
+  canonical ABI (n=7): at_entry_ms 70.5, load_compile_instantiate_ms 36.5, first_g5_ms 68.6, second_g5_ms 9.9, at_first_result_ms 379.3, process_wall_ms 412
+  delta canonical ABI vs ABI v1: at_entry_ms +9.1 (+14.8%), load_compile_instantiate_ms +9.6 (+35.7%), first_g5_ms -1.9 (-2.7%), second_g5_ms -1.4 (-12.4%), at_first_result_ms +30.7 (+8.8%), process_wall_ms +28.0 (+7.3%)
+## startup-wasmkit.txt
+  ABI v1 (n=7): parse_ms 11.2, instantiate_and_init_ms 5.7, first_g5_ms 133.9, second_g5_ms 24.5, uptime_at_first_result_ms 2780, process_wall_ms 2809
+  canonical ABI (n=7): parse_ms 11.7, instantiate_and_init_ms 8.6, first_g5_ms 123.3, second_g5_ms 22.8, uptime_at_first_result_ms 2920, process_wall_ms 2947
+  delta canonical ABI vs ABI v1: parse_ms +0.5 (+4.5%), instantiate_and_init_ms +2.9 (+50.9%), first_g5_ms -10.6 (-7.9%), second_g5_ms -1.7 (-6.9%), uptime_at_first_result_ms +140.0 (+5.0%), process_wall_ms +138.0 (+4.9%)
+## startup-wasmtime-rs.txt
+  ABI v1 core .cwasm [aprv-wt-rt-core] (n=7): engine_and_load_ms 8.16, first_g5_ms 4.87, in_process_to_first_result_ms 14, instantiate_and_init_ms 0.52, second_g5_ms 3.13, process_wall_ms 73
+  ABI v1 core .cwasm [aprv-wt-rt-component] (n=7): engine_and_load_ms 8.7, first_g5_ms 5.04, in_process_to_first_result_ms 14, instantiate_and_init_ms 0.53, second_g5_ms 3.3, process_wall_ms 74
+  canonical-ABI component .ccwasm [aprv-wt-rt-component] (n=7): engine_and_load_ms 8.84, first_g5_ms 4.65, in_process_to_first_result_ms 14, instantiate_and_init_ms 0.49, second_g5_ms 3.06, process_wall_ms 73
+  delta canonical-ABI component .ccwasm [aprv-wt-rt-component] vs ABI v1 core .cwasm [aprv-wt-rt-core]: engine_and_load_ms +0.7 (+8.3%), first_g5_ms -0.2 (-4.5%), in_process_to_first_result_ms +0.0 (+0.0%), instantiate_and_init_ms -0.0 (-5.8%), second_g5_ms -0.1 (-2.2%), process_wall_ms +0.0 (+0.0%)
