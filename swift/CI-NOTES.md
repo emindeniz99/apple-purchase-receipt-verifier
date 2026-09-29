@@ -22,12 +22,18 @@ secret.
   is compiled for this package's product (only WasmKit's CLI and WIT tools
   use them), but SwiftPM resolves them, so a clean build fetches swift-syntax
   (about 40 MB of git history into the SwiftPM cache).
-- `swift/Sources/ApplePurchaseReceiptVerifier/Resources/aprv.wasm` and
-  `aprv.wasm.sha256` are the bundled module. **They are the round-13
-  stand-in (0.6 core) until the release build overwrites both**, byte for
-  byte the Go host's copy (`f837e7a3...7e4a`, the round-13 module with its
-  build directory scrubbed from eleven panic-location strings; see the Go
-  lane's `a0e26d9`), so the two committed copies agree.
+- **Every Swift job copies the module into
+  `swift/Sources/ApplePurchaseReceiptVerifier/Resources/aprv.wasm` before
+  building** (gitignored on the lane branch per the owner's 100 KB rule;
+  SwiftPM refuses to build without the declared resource), and the copy must
+  match `aprv.wasm.sha256`. A job that tests the module `rust-wasm` built
+  writes that build's hash into `aprv.wasm.sha256` in its own checkout (the
+  sha256sum line, `<hex>  aprv.wasm`), as `refresh-wasm-copies` will.
+- `aprv.wasm.sha256` (committed) names the round-13 stand-in (0.6 core),
+  `f837e7a3...7e4a`: byte for byte the Go host's copy, the round-13 module
+  with its build directory scrubbed from eleven panic-location strings (the
+  Go lane's `a0e26d9`), so the two hosts test the same bytes. The release
+  build replaces the module and its hash file together.
 - `Resources/licenses/` holds the licence texts of the code compiled into the
   module (OpenSSL, wasi-libc with musl, the Rust standard library), copied
   from the Node host's `node/licenses/`, and ships as a resource.
@@ -89,6 +95,16 @@ data and not in the repository, so this is a manual or nightly job, not a
 push gate. Result with the stand-in: see the lane's hand-back.
 
 ## Speed
+
+`swift run -c release --package-path swift/bench bench --threads` times the
+public API with a plain release build (no `-enable-testing`): g5 and the
+fixture JWS, one and four threads, per second and per CPU-second, and the
+start-up to the first answer. Results on 2026-09-29 are in the README and
+the hand-back. The round-7 spike's own harness, rebuilt and run on the same
+machine within the same minutes, measured 28 to 33 ms per g5 and 126 ms per
+JWS, where it recorded 13.3 ms and 54.7 ms on 2026-09-26; this package
+measured 26 ms and 100 to 111 ms. The machine, not the package, halved the
+plan's numbers, and the JWS is at the 10 per second per core floor on it.
 
 `MeasurementTests.testSpeed` (`APRV_BENCH=1`, optional
 `APRV_BENCH_SECONDS`) prints start-up (hash and parse, instance, init, first

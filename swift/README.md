@@ -32,6 +32,11 @@ against the SHA-256 in `aprv.wasm.sha256` before it is parsed, and runs it
 on WasmKit, a WebAssembly interpreter written in Swift. Nothing is compiled
 to machine code at run time, so no JIT entitlement is needed on iOS.
 
+**Building from a checkout of this branch:** `aprv.wasm` is not committed
+until the release module lands; copy the module whose SHA-256
+`aprv.wasm.sha256` names into `Sources/ApplePurchaseReceiptVerifier/Resources/`
+first, or the build stops with a missing-resource error.
+
 The Swift code holds no parser, no cryptography and no trust decision: it
 reads the clock, copies the input into the module, and turns the module's
 JSON answer into the types below. A hostile receipt meets the module inside
@@ -313,22 +318,26 @@ receipts nest 9 levels deep in the envelope.
 ## Speed
 
 WasmKit interprets, so this is the slowest host of the nine ports. Measured
-on 2026-09-29 on a shared 4-vCPU x86-64 Linux guest (Swift 6.3.3, WasmKit
-0.4.1, release build, software bounds checking), counted per CPU-second of
-the process because the machine was busy with other work:
+on 2026-09-29 with `swift run -c release --package-path swift/bench bench
+--threads` on a shared 4-vCPU x86-64 Linux guest (Swift 6.3.3, WasmKit
+0.4.1, software bounds checking), counted per CPU-second of the process
+because other work shared the machine:
 
 | Call | Per CPU-second | CPU per call |
 |---|---:|---:|
-| `verifyReceipt`, a genuine sandbox receipt (G5 chain) | about 37 | about 27 ms |
-| `verifySignedData`, the fixture StoreKit 2 transaction | about 9 | about 110 ms |
+| `verifyReceipt`, a genuine sandbox receipt (G5 chain) | 37 to 40 | 25 to 27 ms |
+| `verifySignedData`, the fixture StoreKit 2 transaction | 9 to 10 | 99 to 108 ms |
 
-Four threads on one shared `Verifier` scale with the cores that are free:
-each call runs on its own instance, and nothing is locked while the module
-runs. Start-up: checking and parsing the module takes 70 to 130 ms once per
-process, an instance and its `init` about 10 to 20 ms, and the first call on
-an instance about 150 ms more, because WasmKit translates each function on
-first use. Measure on your own hardware with
-`APRV_BENCH=1 swift test -c release -Xswiftc -enable-testing --filter MeasurementTests/testSpeed`.
+A JWS costs about 100 ms of CPU here, which is the project's guideline of
+about 10 verifications per second per core, with no margin on this machine.
+If you verify StoreKit 2 transactions at volume, measure on your own
+hardware first. Four threads on one shared `Verifier` scale with the free
+cores (each call runs on its own instance, and nothing is locked while the
+module runs): 99 to 149 receipts and 26 to 34 JWS per second on four busy
+vCPUs. Start-up: the first `Verifier` of a process checks and parses the
+module in 45 to 65 ms; the first call on an instance then takes about
+150 ms, because WasmKit translates each function on first use, and later
+receipt calls about 25 ms.
 
 ## Thread safety
 
