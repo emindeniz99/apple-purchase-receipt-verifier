@@ -143,8 +143,9 @@ What runs, on Java 8 and on every Endive JDK:
 
 - `ServerEngineTest`: the managed child through `executable(path)`, the
   spike's 13 managed-mode checks: start on loopback with the token on
-  stdin, the operations, 401 without or with a wrong token, 413 as
-  `TOO_LARGE`/21002, restart after `SIGABRT` and after `SIGKILL`,
+  stdin, the operations, 401 without or with a wrong token, 413 answered
+  as the core answers an input over its cap (`TOO_LARGE`/21002),
+  restart after `SIGABRT` and after `SIGKILL`,
   `close()` stops the child, and the round-trip timings (`BENCH` lines).
 - `ServerUrlTest`: the spike's 6 URL-mode checks against a standalone
   `aprv serve`, a wrong token refused at `create` (and `INTERNAL_ERROR`
@@ -158,53 +159,69 @@ What runs, on Java 8 and on every Endive JDK:
   deleted, not started; HTTPS only; unsafe cache directories refused.
 - `ServerSourcesTest`: `maven()` alone, `github()` alone (fails while
   this version has no release asset), the first working source used, every
-  reason in order when none works, the probe off.
+  reason in order when none works, the probe off, and a root the module
+  refuses (the child exits 2; the module's `init` answer comes back, and
+  `create` throws `IllegalArgumentException` as on Endive).
 - `ServerProblemTest` (no binary needed): 401, 413 and 500 `WASM_TRAP` /
   `ABI_ERROR` / non-problem bodies, the clock read once per call and sent
-  as `X-Aprv-Now-Ms`, a throwing clock, a roots mismatch, the mountinfo
-  parser behind `noexec` detection.
+  as `X-Aprv-Now-Ms`, a throwing clock, a roots mismatch, the 413 answer,
+  the roots-refusal parser, the mountinfo parser behind `noexec`
+  detection.
 - `ServerNoexecTest`: mounts a `noexec` tmpfs and checks the advice a user
   gets. Mounting needs root, so on a GitHub runner it is reported
   **skipped** with the reason. To run it there, add a step
   `sudo -E mvn -B -f java-wasm test -Dtest=ServerNoexecTest -Dsurefire.failIfNoSpecifiedTests=false -Daprv.server.linux-x86_64="$APRV_SERVER"`.
 - `ServerConformanceCasesTest`: the 311 cases through the server engine,
-  one managed child per root set.
+  one managed child per root set. The 33 `decodeBase64` cases have no
+  route of their own on the server; like Endive's, they go through
+  `verifyReceipt` and `verifySignedData` (see `ConformanceCases`).
 - `EngineApiTest`'s Java 8 test runs the default path, `maven()` from the
   classifier directory, so it writes `~/.cache/aprv` on the runner.
 
 Temurin 8 moves to Zulu or Corretto 8 before Temurin 8 builds end in late
 2026 (R25).
 
-While the binary is lane B's stand-in (its `/v1/info` names the component
-`d507c2b2...86ed30`, the 0.6 core), the 311 cases apply
-`stand-in-differences-server.txt`: 218 ids, the 0.6 module's differences
-without the three receipt size-cap cases, which the server answers with
-413 before the core sees the input. With the release server every case must pass; delete
-the list then.
+Every case must pass: the stand-in list of the 0.6 server is gone.
 
-### Measured in lane E (2026-09-29, the stand-in server)
+The corpus through the server engine is `APRV_SERVER=PATH
+scripts/corpus.sh ...` (see `java-wasm-endive`): one managed child per
+`init` configuration, each call one request with its pinned clock. The
+27 calls over the server's 3,145,728-byte body cap get 413 before the
+module sees them, and the engine answers them as the module does, so the
+rows must still equal the module's reference rows byte for byte.
 
-Same shared 4-CPU machine, load average about 4 to 5:
+### Measured in lane E (2026-09-29, the G1 server)
+
+Lane B's G1 build, sha256 `972cd42d...18f0c55`, 11,989,936 bytes,
+`component_sha256` `8f758c0b...4460dd5`; the same shared 4-CPU machine,
+load average 7 to 21. `scripts/g1.sh` with `APRV_SERVER` and `JAVA8`:
 
 - `mvn -B -f java-wasm verify -Daprv.server.linux-x86_64=...` on JDK 21:
-  380 tests, 0 failures, 2 skipped (the two Java-8-only tests), 1 min
-  45 s. `ClassFileTest`: 52 classes at major 52, 34 at major 55; 494
-  classes scanned, no native method or native-loading reference.
-- Java 8 leg (Temurin 8u504): 379 tests, 0 failures, 1 skipped (the
-  Java-11-only test), 59 s.
-- The 311 cases: Endive on JDK 21, 90 passed and 221 stand-in
-  differences; the server engine on JDK 21 and on Temurin 8, 93 passed
-  and 218 stand-in differences; 0 failed and 0 skipped everywhere.
-- From Temurin 8: child start plus `/v1/info` 31 ms (126 ms on JDK 21);
-  `GET /healthz` round trip 84 us; g5 through the child mean 8.55 ms,
-  p50 7.63 ms, p99 16.1 ms, 117 per second on one thread, 277 per second
-  on four; the call that restarted a crashed child 27 ms. The spike
-  measured 3.87 ms mean on an idle machine with its own server build;
-  rerun on a quiet runner before comparing.
-- `-Pclasspath-guard`: `ClasspathGuardJarsIT` 3 of 3 (it ignores the
-  classifier jars in `target/`).
-- Sizes: the jar 1,870,967 bytes; the `linux-x86_64` classifier jar
-  4,179,407 bytes, holding the 11,891,632-byte binary and its `.sha256`.
+  716 tests (the 311 cases on both engines), 0 failures, 2 skipped (the
+  two Java-8-only tests), 3 min 32 s.
+- Java 8 leg (Temurin 8u504): 382 tests, 0 failures, 1 skipped (the
+  Java-11-only test), 1 min 37 s.
+- The 311 cases through the server engine: 311 of 311 on JDK 21 and on
+  Temurin 8 (33 of them `decodeBase64` through the public API), 0 failed,
+  0 skipped.
+- Corpus through the server engine against the module's reference rows,
+  on JDK 21 with 1 and 4 threads and on Temurin 8 with 1: cases 153/153,
+  hostile 811/811, algorithms 22/22, substrate 193/193, fuzz 5,000/5,000
+  identical, 0 problems: 6,179 of 6,179, of which 27 were 413s answered as
+  the module answers them (cases 7, hostile 2, fuzz 18) and 1 a roots
+  refusal at start (hostile). 223 children in all.
+- g5 round trip through the child, at load 7 to 8: from Temurin 8 mean
+  8.2 ms (p50 7.4, p99 13.7), 122 per second on one thread, 288 on four;
+  from JDK 21 mean 8.6 ms (p50 8.2, p99 17.0), 116 per second. `GET
+  /healthz` 56 us, child start plus `/v1/info` 123 ms. The transport is
+  under 0.1 ms of that, so the rest is the verification itself, which
+  takes about 9 ms in process on Endive on the same machine too. The
+  spike measured 3.87 ms on an idle machine with its own build; rerun on
+  a quiet runner before comparing.
+- Sizes: the jar 1,925,790 bytes; the `linux-x86_64` classifier jar
+  4,210,771 bytes, holding the 11,989,936-byte binary and its `.sha256`.
+- `-Pclasspath-guard` was not re-run on G1 (3 of 3 on the stand-in; it
+  does not depend on the module).
 
 ## JVM consumers (MIGRATION 3.9)
 
@@ -220,7 +237,8 @@ mvn -B -f java/samples/spring-boot-smoke/pom.xml test -Dverifier.version="$versi
 ```
 
 Both consumers need Java 17 or later, so on them the `-wasm` artifact runs
-Endive. Run locally on JDK 21 on 2026-09-29: with the main artifact,
+Endive; neither exercises the server engine, which only Java 8 picks by
+default. Run locally on JDK 21 on 2026-09-29: with the main artifact,
 `jvm-interop` 11 of 11 and the smoke 5 of 5 on Boot 4.0.8 and 4.1.1; with
 `-wasm` on the G1 module, the same: 11 of 11, and 5 of 5 on each Boot
 line.
@@ -309,7 +327,7 @@ it on a big-endian JVM yet.
   (mode 755) with its `.sha256`, fails if `SHA256SUMS` does not pin it,
   and attaches the jar with that classifier. `SHA256SUMS` (the release's,
   in `sha256sum`'s format) goes into the main jar as the pins `maven()` and
-  `github()` check; the committed one pins only the stand-in x86_64 binary.
+  `github()` check; the committed one pins only lane B's G1 x86_64 binary.
   Only the x86_64 jar has been built here (4.2 MB); the aarch64 one is
   built the same way from lane D's binary. Neither binary nor classifier
   jar is ever committed.
