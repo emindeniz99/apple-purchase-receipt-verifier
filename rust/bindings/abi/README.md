@@ -62,18 +62,24 @@ and every such path ends in a trap: the hook's write to stderr traps in
 
 A `list<u8>` argument is the host's to place: the canonical ABI requires
 the range to come from `cabi_realloc`, and the module does not check it.
-The core reads its input front to back and decides as early as it can: a
-length over the input cap (3,145,728 bytes for a receipt or an endpoint
-body, 262,144 for a JWS) is `TOO_LARGE` before any byte is read, and base64
-that goes wrong early is `MALFORMED` without the rest being read. So a raw
-call whose range runs past the end of linear memory answers a value when
-those rules decide before the first byte outside memory, and traps
-(out-of-bounds access) when a byte outside memory is read; a range whose
-length overflows 32 bits traps in the lift. No read outside linear memory
-can happen without a trap. The list is also freed with the module's
-allocator after the call, so a range the host did not allocate corrupts
-that instance's heap, as it would for any canonical-ABI guest; hosts built
-on a bindings generator cannot make such a call.
+Every cap is decided on the input's length before a byte of it is read (a
+length over the input cap, 3,145,728 bytes for a receipt or an endpoint
+body and 262,144 for a JWS, is `TOO_LARGE` or `{"status":21002}`), so a
+host may lower at most 3,145,729 bytes of any input and get the answer
+the whole input would get, without copying the rest into linear memory.
+
+A range that did not come from `cabi_realloc` is the host's bug, and the
+module does not turn it into a trap. One that runs past the end of linear
+memory or wraps 32 bits may answer a value (the length alone decided it:
+`TOO_LARGE` for a length of `0xFFFFFFF8`), trap on the first byte read
+outside memory, or corrupt the instance's heap: after the call the list is
+freed with the module's allocator, which on a pointer it never allocated
+corrupts the heap or traps. The same holds for the answer to `random-get`:
+its length is checked (any length but the one asked traps before a byte is
+read), its pointer is not. `cabi_realloc` itself accepts any old pointer
+and alignment. Component runtimes check ranges, and every wrapper in this
+repository lowers through `cabi_realloc`; a hand-rolled host that cannot
+vouch for a call discards the instance after it.
 
 `_initialize` need not be called: each export runs the module's one
 constructor on its first call. Calling it first is harmless; calling it
