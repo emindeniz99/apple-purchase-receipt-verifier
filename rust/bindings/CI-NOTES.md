@@ -107,6 +107,38 @@ Add to the job, after the build:
 13. `cargo deny --manifest-path ffi/Cargo.toml` now reads the workspace's
     graph; `--manifest-path Cargo.toml` from `rust/` covers it.
 
+Lane A3 (MIGRATION.md 1.13, review round 2 F3 and F4) adds:
+
+13a. **The header check** on one OS (Linux): `rust/ffi/check-header.sh`
+     with cbindgen 0.29.0 on PATH (`cargo install cbindgen --locked
+     --version 0.29.0`); it refuses another version rather than diffing.
+     It replaces any step that regenerates the header and diffs by hand.
+13b. **The exported-symbol test** (`rust/ffi/tests/exported_symbols.rs`)
+     runs inside `cargo test` on Linux and macOS and needs `nm` on PATH
+     (binutils; the Xcode command-line tools on macOS). It builds nothing
+     itself: it reads the cdylib `cargo test` already built, so the job
+     must not pass `--lib` alone. On Windows it compiles to nothing.
+13c. **The harnesses now call the ten-symbol ABI**: both drive the
+     `_bytes` calls and run the `decodeBase64` groups. The C++ harness
+     reads the manifest `tools/gen-cases-manifest.mjs` writes, which now
+     carries `probe=` lines; regenerate it in the job (it already does).
+     Add, after the ctypes run on Linux:
+
+     ```sh
+     A="$RUNNER_TEMP/ffi-answers"
+     python3 rust/ffi/tests/conformance.py rust/target/debug --answers "$A"
+     for op in verify-receipt verify-signed-data; do
+       node tools/validate-wire.mjs \
+         "rust/bindings/wire/schema/$op-result.schema.json" "$A/$op.jsonl"
+     done
+     ```
+
+     so the C ABI's documents are held to the wire schema as the
+     module's are.
+13d. **The Elixir NIF example** still drives the 0.7 C-string calls and
+     was not built in this lane (no Elixir toolchain); its job step is
+     unchanged.
+
 ## Dependabot
 
 14. Drop the cargo entry for `/rust/ffi` (it has no lockfile of its own
