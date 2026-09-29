@@ -112,9 +112,9 @@ class PackagingTest < Minitest::Test
     output
   end
 
-  def unbundled(&block)
+  def unbundled(&)
     return yield unless defined?(Bundler)
 
-    Bundler.with_unbundled_env(&block)
+    Bundler.with_unbundled_env(&)
   end
 end
