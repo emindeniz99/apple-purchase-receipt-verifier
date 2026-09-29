@@ -142,6 +142,42 @@ and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   the toolchain's CLI) and wazero `>= 1.10` (each raises Go's 1.22
   floor).
 
+## Why the smoke jobs fetch the tag themselves
+
+`post-publish-smoke.yml` runs on `workflow_run` after `release.yml`, and
+every leg tests the published version with the smoke program and
+fixtures of the release tag. The tag name comes from the triggering
+run (`github.event.workflow_run.head_branch`), which CodeQL's
+`actions/untrusted-checkout` query treats as a pull request's head: any
+`actions/checkout` whose `ref:` is derived from it is reported as a
+checkout of untrusted code, however the value was checked on the way.
+
+The `resolve` job is the actual control. It accepts only a release run
+that a tag push or a dispatch started (`release.yml` has no
+`pull_request` trigger), only a version made of digits, letters, dots
+and hyphens, and only a `v<version>` that exists as a tag of this
+repository (`gh api repos/<repo>/git/ref/tags/v<version>`). The ref is
+therefore repository-controlled.
+
+Because CodeQL's taint tracking cannot see that check, each leg checks
+out the default ref with `actions/checkout` and then switches to the
+tag in a run step, `git fetch --depth 1 origin refs/tags/$REF` and
+`git checkout --detach`, with the name in an environment variable. The
+tree each leg tests is the same as before, the credentials are still
+not persisted, and no permission changed. The repository is public, so
+the fetch needs no token. The same shape is used in all ten legs, not
+only the two CodeQL reported, so the workflow has one way to reach the
+tag.
+
+## release-please.yml's literal branch
+
+The release branch jobs check out `release-please--branches--main` by
+its literal name rather than by the branch the release-please action
+reports. The release-please job fails if the action opened any other
+branch, and `release-branch-server` and `refresh-wasm-copies` fail
+unless the branch still points at the commit `release-branch-wasm`
+built.
+
 ## Owner-side and open
 
 - Repository variables: `APRV_PUBLISH_CRATES` (OD-03),
