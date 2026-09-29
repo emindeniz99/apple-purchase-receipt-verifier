@@ -212,10 +212,12 @@ fn run(
     first_linked.or(first)
 }
 
-/// The certificates of `untrusted` that issued the target, or issued a
-/// certificate already linked this way, by name and by signature
-/// ([`Certificate::issued_by`]), found in at most `max_intermediates` + 1
-/// rounds and returned in their order in `untrusted`.
+/// The certificates of `untrusted` that signed the target, or signed a
+/// certificate already linked this way, under the name it names as its
+/// issuer ([`Certificate::signed_by`]), found in at most
+/// `max_intermediates` + 1 rounds and returned in their order in
+/// `untrusted`. An issuer's `keyUsage` is not judged here: OpenSSL's lookup
+/// does not judge it either, and reports it on the path (not a CA).
 ///
 /// OpenSSL's `find_issuer` takes the first certificate of `untrusted` that
 /// `X509_check_issued` pairs with the current one, and does not try another
@@ -246,7 +248,7 @@ fn linked_above(
             .filter(|candidate| {
                 frontier
                     .iter()
-                    .any(|below| !below.same_as(candidate) && below.issued_by(candidate))
+                    .any(|below| !below.same_as(candidate) && below.signed_by(candidate))
             })
             .collect();
         if next.is_empty() {

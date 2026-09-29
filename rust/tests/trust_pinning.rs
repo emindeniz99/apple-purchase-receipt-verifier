@@ -701,3 +701,63 @@ fn a_same_named_intermediate_placed_first_in_the_bag_does_not_decide_the_path() 
         assert_eq!(failure.reason(), Reason::UntrustedChain, "{failure}");
     }
 }
+
+/// The bag is narrowed by signature alone, not by `keyUsage`: an
+/// intermediate whose `keyUsage` lacks `keyCertSign` still signed the leaf,
+/// so OpenSSL still builds the path through it and reports it as not a CA,
+/// as before the narrowing. A narrowing through `X509_check_issued`, which
+/// judges `keyUsage`, dropped it and reported no path at all (seven corpus
+/// rows' messages, round 3).
+#[test]
+fn an_intermediate_without_key_cert_sign_is_still_reported_as_not_a_ca() {
+    use common::{der, der_int, der_oid, der_seq, mint};
+    let (root_key, intermediate_key, leaf_key) = (mint::key(71), mint::key(72), mint::key(73));
+    let root = TrustAnchor::from_der(&mint::certificate(
+        "KU Root", &root_key, "KU Root", &root_key, 1, true, None,
+    ))
+    .unwrap();
+    // keyUsage (critical) with digitalSignature only: 03 02 07 80.
+    let algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
+    let extensions = der_seq(&[
+        der_seq(&[
+            der_oid("2.5.29.19"),
+            der(0x01, &[0xFF]),
+            der(0x04, &der_seq(&[der(0x01, &[0xFF])])),
+        ]),
+        der_seq(&[
+            der_oid("2.5.29.15"),
+            der(0x01, &[0xFF]),
+            der(0x04, &der(0x03, &[0x07, 0x80])),
+        ]),
+        der_seq(&[der_oid(mint::WWDR_MARKER), der(0x04, &[0x05, 0x00])]),
+    ]);
+    let tbs = der_seq(&[
+        der(0xA0, &der_int(2)),
+        der_int(2),
+        algorithm.clone(),
+        mint::name("KU Root"),
+        der_seq(&[der(0x17, b"200101000000Z"), der(0x18, b"20991231000000Z")]),
+        mint::name("KU WWDR"),
+        mint::spki(&intermediate_key),
+        der(0xA3, &extensions),
+    ]);
+    let signature = root_key.sign_der(&tbs);
+    let intermediate = Certificate::from_der(&mint::assemble(tbs, algorithm, &signature)).unwrap();
+    let leaf = Certificate::from_der(&mint::certificate(
+        "KU Leaf",
+        &leaf_key,
+        "KU WWDR",
+        &intermediate_key,
+        3,
+        false,
+        Some(mint::RECEIPT_SIGNER_MARKER),
+    ))
+    .unwrap();
+    let roots = [root];
+    let authenticated = path::authenticated_top_down(&[leaf.clone(), intermediate], &roots);
+    let failure = path::receipt_path(&leaf, &authenticated, &roots, now_millis()).unwrap_err();
+    assert_eq!(
+        failure.to_string(),
+        "UNTRUSTED_CHAIN: an intermediate is not a CA"
+    );
+}
