@@ -20,7 +20,9 @@ work.
 | C node | `lane/host-node` | steps 4.1 to 4.5 | started 2026-09-29 |
 | C go | `lane/host-go` | steps 4.6, 4.7 | started 2026-09-29 |
 | C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | started 2026-09-29 |
-| C python, swift, ruby, dotnet | `lane/host-*` | Phase 5 | wave 2 |
+| C python | `lane/host-python` | steps 5.1 to 5.3 | started 2026-09-29 |
+| C ruby | `lane/host-ruby` | step 5.5 | started 2026-09-29 |
+| C swift, dotnet | `lane/host-swift`, `lane/host-dotnet` | steps 5.4, 5.6 | wave 2, after wave 1 frees CPU and disk |
 | D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | started 2026-09-29 |
 | E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | waits on B |
 | F php | `lane/php` | Phase 6 | waits on B |
