@@ -159,3 +159,20 @@ Lane A3 (MIGRATION.md 1.13, review round 2 F3 and F4) adds:
 17. The lock step after release-please: `cargo update --workspace` in
     `rust/` now covers the C ABI too; drop any `rust/ffi` lock update (A1's
     item 13 in `rust/openssl/CI-NOTES.md` named one).
+
+## Phase 7 (lane P7-code)
+
+The wrappers' copies of the roots and their generators are gone (Go, Node,
+Python, Ruby, .NET, Swift; PHP follows), so the two root gates reach their
+final form. Only `.github/` changes are listed; the tools changed on the
+lane branch.
+
+| Where | Change |
+|---|---|
+| `ci.yml` `one-implementation` | `node tools/check-one-implementation.mjs --enforce all` replaces the per-language list (`--enforce node,python,go,swift,ruby,dotnet,php,java-wasm`). The two are the same set today; `all` also covers a language added to the tool later. The allowlist is down to `go/config.go`, `dotnet/.../Config.cs`, `dotnet/.../Internal/Certificates.cs` and the four `java-wasm` files; an entry whose file stops using its token is reported as stale, so the list only shrinks. |
+| `ci.yml` `conformance` (`check-cert-copies.mjs`) | unchanged command. It now finds `rust/certs` alone (with `php/certs` until the PHP step lands). |
+| `ci.yml` jobs to delete | `node-roots-generated`, `go-generate-check`, `dotnet-roots`, the Ruby drift step in `ruby` (`script/gen_roots.rb`) and, with the PHP step, the drift step in `php-static` (`tools/gen-roots.php`). |
+| `ci.yml` `go-lint` | `--exclude-dir=gencerts` in the "no system trust store, no network" grep now excludes nothing; drop it. |
+| `ci.yml` `rust-ffi` | the header step's comment ("the same regenerate-and-diff guard the generated roots files elsewhere in this workflow get") names generators that no longer exist. |
+| `release.yml` `tag-go-module` | the zip check drops `roots.go` and the three `roots/certs/*.cer` entries. |
+
