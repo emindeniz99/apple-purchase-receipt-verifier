@@ -3,7 +3,7 @@
 Status on 2026-09-29: **accepted plan, rewritten on the Wasm-first
 basis; the export ABI fixed as the canonical ABI over WIT (R23) and the
 standards of R34 adopted.** 0.7.0 shipped on 2026-09-28 (tag `v0.7.0`, merged into
-`plan/one-rust-core`) with nine hand-written implementations of one API.
+`rust-core`) with nine hand-written implementations of one API.
 The Rust core lands in **0.8.0 under the same API and the same
 `fixtures/cases.json`**. Every package moves in that one release (R19).
 Breaking changes stay allowed before 1.0, and floors may rise (R30).

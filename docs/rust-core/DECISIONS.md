@@ -323,7 +323,7 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 **Status: accepted** (owner, 2026-09-25; restated 2026-09-28).
 
 - 0.7.0 shipped from `main` on 2026-09-28 (tags `v0.7.0` and `go/v0.7.0`)
-  and is merged into `plan/one-rust-core`. It is not part of the
+  and is merged into `rust-core`. It is not part of the
   migration.
 - Every package moves to the Rust core in one release, **0.8.0**, under
   the 0.7 API. The phases run one after another with their gates, and

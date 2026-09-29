@@ -1,6 +1,7 @@
 # Baseline: where the repository stands at 0.7.0 (2026-09-28)
 
-The migration starts from this snapshot: `plan/one-rust-core` at
+The migration starts from this snapshot: `rust-core` (then named
+`plan/one-rust-core`) at
 `1af140f`, which merges `main` with 0.7.0. 0.7.0 was released on
 2026-09-28 (tags `v0.7.0` and `go/v0.7.0`, CHANGELOG.md). Registry states
 come from each registry's public API on 2026-09-28, except Maven Central,
