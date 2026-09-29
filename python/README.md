@@ -95,16 +95,24 @@ status table.
 bytes of a `.cer` file), for tests and for anyone who pins something other than
 Apple's roots. The module parses them when the `Verifier` is built, so a value
 that is not a certificate is a `ValueError` there, never a later verdict.
-`default_roots()` returns Apple's three pinned roots the same way.
+
+Apple's three roots are compiled into the module, and the package carries no
+copy of them: `Config.defaults().roots` is `None`, which the `Verifier` hands
+the module as an empty list meaning those three. To trust Apple's roots and one
+of your own, pass all of them, reading Apple's from its PKI page or the
+repository's `certs/`:
 
 ```python
-from apple_purchase_receipt_verifier import Config, Verifier, default_roots
+from pathlib import Path
 
-roots = [*default_roots(), open("my-test-root.cer", "rb").read()]
-verifier = Verifier(Config.create(roots=roots))
+from apple_purchase_receipt_verifier import Config, Verifier
+
+apple = [path.read_bytes() for path in sorted(Path("certs").glob("*.cer"))]
+verifier = Verifier(Config.create(roots=[*apple, Path("my-test-root.cer").read_bytes()]))
 ```
 
-`Verifier` fails at construction, never later, for an empty root set, a root the
+`Verifier` fails at construction, never later, for an empty root set (an
+explicitly empty collection, not `None`), a root the
 module refuses, or a module it cannot run (an ABI mismatch is a `RuntimeError`
 naming the version expected). The `verify_*` methods never raise. A trap inside
 the module, an answer the wrapper cannot read, and a `Config.clock` that
@@ -343,8 +351,10 @@ The API is the 0.7 API. What changed is what sits under it.
 
 - **Roots are DER `bytes`, not `cryptography` certificates.**
   `Config.create(roots=[cert.public_bytes(Encoding.DER)])` for a
-  `cryptography.x509.Certificate`; `default_roots()` returns `bytes` too.
-  Anything else is a `TypeError`.
+  `cryptography.x509.Certificate`. Anything else is a `TypeError`.
+- **`default_roots()` is gone, and `Config.defaults().roots` is `None`.**
+  Apple's three roots are compiled into the module, which trusts them when no
+  roots are given; the package no longer ships a copy to return.
 - **The dependencies are `wasmtime` alone.** `cryptography` and `asn1crypto`
   are no longer installed by this package.
 - **The first `Verifier` compiles a module** (see the top of this file).
@@ -369,7 +379,7 @@ every failure is a `VerificationResult`/`Failure` instead of a raised
 |---|---|
 | `ReceiptVerifier(roots, bundle_id).verify(b64)` | `Verifier(Config.create(roots=roots)).verify_receipt(b64)`, then compare `result.payload.bundle_id` yourself |
 | `JwsVerifier(roots, bundle_id, environments).verify_transaction(jws)` | `Verifier(Config.create(roots=roots)).verify_signed_data(jws)`, then compare `payload["bundleId"]` / `payload["environment"]` yourself |
-| `apple_receipt_roots()` / `apple_jws_roots()` | `default_roots()` (one function, one pinned set, for both paths) |
+| `apple_receipt_roots()` / `apple_jws_roots()` | `Config.defaults()` (one pinned set, for both paths) |
 | raised `VerificationError` with `.reason` | `VerificationResult.failure` (`Failure.reason`, `.message`, `.cause`); nothing raises |
 | `Reason.INVALID_RECEIPT_FORMAT`, `.INVALID_JWS_FORMAT` | `Reason.MALFORMED` |
 | `Reason.REQUEST_TOO_LARGE` | `Reason.TOO_LARGE` |

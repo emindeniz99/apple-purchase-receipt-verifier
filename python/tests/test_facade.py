@@ -271,8 +271,7 @@ class ModuleFileTest(unittest.TestCase):
 
     LOAD = "from apple_purchase_receipt_verifier import _host; _host.read_pinned_module()"
     START = (
-        "from apple_purchase_receipt_verifier import Config, Verifier, default_roots;"
-        "Verifier(Config.create(roots=default_roots()))"
+        "from apple_purchase_receipt_verifier import Config, Verifier;Verifier(Config.defaults())"
     )
 
     def test_a_missing_module_is_a_clear_error(self) -> None:
