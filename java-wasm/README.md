@@ -78,10 +78,15 @@ compiler, no interpreter, no native library. A test in this module reads
 every class file of the three jars and of jackson-core and finds no native
 method and no call that loads native code.
 
-- The first verifier in a JVM pays for loading the compiled module: 335
-  to 380 ms in the Endive evaluation, up to about a second on a busy
-  machine. Later instances take a few milliseconds each. The JIT then
-  needs some seconds of traffic before calls reach full speed.
+- The first verifier in a JVM pays for loading the compiled module and
+  starting its first instance: about 1.1 s measured on a busy 4-CPU
+  machine (the Endive evaluation measured 335 to 380 ms for the loading
+  alone on an idle one). Each later instance takes about 60 ms, and the
+  first call about 0.2 s. The JIT then needs some seconds of traffic
+  before calls reach full speed: about 9 ms per g5 receipt and 40 ms per
+  JWS on one thread, measured on that machine.
+- Each instance holds about 2 MiB of linear memory; the JVM's heap held
+  about 13 MiB after a GC with the module loaded and one instance live.
 - A `Verifier` keeps a small pool of module instances. Each call takes one
   of its own, so calls on several threads run in parallel, and an instance
   never serves two calls at once.
