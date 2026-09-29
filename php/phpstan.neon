@@ -13,6 +13,7 @@ parameters:
         - src
         - tests
         - bin
+        - tools/update-binaries.php
     excludePaths:
         # Subprocess scripts (a fake aprv, a fake server) that read JSON they wrote themselves.
         - tests/Support/fake-aprv.php
