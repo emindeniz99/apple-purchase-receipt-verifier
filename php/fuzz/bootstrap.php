@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Fuzz;
 
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
 use RuntimeException;
 
 /**
  * Shared setup for every target under `targets/`: the library's autoloader,
  * and a loader for the two generated fixture roots the anchor-set invariants
  * need.
+ *
+ * The targets fuzz the façade over the real `aprv` binary (`APRV_BIN`, or the
+ * one `bin/aprv-install` installed): the parsers live in the module, and only
+ * its answers reach PHP, so what these targets can find is a façade that
+ * throws, or answers something it should not.
  *
  * The fixture directory is located by walking up from this file, the same way
  * `tests/Support/Fixtures.php` does, so nothing under `fixtures/` is copied
@@ -34,6 +40,14 @@ final class FuzzFixtures
         }
 
         throw new RuntimeException('harness error: could not locate fixtures/cases.json by walking up from ' . __DIR__);
+    }
+
+    /** The one-shot CLI transport over the binary under test. */
+    public static function transport(): CliTransport
+    {
+        $binary = getenv('APRV_BIN');
+
+        return new CliTransport(is_string($binary) && $binary !== '' ? $binary : null);
     }
 
     /** Raw bytes of a file under `fixtures/`, addressed by its relative path. */

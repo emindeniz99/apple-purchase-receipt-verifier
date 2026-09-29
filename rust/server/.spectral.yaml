@@ -1,0 +1,11 @@
+# Spectral ruleset for openapi.yaml: every rule of Spectral's OpenAPI
+# ruleset (recommended and the rest), at its default severity, with one
+# rule off. CI runs
+#   npx @stoplight/spectral-cli lint --fail-severity=hint rust/server/openapi.yaml
+# so any other finding, down to a hint, fails the job.
+extends:
+  - [spectral:oas, all]
+rules:
+  # The contact is the issue tracker. The document names no mail address:
+  # nothing committed carries personal data.
+  contact-properties: off

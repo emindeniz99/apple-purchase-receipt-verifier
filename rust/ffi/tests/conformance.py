@@ -2,7 +2,7 @@
 """Runs fixtures/cases.json through the C ABI, from Python, over ctypes.
 
     cargo build --locked --manifest-path rust/ffi/Cargo.toml
-    python3 rust/ffi/tests/conformance.py <cargo target dir>/debug
+    python3 rust/ffi/tests/conformance.py <cargo target dir>/debug [--answers <dir>]
 
 The compiled harness in ../examples/cpp is the primary one; this exists for
 two reasons the C++ one cannot serve.
@@ -19,12 +19,17 @@ Second, it checks the pointers C++ cannot reach. `/receipt/bundle_id`,
 so the nested pointers the manifest generator drops for the C++ harness are
 covered rather than lost.
 
-Every case in the file runs, this harness and the C++ one alike, except the
-`decodeBase64` groups: they call a port's base64 decoders directly, and the
-ABI exposes no decoder, only whole verifications. Those are counted and
-printed as not reachable, never as passed. Any other case this adapter
-cannot run raises rather than being counted as a skip, and after the run
-every case id in the file must have run or be one of those counted groups.
+It drives the `_bytes` calls, which take a pointer and a length and answer
+the document aprv.wasm answers, so every case runs, the decodeBase64 groups
+included: a receipt-data text goes through `aprv_verify_receipt_bytes`, an
+x5c text as the three entries of a JWS header through
+`aprv_verify_signed_data_bytes`, and which side of the base64 rule a text
+landed on is read as tools/wasm-trap-host.mjs reads it (a decoder refusal
+names base64). Every document is checked to be the wire shape
+(`verified`, then `payload` or `reason` and `message`) with a status that
+agrees; `--answers <dir>` also writes them, one per line, for
+tools/validate-wire.mjs (verify-receipt.jsonl, verify-signed-data.jsonl).
+After the run every case id in the file must have run.
 """
 
 from __future__ import annotations
@@ -35,7 +40,7 @@ import json
 import re
 import sys
 import time
-from base64 import b64decode, b64encode
+from base64 import b64decode, b64encode, urlsafe_b64encode
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -86,17 +91,18 @@ def load_library(directory: Path) -> ctypes.CDLL:
     ]
     lib.aprv_verifier_new.restype = ctypes.c_void_p
     lib.aprv_verifier_free.argtypes = [ctypes.c_void_p]
-    for name in ("aprv_verify_receipt", "aprv_verify_signed_data"):
+    for name in ("aprv_verify_receipt_bytes", "aprv_verify_signed_data_bytes"):
         function = getattr(lib, name)
-        function.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(AprvResult)]
+        function.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.POINTER(AprvResult)]
         function.restype = ctypes.c_int32
-    lib.aprv_verify_receipt_endpoint.argtypes = [
+    lib.aprv_verify_receipt_endpoint_bytes.argtypes = [
         ctypes.c_void_p,
         ctypes.c_uint32,
         ctypes.c_char_p,
+        ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_void_p),
     ]
-    lib.aprv_verify_receipt_endpoint.restype = ctypes.c_int32
+    lib.aprv_verify_receipt_endpoint_bytes.restype = ctypes.c_int32
     lib.aprv_string_free.argtypes = [ctypes.c_void_p]
     return lib
 
@@ -248,8 +254,80 @@ def verifier_for(lib, directory: Path, registry: dict, case: dict):
     return verifier, keep
 
 
+ANSWERS: dict[str, list[str]] = {"verify-receipt": [], "verify-signed-data": []}
+
+
+def call_bytes(lib, verifier, function: str, data: bytes):
+    """(status, wire document) for one `_bytes` call; checks the document's
+    shape and that its verdict agrees with the status."""
+    result = AprvResult()
+    status = getattr(lib, f"aprv_{function.replace('-', '_')}_bytes")(verifier, data, len(data), ctypes.byref(result))
+    if status >= 100:
+        raise SystemExit(f"{function}: the call itself failed with {status}")
+    text = take_string(lib, result.json)
+    ANSWERS[function].append(text)
+    document = json.loads(text)
+    keys = list(document)
+    if status == OK:
+        if keys != ["verified", "payload"] or document["verified"] is not True:
+            raise SystemExit(f"{function}: status 0 with the document {text[:200]}")
+    elif keys != ["verified", "reason", "message"] or document["verified"] is not False or REASON_CODES.get(document["reason"]) != status:
+        raise SystemExit(f"{function}: status {status} with the document {text[:200]}")
+    return status, document
+
+
+def payload_text(document) -> str:
+    """What the checks read: the payload JSON (a JWS payload is the signed
+    text, which the wire carries as a string), or the failure document."""
+    if document["verified"] is not True:
+        return json.dumps(document)
+    payload = document["payload"]
+    return payload if isinstance(payload, str) else json.dumps(payload)
+
+
+def x5c_probe(text: str) -> bytes:
+    """A JWS whose header carries `text` as every x5c entry, as the trap host builds it."""
+    b64url = lambda b: urlsafe_b64encode(b).rstrip(b"=")
+    header = json.dumps({"alg": "ES256", "x5c": [text, text, text]}, separators=(",", ":")).encode()
+    return b64url(header) + b"." + b64url(b"{}") + b"." + b64url(b"signature")
+
+
+def run_decode(lib, case: dict) -> str:
+    """A decodeBase64 group through the verify calls; an empty string when
+    every text lands on its group's side of the rule."""
+    verifier = lib.aprv_verifier_new(None, None, 0, None)
+    problems = []
+    try:
+        for decoder in case["decoders"]:
+            for index, text in enumerate(case["input"]["texts"]):
+                if decoder == "receipt-data":
+                    status, document = call_bytes(lib, verifier, "verify-receipt", text.encode("utf-8"))
+                    refusal = "MALFORMED"
+                elif decoder == "x5c":
+                    status, document = call_bytes(lib, verifier, "verify-signed-data", x5c_probe(text))
+                    refusal = "INVALID_CERTIFICATE"
+                else:
+                    raise SystemExit(f'{case["id"]}: no decoder {decoder}')
+                refused = (
+                    document["verified"] is False
+                    and document["reason"] == refusal
+                    and (text == "" or re.search("base64", document["message"], re.I) is not None)
+                )
+                where = f"{decoder} texts[{index}] {json.dumps(text)[:40]}"
+                if document["verified"] is True:
+                    problems.append(f"{where} verified")
+                elif case["expected"]["status"] == "error" and not refused:
+                    problems.append(f'{where} not refused by the decoder: {document["reason"]} {document["message"]}')
+                elif case["expected"]["status"] == "ok" and refused:
+                    problems.append(f'{where} refused by the decoder: {document["message"]}')
+    finally:
+        lib.aprv_verifier_free(verifier)
+    return "; ".join(problems)
+
+
 def run_case(lib, directory: Path, registry: dict, case: dict):
-    """(status, raw JSON text) for one case."""
+    """(status, JSON text) for one case: the payload when verified, the
+    failure document otherwise, the body for the endpoint."""
     verifier, _keep = verifier_for(lib, directory, registry, case)
     try:
         operation = case["operation"]
@@ -262,23 +340,22 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
                 body = json.dumps({"receipt-data": receipt}).encode("utf-8")
             environment = ENDPOINT_ENVIRONMENTS[case["config"]["environment"]]
             response = ctypes.c_void_p()
-            status = lib.aprv_verify_receipt_endpoint(
-                verifier, environment, body, ctypes.byref(response)
+            status = lib.aprv_verify_receipt_endpoint_bytes(
+                verifier, environment, body, len(body), ctypes.byref(response)
             )
             if status != OK:
                 raise SystemExit(f'{case["id"]}: the endpoint call itself failed with {status}')
             return OK, take_string(lib, response.value)
         if operation == "verifyReceipt":
-            text = receipt_string(directory, registry, source["fixture"])
-            call = lib.aprv_verify_receipt
+            data = receipt_string(directory, registry, source["fixture"])
+            function = "verify-receipt"
         elif operation == "verifySignedData":
-            text = fixture_bytes(directory, registry, source["fixture"])
-            call = lib.aprv_verify_signed_data
+            data = fixture_bytes(directory, registry, source["fixture"])
+            function = "verify-signed-data"
         else:
             raise SystemExit(f'{case["id"]}: no adapter for operation {operation}')
-        result = AprvResult()
-        status = call(verifier, text, ctypes.byref(result))
-        return status, take_string(lib, result.json)
+        status, document = call_bytes(lib, verifier, function, data)
+        return status, payload_text(document)
     finally:
         lib.aprv_verifier_free(verifier)
 
@@ -325,10 +402,16 @@ def check(case: dict, status: int, text: str) -> str:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print(f"usage: {sys.argv[0]} <directory holding the built shared library>", file=sys.stderr)
+    args = sys.argv[1:]
+    answers = None
+    if "--answers" in args:
+        at = args.index("--answers")
+        answers = Path(args[at + 1])
+        del args[at : at + 2]
+    if len(args) != 1:
+        print(f"usage: {sys.argv[0]} <directory holding the built shared library> [--answers <dir>]", file=sys.stderr)
         return 2
-    lib = load_library(Path(sys.argv[1]))
+    lib = load_library(Path(args[0]))
     directory = fixtures_dir(Path(__file__).parent)
     file = json.loads((directory / "cases.json").read_text(encoding="utf-8"))
     if file["schemaVersion"] != 2:
@@ -347,18 +430,20 @@ def main() -> int:
 
     passed = failed = 0
     ran: set[str] = set()
-    not_reachable: set[str] = set()
     pinned_clocks = 0
     checked = 0
+    decode_groups = 0
     for case in file["cases"]:
-        if case["operation"] == "decodeBase64":
-            # The ABI has no base64 decoder to call, and a decoded string
-            # that is not a receipt fails verification as MALFORMED whichever
-            # way the decoder answered, so no ABI call could tell a right
-            # answer from a wrong one here.
-            not_reachable.add(case["id"])
-            continue
         ran.add(case["id"])
+        if case["operation"] == "decodeBase64":
+            decode_groups += 1
+            problem = run_decode(lib, case)
+            if problem:
+                print(f'FAIL  {case["id"]}: {problem}', file=sys.stderr)
+                failed += 1
+            else:
+                passed += 1
+            continue
         if case.get("clock"):
             pinned_clocks += 1
         expected = case["expected"]
@@ -383,15 +468,18 @@ def main() -> int:
 
     print(f"{passed} passed, {failed} failed, 0 skipped ({pinned_clocks} pin a clock)")
     print(f"{checked} expected fields and lengths checked, nested pointers included")
-    print(
-        f"{len(not_reachable)} decodeBase64 groups not reachable: the ABI exposes no base64 decoder"
-    )
+    print(f"{decode_groups} decodeBase64 groups through the verify calls")
+    if answers is not None:
+        answers.mkdir(parents=True, exist_ok=True)
+        for function, lines in ANSWERS.items():
+            (answers / f"{function}.jsonl").write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+        print(f"{sum(len(v) for v in ANSWERS.values())} documents written to {answers}")
     if passed == 0:
         print("no case ran", file=sys.stderr)
         return 2
-    # Coverage self-check: every case id in the parsed file ran or is one of
-    # the counted decodeBase64 groups, never compared against a literal count.
-    missing = [c["id"] for c in file["cases"] if c["id"] not in ran | not_reachable]
+    # Coverage self-check: every case id in the parsed file ran, never
+    # compared against a literal count.
+    missing = [c["id"] for c in file["cases"] if c["id"] not in ran]
     if missing:
         print(
             f"{len(missing)} of {len(file['cases'])} cases did not run: {', '.join(missing)}",

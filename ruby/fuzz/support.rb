@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "openssl"
-
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "apple_purchase_receipt_verifier"
 
@@ -39,8 +37,18 @@ module FuzzSupport
     end
 
     # @param relative [String] a path under fixtures/, e.g. "generated/jws-root.der"
-    def fixture_certificate(relative)
-      OpenSSL::X509::Certificate.new(File.binread(File.join(fixtures_root, relative)))
+    # @return [String] the DER of a fixture trust anchor
+    def fixture_der(relative)
+      File.binread(File.join(fixtures_root, relative))
+    end
+
+    # The DER of Apple's three published roots: the repository's canonical
+    # copy, since the gem carries them inside aprv.wasm and no longer beside
+    # the code.
+    #
+    # @return [Array<String>]
+    def apple_roots_der
+      Dir[File.join(fixtures_root, "..", "certs", "*.cer")].map { |path| File.binread(path) }
     end
 
     # Runs one library call and says whether it accepted or rejected.

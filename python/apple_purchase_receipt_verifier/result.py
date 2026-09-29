@@ -12,9 +12,11 @@ T = TypeVar("T")
 class Failure:
     """Why a verification failed. ``message`` is safe to log as is, never
     embeds raw input and is not meant to be parsed; its wording may change
-    between releases. ``cause`` is the inner exception behind
-    :attr:`~.reason.Reason.UNREADABLE_PAYLOAD` and
-    :attr:`~.reason.Reason.INTERNAL_ERROR`; ``None`` for every other reason.
+    between releases. ``cause`` is the inner exception behind an
+    :attr:`~.reason.Reason.INTERNAL_ERROR` raised by this package (a trap of
+    the Wasm module, a clock that failed); ``None`` for every other reason,
+    :attr:`~.reason.Reason.UNREADABLE_PAYLOAD` included: the module's message
+    says what did not parse.
     """
 
     reason: Reason

@@ -1,0 +1,3 @@
+# The embedded module and its checksum are bytes, never text.
+internal/wasm/aprv.wasm -text
+internal/wasm/aprv.wasm.sha256 -text

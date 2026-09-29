@@ -1,21 +1,20 @@
 """Loads the Apple root certificates bundled with this package (copies of
 the public roots from https://www.apple.com/certificateauthority/), used by
-both verification paths. Production trust anchors; tests substitute their
+every verification path. Production trust anchors; tests substitute their
 own.
 
 The anchors are fingerprint-pinned: :func:`default_roots` checks each
 bundled DER file's SHA-256 digest against the value below before it is
-trusted, so a corrupted or substituted resource fails loudly instead of
+handed on, so a corrupted or substituted resource fails loudly instead of
 silently becoming a fourth root. Apple deliberately documents the JWS chain
 as ending in "an Apple root certificate" (not a specific one) and its
 guidance is to trust every root on the PKI page, so anchoring on a single
-root would break silently if Apple re-anchored a path.
+root would break silently if Apple re-anchored a path. The module parses
+the roots; this file only reads and pins them.
 """
 
 import hashlib
 from pathlib import Path
-
-from cryptography import x509
 
 _CERTS = Path(__file__).parent / "certs"
 
@@ -31,7 +30,7 @@ _PINNED_SHA256 = {
 }
 
 
-def _load(name: str, expected_sha256: str) -> x509.Certificate:
+def _load(name: str, expected_sha256: str) -> bytes:
     try:
         der = (_CERTS / name).read_bytes()
     except OSError as e:
@@ -42,16 +41,13 @@ def _load(name: str, expected_sha256: str) -> x509.Certificate:
             f"bundled Apple root {name} has SHA-256 {actual}, expected "
             f"{expected_sha256}: the pinned Apple roots have been replaced"
         )
-    try:
-        return x509.load_der_x509_certificate(der)
-    except ValueError as e:
-        raise RuntimeError(f"bundled Apple root {name} does not parse") from e
+    return der
 
 
-def default_roots() -> "tuple[x509.Certificate, ...]":
-    """Apple's three pinned production roots, in a fixed order.
+def default_roots() -> "tuple[bytes, ...]":
+    """Apple's three pinned production roots as DER bytes, in a fixed order.
 
-    :raises RuntimeError: if a bundled root is missing, does not parse, or
-        does not match its pinned fingerprint
+    :raises RuntimeError: if a bundled root is missing or does not match its
+        pinned fingerprint
     """
     return tuple(_load(name, digest) for name, digest in _PINNED_SHA256.items())

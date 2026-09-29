@@ -55,6 +55,9 @@ certs/** -text
 /php/composer.json -export-ignore
 /php/LICENSE -export-ignore
 /php/README.md -export-ignore
+/php/bin -export-ignore
+/php/bin/aprv-install -export-ignore
+/php/binaries.json -export-ignore
 /php/certs -export-ignore
 /php/certs/** -export-ignore
 /php/src -export-ignore
