@@ -232,7 +232,7 @@ work.
 - Lane Ruby: `VerificationError` (private) removed; new public
   `AbiMismatchError`, `ModuleIntegrityError`, `TrapError`. The gemspec
   floor is open-ended (`wasmtime >= 48.0.1`), as R27's rule for Python.
-  Its commits carry the Sonnet 5.5 and session trailers but not the
+  Its commits carry the lane model's and the session trailers but not the
   orchestrator's; attribution is truthful, so the history stands. It
   wrote an evidence note (`2026-09-29-ruby-host`) that the integrator
   audits before the merge.
