@@ -1,10 +1,10 @@
-import Crypto
 import Foundation
 import XCTest
 @testable import ApplePurchaseReceiptVerifier
 
 // Runs fixtures/cases.json — the normative cross-language conformance
-// vectors for the 0.7 API — against this implementation. The adapter below
+// vectors for the 0.7 API — against this package, which is aprv.wasm on
+// WasmKit behind the 0.7 API. The adapter below
 // knows nothing about any individual case: it loads the file, resolves
 // fixture ids to bytes, builds a Verifier from the generic config, dispatches
 // on "operation", and evaluates "expected" against the result. A vector that
@@ -75,7 +75,7 @@ private struct Vectors {
         guard let expected = fixtures[id]?["contentSha256"] as? String else {
             throw HarnessError("fixture \"\(id)\" registers no contentSha256")
         }
-        let actual = Data(SHA256.hash(data: decoded)).map { String(format: "%02x", $0) }.joined()
+        let actual = SHA256.hex(decoded)
         guard actual == expected.lowercased() else {
             throw HarnessError(
                 "fixture \"\(id)\" has content sha256 \(actual), but cases.json records \(expected)")
@@ -162,10 +162,10 @@ private struct Vectors {
 private func clockMillis(_ kase: [String: Any]) throws -> Int64? {
     guard let clock = kase["clock"] as? [String: Any] else { return nil }
     guard let text = clock["now"] as? String else { throw HarnessError("case clock has no \"now\"") }
-    guard let millis = parseReceiptDate(text) else {
+    guard let date = ISO8601DateFormatter().date(from: text) else {
         throw HarnessError("clock.now \"\(text)\" is not an ISO-8601 instant this harness can parse")
     }
-    return millis
+    return Int64((date.timeIntervalSince1970 * 1000).rounded())
 }
 
 // MARK: - JSON pointers (RFC 6901 + the `[key=value]` extension)
@@ -321,17 +321,24 @@ final class ConformanceCasesTests: XCTestCase {
         let selected = vectors.cases.filter { ($0["operation"] as? String) == operation }
         XCTAssertFalse(selected.isEmpty, "cases.json carries no \(operation) case")
         var ran = Set<String>()
+        var failed: [String] = []
         for kase in selected {
             let id = kase["id"] as? String ?? "<case without an id>"
             ran.insert(id)
+            let before = testRun?.totalFailureCount ?? 0
             do {
                 try runOne(kase, id: id, operation: operation, vectors: vectors)
             } catch {
                 XCTFail("harness error: \(id): \(error)")
             }
+            if (testRun?.totalFailureCount ?? 0) > before { failed.append(id) }
         }
         let missing = selected.compactMap { $0["id"] as? String }.filter { !ran.contains($0) }
         XCTAssertTrue(missing.isEmpty, "\(missing.count) \(operation) cases did not run: \(missing.joined(separator: ", "))")
+        // One line per case that failed, so a run's differences can be listed
+        // by id (the stand-in module's, until the release build lands).
+        for id in failed { print("conformance: FAILED \(operation) \(id)") }
+        print("conformance: \(operation): \(ran.count) ran, \(ran.count - failed.count) passed, \(failed.count) failed")
     }
 
     private func runOne(_ kase: [String: Any], id: String, operation: String, vectors: Vectors) throws {
@@ -510,33 +517,59 @@ final class ConformanceCasesTests: XCTestCase {
 
     // MARK: decodeBase64
 
+    /// Runs every text of the group through the method that uses each
+    /// decoder it names, as the Go host does.
+    ///
+    /// The 0.7 API exposes no decoder, and this package has none of its own:
+    /// the base64 rule is the verification module's. The only observable is
+    /// which side of the rule a text falls on. A text the group expects to
+    /// decode must not be refused as base64 (the bytes it decodes to are not
+    /// a receipt or a certificate, and fail later for that); a text the group
+    /// expects to be refused must be refused as base64, told apart by the
+    /// reason and by the word "base64" in the module's message. What the bytes
+    /// decode to (`bytesHex`) is not observable here and is not checked.
+    ///
+    /// - receipt-data goes through `verifyReceipt`, which refuses as MALFORMED;
+    /// - x5c goes through `verifySignedData`, as the only entry of the x5c
+    ///   header member of an otherwise empty JWS, which refuses as
+    ///   INVALID_CERTIFICATE.
     private func runDecodeBase64(_ kase: [String: Any], id: String, texts: [String]?) throws {
         guard let decoders = kase["decoders"] as? [String], !decoders.isEmpty, let texts, !texts.isEmpty,
             let expected = kase["expected"] as? [String: Any], let status = expected["status"] as? String
         else { throw HarnessError("\(id): a decodeBase64 case needs decoders, input.texts and expected.status") }
         let ok = status == "ok"
-        let wantHex = ok ? (expected["bytesHex"] as? String ?? "") : ""
+        let verifier = Verifier(config: .defaults())
         for decoder in decoders {
             for (index, text) in texts.enumerated() {
                 let at = "\(id): \(decoder) texts[\(index)] \(text.debugDescription)"
-                let decoded: [UInt8]?
+                let failure: Failure?
+                let refusal: Reason
                 switch decoder {
-                case "receipt-data", "x5c":
-                    decoded = decodeReceiptBase64(text)
+                case "receipt-data":
+                    failure = verifier.verifyReceipt(base64: text).failure
+                    refusal = .malformed
+                case "x5c":
+                    failure = verifier.verifySignedData(jws: x5cProbe(text)).failure
+                    refusal = .invalidCertificate
                 default:
                     throw HarnessError("\(id): no decoder \"\(decoder)\"")
                 }
-                switch (decoded, ok) {
-                case (let bytes?, true):
-                    XCTAssertEqual(bytes.map { String(format: "%02x", $0) }.joined(), wantHex, at)
-                case (nil, false):
-                    break
-                case (let bytes?, false):
-                    XCTFail("\(at) was accepted (decoded to \(bytes.map { String(format: "%02x", $0) }.joined()))")
-                case (nil, true):
-                    XCTFail("\(at) was refused, want \(wantHex)")
+                let refused = failure?.reason == refusal && failure?.message.lowercased().contains("base64") == true
+                if ok && refused { XCTFail("\(at) was refused as base64 (\(failure!)), want it decoded") }
+                if !ok && !refused {
+                    XCTFail("\(at) was not refused as base64 (\(failure.map { "\($0)" } ?? "verified")), want it refused")
                 }
             }
         }
+    }
+
+    /// A compact JWS whose header carries `text` as its one x5c entry: the
+    /// smallest input that sends `text` to the x5c decoder. Nothing about it
+    /// is signed; it never gets past the certificate.
+    private func x5cProbe(_ text: String) -> String {
+        let entry = String(
+            decoding: try! JSONSerialization.data(withJSONObject: [text], options: [.withoutEscapingSlashes]), as: UTF8.self)
+        return base64URL(Array(#"{"alg":"ES256","x5c":\#(entry)}"#.utf8)) + "." + base64URL(Array("{}".utf8)) + "."
+            + base64URL([UInt8](repeating: 0, count: 64))
     }
 }

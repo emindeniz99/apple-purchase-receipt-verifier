@@ -1,4 +1,3 @@
-import Crypto
 import Foundation
 import XCTest
 
@@ -10,15 +9,16 @@ import XCTest
 /// turns a data race on a shared value into a compile error; this is the
 /// runtime half of that claim.
 ///
-/// Sixteen child tasks run fifty iterations each through every entry point a
-/// shared `Verifier` would serve, and every answer has to equal the answer a
+/// Eight child tasks run two iterations each through every entry point a
+/// shared `Verifier` would serve (few, because WasmKit interprets and every
+/// call costs milliseconds; ThreadTests covers four threads on one pool), and every answer has to equal the answer a
 /// single sequential call gets. What this is written to catch is not a
-/// missing lock but state that is shared after all: a cached parser, a
-/// reused buffer, or a result that one task's verification writes into while
+/// missing lock but state that is shared after all: an instance handed to
+/// two calls at once, or a result that one task's call writes into while
 /// another reads it.
 final class ConcurrencyTests: XCTestCase {
-    static let tasks = 16
-    static let iterations = 50
+    static let tasks = 8
+    static let iterations = 2
 
     private static func fixtureURL(_ path: String) -> URL {
         URL(fileURLWithPath: #filePath)
