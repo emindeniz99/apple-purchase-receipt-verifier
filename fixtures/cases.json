@@ -9096,6 +9096,70 @@
       ]
     },
     {
+      "id": "receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-first",
+      "description": "The receipt of receipt/verify-with-a-stranger-whose-key-is-unreadable with both roots pinned, the stranger's root first. The two roots share a subject name and each vouches for certificates in the unsigned bag: the genuine chain, and the stranger's intermediate and signer (a key on an unimplemented curve). The receipt verifies whatever the order of the roots. The core answered UNTRUSTED_CHAIN with the stranger's root first, because OpenSSL's issuer lookup takes the first root whose name matches (the differential campaign of 2026-09-29). Apple's three roots have distinct names.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "review-receipt-stranger-unreadable-key"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-signer-root",
+            "review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "differential",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-second",
+      "description": "The receipt of receipt/verify-with-a-stranger-whose-key-is-unreadable with both roots pinned, the stranger's root second. The two roots share a subject name and each vouches for certificates in the unsigned bag: the genuine chain, and the stranger's intermediate and signer (a key on an unimplemented curve). The receipt verifies whatever the order of the roots. The core answered UNTRUSTED_CHAIN with the stranger's root first, because OpenSSL's issuer lookup takes the first root whose name matches (the differential campaign of 2026-09-29). Apple's three roots have distinct names.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "review-receipt-stranger-unreadable-key"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "review-receipt-root",
+            "receipt-signer-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "differential",
+        "new-in-0-7"
+      ]
+    },
+    {
       "id": "receipt/reject-a-stranger-whose-signature-bit-string-is-unaligned",
       "description": "A genuine receipt whose bag also holds a certificate whose signature BIT STRING declares one unused bit. An embedded entry that is not the signer and does not decode is a defect of the receipt: MALFORMED.",
       "operation": "verifyReceipt",
