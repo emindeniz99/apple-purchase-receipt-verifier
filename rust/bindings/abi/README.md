@@ -20,7 +20,16 @@ wit-bindgen, and the cargo of `rust/rust-toolchain.toml` with
 reactor start file, wasi-libc's four emulation libraries and
 `wasi-none.c`, then wraps the module with `wasm-tools component new` (no
 adapter). It writes `aprv.wasm`, `aprv.component.wasm`, `aprv.wit` and
-`SHA256SUMS` into `<out-dir>`, and fails when:
+`SHA256SUMS` into `<out-dir>`, first removing those four files there, so a
+build that stops at any check leaves none of an earlier run's behind. It
+refuses to start when the compiler cargo would run is not the channel
+`rust/rust-toolchain.toml` pins: that compiler is `RUSTC` or
+`CARGO_BUILD_RUSTC` when set, and `rustc` on `PATH` otherwise, and cargo is
+handed it by path, so a `build.rustc` in a cargo configuration cannot swap
+it. A compiler wrapper (`RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER` or their
+`CARGO_BUILD_` forms) is refused, since it may run any compiler, and cargo
+runs with none. `tools/test/build-sh.test.mjs` holds the pin and the
+cleanup without building anything. It fails when:
 
 - the module imports anything but `aprv:verifier/host@1.0.0` `random-get`;
 - it exports anything but the four `@1.0.0` operations, their
