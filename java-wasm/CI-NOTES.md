@@ -116,20 +116,19 @@ from other builds, so timings are for the record, not for comparison.
 
 ### The module
 
-The pin in `src/main/wasm/aprv.wasm.sha256` names the complete 0.7
-module (G1c, its `name` section stripped): SHA-256
-`a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1`,
-2,760,476 bytes. G1c on Endive: 377 of 377 cases on JDK 21, Temurin 17
-and Temurin 11; the corpus 6,179 of 6,179 on 1 and 4 threads; the Java 8
-leg without the server tests 40 tests, 0 failures, 1 skipped.
-`src/main/server/SHA256SUMS` pins lane B's server built on that component
-(`f0d4784e...ab44c5ec`, 11,535,280 bytes). G1c through the server engine:
-377 of 377 cases on JDK 21 and Temurin 8; `verify` on JDK 21 850 tests
-and the Java 8 leg with the server tests 448 tests, 0 failures, 2 and 1
-skipped (the other JVM's tests); the corpus 6,179 of 6,179 on JDK 21 (1
-and 4 threads) and Temurin 8 (1 thread), 27 of them 413s answered as the
-core answers them; the noexec test passes on the real binary. Jar
-1,797,046 bytes, `linux-x86_64` classifier jar 4,082,927 bytes. Every case
+The pin in `src/main/wasm/aprv.wasm.sha256` names the final 0.7 module
+(G1d, after review round 3): SHA-256
+`4e9d2d85c7c1f9b6dbcabbd49c51783e2efd4832ac17994be732b63a98cdc9dd`,
+2,764,700 bytes. `src/main/server/SHA256SUMS` pins lane B's server built on
+its component (`e6292f78...fb840766`, 11,547,568 bytes). G1d, the 384
+cases: 384 of 384 on Endive (JDK 21) and through the server engine (JDK 21
+and Temurin 8); `verify` on JDK 21 864 tests and the Java 8 leg with the
+server tests 455 tests, 0 failures, 2 and 1 skipped (the other JVM's
+tests); the corpus 6,179 of 6,179 on Endive (1 and 4 threads) and through
+the server engine on JDK 21 (1 and 4 threads) and Temurin 8 (1 thread), 27
+of them 413s answered as the core answers them; the noexec test passes on
+the real binary. Jar 1,798,755 bytes, `linux-x86_64` classifier jar
+4,086,600 bytes. Every case
 must pass on both; there is no stand-in list.
 
 G1b, 2026-09-29, `scripts/g1.sh` with `APRV_SERVER`, `JAVA8`, and
@@ -330,6 +329,12 @@ check. `ByteArrayMemory` names `ByteOrder.LITTLE_ENDIAN` in its code (the
 Endive round's facts addendum counts the references), but nothing has run
 it on a big-endian JVM yet.
 
+Wired (lane D2) as `nightly.yml` `java-wasm-s390x`: Maven runs natively on
+an x86_64 hosted runner and surefire's `-Dtest.jvm` names a wrapper that
+runs a digest-pinned s390x Temurin 21 under QEMU user emulation, for
+`ConformanceCasesTest` and `EndiveAbiTest`. The corpus stays with the
+nightly `corpus` job, which needs the OD-05 archive.
+
 ## Release
 
 - `release-please-config.json` `extra-files`, in the commit that wires the
@@ -363,7 +368,18 @@ it on a big-endian JVM yet.
   about 10.5 MB with this jar and the main artifact's 85 KB jar. Seven
   releases in a month would use about 74 MB of the 80 MB monthly size
   allowance; count it before cutting a release.
-- The jar embeds code compiled from OpenSSL, wasi-libc and the Rust
-  standard library. Their licence texts must ship inside it (ARCHITECTURE
-  §9, "Licences ship with the code"); this lane found no licence bundle in
-  the repository to copy into `META-INF/`, so that is still open.
+- The jar embeds code compiled from OpenSSL, wasi-libc, musl and the Rust
+  standard library, and their licence texts ship inside it (ARCHITECTURE
+  §9, "Licences ship with the code") from the one source,
+  `licenses/wasm/` at the repository root (OD-11):
+  - `pom.xml` `<build><resources>` takes `../licenses/wasm` to
+    `META-INF/licenses/aprv-wasm`, read in place like `../java/LICENSE`, so
+    there is no copy in `java-wasm/` and `tools/check-licence-copies.mjs`
+    needs no Java entry. Each server classifier profile copies the same
+    set into its jar, since the binary embeds the module.
+  - `LicensesTest` (no tag, so it runs on every JDK leg, Java 8 included)
+    checks that `META-INF/licenses/aprv-wasm/` holds exactly the files of
+    `licenses/wasm/`, byte for byte, and the same for each server
+    classifier directory the build made (skipped, with the reason, when it
+    made none).
+  - The README's licence paragraph names the directory.

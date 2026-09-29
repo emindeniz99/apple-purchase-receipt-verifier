@@ -1292,18 +1292,16 @@ jobs:
             echo "::error::$MOD@${REF} never became resolvable from proxy.golang.org"
             exit 1
           fi
-          # The module zip is what consumers receive, and go/roots/certs and
-          # the embedded aprv.wasm are files an embed pattern cannot reach
-          # outside the module for. Prove the zip carries the library, the
-          # module with its pin, and the anchors.
+          # The module zip is what consumers receive, and the embedded
+          # aprv.wasm is a file an embed pattern cannot reach outside the
+          # module for (the roots are compiled into it). Prove the zip
+          # carries the library and the module with its pin.
           curl -fsSL "https://proxy.golang.org/${MOD}/@v/${REF}.zip" -o "$RUNNER_TEMP/module.zip"
-          for entry in "roots.go" "internal/wasm/aprv.wasm" "internal/wasm/aprv.wasm.sha256" \
-                       "roots/certs/AppleIncRootCertificate.cer" \
-                       "roots/certs/AppleRootCA-G2.cer" "roots/certs/AppleRootCA-G3.cer"; do
+          for entry in "verifier.go" "internal/wasm/aprv.wasm" "internal/wasm/aprv.wasm.sha256"; do
             unzip -l "$RUNNER_TEMP/module.zip" | grep -q "$entry" \
               || { echo "::error::the module zip is missing $entry"; exit 1; }
           done
-          echo "module zip carries the library, aprv.wasm and all three roots"
+          echo "module zip carries the library and aprv.wasm with its pin"
 
   # php/binaries.json, which bin/aprv-install checks a download against,
   # is committed on the release branch before this tag exists, from the

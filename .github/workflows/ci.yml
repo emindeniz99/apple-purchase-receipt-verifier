@@ -441,25 +441,6 @@ jobs:
           npm run build
           npm run runtime:browser -- chromium firefox webkit
 
-  # roots-data.ts is generated from certs/; a certs change that forgets to
-  # regenerate it would ship stale trust anchors. Its own job now that the
-  # runtime smoke is a matrix, so it runs once rather than six times.
-  node-roots-generated:
-    needs: changes
-    if: needs.changes.outputs.node == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          package-manager-cache: false
-      - run: node scripts/gen-roots.mjs && git diff --exit-code src/roots-data.ts
-        working-directory: node
-
   # Proves jvm-interop/README.md's claim: the published jar is usable from
   # other JVM languages, not just Java. Builds java/ first with install,
   # not package, so jvm-interop resolves it as a real Maven coordinate the
@@ -991,29 +972,10 @@ jobs:
           if grep -rn --include='*.go' \
               -e 'x509\.SystemCertPool' -e 'x509\.NewCertPool' \
               -e 'x509\.VerifyOptions' -e '"net/http"' -e '"net"' \
-              --exclude='*_test.go' --exclude-dir=tools --exclude-dir=gencerts .; then
+              --exclude='*_test.go' --exclude-dir=tools .; then
             echo "::error::forbidden API in the published module"
             exit 1
           fi
-        working-directory: go
-
-  # go/roots/certs is a copy of the repository's certs/, because an embed
-  # pattern may not reach outside its module directory. A copy that drifts
-  # ships stale trust anchors — the Go twin of node's roots-data.ts guard.
-  go-generate-check:
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.27"
-          cache: true
-      - run: go generate ./... && git diff --exit-code
         working-directory: go
 
   # The gem has one runtime dependency, wasmtime, installed from the
@@ -1063,10 +1025,6 @@ jobs:
       - name: thread scaling
         if: matrix.ruby == '3.3'
         run: bundle exec ruby -Ilib bench/threads.rb --assert
-        working-directory: ruby
-      # roots_data.rb inlines the anchors; ruby/certs is a copy of the
-      # repository roots. Either one drifting ships stale trust anchors.
-      - run: ruby script/gen_roots.rb && git diff --exit-code lib/apple_purchase_receipt_verifier/roots_data.rb
         working-directory: ruby
 
   # Test the artifact the consumer receives, not the working tree: the Ruby
@@ -1372,8 +1330,7 @@ jobs:
 
       # include/apple_purchase_receipt_verifier.h is generated from
       # src/lib.rs; a change that forgets to regenerate it ships a header
-      # describing an ABI the library no longer has. The same regenerate-and-
-      # diff guard the generated roots files elsewhere in this workflow get.
+      # describing an ABI the library no longer has.
       # Linux only: the header is platform-independent, and cbindgen is a
       # from-source install that costs a minute per runner.
       - name: the committed header is the generated one
@@ -2032,10 +1989,10 @@ jobs:
 
   # The grep gate of ARCHITECTURE.md §9: no non-Java wrapper reaches a
   # crypto, X.509, ASN.1 or CMS API outside its tests, since aprv.wasm makes
-  # every such decision. Every wrapper is enforced; the few 0.7 API types
-  # that carry DER in and out (Go's *x509.Certificate roots, .NET's
-  # X509Certificate2) are allowlisted per file with a reason in the tool
-  # (OD-04), and `--enforce all` is MIGRATION.md Phase 7 step 5.
+  # every such decision. Every wrapper is enforced (`--enforce all`,
+  # MIGRATION.md Phase 7 step 5, which also covers a language added to the
+  # tool later); the few 0.7 API types that carry DER in and out are
+  # allowlisted per file with a reason in the tool (OD-04).
   one-implementation:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -2047,7 +2004,7 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: node tools/check-one-implementation.mjs --enforce node,python,go,swift,ruby,dotnet,php,java-wasm
+      - run: node tools/check-one-implementation.mjs --enforce all
 
   # The Linux x86_64 static aprv binary, built as the release builds it
   # (rust/server/scripts/build-static.sh, the component rust-wasm built from
@@ -2607,10 +2564,6 @@ jobs:
       # a syntax check and nothing more.
       - run: php -l bench/bench.php
         working-directory: php
-      # php/certs/ is a copy of the repository-root certs/, and
-      # src/Internal/RootsData.php is generated from that copy. A roots change
-      # that forgets either step would ship stale trust anchors.
-      - run: php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php
       # Two manifests for one package drift, and the .gitattributes allowlist
       # silently decides what a PHP consumer unpacks. This reads the real
       # `git archive` rather than the rules that produce it: the manifests
@@ -2710,25 +2663,6 @@ jobs:
             monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
               ApplePurchaseReceiptVerifier.Verifier
 
-  # certs/ is the reviewable source of truth for the pinned Apple roots;
-  # Internal/AppleRootData.cs is generated from it and compiled in. A certs
-  # change that forgets to regenerate would ship stale trust anchors — the
-  # same rule node's roots-data.ts already follows.
-  dotnet-roots:
-    needs: changes
-    if: needs.changes.outputs.dotnet == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '9.0.x'
-      - run: dotnet run --project dotnet/tools/GenerateRootData -- "$GITHUB_WORKSPACE"
-      - run: git diff --exit-code dotnet/src/ApplePurchaseReceiptVerifier/Internal/AppleRootData.cs
-
   # Trimming is the closest CI-runnable proxy for Unity IL2CPP's stripping: a
   # reflection-based serializer, an embedded resource or a dynamic code path
   # would surface here as an IL2xxx warning or as a runtime failure. The
@@ -2781,11 +2715,10 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       - run: node tools/lint-cases.mjs
-      # Every port that ships the pinned Apple roots must ship the same
-      # bytes. Only three ports used to diff their copy against certs/,
-      # and the per-port regenerate-and-diff steps cannot see this: they
-      # compare a generated file to its own port's copy, so a port left
-      # behind by a root refresh stays internally consistent and green.
+      # The core compiles the three pinned Apple roots in from rust/certs,
+      # the one copy of certs/ left since the wrappers' copies went in
+      # Phase 7; a root refresh that misses it would build a module with
+      # stale trust anchors.
       - run: node tools/check-cert-copies.mjs
       # The same for the licence texts of the code compiled into aprv.wasm:
       # licenses/wasm/ is the one source, and every package that ships the

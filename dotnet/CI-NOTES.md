@@ -3,7 +3,7 @@
 For the integrator. This lane does not edit `.github/`; these are the
 changes `dotnet/` needs there and in the root documents. Results quoted
 here were measured on Linux x86-64 with the release module (the 0.7 core,
-rust-core b863252, 2,760,476 bytes), and are in
+rust-core b0a7f3d, 2,764,700 bytes), and are in
 `docs/evidence/2026-09-29-dotnet-host.md`. `docs/evidence/2026-09-29-dotnet-host/scripts/g1.sh`
 runs the whole re-check for a new module as one command.
 
@@ -19,7 +19,7 @@ runs the whole re-check for a new module as one command.
   embeds `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm`, which is
   in `dotnet/.gitignore`, or the file `APRV_WASM` names instead; a missing
   file is a build error that says so. `wasm/aprv.wasm.sha256` (`sha256sum`
-  format, the 0.7 core module, 2,760,476 bytes) is committed and names
+  format, the 0.7 core module, 2,764,700 bytes) is committed and names
   the file that belongs there. Two ways to put the release's build in place:
   - copy it to that path and refresh the hash with
     `sha256sum aprv.wasm > aprv.wasm.sha256`; or
@@ -45,7 +45,7 @@ runs the whole re-check for a new module as one command.
 
 | Job | Change |
 |---|---|
-| `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. With the release module all 377 conformance cases pass and so do the other 217 tests (594 in all), on .NET 8 and 10 (.NET 9 was last run at 524 of 524 with the 311 cases of G1). Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
+| `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. With the release module all 384 conformance cases pass and so do the other 215 tests (599 in all), on .NET 8 and 10 (.NET 9 was last run at 524 of 524 with the 311 cases of G1). Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
 | `dotnet-mono` | Unchanged and still meaningful only as far as it goes: `monop` reflects the netstandard2.0 assembly, which proves it loads and not that it runs. Running the wrapper on Mono needs Mono to find `libwasmtime` (it does not read NuGet's `runtimes/` folders), which was not tried; a job for it should copy `runtimes/linux-x64/native/libwasmtime.so` beside the test binary and set `LD_LIBRARY_PATH`. No Mono here |
 | `dotnet-roots` | Deleted in Phase 7 (below) |
 | `dotnet-trim` | Unchanged command. The sample was rewritten to read verdicts from the endpoint's `status` and passes here: `dotnet publish samples/TrimAotSmoke -c Release -warnaserror` (net9.0, self-contained, trimmed, `linux-x64`) then running it prints `trimmed smoke ok`. Wasmtime is trim-clean under `-warnaserror` in that configuration |
@@ -108,6 +108,8 @@ floor project 9 of 9 on net10.0 and net8.0, the corpora 6,179 of 6,179
 identical through `tools/CorpusRun`. The net9.0 floor leg was built but
 not run: no .NET 9 runtime here.
 
+G1d (the final module, `4e9d2d85...c9dd`, 384 cases): `dotnet test` project 599 of 599 on net10.0 and net8.0 (384 conformance cases and 215 others), the floor project 9 of 9 on both, `dotnet format` clean, the corpora 6,179 of 6,179 identical (`docs/evidence/2026-09-29-dotnet-host/results/corpus.txt`), no wrapper change.
+
 
 ## The first Windows and macOS runs (run 36581848218)
 
@@ -129,16 +131,31 @@ not run: no .NET 9 runtime here.
   sub-code was not seen. If the next run still crashes, run the net10.0 host
   under WER/ProcDump for the faulting address; the README documents the
   limitation for consumers.
-- **`dotnet (macos-latest)`, net10.0 arm64:
-  `PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly`.** Not
-  established whether it was retention. Linux measures 0 B per call over
-  500 to 8,000 calls on net8.0 and net10.0 with 26,280 B allocated per call,
-  and the managed code is the same everywhere, but the collector is not. The
-  test now judges the marginal growth per call (a 2,000-call round minus a
-  500-call round), takes out what a control that allocates the same bytes and
-  keeps none reports, and prints every figure and the runtime id when it fails.
-  It still fails a wrapper that keeps 256 B per call (injected leaks of 64, 256
-  and 1,730 B per call read 85, 277 and 1,763 B), passes on Linux under seven
-  GC and JIT settings, and a fixed cost or a platform's share of allocated
-  bytes that the control reproduces no longer counts. If macOS still fails,
-  its message says which of the two it is.
+- **`dotnet (macos-latest)`, osx-arm64:
+  `PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly`.** The first run
+  failed net10.0 (at least 559,224 B per 500 calls); the second, with the
+  per-call test of the first fix, failed net8.0 (1,570.2 B per call against a
+  control of 5.5 B) and passed net9.0 and net10.0. Linux x64 measures 0 B per
+  call on net8.0 and net10.0. Not established which layer keeps it: there is
+  no Mac here. What was read: the decompiled `Wasmtime.Dotnet` 48.0.2
+  (`Function.Invoke`, `Memory.GetSpan`, `ValueBox`, `Store` and its three extern
+  caches, the callbacks) keeps nothing per call, the store's `GCHandle`s and
+  the callbacks' are made once per store or linker, and this library's managed
+  path has no static cache, no `ThreadLocal`, no `ConditionalWeakTable` and no
+  exception on the success path. The verdict is unchanged (budget 256 B per
+  call, no skip); on a failure the message now carries where the growth is,
+  and the next macOS run's output decides:
+  - "native call alone" large: Wasmtime .NET or the native library keeps it on
+    osx-arm64 (a per-call handle or allocation the managed side never frees);
+    report upstream with that figure.
+  - "reading the answer alone" large: the managed reading (JSON, the payload
+    objects), a collector's accounting of their shape or a real leak there.
+  - both small and the wrapper large: `Rent`/`Return`, the UTF-8 input or the
+    pooled instance; the instance identity and the store caches on the same
+    line say which.
+  - "for one that idles as long" as large as the wrapper: something in the test
+    host or the runtime grows the live set with time, not with calls. Then the
+    verdict should subtract that control too; that change waits for the figure.
+  - dropped results still alive: a caller-visible object graph is retained.
+  If none is conclusive, this test is the one justified red for the pull
+  request to main, with the run's figures attached.

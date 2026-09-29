@@ -5,7 +5,7 @@ the product, `dotnet/`: the library over the `Wasmtime` package, and
 `dotnet/tools/CorpusRun`, which drives its host layer over the shared corpora.
 This folder holds the scripts that run them and the results.
 
-The module is the release build of the 0.7 core (G1, lane/core 05b4ad9; G1b, c4410c7; G1c, b863252). It is
+The module is the release build of the 0.7 core (G1, lane/core 05b4ad9; G1b, c4410c7; G1c, b863252; G1d, b0a7f3d). It is
 not committed: `scripts/g1.sh` copies it to the ignored path in the package.
 The first round of this evidence ran the round-13 stand-in (the 0.6 core); its
 numbers are in the git history.
@@ -28,8 +28,8 @@ Placeholders:
 | `scripts/speed.sh` | Compile, first and later instance, and calls per second at 1 and 4 threads |
 | `scripts/consumer.sh`, `Consumer/` | Does `dotnet pack` give a package a clean project restores from a local feed and verifies a receipt with? |
 | `results/corpus.txt` | The corpus run: 6,179 of 6,179 identical, 0 traps |
-| `results/tests-summary.txt` | Test counts: 594 of 594 on .NET 8 and 10 (G1c) |
-| `results/speed-run1.txt`, `speed-run2.txt`, `speed-run3.txt`, `speed-run4.txt` | Start-up and throughput in four runs, with the machine's load before and after each |
+| `results/tests-summary.txt` | Test counts: 599 of 599 on .NET 8 and 10 (G1d) |
+| `results/speed-run1.txt`, `speed-run2.txt`, `speed-run3.txt`, `speed-run4.txt`, `speed-run5.txt` | Start-up and throughput in five runs, with the machine's load before and after each |
 | `results/consumer.txt` | The nupkg's size and files, and the clean consumer's run |
 | `results/other-checks.txt` | Trimmed publish, fuzz, memory, package size |
 | `results/format.txt` | `dotnet format --verify-no-changes --severity info` |
