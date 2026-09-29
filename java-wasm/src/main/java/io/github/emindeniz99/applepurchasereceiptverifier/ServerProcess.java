@@ -93,6 +93,11 @@ final class ServerProcess {
         }
     }
 
+    /** The binary this process starts. */
+    Path executablePath() {
+        return executable;
+    }
+
     int restarts() {
         return restarts.get();
     }
