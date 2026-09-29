@@ -3,13 +3,17 @@
 //!
 //! This is the rule the whole library exists to hold, so it is asserted
 //! three ways: behaviourally, on a chain that is well-formed in every
-//! respect except its anchor; structurally, over the crate's own sources and
-//! its declared dependencies; and against this machine's operating-system
-//! trust store, which must have no influence at all.
+//! respect except its anchor; structurally, over the sources and declared
+//! dependencies of the crate and of its OpenSSL adapter; and against this
+//! machine's operating-system trust store, which must have no influence at
+//! all. The OpenSSL adapter's own test (openssl/tests/isolation.rs) plants
+//! that trust store, a hostile OpenSSL configuration and more in the
+//! environment and checks OpenSSL reads none of them.
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::{chain, datetime, x509::Certificate};
+use apple_purchase_receipt_verifier::__internal::datetime;
+use apple_purchase_receipt_verifier::__internal::path::{self, Certificate};
 use apple_purchase_receipt_verifier::{Config, Reason, TrustAnchor};
 use std::time::SystemTime;
 
@@ -51,8 +55,8 @@ fn the_public_style_chain_is_genuinely_valid_under_its_own_root() {
     let (leaf, intermediate, root) = public_style_chain();
     assert!(leaf.has_extension(LEAF_OID));
     assert!(intermediate.has_extension(INTERMEDIATE_OID));
-    assert!(intermediate.is_ca());
-    chain::validate_pair(&leaf, &intermediate, &[root], now_millis())
+    assert!(intermediate.may_issue_certificates());
+    path::validate_pair(&leaf, &intermediate, &[root], now_millis())
         .expect("the chain must validate against its own root");
 }
 
@@ -60,10 +64,10 @@ fn the_public_style_chain_is_genuinely_valid_under_its_own_root() {
 fn the_same_chain_is_rejected_against_apples_pinned_roots() {
     let (leaf, intermediate, _) = public_style_chain();
     let error =
-        chain::validate_pair(&leaf, &intermediate, &apple_roots(), now_millis()).unwrap_err();
+        path::validate_pair(&leaf, &intermediate, &apple_roots(), now_millis()).unwrap_err();
     assert_eq!(error.reason(), Reason::UntrustedChain);
     // And with no anchors at all: there is no ambient set to fall back to.
-    let error = chain::validate_pair(&leaf, &intermediate, &[], now_millis()).unwrap_err();
+    let error = path::validate_pair(&leaf, &intermediate, &[], now_millis()).unwrap_err();
     assert_eq!(error.reason(), Reason::UntrustedChain);
 }
 
@@ -72,24 +76,20 @@ fn the_path_builder_refuses_the_same_chain_too() {
     let (leaf, intermediate, root) = public_style_chain();
     let embedded = vec![leaf.clone(), intermediate.clone()];
     let roots = [root];
-    let candidates = chain::authenticated_top_down(&embedded, &roots);
-    assert_eq!(
-        candidates.certificates().len(),
-        2,
-        "both certificates chain to the root"
-    );
+    let candidates = path::authenticated_top_down(&embedded, &roots);
+    assert_eq!(candidates.len(), 2, "both certificates chain to the root");
     assert!(
-        chain::build_and_validate_path(&leaf, &candidates, &roots, now_millis()).is_ok(),
+        path::receipt_path(&leaf, &candidates, &roots, now_millis()).is_ok(),
         "the path builder must reach an explicitly supplied anchor"
     );
     let apple = apple_roots();
-    let candidates = chain::authenticated_top_down(&embedded, &apple);
+    let candidates = path::authenticated_top_down(&embedded, &apple);
     assert!(
-        candidates.certificates().is_empty(),
+        candidates.is_empty(),
         "nothing here is vouched for by Apple"
     );
     assert_eq!(
-        chain::build_and_validate_path(&leaf, &candidates, &apple, now_millis())
+        path::receipt_path(&leaf, &candidates, &apple, now_millis())
             .unwrap_err()
             .reason(),
         Reason::UntrustedChain
@@ -166,8 +166,8 @@ fn os_trust_store_roots() -> Vec<Vec<u8>> {
                 break;
             };
             let block = &after[..end + "-----END CERTIFICATE-----".len()];
-            if let Ok(cert) = Certificate::from_pem(block) {
-                out.push(cert.der().to_vec());
+            if let Ok(anchor) = TrustAnchor::from_pem(block) {
+                out.push(anchor.der().to_vec());
             }
             rest = &after[end..];
         }
@@ -180,8 +180,9 @@ fn os_trust_store_roots() -> Vec<Vec<u8>> {
 
 // --- the structural half -------------------------------------------------
 
-fn crate_sources() -> Vec<(String, String)> {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+/// The `.rs` files under `dir` of this crate's directory, as (path, text).
+fn sources(dir: &str) -> Vec<(String, String)> {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
     let mut out = Vec::new();
     let mut stack = vec![src];
     while let Some(dir) = stack.pop() {
@@ -195,9 +196,36 @@ fn crate_sources() -> Vec<(String, String)> {
             }
         }
     }
+    out
+}
+
+fn crate_sources() -> Vec<(String, String)> {
+    let out = sources("src");
     assert!(
         out.len() >= 10,
         "the source scan found only {} files",
+        out.len()
+    );
+    out
+}
+
+/// The adapter's sources, comment lines dropped: its documentation names
+/// the calls it never makes.
+fn adapter_code() -> Vec<(String, String)> {
+    let out: Vec<(String, String)> = sources("openssl/src")
+        .into_iter()
+        .map(|(path, text)| {
+            let code = text
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            (path, code)
+        })
+        .collect();
+    assert!(
+        out.len() >= 5,
+        "the adapter scan found only {} files",
         out.len()
     );
     out
@@ -207,7 +235,8 @@ fn crate_sources() -> Vec<(String, String)> {
 fn no_source_file_names_a_system_trust_store_or_a_network_client() {
     // The mechanised form of "pinned anchors only, no network ever". A
     // dependency bump cannot introduce these either: deny.toml refuses the
-    // crates that would carry them.
+    // crates that would carry them. The core reaches OpenSSL only through
+    // its adapter.
     const FORBIDDEN: [&str; 16] = [
         "rustls_native_certs",
         "rustls-native-certs",
@@ -237,42 +266,72 @@ fn no_source_file_names_a_system_trust_store_or_a_network_client() {
 }
 
 #[test]
-fn no_source_file_constructs_an_rsa_private_key() {
-    // RUSTSEC-2023-0071 (Marvin) is a timing oracle on RSA *private-key*
-    // operations. This crate holds no secret and never decrypts: the only
-    // `rsa` API it touches is public-key verification. That is what makes
-    // the advisory inapplicable, so it is asserted rather than asserted-in-
-    // a-comment.
-    for (path, text) in crate_sources() {
-        for needle in ["RsaPrivateKey", ".decrypt(", "SigningKey", "sign_with_rng"] {
+fn the_openssl_adapter_never_loads_a_trust_path_a_configuration_or_a_socket() {
+    // What would let OpenSSL trust or read anything the caller did not
+    // hand over: the default certificate paths, a lookup method or file
+    // loader on a store, the configuration file, a provider or engine
+    // load, a network BIO.
+    const FORBIDDEN: [&str; 19] = [
+        "set_default_paths",
+        "X509_STORE_load",
+        "load_locations",
+        "add_lookup",
+        "X509_LOOKUP",
+        "set_default_verify",
+        "CONF_modules",
+        "INIT_LOAD_CONFIG",
+        "OPENSSL_config",
+        "OSSL_LIB_CTX_load_config",
+        "OSSL_PROVIDER",
+        "ENGINE_",
+        "SSL_CERT",
+        "BIO_new_connect",
+        "BIO_s_connect",
+        "OCSP",
+        "TcpStream",
+        "UdpSocket",
+        "http://",
+    ];
+    for (path, code) in adapter_code() {
+        for needle in FORBIDDEN {
+            assert!(!code.contains(needle), "{path} names \"{needle}\"");
+        }
+    }
+    // And it does initialise OpenSSL without its configuration.
+    assert!(
+        adapter_code()
+            .iter()
+            .any(|(_, code)| code.contains("OPENSSL_init_crypto(sys::OPENSSL_INIT_NO_LOAD_CONFIG")),
+        "the adapter no longer initialises OpenSSL with NO_LOAD_CONFIG"
+    );
+}
+
+#[test]
+fn no_source_file_holds_a_private_key_or_decrypts() {
+    // The library verifies public-key signatures over public data: no
+    // private key in the process, nothing to decrypt, nothing to sign, and
+    // so no private-key timing oracle to worry about.
+    for (path, text) in crate_sources().into_iter().chain(adapter_code()) {
+        for needle in [
+            "Private>",
+            "private_key",
+            "decrypt",
+            "EVP_PKEY_sign",
+            "EVP_DigestSign",
+            "sign::Signer",
+        ] {
             assert!(!text.contains(needle), "{path} names \"{needle}\"");
         }
     }
 }
 
-#[test]
-fn the_direct_dependency_set_is_exactly_the_reviewed_one() {
-    // A new direct dependency is a supply-chain decision, and it should not
-    // be possible to make one by accident.
-    // serde_json writes ReceiptPayload::to_json() (owner, 2026-09-27: the
-    // same JSON value across ports, each through its standard encoder).
-    const EXPECTED: [&str; 10] = [
-        "rsa",
-        "p256",
-        "p384",
-        "sha1",
-        "md-5",
-        "sha2",
-        "digest",
-        "subtle",
-        "base64",
-        "serde_json",
-    ];
-    let manifest = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"),
-    )
-    .unwrap();
-    let dependencies = manifest
+/// The names under `[dependencies]` of a manifest in this crate's
+/// directory.
+fn direct_dependencies(manifest: &str) -> Vec<String> {
+    let manifest =
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(manifest))
+            .unwrap();
+    manifest
         .split("[dependencies]")
         .nth(1)
         .unwrap()
@@ -283,8 +342,27 @@ fn the_direct_dependency_set_is_exactly_the_reviewed_one() {
         .filter_map(|line| line.split('=').next())
         .map(str::trim)
         .filter(|name| !name.is_empty() && !name.starts_with('#'))
-        .collect::<Vec<_>>();
-    assert_eq!(dependencies, EXPECTED, "the direct dependency set changed");
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn the_direct_dependency_set_is_exactly_the_reviewed_one() {
+    // A new direct dependency is a supply-chain decision, and it should not
+    // be possible to make one by accident. serde_json writes
+    // ReceiptPayload::to_json() (owner, 2026-09-27: the same JSON value
+    // across ports, each through its standard encoder); aprv-openssl is the
+    // OpenSSL adapter, and its own set is pinned beside it.
+    assert_eq!(
+        direct_dependencies("Cargo.toml"),
+        ["aprv-openssl", "base64", "serde_json"],
+        "the core's direct dependency set changed"
+    );
+    assert_eq!(
+        direct_dependencies("openssl/Cargo.toml"),
+        ["openssl", "openssl-sys", "foreign-types", "libc"],
+        "the adapter's direct dependency set changed"
+    );
 }
 
 #[test]
@@ -296,12 +374,11 @@ fn the_bundled_anchors_are_apples_three_published_roots() {
     assert_eq!(roots.len(), 3);
     for anchor in &roots {
         let cert = Certificate::from_der(anchor.der()).unwrap();
-        assert!(cert.is_ca(), "a bundled anchor must be a CA");
-        assert_eq!(
-            cert.issuer_der(),
-            cert.subject_der(),
-            "a bundled anchor is self-issued"
+        assert!(
+            cert.may_issue_certificates(),
+            "a bundled anchor must be a CA"
         );
+        assert!(cert.issued_by(&cert), "a bundled anchor is self-signed");
     }
 }
 
@@ -348,4 +425,32 @@ fn a_trust_anchors_own_expiry_is_not_checked() {
     let verifier = common::verifier([common::anchor("generated-0.7/receipt-expired-root.der")]);
     let historical = common::read_fixture("generated-0.7/receipt-expired-historical.der");
     assert!(common::verify_der(&verifier, &historical).is_ok());
+}
+
+/// A chain verifies when its root is anywhere in the configured set, in
+/// any order, even beside another pinned root with the same subject name.
+/// OpenSSL's issuer lookup takes the first store certificate whose name
+/// matches and does not try the next after its signature fails, so the
+/// fixtures' same-named "Fake Apple" roots verified in one order and not
+/// the other (the Swift host's G1 run).
+#[test]
+fn a_root_verifies_beside_another_root_with_the_same_subject_in_either_order() {
+    let receipt = common::read_fixture("generated-0.7/receipt.der");
+    let (right, twin) = (
+        common::anchor("generated-0.7/receipt-root.der"),
+        common::anchor("generated-0.7/api-receipt-root.der"),
+    );
+    assert_ne!(right.der(), twin.der(), "two different roots");
+    for roots in [[twin.clone(), right.clone()], [right, twin]] {
+        let verifier = common::verifier(roots);
+        assert!(common::verify_der(&verifier, &receipt).is_ok());
+    }
+    let jws = common::transaction_jws();
+    let (right, twin) = (
+        common::anchor("generated/jws-root.der"),
+        common::anchor("generated-0.7/api-jws-root.der"),
+    );
+    for roots in [[twin.clone(), right.clone()], [right, twin]] {
+        assert!(common::verifier(roots).verify_signed_data(&jws).is_ok());
+    }
 }

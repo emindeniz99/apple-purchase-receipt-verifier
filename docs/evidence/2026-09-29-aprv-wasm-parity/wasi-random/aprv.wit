@@ -1,0 +1,20 @@
+// Evidence only (2026-09-29): rust/bindings/abi/wit/aprv.wit with the host
+// interface replaced by WASI 0.2's random interface (DECISIONS.md R34, the
+// wasi:random check of MIGRATION.md step 1.4). deps/random.wit is the
+// upstream interface.
+package aprv:verifier@1.0.0;
+
+interface verify {
+  /// Once per instance. `{"roots":["<base64 DER>", ...]}`; empty or {} = the built-in Apple roots.
+  /// Answers {"ok":true} or {"ok":false,"message":"..."}; a second call after {"ok":true} traps.
+  init: func(config-json: list<u8>) -> string;
+  verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
+  verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
+  /// env: 0 production, 1 sandbox; anything else traps.
+  verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+}
+
+world aprv {
+  import wasi:random/random@0.2.6;
+  export verify;
+}

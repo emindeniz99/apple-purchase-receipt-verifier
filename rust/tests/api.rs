@@ -9,10 +9,9 @@ mod common;
 
 use apple_purchase_receipt_verifier::__internal::{base64_decode_lenient, base64_encode};
 use apple_purchase_receipt_verifier::{
-    AppleStatus, Config, ConfigError, Environment, Failure, InAppPurchase, JsonPayload, Reason,
-    ReceiptPayload, TrustAnchor, Verifier, VERSION,
+    decode_receipt_data, AppleStatus, Config, ConfigError, Environment, Failure, InAppPurchase,
+    JsonPayload, Reason, ReceiptPayload, TrustAnchor, Verifier, VERSION,
 };
-use sha1::{Digest, Sha1};
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -301,11 +300,11 @@ fn the_device_hash_is_computable_from_the_returned_fields() {
     // fields and the device identifier, with the formula the README shows.
     let receipt = common::verify_der(&common::receipt_verifier(), &common::receipt_der()).unwrap();
     let hash = |guid: &[u8]| {
-        let mut sha1 = Sha1::new();
+        let mut sha1 = openssl::sha::Sha1::new();
         sha1.update(guid);
         sha1.update(receipt.opaque_value.as_deref().unwrap());
         sha1.update(receipt.bundle_id_bytes.as_deref().unwrap());
-        sha1.finalize().to_vec()
+        sha1.finish().to_vec()
     };
     assert_eq!(
         receipt.sha1_hash.as_deref(),
@@ -464,5 +463,74 @@ fn fresh_verifiers_answer_their_first_concurrent_calls_as_one_thread_would() {
     assert!(expected.0.is_ok());
     for answer in concurrent {
         assert_eq!(answer, expected);
+    }
+}
+
+/// The byte entry points are the text ones for the bindings (aprv.wasm, the
+/// C ABI): the same verdict for the same bytes, and bytes that are not UTF-8
+/// judged by the same rules rather than refused by the binding.
+#[test]
+fn the_byte_entry_points_answer_as_the_text_ones() {
+    // A fixed clock: the endpoint's request_date comes from it.
+    let verifier = Verifier::new(
+        Config::builder()
+            .roots([common::receipt_root(), common::jws_root()])
+            .clock(|| 1_735_689_600_000)
+            .build()
+            .unwrap(),
+    );
+    let receipt = base64_encode(&common::receipt_der());
+    assert_eq!(
+        verifier.verify_receipt_bytes(receipt.as_bytes()),
+        verifier.verify_receipt(&receipt)
+    );
+    let jws = common::transaction_jws();
+    assert_eq!(
+        verifier.verify_signed_data_bytes(jws.as_bytes()),
+        verifier.verify_signed_data(&jws)
+    );
+    let body = format!("{{\"receipt-data\":\"{receipt}\"}}");
+    assert_eq!(
+        verifier.verify_receipt_endpoint_bytes(Environment::Sandbox, body.as_bytes()),
+        verifier.verify_receipt_endpoint(Environment::Sandbox, &body)
+    );
+
+    let not_utf8 = verifier
+        .verify_receipt_bytes(b"MIIT\xff\xfe==")
+        .unwrap_err();
+    assert_eq!(not_utf8.reason(), Reason::Malformed);
+    assert_eq!(not_utf8.message(), "receipt is not valid base64");
+    let too_large = verifier
+        .verify_receipt_bytes(&vec![0xff; 3_145_729])
+        .unwrap_err();
+    assert_eq!(too_large.reason(), Reason::TooLarge);
+    let jws_not_utf8 = verifier
+        .verify_signed_data_bytes(b"eyJ\xff.eyJ9.c2ln")
+        .unwrap_err();
+    assert_eq!(jws_not_utf8.reason(), Reason::Malformed);
+    assert_eq!(jws_not_utf8.message(), "header is not canonical base64url");
+    assert_eq!(
+        verifier
+            .verify_receipt_endpoint_bytes(Environment::Production, b"{\"receipt-data\":\"\xff\"}"),
+        "{\"status\":21002}"
+    );
+}
+
+/// The one decoder the crate makes public applies verify_receipt's rule
+/// and gives its refusal.
+#[test]
+fn decode_receipt_data_is_the_receipt_rule() {
+    assert_eq!(decode_receipt_data(b"AQID"), Ok(vec![1, 2, 3]));
+    for refused in [
+        &b""[..],
+        b"AQI",
+        b"AQ==\n",
+        b"AQ",
+        b"A-_=",
+        b"\xff\xff\xff\xff",
+    ] {
+        let failure = decode_receipt_data(refused).unwrap_err();
+        assert_eq!(failure.reason(), Reason::Malformed, "{refused:?}");
+        assert_eq!(failure.message(), "receipt is not valid base64");
     }
 }
