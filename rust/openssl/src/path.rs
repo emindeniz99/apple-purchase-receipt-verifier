@@ -126,7 +126,7 @@ fn run(
     max_intermediates: u32,
 ) -> Option<PathOutcome> {
     let mut builder = X509StoreBuilder::new().ok()?;
-    for anchor in anchors {
+    for anchor in store_anchors(target, untrusted, anchors) {
         builder.add_cert(anchor.x509().to_owned()).ok()?;
     }
     let mut param = X509VerifyParam::new().ok()?;
@@ -177,6 +177,61 @@ fn run(
         anchored,
         problems,
     })
+}
+
+/// The anchors the store holds. OpenSSL's issuer lookup takes the first
+/// store certificate whose subject name matches (and whose key identifier
+/// and `keyUsage` allow it), and does not try another when the signature
+/// then fails; among anchors that share a subject name, the order of the
+/// caller's list would decide whether a path verifies. So of such anchors
+/// only the ones that issued the target or a certificate of `untrusted`
+/// (by name and signature, [`Certificate::issued_by`]) are kept, and a
+/// group none of whose members issued any is kept whole: the path fails
+/// there whichever comes first. Only anchor keys are used, at most once per
+/// anchor that shares a name and certificate given.
+fn store_anchors<'a>(
+    target: &Certificate,
+    untrusted: &[Certificate],
+    anchors: &'a [Certificate],
+) -> Vec<&'a Certificate> {
+    let shares_a_name = |anchor: &Certificate| {
+        anchors
+            .iter()
+            .any(|other| !other.same_as(anchor) && same_subject(other, anchor))
+    };
+    let issued: Vec<Option<bool>> = anchors
+        .iter()
+        .map(|anchor| {
+            shares_a_name(anchor).then(|| {
+                std::iter::once(target)
+                    .chain(untrusted)
+                    .any(|certificate| certificate.issued_by(anchor))
+            })
+        })
+        .collect();
+    anchors
+        .iter()
+        .zip(&issued)
+        .filter(|(anchor, flag)| match flag {
+            None | Some(true) => true,
+            Some(false) => !anchors.iter().zip(&issued).any(|(other, other_issued)| {
+                *other_issued == Some(true) && same_subject(other, anchor)
+            }),
+        })
+        .map(|(anchor, _)| anchor)
+        .collect()
+}
+
+/// Whether two certificates' subject names are equal, as OpenSSL compares
+/// them when it looks an issuer up (`X509_NAME_cmp`).
+fn same_subject(a: &Certificate, b: &Certificate) -> bool {
+    let same = a
+        .x509()
+        .subject_name()
+        .try_cmp(b.x509().subject_name())
+        .is_ok_and(|order| order == core::cmp::Ordering::Equal);
+    drain_errors();
+    same
 }
 
 fn install_callback(ctx: &mut X509StoreContextRef) {

@@ -426,3 +426,31 @@ fn a_trust_anchors_own_expiry_is_not_checked() {
     let historical = common::read_fixture("generated-0.7/receipt-expired-historical.der");
     assert!(common::verify_der(&verifier, &historical).is_ok());
 }
+
+/// A chain verifies when its root is anywhere in the configured set, in
+/// any order, even beside another pinned root with the same subject name.
+/// OpenSSL's issuer lookup takes the first store certificate whose name
+/// matches and does not try the next after its signature fails, so the
+/// fixtures' same-named "Fake Apple" roots verified in one order and not
+/// the other (the Swift host's G1 run).
+#[test]
+fn a_root_verifies_beside_another_root_with_the_same_subject_in_either_order() {
+    let receipt = common::read_fixture("generated-0.7/receipt.der");
+    let (right, twin) = (
+        common::anchor("generated-0.7/receipt-root.der"),
+        common::anchor("generated-0.7/api-receipt-root.der"),
+    );
+    assert_ne!(right.der(), twin.der(), "two different roots");
+    for roots in [[twin.clone(), right.clone()], [right, twin]] {
+        let verifier = common::verifier(roots);
+        assert!(common::verify_der(&verifier, &receipt).is_ok());
+    }
+    let jws = common::transaction_jws();
+    let (right, twin) = (
+        common::anchor("generated/jws-root.der"),
+        common::anchor("generated-0.7/api-jws-root.der"),
+    );
+    for roots in [[twin.clone(), right.clone()], [right, twin]] {
+        assert!(common::verifier(roots).verify_signed_data(&jws).is_ok());
+    }
+}
