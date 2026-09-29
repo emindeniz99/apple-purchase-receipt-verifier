@@ -14,6 +14,16 @@ contracts below; each item says whether that job changes.
    the source tree, `CARGO_HOME` and the target directory, and writes
    `aprv.wasm`, `aprv.component.wasm`, `aprv.wit` and `SHA256SUMS`.
    `CARGO_TARGET_DIR` is honoured when set (default `rust/target`).
+   The compiler pin holds from any working directory (review round 2,
+   F1): the jobs run build.sh from the repository root, where rustup does
+   not see `rust/rust-toolchain.toml`, so build.sh reads the channel from
+   that file, exports `RUSTUP_TOOLCHAIN` and stops unless `rustc
+   --version` names it. The job must have installed that toolchain with
+   the `wasm32-wasip1` target (`rustup toolchain install` in `rust/`, as
+   today); it need not make it the default. A failed check leaves no
+   `aprv.wasm`, component, `aprv.wit` or `SHA256SUMS` in the output
+   directory (F6), so a later step that copies the module without reading
+   the exit status finds nothing to copy.
 2. **`aprv.wit` in the output is the committed file**, written only after
    the component's interface, read back with `wasm-tools component wit`,
    matched it. That is what `tools/check-wasm.sh` check 5 compares byte for
