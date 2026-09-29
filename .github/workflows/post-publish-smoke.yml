@@ -544,8 +544,11 @@ jobs:
     needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # Skipped, not failed, while crates.io is unbootstrapped (BOOTSTRAP.md).
-    if: contains(needs.resolve.outputs.registries, ',crates,')
+    # Skipped, not failed, while crates.io is unbootstrapped (BOOTSTRAP.md),
+    # and held with release.yml's publish-crates (OD-03 in
+    # docs/rust-core/STATUS.md): 0.8 is not published there until the
+    # owner sets the repository variable APRV_PUBLISH_CRATES to true.
+    if: contains(needs.resolve.outputs.registries, ',crates,') && vars.APRV_PUBLISH_CRATES == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
