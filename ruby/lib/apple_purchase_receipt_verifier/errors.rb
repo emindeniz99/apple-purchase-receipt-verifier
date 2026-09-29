@@ -110,29 +110,21 @@ module ApplePurchaseReceiptVerifier
     end
   end
 
-  # Raised internally to unwind to the nearest {Reason} the moment a check
-  # fails; never escapes {Verifier}, which turns every one into a
-  # {VerificationResult}. Kept as an exception rather than threaded through
-  # every return value because the checks are a strict "first failure wins"
-  # pipeline (base64, then CMS/JWS structure, then chain, then marker OIDs,
-  # then signature): a `raise` at the first broken step is what makes that
-  # order the code's actual control flow instead of an invariant every
-  # caller has to maintain by hand.
-  #
-  # @api private
-  class VerificationError < StandardError
-    # @return [Symbol] one of {Reason::ALL}
-    attr_reader :reason
+  # The wasm module this gem carries does not speak the ABI this wrapper was
+  # built for: it lacks the `aprv:verifier/verify@1.0.0` exports, imports
+  # something other than `random-get`, or is not a valid module. Raised by
+  # {Verifier.create}, never answered as a verdict; the message names the
+  # version the wrapper expects and the exports the module has.
+  class AbiMismatchError < StandardError; end
 
-    # @return [Exception, nil] the parser or provider exception behind
-    #   {Reason::UNREADABLE_PAYLOAD} or {Reason::INTERNAL_ERROR}, when there
-    #   is one
-    attr_reader :cause_error
+  # The wasm module on disk does not match the SHA-256 recorded beside it.
+  # Raised by {Verifier.create} before the module is compiled.
+  class ModuleIntegrityError < StandardError; end
 
-    def initialize(reason, detail, cause_error: nil)
-      @reason = reason
-      @cause_error = cause_error
-      super(detail)
-    end
-  end
+  # A guest trap or a runtime failure while calling the module. Never raised
+  # to a caller of a verify method: it is the `cause` of the
+  # {Reason::INTERNAL_ERROR} failure that call answers, so the category stays
+  # visible (docs/rust-core/ARCHITECTURE.md, "Six outcomes"). The instance
+  # that raised it has been discarded.
+  class TrapError < StandardError; end
 end

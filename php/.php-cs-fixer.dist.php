@@ -22,5 +22,8 @@ return (new PhpCsFixer\Config())
             ->in(__DIR__ . '/fuzz')
             // The cross-port benchmark (BENCHMARKS.md at the repository root).
             ->in(__DIR__ . '/bench')
+            // The installer script has no .php extension.
+            ->in(__DIR__ . '/bin')
+            ->name(['*.php', 'aprv-install'])
             ->exclude(['tools', 'corpus', 'crashes', 'coverage'])
     );

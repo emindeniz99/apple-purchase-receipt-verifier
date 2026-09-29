@@ -14,6 +14,9 @@
 // rules. `symlink: false` makes Composer copy rather than link, so the
 // autoload paths under vendor/ are the real ones.
 //
+// The package ships no aprv binary (`vendor/bin/aprv-install` fetches one from
+// a release), so the binary under test comes from APRV_BIN.
+//
 // --no-scripts for the same reason every composer install in ci.yml carries
 // it. psr/clock still comes from packagist.org; there is nothing else in the
 // resolved graph.

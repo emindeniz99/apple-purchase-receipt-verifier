@@ -1,0 +1,12 @@
+Tests run: 357, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 15.69 s <<< FAILURE! -- in io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest
+io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest.conformanceCases()[350] -- Time elapsed: 0.012 s <<< FAILURE!
+	at io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest.lambda$conformanceCases$0(ConformanceCasesTest.java:87)
+io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest.conformanceCases()[351] -- Time elapsed: 0.007 s <<< FAILURE!
+	at io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest.lambda$conformanceCases$0(ConformanceCasesTest.java:87)
+io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest.conformanceCases()[353] -- Time elapsed: 0.005 s <<< FAILURE!
+	at io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest.lambda$conformanceCases$0(ConformanceCasesTest.java:87)
+ConformanceCasesTest.lambda$conformanceCases$0:87->runCase:184 receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string: expected UNREADABLE_PAYLOAD but the operation verified
+ConformanceCasesTest.lambda$conformanceCases$0:87->runCase:203 receipt/accept-fourth-field-sequence-holding-a-constructed-utctime: expected ok but failed with UNREADABLE_PAYLOAD: receipt payload is not valid ASN.1
+ConformanceCasesTest.lambda$conformanceCases$0:87->runCase:184 receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string: expected MALFORMED but the operation verified
+Tests run: 357, Failures: 3, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE

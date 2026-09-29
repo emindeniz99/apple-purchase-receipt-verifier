@@ -11,3 +11,7 @@ gem "rubocop", "~> 1.60"
 gem "rubocop-minitest", "~> 0.35"
 gem "rubocop-rake", "~> 0.6"
 gem "steep", "~> 1.6"
+
+# wasmtime is the library's one runtime dependency, named here so `ruby -Ilib`
+# under this bundle (CI's bench load check) can require the library.
+gem "wasmtime", ">= 48.0.1"

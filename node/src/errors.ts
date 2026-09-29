@@ -1,8 +1,8 @@
 /**
- * The 0.7 result vocabulary, shared by both builds. `VerificationError` is
- * the library's only internal throw: every verify path catches it at its
- * public boundary and turns it into a `Failure` inside a `VerificationResult`
- * (see verifier.ts / web/verifier.ts). It never crosses a public method.
+ * The 0.7 result vocabulary, shared by both entry points. The reasons are
+ * the names aprv.wasm answers with; this file only spells them for
+ * JavaScript. `VerificationError` stays exported for 0.7 compatibility and
+ * is never thrown across a public method.
  */
 
 export const Reason = {
@@ -51,9 +51,9 @@ export interface FailedResult {
 export type VerificationResult<T> = VerifiedResult<T> | FailedResult;
 
 /**
- * The library's one internal throw. `reason` and `message` become a
- * {@link Failure}; `cause`, when given, is sanitised before it is exposed
- * (see `sanitizeCause` in verifier.ts).
+ * An error carrying a {@link Reason}. Kept for 0.7 compatibility: no
+ * public method throws it, and every verify method reports a failure as a
+ * {@link Failure} inside its result instead.
  */
 export class VerificationError extends Error {
   readonly reason: Reason;

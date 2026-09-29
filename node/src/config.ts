@@ -1,81 +1,93 @@
 /**
  * What a `Verifier` trusts and what time it thinks it is. Immutable.
  *
- * Roots default to the three bundled, pinned Apple roots; tests replace
- * them with their own. The clock answers "what time is it now?" and
- * nothing else, read at most once per call and only for the chain-validity
- * instant when a receipt or JWS states no signing date, and `request_date`
- * in the endpoint response.
+ * Roots default to Apple's three published roots, which are compiled into
+ * aprv.wasm and pinned there; tests replace them with their own. The clock
+ * answers "what time is it now?" and nothing else. It is read once per
+ * verify call, before the input is looked at, and the module uses the
+ * value only for the chain-validity instant when a receipt or JWS states
+ * no usable signing date, and for `request_date` in the endpoint response.
+ *
+ * Nothing here parses a certificate: a root is handed to the module as its
+ * DER bytes, and a root the module cannot read fails `createVerifier`.
  */
-import { createHash } from 'node:crypto';
-import { base64Decode } from './bytes.js';
-import { normalizeRoots, type RootInput } from './chain.js';
-import { APPLE_ROOT_DER_BASE64 } from './roots-data.js';
-import { parseCertificate, type ParsedCertificate } from './x509.js';
+
+/** Accepted trust-root inputs: DER bytes, or a PEM certificate. */
+export type RootInput = Uint8Array | string;
 
 export interface Config {
-  readonly roots: readonly ParsedCertificate[];
+  /**
+   * The DER of each trusted root, in the caller's order, or `null` for
+   * Apple's three roots pinned inside aprv.wasm.
+   */
+  readonly roots: readonly Uint8Array[] | null;
   readonly clock: () => number;
 }
 
-/**
- * SHA-256 of each bundled root's DER encoding, Apple's published root
- * fingerprints. A resource that does not match one of them is not the root
- * this library pins, wherever it came from.
- */
-const PINNED_FINGERPRINTS: readonly string[] = [
-  'b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024',
-  'c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050',
-  '63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179',
-];
-
-function loadDefaultRoots(): ParsedCertificate[] {
-  const roots = APPLE_ROOT_DER_BASE64.map((b64, i) => {
-    const der = base64Decode(b64);
-    const actual = createHash('sha256').update(der).digest('hex');
-    const expected = PINNED_FINGERPRINTS[i];
-    if (actual !== expected) {
-      throw new Error(
-        `bundled Apple root ${i} has SHA-256 ${actual}, expected ${expected}: the pinned Apple roots have been replaced`,
-      );
-    }
-    return parseCertificate(der);
-  });
-  const distinct = new Set(roots.map((r) => Buffer.from(r.raw).toString('hex')));
-  if (distinct.size !== roots.length) {
-    throw new Error(`expected ${roots.length} distinct Apple roots, got ${distinct.size}`);
-  }
-  return roots;
-}
-
-let cachedDefaultRoots: ParsedCertificate[] | null = null;
-
-/** The three roots, parsed and fingerprint-checked once. */
-function defaultRoots(): ParsedCertificate[] {
-  cachedDefaultRoots ??= loadDefaultRoots();
-  return cachedDefaultRoots;
-}
-
 export interface CreateConfigOptions {
-  /** Replaces the trusted roots. Leaving it out means Apple's bundled roots. */
+  /** Replaces the trusted roots. Leaving it out means Apple's pinned roots. */
   readonly roots?: readonly RootInput[];
   /** Replaces the clock. Leaving it out means the system clock (`Date.now`). */
   readonly clock?: () => number;
 }
 
+const PEM_BEGIN = '-----BEGIN CERTIFICATE-----';
+const PEM_END = '-----END CERTIFICATE-----';
+
 /**
- * Apple's three pinned roots and the system clock.
- *
- * @throws {Error} if the bundled roots are missing, do not parse, or do not
- * match their pinned fingerprints.
+ * The DER inside the first certificate block of a PEM string. Found with
+ * two `indexOf` calls rather than a regular expression, which is quadratic
+ * on many BEGIN lines with no END. The body goes through the platform's
+ * `atob`; whether the bytes are a certificate is the module's call.
  */
+function pemToDer(text: string): Uint8Array {
+  const begin = text.indexOf(PEM_BEGIN);
+  const end = begin < 0 ? -1 : text.indexOf(PEM_END, begin + PEM_BEGIN.length);
+  if (end < 0) {
+    throw new TypeError('a string trust root must be a PEM certificate');
+  }
+  let binary: string;
+  try {
+    binary = atob(text.slice(begin + PEM_BEGIN.length, end).replace(/\s+/g, ''));
+  } catch {
+    throw new TypeError('a PEM trust root must hold base64 between its BEGIN and END lines');
+  }
+  const der = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    der[i] = binary.charCodeAt(i);
+  }
+  return der;
+}
+
+function toDer(root: RootInput): Uint8Array {
+  if (typeof root === 'string') {
+    return pemToDer(root);
+  }
+  if (root instanceof Uint8Array) {
+    // A copy, so a caller's later write to their buffer changes nothing here.
+    return new Uint8Array(root);
+  }
+  throw new TypeError('a trust root must be a Uint8Array of DER or a PEM string');
+}
+
+function normalizeRoots(roots: readonly RootInput[]): readonly Uint8Array[] {
+  if (!Array.isArray(roots) || roots.length === 0) {
+    throw new TypeError('trustedRoots must be a non-empty array');
+  }
+  return Object.freeze(roots.map(toDer));
+}
+
+const systemClock = (): number => Date.now();
+
+/** Apple's three pinned roots and the system clock. */
 export function defaultConfig(): Config {
-  return { roots: defaultRoots(), clock: () => Date.now() };
+  return Object.freeze({ roots: null, clock: systemClock });
 }
 
 /** A config with explicit roots and/or clock; anything left out takes the default. */
 export function createConfig(options: CreateConfigOptions = {}): Config {
-  const roots = options.roots === undefined ? defaultRoots() : normalizeRoots(options.roots);
-  const clock = options.clock ?? (() => Date.now());
-  return { roots, clock };
+  return Object.freeze({
+    roots: options.roots === undefined ? null : normalizeRoots(options.roots),
+    clock: options.clock ?? systemClock,
+  });
 }

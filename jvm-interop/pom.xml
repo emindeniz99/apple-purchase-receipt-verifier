@@ -41,6 +41,9 @@
     <jvm.target>17</jvm.target>
 
     <library.version>0.7.0</library.version> <!-- x-release-please-version -->
+    <!-- The artifact under test: the main one, or its alternative
+         apple-purchase-receipt-verifier-wasm (same packages and API). -->
+    <verifier.artifactId>apple-purchase-receipt-verifier</verifier.artifactId>
     <junit.version>6.1.3</junit.version>
     <kotlin.version>2.4.20</kotlin.version>
     <scala.version>3.9.0</scala.version>
@@ -53,7 +56,7 @@
          consumer's build would resolve it from Maven Central. -->
     <dependency>
       <groupId>io.github.emindeniz99</groupId>
-      <artifactId>apple-purchase-receipt-verifier</artifactId>
+      <artifactId>${verifier.artifactId}</artifactId>
       <version>${library.version}</version>
     </dependency>
 

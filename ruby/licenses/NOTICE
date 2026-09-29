@@ -1,0 +1,18 @@
+apple-purchase-receipt-verifier (Ruby)
+
+This gem's own code is MIT-licensed (see ../LICENSE). The file
+lib/apple_purchase_receipt_verifier/aprv.wasm is a WebAssembly module built
+from this repository's Rust core, and it contains third-party code, whose
+licences ship here:
+
+  OpenSSL 4.0.2        Apache License 2.0    licenses/openssl/LICENSE.txt
+                       OpenSSL 4.0.2 ships no separate NOTICE file; its
+                       licence text is the complete notice.
+  wasi-libc            Apache-2.0 WITH LLVM-exception, Apache-2.0 and MIT,
+  (from wasi-sdk 34.0) plus the licences of the third-party parts it
+                       carries (musl, cloudlibc, dlmalloc)
+                                           licenses/wasi-libc/
+  Rust standard library  MIT OR Apache-2.0  licenses/rust/
+
+The `wasmtime` gem, which runs the module, is a separate dependency under
+its own licence (Apache-2.0).

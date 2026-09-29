@@ -108,9 +108,18 @@ inside the guest's linear memory ([aprv-server §10][server]).
 
 Every host inherits the core's input bounds (the root model §3.7, and the
 0.7 bounds table). Over the whole corpus the module's linear memory
-peaked at 23,789,568 bytes ([final Python round §2][pyfinal]); a hostile
-3 MiB receipt of tiny attributes peaked at 145 MiB of process memory in
-Node against 67 MiB for a tiny one ([ASN.1 payload §3][payload]).
+peaked at 23,789,568 bytes ([final Python round §2][pyfinal]), measured
+on the ABI v1 module before the core review's fixes and not repeated on
+the current one. A hostile 3 MiB receipt of tiny attributes used to peak
+at 145 MiB of process memory in Node ([ASN.1 payload §3][payload]). Since
+the review's fixes one header walk bounds the envelope and the payload
+before anything is decoded, and the unsigned and signerless forms peak
+near 16 to 18 MiB: the signerless receipt grew linear memory from 1.9 to
+16.1 MiB in 16.5 to 26 ms through `aprv.wasm` in V8, and the unsigned
+one with a signer certificate peaked near 18 MiB ([core review
+fixes][corefix]). The signed-payload path (R21) reaches the full payload
+decode after the walk and the signature, and was not re-measured, so no
+current figure exists for it.
 
 | Host | Memory | CPU and time | Concurrency |
 |---|---|---|---|
@@ -251,3 +260,4 @@ directory can plant code the next Python process runs
 [pyopt]: ../evidence/2026-09-27-python-runtime-options.md
 [payload]: ../evidence/2026-09-26-openssl-asn1-payload.md
 [wasmi]: ../evidence/2026-09-27-wasmi-security-review.md
+[corefix]: ../evidence/2026-09-29-core-review-fixes.md

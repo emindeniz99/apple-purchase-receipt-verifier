@@ -35,8 +35,9 @@ namespace ApplePurchaseReceiptVerifier
         /// <c>ProductionVPP</c> to <see cref="AppleEnvironment.Production"/>,
         /// <c>ProductionSandbox</c> and <c>ProductionVPPSandbox</c> to
         /// <see cref="AppleEnvironment.Sandbox"/>, anything else to
-        /// <see langword="null"/>. <see cref="IVerifier.VerifyReceiptEndpoint"/>
-        /// uses the same rule for its 21007/21008 routing.
+        /// <see langword="null"/>. The verification module behind
+        /// <see cref="IVerifier.VerifyReceiptEndpoint"/> uses the same rule for
+        /// its 21007/21008 routing.
         /// </summary>
         public static AppleEnvironment? FromReceiptType(string? receiptType)
         {
@@ -66,19 +67,6 @@ namespace ApplePurchaseReceiptVerifier
                 case "Production": return AppleEnvironment.Production;
                 case "Sandbox": return AppleEnvironment.Sandbox;
                 default: return null;
-            }
-        }
-
-        /// <summary>The wire spelling Apple's endpoint response uses for <paramref name="environment"/>.</summary>
-        internal static string ToValue(AppleEnvironment environment)
-        {
-            switch (environment)
-            {
-                case AppleEnvironment.Production: return "Production";
-                case AppleEnvironment.Sandbox: return "Sandbox";
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(environment), environment,
-                        "no claim value for this environment");
             }
         }
     }

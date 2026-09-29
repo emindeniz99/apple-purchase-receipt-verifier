@@ -17,9 +17,9 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::Reason;
 use apple_purchase_receipt_verifier::__internal::path::{self, Certificate};
 use apple_purchase_receipt_verifier::__internal::{base64_encode, keys_used_during};
+use apple_purchase_receipt_verifier::Reason;
 use common::der::{parse_exact, tag};
 use common::{der, der_int, der_oid, der_seq, CmsBuilder};
 use std::time::{Duration, Instant};

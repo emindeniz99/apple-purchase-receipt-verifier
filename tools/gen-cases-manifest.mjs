@@ -55,11 +55,17 @@
  *   maxMillis           a wall-clock budget for the call: the harness runs the
  *                       case once to warm up, then times a second run
  *   skippedFields       how many expected pointers this manifest DROPPED
- *   abiUnreachable      set on every decodeBase64 group, and only there: the
- *                       group calls a port's base64 decoders directly and
- *                       the ABI exposes none, so the line carries nothing
- *                       but its id, op and this reason. The harnesses count
- *                       these as not reachable, never as passed.
+ *   abiUnreachable      set on every decodeBase64 group, and only there,
+ *                       for a harness that drives the 0.7 C-string calls
+ *                       (the Elixir example): it counts the group as not
+ *                       reachable, never as passed
+ *   probe               a decodeBase64 group's inputs, one per decoder and
+ *                       text (repeated): `<decoder>~><1 if the text is
+ *                       empty, else 0>~><path>`, the path holding a
+ *                       receipt-data text as it is, or an x5c text as the
+ *                       three x5c entries of a JWS header; the C++ harness
+ *                       runs them through the `_bytes` calls, with
+ *                       `expect` ok or error
  *
  * WHAT IS DROPPED, and why it is counted rather than hidden: an expected
  * pointer below the top level, such as `/receipt/bundle_id` or
@@ -181,6 +187,12 @@ function inputString(kase, entry, bytes) {
   return Buffer.from(bytes.toString('base64'), 'utf8');
 }
 
+/** A JWS whose header carries `text` as every x5c entry: what reaches the x5c decoder through the ABI. */
+function x5cProbe(text) {
+  const b64url = (v) => Buffer.from(v).toString('base64url');
+  return Buffer.from(`${b64url(JSON.stringify({ alg: 'ES256', x5c: [text, text, text] }))}.${b64url('{}')}.${b64url('signature')}`);
+}
+
 function main() {
   const outDir = process.argv[2];
   if (!outDir) fail('usage: node tools/gen-cases-manifest.mjs <outdir>');
@@ -213,7 +225,18 @@ function main() {
   for (const kase of file.cases) {
     const parts = [checkPart(kase.id, `id=${kase.id}`), `op=${kase.operation}`];
     if (kase.operation === 'decodeBase64') {
-      parts.push('abiUnreachable=the C ABI exposes no base64 decoder');
+      // For the C-string calls (the Elixir example) the group stays counted,
+      // not run; the C++ harness runs it through the `_bytes` calls from the
+      // probes: each text as the input that reaches its decoder.
+      parts.push('abiUnreachable=the 0.7 C-string calls expose no base64 decoder');
+      parts.push(`expect=${kase.expected.status}`);
+      for (const decoder of kase.decoders) {
+        kase.input.texts.forEach((text, i) => {
+          const probePath = join(out, 'inputs', `${safeName(kase.id)}.${decoder}.${i}.txt`);
+          writeFileSync(probePath, decoder === 'x5c' ? x5cProbe(text) : Buffer.from(text, 'utf8'));
+          parts.push(checkPart(kase.id, `probe=${decoder}${SEPARATOR}${text === '' ? 1 : 0}${SEPARATOR}${probePath}`));
+        });
+      }
       lines.push(parts.join('\t'));
       unreachable += 1;
       continue;
@@ -317,7 +340,7 @@ function main() {
   process.stdout.write(
     `${lines.length} cases -> ${join(out, 'cases.tsv')} ` +
       `(${pinnedClocks} pin a clock, ${skippedFields} nested pointers dropped, ` +
-      `${unreachable} decodeBase64 groups the ABI cannot reach)\n`,
+      `${unreachable} decodeBase64 groups as probes)\n`,
   );
 }
 
