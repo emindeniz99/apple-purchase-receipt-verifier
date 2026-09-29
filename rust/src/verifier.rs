@@ -59,6 +59,17 @@ impl Verifier {
     /// # Errors
     /// A [`Failure`] naming the first check that failed.
     pub fn verify_receipt(&self, base64: &str) -> Result<ReceiptPayload, Failure> {
+        self.verify_receipt_bytes(base64.as_bytes())
+    }
+
+    /// [`verify_receipt`](Verifier::verify_receipt) for a caller that holds
+    /// the base64 text as bytes, as the Wasm module and other bindings do.
+    /// The checks and the verdicts are the same; bytes that are not UTF-8
+    /// cannot be base64 and fail as it does.
+    ///
+    /// # Errors
+    /// A [`Failure`] naming the first check that failed.
+    pub fn verify_receipt_bytes(&self, base64: &[u8]) -> Result<ReceiptPayload, Failure> {
         self.contained(|clock| receipt::verify(base64, &self.roots, clock))
     }
 
@@ -68,6 +79,17 @@ impl Verifier {
     /// # Errors
     /// A [`Failure`] naming the first check that failed.
     pub fn verify_signed_data(&self, jws: &str) -> Result<JsonPayload, Failure> {
+        self.verify_signed_data_bytes(jws.as_bytes())
+    }
+
+    /// [`verify_signed_data`](Verifier::verify_signed_data) for a caller
+    /// that holds the JWS as bytes. The checks and the verdicts are the
+    /// same; bytes that are not UTF-8 cannot be base64url and fail as it
+    /// does.
+    ///
+    /// # Errors
+    /// A [`Failure`] naming the first check that failed.
+    pub fn verify_signed_data_bytes(&self, jws: &[u8]) -> Result<JsonPayload, Failure> {
         self.contained(|clock| jws::verify(jws, &self.roots, clock))
     }
 
@@ -76,6 +98,18 @@ impl Verifier {
     /// `status` inside the body.
     #[must_use]
     pub fn verify_receipt_endpoint(&self, environment: Environment, request_json: &str) -> String {
+        self.verify_receipt_endpoint_bytes(environment, request_json.as_bytes())
+    }
+
+    /// [`verify_receipt_endpoint`](Verifier::verify_receipt_endpoint) for a
+    /// caller that holds the request body as bytes. A body that is not
+    /// UTF-8 is not JSON, and answers as any other body that is not.
+    #[must_use]
+    pub fn verify_receipt_endpoint_bytes(
+        &self,
+        environment: Environment,
+        request_json: &[u8],
+    ) -> String {
         if self.roots.is_empty() {
             return endpoint::status_only(endpoint::status(Reason::InternalError));
         }

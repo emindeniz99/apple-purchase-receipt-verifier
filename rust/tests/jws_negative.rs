@@ -7,7 +7,6 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::x509::Certificate;
 use apple_purchase_receipt_verifier::__internal::{base64_decode_lenient, base64_encode};
 use apple_purchase_receipt_verifier::{Config, Failure, Reason, TrustAnchor, Verifier};
 use serde_json::{json, Value};
@@ -191,7 +190,8 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
         .as_str()
         .unwrap();
     let der = base64_decode_lenient(leaf);
-    assert!(Certificate::from_der(&der).is_err());
+    // TrustAnchor::from_der is the library's certificate reader, public.
+    assert!(TrustAnchor::from_der(&der).is_err());
 
     let verifier = common::verifier([common::anchor("generated/hostile-jws-root.der")]);
     assert_eq!(
@@ -704,7 +704,8 @@ fn attacker_text_never_reaches_a_failure_message() {
     }
 }
 
-/// An EC SPKI on secp521r1, a curve this crate does not implement.
+/// An EC SPKI on secp521r1 whose point is not on the curve: a key OpenSSL
+/// cannot build, as it cannot build one on a curve it does not implement.
 fn p521_spki() -> Vec<u8> {
     let mut bits = vec![0x00, 0x04];
     bits.extend_from_slice(&[0x11; 132]);
@@ -717,8 +718,8 @@ fn p521_spki() -> Vec<u8> {
     ])
 }
 
-/// A curve is judged only on a key about to be used, after a pinned anchor
-/// vouched for it: never on the unused third entry, and on an intermediate
+/// A key OpenSSL cannot build is judged only on a key about to be used,
+/// after a pinned anchor vouched for it: never on the unused third entry, and on an intermediate
 /// no anchor signed it is the chain, not the certificate, that fails.
 #[test]
 fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
@@ -736,7 +737,6 @@ fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
     };
     // A minted chain whose third entry is on P-521, signed as it stands.
     use common::mint::{certificate, key, RECEIPT_SIGNER_MARKER, WWDR_MARKER};
-    use p256::ecdsa::signature::Signer;
     let (root_key, intermediate_key, leaf_key) = (key(11), key(12), key(13));
     let root = certificate("JWS Root", &root_key, "JWS Root", &root_key, 1, true, None);
     let intermediate = certificate(
@@ -768,11 +768,8 @@ fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
         common::base64url(header.as_bytes()),
         common::base64url(br#"{"signedDate":1735689600000}"#)
     );
-    let signature: p256::ecdsa::Signature = leaf_key.sign(signing_input.as_bytes());
-    let minted = format!(
-        "{signing_input}.{}",
-        common::base64url(&signature.to_bytes())
-    );
+    let signature = leaf_key.sign_raw(signing_input.as_bytes());
+    let minted = format!("{signing_input}.{}", common::base64url(&signature));
     let pinned = common::verifier([TrustAnchor::from_der(&root).unwrap()]);
     assert!(pinned.verify_signed_data(&minted).is_ok());
 
@@ -786,4 +783,35 @@ fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
         reason_of(&common::with_header(&jws, &header)),
         Reason::UntrustedChain
     );
+}
+
+/// Policy-F8: OpenSSL judges validity in whole seconds, and the core adds
+/// the milliseconds. The minted chain is valid from 2020-01-01T00:00:00Z to
+/// 2099-12-31T00:00:00Z, both instants included (RFC 5280 section
+/// 4.1.2.5), so one millisecond either side is outside it.
+#[test]
+fn validity_is_judged_to_the_millisecond() {
+    const NOT_BEFORE: i64 = 1_577_836_800_000;
+    const NOT_AFTER: i64 = 4_102_358_400_000;
+    let at = |millis: i64| {
+        let payload = format!(r#"{{"signedDate":{millis}}}"#);
+        let (root, jws) = common::mint::signed_jws(payload.as_bytes());
+        let verifier = Verifier::new(
+            Config::builder()
+                .roots([TrustAnchor::from_der(&root).unwrap()])
+                .clock(|| 0)
+                .build()
+                .unwrap(),
+        );
+        verifier
+            .verify_signed_data(&jws)
+            .err()
+            .map(|failure| failure.reason())
+    };
+    for inside in [NOT_BEFORE, NOT_BEFORE + 1, NOT_AFTER - 1, NOT_AFTER] {
+        assert_eq!(at(inside), None, "{inside}");
+    }
+    for outside in [NOT_BEFORE - 1, NOT_AFTER + 1, NOT_AFTER + 999] {
+        assert_eq!(at(outside), Some(Reason::InvalidCertificate), "{outside}");
+    }
 }

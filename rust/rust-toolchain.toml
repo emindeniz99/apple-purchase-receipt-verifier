@@ -1,0 +1,15 @@
+# The one pinned Rust toolchain for everything built in rust/: the core,
+# aprv.wasm (rust/bindings/abi, target wasm32-wasip1) and aprv-server. The
+# released module's hash depends on the compiler, so tools/reproduce-wasm.sh
+# and the release's build-wasm job both build with exactly this one.
+# wasi-sdk, OpenSSL, wasm-tools and wit-bindgen are pinned by SHA-256 in
+# tools/wasm-toolchain.sh.
+#
+# The crates' rust-version floor (1.85.0) is proven separately: those CI
+# legs name their toolchain (`cargo +1.85.0`), which overrides this file, and
+# so do the fuzz jobs (`cargo +nightly`).
+[toolchain]
+channel = "1.98.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-wasip1"]

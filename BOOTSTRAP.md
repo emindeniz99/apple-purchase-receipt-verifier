@@ -151,6 +151,29 @@ un-publish it; it makes every consumer's build fail with a checksum mismatch
 that looks exactly like a supply-chain attack. A bad release is fixed forward,
 with a new patch version whose `go.mod` carries `retract`.
 
+## The aprv-server image — GHCR needs one click, Docker Hub needs a token
+
+From 0.8.0, `release.yml`'s `publish-image` job pushes the `aprv-server`
+image to `ghcr.io/emindeniz99/aprv-server` with the workflow's own
+`GITHUB_TOKEN`, so GHCR needs no secret. A package GHCR creates on its first
+push is private:
+
+1. After the first 0.8.0 release, open the package's settings on GitHub
+   (Packages, `aprv-server`), link it to this repository if it is not, and
+   set its visibility to public.
+
+Docker Hub receives the same index, copied by digest, from the
+`publish-image-dockerhub` job, which runs in the `docker-hub` environment.
+Until that environment holds a token the job prints a notice and succeeds.
+
+1. On Docker Hub, create the namespace (an organisation or the owner's
+   account) and a repository `aprv-server` in it.
+2. Create an access token with read and write scope on that repository.
+3. In this repository's settings, create the environment `docker-hub` and
+   add the secret `DOCKERHUB_TOKEN` (the token) and two variables:
+   `DOCKERHUB_USERNAME` (the account that owns the token) and
+   `DOCKERHUB_NAMESPACE` (where the image goes).
+
 ## Packagist (PHP) — layout A is landed, two owner actions remain
 
 **The PHP package is the repository root.** Packagist reads `composer.json`

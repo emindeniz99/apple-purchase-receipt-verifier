@@ -1766,6 +1766,150 @@
       "role": "input",
       "codec": "text",
       "contentSha256": "89f8d25081d1c3fd83a75099173283177ec0146f6fba6a54d980f3df3c8190e8"
+    },
+    "core-review-receipt-certificate-parameters-33": {
+      "path": "generated-0.7/core-review-receipt-certificate-parameters-33.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "ebf2cdb846c17790d7eb3fd07bed70b953edb35821d3ede4362939aa5d84028e"
+    },
+    "core-review-receipt-constructed-utf8": {
+      "path": "generated-0.7/core-review-receipt-constructed-utf8.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "425cc8aa8923c4e0796699f2c6817ef7f0b8abe1f2fa70f914770bc27587a5bb"
+    },
+    "core-review-receipt-content-context-tags-32": {
+      "path": "generated-0.7/core-review-receipt-content-context-tags-32.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "88451c069846a3b3b8c18414f7182ae6429b3a0c381e60d78f0ff11f18b45ff1"
+    },
+    "core-review-receipt-content-context-tags-33": {
+      "path": "generated-0.7/core-review-receipt-content-context-tags-33.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "5772c2aa2633bcc42250336e29020e6b1bec633c5a23b6c068b805324da9d5c0"
+    },
+    "core-review-receipt-crl-33": {
+      "path": "generated-0.7/core-review-receipt-crl-33.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "5cc3ec879e3a2f3479a364c5e3eaf7c33e1220717ef97d6565b54ad5db6b32c5"
+    },
+    "core-review-receipt-digest-algorithms-32": {
+      "path": "generated-0.7/core-review-receipt-digest-algorithms-32.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "6687750a2d53acdecdfc521c1226482136cab7319a5caeb8d16b10d565d58484"
+    },
+    "core-review-receipt-digest-algorithms-33": {
+      "path": "generated-0.7/core-review-receipt-digest-algorithms-33.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "6b6fa1496edf636f61aed8a88729f88ca5e11d95708baa9c2c88794db0ffdf64"
+    },
+    "core-review-receipt-econtent-6-levels": {
+      "path": "generated-0.7/core-review-receipt-econtent-6-levels.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "30a780cc857894986842a16dece2a442c8505d71b6572b70c3032155903e7887"
+    },
+    "core-review-receipt-econtent-7-levels": {
+      "path": "generated-0.7/core-review-receipt-econtent-7-levels.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "945213220e490020fe6125acfe47542a6e8e83cbc84e285e9f537378d1145af3"
+    },
+    "core-review-receipt-eleven-crls": {
+      "path": "generated-0.7/core-review-receipt-eleven-crls.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "338c5405eb769ff02191a253caf1a1552aa9c0241191fa4b5f77181d8bfccb34"
+    },
+    "core-review-receipt-even-modulus": {
+      "path": "generated-0.7/core-review-receipt-even-modulus.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0267c2e909514c1f73a03d1c8dcfb9e23064b4bb4f68a3e20328daf5714c72a4"
+    },
+    "core-review-receipt-five-octet-length": {
+      "path": "generated-0.7/core-review-receipt-five-octet-length.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "988f6d36d3d6faccee183e47a0694dcf53a77be52daef9ff930bb68c047cf325"
+    },
+    "core-review-receipt-fourth-boolean": {
+      "path": "generated-0.7/core-review-receipt-fourth-boolean.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "e0006bfdb7c2cd2470d0225f74d258e215de91f4cc55cb3032a574b41b9cbdfd"
+    },
+    "core-review-receipt-fourth-sequence": {
+      "path": "generated-0.7/core-review-receipt-fourth-sequence.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0adaee63a41fd40161762ed64425f765df29bf995e93ab5c631700b57f9adc42"
+    },
+    "core-review-receipt-high-tag-type": {
+      "path": "generated-0.7/core-review-receipt-high-tag-type.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "c372d45db0ba1cf879ba7b463aca6cab78d2743cf820142f3e3ba77eb8c30ab2"
+    },
+    "core-review-receipt-high-tag-value": {
+      "path": "generated-0.7/core-review-receipt-high-tag-value.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0e7598d0273c964639856f10dacf4b438e341474631d530dff892c0fff2a095f"
+    },
+    "core-review-receipt-root": {
+      "path": "generated-0.7/core-review-receipt-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "bbe79fa4ee3cd43a5c999b290b4f5d38e9940417e3d3b6208865cda16775c867"
+    },
+    "core-review-receipt-ten-crls": {
+      "path": "generated-0.7/core-review-receipt-ten-crls.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "0b716223d28d212b02b1b4809c7ea6f518d1a7e82d5f9df98ec15eebccb47556"
+    },
+    "core-review-receipt-unsigned-context-tags-33": {
+      "path": "generated-0.7/core-review-receipt-unsigned-context-tags-33.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "3ce737268d9cea00935e9e675e9c7e4209dd5e32bae4bf02b5c5b170f6c79b1c"
+    },
+    "core-review-receipt-value-6-levels": {
+      "path": "generated-0.7/core-review-receipt-value-6-levels.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "7a209d58ee59da801056ab15d6b59bb5055c6344dd16557c0936cc1d6984223b"
+    },
+    "core-review-receipt-value-7-levels": {
+      "path": "generated-0.7/core-review-receipt-value-7-levels.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "9322d0576b31892f8a2148c94992aa2fd9893c3c218c59e52e9d32e2477c1a16"
+    },
+    "core-review-receipt-value-chunks": {
+      "path": "generated-0.7/core-review-receipt-value-chunks.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "c608c3cf8d232c23fa95398c10b32e2f48ae09e6c6a116d7fe3896db9e268f12"
+    },
+    "core-review-receipt-value-foreign-chunk": {
+      "path": "generated-0.7/core-review-receipt-value-foreign-chunk.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "9fd519fb3017f299d7eed9b29a39415d8695173542ee5ac4efbb719733f46a1c"
+    },
+    "core-review-receipt-wrap-foreign-chunk": {
+      "path": "generated-0.7/core-review-receipt-wrap-foreign-chunk.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "53e2a84b33eae2fd7f8799bed153dec88e09ddda6e173fab3ea3017c75e83ad8"
     }
   },
   "cases": [
@@ -11313,6 +11457,860 @@
         "validity-window",
         "oid",
         "verification-order",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-econtent-rechunked-into-6-constructed-levels",
+      "description": "The shared receipt with its eContent re-encoded as an OCTET STRING of six constructed levels, all chunks OCTET STRINGs (X.690 section 8.7.3). The joined octets, which the signature covers, do not change, and OpenSSL decodes six levels: it verifies. The core used to stop one level short.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-econtent-6-levels"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "der"
+      ]
+    },
+    {
+      "id": "receipt/reject-econtent-rechunked-into-7-constructed-levels",
+      "description": "The same eContent re-encoded as seven constructed levels. OpenSSL, the core's decoder, reads at most six (ASN1_MAX_STRING_NEST), so the envelope does not decode: MALFORMED, failing closed. 0.7 read it within its depth bound of 32; recorded as a substrate divergence in docs/rust-core/DECISIONS.md R20.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-econtent-7-levels"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "econtent-chunks-nested-7-levels",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "der",
+        "limits"
+      ]
+    },
+    {
+      "id": "receipt/accept-digest-algorithm-parameters-nested-32-deep",
+      "description": "The shared receipt whose unsigned SignedData.digestAlgorithms entry carries parameters of nested SEQUENCEs, so the envelope nests 32 constructed values deep counting the ContentInfo as 1 (ContentInfo, [0], SignedData, the SET, the AlgorithmIdentifier, then 27 levels): at the bound, it verifies.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-digest-algorithms-32"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "limits"
+      ]
+    },
+    {
+      "id": "receipt/reject-digest-algorithm-parameters-nested-33-deep",
+      "description": "The same parameters one level deeper: the envelope nests 33 deep, over the ASN.1 depth bound, which counts every constructed value of the envelope wherever it sits: MALFORMED before any cryptography. The core used to measure the depth only inside SignerInfo values, and verified this.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-digest-algorithms-33"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "digest-algorithm-parameters-nested-33-deep",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "limits"
+      ]
+    },
+    {
+      "id": "receipt/reject-an-envelope-nested-33-deep-in-context-tags",
+      "description": "The shared receipt whose SignerInfo gains an unsigned attribute value of 25 nested [0] context-tagged constructed values: 33 deep counting the ContentInfo as 1. The depth bound counts constructed values of every class, not only SEQUENCEs and SETs: MALFORMED.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-unsigned-context-tags-33"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "envelope-nested-33-deep-in-context-tags",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "limits"
+      ]
+    },
+    {
+      "id": "receipt/reject-a-crls-entry-nested-33-deep",
+      "description": "The shared receipt with a crls field holding one CertificateList whose signature algorithm parameters nest 26 SEQUENCEs deep: 33 deep in the envelope (ContentInfo, [0], SignedData, [1], the CertificateList, its TBSCertList, the AlgorithmIdentifier, then 26 levels). MALFORMED.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-crl-33"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "crls-entry-nested-33-deep",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "limits"
+      ]
+    },
+    {
+      "id": "receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep",
+      "description": "The shared receipt with one more embedded certificate: a copy of its intermediate whose outer signatureAlgorithm parameters nest 27 SEQUENCEs deep, 33 deep in the envelope. MALFORMED before any certificate is decoded.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-certificate-parameters-33"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "embedded-certificate-nested-33-deep",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "limits"
+      ]
+    },
+    {
+      "id": "receipt/accept-ten-embedded-crls",
+      "description": "The shared receipt with ten minimal CertificateLists in its unsigned crls field. Apple's receipts carry none, and nothing reads them; at the bound of ten, which is the certificate bound, it verifies.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-ten-crls"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "limits"
+      ]
+    },
+    {
+      "id": "receipt/reject-eleven-embedded-crls",
+      "description": "The same receipt with eleven CRLs: one over the bound. Each CRL is decoded in full before anything is verified, so the count is bounded before a single one is decoded, as the certificates are: MALFORMED. The 0.7 contract is silent on CRLs; this is the fail-closed answer.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-eleven-crls"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "eleven-embedded-crls",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "limits"
+      ]
+    },
+    {
+      "id": "receipt/accept-signed-content-nested-32-deep-in-context-tags",
+      "description": "Signed content whose unknown attribute 9000 carries a fourth field of 30 nested [0] context-tagged values: the content nests 32 deep counting the SET as 1. At the bound, it verifies.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-content-context-tags-32"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app",
+          "/unknown_attributes/9000/0": "AgEB"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "limits",
+        "payload"
+      ]
+    },
+    {
+      "id": "receipt/unreadable-signed-content-nested-33-deep-in-context-tags",
+      "description": "The same fourth field one level deeper: 33 deep. The depth bound counts constructed values of every class; the signature verifies, so the content is UNREADABLE_PAYLOAD. The core used to count only SEQUENCEs and SETs, and read it.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-content-context-tags-33"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNREADABLE_PAYLOAD"
+      },
+      "fault": "signed-content-nested-33-deep-in-context-tags",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "limits",
+        "payload",
+        "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/accept-attribute-value-as-a-constructed-octet-string",
+      "description": "Signed content whose bundle id value is an OCTET STRING of two constructed levels, every chunk an OCTET STRING, as BER allows: the chunks are joined and the bundle id reads.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-value-chunks"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "payload",
+        "der"
+      ]
+    },
+    {
+      "id": "receipt/unreadable-attribute-value-with-a-utf8string-chunk",
+      "description": "Signed content whose bundle id value is a constructed OCTET STRING whose chunk is a UTF8String. X.690 section 8.7.3 allows only OCTET STRING chunks, and 0.7 and Java refuse it; OpenSSL joins chunks of any tag, and the core used to read com.example.app out of it. The signature verifies: UNREADABLE_PAYLOAD.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-value-foreign-chunk"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNREADABLE_PAYLOAD"
+      },
+      "fault": "attribute-value-with-a-utf8string-chunk",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "payload",
+        "der",
+        "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/unreadable-double-wrap-with-a-foreign-chunk",
+      "description": "Signed content in the Xcode double wrap, written as a constructed OCTET STRING whose one chunk is an INTEGER holding the attribute SET. The wrap is an OCTET STRING, and its chunks must be too: UNREADABLE_PAYLOAD, as in 0.7 and Java.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-wrap-foreign-chunk"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNREADABLE_PAYLOAD"
+      },
+      "fault": "double-wrap-with-an-integer-chunk",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "payload",
+        "der",
+        "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/bundle-id-as-a-constructed-utf8string-is-kept-raw",
+      "description": "Signed content whose bundle id is a constructed, indefinite-length UTF8String (BER, never DER). The value does not decode as a string, so bundle_id is null and bundle_id_bytes keeps the octets, as in 0.7; OpenSSL would join the chunks.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-constructed-utf8"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": null,
+          "/bundle_id_bytes": "LIAED2NvbS5leGFtcGxlLmFwcAAA"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "payload",
+        "der",
+        "unparseable-attribute"
+      ]
+    },
+    {
+      "id": "receipt/unreadable-attribute-type-in-high-tag-form",
+      "description": "Signed content whose first attribute type is the INTEGER 2 written with its tag in high-tag-number form (1F 02). DER forbids that form for a tag below 31, and 0.7 refused it anywhere in the payload; OpenSSL reads it. The signature verifies: UNREADABLE_PAYLOAD.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-high-tag-type"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNREADABLE_PAYLOAD"
+      },
+      "fault": "attribute-type-in-high-tag-form",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "payload",
+        "der",
+        "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/app-item-id-in-high-tag-form-is-kept-raw",
+      "description": "Signed content whose app item id value is the INTEGER 5 with its tag in high-tag-number form. The value does not decode, so the attribute is kept raw, as in 0.7.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-high-tag-value"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app",
+          "/app_item_id": null,
+          "/unknown_attributes/1/0": "HwIBBQ=="
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "payload",
+        "der",
+        "unparseable-attribute"
+      ]
+    },
+    {
+      "id": "receipt/bundle-id-with-a-five-octet-length-is-kept-raw",
+      "description": "Signed content whose bundle id UTF8String states its length in five octets. 0.7 read lengths of at most four octets and DER needs one; OpenSSL reads it. The value does not decode: bundle_id is null.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-five-octet-length"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": null,
+          "/bundle_id_bytes": "DIUAAAAAD2NvbS5leGFtcGxlLmFwcA=="
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "payload",
+        "der",
+        "unparseable-attribute"
+      ]
+    },
+    {
+      "id": "receipt/unreadable-fourth-field-boolean-of-two-octets",
+      "description": "Signed content whose unknown attribute 9000 carries a fourth field that is a BOOLEAN of two octets. OpenSSL decodes every field by its tag and refuses it; 0.7 kept fields after the value opaque and verified. Matching 0.7 would take decoding by hand (R21), so the refusal stands, recorded in docs/rust-core/DECISIONS.md R20: UNREADABLE_PAYLOAD.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-fourth-boolean"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNREADABLE_PAYLOAD"
+      },
+      "fault": "fourth-field-boolean-of-two-octets",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "payload",
+        "der",
+        "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/unreadable-fourth-field-sequence-holding-a-padded-integer",
+      "description": "Signed content whose fourth field is a SEQUENCE holding an INTEGER with a redundant leading octet, which X.690 section 8.3.2 forbids in BER as in DER: the attribute SET is not valid ASN.1, at any depth, so the signature verifies and the content is UNREADABLE_PAYLOAD, as in Java. 0.7's Rust reader did not look inside the field.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-fourth-sequence"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNREADABLE_PAYLOAD"
+      },
+      "fault": "fourth-field-sequence-holding-a-padded-integer",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "payload",
+        "der",
+        "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/accept-attribute-value-rechunked-into-6-constructed-levels",
+      "description": "Signed content whose bundle id value is an OCTET STRING of six constructed levels of OCTET STRING chunks: OpenSSL decodes six, and the bundle id reads.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-value-6-levels"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "positive",
+        "payload",
+        "der"
+      ]
+    },
+    {
+      "id": "receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels",
+      "description": "The same value in seven constructed levels. OpenSSL reads at most six (ASN1_MAX_STRING_NEST), so the content does not decode; the signature verifies: UNREADABLE_PAYLOAD. 0.7 read it within its depth bound; recorded in docs/rust-core/DECISIONS.md R20.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-value-7-levels"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNREADABLE_PAYLOAD"
+      },
+      "fault": "attribute-value-chunks-nested-7-levels",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "core-review",
+        "new-in-0-7",
+        "negative",
+        "payload",
+        "der",
+        "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/verify-under-the-second-of-two-roots-sharing-a-subject",
+      "description": "The shared receipt with two pinned roots of the same subject name, its own second: a chain verifies when its root is anywhere in the configured set, in any order. OpenSSL's issuer lookup takes the first root whose name matches, and the core answered UNTRUSTED_CHAIN with its own root second. Apple's three roots have distinct names.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "api-receipt-root",
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-under-the-first-of-two-roots-sharing-a-subject",
+      "description": "The shared receipt with two pinned roots of the same subject name, its own first: a chain verifies when its root is anywhere in the configured set, in any order. OpenSSL's issuer lookup takes the first root whose name matches, and the core answered UNTRUSTED_CHAIN with its own root second. Apple's three roots have distinct names.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root",
+            "api-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/verify-under-the-second-of-two-roots-sharing-a-subject",
+      "description": "The shared transaction with two pinned roots of the same subject name, its own second: it verifies in either order.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "api-jws-root",
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundleId": "com.example.app"
+        }
+      },
+      "tags": [
+        "transaction",
+        "jws",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/verify-under-the-first-of-two-roots-sharing-a-subject",
+      "description": "The shared transaction with two pinned roots of the same subject name, its own first: it verifies in either order.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "transaction"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root",
+            "api-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundleId": "com.example.app"
+        }
+      },
+      "tags": [
+        "transaction",
+        "jws",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-with-an-even-rsa-modulus",
+      "description": "The shared receipt with the last octet of its signer certificate's RSA modulus zeroed, so the modulus is even. The certificate still decodes, but its intermediate's signature over it no longer holds, so no path reaches the pinned root: UNTRUSTED_CHAIN, before the key is used. A port whose RSA decoder refuses an even modulus at decode time answers INVALID_CERTIFICATE instead.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-receipt-even-modulus"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "UNTRUSTED_CHAIN"
+      },
+      "fault": "signer-rsa-modulus-even",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "negative",
+        "core-review",
         "new-in-0-7"
       ]
     }

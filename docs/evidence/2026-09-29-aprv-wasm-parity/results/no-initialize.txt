@@ -1,0 +1,3 @@
+# the same, with _initialize never called (CALL_INIT unset)
+summary: 311 cases, 311 passed, 0 failed, 0 traps, 0 unexpected imports called, 0 not run
+summary: 0 failed
