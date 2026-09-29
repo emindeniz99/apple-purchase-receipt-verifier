@@ -49,9 +49,6 @@ final class ReceiptCore {
      */
     static final int MAX_EMBEDDED_CRLS = 10;
 
-    /** ContentInfo, then [0], SignedData, encapContentInfo, [0], eContent. */
-    private static final int[] E_CONTENT = {1, 0, 2, 1, 0};
-
     /**
      * Certificates below the anchor, leaf included. PKIX's own limit counts
      * intermediates and skips self-issued ones, so the built path is measured
@@ -104,11 +101,10 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.MALFORMED, "receipt nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
         }
-        if (Asn1Depth.octetStringNestExceeded(receiptDer, Asn1Depth.find(receiptDer, E_CONTENT))) {
+        if (Asn1Depth.stringNestExceeded(receiptDer)) {
             throw new VerificationException(
                     Reason.MALFORMED,
-                    "receipt eContent nests its chunks deeper than " + Asn1Depth.MAX_STRING_NEST
-                            + " constructed levels");
+                    "receipt nests a constructed string deeper than " + Asn1Depth.MAX_STRING_NEST + " levels");
         }
         ASN1Primitive parsed;
         try {

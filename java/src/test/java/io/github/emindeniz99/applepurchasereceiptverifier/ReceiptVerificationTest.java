@@ -34,8 +34,11 @@ import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.BERSequence;
+import org.bouncycastle.asn1.BERSet;
+import org.bouncycastle.asn1.BERTaggedObject;
 import org.bouncycastle.asn1.DERBMPString;
 import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERIA5String;
@@ -134,6 +137,11 @@ class ReceiptVerificationTest {
      * SEQUENCE so a chunked eContent keeps its chunks.
      */
     private static byte[] respun(SignedData genuine, ASN1Encodable encapContentInfo, ASN1Set crls) throws Exception {
+        return respun(genuine, encapContentInfo, crls, genuine.getSignerInfos());
+    }
+
+    private static byte[] respun(SignedData genuine, ASN1Encodable encapContentInfo, ASN1Set crls, ASN1Set signerInfos)
+            throws Exception {
         ASN1EncodableVector fields = new ASN1EncodableVector();
         fields.add(genuine.getVersion());
         fields.add(genuine.getDigestAlgorithms());
@@ -142,8 +150,27 @@ class ReceiptVerificationTest {
         if (crls != null) {
             fields.add(new DERTaggedObject(false, 1, crls));
         }
-        fields.add(genuine.getSignerInfos());
+        fields.add(signerInfos);
         return new ContentInfo(CMSObjectIdentifiers.signedData, new BERSequence(fields)).getEncoded();
+    }
+
+    /**
+     * {@code genuine} whose SignerInfo gains an unsigned attribute whose one
+     * value is a SEQUENCE holding an OCTET STRING of {@code levels}
+     * constructed levels.
+     */
+    private static byte[] withUnsignedValue(SignedData genuine, int levels) throws Exception {
+        ASN1Sequence signerInfo =
+                ASN1Sequence.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        ASN1EncodableVector fields = new ASN1EncodableVector();
+        for (ASN1Encodable field : signerInfo) {
+            fields.add(field);
+        }
+        ASN1Encodable value = new BERSequence(TestPki.chunked(new byte[] {1}, levels));
+        fields.add(new BERTaggedObject(false, 1, new BERSet(new BERSequence(new ASN1Encodable[] {
+            new ASN1ObjectIdentifier("1.2.3.4"), new BERSet(value)
+        }))));
+        return respun(genuine, genuine.getEncapContentInfo(), null, new BERSet(new BERSequence(fields)));
     }
 
     /** {@code count} minimal CertificateLists, each signed by a key of its own issuer. */
@@ -419,7 +446,23 @@ class ReceiptVerificationTest {
         byte[] seven = respun(genuine, new ContentInfo(type, TestPki.chunked(content, 7)), null);
         VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, seven));
         assertEquals(Reason.MALFORMED, e.reason());
-        assertTrue(e.getMessage().contains("deeper than 6 constructed levels"), e.getMessage());
+        assertTrue(e.getMessage().contains("constructed string deeper than 6 levels"), e.getMessage());
+    }
+
+    /**
+     * The string bound holds wherever a string is, not only in the eContent:
+     * an unsigned attribute value that is a SEQUENCE holding a string of
+     * seven levels is MALFORMED, one of six verifies. The value is unsigned,
+     * so nothing but the bound tells them apart.
+     */
+    @Test
+    void rejectsAnUnsignedValueHoldingAStringOfSevenLevels() throws Exception {
+        SignedData genuine = signedData(receiptDer);
+        assertEquals(BUNDLE, verify(pki, withUnsignedValue(genuine, 6)).bundleId());
+        byte[] seven = withUnsignedValue(genuine, 7);
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, seven));
+        assertEquals(Reason.MALFORMED, e.reason());
+        assertTrue(e.getMessage().contains("constructed string deeper than 6 levels"), e.getMessage());
     }
 
     /**

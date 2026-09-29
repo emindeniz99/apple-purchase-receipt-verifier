@@ -55,9 +55,9 @@ pub enum CmsError {
     /// chunk, at some depth, that is not an `OCTET STRING`. X.690 section
     /// 8.7.3 allows no other; OpenSSL joins any universal chunk.
     ForeignContentChunk,
-    /// The encapsulated content's constructed `OCTET STRING` nests more
-    /// levels than OpenSSL decodes (six).
-    ContentChunksTooDeep,
+    /// A constructed string, the encapsulated content's or one kept whole
+    /// inside another value, nests more levels than OpenSSL decodes (six).
+    StringTooDeep,
 }
 
 impl core::fmt::Display for CmsError {
@@ -76,9 +76,9 @@ impl core::fmt::Display for CmsError {
             CmsError::ForeignContentChunk => {
                 f.write_str("encapsulated payload has a chunk that is not an OCTET STRING")
             }
-            CmsError::ContentChunksTooDeep => f.write_str(
-                "encapsulated payload's OCTET STRING chunks nest deeper than OpenSSL decodes",
-            ),
+            CmsError::StringTooDeep => {
+                f.write_str("a constructed string nests deeper than OpenSSL decodes")
+            }
         }
     }
 }
@@ -113,9 +113,18 @@ std::thread_local! {
 /// embedded certificate's key) on this thread meanwhile: the tests' seam
 /// for "refused before the full decode".
 pub fn full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
-    let previous = FULL_DECODES.with(|count| count.replace(Some(0)));
+    /// Puts the previous count back when dropped, so a panic in `body`
+    /// that is caught does not leave this thread counting.
+    struct Restore(Option<usize>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            FULL_DECODES.with(|count| count.set(self.0));
+        }
+    }
+    let restore = Restore(FULL_DECODES.with(|count| count.replace(Some(0))));
     let result = body();
-    let counted = FULL_DECODES.with(|count| count.replace(previous));
+    let counted = FULL_DECODES.with(Cell::get);
+    drop(restore);
     (result, counted.unwrap_or(0))
 }
 
@@ -154,55 +163,49 @@ impl core::fmt::Debug for SignedData {
 
 impl SignedData {
     /// Parses a DER or BER `ContentInfo` and checks its outer shape, in an
-    /// order that keeps the cost of a hostile envelope bounded before the
-    /// full decode (`d2i_CMS_ContentInfo`) builds every embedded
-    /// certificate's key:
+    /// order that keeps the cost of a hostile envelope bounded before
+    /// anything is built per entry:
     ///
-    /// 1. the shallow decode: one `ContentInfo` of type `signedData` whose
+    /// 1. the header walk over the whole input, within `limits.depth` and
+    ///    `limits.nodes`, which decodes no value and allocates nothing;
+    /// 2. the shallow decode: one `ContentInfo` of type `signedData` whose
     ///    `SignedData` has the shape, every member kept as its raw
     ///    encoding, and nothing after it;
-    /// 2. the member bounds, on the shallow decode's counts;
-    /// 3. the header walk over the whole input, within `limits.depth` and
-    ///    `limits.nodes`;
-    /// 4. the full decode, then the chunks of the encapsulated content.
+    /// 3. the member bounds, on the shallow decode's counts;
+    /// 4. the full decode (`d2i_CMS_ContentInfo`, which builds every
+    ///    embedded certificate's key), then the chunks of the encapsulated
+    ///    content.
     ///
-    /// An envelope refused at steps 1 to 3 never reaches the full decode.
-    /// The shallow grammar accepts every envelope the full decode does, so
-    /// step 1 refuses nothing step 4 would accept. When step 1 refuses, the
-    /// walk runs anyway to say why (bytes after the value, the depth or
-    /// node bound); both are linear in the input, and neither builds a key.
+    /// The walk comes first because the shallow decode allocates a value
+    /// for every entry of the `certificates`, `crls` and `signerInfos`
+    /// sets, so only the node budget bounds how many it builds. An
+    /// envelope refused at steps 1 to 3 never reaches the full decode. The
+    /// shallow grammar accepts every envelope the full decode does, so
+    /// step 2 refuses nothing step 4 would accept.
     ///
     /// # Errors
     /// [`CmsError`] for anything but one `signedData` with attached content
     /// and at least one `SignerInfo`, within `limits`.
     pub fn parse(der: &[u8], limits: &EnvelopeLimits) -> Result<SignedData, CmsError> {
         init();
-        let walk = || {
-            let budget = Budget {
-                depth: limits.depth,
-                nodes: limits.nodes,
-            };
-            walk::walk_exact(der, budget, Headers::Ber, Some(decodes_as_any)).map_err(|err| {
-                match err {
-                    WalkError::Malformed => CmsError::Malformed,
-                    WalkError::Trailing => CmsError::Trailing,
-                    WalkError::TooDeep => CmsError::TooDeep,
-                    WalkError::TooManyNodes => CmsError::TooManyNodes,
-                }
-            })
+        let budget = Budget {
+            depth: limits.depth,
+            nodes: limits.nodes,
         };
-        let envelope = match Envelope::decode(der) {
-            Ok(envelope) => envelope,
-            Err(shallow) => {
-                walk()?;
-                return Err(match shallow {
-                    ShallowError::Malformed => CmsError::Malformed,
-                    ShallowError::NotSignedData => CmsError::NotSignedData,
-                });
-            }
-        };
+        walk::walk_exact(der, budget, Headers::Ber, Some(decodes_as_any)).map_err(
+            |err| match err {
+                WalkError::Malformed => CmsError::Malformed,
+                WalkError::Trailing => CmsError::Trailing,
+                WalkError::TooDeep => CmsError::TooDeep,
+                WalkError::TooManyNodes => CmsError::TooManyNodes,
+                WalkError::StringTooDeep => CmsError::StringTooDeep,
+            },
+        )?;
+        let envelope = Envelope::decode(der).map_err(|shallow| match shallow {
+            ShallowError::Malformed => CmsError::Malformed,
+            ShallowError::NotSignedData => CmsError::NotSignedData,
+        })?;
         within(envelope.members(), limits)?;
-        walk()?;
         let (raw, whole) = d2i_whole(der, |cursor, len| {
             FULL_DECODES.with(|count| count.set(count.get().map(|n| n.saturating_add(1))));
             // SAFETY: `cursor` points at `len` readable bytes of `der`;
@@ -227,7 +230,7 @@ impl SignedData {
             return Err(CmsError::NoSignerInfo);
         }
         envelope.content_chunks().map_err(|err| match err {
-            ChunkError::TooDeep => CmsError::ContentChunksTooDeep,
+            ChunkError::TooDeep => CmsError::StringTooDeep,
             ChunkError::Foreign | ChunkError::Malformed => CmsError::ForeignContentChunk,
         })?;
         Ok(parsed)
