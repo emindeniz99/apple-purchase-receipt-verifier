@@ -6,8 +6,8 @@ is wired yet; lane B does not edit `.github/`.
 ## Inputs every leg needs
 
 - The component: `aprv.component.wasm` from the `rust-wasm` job (its
-  SHA-256 is that job's output). Lane B checked G1's component (the 0.7
-  core, sha256 8f758c0b…) with the commands below.
+  SHA-256 is that job's output). Lane B last checked the G1c component
+  (the final 0.7 core, sha256 84fe428c…) with the commands below.
 - Rust 1.98.1 (the toolchain the evidence used), with the
   `x86_64-unknown-linux-musl` target; `binutils` for `readelf`.
 - Python 3.10+ (standard library only for the scripts); Node 22 for
@@ -65,7 +65,7 @@ kill %1 %2
 
 Notes on the steps:
 
-- `cases.py` must exit 0: with the G1 component, 278 of 278 expressible
+- `cases.py` must exit 0: with the G1c component, 344 of 344 expressible
   cases pass on each transport. The 33 `decodeBase64` cases are not
   expressible through the server (it exposes no decoder) and are
   reported as such.
@@ -75,14 +75,16 @@ Notes on the steps:
   corpus job produces both. Expected per transport: every row identical
   except the 27 whose body is over 3,145,728 bytes, which the module
   refuses for size and the server answers 413 (the CLI exits 3) before
-  the module sees them. With G1: 6,152 identical, 27 over-cap, 0
+  the module sees them. With G1c: 6,152 identical, 27 over-cap, 0
   different, on HTTP fresh, HTTP pool and the CLI.
 - Spectral resolves the two `$ref`s to `../bindings/wire/schema/`; on a
   branch without lane A2's files it reports 2 `invalid-ref` errors and
   nothing else. With A2's files beside it: 0 findings. Schemathesis can
   also load `openapi.yaml` from that tree (`schemathesis run openapi.yaml
   --url http://127.0.0.1:18080`), which validates every response body
-  against A2's schemas: 653 of 653 passed with G1.
+  against A2's schemas: 653 of 653 passed with G1. Now that the files
+  are in the tree, the committed document lints at 0 findings and the
+  served `/openapi.json` bundles them.
 - `python3 scripts/startup.py --aprv $BIN` prints start-up and per-call
   times for the record; it is not a gate (README.md, "Measured").
 - `sudo chroot` needs root; on GitHub's hosted runners `sudo` works.
