@@ -15,8 +15,9 @@ work.
 |---|---|---|---|
 | A1 core | `lane/core` | steps 1.1, 1.2: the core on OpenSSL 4, native build | handed back 2026-09-29 (head d5c2838): 548 tests, conformance 313/313, vendored and `OPENSSL_DIR` builds identical on 6,179 rows, no verdict change against the 0.7 core except 5 JWS rows the Java implementation already verifies, `rust/ffi` 22 tests plus C++ and ctypes 278/278, isolation test under strace; evidence note `2026-09-29-openssl-core-parity` |
 | A2 core | `lane/core` | steps 1.3, 1.4, 1.5 (build script), 1.14: workspace, surface, wire, canonical ABI, schemas | handed back 2026-09-29 (head 05b4ad9): the real `aprv.wasm` (3,005,922 B) and component (3,008,364 B), reproducible from a fresh clone; 311 of 311 cases through the trap host with 0 traps, ABI tests 18 checks on Node and 11 on Wasmtime, module identical to its native twin on 6,179 of 6,179 corpus rows and to A1's 0.7 rows on the 5,897 the text API could take; every answer validates against the four JSON Schemas; workspace 589 tests, clippy clean, `check-layering` and `check-wasm.sh` pass; `wasi:random` measured and not adopted; evidence note `2026-09-29-aprv-wasm-parity` |
-| A-fix core | `lane/core` | step 1.10 close-out: the three reviews' blocking and fix-before-merge findings, then a rebuilt module | started 2026-09-29 (brief `core-fix.md`) |
-| A3 core | `lane/core` | steps 1.7, 1.8, 1.12, 1.13 | waits on A-fix |
+| A-fix core | `lane/core` | step 1.10 close-out: the three reviews' blocking and fix-before-merge findings, then a rebuilt module | handed back 2026-09-29 (head c4410c7) and **merged into `rust-core`** (c0a6e15): one `ASN1_get_object` header walk before the full CMS decode (depth 32, 100,000 values, 10 certificates, 4 SignerInfos, 10 CRLs, refusing where the shallow decode refuses), the root-order fix, the off-by-one on constructed strings, 0.7's payload refusals restored where the walk can express them and the rest recorded in R20, 27 new shared cases (338 in all), every review input a committed test; workspace 633 tests, clippy, deny and layering (6 rules) clean; the rebuilt module (3,009,278 B) matches its native twin on 6,179 rows and A2's module on 6,085 with 93 message changes and one verdict change (0.7's answer); the Node hostile receipt drops from 325 to 402 ms and 73.8 MiB to 16 to 26 ms and 16.1 MiB; `java/` disagrees on 4 of the 27 new cases (lane J-align); evidence note `2026-09-29-core-review-fixes` |
+| A3 core | `lane/core` | steps 1.7, 1.8, 1.9, 1.11, 1.12, 1.13 | started 2026-09-29 after the merge |
+| J-align java | `lane/java-align` | `java/` on the 4 review cases it fails (6-level chunk cap, 10-CRL cap, non-minimal length kept raw) | started 2026-09-29 |
 | B server | `lane/server` | Phase 2, rebuilt on the real component | **G1 green** 2026-09-29 (head 47d29c2): static musl binary 11,989,936 B and the glibc build carry the real component (`aprv info` prints its hash), a g5 receipt verifies in an empty chroot; 311 cases 278 pass, 0 fail, 33 decodeBase64 not expressible through a server, on HTTP and the CLI alike; corpus 6,152 identical plus the 27 over-cap rows refused by the transport before the module (their reference answer is the size refusal), 0 different, on HTTP fresh, HTTP pool and the CLI; 24 tests, clippy and fmt clean, managed smoke 10/10, hostile component 6/6, Schemathesis 394 and 265 with a token, and 653/653 with A2's real schemas, which found and fixed one bug (the `X-Aprv-Now-Ms` pattern allowed values above u64); Spectral 0 once A2's schema files sit beside it; one-command re-run `rust/server/scripts/check-component.sh`; timings: load 13 to 16 ms, CLI process g5 25 ms and JWS 31 ms, HTTP keep-alive g5 7.3 ms and JWS 16.5 ms; Docker, aarch64, macOS, Windows and Alpine are CI's |
 | C node | `lane/host-node` | steps 4.1 to 4.5 | **G1 green** 2026-09-29 (head 9e1f8a0): on the real component 676 tests pass on Node 20, 22, 24 and 26 with 311 of 311 cases on both entry points, corpus 6,179 of 6,179 identical with 0 traps, smokes on Bun, Deno, workerd, edge-runtime and Chromium, tarball 1,044,973 B, one-command re-run `node/scripts/g1.mjs`; the only fix was the runner's own base64 judgement; timings on a loaded machine: g5 about 5 ms, first `createVerifier` 135 to 153 ms; the hostile 3 MiB receipt grows linear memory to 73.9 MiB (stand-in 53.2 MiB) and costs 0.8 s before `MALFORMED`, which the review fix for the payload pre-read should shrink; the production workerd 128 MB limit stays unmeasured |
 | C go | `lane/host-go` | steps 4.6, 4.7 | **G1 green** 2026-09-29 (head 3ce225a): on the real module 311 of 311 cases, full suite and `-race` green, host-layer corpus 6,179 of 6,179 identical to the module's rows with 0 traps, no wrapper change needed for the 0.7 wire, pin updated, one-command re-run `go/internal/corpusrun/g1.sh`; timings on a loaded machine: g5 5.4 ms, JWS 22 ms, instance plus `init` 13 to 27 ms (2 ms on the stand-in), first compile 2.3 s; earlier: staticcheck 0, static binary runs in an empty chroot |
@@ -376,9 +377,18 @@ work.
   are in a shared scratch directory; node, go, python, ruby, swift, dotnet,
   java (Endive) and the server re-run against them; php and the Java
   server engine follow once the server hands back its rebuilt binary.
-  Expected everywhere: 311 of 311 and 6,179 of 6,179. A short second
-  re-run (G1b) follows the review-fixed module, whose verdicts differ only
-  on crafted inputs.
+  Expected everywhere: 311 of 311 and 6,179 of 6,179. Result: node, go,
+  python, ruby, swift, dotnet, java (Endive) and the server all green on
+  the first module; the only host-side changes were each runner's
+  base64 judgement (the core refuses an empty text before decoding) and
+  Swift's Guest calling `_initialize`.
+- G1b started 2026-09-29 11:55Z on the review-fixed module (lane/core
+  c4410c7, merged): `rust-core` was merged back into each idle lane
+  branch (a real merge commit each) so their runners read the 338 cases,
+  and each lane re-runs its one-command check against the new module and
+  its rows. Expected: 338 of 338 (the server: every expressible case)
+  and 6,179 of 6,179. Lanes are merged into `rust-core` as they come back
+  green.
 
 ## Merge policy on this branch
 
