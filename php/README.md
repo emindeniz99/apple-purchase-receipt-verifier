@@ -175,7 +175,7 @@ them, so a root it refuses is an `InvalidArgumentException` at startup.
 |---|---|
 | Verified | `$result->payload` |
 | Verification failure | a `Failure` with one of the eight `Reason`s, no `cause` |
-| Caller misuse | `InvalidArgumentException` from `create()`: a root that is not a certificate, a server that trusts other roots or refuses the token |
+| Caller misuse | `InvalidArgumentException` from `create()`: an empty root list, a root that is not a certificate, a server that trusts other roots or refuses the token |
 | ABI mismatch, no binary | `RuntimeException` from `create()`, naming the ABI version this package expects and the one it found |
 | Trap or unreadable answer | `Reason::InternalError`, `cause` a `Transport\ModuleFaultException` |
 | `aprv` did not answer | `Reason::InternalError`, `cause` a `Transport\ServerProcessException` (it could not start, died, timed out, the connection broke, HTTP 5xx) |
@@ -433,7 +433,7 @@ underneath, and four things you can see:
 |---|---|
 | PHP parsed and verified, on `ext-openssl` | `aprv` verifies; `ext-openssl` is no longer required, and `vendor/bin/aprv-install` (or a server URL) is |
 | `Verifier::create(Config)` | `Verifier::create(Config, ?Transport)`: the second argument picks the CLI (default) or a server |
-| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is an empty list, which means the module's built-in Apple roots; roots are DER strings, and "Apple's plus mine" is all four |
+| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER strings, and "Apple's plus mine" is all four |
 | an empty root set was refused by `create` | an empty root set is the built-in one |
 | `Failure::$cause` carried the parser's exception | it is set only when the wrapper produced `INTERNAL_ERROR` (the module trapped, `aprv` did not answer, the clock threw) |
 | a hostile input could exhaust `memory_limit` | it cannot: the parsing is out of PHP |
@@ -499,8 +499,11 @@ thrown `VerificationException`.
 You can pass your own anchors instead of the built-in ones, as DER strings:
 `Config::builder()->roots([$myRootDer])->build()`. "Apple's roots plus mine"
 is all four DER strings (`AppleRootCerts::pinnedRoots()` returns Apple's three
-until the module's copy is the only one); an empty list means the built-in
-Apple roots, never "no roots".
+until the module's copy is the only one). Leaving the roots out (`Config::defaults()`,
+or a builder that never calls `roots()`) means the built-in Apple roots. An
+empty list is not "no roots": `Verifier::create` refuses it with an
+`InvalidArgumentException`, so a list that came up empty by mistake never
+widens to Apple's roots.
 
 ## What the clock can move
 
@@ -604,7 +607,7 @@ See the [project README](../README.md#debugging-a-receipt-by-hand) for the
 composer install                              # installs composer.lock
 export APRV_BIN=/path/to/aprv                 # the suite runs against the real binary
 vendor/bin/phpunit                            # everything
-vendor/bin/phpunit --testsuite conformance    # the 338 shared cases: CLI transport, then HTTP against a local aprv serve
+vendor/bin/phpunit --testsuite conformance    # every shared case: CLI transport, then HTTP against a local aprv serve
 vendor/bin/phpstan analyse
 vendor/bin/php-cs-fixer fix
 fuzz/run.sh all 60                            # the four coverage-guided fuzz targets
