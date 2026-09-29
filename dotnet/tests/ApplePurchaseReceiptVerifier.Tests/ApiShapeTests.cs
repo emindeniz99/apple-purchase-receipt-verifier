@@ -155,6 +155,16 @@ public class ApiShapeTests
             () => Config.CreateBuilder().Roots(new X509Certificate2[] { null! }).Build());
     }
 
+    /// <summary>A certificate object with no data behind it is refused at build time, not sent to the module as an empty root.</summary>
+    [Fact]
+    public void ACertificateWithNoDataIsRefusedAtBuildTime()
+    {
+#pragma warning disable SYSLIB0026
+        using X509Certificate2 empty = new();
+#pragma warning restore SYSLIB0026
+        Assert.Throws<ArgumentException>(() => Config.CreateBuilder().Roots(new[] { empty }).Build());
+    }
+
     /// <summary>
     /// The .NET spelling of "a null Environment is a programming error": an
     /// enum value that is neither of Apple's two URLs throws, and never turns

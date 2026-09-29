@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using ApplePurchaseReceiptVerifier.Internal;
 
@@ -104,7 +105,7 @@ namespace ApplePurchaseReceiptVerifier
             }
 
             /// <summary>Builds the immutable <see cref="Config"/>.</summary>
-            /// <exception cref="ArgumentException">A root set was passed in and it is empty, or contains null.</exception>
+            /// <exception cref="ArgumentException">A root set was passed in and it is empty, or contains null or a certificate with no data.</exception>
             public Config Build()
             {
                 Func<long> clock = _clock ?? SystemClockMillis;
@@ -121,7 +122,22 @@ namespace ApplePurchaseReceiptVerifier
                         throw new ArgumentException("roots must not contain null", "roots");
                     }
 
-                    rootDer.Add(root.RawData);
+                    byte[] der;
+                    try
+                    {
+                        der = root.RawData;
+                    }
+                    catch (CryptographicException)
+                    {
+                        der = Array.Empty<byte>();
+                    }
+
+                    if (der.Length == 0)
+                    {
+                        throw new ArgumentException("roots contains an unreadable certificate", "roots");
+                    }
+
+                    rootDer.Add(der);
                 }
 
                 if (rootDer.Count == 0)
