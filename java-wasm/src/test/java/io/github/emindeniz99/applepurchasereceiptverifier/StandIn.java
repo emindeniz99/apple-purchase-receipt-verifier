@@ -46,10 +46,15 @@ final class StandIn {
         if (!active()) {
             return Collections.emptySet();
         }
+        return list(FILE);
+    }
+
+    /** The ids a stand-in list names. */
+    static Set<String> list(String file) throws IOException {
         Set<String> ids = new TreeSet<>();
-        try (InputStream in = StandIn.class.getResourceAsStream(FILE)) {
+        try (InputStream in = StandIn.class.getResourceAsStream(file)) {
             if (in == null) {
-                throw new IllegalStateException(FILE + " is not on the test classpath");
+                throw new IllegalStateException(file + " is not on the test classpath");
             }
             BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             String line;

@@ -150,11 +150,19 @@ class ServerDownloadTest {
             assertEquals(
                     cache.toAbsolutePath().normalize().resolve("aprv-" + sha256).toString(),
                     verifier.connection().process().executablePath().toString());
-            assertEquals(200, verifier.connection().send("GET", "/healthz", new byte[0], null).status);
+            assertDownloadedServerVerifiesG5(verifier);
         } finally {
             verifier.close();
         }
         assertEquals(1, gets.get());
+    }
+
+    private static void assertDownloadedServerVerifiesG5(ServerVerifier verifier) throws Exception {
+        String g5 = Cases.receiptString(Cases.MAPPER.readTree("{\"fixture\":\"public-receipt-sandbox-g5\"}"));
+        String answer = verifier.connection()
+                .send("POST", "/v1/receipt/verify", g5.getBytes(StandardCharsets.US_ASCII), System.currentTimeMillis())
+                .text();
+        assertTrue(answer.startsWith("{\"verified\":true"), answer);
     }
 
     @Test
@@ -163,7 +171,16 @@ class ServerDownloadTest {
         Path binary = install(cache);
         Files.setPosixFilePermissions(binary, PosixFilePermissions.fromString("rwx------"));
         Files.write(binary, "#!/bin/sh\necho tampered\n".getBytes(StandardCharsets.US_ASCII));
-        assertEquals(binary, install(cache));
+        ServerVerifier verifier = (ServerVerifier) Verifier.create(
+                Config.defaults(),
+                Engine.server(ServerSource.downloadFromLoopbackForTests(uri(), sha256))
+                        .cacheDirectory(cache));
+        try {
+            assertEquals(binary, verifier.connection().process().executablePath());
+            assertDownloadedServerVerifiesG5(verifier);
+        } finally {
+            verifier.close();
+        }
         assertEquals(2, gets.get());
         assertEquals(sha256, ServerBinary.sha256(binary));
         assertEquals("r-x------", PosixFilePermissions.toString(Files.getPosixFilePermissions(binary)));
