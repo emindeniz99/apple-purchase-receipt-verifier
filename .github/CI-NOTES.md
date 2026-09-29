@@ -49,16 +49,16 @@ second column is what it takes from other jobs.
 | module | `rust-wasm`; `rust-wasm-checks` (tools' tests, `check-wasm.sh`, the ABI tests, the cases, the wire schemas, wasm32 clippy, a reproduction in a fresh clone); `rust-wasm-abi` (`rust/bindings/abi/tests` with `APRV_WASM` and `APRV_COMPONENT`); `wasm-copies` (every committed copy and every pin; strict on `release-please--*` branches, warnings elsewhere) | `aprv-wasm` |
 | rust | `rust` (`--workspace`, target/ cached, 40 minutes, strace required, the 1.85.0 floor without `aprv-abi`, and a leg on an OpenSSL 4 built by `tools/openssl-native.sh`: OD-09), `rust-lint` (with `tools/check-layering.mjs`), `rust-ffi`, `elixir-ffi`, `rust-fuzz`, `rust-supply-chain` | nothing |
 | server | `aprv-server` (x86_64 gnu, aarch64 musl with its own static build, macOS, Windows: fmt, both clippy feature sets, tests with `--include-ignored`), `aprv-server-contract` (Spectral, two Schemathesis runs), `aprv-server-image` (buildx from source per architecture, and the `prebuilt` stage on amd64, each through `docker-smoke.sh`) | `aprv-wasm`; `aprv-server-linux` for the contract and the prebuilt image |
-| node | `node`, `node-runtimes` (node, bun, deno, workerd, edge), `node-browsers` (Playwright 1.56.1), `node-lint`, `smoke-npm`, `node-roots-generated` | `aprv-wasm` (the component) |
+| node | `node`, `node-runtimes` (node, bun, deno, workerd, edge), `node-browsers` (Playwright 1.56.1), `node-lint`, `smoke-npm` | `aprv-wasm` (the component) |
 | python | `python` (Python 3.10 to 3.14 on the six runner images wasmtime-py ships wheels for, a second warm-cache run), `python-musl` (digest-pinned `ghcr.io/astral-sh/uv` Alpine images, with `libgcc`), `python-fuzz`, `python-tools`, `smoke-pypi` | `aprv-wasm` |
-| go | `go`, `go-platforms`, `go-cross`, `go-scratch` (a static corpus runner in an empty chroot), `go-race`, `go-fuzz`, `go-lint`, `smoke-go`, `go-generate-check` | `aprv-wasm` |
+| go | `go`, `go-platforms`, `go-cross`, `go-scratch` (a static corpus runner in an empty chroot), `go-race`, `go-fuzz`, `go-lint`, `smoke-go` | `aprv-wasm` |
 | swift | `swift` (6.3 and 6.4 containers, debug build then release tests), `swift-macos` and `swift-ios` (`macos-26`: the package needs Swift tools 6.3), `swift-fuzz`, `swift-format`, `smoke-swiftpm` | `aprv-wasm` |
 | ruby | `ruby`, `ruby-gem`, `ruby-macos`, `ruby-tools`, `ruby-fuzz`, `smoke-rubygems` | `aprv-wasm` |
-| dotnet | `dotnet`, `dotnet-mono`, `dotnet-trim`, `dotnet-fuzz`, `dotnet-format`, `dotnet-roots`, `smoke-nuget` | `aprv-wasm` |
+| dotnet | `dotnet`, `dotnet-mono`, `dotnet-trim`, `dotnet-fuzz`, `dotnet-format`, `smoke-nuget` | `aprv-wasm` |
 | php | `php` (the suites, then the conformance cases, then HTTP on 8.4), `php-lowest`, `php-static`, `php-fuzz`, `php-format` | `aprv-server-x86_64-unknown-linux-musl` |
 | java | `java`, `java-runtime-8`, `java-hardened-policy`, `java-distroless`, `jvm-interop`, `java-spring-boot`, `java-fuzz`, `java-format`, `smoke-maven` (the pure-Java 0.7 artifact, which needs no module) | nothing |
 | java | `java-wasm-endive` (JDK 11 to 27), `java-wasm-runtime-8` (the server engine on a real Java 8, with a noexec check), `java-wasm-consumers` (jvm-interop and Spring Boot on the -wasm artifact), `java-classpath-guard` (`java-wasm/scripts/classpath-guard.sh`) | `aprv-wasm`; the server binary for the first two |
-| always | `one-implementation` (`--enforce node,python,go,swift,ruby,dotnet,php,java-wasm`, with the per-file allowlist OD-04 describes in `tools/check-one-implementation.mjs`), `conformance` (also `tools/check-licence-copies.mjs`), `zizmor` | nothing |
+| always | `one-implementation` (`--enforce all`, with the per-file allowlist OD-04 describes in `tools/check-one-implementation.mjs`), `conformance` (`tools/check-cert-copies.mjs`, which finds `rust/certs` alone since Phase 7, and `tools/check-licence-copies.mjs`), `zizmor` | nothing |
 
 ## Gated and held
 
@@ -80,6 +80,7 @@ run.
 | `node-runtimes-fastly` | `node/CI-NOTES.md`, its row (R5): Fastly Compute runs no WebAssembly; the `test:runtimes:fastly` script and `@fastly/js-compute` are gone |
 | `node-fuzz` | `node/CI-NOTES.md`, its row, and the deleted `node/fuzz/`: it fuzzed the JavaScript DER, CMS and JWS readers, which are gone. The core's fuzz jobs cover the parser |
 | `php-mutation` | `php/CI-NOTES.md`, "Jobs to delete or change": `MutationTest` mutated receipts through the PHP verifier, which is gone, so the `mutation` group no longer exists. The module's mutation corpus is lane A's |
+| `node-roots-generated`, `go-generate-check`, `dotnet-roots`, and the root drift steps in `ruby` and `php-static` | Phase 7 (the "Phase 7" sections of `node/`, `go/`, `dotnet/`, `ruby/`, `php/` and `rust/bindings/` CI-NOTES): the wrappers' copies of the roots and their generators are deleted, since the three Apple roots live only in the module |
 
 ## release.yml
 
@@ -96,7 +97,8 @@ run.
   copies the module into `lib/` and checks its pin.
 - `tag-go-module` refuses to tag a tree without
   `go/internal/wasm/aprv.wasm` and its pin (the Go module is published by
-  the tag alone, so the module must be committed first).
+  the tag alone, so the module must be committed first), and checks the
+  proxy's zip carries the library and both files.
 - `php-binaries` compares `php/binaries.json` with the binaries this
   release built (OD-06). The `smoke` job then runs post-publish-smoke.yml
   for every published registry, `php` included.
