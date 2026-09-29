@@ -28,6 +28,18 @@
 #           composer.json (Packagist reads a root and nowhere else), and
 #           Packagist imports every tag on its own once the owner submits
 #           the repository. See BOOTSTRAP.md.
+#   GitHub Release — aprv.wasm, its component and WIT, the aprv-server
+#           binaries, the SBOMs, the provenance bundles, the OpenAPI
+#           document, the wire schemas and SHA256SUMS (release-assets).
+#   GHCR  — the aprv-server image (publish-image), with GITHUB_TOKEN; Docker
+#           Hub too once the docker-hub environment holds its token
+#           (publish-image-dockerhub, BOOTSTRAP.md).
+#
+# aprv.wasm is built ONCE, by build-wasm, and every package that carries it
+# takes that file from the run's artifacts and checks its SHA-256 before
+# building: no publish job compiles the module. The server binaries likewise
+# come from build-server. Both are attested (SLSA build provenance) where
+# they are built, and their CycloneDX SBOMs are attested by the sbom job.
 #
 # Every publish job skips (loudly) when the registry already has the tag's
 # version, so a manually bootstrapped version doesn't fail the tag run, and
@@ -45,8 +57,9 @@
 # workflow is told which registries it may test.
 #
 # Security: every action pinned to a commit SHA; no dependency cache in
-# publish jobs (a poisoned restore would become the shipped artifact);
-# checkouts never push, so credentials are not persisted.
+# publish or build jobs (a poisoned restore would become the shipped
+# artifact), the wasm toolchain included; checkouts never push, so
+# credentials are not persisted.
 
 name: release
 
@@ -85,10 +98,485 @@ jobs:
           echo "::error::ci never completed on $GITHUB_SHA; not publishing"
           exit 1
 
+  # aprv.wasm and its component, built once for the release (MIGRATION.md,
+  # "Release workflow changes"; THREAT-MODEL.md §4): the pinned toolchain
+  # installed fresh (never a cache: a poisoned restore would become the
+  # shipped module), the same contract checks as ci.yml's rust-wasm, the
+  # committed Go and Swift copies held to this build (a go/v* tag is
+  # forever, so tag-go-module waits for this job), a second build in a fresh
+  # clone that must reproduce the hash, and SLSA build provenance for the
+  # module, the component and the WIT. Every job below takes these files and
+  # never rebuilds them.
+  build-wasm:
+    name: build aprv.wasm
+    needs: ci-passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write       # sign the provenance attestation
+      attestations: write   # store it
+    outputs:
+      wasm-sha256: ${{ steps.build.outputs.wasm-sha256 }}
+      component-sha256: ${{ steps.build.outputs.component-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: install the pinned wasm toolchain (no cache)
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/wasm-toolchain"
+          tools/wasm-toolchain.sh "$dir" > /dev/null
+          { echo "WASI_SDK_DIR=$dir/wasi-sdk"; echo "OPENSSL_WASM_DIR=$dir/openssl-wasm"; } >> "$GITHUB_ENV"
+          echo "$dir/bin" >> "$GITHUB_PATH"
+      - name: install the pinned Rust toolchain
+        working-directory: rust
+        run: rustup toolchain install
+      - name: build aprv.wasm and the component
+        id: build
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/aprv"
+          rust/bindings/abi/build.sh "$out"
+          mkdir -p "$out/build-info"
+          cp "$WASI_SDK_DIR/VERSION" "$out/build-info/VERSION"
+          (cd rust && rustc -vV) > "$out/build-info/rustc-vv.txt"
+          echo "wasm-sha256=$(sha256sum "$out/aprv.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+          echo "component-sha256=$(sha256sum "$out/aprv.component.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+      - name: imports, exports, WIT read-back and SHA256SUMS
+        run: tools/check-wasm.sh "$RUNNER_TEMP/aprv" rust/bindings/abi/wit/aprv.wit
+      - name: the ABI tests and every case, on the trap-on-anything host
+        run: |
+          set -euo pipefail
+          node tools/wasm-trap-host.mjs abi-tests "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json
+          node tools/wasm-trap-host.mjs cases "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json
+      - name: the committed Go and Swift copies are this build
+        env:
+          BUILT: ${{ steps.build.outputs.wasm-sha256 }}
+        run: |
+          set -euo pipefail
+          bad=0
+          for f in $(git ls-files -- '*aprv.wasm'); do
+            got=$(sha256sum "$f" | cut -c1-64)
+            if [ "$got" = "$BUILT" ]; then echo "$f is this build ($BUILT)"
+            else echo "::error file=$f::$f is $got, the release builds $BUILT; release-please.yml refreshes it on the release branch"; bad=1; fi
+          done
+          exit "$bad"
+      - name: the build reproduces in a fresh clone
+        env:
+          EXPECTED: ${{ steps.build.outputs.wasm-sha256 }}
+        run: |
+          APRV_REPO_URL="file://$GITHUB_WORKSPACE" APRV_TOOLCHAIN_DIR="$RUNNER_TEMP/wasm-toolchain" \
+            tools/reproduce-wasm.sh "$GITHUB_SHA" "$EXPECTED"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        id: provenance
+        with:
+          subject-path: |
+            ${{ runner.temp }}/aprv/aprv.wasm
+            ${{ runner.temp }}/aprv/aprv.component.wasm
+            ${{ runner.temp }}/aprv/aprv.wit
+      - name: keep the provenance bundle with the files
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE" "$RUNNER_TEMP/aprv/aprv-wasm.provenance.sigstore.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aprv-wasm-release
+          path: ${{ runner.temp }}/aprv/
+          if-no-files-found: error
+          retention-days: 30
+
+  # The aprv-server binaries (R31): static musl for Linux, native builds for
+  # macOS and Windows, each on a runner of its own architecture, each built
+  # in two stages by rust/server/scripts/build-static.sh (precompile the
+  # release's component for an explicit baseline with the serving binary's
+  # Wasmtime features, then build the binary that embeds it). No cache. The
+  # Linux builds are rebuilt once by tools/reproduce-server.sh; the macOS
+  # and Windows linkers stamp their output, so those are attested but not
+  # claimed to reproduce.
+  build-server:
+    name: build aprv-server (${{ matrix.target }})
+    needs: build-wasm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write       # sign the provenance attestation
+      attestations: write   # store it
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, exe: "" }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, exe: "" }
+          - { os: macos-15-intel, target: x86_64-apple-darwin, exe: "" }
+          - { os: macos-latest, target: aarch64-apple-darwin, exe: "" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, exe: ".exe" }
+          - { os: windows-11-arm, target: aarch64-pc-windows-msvc, exe: ".exe" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm-release
+          path: ${{ runner.temp }}/aprv
+      - name: the component is build-wasm's
+        shell: bash
+        env:
+          COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+        run: echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+      - name: install the pinned Rust toolchain and the target
+        shell: bash
+        working-directory: rust
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+      - name: build
+        id: build
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          EXE: ${{ matrix.exe }}
+        run: |
+          set -euo pipefail
+          rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" "$TARGET" "$RUNNER_TEMP/build"
+          out="$RUNNER_TEMP/server"
+          mkdir -p "$out/build-info"
+          cp "$RUNNER_TEMP/build/aprv$EXE" "$out/aprv-$TARGET$EXE"
+          (cd rust && rustc -vV) > "$out/build-info/rustc-vv-$TARGET.txt"
+          "$out/aprv-$TARGET$EXE" info
+          echo "sha256=$(sha256sum "$out/aprv-$TARGET$EXE" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+      - name: the static binary has no interpreter and no dynamic dependency
+        if: endsWith(matrix.target, '-linux-musl')
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/server/aprv-$TARGET"
+          if readelf -lW "$bin" | grep -q INTERP; then echo "::error::$bin has a program interpreter"; exit 1; fi
+          if readelf -dW "$bin" | grep -q NEEDED; then echo "::error::$bin needs a shared library"; exit 1; fi
+      - name: the Linux build reproduces in a fresh clone
+        if: endsWith(matrix.target, '-linux-musl')
+        env:
+          TARGET: ${{ matrix.target }}
+          EXPECTED: ${{ steps.build.outputs.sha256 }}
+          APRV_EXPECTED_COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+        run: APRV_REPO_URL="file://$GITHUB_WORKSPACE" tools/reproduce-server.sh "$GITHUB_SHA" "$TARGET" "$EXPECTED"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        id: provenance
+        with:
+          subject-path: ${{ runner.temp }}/server/aprv-${{ matrix.target }}${{ matrix.exe }}
+      - name: keep the provenance bundle with the binary
+        shell: bash
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          TARGET: ${{ matrix.target }}
+        run: cp "$BUNDLE" "$RUNNER_TEMP/server/aprv-$TARGET.provenance.sigstore.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aprv-server-${{ matrix.target }}
+          path: ${{ runner.temp }}/server/
+          if-no-files-found: error
+          retention-days: 30
+
+  # One CycloneDX SBOM per artifact (R34): cargo cyclonedx (pinned, built
+  # here from crates.io with --locked) for what Cargo resolved, then
+  # tools/sbom-augment.mjs for what Cargo cannot see, read from the pins,
+  # checked to name every one; each SBOM attested against its artifact.
+  sbom:
+    name: SBOMs for aprv.wasm and the server binaries
+    needs: [build-wasm, build-server]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write       # sign the SBOM attestations
+      attestations: write   # store them
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: aprv-*
+          path: ${{ runner.temp }}/in
+      - name: install cargo-cyclonedx 0.5.9
+        working-directory: rust
+        run: |
+          rustup toolchain install
+          cargo install cargo-cyclonedx --version 0.5.9 --locked --root "$RUNNER_TEMP/cargo-tools"
+          echo "$RUNNER_TEMP/cargo-tools/bin" >> "$GITHUB_PATH"
+      - name: write and check the SBOMs
+        run: |
+          set -euo pipefail
+          in="$RUNNER_TEMP/in"
+          out="$RUNNER_TEMP/sbom"
+          mkdir -p "$out"
+          w="$in/aprv-wasm-release"
+          cargo cyclonedx --manifest-path rust/bindings/abi/Cargo.toml --format json --spec-version 1.5 \
+            --target wasm32-wasip1 --override-filename aprv-abi.cdx -q
+          for f in aprv.wasm aprv.component.wasm; do
+            node tools/sbom-augment.mjs augment --kind wasm --in rust/bindings/abi/aprv-abi.cdx.json \
+              --out "$out/$f.cdx.json" --artifact "$w/$f" --wasi-sdk-dir "$w/build-info" --rustc-vv "$w/build-info/rustc-vv.txt"
+          done
+          for dir in "$in"/aprv-server-*; do
+            target="${dir##*/aprv-server-}"
+            bin="$dir/aprv-$target"
+            [ -f "$bin" ] || bin="$bin.exe"
+            cargo cyclonedx --manifest-path rust/server/Cargo.toml --format json --spec-version 1.5 \
+              --target "$target" --override-filename "aprv-server-$target.cdx" -q
+            node tools/sbom-augment.mjs augment --kind server --in "rust/server/aprv-server-$target.cdx.json" \
+              --out "$out/${bin##*/}.cdx.json" --artifact "$bin" --embedded "$w/aprv.component.wasm" \
+              --rustc-vv "$dir/build-info/rustc-vv-$target.txt"
+          done
+          ls -l "$out"
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/in/aprv-wasm-release/aprv.wasm
+          sbom-path: ${{ runner.temp }}/sbom/aprv.wasm.cdx.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/in/aprv-wasm-release/aprv.component.wasm
+          sbom-path: ${{ runner.temp }}/sbom/aprv.component.wasm.cdx.json
+      # One attestation per binary: attest takes one SBOM per call, and a
+      # matrix here would rebuild cargo-cyclonedx six times.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/in/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl
+          sbom-path: ${{ runner.temp }}/sbom/aprv-x86_64-unknown-linux-musl.cdx.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/in/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl
+          sbom-path: ${{ runner.temp }}/sbom/aprv-aarch64-unknown-linux-musl.cdx.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/in/aprv-server-x86_64-apple-darwin/aprv-x86_64-apple-darwin
+          sbom-path: ${{ runner.temp }}/sbom/aprv-x86_64-apple-darwin.cdx.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/in/aprv-server-aarch64-apple-darwin/aprv-aarch64-apple-darwin
+          sbom-path: ${{ runner.temp }}/sbom/aprv-aarch64-apple-darwin.cdx.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/in/aprv-server-x86_64-pc-windows-msvc/aprv-x86_64-pc-windows-msvc.exe
+          sbom-path: ${{ runner.temp }}/sbom/aprv-x86_64-pc-windows-msvc.exe.cdx.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/in/aprv-server-aarch64-pc-windows-msvc/aprv-aarch64-pc-windows-msvc.exe
+          sbom-path: ${{ runner.temp }}/sbom/aprv-aarch64-pc-windows-msvc.exe.cdx.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aprv-sboms
+          path: ${{ runner.temp }}/sbom/
+          if-no-files-found: error
+          retention-days: 30
+
+  # The GitHub Release carries the files every host and user pins against:
+  # the module, the component, the WIT, the server binaries, the OpenAPI
+  # document, the wire schemas, the SBOMs, the provenance bundles, and one
+  # SHA256SUMS over all of them. The Java -wasm jar and the Composer package
+  # pin the binaries' hashes, so an asset is never replaced: one that exists
+  # with the same digest is skipped (a re-run), one with another digest
+  # fails the job.
+  release-assets:
+    name: attach the artifacts to the GitHub Release
+    needs: [build-wasm, build-server, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write     # uploads release assets; nothing is pushed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: aprv-*
+          path: ${{ runner.temp }}/in
+      - name: gather the assets and write SHA256SUMS
+        env:
+          WASM_SHA256: ${{ needs.build-wasm.outputs.wasm-sha256 }}
+        run: |
+          set -euo pipefail
+          a="$RUNNER_TEMP/assets"
+          mkdir -p "$a"
+          w="$RUNNER_TEMP/in/aprv-wasm-release"
+          echo "$WASM_SHA256  $w/aprv.wasm" | sha256sum -c -
+          cp "$w/aprv.wasm" "$w/aprv.component.wasm" "$w/aprv.wit" "$w/aprv-wasm.provenance.sigstore.json" "$a/"
+          for dir in "$RUNNER_TEMP"/in/aprv-server-*; do
+            find "$dir" -maxdepth 1 -type f -name 'aprv-*' -exec cp {} "$a/" \;
+          done
+          cp "$RUNNER_TEMP"/in/aprv-sboms/*.cdx.json "$a/"
+          if [ -f rust/server/openapi.yaml ]; then cp rust/server/openapi.yaml "$a/aprv-server-openapi.yaml"; fi
+          for s in rust/bindings/wire/schema/*.schema.json; do cp "$s" "$a/"; done
+          (cd "$a" && sha256sum -- * > SHA256SUMS)
+          cat "$a/SHA256SUMS"
+      - name: upload, never replacing an asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          a="$RUNNER_TEMP/assets"
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | "\(.name) \(.digest)"')
+          for f in "$a"/*; do
+            name="${f##*/}"
+            want="sha256:$(sha256sum "$f" | cut -c1-64)"
+            have=$(awk -v n="$name" '$1 == n { print $2 }' <<<"$existing")
+            if [ -z "$have" ]; then
+              gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY"
+            elif [ "$have" = "$want" ]; then
+              echo "$name is already attached with the same digest"
+            else
+              echo "::error::$name is already attached with digest $have, this run built $want; a release asset is never replaced"
+              exit 1
+            fi
+          done
+
+  # The image (R34, MIGRATION.md step 2.6) holds the release's own static
+  # binaries: rust/server/Dockerfile's `prebuilt` stage copies
+  # aprv-<arch> from the build context into its digest-pinned distroless
+  # base, so the published image runs exactly the attested binaries and
+  # nothing is compiled here. Both architectures in one index, pushed to
+  # GHCR with the OCI annotations and attested (provenance and each
+  # platform's SBOM); Docker Hub receives the same index, by digest, once
+  # the owner has set up the docker-hub environment (BOOTSTRAP.md).
+  publish-image:
+    name: publish the aprv-server image
+    needs: [build-server, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write       # push to GHCR with GITHUB_TOKEN
+      id-token: write       # sign the attestations
+      attestations: write   # store them
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: aprv-server-*-linux-musl
+          path: ${{ runner.temp }}/in
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-sboms
+          path: ${{ runner.temp }}/sbom
+      - name: build and push the index to GHCR
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          owner=$(tr '[:upper:]' '[:lower:]' <<<"$GITHUB_REPOSITORY_OWNER")
+          image="ghcr.io/$owner/aprv-server"
+          ctx="$RUNNER_TEMP/ctx"
+          mkdir -p "$ctx"
+          install -m 0755 "$RUNNER_TEMP/in/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl" "$ctx/aprv-amd64"
+          install -m 0755 "$RUNNER_TEMP/in/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl" "$ctx/aprv-arm64"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --use --name aprv
+          ann=()
+          for kv in "source=https://github.com/$GITHUB_REPOSITORY" "revision=$GITHUB_SHA" "version=$version" \
+                    "licenses=MIT" "description=aprv-server: Apple receipt and JWS verification over HTTP, running aprv.wasm"; do
+            ann+=(--annotation "index,manifest:org.opencontainers.image.$kv" --label "org.opencontainers.image.$kv")
+          done
+          docker buildx build --platform linux/amd64,linux/arm64 --target prebuilt \
+            -f rust/server/Dockerfile "${ann[@]}" \
+            --provenance=false --sbom=false \
+            --tag "$image:$version" --push \
+            --metadata-file "$RUNNER_TEMP/metadata.json" "$ctx"
+          digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/metadata.json")
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          docker buildx imagetools inspect --raw "$image@$digest" \
+            | jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.architecture) \(.digest)"' > "$RUNNER_TEMP/platforms.txt"
+          echo "amd64=$(awk '$1 == "amd64" { print $2 }' "$RUNNER_TEMP/platforms.txt")" >> "$GITHUB_OUTPUT"
+          echo "arm64=$(awk '$1 == "arm64" { print $2 }' "$RUNNER_TEMP/platforms.txt")" >> "$GITHUB_OUTPUT"
+          echo "pushed $image:$version at $digest"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.amd64 }}
+          sbom-path: ${{ runner.temp }}/sbom/aprv-x86_64-unknown-linux-musl.cdx.json
+          push-to-registry: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.arm64 }}
+          sbom-path: ${{ runner.temp }}/sbom/aprv-aarch64-unknown-linux-musl.cdx.json
+          push-to-registry: true
+
+  # Docker Hub gets the index publish-image pushed to GHCR, copied by digest,
+  # so both registries serve the same attested bytes. The token lives on the
+  # docker-hub environment; until the owner fills it in (BOOTSTRAP.md), the
+  # job says so and succeeds.
+  publish-image-dockerhub:
+    name: copy the aprv-server image to Docker Hub
+    needs: publish-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: docker-hub
+    permissions:
+      contents: read
+      packages: read        # read the index from GHCR
+    steps:
+      - name: is Docker Hub set up?
+        id: hub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+        run: |
+          if [ -n "$DOCKERHUB_TOKEN" ] && [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_NAMESPACE" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::the docker-hub environment lacks DOCKERHUB_TOKEN, DOCKERHUB_USERNAME or DOCKERHUB_NAMESPACE; the image is on GHCR only (BOOTSTRAP.md)"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: copy the index by digest
+        if: steps.hub.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+          IMAGE: ${{ needs.publish-image.outputs.image }}
+          DIGEST: ${{ needs.publish-image.outputs.digest }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+          docker buildx imagetools create --tag "docker.io/$DOCKERHUB_NAMESPACE/aprv-server:${TAG#v}" "$IMAGE@$DIGEST"
+
   publish-pypi:
     name: publish python to PyPI
     runs-on: ubuntu-latest
-    needs: ci-passed
+    needs: [ci-passed, build-wasm]
     timeout-minutes: 20
     environment: pypi
     permissions:
@@ -98,6 +586,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The one aprv.wasm build-wasm made and attested, checked by hash; the
+      # package build reads it from APRV_WASM / APRV_COMPONENT and never
+      # compiles the module itself (.github/CI-NOTES.md).
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm-release
+          path: ${{ runner.temp }}/aprv
+      - name: the module is build-wasm's
+        env:
+          WASM_SHA256: ${{ needs.build-wasm.outputs.wasm-sha256 }}
+          COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
+          echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+          { echo "APRV_WASM=$RUNNER_TEMP/aprv/aprv.wasm"; echo "APRV_COMPONENT=$RUNNER_TEMP/aprv/aprv.component.wasm"; } >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -131,7 +636,7 @@ jobs:
   publish-npm:
     name: publish node to npm
     runs-on: ubuntu-latest
-    needs: ci-passed
+    needs: [ci-passed, build-wasm]
     timeout-minutes: 20
     permissions:
       contents: read
@@ -140,6 +645,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The one aprv.wasm build-wasm made and attested, checked by hash; the
+      # package build reads it from APRV_WASM / APRV_COMPONENT and never
+      # compiles the module itself (.github/CI-NOTES.md).
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm-release
+          path: ${{ runner.temp }}/aprv
+      - name: the module is build-wasm's
+        env:
+          WASM_SHA256: ${{ needs.build-wasm.outputs.wasm-sha256 }}
+          COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
+          echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+          { echo "APRV_WASM=$RUNNER_TEMP/aprv/aprv.wasm"; echo "APRV_COMPONENT=$RUNNER_TEMP/aprv/aprv.component.wasm"; } >> "$GITHUB_ENV"
 
       # npm's OIDC trusted publishing needs npm >= 11.5; Node 24 ships it.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -179,10 +701,18 @@ jobs:
             npm publish
           fi
 
+  # Two artifactIds from 0.8.0 (R25, ARCHITECTURE.md §7.8): the main
+  # artifact from java/, unchanged, and apple-purchase-receipt-verifier-wasm
+  # from java-wasm/, whose Endive classes are compiled from build-wasm's
+  # aprv.wasm and which carries the two static Linux server binaries from
+  # build-server as the classifier jars linux-x86_64 and linux-aarch64 (R26).
+  # They go up as two deployments; whether Central counts them as one
+  # release event against the 7 a month is the owner's open question
+  # (MIGRATION.md, "Owner actions" 3).
   publish-maven:
     name: publish java to Maven Central
     runs-on: ubuntu-latest
-    needs: ci-passed
+    needs: [ci-passed, build-wasm, build-server]
     timeout-minutes: 30
     # The one publish job that holds long-lived secrets (Maven Central has no
     # OIDC path). The environment scopes them to this job alone once the four
@@ -190,6 +720,8 @@ jobs:
     environment: maven-central
     permissions:
       contents: read
+      id-token: write       # sign the provenance of the -wasm jars
+      attestations: write   # store it
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -207,12 +739,27 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Skip the -wasm artifact if it is not here yet or already on Maven Central
+        id: gate-wasm
+        run: |
+          set -euo pipefail
+          VERSION=$(cat version.txt)
+          if [ ! -f java-wasm/pom.xml ]; then
+            echo "::notice::java-wasm/pom.xml does not exist yet; only the main artifact is deployed"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif curl -fsSL "https://repo1.maven.org/maven2/io/github/emindeniz99/apple-purchase-receipt-verifier-wasm/$VERSION/" >/dev/null 2>&1; then
+            echo "Central already has the -wasm artifact $VERSION — skipping it."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # setup-java writes the settings.xml server entry (id `central`, the
       # pom's publishingServerId) with env-var placeholders and imports the
       # GPG key; the actual values only ever exist as env vars on the mvn
       # step below.
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        if: steps.gate.outputs.publish == 'true'
+        if: steps.gate.outputs.publish == 'true' || steps.gate-wasm.outputs.publish == 'true'
         with:
           distribution: temurin
           java-version: '21'
@@ -231,10 +778,47 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B -P central deploy
 
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.gate-wasm.outputs.publish == 'true'
+        with:
+          name: aprv-wasm-release
+          path: ${{ runner.temp }}/aprv
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.gate-wasm.outputs.publish == 'true'
+        with:
+          pattern: aprv-server-*-linux-musl
+          path: ${{ runner.temp }}/server
+
+      - name: the module is build-wasm's
+        if: steps.gate-wasm.outputs.publish == 'true'
+        env:
+          WASM_SHA256: ${{ needs.build-wasm.outputs.wasm-sha256 }}
+        run: echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
+
+      # The property names are the -wasm build's (.github/CI-NOTES.md): the
+      # module Endive compiles, and the two binaries attached as classifiers.
+      - name: Deploy the -wasm artifact and its classifier jars to Central
+        if: steps.gate-wasm.outputs.publish == 'true'
+        working-directory: java-wasm
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          mvn -B -P central deploy \
+            "-Daprv.wasm=$RUNNER_TEMP/aprv/aprv.wasm" \
+            "-Daprv.server.linux-x86_64=$RUNNER_TEMP/server/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl" \
+            "-Daprv.server.linux-aarch64=$RUNNER_TEMP/server/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl"
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: steps.gate-wasm.outputs.publish == 'true'
+        with:
+          subject-path: java-wasm/target/apple-purchase-receipt-verifier-wasm-*.jar
+
   publish-rubygems:
     name: publish ruby to RubyGems.org
     runs-on: ubuntu-latest
-    needs: ci-passed
+    needs: [ci-passed, build-wasm]
     timeout-minutes: 20
     environment: rubygems
     permissions:
@@ -250,6 +834,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The one aprv.wasm build-wasm made and attested, checked by hash; the
+      # package build reads it from APRV_WASM / APRV_COMPONENT and never
+      # compiles the module itself (.github/CI-NOTES.md).
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm-release
+          path: ${{ runner.temp }}/aprv
+      - name: the module is build-wasm's
+        env:
+          WASM_SHA256: ${{ needs.build-wasm.outputs.wasm-sha256 }}
+          COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
+          echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+          { echo "APRV_WASM=$RUNNER_TEMP/aprv/aprv.wasm"; echo "APRV_COMPONENT=$RUNNER_TEMP/aprv/aprv.component.wasm"; } >> "$GITHUB_ENV"
 
       # This does NOT decide whether to publish — see the adjudication step
       # below. RubyGems supports a *pending* trusted publisher, so the first
@@ -447,7 +1048,7 @@ jobs:
   publish-nuget:
     name: publish dotnet to NuGet
     runs-on: ubuntu-latest
-    needs: ci-passed
+    needs: [ci-passed, build-wasm]
     timeout-minutes: 25
     permissions:
       contents: read
@@ -459,6 +1060,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The one aprv.wasm build-wasm made and attested, checked by hash; the
+      # package build reads it from APRV_WASM / APRV_COMPONENT and never
+      # compiles the module itself (.github/CI-NOTES.md).
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm-release
+          path: ${{ runner.temp }}/aprv
+      - name: the module is build-wasm's
+        env:
+          WASM_SHA256: ${{ needs.build-wasm.outputs.wasm-sha256 }}
+          COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
+          echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+          { echo "APRV_WASM=$RUNNER_TEMP/aprv/aprv.wasm"; echo "APRV_COMPONENT=$RUNNER_TEMP/aprv/aprv.component.wasm"; } >> "$GITHUB_ENV"
 
       # NuGet's trusted publishing cannot create a package, so a trust policy
       # for one that does not exist cannot be saved either, and NuGet/login
@@ -544,7 +1162,9 @@ jobs:
   tag-go-module:
     name: tag the go module at this release
     runs-on: ubuntu-latest
-    needs: ci-passed
+    # build-wasm proved the committed go/ copy of aprv.wasm is the module this
+    # release built; a go/v* tag cannot be moved afterwards.
+    needs: [ci-passed, build-wasm]
     timeout-minutes: 15
     permissions:
       contents: write     # the only job in this workflow that needs it
@@ -605,9 +1225,12 @@ jobs:
   smoke:
     name: dispatch the post-publish smoke test
     needs: [publish-pypi, publish-npm, publish-maven, publish-rubygems,
-            publish-crates, publish-nuget, tag-go-module]
+            publish-crates, publish-nuget, tag-go-module, release-assets,
+            publish-image]
     if: >-
       !cancelled()
+      && needs.release-assets.result == 'success'
+      && needs.publish-image.result == 'success'
       && needs.publish-pypi.result == 'success'
       && needs.publish-npm.result == 'success'
       && needs.publish-maven.result == 'success'

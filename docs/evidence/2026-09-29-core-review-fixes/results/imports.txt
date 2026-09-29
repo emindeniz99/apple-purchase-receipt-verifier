@@ -1,0 +1,2 @@
+import aprv:verifier/host@1.0.0 random-get (function)
+imports: exactly aprv:verifier/host@1.0.0 random-get

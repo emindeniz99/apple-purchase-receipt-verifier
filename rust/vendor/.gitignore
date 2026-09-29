@@ -1,0 +1,4 @@
+# The vendored openssl-sys is the crates.io release as published, and its
+# build script lives in build/, which the root .gitignore ignores
+# everywhere else.
+!/openssl-sys/build/

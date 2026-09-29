@@ -1,0 +1,20 @@
+package aprv:verifier@1.0.0;
+
+interface verify {
+  /// Once per instance. `{"roots":["<base64 DER>", ...]}`; empty or {} = the built-in Apple roots.
+  /// Answers {"ok":true} or {"ok":false,"message":"..."}; a second call after {"ok":true} traps.
+  init: func(config-json: list<u8>) -> string;
+  verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
+  verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
+  /// env: 0 production, 1 sandbox; anything else traps.
+  verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+}
+
+interface host {
+  random-get: func(len: u32) -> list<u8>;
+}
+
+world aprv {
+  import host;
+  export verify;
+}

@@ -1,0 +1,76 @@
+# aprv.wasm at lane/core 2f9dfc1 (rust/bindings/abi/build.sh with tools/wasm-toolchain.sh's pins)
+build.sh: rustc 1.98.1 (48a229cea 2026-09-01); cargo 1.98.1 (797e8a9bc 2026-08-05); wasi-sdk 34.0; wasm-tools 1.259.0 (7fc33f279 2026-09-10); wit-bindgen-cli 0.62.0
+aprv.wasm: 3005922 bytes, sha256 4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e
+  stripped of every custom section (wasm-tools strip --all): 2746570 bytes; gzip -9 of that: 913814 bytes; gzip -9 of the module as built: 985500 bytes
+aprv.component.wasm: 3008364 bytes, sha256 8f758c0b032f5d288b214250437f5085e79344211055b729d155fea0a4460dd5
+imports:
+  "aprv:verifier/host@1.0.0" "random-get"
+exports:
+  "memory"
+  "aprv:verifier/verify@1.0.0#init"
+  "aprv:verifier/verify@1.0.0#verify-receipt"
+  "aprv:verifier/verify@1.0.0#verify-receipt-endpoint"
+  "aprv:verifier/verify@1.0.0#verify-signed-data"
+  "cabi_post_aprv:verifier/verify@1.0.0#init"
+  "cabi_realloc_wit_bindgen_0_62_0"
+  "cabi_realloc"
+  "cabi_post_aprv:verifier/verify@1.0.0#verify-receipt"
+  "cabi_post_aprv:verifier/verify@1.0.0#verify-receipt-endpoint"
+  "cabi_post_aprv:verifier/verify@1.0.0#verify-signed-data"
+  "_initialize"
+custom sections:
+  custom "component-type:wit-bindgen:0.62.0:aprv:verifier@1.0.0:aprv:encoded world" | 0x29e916 - 0x29eac5 | 431 bytes | 1 count
+  custom "name" | 0x29eace - 0x2ddc80 | 258482 bytes | 1 count
+  custom "producers" | 0x2ddc8d - 0x2ddd3b | 174 bytes | 1 count
+  custom "target_features" | 0x2ddd4e - 0x2ddde2 | 148 bytes | 1 count
+the component's interface (wasm-tools component wit):
+  package root:component;
+  
+  world root {
+    import aprv:verifier/host@1.0.0;
+  
+    export aprv:verifier/verify@1.0.0;
+  }
+  package aprv:verifier@1.0.0 {
+    interface host {
+      random-get: func(len: u32) -> list<u8>;
+    }
+    interface verify {
+      init: func(config-json: list<u8>) -> string;
+  
+      verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
+  
+      verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
+  
+      verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+    }
+  }
+panic machinery linked (functions whose name holds panic or unwind): 26
+where a panic ends (std's hook writes to stderr first; panic = "abort" aborts):
+    (func $_RNvCs1njKG4L9aB3_7___rustc18___rust_start_panic (;285;) (type 19)
+      call $_RNvCs1njKG4L9aB3_7___rustc12___rust_abort
+      unreachable
+    )
+    (func $abort (;8366;) (type 19)
+      unreachable
+    )
+    (func $__imported_wasi_snapshot_preview1_fd_write (;8506;) (type 6) (param i32 i32 i32 i32) (result i32)
+      unreachable
+    )
+the one constructor, which every export runs on its first call (so _initialize is optional):
+    (func $__wasm_call_ctors (;1;) (type 19)
+      call $.Lregister_call_dtors
+    )
+the first instructions of an export: the constructor guard
+    (func $aprv:verifier/verify@1.0.0#init (;5;) (type 4) (param i32 i32) (result i32)
+      (local i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i64 i64)
+      global.get $__stack_pointer
+      i32.const 256
+      i32.sub
+      local.tee 2
+      global.set $__stack_pointer
+      block ;; label = @1
+        i32.const 0
+        i32.load8_u offset=1736218
+        br_if 0 (;@1;)
+        call $__wasm_call_ctors

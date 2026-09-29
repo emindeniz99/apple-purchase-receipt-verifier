@@ -1,0 +1,2 @@
+{"id":"case/a","out":"{\"verified\":false,\"reason\":\"INTERNAL_ERROR\",\"message\":\"x\"}"}
+{"id":"case/b","out":{"verified":true,"payload":{"id":"2","date":null}}}
