@@ -12,10 +12,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "apple-purchase-receipt-verifier-ffi"
+version = "0.0.0"
+dependencies = [
+ "aprv-surface",
+ "aprv-wire",
+]
+
+[[package]]
 name = "apple-purchase-receipt-verifier-fuzz"
 version = "0.0.0"
 dependencies = [
  "apple-purchase-receipt-verifier",
+ "apple-purchase-receipt-verifier-ffi",
+ "aprv-surface",
+ "aprv-wire",
  "libfuzzer-sys",
 ]
 
@@ -28,6 +39,23 @@ dependencies = [
  "libc",
  "openssl",
  "openssl-sys",
+]
+
+[[package]]
+name = "aprv-surface"
+version = "0.0.0"
+dependencies = [
+ "apple-purchase-receipt-verifier",
+]
+
+[[package]]
+name = "aprv-wire"
+version = "0.0.0"
+dependencies = [
+ "aprv-surface",
+ "base64",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

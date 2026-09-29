@@ -2,7 +2,10 @@
 # Runs one fuzz target for a fixed budget, seeded from the shared fixtures.
 #
 #   ./run.sh <target> [seconds]      default 60
-#   ./run.sh all [seconds]
+#   ./run.sh all [seconds]           every target but abi-call
+#
+# abi-call (a package of its own under abi/, with Wasmtime) needs the built
+# module: APRV_WASM=<out>/aprv.wasm ./run.sh abi-call [seconds].
 #
 # libFuzzer takes several corpus directories and writes new units only to
 # the first, so the shared fixtures seed every run without being copied
@@ -30,6 +33,14 @@ run_one() {
       seeds=("$fixtures/generated" "$fixtures/apple-official/mock_signed_data" "$fixtures/apple-official/xcode") ;;
     endpoint-json)
       seeds=("$here/seeds/endpoint-json") ;;
+    ffi)
+      seeds=("$fixtures/generated/receipt-b64" "$fixtures/generated" "$here/seeds/endpoint-json") ;;
+    abi-call)
+      [ -n "${APRV_WASM:-}" ] || { echo "abi-call needs APRV_WASM=<out>/aprv.wasm (rust/bindings/abi/build.sh)" >&2; exit 2; }
+      seeds=("$fixtures/generated/receipt-b64" "$fixtures/generated" "$here/seeds/endpoint-json")
+      mkdir -p "$here/abi/corpus/$name"
+      cargo +"${FUZZ_TOOLCHAIN:-nightly}" fuzz run --fuzz-dir "$here/abi" "$name" "$here/abi/corpus/$name" "${seeds[@]}" -- -max_total_time="$seconds"
+      return ;;
     *) echo "unknown target: $name" >&2; exit 2 ;;
   esac
   mkdir -p "$here/corpus/$name"
@@ -37,7 +48,7 @@ run_one() {
 }
 
 if [ "$target" = all ]; then
-  for name in verify-receipt verify-receipt-base64 verify-transaction endpoint-json; do
+  for name in verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi; do
     run_one "$name"
   done
 else

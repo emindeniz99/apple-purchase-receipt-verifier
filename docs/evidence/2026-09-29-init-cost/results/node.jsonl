@@ -1,0 +1,14 @@
+{"host":"node-v22.22.2","input":"g5","run":1,"calls":20,"instantiate_us":3444.2,"init_us":6269.3,"fresh_call_us":4219.1,"pool_call_us":3356.7}
+{"host":"node-v22.22.2","input":"g5","run":2,"calls":20,"instantiate_us":3797,"init_us":3656.4,"fresh_call_us":3028.3,"pool_call_us":2372.7}
+{"host":"node-v22.22.2","input":"g5","run":3,"calls":20,"instantiate_us":4120.9,"init_us":4157.4,"fresh_call_us":3380.3,"pool_call_us":3792.5}
+{"host":"node-v22.22.2","input":"g5","run":4,"calls":20,"instantiate_us":3117.5,"init_us":3076.5,"fresh_call_us":2487.5,"pool_call_us":2067.1}
+{"host":"node-v22.22.2","input":"g5","run":5,"calls":20,"instantiate_us":2795.9,"init_us":2609.1,"fresh_call_us":2147.3,"pool_call_us":2045.7}
+{"host":"node-v22.22.2","input":"g5","run":6,"calls":20,"instantiate_us":3043.7,"init_us":3653.3,"fresh_call_us":2936.2,"pool_call_us":2436.4}
+{"host":"node-v22.22.2","input":"g5","run":7,"calls":20,"instantiate_us":3152.8,"init_us":3210.9,"fresh_call_us":2800.6,"pool_call_us":2422.7}
+{"host":"node-v22.22.2","input":"jws","run":1,"calls":20,"instantiate_us":3541.9,"init_us":2562.7,"fresh_call_us":9221.3,"pool_call_us":9211.8}
+{"host":"node-v22.22.2","input":"jws","run":2,"calls":20,"instantiate_us":3123.5,"init_us":2643.7,"fresh_call_us":11483.4,"pool_call_us":9669.4}
+{"host":"node-v22.22.2","input":"jws","run":3,"calls":20,"instantiate_us":2705,"init_us":2133.7,"fresh_call_us":8092.9,"pool_call_us":7138.1}
+{"host":"node-v22.22.2","input":"jws","run":4,"calls":20,"instantiate_us":3333.8,"init_us":2901.3,"fresh_call_us":10814.8,"pool_call_us":9577.6}
+{"host":"node-v22.22.2","input":"jws","run":5,"calls":20,"instantiate_us":4185,"init_us":3161.7,"fresh_call_us":12510.8,"pool_call_us":10661.4}
+{"host":"node-v22.22.2","input":"jws","run":6,"calls":20,"instantiate_us":2594.8,"init_us":2114.3,"fresh_call_us":8018.5,"pool_call_us":7081.9}
+{"host":"node-v22.22.2","input":"jws","run":7,"calls":20,"instantiate_us":2923.8,"init_us":2440.2,"fresh_call_us":8931.4,"pool_call_us":7982.8}
