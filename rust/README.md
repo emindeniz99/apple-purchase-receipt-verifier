@@ -321,7 +321,7 @@ and the chunks of a constructed `OCTET STRING` must be `OCTET STRING`s. In
 the payload, a tag in high-tag-number form and a length of more than four
 octets are refused, as 0.7's reader refused them. Trailing bytes are
 refused. At most 10 embedded certificates, 10 CRLs and 4 SignerInfos,
-counted on a shallow decode before the envelope's header walk and before
+counted on a shallow decode after the envelope's header walk and before
 any certificate is decoded. JSON: nesting depth 64, numbers of at most
 1,000 characters, names of at most 50,000 UTF-16 code units, strict
 grammar. Chains: at most six certificates, built by OpenSSL from the
@@ -514,10 +514,10 @@ genuine receipts. The
 mutation pass asserts the invariant that matters: a mutated receipt is
 either rejected or produces an identical result.
 
-`fuzz/` holds four `cargo fuzz` targets (the verifier's three methods and
-the DER receipt path; OpenSSL's own decoders are fuzzed upstream by
-OSS-Fuzz) seeded from the shared fixtures and run by CI for a fixed budget
-on every push. `fuzz/README.md` lists them and the invariant each asserts
+`fuzz/` holds six `cargo fuzz` targets (the verifier's three methods, the
+DER receipt path, the C ABI's exports, and `aprv.wasm` through its canonical
+ABI; OpenSSL's own decoders are fuzzed upstream by OSS-Fuzz) seeded from the
+shared fixtures and run by CI for a fixed budget on every push. `fuzz/README.md` lists them and the invariant each asserts
 beyond "no panic".
 
 `tests/data/pacific-transitions.txt` carries every `America/Los_Angeles`

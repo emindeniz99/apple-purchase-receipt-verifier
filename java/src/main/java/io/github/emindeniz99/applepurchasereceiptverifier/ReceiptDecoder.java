@@ -90,9 +90,6 @@ final class ReceiptDecoder {
             IAP_IS_TRIAL_PERIOD,
             IAP_IS_IN_INTRO_OFFER_PERIOD));
 
-    private static final String TOO_MANY_LEVELS =
-            " nests its chunks deeper than " + Asn1Depth.MAX_STRING_NEST + " constructed levels";
-
     private static final DateTimeFormatter RECEIPT_DATE =
             DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss'Z'").withResolverStyle(ResolverStyle.STRICT);
 
@@ -256,13 +253,9 @@ final class ReceiptDecoder {
 
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
         requireDepth(der, what);
-        if (Asn1Depth.octetStringNestExceeded(der, 0)) {
-            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " double-wrap" + TOO_MANY_LEVELS);
-        }
-        byte[] set = der;
         ASN1Primitive parsed;
         try {
-            parsed = ASN1Primitive.fromByteArray(der);
+            parsed = ASN1Primitive.fromByteArray(ConstructedStrings.joined(der));
         } catch (IOException | RuntimeException e) {
             // BouncyCastle's indefinite-length path refuses some values unchecked.
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " is not valid ASN.1", e);
@@ -271,23 +264,14 @@ final class ReceiptDecoder {
             // Xcode receipts wrap the payload in one more OCTET STRING.
             byte[] inner = ((ASN1OctetString) parsed).getOctets();
             requireDepth(inner, what);
-            set = inner;
             try {
-                parsed = ASN1Primitive.fromByteArray(inner);
+                parsed = ASN1Primitive.fromByteArray(ConstructedStrings.joined(inner));
             } catch (IOException | RuntimeException e) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " double-wrap is not valid ASN.1", e);
             }
         }
         if (!(parsed instanceof ASN1Set)) {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " is not an ASN.1 SET");
-        }
-        // BouncyCastle has joined every value's chunks by now, so the bound
-        // is checked on the encoding: the third field of each entry.
-        for (int entry : Asn1Depth.children(set, 0, Integer.MAX_VALUE)) {
-            int[] fields = Asn1Depth.children(set, entry, 3);
-            if (fields.length == 3 && Asn1Depth.octetStringNestExceeded(set, fields[2])) {
-                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " value" + TOO_MANY_LEVELS);
-            }
         }
         return (ASN1Set) parsed;
     }
@@ -308,6 +292,11 @@ final class ReceiptDecoder {
         if (Asn1Depth.exceeded(der)) {
             throw new VerificationException(
                     Reason.UNREADABLE_PAYLOAD, what + " nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
+        }
+        if (Asn1Depth.stringNestExceeded(der)) {
+            throw new VerificationException(
+                    Reason.UNREADABLE_PAYLOAD,
+                    what + " nests a constructed string deeper than " + Asn1Depth.MAX_STRING_NEST + " levels");
         }
     }
 

@@ -5,11 +5,10 @@
 //
 //   node tools/check-one-implementation.mjs [--enforce <all|lang,lang,...>]
 //
-// Lists every hit, per language. Without --enforce it only reports (the
-// hand-written 0.7 verifiers are still in the tree until MIGRATION.md
-// Phase 7 deletes them); with --enforce it exits 1 on a hit in any listed
-// language, so each wrapper's gate can be turned on as its lane lands and
-// `all` once Phase 7 is done.
+// Lists every hit, per language. Without --enforce it only reports; with
+// --enforce it exits 1 on a hit in any listed language. MIGRATION.md
+// Phase 7 deleted the hand-written verifiers and the wrappers' copies of
+// the roots, so CI runs `--enforce all`.
 //
 // What stays allowed, because a wrapper needs it without deciding trust:
 // a CSPRNG for the module's random-get import, and a SHA-256 to check a
@@ -61,9 +60,6 @@ const LANGS = {
     ],
     allow: [
       { file: 'go/config.go', token: /"crypto\/x509"/, why: "Config's roots are *x509.Certificate (the 0.7 API); only .Raw, the DER, crosses into the module" },
-      { file: 'go/verifier.go', token: /"crypto\/x509"/, why: "passes each root's .Raw DER to init; nothing is parsed or checked" },
-      { file: 'go/roots.go', token: /"crypto\/x509"/, why: 'DefaultConfig().Roots() parses the three bundled roots for the 0.7 API; Phase 7 deletes it with go/roots' },
-      { file: 'go/internal/gencerts/main.go', token: /"crypto\/x509"/, why: "go generate's root generator, a build tool the library never links; Phase 7 deletes it with go/roots" },
     ],
   },
   swift: {
@@ -90,8 +86,7 @@ const LANGS = {
     ],
     allow: [
       { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Config.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'Config.Roots and Config.Builder.Roots take X509Certificate2 (the 0.7 API); only its RawData, the DER, reaches the module' },
-      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/AppleRootCertificates.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'AppleRootCertificates.Bundled() returns the three roots as X509Certificate2 (the 0.7 API); Phase 7 deletes it with AppleRootData.cs' },
-      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Internal/Certificates.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: "wraps DER in an X509Certificate2 for the two API members above; no chain, no key, no signature" },
+      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Internal/Certificates.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: "wraps DER in an X509Certificate2 for Config.Roots above; no chain, no key, no signature" },
     ],
   },
   php: {

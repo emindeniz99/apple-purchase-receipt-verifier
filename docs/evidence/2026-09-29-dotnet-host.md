@@ -26,6 +26,19 @@ Labels: TESTED (ran here), EXPECTED (inferred, not run).
 
 ## Result
 
+G1c (the final module, rust-core b863252, 2,760,476 bytes, SHA-256
+`a35b9fce...40a1`, 377 cases): 377 of 377 conformance cases and 594 of 594
+tests pass on .NET 8 and 10, the Floor project passes 9 of 9, and the five
+corpora give this module's rows byte for byte, 6,179 of 6,179, 0 traps
+(`results/corpus.txt`). One wrapper change, from the ABI review: at most
+3,145,729 bytes of an input reach linear memory, since the core decides every
+cap on the length, so a 4 MiB or 64 MiB input gets the core's own TOO_LARGE
+(21002 at the endpoint) with the memory staying small, and 3,145,728 bytes go
+in whole (4 tests). Start-up in one loaded run (load 13 to 17): compile 7.1 s,
+first instance 32 ms, later instances 2.4 ms at the median, 2,031,616 bytes of
+linear memory after `init`; 404 receipts per second on one thread
+(`results/speed-run4.txt`). The text below is from earlier runs.
+
 G1b (the review-fixed module, lane/core c4410c7, 3,009,278 bytes, SHA-256
 `9c0a581c...a263`, 338 cases): 338 of 338 conformance cases and 551 of 551
 tests pass on .NET 8 and 10, the Floor project passes 9 of 9, and the five

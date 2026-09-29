@@ -21,6 +21,11 @@ product id, device binding, refunds, idempotency, is yours; see
 Java **8** is the compiled target (`maven.compiler.release=8`), built and
 tested with any modern JDK.
 
+Depend on this artifact or on `apple-purchase-receipt-verifier-wasm` (the
+same API on the shared Rust core), never both: they have the same class
+names. `Verifier.create` throws `IllegalStateException` when it finds both
+on the classpath.
+
 **On Spring Boot**, Boot's BOM decides your Jackson version, not this
 library. The floor is jackson-core 2.16 (see
 [Dependency floors](#vendoring)). Spring Boot 3.0 to 3.2 manage an older
@@ -545,7 +550,7 @@ anything is decoded; the others as the structure they bound is read:
 | ASN.1 nesting, constructed values, the outermost included | 32 | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | CRLs embedded in a receipt, counted and never decoded | 10 | `MALFORMED` |
-| Constructed levels of one `OCTET STRING`, itself included: the eContent, the Xcode wrap, an attribute value | 6 | `MALFORMED` (eContent), `UNREADABLE_PAYLOAD` (signed receipt content) |
+| Constructed levels of one constructed string, itself included, at any depth | 6 | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content) |
 | Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
@@ -839,11 +844,13 @@ keeps stream state between calls) and every `Signature`.
   primitive value that BouncyCastle decodes eagerly (an extension value
   inside a certificate, for example) is guarded by BouncyCastle's bound
   alone, which is why that bound must still exist after an upgrade.
-- BouncyCastle joins the chunks of a constructed string at any depth and
-  reads a length of more than four octets. `Asn1Depth` bounds the
-  chunk levels of the eContent, the Xcode wrap and each attribute value at
-  6, OpenSSL's bound, and `ReceiptDecoder` keeps a value whose length takes
-  more than four octets raw.
+- BouncyCastle joins the chunks of a constructed BIT STRING or OCTET
+  STRING at any depth, builds no other constructed string, and reads a
+  length of more than four octets. `Asn1Depth` bounds every constructed
+  string at 6 levels, OpenSSL's bound; `ConstructedStrings` joins the
+  other string types in the payload before BouncyCastle parses it, as
+  OpenSSL does; and `ReceiptDecoder` keeps a value whose length takes more
+  than four octets raw.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
   `ReceiptCertificates.decode`).

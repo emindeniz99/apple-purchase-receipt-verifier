@@ -566,7 +566,8 @@ function modeAbiTests(modulePath, casesPath) {
   check('endpoint env 0 (production) answers status 21007 for the sandbox g5', !r.error && JSON.parse(r.out).status === 21007, show(r));
   r = attempt(() => g.call('verify-receipt', now(), new Uint8Array(0)));
   check('empty input is a verification failure value, not a trap', !r.error && JSON.parse(r.out).verified === false, show(r));
-  r = attempt(() => g.call('verify-signed-data', now(), new Uint8Array([0x65, 0x79, 0xff, 0xfe, 0x2e, 0x78])));
+  // Three segments, so the guest's UTF-8 check is what refuses it (`eyJ\xff.eyJ9.c2ln`).
+  r = attempt(() => g.call('verify-signed-data', now(), new Uint8Array([0x65, 0x79, 0x4a, 0xff, 0x2e, 0x65, 0x79, 0x4a, 0x39, 0x2e, 0x63, 0x32, 0x6c, 0x6e])));
   check('a JWS that is not UTF-8 reaches the guest and is a value', !r.error && JSON.parse(r.out).verified === false, show(r));
 
   g = new Guest(module);
@@ -590,7 +591,7 @@ function modeAbiTests(modulePath, casesPath) {
 
   let wrong = fresh(jwsConfig, { randomTrim: 1 });
   r = attempt(() => wrong.call('verify-signed-data', now(), jws));
-  check('random-get answering one byte short traps (if random-get is called at all)', r.trap === true || wrong.randomCalls === 0, `random-get calls: ${wrong.randomCalls}; ${show(r)}`);
+  check('random-get answering one byte short traps', r.trap === true && wrong.randomCalls > 0, `random-get calls: ${wrong.randomCalls}; ${show(r)}`);
   wrong = fresh(jwsConfig);
   attempt(() => wrong.call('verify-signed-data', now(), jws));
   console.log(`INFO random-get calls for one ES256 JWS verification: ${wrong.randomCalls}`);

@@ -16,7 +16,7 @@ Owner, 2026-09-28 (DECISIONS.md R30).
 | Java, main artifact | Java 8 | Java 8 | unchanged |
 | Java, `-wasm` artifact | Java 8; the Endive engine needs Java 11 | new | Endive requires Java 11 ([Endive §2][endive]); on Java 8 the default engine is `aprv-server` |
 | Python | 3.10 | 3.10 | unchanged; wasmtime-py 49.0.0 declares `>=3.9` ([Python wasmtime][pywt]) |
-| Swift | Swift 6.3, macOS 15, iOS 18 | Swift 6.1, macOS 13 | WasmKit 0.4.0 declares `swift-tools-version:6.3` and `.macOS(.v15), .iOS(.v18)` ([Swift WasmKit][swift]) |
+| Swift | Swift 6.3, macOS 15, iOS 18 | Swift 6.1, macOS 13 | WasmKit declares `swift-tools-version:6.3` and `.macOS(.v15), .iOS(.v18)` ([Swift WasmKit][swift]); the package needs WasmKit 0.4.1, which fixes a use-after-free under software bounds checking that 0.4.0 has when a host function re-enters the guest (STATUS.md, lane Swift) |
 | Ruby | 3.3 | 3.3 | the `wasmtime` gem's prebuilt native gems need Ruby ≥ 3.3 (≥ 3.4 on Windows arm64) ([Ruby][ruby]) |
 | .NET | netstandard2.0, tested on net8 and later | netstandard2.0, net8.0 | the `Wasmtime` package reaches netstandard2.0; the spike ran .NET 8 and 10, and netstandard2.0 compiled but was not run on .NET Framework ([.NET][dotnet]) |
 | Node | 20 | 20 | unchanged |

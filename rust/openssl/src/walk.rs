@@ -9,10 +9,15 @@
 //! template decode builds any of them (0.7's bounds), whether the chunks of
 //! a constructed `OCTET STRING` are all `OCTET STRING`s (X.690 section
 //! 8.7.3; OpenSSL joins chunks of any tag), and, for the receipt payload,
-//! which header forms 0.7's reader refused. It also hands each primitive
-//! value of a type whose content has rules to a check the caller supplies
-//! ([`Primitive`]), so values OpenSSL keeps whole inside an `ANY` are
-//! validated as OpenSSL validates the ones it decodes.
+//! which header forms 0.7's reader refused. It also hands each value
+//! OpenSSL's `ANY` decoder would judge, were it standing alone, to a check
+//! the caller supplies ([`Primitive`]): every primitive of a type whose
+//! content has rules, and every constructed string at its outermost level.
+//! The chunks inside a constructed string are not checked one by one:
+//! OpenSSL joins their contents unchecked and judges the joined value.
+//! So a value OpenSSL keeps whole inside an `ANY` is refused at any depth
+//! when OpenSSL would refuse it on its own, and the verdict does not depend
+//! on how deep the value sits.
 
 use crate::{drain_errors, sys};
 use libc::{c_int, c_long};
@@ -41,23 +46,33 @@ pub(crate) enum Headers {
     Short,
 }
 
-/// A check of one primitive value, given its whole encoding: the caller
-/// decodes it with OpenSSL ([`crate::item::decodes_as_any`]).
+/// A check of one value, given its whole encoding: the caller decodes it
+/// with OpenSSL ([`crate::item::decodes_as_any`]).
 pub(crate) type Primitive = fn(&[u8]) -> bool;
 
-/// The universal types whose content X.690 constrains and OpenSSL's `ANY`
-/// decoder checks: BOOLEAN, INTEGER, BIT STRING, NULL, OBJECT IDENTIFIER,
-/// ENUMERATED, `UniversalString` and `BMPString`. Strings without such rules
-/// (an `OCTET STRING` above all, which may be the whole payload) are not
-/// handed over.
-const CHECKED_TAGS: [c_int; 8] = [1, 2, 3, 5, 6, 10, 28, 30];
+/// The universal types whose primitive form OpenSSL's `ANY` decoder
+/// (`asn1_d2i_ex_primitive`, `asn1_ex_c2i` in `tasn_dec.c`) checks: the
+/// content of a BOOLEAN, INTEGER, BIT STRING, NULL, OBJECT IDENTIFIER and
+/// ENUMERATED, the minimum length of a `UTCTime` (13 octets) and a
+/// `GeneralizedTime` (15), the length of a `UniversalString` and a
+/// `BMPString`, and that a SEQUENCE or a SET is not primitive at all.
+/// Strings without such rules (an `OCTET STRING` above all, which may be
+/// the whole payload) are not handed over.
+const CHECKED_TAGS: [c_int; 12] = [1, 2, 3, 5, 6, 10, 16, 17, 23, 24, 28, 30];
+
+/// The universal types OpenSSL refuses in constructed form
+/// (`ASN1_R_TYPE_NOT_PRIMITIVE`): BOOLEAN, INTEGER, NULL, OBJECT IDENTIFIER
+/// and ENUMERATED.
+const PRIMITIVE_ONLY_TAGS: [c_int; 5] = [1, 2, 5, 6, 10];
 
 /// Why a walk stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WalkError {
     /// A header OpenSSL does not read, a length past the end of its
-    /// container, a form [`Headers`] refuses, a missing end-of-contents, or
-    /// a primitive value the [`Primitive`] check refused.
+    /// container, a form [`Headers`] refuses, a missing end-of-contents, an
+    /// end-of-contents in a value of definite length, a constructed value
+    /// of a type OpenSSL reads only as a primitive, or a value the
+    /// [`Primitive`] check refused.
     Malformed,
     /// Bytes follow the value.
     Trailing,
@@ -65,6 +80,9 @@ pub(crate) enum WalkError {
     TooDeep,
     /// More values than [`Budget::nodes`].
     TooManyNodes,
+    /// A constructed string nests more constructed levels than OpenSSL
+    /// joins ([`MAX_STRING_NEST`]).
+    StringTooDeep,
 }
 
 /// One TLV header, as `ASN1_get_object` reads it.
@@ -137,8 +155,15 @@ pub(crate) fn header(input: &[u8]) -> Option<Header> {
 }
 
 /// Walks the one value `input` must be, within `budget`, with nothing after
-/// it, handing every primitive value of a [`CHECKED_TAGS`] type to
-/// `primitive`.
+/// it. With a `primitive` check, it hands that check every primitive value
+/// of a [`CHECKED_TAGS`] type outside a constructed string (a chunk inside
+/// one is joined, not judged, as `asn1_collect` does) and every universal
+/// constructed value other than a SEQUENCE or a SET (a string OpenSSL
+/// joins) at its outermost level, and applies OpenSSL's rules on
+/// constructed values itself: no constructed form of a
+/// [`PRIMITIVE_ONLY_TAGS`] type, at most
+/// [`MAX_STRING_NEST`] + 1 constructed levels in a string, and no
+/// end-of-contents in a value of definite length.
 pub(crate) fn walk_exact(
     input: &[u8],
     budget: Budget,
@@ -151,7 +176,7 @@ pub(crate) fn walk_exact(
         headers,
         primitive,
     };
-    let size = walker.value(input, 0)?;
+    let size = walker.value(input, 0, 0)?;
     if size == input.len() {
         Ok(())
     } else {
@@ -168,9 +193,11 @@ struct Walker {
 
 impl Walker {
     /// The encoded size of the value at the start of `input`, which sits
-    /// inside `depth` constructed values. Recursion is bounded by the depth
-    /// budget, and every value consumes at least two octets.
-    fn value(&mut self, input: &[u8], depth: usize) -> Result<usize, WalkError> {
+    /// inside `depth` constructed values and is a chunk of a constructed
+    /// string of `string` constructed levels (0 outside any string).
+    /// Recursion is bounded by the depth budget, and every value consumes
+    /// at least two octets.
+    fn value(&mut self, input: &[u8], depth: usize, string: usize) -> Result<usize, WalkError> {
         if self.nodes_left == 0 {
             return Err(WalkError::TooManyNodes);
         }
@@ -181,7 +208,10 @@ impl Walker {
         }
         if !header.constructed {
             let size = header.definite_size();
-            if let Some(check) = self.primitive {
+            // A chunk of a constructed string is not a value of its own:
+            // `asn1_collect` joins the chunks' contents whatever their tags,
+            // and the whole string is checked at its outermost level below.
+            if let Some(check) = self.primitive.filter(|_| string == 0) {
                 if header.class == sys::V_ASN1_UNIVERSAL
                     && CHECKED_TAGS.contains(&header.tag)
                     && !check(input.get(..size).ok_or(WalkError::Malformed)?)
@@ -195,21 +225,57 @@ impl Walker {
         if depth >= self.max_depth {
             return Err(WalkError::TooDeep);
         }
+        // OpenSSL's `ANY` decoder joins the chunks of a universal
+        // constructed value other than a SEQUENCE or a SET, and within it
+        // counts every constructed chunk, whatever its tag, as one more
+        // level (`asn1_collect`).
+        let level = if string > 0 {
+            string + 1
+        } else if self.primitive.is_some()
+            && header.class == sys::V_ASN1_UNIVERSAL
+            && header.tag != ffi::V_ASN1_SEQUENCE
+            && header.tag != ffi::V_ASN1_SET
+        {
+            if PRIMITIVE_ONLY_TAGS.contains(&header.tag) {
+                return Err(WalkError::Malformed);
+            }
+            1
+        } else {
+            0
+        };
+        if level > MAX_STRING_NEST + 1 {
+            return Err(WalkError::StringTooDeep);
+        }
         let mut at = header.head;
-        if header.indefinite {
+        let size = if header.indefinite {
             loop {
                 let rest = input.get(at..).ok_or(WalkError::Malformed)?;
                 if rest.starts_with(&[0, 0]) {
-                    return Ok(at + 2);
+                    break at + 2;
                 }
-                at += self.value(rest, depth + 1)?;
+                at += self.value(rest, depth + 1, level)?;
+            }
+        } else {
+            let end = header.definite_size();
+            while at < end {
+                let rest = input.get(at..end).ok_or(WalkError::Malformed)?;
+                // OpenSSL refuses an end-of-contents outside a value of
+                // indefinite length wherever it decodes one.
+                if self.primitive.is_some() && rest.starts_with(&[0, 0]) {
+                    return Err(WalkError::Malformed);
+                }
+                at += self.value(rest, depth + 1, level)?;
+            }
+            end
+        };
+        if level == 1 {
+            if let Some(check) = self.primitive {
+                if !check(input.get(..size).ok_or(WalkError::Malformed)?) {
+                    return Err(WalkError::Malformed);
+                }
             }
         }
-        let end = header.definite_size();
-        while at < end {
-            at += self.value(input.get(at..end).ok_or(WalkError::Malformed)?, depth + 1)?;
-        }
-        Ok(end)
+        Ok(size)
     }
 }
 
@@ -224,7 +290,7 @@ fn size_of_value(input: &[u8]) -> Option<usize> {
         headers: Headers::Ber,
         primitive: None,
     };
-    walker.value(input, 0).ok()
+    walker.value(input, 0, 0).ok()
 }
 
 /// The values inside the constructed value at the start of `input`, each as

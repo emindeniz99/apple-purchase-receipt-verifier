@@ -33,12 +33,17 @@ values: DER in, certificates, facts and booleans out.
   takes the hash from `digestAlgorithm` alone, so `verify_signer` first
   requires a hash named by `signatureAlgorithm` (`OBJ_find_sigid_algs`) to
   be that digest, as 0.7 did.
-- **Paths**: `X509_verify_cert` over an `X509_STORE` holding the caller's
-  anchors and nothing else, with `X509_V_FLAG_PARTIAL_CHAIN` (a pinned
-  anchor is an anchor whether or not it is self-signed), `set_time` (the
-  chain instant), `set_depth` (the path length bound) and a verify callback
-  that records every problem and lets verification continue, so the core
-  can apply 0.7's order. Anchors are trusted by fiat: their own validity,
+- **Paths**: `X509_verify_cert` over an `X509_STORE` holding one of the
+  caller's anchors and nothing else, run once per anchor that may end the
+  path, with the untrusted certificates narrowed first to those that sign
+  the target or one another by signature: OpenSSL's issuer lookup takes
+  the first name match, in the store and in the untrusted list, and never
+  tries another, so neither the anchors' order nor a same-named
+  certificate placed first decides the path. Each run sets
+  `X509_V_FLAG_PARTIAL_CHAIN` (a pinned anchor is an anchor whether or not
+  it is self-signed), `set_time` (the chain instant), `set_depth` (the
+  path length bound) and a verify callback that records every problem and
+  lets verification continue, so the core can apply 0.7's order. Anchors are trusted by fiat: their own validity,
   CA flag and path length problems are waived, as is an expiry reported at
   exactly the `notAfter` second (RFC 5280 includes it; OpenSSL checks
   whole seconds and the core adds the millisecond check). No purpose,
@@ -63,14 +68,18 @@ values: DER in, certificates, facts and booleans out.
   adapter that calls `ASN1_get_object` (`src/sys.rs` declares it), and the
   core calls it nowhere: `tools/check-layering.mjs` rule 6 holds both. It
   answers what OpenSSL's decoders do not:
-  - over the whole envelope, before the full decode and after the shallow
-    decode's member bounds: nesting of constructed values of every class
+  - over the whole envelope, before the shallow decode's member bounds
+    and the full decode: nesting of constructed values of every class
     (the core's depth bound, 32) and the number of values (its node
-    budget, 100,000);
+    budget, 100,000), so the budget also bounds the entries the shallow
+    decode builds;
   - the chunks of a constructed `OCTET STRING` (the `eContent`, a payload
     attribute value, the Xcode wrap) must be `OCTET STRING`s, as X.690
     section 8.7.3 says; OpenSSL joins any tag. Six constructed levels
-    pass, as OpenSSL decodes six (`ASN1_MAX_STRING_NEST`);
+    pass, as OpenSSL decodes six (`ASN1_MAX_STRING_NEST`). Elsewhere a
+    constructed string's chunks are joined unchecked, as OpenSSL's
+    `asn1_collect` joins them, and the whole string is handed to OpenSSL
+    at its outermost level;
   - over the receipt payload, the same budgets plus the header forms 0.7's
     reader refused and OpenSSL reads: a tag in high-tag-number form, a
     length of more than four octets, and a constructed string value.

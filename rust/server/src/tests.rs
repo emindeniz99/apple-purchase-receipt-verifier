@@ -29,12 +29,13 @@ fn component_path() -> String {
     })
 }
 
-/// The real component, compiled once for every test that uses it.
+/// The real component, compiled once for every test that uses it, in the
+/// default (pool) lifecycle.
 fn real() -> Arc<Verifier> {
     static V: OnceLock<Arc<Verifier>> = OnceLock::new();
     V.get_or_init(|| {
         let rt = Runtime::new(Load::File(&component_path()), 10_000).expect("load the component");
-        Arc::new(Verifier::new(rt, Roots::Defaults.config_json(), false).expect("init"))
+        Arc::new(Verifier::new(rt, Roots::Defaults.config_json(), true).expect("init"))
     })
     .clone()
 }

@@ -1,9 +1,10 @@
 # Bootstrap — the owner actions CI cannot perform
 
-Nine implementations ship from this repository. `release.yml` publishes the
-ones whose registries are already set up; the steps below are the ones that
-need the account owner, a browser session, or a 2FA code, and therefore cannot
-be automated or run by an agent.
+Packages for nine languages, the `aprv-server` binaries and its image ship
+from this repository. `release.yml` publishes to the registries that are
+already set up; the steps below are the ones that need the account owner, a
+browser session, a 2FA code or an owner's decision, and therefore cannot be
+automated or run by an agent.
 
 Each section is independent, and an unstarted one no longer breaks a release.
 Each of the three publish jobs below asks its registry whether the package
@@ -26,9 +27,16 @@ A *half*-configured registry is still a failure, and deliberately so: once
 credentials are expected to work, an authentication error is a real one. So do
 a section completely rather than partly.
 
-Already bootstrapped, nothing to do: **npm**, **PyPI**, **Maven Central**.
-**SwiftPM** and the **Go module proxy** need no bootstrap; both consume
-the git tag.
+Already bootstrapped, nothing to do: **npm**, **PyPI**, **Maven Central**
+(both artifactIds live in the same namespace). **SwiftPM** and the **Go
+module proxy** need no bootstrap; both consume the git tag. **GitHub
+Releases** carry `aprv.wasm`, the component, the server binaries and
+`SHA256SUMS` with the workflow's own token.
+
+Still open: RubyGems, NuGet, Packagist and Docker Hub (a first publish or
+a one-time setup each, below); crates.io, held at 0.7 on purpose; and three
+owner decisions that are not registries: the Maven Central release count,
+the Java 8 CI distribution and the corpus archive.
 
 ## RubyGems
 
@@ -46,8 +54,9 @@ through `release.yml` with no manual `gem push`.
    - Workflow filename: `release.yml`
    - Environment: `rubygems`
 3. Merge the next release pull request — or re-run `release.yml` on the tag
-   that skipped. The `publish-rubygems` job builds the gem, refuses to push
-   one missing its entry points or `certs/`, and pushes it.
+   that skipped. The `publish-rubygems` job copies the release's
+   `aprv.wasm` into the gem, checks it against its pin, refuses to push a
+   gem missing its entry points or the module, and pushes it.
 4. Confirm the pending publisher became a normal one on the gem's "Trusted
    publishers" page, and that the account owns the gem:
 
@@ -73,10 +82,29 @@ gem only in dashes, underscores or case, so publishing the dashed name may make
 the underscored one unclaimable. Confirm that at bootstrap; do not publish an
 empty stub gem for it.
 
-## crates.io
+## crates.io — held at 0.7 until `openssl-sys` accepts OpenSSL 4
 
-Trusted publishing is configured on the crate's own settings page, so the
-crate has to exist first — the same chicken-and-egg npm has.
+The 0.8 core runs on OpenSSL 4 through `aprv-openssl`, and the workspace
+builds it with a one-line `[patch.crates-io]` of `openssl-sys`, because
+`openssl-sys` 0.9.117 does not accept `openssl-src` 400.x. A patch applies
+only inside this workspace: a crates.io build of the crate would get
+OpenSSL 3, which `aprv-openssl`'s build script refuses. So the crate stays
+at 0.7 on crates.io, and `publish-crates`, the crates smoke in `ci.yml` and
+the `crates` leg of `post-publish-smoke.yml` are skipped unless the
+repository variable `APRV_PUBLISH_CRATES` is `true`.
+
+1. Ask upstream, or send the change to `rust-openssl`, for `openssl-sys` to
+   accept `openssl-src` 400.x.
+2. Once a release of `openssl-sys` does, drop the workspace patch, publish
+   `aprv-openssl` first and the core after it, and set
+   `APRV_PUBLISH_CRATES` to `true` in the repository's variables.
+
+Until then a Rust user builds from source with a prebuilt OpenSSL 4
+(`OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL 4>`, `rust/openssl/README.md`).
+
+The bootstrap itself, whenever publishing resumes: trusted publishing is
+configured on the crate's own settings page, so the crate has to exist
+first — the same chicken-and-egg npm has.
 
 1. From a clean checkout, with `git status` clean and `HEAD` pushed
    (`cargo publish` packs the working tree, not a commit), publish the current
@@ -132,7 +160,10 @@ publish.
 
 There is no registry account, no token and no OIDC. `proxy.golang.org` serves
 the module from this repository, and `release.yml`'s `tag-go-module` job
-creates the `go/vX.Y.Z` tag that publishes it. Both preconditions hold: the
+creates the `go/vX.Y.Z` tag that publishes it. From 0.8.0 the Go module
+embeds `aprv.wasm`, so the file must be in the tree at the tag: the release
+branch commits it (`go/internal/wasm/aprv.wasm` with its `.sha256`), and
+`tag-go-module` refuses to tag a tree without both. Both preconditions hold: the
 repository is public, and `go/go.mod` declares the final module path,
 `github.com/emindeniz99/apple-purchase-receipt-verifier/go`. The proxy has
 served every Go tag since `go/v0.4.0`; on 2026-09-28 it listed `v0.4.0`,
@@ -201,19 +232,23 @@ What landed:
   reasoning is in the file.
 - **`tools/check-php-package.mjs`** — fails CI when the two manifests'
   `require` or `autoload` disagree, and when the real `git archive` is missing
-  `php/src`, the three `php/certs/*.cer` or `composer.json`, or carries
-  anything the allowlist does not name.
+  `php/src`, the installer or `composer.json`, or carries anything the
+  allowlist does not name.
 - **`tools/php-consumer-smoke.mjs`** — installs that archive into a throwaway
   project behind a `path` repository and verifies a genuine sandbox receipt
   and the generated StoreKit 2 transaction through `vendor/autoload.php`.
   Both run in the `php-static` job.
 
-The archive is 36 files: the two manifests, the two licences,
-`php/README.md`, the installer command (`php/bin/aprv-install`) with its
-`php/binaries.json`, the three pinned roots (until Phase 7) and 26 PHP
-sources; the package ships no binary, and `vendor/bin/aprv-install` fetches the
-one that matches `binaries.json` (`php/CI-NOTES.md`). The open question
-the old text flagged is closed. `git archive` honours `export-ignore`,
+The archive holds the two manifests, the two licences, `php/README.md`,
+the installer command (`php/bin/aprv-install`) with its
+`php/binaries.json`, and the PHP sources. The package ships no binary and
+no certificate: the roots are inside the module the `aprv` binary runs,
+and `vendor/bin/aprv-install` fetches the binary that matches
+`binaries.json` (`php/CI-NOTES.md`). The release branch writes the two
+Linux hashes into `binaries.json` before the tag; the macOS and Windows
+entries stay empty until the release publishes those builds' exact files,
+and those platforms use a server URL meanwhile. The open question the old
+text flagged is closed. `git archive` honours `export-ignore`,
 reproduced by the guard on every run, and GitHub's **zipball** honours it
 too: on 2026-09-06 the branch archive at
 `archive/refs/heads/feat/packagist-root-manifest.zip` listed exactly the 30
@@ -244,9 +279,46 @@ registry with nothing in it. **The first Packagist version is the first tag
 cut after this lands**; earlier tags are importable but their archives predate
 the root manifest, so Packagist will skip them.
 
-## Release budget, unchanged
+## Maven Central — the release count, an owner decision
 
-Maven Central's Usage Center still caps `io.github.emindeniz99` at seven
-releases per calendar month, and one tag publishes every language. RubyGems,
-crates.io, NuGet and the Go proxy have no monthly cap, so they add no pressure
-of their own — but a fix in any one of them still spends a Central release.
+Maven Central's Usage Center caps `io.github.emindeniz99` at seven
+releases, about 80 MB and about 1,000 files per calendar month, and one tag
+publishes every language. From 0.8.0 a release deploys two artifactIds,
+the main artifact and `-wasm`, and two classifier jars of the static
+`aprv-server`, about 10.5 MB in all, so the size allowance binds close
+behind the count: seven releases would be about 74 MB. The working budget
+in CLAUDE.md is therefore five releases a month, with two kept in reserve.
+
+1. Ask central-support@sonatype.com, or read the Usage Center after the
+   first 0.8.0 deployment, whether one deployment of two artifactIds with
+   classifiers counts as one release event.
+2. Record the answer in CLAUDE.md's release budget, and confirm or change
+   the five-a-month rule.
+
+RubyGems, crates.io, NuGet and the Go proxy have no monthly cap, so they
+add no pressure of their own — but a fix in any one of them still spends a
+Central release.
+
+## The Java 8 CI distribution — an owner decision
+
+Temurin's Java 8 builds end in late 2026. Two CI jobs run on a real Java 8
+JVM, `java-runtime-8` (the main artifact) and `java-wasm-runtime-8` (the
+`-wasm` server engine), and the Java 8 floor is only a tested claim while
+they do.
+
+1. Choose Zulu 8 or Corretto 8.
+2. Move both jobs to it before Temurin's last Java 8 build, and say so in
+   SUPPORT-MATRIX.md.
+
+## The corpus archive — optional
+
+The nightly `corpus` job runs every package's parity check over the
+generated corpora (1,179 receipts and 5,000 mutants, about 200 MB of rows).
+They stay out of the repository. Until an archive is configured the job
+prints a notice and does nothing.
+
+1. Host the archive (a `.tar.gz` with the layout `.github/CI-NOTES.md`
+   describes) where the runner can fetch it.
+2. Set the repository variables `APRV_CORPUS_URL` and `APRV_CORPUS_SHA256`.
+3. Refresh the archive after a release changes the module, since its rows
+   belong to one module.

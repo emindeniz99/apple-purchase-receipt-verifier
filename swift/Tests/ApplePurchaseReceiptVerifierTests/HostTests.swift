@@ -47,6 +47,21 @@ final class AbiTests: XCTestCase {
         XCTAssertNoThrow(try AprvModule.bundled.get())
     }
 
+    /// Both choices are the package's, not WasmKit's defaults: mprotect bounds
+    /// checking would install a process-wide signal handler, and the
+    /// direct-threaded loop crashed the first guest call on macOS arm64 in a
+    /// release build (README, known issues). It runs only where this suite has
+    /// tested it, so each platform's run of this suite tests the loop it ships.
+    func testTheEngineChecksBoundsInSoftwareAndRunsTheDirectLoopOnlyOnLinuxX8664() throws {
+        let engine = try AprvModule.bundled.get().engine.configuration
+        XCTAssertEqual(engine.memoryBoundsChecking, .software)
+        #if os(Linux) && arch(x86_64)
+            XCTAssertEqual(engine.threadingModel, .direct)
+        #else
+            XCTAssertEqual(engine.threadingModel, .token)
+        #endif
+    }
+
     func testInitWithNoRootsAcceptsAndASecondInitTraps() throws {
         let guest = try initialized()
         assertTraps({ try guest.initialize(Config.initJson([])) }, "a second init")
@@ -115,6 +130,47 @@ final class AbiTests: XCTestCase {
         XCTAssertTrue(a.dead)
         XCTAssertTrue(try b.verifyReceipt(now: Self.now, g5).contains(#""verified":true"#))
         assertTraps({ try a.verifyReceipt(now: Self.now, g5) }, "the discarded instance")
+    }
+
+    /// An input over the core's largest cap is cut to one byte over it
+    /// before it is copied in: the core still answers TOO_LARGE (21002 at the
+    /// endpoint), byte for byte what it answers for exactly one byte over,
+    /// and the guest's memory never has to hold the whole input.
+    func testAnInputOverTheCapIsCutAndTheCoreStillRefusesIt() throws {
+        let huge = [UInt8](repeating: 0x41, count: 4 << 20)
+        let oneOver = [UInt8](repeating: 0x41, count: Abi.maxInputBytes)
+        let receipt = try initialized()
+        let answer = try receipt.verifyReceipt(now: Self.now, huge)
+        XCTAssertEqual(answer, try initialized().verifyReceipt(now: Self.now, oneOver))
+        XCTAssertTrue(answer.contains(#""reason":"TOO_LARGE""#), answer)
+        // A fresh instance has 2 MiB; holding the whole input would take it
+        // past 6 MiB. The capped input (3 MiB) fits under that.
+        XCTAssertLessThan(receipt.memoryBytes, (2 << 20) + (4 << 20), "the guest never held the 4 MiB input")
+        print("memory: \(receipt.memoryBytes) bytes of linear memory after a 4 MiB receipt")
+        let body = Array(#"{"receipt-data":""#.utf8) + huge + Array(#""}"#.utf8)
+        let endpoint = try initialized().verifyReceiptEndpoint(env: 1, now: Self.now, body)
+        XCTAssertEqual(
+            endpoint, try initialized().verifyReceiptEndpoint(env: 1, now: Self.now, Array(body.prefix(Abi.maxInputBytes))))
+        XCTAssertEqual(endpoint, #"{"status":21002}"#)
+        let jws = try initialized().verifySignedData(now: Self.now, huge)
+        XCTAssertTrue(jws.contains(#""reason":"TOO_LARGE""#), jws)
+
+        let verifier = Verifier(config: .defaults())
+        let text = String(repeating: "A", count: 4 << 20)
+        XCTAssertEqual(verifier.verifyReceipt(base64: text).failure?.reason, .tooLarge)
+        XCTAssertEqual(verifier.verifySignedData(jws: text).failure?.reason, .tooLarge)
+        XCTAssertEqual(verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: text), #"{"status":21002}"#)
+    }
+
+    /// An input of exactly the cap, 3,145,728 bytes, passes whole: the core
+    /// answers about its content, not its size.
+    func testAnInputAtTheCapIsPassedWhole() throws {
+        let atCap = String(repeating: "A", count: Abi.maxInputBytes - 1)
+        let failure = try XCTUnwrap(Verifier(config: .defaults()).verifyReceipt(base64: atCap).failure)
+        XCTAssertNotEqual(failure.reason, .tooLarge, failure.message)
+        let guest = try initialized()
+        _ = try guest.verifyReceipt(now: Self.now, Array(atCap.utf8))
+        XCTAssertGreaterThanOrEqual(guest.memoryBytes, Abi.maxInputBytes - 1, "the whole input reached linear memory")
     }
 
     /// Many calls on one instance leave its linear memory the same size:

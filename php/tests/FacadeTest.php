@@ -268,10 +268,10 @@ final class FacadeTest extends TestCase
 
     // --- roots and clock -------------------------------------------------------
 
-    public function testTheBuiltInRootsAreAnEmptyListAndCustomRootsGoThroughAsGiven(): void
+    public function testTheBuiltInRootsAreNullAndCustomRootsGoThroughAsGiven(): void
     {
-        self::assertSame([], Config::defaults()->roots);
-        self::assertSame([], Config::builder()->build()->roots);
+        self::assertNull(Config::defaults()->roots);
+        self::assertNull(Config::builder()->build()->roots, 'a builder that is never given roots keeps the built-in ones');
 
         $transport = FakeTransport::answering('{}');
         Verifier::create(Config::builder()->roots(new \ArrayIterator(["\x30\x00", "\x01\xff"]))->build(), $transport);
@@ -279,7 +279,31 @@ final class FacadeTest extends TestCase
 
         $builtIn = FakeTransport::answering('{}');
         Verifier::create(Config::defaults(), $builtIn);
-        self::assertSame([[]], $builtIn->opened);
+        self::assertSame([null], $builtIn->opened, 'no roots given reaches the transport as null, the module\'s built-in roots');
+    }
+
+    /**
+     * "No roots given" selects the built-in Apple roots; an empty list is a
+     * caller's mistake (a list built from a config file that came up empty,
+     * say) and must not silently widen to Apple's roots, so it is refused
+     * at create, before any transport is touched.
+     */
+    public function testAnEmptyRootListIsRefusedAtCreateNotReadAsTheBuiltInRoots(): void
+    {
+        foreach ([
+            'the builder given an empty array' => Config::builder()->roots([])->build(),
+            'the builder given an empty iterator' => Config::builder()->roots(new \ArrayIterator([]))->build(),
+            'a Config constructed with an empty list' => new Config([], new FrozenClock(new DateTimeImmutable())),
+        ] as $what => $config) {
+            $transport = FakeTransport::answering('{}');
+            try {
+                Verifier::create($config, $transport);
+                self::fail("{$what} must be refused at create");
+            } catch (InvalidArgumentException $e) {
+                self::assertStringContainsString('root set is empty', $e->getMessage(), $what);
+                self::assertSame([], $transport->opened, "{$what}: nothing was opened");
+            }
+        }
     }
 
     public function testTheClockIsReadOnceBeforeTheInputAndSentAsEpochMilliseconds(): void

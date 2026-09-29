@@ -144,6 +144,13 @@ impl CoreGuest {
         self.memory.data_size(&self.store)
     }
 
+    /// Calls the reactor's `_initialize` export, which a host need not call.
+    pub fn call_initialize(&mut self) -> Result<()> {
+        self.instance
+            .get_typed_func::<(), ()>(&mut self.store, "_initialize")?
+            .call(&mut self.store, ())
+    }
+
     /// `cabi_realloc(0, 0, 1, len)`, then the bytes copied in; the guest
     /// owns the buffer from here.
     fn lower(&mut self, bytes: &[u8]) -> Result<(i32, i32)> {
@@ -178,6 +185,27 @@ impl CoreGuest {
             .get_typed_func::<i32, ()>(&mut self.store, &format!("cabi_post_{IFACE}#{export}"))?;
         post.call(&mut self.store, retptr)?;
         Ok(String::from_utf8(out)?)
+    }
+
+    /// Calls a verify export (`now-ms` and one list) with a range the host
+    /// names rather than one from `cabi_realloc`, and returns what the
+    /// export itself answered: its return area, or its trap. Nothing is
+    /// lifted and no post-return function runs.
+    pub fn call_with_range(
+        &mut self,
+        export: &str,
+        now_ms: u64,
+        ptr: u32,
+        len: u32,
+    ) -> Result<i32> {
+        let f = self.instance.get_typed_func::<(i64, i32, i32), i32>(
+            &mut self.store,
+            &format!("{IFACE}#{export}"),
+        )?;
+        f.call(
+            &mut self.store,
+            (now_ms.cast_signed(), ptr.cast_signed(), len.cast_signed()),
+        )
     }
 
     fn verify(&mut self, export: &str, now_ms: u64, input: &[u8]) -> Result<String> {
