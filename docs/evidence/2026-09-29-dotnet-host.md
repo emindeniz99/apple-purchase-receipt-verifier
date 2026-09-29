@@ -45,15 +45,29 @@ Labels: TESTED (ran here), EXPECTED (inferred, not run).
     and the word "base64" in its message, which the 0.6 core spells
     differently.
   The wrapper changes nothing to make them pass. Node's lane got 90 of 311 too.
-- **Start-up (TESTED, loaded machine).** Compile at first use 3.7 to 6.4 s
+- **Start-up (TESTED, loaded machine).** Compile at first use 2.1 to 6.4 s
   (0.92 to 0.98 s on an idle machine in `2026-09-26-dotnet-wasmtime.md`); the
-  first instance with `init` 29 to 51 ms; later instances 0.07 to 0.4 ms;
-  1,769,472 bytes of linear memory after `init` (`results/speed.txt`).
-- **Throughput (TESTED, loaded machine: treat as a lower bound).** Genuine
-  G5 receipt through the host layer: 354 per second on one thread, 573 on
-  four. JWS: 110 and 183. The idle-machine evidence is 763 and 2,475 for the
-  receipt (`2026-09-26-dotnet-wasmtime.md`); the load average was 5 to 14 on
-  4 vCPUs, so the ratio to that is contention, not the wrapper.
+  first instance with `init` 28 to 51 ms; later instances 0.07 to 0.4 ms;
+  1,769,472 bytes of linear memory after `init`
+  (`results/speed-run1.txt`, `results/speed-run2.txt`).
+- **Throughput (TESTED, loaded machine: treat as a lower bound).** A genuine
+  G5 receipt through the host layer, over two 8-second runs with a load
+  average of 3.5 and 5 to 6 on 4 vCPUs: 343 to 354 per second on one thread
+  and 573 to 1,059 on four, one instance per thread. A JWS: 89 to 110 on one
+  thread and 183 to 257 on four. The idle-machine evidence has 763 and 2,475
+  for the receipt and 227 and 669 for the JWS
+  (`2026-09-26-dotnet-wasmtime.md`); other builds took the rest of the CPUs
+  here, so the gap is contention as much as the wrapper.
+- **Address space (TESTED).** Each instance reserves about 4.2 GiB of virtual
+  address space and holds about 0.25 MiB resident before its first call: 32
+  live instances took 188 GB virtual and 8 MiB resident
+  (`results/other-checks.txt`). That is Wasmtime's default. Setting the
+  engine's memory reservation to 256 MiB (an experiment, not shipped) cut it
+  to 260 MiB of address space per instance and cost 35% of the single-thread
+  speed (256 against 404 receipts per second, 76 against 105 JWS per second in
+  the same run): Wasmtime then checks every memory access in software instead
+  of by guard pages. An environment that caps virtual size has to allow for
+  the default.
 - **Address space (TESTED).** Each instance reserves about 4.2 GiB of virtual
   address space and holds about 0.25 MiB resident before its first call: 32
   live instances took 188 GB virtual and 8 MiB resident

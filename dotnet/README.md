@@ -386,15 +386,16 @@ was the round-13 stand-in (the 0.6 core), not the release build.
 
 - **Compile at start:** the first `Verifier.Create` in a process compiles
   the module with Cranelift: 0.9 to 1 s on an idle 4-CPU machine in the
-  earlier evidence, 3.7 to 5.6 s on the loaded one here. It happens once
+  earlier evidence, 2.1 to 6.4 s on the loaded one here. It happens once
   per process, not per verifier.
-- **Instances:** the first instance and its `init` took 29 to 51 ms here;
-  later instances 0.1 to 0.4 ms.
-- **Throughput:** one genuine G5 receipt per call on one thread, and on four
-  threads with one instance each, are in
-  `docs/evidence/2026-09-29-dotnet-host.md`. The earlier evidence measured
-  1.3 ms per G5 receipt and 4.5 ms per JWS on an idle core, and about 2,475
-  receipts per second on four threads.
+- **Instances:** the first instance and its `init` took 28 to 51 ms here;
+  later instances 0.07 to 0.4 ms.
+- **Throughput:** one genuine G5 receipt per call through the host layer took
+  343 to 354 per second on one thread and 573 to 1,059 per second on four
+  threads with one instance each; a JWS 89 to 110 and 183 to 257. The
+  earlier evidence, on an idle machine, measured 763 and 2,475 receipts per
+  second and 227 and 669 JWSs. Details are in
+  `docs/evidence/2026-09-29-dotnet-host.md`.
 
 Run `dotnet run -c Release --project dotnet/bench` for the genuine receipts
 and `-- --worst-case` for the hostile cases on your own hardware.

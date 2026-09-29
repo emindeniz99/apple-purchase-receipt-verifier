@@ -12,3 +12,7 @@ Memory (CorpusRun memory 32), Linux x86-64, .NET 10.0.12:
 
 Package (dotnet pack): ApplePurchaseReceiptVerifier.0.7.0.nupkg 2,106,917 bytes; see consumer.txt for the file list.
 Module: 2,967,116 bytes, SHA-256 da786ac853464e7b837c5483f9b04a27a3a5c2ff0340fa526f60482fd80fdb68 (round 13's aprv-cabi.core.wasm).
+
+Experiment, not shipped: Engine with memory reservation 256 MiB and guard 64 KiB (Config.WithStaticMemoryMaximumSize / WithMemoryGuardSize), one thread, load average 3.6:
+  16 instances: virtual 58,885 MiB (about 260 MiB each) against 121,344 MiB with the default
+  G5 receipt 256 per second against 404; JWS 76 per second against 105

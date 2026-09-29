@@ -26,7 +26,7 @@ Placeholders:
 | `scripts/consumer.sh`, `Consumer/` | Does `dotnet pack` give a package a clean project restores from a local feed and verifies a receipt with? |
 | `results/corpus-classify.txt`, `results/corpus-rows.txt` | The corpus run: 6,176 identical, 2 `clock-moves-chain`, 1 `init-refusal`, 0 traps |
 | `results/tests-summary.txt`, `results/standin-fail-ids.txt` | Test counts on .NET 8, 9 and 10, and the 221 conformance cases that fail on the stand-in, by id and group |
-| `results/speed.txt` | Start-up and throughput, with the machine's load |
+| `results/speed-run1.txt`, `results/speed-run2.txt` | Start-up and throughput in two runs, with the machine's load before and after each |
 | `results/consumer.txt` | The nupkg's size and files, and the clean consumer's run |
 | `results/format.txt` | `dotnet format --verify-no-changes --severity info` |
 
