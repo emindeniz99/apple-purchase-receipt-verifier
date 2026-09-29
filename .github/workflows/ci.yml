@@ -877,7 +877,9 @@ jobs:
           "$D/corpusrun" "$D/calls.jsonl" > "$RUNNER_TEMP/rows-host.jsonl"
           sudo env -i /usr/sbin/chroot "$D" /corpusrun /calls.jsonl | tee "$RUNNER_TEMP/rows-scratch.jsonl"
           diff "$RUNNER_TEMP/rows-host.jsonl" "$RUNNER_TEMP/rows-scratch.jsonl"
-          grep -q '"verified":true' "$RUNNER_TEMP/rows-scratch.jsonl"
+          # Each row's "out" is the module's JSON as a string, so its
+          # quotes arrive escaped.
+          grep -q 'verified\\":true' "$RUNNER_TEMP/rows-scratch.jsonl"
           grep -q 'INVALID_SIGNATURE' "$RUNNER_TEMP/rows-scratch.jsonl"
 
   # -count=2 so a second run in the same process catches state left behind by
