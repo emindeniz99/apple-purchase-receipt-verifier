@@ -8,7 +8,6 @@ from .environment import Environment
 from .reason import Reason
 from .receipt_payload import InAppPurchase, JsonPayload, ReceiptPayload
 from .result import Failure, VerificationResult
-from .roots import default_roots
 from .verifier import Verifier
 from .version import CURRENT as VERSION
 
@@ -24,5 +23,4 @@ __all__ = [
     "VerificationResult",
     "Verifier",
     "apple_status",
-    "default_roots",
 ]

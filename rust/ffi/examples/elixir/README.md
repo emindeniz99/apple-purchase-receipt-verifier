@@ -22,6 +22,14 @@ The shim is 5 NIFs, one per export that takes arguments, plus `version`.
 An empty roots list means the bundled Apple roots and a `nil` clock means the
 system clock, the same two sentinels the ABI itself takes.
 
+The three verify NIFs call the ABI's byte-range exports
+(`aprv_verify_receipt_bytes`, `aprv_verify_signed_data_bytes`,
+`aprv_verify_receipt_endpoint_bytes`), which take an Erlang binary as it is,
+length and all. So a binary holding a NUL or bytes that are not UTF-8 gets
+the verdict `aprv.wasm` gives it on every other host, rather than being cut
+at the NUL or refused as `:invalid_utf8` the way the NUL-terminated 0.7
+exports would.
+
 ## Build and run
 
 Build the shared library first. The NIF links against it and finds it again
@@ -81,7 +89,11 @@ emulator runs it on a dirty scheduler instead.
 
 ### JSON
 
-The ABI hands back one UTF-8 JSON document per call, and `JSON` from
+The ABI hands back one UTF-8 JSON document per call: for a verify call the
+document `aprv.wasm` answers, `{"verified":true,"payload":...}` or
+`{"verified":false,"reason":...,"message":...}`, whose payload
+`AppleReceiptExample.payload!/1` unwraps (a JWS's payload is a JSON string
+holding the signed text, which it decodes in turn). `JSON` from
 Elixir's own standard library reads it. That is why `mix.exs` claims
 Elixir 1.18: `JSON` arrived there, and taking it as the floor keeps the
 example's dependency count at zero without a hand-written reader.

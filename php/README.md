@@ -44,7 +44,8 @@ Composer installs is the one at the top of this nine-language monorepo. It
 autoloads `EminDeniz99\ApplePurchaseReceiptVerifier\` from `php/src/`, exposes
 `php/bin/aprv-install`, and a root `.gitattributes` allowlist trims the archive
 Composer downloads to this port: the sources, the installer, its manifest, the
-pinned Apple roots (Phase 7 removes them), the two licences and this file.
+two licences and this file. It carries no certificate: Apple's three roots are
+compiled into the module `aprv` runs.
 `php/composer.json` stays the development manifest, with the require-dev block
 and the lockfile the test suite installs, and `tools/check-php-package.mjs`
 fails the build when the two disagree or when the archive loses something.
@@ -175,7 +176,7 @@ them, so a root it refuses is an `InvalidArgumentException` at startup.
 |---|---|
 | Verified | `$result->payload` |
 | Verification failure | a `Failure` with one of the eight `Reason`s, no `cause` |
-| Caller misuse | `InvalidArgumentException` from `create()`: a root that is not a certificate, a server that trusts other roots or refuses the token |
+| Caller misuse | `InvalidArgumentException` from `create()`: an empty root list, a root that is not a certificate, a server that trusts other roots or refuses the token |
 | ABI mismatch, no binary | `RuntimeException` from `create()`, naming the ABI version this package expects and the one it found |
 | Trap or unreadable answer | `Reason::InternalError`, `cause` a `Transport\ModuleFaultException` |
 | `aprv` did not answer | `Reason::InternalError`, `cause` a `Transport\ServerProcessException` (it could not start, died, timed out, the connection broke, HTTP 5xx) |
@@ -426,15 +427,15 @@ every port:
 ## Upgrading from 0.7
 
 The public API is 0.7's: `Verifier::create`, the three verify methods,
-`Config`, `Reason`, the result and payload types. What changes is what runs
-underneath, and four things you can see:
+`Config`, `Reason`, the result and payload types; only `AppleRootCerts` is
+gone. What changes is what runs underneath, and what you can see of it:
 
 | 0.7 | 0.8 |
 |---|---|
 | PHP parsed and verified, on `ext-openssl` | `aprv` verifies; `ext-openssl` is no longer required, and `vendor/bin/aprv-install` (or a server URL) is |
 | `Verifier::create(Config)` | `Verifier::create(Config, ?Transport)`: the second argument picks the CLI (default) or a server |
-| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is an empty list, which means the module's built-in Apple roots; roots are DER strings, and "Apple's plus mine" is all four |
-| an empty root set was refused by `create` | an empty root set is the built-in one |
+| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER strings, and "Apple's plus mine" is all four |
+| `AppleRootCerts::pinnedRoots()` returned Apple's three roots | removed: the package carries no copy of them. Read them from Apple's PKI page or the repository's `certs/` |
 | `Failure::$cause` carried the parser's exception | it is set only when the wrapper produced `INTERNAL_ERROR` (the module trapped, `aprv` did not answer, the clock threw) |
 | a hostile input could exhaust `memory_limit` | it cannot: the parsing is out of PHP |
 
@@ -449,7 +450,7 @@ thrown `VerificationException`.
 |---|---|
 | `new ReceiptVerifier($roots, $bundleId)->verify($b64)` | `Verifier::create(Config::builder()->roots($roots)->build())->verifyReceipt($b64)`, then compare `$result->payload->bundleId` yourself |
 | `new JwsVerifier($roots, $bundleId, $environments)->verifyTransaction($jws)` | `Verifier::create(Config::builder()->roots($roots)->build())->verifySignedData($jws)`, then compare `$payload['bundleId']` / `$payload['environment']` yourself |
-| `AppleRootCerts::receiptRoots()` / `AppleRootCerts::jwsRoots()` | `AppleRootCerts::pinnedRoots()` (one method, one pinned set, for both paths) |
+| `AppleRootCerts::receiptRoots()` / `AppleRootCerts::jwsRoots()` | `Config::defaults()` (one pinned set, for both paths) |
 | thrown `VerificationException` with `->reason` | `VerificationResult::$failure` (`Failure::$reason`, `->message`, `->cause`); nothing throws |
 | `Reason::InvalidReceiptFormat`, `::InvalidJwsFormat` | `Reason::Malformed` |
 | `Reason::RequestTooLarge` | `Reason::TooLarge` |
@@ -498,9 +499,12 @@ thrown `VerificationException`.
 
 You can pass your own anchors instead of the built-in ones, as DER strings:
 `Config::builder()->roots([$myRootDer])->build()`. "Apple's roots plus mine"
-is all four DER strings (`AppleRootCerts::pinnedRoots()` returns Apple's three
-until the module's copy is the only one); an empty list means the built-in
-Apple roots, never "no roots".
+is all four DER strings, Apple's three read from Apple's PKI page or the
+repository's `certs/`: the package carries no copy. Leaving the roots out (`Config::defaults()`,
+or a builder that never calls `roots()`) means the built-in Apple roots. An
+empty list is not "no roots": `Verifier::create` refuses it with an
+`InvalidArgumentException`, so a list that came up empty by mistake never
+widens to Apple's roots.
 
 ## What the clock can move
 
@@ -604,7 +608,7 @@ See the [project README](../README.md#debugging-a-receipt-by-hand) for the
 composer install                              # installs composer.lock
 export APRV_BIN=/path/to/aprv                 # the suite runs against the real binary
 vendor/bin/phpunit                            # everything
-vendor/bin/phpunit --testsuite conformance    # the 338 shared cases: CLI transport, then HTTP against a local aprv serve
+vendor/bin/phpunit --testsuite conformance    # every shared case: CLI transport, then HTTP against a local aprv serve
 vendor/bin/phpstan analyse
 vendor/bin/php-cs-fixer fix
 fuzz/run.sh all 60                            # the four coverage-guided fuzz targets
@@ -631,11 +635,6 @@ both transports as one command.
 **Releasing.** `binaries.json` ships with no tag and no hashes. The release
 pins them with `php php/tools/update-binaries.php --tag vX.Y.Z --sums
 SHA256SUMS` on the release branch, before the tag (`CI-NOTES.md`).
-
-`tools/gen-roots.php` and `php/certs/` (with `src/Internal/RootsData.php`, which
-backs `AppleRootCerts::pinnedRoots()`) are what remains of the roots this
-package used to carry; the roots are the module's now, and these go with the
-old verifiers.
 
 `composer.lock` is committed and CI installs from it, so no run resolves a
 version range. `config.platform.php` is `8.2.0` in `composer.json`, matching

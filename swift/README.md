@@ -13,7 +13,7 @@ product id, device binding, refunds, idempotency) is yours; see
 ```swift
 // The manifest lives at the repository root (SwiftPM resolves a package's
 // manifest only there); the sources stay under swift/.
-.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")
+.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.8.0")
 ```
 
 Swift **6.3** or newer, on macOS 15+, iOS 18+ or Linux (`Package.swift`
@@ -288,7 +288,9 @@ CA, Apple Root CA - G2, Apple Root CA - G3), compiled into `aprv.wasm`. The
 module cannot read the operating system's trust store, a distribution CA
 bundle, or anything downloaded: it has no file or network access at all. The
 only anchors are the built-in ones, or the ones a caller supplies through
-`Config.builder().roots(...)`.
+`Config.builder().roots(...)`. The package carries no certificate file of its
+own; the repository's `certs/` is the reviewable source of the compiled-in
+roots.
 
 The chain is walked top-down: from a pinned root outward, a certificate's
 signature is checked only once the key that will verify it has already been

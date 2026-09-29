@@ -25,7 +25,6 @@ declare(strict_types=1);
  * Usage: APRV_BIN=/path/to/aprv php php-consumer-smoke.php <vendor/autoload.php> <fixtures dir>
  */
 
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
@@ -77,13 +76,13 @@ $check = static function (string $what, mixed $actual, mixed $expected): void {
 };
 
 // The library was reached through vendor/autoload.php and nothing else.
-$reflected = (new ReflectionClass(AppleRootCerts::class))->getFileName();
+$reflected = (new ReflectionClass(Config::class))->getFileName();
 if (!str_contains((string) $reflected, '/vendor/')) {
-    fwrite(STDERR, "php-consumer-smoke: AppleRootCerts loaded from {$reflected}, not from vendor/\n");
+    fwrite(STDERR, "php-consumer-smoke: Config loaded from {$reflected}, not from vendor/\n");
     exit(1);
 }
-// The wrappers carry no copy of the roots on the verification path: built-in means an empty list.
-$check('Config::defaults() roots', Config::defaults()->roots, []);
+// The package carries no copy of the roots: null means the module's built-in ones.
+$check('Config::defaults() roots', Config::defaults()->roots, null);
 
 // The package ships no binary. APRV_BIN names the aprv binary under test (CI
 // downloads the release asset, or builds it); `vendor/bin/aprv-install` is

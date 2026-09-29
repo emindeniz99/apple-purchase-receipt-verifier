@@ -37,11 +37,12 @@ floor (1.22) with `GOTOOLCHAIN=local`, and runs
 `.github/smoke/go-smoke/main.go` against
 `fixtures/public-receipts/receipt-sandbox-g5.b64`.
 
-The assertion that earns the job its place is `DefaultConfig().Roots()`
-returning three certificates. `go:embed` cannot reach outside a module, so `go/roots/certs`
-is a generated copy of the repo-root `certs/`; if it ever falls out of the
-module zip the library still compiles and has no trust anchors at all. That is
-the Go shape of the two empty npm releases that motivated the workflow.
+The assertion that earns the job its place is a genuine receipt verifying
+through the embedded `aprv.wasm`, which carries the three Apple roots: if the
+module or its hash ever falls out of the module zip, the library fails there.
+That is the Go shape of the two empty npm releases that motivated the
+workflow. `DefaultConfig().Roots()` is nil, since the package carries no copy
+of the roots, and the program asserts that too.
 
 The smoke program lives outside `go/` so it never becomes part of the published
 module.

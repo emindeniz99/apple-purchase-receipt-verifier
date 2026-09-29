@@ -22,7 +22,8 @@ class ResultShapeError(Exception):
 
 
 def init_config(roots: "Iterable[bytes]") -> bytes:
-    """``init``'s argument: ``{"roots":["<base64 DER>", ...]}``."""
+    """``init``'s argument: ``{"roots":["<base64 DER>", ...]}``. An empty list
+    means the Apple roots compiled into the module."""
     encoded = [base64.b64encode(der).decode("ascii") for der in roots]
     return json.dumps({"roots": encoded}, separators=(",", ":")).encode("ascii")
 

@@ -38,8 +38,8 @@ secret.
   from the Node host's `node/licenses/`, and ships as a resource.
 - The hand-written verifier is gone. The last commit that has it is the
   lane's branch point `9ffbf70`; use it as the oracle and as the source of
-  the port-only tests (Phase 7 step 1). `swift/Sources/.../certs` stays for
-  `check-cert-copies.mjs` (Phase 7 deletes it); the manifest excludes it.
+  the port-only tests (Phase 7 step 1). `swift/Sources/.../certs` is gone
+  since Phase 7 (below).
 
 ## Tests need a release build
 
@@ -72,7 +72,7 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 | `release-please.yml` `refresh-wasm-copies` | **must also rewrite each copy's `.sha256`**: today it copies `aprv.wasm` over every committed copy and leaves `aprv.wasm.sha256` stale, which breaks both the Go and the Swift package on the release branch. For each copy `f`: `printf '%s  aprv.wasm\n' "$WASM_SHA256" > "$f.sha256"`, and add those files to the commit. |
 | `one-implementation` | add `swift` to `--enforce`. `swift/Sources` imports only Foundation and WasmKit now; the SHA-256 that checks the module is 60 lines of Swift in `Host/SHA256.swift` (no crypto module), which the gate allows by design. `SourceIsolationTests` holds the same rule inside the test suite. |
 | `dependabot.yml` | the three `swift` entries stay; the swift-crypto/-asn1/-certificates history goes with them. Add an ignore for WasmKit `>= 0.5.0` only if 0.5 raises a floor; 0.4.x patch releases should arrive (0.4.1 was a security fix). |
-| `certs` job (`check-cert-copies.mjs`) | unchanged: the copy is still in the tree. |
+| `certs` job (`check-cert-copies.mjs`) | the Swift copy is gone in Phase 7 (below); the job needs no change. |
 
 ## The gate, in one command
 
@@ -108,6 +108,20 @@ plan's numbers, and the JWS is at the 10 per second per core floor on it.
 `APRV_BENCH_SECONDS`) prints start-up (hash and parse, instance, init, first
 and second g5) and g5 and JWS throughput through the public API on one and
 four threads. Not a CI job; the numbers are in the README and the hand-back.
+
+## Phase 7
+
+`swift/Sources/ApplePurchaseReceiptVerifier/certs` is gone, with the
+`exclude: ["certs"]` line in the root `Package.swift`: the library had not
+read it since the WasmKit host landed (`Config.defaults().roots` is `nil`,
+the module's compiled-in roots). The README's SwiftPM line now reads
+`from: "0.8.0"`, the first release built this way.
+
+| Where | Change |
+|---|---|
+| `ci.yml` | nothing: no job generated or diffed the Swift copy beyond `check-cert-copies.mjs`, which no longer finds it. |
+| `one-implementation` | nothing: `swift/Sources` has no allowlist entry and no hit. |
+
 
 ## macOS arm64: the interpreter loop
 

@@ -25,7 +25,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
 
         internal ReceiptBase64()
         {
-            _anchors = new List<X509Certificate2>(AppleRootCertificates.Bundled()) { Fixtures.ReceiptRoot() };
+            _anchors = new List<X509Certificate2>(Fixtures.AppleRoots()) { Fixtures.ReceiptRoot() };
             _verifier = Verifier.Create(Config.CreateBuilder().Roots(_anchors).Build());
         }
 

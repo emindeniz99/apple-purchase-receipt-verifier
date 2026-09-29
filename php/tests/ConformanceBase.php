@@ -277,7 +277,11 @@ abstract class ConformanceBase extends TestCase
     {
         /** @var array<string, mixed> $config */
         $config = Shape::asArray($case['config'], 'config');
-        $builder = Config::builder()->roots(self::trustedRoots($config));
+        $builder = Config::builder();
+        $roots = self::trustedRoots($config);
+        if ($roots !== null) {
+            $builder = $builder->roots($roots);
+        }
         $clock = self::caseClock($case);
         if ($clock !== null) {
             $builder = $builder->clock($clock);
@@ -288,13 +292,13 @@ abstract class ConformanceBase extends TestCase
 
     /**
      * The roots of a case as `Config` takes them: the fixture certificates'
-     * DER, or nothing for the module's built-in Apple roots.
+     * DER, or null for the module's built-in Apple roots.
      *
      * @param array<string, mixed> $config
      *
-     * @return list<string>
+     * @return list<string>|null
      */
-    private static function trustedRoots(array $config): array
+    private static function trustedRoots(array $config): ?array
     {
         /** @var array{source: string, fixtures?: list<string>} $spec */
         $spec = Shape::asArray($config['trustedRoots'], 'config.trustedRoots');

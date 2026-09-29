@@ -42,10 +42,6 @@ let package = Package(
                 .product(name: "WasmKit", package: "WasmKit"),
             ],
             path: "swift/Sources/ApplePurchaseReceiptVerifier",
-            // certs/ is the copy check-cert-copies.mjs still diffs against the
-            // root certs/ until MIGRATION.md Phase 7 retires it. The library no
-            // longer reads it: the roots are compiled into aprv.wasm.
-            exclude: ["certs"],
             resources: [
                 .copy("Resources/aprv.wasm"),
                 .copy("Resources/aprv.wasm.sha256"),

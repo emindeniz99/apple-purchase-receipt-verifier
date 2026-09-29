@@ -8,29 +8,68 @@
 //! have no test here; `rust/bindings/CI-NOTES.md` says so.
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The cdylib `cargo test` built beside this test binary.
+///
+/// Where cargo puts either is its build layout, which changes between
+/// releases: the test binary was `target/<profile>/deps/<name>` with the
+/// library beside it, and cargo's newer build-dir layout puts each unit in
+/// a directory of its own under `target/<profile>/build/`. So the library
+/// is looked for, not placed: under the directory of this build's profile
+/// (the test binary's ancestor just below the directory holding cargo's
+/// `CACHEDIR.TAG`), anywhere, the newest copy. `cargo test` does not copy
+/// the library up to `target/<profile>/`, but a `cargo build` does, and
+/// the newest copy is the one this run built or a later build of it.
 fn library() -> PathBuf {
-    // The test binary is target/<profile>/deps/<name>. `cargo test` builds
-    // this package's cdylib into deps/ and leaves it there; `cargo build`
-    // also copies it up to target/<profile>/.
-    let exe = std::env::current_exe().expect("the test binary's path");
-    let deps = exe.parent().expect("target/<profile>/deps");
     let name = if cfg!(target_os = "macos") {
         "libapple_purchase_receipt_verifier_ffi.dylib"
     } else {
         "libapple_purchase_receipt_verifier_ffi.so"
     };
-    let candidates = [
-        deps.join(name),
-        deps.parent().expect("target/<profile>").join(name),
-    ];
-    candidates
-        .iter()
-        .find(|path| path.is_file())
-        .cloned()
-        .unwrap_or_else(|| panic!("the cdylib is not built: looked for {candidates:?}"))
+    let exe = std::env::current_exe().expect("the test binary's path");
+    let root = exe
+        .ancestors()
+        .find(|dir| dir.join("CACHEDIR.TAG").is_file())
+        .unwrap_or_else(|| panic!("no cargo target directory above {}", exe.display()));
+    let profile = exe
+        .ancestors()
+        .find(|dir| dir.parent() == Some(root))
+        .expect("the test binary sits below the target directory");
+    let mut found = Vec::new();
+    find(profile, name, 8, &mut found);
+    found
+        .into_iter()
+        .max_by_key(|(_, modified)| *modified)
+        .map(|(path, _)| path)
+        .unwrap_or_else(|| {
+            panic!(
+                "the cdylib is not built: no {name} under {}",
+                profile.display()
+            )
+        })
+}
+
+/// Every file called `name` under `dir`, at most `depth` levels down, with
+/// its modification time.
+fn find(dir: &Path, name: &str, depth: usize, found: &mut Vec<(PathBuf, std::time::SystemTime)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_dir() && depth > 0 {
+            find(&path, name, depth - 1, found);
+        } else if kind.is_file() && entry.file_name() == name {
+            if let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) {
+                found.push((path, modified));
+            }
+        }
+    }
 }
 
 #[test]
