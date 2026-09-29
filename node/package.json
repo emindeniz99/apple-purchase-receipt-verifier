@@ -61,5 +61,8 @@
     "prettier": "^3.9.6",
     "typescript": "^7.0.2"
   },
-  "types": "dist/index.d.ts"
+  "types": "dist/index.d.ts",
+  "overrides": {
+    "@bytecodealliance/weval": "0.5.0"
+  }
 }
