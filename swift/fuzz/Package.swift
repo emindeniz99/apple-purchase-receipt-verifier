@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version:6.3
 // A package of its own, not targets in the root manifest: the published
 // package's manifest is its public surface, and five libFuzzer executables
 // no consumer can run would sit in it forever (fuzz/README.md, "Why a
@@ -7,15 +7,14 @@
 import PackageDescription
 
 // Applied to every target, dependencies included: coverage instrumentation
-// has to reach swift-asn1 and swift-certificates for the fuzzer to steer
-// into them, and `-enable-testing` is what lets FuzzSupport reach the
-// library's internal readers (`decodeReceiptBase64`, `decodeBase64URLStrict`,
-// `parseReceiptPayload`) that no public entry point exposes on their own. The flags are passed on
-// the command line by run.sh rather than pinned here so the sanitizer set
-// stays switchable (`fuzzer` vs `fuzzer,address`) without editing this file.
+// has to reach WasmKit, the interpreter the library runs aprv.wasm on, for
+// the fuzzer to steer into it and into the host glue around it. The flags are
+// passed on the command line by run.sh rather than pinned here so the
+// sanitizer set stays switchable (`fuzzer` vs `fuzzer,address`) without
+// editing this file.
 let package = Package(
     name: "apple-purchase-receipt-verifier-fuzz",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v15), .iOS(.v18)],
     dependencies: [
         // `name:` is what the product lookup below matches. Without it the
         // identity comes from the directory the library sits in, and
@@ -35,7 +34,5 @@ let package = Package(
         .executableTarget(name: "receipt-base64", dependencies: ["FuzzSupport"]),
         .executableTarget(name: "jws", dependencies: ["FuzzSupport"]),
         .executableTarget(name: "endpoint-json", dependencies: ["FuzzSupport"]),
-        .executableTarget(name: "receipt-payload", dependencies: ["FuzzSupport"]),
-        .executableTarget(name: "readers", dependencies: ["FuzzSupport"]),
     ]
 )

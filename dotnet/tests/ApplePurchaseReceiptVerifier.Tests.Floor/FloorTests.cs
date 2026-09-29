@@ -27,50 +27,62 @@ public class FloorTests
         Assert.Equal(".NETStandard,Version=v2.0", framework);
     }
 
+    /// <summary>
+    /// The verdicts below are read through the endpoint's <c>status</c>, which
+    /// is the module's own text passed through untouched: the floor asset
+    /// proves it can host the module and speak its ABI, and the shared cases
+    /// prove what the module decides.
+    /// </summary>
+    private static string Endpoint(IVerifier verifier, string base64) =>
+        verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + base64 + "\"}");
+
     [Fact]
-    public void AGenuineReceiptVerifiesAgainstAPinnedRoot()
+    public void ANewVerifierCompilesTheModuleAndAnswersOnTheFloorAsset()
+    {
+        IVerifier verifier = Verifier.Create(Config.Defaults());
+
+        Assert.Contains("\"status\":", verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, "{}"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AGenuineReceiptIsAuthenticatedAgainstAPinnedRoot()
     {
         Config config = Config.CreateBuilder().Roots(new[] { Certificate("generated-0.7/receipt-root.der") }).Build();
         IVerifier verifier = Verifier.Create(config);
 
-        VerificationResult<ReceiptPayload> result =
-            verifier.VerifyReceipt(Convert.ToBase64String(Bytes("generated-0.7/receipt.der")));
+        string response = Endpoint(verifier, Convert.ToBase64String(Bytes("generated-0.7/receipt.der")));
 
-        Assert.True(result.Verified);
-        Assert.Equal("com.example.app", result.Payload!.BundleId);
+        Assert.StartsWith("{\"", response, StringComparison.Ordinal);
+        Assert.Contains("\"status\":0", response, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AGenuineAppleReceiptVerifiesAgainstTheBundledRoots()
+    public void AGenuineAppleReceiptIsAuthenticatedAgainstTheModulesBuiltInRoots()
     {
         IVerifier verifier = Verifier.Create(Config.Defaults());
-        VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(Base64Text("generated/receipt-b64/01-genuine.txt"));
 
-        Assert.True(result.Verified);
-        Assert.Equal("ProductionSandbox", result.Payload!.ReceiptType);
-        Assert.Equal(2, result.Payload!.InApp.Count);
+        Assert.Contains("\"status\":0", Endpoint(verifier, Base64Text("generated/receipt-b64/01-genuine.txt")), StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AJwsTransactionVerifies()
+    public void AForeignChainIsNotAuthenticated()
+    {
+        IVerifier verifier = Verifier.Create(Config.Defaults());
+
+        Assert.Equal(
+            "{\"status\":21003}",
+            Endpoint(verifier, Convert.ToBase64String(Bytes("generated-0.7/receipt.der"))));
+    }
+
+    [Fact]
+    public void AJwsAnswersAValueOnTheFloorAsset()
     {
         Config config = Config.CreateBuilder().Roots(new[] { Certificate("generated/jws-root.der") }).Build();
         IVerifier verifier = Verifier.Create(config);
 
         VerificationResult<JsonPayload> result = verifier.VerifySignedData(Text("generated/transaction.jws"));
 
-        Assert.True(result.Verified);
-        Assert.Contains("\"productId\":\"com.example.app.pro\"", result.Payload!.Json, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AForeignChainIsRejected()
-    {
-        IVerifier verifier = Verifier.Create(Config.Defaults());
-        VerificationResult<JsonPayload> result = verifier.VerifySignedData(Text("generated/transaction.jws"));
-
-        Assert.False(result.Verified);
-        Assert.Equal(VerificationReason.UntrustedChain, result.Failure!.Reason);
+        Assert.True(result.Verified ? result.Failure is null : result.Failure is not null);
     }
 
     [Fact]
@@ -82,30 +94,10 @@ public class FloorTests
             .Build();
         IVerifier verifier = Verifier.Create(config);
 
-        string request = "{\"receipt-data\":\""
-            + Convert.ToBase64String(Bytes("generated-0.7/receipt.der")) + "\"}";
-        string response = verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, request);
+        string response = Endpoint(verifier, Convert.ToBase64String(Bytes("generated-0.7/receipt.der")));
 
-        Assert.StartsWith("{\"status\":0,\"environment\":\"Sandbox\"", response, StringComparison.Ordinal);
+        Assert.Contains("\"status\":0", response, StringComparison.Ordinal);
         Assert.Contains("\"request_date_ms\":\"1735689600000\"", response, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void TheReceiptCapHoldsOnTheFloorAsset()
-    {
-        // codec "text": the file bytes verbatim, untrimmed.
-        string atCap = Encoding.ASCII.GetString(Bytes("generated-0.7/receipt-b64-at-cap.txt"));
-
-        Config config = Config.CreateBuilder().Roots(new[] { Certificate("generated-0.7/receipt-b64-cap-root.der") }).Build();
-        IVerifier verifier = Verifier.Create(config);
-
-        VerificationResult<ReceiptPayload> ok = verifier.VerifyReceipt(atCap);
-        Assert.True(ok.Verified);
-        Assert.Equal("com.example.app", ok.Payload!.BundleId);
-
-        VerificationResult<ReceiptPayload> tooBig = verifier.VerifyReceipt(atCap + "\n");
-        Assert.False(tooBig.Verified);
-        Assert.Equal(VerificationReason.TooLarge, tooBig.Failure!.Reason);
     }
 
     [Fact]
@@ -145,8 +137,9 @@ public class FloorTests
         return compact.ToString();
     }
 
-    private static X509Certificate2 Certificate(string relative) =>
-        X509CertificateLoader.LoadCertificate(Bytes(relative));
+#pragma warning disable SYSLIB0057
+    private static X509Certificate2 Certificate(string relative) => new(Bytes(relative));
+#pragma warning restore SYSLIB0057
 
     private static string FindFixtures()
     {

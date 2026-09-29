@@ -208,8 +208,11 @@ What landed:
   and the generated StoreKit 2 transaction through `vendor/autoload.php`.
   Both run in the `php-static` job.
 
-The archive is 38 files: the two manifests, the two licences,
-`php/README.md`, the three pinned roots and 30 PHP sources. The open question
+The archive is 36 files: the two manifests, the two licences,
+`php/README.md`, the installer command (`php/bin/aprv-install`) with its
+`php/binaries.json`, the three pinned roots (until Phase 7) and 26 PHP
+sources; the package ships no binary, and `vendor/bin/aprv-install` fetches the
+one that matches `binaries.json` (`php/CI-NOTES.md`). The open question
 the old text flagged is closed. `git archive` honours `export-ignore`,
 reproduced by the guard on every run, and GitHub's **zipball** honours it
 too: on 2026-09-06 the branch archive at

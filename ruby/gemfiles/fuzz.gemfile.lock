@@ -1,7 +1,13 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    rake-compiler-dock (1.12.0)
+    rb_sys (0.9.130)
+      rake-compiler-dock (= 1.12.0)
     ruzzy (0.8.0)
+    wasmtime (48.0.1)
+      rb_sys (~> 0.9.130)
+    wasmtime (48.0.1-x86_64-linux)
 
 PLATFORMS
   ruby
@@ -9,6 +15,7 @@ PLATFORMS
 
 DEPENDENCIES
   ruzzy (~> 0.8)
+  wasmtime (>= 48.0.1)
 
 BUNDLED WITH
    2.5.22

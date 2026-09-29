@@ -21,6 +21,11 @@ product id, device binding, refunds, idempotency, is yours; see
 Java **8** is the compiled target (`maven.compiler.release=8`), built and
 tested with any modern JDK.
 
+Depend on this artifact or on `apple-purchase-receipt-verifier-wasm` (the
+same API on the shared Rust core), never both: they have the same class
+names. `Verifier.create` throws `IllegalStateException` when it finds both
+on the classpath.
+
 **On Spring Boot**, Boot's BOM decides your Jackson version, not this
 library. The floor is jackson-core 2.16 (see
 [Dependency floors](#vendoring)). Spring Boot 3.0 to 3.2 manage an older

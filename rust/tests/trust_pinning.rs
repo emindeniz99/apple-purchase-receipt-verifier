@@ -454,3 +454,132 @@ fn a_root_verifies_beside_another_root_with_the_same_subject_in_either_order() {
         assert!(common::verifier(roots).verify_signed_data(&jws).is_ok());
     }
 }
+
+/// Two pinned roots with one subject name and different keys, a receipt
+/// chain under the first, a certificate the second issued, and a
+/// self-signed anchor that carries the intermediate's subject name. P-256,
+/// minted here, none with key identifiers.
+struct Lookalikes {
+    first_root: TrustAnchor,
+    second_root: TrustAnchor,
+    decoy: TrustAnchor,
+    intermediate: Certificate,
+    other: Certificate,
+    leaf: Certificate,
+}
+
+fn lookalikes() -> Lookalikes {
+    use common::mint;
+    let (first_key, second_key, intermediate_key, other_key, leaf_key, decoy_key) = (
+        mint::key(41),
+        mint::key(42),
+        mint::key(43),
+        mint::key(44),
+        mint::key(45),
+        mint::key(46),
+    );
+    let root =
+        |key, serial| mint::certificate("Twin Root", key, "Twin Root", key, serial, true, None);
+    let certificate = |der: Vec<u8>| Certificate::from_der(&der).unwrap();
+    let anchor = |der: Vec<u8>| TrustAnchor::from_der(&der).unwrap();
+    Lookalikes {
+        first_root: anchor(root(&first_key, 1)),
+        second_root: anchor(root(&second_key, 2)),
+        decoy: anchor(mint::certificate(
+            "Twin WWDR",
+            &decoy_key,
+            "Twin WWDR",
+            &decoy_key,
+            6,
+            true,
+            None,
+        )),
+        intermediate: certificate(mint::certificate(
+            "Twin WWDR",
+            &intermediate_key,
+            "Twin Root",
+            &first_key,
+            3,
+            true,
+            Some(mint::WWDR_MARKER),
+        )),
+        other: certificate(mint::certificate(
+            "Twin Other",
+            &other_key,
+            "Twin Root",
+            &second_key,
+            4,
+            true,
+            None,
+        )),
+        leaf: certificate(mint::certificate(
+            "Twin Leaf",
+            &leaf_key,
+            "Twin WWDR",
+            &intermediate_key,
+            5,
+            false,
+            Some(mint::RECEIPT_SIGNER_MARKER),
+        )),
+    }
+}
+
+/// Round-2 review F2 (a): OpenSSL's issuer lookup takes the first store
+/// certificate with the right name and never tries a second, so with both
+/// same-named roots in one store the order decided, and a certificate the
+/// second root issued, appended to the unsigned certificates bag, kept both
+/// in the store. Each root now gets a store of its own.
+#[test]
+fn a_certificate_from_a_same_named_roots_pki_in_the_bag_does_not_decide_the_path() {
+    let pki = lookalikes();
+    let embedded = [
+        pki.leaf.clone(),
+        pki.intermediate.clone(),
+        pki.other.clone(),
+    ];
+    let orders = [
+        vec![pki.first_root.clone(), pki.second_root.clone()],
+        vec![pki.second_root.clone(), pki.first_root.clone()],
+    ];
+    for roots in &orders {
+        let authenticated = path::authenticated_top_down(&embedded, roots);
+        assert_eq!(authenticated.len(), 3, "both roots vouch for something");
+        let chain = path::receipt_path(&pki.leaf, &authenticated, roots, now_millis());
+        assert_eq!(chain.map(|chain| chain.len()).ok(), Some(2));
+    }
+    // A failing path fails for the same reason in either order: the
+    // problems come from the run whose links hold, under the first root,
+    // not from the second root's broken signature. 2100-01-01, when every
+    // minted certificate has expired.
+    let late = 4_102_444_800_000;
+    for roots in &orders {
+        let authenticated = path::authenticated_top_down(&embedded, roots);
+        let failure = path::receipt_path(&pki.leaf, &authenticated, roots, late).unwrap_err();
+        assert_eq!(failure.reason(), Reason::InvalidCertificate, "{failure}");
+    }
+}
+
+/// Round-2 review F2 (b): a pinned self-signed anchor carrying the
+/// intermediate's subject name was, under OpenSSL's trusted-first lookup,
+/// taken as the leaf's issuer, and the path to the real root never
+/// verified, for receipts and for the JWS pair alike.
+#[test]
+fn an_anchor_named_as_the_intermediate_does_not_change_the_verdict() {
+    let pki = lookalikes();
+    let embedded = [pki.leaf.clone(), pki.intermediate.clone()];
+    for roots in [
+        vec![pki.first_root.clone()],
+        vec![pki.first_root.clone(), pki.decoy.clone()],
+        vec![pki.decoy.clone(), pki.first_root.clone()],
+    ] {
+        let authenticated = path::authenticated_top_down(&embedded, &roots);
+        let chain = path::receipt_path(&pki.leaf, &authenticated, &roots, now_millis());
+        assert_eq!(chain.map(|chain| chain.len()).ok(), Some(2));
+        assert!(path::validate_pair(&pki.leaf, &pki.intermediate, &roots, now_millis()).is_ok());
+    }
+    // The decoy alone anchors nothing.
+    let roots = [pki.decoy.clone()];
+    let failure =
+        path::validate_pair(&pki.leaf, &pki.intermediate, &roots, now_millis()).unwrap_err();
+    assert_eq!(failure.reason(), Reason::UntrustedChain, "{failure}");
+}

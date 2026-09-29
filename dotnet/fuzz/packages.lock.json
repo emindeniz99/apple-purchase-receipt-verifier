@@ -22,15 +22,15 @@
         "resolved": "2.2.0",
         "contentHash": "biITWpwnMR7HUp43lAGU97DWq/4LfyXqqhuOK0Z4IuRP97KjQMOe/GKq3wE1KY21gNrc7OPO9HbAtQUvMKTImA=="
       },
-      "System.Security.Cryptography.Pkcs": {
+      "Wasmtime": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "W6BsawU2tB2qy6u4+3cBOSOmiTUgYWW365b5WMVA1bDxQwZZeNWD+qufKJkDQNKzAKq4b6Q04DDKhmr2SNJ1eg=="
+        "resolved": "48.0.2",
+        "contentHash": "BBqIEIPSTQ5cCVfxk6kH4lYSwNiMQ8Bf2F8Sy1I8N0JkvrWYoqhG3ro41R3JhNStIs0tVbqajBXXKnahyxHn0g=="
       },
       "applepurchasereceiptverifier": {
         "type": "Project",
         "dependencies": {
-          "System.Security.Cryptography.Pkcs": "[10.0.12, )"
+          "Wasmtime": "[48.0.2, )"
         }
       }
     }

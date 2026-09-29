@@ -1,0 +1,14 @@
+# ruzzy 0.8.0, clang 18, 15 s per target, fuzz/run.sh all 15, real module
+=== verify_receipt for 15s ===
+Done 71864 runs in 16 second(s)
+stat::peak_rss_mb:              701
+=== verify_receipt_base64 for 15s ===
+Done 16806 runs in 16 second(s)
+stat::peak_rss_mb:              774
+=== verify_transaction for 15s ===
+Done 49035 runs in 16 second(s)
+stat::peak_rss_mb:              664
+=== endpoint_json for 15s ===
+Done 161416 runs in 16 second(s)
+stat::peak_rss_mb:              699
+no crash, no invariant violation

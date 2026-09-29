@@ -1,5 +1,4 @@
 import Foundation
-import X509
 
 /// The system clock, as epoch milliseconds.
 @Sendable func systemMillis() -> Int64 {
@@ -7,8 +6,10 @@ import X509
 }
 
 /// A programming mistake in how a ``Config`` was built: no trust anchors, or
-/// bytes that are not a certificate. Not a ``Failure``: misconfiguration is
-/// not a verdict about any input, and happens once, at startup.
+/// bytes the verification module refuses as a certificate. Not a
+/// ``Failure``: misconfiguration is not a verdict about any input, and
+/// happens once, at startup. Also thrown when the verification module this
+/// package carries cannot be loaded at all.
 public struct ConfigError: Error, Sendable, CustomStringConvertible {
     public let detail: String
     init(_ detail: String) { self.detail = detail }
@@ -18,50 +19,68 @@ public struct ConfigError: Error, Sendable, CustomStringConvertible {
 /// What a ``Verifier`` is built from: the pinned roots and the clock.
 ///
 /// The clock answers "what time is it now?" and nothing else. The library
-/// reads it in two places: the chain check when the receipt or JWS carries no
-/// signing date, and `request_date` in the endpoint response. A
-/// caller-supplied clock must be safe to call from several threads — it is
-/// typed `@Sendable`.
+/// reads it once per call, before it looks at the input, and the
+/// verification module uses the value in two places: the chain check when
+/// the receipt or JWS carries no signing date, and `request_date` in the
+/// endpoint response. A caller-supplied clock must be safe to call from
+/// several threads — it is typed `@Sendable` — and must not answer a time
+/// before 1970, which is ``Reason/internalError``.
 public struct Config: Sendable {
-    /// The pinned roots a chain must reach — an unmodifiable copy.
-    public let roots: [Certificate]
+    /// The roots a chain must reach, as DER-encoded certificates, or `nil`
+    /// for Apple's three published roots, which are compiled into the
+    /// verification module and pinned there.
+    public let roots: [[UInt8]]?
     let clock: @Sendable () -> Int64
 
-    fileprivate init(roots: [Certificate], clock: @escaping @Sendable () -> Int64) {
+    fileprivate init(roots: [[UInt8]]?, clock: @escaping @Sendable () -> Int64) {
         self.roots = roots
         self.clock = clock
     }
 
-    /// Apple's three pinned roots and the system clock.
-    ///
-    /// The bundled roots load all together or not at all, each checked
-    /// against its published SHA-256 (``bundledAppleRoots``). Should they not
-    /// load, this cannot say so: a ``Verifier`` built from it then answers
-    /// ``Reason/internalError`` to every call, where ``ConfigBuilder/build()``
-    /// reports a ``ConfigError`` for an empty root set given explicitly.
+    /// Apple's three pinned roots and the system clock. Never throws.
     public static func defaults() -> Config {
-        Config(roots: bundledAppleRoots, clock: systemMillis)
+        Config(roots: nil, clock: systemMillis)
     }
 
     /// A builder whose unset parts are ``defaults()``.
     public static func builder() -> ConfigBuilder { ConfigBuilder() }
+
+    /// init's argument (docs/rust-core/ARCHITECTURE.md §4): the roots as
+    /// base64 DER, where an empty list means the module's built-in roots.
+    var initJson: [UInt8] {
+        Config.initJson(roots ?? [])
+    }
+
+    static func initJson(_ roots: [[UInt8]]) -> [UInt8] {
+        let list = roots.map { "\"" + Data($0).base64EncodedString() + "\"" }.joined(separator: ",")
+        return Array(#"{"roots":[\#(list)]}"#.utf8)
+    }
 }
 
 /// Builds a ``Config``.
 public struct ConfigBuilder: Sendable {
-    private var roots: [Certificate]?
+    private var roots: [[UInt8]]?
     private var clock: (@Sendable () -> Int64)?
 
     /// The roots a chain must reach, replacing Apple's bundled ones. Tests
     /// use their own, given as DER-encoded certificates.
+    ///
+    /// - Throws: ``ConfigError`` when the verification module refuses one of
+    ///   them as a certificate, or cannot be loaded at all. The roots are
+    ///   handed to a fresh module instance here, so a bad one is refused at
+    ///   startup rather than on the first call.
     public func roots(_ roots: [[UInt8]]) throws -> ConfigBuilder {
-        var copy = self
-        copy.roots = try roots.map { der in
-            guard let certificate = try? Certificate(derEncoded: der) else {
-                throw ConfigError("trust anchor is not a certificate")
+        if !roots.isEmpty {
+            do {
+                _ = try Pool(module: AprvModule.bundled, config: Config.initJson(roots)).create()
+            } catch .initRefused(let message) {
+                throw ConfigError("trust anchor is not a certificate: \(message)")
+            } catch {
+                throw ConfigError("the verification module could not check the trust anchors: \(error)")
             }
-            return certificate
         }
+        var copy = self
+        copy.roots = roots
         return copy
     }
 
@@ -79,10 +98,9 @@ public struct ConfigBuilder: Sendable {
     ///   roots would answer ``Reason/untrustedChain`` to everything, and
     ///   nobody would notice until production.
     public func build() throws -> Config {
-        let resolvedRoots = roots ?? bundledAppleRoots
-        guard !resolvedRoots.isEmpty else {
+        if let roots, roots.isEmpty {
             throw ConfigError("roots must not be empty")
         }
-        return Config(roots: resolvedRoots, clock: clock ?? systemMillis)
+        return Config(roots: roots, clock: clock ?? systemMillis)
     }
 }

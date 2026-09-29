@@ -1,0 +1,3 @@
+# The module is not committed on a lane branch: copy it into place (see README).
+# The real one is added once, at integration.
+/internal/wasm/aprv.wasm

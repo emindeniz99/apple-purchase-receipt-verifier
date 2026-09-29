@@ -13,10 +13,12 @@
   <testsuites>
     <testsuite name="conformance">
       <file>tests/ConformanceCasesTest.php</file>
+      <file>tests/ConformanceHttpTest.php</file>
     </testsuite>
     <testsuite name="native">
       <directory>tests</directory>
       <exclude>tests/ConformanceCasesTest.php</exclude>
+      <exclude>tests/ConformanceHttpTest.php</exclude>
     </testsuite>
   </testsuites>
   <source>

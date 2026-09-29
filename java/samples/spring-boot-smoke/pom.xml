@@ -28,6 +28,9 @@
     <spring-boot.version>4.0.8</spring-boot.version>
     <!-- Overridden by CI from ../../pom.xml; see the comment above. -->
     <verifier.version>0.0.0-set-me</verifier.version>
+    <!-- The artifact under test: the main one, or its alternative
+         apple-purchase-receipt-verifier-wasm (same packages and API). -->
+    <verifier.artifactId>apple-purchase-receipt-verifier</verifier.artifactId>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -52,7 +55,7 @@
     </dependency>
     <dependency>
       <groupId>io.github.emindeniz99</groupId>
-      <artifactId>apple-purchase-receipt-verifier</artifactId>
+      <artifactId>${verifier.artifactId}</artifactId>
       <version>${verifier.version}</version>
     </dependency>
     <dependency>

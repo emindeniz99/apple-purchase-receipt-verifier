@@ -1,0 +1,184 @@
+api_shape_test.rb	test_the_public_classes_exist	K	api_shape_test
+api_shape_test.rb	test_the_three_entry_points_exist	K	api_shape_test
+api_shape_test.rb	test_the_reason_vocabulary_equals_the_shared_schema	K	api_shape_test
+api_shape_test.rb	test_the_environment_vocabulary_is_production_and_sandbox_only	K	api_shape_test
+api_shape_test.rb	test_a_verification_error_carries_its_reason_as_data_and_in_its_message	D	tested the private VerificationError class, removed
+api_shape_test.rb	test_misconfiguration_raises_argument_error_never_verification_error	K	api_shape_test
+api_shape_test.rb	test_verify_receipt_and_verify_signed_data_take_no_clock_parameter	K	api_shape_test
+api_shape_test.rb	test_config_and_verifier_instances_are_frozen	K	api_shape_test
+api_shape_test.rb	test_one_verifier_is_usable_from_many_threads_at_once	K	thread_test (one Verifier from several threads)
+api_shape_test.rb	test_returned_value_objects_are_frozen	K	api_shape_test
+api_shape_test.rb	test_a_result_carries_exactly_one_of_payload_and_failure	K	api_shape_test
+api_shape_test.rb	test_input_that_is_not_valid_utf8_is_malformed_not_a_raise	K	api_shape_test (invalid UTF-8 is passed on and answered as a value; MALFORMED once the real module is in)
+api_shape_test.rb	test_the_dashed_require_path_works_too	K	api_shape_test
+api_shape_test.rb	test_the_version_is_a_semver_string	K	api_shape_test
+certificate_flood_test.rb	test_exactly_ten_embedded_certificates_is_admitted	C	receipt/accept-ten-embedded-certificates
+certificate_flood_test.rb	test_eleven_embedded_certificates_is_rejected_as_malformed	C	receipt/reject-eleven-embedded-certificates
+certificate_flood_test.rb	test_a_thousand_certificate_flood_is_refused_before_the_certificates_are_decoded	P	receipt/reject-a-thousand-certificate-flood with maxMillis
+certificate_flood_test.rb	test_the_decode_counter_sees_a_receipt_that_is_actually_verified	D	counted X509 decodes inside the old Ruby code
+certificate_flood_test.rb	test_the_bound_clears_every_genuine_chain_in_the_corpus	C	receipt/verify-genuine-sandbox-g5-against-apple-roots, receipt/verify-genuine-legacy-sha1-chain
+certificate_flood_test.rb	test_a_cross_signed_certificate_mesh_is_rejected_in_bounded_time	C	receipt/reject-cross-signed-mesh
+certificate_flood_test.rb	test_the_bound_is_reported_before_the_signer_lookup	P	receipt/reject-eleven-certificates-with-the-signer-absent (the count is reported before the signer lookup)
+chain_hardening_test.rb	test_a_key_usage_extension_that_does_not_decode_fails_closed	D	called the private Chain.cert_sign_permitted? on a fake certificate
+chain_hardening_test.rb	test_no_key_usage_extension_at_all_is_still_permitted	D	called the private Chain.cert_sign_permitted? on a fake certificate
+chain_hardening_test.rb	test_an_intermediate_with_a_malformed_key_usage_is_refused_end_to_end	C	receipt/intermediate-with-a-malformed-key-usage-does-not-crash, signed-data/intermediate-with-a-malformed-key-usage-does-not-crash
+clock_test.rb	test_a_payload_is_never_rejected_for_its_age	C	transaction/accept-historical-payload-under-expired-chain
+clock_test.rb	test_a_dateless_payload_under_a_live_chain_verifies_at_the_default_clock	C	transaction/accept-payload-without-a-signed-date, receipt/accept-missing-creation-date
+clock_test.rb	test_a_dateless_payload_under_an_expired_chain_is_judged_at_the_configured_clock	C	transaction/reject-dateless-payload-under-an-expired-chain
+clock_test.rb	test_a_dateless_receipt_is_judged_at_the_configured_clock	C	endpoint/clock-inside-the-window-verifies-a-dateless-receipt, endpoint/clock-past-the-window-rejects-a-dateless-receipt
+clock_test.rb	test_an_omitted_clock_reads_the_real_system_clock	K	facade_test (the default clock is the system clock)
+clock_test.rb	test_a_clock_must_respond_to_call	K	facade_test / api_shape_test (a clock must respond to #call)
+clock_test.rb	test_the_clock_is_read_at_most_once_per_call	K	facade_test (the clock is read once per call, before the input)
+clock_test.rb	test_a_clock_that_raises_is_internal_error_never_a_verdict_about_the_input	K	facade_test (a clock that raises is INTERNAL_ERROR)
+clock_test.rb	test_a_clock_that_does_not_return_an_integer_is_internal_error	K	facade_test (a clock that is not an Integer is INTERNAL_ERROR)
+clock_test.rb	test_a_clock_that_raises_answers_endpoint_status_21009	K	facade_test (a clock that raises answers 21009)
+clock_test.rb	test_the_endpoint_clock_drives_request_date_and_the_chain_fallback_alike	C	endpoint/request-date-is-the-verification-clock
+endpoint_test.rb	test_status_zero_body_matches_the_documented_contract	C	endpoint/sandbox-receipt-on-sandbox-answers-0
+endpoint_test.rb	test_wire_types_are_apples_wire_types	C	endpoint/ids-echo-apples-keys
+endpoint_test.rb	test_is_in_intro_offer_period_is_the_string_true_or_false	P	endpoint/intro-offer-flag-is-the-string-true-or-false
+endpoint_test.rb	test_legacy_receipt_ids_are_wire_numbers_with_exact_digits	C	endpoint/ids-echo-apples-keys
+endpoint_test.rb	test_legacy_receipt_id_keys_are_omitted_not_null_when_absent	C	endpoint/ids-absent-are-omitted
+endpoint_test.rb	test_malformed_receipt_data_answers_21002	C	endpoint/receipt-data-missing-answers-21002, receipt-data-empty, receipt-data-not-a-string, body-that-is-*
+endpoint_test.rb	test_undecodable_base64_answers_21002	C	endpoint/receipt-data-junk-after-padding, receipt-data-urlsafe-padded
+endpoint_test.rb	test_unauthenticated_receipt_answers_21003	C	endpoint/foreign-root-answers-21003
+endpoint_test.rb	test_environment_routing_both_directions	C	endpoint/sandbox-receipt-on-production-answers-21007, production-receipt-on-sandbox-answers-21008
+endpoint_test.rb	test_vpp_sandbox_routes_as_sandbox	C	endpoint/vpp-sandbox-receipt-on-sandbox-answers-0
+endpoint_test.rb	test_a_missing_receipt_type_routes_as_sandbox	C	endpoint/missing-receipt-type-on-sandbox-answers-0
+endpoint_test.rb	test_non_zero_status_bodies_carry_neither_receipt_nor_environment	P	endpoint/a-refusal-carries-only-status (no receipt, no environment)
+endpoint_test.rb	test_verify_receipt_endpoint_answers_21002_for_anything_that_is_not_a_json_object	C	endpoint/receipt-data-missing-answers-21002, receipt-data-empty, receipt-data-not-a-string, body-that-is-*
+endpoint_test.rb	test_password_and_exclude_old_transactions_are_accepted_and_ignored	C	endpoint/password-and-exclude-old-transactions-are-ignored
+endpoint_test.rb	test_the_endpoint_never_raises_for_hostile_input	F	corpus: hostile endpoint rows
+endpoint_test.rb	test_environment_must_be_production_or_sandbox	K	api_shape_test / facade_test (environment must be PRODUCTION or SANDBOX)
+endpoint_test.rb	test_verify_receipt_endpoint_answers_21002_for_a_non_string_request_body	K	api_shape_test (non-String request body answers 21002)
+endpoint_test.rb	test_an_unexpected_error_inside_verification_answers_21009_not_a_raise	K	facade_test (a trap at the endpoint answers 21009)
+endpoint_test.rb	test_status_codes_out_of_scope_are_never_produced	F	corpus: no status outside the six appears in any of the 6,179 rows; AppleStatus is a Ruby constants table (covered by the wrapper's own test below)
+hostile_input_test.rb	test_indefinite_length_nesting_bomb	P	receipt/reject-an-indefinite-length-nesting-bomb with maxMillis (500,000 nested 30 80 opens)
+hostile_input_test.rb	test_definite_length_nesting_bomb	P	receipt/reject-a-definite-length-nesting-bomb with maxMillis (100,000 nested SEQUENCEs)
+hostile_input_test.rb	test_the_scanner_rejects_before_openssl_is_reached	D	tested the hand-written scanner's ordering against OpenSSL's recursion; the two bombs above pin the behaviour
+hostile_input_test.rb	test_depth_thirty_two_is_accepted_and_thirty_three_is_not	C	receipt/accept-an-envelope-nested-32-deep, receipt/reject-an-envelope-nested-33-deep
+hostile_input_test.rb	test_a_length_claiming_two_gigabytes_on_a_forty_byte_input	P	receipt/reject-a-length-claiming-two-gigabytes (oneOf MALFORMED)
+hostile_input_test.rb	test_an_unterminated_indefinite_length_container	P	receipt/reject-an-unterminated-indefinite-length-container
+hostile_input_test.rb	test_an_end_of_contents_with_no_open_container	P	receipt/reject-an-end-of-contents-with-no-open-container
+hostile_input_test.rb	test_multi_byte_tags_are_refused_rather_than_interpreted	P	receipt/reject-a-multi-byte-tag (core decides: oneOf if OpenSSL accepts it)
+hostile_input_test.rb	test_length_fields_wider_than_four_octets_are_refused	P	receipt/reject-a-length-field-wider-than-four-octets (core decides)
+hostile_input_test.rb	test_truncation_at_every_offset_of_a_genuine_receipt_is_contained	F	corpus: the 5,000 mutants include truncations; the differential job runs them
+hostile_input_test.rb	test_trailing_bytes_after_a_genuine_receipt	C	receipt/reject-one-trailing-byte-after-the-der
+hostile_input_test.rb	test_a_payload_with_invalid_utf8_in_the_bundle_id	C	receipt/invalid-utf8-strings-are-kept-raw
+hostile_input_test.rb	test_a_message_digest_attribute_that_does_not_match_the_content	C	receipt/reject-genuine-content-byte-flip
+hostile_input_test.rb	test_no_source_file_can_reach_the_operating_systems_trust_store	K	api_shape_test: the library holds no verification code (greps lib/ for crypto, X.509, ASN.1, trust-store names)
+hostile_input_test.rb	test_no_source_file_performs_network_io	K	api_shape_test: the library holds no verification code (greps lib/ for crypto, X.509, ASN.1, trust-store names)
+hostile_input_test.rb	test_a_chain_the_platform_trust_store_accepts_is_still_rejected	H	the core's isolation test (ARCHITECTURE section 9: SSL_CERT_FILE, SSL_CERT_DIR, OPENSSL_CONF planted and ignored) replaces the platform-store trick
+hostile_input_test.rb	test_the_same_pinning_holds_on_the_jws_path	H	the core's isolation test (ARCHITECTURE section 9: SSL_CERT_FILE, SSL_CERT_DIR, OPENSSL_CONF planted and ignored) replaces the platform-store trick
+hostile_input_test.rb	test_a_receipt_whose_payload_is_a_huge_flat_set_is_bounded	P	receipt/a-huge-flat-attribute-set-is-bounded with maxMillis (5,000 valid attributes)
+hostile_input_test.rb	test_a_ber_chunked_attribute_value_is_bounded	P	receipt/a-ber-chunked-attribute-value-is-bounded with maxMillis (80 nested constructed OCTET STRINGs)
+hostile_input_test.rb	test_the_node_budget_ceiling_costs_a_bounded_amount	P	receipt/reject-a-node-budget-flood with maxMillis (199,000 NULLs in one SEQUENCE)
+hostile_input_test.rb	test_a_date_with_a_million_fractional_digits_is_not_superlinear	P	receipt/a-date-with-a-million-fractional-digits-is-bounded with maxMillis
+hostile_input_test.rb	test_the_endpoint_is_not_superlinear_on_a_long_fractional_second	P	endpoint/a-date-with-1500000-fractional-digits-is-bounded with maxMillis
+hostile_input_test.rb	test_the_containment_boundary_converts_every_foreign_error	K	facade_test: an exception inside the wrapper is INTERNAL_ERROR, never a raise; the trap and unreadable-answer tests
+hostile_input_test.rb	test_the_containment_boundary_covers_system_stack_error	K	facade_test: an exception inside the wrapper is INTERNAL_ERROR, never a raise; the trap and unreadable-answer tests
+hostile_input_test.rb	test_a_foreign_error_in_the_signed_payload_parse_is_unreadable_payload	K	facade_test: an exception inside the wrapper is INTERNAL_ERROR, never a raise; the trap and unreadable-answer tests
+hostile_input_test.rb	test_a_verification_error_passes_through_the_boundary_unchanged	D	tested the private Receipt.contained boundary
+hostile_input_test.rb	test_the_jws_boundary_contains_foreign_errors_too	K	facade_test: an exception inside the wrapper is INTERNAL_ERROR, never a raise; the trap and unreadable-answer tests
+input_size_bounds_test.rb	test_the_caps_are_public_and_carry_the_cross_port_numbers	D	asserted Ruby constants that no longer exist; the caps are the module's and the cases below pin them
+input_size_bounds_test.rb	test_a_base64_receipt_one_byte_over_the_cap_is_refused_before_decoding	C	receipt-base64/reject-one-byte-over-the-size-cap
+input_size_bounds_test.rb	test_the_base64_cap_counts_utf8_bytes_not_characters	C	receipt-base64/reject-one-utf8-byte-over-the-size-cap, receipt-base64/pass-the-size-cap-then-fail-as-malformed
+input_size_bounds_test.rb	test_a_base64_receipt_exactly_at_the_cap_is_decoded	C	receipt-base64/accept-at-the-size-cap, receipt-base64/pass-the-size-cap-then-fail-as-malformed
+input_size_bounds_test.rb	test_the_byte_floor_receipt_verifies_through_every_entry_point	C	receipt/verify-at-the-byte-floor, endpoint/verify-at-the-byte-floor
+input_size_bounds_test.rb	test_receipt_data_over_the_cap_answers_21002_without_decoding	C	endpoint/receipt-data-over-the-receipt-cap-answers-21002
+input_size_bounds_test.rb	test_a_body_one_byte_over_the_cap_answers_21002_without_parsing	C	endpoint/request-body-one-byte-over-the-size-cap-answers-21002
+input_size_bounds_test.rb	test_an_oversized_malformed_body_answers_21002_without_parsing	P	endpoint/an-oversized-body-that-is-not-json-answers-21002 (size is decided before parsing)
+input_size_bounds_test.rb	test_a_body_exactly_at_the_cap_is_parsed	C	endpoint/request-body-at-the-size-cap-answers-0
+input_size_bounds_test.rb	test_the_body_cap_counts_utf8_bytes_not_characters	C	endpoint/request-body-at-the-size-cap-in-two-byte-characters-answers-0, endpoint/request-body-over-the-size-cap-in-two-byte-characters-answers-21002
+input_size_bounds_test.rb	test_a_binary_body_is_measured_in_its_bytes	H	the wrapper sends a String's bytes, so a binary-encoded body is measured in bytes; retest through the real module after G1 (endpoint over-cap case with a .b body)
+input_size_bounds_test.rb	test_a_body_nested_exactly_64_deep_is_read	C	endpoint/request-body-nested-64-deep-answers-0
+input_size_bounds_test.rb	test_a_body_nested_65_deep_answers_21002_without_decoding	C	endpoint/request-body-nested-65-deep-answers-21002
+input_size_bounds_test.rb	test_a_jws_one_character_over_the_cap_is_refused_before_it_is_split	C	raw/reject-jws-one-byte-over-the-size-cap
+input_size_bounds_test.rb	test_a_jws_exactly_at_the_cap_is_split	C	raw/jws-at-the-size-cap-reaches-the-signature-check
+input_size_bounds_test.rb	test_a_jws_header_or_payload_nested_exactly_64_deep_verifies	C	signed-data/accept-a-header-nested-64-deep, signed-data/accept-a-payload-nested-64-deep
+input_size_bounds_test.rb	test_a_jws_header_nested_65_deep_is_malformed	C	signed-data/reject-a-header-nested-65-deep
+input_size_bounds_test.rb	test_a_jws_payload_nested_65_deep_is_unreadable_after_a_genuine_signature	C	signed-data/unreadable-payload-nested-65-deep
+jws_test.rb	test_verifies_the_apple_official_transaction_info_mock	C	transaction/verify-apple-official-transaction-info
+jws_test.rb	test_rejects_a_non_es256_alg	C	signed-data/reject-alg-rs256
+jws_test.rb	test_rejects_x5c_with_two_or_four_entries	P	signed-data/reject-a-four-certificate-x5c (two: signed-data/reject-a-two-certificate-x5c exists)
+jws_test.rb	test_rejects_x5c_entries_that_are_not_strings	C	transaction/reject-x5c-entry-that-is-not-a-string
+jws_test.rb	test_rejects_an_x5c_entry_that_is_base64_but_not_a_certificate	C	transaction/reject-x5c-leaf-that-is-not-a-certificate
+jws_test.rb	test_rejects_an_x5c_certificate_carrying_one_extension_twice	C	transaction/reject-x5c-duplicate-extension
+jws_test.rb	test_rejects_a_segment_outside_the_base64url_alphabet	P	transaction/reject-a-header-or-payload-segment-outside-the-base64url-alphabet (signature-segment variants exist)
+jws_test.rb	test_rejects_a_segment_that_is_base64url_but_not_json	P	transaction/reject-a-header-that-is-base64url-but-not-json (json array and scalar exist)
+jws_test.rb	test_rejects_a_payload_that_is_json_but_not_an_object	C	signed-data/unreadable-json-array-payload, transaction/reject-payload-that-is-a-json-array
+jws_test.rb	test_rejects_a_leaf_without_the_apple_marker_oid	C	transaction/reject-leaf-without-apple-marker-oid
+jws_test.rb	test_rejects_an_intermediate_without_the_wwdr_marker_oid	C	transaction/reject-intermediate-without-wwdr-marker-oid
+jws_test.rb	test_chain_is_reported_before_the_marker_oid	C	signed-data/reject-foreign-chain-without-markers
+jws_test.rb	test_rejects_an_intermediate_that_is_not_a_ca	P	signed-data/reject-an-intermediate-that-is-not-a-ca (basicConstraints cA false; receipt twin: receipt/reject-leaf-presented-as-intermediate)
+jws_test.rb	test_rejects_signatures_that_are_not_sixty_four_bytes	P	transaction/reject-a-signature-of-63-and-65-bytes
+jws_test.rb	test_rejects_a_signature_whose_scalars_are_zero_or_out_of_range	P	transaction/reject-signature-scalars-of-zero-and-of-the-group-order
+jws_test.rb	test_rejects_a_tampered_payload	C	transaction/reject-tampered-payload
+jws_test.rb	test_x5c_third_element_is_ignored	P	transaction/ignore-a-third-x5c-element (a foreign root as x5c[2] changes nothing)
+jws_test.rb	test_no_claim_is_enforced_only_the_signature	C	transaction/return-bundle-id-for-the-caller, raw/skip-claim-checks-but-not-signature
+jws_test.rb	test_dates_are_epoch_millisecond_numbers_not_strings	C	transaction/verify-shared-sandbox (numeric claims), raw/return-claims-of-any-type
+jws_test.rb	test_json_exposes_every_claim_unchanged_including_ones_this_library_does_not_model	C	transaction/accept-null-and-unmodelled-claims
+jws_test.rb	test_the_json_payload_is_frozen	K	api_shape_test (frozen values)
+jws_test.rb	test_rejects_inputs_that_are_not_three_segments	P	raw/reject-a-jws-with-fewer-or-more-than-three-segments (four: signed-data/reject-four-segment-jws; empty: transaction/reject-all-segments-empty)
+jws_test.rb	test_rejects_a_non_string_input	K	api_shape_test (non-String is MALFORMED)
+mutation_test.rb	test_mutations_of_the_genuine_legacy_receipt_never_escape	F	corpus: the 5,000 mutants and the hostile rows, byte for byte against native; rust/fuzz
+mutation_test.rb	test_mutations_of_the_genuine_sandbox_receipt_never_escape	F	corpus: the 5,000 mutants and the hostile rows, byte for byte against native; rust/fuzz
+mutation_test.rb	test_mutations_of_a_generated_receipt_never_escape	F	corpus: the 5,000 mutants and the hostile rows, byte for byte against native; rust/fuzz
+mutation_test.rb	test_mutations_of_the_shared_transaction_jws_never_escape	F	corpus: the 5,000 mutants and the hostile rows, byte for byte against native; rust/fuzz
+mutation_test.rb	test_segment_swaps_and_reorderings_of_a_jws_never_escape	F	corpus: the 5,000 mutants and the hostile rows, byte for byte against native; rust/fuzz
+mutation_test.rb	test_a_mutation_that_still_verifies_returns_an_identical_payload	F	differential check (Phase 1 runner): a mutant that still verifies returns the payload of the unmutated input
+mutation_test.rb	test_random_bytes_never_escape	F	corpus: the 5,000 mutants and the hostile rows, byte for byte against native; rust/fuzz
+mutation_test.rb	test_random_strings_never_escape_the_jws_path	F	corpus: the 5,000 mutants and the hostile rows, byte for byte against native; rust/fuzz
+mutation_test.rb	test_the_endpoint_never_raises_across_the_same_sweep	F	corpus: the 5,000 mutants and the hostile rows, byte for byte against native; rust/fuzz
+pacific_time_test.rb	test_every_tzdata_vector_renders_identically	P	endpoint/request-date-pst-* : pinned-clock cases either side of each US DST transition, and 2007 and 2040 (the tzdata vectors of the old file)
+pacific_time_test.rb	test_the_offset_is_only_ever_seven_or_eight_hours_west	P	endpoint/request-date-pst-* : pinned-clock cases either side of each US DST transition, and 2007 and 2040 (the tzdata vectors of the old file)
+pacific_time_test.rb	test_the_offset_actually_changes_across_a_year	P	endpoint/request-date-pst-* : pinned-clock cases either side of each US DST transition, and 2007 and 2040 (the tzdata vectors of the old file)
+pacific_time_test.rb	test_transitions_land_on_a_sunday_at_two_am_local	P	endpoint/request-date-pst-* : pinned-clock cases either side of each US DST transition, and 2007 and 2040 (the tzdata vectors of the old file)
+pacific_time_test.rb	test_a_non_utc_time_is_converted_before_the_rule_is_applied	P	endpoint/request-date-pst-* : pinned-clock cases either side of each US DST transition, and 2007 and 2040 (the tzdata vectors of the old file)
+packaging_test.rb	test_the_gemspec_declares_every_file_a_consumer_needs	K	packaging_test
+packaging_test.rb	test_the_gemspec_ships_no_test_or_tooling_files	K	packaging_test
+packaging_test.rb	test_the_built_gem_verifies_a_genuine_receipt_from_a_clean_gem_home	K	packaging_test
+performance_test.rb	test_the_largest_genuine_receipt_stays_inside_its_budget	H	bench/startup.rb and the maxMillis cases replace CPU budgets; per-call cost is the module's
+performance_test.rb	test_a_typical_receipt_stays_inside_its_budget	H	bench/startup.rb and the maxMillis cases replace CPU budgets; per-call cost is the module's
+performance_test.rb	test_a_transaction_jws_stays_inside_its_budget	H	bench/startup.rb and the maxMillis cases replace CPU budgets; per-call cost is the module's
+performance_test.rb	test_rejecting_a_nesting_bomb_costs_almost_nothing	P	covered by the two nesting-bomb cases above (maxMillis)
+port_divergence_test.rb	test_a_ber_chunked_attribute_value_reads_as_its_concatenation	P	receipt/a-ber-chunked-attribute-value-reads-as-its-concatenation (node and java read it, python and swift refuse it: the core decides, so oneOf until then)
+port_divergence_test.rb	test_a_ber_chunked_attribute_value_survives_a_single_chunk_and_an_empty_one	P	receipt/a-ber-chunked-attribute-value-reads-as-its-concatenation (node and java read it, python and swift refuse it: the core decides, so oneOf until then)
+port_divergence_test.rb	test_a_ber_chunked_attribute_value_with_a_non_octet_string_chunk_is_kept_raw	P	receipt/a-ber-chunked-attribute-value-reads-as-its-concatenation (node and java read it, python and swift refuse it: the core decides, so oneOf until then)
+port_divergence_test.rb	test_a_non_integer_signed_date_still_drives_the_chain_instant	C	signed-data/signed-date-fractional
+port_divergence_test.rb	test_a_non_integer_signed_date_is_reported_unchanged_in_the_payload	C	signed-data/signed-date-fractional
+port_divergence_test.rb	test_a_non_finite_or_out_of_range_signed_date_falls_back_to_the_clock	C	transaction/signed-date-out-of-range-falls-back-to-the-clock
+receipt_base64_test.rb	test_bytes_outside_the_base64_alphabet_are_refused	C	receipt-base64/reject-*, base64/reject-*
+receipt_base64_test.rb	test_neither_ruby_decoder_alone_is_the_rule	D	tested the Ruby decoder Receipt.decode_canonical_base64
+receipt_test.rb	test_verifies_the_genuine_sandbox_receipt	C	receipt/verify-genuine-sandbox-g5-against-apple-roots
+receipt_test.rb	test_verifies_the_genuine_legacy_sha1_receipt	C	receipt/verify-genuine-legacy-sha1-chain
+receipt_test.rb	test_the_caller_can_compute_the_device_hash_from_the_returned_fields	C	receipt/verify-genuine-sandbox-g5-device-hash
+receipt_test.rb	test_rejects_trailing_bytes_after_the_cms_blob	C	receipt/reject-one-trailing-byte-after-the-der
+receipt_test.rb	test_rejects_zero_signer_infos	C	receipt/reject-zero-signer-infos
+receipt_test.rb	test_a_duplicated_genuine_signer_info_still_verifies	P	receipt/accept-a-duplicated-genuine-signer-info (closest today: accept-four-signers-at-the-cap)
+receipt_test.rb	test_accepts_an_ec_signer_key	C	receipt/verify-signer-ecdsa-p256
+receipt_test.rb	test_rejects_a_signer_certificate_that_is_not_embedded	P	receipt/reject-a-signer-certificate-that-is-not-embedded (closest today: reject-signer-absent-beside-a-malformed-stranger)
+receipt_test.rb	test_twin_certificate_with_the_signers_serial_is_not_accepted_as_the_signer	C	receipt/reject-twin-certificate
+receipt_test.rb	test_chain_is_reported_before_the_signer_marker_oid	P	receipt/reject-a-foreign-chain-whose-signer-lacks-the-marker (UNTRUSTED_CHAIN before INVALID_CERTIFICATE_PURPOSE; the JWS twin is signed-data/reject-foreign-chain-without-markers)
+receipt_test.rb	test_attribute_integers_at_the_edges	C	receipt/integers-at-the-64-bit-edge
+receipt_test.rb	test_rejects_an_attribute_type_above_the_32_bit_signed_range	C	receipt/reject-attribute-type-above-int32-max, receipt/attribute-type-int32-max-is-kept
+receipt_test.rb	test_legacy_receipt_ids_are_decoded	C	receipt/ids-are-decoded
+receipt_test.rb	test_legacy_receipt_ids_are_absent_when_the_receipt_does_not_carry_them	C	receipt/ids-absent-when-not-carried
+receipt_test.rb	test_dates_outside_the_exact_grammar_are_kept_raw_not_an_error	C	receipt/date-grammar
+receipt_test.rb	test_an_empty_date_string_means_absent_and_is_not_kept_raw	C	receipt/verify-genuine-sandbox-g5-against-apple-roots (attribute 1712 is an empty date)
+receipt_test.rb	test_an_attribute_value_that_is_not_valid_utf8_is_kept_raw	C	receipt/invalid-utf8-strings-are-kept-raw
+receipt_test.rb	test_a_string_attribute_whose_value_is_the_wrong_asn1_type_is_kept_raw	C	receipt/printable-string-attributes-are-kept-raw
+receipt_test.rb	test_the_library_takes_no_bundle_id_and_judges_no_claim	C	receipt/return-bundle-id-for-the-caller
+receipt_test.rb	test_byte_fields_are_frozen_copies_of_the_input	K	facade_test / api_shape_test (frozen values); the copy-from-input concern cannot arise, the bytes come from the module
+receipt_test.rb	test_receipt_dates_are_epoch_millisecond_integers	C	receipt/verify-genuine-sandbox-g5-against-apple-roots (toJson dates)
+receipt_test.rb	test_an_anchor_is_not_rejected_for_being_expired	P	receipt/accept-an-expired-trust-anchor (an anchor's own validity window is not examined)
+receipt_test.rb	test_rejects_input_that_is_not_a_string_or_is_empty	K	api_shape_test (non-String is MALFORMED); receipt-base64/reject-empty
+receipt_test.rb	test_rejects_text_that_is_not_canonical_base64	C	receipt-base64/reject-*, base64/reject-*
+receipt_test.rb	test_rejects_base64_that_does_not_hold_a_cms_blob	C	base64/decodes-to-not-a-certificate, base64/decodes-to-not-a-certificate-at-all
+roots_test.rb	test_config_defaults_returns_all_three_published_apple_roots	H	the core's AppleRootCerts-style test: three roots pinned by fingerprint (Rust); the gem carries none
+roots_test.rb	test_the_inlined_roots_equal_the_packaged_certificate_files	H	tools/check-cert-copies.mjs (certs/ and its copies), until Phase 7 deletes ruby/certs
+roots_test.rb	test_the_packaged_certificates_match_the_repository_roots	H	tools/check-cert-copies.mjs (certs/ and its copies), until Phase 7 deletes ruby/certs
+roots_test.rb	test_every_bundled_root_matches_its_pinned_fingerprint	H	the core's AppleRootCerts-style test: three roots pinned by fingerprint (Rust); the gem carries none
+roots_test.rb	test_a_swapped_root_empties_the_whole_set_rather_than_silently_dropping_one	D	tested the Ruby roots loader
+roots_test.rb	test_each_call_returns_fresh_certificate_objects_so_a_caller_cannot_poison_another_config	D	tested the Ruby roots loader
+roots_test.rb	test_the_roots_are_self_signed_and_carry_ca_true	H	the core's AppleRootCerts-style test: three roots pinned by fingerprint (Rust); the gem carries none
+roots_test.rb	test_the_bundled_roots_are_not_expired	H	the core's AppleRootCerts-style test: three roots pinned by fingerprint (Rust); the gem carries none

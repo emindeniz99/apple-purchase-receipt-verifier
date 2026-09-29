@@ -1,6 +1,9 @@
 """The cross-port benchmark: the same operations on the same two genuine
 sandbox receipts in every port, named after the Java JMH benchmarks in
-java-bench/ (BENCHMARKS.md at the repository root has the table).
+java-bench/ (BENCHMARKS.md at the repository root has the table). The
+package holds no decoder and no DER entry point of its own any more, so the
+``decodeBase64`` and ``core`` benchmarks of 0.7 have no Python counterpart;
+``verifierBase64``, ``endpointJson`` and ``rejectTamperedSignature`` do.
 
     uv sync --locked
     uv run --locked python bench/bench.py > python-bench.json
@@ -9,7 +12,8 @@ timeit rather than pyperf, which is not a dependency of this project. Each
 benchmark warms up for one second, then takes ten samples of at least 100 ms
 each, with the garbage collector left on as it is in every other port; the
 JSON on stdout carries the median, minimum and maximum microseconds per
-operation over those samples.
+operation over those samples. The first call in the process compiles
+``aprv.wasm`` (or loads it from Wasmtime's cache), which the warm-up absorbs.
 
     uv run --locked python bench/bench.py --worst-case
 
@@ -37,11 +41,6 @@ from pathlib import Path
 from typing import Any
 
 from apple_purchase_receipt_verifier import Config, Environment, Verifier
-
-# The library's own receipt-data decoder, which the package does not export.
-from apple_purchase_receipt_verifier._receipt_base64 import decode_receipt_base64
-from apple_purchase_receipt_verifier.receipt import verify_receipt_der
-from cryptography import x509
 
 WARMUP_S = 1.0
 SAMPLES = 10
@@ -129,10 +128,7 @@ def worst_case() -> list[dict[str, Any]]:
         trusted = case["config"]["trustedRoots"]
         roots = None
         if trusted["source"] == "fixtures":
-            roots = [
-                x509.load_der_x509_certificate(fixture_bytes(fixtures_dir, registry[i]))
-                for i in trusted["fixtures"]
-            ]
+            roots = [fixture_bytes(fixtures_dir, registry[i]) for i in trusted["fixtures"]]
         verifier = Verifier(Config.create(roots=roots, clock=lambda: NOW_MS))
         entry = registry[case["input"]["fixture"]]
         data = fixture_bytes(fixtures_dir, entry)
@@ -178,23 +174,17 @@ def cross_port() -> list[dict[str, Any]]:
         production_endpoint = partial(verifier.verify_receipt_endpoint, Environment.PRODUCTION)
 
         # Every call once, with the answer the conformance suite expects, so
-        # no benchmark can time a fast failure by accident.
-        assert decode_receipt_base64(text) == der
-        for receipt in (
-            verify_receipt_der(der, roots, clock),
-            verifier.verify_receipt(text).payload,
-        ):
-            assert receipt is not None
-            assert receipt.bundle_id == bundle_id
-            assert len(receipt.in_app) == in_app_count
+        # no benchmark can time a fast failure by accident. The endpoint's
+        # answer is the module's own JSON, read here for the receipt's
+        # content.
+        assert verifier.verify_receipt(text).verified
         ok = json.loads(sandbox_endpoint(request_json))
         assert ok["status"] == 0 and len(ok["receipt"]["in_app"]) == in_app_count
+        assert ok["receipt"]["bundle_id"] == bundle_id
         rejected = json.loads(production_endpoint(json.dumps({"receipt-data": tampered})))
         assert rejected["status"] == 21003
 
         results += [
-            measure("decodeBase64", name, partial(decode_receipt_base64, text)),
-            measure("core", name, partial(verify_receipt_der, der, roots, clock)),
             measure("verifierBase64", name, partial(verifier.verify_receipt, text)),
             measure("endpointJson", name, partial(sandbox_endpoint, request_json)),
             measure(

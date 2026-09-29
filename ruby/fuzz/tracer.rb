@@ -11,7 +11,7 @@
 require "ruzzy"
 
 name = ENV.fetch("APRV_FUZZ_TARGET", nil)
-raise "set APRV_FUZZ_TARGET to a target name, e.g. parse_der" if name.nil? || name.empty?
+raise "set APRV_FUZZ_TARGET to a target name, e.g. verify_receipt" if name.nil? || name.empty?
 
 path = File.expand_path("targets/#{name}.rb", __dir__)
 raise "no such fuzz target: #{name} (expected #{path})" unless File.file?(path)
