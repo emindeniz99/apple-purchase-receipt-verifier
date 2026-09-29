@@ -33,7 +33,7 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `--now-ms N` | CLI | The verification clock, ms since the Unix epoch (u64). Default: the system clock |
 | `--listen ADDR` | serve | The bind address; overrides `APRV_LISTEN`. Default `127.0.0.1:8080` |
 | `--token-file FILE` | serve | The token `/v1/` routes require (trimmed). Overrides `APRV_TOKEN` |
-| `--lifecycle fresh\|pool` | serve | `fresh` (default): a new store, instance and `init` per request. `pool`: instances are kept, one request at a time each, and one that trapped or broke the interface is destroyed, never reused |
+| `--lifecycle pool\|fresh` | serve | `pool` (default): instances are kept, one request at a time each, at most one per worker, and one that trapped or broke the interface is destroyed, never reused. `fresh`: a new store, instance and `init` per request. The default follows DECISIONS.md R23: `init` costs 2.3 to 3.7 ms and a fresh instance 1.45 to 4 times a pooled call (`docs/evidence/2026-09-29-init-cost.md`) |
 | `--workers N` | serve | Concurrent verifications. Default: the CPU count |
 | `--time-limit-ms N` | serve, CLI | The guest time limit per call. Default 10,000 |
 | `--component FILE.wasm` | all | The full build only: compile this component at start instead of the embedded one (development and tests) |
@@ -165,8 +165,10 @@ A bad handshake exits 2 with a message on stderr and prints no address.
 | `random-get` | at most 65,536 bytes per call; OpenSSL asks for tens |
 | Concurrent verifications | a semaphore of `--workers`, default the CPU count |
 
-A trapped instance is discarded in both lifecycles, so nothing from one
-hostile input reaches the next request.
+A trapped instance is discarded in both lifecycles. In the default pool
+an instance that answered normally serves later requests, so its guest
+memory outlives the call; `--lifecycle fresh` gives every request a new
+instance, so nothing of one input's guest state reaches the next.
 
 ## The precompile rule
 
@@ -227,6 +229,7 @@ load average of 1 to 3 (`scripts/startup.py`, medians of 7 runs and of
 | `aprv serve` to its address line; to the first g5 result | 16.4 ms; 24.7 ms |
 | One-shot CLI process, g5 receipt; JWS | 19.5 ms; 26.9 ms |
 | HTTP keep-alive, fresh lifecycle, per call: g5; JWS | 6.2 ms; 14.0 ms |
+| HTTP keep-alive per call, pool (the default) vs fresh, one later run at a load average of 5 to 9: g5; JWS | pool 3.2 ms, 10.8 ms; fresh 7.9 ms, 15.4 ms |
 
 ## Tests and checks
 
