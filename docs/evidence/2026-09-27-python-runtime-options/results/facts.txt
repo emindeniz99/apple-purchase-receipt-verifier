@@ -1,0 +1,46 @@
+# fetched 2026-09-27T05:46:21Z; 12-month window from 2025-09-27
+## PyPI
+wasmtime: latest 49.0.0 uploaded 2026-09-21; requires_python >=3.9; requires ['coverage; extra == "testing"', 'pycparser; extra == "testing"', 'pytest-mypy; extra == "testing"', 'pytest; extra == "testing"']; wheels: py3-none-android_26_arm64_v8a, py3-none-android_26_x86_64, py3-none-any, py3-none-macosx_10_13_x86_64, py3-none-macosx_11_0_arm64, py3-none-manylinux1_x86_64, py3-none-manylinux2014_aarch64, py3-none-musllinux_1_2_aarch64, py3-none-musllinux_1_2_x86_64, py3-none-win_amd64, py3-none-win_arm64
+wasmer: latest 1.1.0 uploaded 2022-01-07; requires_python -; requires -; wheels: cp310-cp310-macosx_10_7_x86_64, cp310-cp310-manylinux_2_24_x86_64, cp310-none-win_amd64, cp37-cp37m-macosx_10_7_x86_64, cp37-cp37m-manylinux_2_24_x86_64, cp37-none-win_amd64, cp38-cp38-macosx_10_7_x86_64, cp38-cp38-manylinux_2_24_x86_64, cp38-none-win_amd64, cp39-cp39-macosx_10_7_x86_64, cp39-cp39-macosx_11_0_arm64, cp39-cp39-manylinux_2_24_x86_64, cp39-none-win_amd64, py3-none-any
+pywasm3: latest 0.5.0 uploaded 2021-06-02; requires_python -; requires -; wheels: none (sdist only)
+pywasm: latest 2.2.3 uploaded 2026-05-13; requires_python -; requires -; wheels: py2.py3-none-any
+wasmedge: latest 0.0.1 uploaded 2021-05-13; requires_python -; requires -; wheels: none (sdist only)
+extism: latest 1.1.1 uploaded 2026-03-26; requires_python >=3.9; requires ['extism-sys>=1.9.1']; wheels: py3-none-any
+extism-sys: latest 1.21.0 uploaded 2026-03-26; requires_python >=3.7; requires ['cffi']; wheels: py3-none-macosx_10_12_x86_64, py3-none-macosx_11_0_arm64, py3-none-musllinux_1_2_aarch64, py3-none-win_amd64
+wamr-python: not on PyPI (HTTP 404)
+wamr: not on PyPI (HTTP 404)
+## upstream git activity
+bytecodealliance/wasmtime-py: last commit 2026-09-24; 37 commits by 9 authors in 12 months
+bytecodealliance/wasm-micro-runtime: last commit 2026-09-21; 291 commits by 51 authors in 12 months
+wasmerio/wasmer-python: last commit 2023-05-01; 0 commits by 0 authors in 12 months
+wasm3/pywasm3: last commit 2026-09-25; 21 commits by 5 authors in 12 months
+wasm3/wasm3: last commit 2026-09-25; 101 commits by 16 authors in 12 months
+mohanson/pywasm: last commit 2026-09-18; 13 commits by 2 authors in 12 months
+extism/python-sdk: last commit 2026-02-23; 3 commits by 3 authors in 12 months
+WasmEdge/WasmEdge: last commit 2026-09-24; 754 commits by 84 authors in 12 months
+WAMR language-bindings/python: last commit 2025-06-17; 0 commits in 12 months
+WAMR latest tag: WAMR-2.4.5 (2026-06-29)
+WasmEdge bindings/ at the tip: bindings/java bindings/rust 
+## WAMR's Python binding at WAMR-2.4.5 (setup.py -> utils/create_lib.sh)
+-DWAMR_BUILD_DEBUG_INTERP=1 \ -DWAMR_BUILD_LIB_PTHREAD=1 \ -DWAMR_BUILD_LIB_WASI_THREADS=1 \ -DWAMR_BUILD_LIB_WASI=1 \ ctypesgen \ 
+55:        print("deleting Engine") 60:        heap_size: int = 1024 * 1024 * 2, 109:        print("deleting Module") 129:        heap_size: int = 16384, 143:        print("deleting Instance") 201:            print("deleting ExecEnv") 
+product-mini/platforms/linux: if (WAMR_BUILD_DEBUG_INTERP EQUAL 1)  set (WAMR_BUILD_FAST_INTERP 0)  set (WAMR_BUILD_MINI_LOADER 0) 
+## WAMR WAMR-2.4.5 release assets (HTTP status of the download URL)
+  wamrc-2.4.5-x86_64-ubuntu-22.04.tar.gz: 200
+  wamrc-2.4.5-x86_64-ubuntu-24.04.tar.gz: 404
+  wamrc-2.4.5-aarch64-ubuntu-22.04.tar.gz: 404
+  wamrc-2.4.5-x86_64-macos-13.tar.gz: 404
+  iwasm-2.4.5-x86_64-ubuntu-22.04.tar.gz: 200
+  iwasm-2.4.5-x86_64-ubuntu-24.04.tar.gz: 404
+  iwasm-2.4.5-aarch64-ubuntu-22.04.tar.gz: 404
+  iwasm-2.4.5-x86_64-macos-13.tar.gz: 404
+  wamrc-2.4.5-x86_64-ubuntu-22.04.tar.gz.sha256: 404
+## Wasmtime v49.0.0 docs/stability-tiers.md
+| Compiler | Cranelift [^support] |
+| Compiler | Winch [^support] |
+| Execution Backend | Pulley | More time fuzzing/baking |
+[^c]: Winch's support for aarch64 is complete for Core Wasm.
+## wasmtime-py 49.0.0 Config.strategy accepts: ['auto', 'cranelift']
+## READMEs
+wasm3: Wasm3 will enter a minimal maintenance phase
+pywasm: A WebAssembly interpreter written in pure Python

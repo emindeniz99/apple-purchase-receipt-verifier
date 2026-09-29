@@ -14,8 +14,11 @@ name: apple-purchase-receipt-verifier
 #   rust/src/          php/src/
 #   rust/ffi/src/      dotnet/src/
 #   java/src/main/     swift/Sources/
+#   java-wasm/src/main/java/
 #
-# stays fully in scope.
+# stays fully in scope. (java-wasm/src/main/java11 is not built for the
+# scan: it compiles only against the class Endive generates from the real
+# aprv.wasm; codeql.yml says why.)
 #
 # Why the exclusions below are legitimate rather than convenient: every one
 # of these paths is a *repository-controlled* input. The conformance suites,
@@ -82,12 +85,19 @@ paths-ignore:
   - swift/Tests/**
   - rust/tests/**
   - rust/ffi/tests/**
+  # The workspace's other crates keep their integration tests in the same
+  # place. rust/openssl/tests/isolation.rs plants a certificate and prints
+  # the path problems it produces in an assertion message, which the
+  # cleartext-logging query reads as logging the certificate.
+  - rust/openssl/tests/**
+  - rust/server/tests/**
+  - rust/bindings/abi/tests/**
+  - rust/bindings/wire/tests/**
   - "**/*_test.go"
 
   # ---- fuzz harnesses --------------------------------------------------
   # Drivers and seed corpora. They exist to feed malformed bytes to the
   # library on purpose; the driver itself is not shipped to anyone.
-  - node/fuzz/**
   - python/fuzz/**
   - ruby/fuzz/**
   - php/fuzz/**
@@ -119,6 +129,24 @@ paths-ignore:
   - rust/ffi/examples/**
   - dotnet/samples/**
   - java/samples/**
+
+  # ---- evidence spikes and measurements ---------------------------------
+  # docs/evidence/ keeps the code of every spike and measurement, including
+  # the ones that answered "no", because a result nobody can rerun is a
+  # claim rather than evidence (the evidence rule in CLAUDE.md). None of it
+  # ships: throwaway key generators, C hosts that time a runtime, browser
+  # pages that load a local build. Their inputs are files committed beside
+  # them or arguments the person rerunning the spike types, so the alerts
+  # they raise (a 1024-bit test key, sprintf into a sized buffer, an
+  # allocation sized by a measured file, a fetch of a local URL) describe
+  # repository-controlled input, not an attacker's.
+  #
+  # Honoured by the languages analysed without a build: python,
+  # javascript-typescript, ruby, rust, actions, and c-cpp, which reads the
+  # same exclusion from codeql-config-c-cpp.yml. No built language compiles
+  # anything under docs/evidence/: java-kotlin and csharp build named
+  # library projects, Go's autobuild and Swift's build the package roots.
+  - docs/evidence/**
 
   # ---- vendored fixtures ------------------------------------------------
   # Apple's published sample receipts and certificates, plus the generated

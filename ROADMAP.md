@@ -13,9 +13,53 @@ Delete a line in the commit that ships it.
    repo setting that still names four languages (owner-only).
 2. **Release**: approve the held release-please run (first-time
    contributor gate; owner-only), register the signing key on GitHub,
-   enforce branch protection for admins, bootstrap RubyGems, crates.io,
-   NuGet and the Go proxy, and submit the repository to Packagist
-   (the root manifest is landed; see BOOTSTRAP.md).
+   enforce branch protection for admins, bootstrap RubyGems, NuGet and
+   Docker Hub, submit the repository to Packagist, and settle the Maven
+   Central release count and the Java 8 CI distribution (BOOTSTRAP.md has
+   each). crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4.
+
+## 0.8.0: one core — landed, open items (2026-09-29)
+
+The eight non-Java packages run one Rust core as `aprv.wasm`, `aprv-server`
+runs it for Java 8, PHP and any other language, and the Java
+implementation stays beside it (PLAN.md D17 to D30,
+[docs/rust-core/](./docs/rust-core/README.md)). What is still open from
+the migration:
+
+- **Re-measure on an idle runner.** Every 0.8 timing in BENCHMARKS.md was
+  taken on a heavily loaded shared machine. Swift's JWS came out at about
+  the guideline's 10 per second per core with no margin; the owner decides
+  if a platform falls below it (docs/rust-core/DECISIONS.md R4). The Java
+  main artifact and the native core were not re-measured at all, and ARM64
+  speed is unmeasured (the ARM64 spike branch of
+  docs/rust-core/MIGRATION.md).
+- **`aprv-server`'s default lifecycle.** The `init` measurement met R23's
+  rule for making `--lifecycle pool` the default
+  (docs/evidence/2026-09-29-init-cost.md); the server still starts a fresh
+  instance per request unless told otherwise. Flip the default, or record
+  why fresh stays.
+- **A third review round** for the second round's fixes and the last ABI
+  work, which have had no reader but their authors
+  (docs/rust-core/REVIEW-LOG.md §10.9).
+- **The test inventory's open rows.** docs/rust-core/TEST-INVENTORY.md
+  lists 78 port-only tests whose behaviour has no shared case yet; each
+  becomes a case in `fixtures/cases.json`, or a Rust test when its input is
+  too large for one.
+- **CI still missing:** `java-wasm-s390x` (the Endive corpus under QEMU
+  before each release, the big-endian check); CodeQL over `java-wasm/`;
+  the licence texts of the code compiled into the module inside the
+  `-wasm` jar.
+- **PHP on macOS and Windows** installs no binary until the release
+  publishes those builds' exact files and pins their hashes in
+  `php/binaries.json`; until then those platforms use a server URL.
+- **A guest time limit in the in-process hosts.** Only `aprv-server`
+  enforces one (epoch interruption); Wasmtime's hosts could too.
+- **Python's compile time.** Winch halves the compile at half the speed;
+  wasmtime-py reaches it only through a private call today.
+- **Exotic CPUs** without a Cranelift backend (ppc64le, loongarch64,
+  32-bit) have no `aprv-server` build; nothing is decided (R31).
+- **workerd's production 128 MB limit** was not measured; the local
+  workerd peaked at 104 MiB on the hostile receipt.
 
 ## 0.7: the API redesign — done (owner, 2026-09-27)
 
@@ -41,7 +85,7 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   at 256 KiB, and `fixtures/cases.json` holds every cap as a MUST from both
   sides. Swift's release-build crash on Linux x86_64 with
   Swift 6.3.3 is fixed (#126), and CI now runs the Swift tests in release
-  mode. PORTS.md has the per-port detail. The tolerant decoder and its
+  mode. The tolerant decoder and its
   fast path were replaced on 2026-09-23 by the rule Apple's verifyReceipt
   was measured to apply, canonical standard base64 only (THREAT-MODEL.md
   §3.8).
@@ -51,20 +95,9 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
 - **SwiftPM checkouts carry the fixtures (owner decision)**: SwiftPM
   consumers check out the whole repository, and `fixtures/limits/` adds
   about 21.5 MB on disk to every checkout. The git transfer stays small
-  because git compresses the padding. Package.swift declares only `certs`
-  as resources, so nothing ships in a built product.
-- **Cross-port benchmarks: record a 0.7 run.** All nine ports carry a
-  benchmark and `benchmark.yml` runs them on demand, but the results in
-  BENCHMARKS.md are from `v0.6.0`, under the 0.6 names.
-- **A startup runtime probe in the other eight ports.** Java's
-  `Verifier.create` now looks up every crypto engine a verify call uses by
-  name, checks the signature of each of the three bundled Apple roots, and
-  throws when either fails, so a runtime that cannot verify fails at
-  deployment instead of answering `INTERNAL_ERROR` on the first request.
-  `Config.runtimeProbe(false)` turns it off. Node, Python, Go, Ruby, PHP,
-  .NET, Rust and Swift should get the same shape: the engines by name, the
-  bundled roots' own signatures, and an opt-out in `Config`. PORTS.md
-  tracks it.
+  because git compresses the padding. Package.swift declares only the
+  module, its hash and the licence texts as resources, so no fixture ships
+  in a built product.
 - **A date round-trip conformance vector**: a date string parsed to an
   instant and rendered back as Apple's JSON must come out byte-identical in
   every port.
@@ -89,8 +122,10 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   split) and Rust 1.74 to 1.85 (#91, a plain `cargo update` locked
   edition-2024 crates the floor could not parse). Held on purpose: Java 8
   (enterprise consumers, PLAN D2; JUnit 6 is test-only and stays ignored),
-  Swift 6.1 (swift-crypto 5.0 needs 6.2, the 4.x line still ships), Node 20
-  (next candidate, see below).
+  Node 20 (next candidate, see below), Go 1.22 (wazero stays on v1.9.0,
+  the newest release that builds on it). Moved in 0.8.0 because a runtime
+  required it: Swift 6.1 to 6.3 with macOS 15 and iOS 18, WasmKit's floors
+  (PLAN.md D25).
 - **Model the receipt attributes Apple's verifyReceipt echoes and we held
   as raw bytes** — done ✅ (2026-09-21, measured against Apple's own answer
   for a genuine production receipt, which stays out of the repository):
@@ -110,7 +145,7 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   it maps to no `verifyReceipt` or App Store Server API field
   (RECEIPT-FIELDS.md "The unnamed types").
 - **Apple's step 4, the app-version match (type 3), is a caller
-  responsibility** in every port: the server cannot know which binary is
+  responsibility** in every package: the server cannot know which binary is
   running. RECEIPT-FIELDS.md states it; the accessor exists.
 - **The distroless `java17-debian12` image is deprecated** (last rebuilt
   2026-02-20, Debian OpenJDK, not Temurin); distroless now builds only
@@ -119,57 +154,25 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   their own JVM and java.security and again under a SHA-1-free
   `jdk.certpath.disabledAlgorithms`. Move deployments to `java17-debian13`
   or `java21-debian13`.
-- **RubyGems, crates.io and NuGet are still unbootstrapped** (BOOTSTRAP.md
-  has the owner actions). The release itself no longer breaks on them:
+- **RubyGems and NuGet are still unbootstrapped, and crates.io is held at
+  0.7** (BOOTSTRAP.md has the owner actions). The release itself no longer breaks on them:
   `release.yml` asks each of the three whether the package exists and skips
   the publish with a `::notice::` when it does not — before OIDC for
   crates.io and NuGet, and after a failed OIDC for RubyGems, whose pending
   publisher is meant to create the gem — and the `smoke` job runs on the
   registries that did publish. The Go module has been on `proxy.golang.org`
   since `go/v0.4.0`; README.md and BOOTSTRAP.md say so as of 2026-09-28.
-- **Legacy receipts fail on RHEL 9 in five ports (known issue, owner
-  decision 2026-09-24: fix after 0.6.0; 2026-09-27: not in 0.7, after
-  it).** RHEL 9's DEFAULT crypto policy
-  makes the system OpenSSL refuse SHA-1 signatures. Apple's legacy chain
-  (leaf and WWDR intermediate) and the legacy CMS signature are SHA-1, so a
-  genuine legacy receipt fails the chain check, the same verdict as a forgery.
-  Modern (g5) receipts and every JWS are unaffected. Observed in an
-  AlmaLinux 9.8 container (OpenSSL 3.5.5, `update-crypto-policies` DEFAULT),
-  after checking that the container really refused SHA-1:
-
-  | Port | On RHEL 9 DEFAULT |
-  |---|---|
-  | Ruby, PHP | always fails: both use the system OpenSSL |
-  | .NET | always fails on Linux: `System.Security.Cryptography` loads the system libssl |
-  | Python | fails only with the distro `cryptography` package; the PyPI wheel bundles its own OpenSSL and passes |
-  | Node | fails only with RHEL's `nodejs` package (`node_shared_openssl`); nodejs.org, nvm and Docker builds bundle OpenSSL and pass |
-  | Rust, Go, Swift, Java | pass: pure-language crypto, their own BoringSSL copy, or Java's private BouncyCastle (#152) |
-
-  PHP ran only the legacy and g5 receipts, not its full suite; Swift was not
-  run on RHEL (inferred from its code and binary); FIPS mode is untested.
-  Workaround until the fix: `update-crypto-policies --set DEFAULT:SHA1`.
-
-  The fix (owner decision: a library where one fits). RHEL blocks "verify a
-  SHA-1 signature" but not the raw RSA public-key operation, and plain SHA-1
-  hashing still works. So for `sha1WithRSAEncryption` only, on Apple's
-  pinned chain and the receipt's CMS signature, recover the signed block
-  with the RSA public key and compare it in constant time with the exact
-  expected bytes `3021300906052b0e03021a05000414 || SHA1(data)`. Build the
-  expected bytes and compare; never parse what was recovered, which is how
-  the lax-parsing signature forgeries (Bleichenbacher 2006) happen.
-  SHA-256 and stronger stay on the normal verify path. Per port:
-  .NET moves to BouncyCastle (as Java did, #152); PHP uses phpseclib;
-  Python uses `cryptography`'s `recover_data_from_signature`; Ruby uses
-  OpenSSL's `verify_recover`; Node uses `crypto.publicDecrypt` (the web
-  build has no raw RSA in WebCrypto, so it needs a `BigInt` modPow or a
-  documented limitation). This deliberately goes around a policy the host
-  administrator set, for Apple's pinned legacy chain only, which is the
-  same trade Java made.
-
-  Add one CI job that runs every port's conformance suite, all nine, in an
-  `almalinux:9` container (pulled from quay.io; Docker Hub rate-limits) with
-  the DEFAULT policy. It is the only check that catches this coming back,
-  and it gives Swift its first real run on RHEL.
+- **Legacy receipts on RHEL 9: fixed by design in 0.8.0, not yet run
+  there.** RHEL 9's DEFAULT crypto policy makes the system OpenSSL refuse
+  SHA-1 signatures, and Apple's legacy chain and CMS signature are SHA-1.
+  In 0.7 that failed genuine legacy receipts in Ruby, PHP and .NET, and in
+  Python and Node with the distribution's own packages (observed in an
+  AlmaLinux 9.8 container, OpenSSL 3.5.5). In 0.8.0 no package uses the
+  system's crypto: the Wasm packages verify with the OpenSSL compiled into
+  the module, and the Java implementation with its own BouncyCastle
+  (#152). Add one CI job that runs every package's conformance suite in an
+  `almalinux:9` container (pulled from quay.io; Docker Hub rate-limits)
+  with the DEFAULT policy, which proves it and keeps it from coming back.
 - **Map Apple's own tests to ours, one by one.** Apple's Java library has
   30 verification tests; `fixtures/apple-official` already imports its test
   data. A name-level match on 2026-09-24 found the missing ones all belong
@@ -179,9 +182,9 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   have, and file the rest under the matching item below. Then add a monthly
   workflow that opens an issue when Apple's libraries release with test
   names we have not mapped yet.
-- **Vendor-readability review of the other eight ports**, as done for Java,
-  and a last read of the Java port as a whole now that #152 to #154 changed
-  it.
+- **Vendor-readability review of the wrappers and of `aprv-server`**, as
+  done for Java, and a last read of the Java implementation as a whole now
+  that #152 to #154 and the 0.8 alignment changed it.
 
 - **No branch protection in practice.** main reports protected, yet an
   admin push lands directly, so either the pull-request requirement or
@@ -189,11 +192,6 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   SSH-signed by the assistant environment's key, which belongs to the
   `claude` GitHub account, so they show Verified when authored as that
   account; CLAUDE.md records the rule (2026-09-06).
-- **`asn1crypto` is kept by owner decision (PLAN.md D16)**: last release
-  1.5.1 in 2022, about 155M downloads a month. Pin the tested range; the
-  python fuzz target runs through it.
-- **The `cryptography>=40` floor is never installed.** Every python CI leg
-  resolves the latest, so the floor is a claim.
 - **Real receipt fixtures** (PLAN D6): owner to supply real production +
   sandbox receipts (and ideally a StoreKit-Test/Xcode receipt) as checked-in
   fixtures; add byte-level regression tests over them in every suite.
@@ -219,11 +217,9 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
 - **Post-publish smoke gaps that remain.** The Go, RubyGems, crates.io and
   NuGet legs are wired; only the Go one has ever run against a real registry,
   because the other three are unbootstrapped and their legs skip until they
-  are not. Two holes are left. **PHP has no leg**: Packagist has no publish
-  job — the tag is the release — so there is no step of ours to verify, and
-  `tools/php-consumer-smoke.mjs` already installs the real `git archive` in
-  the `php-static` CI job; a Packagist leg would only be testing Composer.
-  **The .NET leg tests one of the two shipped assets**: `net8.0` selects
+  are not. The `packagist` leg installs the published PHP package and runs
+  `aprv-install`. One hole is left: **the .NET leg tests one of the two
+  shipped assets**: `net8.0` selects
   `lib/net8.0`, and `lib/netstandard2.0` needs a `net472` consumer on a
   Windows runner (`dotnet/RELEASE.md`).
 - **Unity smoke test for the .NET port**: the `dotnet-mono` CI job is evidence
@@ -236,44 +232,6 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   ecosystem only discovers a manifest named `Gemfile` or `gems.rb`, which is
   why `.github/dependabot.yml` points at `/ruby`. Until those two files are
   renamed, rubocop, rbs, steep and ruzzy are bumped by hand.
-- **Dependency bumps inside the seven-day cooldown** land via dependabot on
-  their own; swift-certificates 1.20.0 and swift-asn1 1.7.2 (released
-  2026-09-01) will arrive that way.
-- **The RustCrypto 0.11/0.14 wave is deliberately not taken** (2026-09-21):
-  the MSRV move to 1.85.0 that the wave needed is done — `rust-version` in
-  `rust/Cargo.toml` and `rust/ffi/Cargo.toml` now reads 1.85.0, matching
-  `digest` 0.11, `sha1`/`sha2` 0.11 and `p256`/`p384` 0.14. What still blocks
-  the wave is `rsa`: it is still 0.9 on `digest` 0.10, and `rsa` 0.10 is
-  still a release candidate (0.10.0-rc.18 as of 2026-04-27; stable is
-  0.9.10), so the trait versions would not line up. The five bumps
-  (PRs #22–#24, #26, #27) are closed and the versions are ignored in
-  `.github/dependabot.yml`'s cargo entry; the `@dependabot ignore` comments
-  on the PRs never reached the bot. Take the whole wave in one commit once
-  `rsa` 0.10 is stable. It is also the next Rust speed step: measured
-  2026-09-23, one RSA-2048 verify takes about 92 µs on 0.10.0-rc.18
-  against 221 µs on 0.9.10, and a receipt does three, which would take the
-  g5 receipt from about 740 µs to about 350 µs.
-- **Faster Rust RSA beyond `rsa` 0.10 is not taken** (2026-09-23). `ring`
-  (27 µs per verify) or `aws-lc-rs` (24 µs) would make the g5 receipt about
-  5 times faster, but both bring C and assembly into a crate whose C ABI is
-  cross-compiled, plus a licence review. Caching verified certificate
-  signatures would skip two of the three verifies with the current crate,
-  but it puts shared mutable state in the security core and an attacker's
-  own chain could fill the cache, so it needs a THREAT-MODEL decision
-  first.
-- **Three Dependabot alerts on `node/package-lock.json` stay open**
-  (2026-09-05): `decompress` 4.2.1 (critical, Zip Slip) and two moderates
-  in the chain `@fastly/js-compute` → `@bytecodealliance/weval` →
-  `decompress`. All dev-only: the Fastly package exists for the
-  `node-runtimes-fastly` job and is not in `dependencies`, so nothing
-  published carries it. No fix to take: 3.45.0 is the newest Fastly
-  release, `weval` 0.4.1 still depends on `decompress ^4.2.1`, and
-  `decompress` has no release after 4.2.1. `weval` uses it to unpack its
-  own binary from a GitHub release at install time, not to read input the
-  tests supply. Dismiss the alerts as "vulnerable code is not actually
-  used" (an owner action in the Security tab) and re-check when a Fastly
-  release drops `weval` or `weval` drops `decompress`.
-
 ## Java, after 0.7 (from the 2026-09-24 reviews)
 
 Found by the pre-0.6.0 vendor, readability and production reviews of the
@@ -300,7 +258,7 @@ through.
   - `equals`/`hashCode` render JSON; owner decision: keep.
   - JWS x5c entries tolerate trailing bytes and PEM wrapping through
     BouncyCastle's `CertificateFactory`, while the receipt path refuses
-    trailing bytes; check parity across the nine ports before changing.
+    trailing bytes; check against the core before changing.
   - `Endpoint`'s `default:` branch maps any future `Reason` to 21009.
   - `pom.xml` has no plugin pins for resources, install, deploy and
     clean, and sets `doclint none`.
@@ -322,13 +280,13 @@ elsewhere in this file.
 - **A result accessor that cannot be misread**: a `payloadOrThrow()`-style
   method, or a Verified/Failed pair of result types. Today callers write
   `verified()` and then read a nullable `payload()`. Decision deferred by
-  the owner; if it comes, it lands in every port at once after 0.7.0 so
-  the ports stay in parity.
-- **JWS `crit` and `typ` headers**: every port ignores header members it
-  does not know, while RFC 7515 §4.1.11 says a `crit` naming a parameter
+  the owner; if it comes, it lands in every package at once so the
+  packages stay in parity.
+- **JWS `crit` and `typ` headers**: the core and Java ignore header members
+  they do not know, while RFC 7515 §4.1.11 says a `crit` naming a parameter
   the recipient does not understand must be rejected. Apple's signed data
-  carries only `alg` and `x5c`. No code before 0.7.0; if added, it is a
-  cross-port change with a shared case in `fixtures/cases.json`.
+  carries only `alg` and `x5c`. If added, it is a behaviour change: the
+  core, Java and a shared case in `fixtures/cases.json` together.
 - **From the final blind Java reviews (2026-09-24):**
   - Build the CMS signer verifier per call instead of sharing it, if the
     benchmark allows.
@@ -341,13 +299,14 @@ elsewhere in this file.
 
 Everything else decided for 0.7 in this session shipped with it.
 
-- **Smarter CI.** Run each port's jobs only when its files, `fixtures/`
-  or `.github/` change; skip tests for Markdown-only changes, except
-  under `fixtures/`, whose README digest is pinned in `cases.json`; move
-  fuzzing to `main` and a nightly run; scan CodeQL per changed language;
-  and gate branch protection on one aggregate "CI OK" job so skipped jobs
-  do not block a PR. A release commit touches every port, so it still
-  runs everything.
+- **Smarter CI.** Per-area job selection landed with 0.8.0: the
+  `changes` job runs a package's jobs only when its files change, and a
+  change to the core, the bindings or the toolchain selects every package.
+  Still open: skip tests for Markdown-only changes, except under
+  `fixtures/`, whose README digest is pinned in `cases.json`; move fuzzing
+  to `main` and a nightly run; scan CodeQL per changed language; and gate
+  branch protection on one aggregate "CI OK" job so skipped jobs do not
+  block a PR.
 
 Measured the same day, for capacity planning (0.6.0, genuine receipts,
 a 4-core container): about 1,270 verifications per second on one core,
@@ -389,7 +348,7 @@ for a production receipt and 0.78 to 0.87 ms for a sandbox one.
 
 | # | Ask | Checked | Size | Suggested |
 |---|---|---|---|---|
-| 1 | One verification that yields the status, Apple's JSON for the receipt's own environment, and the `Failure` with its cause | True. On an internal error `Endpoint.respond` answers 21009 and drops the exception, so a caller's log has no stack trace | See below; all nine ports | Do, as a renderer, not a fourth verify method |
+| 1 | One verification that yields the status, Apple's JSON for the receipt's own environment, and the `Failure` with its cause | True. On an internal error `Endpoint.respond` answers 21009 and drops the exception, so a caller's log has no stack trace | See below; the core, Java and every package | Do, as a renderer, not a fourth verify method |
 | 2 | Take the raw base64, not a request body the library parses back | True | Covered by 1 | Folded into 1 |
 | 3 | Declare the real dependency floors: jackson-core 2.16 (the pom says 2.22.2, which a BOM managing 2.21 turns into a `RequireUpperBoundDeps` failure) and the real BouncyCastle floor | True for Jackson. The BouncyCastle floor is untested; the decoder uses classes from 1.70 on | Small for Jackson, plus a CI leg on the floor and a Dependabot rule so bumps do not undo it | Jackson: do. BouncyCastle: measure in CI before declaring anything below 1.86 |
 | 4 | A public `TestPki` builder: set the receipt type (the public `receiptPayload` always writes `ProductionSandbox`), omit `web_order_line_item_id` (always 42 today), set cancellation date (1712) and receipt expiration (21), no forced unknown attribute 9999; named setters instead of `inAppPurchase(long, String, String, String, String, String)`, where the two date strings cannot be told apart | True | About 150 lines, test-jar only, plus a sources jar for it | Do. Closes "Test signer fields" above |
@@ -413,13 +372,14 @@ the receipt's own environment, `{"status":21007}` or `21008` when asked
 for the other one, and `{"status":N}` for a failure. `verifyReceiptEndpoint`
 then becomes "parse the body, verify, render", so the two paths cannot
 drift. Java is about 15 lines because the renderer and both status maps
-exist already; each other port has the same internals. The endpoint JSON
-on failure stays `{"status":N}` and never gains a reason field, so it
-stays comparable with Apple's own answer.
+exist already; the core has the same internals, and reaching the
+wrappers needs a new export and so a new ABI version, a design question of
+its own. The endpoint JSON on failure stays `{"status":N}` and never gains
+a reason field, so it stays comparable with Apple's own answer.
 
 **Packaging, if accepted.** Items 3 (Jackson), 4, 5, 6 and 7 are small
 Java pull requests with no library risk. Item 1 needs a short design note
-first, then Java, then the other eight ports and a row in PORTS.md. All
+first, then the core and Java, then every package. All
 of them are `feat`, so the pending 0.7.1 becomes 0.8.0.
 
 Already fixed in 0.7.0, from their earlier list: `web_order_line_item_id`
@@ -432,8 +392,7 @@ omitted when 0, `Environment.fromReceiptType`, the runtime probe in
 From the six pre- and post-0.6.0 Java reviews; none lets a forged receipt
 or JWS through. Kept here so they are not lost with the review reports.
 
-- **THREAT-MODEL.md corrections:** the fuzzing paragraph omits `java/fuzz`
-  (five Jazzer targets); and "the host cannot
+- **THREAT-MODEL.md correction:** "the host cannot
   change a verdict" is overstated, because BouncyCastle still reads JVM-wide
   `org.bouncycastle.*` properties (`rsa.max_size`, `rsa.max_mr_tests`,
   `x509.max_cert_path_build_nodes`).
@@ -444,7 +403,8 @@ or JWS through. Kept here so they are not lost with the review reports.
   a `@Nullable ASN1Set` dereferenced without a guard (safe today because the
   count is checked first); a redundant `unmodifiableMap` wrap in the models.
 - **Owner decision (2026-09-24): all nine ports reach Java's quality.** No
-  port is frozen or reduced to security fixes only.
+  port is frozen or reduced to security fixes only. Since 0.8.0 that means
+  the core, the Java implementation and every wrapper.
 - **README additions:**
   - For a 21009 on a consumable, reconcile with the App Store Server API's
     Get Transaction Info by transaction id: Get Transaction History does
@@ -509,11 +469,11 @@ Still worth filing as issues:
 ## Later / hardening
 
 - **Coverage reports with Codecov (owner, 2026-09-27).** Upload each
-  port's coverage from CI so a pull request shows which lines its tests
-  miss, across all nine ports in one place. The free Developer plan
+  package's coverage from CI so a pull request shows which lines its tests
+  miss, across the core, Java and every wrapper in one place. The free Developer plan
   allows unlimited uploads for a public repository
   (<https://about.codecov.io/pricing/>, checked 2026-09-27). Needs a
-  coverage report per port in a format Codecov reads, an upload step
+  coverage report per package in a format Codecov reads, an upload step
   pinned by commit SHA with `contents: read` only, and a decision on
   whether a coverage drop fails the check or only comments.
 - **Java signature checks, deferred (owner, 2026-09-27).** Java verifies
@@ -540,10 +500,6 @@ Still worth filing as issues:
   design keeps room for this (docs/design/0.7-api.md).
 - **A per-certificate distrust list in `Config`**, for a leaked historical
   Apple leaf key (THREAT-MODEL.md §4). Not built until that day comes.
-- **A shared Rust core compiled to WebAssembly under every port.** A
-  future idea for its own branch. The 0.7 design keeps the door open: the
-  core would take `now_ms` as an argument instead of calling back into the
-  host for the time.
 - Decide whether to support the ancient `transactionReceipt`
   (purchase-info) format at all (double-wrapped payloads are handled ✅).
 - **Dev-mode environments**: Apple's `SignedDataVerifier` deliberately
@@ -583,18 +539,6 @@ Still worth filing as issues:
   - A cache of parsed embedded certificates keyed by their DER: maybe 25%
     on a small receipt, but it is process-wide mutable state, which the
     thread-safety design and `ConcurrencyTest` avoid on purpose.
-- **PHP worst-case JSON body memory**: a 3 MiB request body of arrays
-  nested 60 deep peaks at about 331 MB inside `json_decode` on PHP 8.4, so
-  php/README.md tells you to give a worker at least 384M of
-  `memory_limit`. A pre-scan of the raw body could reject that shape before
-  `json_decode` runs. Not queued.
-- **.NET fixed cost per receipt, a trust-model decision**: what remains
-  after the caps work is OpenSSL 3.0 decoding each certificate (about 150
-  to 190 us) and importing its RSA key (about 125 us), and both get slower
-  per call as threads are added. Three options: check the signer info
-  ourselves instead of through `SignedCms`, cache the anchors' keys, or
-  cache embedded certificates' keys by their exact DER. Each changes what
-  the port trusts between calls, so the owner decides first.
 - **Revocation, still offline.** Apple's library can ask Apple's OCSP
   responder about the leaf and intermediate (`enableOnlineChecks`), caching
   the answer for 15 minutes and returning `RETRYABLE_VERIFICATION_FAILURE`
@@ -621,6 +565,6 @@ Still worth filing as issues:
   intermediate, keeps the verified public key, and on a hit still checks
   every certificate's validity window against that payload's date
   (signatures, OIDs and the anchor do not depend on the date). Bounded,
-  for example 32 entries. Java would save about 90 µs a receipt; the Rust
-  and .NET entries above name the same trade. A bug here accepts a
+  for example 32 entries. Java would save about 90 µs a receipt. A bug
+  here accepts a
   forgery, so it needs a THREAT-MODEL decision and a measured need first.

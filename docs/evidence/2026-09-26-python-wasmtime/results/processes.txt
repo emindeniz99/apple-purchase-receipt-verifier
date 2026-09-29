@@ -1,0 +1,7 @@
+# python 3.12.3, 4 cores, load average (0.7802734375, 1.42041015625, 1.51171875)
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "processes": 1, "warm_each": 300, "n_each": 600, "seconds": 1.01, "total_per_s": 594.9, "not_verified": 0}
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "processes": 2, "warm_each": 300, "n_each": 600, "seconds": 1.07, "total_per_s": 1123.3, "not_verified": 0}
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "processes": 4, "warm_each": 300, "n_each": 600, "seconds": 1.06, "total_per_s": 2259.3, "not_verified": 0}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "processes": 1, "warm_each": 150, "n_each": 300, "seconds": 1.57, "total_per_s": 191.3, "not_verified": 0}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "processes": 2, "warm_each": 150, "n_each": 300, "seconds": 1.6, "total_per_s": 375.5, "not_verified": 0}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "processes": 4, "warm_each": 150, "n_each": 300, "seconds": 1.72, "total_per_s": 697.6, "not_verified": 0}

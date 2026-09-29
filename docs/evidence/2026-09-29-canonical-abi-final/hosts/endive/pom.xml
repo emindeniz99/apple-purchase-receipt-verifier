@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Spike only (2026-09-29, round 13; round 12's pom plus a second module).
+  The canonical-ABI aprv.wasm compiled by Endive's build-time compiler (as
+  ABI v1 and round 5), plus a hand-written canonical-ABI bridge
+  (AprvCabi.java), the corpus runner and the ABI tests. The ABI v1 module
+  is compiled into the same jar (V1Module), for the start-up comparison
+  only. Pass the modules with -Dcabi.wasm=<path> -Dv1.wasm=<path>
+  (scripts/endive.sh).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>spike.aprv</groupId>
+  <artifactId>aprv-cabi-endive</artifactId>
+  <version>0.0.0-spike</version>
+  <packaging>jar</packaging>
+  <properties>
+    <endive.version>1.1.0</endive.version>
+    <maven.compiler.release>11</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <cabi.wasm>MISSING-pass-Dcabi.wasm</cabi.wasm>
+    <v1.wasm>MISSING-pass-Dv1.wasm</v1.wasm>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>run.endive</groupId>
+      <artifactId>runtime</artifactId>
+      <version>${endive.version}</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>run.endive</groupId>
+        <artifactId>endive-compiler-maven-plugin</artifactId>
+        <version>${endive.version}</version>
+        <executions>
+          <execution>
+            <id>cabi</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <wasmFile>${cabi.wasm}</wasmFile>
+              <name>spike.aprv.cabi.CabiModule</name>
+              <interpreterFallback>FAIL</interpreterFallback>
+              <methodPrefixer>run.endive.compiler.NameSectionMethodPrefixer</methodPrefixer>
+            </configuration>
+          </execution>
+          <execution>
+            <id>v1</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <wasmFile>${v1.wasm}</wasmFile>
+              <name>spike.aprv.cabi.V1Module</name>
+              <interpreterFallback>FAIL</interpreterFallback>
+              <methodPrefixer>run.endive.compiler.NameSectionMethodPrefixer</methodPrefixer>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

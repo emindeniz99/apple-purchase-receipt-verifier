@@ -1,0 +1,30 @@
+// Spike only (2026-09-29, round 13). Round 12's interface with the owner's
+// changes: the inputs are bytes (list<u8>), so input that is not UTF-8
+// reaches the guest and is answered there as ABI v1 answered it; env is a
+// u32 (0 production, 1 sandbox; the guest traps on any other value).
+// Outputs stay strings carrying the existing wire JSON.
+package aprv:verifier@1.0.0;
+
+interface verify {
+  // {"roots":[base64 DER, ...]}; empty (or no roots) = the built-in Apple roots.
+  // Answers {"ok":true} or {"ok":false,"message":...}. A second successful
+  // init traps; a verify before a successful init traps.
+  init: func(config-json: list<u8>) -> string;
+
+  // now-ms: the instant for the chain check when the input carries no date,
+  // and request_date at the endpoint. Verification failures are values.
+  verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
+  verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
+  // env: 0 production, 1 sandbox; any other value traps.
+  verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+}
+
+interface host {
+  // OpenSSL's randomness (EC blinding): exactly len bytes.
+  random-get: func(len: u32) -> list<u8>;
+}
+
+world aprv {
+  import host;
+  export verify;
+}

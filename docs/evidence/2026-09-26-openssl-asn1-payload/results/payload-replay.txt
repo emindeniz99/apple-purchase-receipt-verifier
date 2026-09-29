@@ -1,0 +1,45 @@
+# file | content bytes | creation date read before trust | payload verdict (base) | in-app purchases | new == base | any == base
+receipt-sandbox-g5.b64 | 1344 | some | OK | 2 | yes | yes
+receipt-sandbox-legacy.b64 | 74884 | some | OK | 187 | yes | yes
+receipt-xcode-with-purchases.b64 | 374 | some | OK | 1 | yes | yes
+xcode-app-receipt-empty | 225 | some | OK | 0 | yes | yes
+xcode-app-receipt-with-transaction | 374 | some | OK | 1 | yes | yes
+01-genuine.txt | 1344 | some | OK | 2 | yes | yes
+receipt-b64-at-cap.txt | 2347193 | some | OK | 2300 | yes | yes
+receipt-at-der-cap.der | 3130492 | some | OK | 2300 | yes | yes
+receipt-attribute-type-overflow.der | 234 | none | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt-attribute-type-truncates-to-bundle-id.der | 249 | none | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt-byte-floor.der | 1027857 | some | OK | 2300 | yes | yes
+receipt-creation-date-twice-expired-chain.der | 249 | none | OK | 0 | yes | yes
+receipt-double-wrapped.der | 650 | some | OK | 2 | yes | yes
+receipt-empty-content.der | 0 | none | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt-empty-signature.der | 217 | some | OK | 0 | yes | yes
+receipt-expired-fresh.der | 646 | some | OK | 2 | yes | yes
+receipt-expired-historical.der | 217 | some | OK | 0 | yes | yes
+receipt-expired-no-creation-date.der | 185 | none | OK | 0 | yes | yes
+receipt-foreign.der | 646 | some | OK | 2 | yes | yes
+receipt-garbage-in-app-purchase.der | 231 | some | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt-ids.der | 719 | some | OK | 2 | yes | yes
+receipt-leaf-as-intermediate.der | 217 | some | OK | 0 | yes | yes
+receipt-missing-intermediate.der | 217 | some | OK | 0 | yes | yes
+receipt-no-creation-date.der | 185 | none | OK | 0 | yes | yes
+receipt-no-signer-oid.der | 646 | some | OK | 2 | yes | yes
+receipt-no-type.der | 188 | some | OK | 0 | yes | yes
+receipt-node-floor.der | 71569 | some | OK | 10 | yes | yes
+receipt-over-der-cap.der | 3130493 | some | OK | 2300 | yes | yes
+receipt-signer-absent.der | - | - | not a signedData | 0 | yes | yes
+receipt-signer-corrupt-extension.der | 217 | some | OK | 0 | yes | yes
+receipt-signer-duplicate-extension.der | 217 | some | OK | 0 | yes | yes
+receipt-signer-unimplemented-curve.der | 217 | some | OK | 0 | yes | yes
+receipt-signer-version-11.der | 217 | some | OK | 0 | yes | yes
+receipt-tampered-payload.der | 217 | some | OK | 0 | yes | yes
+receipt-type-production.der | 210 | some | OK | 0 | yes | yes
+receipt-type-vpp-sandbox.der | 220 | some | OK | 0 | yes | yes
+receipt-type-vpp.der | 213 | some | OK | 0 | yes | yes
+receipt-unreadable-creation-date-expired-chain.der | 207 | none | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt-unreadable-creation-date-foreign-chain.der | 207 | none | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt-unreadable-creation-date.der | 207 | none | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt-unreadable-entry-expired-chain.der | 222 | none | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt-unreadable-entry.der | 222 | none | ERR InvalidReceiptFormat | 0 | yes | yes
+receipt.der | 646 | some | OK | 2 | yes | yes
+# 43 files: new identical on 43, any identical on 43

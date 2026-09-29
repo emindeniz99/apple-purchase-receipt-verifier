@@ -4,7 +4,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # rust-core is the 0.8.0 integration branch (docs/rust-core/MIGRATION.md):
+    # every lane merges into it, so every merge runs the full suite there.
+    branches: [main, rust-core]
   pull_request:
   workflow_dispatch:
 
@@ -29,8 +31,10 @@ jobs:
   # allowlist, so a path it does not know -- fixtures/, certs/, tools/, this
   # file -- runs every port: a forgotten path may cost minutes, never
   # coverage. Pushes to main are not filtered because release.yml's
-  # ci-passed gate needs a full run on the exact tagged SHA. conformance and
-  # zizmor are not filtered either: they guard shared files and take seconds.
+  # ci-passed gate needs a full run on the exact tagged SHA, and neither are
+  # pushes to rust-core, the integration branch. conformance, zizmor and
+  # one-implementation are not filtered either: they guard shared files and
+  # take seconds.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -44,6 +48,14 @@ jobs:
       rust: ${{ steps.areas.outputs.rust }}
       swift: ${{ steps.areas.outputs.swift }}
       dotnet: ${{ steps.areas.outputs.dotnet }}
+      server: ${{ steps.areas.outputs.server }}
+      # Every host runs aprv.wasm, so any selected area needs rust-wasm's
+      # build of it (OD-01 in docs/rust-core/STATUS.md): no host job
+      # downloads a module from an earlier run.
+      module: ${{ steps.areas.outputs.module }}
+      # The Linux x86_64 static aprv binary: the server's own jobs, PHP
+      # (its only transport) and the Java -wasm artifact's server engine.
+      server-bin: ${{ steps.areas.outputs.server-bin }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,10 +70,15 @@ jobs:
           set -euo pipefail
           if [ "$EVENT" = pull_request ]; then
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
-            .github/scripts/changed-areas.sh "$BASE_SHA" HEAD >> "$GITHUB_OUTPUT"
+            .github/scripts/changed-areas.sh "$BASE_SHA" HEAD > "$RUNNER_TEMP/areas"
           else
-            .github/scripts/changed-areas.sh all >> "$GITHUB_OUTPUT"
+            .github/scripts/changed-areas.sh all > "$RUNNER_TEMP/areas"
           fi
+          {
+            cat "$RUNNER_TEMP/areas"
+            if grep -q '=true$' "$RUNNER_TEMP/areas"; then echo "module=true"; else echo "module=false"; fi
+            if grep -qE '^(server|php|java)=true$' "$RUNNER_TEMP/areas"; then echo "server-bin=true"; else echo "server-bin=false"; fi
+          } >> "$GITHUB_OUTPUT"
 
   java:
     needs: changes
@@ -318,8 +335,11 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
 
+  # Every job that builds node/ first puts rust-wasm's component at
+  # node/wasm/aprv.component.wasm (jco transpiles it at build; nothing
+  # generated is committed) with .github/scripts/place-module.sh.
   node:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -333,122 +353,93 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" node
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
       # npm ci, not npm install: the committed lockfile is the contract and
       # this is the job that verifies it. --ignore-scripts everywhere: no
-      # dependency here needs its install script (esbuild resolves its binary
-      # from the optional platform package, jazzer ships prebuilds), and an
-      # install script is the way a hijacked release runs code in CI.
+      # dependency here needs its install script (jco and its dependencies
+      # are plain JavaScript), and an install script is the way a hijacked
+      # release runs code in CI.
       - run: npm ci --ignore-scripts && npm test
         working-directory: node
 
   # The npm package's runtime claims (README "JavaScript runtimes"): the
-  # built dist runs the same checks on Bun, Deno and Cloudflare workerd,
-  # workerd at all three compatibility configurations it supports. The
-  # runtimes come from npm at pinned versions so no extra action is
-  # needed; bump the pins in node/package.json's runtime:* scripts.
+  # built dist runs the same smoke, on both entry points (`.` and `/web`
+  # load the same module), on Node, Bun, Deno, Cloudflare workerd and the
+  # Vercel Edge runtime. The package needs no workerd compatibility flag,
+  # so one workerd leg covers every configuration. The runtimes come from
+  # npm at pinned versions so no extra action is needed; bump the pins in
+  # node/package.json's runtime:* scripts.
   #
-  # One leg per runtime rather than one job running all six. As a single
-  # job it downloaded Bun, Deno and workerd in sequence and hit the
-  # 15-minute timeout; split, each leg downloads one runtime and they run
-  # at the same time. fail-fast is off because "Bun passed and Deno did
-  # not" is the useful answer, not the first failure.
+  # One leg per runtime rather than one job running all of them: each leg
+  # downloads one runtime and they run at the same time. fail-fast is off
+  # because "Bun passed and Deno did not" is the useful answer, not the
+  # first failure.
   node-runtimes:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        runtime:
-          - node
-          - bun
-          - deno
-          - workerd-floor
-          - workerd-compat-v2
-          - workerd-latest
+        runtime: [node, bun, deno, workerd, edge]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" node
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: npm ci --ignore-scripts && npm run runtime:${{ matrix.runtime }}
+      - run: npm ci --ignore-scripts && npm run build && npm run "runtime:$RUNTIME"
         working-directory: node
+        env:
+          RUNTIME: ${{ matrix.runtime }}
 
-  # roots-data.ts is generated from certs/; a certs change that forgets to
-  # regenerate it would ship stale trust anchors. Its own job now that the
-  # runtime smoke is a matrix, so it runs once rather than six times.
-  node-roots-generated:
-    needs: changes
+  # The browsers the README claims, through Playwright at a pinned version
+  # (installed for this job only, never a dependency of the package).
+  node-browsers:
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" node
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: node scripts/gen-roots.mjs && git diff --exit-code src/roots-data.ts
+      # Playwright is pinned by exact version and installed with
+      # --ignore-scripts; its browsers come from its own pinned build list.
+      - name: Chromium, Firefox and WebKit # zizmor: ignore[adhoc-packages]
         working-directory: node
-
-  # The /web entry point's runtime claims (README "JavaScript runtimes"):
-  # the built dist/web runs the same smoke on Node's WebCrypto, on the
-  # Vercel Edge runtime (@edge-runtime/vm, a devDependency) and on
-  # Cloudflare workerd configured with NO compatibility flags, which is
-  # the configuration where node:crypto does not exist. workerd comes
-  # from npm at a pinned version; bump the pin in node/package.json's
-  # test:runtimes:web.
-  node-runtimes-web:
-    needs: changes
-    if: needs.changes.outputs.node == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          package-manager-cache: false
-      - run: npm ci --ignore-scripts && npm run test:runtimes:web
-        working-directory: node
-
-  # Fastly Compute is the fourth WebCrypto-only runtime, and the one that
-  # forced the /web build to import keys as JWK: Fastly's crypto.subtle has
-  # no 'spki' import format at all, so every chain failed there until the
-  # conversion landed. js-compute-runtime builds the smoke to wasm and
-  # viceroy, Fastly's own local runtime, serves it. viceroy is a Rust
-  # binary, not an npm package, which is why this is its own job and why it
-  # is slower than its siblings.
-  node-runtimes-fastly:
-    needs: changes
-    if: needs.changes.outputs.node == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          package-manager-cache: false
-      # --locked so the published lockfile decides the build, and a pinned
-      # version so a viceroy release cannot change what this job proves.
-      - run: cargo install viceroy --locked --version 0.20.1
-      - run: npm ci --ignore-scripts && npm run test:runtimes:fastly
-        working-directory: node
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm i --no-save --ignore-scripts playwright@1.56.1
+          npx --no-install playwright install --with-deps chromium firefox webkit
+          npm run build
+          npm run runtime:browser -- chromium firefox webkit
 
   # Proves jvm-interop/README.md's claim: the published jar is usable from
   # other JVM languages, not just Java. Builds java/ first with install,
@@ -518,24 +509,35 @@ jobs:
         env:
           BOOT: ${{ matrix.boot }}
 
+  # Every Python line on every platform wasmtime-py ships a wheel for
+  # (python/CI-NOTES.md): glibc x86_64 and aarch64, macOS arm64 and x86_64,
+  # Windows amd64 and arm64 here, musl in python-musl below. The package's
+  # one runtime dependency is wasmtime, so the platform list is its wheel
+  # list, and a floor nothing runs is a claim.
   python:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         # Every supported line (endoflife.date/python); 3.10 is the
         # requires-python floor and stays tested while claimed.
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # setup-uv provisions the interpreter too (uv python install), so this
-      # is one action where it used to be setup-python plus pip. uv builds
-      # every leg's Python from python-build-standalone, including the 3.10
-      # floor, so the matrix keeps proving exactly what it proved before.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" python
+        shell: bash
+      # setup-uv provisions the interpreter too (uv python install), from
+      # python-build-standalone, including the 3.10 floor.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: ${{ matrix.python }}
@@ -545,71 +547,166 @@ jobs:
       # through 3.14 without pinning the whole matrix to what the floor can
       # take. `uv sync` installs the project editable, which keeps this a
       # test of the SOURCE TREE rather than of a built wheel.
-      #
-      # It used to resolve cryptography fresh on every run, to catch an
-      # upstream release that breaks the >= 42 compatibility shim in
-      # _chain.py. Dependabot's uv entry now carries that signal: it proposes
-      # the same bump after the seven-day cooldown, and the shim breaks in a
-      # reviewable pull request instead of in an unreviewed install.
-      - run: uv sync --locked
+      - run: uv sync --locked --extra dev
         working-directory: python
-      - run: uv run --locked python -m unittest discover -s tests
+      # APRV_WASM_CACHE_DIR stays unset: test_cache.py sets it where it
+      # needs it, and the default cache directory under HOME is part of
+      # what it tests.
+      - run: uv run --locked --extra dev python -m unittest discover -s tests
+        working-directory: python
+      # Again with the compile cache warm: the second run is the one a
+      # deployment sees after its first start, and test_cache.py prints the
+      # cold and warm start times for the README's numbers.
+      - name: the suite again, with the compile cache warm
+        run: uv run --locked --extra dev python -m unittest discover -s tests
         working-directory: python
 
-  # Every Swift the manifest admits (tools 6.1 is the floor swift-crypto
-  # 4.5.1 needs), on Linux, plus the Xcode toolchain on macOS. A test helper
-  # once compiled on 6.3 locally and failed on the 6.1 container; one
-  # compiler is not a matrix.
+  # The musl legs: the uv image for each Python line, digest-pinned (the
+  # comments name the tags), run with docker on the runner rather than as a
+  # job container, because JavaScript actions cannot run inside Alpine.
+  # Root inside the container, so test_cache.py takes its simulated
+  # read-only branch.
+  python-musl:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - { python: "3.10", image: "ghcr.io/astral-sh/uv:python3.10-alpine@sha256:e2d2f86302f7afee240296e03124cf2337cfba1e517addecdd1e5667c29862d9" } # python3.10-alpine
+          - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:97c6d480e7b214e5d7e8bf6db85a101078554de11cd6e677451a6174486a52a9" } # python3.11-alpine
+          - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:262abc719041a446c354092e6b7730c9066de499089e16ef4edcb1a2e5d7b8b9" } # python3.12-alpine
+          - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:8265a34ae4034f7f6d3f4146f97cf7ec8de6de803b0698f560df63b9a8dadd38" } # python3.13-alpine
+          - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:ea7c8f721b5042fb12f6eb051b63469edfeb61c7c00551dbe67d71f182810c66" } # python3.14-alpine
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" python
+      # The image's own interpreter, never a downloaded glibc one: that is
+      # what makes the leg a musl leg.
+      - name: the suite on musl, twice (cold, then warm cache)
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$GITHUB_WORKSPACE:/w" -w /w/python \
+            -e HOME=/tmp/home -e UV_PYTHON_PREFERENCE=only-system -e UV_PYTHON_DOWNLOADS=never \
+            "$IMAGE" sh -euc '
+              # wasmtime-py'"'"'s musllinux wheel links libgcc_s, which Alpine
+              # leaves out of its base image; a musl deployment installs it too.
+              apk add --no-cache libgcc
+              uv sync --locked --extra dev
+              uv run --locked --extra dev python -c "import platform, sys; print(sys.version, platform.libc_ver())"
+              uv run --locked --extra dev python -m unittest discover -s tests
+              uv run --locked --extra dev python -m unittest discover -s tests
+            '
+
+  # Every Swift the manifest admits (tools 6.3 is the floor since the
+  # WasmKit host), on Linux, plus the Xcode toolchain on macOS and an iOS
+  # compile. The tests run optimised with testing enabled: WasmKit
+  # interprets, and a debug build of the interpreter is 50 to 150 times
+  # slower, so the cases with a 2,000 ms budget fail on time alone in debug
+  # (swift/CI-NOTES.md). A debug build of the tests stays as a compile check,
+  # since #if DEBUG code is compiled nowhere else. Every job copies
+  # rust-wasm's module into the package's resource directory first:
+  # SwiftPM will not build without the declared resource.
   swift:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         # Digest-pinned (mutable tags are the container flavor of action
         # retagging); dependabot bumps the digests, the comments name the tags.
         include:
-          - swift: "6.1"
-            image: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
-          - swift: "6.2"
-            image: swift:6.2@sha256:29b983751c605c2d3102d2ab93438c6e0cadf110d9d2aa6e929b6dec9dcb7cbc
           - swift: "6.3"
             image: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+          - swift: "6.4"
+            image: swift:6.4@sha256:bb6e5d5f2a97bc07cf8022c1a3e062f8164b8fd078698327ce2ab097e02a91dc
     container: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
+        shell: bash
       # Manifest lives at the repo root (SwiftPM requirement); no
       # working-directory needed. --force-resolved-versions builds the exact
       # revisions in Package.resolved and fails instead of re-resolving, so a
       # newer tag matching the manifest's `from:` floors cannot arrive
       # unreviewed.
-      - run: swift test --force-resolved-versions
+      - run: swift build --build-tests --force-resolved-versions
       # Consumers ship release builds, and the optimizer is where a compiler
       # bug shows up: Swift 6.3.3 on x86_64 miscompiled a throwing function
       # so that release builds crashed on a genuine receipt while every debug
       # test passed.
-      - run: swift test -c release --force-resolved-versions
+      - run: swift test -c release -Xswiftc -enable-testing --force-resolved-versions
+  # macos-26: the package needs Swift tools 6.3, and macos-15's Xcode
+  # carries Swift 6.1 (swift/CI-NOTES.md asks for 15+ with Swift 6.3+).
   swift-macos:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.swift == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
+    runs-on: macos-26
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: swift --version && swift test --force-resolved-versions
-      - run: swift test -c release --force-resolved-versions
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
+      - run: swift --version && swift test -c release -Xswiftc -enable-testing --force-resolved-versions
+
+  # The iOS 18 compile the manifest claims, which Linux cannot do: the
+  # package and WasmKit build for a generic iOS device with the software
+  # bounds checking the package selects there. Nothing runs on a device.
+  swift-ios:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.swift == 'true'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
+      - run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -list
+          xcodebuild build -scheme apple-purchase-receipt-verifier \
+            -destination 'generic/platform=iOS' -skipPackagePluginValidation
 
   # Every Go line the module claims, down to the go.mod floor: a floor
   # nothing executes is a claim, not a fact — the analogue of the
-  # java-runtime-8 job above.
+  # java-runtime-8 job above. The floor is wazero's as much as the
+  # module's (wazero v1.9.0 builds on Go 1.22; later wazero lines raise it).
+  # Every Go job copies rust-wasm's module into go/internal/wasm first:
+  # //go:embed needs the file, and it is not committed until integration
+  # (DECISIONS.md R14).
   go:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -621,10 +718,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go }}
           cache: true
+          cache-dependency-path: go/go.sum
       # GOTOOLCHAIN=local is the whole point of the matrix. Without it Go
       # downloads a newer toolchain whenever go.mod asks for one, and the
       # "go 1.22" floor would be compiled by 1.27 on every leg.
@@ -635,13 +738,12 @@ jobs:
           GOFLAGS: -mod=readonly
 
   # Windows earns its place: the conformance adapter walks the filesystem to
-  # find fixtures/, the .b64 fixtures pick up CRLF on checkout, and the
-  # whitespace-stripping base64 decode is what makes that survive. macOS earns
-  # its place because x509.Certificate.Verify falls back to the OS trust
-  # evaluation there, and this library must still never reach it. One Go
-  # version each, not a cross product.
+  # find fixtures/, and the .b64 fixtures pick up CRLF on checkout. macOS
+  # earns its place because wazero compiles to a different ISA there. One Go
+  # version each, not a cross product; CGO off, as a consumer's static
+  # build has it.
   go-platforms:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.go == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -653,38 +755,146 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
+        shell: bash
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
           cache: true
+          cache-dependency-path: go/go.sum
       - run: go test ./...
         working-directory: go
         env:
+          CGO_ENABLED: "0"
           GOFLAGS: -mod=readonly
 
-  # -count=2 so a second run in the same process catches state left behind by
-  # the first, which is what a cached buffer or a memoised location would be.
-  go-race:
-    needs: changes
+  # The platforms a consumer cross-compiles to, without running them: the
+  # package (wazero included) must build and vet for each with CGO off. No
+  # 32-bit target: the package does not claim one (OD-13).
+  go-cross:
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [darwin/amd64, darwin/arm64, windows/amd64, linux/arm64]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
           cache: true
+          cache-dependency-path: go/go.sum
+      - working-directory: go
+        env:
+          TARGET: ${{ matrix.target }}
+          CGO_ENABLED: "0"
+          GOFLAGS: -mod=readonly
+        run: |
+          set -euo pipefail
+          export GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}"
+          go build ./...
+          go vet ./...
+
+  # The FROM-scratch claim without a container daemon: a static build of
+  # the package's own corpus runner, run by chroot in a directory that holds
+  # nothing else (no libc, no certificates, no /proc, an empty
+  # environment), must answer exactly what an ordinary run answers.
+  go-scratch:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: go/go.sum
+      - name: the same rows in an empty chroot
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/scratch"
+          mkdir -p "$D"
+          (cd go && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$D/corpusrun" ./internal/corpusrun)
+          if ldd "$D/corpusrun" 2>&1 | grep -qv 'not a dynamic executable'; then
+            ldd "$D/corpusrun" || true
+            echo "::error::corpusrun is not a static executable"; exit 1
+          fi
+          # Two calls: the genuine g5 receipt, and the same receipt with one
+          # signature bit flipped (a verdict each way).
+          python3 - "$D/calls.jsonl" <<'PY'
+          import base64, json, sys
+          text = open("fixtures/public-receipts/receipt-sandbox-g5.b64", encoding="ascii").read().strip()
+          der = bytearray(base64.b64decode(text))
+          der[-128] ^= 1
+          rows = [("g5", text.encode()), ("g5-flipped", base64.b64encode(bytes(der)))]
+          with open(sys.argv[1], "w") as out:
+              for name, data in rows:
+                  out.write(json.dumps({"id": name, "fn": "verify-receipt", "env": 0, "config": "",
+                                        "now": 1790640000000, "b64": base64.b64encode(data).decode()}) + "\n")
+          PY
+          "$D/corpusrun" "$D/calls.jsonl" > "$RUNNER_TEMP/rows-host.jsonl"
+          sudo env -i /usr/sbin/chroot "$D" /corpusrun /calls.jsonl | tee "$RUNNER_TEMP/rows-scratch.jsonl"
+          diff "$RUNNER_TEMP/rows-host.jsonl" "$RUNNER_TEMP/rows-scratch.jsonl"
+          # Each row's "out" is the module's JSON as a string, so its
+          # quotes arrive escaped.
+          grep -q 'verified\\":true' "$RUNNER_TEMP/rows-scratch.jsonl"
+          grep -q 'INVALID_SIGNATURE' "$RUNNER_TEMP/rows-scratch.jsonl"
+
+  # -count=2 so a second run in the same process catches state left behind by
+  # the first, which is what a cached buffer or a memoised location would be.
+  # Slow: every call goes through wazero under the race detector.
+  go-race:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: go/go.sum
       - run: go test -race -count=2 ./...
         working-directory: go
 
   # The seed corpora already run on every `go test`; this is the exploratory
-  # pass. A crasher it finds is written under testdata/fuzz/ — commit that
-  # file, it becomes a permanent regression case.
+  # pass over the two public entry points (the package parses nothing of
+  # its own any more; the module's parser has its own fuzz jobs). A crasher
+  # it finds is written under testdata/fuzz/ — commit that file, it becomes
+  # a permanent regression case.
   go-fuzz:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -692,13 +902,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
           cache: true
-      - name: fuzz the DER reader
-        run: go test ./internal/der -run '^FuzzParseDER$' -fuzz '^FuzzParseDER$' -fuzztime=60s
-        working-directory: go
+          cache-dependency-path: go/go.sum
       - name: fuzz the verifiers
         run: |
           set -euo pipefail
@@ -713,7 +926,7 @@ jobs:
   # another module in place, so the binaries are built in go/tools and run
   # from go/.
   go-lint:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -721,10 +934,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
           cache: true
+          cache-dependency-path: |
+            go/go.sum
+            go/tools/go.sum
       - run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
         working-directory: go
       - run: go vet ./...
@@ -735,12 +956,11 @@ jobs:
           go build -o "$RUNNER_TEMP/staticcheck" honnef.co/go/tools/cmd/staticcheck
           go build -o "$RUNNER_TEMP/govulncheck" golang.org/x/vuln/cmd/govulncheck
         working-directory: go/tools
-      - run: "$RUNNER_TEMP/staticcheck ./..."
+      - run: '"$RUNNER_TEMP/staticcheck" ./...'
         working-directory: go
-      # govulncheck reports only reachable vulnerabilities, and the library has
-      # no dependencies, so anything it reports is a standard-library advisory
-      # reached through x509.ParseCertificate on attacker-supplied bytes.
-      - run: "$RUNNER_TEMP/govulncheck ./..."
+      # govulncheck reports only reachable vulnerabilities: in the standard
+      # library, and in wazero, the package's one dependency.
+      - run: '"$RUNNER_TEMP/govulncheck" ./...'
         working-directory: go
       # Structural gates: the library must never reach the OS trust store or
       # the network. The authoritative versions are Go tests that parse the
@@ -752,36 +972,25 @@ jobs:
           if grep -rn --include='*.go' \
               -e 'x509\.SystemCertPool' -e 'x509\.NewCertPool' \
               -e 'x509\.VerifyOptions' -e '"net/http"' -e '"net"' \
-              --exclude='*_test.go' --exclude-dir=tools --exclude-dir=gencerts .; then
+              --exclude='*_test.go' --exclude-dir=tools .; then
             echo "::error::forbidden API in the published module"
             exit 1
           fi
         working-directory: go
 
-  # go/roots/certs is a copy of the repository's certs/, because an embed
-  # pattern may not reach outside its module directory. A copy that drifts
-  # ships stale trust anchors — the Go twin of node's roots-data.ts guard.
-  go-generate-check:
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.27"
-          cache: true
-      - run: go generate ./... && git diff --exit-code
-        working-directory: go
-
+  # The gem has one runtime dependency, wasmtime, installed from the
+  # committed Gemfile.lock (its prebuilt platform gems included, so no Rust
+  # toolchain). Every job that loads the library or builds the gem copies
+  # rust-wasm's module into lib/ first: the gem checks it against
+  # aprv.wasm.sha256 before compiling it, and the gemspec refuses to build
+  # without it.
   ruby:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      BUNDLE_FROZEN: "true"
     strategy:
       fail-fast: false
       matrix:
@@ -794,38 +1003,43 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
       - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: ${{ matrix.ruby }}
-          # Nothing to install: the library has no runtime dependencies and the
-          # suite uses only gems that ship with Ruby. Running without Bundler is
-          # also the strongest form of the zero-dependency claim — if anything
-          # crept in, this leg is where it fails. ruby/Gemfile.lock is committed
-          # for contributors who do run `bundle exec`; this job installs
-          # nothing, so it has nothing to lock.
-          bundler-cache: false
+          bundler-cache: true
           working-directory: ruby
-      # The OpenSSL a runner links decides whether the genuine SHA-1 legacy
-      # receipt chain verifies at all. Print it so a red leg on a distro with
-      # SHA-1 disabled is diagnosable from the log rather than from a bisect.
-      - run: ruby -v && ruby -ropenssl -e 'puts OpenSSL::OPENSSL_LIBRARY_VERSION'
-      - run: rake test
+      # The Wasmtime the platform gem carries is what runs the module; print
+      # it so a red leg is diagnosable from the log.
+      - run: ruby -v && bundle exec ruby -e 'require "wasmtime"; puts Wasmtime::VERSION'
         working-directory: ruby
-      # roots_data.rb inlines the anchors; ruby/certs is a copy of the
-      # repository roots. Either one drifting ships stale trust anchors.
-      - run: ruby script/gen_roots.rb && git diff --exit-code lib/apple_purchase_receipt_verifier/roots_data.rb
+      - run: bundle exec rake test
+        working-directory: ruby
+      # Four threads must reach twice one thread's verifications per second
+      # (the gem releases the GVL around each call); checked on one leg,
+      # where the runner's four CPUs are usable.
+      - name: thread scaling
+        if: matrix.ruby == '3.3'
+        run: bundle exec ruby -Ilib bench/threads.rb --assert
         working-directory: ruby
 
   # Test the artifact the consumer receives, not the working tree: the Ruby
-  # shape of the two broken npm releases is spec.files losing certs/, which
-  # ships a gem that loads cleanly and raises the first time anyone asks for a
-  # trust anchor. APRV_PACKAGING=1 builds the gem, installs it into a GEM_HOME
-  # outside the checkout and verifies a genuine receipt from a fresh process.
+  # shape of the two broken npm releases is spec.files losing a file, which
+  # ships a gem that loads cleanly and fails the first time anyone uses it.
+  # APRV_PACKAGING=1 builds the gem, installs it into a GEM_HOME outside the
+  # checkout (fetching the wasmtime platform gem from rubygems.org) and
+  # verifies a genuine receipt from a fresh process.
   ruby-gem:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      BUNDLE_FROZEN: "true"
     strategy:
       fail-fast: false
       matrix:
@@ -834,33 +1048,49 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
       - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: ${{ matrix.ruby }}
-          bundler-cache: false
+          bundler-cache: true
           working-directory: ruby
-      - run: APRV_PACKAGING=1 rake test TEST=test/packaging_test.rb
+      - run: APRV_PACKAGING=1 bundle exec rake test TEST=test/packaging_test.rb
         working-directory: ruby
 
-  # macOS links a different libcrypto than the Linux legs, and the SHA-1
-  # legacy chain plus OpenSSL::PKCS7's behaviour are exactly the kind of thing
-  # that differs between them. One current-Ruby leg is enough.
+  # The arm64-darwin platform gem of wasmtime, which the Linux legs never
+  # load. One current-Ruby leg is enough.
   ruby-macos:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true'
     runs-on: macos-latest
     timeout-minutes: 15
+    env:
+      BUNDLE_FROZEN: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
       - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: "3.4"
-          bundler-cache: false
+          bundler-cache: true
           working-directory: ruby
-      - run: ruby -ropenssl -e 'puts OpenSSL::OPENSSL_LIBRARY_VERSION'
-      - run: rake test
+      - run: bundle exec ruby -e 'require "wasmtime"; puts Wasmtime::VERSION'
+        working-directory: ruby
+      - run: bundle exec rake test
+        working-directory: ruby
+      # For the log only: a shared macOS runner's thread numbers are not a
+      # gate.
+      - run: bundle exec ruby -Ilib bench/threads.rb
         working-directory: ruby
 
   # Lint and types on one modern Ruby, deliberately outside the matrix:
@@ -868,7 +1098,7 @@ jobs:
   # does, and a tool that cannot run on 3.1 must not be able to fail the 3.1
   # leg. Their gemfile is the only one in the port with dependencies.
   ruby-tools:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -882,6 +1112,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
       - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: "3.4"
@@ -904,18 +1139,21 @@ jobs:
       # it requires the library and defines the benchmark module, but main
       # runs only when the file is the program itself, so nothing is timed.
       # A moved require or a renamed module-level constant fails here; calls
-      # inside its methods are only checked by running it.
-      - run: ruby -Ilib -e 'load "bench/bench.rb"'
+      # inside its methods are only checked by running it. Under the tools
+      # bundle, which lists wasmtime, since the library now needs it.
+      - run: bundle exec ruby -Ilib -e 'load "bench/bench.rb"'
         working-directory: ruby
 
-  # The toolchains come from the rustup already on the runner, so this port
-  # pins no action beyond the checkout and caches nothing: a clean debug build
-  # of the library and every test target is cheaper than restoring a cache.
+  # The toolchains come from the rustup already on the runner. The whole
+  # workspace: the core, the aprv-openssl adapter, aprv-surface, aprv-wire,
+  # the C ABI and a native build of aprv-abi. The default build compiles
+  # OpenSSL 4.0.2 from source (openssl-src), so target/ is cached: this is a
+  # test job, and publish jobs never restore it.
   rust:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -923,47 +1161,84 @@ jobs:
         # it is the one that needs proving; stable is what users have; beta
         # is the early warning.
         toolchain: ["1.85.0", "stable", "beta"]
+    env:
+      # openssl/tests/isolation.rs traces the adapter's system calls; a
+      # missing or blocked tracer fails the job instead of skipping that half.
+      APRV_REQUIRE_STRACE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
+      - run: sudo apt-get update && sudo apt-get install -y strace
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/target
+          key: rust-target-${{ runner.os }}-${{ matrix.toolchain }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-target-${{ runner.os }}-${{ matrix.toolchain }}-
       # rust/Cargo.lock is committed and every leg installs from it, so no
       # push resolves a version range. The file was generated with
       # CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback on a modern cargo,
       # which is what makes it resolvable on the 1.85.0 floor; regenerate it
       # the same way (rust/README.md). --locked turns "cargo quietly rewrote
       # the lockfile" into a failed job rather than an unnoticed bump.
+      # aprv-abi is left out of the floor: wit-bindgen's generator crates
+      # need Rust 1.88, and the module is built with the pinned toolchain
+      # only (rust/rust-toolchain.toml).
       - name: test on the floor
         if: matrix.toolchain == '1.85.0'
         working-directory: rust
-        run: cargo +1.85.0 test --locked --all-features
+        run: cargo +1.85.0 test --locked --workspace --exclude aprv-abi --all-features
       - name: test on ${{ matrix.toolchain }}
         if: matrix.toolchain != '1.85.0'
         working-directory: rust
+        env:
+          TOOLCHAIN: ${{ matrix.toolchain }}
+        run: cargo "+$TOOLCHAIN" test --locked --workspace --all-features
+      # The prebuilt-OpenSSL leg: the same tests linked against an OpenSSL
+      # 4.0.2 built outside cargo from the one pinned tarball, as a
+      # distribution or a source build with OPENSSL_DIR links it.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: matrix.toolchain != '1.85.0'
+        with:
+          path: ~/.cache/aprv-openssl-native
+          key: aprv-openssl-native-${{ runner.os }}-${{ hashFiles('tools/openssl-native.sh', 'tools/wasm-toolchain.sh') }}
+      - name: test on ${{ matrix.toolchain }} against a prebuilt OpenSSL 4
+        if: matrix.toolchain != '1.85.0'
+        working-directory: rust
+        env:
+          TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
-          cargo +${{ matrix.toolchain }} test --locked --all-features
-          cargo +${{ matrix.toolchain }} test --locked --no-default-features
+          set -euo pipefail
+          ../tools/openssl-native.sh "$HOME/.cache/aprv-openssl-native" > "$RUNNER_TEMP/openssl.env"
+          . "$RUNNER_TEMP/openssl.env"
+          OPENSSL_NO_VENDOR=1 OPENSSL_STATIC=1 OPENSSL_DIR="$OPENSSL_DIR" \
+            cargo "+$TOOLCHAIN" test --locked --workspace --no-default-features
 
   rust-lint:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
       - run: cargo fmt --check
         working-directory: rust
-      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
         working-directory: rust
       - run: cargo fmt --check
         working-directory: rust/fuzz
-      # rust/certs/ is a copy of the repository's certs/, because cargo package
-      # cannot reach outside the package directory. A copy that drifts ships
-      # stale trust anchors.
+      # The layering rules of docs/rust-core/SURFACE.md section 9 (which
+      # crate may name OpenSSL, which may hold unsafe code), read from
+      # cargo metadata and the sources.
+      - run: node tools/check-layering.mjs
 
   # The C ABI (rust/ffi) and its three consumers. Three operating systems
   # because this is the only artifact in the repository whose contract is a
@@ -988,9 +1263,10 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
-      # rust/ffi/Cargo.lock is committed and resolved for the 1.85.0 floor the
-      # same way rust/Cargo.lock is; --locked turns "cargo quietly rewrote the
-      # lockfile" into a failed job rather than an unnoticed bump.
+      # rust/ffi is a member of the rust/ workspace: rust/Cargo.lock is its
+      # lockfile and the library lands in rust/target/<profile>. --locked
+      # turns "cargo quietly rewrote the lockfile" into a failed job rather
+      # than an unnoticed bump.
       - run: cargo build --locked
         working-directory: rust/ffi
       # The floor this crate's manifest claims, proven rather than asserted —
@@ -1043,19 +1319,18 @@ jobs:
         run: |
           interpreter=python3
           command -v python3 >/dev/null 2>&1 || interpreter=python
-          "$interpreter" tests/conformance.py target/debug
+          "$interpreter" tests/conformance.py ../target/debug
       - name: the README example, from Python
         shell: bash
         working-directory: rust/ffi
         run: |
           interpreter=python3
           command -v python3 >/dev/null 2>&1 || interpreter=python
-          "$interpreter" examples/python/example.py target/debug
+          "$interpreter" examples/python/example.py ../target/debug
 
       # include/apple_purchase_receipt_verifier.h is generated from
       # src/lib.rs; a change that forgets to regenerate it ships a header
-      # describing an ABI the library no longer has. The same regenerate-and-
-      # diff guard the generated roots files elsewhere in this workflow get.
+      # describing an ABI the library no longer has.
       # Linux only: the header is platform-independent, and cbindgen is a
       # from-source install that costs a minute per runner.
       - name: the committed header is the generated one
@@ -1131,11 +1406,15 @@ jobs:
       - run: mix format --check-formatted
         working-directory: rust/ffi/examples/elixir
 
-  # The exploratory pass over the hand-written ASN.1, CMS, X.509 and JWS
-  # readers and the three verifiers; rust/fuzz/README.md lists the targets
-  # and their invariants. Seeds come from fixtures/, so a crasher is a
-  # mutation of a genuine receipt or JWS, not of noise. It needs a nightly
-  # for the sanitizer flags, which is why it is not part of the `rust` matrix.
+  # The exploratory pass over the core's four entry points (the receipt,
+  # its base64 form, the transaction JWS and the endpoint JSON), with the
+  # bounded JSON reader the core still writes by hand and OpenSSL's parsers
+  # beneath them; rust/fuzz/README.md lists the targets and their
+  # invariants. Seeds come from fixtures/, so a crasher is a mutation of a
+  # genuine receipt or JWS, not of noise. It needs a nightly for the
+  # sanitizer flags, which is why it is not part of the `rust` matrix. The
+  # vendored OpenSSL here is not instrumented; nightly.yml's
+  # rust-fuzz-openssl links an ASan and fuzzer-no-link build of it.
   rust-fuzz:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
@@ -1154,39 +1433,13 @@ jobs:
       - run: ./run.sh all 60
         working-directory: rust/fuzz
 
-  # The exploratory pass over the hand-written DER and CMS readers and the
-  # three public Verifier methods; node/fuzz/README.md lists the targets and their
-  # invariants. Seeds come from fixtures/, so a crasher is a mutation of a
-  # genuine receipt or JWS, not of noise. The fuzzer is a native addon and
-  # lives in node/fuzz's own package.json, which is why this job installs
-  # twice and is not part of the `node` matrix.
-  node-fuzz:
-    needs: changes
-    if: needs.changes.outputs.node == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          package-manager-cache: false
-      # The targets import ../dist, so the library has to be built first.
-      - run: npm ci --ignore-scripts && npm run build
-        working-directory: node
-      - run: npm ci --ignore-scripts
-        working-directory: node/fuzz
-      - run: ./run.sh all 60
-        working-directory: node/fuzz
-
-  # SharpFuzz under libFuzzer, over the two parsers this package hand-writes
-  # (the bounded JSON reader and the CMS pre-scan) and the four public entry
-  # points. The invariants are the go-fuzz and rust-fuzz jobs': nothing but a
-  # VerificationException escapes, an accepted receipt or JWS fails against an
-  # unrelated anchor set, and the verifyReceipt endpoint always answers JSON
-  # with a numeric status.
+  # SharpFuzz under libFuzzer, over the four public entry points and the
+  # wrapper's own JSON handling around aprv.wasm. SharpFuzz instruments .NET
+  # IL only, so the module is a black box here; its parser has its own fuzz
+  # jobs (rust-fuzz, nightly.yml). The invariants are the go-fuzz and
+  # rust-fuzz jobs': nothing but a VerificationException escapes, an
+  # accepted receipt or JWS fails against an unrelated anchor set, and the
+  # verifyReceipt endpoint always answers JSON with a numeric status.
   #
   # The fuzz project sits outside ApplePurchaseReceiptVerifier.sln on purpose,
   # so neither the `dotnet` job (dotnet test) nor `dotnet-format` sees it and
@@ -1194,7 +1447,7 @@ jobs:
   # the libFuzzer driver with clang, which the ubuntu runner image already
   # carries, and instruments only the library assembly.
   dotnet-fuzz:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1202,6 +1455,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" dotnet
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
@@ -1212,12 +1470,12 @@ jobs:
       - run: ./run.sh all 60
         working-directory: dotnet/fuzz
 
-  # The exploratory pass over the hand-written DER, CMS and X.509 readers and
-  # the three public verifiers; php/fuzz/README.md lists the six targets and
-  # their invariants. Seeds come from fixtures/, so a crasher is a mutation of
-  # a genuine Apple-signed receipt or JWS rather than of noise, and the
-  # anchor-set invariants are exercised on nearly every iteration because
-  # several seeds genuinely verify.
+  # The exploratory pass over the façade's four entry points, through the
+  # aprv binary (the CLI transport); php/fuzz/README.md lists the four
+  # targets and their invariants. Seeds come from fixtures/, so a crasher is
+  # a mutation of a genuine Apple-signed receipt or JWS rather than of
+  # noise, and the anchor-set invariants are exercised on nearly every
+  # iteration because several seeds genuinely verify.
   #
   # It is its own job, not a step in `php`, for the same reason `rust-fuzz` is
   # separate from `rust`: the tool is not the one the test matrix installs.
@@ -1230,7 +1488,7 @@ jobs:
   # timeout that turns an input the parsers loop forever on into a recorded
   # crash instead of a job that hangs until the runner's own limit.
   php-fuzz:
-    needs: changes
+    needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1238,24 +1496,32 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/aprv-bin
+      - name: the aprv binary this tree builds
+        run: |
+          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
+          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.4"
-          extensions: openssl, json, pcntl
+          extensions: json, curl, posix, pcntl
           coverage: none
       # The targets load the library through Composer's autoloader; no dev
       # dependency is needed for them, but the install is what writes it.
       - run: composer install --no-scripts --no-progress --no-interaction
         working-directory: php
-      # 60 s per target, six targets. A crasher leaves
+      # 60 s per target, four targets. A crasher leaves
       # php/fuzz/crashes/<target>/crash-<hash>.txt and fails the job; reduce it
       # and pin it as a test under php/tests/, where it then runs on all five
       # PHP matrix legs rather than only here.
       - run: ./run.sh all 60
         working-directory: php/fuzz
 
-  # The exploratory pass over the hand-written ASN.1 and CMS readers and the
-  # verifiers a consumer calls; ruby/fuzz/README.md lists the six targets and
+  # The exploratory pass over the verifiers a consumer calls, through the
+  # wrapper into aprv.wasm; ruby/fuzz/README.md lists the four targets and
   # the invariant each asserts. Seeds come from fixtures/, so a crasher is a
   # mutation of a genuine receipt or JWS, not of noise.
   #
@@ -1271,7 +1537,7 @@ jobs:
   # own resource directory, so an unversioned `clang` that outruns the
   # installed runtime package fails the build with "Could not find asan".
   ruby-fuzz:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -1285,6 +1551,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
       - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           # One line, not the library's matrix: this job proves the parsers
@@ -1314,8 +1585,8 @@ jobs:
         run: ./run.sh all 60
         working-directory: ruby/fuzz
 
-  # Five coverage-guided atheris targets over the verifiers and the receipt
-  # attribute reader, 60 s each -- the same budget and the same shape as
+  # Three coverage-guided atheris targets over the verifiers (the receipt's
+  # base64 form, the JWS, the endpoint JSON), 60 s each -- the same budget and the same shape as
   # go-fuzz and rust-fuzz. Pinned to CPython 3.13 because atheris ships wheels
   # only (3.1.0: 3.12/3.13/3.14, no sdist), so the fuzzer's Python is not the
   # library's: the `python` matrix above is what proves 3.10 through 3.14, and
@@ -1324,7 +1595,7 @@ jobs:
   # sets -- run.sh installs it into an ephemeral uv environment and fuzzes the
   # source tree off PYTHONPATH, exactly as the `python` job tests it.
   python-fuzz:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1332,6 +1603,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" python
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.13"
@@ -1351,22 +1627,28 @@ jobs:
   # library by path, so the published root manifest carries no executable
   # targets a consumer would never run (swift/fuzz/README.md).
   #
-  # 60 s per target, five targets, a fixed budget rather than a run count:
+  # 60 s per target, four targets, a fixed budget rather than a run count:
   # a fuzzer's job on a push is to keep proving the seeds and their neighbours
   # stay clean, not to search exhaustively. A crasher aborts the process and
   # fails the job; reduce it and pin it as a test under
   # swift/Tests/ApplePurchaseReceiptVerifierTests, where it then runs on every
   # Swift line rather than only here.
   swift-fuzz:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
+        shell: bash
       # swift/bench is a package of its own on the same path dependency, so
       # neither the `swift` matrix nor this job's fuzz build compiles it;
       # benchmark.yml builds it only by hand. A debug build: the point is that
@@ -1434,25 +1716,728 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - run: cargo install cargo-deny --locked
+      # The whole workspace, the C ABI (ffi/) and the bindings included. The
+      # two packages outside it with lockfiles of their own, rust/server and
+      # rust/bindings/abi/tests, are not audited here: both link Wasmtime,
+      # whose Apache-2.0 WITH LLVM-exception licence deny.toml does not list.
       - run: cargo deny check
         working-directory: rust
-      # ffi/ is a separate manifest with a separate lockfile, and cargo-deny
-      # audits one manifest at a time — a dependency added there would be
-      # invisible to the check above. Same policy file: the banned-crate list
-      # is a property of the project, not of one crate.
-      - run: cargo deny --manifest-path ffi/Cargo.toml --config deny.toml check
-        working-directory: rust
 
+  # aprv.wasm, built the way release.yml's build-wasm builds it, then held to
+  # its contract (ARCHITECTURE.md §9, MIGRATION.md steps 1.4, 1.5, 1.14):
+  # exactly one import, random-get; the export list; the WIT read back from
+  # the component equal to rust/bindings/abi/wit/aprv.wit; the ABI tests on a
+  # hand-rolled host; every case of fixtures/cases.json through a host whose
+  # import object traps on anything but random-get; every answer valid
+  # against the wire schemas; and a second build, in a fresh clone, that
+  # reproduces the hash.
+  #
+  # It runs whenever any area is selected, because every host job downloads
+  # its `aprv-wasm` artifact before its first build step (OD-01): a host is
+  # always tested against the module this tree builds, never one from an
+  # earlier run.
+  #
+  # The reference rows here are the cases' own expectations. The spike
+  # corpora (1,179 rows and 5,000 mutants) are scratch data of the evidence
+  # rounds and not in the repository; tools/wasm-trap-host.mjs `calls` runs
+  # them wherever they are (docs/evidence/2026-09-29-canonical-abi-final),
+  # and nightly.yml runs them when APRV_CORPUS_URL names an archive.
+  #
+  # It caches the toolchain directory, keyed by the hash of the script that
+  # makes it: this is a test job, and the cached tree is re-verified by
+  # nothing but its key, which is why release.yml's build-wasm never
+  # restores it.
+  rust-wasm:
+    needs: changes
+    if: needs.changes.outputs.module == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      wasm-sha256: ${{ steps.build.outputs.wasm-sha256 }}
+      component-sha256: ${{ steps.build.outputs.component-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/aprv-wasm-toolchain
+          key: aprv-wasm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wasm-toolchain.sh') }}
+      - name: install the pinned wasm toolchain
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/aprv-wasm-toolchain"
+          tools/wasm-toolchain.sh "$dir" > /dev/null
+          { echo "WASI_SDK_DIR=$dir/wasi-sdk"; echo "OPENSSL_WASM_DIR=$dir/openssl-wasm"; } >> "$GITHUB_ENV"
+          echo "$dir/bin" >> "$GITHUB_PATH"
+      # The rustc rust/rust-toolchain.toml names, with the wasm32-wasip1
+      # target, made the one every later step uses: build.sh runs from the
+      # repository root, where rustup does not read that file.
+      - name: install the pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-wasip1
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - name: build aprv.wasm and the component
+        id: build
+        run: |
+          set -euo pipefail
+          rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
+          wasm=$(sha256sum "$RUNNER_TEMP/aprv/aprv.wasm" | cut -c1-64)
+          component=$(sha256sum "$RUNNER_TEMP/aprv/aprv.component.wasm" | cut -c1-64)
+          echo "wasm-sha256=$wasm" >> "$GITHUB_OUTPUT"
+          echo "component-sha256=$component" >> "$GITHUB_OUTPUT"
+          {
+            echo "| file | bytes | SHA-256 |"
+            echo "|---|---:|---|"
+            for f in aprv.wasm aprv.component.wasm aprv.wit; do
+              echo "| $f | $(wc -c < "$RUNNER_TEMP/aprv/$f") | \`$(sha256sum "$RUNNER_TEMP/aprv/$f" | cut -c1-64)\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aprv-wasm
+          path: |
+            ${{ runner.temp }}/aprv/aprv.wasm
+            ${{ runner.temp }}/aprv/aprv.component.wasm
+            ${{ runner.temp }}/aprv/aprv.wit
+            ${{ runner.temp }}/aprv/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  # The module's contract, checked on the build rust-wasm uploaded, in a
+  # job of its own so the host jobs start as soon as the module exists and
+  # a broken contract is its own red job rather than a wall of skipped ones.
+  rust-wasm-checks:
+    needs: [changes, rust-wasm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      # Some tools run the module (the production-receipt checker's tests
+      # among them); they take this run's build from APRV_WASM.
+      - name: the CI tools' own tests
+        run: |
+          npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+          APRV_WASM="$RUNNER_TEMP/aprv/aprv.wasm" npm --prefix tools test
+          shellcheck tools/*.sh tools/reproduce/entrypoint.sh .github/scripts/*.sh
+      - name: imports, exports, WIT read-back and SHA256SUMS
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/wasm-tools"
+          pin() { sed -n "s/^$1=\(.*\)$/\1/p" tools/wasm-toolchain.sh; }
+          curl -fsSL --retry 4 --retry-delay 2 -o "$RUNNER_TEMP/wasm-tools.tar.gz" "$(pin WASM_TOOLS_URL)"
+          echo "$(pin WASM_TOOLS_SHA256)  $RUNNER_TEMP/wasm-tools.tar.gz" | sha256sum -c -
+          mkdir -p "$dir"
+          tar -C "$dir" --strip-components=1 -xzf "$RUNNER_TEMP/wasm-tools.tar.gz"
+          echo "$dir" >> "$GITHUB_PATH"
+          PATH="$dir:$PATH" tools/check-wasm.sh "$RUNNER_TEMP/aprv" rust/bindings/abi/wit/aprv.wit
+      - name: the ABI tests on a hand-rolled host
+        run: node tools/wasm-trap-host.mjs abi-tests "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json
+      - name: every case through the trap-on-anything host
+        run: node tools/wasm-trap-host.mjs cases "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json --answers "$RUNNER_TEMP/answers"
+      # Every answer the cases produced, against its JSON Schema 2020-12 file
+      # (step 1.14), then one planted wrong type, which must fail: a schema
+      # that accepts everything would pass the first half alone.
+      - name: every answer validates against the wire schemas
+        run: |
+          set -euo pipefail
+          S=rust/bindings/wire/schema
+          A="$RUNNER_TEMP/answers"
+          node tools/validate-wire.mjs "$S/init-config.schema.json" "$A/init-config.jsonl"
+          node tools/validate-wire.mjs "$S/init-result.schema.json" "$A/init.jsonl"
+          node tools/validate-wire.mjs "$S/verify-receipt-result.schema.json" "$A/verify-receipt.jsonl"
+          node tools/validate-wire.mjs "$S/verify-signed-data-result.schema.json" "$A/verify-signed-data.jsonl"
+          head -1 "$A/verify-receipt.jsonl" | sed -E 's/"verified":(true|false)/"verified":"planted"/' > "$RUNNER_TEMP/planted.jsonl"
+          if node tools/validate-wire.mjs "$S/verify-receipt-result.schema.json" "$RUNNER_TEMP/planted.jsonl"; then
+            echo "::error::a planted wrong type validated; verify-receipt-result.schema.json does not constrain \"verified\""
+            exit 1
+          fi
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/aprv-wasm-toolchain
+          key: aprv-wasm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wasm-toolchain.sh') }}
+      - name: install the pinned wasm and Rust toolchains
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/aprv-wasm-toolchain"
+          tools/wasm-toolchain.sh "$dir" > /dev/null
+          { echo "WASI_SDK_DIR=$dir/wasi-sdk"; echo "OPENSSL_WASM_DIR=$dir/openssl-wasm"; } >> "$GITHUB_ENV"
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --component clippy --target wasm32-wasip1
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      # aprv-abi's cfg(target_arch = "wasm32") code, which the native
+      # workspace lint in rust-lint never compiles, with the C compiler and
+      # OpenSSL build.sh uses.
+      - name: clippy on the wasm32-wasip1 build
+        working-directory: rust
+        run: |
+          set -euo pipefail
+          sysroot="$WASI_SDK_DIR/share/wasi-sysroot"
+          CC_wasm32_wasip1="$WASI_SDK_DIR/bin/clang" \
+          AR_wasm32_wasip1="$WASI_SDK_DIR/bin/llvm-ar" \
+          CFLAGS_wasm32_wasip1="--target=wasm32-wasip1 --sysroot=$sysroot -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_GETPID" \
+          OPENSSL_NO_VENDOR=1 OPENSSL_STATIC=1 OPENSSL_DIR="$OPENSSL_WASM_DIR" \
+          OPENSSL_LIB_DIR="$OPENSSL_WASM_DIR/lib" OPENSSL_INCLUDE_DIR="$OPENSSL_WASM_DIR/include" \
+            cargo clippy --locked -p aprv-abi --target wasm32-wasip1 -- -D warnings
+      # A second build of the same commit in a fresh clone and a directory it
+      # never ran in: a path leaking into the module, or anything else that
+      # is not a function of the source and the pins, shows as a mismatch.
+      - name: the build reproduces in a fresh clone
+        env:
+          EXPECTED: ${{ needs.rust-wasm.outputs.wasm-sha256 }}
+        run: |
+          APRV_REPO_URL="file://$GITHUB_WORKSPACE" APRV_TOOLCHAIN_DIR="$HOME/.cache/aprv-wasm-toolchain" \
+            tools/reproduce-wasm.sh "$GITHUB_SHA" "$EXPECTED"
+
+  # The ABI tests under Wasmtime: rust/bindings/abi/tests, a package outside
+  # the workspace with its own lockfile, drives the built module and
+  # component through the runtime aprv-server ships. Its target directory is
+  # cached (a test job; Wasmtime with Cranelift is a four-minute build).
+  rust-wasm-abi:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - name: install the pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/bindings/abi/tests/target
+          key: rust-wasm-abi-${{ runner.os }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/bindings/abi/tests/Cargo.lock') }}
+      - run: cargo test --locked --manifest-path rust/bindings/abi/tests/Cargo.toml
+        env:
+          APRV_WASM: ${{ runner.temp }}/aprv/aprv.wasm
+          APRV_COMPONENT: ${{ runner.temp }}/aprv/aprv.component.wasm
+
+  # Every committed copy of aprv.wasm (the Go module's and the Swift
+  # package's, R14) and every tracked pin of it (each host's
+  # aprv.wasm.sha256, Node's aprv.component.wasm.sha256) against the module
+  # rust-wasm just built from the same tree. On a release-please branch a
+  # difference fails: that tree becomes the tag, and a Go tag is forever.
+  # Anywhere else the copies and pins may lag the core until
+  # release-please.yml refreshes them on the release branch, so a
+  # difference is a warning that says which file and which hash (the host
+  # jobs test the build, whatever the pin says: place-module.sh).
+  wasm-copies:
+    needs: rust-wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: compare every committed copy and pin with the build
+        env:
+          BUILT: ${{ needs.rust-wasm.outputs.wasm-sha256 }}
+          COMPONENT: ${{ needs.rust-wasm.outputs.component-sha256 }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          strict=false
+          case "$HEAD_REF" in release-please--*) strict=true ;; esac
+          bad=0
+          report() { # file got want
+            if [ "$2" = "$3" ]; then
+              echo "$1 matches the build ($3)"
+            elif [ "$strict" = true ]; then
+              echo "::error file=$1::$1 is $2; this tree builds $3, and a release must carry the module it builds"
+              bad=1
+            else
+              echo "::warning file=$1::$1 is $2; this tree builds $3 (release-please.yml refreshes it on the release branch)"
+            fi
+          }
+          for f in $(git ls-files -- '*aprv.wasm'); do
+            report "$f" "$(sha256sum "$f" | cut -c1-64)" "$BUILT"
+          done
+          for f in $(git ls-files -- '*aprv.wasm.sha256'); do
+            report "$f" "$(cut -c1-64 "$f")" "$BUILT"
+          done
+          for f in $(git ls-files -- '*aprv.component.wasm.sha256'); do
+            report "$f" "$(cut -c1-64 "$f")" "$COMPONENT"
+          done
+          # A committed copy and its pin must also agree with each other:
+          # the package checks the pair when it loads, so a copy swapped
+          # without its pin fails every consumer.
+          for f in $(git ls-files -- '*aprv.wasm'); do
+            (cd "$(dirname "$f")" && sha256sum -c aprv.wasm.sha256) || bad=1
+          done
+          exit "$bad"
+
+  # The grep gate of ARCHITECTURE.md §9: no non-Java wrapper reaches a
+  # crypto, X.509, ASN.1 or CMS API outside its tests, since aprv.wasm makes
+  # every such decision. Every wrapper is enforced (`--enforce all`,
+  # MIGRATION.md Phase 7 step 5, which also covers a language added to the
+  # tool later); the few 0.7 API types that carry DER in and out are
+  # allowlisted per file with a reason in the tool (OD-04).
+  one-implementation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: node tools/check-one-implementation.mjs --enforce all
+
+  # The Linux x86_64 static aprv binary, built as the release builds it
+  # (rust/server/scripts/build-static.sh, the component rust-wasm built from
+  # this tree embedded) and uploaded as `aprv-server-x86_64-unknown-linux-musl`
+  # for the jobs that run it: the server's contract and image jobs, every PHP
+  # job (the binary is PHP's only transport, APRV_BIN) and the Java -wasm
+  # artifact's server engine. The binary is a test input and never a
+  # release asset (release.yml builds its own), so the target directory is
+  # cached. The checks here are the ones that need nothing but the binary:
+  # no interpreter and no dynamic dependency (build-static.sh), an empty
+  # chroot, the cases over HTTP and the CLI, the managed mode, and the
+  # hostile component through a full build.
+  aprv-server-linux:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.server-bin == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - name: install the pinned Rust toolchain and the musl target
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target x86_64-unknown-linux-musl
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      # musl-gcc compiles Wasmtime's C helpers for the musl target
+      # (build-static.sh).
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/server/target
+          key: aprv-server-linux-${{ runner.os }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/server/Cargo.lock') }}
+      - name: the two-stage static build
+        env:
+          COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
+        run: rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" x86_64-unknown-linux-musl "$RUNNER_TEMP/server"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/server/aprv-x86_64-unknown-linux-musl
+          if-no-files-found: error
+          retention-days: 14
+      - name: a static binary runs with nothing around it
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/empty"
+          cp "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl" "$RUNNER_TEMP/empty/aprv"
+          sudo env -i /usr/sbin/chroot "$RUNNER_TEMP/empty" /aprv info
+      - name: every case over HTTP and through the CLI
+        run: python3 rust/server/scripts/cases.py --aprv "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl" --mode both --list
+      - name: the managed mode
+        run: python3 rust/server/scripts/managed-smoke.py --aprv "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl"
+      # wasm-tools from its pinned release archive (tools/wasm-toolchain.sh
+      # holds the one pin), to assemble the hostile component the full
+      # build step 1 left serves.
+      - name: the hostile component through a real server
+        run: |
+          set -euo pipefail
+          pin() { sed -n "s/^$1=\(.*\)$/\1/p" tools/wasm-toolchain.sh; }
+          curl -fsSL --retry 4 --retry-delay 2 -o "$RUNNER_TEMP/wasm-tools.tar.gz" "$(pin WASM_TOOLS_URL)"
+          echo "$(pin WASM_TOOLS_SHA256)  $RUNNER_TEMP/wasm-tools.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/wasm-tools"
+          tar -C "$RUNNER_TEMP/wasm-tools" --strip-components=1 -xzf "$RUNNER_TEMP/wasm-tools.tar.gz"
+          PATH="$RUNNER_TEMP/wasm-tools:$PATH" rust/server/scripts/hostile-smoke.sh rust/server/target/x86_64-unknown-linux-gnu/release/aprv
+
+  # aprv-server (MIGRATION.md Phase 2): lint and tests with the component
+  # rust-wasm built from this same tree, on Linux x86_64 and aarch64, macOS
+  # and Windows; the aarch64 leg also builds that target's static binary
+  # natively and runs it as the x86_64 one runs in aprv-server-linux. The
+  # macOS and Windows legs run the tests only: their release binaries are
+  # built by release.yml (MIGRATION.md step 2.4). The target directory is
+  # cached (a test job).
+  aprv-server:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - name: install the pinned Rust toolchain and the target
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --component rustfmt,clippy --target "$TARGET"
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/server/target
+          key: aprv-server-${{ matrix.target }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/server/Cargo.lock') }}
+      - run: cargo fmt --check
+        working-directory: rust/server
+      - run: cargo clippy --locked --all-targets --features compile -- -D warnings
+        working-directory: rust/server
+      # The runtime-only feature set, which is what ships.
+      - run: cargo clippy --locked --all-targets -- -D warnings
+        working-directory: rust/server
+      # --include-ignored: the WIT and wire-schema comparisons with
+      # rust/bindings run too.
+      - name: the tests, with this tree's component
+        shell: bash
+        working-directory: rust/server
+        run: APRV_TEST_COMPONENT="$RUNNER_TEMP/aprv/aprv.component.wasm" cargo test --locked --features compile -- --include-ignored
+      - name: the aarch64 static binary
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        env:
+          COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y musl-tools
+          rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" aarch64-unknown-linux-musl "$RUNNER_TEMP/server"
+          bin="$RUNNER_TEMP/server/aprv-aarch64-unknown-linux-musl"
+          mkdir -p "$RUNNER_TEMP/empty"
+          cp "$bin" "$RUNNER_TEMP/empty/aprv"
+          sudo env -i /usr/sbin/chroot "$RUNNER_TEMP/empty" /aprv info
+          python3 rust/server/scripts/cases.py --aprv "$bin" --mode both --list
+
+  # The server's HTTP contract (R34): Spectral lints rust/server/openapi.yaml
+  # with the committed ruleset (0 findings at hint severity); Schemathesis
+  # runs the served document against the static binary, without and with a
+  # token. Both tools are pinned by version and run from ephemeral
+  # installs, Schemathesis from a scratch directory (it writes .schemathesis
+  # and .hypothesis where it runs).
+  aprv-server-contract:
+    needs: [changes, aprv-server-linux]
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Spectral over the OpenAPI document
+        working-directory: rust/server
+        run: npx --yes @stoplight/spectral-cli@6.16.3 lint --fail-severity=hint --ruleset .spectral.yaml openapi.yaml
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/server
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - name: Schemathesis against a started server, without and with a token
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl"
+          chmod +x "$bin"
+          work="$RUNNER_TEMP/schemathesis"
+          mkdir -p "$work"
+          cd "$work"
+          up() { for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$1/healthz" >/dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
+          "$bin" serve --listen 127.0.0.1:18080 > serve1.log 2>&1 &
+          p1=$!
+          token=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+          APRV_TOKEN="$token" "$bin" serve --listen 127.0.0.1:18081 > serve2.log 2>&1 &
+          p2=$!
+          trap 'kill "$p1" "$p2" 2>/dev/null || true; cat serve1.log serve2.log' EXIT
+          up 18080
+          up 18081
+          uvx --from schemathesis==4.28.0 schemathesis run http://127.0.0.1:18080/openapi.json \
+            --checks all --max-examples 50 --workers 1
+          uvx --from schemathesis==4.28.0 schemathesis run http://127.0.0.1:18081/openapi.json \
+            --checks all --max-examples 30 --workers 1 -H "X-Aprv-Token: $token"
+
+  # The Docker image both ways it is built: from source (the Dockerfile's
+  # two-stage build, the component as a named context) natively on each
+  # architecture, and, on x86_64, the release's way (`--target prebuilt`
+  # around the static binary aprv-server-linux built). Each image then runs
+  # rust/server/scripts/docker-smoke.sh: the OCI labels, uid 65532, nothing
+  # answering without APRV_LISTEN, the token, and g5.
+  aprv-server-image:
+    needs: [changes, rust-wasm, aprv-server-linux]
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, platform: linux/amd64, arch: amd64 }
+          - { os: ubuntu-24.04-arm, platform: linux/arm64, arch: arm64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - name: the image from source
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          docker buildx build --platform "$PLATFORM" -f rust/server/Dockerfile \
+            --build-context component="$RUNNER_TEMP/aprv" \
+            --build-arg COMPONENT_SHA256="$COMPONENT_SHA256" \
+            --build-arg VERSION="$(cat version.txt)-ci" --build-arg REVISION="$GITHUB_SHA" \
+            --load -t aprv-server:ci .
+          sh rust/server/scripts/docker-smoke.sh aprv-server:ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: matrix.arch == 'amd64'
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/server
+      - name: the image the release's way, around the prebuilt binary
+        if: matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          ctx="$RUNNER_TEMP/ctx"
+          mkdir -p "$ctx"
+          install -m 0755 "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl" "$ctx/aprv-amd64"
+          docker buildx build --platform linux/amd64 --target prebuilt -f rust/server/Dockerfile \
+            --build-arg VERSION="$(cat version.txt)-ci" --build-arg REVISION="$GITHUB_SHA" \
+            --load -t aprv-server:prebuilt "$ctx"
+          sh rust/server/scripts/docker-smoke.sh aprv-server:prebuilt
+
+  # The -wasm Java artifact (java-wasm/, MIGRATION.md Phase 3) with the
+  # Endive engine: the cases on every Temurin line from 11 (Endive's
+  # floor), compiled with JDK 21 and tested on the JVM under test through
+  # surefire's `jvm` (a JRE cannot compile). Endive compiles the aprv.wasm
+  # rust-wasm built from this tree; the server-engine tests run the static
+  # binary aprv-server-linux built, pinned for the run in a SHA256SUMS of
+  # its own. Waits for java-wasm/pom.xml (the Java lane).
+  java-wasm-endive:
+    needs: [changes, rust-wasm, aprv-server-linux]
+    if: needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ["11", "17", "21", "25", "27"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/server
+      - name: the module and the server binary this tree builds
+        run: |
+          set -euo pipefail
+          .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" java
+          chmod +x "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl"
+          (cd "$RUNNER_TEMP/server" && sha256sum aprv-x86_64-unknown-linux-musl > SHA256SUMS)
+      # The JVM under test first (its home is exported as JAVA_HOME_<v>_X64),
+      # then JDK 21 last, which wins JAVA_HOME and runs Maven.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: the cases with the Endive engine and the server engine
+        env:
+          JDK: ${{ matrix.jdk }}
+        run: |
+          set -euo pipefail
+          var="JAVA_HOME_${JDK}_X64"
+          mvn -B -f java-wasm verify \
+            "-Dtest.jvm=${!var}/bin/java" \
+            "-Daprv.server.linux-x86_64=$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl" \
+            "-Daprv.server.sha256sums=$RUNNER_TEMP/server/SHA256SUMS"
+
+  # The -wasm artifact on a real Java 8 JVM, where Verifier.create picks the
+  # server engine (the Endive tests are left out by the java8-tests
+  # profile), with the static binary aprv-server-linux built.
+  java-wasm-runtime-8:
+    needs: [changes, rust-wasm, aprv-server-linux]
+    if: needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/server
+      - name: the module and the server binary this tree builds
+        run: |
+          set -euo pipefail
+          .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" java
+          chmod +x "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl"
+          (cd "$RUNNER_TEMP/server" && sha256sum aprv-x86_64-unknown-linux-musl > SHA256SUMS)
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '8'
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: the server engine on Java 8
+        run: |
+          mvn -B -f java-wasm verify -Pjava8-tests "-Dtest.jvm=${JAVA_HOME_8_X64}/bin/java" \
+            "-Daprv.server.linux-x86_64=$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl" \
+            "-Daprv.server.sha256sums=$RUNNER_TEMP/server/SHA256SUMS"
+      # ServerNoexecTest mounts a noexec tmpfs, which needs root; without it
+      # the test reports itself skipped with the reason.
+      - name: the noexec advice, as root
+        run: |
+          sudo -E env "PATH=$PATH" mvn -B -f java-wasm test -Dtest=ServerNoexecTest -Dsurefire.failIfNoSpecifiedTests=false \
+            "-Daprv.server.linux-x86_64=$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl" \
+            "-Daprv.server.sha256sums=$RUNNER_TEMP/server/SHA256SUMS"
+
+  # The JVM consumers again, on the -wasm artifact (Endive, since both need
+  # Java 17 or later): jvm-interop's Kotlin and Scala tests and the Spring
+  # Boot smoke on both Boot lines take the artifact as
+  # -Dverifier.artifactId. Waits for java-wasm/pom.xml.
+  java-wasm-consumers:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer: [jvm-interop, boot-4.0.8, boot-4.1.1]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" java
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: the consumer on the -wasm artifact
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+        run: |
+          set -euo pipefail
+          mvn -B -f java install -DskipTests
+          mvn -B -f java-wasm install -DskipTests
+          if [ "$CONSUMER" = jvm-interop ]; then
+            mvn -B -f jvm-interop test -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
+          else
+            version=$(mvn -q -f java help:evaluate -Dexpression=project.version -DforceStdout)
+            mvn -B -f java/samples/spring-boot-smoke/pom.xml test -Dverifier.version="$version" \
+              -Dspring-boot.version="${CONSUMER#boot-}" -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
+          fi
+
+  # Both Java artifacts on one classpath must fail fast, and a Gradle build
+  # that asks for both must fail at resolution (the capability conflict):
+  # java-wasm/scripts/classpath-guard.sh. Waits for java-wasm/pom.xml.
+  java-classpath-guard:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" java
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # The Gradle the capability check was written against, on PATH.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          gradle-version: "8.14.3"
+          cache-disabled: true
+      - name: both jars on one classpath fail; Gradle refuses both
+        run: java-wasm/scripts/classpath-guard.sh
+
+  # The PHP package is a façade over the aprv binary (Phase 6): every PHP
+  # job that runs the library gets aprv-server-linux's static binary, the
+  # one built around this tree's component, as APRV_BIN (the suite fails
+  # loudly without it). The package needs json and curl; posix is for the
+  # CLI tests' fake aprv, which raises a signal. openssl is needed by
+  # neither, and no leg installs it.
+  #
   # Every line the composer.json floor admits. 8.2 is the floor since 0.7 (for
   # readonly class); it stays here for exactly as long as the manifest claims
   # it, even past its own security-support end, the same rule as node 20 and
-  # python 3.10. That leg is not decoration: PHP gained
-  # zend.max_allowed_stack_size in 8.3, so on 8.2 an unbounded recursive
-  # parser segfaults rather than raising, and this is the only leg where the
-  # DER reader's depth bound is what stands between hostile input and a
-  # crashed worker.
+  # python 3.10.
   php:
-    needs: changes
+    needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1464,10 +2449,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/aprv-bin
+      - name: the aprv binary this tree builds
+        run: |
+          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
+          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: ${{ matrix.php }}
-          extensions: openssl, json
+          extensions: json, curl, posix
           coverage: none
           ini-values: memory_limit=256M
       # composer install, not update: php/composer.lock is committed and is
@@ -1479,7 +2472,17 @@ jobs:
       # --ignore-scripts.
       - run: composer install --no-scripts --no-progress --no-interaction --prefer-dist
         working-directory: php
-      - run: vendor/bin/phpunit
+      # The façade, the transports, the installer and the gates: no network.
+      - run: vendor/bin/phpunit --exclude-testsuite conformance
+        working-directory: php
+      # Every case of fixtures/cases.json through the CLI transport.
+      - run: vendor/bin/phpunit tests/ConformanceCasesTest.php
+        working-directory: php
+      # And once over HTTP, against a locally started `aprv serve` per root
+      # set.
+      - name: every case over HTTP
+        if: matrix.php == '8.4'
+        run: vendor/bin/phpunit tests/ConformanceHttpTest.php
         working-directory: php
 
   # The floor is a claim about the constraints, not only about the runtime:
@@ -1489,7 +2492,7 @@ jobs:
   # from ranges, and deliberately: resolving is what it tests. The lockfile
   # would make it a copy of the `php` job's 8.2 leg.
   php-lowest:
-    needs: changes
+    needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1497,10 +2500,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/aprv-bin
+      - name: the aprv binary this tree builds
+        run: |
+          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
+          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.2"
-          extensions: openssl, json
+          extensions: json, curl, posix
           coverage: none
       - run: composer update --no-progress --no-interaction --prefer-lowest --prefer-stable
         working-directory: php
@@ -1508,7 +2519,7 @@ jobs:
         working-directory: php
 
   php-static:
-    needs: changes
+    needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1516,10 +2527,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/aprv-bin
+      - name: the aprv binary this tree builds
+        run: |
+          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
+          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.4"
-          extensions: openssl, json
+          extensions: json, curl, posix
           coverage: none
       # The consumer smoke and the drift guard are Node, like the rest of
       # tools/. They live in this job rather than in `conformance` because
@@ -1538,54 +2557,33 @@ jobs:
       # The root manifest is what Packagist reads and what Composer installs;
       # php/composer.json is only the development one. Both get validated.
       - run: composer validate --strict --no-check-lock composer.json
+      # src, tests, bin/ and tools/update-binaries.php (phpstan.neon).
       - run: vendor/bin/phpstan analyse --no-progress
         working-directory: php
       # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
-      # a syntax check and nothing more: PHPStan's paths are src and tests.
+      # a syntax check and nothing more.
       - run: php -l bench/bench.php
         working-directory: php
-      # php/certs/ is a copy of the repository-root certs/, and
-      # src/Internal/RootsData.php is generated from that copy. A roots change
-      # that forgets either step would ship stale trust anchors.
-      - run: php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php
       # Two manifests for one package drift, and the .gitattributes allowlist
       # silently decides what a PHP consumer unpacks. This reads the real
-      # `git archive` rather than the rules that produce it.
+      # `git archive` rather than the rules that produce it: the manifests
+      # agree on bin and suggest, and the archive carries bin/aprv-install
+      # and binaries.json.
       - run: node tools/check-php-package.mjs
       # Then install that archive into a throwaway project and verify a
-      # receipt through vendor/autoload.php: the only check here that runs
-      # against what a stranger downloads rather than against a checkout.
+      # receipt through vendor/autoload.php and the default CLI transport
+      # (APRV_BIN): the only check here that runs against what a stranger
+      # downloads rather than against a checkout.
       - run: node tools/php-consumer-smoke.mjs
 
-  # The mutation pass: ~1,500 mutated receipts and ~1,000 mutated JWS
-  # payloads, each verified through every public entry point. Its own job
-  # because it is the slow one and because a failure here means something
-  # different from a conformance failure.
-  php-mutation:
-    needs: changes
-    if: needs.changes.outputs.php == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
-        with:
-          php-version: "8.4"
-          extensions: openssl, json
-          coverage: none
-      - run: composer install --no-scripts --no-progress --no-interaction
-        working-directory: php
-      - run: vendor/bin/phpunit --group mutation
-        working-directory: php
-
-  # The matrix that matters here is OS, not SDK: X.509 parsing, CNG versus
-  # OpenSSL versus SecureTransport, and the time-zone database all differ per
-  # platform, and this port touches all three. The netstandard2.0 floor gets
-  # its own jobs below.
+  # The matrix that matters here is OS, not SDK: the Wasmtime package ships
+  # a native library per platform (linux-x64, osx-arm64, win-x64 here), and
+  # each is what runs the module there. The netstandard2.0 floor gets its
+  # own jobs below. Every .NET job that builds the library copies
+  # rust-wasm's module to src/ApplePurchaseReceiptVerifier/wasm/ first: the
+  # project embeds it and refuses to build without it.
   dotnet:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.dotnet == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -1597,6 +2595,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" dotnet
+        shell: bash
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
@@ -1616,7 +2620,7 @@ jobs:
   # asset; this one loads it under Mono, the closest a hosted runner gets to
   # Unity's scripting backend.
   dotnet-mono:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1624,6 +2628,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" dotnet
       # 10.0.x, the newest line this workflow installs, is the SDK that wrote
       # packages.lock.json. Each SDK band bundles its own implicit
       # Microsoft.NET.ILLink.Tasks version for a given target, and they do
@@ -1654,32 +2663,13 @@ jobs:
             monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
               ApplePurchaseReceiptVerifier.Verifier
 
-  # certs/ is the reviewable source of truth for the pinned Apple roots;
-  # Internal/AppleRootData.cs is generated from it and compiled in. A certs
-  # change that forgets to regenerate would ship stale trust anchors — the
-  # same rule node's roots-data.ts already follows.
-  dotnet-roots:
-    needs: changes
-    if: needs.changes.outputs.dotnet == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '9.0.x'
-      - run: dotnet run --project dotnet/tools/GenerateRootData -- "$GITHUB_WORKSPACE"
-      - run: git diff --exit-code dotnet/src/ApplePurchaseReceiptVerifier/Internal/AppleRootData.cs
-
   # Trimming is the closest CI-runnable proxy for Unity IL2CPP's stripping: a
   # reflection-based serializer, an embedded resource or a dynamic code path
   # would surface here as an IL2xxx warning or as a runtime failure. The
   # sample verifies a receipt and asserts a foreign chain is still rejected,
   # so a trimmer that silently removed a check fails the job.
   dotnet-trim:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -1687,6 +2677,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" dotnet
       # The SDK that wrote packages.lock.json; see dotnet-mono. The sample
       # still targets net9.0, which this SDK builds and publishes.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -1720,12 +2715,15 @@ jobs:
           node-version: "22"
           package-manager-cache: false
       - run: node tools/lint-cases.mjs
-      # Every port that ships the pinned Apple roots must ship the same
-      # bytes. Only three ports used to diff their copy against certs/,
-      # and the per-port regenerate-and-diff steps cannot see this: they
-      # compare a generated file to its own port's copy, so a port left
-      # behind by a root refresh stays internally consistent and green.
+      # The core compiles the three pinned Apple roots in from rust/certs,
+      # the one copy of certs/ left since the wrappers' copies went in
+      # Phase 7; a root refresh that misses it would build a module with
+      # stale trust anchors.
       - run: node tools/check-cert-copies.mjs
+      # The same for the licence texts of the code compiled into aprv.wasm:
+      # licenses/wasm/ is the one source, and every package that ships the
+      # module ships a byte-identical copy.
+      - run: node tools/check-licence-copies.mjs
 
   zizmor:
     runs-on: ubuntu-latest
@@ -1748,7 +2746,7 @@ jobs:
   # would. `npm test` deliberately does not call them (prettier --check
   # costs ~1.5s), which is why this job has to exist.
   node-lint:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1756,6 +2754,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" node
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
@@ -1793,8 +2796,8 @@ jobs:
   # does not change either verdict. The floor's runtime behaviour is
   # proven by the `python` job's 3.10 leg above, not by this one.
   #
-  # Installs the package rather than just the tools: mypy needs cryptography
-  # and asn1crypto importable to resolve their types.
+  # Installs the package rather than just the tools: mypy needs wasmtime
+  # importable to resolve its types.
   python-tools:
     needs: changes
     if: needs.changes.outputs.python == 'true'
@@ -1816,7 +2819,7 @@ jobs:
         working-directory: python
       # --extra dev on every run as well: without it `uv run` re-syncs to
       # the base environment, which has no ruff or mypy, and falls back to
-      # tools that cannot see cryptography.
+      # tools that cannot see wasmtime.
       - run: uv run --locked --extra dev ruff check .
         working-directory: python
       - run: uv run --locked --extra dev ruff format --check .
@@ -1842,7 +2845,7 @@ jobs:
       # tool by adding a second suppression dialect to the source is worse
       # than not running it there, so we don't.
       #
-      # It resolves cryptography's types through the environment `uv sync`
+      # It resolves wasmtime's types through the environment `uv sync`
       # built; --python names it explicitly, because under continue-on-error
       # a mis-resolved environment would look like findings rather than like
       # the misconfiguration it is.
@@ -1922,7 +2925,7 @@ jobs:
       - run: mvn -B spotless:check
         working-directory: java
 
-  # PHP-CS-Fixer, separate from the php/php-lowest/php-static/php-mutation
+  # PHP-CS-Fixer, separate from the php/php-lowest/php-static/php-fuzz
   # jobs so a formatting drift fails on its own instead of inside a
   # functional job's log. This is also the first CI run of the fixer at
   # all: the committed .php-cs-fixer.dist.php declared the risky
@@ -1958,7 +2961,7 @@ jobs:
   # and runs the program unchanged. What only a registry can get wrong (a
   # version that never indexes, a slow sync) stays post-publish's job.
   smoke-npm:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.node == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1966,11 +2969,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" node
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
           package-manager-cache: false
-      # npm pack runs prepack (tsc), so the tarball carries a fresh dist/.
+      # npm pack runs prepack (jco transpile, then tsc), so the tarball
+      # carries a fresh dist/ built around this tree's component.
       - run: |
           npm ci --ignore-scripts
           mkdir -p "$RUNNER_TEMP/npm-pack"
@@ -1990,7 +2999,7 @@ jobs:
           node npm-smoke.mjs
 
   smoke-pypi:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1998,11 +3007,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" python
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.10"
-      # pip builds a wheel from python/ with the same backend release.yml's
-      # `python -m build` uses and installs that wheel, not the source tree.
+      # pip builds a wheel from python/ (aprv.wasm included, as package data)
+      # with the setuptools backend tools/build_dist.py drives for the
+      # release, and installs that wheel, not the source tree.
       - name: install the package from the checkout into a venv outside it
         run: |
           set -euo pipefail
@@ -2047,16 +3062,22 @@ jobs:
           java -cp ".:$(cat cp.txt)" Smoke
 
   smoke-swiftpm:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # The post-publish leg's image: the manifest's 6.1 floor.
-    container: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
+    timeout-minutes: 45
+    # The post-publish leg's image: the manifest's 6.3 floor.
+    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
+        shell: bash
       # SMOKE_PATH makes the smoke manifest depend on the checkout by path
       # instead of on the published tag by URL. The tag is the artifact for
       # SwiftPM, so this proves the program and the manifest at the root,
@@ -2072,10 +3093,12 @@ jobs:
           cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
           export SMOKE_PATH="$GITHUB_WORKSPACE"
           cd "$SMOKE"
-          swift run Smoke
+          # Release: WasmKit interprets, and a debug build of it is too slow
+          # for one honest receipt (swift/CI-NOTES.md).
+          swift run -c release Smoke
 
   smoke-go:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -2083,6 +3106,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.22"
@@ -2103,10 +3131,12 @@ jobs:
           cd "$SMOKE"
           go mod init smoke
           go mod edit -require="$MODULE@v0.0.0" -replace="$MODULE=$GITHUB_WORKSPACE/go"
+          # The library requires wazero; tidy fetches it and writes go.sum.
+          go mod tidy
           go run .
 
   smoke-rubygems:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -2114,14 +3144,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
       - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: "3.3"
           bundler-cache: false
       - run: gem build apple-purchase-receipt-verifier.gemspec --output "$RUNNER_TEMP/aprv.gem"
         working-directory: ruby
-      # A scratch GEM_HOME and --local: the gem just built is the only copy
-      # of the library on the load path, and nothing is fetched.
+      # A scratch GEM_HOME: the gem just built is the only copy of the
+      # library on the load path. Not --local, because its one dependency,
+      # the wasmtime platform gem, comes from rubygems.org as a consumer's
+      # would.
       - name: install the built gem outside the checkout # zizmor: ignore[adhoc-packages]
         run: |
           set -euo pipefail
@@ -2131,12 +3168,19 @@ jobs:
           cp .github/smoke/rubygems-smoke.rb "$SMOKE/"
           cd "$SMOKE"
           export GEM_HOME="$SMOKE/gems"
-          gem install --local --no-document "$RUNNER_TEMP/aprv.gem"
+          gem install --no-document "$RUNNER_TEMP/aprv.gem"
           ruby rubygems-smoke.rb
 
+  # Held with crates.io itself (OD-03 in docs/rust-core/STATUS.md;
+  # checklist rows RL-16 and PS-07): the core stays at 0.7 on crates.io
+  # until openssl-sys accepts openssl-src 400.x, because a registry build of
+  # this tree would get OpenSSL 3, which aprv-openssl refuses, and
+  # aprv-openssl is not on crates.io yet. It runs again, with
+  # release.yml's publish-crates, once the owner sets the repository
+  # variable APRV_PUBLISH_CRATES to true.
   smoke-crates:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' && vars.APRV_PUBLISH_CRATES == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -2162,7 +3206,7 @@ jobs:
           cargo +stable run
 
   smoke-nuget:
-    needs: changes
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -2170,6 +3214,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" dotnet
       # 10.0 packs (it is the SDK that wrote packages.lock.json, see
       # dotnet-mono); 8.0 is the runtime the net8.0 smoke runs on.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0

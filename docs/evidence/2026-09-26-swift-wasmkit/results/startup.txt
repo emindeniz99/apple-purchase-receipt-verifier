@@ -1,0 +1,5 @@
+{"parse_module_ms":2.7,"first_instance_ms":3.6,"second_instance_ms":3.2,"first_call_ms":81.9,"second_call_ms":13.9}
+{"parse_module_ms":3.0,"first_instance_ms":3.9,"second_instance_ms":3.1,"first_call_ms":67.7,"second_call_ms":11.6}
+{"parse_module_ms":2.2,"first_instance_ms":2.9,"second_instance_ms":2.6,"first_call_ms":60.2,"second_call_ms":10.7}
+{"parse_module_ms":2.3,"first_instance_ms":2.9,"second_instance_ms":2.5,"first_call_ms":63.2,"second_call_ms":10.6}
+{"parse_module_ms":2.6,"first_instance_ms":3.3,"second_instance_ms":3.1,"first_call_ms":77.8,"second_call_ms":13.5}

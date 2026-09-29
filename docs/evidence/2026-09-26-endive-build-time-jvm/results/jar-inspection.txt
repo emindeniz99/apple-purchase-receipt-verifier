@@ -1,0 +1,167 @@
+# The library jar as the consumer resolved it (aprv-endive-0.0.0-spike.jar): 1762214 bytes
+# Input: db31279e4b70ad1a73373b83685885592c6e1ade55ab6e60bd3b15b33d22919f sha256, 2973532 bytes (new-c.wasm, round 4's routec-new)
+## entries (unzip -l): size name
+81 META-INF/MANIFEST.MF
+32411 spike/aprv/endive/AprvModuleMachineDispatch_5120.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_6656.class
+55869 spike/aprv/endive/AprvModuleMachineIndirect_0_0.class
+31921 spike/aprv/endive/AprvModuleMachineDispatch_512.class
+7566 spike/aprv/endive/AprvWasm.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_4608.class
+728138 spike/aprv/endive/AprvModule.meta
+79401 spike/aprv/endive/AprvModuleMachineIndirect_4_4096.class
+76171 spike/aprv/endive/AprvModuleMachineIndirect_0_4096.class
+3679226 spike/aprv/endive/AprvModuleMachineFuncGroup_0.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_7168.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_2048.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_3072.class
+82127 spike/aprv/endive/AprvModuleMachineIndirect_3_4096.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_5632.class
+1289 spike/aprv/endive/AprvModule$WasmModuleHolder.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_2560.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_4096.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_1024.class
+5032 spike/aprv/endive/AprvModuleMachineIndirect_0_8192.class
+56160 spike/aprv/endive/AprvModuleMachineIndirect_4_0.class
+49328 spike/aprv/endive/AprvModuleMachineShaded.class
+31905 spike/aprv/endive/AprvModuleMachineDispatch_0.class
+3653 spike/aprv/endive/AprvModuleMachineIndirect_4_8192.class
+5994 spike/aprv/endive/AprvModuleMachineIndirect_3_8192.class
+66829 spike/aprv/endive/AprvModuleMachineIndirect_3_0.class
+18585 spike/aprv/endive/AprvModuleMachineDispatch_8192.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_1536.class
+365689 spike/aprv/endive/AprvModuleMachine.class
+2558 spike/aprv/endive/AprvModuleMachineMachineCall.class
+1656 spike/aprv/endive/AprvModule.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_7680.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_6144.class
+32411 spike/aprv/endive/AprvModuleMachineDispatch_3584.class
+2349 META-INF/maven/spike.aprv/aprv-endive/pom.xml
+62 META-INF/maven/spike.aprv/aprv-endive/pom.properties
+## by kind
+MF 1 files 81 bytes
+aprv/ 1 files 0 bytes
+aprv/aprv-endive/ 1 files 0 bytes
+class 33 files 5074713 bytes
+meta 1 files 728138 bytes
+properties 1 files 62 bytes
+xml 1 files 2349 bytes
+## generated Java source (target/generated-sources): not in the jar, compiled into AprvModule.class
+target/generated-sources/endive-compiler/spike/aprv/endive/AprvModule.java
+## AprvModule.meta: the wasm module Endive keeps at run time (wasm-tools objdump)
+  types                                  |        0xb -      0x24c |       577 bytes | 66 count
+  imports                                |      0x24e -      0x275 |        39 bytes | 2 count
+  functions                              |      0x278 -     0x2399 |      8481 bytes | 8479 count
+  tables                                 |     0x239b -     0x23a2 |         7 bytes | 1 count
+  memories                               |     0x23a4 -     0x23a7 |         3 bytes | 1 count
+  globals                                |     0x23aa -     0x29ce |      1572 bytes | 214 count
+  exports                                |     0x29d1 -     0x2c6b |       666 bytes | 25 count
+  elements                               |     0x2c6e -     0x500f |      9121 bytes | 1 count
+  code                                   |     0x5013 -     0xd491 |     33918 bytes | 8479 count
+  data                                   |     0xd495 -    0xb1c4a |    673717 bytes | 2 count
+## function bodies in .meta: every one is replaced (count of bodies that are exactly 'unreachable')
+8479 functions, 8479 with an unreachable-only body
+## the original module, for comparison
+  types                                  |        0xb -      0x24c |       577 bytes | 66 count
+  imports                                |      0x24e -      0x275 |        39 bytes | 2 count
+  functions                              |      0x278 -     0x2399 |      8481 bytes | 8479 count
+  tables                                 |     0x239b -     0x23a2 |         7 bytes | 1 count
+  memories                               |     0x23a4 -     0x23a7 |         3 bytes | 1 count
+  globals                                |     0x23aa -     0x29ce |      1572 bytes | 214 count
+  exports                                |     0x29d1 -     0x2c6b |       666 bytes | 25 count
+  elements                               |     0x2c6e -     0x500f |      9121 bytes | 1 count
+  code                                   |     0x5013 -   0x1f33fc |   2024425 bytes | 8479 count
+  data                                   |   0x1f3400 -   0x297bb5 |    673717 bytes | 2 count
+  custom "name"                          |   0x297bbe -   0x2d5dfa |    254524 bytes | 1 count
+  custom "producers"                     |   0x2d5e07 -   0x2d5eb5 |       174 bytes | 1 count
+  custom "target_features"               |   0x2d5ec8 -   0x2d5f5c |       148 bytes | 1 count
+## javap: the compiled machine (class shape)
+Compiled from "wasm"
+public final class spike.aprv.endive.AprvModuleMachine implements run.endive.runtime.Machine {
+  public spike.aprv.endive.AprvModuleMachine(run.endive.runtime.Instance);
+  public long[] call(int, long[]);
+  public long[] call(int, long[], java.lang.Object[]);
+  public run.endive.runtime.CallResult callWithRefs(int, long[], java.lang.Object[]);
+  public static int call_indirect_0(int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static void call_indirect_1(int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static void call_indirect_2(int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_3(int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_4(int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_5(int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_6(int, int, int, int, int, int, int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_7(int, int, int, int, int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_8(int, int, int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_9(int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_10(int, int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_11(int, int, int, int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int call_indirect_12(int, int, int, int, int, int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static void call_indirect_13(int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+## methods per generated class
+AprvModuleMachine: 70
+AprvModuleMachineFuncGroup_0: 16960
+AprvModuleMachineShaded: 180
+AprvModuleMachineDispatch_0: 1
+AprvModuleMachineIndirect_0_0: 1
+## method names come from the wasm name section (methodPrefixer), sample:
+  public static int aprv_verify_receipt_der_221(int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int aprv_verify_receipt_der_with_device_guid_223(int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int ASN1_item_d2i_ex_442(int, int, int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int ASN1_item_d2i_443(int, int, int, int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int X509_verify_cert_error_string_4110(int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+  public static int X509_verify_cert_4161(int, run.endive.runtime.Memory, run.endive.runtime.Instance);
+## references from the generated classes to an interpreter, a runtime compiler, ASM, or native code (javap -c -p, counted)
+InterpreterMachine: 1
+run/endive/compiler: 0
+org/objectweb/asm: 0
+MachineFactoryCompiler: 0
+java/lang/System.load: 0
+java/lang/foreign: 0
+com/sun/jna: 0
+jnr/: 0
+com/kenai/jffi: 0
+redline: 0
+## the one InterpreterMachine reference: a field of AprvModuleMachine; is it ever assigned (putfield)?
+private final run.endive.runtime.internal.CompilerInterpreterMachine compilerInterpreterMachine;
+putfield compilerInterpreterMachine: 0
+## the consumer's resolved dependencies (mvn dependency:tree)
+spike.consumer:aprv-endive-consumer:jar:0.0.0-spike
++- spike.aprv:aprv-endive:jar:0.0.0-spike:compile
+|  \- run.endive:runtime:jar:1.1.0:compile
+|     \- run.endive:wasm:jar:1.1.0:compile
+\- spike.aprv:trap-probe:jar:0.0.0-spike:compile
+## the consumer's runtime classpath (cp.txt), jar sizes
+1762214 aprv-endive-0.0.0-spike.jar
+168605 runtime-1.1.0.jar
+213209 wasm-1.1.0.jar
+24260 trap-probe-0.0.0-spike.jar
+## everything the consumer's EMPTY local repository ended up holding, grouped (build plugins included)
+      1 com/github
+      1 com/thoughtworks
+      1 commons-beanutils/commons-beanutils
+      1 commons-chain/commons-chain
+      1 commons-codec/commons-codec
+      1 commons-collections/commons-collections
+      1 commons-digester/commons-digester
+      3 commons-io/commons-io
+      1 commons-lang/commons-lang
+      1 commons-logging/commons-logging
+      1 dom4j/dom4j
+      1 javax/inject
+     50 org/apache
+     15 org/codehaus
+      2 org/eclipse
+      1 org/iq80
+      2 org/ow2
+      1 org/slf4j
+      1 org/sonatype
+      1 org/tukaani
+      1 oro/oro
+      2 run/endive
+      2 spike/aprv
+## run.endive artifacts in it (no compiler, build-time-compiler, codegen, plugin, redline):
+run/endive/runtime/1.1.0/runtime-1.1.0.jar
+run/endive/wasm/1.1.0/wasm-1.1.0.jar
+## ASM in it (org/ow2/asm)? Only through Maven's own plugins (plexus-java, maven-dependency-analyzer), never on the runtime classpath:
+org/ow2/asm/asm/9.6/asm-9.6.jar
+org/ow2/asm/asm/9.7/asm-9.7.jar
+on cp.txt: 4

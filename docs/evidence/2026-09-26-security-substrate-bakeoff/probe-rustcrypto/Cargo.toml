@@ -1,0 +1,15 @@
+# Spike probe: can the RustCrypto CMS stack (DER only by design) read the
+# genuine public receipts, which Apple encodes with BER indefinite lengths?
+[package]
+name = "probe-rustcrypto"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cms = "=0.2.3"
+x509-cert = "0.2"
+der = "0.7"
+base64 = "0.22"
+
+[workspace]

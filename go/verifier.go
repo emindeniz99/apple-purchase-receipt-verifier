@@ -1,8 +1,14 @@
 package applereceipt
 
 import (
-	"crypto/x509"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/host"
 )
 
 // Verifier verifies what Apple signed, offline, against the pinned roots
@@ -11,16 +17,21 @@ import (
 // product id, device binding, refunds and idempotency are the caller's
 // decisions; no method here takes a parameter for any of them.
 //
+// Every decision is made by aprv.wasm, the one verification module every
+// port of this library runs, which is embedded in this package and run
+// with wazero: pure Go, no cgo, no native code. A Verifier reads the
+// clock, moves the input in and the answer out, and turns what the module
+// says into Go values. It owns a small pool of module instances, each
+// created and set up on first need and dropped with the Verifier; there is
+// nothing to close.
+//
 // A Verifier is immutable after construction and safe for concurrent use
-// by multiple goroutines. The verify methods never panic for any input: a
-// panic inside one is contained and reported by where it happened. Before
-// a signature has verified it is ReasonMalformed: input nobody has
-// vouched for yet must not be able to raise an internal-error alert at
-// will; while the signed payload is being read it is
-// ReasonUnreadablePayload; after that, or when the configured clock
-// panics, it is ReasonInternalError.
+// by multiple goroutines. The verify methods never panic for any input. A
+// failure of the machinery itself (the module trapped, gave an answer this
+// package cannot read, or the configured clock panicked) is
+// ReasonInternalError, with the category in the cause.
 type Verifier struct {
-	roots []*x509.Certificate
+	pool  *host.Pool
 	clock func() int64
 }
 
@@ -31,30 +42,60 @@ type Verifier struct {
 // any input: a verifier with no roots would answer UNTRUSTED_CHAIN to
 // everything, and nobody would notice until production, and a caller
 // switching on Reason must never see one.
+//
+// The first Verifier of a process compiles the module, which takes about a
+// second; later ones take a few milliseconds. NewVerifier also returns a
+// plain error when the module refuses a trust anchor (one that is not a
+// certificate) or is not the module this package binds.
 func NewVerifier(config *Config) (*Verifier, error) {
-	if config == nil {
-		return nil, errors.New("applereceipt: config must not be nil")
+	if err := checkConfig(config); err != nil {
+		return nil, err
 	}
-	if len(config.roots) == 0 {
-		return nil, errors.New("applereceipt: config has no trust anchors")
+	pool, err := host.NewPool(initConfig(config.roots, config.builtin))
+	if err != nil {
+		return nil, fmt.Errorf("applereceipt: %w", err)
+	}
+	return &Verifier{pool: pool, clock: config.clock}, nil
+}
+
+// checkConfig is the caller-misuse half of NewVerifier: the mistakes that
+// need no module to see.
+func checkConfig(config *Config) error {
+	if config == nil {
+		return errors.New("applereceipt: config must not be nil")
+	}
+	if !config.builtin && len(config.roots) == 0 {
+		return errors.New("applereceipt: config has no trust anchors")
 	}
 	for _, root := range config.roots {
 		if root == nil {
-			return nil, errors.New("applereceipt: config has a nil trust anchor")
+			return errors.New("applereceipt: config has a nil trust anchor")
 		}
 	}
-	return &Verifier{
-		roots: append([]*x509.Certificate(nil), config.roots...),
-		clock: config.clock,
-	}, nil
+	return nil
 }
 
 // VerifyReceipt verifies a legacy PKCS#7 app receipt, given as the base64
 // string a client sends, and decodes its payload.
 func (v *Verifier) VerifyReceipt(base64 string) (payload *ReceiptPayload, err error) {
-	ctx := newVerifyCtx(v.clock)
-	defer ctx.contain(&err)
-	return verifyReceipt(base64, v.roots, ctx)
+	defer contain(&err)
+	now, err := v.now()
+	if err != nil {
+		return nil, err
+	}
+	answer, err := v.pool.VerifyReceipt(now, base64)
+	if err != nil {
+		return nil, hostFailure(err)
+	}
+	result, err := readResult(answer)
+	if err != nil {
+		return nil, err
+	}
+	payload, err = receiptFromJSON(result)
+	if err != nil {
+		return nil, unreadableAnswer(err)
+	}
+	return payload, nil
 }
 
 // VerifySignedData verifies an Apple-signed compact JWS (StoreKit 2
@@ -62,9 +103,24 @@ func (v *Verifier) VerifyReceipt(base64 string) (payload *ReceiptPayload, err er
 // AppTransaction, or an outer or nested App Store Server Notifications V2
 // JWS) and returns its payload, exactly as signed.
 func (v *Verifier) VerifySignedData(jws string) (payload *JSONPayload, err error) {
-	ctx := newVerifyCtx(v.clock)
-	defer ctx.contain(&err)
-	return verifySignedData(jws, v.roots, ctx)
+	defer contain(&err)
+	now, err := v.now()
+	if err != nil {
+		return nil, err
+	}
+	answer, err := v.pool.VerifySignedData(now, jws)
+	if err != nil {
+		return nil, hostFailure(err)
+	}
+	result, err := readResult(answer)
+	if err != nil {
+		return nil, err
+	}
+	var signed string
+	if err := json.Unmarshal(result, &signed); err != nil {
+		return nil, unreadableAnswer(errors.New("the payload is not a JSON string"))
+	}
+	return NewJSONPayload(signed), nil
 }
 
 // VerifyReceiptEndpoint is the response body Apple's deprecated
@@ -72,97 +128,128 @@ func (v *Verifier) VerifySignedData(jws string) (payload *JSONPayload, err error
 // verified offline against the pinned roots instead of by calling Apple.
 //
 // It never returns an error and never panics: like the real endpoint,
-// every failure is the status field inside the returned body.
+// every failure is the status field inside the returned body. The module
+// or the clock failing is StatusInternalDataAccessError, and so is an
+// environment that is neither of the two constants.
 func (v *Verifier) VerifyReceiptEndpoint(environment Environment, requestJSON string) (out string) {
-	ctx := newVerifyCtx(v.clock)
+	failed := statusOnlyResponse(StatusInternalDataAccessError)
 	defer func() {
 		if recover() != nil {
-			out = statusOnlyResponse(statusForReason(ctx.stage.reason()))
+			out = failed
 		}
 	}()
-	return verifyReceiptEndpoint(environment, requestJSON, v.roots, ctx)
-}
-
-// --- panic containment and the lazy clock ---------------------------------
-
-// stage is where a verification has reached, for mapping an unexpected
-// panic to a verdict: nothing that is only known after a panic, its text
-// included, reaches the caller.
-type stage int
-
-const (
-	// stageBeforeSignature: reading input no signature has vouched for
-	// yet.
-	stageBeforeSignature stage = iota
-	// stagePayloadParse: decoding a payload a trusted signer signed.
-	stagePayloadParse
-	// stageAfterSignature: everything after that.
-	stageAfterSignature
-)
-
-func (s stage) reason() Reason {
-	switch s {
-	case stagePayloadParse:
-		return ReasonUnreadablePayload
-	case stageAfterSignature:
-		return ReasonInternalError
+	var env uint32
+	switch environment {
+	case EnvironmentProduction:
+		env = 0
+	case EnvironmentSandbox:
+		env = 1
 	default:
-		return ReasonMalformed
+		return failed
 	}
-}
-
-func (s stage) message() string {
-	switch s {
-	case stagePayloadParse:
-		return "unexpected failure while reading the signed payload"
-	case stageAfterSignature:
-		return "unexpected internal failure"
-	default:
-		return "unexpected failure while reading unverified input"
+	now, err := v.now()
+	if err != nil {
+		return failed
 	}
+	answer, err := v.pool.VerifyReceiptEndpoint(env, now, requestJSON)
+	if err != nil || !utf8.ValidString(answer) || !json.Valid([]byte(answer)) {
+		return failed
+	}
+	return answer
 }
 
-// verifyCtx is the per-call state a verification threads through its call
-// graph: which stage it has reached, and a clock read at most once and
-// only when a verdict needs it.
-type verifyCtx struct {
-	stage       stage
-	clockFn     func() int64
-	haveClock   bool
-	clockMillis int64
-}
-
-func newVerifyCtx(clockFn func() int64) *verifyCtx {
-	return &verifyCtx{stage: stageBeforeSignature, clockFn: clockFn}
-}
-
-// enter marks the stage the current verification has reached.
-func (c *verifyCtx) enter(s stage) { c.stage = s }
-
-// now is the configured clock's answer, in epoch milliseconds, the same
-// value on every call. A clock that panics is ReasonInternalError
-// regardless of the current stage: the caller's clock broke, not the
-// input.
-func (c *verifyCtx) now() (millis int64, err error) {
-	if c.haveClock {
-		return c.clockMillis, nil
+// now reads the configured clock, once per call and before the input is
+// looked at, as epoch milliseconds for the module. A clock that panics or
+// answers a time before 1970 is ReasonInternalError regardless of the
+// input: the caller's clock broke, not the input.
+func (v *Verifier) now() (millis uint64, err error) {
+	if v == nil || v.pool == nil {
+		return 0, newError(ReasonInternalError, "the Verifier was not made by NewVerifier")
 	}
 	defer func() {
 		if recover() != nil {
 			err = newError(ReasonInternalError, "the configured clock panicked")
 		}
 	}()
-	c.clockMillis = c.clockFn()
-	c.haveClock = true
-	return c.clockMillis, nil
+	instant := v.clock()
+	if instant < 0 {
+		return 0, newError(ReasonInternalError, "the configured clock answered a time before 1970")
+	}
+	return uint64(instant), nil
 }
 
-// contain turns an unexpected panic anywhere within a verify method into a
-// *Failure, judged by the stage the verification had reached. Deferred
-// directly in each verify method, so the named error return still holds
-// nil until this runs.
-func (c *verifyCtx) contain(err *error) {
+// contain turns a panic in this package's own code into a *Failure. Nothing
+// here is expected to panic: this is the promise that no input can make a
+// verify method do so. Deferred directly in each verify method, so the
+// named error return still holds nil until this runs.
+func contain(err *error) {
 	if recover() != nil {
-		*err = newError(c.stage.reason(), c.stage.message())
+		*err = newError(ReasonInternalError, "unexpected internal failure")
 	}
+}
+
+// hostFailure is a call that ended in the machinery, not in a verdict. The
+// message names the category; the cause has the detail, so a caller who
+// looks can tell a trap from an answer nobody could read.
+func hostFailure(cause error) *Failure {
+	var trap *host.TrapError
+	var result *host.ResultError
+	switch {
+	case errors.As(cause, &trap):
+		return wrapError(ReasonInternalError, cause, "the verification module trapped")
+	case errors.As(cause, &result):
+		return wrapError(ReasonInternalError, cause, "the verification module's answer was unusable")
+	default:
+		return wrapError(ReasonInternalError, cause, "the verification module could not be run")
+	}
+}
+
+func unreadableAnswer(cause error) *Failure {
+	return wrapError(ReasonInternalError, cause, "the verification module's answer was unusable")
+}
+
+// readResult reads the envelope of an answer: a failure becomes a
+// *Failure, a success yields the payload's JSON. An answer that is not in
+// the wire's shape, or names a reason outside the eight, is unusable and
+// therefore INTERNAL_ERROR: this never guesses at what a module meant.
+func readResult(answer string) (payload json.RawMessage, err error) {
+	var wire struct {
+		Verified *bool            `json:"verified"`
+		Reason   *string          `json:"reason"`
+		Message  *string          `json:"message"`
+		Payload  *json.RawMessage `json:"payload"`
+	}
+	if !utf8.ValidString(answer) {
+		return nil, unreadableAnswer(errors.New("the answer is not UTF-8"))
+	}
+	decoder := json.NewDecoder(strings.NewReader(answer))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil || wire.Verified == nil {
+		return nil, unreadableAnswer(errors.New("the answer is not a verification result"))
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, unreadableAnswer(errors.New("the answer has content after the result"))
+	}
+	if *wire.Verified {
+		if wire.Payload == nil || wire.Reason != nil || wire.Message != nil {
+			return nil, unreadableAnswer(errors.New("a verified result must carry a payload and nothing else"))
+		}
+		return *wire.Payload, nil
+	}
+	if wire.Reason == nil || wire.Payload != nil {
+		return nil, unreadableAnswer(errors.New("a failed result must carry a reason and no payload"))
+	}
+	reason := Reason(*wire.Reason)
+	known := false
+	for _, r := range AllReasons() {
+		known = known || r == reason
+	}
+	if !known {
+		return nil, unreadableAnswer(fmt.Errorf("the reason %q is not one of the eight", *wire.Reason))
+	}
+	message := ""
+	if wire.Message != nil {
+		message = *wire.Message
+	}
+	return nil, &Failure{Reason: reason, Message: message}
 }

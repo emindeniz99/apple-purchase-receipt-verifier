@@ -1,0 +1,22 @@
+{
+  "name": "aprv-spike-emscripten",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Spike only (never published): Emscripten build (AWS-LC inside): one .wasm, two Emscripten glues.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "workerd": "./workerd.js",
+      "worker": "./browser.js",
+      "browser": "./browser.js",
+      "node": "./node.js",
+      "deno": "./node.js",
+      "bun": "./node.js",
+      "default": "./browser.js"
+    }
+  },
+  "files": ["*.js", "*.mjs", "index.d.ts", "aprv-em.wasm", "THIRD-PARTY-NOTICES.txt"],
+  "sideEffects": true
+}

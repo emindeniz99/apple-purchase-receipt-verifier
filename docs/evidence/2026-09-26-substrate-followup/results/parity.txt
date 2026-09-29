@@ -1,0 +1,72 @@
+# Follow-up parity runs, 2026-09-26 (scripts/parity.sh, scripts/browser-parity.sh). 'same' = identical row by row to the reference.
+# ossl-em with its regenerated node+web glue (13,882 B; the wasm bake-off's em/ossl-em glue had been overwritten by the web-only link, see the note)
+ossl-em-nodeglue node host=emscripten cases vs ossl402: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":416,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+ossl-em-nodeglue node host=emscripten hostile vs ossl402: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11,"_random_get":1,"_emscripten_date_now":203},"traps":0,"rows":811}
+ossl-em-nodeglue node host=emscripten algorithms vs ossl402: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":68},"traps":0,"rows":22}
+ossl-em-nodeglue node host=emscripten substrate vs ossl402: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":527},"traps":0,"rows":193}
+# Task 1b: WASIp1 modules (Route A, WASI answered by js/hosts.mjs policy 'trap', no node:wasi) in three browsers
+awslc-w1 chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"wasi_snapshot_preview1.clock_time_get":58}}
+awslc-w1 chromium cases vs awslc: 153 same, 0 differ, 0 trapped
+awslc-w1 chromium hostile vs awslc: 811 same, 0 differ, 0 trapped
+awslc-w1 chromium algorithms vs awslc: 22 same, 0 differ, 0 trapped
+awslc-w1 chromium substrate vs awslc: 193 same, 0 differ, 0 trapped
+ossl-w1 chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":1257}}
+ossl-w1 chromium cases vs ossl402: 153 same, 0 differ, 0 trapped
+ossl-w1 chromium hostile vs ossl402: 811 same, 0 differ, 0 trapped
+ossl-w1 chromium algorithms vs ossl402: 22 same, 0 differ, 0 trapped
+ossl-w1 chromium substrate vs ossl402: 193 same, 0 differ, 0 trapped
+awslc-w1 firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"wasi_snapshot_preview1.clock_time_get":58}}
+awslc-w1 firefox cases vs awslc: 153 same, 0 differ, 0 trapped
+awslc-w1 firefox hostile vs awslc: 811 same, 0 differ, 0 trapped
+awslc-w1 firefox algorithms vs awslc: 22 same, 0 differ, 0 trapped
+awslc-w1 firefox substrate vs awslc: 193 same, 0 differ, 0 trapped
+ossl-w1 firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":1257}}
+ossl-w1 firefox cases vs ossl402: 153 same, 0 differ, 0 trapped
+ossl-w1 firefox hostile vs ossl402: 811 same, 0 differ, 0 trapped
+ossl-w1 firefox algorithms vs ossl402: 22 same, 0 differ, 0 trapped
+ossl-w1 firefox substrate vs ossl402: 193 same, 0 differ, 0 trapped
+awslc-w1 webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"wasi_snapshot_preview1.clock_time_get":58}}
+awslc-w1 webkit cases vs awslc: 153 same, 0 differ, 0 trapped
+awslc-w1 webkit hostile vs awslc: 811 same, 0 differ, 0 trapped
+awslc-w1 webkit algorithms vs awslc: 22 same, 0 differ, 0 trapped
+awslc-w1 webkit substrate vs awslc: 193 same, 0 differ, 0 trapped
+ossl-w1 webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":1257}}
+ossl-w1 webkit cases vs ossl402: 153 same, 0 differ, 0 trapped
+ossl-w1 webkit hostile vs ossl402: 811 same, 0 differ, 0 trapped
+ossl-w1 webkit algorithms vs ossl402: 22 same, 0 differ, 0 trapped
+ossl-w1 webkit substrate vs ossl402: 193 same, 0 differ, 0 trapped
+# Task 2: rustc 1.98.1 rebuilds (scripts/rust198.sh) vs the rustc 1.94.1 builds
+ossl402-r198 native cases vs ossl402 (rustc 1.94.1): 153 same, 0 differ, 0 trapped
+ossl402-r198 native hostile vs ossl402 (rustc 1.94.1): 811 same, 0 differ, 0 trapped
+ossl402-r198 native algorithms vs ossl402 (rustc 1.94.1): 22 same, 0 differ, 0 trapped
+ossl402-r198 native substrate vs ossl402 (rustc 1.94.1): 193 same, 0 differ, 0 trapped
+awslc-r198 native cases vs awslc (rustc 1.94.1): 153 same, 0 differ, 0 trapped
+awslc-r198 native hostile vs awslc (rustc 1.94.1): 811 same, 0 differ, 0 trapped
+awslc-r198 native algorithms vs awslc (rustc 1.94.1): 22 same, 0 differ, 0 trapped
+awslc-r198 native substrate vs awslc (rustc 1.94.1): 193 same, 0 differ, 0 trapped
+awslc-c-r198 node host=strict cases vs awslc: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+awslc-c-r198 node host=strict hostile vs awslc: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":11},"traps":0,"rows":811}
+awslc-c-r198 node host=strict algorithms vs awslc: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+awslc-c-r198 node host=strict substrate vs awslc: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+ossl-c-r198 node host=trap cases vs ossl402: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+ossl-c-r198 node host=trap hostile vs ossl402: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+ossl-c-r198 node host=trap algorithms vs ossl402: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+ossl-c-r198 node host=trap substrate vs ossl402: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+awslc-c-r198-vs-r198 node host=strict cases vs awslc-r198: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+awslc-c-r198-vs-r198 node host=strict hostile vs awslc-r198: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":11},"traps":0,"rows":811}
+awslc-c-r198-vs-r198 node host=strict algorithms vs awslc-r198: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+awslc-c-r198-vs-r198 node host=strict substrate vs awslc-r198: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+ossl-c-r198-vs-r198 node host=trap cases vs ossl402-r198: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+ossl-c-r198-vs-r198 node host=trap hostile vs ossl402-r198: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+ossl-c-r198-vs-r198 node host=trap algorithms vs ossl402-r198: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+ossl-c-r198-vs-r198 node host=trap substrate vs ossl402-r198: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+# Task 2: OpenSSL 4.1.0-beta1 (BETA, informational), rustc 1.98.1, vs OpenSSL 4.0.2 (rustc 1.94.1)
+ossl410b1 native cases vs ossl402: 153 same, 0 differ, 0 trapped
+ossl410b1 native hostile vs ossl402: 811 same, 0 differ, 0 trapped
+ossl410b1 native algorithms vs ossl402: 22 same, 0 differ, 0 trapped
+ossl410b1 native substrate vs ossl402: 193 same, 0 differ, 0 trapped
+# Task 2: aws-lc-sys 0.45.0 through openssl-sys 0.9.117 with its aws-lc-sys requirement raised (scripts/newest.sh awslc045), rustc 1.98.1, vs aws-lc-sys 0.41.0
+awslc045 native cases vs awslc: 153 same, 0 differ, 0 trapped
+awslc045 native hostile vs awslc: 811 same, 0 differ, 0 trapped
+awslc045 native algorithms vs awslc: 22 same, 0 differ, 0 trapped
+awslc045 native substrate vs awslc: 193 same, 0 differ, 0 trapped

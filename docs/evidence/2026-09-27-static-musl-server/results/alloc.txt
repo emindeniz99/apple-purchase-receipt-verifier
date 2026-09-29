@@ -1,0 +1,13 @@
+# 2026-09-27 x86_64, 4 vCPUs; load before: 1.05 1.17 1.18
+## Rust heap allocations per call (gnu-count: the gnu row with a counting global allocator)
+receipt fresh: {"allocs_per_call":21.0,"alloc_bytes_per_call":193942}
+jws     fresh: {"allocs_per_call":21.1,"alloc_bytes_per_call":192524}
+receipt pool: {"allocs_per_call":1.0,"alloc_bytes_per_call":2202}
+jws     pool: {"allocs_per_call":1.1,"alloc_bytes_per_call":784}
+## syscalls per call, receipt, lifecycle fresh and pool (strace -f -c; the 300-call run minus the 100-call run, divided by 200)
+gnu fresh: 11.2 syscalls/call: mprotect 7.2, mmap 2.4, munmap 1.2, brk 0.4
+gnu pool: 0.0 syscalls/call: 
+musl fresh: 16.6 syscalls/call: mprotect 7.2, mmap 5.3, munmap 4.1
+musl pool: 0.0 syscalls/call: 
+musl-mimalloc fresh: 10.8 syscalls/call: mprotect 7.2, mmap 2.4, munmap 1.2
+musl-mimalloc pool: 0.0 syscalls/call: 

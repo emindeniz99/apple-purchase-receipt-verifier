@@ -1,0 +1,51 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -494,10 +494,12 @@
+ 
+ /// A parsed PKCS#7 signedData. Owns its `PKCS7` (rust-openssl's `Pkcs7`
+ /// wrapper is compiled out for AWS-LC, so this crate owns the pointer).
++#[cfg(not(feature = "cms"))]
+ pub struct SignedData {
+     p7: *mut ffi::PKCS7,
+ }
+ 
++#[cfg(not(feature = "cms"))]
+ impl Drop for SignedData {
+     fn drop(&mut self) {
+         // SAFETY: `p7` came from d2i_PKCS7, is owned by this value and is
+@@ -509,11 +511,13 @@
+ // SAFETY: a PKCS7 is only read after parsing, except by the verify
+ // functions, which this crate calls with `&mut self` only. It holds no
+ // thread-affine state.
++#[cfg(not(feature = "cms"))]
+ unsafe impl Send for SignedData {}
+ 
+ const NID_PKCS7_SIGNED: c_int = 22;
+ const NID_PKCS7_ENCRYPTED: c_int = 26;
+ 
++#[cfg(not(feature = "cms"))]
+ impl SignedData {
+     /// Parses a DER/BER PKCS#7 blob and checks its outer shape.
+     ///
+@@ -934,6 +938,11 @@
+     }
+ }
+ 
++#[cfg(feature = "cms")]
++mod cms_path;
++#[cfg(feature = "cms")]
++pub use cms_path::SignedData;
++
+ fn algor_oid(algor: *mut ffi::X509_ALGOR) -> String {
+     if algor.is_null() {
+         return String::new();
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -28,3 +28,7 @@
+ negative-control = []
+ vendored = ["openssl/vendored"]
+ aws-lc = ["openssl/aws-lc", "openssl-sys/aws-lc"]
++# Follow-up spike: SignedData through the CMS API (CMS_SignerInfo_verify
++# and CMS_SignerInfo_verify_content) instead of the legacy PKCS7 API.
++# OpenSSL and LibreSSL only; AWS-LC has no CMS API.
++cms = []

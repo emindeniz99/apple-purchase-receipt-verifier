@@ -1,0 +1,43 @@
+## aprv-full
+compiler (cranelift): true
+embedded module: true
+pinned cwasm sha256: -
+canonical wasm sha256: b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+arch: x86_64 os: linux
+guest memory cap: 268435456 bytes
+config: Config { wasm_mutable_global: true, wasm_saturating_float_to_int: true, wasm_sign_extension: true, wasm_reference_types: true, wasm_multi_value: true, wasm_bulk_memory: true, wasm_simd: true, wasm_relaxed_simd: true, wasm_threads: false, wasm_shared_everything_threads: false, wasm_tail_call: true, wasm_floats: true, wasm_multi_memory: true, wasm_exceptions: false, wasm_memory64: true, wasm_extended_const: true, wasm_component_model: false, wasm_function_references: true, wasm_memory_control: false, wasm_gc: true, wasm_custom_page_sizes: false, wasm_legacy_exceptions: false, wasm_gc_types: false, wasm_stack_switching: false, wasm_wide_arithmetic: true, wasm_cm_values: false, wasm_cm_nested_names: false, wasm_cm_async: false, wasm_cm_async_stackful: false, wasm_cm_more_async_builtins: false, wasm_cm_threading: false, wasm_cm_error_context: false, wasm_cm_fixed_length_lists: false, wasm_cm_gc: false, wasm_call_indirect_overlong: true, wasm_bulk_memory_opt: true, wasm_custom_descriptors: false, wasm_compact_imports: false, wasm_cm_map: false, wasm_cm64: false, wasm_cm_implements: false, wasm_cm_canon_names: false, parallel_compilation: true, compiler_config: Some(CompilerConfig { strategy: Some(Cranelift), settings: {}, flags: {}, clif_dir: None, wmemcheck: false }), parse_wasm_debuginfo: false }
+module: embedded .wasm, compiled at start (887.4 ms)
+## aprv-min
+compiler (cranelift): false
+embedded module: true
+pinned cwasm sha256: 31ca2603abcac8e266e5b55f6fe8fb35ff9ae0e917e5f88ccd725603e6147b28
+canonical wasm sha256: b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+arch: x86_64 os: linux
+guest memory cap: 268435456 bytes
+config: Config { wasm_mutable_global: true, wasm_saturating_float_to_int: true, wasm_sign_extension: true, wasm_reference_types: true, wasm_multi_value: true, wasm_bulk_memory: true, wasm_simd: true, wasm_relaxed_simd: true, wasm_threads: false, wasm_shared_everything_threads: false, wasm_tail_call: true, wasm_floats: true, wasm_multi_memory: true, wasm_exceptions: false, wasm_memory64: true, wasm_extended_const: true, wasm_component_model: false, wasm_function_references: true, wasm_memory_control: false, wasm_gc: true, wasm_custom_page_sizes: false, wasm_legacy_exceptions: false, wasm_gc_types: false, wasm_stack_switching: false, wasm_wide_arithmetic: true, wasm_cm_values: false, wasm_cm_nested_names: false, wasm_cm_async: false, wasm_cm_async_stackful: false, wasm_cm_more_async_builtins: false, wasm_cm_threading: false, wasm_cm_error_context: false, wasm_cm_fixed_length_lists: false, wasm_cm_gc: false, wasm_call_indirect_overlong: true, wasm_bulk_memory_opt: true, wasm_custom_descriptors: false, wasm_compact_imports: false, wasm_cm_map: false, wasm_cm64: false, wasm_cm_implements: false, wasm_cm_canon_names: false, parallel_compilation: true, parse_wasm_debuginfo: false }
+module: embedded .cwasm, deserialized (6.7 ms)
+## aprv-min-side (APRV_MODULE_FILE=the .cwasm)
+compiler (cranelift): false
+embedded module: false
+pinned cwasm sha256: 31ca2603abcac8e266e5b55f6fe8fb35ff9ae0e917e5f88ccd725603e6147b28
+canonical wasm sha256: b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+arch: x86_64 os: linux
+guest memory cap: 268435456 bytes
+config: Config { wasm_mutable_global: true, wasm_saturating_float_to_int: true, wasm_sign_extension: true, wasm_reference_types: true, wasm_multi_value: true, wasm_bulk_memory: true, wasm_simd: true, wasm_relaxed_simd: true, wasm_threads: false, wasm_shared_everything_threads: false, wasm_tail_call: true, wasm_floats: true, wasm_multi_memory: true, wasm_exceptions: false, wasm_memory64: true, wasm_extended_const: true, wasm_component_model: false, wasm_function_references: true, wasm_memory_control: false, wasm_gc: true, wasm_custom_page_sizes: false, wasm_legacy_exceptions: false, wasm_gc_types: false, wasm_stack_switching: false, wasm_wide_arithmetic: true, wasm_cm_values: false, wasm_cm_nested_names: false, wasm_cm_async: false, wasm_cm_async_stackful: false, wasm_cm_more_async_builtins: false, wasm_cm_threading: false, wasm_cm_error_context: false, wasm_cm_fixed_length_lists: false, wasm_cm_gc: false, wasm_call_indirect_overlong: true, wasm_bulk_memory_opt: true, wasm_custom_descriptors: false, wasm_compact_imports: false, wasm_cm_map: false, wasm_cm64: false, wasm_cm_implements: false, wasm_cm_canon_names: false, parallel_compilation: true, parse_wasm_debuginfo: false }
+module: file .cwasm, deserialized, sha256 31ca2603abcac8e266e5b55f6fe8fb35ff9ae0e917e5f88ccd725603e6147b28 (18.9 ms)
+## aprv-min-side with a tampered side file
+module: load failed: precompiled module sha256 a0c57cff45eec330453103432b82e064192f4b7c63e543da7430e0ae6fb52806 is not the pinned 31ca2603abcac8e266e5b55f6fe8fb35ff9ae0e917e5f88ccd725603e6147b28; refusing to load it
+## aprv-min-side, one-shot with the tampered side file
+aprv: precompiled module sha256 a0c57cff45eec330453103432b82e064192f4b7c63e543da7430e0ae6fb52806 is not the pinned 31ca2603abcac8e266e5b55f6fe8fb35ff9ae0e917e5f88ccd725603e6147b28; refusing to load it
+exit 70
+## aprv-min, APRV_MODULE_FILE=the canonical .wasm (runtime-only build has no compiler)
+module: load failed: this build has no compiler: it loads only a precompiled module
+## cargo tree: wasmtime features (aprv-min)
+wasmtime v49.0.1
+├── wasmtime feature "once_cell"
+│   └── wasmtime feature "std"
+│           └── aprv-server feature "server" (command-line)
+├── wasmtime feature "runtime"
+├── wasmtime feature "std" (*)
+└── wasmtime feature "wasmtime-jit-icache-coherence"
+    └── wasmtime feature "std" (*)

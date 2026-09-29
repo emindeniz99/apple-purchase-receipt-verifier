@@ -1,0 +1,28 @@
+## current custom security code (rust/src)
+file                                                                total         code        tests unsafe_sites unsafe_lines          cfg  cfg_library
+rust/src/asn1.rs                                                      374          265            0            0            0            0            0
+rust/src/cms.rs                                                       223          148            0            0            0            0            0
+rust/src/x509.rs                                                      485          374            0            0            0            0            0
+rust/src/chain.rs                                                     132           82            0            0            0            0            0
+rust/src/crypto.rs                                                    297          200           12            0            0            1            0
+sum                                                                  1511         1069           12            0            0            1            0
+
+## current policy files that call it
+file                                                                total         code        tests unsafe_sites unsafe_lines          cfg  cfg_library
+rust/src/receipt.rs                                                   473          287            0            0            0            0            0
+rust/src/jws.rs                                                       696          433            0            0            0            0            0
+rust/src/roots.rs                                                     112           60            0            0            0            0            0
+rust/src/receipt_payload.rs                                           532          256          101            0            0            1            0
+sum                                                                  1813         1036          101            0            0            1            0
+
+## spike: adapter (the only crate with unsafe code) and policy over it
+file                                                                total         code        tests unsafe_sites unsafe_lines          cfg  cfg_library
+security-openssl/src/lib.rs                                          1119          823            0           62          287           29           23
+security-openssl/build.rs                                              17           14            0            0            0            0            0
+core-patch/substrate.rs                                               241          184            0            0            0            1            0
+sum                                                                  1377         1021            0           62          287           30           23
+
+## spike: wasm shim (host-facing alloc/dealloc only)
+file                                                                total         code        tests unsafe_sites unsafe_lines          cfg  cfg_library
+wasm/shim/src/lib.rs                                                   28           16            0            2            6            0            0
+sum                                                                    28           16            0            2            6            0            0

@@ -1,0 +1,17 @@
+## generated method sizes, nistp module (compare round 5's results/method-sizes.txt: 6 above 8,000 bytes, largest 14,274)
+methods: 17153
+above 8000 bytes: 17
+above 32000 bytes: 2
+above 65535 bytes: 0
+## largest
+37802 felem_inv_1340
+37397 felem_inv_1388
+31627 felem_inv_1361
+26157 point_add_1381
+22488 point_add_1343
+18360 felem_inv_1410
+17462 point_add_1393
+15568 point_add_1415
+## JWS, JDK 21, ByteArrayMemory, 1,000 warm-up + 500 timed
+flags=[] {"id":"transaction/verify-shared-sandbox","code":0,"java":"21.0.10","init_ms":357.85,"first_call_ms":269.9,"warm":1000,"n":500,"mean_us":63584.19,"median_us":63796.11,"p99_us":84504.5,"per_s":16,"memory_bytes":2031616}
+flags=[-XX:-DontCompileHugeMethods] {"id":"transaction/verify-shared-sandbox","code":0,"java":"21.0.10","init_ms":377.77,"first_call_ms":310.06,"warm":1000,"n":500,"mean_us":36992.73,"median_us":36681.43,"p99_us":50942.81,"per_s":27,"memory_bytes":2031616}

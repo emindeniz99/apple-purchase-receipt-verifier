@@ -1,0 +1,26 @@
+# valgrind 3.22.0, --leak-check=full
+## valgrind-ni
+in use at exit: 23,247 bytes in 41 blocks
+total heap usage: 537 allocs, 496 frees, 655,787 bytes allocated
+definitely lost: 0 bytes in 0 blocks
+indirectly lost: 0 bytes in 0 blocks
+possibly lost: 0 bytes in 0 blocks
+still reachable: 23,247 bytes in 41 blocks
+ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+## valgrind-ni-smoke
+in use at exit: 18,577 bytes in 38 blocks
+total heap usage: 243 allocs, 205 frees, 184,944 bytes allocated
+definitely lost: 0 bytes in 0 blocks
+indirectly lost: 0 bytes in 0 blocks
+possibly lost: 0 bytes in 0 blocks
+still reachable: 18,577 bytes in 38 blocks
+ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+## valgrind-rust
+in use at exit: 33,332 bytes in 62 blocks
+total heap usage: 329,158 allocs, 329,096 frees, 55,831,055 bytes allocated
+definitely lost: 0 bytes in 0 blocks
+indirectly lost: 0 bytes in 0 blocks
+possibly lost: 0 bytes in 0 blocks
+still reachable: 33,332 bytes in 62 blocks
+ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+## ASan+UBSan (gcc 13.3 -fsanitize=address,undefined): h-ni smoke, h-ni leak 300, h-ni bench receipt 4 threads 3 s, h-rust leak 300: no sanitizer report, exit 0

@@ -1,0 +1,6 @@
+{"corpus": "cases", "rows": 153, "traps": 0, "fuel_max": 2445659026, "fuel_max_id": "endpoint/verify-at-the-byte-floor", "mem_max": 23789568, "fuel_sum": 15532036228, "fuel_mean": 101516577}
+{"corpus": "hostile", "rows": 810, "traps": 0, "fuel_max": 597719365, "fuel_max_id": "hostile/endpoint/over-cap", "mem_max": 6160384, "fuel_sum": 6990339035, "fuel_mean": 8630048}
+{"corpus": "algorithms", "rows": 22, "traps": 0, "fuel_max": 564025531, "fuel_max_id": "algorithms/jws/chain-ec-p521-sha512", "mem_max": 2162688, "fuel_sum": 1708792457, "fuel_mean": 77672384}
+{"corpus": "substrate", "rows": 193, "traps": 0, "fuel_max": 328090621, "fuel_max_id": "substrate/flood/signerinfos-1000", "mem_max": 4521984, "fuel_sum": 7002300655, "fuel_mean": 36281351}
+{"corpus": "fuzz", "rows": 5000, "traps": 0, "fuel_max": 328476549, "fuel_max_id": "fuzz/2944/substrate/flood/signerinfos-1000", "mem_max": 6881280, "fuel_sum": 59419746832, "fuel_mean": 11883949}
+{"rows": 6178, "traps": 0, "fuel_max": 2445659026, "fuel_max_id": "endpoint/verify-at-the-byte-floor", "mem_max": 23789568, "fuel_sum": 90653215207, "corpus": "all", "named": {"transaction/verify-shared-sandbox": 173494986, "receipt/verify-genuine-sandbox-g5-against-apple-roots": 39329781}}

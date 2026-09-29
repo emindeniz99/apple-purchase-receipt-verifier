@@ -10,8 +10,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// What a caller relies on from a <see cref="VerificationResult{T}"/>: exactly
 /// one of payload and failure, <see cref="VerificationResult{T}.Verified"/>
 /// saying which, and a <see cref="Failure"/> that is safe to log and carries
-/// an inner exception only where it explains Apple-signed content the
-/// library could not read, or the library's own failure.
+/// an inner exception only where the wrapper itself failed.
 /// </summary>
 public class VerificationResultTests
 {
@@ -20,12 +19,12 @@ public class VerificationResultTests
 
     private static readonly Lazy<IVerifier> EveryRoot = new(() =>
     {
-        List<X509Certificate2> roots = AppleRootCertificates.Bundled().ToList();
-        roots.AddRange(TestPki.RootFixtureIds.Select(TestPki.FixtureCertificate));
-        return TestPki.Verifier(roots, Now);
+        List<X509Certificate2> roots = TestRoots.AppleRoots().ToList();
+        roots.AddRange(TestRoots.RootFixtureIds.Select(TestRoots.FixtureCertificate));
+        return TestRoots.Verifier(roots, Now);
     });
 
-    private static IEnumerable<string> ReceiptFixtures() => TestPki.ReceiptFixtureIds();
+    private static IEnumerable<string> ReceiptFixtures() => TestRoots.ReceiptFixtureIds();
 
     private static IEnumerable<string> JwsFixtures() =>
         Fixtures070.Ids.Where(id => (Fixtures070.Codec(id) == "utf8" && id != "device-guid")
@@ -34,18 +33,18 @@ public class VerificationResultTests
     /// <summary>
     /// The invariant over every receipt and every JWS the repository
     /// registers, verified against every root it registers: whatever the
-    /// verdict, the result is well formed, and together the corpus reaches
-    /// both a pass and a failure of every kind an input can cause.
+    /// verdict, the result is well formed. A cause is present exactly when
+    /// the wrapper itself failed (INTERNAL_ERROR), never for the module's
+    /// verdicts, and every call comes back as a value.
     /// </summary>
     [Fact]
     public void TheResultInvariantHoldsOverTheWholeCorpus()
     {
-        HashSet<VerificationReason?> seen = new();
+        int checkedCount = 0;
         foreach (string id in ReceiptFixtures())
         {
-            VerificationResult<ReceiptPayload> result = EveryRoot.Value.VerifyReceipt(Fixtures070.ForReceipt(id));
-            AssertInvariant(result, id);
-            seen.Add(result.Failure?.Reason);
+            AssertInvariant(EveryRoot.Value.VerifyReceipt(Fixtures070.ForReceipt(id)), id);
+            checkedCount++;
         }
 
         foreach (string id in JwsFixtures())
@@ -53,55 +52,11 @@ public class VerificationResultTests
             string jws = Fixtures070.Codec(id) == "text"
                 ? System.Text.Encoding.UTF8.GetString(Fixtures070.Bytes(id))
                 : Fixtures070.ForSignedData(id);
-            VerificationResult<JsonPayload> result = EveryRoot.Value.VerifySignedData(jws);
-            AssertInvariant(result, id);
-            seen.Add(result.Failure?.Reason);
+            AssertInvariant(EveryRoot.Value.VerifySignedData(jws), id);
+            checkedCount++;
         }
 
-        Assert.Contains(null, seen);
-        foreach (VerificationReason reason in Enum.GetValues<VerificationReason>())
-        {
-            if (reason != VerificationReason.InternalError)
-            {
-                Assert.Contains(reason, seen);
-            }
-        }
-    }
-
-    /// <summary>
-    /// A trusted signer signed content the library cannot read: not the
-    /// client's fault, and the parser's own verdict is kept as the cause so an
-    /// operator can see why.
-    /// </summary>
-    [Fact]
-    public void UnreadableSignedContentKeepsTheParsersVerdictAsItsCause()
-    {
-        IVerifier verifier = TestPki.FixtureVerifier("verification-order-root", Now);
-        Failure failure = verifier.VerifyReceipt(Fixtures070.ForReceipt("receipt-unreadable-entry")).Failure!;
-
-        Assert.Equal(VerificationReason.UnreadablePayload, failure.Reason);
-        Assert.NotNull(failure.Cause);
-    }
-
-    /// <summary>
-    /// Input nobody has vouched for gets no inner exception on its failure:
-    /// a library's message can quote what it failed on, and the cause is only
-    /// for the two reasons that are about Apple-signed content or the library
-    /// itself (the Java reference's <c>VerificationException.toFailure</c>).
-    /// </summary>
-    [Theory]
-    [InlineData("MA==")]
-    [InlineData("MAsGCSqGSIb3")]
-    [InlineData("not base64")]
-    public void AFailureCausedByUnvouchedInputCarriesNoInnerException(string receipt)
-    {
-        Failure failure = EveryRoot.Value.VerifyReceipt(receipt).Failure!;
-        Assert.Equal(VerificationReason.Malformed, failure.Reason);
-        Assert.Null(failure.Cause);
-
-        Failure header = EveryRoot.Value.VerifySignedData("eyJhbGci.e30.AAAA").Failure!;
-        Assert.Equal(VerificationReason.Malformed, header.Reason);
-        Assert.Null(header.Cause);
+        Assert.True(checkedCount > 100, "the fixture registry shrank: " + checkedCount);
     }
 
     /// <summary>
@@ -176,10 +131,8 @@ public class VerificationResultTests
         }
 
         Assert.True(
-            failure.Cause is null
-                || failure.Reason is VerificationReason.UnreadablePayload or VerificationReason.InternalError,
-            $"{label}: {failure.Reason} carries a cause ({failure.Cause?.GetType().Name})");
-        Assert.NotEqual(VerificationReason.InternalError, failure.Reason);
+            (failure.Reason == VerificationReason.InternalError) == (failure.Cause is not null),
+            $"{label}: {failure.Reason} and a cause of {failure.Cause?.GetType().Name ?? "none"}: only the wrapper's own INTERNAL_ERROR carries one");
         Assert.False(string.IsNullOrEmpty(failure.Message), label + ": empty message");
         Assert.True(failure.Message.Length <= 512, label + ": message longer than a log line should be");
         foreach (char c in failure.Message)

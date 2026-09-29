@@ -1,0 +1,66 @@
+# node v22.22.2, jco 1.35.0 output
+init(empty bytes) -> {"ok":true}
+verify-receipt(g5) -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+second init -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed
+verify before init -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed
+verify-signed-data(shared-sandbox, test roots) -> {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHAS
+endpoint env 1 (sandbox) -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env 2 -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed  [instance afterwards: NOT usable]
+endpoint env -1 (Number) -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed  [instance afterwards: NOT usable]
+endpoint env 2**32 + 1 (Number) -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env 1.5 -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env "sandbox" (a string) -> {"status":21007}  [instance afterwards: usable]
+endpoint env 1n (a BigInt) -> THROWS TypeError: Cannot mix BigInt and other types, use explicit conversions  [instance afterwards: usable]
+JWS bytes that are not UTF-8 -> {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}  [instance afterwards: usable]
+receipt as a JS string (the g5 base64 text), not bytes -> {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified":false}  [instance afterwards: usable]
+receipt as a plain Array of numbers -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+receipt as an ArrayBuffer -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms as a Number, not a BigInt -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms negative BigInt -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms 2n ** 64n -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+isolation: after a trap in another instance -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+
+# deno 2.9.7, jco 1.35.0 output
+init(empty bytes) -> {"ok":true}
+verify-receipt(g5) -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+second init -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed
+verify before init -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed
+verify-signed-data(shared-sandbox, test roots) -> {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHAS
+endpoint env 1 (sandbox) -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env 2 -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed  [instance afterwards: NOT usable]
+endpoint env -1 (Number) -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed  [instance afterwards: NOT usable]
+endpoint env 2**32 + 1 (Number) -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env 1.5 -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env "sandbox" (a string) -> {"status":21007}  [instance afterwards: usable]
+endpoint env 1n (a BigInt) -> THROWS TypeError: Cannot mix BigInt and other types, use explicit conversions  [instance afterwards: usable]
+JWS bytes that are not UTF-8 -> {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}  [instance afterwards: usable]
+receipt as a JS string (the g5 base64 text), not bytes -> {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified":false}  [instance afterwards: usable]
+receipt as a plain Array of numbers -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+receipt as an ArrayBuffer -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms as a Number, not a BigInt -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms negative BigInt -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms 2n ** 64n -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+isolation: after a trap in another instance -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+
+# bun 1.3.11, jco 1.35.0 output
+init(empty bytes) -> {"ok":true}
+verify-receipt(g5) -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+second init -> THROWS RuntimeError: Unreachable code should not be executed (evaluating 'fn()')
+verify before init -> THROWS RuntimeError: Unreachable code should not be executed (evaluating 'fn()')
+verify-signed-data(shared-sandbox, test roots) -> {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHAS
+endpoint env 1 (sandbox) -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env 2 -> THROWS RuntimeError: Unreachable code should not be executed (evaluating 'fn()')  [instance afterwards: NOT usable]
+endpoint env -1 (Number) -> THROWS RuntimeError: Unreachable code should not be executed (evaluating 'fn()')  [instance afterwards: NOT usable]
+endpoint env 2**32 + 1 (Number) -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env 1.5 -> {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bon  [instance afterwards: usable]
+endpoint env "sandbox" (a string) -> {"status":21007}  [instance afterwards: usable]
+endpoint env 1n (a BigInt) -> THROWS TypeError: BigInt does not support >>> operator  [instance afterwards: usable]
+JWS bytes that are not UTF-8 -> {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}  [instance afterwards: usable]
+receipt as a JS string (the g5 base64 text), not bytes -> {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified":false}  [instance afterwards: usable]
+receipt as a plain Array of numbers -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+receipt as an ArrayBuffer -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms as a Number, not a BigInt -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms negative BigInt -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+now-ms 2n ** 64n -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"  [instance afterwards: usable]
+isolation: after a trap in another instance -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"
+

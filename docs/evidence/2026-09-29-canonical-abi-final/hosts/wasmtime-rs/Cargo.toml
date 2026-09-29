@@ -1,0 +1,39 @@
+# Spike only (2026-09-29, round 13). A Rust host on Wasmtime 49 (the
+# version aprv-server pins) with the component API: `bindgen!` generates
+# the typed bindings from wit/aprv.wit (a copy of ../../guest/wit/aprv.wit).
+# Three builds, as aprv-server's A and B:
+#   --features compile,component   the full engine: runs the .wasm component, the corpus, the tests,
+#                                  and `precompile` writes the .cwasm files
+#   --features component           runtime only (no Cranelift) + component-model: loads the
+#                                  precompiled component and the precompiled ABI v1 core module
+#   (no features)                  runtime only, no component-model: aprv-server B's feature set
+#                                  (loads the precompiled ABI v1 core module only)
+# With APRV_CCWASM / APRV_CWASM set at build time, the precompiled files are
+# embedded with include_bytes! (feature "embed"), as aprv-server does.
+[package]
+name = "aprv-wasmtime-cabi"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "aprv-wt"
+path = "src/main.rs"
+
+[features]
+compile = ["wasmtime/cranelift"]
+component = ["wasmtime/component-model"]
+embed = []
+
+[dependencies]
+# aprv-server's line ("runtime" and "std" only); the features above add to it.
+wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std"] }
+getrandom = "0.3"
+serde_json = "1"
+base64 = "0.22"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = "symbols"

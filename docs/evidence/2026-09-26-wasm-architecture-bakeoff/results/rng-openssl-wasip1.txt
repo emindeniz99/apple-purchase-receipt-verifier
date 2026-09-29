@@ -1,0 +1,4 @@
+# OpenSSL 4.0.2 wasm32-wasip1 (ossl-w1h) with a broken host RNG, all 1,179 rows,
+# compared with native OpenSSL 4.0.2 (js/hosts.mjs APRV_RANDOM=fail|zero).
+random_get=fail: 1179 rows, 1103 same code as native, 46 accepted natively but rejected here, 30 rejected with another reason, 0 turned into an acceptance []; rows that called random_get: 95
+random_get=zero: 1179 rows, 1179 same code as native, 0 accepted natively but rejected here, 0 rejected with another reason, 0 turned into an acceptance []; rows that called random_get: 4

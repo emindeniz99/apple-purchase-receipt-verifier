@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Spike only (2026-09-26). The trap-probe module (src/main/wat/trap.wat),
+  compiled by the same Endive build-time compiler plugin as the verifier.
+  Pass the assembled module with -Dtrap.wasm=<path> (scripts/build.sh).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>spike.aprv</groupId>
+  <artifactId>trap-probe</artifactId>
+  <version>0.0.0-spike</version>
+  <packaging>jar</packaging>
+  <properties>
+    <endive.version>1.1.0</endive.version>
+    <maven.compiler.release>11</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <trap.wasm>MISSING-pass-Dtrap.wasm</trap.wasm>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>run.endive</groupId>
+      <artifactId>runtime</artifactId>
+      <version>${endive.version}</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>run.endive</groupId>
+        <artifactId>endive-compiler-maven-plugin</artifactId>
+        <version>${endive.version}</version>
+        <executions>
+          <execution>
+            <id>trap</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <wasmFile>${trap.wasm}</wasmFile>
+              <name>spike.aprv.trap.TrapModule</name>
+              <interpreterFallback>FAIL</interpreterFallback>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

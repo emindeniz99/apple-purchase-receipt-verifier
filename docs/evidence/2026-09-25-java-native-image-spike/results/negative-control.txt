@@ -1,0 +1,14 @@
+# Negative control: config without the AppleRootCA-G2.cer resource (config-noG2)
+self_check: (-3, '{"reason":"ABI_CONFIGURATION","exception":"java.lang.IllegalStateException","message":"bundled certificate missing: AppleRootCA-G2.cer"}')
+FAIL lines: 37
+expect: 115 passed, 37 failed, 1 explained, 0 not run, 218 expected fields checked
+
+# The three root SHA-256s self_check reports equal sha256sum of $REPO/certs/*.cer:
+b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024  $REPO/certs/AppleIncRootCertificate.cer
+c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050  $REPO/certs/AppleRootCA-G2.cer
+63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179  $REPO/certs/AppleRootCA-G3.cer
+# The negative control fails every case that uses the bundled roots with -3 (ABI_CONFIGURATION, IllegalStateException 'bundled certificate missing: AppleRootCA-G2.cer'); cases with custom roots still pass.
+# byte search for each certs/*.cer file inside the .so (occurrences: main build / negative control)
+AppleIncRootCertificate.cer 1215 bytes: 1 / 1
+AppleRootCA-G2.cer 1430 bytes: 1 / 0
+AppleRootCA-G3.cer 583 bytes: 1 / 1

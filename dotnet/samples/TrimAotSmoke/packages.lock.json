@@ -8,45 +8,25 @@
         "resolved": "9.0.20",
         "contentHash": "oPFydtjCgow3DXnL8z5gPbq3R1zGvBpcypgRhW172Hn8asJcI8oy7isudAnAAALIWyK+uRWCDP+/+om3s0PZHA=="
       },
-      "Microsoft.Bcl.Cryptography": {
-        "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "gRMy9aW3sAZxKGQwfIh5i/sB7gqCLnhRowjyuCYnZEqM3LyZ+SUi9MlMc4pq3a+ddUflo86yp7vJ9lOy3u0xBw=="
-      },
       "applepurchasereceiptverifier": {
         "type": "Project",
         "dependencies": {
-          "System.Formats.Asn1": "[10.0.12, )",
-          "System.Security.Cryptography.Pkcs": "[10.0.12, )"
+          "Wasmtime": "[48.0.2, )"
         }
       },
-      "System.Formats.Asn1": {
+      "Wasmtime": {
         "type": "CentralTransitive",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "Xu4MyfkDjUTxqFk+vhUXdoICN8uG9X6rL1qRb0HXcIkV6YEVzxuFkXKiBG+/ikoB9CO1w8zFdXJPY036I08fnQ=="
-      },
-      "System.Security.Cryptography.Pkcs": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "W6BsawU2tB2qy6u4+3cBOSOmiTUgYWW365b5WMVA1bDxQwZZeNWD+qufKJkDQNKzAKq4b6Q04DDKhmr2SNJ1eg==",
-        "dependencies": {
-          "Microsoft.Bcl.Cryptography": "10.0.12",
-          "System.Formats.Asn1": "10.0.12"
-        }
+        "requested": "[48.0.2, )",
+        "resolved": "48.0.2",
+        "contentHash": "BBqIEIPSTQ5cCVfxk6kH4lYSwNiMQ8Bf2F8Sy1I8N0JkvrWYoqhG3ro41R3JhNStIs0tVbqajBXXKnahyxHn0g=="
       }
     },
     "net9.0/linux-x64": {
-      "System.Security.Cryptography.Pkcs": {
+      "Wasmtime": {
         "type": "CentralTransitive",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "W6BsawU2tB2qy6u4+3cBOSOmiTUgYWW365b5WMVA1bDxQwZZeNWD+qufKJkDQNKzAKq4b6Q04DDKhmr2SNJ1eg==",
-        "dependencies": {
-          "Microsoft.Bcl.Cryptography": "10.0.12",
-          "System.Formats.Asn1": "10.0.12"
-        }
+        "requested": "[48.0.2, )",
+        "resolved": "48.0.2",
+        "contentHash": "BBqIEIPSTQ5cCVfxk6kH4lYSwNiMQ8Bf2F8Sy1I8N0JkvrWYoqhG3ro41R3JhNStIs0tVbqajBXXKnahyxHn0g=="
       }
     }
   }

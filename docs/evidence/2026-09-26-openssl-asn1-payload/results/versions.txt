@@ -1,0 +1,9 @@
+# Exact versions, 2026-09-26 (openssl-asn1-payload)
+rustc: rustc 1.98.1 (48a229cea 2026-09-01) (everything but fuzzing), $SCRATCH/rustup; clippy 0.1.98 (component added to $SCRATCH/rustup this round)
+rustc (fuzzing only): rustc 1.100.0-nightly (5ceaf6608 2026-09-25); cargo-fuzz 0.13.2; libfuzzer-sys 0.4.13
+OpenSSL: 4.0.2 only; builds $SCRATCH/inst (native), inst-wasm (wasi-sdk 34), inst/openssl-4.0.2-fuzz (clang 18, ASan + fuzzer-no-link)
+rust-openssl: openssl 0.10.81, openssl-sys 0.9.117; cc 1.5.1 (builds payload.c)
+probe crates: der 0.8.2, rasn 0.28.15, bcder 0.7.7
+wasm-tools 1.259.0, wasi-sdk 34, wasmtime-py 49.0.0, wazero 1.12.0; Node 22.22.2, Bun 1.3.11, Deno 2.9.7, workerd 1.20260926.1, Chromium 141.0.7390.37, Firefox 156.0.1, WebKitGTK 2.52.6
+Java oracle rows: JDK 25.0.4.1 + BC 1.86 (substrate bake-off, reused)
+system packages: none installed or upgraded in this round

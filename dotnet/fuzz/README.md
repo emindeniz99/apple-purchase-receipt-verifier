@@ -1,8 +1,15 @@
 # Fuzz targets
 
-Five [SharpFuzz] targets under [libFuzzer], over the parsers this package
-hand-writes and the verifiers a consumer calls. `run.sh` pairs each with the
+Five [SharpFuzz] targets under [libFuzzer], over the JSON reader this package
+still carries and the verifiers a consumer calls. `run.sh` pairs each with the
 shared fixtures that seed it, so nothing under `fixtures/` is copied here.
+
+Since 0.8 the parsers behind the verifiers are inside `aprv.wasm`, and
+SharpFuzz instruments only .NET IL: coverage guidance reaches the wrapper
+(the host layer and the JSON reader), and the module is exercised as a
+black box. The targets keep asserting what a caller relies on: nothing
+escapes, and an accepted input fails against an unrelated anchor set. The
+core's own fuzz jobs cover its parsers.
 
 ```bash
 sudo apt-get install -y clang          # the driver needs -fsanitize=fuzzer
@@ -58,7 +65,7 @@ Two things about that arrangement are worth knowing before reading its output:
   finding new paths in the library; `cov:` will read 2 forever.
 - **Instrumented code must not run before `Fuzzer.LibFuzzer.Run`.** The
   instrumentation writes edge counters through a shared-memory pointer that
-  `Run` installs, so an eager `AppleRootCertificates.Bundled()` in `Main`
+  `Run` installs, so an eager `Config.Defaults()` in `Main`
   dereferences a pointer that does not exist yet and dies with an
   `AccessViolationException` that reads like a library crash. Every target here
   therefore builds its anchors and verifiers on its first execution — see the

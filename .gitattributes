@@ -34,8 +34,7 @@ certs/** -text
 # file. The allowlist fails the other way. Something the package needs and
 # nobody named here goes MISSING, which is louder, and which
 # tools/check-php-package.mjs turns into a red build: it lists the archive on
-# every CI run and fails when php/src, php/certs/*.cer or composer.json is
-# absent, or when anything outside the list is present.
+# every CI run and fails when php/src or composer.json is absent, or when anything outside the list is present.
 #
 # Directories have to be named before their contents. `git archive` prunes an
 # export-ignored directory without reading its children, so `/php` and
@@ -55,7 +54,8 @@ certs/** -text
 /php/composer.json -export-ignore
 /php/LICENSE -export-ignore
 /php/README.md -export-ignore
-/php/certs -export-ignore
-/php/certs/** -export-ignore
+/php/bin -export-ignore
+/php/bin/aprv-install -export-ignore
+/php/binaries.json -export-ignore
 /php/src -export-ignore
 /php/src/** -export-ignore

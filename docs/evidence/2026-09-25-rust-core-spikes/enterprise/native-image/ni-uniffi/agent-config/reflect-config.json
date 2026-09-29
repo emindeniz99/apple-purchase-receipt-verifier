@@ -1,0 +1,116 @@
+[
+{
+  "name":"byte",
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+},
+{
+  "name":"com.sun.jna.CallbackProxy",
+  "methods":[{"name":"callback","parameterTypes":["java.lang.Object[]"] }]
+},
+{
+  "name":"com.sun.jna.Pointer",
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+},
+{
+  "name":"com.sun.jna.Structure$FFIType",
+  "allDeclaredFields":true,
+  "queryAllPublicConstructors":true,
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}],
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"com.sun.jna.Structure$FFIType$size_t",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"double",
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+},
+{
+  "name":"float",
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+},
+{
+  "name":"int",
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+},
+{
+  "name":"java.lang.Throwable",
+  "methods":[{"name":"addSuppressed","parameterTypes":["java.lang.Throwable"] }]
+},
+{
+  "name":"java.lang.ref.Cleaner"
+},
+{
+  "name":"java.lang.reflect.Method",
+  "methods":[{"name":"isVarArgs","parameterTypes":[] }]
+},
+{
+  "name":"java.nio.Buffer"
+},
+{
+  "name":"java.security.SecureRandomParameters"
+},
+{
+  "name":"java.util.concurrent.ForkJoinTask",
+  "fields":[{"name":"aux"}, {"name":"status"}]
+},
+{
+  "name":"java.util.concurrent.atomic.AtomicBoolean",
+  "fields":[{"name":"value"}]
+},
+{
+  "name":"jdk.internal.misc.Unsafe"
+},
+{
+  "name":"long",
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+},
+{
+  "name":"short",
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+},
+{
+  "name":"sun.security.provider.NativePRNG",
+  "methods":[{"name":"<init>","parameterTypes":[] }, {"name":"<init>","parameterTypes":["java.security.SecureRandomParameters"] }]
+},
+{
+  "name":"sun.security.provider.SHA",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"uniffi.aprv_uniffi.ForeignBytes",
+  "allDeclaredFields":true
+},
+{
+  "name":"uniffi.aprv_uniffi.ForeignBytes$ByValue",
+  "allDeclaredFields":true,
+  "queryAllPublicConstructors":true,
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}],
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"uniffi.aprv_uniffi.RustBuffer",
+  "allDeclaredFields":true
+},
+{
+  "name":"uniffi.aprv_uniffi.RustBuffer$ByValue",
+  "allDeclaredFields":true,
+  "queryAllPublicConstructors":true,
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}],
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"uniffi.aprv_uniffi.UniffiLib",
+  "queryAllDeclaredMethods":true
+},
+{
+  "name":"uniffi.aprv_uniffi.UniffiRustCallStatus",
+  "allDeclaredFields":true,
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+},
+{
+  "name":"void",
+  "fields":[{"name":"OPTIONS"}, {"name":"STRING_ENCODING"}, {"name":"STRUCTURE_ALIGNMENT"}, {"name":"TYPE_MAPPER"}]
+}
+]

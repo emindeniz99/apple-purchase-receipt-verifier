@@ -1,0 +1,32 @@
+# 2026-09-26, wasm-tools 1.259.0
+rust-uu            1 imports: aprv.clock_now_ms 
+rust-uu-noseam     0 imports: 
+rust-w1            5 imports: wasi_snapshot_preview1.environ_get wasi_snapshot_preview1.environ_sizes_get wasi_snapshot_preview1.clock_time_get wasi_snapshot_preview1.fd_write wasi_snapshot_preview1.proc_exit 
+rust-w1h           5 imports: aprv.clock_now_ms wasi_snapshot_preview1.environ_get wasi_snapshot_preview1.environ_sizes_get wasi_snapshot_preview1.fd_write wasi_snapshot_preview1.proc_exit 
+rust-c             1 imports: aprv.clock_now_ms 
+awslc-w1          10 imports: wasi_snapshot_preview1.environ_get wasi_snapshot_preview1.environ_sizes_get wasi_snapshot_preview1.clock_time_get wasi_snapshot_preview1.fd_close wasi_snapshot_preview1.fd_prestat_get wasi_snapshot_preview1.fd_prestat_dir_name wasi_snapshot_preview1.fd_seek wasi_snapshot_preview1.fd_write wasi_snapshot_preview1.proc_exit wasi_snapshot_preview1.random_get 
+awslc-w1h         11 imports: aprv.clock_now_ms wasi_snapshot_preview1.environ_get wasi_snapshot_preview1.environ_sizes_get wasi_snapshot_preview1.clock_time_get wasi_snapshot_preview1.fd_close wasi_snapshot_preview1.fd_prestat_get wasi_snapshot_preview1.fd_prestat_dir_name wasi_snapshot_preview1.fd_seek wasi_snapshot_preview1.fd_write wasi_snapshot_preview1.proc_exit wasi_snapshot_preview1.random_get 
+awslc-c            1 imports: aprv.clock_now_ms 
+ossl-w1           17 imports: wasi_snapshot_preview1.environ_get wasi_snapshot_preview1.environ_sizes_get wasi_snapshot_preview1.clock_time_get wasi_snapshot_preview1.fd_close wasi_snapshot_preview1.fd_fdstat_get wasi_snapshot_preview1.fd_fdstat_set_flags wasi_snapshot_preview1.fd_filestat_get wasi_snapshot_preview1.fd_prestat_get wasi_snapshot_preview1.fd_prestat_dir_name wasi_snapshot_preview1.fd_read wasi_snapshot_preview1.fd_readdir wasi_snapshot_preview1.fd_seek wasi_snapshot_preview1.fd_write wasi_snapshot_preview1.path_filestat_get wasi_snapshot_preview1.path_open wasi_snapshot_preview1.proc_exit wasi_snapshot_preview1.random_get 
+ossl-w1h          18 imports: aprv.clock_now_ms wasi_snapshot_preview1.environ_get wasi_snapshot_preview1.environ_sizes_get wasi_snapshot_preview1.clock_time_get wasi_snapshot_preview1.fd_close wasi_snapshot_preview1.fd_fdstat_get wasi_snapshot_preview1.fd_fdstat_set_flags wasi_snapshot_preview1.fd_filestat_get wasi_snapshot_preview1.fd_prestat_get wasi_snapshot_preview1.fd_prestat_dir_name wasi_snapshot_preview1.fd_read wasi_snapshot_preview1.fd_readdir wasi_snapshot_preview1.fd_seek wasi_snapshot_preview1.fd_write wasi_snapshot_preview1.path_filestat_get wasi_snapshot_preview1.path_open wasi_snapshot_preview1.proc_exit wasi_snapshot_preview1.random_get 
+ossl-c             2 imports: aprv.clock_now_ms aprv.random_get 
+
+## Emscripten builds: wasm imports (minified names) -> JS functions in the glue
+awslc-em     wasmImports={h:___syscall_getcwd,i:__abort_js,e:_clock_time_get,d:_emscripten_date_now,j:_emscripten_resize_heap,b:_environ_get,c:_environ_sizes_get,g:_fd_close,a:_fd_write,f:_random_get}
+ossl-em      wasmImports={d:___syscall_fcntl64,j:___syscall_getcwd,o:___syscall_getdents64,r:___syscall_getegid32,t:___syscall_geteuid32,s:___syscall_getgid32,f:___syscall_getuid32,n:___syscall_ioctl,e:___syscall_openat,k:___syscall_stat64,u:__abort_js,l:__munmap_js,h:_clock_time_get,c:_emscripten_date_now,v:_emscripten_resize_heap,p:_environ_get,q:_environ_sizes_get,b:_fd_close,m:_fd_read,i:_fd_seek,a:_fd_write,g:_random_get}
+libressl-em  wasmImports={a:___assert_fail,h:___call_sighandler,y:___syscall_connect,c:___syscall_fcntl64,l:___syscall_getcwd,g:___syscall_getuid32,t:___syscall_ioctl,f:___syscall_openat,u:___syscall_sendto,e:___syscall_socket,q:__abort_js,j:__emscripten_runtime_keepalive_clear,v:__gmtime_js,o:__munmap_js,w:__tzset_js,k:_clock_time_get,x:_emscripten_date_now,A:_emscripten_resize_heap,m:_environ_get,n:_environ_sizes_get,z:_exit,d:_fd_close,r:_fd_read,s:_fd_seek,b:_fd_write,i:_proc_exit,p:_random_get}
+
+## Emscripten glue capability markers (grep counts)
+awslc-em     process.env:0  WebSocket:0  SOCKFS:0  MEMFS:0  NODEFS:0  fetch(:2  XMLHttpRequest:1
+ossl-em      process.env:0  WebSocket:0  SOCKFS:0  MEMFS:0  NODEFS:0  fetch(:2  XMLHttpRequest:1
+libressl-em  process.env:0  WebSocket:8  SOCKFS:39  MEMFS:47  NODEFS:0  fetch(:2  XMLHttpRequest:5
+
+## Components: WIT world imports
+awslc-min  aprv:verifier/types@0.1.0; clock-now-ms: func() -> f64; 
+ossl-wasi  wasi:io/error@0.2.12; wasi:io/streams@0.2.12; wasi:cli/stderr@0.2.12; wasi:clocks/monotonic-clock@0.2.12; wasi:clocks/wall-clock@0.2.12; wasi:random/random@0.2.12; aprv:verifier/types@0.1.0; 
+awslc-p2   aprv:verifier/types@0.1.0; wasi:io/poll@0.2.6; wasi:clocks/monotonic-clock@0.2.6; wasi:io/error@0.2.6; wasi:io/streams@0.2.6; wasi:cli/environment@0.2.6; wasi:cli/exit@0.2.6; wasi:cli/stdin@0.2.6; wasi:cli/stdout@0.2.6; wasi:cli/stderr@0.2.6; wasi:cli/terminal-input@0.2.6; wasi:cli/terminal-output@0.2.6; wasi:cli/terminal-stdin@0.2.6; wasi:cli/terminal-stdout@0.2.6; wasi:cli/terminal-stderr@0.2.6; wasi:clocks/wall-clock@0.2.6; wasi:filesystem/types@0.2.6; wasi:filesystem/preopens@0.2.6; wasi:random/random@0.2.6; 
+awslc-p3   aprv:verifier/types@0.1.0; wasi:cli/environment@0.3.0; wasi:cli/exit@0.3.0; wasi:cli/types@0.3.0; wasi:cli/stdin@0.3.0; wasi:cli/stdout@0.3.0; wasi:cli/stderr@0.3.0; wasi:cli/terminal-input@0.3.0; wasi:cli/terminal-output@0.3.0; wasi:cli/terminal-stdin@0.3.0; wasi:cli/terminal-stdout@0.3.0; wasi:cli/terminal-stderr@0.3.0; wasi:clocks/types@0.3.0; wasi:clocks/monotonic-clock@0.3.0; wasi:clocks/system-clock@0.3.0; wasi:filesystem/types@0.3.0; wasi:filesystem/preopens@0.3.0; wasi:random/random@0.3.0; 
+
+## jco glue capability markers
+awslc-min-jco  process.env:0  WebSocket:0  fetch(:1  node:fs:1  preview2-shim:0
+ossl-wasi-jco  process.env:0  WebSocket:0  fetch(:1  node:fs:1  preview2-shim:0

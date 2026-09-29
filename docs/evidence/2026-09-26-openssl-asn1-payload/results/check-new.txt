@@ -1,0 +1,42 @@
+# scripts/build.sh check-new, 2026-09-26: cargo test --lib and cargo clippy --lib -D warnings (the crate's own lint set) on the no-asn1 tree, templates then payload-any. Adapter warnings (pre-existing, PKCS7 items unused under the cms feature) filtered out.
+    Finished `release` profile [optimized] target(s) in 1.93s
+test json_depth::tests::the_limit_itself_is_allowed_and_one_more_is_not ... ok
+test json_depth::tests::siblings_do_not_add_up ... ok
+test json_depth::tests::brackets_inside_strings_are_data ... ok
+test receipt_payload::tests::a_negative_or_oversized_attribute_integer_is_refused ... ok
+test receipt_payload::tests::a_single_readable_creation_date_is_the_chain_instant ... ok
+test receipt_payload::tests::a_receipt_date_without_a_timezone_designator_is_refused ... ok
+test receipt_payload::tests::an_attribute_set_that_is_not_a_set_is_refused ... ok
+test receipt_payload::tests::an_attribute_with_fewer_than_three_fields_is_refused ... ok
+test receipt_payload::tests::an_attribute_type_above_the_signed_32_bit_range_is_refused ... ok
+test receipt_payload::tests::an_empty_receipt_date_means_absent ... ok
+test receipt_payload::tests::an_unusable_creation_date_means_now ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    Finished `release` profile [optimized] target(s) in 0.54s
+    Finished `release` profile [optimized] target(s) in 1.56s
+test json_depth::tests::the_limit_itself_is_allowed_and_one_more_is_not ... ok
+test json_depth::tests::brackets_inside_strings_are_data ... ok
+test json_depth::tests::siblings_do_not_add_up ... ok
+test receipt_payload::tests::a_negative_or_oversized_attribute_integer_is_refused ... ok
+test receipt_payload::tests::a_receipt_date_without_a_timezone_designator_is_refused ... ok
+test receipt_payload::tests::an_attribute_set_that_is_not_a_set_is_refused ... ok
+test receipt_payload::tests::a_single_readable_creation_date_is_the_chain_instant ... ok
+test receipt_payload::tests::an_attribute_type_above_the_signed_32_bit_range_is_refused ... ok
+test receipt_payload::tests::an_attribute_with_fewer_than_three_fields_is_refused ... ok
+test receipt_payload::tests::an_empty_receipt_date_means_absent ... ok
+test receipt_payload::tests::an_unusable_creation_date_means_now ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    Finished `release` profile [optimized] target(s) in 0.56s
+src: clock.rs
+src: datetime.rs
+src: endpoint.rs
+src: environment.rs
+src: error.rs
+src: json_depth.rs
+src: jws.rs
+src: lib.rs
+src: receipt.rs
+src: receipt_payload.rs
+src: roots.rs
+src: spike_probe.rs
+src: substrate.rs

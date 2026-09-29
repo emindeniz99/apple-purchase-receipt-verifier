@@ -1,0 +1,11 @@
+# jco-deno: 2026-09-29; load before: 0.58 0.85 0.58
+    jco-deno: 151 of 153 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"deno 2.9.7 + jco 1.35.0","rows":153,"traps":0,"instances":27} 2 s wall
+    jco-deno: 810 of 811 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"deno 2.9.7 + jco 1.35.0","rows":811,"traps":0,"instances":4} 1 s wall
+    jco-deno: 22 of 22 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"deno 2.9.7 + jco 1.35.0","rows":22,"traps":0,"instances":22} 0 s wall
+    jco-deno: 193 of 193 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"deno 2.9.7 + jco 1.35.0","rows":193,"traps":0,"instances":74} 1 s wall
+    jco-deno: 5000 of 5000 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"deno 2.9.7 + jco 1.35.0","rows":5000,"traps":0,"instances":96} 9 s wall

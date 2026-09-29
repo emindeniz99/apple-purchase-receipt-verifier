@@ -1,0 +1,14 @@
+# cases: libressl432cms vs libressl432
+153 same, 0 differ, 0 trapped
+# substrate: libressl432cms vs libressl432
+  differ substrate/cms/signer-identified-by-ski 9 0
+192 same, 1 differ, 0 trapped
+# hostile: libressl432cms vs libressl432
+811 same, 0 differ, 0 trapped
+# algorithms: libressl432cms vs libressl432
+  differ algorithms/receipt/rsa-pss-sha256 5 0
+  differ algorithms/receipt/ec-p256-sha256 0 5
+  differ algorithms/receipt/ec-p384-sha384 0 5
+  differ algorithms/receipt/ec-p521-sha512 0 5
+  differ algorithms/receipt/ed25519 5 0
+17 same, 5 differ, 0 trapped

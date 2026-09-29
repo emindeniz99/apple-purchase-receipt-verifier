@@ -1,0 +1,52 @@
+# py/classify.py, per host, against ABI v1's Node rows (2026-09-29). Examples: the first host only.
+wazero cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+wazero hostile: identical 742, init-refusal 1, not-a-string (verify-signed-data) 68
+wazero algorithms: identical 22
+wazero substrate: identical 193
+wazero fuzz: identical 4825, not-a-string (verify-signed-data) 175
+wazero all: clock-moves-chain (endpoint, pinned clock) 2, identical 5933, init-refusal 1, not-a-string (verify-signed-data) 243 (rows 6179)
+  [clock-moves-chain (endpoint, pinned clock)] endpoint/injected-clock-cannot-authenticate-an-expired-chain
+      ABI v1 : {"status":21003}
+      new    : {"environment":"Sandbox","receipt":{"application_version":"1.2.3","bundle_id":"com.example.app","in_app":[],"original_application_version":"1.0","orig
+  [clock-moves-chain (endpoint, pinned clock)] endpoint/injected-clock-cannot-expire-a-valid-chain
+      ABI v1 : {"environment":"Sandbox","receipt":{"application_version":"1.2.3","bundle_id":"com.example.app","in_app":[],"original_application_version":"1.0","orig
+      new    : {"status":21003}
+  [not-a-string (verify-signed-data)] hostile/jws/invalid-utf8/op0
+      ABI v1 : {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+      new    : {"message":"header is not valid base64url JSON","reason":"INVALID_JWS_FORMAT","verified":false}
+  [not-a-string (verify-signed-data)] hostile/jws/invalid-utf8/op2
+      ABI v1 : {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+      new    : {"message":"header is not valid base64url JSON","reason":"INVALID_JWS_FORMAT","verified":false}
+  [init-refusal] hostile/ctor/root-not-a-cert
+      ABI v1 : {"error":"INVALID_TEST_ENVELOPE"}
+      new    : {"message":"roots[0]: trust anchor is not a certificate","ok":false}
+wazero-unchecked cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+wazero-unchecked hostile: identical 742, init-refusal 1, not-a-string (verify-signed-data) 68
+wazero-unchecked algorithms: identical 22
+wazero-unchecked substrate: identical 193
+wazero-unchecked fuzz: identical 4825, not-a-string (verify-signed-data) 175
+wazero-unchecked all: clock-moves-chain (endpoint, pinned clock) 2, identical 5933, init-refusal 1, not-a-string (verify-signed-data) 243 (rows 6179)
+endive cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+endive hostile: identical 742, init-refusal 1, not-a-string (verify-signed-data) 68
+endive algorithms: identical 22
+endive substrate: identical 193
+endive fuzz: identical 4825, not-a-string (verify-signed-data) 175
+endive all: clock-moves-chain (endpoint, pinned clock) 2, identical 5933, init-refusal 1, not-a-string (verify-signed-data) 243 (rows 6179)
+jco cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+jco hostile: identical 742, init-refusal 1, not-a-string (verify-signed-data) 68
+jco algorithms: identical 22
+jco substrate: identical 193
+jco fuzz: identical 4825, not-a-string (verify-signed-data) 175
+jco all: clock-moves-chain (endpoint, pinned clock) 2, identical 5933, init-refusal 1, not-a-string (verify-signed-data) 243 (rows 6179)
+wasmtime-py cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+wasmtime-py hostile: identical 742, init-refusal 1, not-a-string (verify-signed-data) 68
+wasmtime-py algorithms: identical 22
+wasmtime-py substrate: identical 193
+wasmtime-py fuzz: identical 4825, not-a-string (verify-signed-data) 175
+wasmtime-py all: clock-moves-chain (endpoint, pinned clock) 2, identical 5933, init-refusal 1, not-a-string (verify-signed-data) 243 (rows 6179)
+
+# cross-host: each host's rows against wazero's (request_date* masked on unpinned endpoint rows)
+wazero-unchecked vs wazero: 6179 identical, 0 different
+endive vs wazero: 6179 identical, 0 different
+jco vs wazero: 6179 identical, 0 different
+wasmtime-py vs wazero: 6179 identical, 0 different

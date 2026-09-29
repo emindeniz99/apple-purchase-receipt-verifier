@@ -9,11 +9,6 @@ Rake::TestTask.new(:test) do |task|
   task.warning = false
 end
 
-desc "Regenerate lib/apple_purchase_receipt_verifier/roots_data.rb from certs/"
-task :roots do
-  ruby "script/gen_roots.rb"
-end
-
 desc "Validate the RBS signatures in sig/"
 task :rbs do
   # RBS::CLI#run returns nil when it finds nothing wrong, so `exit` on its
@@ -23,7 +18,7 @@ task :rbs do
     require "rbs"
     require "rbs/cli"
     status = RBS::CLI.new(stdout: $stdout, stderr: $stderr)
-                     .run(["-r", "openssl", "-r", "json", "-I", "sig", "validate"])
+                     .run(["-r", "json", "-I", "sig", "validate"])
     exit(status.nil? ? 0 : status)
   SCRIPT
 end

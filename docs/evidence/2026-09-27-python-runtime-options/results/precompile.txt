@@ -1,0 +1,4 @@
+{"engine": "cranelift", "baseline_target": true, "compile_ms": 1027.7, "cwasm_bytes": 8556416, "in_wheel_deflate_bytes": 2727928, "xz_bytes": 2070240, "sha256": "77f8020a3fb3ba32e26d1fe4255a70cd9b5588cba38ec28e8ce8d04be6845d4f"}
+{"engine": "winch", "baseline_target": true, "compile_ms": 395.1, "cwasm_bytes": 12611936, "in_wheel_deflate_bytes": 2497582, "xz_bytes": 1775516, "sha256": "360c8f5ccd0b735c68ca1eeabd74f3eae90e0b8b61432900c56bf6620c343689"}
+{"engine": "pulley", "baseline_target": false, "compile_ms": 897.7, "cwasm_bytes": 6467568, "in_wheel_deflate_bytes": 2410404, "xz_bytes": 1876972, "sha256": "62938fef62a093fb910919e4fcee52a0c837b5b8722e696fec68e088e766866d"}
+{"engine": "cranelift", "baseline_target": false, "compile_ms": 863.5, "cwasm_bytes": 8552264, "in_wheel_deflate_bytes": 2728523, "xz_bytes": 2070200, "sha256": "5bd9062ffa431a76094c331d7d2fa5c4c2c1180bc574ca90a1fb53ddaa5fbc24"}

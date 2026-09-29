@@ -1,0 +1,16 @@
+# Task 4 fuzz campaign, CMS path (substrate-cms + substrate-prescan), 2026-09-26T12:08:58Z -> 2026-09-26T12:53:59Z, both targets in parallel, 2700 s each.
+# Tools: cargo-fuzz 0.13.2, libfuzzer-sys 0.4.13, rustc 1.100.0-nightly 2026-09-25 (the one exception to rustc 1.98.1: -Zsanitizer needs nightly),
+#   clang 18 ASan + -fsanitize=fuzzer-no-link over OpenSSL 4.0.2 no-asm ($SCRATCH/inst/openssl-4.0.2-fuzz, the follow-up's build).
+# Flags: -max_total_time=2700 -timeout=10 -rss_limit_mb=2048 -max_len=65536; ASAN_OPTIONS=detect_leaks=1:allocator_may_return_null=0.
+# Seeds (read only): verify-receipt = the follow-up's corpus-ossl-verify-receipt (1594 files) + seeds-receipt (3834);
+#   verify-transaction = corpus-ossl-verify-transaction (2371) + seeds-jws (2061). 'seeds' below counts the seeds-* dir only.
+# Instrumented counters: verify-receipt 69,375; verify-transaction 71,517.
+# target: seconds execs exec/s | final cov ft corpus | peak_rss_mb | seed files | findings
+verify-receipt: 2701 s, 4,931,206 execs, 1825 exec/s | start cov 7048 -> final cov 7236, ft 21896, corpus 1000 units (4345Kb) | peak rss 609 MB | seeds 3834 | findings 0 [] | artifacts []
+verify-transaction: 2701 s, 4,403,659 execs, 1630 exec/s | start cov 8077 -> final cov 8174, ft 22373, corpus 1291 units (1901Kb) | peak rss 555 MB | seeds 2061 | findings 0 [] | artifacts []
+# libFuzzer final stats
+verify-receipt: number_of_executed_units=4931206 average_exec_per_sec=1825 new_units_added=1273 slowest_unit_time_sec=0 peak_rss_mb=609 
+verify-transaction: number_of_executed_units=4403659 average_exec_per_sec=1630 new_units_added=2345 slowest_unit_time_sec=0 peak_rss_mb=555 
+# new corpus files written: verify-receipt 889, verify-transaction 1937 (kept in $SCRATCH/cms/fuzz, not committed)
+# artifact directories: verify-receipt [], verify-transaction []; ==ERROR / deadly signal / crash-unit lines in the logs: 0
+# Result: no crash, leak, timeout or OOM; nothing to minimize.

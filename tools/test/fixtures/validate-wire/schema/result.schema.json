@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/aprv-test/result.schema.json",
+  "title": "A test-only result shape: a verified payload or a failure",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["verified", "payload"],
+      "additionalProperties": false,
+      "properties": {
+        "verified": { "const": true },
+        "payload": { "$ref": "payload.schema.json" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["verified", "reason", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "verified": { "const": false },
+        "reason": { "enum": ["MALFORMED", "INTERNAL_ERROR"] },
+        "message": { "type": "string" }
+      }
+    }
+  ]
+}

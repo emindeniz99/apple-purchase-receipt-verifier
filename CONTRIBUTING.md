@@ -1,62 +1,141 @@
 # Contributing
 
-Nine implementations of the same verifier — Java, Node, Python, Swift, Go,
-Ruby, Rust, PHP and .NET — kept in lockstep by one shared fixture suite. A
-behavior change lands in all nine languages plus `fixtures/`, or it doesn't
-land.
+One product, two implementations, eight wrappers. The Rust core in `rust/`
+holds every verification decision; it is compiled once to `aprv.wasm`, and
+the Node, Go, Python, Ruby, Swift, .NET, Java `-wasm` and PHP packages run
+that one module. `java/` is a second, independent implementation over
+BouncyCastle, kept in step with the core by the shared cases in
+`fixtures/cases.json`. `aprv-server` (`rust/server/`) runs the module in
+its own process, and `rust/ffi/` is the C ABI over the core.
 
-The same holds for features that do not change behavior, such as a new
-entry point, a fast path or a benchmark: a feature lands in every port, or
-[PORTS.md](./PORTS.md) says why a port does not have it. Update that table
-in the PR that adds the feature.
+A behaviour change lands in the core, the Java implementation and
+`fixtures/` together, or it doesn't land ([Making a behaviour
+change](#making-a-behaviour-change)). A wrapper change never changes a
+verdict: wrappers read the clock, move bytes in and JSON out, pool
+instances and map the outcome, and hold no parser, no crypto and no trust
+decision. [PORTS.md](./PORTS.md) lists what each package runs on.
+
+## Building the module
+
+Every package except `java/` needs `aprv.wasm` (Node: the component,
+`aprv.component.wasm`) before its tests can run. CI builds it once per run
+in the `rust-wasm` job and hands it to every host job; locally you build it
+the same way, on Linux x86_64:
+
+```bash
+eval "$(tools/wasm-toolchain.sh "$HOME/.cache/aprv-wasm-toolchain")"
+rust/bindings/abi/build.sh "$OUT"
+```
+
+`tools/wasm-toolchain.sh` downloads and checks, by SHA-256, the pinned
+wasi-sdk (34.0), wasm-tools (1.259.0), wit-bindgen (0.62.0) and the
+OpenSSL 4.0.2 source, builds OpenSSL for `wasm32-wasip1`, and prints the
+variables `build.sh` reads. The Rust compiler is the one
+`rust/rust-toolchain.toml` pins (1.98.1, with the `wasm32-wasip1`
+target); the released module's hash depends on it. `build.sh` writes
+`aprv.wasm`, `aprv.component.wasm`, `aprv.wit` and `SHA256SUMS` into
+`$OUT`, and fails when the module imports anything but `random-get`,
+exports anything but the four operations and their helpers, or reads back
+an interface that differs from `rust/bindings/abi/wit/aprv.wit`.
+`rust/bindings/abi/README.md` has the details.
+
+`tools/reproduce-wasm.sh <tag-or-ref> <sha256>` rebuilds the module of a
+tag or commit in a fresh clone with that ref's own pins and compares the
+hash; `--container` does the same inside a digest-pinned image. The
+release job runs it once against its own artifact.
+
+Then put the file where the package reads it. No package commits the
+module on a branch; Go and Swift commit it once per release (the release
+tooling does that, never a person):
+
+| Package | Where the module goes | Or |
+|---|---|---|
+| Node | `node/wasm/aprv.component.wasm` | `APRV_COMPONENT` at build time |
+| Go | `go/internal/wasm/aprv.wasm` | none: `//go:embed` needs the file |
+| Python | `python/apple_purchase_receipt_verifier/aprv.wasm` | `APRV_WASM` for the tests and the build tools |
+| Ruby | `ruby/lib/apple_purchase_receipt_verifier/aprv.wasm` | `APRV_WASM` for the tests |
+| Swift | `swift/Sources/ApplePurchaseReceiptVerifier/Resources/aprv.wasm` | none: SwiftPM needs the resource |
+| .NET | `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm` | `APRV_WASM` at build time |
+| Java `-wasm` | `java-wasm/src/main/wasm/aprv.wasm` | `-Daprv.wasm=PATH` |
+| PHP, the Java server engine | an `aprv` binary built around the component (`rust/server/scripts/build-static.sh`) | `APRV_BIN` for PHP; `-Daprv.server.linux-x86_64=PATH` for Java |
+
+Each package checks the file against the SHA-256 in the `.sha256` file
+beside it, so a module other than the pinned one stops the build or the
+first `Verifier`. After a core change, rewrite your local pins with
+`tools/refresh-wasm-pins.sh "$OUT/aprv.wasm" "$OUT/aprv.component.wasm"`
+and do not commit them: the release branch refreshes every pin at once.
+The libraries themselves read no environment variable to find the module;
+only their build and test tooling does.
 
 ## Running the tests
 
-Each language runs the same fixtures:
+Each package runs all the cases of `fixtures/cases.json`, one named test
+per case, and fails unless every case ran. From the repository root:
 
 ```bash
-# Java (library targets Java 8; build with any modern JDK + Maven)
-cd java && mvn test
+# Rust core (the workspace: core, OpenSSL adapter, surface, wire, ABI, C ABI)
+cargo test --locked --workspace --manifest-path rust/Cargo.toml
 
-# Node (strict TypeScript, zero runtime deps; Node >= 20)
-cd node && npm ci && npm test          # both entry points, every shared fixture
-cd node && npm run test:runtimes       # default build on Bun, Deno and Cloudflare workerd
-cd node && npm run test:runtimes:web   # /web build on Vercel Edge and flagless workerd
+# The C ABI's ctypes harness (rust/ffi/README.md, "Tests", has the C++ one)
+cargo build --locked --manifest-path rust/ffi/Cargo.toml
+python3 rust/ffi/tests/conformance.py rust/target/debug
 
-# Python (>= 3.10; uv installs the locked dependencies)
-cd python && uv sync && uv run python -m unittest discover -s tests
+# aprv-server, against a component
+APRV_TEST_COMPONENT="$OUT/aprv.component.wasm" \
+  cargo test --features compile --manifest-path rust/server/Cargo.toml
 
-# Swift (Swift 6.1+; Linux or macOS 13+; manifest lives at the repo root)
-swift test
+# The module alone, through a host that traps on any import but random-get
+node tools/wasm-trap-host.mjs cases "$OUT/aprv.wasm" fixtures/cases.json
 
-# Go (>= 1.22; no dependencies)
-cd go && go test ./...
+# Java, the independent implementation (Java 8 target, any modern JDK)
+mvn -B -f java/pom.xml verify
 
-# Ruby (>= 3.3; no runtime dependencies, minitest through rake)
-cd ruby && rake test
+# Java -wasm (Endive on Java 11+; the server-engine tests need the binary)
+mvn -B -f java-wasm/pom.xml verify -Daprv.server.linux-x86_64="$APRV_BIN"
 
-# Rust (>= 1.85)
-cd rust && cargo test
+# Node (Node 20+): builds with jco and tsc, then the node:test suite
+npm ci --ignore-scripts --prefix node && npm test --prefix node
 
-# PHP (>= 8.2; installs php/composer.lock)
-cd php && composer install && vendor/bin/phpunit
+# Go (1.22+)
+go -C go test ./...
 
-# .NET (SDK 8.0+; runs the net8.0 suite and the netstandard2.0 floor suite)
-cd dotnet && dotnet test -c Release
+# Python (3.10+)
+(cd python && uv run --locked --extra dev python -m unittest discover -s tests)
 
-# The shared conformance vectors, see below
+# Ruby (3.3+)
+(cd ruby && bundle install && bundle exec rake test)
+
+# Swift (6.3+; the manifest lives at the repository root)
+swift test -c release -Xswiftc -enable-testing --force-resolved-versions
+
+# .NET (SDK 8.0+)
+dotnet test -c Release dotnet/tests/ApplePurchaseReceiptVerifier.Tests
+
+# PHP (8.2+; the suite runs against a real aprv binary)
+(cd php && composer install && APRV_BIN="$APRV_BIN" vendor/bin/phpunit)
+
+# The shared cases file itself
 node tools/lint-cases.mjs
 ```
 
+Each wrapper's README has its own section on the suite and its extra
+legs (Node's runtimes and browsers, .NET's netstandard2.0 floor, Java's
+Temurin 8 server-engine leg). Each package also carries a one-command
+parity run over the corpora of generated receipts (1,179 rows and 5,000
+mutants), which compares every answer byte for byte with the module's own
+rows; PORTS.md names the script. The corpora are too large for the
+repository: the nightly `corpus` job fetches an archive the owner hosts,
+and prints a notice when none is configured.
+
 ### The three fixture tiers
 
-All nine suites verify the same three shared fixture tiers:
+Every suite verifies the same three shared fixture tiers:
 
 1. `fixtures/generated/` and `fixtures/generated-0.7/`: deterministic
-   cross-language fixtures (fake Apple PKI) written by the Java
-   `FixtureGeneratorTest` and the `*Fixtures` generators beside it; the
-   receipts in `generated-0.7/` carry the WWDR marker 0.7 checks.
-   Regenerate only deliberately, then re-run **every** suite
+   fixtures (fake Apple PKI) written by the Java `FixtureGeneratorTest`
+   and the `*Fixtures` generators beside it; the receipts in
+   `generated-0.7/` carry the WWDR marker 0.7 checks. Regenerate only
+   deliberately, then re-run **every** suite
    ([Generating a fixture](#generating-a-fixture)).
 2. `fixtures/apple-official/`: Apple's own library test fixtures
    (vendored, MIT). Their test-CA-signed JWS mocks verify, their negative
@@ -69,32 +148,98 @@ All nine suites verify the same three shared fixture tiers:
    tier: real Apple bytes.
 
 The vectors those suites run the fixtures under are in `fixtures/cases.json`
-([Conformance vectors](#conformance-vectors)).
-
-Five ports additionally generate a throwaway "Apple" PKI per run for inputs
-the shared fixtures cannot express: `java/.../TestPki.java`,
-`go/testpki_test.go`, `ruby/test/test_pki.rb`, `php/tests/Support/TestPki.php`
-and `dotnet/tests/.../TestPki.cs`. Those are native suites, not a shared tier.
+([Conformance vectors](#conformance-vectors)). Inputs the shared fixtures
+cannot express are built in code by the core's own tests (`rust/tests/`)
+and by Java's throwaway test PKI (`java/src/test/.../TestPki.java`).
 
 ### Fuzzing
 
-Every port also has coverage-guided fuzz targets, run for a fixed budget by
-its own CI job (`go-fuzz`, `rust-fuzz`, `node-fuzz`, `ruby-fuzz`, `php-fuzz`,
-`dotnet-fuzz`, `python-fuzz`, `swift-fuzz`, `java-fuzz`) and seeded from
-`fixtures/`, so a crasher is a mutation of a genuine receipt or JWS. The
-targets share three invariants: nothing panics or traps, every failure is the
-port's typed verification error, and an input one anchor set accepts must be
-refused by an unrelated one. The last is what lets a fuzzer find a wrong
-acceptance, not only a crash. Each `<port>/fuzz/README.md` lists its targets;
-[THREAT-MODEL.md](./THREAT-MODEL.md) says what they are for and PLAN.md D16
-why the parsers they cover are hand-written.
+The parsers are the core's and OpenSSL's, so the fuzz targets that matter
+reach them: `rust/fuzz/` holds five `cargo fuzz` targets over the core's
+three operations, the receipt path and the C ABI, and a sixth,
+`abi-call`, over the module's canonical ABI in Wasmtime
+([`rust/fuzz/README.md`](./rust/fuzz/README.md)). `rust-fuzz` runs them
+for a fixed budget on every change; the nightly `rust-fuzz-openssl` job
+runs them over an OpenSSL built with AddressSanitizer and coverage
+instrumentation, so libFuzzer follows edges inside OpenSSL's CMS, X.509
+and ASN.1 code. `java-fuzz` fuzzes the Java implementation with Jazzer.
+The wrappers' own fuzz jobs (`go-fuzz`, `python-fuzz`, `ruby-fuzz`,
+`swift-fuzz`, `dotnet-fuzz`, `php-fuzz`) drive the public API through the
+module, which exercises each wrapper's own boundary: lowering, lifting,
+trap recovery. Every target is seeded from `fixtures/`, and the core's
+targets carry the anchor-set invariant: an input one anchor set accepts
+must fail against an unrelated one, which lets a fuzzer find a wrong
+acceptance, not only a crash. A fuzz finding fails the job and keeps the
+input; it opens no public issue, since a crash in a parser can be a
+vulnerability ([SECURITY.md](./SECURITY.md)).
 
-CI runs these on every supported runtime line (Java 8–27, Node 20–26,
-Python 3.10–3.14, Swift 6.1–6.3, Go 1.22–1.27, Ruby 3.3–4.0, Rust 1.85 through beta,
-PHP 8.2–8.5, .NET on Linux, Windows and macOS). The floors are claims we test,
-not decoration: `@types/node` stays on 20 and JUnit stays on 5.x on purpose —
-see the rationale comments in `.github/dependabot.yml` before "upgrading"
-them.
+CI runs the suites on every supported runtime line
+([SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md)). The floors are claims we
+test, not decoration: `@types/node` stays on 20, JUnit stays on 5.x and
+wazero stays below 1.10 on purpose — see the rationale comments in
+`.github/dependabot.yml` before "upgrading" them.
+
+## Making a behaviour change
+
+1. Write or change the case in `fixtures/cases.json` first
+   ([Adding a case](#adding-a-case)): the case is what was decided.
+2. Change the Rust core (`rust/src/`, or the OpenSSL adapter in
+   `rust/openssl/`) and the Java implementation (`java/`) in the same pull
+   request. The Java implementation is not a port of the core: it is the
+   independent second opinion (docs/rust-core/DECISIONS.md R33), so fix it
+   in its own code and idiom.
+3. Run the core's suite, Java's suite and the module through the trap
+   host. Every wrapper then answers the new case with no change of its
+   own, because it runs the module; if a wrapper needs a change to pass a
+   verdict case, the logic is in the wrong place.
+4. A difference between the core and Java that you keep on purpose is
+   recorded in docs/rust-core/DECISIONS.md R20 with its reason. One that
+   changes an Apple-signed input's verdict, or accepts something
+   unsigned, is a bug, never a divergence to record.
+
+The nightly `java-differential` job (`tools/differential.sh`) runs the
+core and the Java implementation over every input it collects and fails
+on a difference R20 does not record.
+
+## Adding a wrapper
+
+A new language joins by running the same `aprv.wasm`, never by carrying
+verification code. What a wrapper has to do is fixed by the WIT and by the
+wire schemas, not by another wrapper's code:
+
+1. **Bind the ABI.** `rust/bindings/abi/wit/aprv.wit` is the contract. A
+   runtime with the Component Model binds it with its generator; any other
+   calls the four core exports by hand, as the Go, Swift, Python, Ruby,
+   .NET and Endive hosts do (`cabi_realloc`, the export, the return area,
+   `cabi_post_*`; docs/rust-core/ARCHITECTURE.md §4 has the call, step by
+   step). Supply `random-get` from the platform's CSPRNG and refuse any
+   other import.
+2. **Read the answers against the schemas.** The four JSON Schema 2020-12
+   files in `rust/bindings/wire/schema/` describe `init`'s configuration
+   and answer and the two verify results; the endpoint answer is Apple's
+   JSON, passed through byte for byte.
+3. **Hold the instance model** (ARCHITECTURE.md §5): one call at a time
+   per instance, `init` once per instance with the `Config` roots, the
+   clock read once per call and passed as `now-ms`, a trapped instance
+   discarded, at most 3,145,729 bytes of any input copied into linear
+   memory. Keep the six outcomes apart (ARCHITECTURE.md §4): a trap or an
+   unreadable answer is `INTERNAL_ERROR`, never a verdict.
+4. **Pin the module.** Check the packaged `aprv.wasm` against a
+   `.sha256` file beside it before it is compiled, add that file to
+   `tools/refresh-wasm-pins.sh`'s reach, and have the release job pack the
+   file `build-wasm` built.
+5. **Prove it.** A conformance runner that runs every case of
+   `fixtures/cases.json` as one test and asserts every case id ran; the
+   ABI tests (an `env` of 2, 255 and 2^32-1 traps, a verify before `init`
+   and a second `init` trap, a wrong-length `random-get` traps, a trap in
+   one instance leaves another verifying, 2,000 calls leave memory the same
+   size); and a corpus runner whose rows match the module's reference rows
+   byte for byte, wired into the nightly `corpus` job. Add the language to
+   `tools/check-one-implementation.mjs`, a row to PORTS.md and to
+   SUPPORT-MATRIX.md, and the package's CI needs to its own `CI-NOTES.md`.
+
+A platform no Wasm runtime reaches uses `aprv-server` (HTTP or the
+one-shot CLI) or the C ABI instead of a new wrapper.
 
 ## Adding or bumping a dependency by hand
 
@@ -111,41 +256,56 @@ Under seven days old: wait, or say in the commit body why it cannot. CI
 installs npm packages with `--ignore-scripts`; a dependency that needs its
 install script to work is a reason to look for another dependency.
 
+A bump of a toolchain the module depends on (the Rust compiler, wasi-sdk,
+wasm-tools, wit-bindgen, OpenSSL) changes the module's bytes, and a bump
+of a runtime a wrapper depends on (wazero, wasmtime-py, the `wasmtime` gem,
+Wasmtime .NET, WasmKit, jco, Endive, the server's `wasmtime`) changes how
+it runs. Either passes the full cross-host run before it merges
+(docs/rust-core/DECISIONS.md R14).
+
 Every ecosystem that has a lockfile commits it, and CI installs from it
 strictly, so a bump reaches CI only as a committed change to a lockfile
-(SECURITY.md, "Dependency policy"). Regenerate the file the port names when
-you change a manifest:
+(SECURITY.md, "Dependency policy"). Regenerate the file the package names
+when you change a manifest:
 
-| Port | Lockfile | Regenerate with |
+| Package | Lockfile | Regenerate with |
 |---|---|---|
-| node | `node/package-lock.json`, `node/fuzz/package-lock.json` | `npm install` |
-| rust | `rust/Cargo.lock`, `rust/ffi/Cargo.lock` | `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile` in each; a plain `cargo update` ignores `rust-version` and can lock crates the declared floor cannot build |
+| node | `node/package-lock.json` | `npm install` |
+| rust | `rust/Cargo.lock` (the workspace: the core, the adapter, the bindings and the C ABI) | `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile` in `rust/`; a plain `cargo update` ignores `rust-version` and can lock crates the declared floor cannot build |
+| rust | `rust/server/Cargo.lock` (`aprv-server`, outside the workspace) | `cargo generate-lockfile` in `rust/server` |
+| rust | `rust/bindings/abi/tests/Cargo.lock` (the Wasmtime ABI tests) | `cargo generate-lockfile` in `rust/bindings/abi/tests` |
 | rust | `rust/fuzz/Cargo.lock` | `cargo generate-lockfile` in `rust/fuzz` |
+| tools | `tools/package-lock.json` | `npm install` in `tools/` |
 | python | `python/uv.lock` | `uv lock` |
 | php | `php/composer.lock` | `composer update` (resolves at the 8.2 floor, see below) |
 | ruby | `ruby/Gemfile.lock`, `ruby/gemfiles/*.lock` | `bundle lock` with the matching `BUNDLE_GEMFILE` |
 | dotnet | `dotnet/**/packages.lock.json` | `dotnet restore --force-evaluate` under the newest SDK line `ci.yml` installs (10.0.x); an older band asks for a different implicit ILLink version and fails locked mode |
 | swift | `Package.resolved`, `swift/fuzz/Package.resolved` | `swift package update` |
-| go | `go/tools/go.sum` | `go get` then `go mod tidy` in `go/tools` |
+| go | `go/go.sum`, `go/tools/go.sum` | `go get` then `go mod tidy` in the module's directory |
 
 `php/composer.json` sets `config.platform.php` to 8.2.0, so a `composer
 update` on any machine resolves the graph the PHP 8.2 leg has to install.
-The Java port pins exact versions in `java/pom.xml` and Maven has no lockfile
-format; the go library module has no dependencies at all.
+The Java builds pin exact versions in their poms and Maven has no lockfile
+format.
 
 ## Conformance vectors
 
-`fixtures/cases.json` is the normative contract between the nine
-implementations: one language-neutral case per semantic fact, each naming a
-registered fixture, the `Config` to build the verifier from, and either the
-payload fields the call must return or the reason it must fail with.
-Each language reads the file through a thin adapter that knows nothing about
-any individual case — `java/src/test/.../ConformanceCasesTest.java`,
+`fixtures/cases.json` is the normative contract between the Rust core and
+the Java implementation, and every package answers it: one
+language-neutral case per semantic fact, each naming a registered fixture,
+the `Config` to build the verifier from, and either the payload fields the
+call must return or the reason it must fail with. 377 cases today. Each
+package reads the file through a thin adapter that knows nothing about
+any individual case — `rust/tests/conformance.rs`,
+`java/src/test/.../ConformanceCasesTest.java`,
+`java-wasm/src/test/.../ConformanceCasesTest.java` (and
+`ServerConformanceCasesTest.java` for the server engine),
 `node/test/conformance.test.js`, `python/tests/test_conformance.py`,
 `swift/Tests/.../ConformanceCasesTests.swift`, `go/conformance_test.go`,
-`ruby/test/conformance_test.rb`, `rust/tests/conformance.rs`,
-`php/tests/ConformanceCasesTest.php` and
-`dotnet/tests/ApplePurchaseReceiptVerifier.Tests/Conformance070.cs`.
+`ruby/test/conformance_test.rb`, `php/tests/ConformanceCasesTest.php`,
+`dotnet/tests/ApplePurchaseReceiptVerifier.Tests/Conformance070.cs`,
+the C ABI's C++ and ctypes harnesses, `rust/server/scripts/cases.py` and
+`tools/wasm-trap-host.mjs`.
 
 **A behavior change means editing `cases.json` in the same commit.** The file
 records what was decided, not what an implementation happened to do, so a
@@ -179,24 +339,26 @@ behind the expectations. Read it before adding a case.
    Pointers into the payload's JSON; a field it does not list is not pinned.
    A negative case carries `status: "error"` plus one of the eight reasons
    (never `INTERNAL_ERROR`), and a `fault` naming its single intentional
-   defect. Where the outcome is port-defined, `expected: {"oneOf": [...]}`
-   lists every outcome a port may give. Add a `clock` if — and only if — the
-   answer depends on the current time; see below.
+   defect. Where the outcome is implementation-defined,
+   `expected: {"oneOf": [...]}` lists every outcome an implementation may
+   give. Add a `clock` if — and only if — the answer depends on the
+   current time; see below.
 3. Run `node tools/lint-cases.mjs`. It validates the file against
    `fixtures/cases.schema.json`, re-hashes every registered fixture, and
    fails on a fixture file no case registers or an `input` fixture no case
    uses. CI runs the same command in the `conformance` job.
-4. Run all nine suites. The case must pass in every language; a disagreement
-   is the finding, not something to paper over in an adapter. Every runner
-   also checks that each case id in the file ran, so a case an adapter
-   silently skips fails the suite. Only an explicit test filter turns that
-   check off.
+4. Run the core's and Java's suites, and the module through the trap
+   host. The case must pass in both implementations; a disagreement is the
+   finding, not something to paper over in an adapter. Every runner also
+   checks that each case id in the file ran, so a case an adapter silently
+   skips fails the suite. Only an explicit test filter turns that check
+   off.
 
 ### Adding a base64 spelling
 
 The `receipt-data` and `x5c` base64 spellings live in `cases.json` as
-`decodeBase64` groups, one list for all nine ports. Do not add a spelling
-list to a port's own tests. Put the string in the group for its category
+`decodeBase64` groups, one list for every package. Do not add a spelling
+list to a package's own tests. Put the string in the group for its category
 (`base64/reject-whitespace-inside`, `base64/decodes-to-41`, ...) or start a
 new group:
 
@@ -206,10 +368,13 @@ new group:
   the bytes every text decodes to. A refusing group has
   `expected: {"status": "error", "reason": "MALFORMED"}`.
 - `decoders` names the decoders the group runs through, normally
-  `["receipt-data", "x5c"]`. Each runner calls the port's decoders
-  directly. A refusal is `MALFORMED` from the receipt-data decoder and
-  `INVALID_CERTIFICATE` from the x5c decoder; the runner maps the reason, so
-  a case never repeats it.
+  `["receipt-data", "x5c"]`. The Rust core and Java call their decoders
+  directly. A wrapper has no decoder of its own, so its runner passes a
+  `receipt-data` text through `verifyReceipt` and an `x5c` text through a
+  JWS that carries it, and checks which side of the rule the text lands
+  on. A refusal is `MALFORMED` from the receipt-data decoder and
+  `INVALID_CERTIFICATE` from the x5c decoder; the runner maps the reason,
+  so a case never repeats it.
 - The `description` says why, citing the Apple measurement in
   `docs/evidence/2026-09-23-verifyreceipt-base64.md` where there is one.
 
@@ -298,12 +463,13 @@ is why each generator emits its own roots beside its inputs.
 
 A case may carry `clock: {"now": "<ISO-8601 UTC instant>"}`, and the runner
 builds its `Config` with a clock fixed at that instant; without one the
-default clock runs. Each port's `Config` takes a clock in its own idiom
+default clock runs. Each package's `Config` takes a clock in its own idiom
 (`java.time.Clock`, a `() => number`, a callable, a closure, a PSR-20
 `ClockInterface`, a `Func<long>`), so no runner fakes time and no runner
-skips a case for want of a seam.
+skips a case for want of a seam. A wrapper reads that clock once per call
+and passes the value to the module as `now-ms`.
 
-0.7 reads the clock in two places: the certificate-validity instant when the
+The clock matters in two places: the certificate-validity instant when the
 input states no usable date (a receipt whose first attribute 12 is missing
 or does not parse, a JWS whose `signedDate` is missing or not a
 representable instant), and `request_date` at the endpoint. Pin a clock on
@@ -313,6 +479,15 @@ itself, and two endpoint cases pin that the clock does move the verdict of
 a dateless receipt. A payload that states its own date is judged at that
 date, so the expired-chain cases need no clock. How old a signed payload
 may be is the caller's decision, so no case pins one.
+
+## Spikes and evidence
+
+Every experiment's code goes into the repo, even code that answered "no":
+a note at `docs/evidence/<date>-<name>.md` and its sources in
+`docs/evidence/<date>-<name>/`, committed together. See
+[docs/evidence/README.md](docs/evidence/README.md) for the layout, and
+what stays out: binaries (`aprv.wasm` included), local paths, secrets and
+production receipts.
 
 ## Commits
 
@@ -330,6 +505,8 @@ Conventional Commits with a **mandatory scope**:
   already shows. Wrap at 72 chars.
 - `feat`/`fix` drive release-please's version bump — use them only for
   user-visible changes.
+- No binary over 100 KB. The two committed copies of `aprv.wasm` (Go and
+  Swift) are written by the release tooling, never by a contributor.
 
 ## Merging
 
@@ -352,16 +529,28 @@ on the branch commit, which release-please does read.
 Fully automated — do not publish from a laptop:
 
 1. Conventional Commits on `main` → release-please opens/updates a release PR
-   (one version for every language; extra-files bump every manifest that
-   carries a version string, and a step in the same workflow regenerates
-   the three lockfiles that carry it too).
+   (one version for every package; extra-files bump every manifest and
+   version constant that carries a version string, and a step in the same
+   workflow regenerates the lockfiles that carry it too). On that branch,
+   `release-please.yml` also builds the module and the Linux server
+   binaries, rewrites every committed copy and pin of `aprv.wasm`
+   (`tools/refresh-wasm-pins.sh`), and writes the server hashes into
+   `php/binaries.json`, in one commit.
 2. Merging that PR creates the tag + GitHub Release, and the workflow
    dispatches `release.yml` at the tag.
-3. `release.yml` publishes to npm (OIDC), PyPI (OIDC), RubyGems (OIDC),
-   crates.io (OIDC), NuGet (OIDC) and Maven Central (token + GPG), and creates
-   the `go/vX.Y.Z` tag that publishes the Go module through
-   `proxy.golang.org`. SwiftPM consumes the plain tag directly. PHP is not
-   published from this repository — see `BOOTSTRAP.md`.
+3. `release.yml` builds `aprv.wasm` and the component once, with no cache
+   (`build-wasm`), and the `aprv-server` binaries per platform
+   (`build-server`); attests each with SLSA build provenance and a
+   CycloneDX SBOM; attaches the module, the component, the WIT, the
+   binaries and `SHA256SUMS` to the Release; and pushes the server image
+   to GHCR (and Docker Hub once bootstrapped). The publish jobs take those
+   files and never rebuild them: npm (OIDC), PyPI (OIDC), RubyGems (OIDC),
+   NuGet (OIDC), Maven Central (token + GPG; both artifactIds and the two
+   classifier jars), and the `go/vX.Y.Z` tag that publishes the Go module
+   through `proxy.golang.org`. SwiftPM consumes the plain tag directly,
+   and Packagist reads the tag once the owner has submitted the repository.
+   crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4
+   (BOOTSTRAP.md).
 
 Every publish job is version-gated: it skips loudly if the registry already
 has that version, so re-runs are safe, and each one proves the built artifact
@@ -369,18 +558,20 @@ carries the library before pushing it. **Never rename `release.yml`** — npm,
 PyPI, RubyGems, crates.io and NuGet trusted publishing all match the workflow
 filename.
 
-Four of the nine registries are not live yet: each needs a one-time owner
-action, listed per registry in [BOOTSTRAP.md](./BOOTSTRAP.md).
+Registries that are not live yet each need a one-time owner action, listed
+per registry in [BOOTSTRAP.md](./BOOTSTRAP.md).
 
-Maven Central's Usage Center caps `io.github.emindeniz99` at 7 releases per
-calendar month, and every release-please PR merge spends one, since
-`release.yml` publishes to Central on every tag. Merge a release PR only for
-a consumer-visible change — a fix, a feature, a docs correction that
-registries display, or a security bump of a shipped dependency — not for a
-`Package.resolved`/lockfile or CI-only bump; let release-please accumulate
-those into the next real release instead. Before merging, check the month's
-count on https://central.sonatype.com (Usage Center) or `git tag
---sort=-creatordate | head`, and keep at least 2 releases in reserve for an
-emergency fix. Note that SwiftPM consumers never see `Package.resolved` —
-they resolve from `Package.swift`'s `from:` floors — so a `Package.resolved`
-bump alone changes nothing for them.
+Maven Central's Usage Center caps `io.github.emindeniz99` at 7 releases and
+about 80 MB per calendar month, and every release-please PR merge spends
+one, since `release.yml` publishes to Central on every tag. With the two
+server classifier jars a release is about 10.5 MB, so the working budget
+is 5 releases a month. Merge a release PR only for a consumer-visible
+change — a fix, a feature, a docs correction that registries display, or a
+security bump of a shipped dependency (an OpenSSL advisory that reaches
+the core is one) — not for a `Package.resolved`/lockfile or CI-only bump;
+let release-please accumulate those into the next real release instead.
+Before merging, check the month's count on https://central.sonatype.com
+(Usage Center) or `git tag --sort=-creatordate | head`, and keep at least
+2 releases in reserve for an emergency fix. Note that SwiftPM consumers
+never see `Package.resolved` — they resolve from `Package.swift`'s `from:`
+floors — so a `Package.resolved` bump alone changes nothing for them.

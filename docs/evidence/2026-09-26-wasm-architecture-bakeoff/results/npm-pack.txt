@@ -1,0 +1,36 @@
+aprv-spike-component-0.0.0.tgz 603169 B, 14 files, sha256 737b179c71ab00e1
+    202031 package/aprv.js
+    324 package/browser.js
+    2093 package/facade.js
+    365 package/node.js
+    550 package/workerd.js
+    618 package/package.json
+    1323 package/interfaces/aprv-verifier-types.d.ts
+    1250 package/interfaces/aprv-verifier-verifier.d.ts
+    1869 package/aprv.d.ts
+    883 package/index.d.ts
+    20478 package/THIRD-PARTY-NOTICES.txt
+    1422760 package/aprv.core.wasm
+    224 package/aprv.core2.wasm
+    210 package/aprv.core3.wasm
+aprv-spike-core-0.0.0.tgz 567366 B, 9 files, sha256 63540885b648ec6b
+    4696 package/abi.js
+    421 package/browser.js
+    1066 package/instantiate.js
+    450 package/node.js
+    398 package/workerd.js
+    609 package/package.json
+    883 package/index.d.ts
+    20478 package/THIRD-PARTY-NOTICES.txt
+    1406386 package/aprv.wasm
+aprv-spike-emscripten-0.0.0.tgz 534225 B, 10 files, sha256 bd56967a6b71d9bc
+    4696 package/abi.js
+    388 package/browser.js
+    562 package/node.js
+    647 package/workerd.js
+    624 package/package.json
+    12808 package/aprv-em-node.mjs
+    11783 package/aprv-em-web.mjs
+    883 package/index.d.ts
+    25637 package/THIRD-PARTY-NOTICES.txt
+    1117625 package/aprv-em.wasm

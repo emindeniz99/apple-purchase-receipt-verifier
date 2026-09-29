@@ -13,6 +13,38 @@ pip install apple-purchase-receipt-verifier
 The import package is `apple_purchase_receipt_verifier`; the distribution is
 `apple-purchase-receipt-verifier`. Requires Python 3.10+.
 
+## Before you deploy
+
+The verification core is one WebAssembly module, `aprv.wasm`, that this package
+runs on [wasmtime-py](https://pypi.org/project/wasmtime/). The Python code moves
+bytes in and out and parses nothing. In a source checkout the module is not
+committed: copy it into `apple_purchase_receipt_verifier/`. The package loads only that file, checked against
+`aprv.wasm.sha256`, and reads no variable to pick another.
+
+- **It compiles at start.** The first `Verifier` in a process compiles the
+  module: 1 to 3 s on an idle machine, up to 8 s on a busy shared one (about
+  5 s of CPU). A later one in the same process takes about 3 ms. Build the
+  `Verifier` at start-up, never per request.
+- **A compile cache is on by default** and brings a start to about 0.1 s
+  (54 MB resident, against 150 MB for a compile). It
+  lives in your own user cache directory; `APRV_WASM_CACHE_DIR` moves it, and
+  an empty value turns it off ([the rules](#the-compile-cache)).
+- **AWS Lambda pays the compile in every new container**, about 3 s or more on
+  one vCPU: the package directory is read-only and nothing survives a cold start.
+  Create the `Verifier` in the init phase, outside the handler, and count it in
+  your cold-start budget.
+- **Use worker processes, not threads.** A `Verifier` is thread-safe, but
+  wasmtime-py scales threads badly: on an idle 4-CPU machine, 583, 946 and 566
+  receipts per second at 1, 2 and 4 threads, against 595, 1,123 and 2,259 with
+  processes (an idle machine and an earlier build of the module; the shape
+  comes from wasmtime-py, not from the module). With gunicorn or uvicorn, one
+  `Verifier` per worker.
+- **Platforms follow wasmtime-py's wheels:** Linux (glibc and musl), macOS and
+  Windows, on x86_64 and arm64. Elsewhere (32-bit machines, ppc64le, s390x,
+  riscv64) `pip install` stops with a pointer to `aprv-server`, a standalone
+  binary or Docker image any language can call, or to the C ABI, instead of
+  installing a package whose import fails.
+
 ## Quick start
 
 One `Verifier`, built from a `Config`, exposes the three entry points. It is
@@ -56,6 +88,62 @@ response_json = verifier.verify_receipt_endpoint(Environment.PRODUCTION, request
 string Apple's endpoint would have answered, `status` field included. See
 "The verifyReceipt-compatible endpoint" below for the raw-body caveat and the
 status table.
+
+### Your own roots
+
+`Config.create(roots=[...])` takes DER-encoded certificates as `bytes` (the
+bytes of a `.cer` file), for tests and for anyone who pins something other than
+Apple's roots. The module parses them when the `Verifier` is built, so a value
+that is not a certificate is a `ValueError` there, never a later verdict.
+
+Apple's three roots are compiled into the module, and the package carries no
+copy of them: `Config.defaults().roots` is `None`, which the `Verifier` hands
+the module as an empty list meaning those three. To trust Apple's roots and one
+of your own, pass all of them, reading Apple's from its PKI page or the
+repository's `certs/`:
+
+```python
+from pathlib import Path
+
+from apple_purchase_receipt_verifier import Config, Verifier
+
+apple = [path.read_bytes() for path in sorted(Path("certs").glob("*.cer"))]
+verifier = Verifier(Config.create(roots=[*apple, Path("my-test-root.cer").read_bytes()]))
+```
+
+`Verifier` fails at construction, never later, for an empty root set (an
+explicitly empty collection, not `None`), a root the
+module refuses, or a module it cannot run (an ABI mismatch is a `RuntimeError`
+naming the version expected). The `verify_*` methods never raise. A trap inside
+the module, an answer the wrapper cannot read, and a `Config.clock` that
+raises or answers anything but epoch milliseconds are all
+`Reason.INTERNAL_ERROR` (status 21009 at the endpoint); the instance involved
+is discarded and the next call uses a fresh one.
+
+### The compile cache
+
+Wasmtime writes the compiled module to disk, so the next process loads it
+(about 0.1 s warm, against 1 to 3 s to compile on an idle machine and about 5 s
+of CPU on a busy one; `docs/evidence/2026-09-29-python-g1.md`). The cache holds native
+code that the next process runs, so anyone who can write its directory can plant
+code. The rules:
+
+1. The default is your own user cache directory:
+   `~/.cache/apple-purchase-receipt-verifier/wasmtime` on Linux (or under
+   `$XDG_CACHE_HOME`), `~/Library/Caches/apple-purchase-receipt-verifier/wasmtime`
+   on macOS, `%LOCALAPPDATA%\apple-purchase-receipt-verifier\wasmtime` on
+   Windows. It is created private (mode 0700).
+2. `APRV_WASM_CACHE_DIR` names another absolute path. Set it empty for no cache.
+3. The cache is off, silently, when the directory is read-only or cannot be
+   created, is not owned by you, or is writable by group or others, or when
+   its parent is one someone else could swap. A shared directory such as `/tmp`
+   never holds it. Off is not an error: the process compiles at start and
+   verifies as usual.
+4. On Windows there are no owner or mode bits to read, so only the read-only
+   rule applies.
+
+A `Verifier` made before a `fork` keeps answering in the children, and one made
+after it reuses the process's compiled module.
 
 ## Integrating: from verified payload to entitlement
 
@@ -257,6 +345,29 @@ every port:
   everything else as JSON numbers, the same value every other port
   writes (the bytes may differ).
 
+## Upgrading from 0.7
+
+The API is the 0.7 API. What changed is what sits under it.
+
+- **Roots are DER `bytes`, not `cryptography` certificates.**
+  `Config.create(roots=[cert.public_bytes(Encoding.DER)])` for a
+  `cryptography.x509.Certificate`. Anything else is a `TypeError`.
+- **`default_roots()` is gone, and `Config.defaults().roots` is `None`.**
+  Apple's three roots are compiled into the module, which trusts them when no
+  roots are given; the package no longer ships a copy to return.
+- **The dependencies are `wasmtime` alone.** `cryptography` and `asn1crypto`
+  are no longer installed by this package.
+- **The first `Verifier` compiles a module** (see the top of this file).
+- **`Failure.cause` is set only for an `INTERNAL_ERROR` this package raised**
+  (a trap, a failing clock). It is `None` for `UNREADABLE_PAYLOAD`: the message
+  says what did not parse.
+- **The module-private helpers are gone** (`_receipt_base64`,
+  `verify_receipt_der`, and the rest of the hand-written verifier). The
+  public names, `receipt.MAX_RECEIPT_BYTES`, `endpoint.MAX_REQUEST_BYTES`,
+  `jws.MAX_JWS_BYTES` and `receipt.device_hash`, stay.
+- **Platforms follow wasmtime-py's wheels** (top of this file), where 0.7
+  followed `cryptography`'s.
+
 ## Upgrading from 0.6
 
 0.7 is a breaking change: the two verifier classes are gone, policy checks
@@ -268,7 +379,7 @@ every failure is a `VerificationResult`/`Failure` instead of a raised
 |---|---|
 | `ReceiptVerifier(roots, bundle_id).verify(b64)` | `Verifier(Config.create(roots=roots)).verify_receipt(b64)`, then compare `result.payload.bundle_id` yourself |
 | `JwsVerifier(roots, bundle_id, environments).verify_transaction(jws)` | `Verifier(Config.create(roots=roots)).verify_signed_data(jws)`, then compare `payload["bundleId"]` / `payload["environment"]` yourself |
-| `apple_receipt_roots()` / `apple_jws_roots()` | `default_roots()` (one function, one pinned set, for both paths) |
+| `apple_receipt_roots()` / `apple_jws_roots()` | `Config.defaults()` (one pinned set, for both paths) |
 | raised `VerificationError` with `.reason` | `VerificationResult.failure` (`Failure.reason`, `.message`, `.cause`); nothing raises |
 | `Reason.INVALID_RECEIPT_FORMAT`, `.INVALID_JWS_FORMAT` | `Reason.MALFORMED` |
 | `Reason.REQUEST_TOO_LARGE` | `Reason.TOO_LARGE` |
@@ -280,32 +391,25 @@ every failure is a `VerificationResult`/`Failure` instead of a raised
 | transaction's `expires_date` / `.revocation_date` attributes | read the same keys straight off `json.loads(payload.json)` (there is no longer a typed JWS model, only the verified JSON text) |
 | device-hash check built into `ReceiptVerifier` | `apple_purchase_receipt_verifier.receipt.device_hash(...)`, called by you (see "Device hash" above) |
 
-## Measured worst-case CPU
+## Speed
 
-Measured on 2026-09-27 with `bench/bench.py --worst-case`, which times every
-shared case in `fixtures/cases.json` that carries a time budget: oversized
-untrusted keys, a cross-signed certificate mesh, and the encoding oddities
-inside certificates. CPython 3.11.15 with cryptography 50.0.1, one thread,
-on a shared 4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); one second of
-warm-up, then ten samples of at least 100 ms each, garbage collector on.
+What wasmtime-py 49.0.0 measured on the release module (2026-09-29, one thread,
+Linux x86_64, CPython 3.11, on a shared 4-CPU runner that was busy the whole
+time, so read them as upper bounds; `docs/evidence/2026-09-29-python-g1.md`
+holds the sources): 2.2 to 3.0 ms of CPU for a genuine sandbox receipt with two
+purchases, 18 ms for one with 187, and 8 ms for a StoreKit 2 JWS, after the
+module is compiled (at most about 450 receipts per second per thread), a new
+`Verifier` about 3 ms once it is, and the start-up figures at the top of this
+file. Peak memory is 150 MB after a compile and 54 MB after a cache hit, and
+does not grow over 300 calls. The core does the same work for a
+hostile input as for an ordinary one of its size, and its bounds are its own
+(see "Input limits"), so a large or malformed input costs no more than a large
+valid one.
 
-| Call | Median | Slowest sample |
-|---|---:|---:|
-| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 2.3 ms | 3.2 ms |
-| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 2.3 ms | 2.6 ms |
-| Next: `receipt/reject-untrusted-oversized-intermediates` | 1.5 ms | 1.7 ms |
-| Every other budgeted case | under 1.1 ms | under 1.4 ms |
-| For scale: `verify_receipt` on the genuine 187-purchase legacy receipt | 16 ms | 17 ms |
-| For scale: `verify_receipt_endpoint` on the same receipt | 24 ms | 28 ms |
-
-No hostile input in the shared suite costs more than an ordinary large
-receipt: the cost of a call follows the size of the input, which the caps
-below bound, not the structure an attacker chooses. The smaller cross-port
-fixture (2 in-app purchases) verifies in about 0.9 ms. The machine was
-shared with other work, so treat these as an order of magnitude. Run
-`uv run --locked python bench/bench.py --worst-case` for the hostile cases
-on your own hardware, and the same command without `--worst-case` for the
-genuine receipts; `../BENCHMARKS.md` compares all nine ports.
+`uv run --locked python bench/bench.py` times the cross-port operations on the
+two genuine sandbox receipts on your machine, and with `--worst-case` every
+case of `fixtures/cases.json` that carries a time budget (it needs the release
+module, whose answers the cases pin). `../BENCHMARKS.md` compares all the ports.
 
 ## Debugging a receipt by hand
 
@@ -341,21 +445,7 @@ limits are Apple's, fixed constants in every port of this library, not
 `fixtures/cases.json` holds every port to these same numbers, from both
 sides of each boundary.
 
-## Known issue: legacy receipts on RHEL 9
-
-The legacy Apple receipt chain and its CMS signature are SHA-1. The
-`cryptography` wheel from PyPI bundles its own OpenSSL and is not affected.
-The distro package (`python3-cryptography` on RHEL 9, Alma or Rocky) uses the
-system OpenSSL, which the DEFAULT crypto policy stops from verifying SHA-1
-signatures, so with it a genuine legacy receipt is `Reason.UNTRUSTED_CHAIN`.
-Observed on AlmaLinux 9.8 on 2026-09-24. Newer receipts (SHA-256 chains) and
-every JWS are unaffected; FIPS mode is untested.
-
-Until the fix ships, install `cryptography` from PyPI, or run
-`update-crypto-policies --set DEFAULT:SHA1` on that host. The planned fix
-checks SHA-1 signatures on Apple's pinned legacy chain with `cryptography`'s
-`recover_data_from_signature` and an exact byte comparison, and adds an
-AlmaLinux 9 CI job (ROADMAP.md).
+The package copies at most 3,145,729 bytes of any input into the module (one over the cap), so the module itself answers `TOO_LARGE` and a huge input costs no memory.
 
 ## Why offline
 
@@ -364,10 +454,11 @@ purchase can be honoured immediately and reconciled against the App Store
 Server API afterwards. Refunds and revocations still need that reconciliation
 pass — a signature proves what Apple signed, not what happened since.
 
-This is one of nine implementations (Java, Node, Python, Swift, Go, Ruby,
-Rust, PHP, .NET) that share a single fixture suite, including Apple's own official test fixtures, and are
-required to agree on every verdict and every decoded value. See the
-[project README](../README.md) for the full picture and
+This package holds no verification code. It runs the project's Rust core,
+compiled once to WebAssembly, as the other Wasm-hosted packages do; the shared
+fixture suite `fixtures/cases.json`, including Apple's own official test
+fixtures, is the contract every package meets, and `tests/test_conformance.py`
+runs all of it. See the [project README](../README.md) for the full picture and
 [COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
 libraries.
 

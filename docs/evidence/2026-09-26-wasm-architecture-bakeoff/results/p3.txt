@@ -1,0 +1,12 @@
+# P3 (wasm32-wasip3) attempt, 2026-09-26
+rustc: rustc 1.100.0-nightly (5ceaf6608 2026-09-25)
+build: TESTED ok, 1504456 B component (AWS-LC via wasi-sdk 34 wasi-sdk-p3.cmake, guest world aprv-wasi)
+imports: aprv:verifier/types@0.1.0; wasi:cli/environment@0.3.0; wasi:cli/exit@0.3.0; wasi:cli/types@0.3.0; wasi:cli/stdin@0.3.0; wasi:cli/stdout@0.3.0; wasi:cli/stderr@0.3.0; wasi:cli/terminal-input@0.3.0; wasi:cli/terminal-output@0.3.0; wasi:cli/terminal-stdin@0.3.0; wasi:cli/terminal-stdout@0.3.0; wasi:cli/terminal-stderr@0.3.0; wasi:clocks/types@0.3.0; wasi:clocks/monotonic-clock@0.3.0; wasi:clocks/system-clock@0.3.0; wasi:filesystem/types@0.3.0; wasi:filesystem/preopens@0.3.0; wasi:random/random@0.3.0; 
+features: awslc-p3.component.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'component-model', 'call-indirect-overlong', 'bulk-memory-opt', 'cm-async']; validates as ['none of wasm1/wasm2/lime1']
+jco 1.35.0 transpile (--instantiation async, and --async-mode jspi): transpiles, but the output fails to load in Node 22.22.2:
+aprv.js:13239
+        const started = await task.enter();
+                        ^^^^^
+
+wasmtime 49.0.1 CLI with -W component-model-async=y -S p3=y: --invoke cannot address an interface's resource constructors ("No exported func named `create`", "invalid token"); no corpus run.
+wasmtime-py 49.0.0: component Linker offers add_wasip2 and add_wasi_http, no WASIp3 (dir(wasmtime.component.Linker)); no corpus run.

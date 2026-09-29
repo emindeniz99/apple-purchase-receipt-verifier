@@ -44,6 +44,7 @@ final class DefaultVerifier implements Verifier {
 
     DefaultVerifier(Config config) {
         Objects.requireNonNull(config, "config");
+        ClasspathGuard.check(DefaultVerifier.class.getClassLoader());
         initialise(DefaultVerifier::buildStaticState);
         // A bad config (an empty root set) fails before the probe's cost.
         this.trustAnchors = AppleTrust.anchors(config.roots());

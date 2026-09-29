@@ -22,7 +22,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -47,16 +46,6 @@ namespace ApplePurchaseReceiptVerifier.Bench
                 "ec62c6bd4a34bd8e56b11e675bf5a28319ce69b71d050e73344bab22f46799a8"),
         };
 
-        // The library's own receipt-data decoder is internal. Reflection
-        // rather than an InternalsVisibleTo entry, as in fuzz/: the library
-        // is what ships and this project must not change it. The delegate is
-        // bound once, so each call costs a delegate invocation.
-        private static readonly Func<string, byte[]> DecodeBase64 =
-            (Func<string, byte[]>)typeof(IVerifier).Assembly
-                .GetType("ApplePurchaseReceiptVerifier.Internal.ReceiptVerifierCore", throwOnError: true)!
-                .GetMethod("DecodeBase64", BindingFlags.Static | BindingFlags.NonPublic, null, new[] { typeof(string) }, null)!
-                .CreateDelegate(typeof(Func<string, byte[]>));
-
         // Keeps each result reachable so no call can be optimized away.
         private static object? s_sink;
 
@@ -74,7 +63,6 @@ namespace ApplePurchaseReceiptVerifier.Bench
         private static List<Result> CrossPort()
         {
             Config config = Config.CreateBuilder()
-                .Roots(AppleRootCertificates.Bundled())
                 .Clock(() => NowMillis)
                 .Build();
             IVerifier verifier = Verifier.Create(config);
@@ -96,7 +84,6 @@ namespace ApplePurchaseReceiptVerifier.Bench
 
                 // Every call once, with the answer the conformance suite
                 // expects, so no benchmark can time a fast failure by accident.
-                Check(DecodeBase64(base64).AsSpan().SequenceEqual(der), "decodeBase64");
                 VerificationResult<ReceiptPayload> verified = verifier.VerifyReceipt(base64);
                 Check(
                     verified.Verified && verified.Payload!.BundleId == bundleId && verified.Payload!.InApp.Count == inAppCount,
@@ -112,7 +99,6 @@ namespace ApplePurchaseReceiptVerifier.Bench
                     RejectTampered() is Failure { Reason: VerificationReason.InvalidSignature },
                     "rejectTamperedSignature");
 
-                results.Add(Measure("decodeBase64", name, () => DecodeBase64(base64)));
                 results.Add(Measure("verifyReceipt", name, () => verifier.VerifyReceipt(base64)));
                 results.Add(Measure("endpointJson", name, () => verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, requestJson)));
                 results.Add(Measure("rejectTamperedSignature", name, RejectTampered));
@@ -151,12 +137,15 @@ namespace ApplePurchaseReceiptVerifier.Bench
                 string id = kase.GetProperty("id").GetString()!;
                 string operation = kase.GetProperty("operation").GetString()!;
                 JsonElement trusted = kase.GetProperty("config").GetProperty("trustedRoots");
-                IEnumerable<X509Certificate2> roots = trusted.GetProperty("source").GetString() == "fixtures"
-                    ? trusted.GetProperty("fixtures").EnumerateArray()
+                Config.Builder builder = Config.CreateBuilder().Clock(() => NowMillis);
+                if (trusted.GetProperty("source").GetString() == "fixtures")
+                {
+                    builder.Roots(trusted.GetProperty("fixtures").EnumerateArray()
                         .Select(root => X509CertificateLoader.LoadCertificate(FixtureBytes(root.GetString()!)))
-                        .ToList()
-                    : AppleRootCertificates.Bundled();
-                IVerifier verifier = Verifier.Create(Config.CreateBuilder().Roots(roots).Clock(() => NowMillis).Build());
+                        .ToList());
+                }
+
+                IVerifier verifier = Verifier.Create(builder.Build());
                 string fixture = kase.GetProperty("input").GetProperty("fixture").GetString()!;
                 byte[] bytes = FixtureBytes(fixture);
                 string codec = registry.GetProperty(fixture).GetProperty("codec").GetString()!;

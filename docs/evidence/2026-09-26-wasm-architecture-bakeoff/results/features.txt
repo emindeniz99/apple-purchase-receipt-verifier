@@ -1,0 +1,21 @@
+# py/features.py (wasm-tools 1.259.0 leave-one-out), 2026-09-26
+# rust-uu/rust-c/awslc-c/ossl-c/awslc-w1/ossl-w1 = core modules; aprv-em.wasm x3 = awslc-em, ossl-em, libressl-em (in that order); components; jco cores (awslc-min-jco core, ossl-wasi-jco core, ossl adapter core4)
+rust-uu.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+rust-c.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+awslc-c.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+ossl-c.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+awslc-w1.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+ossl-w1.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+aprv-em.wasm: requires ['saturating-float-to-int', 'sign-extension', 'bulk-memory', 'floats', 'legacy-exceptions', 'bulk-memory-opt']; validates as ['none of wasm1/wasm2/lime1']
+aprv-em.wasm: requires ['saturating-float-to-int', 'sign-extension', 'bulk-memory', 'floats', 'legacy-exceptions', 'bulk-memory-opt']; validates as ['none of wasm1/wasm2/lime1']
+aprv-em.wasm: requires ['saturating-float-to-int', 'sign-extension', 'bulk-memory', 'floats', 'legacy-exceptions', 'bulk-memory-opt']; validates as ['none of wasm1/wasm2/lime1']
+awslc-min.component.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'component-model', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+ossl-wasi.component.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'component-model', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+aprv.core.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+aprv.core.wasm: requires ['saturating-float-to-int', 'sign-extension', 'reference-types', 'bulk-memory', 'floats', 'call-indirect-overlong', 'bulk-memory-opt']; validates as ['wasm2', 'lime1']
+aprv.core4.wasm: requires ['nothing beyond all-on baseline']; validates as ['wasm1', 'wasm2', 'lime1']
+
+# legacy-exceptions users in the Emscripten builds (try/catch/rethrow opcodes):
+awslc-em: 152
+ossl-em: 160
+libressl-em: 160

@@ -1,0 +1,6 @@
+# build.sh, 2026-09-29; rustc 1.98.1 (48a229cea 2026-09-01); wasi-sdk 34.0 clang: clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141); wasm-tools 1.259.0 (7fc33f279 2026-09-10); wit-bindgen-cli 0.62.0
+v1 rebuilt from the ABI v1 tree in 47 s: sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3 (IDENTICAL to b14e14b2...)
+ABI v1 module (b14e14b2): 2952613 bytes, sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+    imports: aprv :: clock_now_ms;aprv :: random_get;
+    exports: memory;aprv_abi_version;aprv_alloc;aprv_call;aprv_dealloc;aprv_result_free;aprv_result_len;aprv_result_ptr;_initialize;
+    custom sections:  custom "name" | 0x2933d9 - 0x2d0c43 | 252010 bytes | 1 count; custom "producers" | 0x2d0c50 - 0x2d0cfe | 174 bytes | 1 count; custom "target_features" | 0x2d0d11 - 0x2d0da5 | 148 bytes | 1 count;

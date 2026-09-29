@@ -1,0 +1,2 @@
+{"test":"independent instances: a trap in A leaves B untouched; A restarts fresh","b_unchanged":true,"a_after_trap":true,"a_traps":1,"b_traps":0,"pass":true}
+{"test":"4 threads, one Verifier each, a trap every 7th call","good_calls":[60, 60, 60, 60],"traps":[10, 10, 10, 10],"errors":0,"pass":true}

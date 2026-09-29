@@ -18,10 +18,10 @@ endpoint. The recommended replacements are:
    INTEGER, value OCTET STRING }`, `Payload ::= SET OF ReceiptAttribute`)
    and defers the attribute numbers to Apple's archived
    [Receipt Fields](https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html)
-   page, last revised 2017-12-11. Every attribute the ports read is on
+   page, last revised 2017-12-11. Every attribute the library reads is on
    that page except two, receipt type (0) and original purchase date
-   (18), which are community-established and flagged as such in every
-   port's payload reader.
+   (18), which are community-established and flagged as such in the
+   payload readers.
 
 We want our backends to do exactly that: **prove, cryptographically and
 offline, that purchase data presented by a client was produced by Apple** —
@@ -29,22 +29,27 @@ so we can trust the client enough to unlock purchased products.
 
 ## What we are building
 
-A small, self-contained verification library, implemented **per backend
-language** (all inside this folder):
+A small, self-contained verification library, with a package for **each
+backend language** (all inside this folder). One Rust core does the
+verification; it is compiled to one WebAssembly module, `aprv.wasm`, that
+the other packages run, and a second, independent implementation in Java
+answers the same shared cases beside it:
 
-| Folder | Language | Status |
-|--------|----------|--------|
-| [`java/`](./java) | Java 8+ | ✅ done |
-| [`node/`](./node) | Node.js 20+ | ✅ done |
-| [`python/`](./python) | Python 3.10+ | ✅ done |
-| [`swift/`](./swift) | Swift 6.1+ | ✅ done |
-| [`go/`](./go) | Go 1.22+ | ✅ done |
-| [`ruby/`](./ruby) | Ruby 3.3+ | ✅ done |
-| [`rust/`](./rust) | Rust 1.85+ | ✅ done |
-| [`php/`](./php) | PHP 8.2+ | ✅ done |
-| [`dotnet/`](./dotnet) | .NET (netstandard2.0, net8.0) | ✅ done |
+| Folder | Language | What verifies |
+|--------|----------|---------------|
+| [`rust/`](./rust) | Rust 1.85+ | the core, on OpenSSL 4 |
+| [`java/`](./java) | Java 8+ | the independent Java implementation |
+| [`java-wasm/`](./java-wasm) | Java 8+ | the core, on Endive (Java 11+) or `aprv-server` (Java 8) |
+| [`node/`](./node) | Node.js 20+ | the core, as `aprv.wasm` |
+| [`python/`](./python) | Python 3.10+ | the core, as `aprv.wasm` |
+| [`swift/`](./swift) | Swift 6.3+ | the core, as `aprv.wasm` |
+| [`go/`](./go) | Go 1.22+ | the core, as `aprv.wasm` |
+| [`ruby/`](./ruby) | Ruby 3.3+ | the core, as `aprv.wasm` |
+| [`php/`](./php) | PHP 8.2+ | the core, through `aprv-server` |
+| [`dotnet/`](./dotnet) | .NET (netstandard2.0) | the core, as `aprv.wasm` |
+| [`rust/server/`](./rust/server) | any, over HTTP or a CLI | the core, as `aprv.wasm`, in its own process |
 
-Each implementation exposes one `Verifier` with three methods
+Each package exposes one `Verifier` with three methods
 ([docs/design/0.7-api.md](./docs/design/0.7-api.md)):
 
 1. **JWS verification** (`verifySignedData`: `signedTransactionInfo`,

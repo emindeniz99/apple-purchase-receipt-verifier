@@ -1,0 +1,46 @@
+package spikeweb;
+
+import __PKG__.servlet.http.HttpServlet;
+import __PKG__.servlet.http.HttpServletRequest;
+import __PKG__.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.TreeSet;
+
+public class VerifyServlet extends HttpServlet {
+    private static String receipt() throws IOException {
+        try (InputStream in = VerifyServlet.class.getResourceAsStream("/receipt.b64")) {
+            ByteArrayOutputStream o = new ByteArrayOutputStream(); byte[] b = new byte[8192]; int n;
+            while ((n = in.read(b)) > 0) o.write(b, 0, n);
+            return new String(o.toByteArray(), StandardCharsets.UTF_8).replaceAll("\\s", "");
+        }
+    }
+    static String maps() {
+        try {
+            TreeSet<String> s = new TreeSet<>();
+            for (String l : Files.readAllLines(Paths.get("/proc/self/maps"))) {
+                int i = l.indexOf('/');
+                if (i > 0 && (l.contains("aprv") || l.contains("jna"))) s.add(l.substring(i).replaceAll(" \\(deleted\\)", ""));
+            }
+            return s.size() + " " + s;
+        } catch (Exception e) { return "?"; }
+    }
+    @Override protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        resp.setContentType("text/plain");
+        String out;
+        try {
+            out = "OK bundleId=" + Impl.verify(receipt());
+        } catch (Throwable t) {
+            StringBuilder sb = new StringBuilder("ERR ");
+            for (Throwable c = t; c != null; c = c.getCause()) sb.append(c).append(" | ");
+            out = sb.toString();
+        }
+        resp.getWriter().println(out + "\n  ctx=" + req.getContextPath() + " cl@" + Integer.toHexString(System.identityHashCode(getClass().getClassLoader()))
+            + " threads=" + Thread.activeCount() + "\n  mapped=" + maps());
+    }
+}

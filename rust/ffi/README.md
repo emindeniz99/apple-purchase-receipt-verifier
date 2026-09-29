@@ -17,7 +17,9 @@ cargo build --locked --manifest-path rust/ffi/Cargo.toml            # debug
 cargo build --locked --release --manifest-path rust/ffi/Cargo.toml  # release
 ```
 
-That produces both a `cdylib` and a `staticlib` in `rust/ffi/target/<profile>`:
+That produces both a `cdylib` and a `staticlib` in `rust/target/<profile>`
+(the crate is a member of the `rust/` workspace, whose target directory that
+is):
 
 | Platform | Shared | Static |
 |---|---|---|
@@ -37,12 +39,17 @@ cd rust/ffi && cbindgen --config cbindgen.toml \
   --output include/apple_purchase_receipt_verifier.h
 ```
 
-The crate builds on the same Rust 1.85.0 floor as the library, from a
-committed `Cargo.lock` resolved for that floor:
+The crate builds on the same Rust 1.85.0 floor as the library, from the
+`rust/` workspace's one committed `Cargo.lock`, resolved for that floor
+(run in `rust/`):
 
 ```bash
 CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile
 ```
+
+It reaches the library through `aprv-surface` (the calls) and `aprv-wire`
+(the JSON), the boundary `aprv.wasm` is built on too, so the C ABI and the
+Wasm module hand out the same bytes.
 
 **Phase 2 — prebuilt binaries — does not exist yet.** There is no
 `.so`/`.dylib`/`.dll` attached to a release and no package on any registry.
@@ -50,11 +57,10 @@ Building from source is the only supported path today; see `ROADMAP.md`.
 
 ## The surface
 
-Seven symbols, all functions: the version string, a constructor and a
+Ten symbols, all functions: the version string, a constructor and a
 destructor for the opaque `AprvVerifier` handle, three verification calls
-(two fill an `AprvResult` struct, the endpoint call returns a string), and
-one function that frees that string. They mirror the Rust 0.7 API one to
-one.
+in two forms each (two fill an `AprvResult` struct, the endpoint call
+returns a string), and one function that frees those strings.
 
 ```c
 const char *aprv_version(void);
@@ -63,6 +69,14 @@ AprvVerifier *aprv_verifier_new(const uint8_t *const *ders, const size_t *lens, 
                                 const int64_t *fixed_clock_unix_millis);
 void          aprv_verifier_free(AprvVerifier *);
 
+/* Bytes in, aprv.wasm's documents out: use these. */
+int32_t aprv_verify_receipt_bytes(const AprvVerifier *, const uint8_t *receipt_base64, size_t len,
+                                  AprvResult *out);
+int32_t aprv_verify_signed_data_bytes(const AprvVerifier *, const uint8_t *jws, size_t len, AprvResult *out);
+int32_t aprv_verify_receipt_endpoint_bytes(const AprvVerifier *, uint32_t environment,
+                                           const uint8_t *request_json, size_t len, char **response_json);
+
+/* The 0.7 C-string forms, kept for 0.7 callers. */
 int32_t aprv_verify_receipt(const AprvVerifier *, const char *receipt_base64, AprvResult *out);
 int32_t aprv_verify_signed_data(const AprvVerifier *, const char *jws, AprvResult *out);
 int32_t aprv_verify_receipt_endpoint(const AprvVerifier *, uint32_t environment,
@@ -70,6 +84,14 @@ int32_t aprv_verify_receipt_endpoint(const AprvVerifier *, uint32_t environment,
 
 void aprv_string_free(char *);
 ```
+
+The `_bytes` calls take a pointer and a length, as `aprv.wasm` takes a
+`list<u8>`, and answer what `aprv.wasm` answers for the same bytes: every
+input is a verdict, an embedded NUL and bytes that are not UTF-8 included.
+The C-string forms read up to the first NUL, so a genuine receipt followed
+by a NUL and anything verifies through `aprv_verify_receipt` and is
+`MALFORMED` everywhere else, and they answer bytes that are not UTF-8 with
+`APRV_REASON_INVALID_UTF8` rather than a verdict.
 
 `NULL`, `NULL`, `0` for the anchors selects the three Apple roots the Rust
 library embeds. Otherwise `ders` and `lens` describe DER certificates the
@@ -85,9 +107,9 @@ payload comes back whole and the caller judges it, as in every 0.7 port.
 
 | You have | Call | You get |
 |---|---|---|
-| the base64 receipt an app sends | `aprv_verify_receipt` | the failure reason as `status`, or `ReceiptPayload::to_json()` in `json` |
-| any Apple-signed JWS (transaction, renewal info, app transaction, notification) | `aprv_verify_signed_data` | the failure reason as `status`, or the signed payload text in `json` |
-| a drop-in for Apple's `verifyReceipt` | `aprv_verify_receipt_endpoint` | Apple's response body, verdict in its `status` field |
+| the base64 receipt an app sends | `aprv_verify_receipt_bytes` | the reason as `status`, and aprv.wasm's document in `json` |
+| any Apple-signed JWS (transaction, renewal info, app transaction, notification) | `aprv_verify_signed_data_bytes` | the reason as `status`, and aprv.wasm's document in `json` |
+| a drop-in for Apple's `verifyReceipt` | `aprv_verify_receipt_endpoint_bytes` | Apple's response body, verdict in its `status` field |
 
 `environment` is `APRV_ENVIRONMENT_PRODUCTION` or `APRV_ENVIRONMENT_SANDBOX`;
 it drives the 21007/21008 routing. The endpoint call takes Apple's request
@@ -123,23 +145,29 @@ the JSON.
 
 ### Why JSON is the interchange
 
-`AprvResult.json` carries the answer: the signed JSON text for a JWS,
-exactly `ReceiptPayload::to_json()` for a receipt, Apple's own response body
-for the endpoint call.
+`AprvResult.json` carries the answer. From the `_bytes` calls it is the
+document `aprv.wasm` answers, byte for byte, which validates against
+`rust/bindings/wire/schema/`: `{"verified":true,"payload":...}` (the
+receipt payload is 0.7's `ReceiptPayload.toJson()` value; a JWS payload is
+a JSON string holding the signed text) or
+`{"verified":false,"reason":"<token>","message":"<detail>"}`. From the 0.7
+calls it is the bare payload (the receipt value, or the signed JSON text).
+The endpoint calls hand back Apple's own response body.
 
 A verified transaction is an open-ended JSON claim set and a verified receipt
 is a tree with repeated groups and raw byte attributes. Modelling either as C
 structs would put every field of a wire format Apple extends at will into the
 ABI, and every field Apple added would then be a breaking change for every
 consumer in every language. One UTF-8 JSON document instead keeps the ABI at
-seven symbols and moves the schema question into a parser the caller already
+ten symbols and moves the schema question into a parser the caller already
 has.
 
 The receipt encoding is the JSON value every 0.7 port shares and the
 conformance vectors pin (the value, not the bytes): snake_case keys, dates as `*_ms` epoch
 milliseconds, 64-bit ids as strings, bytes as standard base64,
 `unknown_attributes` keyed by the attribute number. JWS claims are passed
-through exactly as Apple signed them.
+through exactly as Apple signed them. `rust/bindings/wire/schema/` describes
+the receipt value as JSON Schema 2020-12.
 
 ### Status codes are stable and append-only
 
@@ -163,7 +191,9 @@ the point.
 against the library's own `Reason::all()`, so the promise is mechanical
 rather than written down.
 
-On any non-zero status, `json` is `{"reason":"<token>","message":"<detail>"}`.
+From the `_bytes` calls, a verdict (`1`-`99`) comes with the wire document
+above and a call mistake (`100`+) with `json` `NULL`. From the 0.7 calls,
+any non-zero status comes with `{"reason":"<token>","message":"<detail>"}`.
 The token is the `SCREAMING_SNAKE` spelling; the message is short,
 non-sensitive, and never contains receipt bytes, claims or key material.
 Match on the status or the token; never parse the message.
@@ -188,6 +218,22 @@ body inside `std::panic::catch_unwind` and reports a caught panic as
 `APRV_REASON_PANIC` (or a `NULL` handle). This is not a convention anyone has
 to remember: `every_exported_function_is_guarded` reads `src/lib.rs` and
 fails if a `#[no_mangle]` function is ever added that does not do it.
+
+### What else holds the surface
+
+* The crate denies `unsafe_op_in_unsafe_fn`, `improper_ctypes`,
+  `improper_ctypes_definitions` and `ffi_unwind_calls`, and Clippy's
+  `undocumented_unsafe_blocks`: every `unsafe` block says why it is sound.
+* `exported-symbols.txt` is the allowlist of what the shared library
+  exports; `tests/exported_symbols.rs` reads the built library with `nm`
+  (Linux and macOS) and fails on any other symbol, so no Rust, OpenSSL or
+  libc symbol reaches a caller's namespace.
+* `check-header.sh` regenerates the header with cbindgen 0.29.0 and fails
+  on any difference from the committed one; the unit test
+  `the_committed_header_declares_exactly_the_exports` checks the names and
+  parameter counts without cbindgen.
+* `rust/fuzz`'s `ffi` target drives the `_bytes` calls with arbitrary bytes
+  and checks each answer against the surface's own.
 
 Nothing is expected to panic — the library target denies `unwrap`, `expect`,
 slice indexing and `panic!` — so `APRV_REASON_PANIC` is a bug report, not a
@@ -217,7 +263,7 @@ cmake --build rust/ffi/target/cppbuild --config Debug
 rust/ffi/target/cppbuild/bin/aprv_conformance rust/ffi/target/manifest
 
 # 3. the same vectors from a language with no compiler in the loop
-python3 rust/ffi/tests/conformance.py rust/ffi/target/debug
+python3 rust/ffi/tests/conformance.py rust/target/debug
 ```
 
 **Layer 2 is the primary evidence.** A passing C++ run says the header
@@ -235,13 +281,19 @@ pointers the C++ harness cannot reach: `/receipt/bundle_id`,
 `/in_app/[product_id=...]/expires_date_ms`, `/unknown_attributes/9999/0`,
 and every `toJson` value.
 
-Both harnesses run every case in the file and skip none, except the
-`decodeBase64` groups: they call a port's base64 decoders directly, and the
-ABI exposes none, so they are counted as not reachable, never as passed. A
-case that pins a clock passes the instant to `aprv_verifier_new`. A case with
-a `maxMillis` budget (the denial-of-service cases) runs once to warm up and
+Both harnesses drive the `_bytes` calls and run every case in the file,
+skipping none. A `decodeBase64` group reaches its decoder through a verify
+call, as `tools/wasm-trap-host.mjs` does: a receipt-data text as the input
+of `aprv_verify_receipt_bytes`, an x5c text as the three x5c entries of a
+JWS header, and a text lands on the refusing side of the base64 rule when
+the answer is its group's reason and the message names base64. Both check
+that each document is the wire shape and agrees with its status; ctypes
+writes them with `--answers <dir>` for `tools/validate-wire.mjs`. A case
+that pins a clock passes the instant to `aprv_verifier_new`. A case with a
+`maxMillis` budget (the denial-of-service cases) runs once to warm up and
 fails if the second run takes longer. After the run every case id must have
-run or been counted.
+run. The Elixir example still drives the 0.7 C-string calls and counts the
+`decodeBase64` groups as not reachable.
 
 ## Example
 
@@ -272,7 +324,7 @@ the exported symbols by name, so there is no compiler and no package in the
 loop; the conformance harness in `tests/` is built the same way.
 
 ```bash
-python3 rust/ffi/examples/python/example.py rust/ffi/target/release
+python3 rust/ffi/examples/python/example.py rust/target/release
 ```
 
 ## Elixir

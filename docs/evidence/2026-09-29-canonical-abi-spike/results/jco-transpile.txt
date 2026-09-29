@@ -1,0 +1,84 @@
+# jco 1.35.0 transpile aprv-cabi-checked.component.wasm --name aprv --instantiation async, 2026-09-29
+## out (default)
+2979769 ./aprv.core.wasm
+    186 ./aprv.core2.wasm
+    181 ./aprv.core3.wasm
+   1800 ./aprv.d.ts
+ 130734 ./aprv.js
+    103 ./interfaces/aprv-verifier-host.d.ts
+    472 ./interfaces/aprv-verifier-verify.d.ts
+3113245 total
+## out-min (--minify)
+2979769 ./aprv.core.wasm
+    186 ./aprv.core2.wasm
+    181 ./aprv.core3.wasm
+   1800 ./aprv.d.ts
+  63523 ./aprv.js
+    103 ./interfaces/aprv-verifier-host.d.ts
+    472 ./interfaces/aprv-verifier-verify.d.ts
+3046034 total
+## out/aprv.d.ts
+// world root:component/root
+import type * as AprvVerifierHost from './interfaces/aprv-verifier-host.js'; // aprv:verifier/host@1.0.0
+import type * as AprvVerifierVerify from './interfaces/aprv-verifier-verify.js'; // aprv:verifier/verify@1.0.0
+export interface ImportObject {
+  'aprv:verifier/host@1.0.0': typeof AprvVerifierHost,
+}
+export interface Root {
+  'aprv:verifier/verify@1.0.0': typeof AprvVerifierVerify,
+  verify: typeof AprvVerifierVerify,
+}
+
+/**
+* Instantiates this component with the provided imports and
+* returns a map of all the exports of the component.
+*
+* This function is intended to be similar to the
+* `WebAssembly.Instantiate` constructor. The second `imports`
+* argument is the "import object" for wasm, except here it
+* uses component-model-layer types instead of core wasm
+* integers/numbers/etc.
+*
+* The first argument to this function, `getCoreModule`, is
+* used to compile core wasm modules within the component.
+* Components are composed of core wasm modules and this callback
+* will be invoked per core wasm module. The caller of this
+* function is responsible for reading the core wasm module
+* identified by `path` and returning its compiled
+* `WebAssembly.Module` object. This would use the
+* `WebAssembly.Module` constructor on the web, for example.
+*/
+export function instantiate(
+getCoreModule: (path: string) => WebAssembly.Module,
+imports: ImportObject,
+instantiateCore?: (module: WebAssembly.Module, imports: Record<string, any>) => WebAssembly.Instance
+): Root;
+export function instantiate(
+getCoreModule: (path: string) => WebAssembly.Module | Promise<WebAssembly.Module>,
+imports: ImportObject,
+instantiateCore?: (module: WebAssembly.Module, imports: Record<string, any>) => WebAssembly.Instance | Promise<WebAssembly.Instance>
+): Root | Promise<Root>;
+
+## out/interfaces/*.d.ts
+/** @module Interface aprv:verifier/host@1.0.0 **/
+export function randomGet(len: number): Uint8Array;
+/** @module Interface aprv:verifier/verify@1.0.0 **/
+export function init(configJson: string): string;
+export function verifyReceipt(nowMs: bigint, receiptBase64: string): string;
+export function verifySignedData(nowMs: bigint, jws: string): string;
+export function verifyReceiptEndpoint(env: Environment, nowMs: bigint, requestJson: string): string;
+/**
+ * # Variants
+ * 
+ * ## `"production"`
+ * 
+ * ## `"sandbox"`
+ */
+export type Environment = 'production' | 'sandbox';
+## the import key the glue reads
+'aprv:verifier/host@1.0.0#randomGet'
+'aprv:verifier/host@1.0.0'
+imports['aprv:verifier/host']
+## node hosts/jco/import-key.mjs out (jco 1.35.0, 2026-09-29)
+aprv:verifier/host@1.0.0 -> THROWS TypeError: Cannot destructure property 'randomGet' of 'imports.aprv:verifier/host' as it is undefined.
+aprv:verifier/host -> {"ok":true}

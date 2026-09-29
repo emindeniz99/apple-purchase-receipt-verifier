@@ -1,0 +1,4 @@
+built: aprv_wasm_spike-0.0.0.gem 977408 bytes
+installed into an empty GEM_HOME: aprv_wasm_spike (0.0.0) wasmtime (48.0.1 x86_64-linux) 
+wasmtime platform gem: wasmtime-48.0.1-x86_64-linux
+consumer run (ruby 3.3.6): {:verified=>true, :bundleId=>"dev.bonzer.weeka.app"}

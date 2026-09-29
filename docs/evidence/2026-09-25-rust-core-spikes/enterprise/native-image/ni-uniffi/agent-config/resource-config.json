@@ -1,0 +1,13 @@
+{
+  "resources":{
+  "includes":[{
+    "pattern":"\\QMETA-INF/services/java.lang.System$LoggerFinder\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.time.zone.ZoneRulesProvider\\E"
+  }, {
+    "pattern":"\\Qcom/sun/jna/linux-x86-64/libjnidispatch.so\\E"
+  }, {
+    "pattern":"\\Qlinux-x86-64/libaprv_uniffi.so\\E"
+  }]},
+  "bundles":[]
+}

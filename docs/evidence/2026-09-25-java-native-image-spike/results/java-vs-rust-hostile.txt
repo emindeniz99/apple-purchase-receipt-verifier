@@ -1,0 +1,438 @@
+DIVERGE hostile/receipt-der/g5-m1-853597831: native/java 9 vs rust 4
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes"}
+  rust: {"message": "certificate not valid at signing time", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/receipt-der/g5-m0-1026916606: native/java 5 vs rust 9
+  java: {"reason": "INVALID_SIGNATURE", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_SIGNATURE: CMS signature does not match the signer certificate's key"}
+  rust: {"message": "malformed CMS structure: unsupported digest algorithm", "reason": "INVALID_RECEIPT_FORMAT"}
+DIVERGE hostile/receipt-der/g5-m1-990678718: native/java 9 vs rust 4
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: an embedded certificate is not a valid certificate"}
+  rust: {"message": "chain does not reach a pinned root", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/receipt-der/g5-m1-236749769: native/java 9 vs rust 4
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes"}
+  rust: {"message": "chain does not reach a pinned root", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/receipt-der/g5-m1-108278412: native/java 9 vs rust 4
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: unexpected java.lang.IllegalArgumentException"}
+  rust: {"message": "certificate not valid at signing time", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/receipt-der/g5-m1-1001982007: native/java 9 vs rust 4
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: an embedded certificate is not a valid certificate"}
+  rust: {"message": "chain does not reach a pinned root", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/receipt-der/g5-m1-119436138: native/java 4 vs rust 2
+  java: {"reason": "INVALID_CHAIN", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in certification path found."}
+  rust: {"message": "receipt signer certificate is not a valid certificate", "reason": "INVALID_CERTIFICATE"}
+DIVERGE hostile/receipt-der/g5-m1-324520034: native/java 9 vs rust 4
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes"}
+  rust: {"message": "certificate not valid at signing time", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/receipt-der/g5-m1-648951490: native/java 5 vs rust 9
+  java: {"reason": "INVALID_SIGNATURE", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_SIGNATURE: CMS signature does not match the signer certificate's key"}
+  rust: {"message": "signer certificate not embedded", "reason": "INVALID_RECEIPT_FORMAT"}
+DIVERGE hostile/receipt-der/g5-m0-701123523: native/java 9 vs rust 4
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes"}
+  rust: {"message": "certificate not valid at signing time", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/receipt-der/gen-m0-776246130: native/java 0 vs rust 9
+  java: {"receiptType": "ProductionSandbox", "bundleId": "com.example.app", "appVersion": "1.2.3", "originalAppVersion": "1.0", "creationDate": "2024-08-06T12:00:00Z", "originalPurchaseDate": "2024-08-06T12:00:00Z", "expirationDate": null, "appItemId": null, "downloadId": null, "versionExternalIdentifier": null, "opaqueValueHex": "0102030405060708", "sha1HashHex": "a37002bad7df701d30ae601ebf3c4c2dc23a09c0
+  rust: {"message": "embedded certificate is malformed: signatureAlgorithm disagrees with tbsCertificate.signature", "reason": "INVALID_RECEIPT_FORMAT"}
+DIVERGE hostile/receipt-der/gen-m1-280546414: native/java 9 vs rust 2
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes"}
+  rust: {"message": "receipt signer certificate is not a valid certificate", "reason": "INVALID_CERTIFICATE"}
+DIVERGE hostile/receipt-der/gen-m1-619385370: native/java 4 vs rust 9
+  java: {"reason": "INVALID_CHAIN", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validated."}
+  rust: {"message": "malformed CMS structure: not a CMS SignedData", "reason": "INVALID_RECEIPT_FORMAT"}
+DIVERGE hostile/receipt-der/gen-m1-933684943: native/java 9 vs rust 4
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes"}
+  rust: {"message": "certificate not valid at signing time", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/receipt-der/gen-m0-379652758: native/java 5 vs rust 9
+  java: {"reason": "INVALID_SIGNATURE", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_SIGNATURE: CMS verifier refused the signer info"}
+  rust: {"message": "malformed CMS structure: signedAttrs without a contentType attribute", "reason": "INVALID_RECEIPT_FORMAT"}
+DIVERGE hostile/receipt-b64/invalid-utf8: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m1-368922102: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-809384397: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-1059016584: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m1-561040823: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-1038858105: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-674367647: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m1-249980623: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-639361041: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m1-139051852: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-234738030: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m1-771324356: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-182568784: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m1-962283535: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m1-411704958: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-825459219: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m1-604665726: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/receipt-b64/m3-458315756: native/java 9 vs rust 101
+  java: {"reason": "INVALID_RECEIPT_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_RECEIPT_FORMAT: receipt is not canonically padded standard base64"}
+  rust: {"message": "receipt argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/invalid-utf8/op0: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/invalid-utf8/op2: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-1015294164: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-863395319: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-902729958: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-105055458: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-872308212: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-208790371: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-363186951: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-288260161: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-5174191: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-963103774: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-392910055: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: expected 3 dot-separated segments, got 2"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-1044143893: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-173977878: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-822803138: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-942104308: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: payload is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-249539622: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-534728031: native/java 1 vs rust 2
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid JSON"}
+  rust: {"message": "x5c entry is not a valid certificate", "reason": "INVALID_CERTIFICATE"}
+DIVERGE hostile/jws/m1-374006628: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-223800496: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-579530845: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-628864856: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-880356502: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-1013459655: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-399866815: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-409149122: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-675379131: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-954725044: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-1011551471: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-152094613: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-753794101: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-1023336047: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-774171629: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-642533360: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-946400406: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-535996881: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-160010987: native/java 1 vs rust 2
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid JSON"}
+  rust: {"message": "x5c entry is not a valid certificate", "reason": "INVALID_CERTIFICATE"}
+DIVERGE hostile/jws/m3-677198712: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-1021188184: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-946943333: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-718123265: native/java 1 vs rust 2
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid JSON"}
+  rust: {"message": "x5c entry is not a valid certificate", "reason": "INVALID_CERTIFICATE"}
+DIVERGE hostile/jws/m1-1006517628: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-266637059: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: payload is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-683466095: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-348550141: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-867798168: native/java 2 vs rust 4
+  java: {"reason": "INVALID_CERTIFICATE", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_CERTIFICATE: x5c[0] does not decode"}
+  rust: {"message": "leaf not issued by intermediate", "reason": "INVALID_CHAIN"}
+DIVERGE hostile/jws/m1-1008841973: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-966405909: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: expected 3 dot-separated segments, got 4"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-394228224: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-138012174: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-419113767: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: expected 3 dot-separated segments, got 4"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-647064896: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-19423304: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-218601020: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-329776598: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-269157379: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-129527004: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-695381940: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-965679712: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-1025599250: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-672945841: native/java 1 vs rust 2
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid JSON"}
+  rust: {"message": "x5c entry is not a valid certificate", "reason": "INVALID_CERTIFICATE"}
+DIVERGE hostile/jws/m3-391819268: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: expected 3 dot-separated segments, got 4"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m0-575934545: native/java 4 vs rust 2
+  java: {"reason": "INVALID_CHAIN", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_CHAIN: leaf certificate is not signed by the intermediate"}
+  rust: {"message": "x5c entry is not a valid certificate", "reason": "INVALID_CERTIFICATE"}
+DIVERGE hostile/jws/m1-374026064: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-322812616: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-889671535: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m3-260430232: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: signature is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/jws/m1-440106853: native/java 1 vs rust 101
+  java: {"reason": "INVALID_JWS_FORMAT", "exception": "io.github.emindeniz99.applepurchasereceiptverifier.VerificationException", "message": "INVALID_JWS_FORMAT: header is not valid base64url"}
+  rust: {"message": "jws argument", "reason": "INVALID_UTF8"}
+DIVERGE hostile/endpoint/invalid-utf8: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/trailing-garbage: native/java 0 vs rust None
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: {"status": 21002}
+DIVERGE hostile/endpoint/m1-510167067: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m1-17499946: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-435886742: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-902249935: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-649212829: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m0-231647358: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m1-289677175: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-883627433: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-360438333: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-357860004: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-860403256: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-718087725: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-1033404763: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-179521269: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-655147566: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-337932050: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m0-739716219: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m1-370608127: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-444297534: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m3-349015772: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-650577924: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-37156280: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-260971049: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-673871122: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-733080453: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-471080098: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-1052768842: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-64657417: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-523331362: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-629831217: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-297144184: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-510012031: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m1-681484030: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m1-64977774: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-514644828: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+DIVERGE hostile/endpoint/m0-913809771: native/java 9 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-184626924: native/java 0 vs rust None
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: {"status": 21002}
+DIVERGE hostile/endpoint/m1-131264727: native/java 11 vs rust 101
+  java: {"status": 21002}
+  rust: null
+DIVERGE hostile/endpoint/m3-555006329: native/java 0 vs rust 101
+  java: {"status": 0, "environment": "Sandbox", "receipt": {"receipt_type": "ProductionSandbox", "adam_id": 0, "app_item_id": 0, "bundle_id": "dev.bonzer.weeka.app", "application_version": "2", "download_id": 0, "version_external_identifier": 0, "original_application_version": "1.0", "receipt_creation_date": "2025-12-26 18:39:47 Etc/GMT", "receipt_creation_date_ms": "1766774387000", "receipt_creation_date
+  rust: null
+    5  constructor refused: both
+   41  endpoint: DIFFERENT response
+   93  endpoint: identical response
+   69  jws: DIFFERENT code
+  152  jws: same failure code
+   11  not expressible in the Rust ABI (NUL in a C string)
+   33  receipt: DIFFERENT code
+  390  receipt: same failure code
+   17  receipt: success, common fields equal

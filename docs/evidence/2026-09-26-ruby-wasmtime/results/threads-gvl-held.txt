@@ -1,0 +1,7 @@
+# APRV_GVL=1 (the default to_func: GVL held during aprv_call); ruby 3.3.6, wasmtime 48.0.1, 4 cores, load average 0.79 1.32 1.47
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":1,"warm_each":300,"n_each":600,"seconds":0.79,"total_per_s":763.3,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":2,"warm_each":300,"n_each":600,"seconds":1.8,"total_per_s":665.7,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":4,"warm_each":300,"n_each":600,"seconds":3.43,"total_per_s":699.2,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":1,"warm_each":150,"n_each":300,"seconds":1.39,"total_per_s":216.3,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":2,"warm_each":150,"n_each":300,"seconds":2.67,"total_per_s":224.7,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":4,"warm_each":150,"n_each":300,"seconds":5.75,"total_per_s":208.7,"not_verified":0}

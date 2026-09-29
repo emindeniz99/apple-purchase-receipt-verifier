@@ -1,0 +1,60 @@
+# openjdk version "1.8.0_504" OpenJDK Runtime Environment (Temurin)(build 1.8.0_504-b01) 
+## mode 2: managed child (aprv-min-spike: variant B + the spike-only crash route)
+# java 1.8.0_504 (Temurin), amd64
+PASS child started (managed, loopback, token on stdin): pid 23675, 76 ms to port
+   first verification after start: 8015 us
+PASS verifyReceipt(g5) verified: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap...
+PASS verifySignedData(shared-sandbox JWS) is a result value (Apple roots: not anchored): {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHA...
+PASS verifyReceiptEndpoint(sandbox) status 0: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2",...
+PASS verifyReceiptEndpoint(production) on a sandbox receipt answers 21007: {"status":21007}
+PASS garbage receipt is a verification failure value, not an exception: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified"...
+PASS request without token refused: aprv-server HTTP 401: missing or wrong X-Aprv-Token
+PASS request with a wrong token refused: aprv-server HTTP 401: missing or wrong X-Aprv-Token
+PASS body over 3 MiB refused with 413: request larger than 3145728 bytes
+PASS deliberate crash (abort) killed the child: pid 23675
+PASS JVM survived; next call succeeds after restart: restarts 1, new pid 23685, call incl. restart 18704 us
+PASS child killed with SIGKILL; next call restarts it: restarts 2
+BENCH local HTTP round trip, GET /healthz (transport only): 43.7 us
+BENCH verifyReceipt(g5) from Java 8, 1 thread: mean 3869 us, p50 3706 us, p99 6091 us, 258/s
+BENCH verifyReceipt(g5) from Java 8, 4 threads, 8 s: 719/s (client and child share 4 vCPUs)
+PASS close() stops the child: pid 23696
+summary: 13 passed, 0 failed
+## mode 1: configured URL (a standalone aprv-min with a token)
+# java 1.8.0_504 (Temurin), amd64
+PASS resolution picked the configured URL (mode 1): url
+PASS verifyReceipt(g5) verified: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap...
+PASS verifySignedData(shared-sandbox JWS) is a result value (Apple roots: not anchored): {"message":"intermediate certificate is not signed by a pinned root","reason":"INVALID_CHA...
+PASS verifyReceiptEndpoint(sandbox) status 0: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2",...
+PASS verifyReceiptEndpoint(production) on a sandbox receipt answers 21007: {"status":21007}
+PASS garbage receipt is a verification failure value, not an exception: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified"...
+BENCH mode 1 verifyReceipt(g5): 3645 us per call
+summary: 6 passed, 0 failed
+## JVM exits without close(): the shutdown hook stops the child
+PASS child 23789 gone after System.exit
+## JVM killed with SIGKILL (no hook runs): the child sees stdin EOF and exits
+   (pid 23825 exited; zombie left for its new parent, pid 1, to reap)
+PASS child 23825 gone after kill -9 of the JVM
+## mode 3: managed download from a loopback stand-in for the release location
+pinned sha256 e339aad6d5f6c7d81ef6ef526b73da45d549e4b8987727e58ef69958f1d83866; tampered copy a526954d5e7c705a134589c2c3b49e7f1dbf186936681c1f14ce11f39b56138d
+### two JVMs at once, four threads each, empty cache
+DOWNLOADS 0
+PASS 4 concurrent resolves agree on one verified file: aprv-e339aad6d5f6c7d81ef6ef526b73da45d549e4b8987727e58ef69958f1d83866
+PASS cached file is owner r-x only, directory owner-only: r-x------ rwx------
+PASS downloaded server verifies g5: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap...
+summary: 3 passed, 0 failed
+DOWNLOADS 1
+PASS 4 concurrent resolves agree on one verified file: aprv-e339aad6d5f6c7d81ef6ef526b73da45d549e4b8987727e58ef69958f1d83866
+PASS cached file is owner r-x only, directory owner-only: r-x------ rwx------
+PASS downloaded server verifies g5: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap...
+summary: 3 passed, 0 failed
+GET requests the file server saw: 1
+### a tampered cache entry is re-verified at start, replaced, not executed
+DOWNLOADS 1
+PASS 1 concurrent resolves agree on one verified file: aprv-e339aad6d5f6c7d81ef6ef526b73da45d549e4b8987727e58ef69958f1d83866
+PASS cached file is owner r-x only, directory owner-only: r-x------ rwx------
+PASS downloaded server verifies g5: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap...
+summary: 3 passed, 0 failed
+GET requests the file server saw: 2
+### a download whose hash is not the pin
+PASS tampered download refused before it is executable; nothing left in the cache: aprv-server download <url> has sha256 a526954d5e7c705a134589c2c3b49e7f1dbf186936681c1f14ce11f39b56138d, pinned e339aad6d5f6c7d81ef6ef526b73da45d549e4b8987727e58ef69958f1d83866; refusing to execute it
+summary: 1 passed, 0 failed

@@ -39,15 +39,21 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
 - **Rust 1.85.0**, declared as `rust-version` and proven by CI: the whole
   suite, conformance included, runs on a real 1.85.0 toolchain against
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
-- **Ten direct dependencies**: `rsa`, `p256`, `p384`, `sha1`, `md-5`,
-  `sha2`, `digest` and `subtle` for the arithmetic, `base64` for
-  `receipt-data` and `x5c` entries, and `serde_json`, which only writes
-  `to_json()` and the endpoint response and never reads input. Every byte of
-  attacker-supplied ASN.1 (certificates, CMS, receipt payloads, keys,
-  signatures) and every byte of JSON (a JWS header and payload, the endpoint
-  request body) is read by this crate's own bounded readers, so no
-  third-party parser decides what a key, a signature or a claim is. What is
-  delegated is arithmetic.
+- **Three direct dependencies**: `aprv-openssl` (`openssl/`, published
+  beside this crate), `base64` for `receipt-data` and `x5c` entries, and
+  `serde_json`, which only writes `to_json()` and the endpoint response and
+  never reads input. Every byte of attacker-supplied ASN.1 (certificates,
+  CMS, receipt payloads, keys, signatures) is parsed by OpenSSL 4 through
+  that adapter, which also does the path building and the signature
+  arithmetic; this crate keeps the policy (roots, markers, the chain
+  instant, the bounds, the reasons and their order) and holds
+  `#![forbid(unsafe_code)]`. Every byte of JSON (a JWS header and payload,
+  the endpoint request body) is read by this crate's own bounded reader.
+- **OpenSSL 4.0 or later.** By default the adapter builds OpenSSL 4.0.2
+  from source (openssl-src). That needs this repository's workspace patch
+  of openssl-sys; a crates.io build of this crate links a prebuilt
+  OpenSSL 4 instead (`OPENSSL_NO_VENDOR=1 OPENSSL_DIR=...`). See
+  [`openssl/README.md`](openssl/README.md).
 - **No `no_std`, no async.** Nothing here does I/O, every entry point is
   synchronous, and `Verifier` is `Send + Sync + Clone`, so one can be shared
   across threads or dropped into `spawn_blocking`.
@@ -63,8 +69,11 @@ a test rather than only documented.
   the caller's `Config` or from `Config::defaults()`, which holds
   `include_bytes!`-embedded copies of Apple's three published roots, so they
   work unchanged in a `FROM scratch` container. There is no code path to a
-  system store, so there is no switch to get wrong. `deny.toml` refuses, at
-  build time, every crate that could carry one.
+  system store, so there is no switch to get wrong. The OpenSSL adapter
+  initialises OpenSSL without its configuration file and never gives a
+  store default paths, and `openssl/tests/isolation.rs` proves a planted
+  `SSL_CERT_FILE`, `SSL_CERT_DIR` and `OPENSSL_CONF` are ignored.
+  `deny.toml` refuses, at build time, every crate that could carry one.
 - **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
   download. Revocation checking is disabled by design; an integrator who
   needs it must layer it on top.
@@ -216,7 +225,7 @@ the pinned roots **before** the leaf is checked against the intermediate →
 **leaf marker OID** `1.2.840.113635.100.6.11.1` → **intermediate marker
 OID** `1.2.840.113635.100.6.2.1` → ES256 signature. As on the receipt path,
 a chain that does not reach a pinned root is `UNTRUSTED_CHAIN` whatever
-markers it carries. A key on a curve this crate does not implement is
+markers it carries. A key OpenSSL cannot use is
 `INVALID_CERTIFICATE`, judged only once it has been vouched for and is
 about to be used. The payload is read before the chain, for `signedDate`, but a
 payload that does not parse (text after the object included) is
@@ -230,14 +239,14 @@ every `SignerInfo`'s `signedAttrs`, whatever its position → at most four
 (nothing else in the payload is read yet) → for each `SignerInfo`: the
 signer's certificate → the chain, top-down from the pinned roots, at the
 creation date or the clock → **signer marker OID** → **WWDR marker OID on the
-intermediate** → the signer's key on a curve this crate implements → the
+intermediate** → the signer's key, which OpenSSL must be able to use → the
 CMS signature. One `SignerInfo` passing is enough; when
 none does, the first one's failure is the verdict. Then the full payload
 parse, where any failure is `UNREADABLE_PAYLOAD`.
 
-The receipt signer may use any algorithm the crypto crates verify: RSA
-PKCS#1 v1.5, RSA-PSS or ECDSA on P-256 and P-384, over MD5, SHA-1 or the
-SHA-2 family. A signer that chains to a pinned root and carries Apple's
+The receipt signer may use any algorithm OpenSSL's default provider
+verifies: RSA PKCS#1 v1.5, RSA-PSS or ECDSA on its named curves (P-256,
+P-384 and P-521 included), over MD5, SHA-1, the SHA-2 family or SHA-3. A signer that chains to a pinned root and carries Apple's
 marker is trusted whatever it signs with, so a change on Apple's side does
 not reject genuine receipts. The same goes for certificate signatures in the
 chain. A `signatureAlgorithm` that names a hash (`sha256WithRSAEncryption`,
@@ -257,23 +266,34 @@ is not checked**, which is what lets a receipt signed years ago under a
 since-expired chain verify at its own creation date.
 
 A certificate on the path (not the anchor) that marks critical an
-extension a PKIX validator does not process makes the path
-`UNTRUSTED_CHAIN`, as it does for a PKIX validator. Processed are
-keyUsage, basicConstraints, certificatePolicies, policyMappings,
-policyConstraints, inhibitAnyPolicy, nameConstraints, subjectAltName,
-issuingDistributionPoint and deltaCRLIndicator, and on the leaf also
-cRLDistributionPoints and extKeyUsage. A certificate decodes only as
+extension OpenSSL's path validation does not process makes the path
+`UNTRUSTED_CHAIN`, as it does for a PKIX validator. Accepted when
+critical are the extensions OpenSSL 4 lists as supported: keyUsage,
+extKeyUsage, basicConstraints, subjectAltName, certificatePolicies,
+policyMappings, policyConstraints, inhibitAnyPolicy, nameConstraints,
+cRLDistributionPoints, nsCertType, proxyCertInfo, the OCSP noCheck
+extension and the two RFC 3779 extensions. Accepted is not evaluated: no
+policy check and no purpose is asked for, so certificate policies and
+extKeyUsage are not judged, on the leaf or on an intermediate, and
+cRLDistributionPoints, OCSP noCheck and nsCertType are not acted on.
+Nothing unsigned depends on them: only a certificate a pinned root vouched
+for is on the path. Names chain by
+their RFC 5280 canonical form (case, whitespace and string type do not
+matter), as in Java. A certificate decodes only as
 exactly three elements, and a BOOLEAN only with exactly one content octet.
 In signedAttrs, `contentType` or `messageDigest` twice, or a `contentType`
 that differs from the eContentType, is `INVALID_SIGNATURE`.
 
-An embedded certificate whose structure does not decode is fatal, and the
-reason depends on which one it is: the **signer** is `INVALID_CERTIFICATE`,
-any other entry `MALFORMED`, because the certificate bag is unsigned. A key
-the library cannot read is not a structural failure: a certificate's key is
-parsed only once a pinned root vouches for it, so a stranger carrying a key
-on an unimplemented curve is ignored and the receipt verifies (shared case
-`receipt/verify-with-a-stranger-whose-key-is-unreadable`).
+An embedded certificate whose structure does not decode is fatal. One
+OpenSSL's decoder refuses makes the whole envelope `MALFORMED`. One it
+decodes but the 0.7 structure rules refuse (a version above 3, a signature
+with unused bits, a repeated extension, an undecodable basicConstraints or
+keyUsage) is `INVALID_CERTIFICATE` when it is the **signer** and
+`MALFORMED` for any other entry, because the certificate bag is unsigned. A
+key the library cannot use is not a structural failure: a certificate's key
+is used only once a pinned root vouches for it, so a stranger carrying a
+key on an unimplemented curve is ignored and the receipt verifies (shared
+case `receipt/verify-with-a-stranger-whose-key-is-unreadable`).
 
 ### Stranger certificates
 
@@ -281,21 +301,32 @@ A receipt's certificate bag is not signed, so anyone can add to it. A
 certificate there that no pinned root vouches for, directly or through a
 certificate it vouched for, is ignored: it never reaches the path builder
 and its key is never used, so a genuine receipt padded with such
-certificates still verifies. The walk starts at the roots, so the cost of a
-stranger is a name comparison, however large or broken its key. The shared
+certificates still verifies. The walk starts at the roots, so a stranger
+costs its decoding and a name comparison, however large or broken its key. The shared
 denial-of-service cases pin this with a time budget, and the tests assert it
 directly through a seam that records every key used.
 
 ## Defensive parsing
 
 Everything this crate parses is attacker-supplied, so the bounds are part of
-the design rather than a configuration. ASN.1: nesting depth 32 constructed values (as BouncyCastle counts them), a
-100,000-node budget per parse, at most four length octets, indefinite (BER)
-lengths only on constructed values, trailing bytes refused. JSON: nesting
-depth 64, numbers of at most 1,000 characters, names of at most 50,000
-UTF-16 code units, strict grammar. Chains: at most six certificates, each candidate
-issuer tried once per hop. RSA keys: at most 8,192 bits, refused before any
-arithmetic.
+the design rather than a configuration. ASN.1 is decoded by OpenSSL's
+template decoder, with its own limits (30 levels of nested templates, six
+constructed levels of a string, indefinite (BER) lengths only on
+constructed values). Before it, a walk over the headers alone
+(`ASN1_get_object`) bounds each value parsed on its own, the CMS envelope
+and each attribute SET: at most 32 nested constructed values of any class,
+counted as BouncyCastle counts them, and at most 100,000 values; the
+primitive values OpenSSL would keep whole are handed to its own decoder,
+and the chunks of a constructed `OCTET STRING` must be `OCTET STRING`s. In
+the payload, a tag in high-tag-number form and a length of more than four
+octets are refused, as 0.7's reader refused them. Trailing bytes are
+refused. At most 10 embedded certificates, 10 CRLs and 4 SignerInfos,
+counted on a shallow decode after the envelope's header walk and before
+any certificate is decoded. JSON: nesting depth 64, numbers of at most
+1,000 characters, names of at most 50,000 UTF-16 code units, strict
+grammar. Chains: at most six certificates, built by OpenSSL from the
+certificates a pinned root vouched for. RSA keys: OpenSSL's cap of 16,384
+bits, on keys a pinned root vouched for.
 
 Input size is capped before anything is decoded, and the caps are Apple's
 own (measured on 2026-09-23 against both `verifyReceipt` endpoints; see
@@ -475,17 +506,19 @@ a `maxMillis` budget is timed after a warm-up call.
 
 The native suite beyond conformance covers hostile and malformed input, the
 resource bounds above, the public API's shape, the trust-pinning rule from
-three directions, stranger certificates and their key cost, every signer and
-certificate algorithm, US-Pacific date rendering against vectors generated
-from the IANA database, and a mutation pass over the genuine receipts. The
+three directions, OpenSSL's isolation from its environment
+(`openssl/tests/isolation.rs`), stranger certificates and their key cost,
+every signer and certificate algorithm, US-Pacific date rendering against
+vectors generated from the IANA database, and a mutation pass over the
+genuine receipts. The
 mutation pass asserts the invariant that matters: a mutated receipt is
 either rejected or produces an identical result.
 
-`fuzz/` holds seven `cargo fuzz` targets (the ASN.1, X.509 and CMS readers
-on their own, the verifier's three methods, and the DER receipt path)
-seeded from the shared fixtures and run by CI for a fixed budget on every
-push. `fuzz/README.md` lists them and the invariant each asserts beyond "no
-panic".
+`fuzz/` holds six `cargo fuzz` targets (the verifier's three methods, the
+DER receipt path, the C ABI's exports, and `aprv.wasm` through its canonical
+ABI; OpenSSL's own decoders are fuzzed upstream by OSS-Fuzz) seeded from the
+shared fixtures and run by CI for a fixed budget on every push. `fuzz/README.md` lists them and the invariant each asserts
+beyond "no panic".
 
 `tests/data/pacific-transitions.txt` carries every `America/Los_Angeles`
 offset transition from 1900 to 2100, taken from the IANA database via

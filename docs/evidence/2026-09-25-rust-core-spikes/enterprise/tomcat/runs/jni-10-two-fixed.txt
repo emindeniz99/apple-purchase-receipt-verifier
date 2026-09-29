@@ -1,0 +1,33 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@3ecd267f threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so]
+app2: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app2 cl@43599640 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so]
+== redeploy 1
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@44ac24f0 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so]
+app2: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app2 cl@6cdfc0 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so]
+== redeploy 2
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@1f099039 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so]
+app2: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app2 cl@1733c5b9 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so]
+== redeploy 3
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@fc3a159 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so]
+app2: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app2 cl@4494ef81 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so]
+== findleaks: OK - No memory leaks found
+== after findleaks(GC) app1: ERR java.lang.NoClassDefFoundError: Could not initialize class bakeoff.jni.Native | java.lang.ExceptionInInitializerError: Exception java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-two-fixed/temp/libaprv_jni-spike.so already loaded in another classloader [in thread "http-nio-8080-exec-5"] | 
+  ctx=/app1 cl@fc3a159 threads=17
+  mapped=0 []
+== log warnings/errors:

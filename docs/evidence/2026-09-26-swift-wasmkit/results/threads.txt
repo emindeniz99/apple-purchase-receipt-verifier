@@ -1,0 +1,7 @@
+# 4 cores; load average 1.24 2.16 1.94
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":1,"warm_each":20,"n_each":150,"seconds":1.95,"total_per_s":77.1,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":2,"warm_each":20,"n_each":150,"seconds":2.12,"total_per_s":141.6,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"threads":4,"warm_each":20,"n_each":150,"seconds":1.95,"total_per_s":308.0,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":1,"warm_each":10,"n_each":50,"seconds":2.66,"total_per_s":18.8,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":2,"warm_each":10,"n_each":50,"seconds":2.68,"total_per_s":37.3,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"threads":4,"warm_each":10,"n_each":50,"seconds":2.98,"total_per_s":67.2,"not_verified":0}

@@ -1,0 +1,72 @@
+## Start-up: fresh process to first verified g5 (median of 7; 1 run when a run took > 60 s)
+
+| Row | Runtime size (stripped) | 4 CPUs | 1 CPU | 1 CPU: init / load / instantiate / first call | 1 CPU: 2nd call | RSS after first result |
+|---|---:|---:|---:|---|---:|---:|
+| wasmi1-eager | 1.61 MB | 108.3 ms | 106.7 ms | 0.0 / 44.6 / 1.5 / 57.2 ms | 33.0 ms | 14 MiB |
+| wasmi1-lazytr | 1.61 MB | 89.9 ms | 91.9 ms | 0.0 / 21.7 / 1.3 / 65.3 ms | 35.0 ms | 12 MiB |
+| wasmi1-lazy | 1.61 MB | 76.6 ms | 77.6 ms | 0.0 / 4.9 / 1.3 / 67.9 ms | 36.6 ms | 13 MiB |
+| wasmi2-auto-eager | 1.67 MB | 96.8 ms | 100.7 ms | 0.0 / 63.5 / 1.5 / 32.4 ms | 15.1 ms | 19 MiB |
+| wasmi2-auto-lazytr | 1.67 MB | 65.4 ms | 69.2 ms | 0.0 / 19.7 / 1.5 / 43.5 ms | 16.3 ms | 14 MiB |
+| wasmi2-auto-lazy | 1.67 MB | 62.1 ms | 54.1 ms | 0.0 / 5.1 / 1.5 / 44.1 ms | 15.1 ms | 14 MiB |
+| wasmi2-tail-lazytr | 1.67 MB | 71.5 ms | 69.2 ms | 0.0 / 20.9 / 1.8 / 43.3 ms | 15.1 ms | 14 MiB |
+| wasmi2-tail-ind-lazytr | 1.69 MB | 68.0 ms | 71.6 ms | 0.0 / 18.8 / 1.5 / 47.7 ms | 16.9 ms | 13 MiB |
+| wasmi2-loop-lazytr | 1.67 MB | 122.9 ms | 112.8 ms | 0.0 / 19.8 / 1.5 / 88.0 ms | 43.7 ms | 14 MiB |
+| wasmi2-loop-ind-lazytr | 1.60 MB | 85.5 ms | 87.6 ms | 0.0 / 21.6 / 1.7 / 60.5 ms | 26.7 ms | 13 MiB |
+| wasmi2-unstable-lazytr | 1.65 MB | 66.6 ms | 75.9 ms | 0.0 / 18.3 / 5.5 / 48.3 ms | 15.9 ms | 14 MiB |
+| wamr-classic | 0.30 MB | 357.1 ms | 367.5 ms | 4.5 / 24.6 / 1.4 / 333.6 ms | 114.5 ms | 17 MiB |
+| wamr-fast | 0.32 MB | 135.5 ms | 133.9 ms | 4.7 / 80.0 / 1.6 / 44.0 ms | 23.2 ms | 23 MiB |
+| wamr-fastjit-lazy | 0.69 MB | 195.2 ms | 449.1 ms | 6.9 / 29.5 / 375.9 / 32.9 ms | 3.7 ms | 31 MiB |
+| wamr-fastjit-eager | 0.69 MB | 156.0 ms | 453.5 ms | 6.5 / 433.4 / 1.7 / 7.8 ms | 3.6 ms | 30 MiB |
+| wamr-multitier-lazy | 49.87 MB | 356.1 ms | 698.1 ms | 9.6 / 133.6 / 524.0 / 20.6 ms | 8.5 ms | 146 MiB |
+| wasmtime-cranelift | 11.97 MB | 988.6 ms | 3,194.8 ms | 0.1 / 3,187.1 / 0.3 / 3.9 ms | 1.6 ms | 115 MiB |
+| wasmtime-winch | 11.97 MB | 510.0 ms | 951.7 ms | 0.2 / 939.7 / 0.3 / 7.8 ms | 3.8 ms | 124 MiB |
+| wasmtime-pulley | 11.97 MB | 1,112.7 ms | 3,329.8 ms | 0.1 / 3,222.4 / 0.4 / 102.8 ms | 58.9 ms | 104 MiB |
+| wamr-llvmjit-lazy | 49.46 MB | 84,557.2 ms (1 run) | 110,703.9 ms (1 run) | 5.6 / 25,938.3 / 659.7 / 84,089.6 ms | 1.8 ms | 977 MiB |
+| wamr-llvmjit-eager | 49.46 MB | 106,003.8 ms (1 run) | 152,991.3 ms (1 run) | 6.0 / 152,938.1 / 1.7 / 32.7 ms | 1.7 ms | 976 MiB |
+| wamr-multitier-eager | 49.85 MB | 111,875.9 ms (1 run) | 160,340.7 ms (1 run) | 18.2 / 160,286.8 / 1.7 / 19.5 ms | 2.7 ms | 986 MiB |
+| wasmi2-tail-eager | 1.67 MB | 98.9 ms | 100.9 ms | 0.0 / 64.4 / 1.5 / 31.5 ms | 16.3 ms | 19 MiB |
+| wasmi2-tail-lazy | 1.67 MB | 57.7 ms | 54.3 ms | 0.0 / 5.3 / 1.5 / 44.0 ms | 14.8 ms | 14 MiB |
+| wasmi2-tail-ind-eager | 1.69 MB | 96.2 ms | 98.0 ms | 0.0 / 56.3 / 1.5 / 36.4 ms | 16.8 ms | 14 MiB |
+| wasmi2-tail-ind-lazy | 1.69 MB | 60.3 ms | 57.8 ms | 0.0 / 5.4 / 1.5 / 47.2 ms | 17.2 ms | 13 MiB |
+| wasmi2-loop-eager | 1.67 MB | 139.7 ms | 139.4 ms | 0.0 / 60.6 / 1.6 / 74.0 ms | 40.4 ms | 19 MiB |
+| wasmi2-loop-lazy | 1.67 MB | 96.3 ms | 100.2 ms | 0.0 / 5.4 / 1.5 / 89.9 ms | 42.0 ms | 14 MiB |
+| wasmi2-loop-ind-eager | 1.60 MB | 107.6 ms | 108.5 ms | 0.0 / 56.1 / 1.5 / 47.1 ms | 26.7 ms | 14 MiB |
+| wasmi2-loop-ind-lazy | 1.60 MB | 84.1 ms | 70.5 ms | 0.0 / 5.6 / 1.6 / 59.4 ms | 31.8 ms | 13 MiB |
+| wasmi2-unstable-eager | 1.65 MB | 103.8 ms | 101.3 ms | 0.0 / 63.0 / 1.5 / 31.5 ms | 15.1 ms | 19 MiB |
+| wasmi2-unstable-lazy | 1.65 MB | 57.5 ms | 67.5 ms | 0.0 / 8.8 / 2.3 / 51.8 ms | 14.9 ms | 14 MiB |
+| py-wamr-fast | 0.32 MB | 162.4 ms | 164.8 ms | 5.0 / 84.9 / 1.6 / 44.5 ms | 23.2 ms | 33 MiB |
+| py-wamr-fastjit-eager | 0.69 MB | 230.7 ms | 486.3 ms | 9.4 / 424.6 / 1.7 / 7.2 ms | 9.2 ms | 41 MiB |
+| py-wasmtime-cranelift | - | 1,096.7 ms | 3,259.8 ms | 0.0 / 3,193.1 / 0.8 / 4.4 ms | 2.0 ms | 136 MiB |
+| py-wasmtime-winch | - | 625.8 ms | 1,018.3 ms | 0.0 / 945.5 / 1.0 / 10.3 ms | 4.5 ms | 145 MiB |
+| py-wasmtime-cranelift-cwasm | - | 63.6 ms | 72.0 ms | 0.0 / 2.9 / 0.6 / 7.9 ms | 3.9 ms | 31 MiB |
+
+## Warm-up and steady state (bench: calls #1, #2, #5, #10, #100 of one instance, then >= 20 calls and >= 2 s)
+
+| Row | g5 calls #1 / #2 / #5 / #10 / #100 (ms), 1 CPU | g5/s 1 CPU | g5/s per CPU, 4 CPUs | JWS #1 / #100 (ms), 1 CPU | JWS/s 1 CPU | JWS/s per CPU, 4 CPUs | Peak RSS | Parity (identical/rows) | ABI tests |
+|---|---|---:|---:|---|---:|---:|---:|---|---|
+| wasmi1-eager | 56.6 / 32.8 / 32.8 / 33.2 / 32.6 | 29.5 | 29.6 | 165.1 / 134.8 | 7.5 | 7.7 | 14 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi1-lazytr | 64.8 / 32.8 / 37.4 / 33.2 / 34.8 | 29.3 | 29.3 | 159.3 / 142.1 | 7.3 | 7.6 | 13 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi1-lazy | 67.0 / 34.6 / 35.2 / 36.6 / 32.6 | 29.5 | 29.7 | 144.1 / 127.4 | 7.6 | 7.5 | 13 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi2-auto-eager | 31.0 / 14.9 / 15.9 / 15.1 / 17.3 | 64.1 | 63.0 | 89.0 / 78.0 | 13.0 | 12.6 | 19 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi2-auto-lazytr | 42.9 / 15.4 / 15.9 / 15.2 / 15.1 | 62.5 | 63.0 | 86.1 / 79.6 | 12.8 | 12.4 | 14 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi2-auto-lazy | 44.8 / 17.6 / 15.1 / 15.0 / 15.2 | 64.0 | 63.6 | 88.1 / 80.1 | 12.5 | 12.4 | 14 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi2-tail-lazytr | 44.3 / 17.0 / 14.9 / 14.8 / 14.7 | 63.0 | 64.7 | 83.5 / 77.0 | 12.6 | 12.4 | 14 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi2-tail-ind-lazytr | 45.0 / 17.8 / 17.2 / 17.1 / 17.1 | 55.5 | 56.8 | 101.2 / 92.3 | 10.1 | 10.7 | 13 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi2-loop-lazytr | 92.3 / 46.0 / 41.4 / 44.4 / 41.4 | 24.1 | 23.4 | 179.5 / 169.8 | 5.8 | 5.8 | 14 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi2-loop-ind-lazytr | 69.3 / 27.9 / 26.8 / 26.2 / 25.9 | 36.7 | 37.6 | 134.3 / 117.1 | 8.1 | 8.0 | 13 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmi2-unstable-lazytr | 43.4 / 15.6 / 15.8 / 15.6 / 15.2 | 63.2 | 62.7 | 85.1 / 76.5 | 12.3 | 12.6 | 14 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wamr-classic | 312.3 / 110.6 / 114.0 / 111.8 / 113.5 | 8.5 | 8.4 | 400.3 / 373.0 | 2.6 | 2.5 | 18 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wamr-fast | 54.1 / 33.8 / 26.6 / 25.2 / 22.9 | 41.2 | 41.6 | 153.8 / 109.3 | 9.4 | 8.9 | 25 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wamr-fastjit-lazy | 31.7 / 3.7 / 3.4 / 3.5 / 3.8 | 276.8 | 276.1 | 14.6 / 13.6 | 67.9 | 66.4 | 31 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wamr-fastjit-eager | 8.1 / 3.5 / 3.5 / 3.7 / 3.4 | 274.4 | 270.1 | 15.9 / 17.1 | 67.8 | 68.2 | 30 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wamr-multitier-lazy | 56.9 / 15.8 / 10.4 / 10.7 / 10.4 | 127.6 | 124.0 | 33.2 / 33.7 | 32.5 | 32.4 | 476 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmtime-cranelift | 5.0 / 1.9 / 1.7 / 1.7 / 1.9 | 574.6 | 552.4 | 7.2 / 8.0 | 143.4 | 144.4 | 115 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmtime-winch | 8.0 / 3.9 / 4.0 / 3.8 / 4.1 | 247.7 | 238.9 | 14.1 / 14.7 | 72.7 | 69.5 | 124 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wasmtime-pulley | 88.3 / 44.9 / 46.1 / 45.3 / 44.2 | 22.1 | 21.7 | 227.4 / 229.3 | 4.6 | 4.6 | 104 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wamr-llvmjit-lazy | 85,269.9 / 1.8 / 9.8 / 9.8 / 11.0 | 229.4 | 218.5 | 14,593.5 / 21.6 | 64.3 | 66.1 | 976 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wamr-llvmjit-eager | 21.1 / 2.2 / 2.0 / 2.0 / 1.5 | 604.1 | 596.6 | 9.8 / 6.1 | 183.4 | 169.5 | 976 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| wamr-multitier-eager | 17.7 / 1.6 / 1.6 / 1.6 / 1.5 | 592.5 | 603.2 | 9.5 / 5.0 | 189.6 | 188.4 | 986 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| py-wamr-fast | 43.3 / 23.4 / 23.0 / 23.6 / 23.8 | 41.4 | 40.4 | 110.0 / 107.4 | 9.4 | 9.2 | 34 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+| py-wamr-fastjit-eager | 11.4 / 5.6 / 5.5 / 5.5 / 4.2 | 271.9 | 259.1 | 14.8 / 14.3 | 65.8 | 66.1 | 41 MiB | 6,179/6,179 | 37/37 + iso 2/2 |
+
+Start-up only (no bench rows): wasmi2-tail-eager, wasmi2-tail-lazy, wasmi2-tail-ind-eager, wasmi2-tail-ind-lazy, wasmi2-loop-eager, wasmi2-loop-lazy, wasmi2-loop-ind-eager, wasmi2-loop-ind-lazy, wasmi2-unstable-eager, wasmi2-unstable-lazy, py-wasmtime-cranelift, py-wasmtime-winch, py-wasmtime-cranelift-cwasm.

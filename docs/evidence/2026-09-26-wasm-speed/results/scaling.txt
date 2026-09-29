@@ -1,0 +1,14 @@
+# 2026-09-26, x86_64, 4 cores (Intel(R) Xeon(R) Processor @ 2.10GHz), JDK 21. One instance per thread; warm then timed, per thread.
+# load average before: 1.25 1.51 1.57; other busy processes: 
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","java":"21.0.10","memory":"default","threads":1,"warm_each":600,"n_each":600,"seconds":6.15,"total_per_s":97.5,"wrong_codes":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","java":"21.0.10","memory":"default","threads":2,"warm_each":600,"n_each":600,"seconds":5.81,"total_per_s":206.4,"wrong_codes":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","java":"21.0.10","memory":"default","threads":4,"warm_each":600,"n_each":600,"seconds":7.26,"total_per_s":330.6,"wrong_codes":0}
+{"id":"transaction/verify-shared-sandbox","java":"21.0.10","memory":"default","threads":1,"warm_each":300,"n_each":300,"seconds":9.52,"total_per_s":31.5,"wrong_codes":0}
+{"id":"transaction/verify-shared-sandbox","java":"21.0.10","memory":"default","threads":2,"warm_each":300,"n_each":300,"seconds":9.05,"total_per_s":66.3,"wrong_codes":0}
+{"id":"transaction/verify-shared-sandbox","java":"21.0.10","memory":"default","threads":4,"warm_each":300,"n_each":300,"seconds":11.26,"total_per_s":106.6,"wrong_codes":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","java":"21.0.10","memory":"bytearray","threads":1,"warm_each":600,"n_each":600,"seconds":3.92,"total_per_s":153.1,"wrong_codes":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","java":"21.0.10","memory":"bytearray","threads":2,"warm_each":600,"n_each":600,"seconds":3.67,"total_per_s":327.0,"wrong_codes":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","java":"21.0.10","memory":"bytearray","threads":4,"warm_each":600,"n_each":600,"seconds":5.18,"total_per_s":463.7,"wrong_codes":0}
+{"id":"transaction/verify-shared-sandbox","java":"21.0.10","memory":"bytearray","threads":1,"warm_each":300,"n_each":300,"seconds":6.15,"total_per_s":48.8,"wrong_codes":0}
+{"id":"transaction/verify-shared-sandbox","java":"21.0.10","memory":"bytearray","threads":2,"warm_each":300,"n_each":300,"seconds":6.18,"total_per_s":97.0,"wrong_codes":0}
+{"id":"transaction/verify-shared-sandbox","java":"21.0.10","memory":"bytearray","threads":4,"warm_each":300,"n_each":300,"seconds":7.88,"total_per_s":152.3,"wrong_codes":0}

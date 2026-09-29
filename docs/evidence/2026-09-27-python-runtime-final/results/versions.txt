@@ -1,0 +1,11 @@
+date: 2026-09-27
+os: Ubuntu 24.04.4 LTS, kernel 6.18.44-fc-v37, x86_64
+cpu: Intel(R) Xeon(R) Processor @ 2.80GHz, 4 vCPUs, 16 GB RAM
+python: Python 3.12.3 (facades, harness children); Python 3.11.15 (harness parents)
+pywasm: 2.2.3 in a python3.12 venv
+rust: rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05)
+zig: 0.16.0 (PyPI ziglang), cargo-zigbuild 0.23.4 (PyPI)
+qemu: qemu-aarch64 version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)
+wasm-tools: wasm-tools 1.259.0 (7fc33f279 2026-09-10) (compiles ../wat/*.wat)
+module: aprv-abi1.wasm 2952613 bytes, sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3 (expected b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3)
+round 9 native host reused for the A/B: aprv-wasmi2-auto (round 9's build-wasmi.sh wasmi2-auto), sha256 72b53ba7301b20ca913bb624466fce503ae6b45a866e2a4717a945a2d689cd03

@@ -3,5 +3,5 @@
 target :lib do
   signature "sig"
   check "lib"
-  library "openssl", "json", "time", "digest"
+  library "json", "digest", "securerandom"
 end

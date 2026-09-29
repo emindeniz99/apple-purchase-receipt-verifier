@@ -1,0 +1,21 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@5e955596 threads=17
+  mapped=2 [$SCRATCH/enterprise1/runs/jni-9-fixed/temp/libaprv_jni-spike.so, $SCRATCH/enterprise1/runs/jni-9-fixed/webapps/app1/WEB-INF/lib/aprv-jni.jar]
+== redeploy 1
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-9-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@61229559 threads=17
+  mapped=2 [$SCRATCH/enterprise1/runs/jni-9-fixed/temp/libaprv_jni-spike.so, $SCRATCH/enterprise1/runs/jni-9-fixed/webapps/app1/WEB-INF/lib/aprv-jni.jar]
+== redeploy 2
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-9-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@72314b26 threads=17
+  mapped=2 [$SCRATCH/enterprise1/runs/jni-9-fixed/temp/libaprv_jni-spike.so, $SCRATCH/enterprise1/runs/jni-9-fixed/webapps/app1/WEB-INF/lib/aprv-jni.jar]
+== redeploy 3
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-9-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@78d8d669 threads=17
+  mapped=2 [$SCRATCH/enterprise1/runs/jni-9-fixed/temp/libaprv_jni-spike.so, $SCRATCH/enterprise1/runs/jni-9-fixed/webapps/app1/WEB-INF/lib/aprv-jni.jar]
+== findleaks: OK - No memory leaks found
+== after findleaks(GC) app1: ERR java.lang.NoClassDefFoundError: Could not initialize class bakeoff.jni.Native | 
+  ctx=/app1 cl@78d8d669 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-9-fixed/webapps/app1/WEB-INF/lib/aprv-jni.jar]
+== log warnings/errors:

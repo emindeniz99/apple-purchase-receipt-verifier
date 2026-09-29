@@ -108,11 +108,13 @@ enum AprvReason
   APRV_REASON_UNREADABLE_PAYLOAD = 16,
   // A required pointer argument was `NULL`. Nothing was verified.
   APRV_REASON_NULL_POINTER = 100,
-  // A `const char *` argument was not valid UTF-8. Nothing was verified.
+  // A `const char *` argument of a 0.7 call was not valid UTF-8. Nothing
+  // was verified. The `_bytes` calls never answer it: bytes that are not
+  // UTF-8 are input like any other there.
   APRV_REASON_INVALID_UTF8 = 101,
   // A configuration argument was rejected: an unknown environment, bytes
   // that are not a certificate, an anchor array that disagrees with its
-  // count. Nothing was verified.
+  // count, a length over `PTRDIFF_MAX`. Nothing was verified.
   APRV_REASON_INVALID_ARGUMENT = 102,
   // A panic was caught at the boundary. Nothing crossed it. This is a bug
   // in the library; please report it.
@@ -137,17 +139,28 @@ typedef struct AprvVerifier AprvVerifier;
 // The outcome of one verification call.
 //
 // `json` is owned by the caller and must be released with
-// [`aprv_string_free`]. It is `NULL` only when the allocation itself could
-// not be made.
+// [`aprv_string_free`].
 //
-// * `status == APRV_REASON_OK`: `json` is the verified payload, exactly
-//   `ReceiptPayload::to_json()` for a receipt and the signed JSON text for
-//   a JWS.
+// From the `_bytes` calls ([`aprv_verify_receipt_bytes`],
+// [`aprv_verify_signed_data_bytes`]):
+//
+// * `status` below 100 (a verdict): `json` is the document `aprv.wasm`
+//   answers for the same input, byte for byte, which validates against
+//   `rust/bindings/wire/schema/`: `{"verified":true,"payload":...}` or
+//   `{"verified":false,"reason":"<token>","message":"<detail>"}`.
+// * `status` 100 or above (a mistake in the call): `json` is `NULL`.
+//
+// From the 0.7 calls ([`aprv_verify_receipt`], [`aprv_verify_signed_data`]):
+//
+// * `status == APRV_REASON_OK`: `json` is the verified payload: for a
+//   receipt the 0.7 `ReceiptPayload` JSON, the bytes `aprv.wasm` returns
+//   as its payload; for a JWS the signed JSON text, exactly.
 // * anything else: `json` is `{"reason":"<token>","message":"<detail>"}`.
-//   The token is the `SCREAMING_SNAKE` spelling every port of this library
-//   shares; the message is a short, non-sensitive description that never
-//   contains receipt bytes, claims or key material. Match on `status`, or
-//   on `reason`; never parse `message`.
+//
+// A token is the `SCREAMING_SNAKE` spelling every port of this library
+// shares; a message is a short, non-sensitive description that never
+// contains receipt bytes, claims or key material. Match on `status`, or on
+// `reason`; never parse `message`.
 typedef struct {
   // An [`AprvReason`] value.
   int32_t status;
@@ -202,7 +215,13 @@ AprvVerifier *aprv_verifier_new(const uint8_t *const *ders,
 void aprv_verifier_free(AprvVerifier *verifier);
 
 // Verifies a legacy app receipt given as the base64 string an app sends.
-// On success `out->json` is exactly `ReceiptPayload::to_json()`.
+// On success `out->json` is the 0.7 `ReceiptPayload` JSON.
+//
+// The 0.7 C-string form: the input ends at its first NUL, and bytes that
+// are not UTF-8 are [`AprvReason::InvalidUtf8`], not a verdict. So a
+// genuine receipt followed by a NUL and anything verifies here and is
+// `MALFORMED` everywhere else. [`aprv_verify_receipt_bytes`] answers as
+// `aprv.wasm` does for every input.
 //
 // Returns the status, which is also written to `out->status`. `out` may be
 // `NULL` for a caller that only wants the status.
@@ -218,6 +237,9 @@ int32_t aprv_verify_receipt(const AprvVerifier *verifier,
 // app transaction or a notification. On success `out->json` is the signed
 // payload's JSON text, exactly as signed.
 //
+// The 0.7 C-string form, with [`aprv_verify_receipt`]'s limits;
+// [`aprv_verify_signed_data_bytes`] has none.
+//
 // # Safety
 // As [`aprv_verify_receipt`], with `jws` for the input.
 int32_t aprv_verify_signed_data(const AprvVerifier *verifier,
@@ -225,7 +247,10 @@ int32_t aprv_verify_signed_data(const AprvVerifier *verifier,
                                 AprvResult *out);
 
 // Apple's `verifyReceipt`, answered locally: `request_json` is the request
-// body, `*response_json` receives Apple's response body.
+// body, `*response_json` receives Apple's response body. The 0.7
+// C-string form: the body ends at its first NUL, and a body that is not
+// UTF-8 is [`AprvReason::InvalidUtf8`] rather than `{"status":21002}`;
+// [`aprv_verify_receipt_endpoint_bytes`] answers as `aprv.wasm` does.
 //
 // `environment` is an [`AprvEnvironment`] value. Like Apple's endpoint this
 // never reports a verification failure through the return value: every
@@ -243,6 +268,52 @@ int32_t aprv_verify_receipt_endpoint(const AprvVerifier *verifier,
                                      uint32_t environment,
                                      const char *request_json,
                                      char **response_json);
+
+// Verifies a legacy app receipt given as the `len` bytes of the base64
+// text an app sends. `out->json` is the document `aprv.wasm` answers for
+// the same bytes (see [`AprvResult`]): every input is a verdict, an
+// embedded NUL and bytes that are not UTF-8 included.
+//
+// Returns the status, which is also written to `out->status`. `out` may be
+// `NULL` for a caller that only wants the status. `receipt_base64` may be
+// `NULL` when `len` is 0.
+//
+// # Safety
+// `verifier` must be a live handle, `receipt_base64` `NULL` or `len`
+// readable bytes, and `out` `NULL` or a writable `AprvResult`.
+int32_t aprv_verify_receipt_bytes(const AprvVerifier *verifier,
+                                  const uint8_t *receipt_base64,
+                                  size_t len,
+                                  AprvResult *out);
+
+// Verifies any Apple-signed compact JWS given as `len` bytes. `out->json`
+// is the document `aprv.wasm` answers for the same bytes (see
+// [`AprvResult`]); a verified payload is a JSON string holding the signed
+// text, exactly.
+//
+// # Safety
+// As [`aprv_verify_receipt_bytes`], with `jws` for the input.
+int32_t aprv_verify_signed_data_bytes(const AprvVerifier *verifier,
+                                      const uint8_t *jws,
+                                      size_t len,
+                                      AprvResult *out);
+
+// Apple's `verifyReceipt`, answered locally, over the `len` bytes of the
+// request body: `*response_json` receives the body `aprv.wasm` answers for
+// the same bytes. As with [`aprv_verify_receipt_endpoint`], every verdict
+// is the `status` field inside the body; a non-zero return means the call
+// itself was malformed (a null argument, an unknown environment) and
+// `*response_json` is then left untouched. Bytes that are not UTF-8, or
+// that hold a NUL, are a body like any other (`{"status":21002}`).
+//
+// # Safety
+// `verifier` must be a live handle, `request_json` `NULL` or `len` readable
+// bytes, and `response_json` a writable `char *`.
+int32_t aprv_verify_receipt_endpoint_bytes(const AprvVerifier *verifier,
+                                           uint32_t environment,
+                                           const uint8_t *request_json,
+                                           size_t len,
+                                           char **response_json);
 
 // Releases a string this library handed out: an `AprvResult::json` or a
 // `verifyReceipt` response body. `NULL` is a no-op. Never call it on

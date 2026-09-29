@@ -1,0 +1,14 @@
+# bytes. raw | after wasm-tools strip | strip + gzip -9 | sha256. JS = glue a host loads besides the wasm.
+cms-c.wasm raw 3000116 | strip 2999762 | strip+gz 986315 | sha256 5ad7f6e9d56ac6784b8a27e60b6cdc78d185e49740062fd21af8666e72258e91
+cms-w1.wasm raw 3006245 | strip 3005891 | strip+gz 987914 | sha256 34ccfc80b84e5e053888648b02cc4d9319f471a91ff8c977326c8226f3f9b334
+cms-em/aprv-em.wasm raw 2191960 | strip 2191960 | strip+gz 893385 | sha256 0bfc7947bdccf55dabb67e7c85e9837d46fca6feab004ee7a84b75a6d37134d3
+cms-em glue: node+web 13882 B, web-only 12857 B; the two .wasm files are identical: yes
+cms-comp.component.wasm raw 3038350 | strip 3033817 | strip+gz 996970 | sha256 eb0516ac6d098b5b1e1ca99f3124bc6d3a3a57a0ac5f3ec644ec8547d38803ee
+  jco aprv.core.wasm 3021774
+  jco aprv.core2.wasm 4738
+  jco aprv.core3.wasm 603
+  jco aprv.core4.wasm 310
+  jco aprv.js 236337 B, gzip 37008 B
+native C ABI (native) raw 8619992 | stripped+gz 2789725 | sha256 69ccc9482e614490830fc966a96e428ab0380f40183da8c692fb51c42648e86f
+native C ABI (vendored) raw 6336528 | stripped+gz 1966051 | sha256 db3b3ec69f531298adb265060e97ba7ee7a81cc7e9117986d8f55a1809181087
+# the PKCS7-path artifacts of the earlier rounds, for comparison: ossl-c.wasm 2,933,868; ossl-w1.wasm 2,941,778; ossl-em aprv-em.wasm 2,161,403; ossl-wasi component 2,974,268; ossl402 .so 8,428,112 (wasm bake-off results/sizes.txt)

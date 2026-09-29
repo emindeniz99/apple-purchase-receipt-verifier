@@ -1,23 +1,25 @@
+import Foundation
+
 /// Verifies what Apple signed, offline, against the pinned roots of a
 /// ``Config``.
 ///
-/// Immutable and thread-safe (`Sendable`); share one across threads. The
-/// verify methods never throw for any input: before a signature has
-/// verified it is ``Reason/malformed``, as the input nobody vouched for must
-/// not be able to raise the internal-error alarm at will; while the signed
-/// receipt payload is read it is ``Reason/unreadablePayload``; anywhere
-/// else, ``Reason/internalError``.
+/// Every decision is made by aprv.wasm, the one verification module every
+/// port of this library runs, which ships inside this package and runs on
+/// WasmKit, an interpreter written in Swift: no native code is generated
+/// and none of the verification runs outside the WebAssembly sandbox. A
+/// `Verifier` reads the clock, moves the input in and the answer out, and
+/// turns what the module says into Swift values. It holds no parser, no
+/// cryptography and no trust decision of its own.
 ///
-/// Swift has no equivalent of Java's `catch (Throwable)` or Rust's
-/// `catch_unwind`: an out-of-bounds array access or a forced unwrap traps
-/// and cannot be recovered, in this library or any other. Containment here
-/// therefore comes from the same discipline the parsers in this library
-/// apply throughout — bounds-checked access and `throw` instead of a trap or
-/// a force-unwrap — rather than from a runtime safety net that could catch a
-/// trap after the fact. Every unexpected `Error` an internal call throws
-/// (not only this library's own ``Failure``) is still mapped to the right
-/// ``Reason`` by which phase it happened in — before the signature, while
-/// the payload is read, or after.
+/// Immutable and thread-safe (`Sendable`); share one across threads. It
+/// owns a small pool of module instances: each is set up with the roots once,
+/// serves one call at a time, and is discarded if the module traps. There
+/// is nothing to close.
+///
+/// The verify methods never throw for any input. A failure of the machinery
+/// itself (the module trapped, gave an answer this package cannot read, or
+/// could not be loaded, or the clock answered a time before 1970) is
+/// ``Reason/internalError``, with the category in ``Failure/cause``.
 ///
 /// ```swift
 /// let verifier = Verifier(config: .defaults())
@@ -29,41 +31,98 @@
 /// }
 /// ```
 public struct Verifier: Sendable {
-    private let config: Config
+    let pool: Pool
+    private let clock: @Sendable () -> Int64
 
-    /// A verifier for `config`. The roots are parsed once, when the
-    /// ``Config`` is built, and never per call.
+    /// A verifier for `config`. The first `Verifier` of a process loads
+    /// aprv.wasm (checks its SHA-256 and parses it, a few milliseconds);
+    /// the instances are created on first use.
     public init(config: Config) {
-        self.config = config
+        self.init(config: config, module: AprvModule.bundled)
+    }
+
+    init(
+        config: Config, module: Result<AprvModule, HostError>,
+        random: @escaping @Sendable (Int) -> [UInt8] = Guest.systemRandomBytes
+    ) {
+        self.pool = Pool(module: module, config: config.initJson, random: random)
+        self.clock = config.clock
     }
 
     /// Verifies a legacy PKCS#7 app receipt, given as the base64 string a
     /// client sends, and decodes its payload.
     public func verifyReceipt(base64: String) -> VerificationResult<ReceiptPayload> {
-        guard !config.roots.isEmpty else { return noAnchors() }
-        return ApplePurchaseReceiptVerifier.verifyReceipt(base64: base64, roots: config.roots, clock: config.clock)
+        let now: UInt64
+        switch readClock() {
+        case .success(let value): now = value
+        case .failure(let failure): return VerificationResult(failure: failure)
+        }
+        let export = "verify-receipt"
+        do {
+            let answer = try pool.with { guest throws(HostError) in try guest.verifyReceipt(now: now, Abi.capped(base64.utf8)) }
+            return Wire.result(answer, export, ReceiptPayload.self)
+        } catch {
+            return VerificationResult(failure: Self.failure(error))
+        }
     }
 
     /// Verifies an Apple-signed compact JWS and returns its payload,
     /// unchanged.
     public func verifySignedData(jws: String) -> VerificationResult<JsonPayload> {
-        guard !config.roots.isEmpty else { return noAnchors() }
-        return ApplePurchaseReceiptVerifier.verifySignedData(jws: jws, roots: config.roots, clock: config.clock)
+        let now: UInt64
+        switch readClock() {
+        case .success(let value): now = value
+        case .failure(let failure): return VerificationResult(failure: failure)
+        }
+        let export = "verify-signed-data"
+        do {
+            let answer = try pool.with { guest throws(HostError) in try guest.verifySignedData(now: now, Abi.capped(jws.utf8)) }
+            let result = Wire.result(answer, export, String.self)
+            if let json = result.payload { return VerificationResult(payload: JsonPayload(json: json)) }
+            return VerificationResult(failure: result.failure!)
+        } catch {
+            return VerificationResult(failure: Self.failure(error))
+        }
     }
 
     /// The response body Apple's `verifyReceipt` endpoint at `environment`
     /// would return for `requestJson`. Never fails: every verdict is the
-    /// `status` inside the body.
+    /// `status` inside the body, and a failure of the machinery or the clock
+    /// is ``AppleStatus/internalDataAccessError``.
     public func verifyReceiptEndpoint(environment: Environment, requestJson: String) -> String {
-        ApplePurchaseReceiptVerifier.verifyReceiptEndpoint(
-            environment: environment, requestJson: requestJson, roots: config.roots, clock: config.clock)
+        let failed = #"{"status":\#(AppleStatus.internalDataAccessError)}"#
+        guard case .success(let now) = readClock() else { return failed }
+        let env: UInt32 = environment == .production ? 0 : 1
+        guard
+            let answer = try? pool.with({ guest throws(HostError) in
+                try guest.verifyReceiptEndpoint(env: env, now: now, Abi.capped(requestJson.utf8))
+            }),
+            (try? JSONSerialization.jsonObject(with: Data(answer.utf8))) is [String: Any]
+        else { return failed }
+        return answer
     }
 
-    /// Only ``Config/defaults()`` can hand over an empty root set, when the
-    /// bundled roots did not load; every verdict without an anchor would be
-    /// a misleading ``Reason/untrustedChain``.
-    private func noAnchors<T>() -> VerificationResult<T> {
-        VerificationResult(
-            failure: Failure(.internalError, "no trust anchors: the bundled Apple roots did not load"))
+    /// Reads the configured clock once per call, before the input is looked
+    /// at, as epoch milliseconds for the module. A time before 1970 is the
+    /// caller's clock failing, not the input: ``Reason/internalError``.
+    private func readClock() -> Result<UInt64, Failure> {
+        let millis = clock()
+        guard let now = UInt64(exactly: millis) else {
+            return .failure(Failure(.internalError, "the configured clock answered a time before 1970"))
+        }
+        return .success(now)
+    }
+
+    /// A call that ended in the machinery, not in a verdict. The message
+    /// names the category; the cause has the detail.
+    private static func failure(_ error: HostError) -> Failure {
+        let message: String
+        switch error {
+        case .trap: message = "the verification module trapped"
+        case .unusableAnswer: message = "the verification module's answer was unusable"
+        case .initRefused: message = "the verification module refused the configuration"
+        case .abiMismatch, .moduleUnavailable: message = "the verification module could not be loaded"
+        }
+        return Failure(.internalError, message, cause: error)
     }
 }

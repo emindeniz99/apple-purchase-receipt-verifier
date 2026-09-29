@@ -1,0 +1,22 @@
+# Task 4 (verify-receipt) and the differential campaign (payload-diff), run in parallel.
+# verify-receipt: 2026-09-26T13:44:53Z -> 2026-09-26T14:29:55Z, 2700 s. payload-diff: 2026-09-26T13:56:55Z -> 14:41:58Z, 2700 s. The payload-diff binary that ran
+#   was built from an earlier revision of fuzz/payload-diff.rs (same comparison, coarser signatures); results/diff-classes.txt comes from the replay below.
+#   Both shared the 4-core machine with the builds and parity runs of this round, so exec/s is lower than in round 3.
+# Tools: cargo-fuzz 0.13.2, libfuzzer-sys 0.4.13, rustc 1.100.0-nightly 2026-09-25 (the one exception to rustc 1.98.1: -Zsanitizer needs nightly),
+#   clang 18 ASan + -fsanitize=fuzzer-no-link over OpenSSL 4.0.2 no-asm ($SCRATCH/inst/openssl-4.0.2-fuzz).
+# Code under test: the no-asn1 tree (patch/no-asn1.patch), CMS path, payload through the adapter's OpenSSL templates (payload.c), no prescan.
+#   verify-receipt is the repository's target, unchanged. payload-diff is fuzz/payload-diff.rs (old asn1.rs reader vs new, both in one ASan binary).
+# Flags: -max_total_time=2700 -timeout=10 -rss_limit_mb=2048 -max_len=65536; ASAN_OPTIONS=detect_leaks=1:allocator_may_return_null=0.
+# Seeds (read only): verify-receipt = round 3's corpus (889) + the follow-up's corpus-ossl-verify-receipt (1594) + seeds-receipt (3834);
+#   payload-diff = 601 payloads: every receipt fixture's eContent, their BER re-spellings, and the eContent of the two receipt corpora.
+# Instrumented counters: verify-receipt 67,663; payload-diff 60,458.
+# target: seconds execs exec/s | final cov ft corpus | peak_rss_mb | seed files | findings
+payload-diff: 2701 s, 5,634,104 execs, 2085 exec/s | start cov 2080 -> final cov 2776, ft 13660, corpus 1640 units (1613Kb) | peak rss 540 MB | seeds 601 | findings 0 [] | artifacts []
+verify-receipt: 2701 s, 2,999,045 execs, 1110 exec/s | start cov 6457 -> final cov 6493, ft 21361, corpus 1065 units (5273Kb) | peak rss 618 MB | seeds 3834 | findings 0 [] | artifacts []
+# libFuzzer final stats
+verify-receipt: number_of_executed_units=2999045 average_exec_per_sec=1110 new_units_added=936 slowest_unit_time_sec=0 peak_rss_mb=618 
+payload-diff: number_of_executed_units=5634104 average_exec_per_sec=2085 new_units_added=2967 slowest_unit_time_sec=0 peak_rss_mb=540 
+# artifact directories: verify-receipt [], payload-diff []; ==ERROR / deadly signal / crash-unit lines in the logs: 0
+# payload-diff differences filed during the campaign: 410 signatures, 13235 inputs (at most 50 per signature).
+# Replay (scripts/fuzz.sh replay, the final harness): 15407 inputs (campaign corpus, seeds, filed differences) -> 379 signatures (templates), 319 (payload-any); every one classified in results/diff-classes.txt.
+# Result: no crash, leak, timeout or OOM in either binary; nothing to minimize.

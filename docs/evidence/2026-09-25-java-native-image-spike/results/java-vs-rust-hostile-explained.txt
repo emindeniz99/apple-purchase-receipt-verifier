@@ -1,0 +1,101 @@
+== hostile/receipt-der/g5-m1-853597831: java 9 vs rust 4
+   len 5665 -> 5665, first change at byte 1075: 4 -> 35
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > SEQ@43 > [0]@58 > OCTETS@62 > SET@66 > SEQ@983 > OCTETS@993 > SET@997 > SEQ@1066 > OCTETS@1075(header)
+   java: INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+   rust: {"message":"certificate not valid at signing time","reason":"INVALID_CHAIN"}
+== hostile/receipt-der/g5-m0-1026916606: java 5 vs rust 9
+   len 5665 -> 5665, first change at byte 5387: 1 -> 9
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > SET@5224 > SEQ@5228 > SEQ@5375 > OID@5377
+   java: INVALID_SIGNATURE: CMS signature does not match the signer certificate's key
+   rust: {"message":"malformed CMS structure: unsupported digest algorithm","reason":"INVALID_RECEIPT_FORMAT"}
+== hostile/receipt-der/g5-m1-990678718: java 9 vs rust 4
+   len 5665 -> 5665, first change at byte 467: 2 -> 58
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > SEQ@43 > [0]@58 > OCTETS@62 > SET@66 > SEQ@427 > OCTETS@435
+   java: INVALID_RECEIPT_FORMAT: an embedded certificate is not a valid certificate
+   rust: {"message":"chain does not reach a pinned root","reason":"INVALID_CHAIN"}
+== hostile/receipt-der/g5-m1-236749769: java 9 vs rust 4
+   len 5665 -> 5665, first change at byte 3467: 155 -> 107
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > [0]@1410 > SEQ@2896 > SEQ@2900 > SEQ@3197 > BITS@3216
+   java: INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+   rust: {"message":"chain does not reach a pinned root","reason":"INVALID_CHAIN"}
+== hostile/receipt-der/g5-m1-108278412: java 9 vs rust 4
+   len 5665 -> 5665, first change at byte 303: 2 -> 251
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > SEQ@43 > [0]@58 > OCTETS@62 > SET@66 > SEQ@301 > INT@303(header)
+   java: INVALID_RECEIPT_FORMAT: unexpected java.lang.IllegalArgumentException
+   rust: {"message":"certificate not valid at signing time","reason":"INVALID_CHAIN"}
+== hostile/receipt-der/g5-m1-1001982007: java 9 vs rust 4
+   len 5665 -> 5665, first change at byte 731: 3 -> 184
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > SEQ@43 > [0]@58 > OCTETS@62 > SET@66 > SEQ@556 > OCTETS@566 > SET@570 > SEQ@721 > OCTETS@730(header)
+   java: INVALID_RECEIPT_FORMAT: an embedded certificate is not a valid certificate
+   rust: {"message":"chain does not reach a pinned root","reason":"INVALID_CHAIN"}
+== hostile/receipt-der/g5-m1-119436138: java 4 vs rust 2
+   len 5665 -> 5665, first change at byte 499: 4 -> 185
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > SEQ@43 > [0]@58 > OCTETS@62 > SET@66 > SEQ@491 > OCTETS@499(header)
+   java: INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificate for certificate in certification path found.
+   rust: {"message":"receipt signer certificate is not a valid certificate","reason":"INVALID_CERTIFICATE"}
+== hostile/receipt-der/g5-m1-324520034: java 9 vs rust 4
+   len 5665 -> 5665, first change at byte 1588: 52 -> 166
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > [0]@1410 > SEQ@1414 > SEQ@1418 > SEQ@1579 > UTCTime@1581
+   java: INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+   rust: {"message":"certificate not valid at signing time","reason":"INVALID_CHAIN"}
+== hostile/receipt-der/g5-m1-648951490: java 5 vs rust 9
+   len 5665 -> 5665, first change at byte 4847: 99 -> 174
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > [0]@1410 > SEQ@4009 > SEQ@4013 > [3]@4566 > SEQ@4570 > SEQ@4671 > OCTETS@4680 > SEQ@4684 > SEQ@4688 > SEQ@4703 > SEQ@4750 > SEQ@4763 > 0x1a@4766
+   java: INVALID_SIGNATURE: CMS signature does not match the signer certificate's key
+   rust: {"message":"signer certificate not embedded","reason":"INVALID_RECEIPT_FORMAT"}
+== hostile/receipt-der/g5-m0-701123523: java 9 vs rust 4
+   len 5665 -> 5665, first change at byte 1604: 49 -> 17
+   DER path: SEQ@0 > [0]@15 > SEQ@19 > [0]@1410 > SEQ@1414 > SEQ@1418 > SEQ@1579 > UTCTime@1596
+   java: INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+   rust: {"message":"certificate not valid at signing time","reason":"INVALID_CHAIN"}
+== hostile/receipt-der/gen-m0-776246130: java 0 vs rust 9
+   len 3362 -> 3362, first change at byte 2178: 1 -> 5
+   DER path: 
+   java: {"receiptType":"ProductionSandbox","bundleId":"com.example.app","appVersion":"1.2.3","originalAppVersion":"1.0","creationDate":"2024-08-06T12:00:00Z","originalPurchaseDate":"2024-08-06T12:00:00Z","expirationDate":null,"appItemId":null,"downloadId":null,"versio
+   rust: {"message":"embedded certificate is malformed: signatureAlgorithm disagrees with tbsCertificate.signature","reason":"INVALID_RECEIPT_FORMAT"}
+== hostile/receipt-der/gen-m1-280546414: java 9 vs rust 2
+   len 3362 -> 3362, first change at byte 416: 20 -> 189
+   DER path: 
+   java: INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+   rust: {"message":"receipt signer certificate is not a valid certificate","reason":"INVALID_CERTIFICATE"}
+== hostile/receipt-der/gen-m1-619385370: java 4 vs rust 9
+   len 3362 -> 3362, first change at byte 10: 1 -> 205
+   DER path: 
+   java: INVALID_CHAIN: signer chain does not validate to a pinned Apple root: Certification path could not be validated.
+   rust: {"message":"malformed CMS structure: not a CMS SignedData","reason":"INVALID_RECEIPT_FORMAT"}
+== hostile/receipt-der/gen-m1-933684943: java 9 vs rust 4
+   len 3362 -> 3362, first change at byte 798: 48 -> 157
+   DER path: 
+   java: INVALID_RECEIPT_FORMAT: receipt has trailing or unparseable bytes
+   rust: {"message":"certificate not valid at signing time","reason":"INVALID_CHAIN"}
+== hostile/receipt-der/gen-m0-379652758: java 5 vs rust 9
+   len 3362 -> 3362, first change at byte 2940: 13 -> 15
+   DER path: 
+   java: INVALID_SIGNATURE: CMS verifier refused the signer info
+   rust: {"message":"malformed CMS structure: signedAttrs without a contentType attribute","reason":"INVALID_RECEIPT_FORMAT"}
+== hostile/jws/m0-534728031: java 1 vs rust 2
+   first change at char 570 (segment 0): 'c' -> 'a'
+   java: INVALID_JWS_FORMAT: header is not valid JSON
+   rust: {"message":"x5c entry is not a valid certificate","reason":"INVALID_CERTIFICATE"}
+== hostile/jws/m1-160010987: java 1 vs rust 2
+   first change at char 1410 (segment 0): '1' -> '3'
+   java: INVALID_JWS_FORMAT: header is not valid JSON
+   rust: {"message":"x5c entry is not a valid certificate","reason":"INVALID_CERTIFICATE"}
+== hostile/jws/m0-718123265: java 1 vs rust 2
+   first change at char 1009 (segment 0): 'U' -> 'u'
+   java: INVALID_JWS_FORMAT: header is not valid JSON
+   rust: {"message":"x5c entry is not a valid certificate","reason":"INVALID_CERTIFICATE"}
+== hostile/jws/m0-867798168: java 2 vs rust 4
+   first change at char 82 (segment 0): 'B' -> 'J'
+   java: INVALID_CERTIFICATE: x5c[0] does not decode
+   rust: {"message":"leaf not issued by intermediate","reason":"INVALID_CHAIN"}
+== hostile/jws/m0-672945841: java 1 vs rust 2
+   first change at char 486 (segment 0): 'd' -> 'f'
+   java: INVALID_JWS_FORMAT: header is not valid JSON
+   rust: {"message":"x5c entry is not a valid certificate","reason":"INVALID_CERTIFICATE"}
+== hostile/jws/m0-575934545: java 4 vs rust 2
+   first change at char 497 (segment 0): 'j' -> 'n'
+   java: INVALID_CHAIN: leaf certificate is not signed by the intermediate
+   rust: {"message":"x5c entry is not a valid certificate","reason":"INVALID_CERTIFICATE"}
+  63 rows: Rust ABI refused non-UTF-8 input (101) before verifying; Java decoded it with U+FFFD and answered 1 (jws)
+  18 rows: Rust ABI refused non-UTF-8 input (101) before verifying; Java decoded it with U+FFFD and answered 9 (receipt)

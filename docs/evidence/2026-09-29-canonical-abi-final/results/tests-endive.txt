@@ -1,0 +1,23 @@
+## java spike.aprv.cabi.Tests (Endive 1.1.0, 2026-09-29)
+PASS init(empty) answers {"ok":true}: 
+PASS verify before init traps: TRAP TrapException: Trapped on unreachable instruction
+PASS a second init traps: TRAP TrapException: Trapped on unreachable instruction
+PASS a config that is not JSON is {"ok":false}, and init can be retried: {"message":"config is not JSON: key must be a string at line 1 column 2","ok":false}
+PASS verify-receipt(genuine g5) verifies: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c146465762e626f6e7a65722e7765656b612e617070","bundleIdBytesHex":"0c146465762e626f6e7a65722e7765656b612e617070","creationDate":"2025-12-26T18:39:47Z",...
+PASS verify-signed-data(shared-sandbox JWS, its test roots) verifies: {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHASED","originalPurchaseDate":1722945600000,"originalTransactionId":"2000000000000001","productId":"com.example.app.pro","purchaseDate":1722945600000,"qu...
+PASS verify-receipt-endpoint(env 1 = sandbox, g5) answers status 0: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2","bundle_id":"dev.bonzer.weeka.app","download_id":0,"in_app":[{"expires_date":"2025-12-26 18:19:07 Etc/GMT","expires_date_ms":"1766773147000","expires_date_pst":"2025-12-2...
+PASS a JWS that is not UTF-8 reaches the guest and is a value (ABI v1's answer): {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+PASS the lowering helper refuses an Integer (u32) where the WIT says u64 (loud host error, no call): TRAP IllegalArgumentException: verify-receipt: argument 0 is Integer, the WIT type is d
+PASS the lowering helper refuses a Long (u64) where the WIT says u32: TRAP IllegalArgumentException: verify-receipt-endpoint: argument 0 is Long, the WIT type is w
+PASS the lowering helper refuses a Double where the WIT says list<u8>: TRAP IllegalArgumentException: verify-receipt: argument 1 is Double, the WIT type is b
+PASS the lowering helper refuses a wrong argument count: TRAP IllegalArgumentException: verify-receipt: unknown export or wrong argument count
+PASS   ... and the instance still verifies g5: 
+PASS endpoint with env 2 traps: TRAP TrapException: Trapped on unreachable instruction
+PASS endpoint with env 255 traps: TRAP TrapException: Trapped on unreachable instruction
+PASS endpoint with env 4294967295 traps: TRAP TrapException: Trapped on unreachable instruction
+RECORD double post-return on one result: first: no trap; second: no trap; the instance verifies g5 afterwards: true
+RECORD post-return with a foreign pointer (a heap block no export returned): TRAP WasmRuntimeException: out of bounds memory access: attempted to access address: 875770413 but limit is: 1769472 and size: 4; the instance verifies g5 afterwards: true
+PASS random-get answering the wrong length traps: TRAP TrapException: Trapped on unreachable instruction
+PASS isolation: a trap (env 2) in one instance leaves another verifying: TRAP TrapException: Trapped on unreachable instruction
+RECORD the trapped instance itself, called again (a host should discard it): {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c146465762e626f6e7a65722e7765656b612e617070","bundleIdBytesHex":"0c146465762e626f6e7a65722e7765656b612e617070","creationDate":"2025-12-26T18:39:47Z",...
+summary: 0 failed

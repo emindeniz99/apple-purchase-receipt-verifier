@@ -1,0 +1,10 @@
+# Exact versions, 2026-09-26 (wasm-speed)
+repository: 41cc78b on plan/one-rust-core
+reference: round 4's routec-new ($SCRATCH/asn1/art/new-c.wasm, sha256 db31279e4b70ad1a); this round's recipe rebuilds it byte for byte (r4-repro)
+rustc: rustc 1.98.1 (48a229cea 2026-09-01) from $SCRATCH/rustup; target wasm32-wasip1; shim profile: opt-level 3, lto = true, codegen-units 1, panic abort
+OpenSSL: 4.0.2 (tarball sha256 736b4675…43a8), linux-generic32, no-asm, the substrate bake-off's options; wasi-sdk 34.0 (clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141))
+binaryen: wasm-opt version 132 (version_132); wasm-tools: wasm-tools 1.259.0 (7fc33f279 2026-09-10)
+Node: v22.22.2 (the wasm bake-off's js/run.mjs)
+Endive: run.endive 1.1.0 (round 5's library and consumer); JDK 21: OpenJDK Runtime Environment (build 21.0.10+7-Ubuntu-124.04); JDK 25: OpenJDK Runtime Environment Temurin-25.0.4.1+1 (build 25.0.4.1+1-LTS)
+machine: Linux 6.18.44-fc-v37 x86_64, 4 cores (Intel(R) Xeon(R) Processor @ 2.10GHz), 15 GiB RAM
+system packages: none installed or upgraded

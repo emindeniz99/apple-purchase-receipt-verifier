@@ -13,10 +13,11 @@ dotnet add package ApplePurchaseReceiptVerifier
 ```csharp
 using ApplePurchaseReceiptVerifier;
 
-// Build once, share everywhere: the roots are parsed once, not per call.
-// Thread-safe, immutable, and — unlike the 0.6 verifiers — implements no
-// IDisposable: it copies the certificates you hand it, so you may dispose
-// your own X509Certificate2 instances right after Build().
+// Build once, share everywhere: the module is compiled and the roots are
+// parsed once, not per call (about a second, the first time in a process).
+// Thread-safe, immutable and never disposed: it copies the certificates you
+// hand it, so you may dispose your own X509Certificate2 instances right
+// after Build().
 IVerifier verifier = Verifier.Create(Config.Defaults());
 
 // A legacy app receipt, as the base64 string the app sends.
@@ -42,11 +43,13 @@ input the caller does not control: every verify call returns a
 `VerificationResult<T>`, never a thrown exception, for anything short of an
 `OutOfMemoryException`.
 
-Dependencies: `System.Security.Cryptography.Pkcs` and `System.Formats.Asn1`,
-both first-party. There is no JSON dependency — the package carries its own
-bounded reader, because `System.Text.Json` is a NuGet package below net8.0
-and an assembly compiled against a newer one than the host ships will not
-load.
+Everything that verifies runs inside one WebAssembly module, `aprv.wasm`,
+embedded in the assembly and run by [Wasmtime](https://github.com/bytecodealliance/wasmtime-dotnet)
+(the `Wasmtime` NuGet package, the package's only dependency). This library
+parses no receipt, checks no signature and decides no trust: it moves bytes
+in, reads a JSON answer back, and maps it to the types below. Read
+[How it runs](#how-it-runs) before deploying it on Alpine or in a
+memory-limited container.
 
 The library answers one question: did Apple sign this? It checks the chain
 to a pinned root, Apple's marker OIDs and the signature, and hands back
@@ -65,9 +68,8 @@ These are the properties the library exists to hold.
   developer's macOS or Windows machine, where the Apple roots are already
   in the OS store, forgetting the pin fails *permissively*. Anchors come
   from `Config.CreateBuilder().Roots(...)`, or from `Config.Defaults()`,
-  which holds Apple's three published roots compiled in as source
-  constants, so they work unchanged in a container with no filesystem
-  access.
+  whose roots are Apple's three published roots pinned inside the module,
+  so they work unchanged in a container with no filesystem access.
 - **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
   download. Revocation checking is disabled by design; an integrator who
   needs it must layer it on top.
@@ -89,7 +91,7 @@ These are the properties the library exists to hold.
 ### `Config`: the roots and the clock
 
 ```csharp
-Config defaults = Config.Defaults(); // Apple's three roots, the system clock
+Config defaults = Config.Defaults(); // the module's Apple roots, the system clock
 
 Config pinned = Config.CreateBuilder()
     .Roots(new[] { rootCertificate })          // replaces the defaults
@@ -97,12 +99,20 @@ Config pinned = Config.CreateBuilder()
     .Build();
 ```
 
-An empty `Roots` set is an `ArgumentException` from `Build()`, never a
-verdict: a verifier with no roots would reject everything, and nobody would
-notice until production. `Config.Defaults()` throws
-`InvalidOperationException` if the bundled roots are missing or unreadable —
-check for that at startup, since a call made with a config it fails to
-produce would never exist.
+`Roots` is either your own list of trust anchors or, by default, nothing:
+the three Apple roots are pinned inside the module, and `Config` lists none
+of them (`Config.Defaults().Roots` is empty), and the package ships no copy.
+To trust Apple's roots and one of your own, pass all four, loading Apple's
+three from its PKI page or the repository's `certs/`. An empty `Roots` set that you pass in is an
+`ArgumentException` from `Build()`, never a verdict: a verifier with no
+roots would reject everything, and nobody would notice until production.
+`Verifier.Create` throws `ArgumentException` for a root the module cannot
+read, and `InvalidOperationException` when the embedded module is not the
+one this library was built for; check for both at startup.
+
+The clock is read once per call, before the input is looked at, and the
+value goes to the module. A clock that throws, or answers a negative time,
+is an `InternalError` with the exception as its cause.
 
 ### `Verifier.Create`: three methods
 
@@ -145,10 +155,11 @@ JSON whose parsed value is the same in every port; the bytes may differ.
 
 ### `Failure` and `VerificationReason`
 
-`Failure` is `{ Reason, Message, Cause }`; `Cause` is non-null only for
-`UnreadablePayload` and `InternalError` — behind any other reason it would
-be a parser exception about unverified input, whose message can quote raw
-certificate text. Switch on `Failure.Reason`; never parse `Failure.Message`.
+`Failure` is `{ Reason, Message, Cause }`. `Reason` and `Message` are the
+module's verdict. `Cause` is non-null only for an `InternalError` this
+library raised itself: the module trapped, its answer could not be read, or
+the clock failed. A verdict of the module, `InternalError` included, has no
+cause. Switch on `Failure.Reason`; never parse `Failure.Message`.
 `VerificationReasonCodes.ToCode` gives the SCREAMING_SNAKE token every port
 reports (e.g. `"UNTRUSTED_CHAIN"`) for logging or telemetry.
 
@@ -165,7 +176,7 @@ To stand in for `IVerifier` in your own tests, build results by hand:
 | `InvalidCertificate` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
 | `InvalidCertificatePurpose` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `UnreadablePayload` | the chain and signature passed, but the signed content does not parse | 21009 |
-| `InternalError` | the library failed unexpectedly, or the configured clock threw; no input makes a correct library answer it | 21009 |
+| `InternalError` | the module failed or trapped, its answer could not be read, or the configured clock threw; no input makes a correct library answer it | 21009 |
 
 `UnreadablePayload` and `InternalError` are not the client's fault: alert,
 log the failure, and reconcile the purchase through the App Store Server API
@@ -259,8 +270,9 @@ if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("signedRenewal
 
 ## What the checks are, and in what order
 
-The order is observable and is part of the contract: an input that fails an
-early check reports that check's reason, not a later one.
+The module makes these checks. The order is observable and is part of the
+contract every port shares (`docs/design/0.7-api.md`): an input that fails
+an early check reports that check's reason, not a later one.
 
 **JWS.** Size cap → three segments, each strict base64url → header JSON
 (strict UTF-8, no byte order mark, nothing but whitespace after the object),
@@ -270,15 +282,10 @@ undecodable extension) → the chain at `signedDate` (or the clock), the
 intermediate checked against the pinned roots **before** the leaf is
 checked against the intermediate → **leaf marker OID**
 `1.2.840.113635.100.6.11.1` → **intermediate marker OID**
-`1.2.840.113635.100.6.2.1` → the leaf's key is buildable on this platform →
-ES256 signature. A chain that does not reach a pinned root is
+`1.2.840.113635.100.6.2.1` → ES256 signature. A chain that does not reach a pinned root is
 `UntrustedChain` whatever markers it carries; validity is part of the chain
 check, so an expired chain that lacks a marker, or has a broken signature,
-is `InvalidCertificate` (owner decision, 2026-09-27). A key on a curve this
-library cannot construct a key object from is `InvalidCertificate`, judged
-only once its certificate has been vouched for and is about to be used —
-this applies to the leaf and, separately, to the intermediate, since the
-intermediate's own key is what checks the leaf.
+is `InvalidCertificate` (owner decision, 2026-09-27).
 
 **Receipt.** Size cap → strict base64 → CMS parse, including the syntax of
 every `SignerInfo`'s signed attributes, whatever its position → at most four
@@ -287,29 +294,24 @@ every `SignerInfo`'s signed attributes, whatever its position → at most four
 order: the signer's certificate looked up among the embedded certificates by
 issuer and serial number → structurally sound → the chain, top-down from the
 pinned roots, at the creation date or the clock → **signer marker OID** →
-**WWDR marker OID on the intermediate** → the signer's key buildable on this
-platform → the CMS signature. One `SignerInfo` passing is enough; when none
+**WWDR marker OID on the intermediate** → the CMS signature. One `SignerInfo` passing is enough; when none
 does, the first one's failure is the verdict. Then the full payload parse,
 where any failure is `UnreadablePayload`.
 
-The receipt signer may use any algorithm `System.Security.Cryptography`
-supports on this host: RSA PKCS#1 v1.5, RSA-PSS or ECDSA over MD5, SHA-1 or
-the SHA-2 family (SHA-224 excepted — .NET ships no SHA-224 implementation
-at all, on any target framework, so a receipt or certificate signed with it
-cannot be verified on this port; no fixture requires it). A signer that
+The receipt signer may use any algorithm the module implements: RSA
+PKCS#1 v1.5, RSA-PSS or ECDSA over the hashes it supports. A signer that
 chains to a pinned root and carries Apple's marker is trusted whatever it
 signs with, so a change on Apple's side does not reject genuine receipts.
-The same goes for certificate signatures in the chain: this port accepts
-any algorithm, like the Java and Node ports, rather than allowlisting a
-fixed set (owner decision, 2026-09-27). A `signatureAlgorithm` that names a
+The same goes for certificate signatures in the chain: no fixed allowlist
+(owner decision, 2026-09-27). A `signatureAlgorithm` that names a
 hash (`sha256WithRSAEncryption`, `ecdsa-with-SHA384`, the RSA-PSS
 parameters) must name the `SignerInfo`'s `digestAlgorithm`, or the signature
 is `InvalidSignature`; `rsaEncryption` and `id-ecPublicKey` name none and
 take the digest.
 
-The bundled roots are checked against their published SHA-256 fingerprints
-when they load, all three or none; `Config.Defaults()` throws if any do not
-match, so a call made with a config it fails to produce would never exist.
+The three roots are pinned inside the module, and the repository's `certs/`
+holds the canonical copy; the assembly's SHA-256 check of its embedded
+module is described under [How it runs](#how-it-runs).
 
 `x5c[2]` is never compared to an anchor and never trusted, and neither is a
 receipt's embedded copy of its root: the chain terminates at an anchor the
@@ -375,34 +377,81 @@ base64url and omitted or extra padding are all refused, as at Apple. `x5c`
 entries are standard base64, JWS segments unpadded canonical base64url, so
 one signed payload has one accepted spelling.
 
-## Measured worst-case CPU
+## Speed and start-up
 
-Measured on 2026-09-27 with `bench --worst-case`, which times every shared
-case in `fixtures/cases.json` that carries a time budget: oversized
-untrusted keys, a cross-signed certificate mesh, and the encoding oddities
-inside certificates. .NET 10.0.11 (SDK 10.0.400), Release build of the
-`net8.0` library, one calling thread, on a shared 4-vCPU KVM guest (Intel
-Xeon Processor @ 2.10GHz); one second of warm-up, then ten samples of at
-least 100 ms each.
+Measured on 2026-09-29 through the host layer (`dotnet/tools/CorpusRun`),
+.NET 10.0.12, Wasmtime 48.0.2, Linux x86-64 in a 4-vCPU guest shared with
+five other builds (load average 8 to 18 during the runs), so treat the
+numbers as an order of magnitude. The module was the release build.
 
-| Call | Median | Slowest sample |
-|---|---:|---:|
-| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 4.8 ms | 6.4 ms |
-| Next: `receipt/reject-untrusted-oversized-intermediates` | 3.0 ms | 3.9 ms |
-| Slowest hostile JWS: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 1.5 ms | 2.0 ms |
-| Every other budgeted case | under 1.3 ms | under 1.8 ms |
-| For scale: `VerifyReceipt` on the genuine 187-purchase legacy receipt | 2.7 ms | 3.0 ms |
-| For scale: `VerifyReceiptEndpoint` on the same receipt | 4.0 ms | 4.7 ms |
+- **Compile at start:** the first `Verifier.Create` in a process compiles
+  the module with Cranelift: 0.9 to 1 s on an idle 4-CPU machine in the
+  earlier evidence, 7.7 to 12.3 s on the loaded one here. It happens once
+  per process, not per verifier.
+- **Instances:** the first instance and its `init` took 56 to 81 ms here;
+  later instances 4 to 7 ms at the median (`init` reads the three built-in
+  roots).
+- **Throughput:** one genuine G5 receipt per call through the host layer took
+  215 to 379 per second on one thread and 237 to 510 per second on four
+  threads with one instance each; a JWS 55 to 95 and 64 to 92. The earlier
+  evidence, on an idle machine, measured 763 and 2,475 receipts per second
+  and 227 and 669 JWSs, so the gap is mostly the other builds' load.
+  Details are in `docs/evidence/2026-09-29-dotnet-host.md`.
 
-The slowest hostile case costs about what the endpoint spends on the
-largest genuine receipt, and under twice what `VerifyReceipt` spends on it
-(a repeat run gave the same order: 4.6 ms against 2.7 ms and 4.4 ms). The
-cost of a call follows the size of the input, which the caps above bound,
-not the structure an attacker chooses. The machine was shared with other
-work, so treat these as an order of magnitude. Run
-`dotnet run -c Release --project dotnet/bench -- --worst-case` for the
-hostile cases on your own hardware, and the same command without
-`-- --worst-case` for the genuine receipts.
+Run `dotnet run -c Release --project dotnet/bench` for the genuine receipts
+and `-- --worst-case` for the hostile cases on your own hardware.
+
+## How it runs
+
+- **One module, one hash.** `aprv.wasm` is embedded in both target
+  frameworks. Its SHA-256 is checked against the hash embedded beside it the
+  first time a verifier is created, and a mismatch is an
+  `InvalidOperationException`. The module imports exactly one function,
+  `random-get`, answered from `RandomNumberGenerator`; anything else it asks
+  for is refused.
+- **Input cap.** At most 3,145,729 bytes of an input (one over the largest cap) are copied into the module's memory; the core decides every cap on the length, so a longer input gets the `TooLarge` answer (21002 at the endpoint) it would get whole.
+- **Instances.** One compiled module per process. Each `IVerifier` owns a
+  small pool of instances, each in a `Store` of its own limited to one
+  instance and 256 MiB of linear memory. A call takes an idle instance or a
+  new one, uses it alone, and hands it back; an instance that trapped, that
+  answered something unreadable, or that grew past 64 MiB is thrown away
+  and the next call takes another. Nothing needs closing.
+- **Address space, not memory.** Wasmtime reserves about 4 GiB of *virtual*
+  address space for each instance's linear memory, so 32 live instances show
+  about 188 GB of virtual size and about 32 MiB more resident memory than none
+  (measured on Linux x86-64; `CorpusRun memory 32`). An instance holds about
+  1.9 MiB of linear memory after `init`. Nothing is committed beyond that,
+  so container memory limits are unaffected, but an environment that caps
+  virtual size (`ulimit -v`, strict overcommit) has to allow for it. The pool
+  keeps at most as many idle instances as there are CPUs, and never fewer
+  than two.
+- **Native library.** Wasmtime brings a native library per platform:
+  `linux-x64` (glibc 2.28), `linux-arm64` (glibc 2.18), `osx-x64`,
+  `osx-arm64`, `win-x64`, `win-arm64`. The package has no 32-bit or musl
+  build.
+- **Alpine and other musl distributions** fall back to the glibc library,
+  which is expected to fail to load without a glibc compatibility layer
+  (`gcompat`). This has not been run here. Alpine users take `aprv-server`,
+  the same module in a static binary that ships for musl, and call it over
+  HTTP.
+- **Windows and CET.** An application built with the .NET 9 or later SDK has
+  the hardware shadow stack (CET) flag in its apphost. Under it Wasmtime's
+  recovery from a guest trap ends the process (exit code -1073740791,
+  `0xC0000409`) instead of surfacing the trap, so the wrapper cannot turn it
+  into `INTERNAL_ERROR`. This library's own Windows CI showed it (net8.0
+  apphosts do not), and it is reported upstream
+  (bytecodealliance/wasmtime-dotnet#374). A trap is a defect in the module or a
+  misused ABI and none of the shared corpora causes one; an application that
+  wants the wrapper to survive one sets `<CETCompat>false</CETCompat>`. Not
+  run here: there is no Windows machine.
+- **.NET Framework, Mono and Unity.** The netstandard2.0 asset compiles and
+  is exercised on modern .NET; whether .NET Framework or Mono find the native
+  library under `runtimes/` depends on the consuming project, and was not run.
+  Unity's IL2CPP has not been tried.
+- **No operating-system crypto.** Verification uses the crypto compiled into
+  the module, not the system's OpenSSL, CNG or Security framework, so the
+  platform crypto policies of 0.7 (for example RHEL 9's refusal of SHA-1
+  signatures) no longer apply.
 
 ## The endpoint
 
@@ -454,20 +503,6 @@ can differ from tzdb's, so a `_pst` value from 1883 to 1986 can differ
 there. Genuine receipts carry no dates that old, so only hand-made input
 reaches this.
 
-## Known issue: legacy receipts on RHEL 9
-
-The legacy Apple receipt chain and its CMS signature are SHA-1. On Linux,
-`System.Security.Cryptography` uses the system OpenSSL, and RHEL 9's
-DEFAULT crypto policy (also Alma and Rocky) makes that OpenSSL refuse SHA-1
-signatures, so a genuine legacy receipt answers `UntrustedChain` there
-however .NET was installed. Observed on AlmaLinux 9.8 with the distro .NET
-8 on 2026-09-24. Windows and macOS use the OS crypto and are not affected
-by this policy. Newer receipts (SHA-256 chains) and every JWS are
-unaffected; FIPS mode is untested.
-
-Until the fix ships, run `update-crypto-policies --set DEFAULT:SHA1` on
-that host.
-
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a
@@ -485,6 +520,22 @@ for the full picture and
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
 for how it differs from Apple's official libraries.
 
+## Upgrading from 0.7
+
+The API is unchanged but for `AppleRootCertificates`, which is gone; what
+runs under it is not.
+
+| 0.7 | 0.8 |
+|---|---|
+| verification in C#, on `System.Security.Cryptography.Pkcs` and `System.Formats.Asn1` | verification in `aprv.wasm`, hosted by the `Wasmtime` package; those two packages are no longer dependencies |
+| `Config.Defaults().Roots` lists Apple's three roots | it is empty: the roots are pinned inside the module. To trust Apple's roots and your own, pass all four |
+| `AppleRootCertificates.Bundled()` returns Apple's three roots | removed: the package ships no copy of them. Load them from Apple's PKI page or the repository's `certs/` |
+| `Config.Defaults()` throws if the bundled roots do not load | it cannot fail; `Verifier.Create` throws `ArgumentException` for a root the module refuses and `InvalidOperationException` for a module of another ABI version |
+| `Failure.Cause` set for `UnreadablePayload` and `InternalError` | set only for an `InternalError` raised by this library (a trap, an unreadable answer, the clock) |
+| `Verifier.Create` takes microseconds | the first one in a process compiles the module, about a second on an idle machine and several under load |
+| any platform .NET runs on | the platforms Wasmtime ships a native library for; no Alpine, no 32-bit |
+| SHA-224 receipts could not be verified | the module decides which algorithms verify |
+
 ## Upgrading from 0.6
 
 0.7 replaces the three constructed verifiers with one `IVerifier` built
@@ -500,7 +551,7 @@ environments, no app Apple id, no device id. Methods return a
 | `Verify(base64, deviceGuid)` (device-hash checking on the verifier) | compute the hash yourself from `OpaqueValue` and `BundleIdBytes` (above) |
 | `new JwsVerifier(roots, bundleId, acceptedEnvironments).VerifyTransaction/VerifyAppTransaction/VerifyRaw(jws)` | `verifier.VerifySignedData(jws)`, then deserialize `payload.Json` yourself |
 | `new VerifyReceiptEndpoint(roots, environment).VerifyReceiptJson(body)` | `verifier.VerifyReceiptEndpoint(environment, body)` |
-| `AppleRootCertificates.JwsRoots()`, `AppleRootCertificates.ReceiptRoots()` | `AppleRootCertificates.Bundled()` (one set, shared by every method) |
+| `AppleRootCertificates.JwsRoots()`, `AppleRootCertificates.ReceiptRoots()` | `Config.Defaults()` (one set, shared by every method) |
 | a `DateTimeOffset` argument for `request_date` | `Config.CreateBuilder().Clock(() => epochMs)` |
 | `VerificationException` (thrown) | `result.Failure` (`{ Reason, Message, Cause }`, never thrown for input) |
 | `AppReceipt` (`DateTimeOffset` fields) | `ReceiptPayload` (`*Ms` epoch milliseconds) |
@@ -513,11 +564,9 @@ environments, no app Apple id, no device id. Methods return a
 | `InternalError` for signed content that does not parse | `UnreadablePayload` |
 | `WrongBundleId`, `WrongEnvironment`, `WrongAppAppleId`, `DeviceHashMismatch` | gone: the caller's own checks |
 
-The netstandard2.0 / net8.0 dual targeting, the compiled-in root
-certificates, and the dependency set (`System.Security.Cryptography.Pkcs`
-and `System.Formats.Asn1`) are unchanged from 0.6.
-
 ## Testing
+
+`aprv.wasm` is not committed: copy the module to `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm` (listed in `.gitignore`; its SHA-256 is in `aprv.wasm.sha256` beside it), or set `APRV_WASM` to its path; a missing file stops the build with a message.
 
 ```bash
 dotnet test dotnet/tests/ApplePurchaseReceiptVerifier.Tests           # the whole suite
@@ -530,14 +579,32 @@ as one named test per case, and fails unless every case in the file ran.
 The adapter carries no case-specific knowledge: it builds a `Config` from
 the case, dispatches on the operation and evaluates the expected JSON
 Pointers on the result. A case with a `maxMillis` budget is timed after a
-warm-up call. `Tests.Floor` re-runs a representative slice of the same
-fixtures with the library loaded as its netstandard2.0 asset, across
-net8.0, net9.0 and net10.0 — proving the floor binary, not just the modern
-one, decodes RSA-PSS and ECDSA correctly.
+warm-up call. The `decodeBase64` cases run through the module, which is the
+only decoder there is, and are judged on which side of the rule each text
+lands, since a host cannot read the decoded bytes.
+
+The other tests are about the wrapper, not the module:
+
+- `AbiTests` calls the canonical ABI by hand over the real module: `init`
+  and its misuse, the environment values that trap, a `random-get` answering
+  the wrong length, isolation between instances, and memory that stays the
+  same size over 2,000 calls.
+- `FacadeTests` runs the six outcomes against a hand-assembled module
+  (`StubModule`) that speaks the same ABI: a verdict, a trap, an unreadable
+  answer, a return pointer outside the memory, a module of another version
+  or with another import, and the post-return that must happen once per call.
+- `ModuleAnswersTests`, `ClockTests`, `RootsTests`, `CultureTests` and
+  `PlatformTests` cover reading the wire, the clock read, the roots that
+  reach `init`, culture independence and four threads on one verifier.
+- `Tests.Floor` loads the library as its netstandard2.0 asset and runs a
+  slice of the same fixtures, read through the endpoint's status.
+
+`dotnet/tools/CorpusRun` runs the shared corpora (1,179 rows and 5,000
+mutants) through the host layer and prints rows for
+`docs/evidence/2026-09-29-canonical-abi-final/py/classify.py`.
 
 This environment is Linux-only: the Windows and macOS legs of the test
-matrix (RHEL crypto-policy behaviour aside, which is Linux-specific by
-definition) were not exercised here and need CI or a local run on those
+matrix were not exercised here and need CI or a local run on those
 platforms to confirm.
 
 ## Changelog

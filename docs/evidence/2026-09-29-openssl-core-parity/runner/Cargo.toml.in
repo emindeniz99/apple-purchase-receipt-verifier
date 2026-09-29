@@ -1,0 +1,19 @@
+# Evidence only (2026-09-29). Runs ABI v1 call files through the 0.7
+# public API of one core tree. scripts/parity.sh copies this file next to
+# a copy of src/ as Cargo.toml, with @CORE@ replaced by the core tree
+# under test (the migrated rust/, or the pre-migration one).
+[package]
+name = "aprv-parity-runner"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+aprv = { package = "apple-purchase-receipt-verifier", path = "@CORE@" }
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+serde_json = "1"
+
+[workspace]
+
+[patch.crates-io]
+openssl-sys = { path = "@CORE@/vendor/openssl-sys" }

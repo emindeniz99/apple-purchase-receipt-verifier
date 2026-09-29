@@ -1,0 +1,30 @@
+# option cranelift
+# python 3.12.3, 4 cores, load average (0.98779296875, 1.0234375, 0.580078125)
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "warm": 200, "n": 1000, "mean_us": 1745, "per_s": 572.9}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "warm": 200, "n": 1000, "mean_us": 5665, "per_s": 176.5}
+{"id": "endpoint-sandbox body {} (bridge floor)", "op": 4, "warm": 1000, "n": 20000, "mean_us": 186}
+# option cranelift-none
+# python 3.12.3, 4 cores, load average (0.97900390625, 1.02099609375, 0.58935546875)
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "warm": 200, "n": 1000, "mean_us": 2013, "per_s": 496.9}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "warm": 200, "n": 1000, "mean_us": 6143, "per_s": 162.8}
+{"id": "endpoint-sandbox body {} (bridge floor)", "op": 4, "warm": 1000, "n": 20000, "mean_us": 240}
+# option winch
+# python 3.12.3, 4 cores, load average (0.96533203125, 1.01611328125, 0.60595703125)
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "warm": 200, "n": 1000, "mean_us": 3474, "per_s": 287.9}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "warm": 200, "n": 1000, "mean_us": 11174, "per_s": 89.5}
+{"id": "endpoint-sandbox body {} (bridge floor)", "op": 4, "warm": 1000, "n": 20000, "mean_us": 193}
+# option cranelift-baseline
+# python 3.12.3, 4 cores, load average (0.97119140625, 1.013671875, 0.61767578125)
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "warm": 200, "n": 1000, "mean_us": 1735, "per_s": 576.5}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "warm": 200, "n": 1000, "mean_us": 5536, "per_s": 180.6}
+{"id": "endpoint-sandbox body {} (bridge floor)", "op": 4, "warm": 1000, "n": 20000, "mean_us": 188}
+# option winch-baseline
+# python 3.12.3, 4 cores, load average (0.89697265625, 0.99462890625, 0.6259765625)
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "warm": 200, "n": 1000, "mean_us": 3368, "per_s": 296.9}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "warm": 200, "n": 1000, "mean_us": 10404, "per_s": 96.1}
+{"id": "endpoint-sandbox body {} (bridge floor)", "op": 4, "warm": 1000, "n": 20000, "mean_us": 184}
+# option pulley
+# python 3.12.3, 4 cores, load average (0.61083984375, 0.91455078125, 0.62255859375)
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "warm": 200, "n": 1000, "mean_us": 35332, "per_s": 28.3}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "warm": 200, "n": 1000, "mean_us": 162003, "per_s": 6.2}
+{"id": "endpoint-sandbox body {} (bridge floor)", "op": 4, "warm": 1000, "n": 20000, "mean_us": 221}

@@ -1,0 +1,25 @@
+// gradle -p java-wasm/src/it/gradle-capability -PaprvRepo=<file repository> -PaprvVersion=<version> resolveBoth
+// The file repository holds both artifacts, deployed with
+//   mvn deploy -DskipTests -DaltDeploymentRepository=guard::file://<dir>
+// Expected: the task fails with a capability conflict on
+// io.github.emindeniz99:apple-purchase-receipt-verifier.
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    maven { url = uri(property('aprvRepo')) }
+    mavenCentral()
+}
+
+dependencies {
+    implementation "io.github.emindeniz99:apple-purchase-receipt-verifier:${property('aprvVersion')}"
+    implementation "io.github.emindeniz99:apple-purchase-receipt-verifier-wasm:${property('aprvVersion')}"
+}
+
+tasks.register('resolveBoth') {
+    def classpath = configurations.runtimeClasspath
+    doLast {
+        classpath.files.each { println it.name }
+    }
+}

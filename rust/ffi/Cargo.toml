@@ -1,13 +1,14 @@
 # The C ABI over the Rust library: one `cdylib`/`staticlib` that C, C++ and
 # any FFI-capable runtime (Elixir NIFs, Lua, Python ctypes, .NET P/Invoke)
 # can load. Not published to crates.io — a C consumer wants a shared object
-# and a header, not a crate — and not a workspace member, for the same
-# reason `fuzz/` is not: `..`'s `exclude` keeps it out of the library
-# tarball, and it carries its own `Cargo.lock`.
+# and a header, not a crate. A member of `..`'s workspace, so it builds from
+# the one `rust/Cargo.lock`; `..`'s package `exclude` keeps it out of the
+# library tarball.
 #
-# The version is not declared here. `aprv_version()` reads the repository's
-# `version.txt`, the one file release-please bumps, so the ABI cannot report
-# a version that drifted from the library it wraps.
+# The version is not declared here. `aprv_version()` returns the core's own
+# `VERSION` through aprv-surface (the core crate's version, which
+# release-please bumps with every other), so the ABI cannot report a version
+# that drifted from the library it wraps.
 [package]
 name = "apple-purchase-receipt-verifier-ffi"
 version = "0.0.0"
@@ -20,11 +21,17 @@ license = "MIT"
 [lib]
 name = "apple_purchase_receipt_verifier_ffi"
 path = "src/lib.rs"
-crate-type = ["cdylib", "staticlib"]
+# `rlib` too, for rust/fuzz's `ffi` target, which calls the exports as Rust
+# functions; C callers link the other two.
+crate-type = ["cdylib", "staticlib", "rlib"]
 
-# One dependency, and it is the library itself. The JSON the ABI hands out
-# is the library's own (`ReceiptPayload::to_json()` and the signed JWS text),
-# so nothing beyond the library's own graph enters and cargo-deny's
-# banned-crate list keeps meaning what it means.
-[dependencies.apple-purchase-receipt-verifier]
-path = ".."
+# The library through its binding boundary (docs/rust-core/SURFACE.md §9,
+# rule 3): aprv-surface for the calls and aprv-wire for the JSON, the same
+# bytes aprv.wasm returns. Nothing beyond the library's own graph enters,
+# so cargo-deny's banned-crate list keeps meaning what it means.
+[dependencies]
+aprv-surface = { path = "../bindings/surface" }
+aprv-wire = { path = "../bindings/wire" }
+
+[dev-dependencies]
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }

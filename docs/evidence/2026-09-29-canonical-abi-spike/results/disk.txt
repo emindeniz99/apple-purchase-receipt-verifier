@@ -1,0 +1,23 @@
+# disk, 2026-09-29
+## before cleanup
+/: 4.5G free of 252G
+7.5M	$SCRATCH/r12/aprv-wazero
+15M	$SCRATCH/r12/art
+4.0K	$SCRATCH/r12/build-cabi.txt
+4.0K	$SCRATCH/r12/build-v1.txt
+181M	$SCRATCH/r12/calls
+4.0K	$SCRATCH/r12/corpus-wasmtime-py.txt
+13M	$SCRATCH/r12/endive-work
+56K	$SCRATCH/r12/guest
+347M	$SCRATCH/r12/jco
+59M	$SCRATCH/r12/run
+231M	$SCRATCH/r12/target
+44K	$SCRATCH/r12/v1
+4.0K	$SCRATCH/r12/wasi-none.o
+40K	$SCRATCH/r12/wazero
+## after cleanup (kept: art/, the five modules, and the build logs)
+/: 5.3G free of 252G
+15M	$SCRATCH/r12/art
+4.0K	$SCRATCH/r12/build-cabi.txt
+4.0K	$SCRATCH/r12/build-v1.txt
+4.0K	$SCRATCH/r12/corpus-wasmtime-py.txt

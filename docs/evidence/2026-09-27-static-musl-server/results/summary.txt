@@ -1,0 +1,29 @@
+## CLI start-up (verify-receipt, g5): median of the per-round medians of 7 runs (range of the round medians)
+## first result = the verdict's bytes have arrived; exit = the process has exited
+gnu                     4 CPUs: first 13.5 (13.1-13.5), exit 14.5 (14.1-15.0) ms | taskset -c 0: first 15.0 (14.0-16.1), exit 15.8 (14.8-16.9) ms | peak RSS 21.3 MiB, minor faults 2590
+musl                    4 CPUs: first 13.2 (13.0-13.2), exit 70.1 (69.9-72.2) ms | taskset -c 0: first 14.5 (14.3-14.8), exit 70.8 (69.1-73.2) ms | peak RSS 19.8 MiB, minor faults 2771
+musl-mimalloc           4 CPUs: first 15.9 (14.6-16.1), exit 114.2 (98.5-119.9) ms | taskset -c 0: first 15.5 (15.3-16.3), exit 100.0 (99.8-107.0) ms | peak RSS 31.4 MiB, minor faults 2563
+gnu-fastexit            4 CPUs: first 15.6 (13.3-15.6), exit 16.3 (14.1-16.4) ms | taskset -c 0: first 14.9 (14.6-16.2), exit 15.5 (15.2-17.4) ms | peak RSS 21.2 MiB, minor faults 2590
+musl-fastexit           4 CPUs: first 14.4 (13.3-16.8), exit 15.2 (13.9-17.6) ms | taskset -c 0: first 17.5 (16.8-20.1), exit 18.1 (17.7-21.3) ms | peak RSS 19.8 MiB, minor faults 2771
+musl-mimalloc-fastexit  4 CPUs: first 15.7 (13.9-19.5), exit 16.6 (14.6-20.7) ms | taskset -c 0: first 15.0 (15.0-15.5), exit 15.7 (15.7-16.2) ms | peak RSS 31.4 MiB, minor faults 2562
+
+## in-process `aprv bench` on CPU 0, 1 thread: calls/s, median over rounds (min-max)
+receipt fresh gnu 246.2 (222.0-261.5) (+0.0%) | musl 230.4 (212.0-239.6) (-6.4%) | musl-mimalloc 231.7 (213.5-233.5) (-5.9%)
+receipt pool  gnu 588.5 (511.1-607.6) (+0.0%) | musl 553.9 (537.2-577.4) (-5.9%) | musl-mimalloc 551.3 (462.3-574.8) (-6.3%)
+JWS     fresh gnu 107.2 (101.9-110.5) (+0.0%) | musl 96.8 (92.7-100.5) (-9.7%) | musl-mimalloc 101.6 (89.4-103.6) (-5.2%)
+JWS     pool  gnu 150.8 (137.6-161.2) (+0.0%) | musl 146.2 (137.9-149.5) (-3.1%) | musl-mimalloc 138.7 (120.8-142.7) (-8.0%)
+
+## HTTP: server on CPU 0 (1 worker, lifecycle fresh), aprv-load on CPUs 1-3, 1 connection, 8 s: requests per server CPU-second, median over rounds (min-max); p50 latency; server peak RSS
+receipt gnu            232.0 (230.1-252.6) per server CPU-s (+0.0%) | 224.4 req/s | p50 4.11 ms | peak RSS 22.2 MiB
+receipt musl           218.6 (211.7-223.8) per server CPU-s (-5.8%) | 211.0 req/s | p50 4.47 ms | peak RSS 20.2 MiB
+receipt musl-mimalloc  217.6 (213.2-220.7) per server CPU-s (-6.2%) | 210.9 req/s | p50 4.39 ms | peak RSS 37.5 MiB
+jws     gnu            103.7 (101.9-108.2) per server CPU-s (+0.0%) | 101.0 req/s | p50 9.25 ms | peak RSS 22.3 MiB
+jws     musl           95.9 (90.6-100.0) per server CPU-s (-7.5%) | 94.0 req/s | p50 9.90 ms | peak RSS 20.2 MiB
+jws     musl-mimalloc  96.4 (95.7-101.4) per server CPU-s (-7.0%) | 94.2 req/s | p50 9.95 ms | peak RSS 37.6 MiB
+
+## sizes (features server,embed; stripped with llvm-strip), from build.txt
+gnu-min                x86_64-unknown-linux-gnu    raw 10,801,512 | stripped 10,322,744 | gzip -9 3,580,885 | xz -9 2,726,496
+musl-min               x86_64-unknown-linux-musl   raw 10,957,424 | stripped 10,457,856 | gzip -9 3,656,734 | xz -9 2,789,028
+musl-mimalloc-min      x86_64-unknown-linux-musl   raw 11,134,640 | stripped 10,615,552 | gzip -9 3,714,472 | xz -9 2,837,972
+a64-musl-min           aarch64-unknown-linux-musl  raw 10,150,928 | stripped 10,150,752 | gzip -9 3,390,574 | xz -9 2,430,620
+a64-musl-mimalloc-min  aarch64-unknown-linux-musl  raw 10,282,616 | stripped 10,282,440 | gzip -9 3,442,814 | xz -9 2,472,988

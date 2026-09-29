@@ -1,0 +1,50 @@
+# node v22.22.2, module sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+cases: rows 153: endpoint-same 33, old-der-only 3, old-device-binding 2, old-policy-verdict 6, old-typed-model 6, same-failure 75, same-verified 28
+    {"host":"node","node":"v22.22.2","calls":{"aprv.clock_now_ms":463,"aprv.random_get":1},"traps":0,"instances":1,"rows":153}
+hostile: rows 811: endpoint-same 95, old-abi-inexpressible 131, old-config-refusal 5, old-der-only 2, old-device-binding 4, same-failure 556, same-verified 18
+    {"host":"node","node":"v22.22.2","calls":{"aprv.clock_now_ms":229,"aprv.random_get":1},"traps":0,"instances":1,"rows":811}
+algorithms: rows 22: same-verified 22
+    {"host":"node","node":"v22.22.2","calls":{"aprv.clock_now_ms":68,"aprv.random_get":1},"traps":0,"instances":1,"rows":22}
+substrate: rows 193: old-der-only 1, same-failure 100, same-verified 92
+    {"host":"node","node":"v22.22.2","calls":{"aprv.clock_now_ms":527,"aprv.random_get":1},"traps":0,"instances":1,"rows":193}
+fuzz: rows 5000: old-abi-inexpressible 175, old-der-only 22, same-failure 4775, same-verified 28
+    {"host":"node","node":"v22.22.2","calls":{"aprv.clock_now_ms":4308,"aprv.random_get":1},"traps":0,"instances":1,"rows":5000}
+# mappings over all rows
+    {'der-encoded': 3822, 'der-encoded+guid-dropped': 12, 'direct': 2344, 'no-call:endpoint-environment-Xcode': 1}
+# ABI tests
+PASS aprv_abi_version() == 1
+PASS aprv_call(1, VERIFY_RECEIPT, genuine g5) verifies: bundleId dev.bonzer.weeka.app
+PASS aprv_call(1, VERIFY_SIGNED_DATA (test anchors), shared-sandbox JWS) verifies; payloadJson is the exact signed JSON and parses to payload: payloadJson 329 chars
+PASS aprv_call(0, garbage op, invalid ptr, absurd len) fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS aprv_call(2, garbage op, invalid ptr, absurd len) fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS bridge reports a version mismatch as an ABI error, never verified=false: APRV Wasm ABI mismatch: module=1, caller=2
+PASS a version mismatch runs nothing (no host import called): clock calls during the call: 0
+PASS unknown operation 0 fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS unknown operation 5 fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS unknown operation 99 fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS unknown operation 255 fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS unknown operation 256 fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS unknown operation 261 fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS unknown operation -1 fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS null input pointer with a length fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS input beyond linear memory fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS input range that overflows u32 fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS empty input is a verification failure value: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified":false}
+PASS absurd aprv_alloc lengths return 0, and the instance keeps working: [0,0,true]
+PASS invalid handle: aprv_result_ptr(0) fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS invalid handle: aprv_result_len(12345) fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS invalid handle: aprv_result_free(0) fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS invalid handle: aprv_result_free(never issued) fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS double free fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS use after free (result_ptr) fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS use after free (result_len) fails hard: trap (unreachable); fresh instance verifies g5: true
+PASS freed handles are reused and live ones stay valid: [[1,2,3],2]
+PASS garbage receipt -> verified=false value: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified":false}
+PASS non-UTF-8 JWS -> verified=false INVALID_JWS_FORMAT: {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+PASS malformed endpoint request JSON -> Apple status 21002 value: {"status":21002}
+PASS malformed result JSON is a host decode error (internal failure), not a verdict: SyntaxError: Unexpected end of JSON input
+PASS a result is a host-owned copy (unchanged after later calls reuse guest memory)
+PASS no growth of linear memory over 2,000 more calls: [2097152,2097152]
+summary: 33 passed, 0 failed
+# base64 rule
+base64 rule through VERIFY_RECEIPT: 33 cases, 167 texts, 167 as expected, 0 not

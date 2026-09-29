@@ -1,0 +1,13 @@
+# Round 8 environment, 2026-09-27
+machine: 4 cores, Intel(R) Xeon(R) Processor @ 2.10GHz; Ubuntu 24.04.4 LTS x86_64; kernel 6.18
+python: CPython 3.12.3 (round 7's venv, $SCRATCH/py7/venv-wheel)
+wasmtime-py: 49.0.0 from PyPI (manylinux1_x86_64 wheel); 48.0.0 from PyPI in a second venv, for pinning.txt only
+Wasmtime CLI: 49.0.1 (46c23a87d 2026-09-24), the x86_64-linux release asset fetched by ../2026-09-26-wasm-architecture-bakeoff/scripts/fetch-tools.sh (tar.xz sha256 c71f7e0d30a92e418f0d17db7c6d8f6664c1ad764340a1278678f4209deab534)
+WAMR: WAMR-2.4.5 = 25bd7eb63e828e4bd242cc9b38d260b4b31c6605 (git clone of bytecodealliance/wasm-micro-runtime); wamrc 2.4.5 release asset, sha256 fedda99950a70f7dc45470ce88e12bf9e435b9482058ae97ce2cadd760e2329f
+build tools (WAMR only): gcc 13, cmake 3.28, ninja
+module: aprv-abi1.wasm (ABI v1, from ../2026-09-26-wasm-abi-v1), 2,952,613 bytes, sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+precompiled with wasmtime-py 49.0.0 (sha256, from precompile.txt):
+  cranelift-baseline.cwasm  77f8020a3fb3ba32e26d1fe4255a70cd9b5588cba38ec28e8ce8d04be6845d4f
+  winch-baseline.cwasm      360c8f5ccd0b735c68ca1eeabd74f3eae90e0b8b61432900c56bf6620c343689
+  pulley64.cwasm            62938fef62a093fb910919e4fcee52a0c837b5b8722e696fec68e088e766866d
+  cranelift-native.cwasm    5bd9062ffa431a76094c331d7d2fa5c4c2c1180bc574ca90a1fb53ddaa5fbc24

@@ -1,0 +1,18 @@
+# $SPIKE/py/tri.py, 2026-09-26. Columns per corpus: agree cand=java cand=rust cand-own abi. Java rows: JDK 25.0.4.1 + BC 1.86 (reused).
+# java-equal = agree + cand=java over the 1,048 rows the C ABI can express. 'same' = identical to base's tallies.
+run                                cases              substrate          hostile              algorithms       java-equal  vs-base
+base                               153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new                                153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+any                                153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+any-c-chromium                     153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+any-c-node-trap                    153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+any-c-workerd                      153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-bun-trap                     153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-chromium                     153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-deno-trap                    153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-firefox                      153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-node-trap                    153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-wasmtime                     153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-wazero                       153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-webkit                       153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same
+new-c-workerd                      153 0 0 0 0        167 21 2 3 0       655 10 12 3 131    8 14 0 0 0          1028        same

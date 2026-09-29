@@ -1,0 +1,8 @@
+# The SHA-256 of each aprv-server release asset, in sha256sum's format.
+# ServerSource.maven() and ServerSource.github() accept only a binary with
+# the hash listed here. The release build replaces this file with the
+# release's own (-Daprv.server.sha256sums=PATH). Until then it pins lane B's
+# G1d build (the final 0.7 component, component_sha256 ccccbfb5...) for
+# x86_64 Linux only, so the classifier jar and maven() can be built and
+# tested.
+e6292f783b25be4d04dfbea9755725c46b626bbfde8a5815d4c23206fb840766  aprv-x86_64-unknown-linux-musl

@@ -1,0 +1,7 @@
+# 2026-09-26 x86_64, 4 vCPUs; load before: 2.38 1.68 1.55
+B aprv-cli (embedded .cwasm), receipt: sequential n=30 median 12.5 ms, p90 17.5 ms; 4 parallel callers n=200: 355.1 calls/s, 101.9 calls per child CPU-second
+B aprv-min (server binary, embedded .cwasm), receipt: sequential n=30 median 12.1 ms, p90 13.5 ms; 4 parallel callers n=200: 326.2 calls/s, 91.3 calls per child CPU-second
+B aprv-min-side (.cwasm side file, pinned hash), receipt: sequential n=30 median 24.3 ms, p90 29.3 ms; 4 parallel callers n=200: 195.8 calls/s, 52.3 calls per child CPU-second
+A aprv-full-pin + .cwasm side file, receipt: sequential n=30 median 25.0 ms, p90 27.2 ms; 4 parallel callers n=200: 182.9 calls/s, 49.1 calls per child CPU-second
+A aprv-full (compiles the .wasm at every start), receipt: sequential n=5 median 880.5 ms, p90 899.9 ms; 4 parallel callers n=12: 1.4 calls/s, 0.4 calls per child CPU-second
+B aprv-cli, endpoint sandbox: sequential n=30 median 13.3 ms, p90 16.2 ms; 4 parallel callers n=200: 368.5 calls/s, 101.2 calls per child CPU-second

@@ -1,0 +1,11 @@
+# JDK 25.0.4.1 (Temurin) AOT cache (JEP 483/514/515), JvmBench receipt, 1 thread
+# training: java -XX:AOTCacheOutput=app.aot -cp <jars only> aprvj.bench.JvmBench $REPO/fixtures receipt 1 1 2
+# app.aot: 29,523,968 bytes. A directory on the class path makes the dump fail:
+#   "Error occurred during CDS dumping / Cannot have non-empty directory in paths"
+# columns: JVM start to first verdict ms, verifier construction ms, first call ms
+with -XX:AOTCache=app.aot   456  198.25   89.22
+with -XX:AOTCache=app.aot   497  244.47  106.06
+with -XX:AOTCache=app.aot   438  208.72   90.69
+without                     690  502.39  140.12
+without                     753  563.74  145.74
+without                     742  558.76  132.97

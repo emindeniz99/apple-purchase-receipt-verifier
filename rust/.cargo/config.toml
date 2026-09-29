@@ -1,0 +1,13 @@
+# Build-time settings for cargo invoked inside rust/ (the library, the
+# adapter, ffi/ and fuzz/). Cargo reads this file by working directory, so
+# `cargo --manifest-path rust/...` from the repository root does not see it.
+
+[env]
+# The OPENSSLDIR compiled into the vendored OpenSSL (openssl-sys passes it
+# to openssl-src as --openssldir). The adapter never loads a configuration
+# file or a default trust store, so nothing should ever be read from it;
+# pointing it at a directory that does not exist means that even a
+# regression in that rule finds no file to read, rather than whatever a
+# machine keeps under /usr/local/ssl. An OPENSSL_CONFIG_DIR already set in
+# the environment wins (no `force`).
+OPENSSL_CONFIG_DIR = "/nonexistent/aprv-openssl"

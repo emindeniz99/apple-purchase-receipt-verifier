@@ -1,0 +1,30 @@
+[package]
+name = "aprv-security-openssl"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "Spike only: the one crate that holds unsafe code, over rust-openssl and openssl-sys."
+build = "build.rs"
+
+# One adapter, three libraries. Which library is linked is decided by
+# openssl-sys at build time:
+#   OpenSSL 4.0.2 or LibreSSL 4.3.2: OPENSSL_DIR=<static install> OPENSSL_STATIC=1
+#   OpenSSL 3.6.x from crates.io:    --features vendored (openssl-src)
+#   AWS-LC:                          --features aws-lc (aws-lc-sys)
+[dependencies]
+openssl = "=0.10.81"
+openssl-sys = "=0.9.117"
+libc = "0.2"
+foreign-types = "0.3"
+
+[features]
+# The signature step through PKCS7_verify (experiment A1) instead of
+# PKCS7_signatureVerify on the first SignerInfo (experiment A2).
+a1 = []
+# Negative control for scripts/isolation.sh only: load the default config
+# and add the default certificate paths to the store, i.e. exactly what the
+# adapter otherwise never does, to show the test can see it.
+negative-control = []
+vendored = ["openssl/vendored"]
+aws-lc = ["openssl/aws-lc", "openssl-sys/aws-lc"]

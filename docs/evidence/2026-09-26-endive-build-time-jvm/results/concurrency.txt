@@ -1,0 +1,38 @@
+## memory: two instances of the compiled module (JDK 21): same allocator, same pointer, separate linear memories
+{"ptr_a":1728624,"ptr_b":1728624,"a":"instance A","b":"instance B","b_after_writing_a":"instance B","a_after":"Xnstance A","same_memory_object":false}
+## JDK 17: one instance per thread (4 threads, each 3 rounds of the 153 cases.jsonl rows, compared with a single-threaded run)
+{"mode":"one instance per thread","java":"17.0.20.1","threads":4,"rounds":3,"rows_each":153,"same":1836,"differ":0,"errors":0,"seconds":23.76,"rows_per_s":77}
+## JDK 21: one instance per thread (4 threads, each 3 rounds of the 153 cases.jsonl rows, compared with a single-threaded run)
+{"mode":"one instance per thread","java":"21.0.10","threads":4,"rounds":3,"rows_each":153,"same":1836,"differ":0,"errors":0,"seconds":20.67,"rows_per_s":89}
+## JDK 25: one instance per thread (4 threads, each 3 rounds of the 153 cases.jsonl rows, compared with a single-threaded run)
+{"mode":"one instance per thread","java":"25.0.4.1","threads":4,"rounds":3,"rows_each":153,"same":1836,"differ":0,"errors":0,"seconds":23.9,"rows_per_s":77}
+## JDK 21: one instance per thread (4 threads, each 2 rounds of the 811 hostile.jsonl rows)
+{"mode":"one instance per thread","java":"21.0.10","threads":4,"rounds":2,"rows_each":811,"same":6488,"differ":0,"errors":0,"seconds":7.23,"rows_per_s":897}
+## (run on the library build before the ByteArrayMemory switch was added; the default path is unchanged)
+## JDK 21: ONE instance shared by 4 threads (1 round of cases.jsonl each), no locking: expected to break
+exit 143: no result line. The JVM did not crash; the guest livelocked. After 8.5 min at ~300% CPU, jstack showed three pool threads spinning inside OpenSSL's stack and allocator code of the one shared linear memory (excerpt below), and the run was killed (timeout 600 on the wrapper, kill on the JVM).
+## jstack excerpt of the shared-instance run (top 5 frames per worker thread)
+"pool-1-thread-1" #22 [6678] prio=5 os_prio=0 cpu=512260.90ms elapsed=522.01s tid=0x00007f14a056dd20 nid=6678 runnable  [0x00007f148451f000]
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.sk_reserve_3609(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.OPENSSL_sk_insert_3615(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.OPENSSL_sk_push_3621(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.namemap_add_name_2574(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.ossl_namemap_add_names_2580(Unknown Source)
+"pool-1-thread-2" #23 [6679] prio=5 os_prio=0 cpu=3824.95ms elapsed=522.01s tid=0x00007f14a056edf0 nid=6679 waiting on condition  [0x00007f1484424000]
+  at jdk.internal.misc.Unsafe.park(java.base@21.0.10/Native Method)
+  at java.util.concurrent.locks.LockSupport.park(java.base@21.0.10/LockSupport.java:371)
+  at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(java.base@21.0.10/AbstractQueuedSynchronizer.java:519)
+  at java.util.concurrent.ForkJoinPool.unmanagedBlock(java.base@21.0.10/ForkJoinPool.java:3780)
+  at java.util.concurrent.ForkJoinPool.managedBlock(java.base@21.0.10/ForkJoinPool.java:3725)
+"pool-1-thread-3" #24 [6680] prio=5 os_prio=0 cpu=512574.17ms elapsed=522.00s tid=0x00007f14a056fec0 nid=6680 runnable  [0x00007f1484321000]
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.sk_reserve_3609(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.OPENSSL_sk_insert_3615(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.OPENSSL_sk_push_3621(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.namemap_add_name_2574(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.ossl_namemap_stored_2571(Unknown Source)
+"pool-1-thread-4" #25 [6681] prio=5 os_prio=0 cpu=513669.56ms elapsed=522.00s tid=0x00007f14a0571060 nid=6681 runnable  [0x00007f1484221000]
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.dlmalloc_8451(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.malloc_8450(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.CRYPTO_malloc_2815(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.asn1_item_flags_i2d_450(Unknown Source)
+  at spike.aprv.endive.AprvModuleMachineFuncGroup_0.ASN1_item_i2d_452(Unknown Source)

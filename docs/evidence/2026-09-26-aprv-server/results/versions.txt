@@ -1,0 +1,24 @@
+date: 2026-09-26
+host: x86_64, 4 vCPUs, Intel(R) Xeon(R) Processor @ 2.10GHz, Linux 6.18.44
+rustc: rustc 1.98.1 (48a229cea 2026-09-01)
+cargo: cargo 1.98.1 (797e8a9bc 2026-08-05)
+crates (server/Cargo.lock):
+  wasmtime 49.0.1
+  pulley-interpreter 49.0.1
+  cranelift-codegen 0.136.1
+  axum 0.8.9
+  hyper 1.11.1
+  tokio 1.53.1
+  getrandom 0.3.4
+  sha2 0.10.9
+java: openjdk version "1.8.0_504", OpenJDK Runtime Environment (Temurin)(build 1.8.0_504-b01)
+php: 8.4.19, curl 8.5.0
+python: 3.11.15
+qemu: qemu-ppc64le version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)
+cross gcc: powerpc64le-linux-gnu-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+docker CLI: Docker version 29.3.1, build c2be9cc (daemon not running)
+module: aprv-abi1.wasm, 2952613 bytes, sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+precompiled x86_64 (Cranelift): aprv-abi1.cwasm, 8449864 bytes, sha256 31ca2603abcac8e266e5b55f6fe8fb35ff9ae0e917e5f88ccd725603e6147b28, target x86_64-unknown-linux-gnu, byte-identical over repeated precompiles
+precompiled pulley64: aprv-abi1.pulley64.cwasm, 6399792 bytes, sha256 060a5fe2527ff56dca384ddbb329e4a8215d86629b6190410aec02d931b6d05e
+Wasmtime Config: Config::new() defaults of 49.0.1 (no setting changed; full build: Cranelift, parallel compilation; runtime-only build: no compiler); per Store: StoreLimits memory_size 256 MiB, instances 1, trap_on_grow_failure
+repo HEAD: fe5b6ee

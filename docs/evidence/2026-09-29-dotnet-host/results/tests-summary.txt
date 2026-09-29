@@ -1,0 +1,29 @@
+G1d (the final module after review round 3, rust-core b0a7f3d, 2,764,700 bytes, SHA-256 4e9d2d85c7c1f9b6dbcabbd49c51783e2efd4832ac17994be732b63a98cdc9dd; 384 cases in fixtures/cases.json):
+Tests, .NET 8.0.31 (shared runtime): total 599, succeeded 599, failed 0, skipped 0 (384 conformance cases, 215 others)
+Tests, .NET 10.0.12 (shared runtime): total 599, succeeded 599, failed 0, skipped 0
+Floor (netstandard2.0 asset), .NET 8.0.31 and 10.0.12: 9 of 9 each
+Corpora: results/corpus.txt, 6,179 of 6,179 identical to this module's rows, 0 traps
+Not re-run for G1d: .NET 9, the consumer, the trimmed publish, the fuzz smoke.
+
+G1c, for the record:
+G1c (the final module, rust-core b863252, 2,760,476 bytes, SHA-256 a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1; 377 cases in fixtures/cases.json):
+Tests, .NET 8.0.31 (shared runtime): total 594, succeeded 594, failed 0, skipped 0 (377 conformance cases, 217 others)
+Tests, .NET 10.0.12 (shared runtime): total 594, succeeded 594, failed 0, skipped 0
+Floor (netstandard2.0 asset), .NET 8.0.31 and 10.0.12: 9 of 9 each
+Corpora: results/corpus.txt, 6,179 of 6,179 identical to this module's rows, 0 traps
+Input cap tests (4 of the 217): 4 MiB and 64 MiB inputs are cut to 3,145,729 bytes, TOO_LARGE / 21002 as the whole input would get, linear memory under 7 MiB; 3,145,728 bytes passed whole is not TOO_LARGE.
+.NET 9, the consumer, the trimmed publish and the fuzz smoke were not re-run for G1b or G1c.
+
+G1b (the review-fixed module, lane/core c4410c7, 3,009,278 bytes, SHA-256 9c0a581c5a0b6e4e7f7ba66675f07ec00096fa95772ae27ad86d6049a1a0f263; 338 cases in fixtures/cases.json):
+Tests, .NET 8.0.31 (shared runtime): total 551, succeeded 551, failed 0, skipped 0 (338 conformance cases, 213 others)
+Tests, .NET 10.0.12 (shared runtime): total 551, succeeded 551, failed 0, skipped 0
+Floor (netstandard2.0 asset), .NET 8.0.31 and 10.0.12: 9 of 9 each
+Corpora: results/corpus.txt, 6,179 of 6,179 identical to this module's rows, 0 traps
+.NET 9, the consumer, the trimmed publish and the fuzz smoke were not re-run for G1b.
+
+G1 (the module of core 05b4ad9), for the record:
+Module: aprv.wasm of the 0.7 core (lane/core 05b4ad9), 3,005,922 bytes, SHA-256 4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e
+Tests, .NET 8.0.31 (shared runtime): total 524, succeeded 524, failed 0, skipped 0 (311 conformance cases, 213 others)
+Tests, .NET 9.0.20 (self-contained publish of the test project): total 524, succeeded 524, failed 0, skipped 0
+Tests, .NET 10.0.12 (shared runtime): total 524, succeeded 524, failed 0, skipped 0
+Floor (netstandard2.0 asset), .NET 8.0.31 and 10.0.12: 9 of 9 each; .NET 9.0.20 (self-contained) 9 of 9 on the stand-in run

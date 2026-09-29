@@ -1,0 +1,11 @@
+# OpenSSL 4.0.2 built by clang 18 with -fsanitize=address,undefined -fno-sanitize=function (build-libs.sh openssl-asan),
+# linked as the ffi staticlib into c/run1.c built by gcc 13 -fsanitize=address,undefined; Rust code itself not instrumented (no nightly toolchain).
+# ASAN_OPTIONS=detect_leaks=1:exitcode=99 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1:exitcode=99; py/memcheck.py --checker plain
+cases.jsonl:1: 93 runs, 0 flagged, 0 crashed
+algorithms.jsonl:1: 22 runs, 0 flagged, 0 crashed
+substrate.jsonl:1: 193 runs, 0 flagged, 0 crashed
+  flagged hostile/ctor/root-not-a-cert: ['constructor refused', '', '=================================================================']
+hostile.jsonl:1: 594 runs, 1 flagged, 0 crashed
+fuzz.jsonl:1: 5000 runs, 0 flagged, 0 crashed
+# the one flagged row: LeakSanitizer reports run1.c's own input buffers (slurp at c/run1.c:30, calloc at :46-47)
+# on the early 'constructor refused' return; no frame in the library. Harness leak, not a finding.

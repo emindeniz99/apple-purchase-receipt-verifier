@@ -1,0 +1,46 @@
+[package]
+name = "aprv-server"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Spike (2026-09-26): HTTP-to-Wasm-ABI adapter hosting aprv.wasm through Wasmtime"
+
+[[bin]]
+name = "aprv"
+path = "src/main.rs"
+
+[features]
+default = ["server", "compile", "embed"]
+# The HTTP server (`aprv serve`). Without it the binary is the one-shot CLI only.
+server = ["dep:axum", "dep:tokio"]
+# A: the full engine. Cranelift compiles the embedded .wasm at start and
+# `aprv precompile` writes the .cwasm the runtime-only build embeds.
+compile = ["wasmtime/cranelift", "wasmtime/parallel-compilation"]
+# Embed the module in the binary: APRV_WASM (.wasm, with `compile`) or
+# APRV_CWASM (.cwasm, without) names the file at build time.
+embed = []
+# Lifecycle B with Wasmtime's pooling instance allocator (benchmark only).
+pooling = ["wasmtime/pooling-allocator"]
+# Spike only: run the Pulley interpreter on a host that has a Cranelift
+# backend (with APRV_TARGET=pulley64), to measure it. Hosts without a
+# Cranelift backend (e.g. ppc64le) get Pulley automatically.
+pulley = ["wasmtime/pulley"]
+# Spike only: /spike/call/{op} for the corpus's test variants, `aprv bench`.
+spike = []
+# Spike only, never default: POST /spike/crash aborts the process.
+crash = []
+
+[dependencies]
+# B (runtime-only) is this line with no features added: "runtime" and "std"
+# only; no cranelift, winch, cache, component-model, gc, wat, async, threads,
+# profiling, coredump, addr2line, demangle, debug-builtins, pooling-allocator.
+wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std"] }
+getrandom = "0.3"
+sha2 = { version = "0.10", default-features = false }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "sync", "macros"], optional = true }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

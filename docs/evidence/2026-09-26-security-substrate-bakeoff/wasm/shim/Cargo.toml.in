@@ -1,0 +1,26 @@
+# Spike only. A wasm module that carries the unchanged C ABI (rust/ffi) plus
+# two exports a wasm host needs to pass bytes in: aprv_alloc and
+# aprv_dealloc. scripts/build-wasm.sh copies this file to the scratch tree
+# as Cargo.toml and replaces @TREE@ with the patched scratch copy of rust/.
+# The scratch copy of rust/ffi gets "rlib" added to its crate types, so the
+# ffi crate's #[no_mangle] functions link into this cdylib unchanged.
+[package]
+name = "aprv-wasm-shim"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+apple-purchase-receipt-verifier-ffi = { path = "@TREE@/rust/ffi" }
+# Named only so `--features aprv/<feature>` can pick the substrate.
+aprv = { package = "apple-purchase-receipt-verifier", path = "@TREE@/rust" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

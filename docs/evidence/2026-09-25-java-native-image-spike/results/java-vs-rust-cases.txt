@@ -1,0 +1,5 @@
+   33  endpoint: identical response
+   44  jws: same failure code
+   12  jws: success, common fields equal
+   47  receipt: same failure code
+   17  receipt: success, common fields equal

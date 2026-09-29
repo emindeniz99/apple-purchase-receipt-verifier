@@ -1,0 +1,5 @@
+# 5,000-mutant smoke corpus (substrate bake-off's py/mutate.py, seed 20260926) through the PKCS7 and CMS paths, OpenSSL 4.0.2.
+# Columns of 'total': agree cand=java cand=rust cand-own abi. The PKCS7 row reproduces the substrate bake-off's results/fuzz.txt exactly.
+ossl402: total 4565 85 129 46 175 | accepts what Java and Rust reject: 3 ['fuzz/4378/substrate/flood/unsigned-attribute-values-10000', 'fuzz/605/substrate/cms/unsigned-attribute-nesting-2000', 'fuzz/985/substrate/flood/unsigned-attribute-values-10000'] | rejects what both accept: 1 ['fuzz/3934/substrate/flood/digestalgorithms-1000']
+ossl402cms: total 4565 89 125 46 175 | accepts what Java and Rust reject: 3 ['fuzz/4378/substrate/flood/unsigned-attribute-values-10000', 'fuzz/605/substrate/cms/unsigned-attribute-nesting-2000', 'fuzz/985/substrate/flood/unsigned-attribute-values-10000'] | rejects what both accept: 1 ['fuzz/3934/substrate/flood/digestalgorithms-1000']
+ossl402cmspre: total 4569 89 125 42 175 | accepts what Java and Rust reject: 0 [] | rejects what both accept: 1 ['fuzz/3934/substrate/flood/digestalgorithms-1000']

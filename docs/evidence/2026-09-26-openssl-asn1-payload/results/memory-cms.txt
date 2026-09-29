@@ -1,0 +1,21 @@
+# receipt (payload) | receipt bytes | runner | peak RSS KiB | row
+tiny | 115 | base | 19836 | {"id": "memory/tiny", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+tiny | 115 | new | 20908 | {"id": "memory/tiny", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+tiny | 115 | any | 20916 | {"id": "memory/tiny", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+tiny | 115 | new-c | 68124 | {"id":"memory/tiny","code":9,"json":"{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}","imports":{"aprv.clock_now_ms":1}}
+tiny | 115 | any-c | 68128 | {"id":"memory/tiny","code":9,"json":"{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}","imports":{"aprv.clock_now_ms":1}}
+flat-node-cap | 300112 | base | 31404 | {"id": "memory/flat-node-cap", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+flat-node-cap | 300112 | new | 30684 | {"id": "memory/flat-node-cap", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+flat-node-cap | 300112 | any | 27064 | {"id": "memory/flat-node-cap", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+flat-node-cap | 300112 | new-c | 79064 | {"id":"memory/flat-node-cap","code":9,"json":"{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}","imports":{"aprv.clock_no
+flat-node-cap | 300112 | any-c | 76692 | {"id":"memory/flat-node-cap","code":9,"json":"{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}","imports":{"aprv.clock_no
+flat-max | 3145708 | base | 48424 | {"id": "memory/flat-max", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+flat-max | 3145708 | new | 125212 | {"id": "memory/flat-max", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+flat-max | 3145708 | any | 86324 | {"id": "memory/flat-max", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+flat-max | 3145708 | new-c | 148668 | {"id":"memory/flat-max","code":9,"json":"{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}","imports":{"aprv.clock_now_ms"
+flat-max | 3145708 | any-c | 127448 | {"id":"memory/flat-max","code":9,"json":"{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}","imports":{"aprv.clock_now_ms"
+in-app-max | 3145717 | base | 47144 | {"id": "memory/in-app-max", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+in-app-max | 3145717 | new | 50944 | {"id": "memory/in-app-max", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+in-app-max | 3145717 | any | 54088 | {"id": "memory/in-app-max", "code": 9, "json": "{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}"}
+in-app-max | 3145717 | new-c | 103368 | {"id":"memory/in-app-max","code":9,"json":"{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}","imports":{"aprv.clock_now_m
+in-app-max | 3145717 | any-c | 106528 | {"id":"memory/in-app-max","code":9,"json":"{\"message\":\"signer certificate not embedded\",\"reason\":\"INVALID_RECEIPT_FORMAT\"}","imports":{"aprv.clock_now_m

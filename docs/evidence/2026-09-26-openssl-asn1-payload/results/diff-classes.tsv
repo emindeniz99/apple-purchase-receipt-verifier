@@ -1,0 +1,15 @@
+# Classes of old (asn1.rs) vs new (OpenSSL) payload-reader differences. Tab separated: class, regex over
+# "<signature> @<where the old reader stops>" (py/diff_classes.py). First match wins. L = new accepts
+# what old refused; S = new refuses what old accepted. See the note, section 3.
+L1 opaque ANY: version contents not parsed	@(double wrap: |in-app SET: )*(truncated ASN\.1 value|ASN\.1 length exceeds input|unsupported ASN\.1 length|unterminated indefinite-length value|multi-byte ASN\.1 tags are not supported|maximum ASN\.1 nesting depth exceeded): version, inside it
+L1 opaque ANY: version contents not parsed	--old-in-app-purchase-attribute-is-not-valid-ASN-#-ASN-#-length-exceeds-input--new-ok
+L2 long-form tag number for a low tag	@(double wrap: |in-app SET: )*multi-byte ASN\.1 tags are not supported: (version|the SET itself)$
+L3 constructed OCTET STRING chunk of another universal type	@(double wrap: |in-app SET: )*(a chunk of|multi-byte ASN\.1 tags are not supported: value, inside it)
+L3 constructed OCTET STRING chunk of another universal type	date-new-only--attr-walk--old-malformed-receipt-attribute
+L3 constructed OCTET STRING chunk of another universal type	--old-malformed-receipt-attribute--new-ok
+L4 constructed UTF8String or IA5String value	--old-attribute-value-is-not-an-ASN-#-string--new-ok
+L5 SET OF with the constructed bit clear	tag 0x11, not a SET
+S1 INTEGER with empty contents	--new-illegal-zero-content
+S2 INTEGER not in minimal form	--new-illegal-padding
+S3 more than three fields in an attribute	--new-(sequence-length-mismatch|missing-eoc)
+S4 a version value (payload-any: also an extra field) that OpenSSL's ANY decoder refuses	--new-(string-too-short|boolean-is-wrong-length|null-is-wrong-length|universalstring-is-wrong-length|bmpstring-is-wrong-length|invalid-object-encoding|type-not-constructed|type-not-primitive|invalid-bit-string-bits-left|generalizedtime-is-too-short|utctime-is-too-short|unexpected-eoc)

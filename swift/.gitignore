@@ -1,1 +1,3 @@
 .build/
+# Resources/aprv.wasm is committed (DECISIONS.md R14): SwiftPM builds from
+# git with no build step. Only tools/refresh-wasm-pins.sh rewrites it.

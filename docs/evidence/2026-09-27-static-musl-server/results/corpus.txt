@@ -1,0 +1,16 @@
+# 2026-09-27 x86_64, 4 vCPUs; load before: 0.94 1.23 1.18
+# module sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+## musl-spike, lifecycle fresh, 4 workers
+cases: rows 153: public: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 3, public: identical 35, spike: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 3, spike: identical 112
+hostile: rows 811: no-call (not expressible in ABI v1, as in Node) 1, public: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 1, public: identical 323, spike: identical 486
+algorithms: rows 22: spike: identical 22
+substrate: rows 193: public: identical 26, spike: identical 167
+fuzz: rows 5000: spike: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 18, spike: identical 4982
+all: rows 6179: no-call (not expressible in ABI v1, as in Node) 1, public: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 4, public: identical 384, spike: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 21, spike: identical 5769
+## musl-mimalloc-spike, lifecycle fresh, 4 workers
+cases: rows 153: public: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 3, public: identical 35, spike: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 3, spike: identical 112
+hostile: rows 811: no-call (not expressible in ABI v1, as in Node) 1, public: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 1, public: identical 323, spike: identical 486
+algorithms: rows 22: spike: identical 22
+substrate: rows 193: public: identical 26, spike: identical 167
+fuzz: rows 5000: spike: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 18, spike: identical 4982
+all: rows 6179: no-call (not expressible in ABI v1, as in Node) 1, public: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 4, public: identical 384, spike: HTTP 413 (body over 3145728 bytes; Node answered a refusal) 21, spike: identical 5769

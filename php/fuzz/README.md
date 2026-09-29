@@ -1,12 +1,19 @@
 # Fuzz targets
 
-Six coverage-guided targets over the parsers this package hand-writes and the
-verifiers a consumer calls. `run.sh` pairs each target with the shared fixtures
-that seed it, so nothing under `fixtures/` is committed here.
+Four coverage-guided targets over the three `Verifier` methods a consumer
+calls. The parsers moved out of this package: they live in the verification
+module `aprv` runs, and are fuzzed where they are (the Rust core's own
+targets). What is left to find here is a façade that throws, answers
+something it should not, or reads the module's JSON wrongly. `run.sh` pairs
+each target with the shared fixtures that seed it, so nothing under
+`fixtures/` is committed here.
+
+The targets run over the real `aprv` binary, one process per call: set
+`APRV_BIN` to it, or run `bin/aprv-install` first.
 
 ```bash
-./run.sh all               # every target, 60 s each
-./run.sh parse-cms 600     # one target, ten minutes
+./run.sh all                  # every target, 60 s each
+./run.sh verify-receipt 600   # one target, ten minutes
 ```
 
 The first run downloads the fuzzer (1.3 MB) into `tools/`, verifying it against
@@ -15,9 +22,7 @@ gitignored.
 
 | target | what it reaches | invariant beyond "nothing but a verdict escapes" |
 |---|---|---|
-| `parse-der` | `Der::parse` on raw bytes, then every accessor on every node | — |
-| `parse-cms` | `Cms::parse`, the embedded certificates, every SignerInfo's lookup and both signed-attribute readers | — |
-| `verify-receipt` | `Verifier::verifyReceipt()` on base64-encoded raw bytes: CMS, payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
+| `verify-receipt` | `Verifier::verifyReceipt()` on base64-encoded raw bytes | an accepted receipt fails against an unrelated anchor set |
 | `verify-receipt-base64` | `Verifier::verifyReceipt()` on the transport string a client sends, unencoded | — |
 | `verify-transaction` | `Verifier::verifySignedData()`, the one 0.7 JWS entry point | a JWS that verifies under the fixture root fails under Apple's roots |
 | `endpoint-json` | `Verifier::verifyReceiptEndpoint()` on a request body | the answer is always JSON with an integer `status` |
@@ -45,9 +50,7 @@ it as their normal failure path):
 
 | target | allowed |
 |---|---|
-| `parse-der` | `Internal\ParseException` |
-| `parse-cms` | `Internal\VerificationException`, `Internal\ParseException` |
-| `verify-receipt`, `verify-receipt-base64`, `verify-transaction`, `endpoint-json` | nothing |
+| all four | nothing |
 
 That covers more than a segfault would. php-fuzzer installs an error handler
 that turns every warning and notice into an `Error`, so an undefined array key
@@ -56,9 +59,9 @@ the call return. `TypeError`, `ValueError` and `ArgumentCountError` are
 `Error`s and were never allowed.
 
 The one failure mode a `catch` cannot see is a `memory_limit` fatal, which is
-not a `Throwable` at all — the reason `Der` has a retained-byte budget on top
-of its node and depth budgets (see the port's README, "Why PHP needs its own
-headroom").
+not a `Throwable` at all. The façade holds the input, the module's JSON and
+their decoded copies, so its allocations follow the input's size, which
+`aprv` caps at 3 MiB.
 `run.sh` therefore runs with a finite `memory_limit=512M`: php-fuzzer's
 shutdown handler saves the input that caused a fatal error, so an allocation
 bomb is a recorded, reducible finding instead of an OOM-killed container.

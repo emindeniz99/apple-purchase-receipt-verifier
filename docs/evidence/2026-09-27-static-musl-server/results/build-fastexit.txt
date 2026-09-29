@@ -1,0 +1,11 @@
+# build.sh, 2026-09-27; rustc 1.98.1 (48a229cea 2026-09-01); cargo 1.98.1 (797e8a9bc 2026-08-05); host cc: cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+# musl-gcc wrapper: musl-tools 1.2.4-2; zig 0.16.0, cargo-zigbuild 0.23.4
+gnu-fastexit-min | x86_64-unknown-linux-gnu | cargo build | features server,embed,cli-fast-exit | 66 s | raw 10801576 | stripped 10322728 | gzip -9 3581007 | xz -9 2726144
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, not stripped
+    readelf: 1 INTERP, 3 NEEDED: [libgcc_s.so.1] [libm.so.6] [libc.so.6] 
+musl-fastexit-min | x86_64-unknown-linux-musl | cargo build | features server,embed,cli-fast-exit | 63 s | raw 10957424 | stripped 10457856 | gzip -9 3656509 | xz -9 2790352
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    readelf: 0 INTERP, 0 NEEDED
+musl-mimalloc-fastexit-min | x86_64-unknown-linux-musl | cargo build | features server,embed,mimalloc,cli-fast-exit | 30 s | raw 11134632 | stripped 10615552 | gzip -9 3715077 | xz -9 2837348
+    file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    readelf: 0 INTERP, 0 NEEDED

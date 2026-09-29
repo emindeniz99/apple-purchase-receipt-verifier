@@ -1,0 +1,160 @@
+# parity.txt: every run of this round (scripts/parity.sh). Reference: the native CMS build (cms-native) unless stated. 2026-09-26.
+# native CMS+prescan, rustc 1.98.1, vs the follow-up's ossl402cmspre (rustc 1.94.1)
+cms-native native cases vs ossl402cmspre: 153 same, 0 differ, 0 trapped
+cms-native native hostile vs ossl402cmspre: 811 same, 0 differ, 0 trapped
+cms-native native algorithms vs ossl402cmspre: 22 same, 0 differ, 0 trapped
+cms-native native substrate vs ossl402cmspre: 193 same, 0 differ, 0 trapped
+# Task 1: vendored OpenSSL 4.0.2 via openssl-src 400.0.1 (scripts/vendored.sh), vs cms-native (OPENSSL_DIR)
+cms-vendored native cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-vendored native hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-vendored native algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-vendored native substrate vs cms-native: 193 same, 0 differ, 0 trapped
+# Task 2: the CMS matrix (scripts/matrix.sh), every artifact vs cms-native
+cms-c node/trap cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+cms-c node/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+cms-c node/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+cms-c node/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+cms-c bun/trap cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+cms-c bun/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+cms-c bun/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+cms-c bun/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+cms-c deno/trap cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+cms-c deno/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+cms-c deno/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+cms-c deno/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+cms-c wazero cases vs cms-native: 153 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":463,"aprv.random_get":1},"host":"wazero","wasi":false}
+cms-c wazero hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"host":"wazero","wasi":false}
+cms-c wazero algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":68,"aprv.random_get":1},"host":"wazero","wasi":false}
+cms-c wazero substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":527,"aprv.random_get":1},"host":"wazero","wasi":false}
+cms-c wasmtime cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 463}, "traps": 0, "rows": 153}
+cms-c wasmtime hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.clock_now_ms": 214, "aprv.random_get": 1}, "traps": 0, "rows": 811}
+cms-c wasmtime algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 68}, "traps": 0, "rows": 22}
+cms-c wasmtime substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 527}, "traps": 0, "rows": 193}
+cms-c workerd/core/trap cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-c workerd/core/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-c workerd/core/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-c workerd/core/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-c workerd imports+calls: {"imports":[{"module":"aprv","name":"clock_now_ms","kind":"function"},{"module":"aprv","name":"random_get","kind":"function"}],"calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+cms-c chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+cms-c chromium cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-c chromium hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-c chromium algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-c chromium substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-c firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+cms-c firefox cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-c firefox hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-c firefox algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-c firefox substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-c webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+cms-c webkit cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-c webkit hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-c webkit algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-c webkit substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-w1 node/trap cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":463},"traps":0,"rows":153}
+cms-w1 node/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.clock_time_get":214,"wasi_snapshot_preview1.random_get":1},"traps":0,"rows":811}
+cms-w1 node/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":68},"traps":0,"rows":22}
+cms-w1 node/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":527},"traps":0,"rows":193}
+cms-w1 bun/trap cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":463},"traps":0,"rows":153}
+cms-w1 bun/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.clock_time_get":214,"wasi_snapshot_preview1.random_get":1},"traps":0,"rows":811}
+cms-w1 bun/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":68},"traps":0,"rows":22}
+cms-w1 bun/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":527},"traps":0,"rows":193}
+cms-w1 deno/trap cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":463},"traps":0,"rows":153}
+cms-w1 deno/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.clock_time_get":214,"wasi_snapshot_preview1.random_get":1},"traps":0,"rows":811}
+cms-w1 deno/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":68},"traps":0,"rows":22}
+cms-w1 deno/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":527},"traps":0,"rows":193}
+cms-w1 wazero cases vs cms-native: 153 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+cms-w1 wazero hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+cms-w1 wazero algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+cms-w1 wazero substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+cms-w1 wasmtime cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 153}
+cms-w1 wasmtime hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 811}
+cms-w1 wasmtime algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 22}
+cms-w1 wasmtime substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 193}
+cms-w1 workerd/core/trap cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-w1 workerd/core/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-w1 workerd/core/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-w1 workerd/core/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-w1 workerd imports+calls: {"imports":[{"module":"wasi_snapshot_preview1","name":"environ_get","kind":"function"},{"module":"wasi_snapshot_preview1","name":"environ_sizes_get","kind":"function"},{"module":"wasi_snapshot_preview1","name":"clock_time_get","kind":"function"},{"module":"wasi_snapshot_preview1","name":"fd_close","kind":"function"},{"module":"wasi_snapshot_preview1","name":"fd_fdstat_get","kind":"function"},{"mod
+cms-w1 chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":1257}}
+cms-w1 chromium cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-w1 chromium hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-w1 chromium algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-w1 chromium substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-w1 firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":1257}}
+cms-w1 firefox cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-w1 firefox hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-w1 firefox algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-w1 firefox substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-w1 webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":1257}}
+cms-w1 webkit cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-w1 webkit hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-w1 webkit algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-w1 webkit substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-em node/emscripten cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":416,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+cms-em node/emscripten hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11,"_random_get":1,"_emscripten_date_now":203},"traps":0,"rows":811}
+cms-em node/emscripten algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":68},"traps":0,"rows":22}
+cms-em node/emscripten substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":527},"traps":0,"rows":193}
+cms-em bun/emscripten cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":416,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+cms-em bun/emscripten hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11,"_random_get":1,"_emscripten_date_now":203},"traps":0,"rows":811}
+cms-em bun/emscripten algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":68},"traps":0,"rows":22}
+cms-em bun/emscripten substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":527},"traps":0,"rows":193}
+cms-em deno/emscripten cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":416,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+cms-em deno/emscripten hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11,"_random_get":1,"_emscripten_date_now":203},"traps":0,"rows":811}
+cms-em deno/emscripten algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":68},"traps":0,"rows":22}
+cms-em deno/emscripten substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":527},"traps":0,"rows":193}
+cms-em-web workerd/emscripten/trap cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-em-web workerd/emscripten/trap hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-em-web workerd/emscripten/trap algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-em-web workerd/emscripten/trap substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-em-web workerd imports+calls: {"imports":[{"module":"a","name":"a","kind":"function"},{"module":"a","name":"b","kind":"function"},{"module":"a","name":"c","kind":"function"},{"module":"a","name":"d","kind":"function"},{"module":"a","name":"e","kind":"function"},{"module":"a","name":"f","kind":"function"},{"module":"a","name":"g","kind":"function"},{"module":"a","name":"h","kind":"function"},{"module":"a","name":"i","kind":"fun
+cms-em chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":1199,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+cms-em chromium cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-em chromium hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-em chromium algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-em chromium substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-em firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":1199,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+cms-em firefox cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-em firefox hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-em firefox algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-em firefox substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-em webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":1199,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+cms-em webkit cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-em webkit hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-em webkit algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-em webkit substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-comp wasmtime-component cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 153}
+cms-comp wasmtime-component hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 811}
+cms-comp wasmtime-component algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 22}
+cms-comp wasmtime-component substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 193}
+cms-comp node/jco-p2min cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":463},"traps":0,"rows":153}
+cms-comp node/jco-p2min hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:clocks/wall-clock.now":214,"wasi:random/random.get-random-bytes":1},"traps":0,"rows":811}
+cms-comp node/jco-p2min algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":68},"traps":0,"rows":22}
+cms-comp node/jco-p2min substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":527},"traps":0,"rows":193}
+cms-comp bun/jco-p2min cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":463},"traps":0,"rows":153}
+cms-comp bun/jco-p2min hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:clocks/wall-clock.now":214,"wasi:random/random.get-random-bytes":1},"traps":0,"rows":811}
+cms-comp bun/jco-p2min algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":68},"traps":0,"rows":22}
+cms-comp bun/jco-p2min substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":527},"traps":0,"rows":193}
+cms-comp deno/jco-p2min cases vs cms-native: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":463},"traps":0,"rows":153}
+cms-comp deno/jco-p2min hostile vs cms-native: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:clocks/wall-clock.now":214,"wasi:random/random.get-random-bytes":1},"traps":0,"rows":811}
+cms-comp deno/jco-p2min algorithms vs cms-native: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":68},"traps":0,"rows":22}
+cms-comp deno/jco-p2min substrate vs cms-native: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":527},"traps":0,"rows":193}
+cms-comp workerd/jco/wasi-p2-min cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-comp workerd/jco/wasi-p2-min hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-comp workerd/jco/wasi-p2-min algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-comp workerd/jco/wasi-p2-min substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-comp workerd imports+calls: {"imports":[{"module":"[export]aprv:verifier/verifier@0.1.0","name":"[resource-new]endpoint","kind":"function"},{"module":"[export]aprv:verifier/verifier@0.1.0","name":"[resource-drop]endpoint","kind":"function"},{"module":"[export]aprv:verifier/verifier@0.1.0","name":"[resource-new]jws-verifier","kind":"function"},{"module":"[export]aprv:verifier/verifier@0.1.0","name":"[resource-drop]jws-verifie
+cms-comp chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":1257}}
+cms-comp chromium cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-comp chromium hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-comp chromium algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-comp chromium substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-comp firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":1257}}
+cms-comp firefox cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-comp firefox hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-comp firefox algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-comp firefox substrate vs cms-native: 193 same, 0 differ, 0 trapped
+cms-comp webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":1257}}
+cms-comp webkit cases vs cms-native: 153 same, 0 differ, 0 trapped
+cms-comp webkit hostile vs cms-native: 811 same, 0 differ, 0 trapped
+cms-comp webkit algorithms vs cms-native: 22 same, 0 differ, 0 trapped
+cms-comp webkit substrate vs cms-native: 193 same, 0 differ, 0 trapped

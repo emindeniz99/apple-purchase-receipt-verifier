@@ -1,6 +1,8 @@
 dist/
 node_modules/
-certs/
+src/generated/
+licenses/
+wasm/
 *.min.*
 # Prose, not code — out of scope for a code formatter.
 *.md

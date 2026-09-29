@@ -1,0 +1,21 @@
+[package]
+name = "aprv-wasmi-capi"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Spike (2026-09-27): Wasmi 2.0.0's official C API (wasmi_c_api_impl) as one shared library, for a ctypes facade"
+
+[lib]
+name = "wasmi"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# The official C API crate at the version matching wasmi 2.0.0, with its
+# default features: std, memory64, auto-dispatch (it adds wasmi's validate).
+wasmi_c_api = { package = "wasmi_c_api_impl", version = "=2.0.0" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

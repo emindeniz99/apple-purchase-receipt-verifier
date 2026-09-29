@@ -1,0 +1,7 @@
+# 4 cores; load average 0.79 1.22 1.41
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"dotnet":"10.0.12","warm":200,"n":1000,"mean_us":1310,"per_s":763.5}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"dotnet":"10.0.12","warm":200,"n":1000,"mean_us":1463,"per_s":683.6}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"dotnet":"10.0.12","warm":200,"n":1000,"mean_us":1294,"per_s":772.7}
+{"id":"transaction/verify-shared-sandbox","op":258,"dotnet":"10.0.12","warm":200,"n":1000,"mean_us":4515,"per_s":221.5}
+{"id":"transaction/verify-shared-sandbox","op":258,"dotnet":"10.0.12","warm":200,"n":1000,"mean_us":4875,"per_s":205.1}
+{"id":"transaction/verify-shared-sandbox","op":258,"dotnet":"10.0.12","warm":200,"n":1000,"mean_us":4541,"per_s":220.2}

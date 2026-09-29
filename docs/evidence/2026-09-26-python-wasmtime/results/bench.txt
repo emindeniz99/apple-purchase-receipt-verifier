@@ -1,0 +1,4 @@
+# python 3.12.3, 4 cores, load average (1.12744140625, 0.64990234375, 1.0)
+{"id": "receipt/verify-genuine-sandbox-g5-against-apple-roots", "op": 1, "warm": 200, "n": 1000, "mean_us": 1783, "per_s": 560.8}
+{"id": "transaction/verify-shared-sandbox", "op": 258, "warm": 200, "n": 1000, "mean_us": 5198, "per_s": 192.4}
+{"id": "endpoint-sandbox body {} (bridge floor)", "op": 4, "warm": 1000, "n": 20000, "mean_us": 178}

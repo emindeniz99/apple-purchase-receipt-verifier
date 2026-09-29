@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/rust/bindings/wire/schema/init-result.schema.json",
+  "title": "The answer of init",
+  "description": "What aprv.wasm's init export returns: {\"ok\":true}, or {\"ok\":false,\"message\":...} naming why the configuration was refused (not JSON, a member other than roots, a root that is not base64 or not a certificate). After a refusal init may be called again on the same instance; after {\"ok\":true} a second init traps.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "const": true
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "ok",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  ]
+}

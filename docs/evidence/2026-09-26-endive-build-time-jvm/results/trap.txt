@@ -1,0 +1,27 @@
+## JDK 17
+load 65533 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65536 but limit is: 65536 and size: 1 | load(100) after = 42, load(65532) after = 0
+load -1 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: -1 but limit is: 65536 and size: 1 | load(100) after = 42, load(65532) after = 0
+store 65534 7 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65534 but limit is: 65536 and size: 4 | load(100) after = 42, load(65532) after = 0
+fill_oob -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65000 but limit is: 65536 and size: 1000 | load(100) after = 42, load(65532) after = 0
+unreachable -> run.endive.runtime.TrapException: Trapped on unreachable instruction | load(100) after = 42, load(65532) after = 0
+div0 0 -> run.endive.runtime.WasmRuntimeException: integer divide by zero | load(100) after = 42, load(65532) after = 0
+deep 0 -> run.endive.wasm.WasmEngineException: call stack exhausted | load(100) after = 42, load(65532) after = 0
+aprv_version after all traps: 0.6.0
+## JDK 21
+load 65533 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65536 but limit is: 65536 and size: 1 | load(100) after = 42, load(65532) after = 0
+load -1 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: -1 but limit is: 65536 and size: 1 | load(100) after = 42, load(65532) after = 0
+store 65534 7 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65534 but limit is: 65536 and size: 4 | load(100) after = 42, load(65532) after = 0
+fill_oob -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65000 but limit is: 65536 and size: 1000 | load(100) after = 42, load(65532) after = 0
+unreachable -> run.endive.runtime.TrapException: Trapped on unreachable instruction | load(100) after = 42, load(65532) after = 0
+div0 0 -> run.endive.runtime.WasmRuntimeException: integer divide by zero | load(100) after = 42, load(65532) after = 0
+deep 0 -> run.endive.wasm.WasmEngineException: call stack exhausted | load(100) after = 42, load(65532) after = 0
+aprv_version after all traps: 0.6.0
+## JDK 25
+load 65533 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65536 but limit is: 65536 and size: 1 | load(100) after = 42, load(65532) after = 0
+load -1 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: -1 but limit is: 65536 and size: 1 | load(100) after = 42, load(65532) after = 0
+store 65534 7 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65534 but limit is: 65536 and size: 4 | load(100) after = 42, load(65532) after = 0
+fill_oob -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65000 but limit is: 65536 and size: 1000 | load(100) after = 42, load(65532) after = 0
+unreachable -> run.endive.runtime.TrapException: Trapped on unreachable instruction | load(100) after = 42, load(65532) after = 0
+div0 0 -> run.endive.runtime.WasmRuntimeException: integer divide by zero | load(100) after = 42, load(65532) after = 0
+deep 0 -> run.endive.wasm.WasmEngineException: call stack exhausted | load(100) after = 42, load(65532) after = 0
+aprv_version after all traps: 0.6.0

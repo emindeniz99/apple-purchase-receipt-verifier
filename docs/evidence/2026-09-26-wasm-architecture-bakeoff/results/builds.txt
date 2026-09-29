@@ -1,0 +1,32 @@
+# Build log excerpts and facts, 2026-09-26. Toolchains: see the note, section 2.
+
+## Emscripten 6.0.10: AWS-LC through aws-lc-sys 0.41.0, attempt 1 (Emscripten's own toolchain file via cmake-rs's emcmake wrapping)
+  Copying platform assembly files from $CARGO_REGISTRY/aws-lc-sys-0.41.0/aws-lc/generated-src/linux-x86/crypto/ to $SCRATCH/target-awslc-em/wasm32-unknown-emscripten/release/build/aws-lc-sys-8f27805a79e36987/out/build/aws-lc/crypto
+  emcc: error: passing any of -msse, -msse2, -msse3, -mssse3, -msse4.1, -msse4.2, -msse4, -mavx, -mavx2, -mfma, -mfpu=neon flags also requires passing -msimd128 (or -mrelaxed-simd)!
+  emcc: error: passing any of -msse, -msse2, -msse3, -mssse3, -msse4.1, -msse4.2, -msse4, -mavx, -mavx2, -mfma, -mfpu=neon flags also requires passing -msimd128 (or -mrelaxed-simd)!
+cause: Emscripten.cmake sets CMAKE_SYSTEM_PROCESSOR=x86 (EMSCRIPTEN_SYSTEM_PROCESSOR default), AWS-LC CMakeLists.txt then picks ARCH x86 and adds -msse2 (lines 1109-1117).
+fix: EMCMAKE_wasm32_unknown_emscripten=cmake/emcmake-wasm32.sh (appends -DEMSCRIPTEN_SYSTEM_PROCESSOR=wasm32) -> ARCH generic; build OK. No AWS-LC source patch.
+
+## Emscripten: LibreSSL 4.3.2, documented 'emcmake cmake' path
+library: builds with no option beyond the native build's (496/496 ninja steps).
+link with -sFILESYSTEM=0:
+error: undefined symbol: $SOCKFS (referenced by $getSocketFromFD, referenced by __syscall_connect, referenced by root reference (e.g. compiled C/C++ code))
+warning: To disable errors for undefined symbols use `-sERROR_ON_UNDEFINED_SYMBOLS=0`
+cause: libcrypto's b_sock.c/bss_conn.c/bss_dgram.c (socket, connect, sendto) are linked; Emscripten implements those syscalls only over its FS/SOCKFS layer.
+fix: -sFILESYSTEM=1 (glue 78,886 B instead of 12,808 B; brings MEMFS and SOCKFS/WebSocket code). No source patch.
+
+## Emscripten: OpenSSL 4.0.2
+Configure linux-generic32 CC=emcc no-asm no-threads no-sock no-ui-console no-afalgeng --with-rand-seed=getrandom -DNO_SYSLOG (+ the native no-shared/no-module/no-dso/no-engine/no-autoload-config set): builds (1m03s), no source patch; rand_unix.c has an upstream __wasi__/__EMSCRIPTEN__ getentropy branch.
+
+## Emscripten link (all three): emcc <Rust staticlib> -O3 -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,worker,node -sFILESYSTEM=0 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1048576 -sEXPORTED_FUNCTIONS=<23 aprv_*> -sEXPORTED_RUNTIME_METHODS=HEAPU8 -sINCOMING_MODULE_JS_API=instantiateWasm,wasmBinary,print,printErr,locateFile
+Rust side: wasm32-unknown-emscripten, crate-type staticlib (a cdylib makes rustc drive emcc and fail: 'undefined symbol: main' from libstandalonewasm.a __main_void.o).
+workerd: the node+web glue fails at import (workerd log: "The argument 'path' ... Received 'undefined'"; results/parity.txt shows that run as JSONDecodeError lines). A probe worker (compat date 2026-09-26, no flags) answered {"process":"object","node":"22.19.0","importMetaUrl":null}: workerd presents process.versions.node, so the glue takes its Node branch and builds a path from an undefined import.meta.url. -sENVIRONMENT=web,worker glue works; the .wasm is byte-identical (sha256 in results/sizes.txt).
+
+## WASI p1 (Routes A and C): the previous bake-off's recipes unchanged (wasi-sdk 34; OpenSSL via openssl-src's WASI option set on linux-generic32; AWS-LC with 5 flags; link fixes: wasi-libc emulation libs + crt1-reactor.o).
+Route C adds only c/wasi-none.c at link time (STUB_WASI=1). Resulting imports: results/imports.txt.
+
+## Component Model
+aprv-minimal (AWS-LC): wasm32-wasip1 core + c/wasi-none.c -DAPRV_CLOCK_TRAP, wit-bindgen 0.62.0 guest, 'wasm-tools component new' (no adapter). imports: clock-now-ms only.
+OpenSSL: wasm32-wasip1 core + c/wasi-none.c -DAPRV_KEEP_WASI_RANDOM_CLOCK, 'wasm-tools component new --adapt wasi_snapshot_preview1=wasi_snapshot_preview1.reactor.wasm' (wasmtime v49.0.1 release asset, sha256 efb5f04f...8682d).
+standard P2: Rust wasm32-wasip2 + aws-lc-sys with wasi-sdk-p2.cmake: rustc/wasm-component-ld emit the component directly; no stub, no adapter.
+P3: results/p3.txt.

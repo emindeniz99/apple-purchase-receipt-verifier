@@ -1,0 +1,488 @@
+rust-uu-noseam node host=trap cases vs native-rust: 108 same, 0 differ, 45 trapped | {"host":"trap","calls":{},"traps":45,"rows":153}
+rust-uu-noseam node host=trap hostile vs native-rust: 798 same, 0 differ, 13 trapped | {"host":"trap","calls":{},"traps":13,"rows":811}
+rust-uu-noseam node host=trap algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+rust-uu-noseam node host=trap substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+rust-uu-noseam bun host=trap cases vs native-rust: 108 same, 0 differ, 45 trapped | {"host":"trap","calls":{},"traps":45,"rows":153}
+rust-uu-noseam bun host=trap hostile vs native-rust: 798 same, 0 differ, 13 trapped | {"host":"trap","calls":{},"traps":13,"rows":811}
+rust-uu-noseam bun host=trap algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+rust-uu-noseam bun host=trap substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+rust-uu-noseam deno host=trap cases vs native-rust: 108 same, 0 differ, 45 trapped | {"host":"trap","calls":{},"traps":45,"rows":153}
+rust-uu-noseam deno host=trap hostile vs native-rust: 798 same, 0 differ, 13 trapped | {"host":"trap","calls":{},"traps":13,"rows":811}
+rust-uu-noseam deno host=trap algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+rust-uu-noseam deno host=trap substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+rust-uu node host=trap cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+rust-uu node host=trap hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":13},"traps":0,"rows":811}
+rust-uu node host=trap algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+rust-uu node host=trap substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+rust-uu bun host=trap cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+rust-uu bun host=trap hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":13},"traps":0,"rows":811}
+rust-uu bun host=trap algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+rust-uu bun host=trap substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+rust-uu deno host=trap cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+rust-uu deno host=trap hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":13},"traps":0,"rows":811}
+rust-uu deno host=trap algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+rust-uu deno host=trap substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+rust-w1 node host=nodewasi cases vs native-rust: 153 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+rust-w1 node host=nodewasi hostile vs native-rust: 811 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+rust-w1 node host=nodewasi algorithms vs native-rust: 22 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+rust-w1 node host=nodewasi substrate vs native-rust: 193 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+rust-w1 node host=trap cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.clock_time_get":47},"traps":0,"rows":153}
+rust-w1 node host=trap hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.clock_time_get":13},"traps":0,"rows":811}
+rust-w1 node host=trap algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+rust-w1 node host=trap substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+ossl-w1 node host=nodewasi cases vs native-ossl402: 153 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+ossl-w1 node host=nodewasi hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+ossl-w1 node host=nodewasi algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+ossl-w1 node host=nodewasi substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+ossl-w1 node host=trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":463},"traps":0,"rows":153}
+ossl-w1 node host=trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.clock_time_get":214,"wasi_snapshot_preview1.random_get":1},"traps":0,"rows":811}
+ossl-w1 node host=trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":68},"traps":0,"rows":22}
+ossl-w1 node host=trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":527},"traps":0,"rows":193}
+awslc-w1 node host=nodewasi cases vs native-awslc: 153 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+awslc-w1 node host=nodewasi hostile vs native-awslc: 811 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+awslc-w1 node host=nodewasi algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+awslc-w1 node host=nodewasi substrate vs native-awslc: 193 same, 0 differ, 0 trapped | (Use `node --trace-warnings ...` to show where the warning was created)
+awslc-w1 node host=trap cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.clock_time_get":47},"traps":0,"rows":153}
+awslc-w1 node host=trap hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.clock_time_get":11},"traps":0,"rows":811}
+awslc-w1 node host=trap algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+awslc-w1 node host=trap substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+rust-w1h node host=trap cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+rust-w1h node host=trap hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":13},"traps":0,"rows":811}
+rust-w1h node host=trap algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+rust-w1h node host=trap substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+ossl-w1h node host=trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":416,"aprv.clock_now_ms":47},"traps":0,"rows":153}
+ossl-w1h node host=trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":11,"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":203},"traps":0,"rows":811}
+ossl-w1h node host=trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":68},"traps":0,"rows":22}
+ossl-w1h node host=trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"wasi_snapshot_preview1.random_get":1,"wasi_snapshot_preview1.clock_time_get":527},"traps":0,"rows":193}
+awslc-w1h node host=trap cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+awslc-w1h node host=trap hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":11},"traps":0,"rows":811}
+awslc-w1h node host=trap algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+awslc-w1h node host=trap substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+awslc-w1h node host=strict cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+awslc-w1h node host=strict hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":11},"traps":0,"rows":811}
+awslc-w1h node host=strict algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+awslc-w1h node host=strict substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+rust-w1h node host=strict cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+rust-w1h node host=strict hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":13},"traps":0,"rows":811}
+rust-w1h node host=strict algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+rust-w1h node host=strict substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+awslc-c node host=strict cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+awslc-c node host=strict hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":11},"traps":0,"rows":811}
+awslc-c node host=strict algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+awslc-c node host=strict substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+rust-c node host=strict cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+rust-c node host=strict hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":13},"traps":0,"rows":811}
+rust-c node host=strict algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+rust-c node host=strict substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+ossl-c node host=trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+ossl-c node host=trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+ossl-c node host=trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+ossl-c node host=trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+awslc-c bun host=strict cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+awslc-c bun host=strict hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":11},"traps":0,"rows":811}
+awslc-c bun host=strict algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+awslc-c bun host=strict substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+rust-c bun host=strict cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+rust-c bun host=strict hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":13},"traps":0,"rows":811}
+rust-c bun host=strict algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+rust-c bun host=strict substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+ossl-c bun host=trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+ossl-c bun host=trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+ossl-c bun host=trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+ossl-c bun host=trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+awslc-c deno host=strict cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+awslc-c deno host=strict hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":11},"traps":0,"rows":811}
+awslc-c deno host=strict algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+awslc-c deno host=strict substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+rust-c deno host=strict cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+rust-c deno host=strict hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host":"strict","calls":{"aprv.clock_now_ms":13},"traps":0,"rows":811}
+rust-c deno host=strict algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":22}
+rust-c deno host=strict substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host":"strict","calls":{},"traps":0,"rows":193}
+ossl-c deno host=trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+ossl-c deno host=trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+ossl-c deno host=trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+ossl-c deno host=trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+awslc-c workerd host=core/strict cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-c workerd host=core/strict hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-c workerd host=core/strict algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-c workerd host=core/strict substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-c workerd imports+calls: {"imports": ["aprv.clock_now_ms"], "calls": {"aprv.clock_now_ms": 58}}
+ossl-c workerd host=core/trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-c workerd host=core/trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-c workerd host=core/trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-c workerd host=core/trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+ossl-c workerd imports+calls: {"imports": ["aprv.clock_now_ms", "aprv.random_get"], "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 1257}}
+rust-c workerd host=core/strict cases vs native-rust: 153 same, 0 differ, 0 trapped
+rust-c workerd host=core/strict hostile vs native-rust: 811 same, 0 differ, 0 trapped
+rust-c workerd host=core/strict algorithms vs native-rust: 22 same, 0 differ, 0 trapped
+rust-c workerd host=core/strict substrate vs native-rust: 193 same, 0 differ, 0 trapped
+rust-c workerd imports+calls: {"imports": ["aprv.clock_now_ms"], "calls": {"aprv.clock_now_ms": 60}}
+rust-uu workerd host=core/strict cases vs native-rust: 153 same, 0 differ, 0 trapped
+rust-uu workerd host=core/strict hostile vs native-rust: 811 same, 0 differ, 0 trapped
+rust-uu workerd host=core/strict algorithms vs native-rust: 22 same, 0 differ, 0 trapped
+rust-uu workerd host=core/strict substrate vs native-rust: 193 same, 0 differ, 0 trapped
+rust-uu workerd imports+calls: {"imports": ["aprv.clock_now_ms"], "calls": {"aprv.clock_now_ms": 60}}
+awslc-w1 workerd host=core/trap cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-w1 workerd host=core/trap hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-w1 workerd host=core/trap algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-w1 workerd host=core/trap substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-w1 workerd imports+calls: {"imports": ["wasi_snapshot_preview1.environ_get", "wasi_snapshot_preview1.environ_sizes_get", "wasi_snapshot_preview1.clock_time_get", "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_prestat_get", "wasi_snapshot_preview1.fd_prestat_dir_name", "wasi_snapshot_preview1.fd_seek", "wasi_snapshot_preview1.fd_write", "wasi_snapshot_preview1.proc_exit", "wasi_snapshot_preview1.random_get"], "calls": {"wasi_snapshot_preview1.clock_time_get": 58}}
+ossl-w1 workerd host=core/trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-w1 workerd host=core/trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-w1 workerd host=core/trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-w1 workerd host=core/trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+ossl-w1 workerd imports+calls: {"imports": ["wasi_snapshot_preview1.environ_get", "wasi_snapshot_preview1.environ_sizes_get", "wasi_snapshot_preview1.clock_time_get", "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_fdstat_get", "wasi_snapshot_preview1.fd_fdstat_set_flags", "wasi_snapshot_preview1.fd_filestat_get", "wasi_snapshot_preview1.fd_prestat_get", "wasi_snapshot_preview1.fd_prestat_dir_name", "wasi_snapshot_preview1.fd_read", "wasi_snapshot_preview1.fd_readdir", "wasi_snapshot_preview1.fd_seek", "wasi_snapshot_preview1.fd_write", "wasi_snapshot_preview1.path_filestat_get", "wasi_snapshot_preview1.path_open", "wasi_snapshot_preview1.proc_exit", "wasi_snapshot_preview1.random_get"], "calls": {"wasi_snapshot_preview1.random_get": 1, "wasi_snapshot_preview1.clock_time_get": 1257}}
+awslc-w1-nodewasi workerd built-in node:wasi (flags nodejs_compat, enable_nodejs_wasi_module): {"imported":"function","error":"The WASI method is not implemented"}
+awslc-c chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{}}
+awslc-c chromium algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-c firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{}}
+awslc-c firefox algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-c chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"aprv.clock_now_ms":58}}
+awslc-c chromium cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-c chromium hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-c chromium algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-c chromium substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+ossl-c chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+ossl-c chromium cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-c chromium hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-c chromium algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-c chromium substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+rust-uu chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"aprv.clock_now_ms":60}}
+rust-uu chromium cases vs native-rust: 153 same, 0 differ, 0 trapped
+rust-uu chromium hostile vs native-rust: 811 same, 0 differ, 0 trapped
+rust-uu chromium algorithms vs native-rust: 22 same, 0 differ, 0 trapped
+rust-uu chromium substrate vs native-rust: 193 same, 0 differ, 0 trapped
+rust-c chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"aprv.clock_now_ms":60}}
+rust-c chromium cases vs native-rust: 153 same, 0 differ, 0 trapped
+rust-c chromium hostile vs native-rust: 811 same, 0 differ, 0 trapped
+rust-c chromium algorithms vs native-rust: 22 same, 0 differ, 0 trapped
+rust-c chromium substrate vs native-rust: 193 same, 0 differ, 0 trapped
+awslc-c firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"aprv.clock_now_ms":58}}
+awslc-c firefox cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-c firefox hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-c firefox algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-c firefox substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+ossl-c firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+ossl-c firefox cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-c firefox hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-c firefox algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-c firefox substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+rust-uu firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"aprv.clock_now_ms":60}}
+rust-uu firefox cases vs native-rust: 153 same, 0 differ, 0 trapped
+rust-uu firefox hostile vs native-rust: 811 same, 0 differ, 0 trapped
+rust-uu firefox algorithms vs native-rust: 22 same, 0 differ, 0 trapped
+rust-uu firefox substrate vs native-rust: 193 same, 0 differ, 0 trapped
+rust-c firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"aprv.clock_now_ms":60}}
+rust-c firefox cases vs native-rust: 153 same, 0 differ, 0 trapped
+rust-c firefox hostile vs native-rust: 811 same, 0 differ, 0 trapped
+rust-c firefox algorithms vs native-rust: 22 same, 0 differ, 0 trapped
+rust-c firefox substrate vs native-rust: 193 same, 0 differ, 0 trapped
+ossl-em node host=emscripten algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{},"traps":0,"rows":22}
+ossl-em node host=emscripten algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":68},"traps":0,"rows":22}
+ossl-em node host=emscripten cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":416,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+ossl-em node host=emscripten hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11,"_random_get":1,"_emscripten_date_now":203},"traps":0,"rows":811}
+ossl-em node host=emscripten algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":68},"traps":0,"rows":22}
+ossl-em node host=emscripten substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":527},"traps":0,"rows":193}
+ossl-em bun host=emscripten cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":416,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+ossl-em bun host=emscripten hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11,"_random_get":1,"_emscripten_date_now":203},"traps":0,"rows":811}
+ossl-em bun host=emscripten algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":68},"traps":0,"rows":22}
+ossl-em bun host=emscripten substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":527},"traps":0,"rows":193}
+ossl-em deno host=emscripten cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":416,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+ossl-em deno host=emscripten hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11,"_random_get":1,"_emscripten_date_now":203},"traps":0,"rows":811}
+ossl-em deno host=emscripten algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":68},"traps":0,"rows":22}
+ossl-em deno host=emscripten substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":527},"traps":0,"rows":193}
+ossl-em workerd host=emscripten/trap cases vs native-ossl402: json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+ossl-em workerd host=emscripten/trap hostile vs native-ossl402: json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+ossl-em workerd host=emscripten/trap algorithms vs native-ossl402: json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+ossl-em workerd host=emscripten/trap substrate vs native-ossl402: json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+# NOTE (a finding, not a harness bug): Emscripten's node+web glue cannot load in workerd (workerd presents process.versions.node; results/builds.txt). The ossl-em-web / awslc-em-web / libressl-em-web lines below use the same .wasm with -sENVIRONMENT=web,worker glue.
+ossl-em workerd imports+calls: 
+ossl-em chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":1199,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+ossl-em chromium cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-em chromium hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-em chromium algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-em chromium substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+ossl-em firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":1199,"_clock_time_get":58,"_emscripten_resize_heap":2}}
+ossl-em firefox cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-em firefox hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-em firefox algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-em firefox substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+ossl-em-web workerd host=emscripten/trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-em-web workerd host=emscripten/trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-em-web workerd host=emscripten/trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-em-web workerd host=emscripten/trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+ossl-em-web workerd imports+calls: {"imports": ["a.a", "a.b", "a.c", "a.d", "a.e", "a.f", "a.g", "a.h", "a.i", "a.j", "a.k", "a.l", "a.m", "a.n", "a.o", "a.p", "a.q", "a.r", "a.s", "a.t", "a.u", "a.v"], "calls": {"_environ_sizes_get": 1, "_environ_get": 1, "_random_get": 1, "_emscripten_date_now": 1199, "_clock_time_get": 58, "_emscripten_resize_heap": 1}}
+awslc-em node host=emscripten cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+awslc-em node host=emscripten hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11},"traps":0,"rows":811}
+awslc-em node host=emscripten algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":22}
+awslc-em node host=emscripten substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":193}
+awslc-em bun host=emscripten cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+awslc-em bun host=emscripten hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11},"traps":0,"rows":811}
+awslc-em bun host=emscripten algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":22}
+awslc-em bun host=emscripten substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":193}
+awslc-em deno host=emscripten cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+awslc-em deno host=emscripten hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11},"traps":0,"rows":811}
+awslc-em deno host=emscripten algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":22}
+awslc-em deno host=emscripten substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":193}
+awslc-em-web workerd host=emscripten/trap cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-em-web workerd host=emscripten/trap hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-em-web workerd host=emscripten/trap algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-em-web workerd host=emscripten/trap substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-em-web workerd imports+calls: {"imports": ["a.a", "a.b", "a.c", "a.d", "a.e", "a.f", "a.g", "a.h", "a.i", "a.j"], "calls": {"_environ_sizes_get": 1, "_environ_get": 1, "_clock_time_get": 58, "_emscripten_resize_heap": 1}}
+awslc-em chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+awslc-em chromium cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-em chromium hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-em chromium algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-em chromium substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-em firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+awslc-em firefox cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-em firefox hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-em firefox algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-em firefox substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+libressl-em node host=emscripten cases vs native-libressl432: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+libressl-em node host=emscripten hostile vs native-libressl432: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11},"traps":0,"rows":811}
+libressl-em node host=emscripten algorithms vs native-libressl432: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":22}
+libressl-em node host=emscripten substrate vs native-libressl432: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":193}
+libressl-em bun host=emscripten cases vs native-libressl432: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+libressl-em bun host=emscripten hostile vs native-libressl432: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11},"traps":0,"rows":811}
+libressl-em bun host=emscripten algorithms vs native-libressl432: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":22}
+libressl-em bun host=emscripten substrate vs native-libressl432: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":193}
+libressl-em deno host=emscripten cases vs native-libressl432: 153 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":47,"_emscripten_resize_heap":1},"traps":0,"rows":153}
+libressl-em deno host=emscripten hostile vs native-libressl432: 811 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":11},"traps":0,"rows":811}
+libressl-em deno host=emscripten algorithms vs native-libressl432: 22 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":22}
+libressl-em deno host=emscripten substrate vs native-libressl432: 193 same, 0 differ, 0 trapped | {"host":"emscripten","calls":{"_environ_sizes_get":1,"_environ_get":1},"traps":0,"rows":193}
+libressl-em-web workerd host=emscripten/trap cases vs native-libressl432: 153 same, 0 differ, 0 trapped
+libressl-em-web workerd host=emscripten/trap hostile vs native-libressl432: 811 same, 0 differ, 0 trapped
+libressl-em-web workerd host=emscripten/trap algorithms vs native-libressl432: 22 same, 0 differ, 0 trapped
+libressl-em-web workerd host=emscripten/trap substrate vs native-libressl432: 193 same, 0 differ, 0 trapped
+libressl-em-web workerd imports+calls: {"imports": ["a.a", "a.b", "a.c", "a.d", "a.e", "a.f", "a.g", "a.h", "a.i", "a.j", "a.k", "a.l", "a.m", "a.n", "a.o", "a.p", "a.q", "a.r", "a.s", "a.t", "a.u", "a.v", "a.w", "a.x", "a.y", "a.z", "a.A"], "calls": {"_environ_sizes_get": 1, "_environ_get": 1, "_clock_time_get": 58, "_emscripten_resize_heap": 1}}
+libressl-em chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+libressl-em chromium cases vs native-libressl432: 153 same, 0 differ, 0 trapped
+libressl-em chromium hostile vs native-libressl432: 811 same, 0 differ, 0 trapped
+libressl-em chromium algorithms vs native-libressl432: 22 same, 0 differ, 0 trapped
+libressl-em chromium substrate vs native-libressl432: 193 same, 0 differ, 0 trapped
+libressl-em firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+libressl-em firefox cases vs native-libressl432: 153 same, 0 differ, 0 trapped
+libressl-em firefox hostile vs native-libressl432: 811 same, 0 differ, 0 trapped
+libressl-em firefox algorithms vs native-libressl432: 22 same, 0 differ, 0 trapped
+libressl-em firefox substrate vs native-libressl432: 193 same, 0 differ, 0 trapped
+awslc-comp node host=jco algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":22}
+awslc-comp node host=jco cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":47},"traps":0,"rows":153}
+awslc-comp node host=jco hostile vs native-awslc: 810 same, 1 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":11},"traps":0,"rows":811}
+awslc-comp node host=jco algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":22}
+awslc-comp node host=jco substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":193}
+awslc-comp bun host=jco cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":47},"traps":0,"rows":153}
+awslc-comp bun host=jco hostile vs native-awslc: 810 same, 1 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":11},"traps":0,"rows":811}
+awslc-comp bun host=jco algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":22}
+awslc-comp bun host=jco substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":193}
+awslc-comp deno host=jco cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":47},"traps":0,"rows":153}
+awslc-comp deno host=jco hostile vs native-awslc: 810 same, 1 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":11},"traps":0,"rows":811}
+awslc-comp deno host=jco algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":22}
+awslc-comp deno host=jco substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":193}
+awslc-comp workerd host=jco/trap cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-comp workerd host=jco/trap hostile vs native-awslc: 810 same, 1 differ, 0 trapped
+awslc-comp workerd host=jco/trap algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-comp workerd host=jco/trap substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-comp workerd imports+calls: {"imports": ["[export]aprv:verifier/verifier@0.1.0.[resource-new]endpoint", "$root.clock-now-ms", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]endpoint", "[export]aprv:verifier/verifier@0.1.0.[resource-new]jws-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]jws-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-new]receipt-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]receipt-verifier"], "calls": {"clock-now-ms": 58}}
+awslc-comp chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"clock-now-ms":58}}
+awslc-comp chromium cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-comp chromium hostile vs native-awslc: 810 same, 1 differ, 0 trapped
+awslc-comp chromium algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-comp chromium substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-comp firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"clock-now-ms":58}}
+awslc-comp firefox cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-comp firefox hostile vs native-awslc: 810 same, 1 differ, 0 trapped
+awslc-comp firefox algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-comp firefox substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+# NOTE: the awslc-comp rows above with '810 same, 1 differ' (hostile/endpoint/bom) were the harness's TextDecoder stripping the UTF-8 BOM (ignoreBOM default false); fixed in js/jco-driver.mjs, rerun below
+awslc-comp node host=jco cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":47},"traps":0,"rows":153}
+awslc-comp node host=jco hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":11},"traps":0,"rows":811}
+awslc-comp node host=jco algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":22}
+awslc-comp node host=jco substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":193}
+awslc-comp bun host=jco cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":47},"traps":0,"rows":153}
+awslc-comp bun host=jco hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":11},"traps":0,"rows":811}
+awslc-comp bun host=jco algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":22}
+awslc-comp bun host=jco substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":193}
+awslc-comp deno host=jco cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":47},"traps":0,"rows":153}
+awslc-comp deno host=jco hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"clock-now-ms":11},"traps":0,"rows":811}
+awslc-comp deno host=jco algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":22}
+awslc-comp deno host=jco substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":193}
+awslc-comp workerd host=jco/trap cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-comp workerd host=jco/trap hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-comp workerd host=jco/trap algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-comp workerd host=jco/trap substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-comp workerd imports+calls: {"imports": ["[export]aprv:verifier/verifier@0.1.0.[resource-new]endpoint", "$root.clock-now-ms", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]endpoint", "[export]aprv:verifier/verifier@0.1.0.[resource-new]jws-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]jws-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-new]receipt-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]receipt-verifier"], "calls": {"clock-now-ms": 58}}
+awslc-comp chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"clock-now-ms":58}}
+awslc-comp chromium cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-comp chromium hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-comp chromium algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-comp chromium substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-comp firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"clock-now-ms":58}}
+awslc-comp firefox cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-comp firefox hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-comp firefox algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-comp firefox substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-c wazero host=- cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":47},"host":"wazero","wasi":false}
+awslc-c wazero host=- hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":11},"host":"wazero","wasi":false}
+awslc-c wazero host=- algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":false}
+awslc-c wazero host=- substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":false}
+ossl-c wazero host=- cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":463,"aprv.random_get":1},"host":"wazero","wasi":false}
+ossl-c wazero host=- hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"host":"wazero","wasi":false}
+ossl-c wazero host=- algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":68,"aprv.random_get":1},"host":"wazero","wasi":false}
+ossl-c wazero host=- substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":527,"aprv.random_get":1},"host":"wazero","wasi":false}
+rust-c wazero host=- cases vs native-rust: 153 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":47},"host":"wazero","wasi":false}
+rust-c wazero host=- hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"calls":{"aprv.clock_now_ms":13},"host":"wazero","wasi":false}
+rust-c wazero host=- algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":false}
+rust-c wazero host=- substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":false}
+awslc-w1 wazero host=- cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+awslc-w1 wazero host=- hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+awslc-w1 wazero host=- algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+awslc-w1 wazero host=- substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+ossl-w1 wazero host=- cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+ossl-w1 wazero host=- hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+ossl-w1 wazero host=- algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+ossl-w1 wazero host=- substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"calls":{},"host":"wazero","wasi":true}
+awslc-c wasmtime host=- algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {}, "traps": 0, "rows": 22}
+awslc-c wasmtime host=- cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.clock_now_ms": 47}, "traps": 0, "rows": 153}
+awslc-c wasmtime host=- hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.clock_now_ms": 11}, "traps": 0, "rows": 811}
+awslc-c wasmtime host=- algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {}, "traps": 0, "rows": 22}
+awslc-c wasmtime host=- substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {}, "traps": 0, "rows": 193}
+ossl-c wasmtime host=- cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 463}, "traps": 0, "rows": 153}
+ossl-c wasmtime host=- hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.clock_now_ms": 214, "aprv.random_get": 1}, "traps": 0, "rows": 811}
+ossl-c wasmtime host=- algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 68}, "traps": 0, "rows": 22}
+ossl-c wasmtime host=- substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.random_get": 1, "aprv.clock_now_ms": 527}, "traps": 0, "rows": 193}
+rust-c wasmtime host=- cases vs native-rust: 153 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.clock_now_ms": 47}, "traps": 0, "rows": 153}
+rust-c wasmtime host=- hostile vs native-rust: 811 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {"aprv.clock_now_ms": 13}, "traps": 0, "rows": 811}
+rust-c wasmtime host=- algorithms vs native-rust: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {}, "traps": 0, "rows": 22}
+rust-c wasmtime host=- substrate vs native-rust: 193 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": false, "calls": {}, "traps": 0, "rows": 193}
+awslc-w1 wasmtime host=- cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 153}
+awslc-w1 wasmtime host=- hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 811}
+awslc-w1 wasmtime host=- algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 22}
+awslc-w1 wasmtime host=- substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 193}
+ossl-w1 wasmtime host=- cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 153}
+ossl-w1 wasmtime host=- hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 811}
+ossl-w1 wasmtime host=- algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 22}
+ossl-w1 wasmtime host=- substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host": "wasmtime", "wasi": true, "calls": {}, "traps": 0, "rows": 193}
+awslc-comp wasmtime host=component algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 22}
+awslc-comp wasmtime host=component cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {"clock-now-ms": 47}, "traps": 0, "rows": 153}
+awslc-comp wasmtime host=component hostile vs native-awslc: AssertionError: (811, 811, 806) | TypeError: expected ResourceAny or ResourceHost for Own type
+awslc-comp wasmtime host=component algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 22}
+awslc-comp wasmtime host=component substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 193}
+awslc-comp wasmtime host=component hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {"clock-now-ms": 11}, "traps": 0, "rows": 811}
+# NOTE: the 'AssertionError ... expected ResourceAny' hostile line above was a harness bug in py/run_wasmtime_component.py (untagged result from a constructor); fixed, rerun below
+ossl-comp node host=jco-p2min cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":463},"traps":0,"rows":153}
+ossl-comp node host=jco-p2min hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:clocks/wall-clock.now":214,"wasi:random/random.get-random-bytes":1},"traps":0,"rows":811}
+ossl-comp node host=jco-p2min algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":68},"traps":0,"rows":22}
+ossl-comp node host=jco-p2min substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":527},"traps":0,"rows":193}
+ossl-comp bun host=jco-p2min cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":463},"traps":0,"rows":153}
+ossl-comp bun host=jco-p2min hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:clocks/wall-clock.now":214,"wasi:random/random.get-random-bytes":1},"traps":0,"rows":811}
+ossl-comp bun host=jco-p2min algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":68},"traps":0,"rows":22}
+ossl-comp bun host=jco-p2min substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":527},"traps":0,"rows":193}
+ossl-comp deno host=jco-p2min cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":463},"traps":0,"rows":153}
+ossl-comp deno host=jco-p2min hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:clocks/wall-clock.now":214,"wasi:random/random.get-random-bytes":1},"traps":0,"rows":811}
+ossl-comp deno host=jco-p2min algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":68},"traps":0,"rows":22}
+ossl-comp deno host=jco-p2min substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":527},"traps":0,"rows":193}
+ossl-comp wasmtime host=component-wasi cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 153}
+ossl-comp wasmtime host=component-wasi hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 811}
+ossl-comp wasmtime host=component-wasi algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 22}
+ossl-comp wasmtime host=component-wasi substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 193}
+ossl-comp workerd host=jco/wasi-p2-min cases vs native-ossl402: json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+ossl-comp workerd host=jco/wasi-p2-min hostile vs native-ossl402: json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+ossl-comp workerd host=jco/wasi-p2-min algorithms vs native-ossl402: json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+ossl-comp workerd host=jco/wasi-p2-min substrate vs native-ossl402: json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+ossl-comp workerd imports+calls: 
+ossl-comp chromium report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":1257}}
+ossl-comp chromium cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-comp chromium hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-comp chromium algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-comp chromium substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+ossl-comp firefox report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":1257}}
+ossl-comp firefox cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-comp firefox hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-comp firefox algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-comp firefox substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+ossl-comp workerd host=jco/wasi-p2-min cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-comp workerd host=jco/wasi-p2-min hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-comp workerd host=jco/wasi-p2-min algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-comp workerd host=jco/wasi-p2-min substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+ossl-comp workerd imports+calls: {"imports": ["[export]aprv:verifier/verifier@0.1.0.[resource-new]endpoint", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]endpoint", "[export]aprv:verifier/verifier@0.1.0.[resource-new]jws-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]jws-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-new]receipt-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]receipt-verifier", "wasi_snapshot_preview1.clock_time_get", "wasi_snapshot_preview1.random_get"], "calls": {"wasi:random/random.get-random-bytes": 1, "wasi:clocks/wall-clock.now": 1257}}
+awslc-comp workerd host=jco/trap cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-comp workerd host=jco/trap hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-comp workerd host=jco/trap algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-comp workerd host=jco/trap substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+awslc-comp workerd imports+calls: {"imports": ["[export]aprv:verifier/verifier@0.1.0.[resource-new]endpoint", "$root.clock-now-ms", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]endpoint", "[export]aprv:verifier/verifier@0.1.0.[resource-new]jws-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]jws-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-new]receipt-verifier", "[export]aprv:verifier/verifier@0.1.0.[resource-drop]receipt-verifier"], "calls": {"clock-now-ms": 58}}
+# NOTE: the first 'ossl-comp workerd ... JSONDecodeError' lines above were a harness limit (worker-jco.mjs hard-coded 3 core modules; the adapter component has 4); fixed with a generated modules.mjs, rerun below
+awslc-c webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{}}
+awslc-c webkit algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+rust-uu webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"aprv.clock_now_ms":60}}
+rust-uu webkit cases vs native-rust: 153 same, 0 differ, 0 trapped
+rust-uu webkit hostile vs native-rust: 811 same, 0 differ, 0 trapped
+rust-uu webkit algorithms vs native-rust: 22 same, 0 differ, 0 trapped
+rust-uu webkit substrate vs native-rust: 193 same, 0 differ, 0 trapped
+rust-c webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"aprv.clock_now_ms":60}}
+rust-c webkit cases vs native-rust: 153 same, 0 differ, 0 trapped
+rust-c webkit hostile vs native-rust: 811 same, 0 differ, 0 trapped
+rust-c webkit algorithms vs native-rust: 22 same, 0 differ, 0 trapped
+rust-c webkit substrate vs native-rust: 193 same, 0 differ, 0 trapped
+awslc-c webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"aprv.clock_now_ms":58}}
+awslc-c webkit cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-c webkit hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-c webkit algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-c webkit substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+ossl-c webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"aprv.random_get":1,"aprv.clock_now_ms":1257}}
+ossl-c webkit cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-c webkit hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-c webkit algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-c webkit substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+awslc-em webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+awslc-em webkit cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-em webkit hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-em webkit algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-em webkit substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+ossl-em webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"_environ_sizes_get":1,"_environ_get":1,"_random_get":1,"_emscripten_date_now":1199,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+ossl-em webkit cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-em webkit hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-em webkit algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-em webkit substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+libressl-em webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"_environ_sizes_get":1,"_environ_get":1,"_clock_time_get":58,"_emscripten_resize_heap":1}}
+libressl-em webkit cases vs native-libressl432: 153 same, 0 differ, 0 trapped
+libressl-em webkit hostile vs native-libressl432: 811 same, 0 differ, 0 trapped
+libressl-em webkit algorithms vs native-libressl432: 22 same, 0 differ, 0 trapped
+libressl-em webkit substrate vs native-libressl432: 193 same, 0 differ, 0 trapped
+awslc-comp webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"clock-now-ms":58}}
+awslc-comp webkit cases vs native-awslc: 153 same, 0 differ, 0 trapped
+awslc-comp webkit hostile vs native-awslc: 811 same, 0 differ, 0 trapped
+awslc-comp webkit algorithms vs native-awslc: 22 same, 0 differ, 0 trapped
+awslc-comp webkit substrate vs native-awslc: 193 same, 0 differ, 0 trapped
+ossl-comp webkit report: {"ok":true,"userAgent":"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15","calls":{"wasi:random/random.get-random-bytes":1,"wasi:clocks/wall-clock.now":1257}}
+ossl-comp webkit cases vs native-ossl402: 153 same, 0 differ, 0 trapped
+ossl-comp webkit hostile vs native-ossl402: 811 same, 0 differ, 0 trapped
+ossl-comp webkit algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped
+ossl-comp webkit substrate vs native-ossl402: 193 same, 0 differ, 0 trapped
+awslc-c.oz node host=trap cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":47},"traps":0,"rows":153}
+awslc-c.oz node host=trap hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":11},"traps":0,"rows":811}
+awslc-c.oz node host=trap algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":22}
+awslc-c.oz node host=trap substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{},"traps":0,"rows":193}
+ossl-c.oz node host=trap cases vs native-ossl402: 153 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":463},"traps":0,"rows":153}
+ossl-c.oz node host=trap hostile vs native-ossl402: 811 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811}
+ossl-c.oz node host=trap algorithms vs native-ossl402: 22 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":68},"traps":0,"rows":22}
+ossl-c.oz node host=trap substrate vs native-ossl402: 193 same, 0 differ, 0 trapped | {"host":"trap","calls":{"aprv.random_get":1,"aprv.clock_now_ms":527},"traps":0,"rows":193}
+awslc-p2 wasmtime host=component-wasi cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 153}
+awslc-p2 wasmtime host=component-wasi hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 811}
+awslc-p2 wasmtime host=component-wasi algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 22}
+awslc-p2 wasmtime host=component-wasi substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host": "wasmtime-component", "calls": {}, "traps": 0, "rows": 193}
+awslc-p2 node host=jco-p2shim cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":153}
+awslc-p2 node host=jco-p2shim hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":811}
+awslc-p2 node host=jco-p2shim algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":22}
+awslc-p2 node host=jco-p2shim substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{},"traps":0,"rows":193}
+awslc-p3 node host=jco-trapstubs algorithms vs native-awslc: AssertionError: (22, 22, 0) | Node.js v22.22.2
+# NOTE (a finding): the P3 component's jco 1.35.0 output does not load in Node 22 (SyntaxError, results/p3.txt); no P3 corpus run.
+awslc-p2 node host=jco-trapstubs cases vs native-awslc: AssertionError: (153, 153, 0) | Node.js v22.22.2
+awslc-p2 node host=jco-trapstubs hostile vs native-awslc: AssertionError: (811, 811, 0) | Node.js v22.22.2
+awslc-p2 node host=jco-trapstubs algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasiInterfacesStubbed":18},"traps":0,"rows":22}
+awslc-p2 node host=jco-trapstubs substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasiInterfacesStubbed":18},"traps":0,"rows":193}
+# NOTE: the two 'awslc-p2 ... jco-trapstubs ... AssertionError' lines above: the trap stubs also covered wasi:clocks/wall-clock, which the core's no-signed-date fallback reads (standard P2 build has no host-clock seam). The stub mode now keeps a real wall clock; rerun below.
+awslc-p2 node host=jco-trapstubs cases vs native-awslc: 153 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasiInterfacesStubbed":18,"wasi:clocks/wall-clock#now":47},"traps":0,"rows":153}
+awslc-p2 node host=jco-trapstubs hostile vs native-awslc: 811 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasiInterfacesStubbed":18,"wasi:clocks/wall-clock#now":11},"traps":0,"rows":811}
+awslc-p2 node host=jco-trapstubs algorithms vs native-awslc: 22 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasiInterfacesStubbed":18},"traps":0,"rows":22}
+awslc-p2 node host=jco-trapstubs substrate vs native-awslc: 193 same, 0 differ, 0 trapped | {"host":"jco","calls":{"wasiInterfacesStubbed":18},"traps":0,"rows":193}

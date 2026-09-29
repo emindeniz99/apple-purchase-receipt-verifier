@@ -1,15 +1,15 @@
 //! Hostile input and resource bounds.
 //!
-//! Everything this crate parses is attacker-supplied. These tests state the
-//! two properties that follow from that: nothing ever panics, and nothing
-//! costs unbounded time or memory.
+//! Everything this crate reads is attacker-supplied, and OpenSSL parses it.
+//! These tests state the two properties that follow from that, through the
+//! public API: nothing ever panics, and nothing costs unbounded time or
+//! memory.
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::asn1::{parse_exact, MAX_DEPTH};
 use apple_purchase_receipt_verifier::{Environment, Reason, ReceiptPayload, Verifier};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 fn receipt_verifier() -> Verifier {
     common::receipt_verifier()
@@ -49,15 +49,14 @@ fn eleven_characters_of_base64_do_not_escape_the_contract() {
 
 #[test]
 fn deeply_nested_asn1_is_refused_rather_than_recursed() {
-    // One more level than the reader admits. A parser without this bound
+    // Past the 0.7 ASN.1 depth bound of 32. A parser without a bound
     // recurses off the stack instead of returning.
     let mut nested = vec![0x05, 0x00]; // NULL
-    for _ in 0..(MAX_DEPTH + 2) {
+    for _ in 0..34 {
         let mut wrapped = vec![0x30, u8::try_from(nested.len()).unwrap()];
         wrapped.extend_from_slice(&nested);
         nested = wrapped;
     }
-    assert!(parse_exact(&nested).is_err());
     assert_eq!(
         receipt_verifier().verify(&nested).unwrap_err().reason(),
         Reason::Malformed
@@ -85,21 +84,38 @@ fn a_thousand_levels_of_nesting_does_not_overflow_the_stack() {
 
 #[test]
 fn an_unterminated_indefinite_length_value_is_refused() {
-    // 0x30 0x80 with no end-of-contents marker.
-    assert!(parse_exact(&[0x30, 0x80]).is_err());
-    assert!(parse_exact(&[0x30, 0x80, 0x05, 0x00]).is_err());
-    // A primitive value may not carry an indefinite length at all.
-    assert!(parse_exact(&[0x04, 0x80, 0x00, 0x00]).is_err());
+    let verifier = receipt_verifier();
+    // 0x30 0x80 with no end-of-contents marker, and a primitive value with
+    // an indefinite length, which no encoding allows.
+    for input in [
+        &[0x30, 0x80][..],
+        &[0x30, 0x80, 0x05, 0x00],
+        &[0x04, 0x80, 0x00, 0x00],
+    ] {
+        assert_eq!(
+            verifier.verify(input).unwrap_err().reason(),
+            Reason::Malformed,
+            "{input:02x?}"
+        );
+    }
 }
 
 #[test]
 fn a_declared_length_larger_than_the_input_is_refused_without_allocating() {
-    // 2^31 declared on a four-byte input.
+    // 2^31 declared on a four-byte input, and a five-octet length.
+    let verifier = receipt_verifier();
     let started = Instant::now();
-    assert!(parse_exact(&[0x30, 0x84, 0x7f, 0xff, 0xff, 0xff]).is_err());
-    assert!(parse_exact(&[0x04, 0x84, 0xff, 0xff, 0xff, 0xff]).is_err());
-    // Five length octets is beyond what this reader admits at all.
-    assert!(parse_exact(&[0x30, 0x85, 0x01, 0x00, 0x00, 0x00, 0x00]).is_err());
+    for input in [
+        &[0x30, 0x84, 0x7f, 0xff, 0xff, 0xff][..],
+        &[0x04, 0x84, 0xff, 0xff, 0xff, 0xff],
+        &[0x30, 0x85, 0x01, 0x00, 0x00, 0x00, 0x00],
+    ] {
+        assert_eq!(
+            verifier.verify(input).unwrap_err().reason(),
+            Reason::Malformed,
+            "{input:02x?}"
+        );
+    }
     assert!(
         started.elapsed().as_millis() < 500,
         "a length claim must not cost time"
@@ -108,8 +124,14 @@ fn a_declared_length_larger_than_the_input_is_refused_without_allocating() {
 
 #[test]
 fn multi_byte_tags_are_refused() {
-    assert!(parse_exact(&[0x1f, 0x81, 0x00, 0x00]).is_err());
-    assert!(parse_exact(&[0x3f, 0x01, 0x00]).is_err());
+    let verifier = receipt_verifier();
+    for input in [&[0x1f, 0x81, 0x00, 0x00][..], &[0x3f, 0x01, 0x00]] {
+        assert_eq!(
+            verifier.verify(input).unwrap_err().reason(),
+            Reason::Malformed,
+            "{input:02x?}"
+        );
+    }
 }
 
 #[test]
@@ -127,53 +149,205 @@ fn a_megabyte_of_zeros_is_refused_quickly() {
 }
 
 #[test]
-fn a_wide_flat_structure_hits_the_node_budget_rather_than_growing_without_bound() {
-    // A SEQUENCE holding 200,000 two-byte children: well past the node
-    // budget, and the point where an unbounded parser starts allocating in
-    // proportion to whatever the attacker sent.
+fn a_wide_flat_structure_is_refused_at_a_bounded_cost() {
+    // A SEQUENCE holding 200,000 two-byte children: the point where an
+    // unbounded parser starts allocating in proportion to whatever the
+    // attacker sent. It is no ContentInfo, and OpenSSL's template decoder
+    // stops at the first child that is not one.
     let children = [0x05u8, 0x00].repeat(200_000);
     let mut input = vec![0x30, 0x84];
     input.extend_from_slice(&u32::try_from(children.len()).unwrap().to_be_bytes());
     input.extend_from_slice(&children);
     let started = Instant::now();
-    assert!(parse_exact(&input).is_err());
+    assert_eq!(
+        receipt_verifier().verify(&input).unwrap_err().reason(),
+        Reason::Malformed
+    );
     assert!(started.elapsed().as_secs() < 5);
 }
 
 #[test]
 fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
     // 1,057 embedded certificates — the shape that measured 26 to 45 times
-    // the cost of a genuine verification in a port without the bound. Here
-    // the bound is enforced before a single certificate is decoded.
+    // the cost of a genuine verification in a port without the bound.
+    // OpenSSL's CMS decoder builds every certificate's public key (about
+    // 45 ms for this flood), so the bound is enforced on a shallow decode
+    // that keeps each certificate as raw bytes, before the full one.
     let mut builder = common::CmsBuilder::from_shared();
     let original = builder.certificates[0].clone();
     while builder.certificates.len() < 1057 {
         builder.certificates.push(original.clone());
     }
-    let flood = builder.build();
+    let flood_der = builder.build();
+    // The same flood with one byte after it. The header walk runs before
+    // anything is decoded: it reads every header of the flood, hands each
+    // of its 20,000 or so checked primitives to OpenSSL's decoder, and then
+    // refuses the byte. That is what any reader of the flood pays past its
+    // base64, and in an unoptimised test build it is one to two times the
+    // base64's cost, so it, not junk, is the control the flood and the
+    // broken envelope are judged against.
+    let mut walked_der = flood_der.clone();
+    walked_der.push(0x00);
+    // The same flood with its signerInfos SET written as a SEQUENCE: the
+    // walk passes it and the shallow decode refuses it, which must not
+    // then fall through to the full decode.
+    let signer_infos = common::der_set(&[builder.signer_info()]);
+    let mut broken_der = flood_der.clone();
+    let at = broken_der.len() - signer_infos.len();
+    broken_der[at] = 0x30;
     let verifier = receipt_verifier();
+    // Encoded once, outside the clock: the test's own base64 is not the
+    // library's cost.
+    let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
+    let (flood, walked, broken, genuine) = (
+        encode(&flood_der),
+        encode(&walked_der),
+        encode(&broken_der),
+        encode(&common::receipt_der()),
+    );
 
-    let genuine = common::receipt_der();
-    let started = Instant::now();
+    // Interleaved, so all four see the same load from the tests running
+    // alongside this one.
+    let mut costs = [Duration::ZERO; 4];
     for _ in 0..5 {
-        verifier.verify(&genuine).unwrap();
-    }
-    let genuine_cost = started.elapsed();
+        let started = Instant::now();
+        verifier.verify_receipt(&genuine).unwrap();
+        costs[0] += started.elapsed();
 
-    let started = Instant::now();
-    for _ in 0..5 {
-        assert_eq!(
-            verifier.verify(&flood).unwrap_err().reason(),
-            Reason::Malformed
+        let started = Instant::now();
+        let refused = verifier.verify_receipt(&walked).unwrap_err();
+        costs[1] += started.elapsed();
+        assert_eq!(refused.reason(), Reason::Malformed);
+        assert!(refused.to_string().contains("bytes follow"), "{refused}");
+
+        let started = Instant::now();
+        let refused = verifier.verify_receipt(&flood).unwrap_err();
+        costs[2] += started.elapsed();
+        assert_eq!(refused.reason(), Reason::Malformed);
+        assert!(
+            refused.to_string().contains("1057 certificates"),
+            "{refused}"
         );
-    }
-    let flood_cost = started.elapsed();
 
+        let started = Instant::now();
+        let refused = verifier.verify_receipt(&broken).unwrap_err();
+        costs[3] += started.elapsed();
+        assert_eq!(refused.reason(), Reason::Malformed);
+    }
+    let [genuine_cost, walked_cost, flood_cost, broken_cost] = costs;
+
+    // Half the walk's cost again, plus ten genuine verifications, is
+    // headroom for the shallow decode and for timing noise; the full
+    // decode alone costs more than that.
     assert!(
-        flood_cost < genuine_cost * 10,
-        "rejecting a {}-certificate receipt cost {flood_cost:?} against {genuine_cost:?} for a \
-         genuine one — the ten-certificate bound is not being enforced before decoding",
-        1057
+        flood_cost < walked_cost * 3 / 2 + genuine_cost * 10,
+        "rejecting a 1057-certificate receipt cost {flood_cost:?}, against {walked_cost:?} for \
+         walking it and {genuine_cost:?} for a genuine receipt — the ten-certificate bound is \
+         not being enforced before the envelope decode"
+    );
+    assert!(
+        broken_cost < walked_cost * 3 / 2 + genuine_cost * 10,
+        "rejecting the flood with a broken signerInfos cost {broken_cost:?}, against \
+         {walked_cost:?} for walking it and {genuine_cost:?} for a genuine receipt — an \
+         envelope the shallow decode refuses is reaching the full decode"
+    );
+}
+
+#[test]
+fn unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost() {
+    // Policy-F6: the creation date is read before any chain or signature,
+    // and a 3 MiB payload of 180,000 tiny attributes cost 300 ms natively
+    // and 0.8 s in Wasm there, with linear memory grown to 74 MiB, even
+    // when no SignerInfo named an embedded certificate. The date is now read
+    // only once a signer has been found, under the 100,000-value budget, so
+    // the tiny attributes cost what one flat value of the same size costs.
+    let tiny = [
+        0x30, 0x0b, 0x02, 0x02, 0x23, 0x28, 0x02, 0x01, 0x01, 0x04, 0x02, 0x05, 0x00,
+    ];
+    let count = (3_145_728 / 4 * 3 - 20_000) / tiny.len();
+    let set_of = |body: &[u8]| {
+        let mut set = vec![0x31, 0x84];
+        set.extend_from_slice(&u32::try_from(body.len()).unwrap().to_be_bytes());
+        set.extend_from_slice(body);
+        set
+    };
+    let mut builder = common::CmsBuilder::from_shared();
+    builder.content = Some(set_of(&tiny.repeat(count)));
+    let signer_embedded = builder.build();
+    let mut absent_builder = common::CmsBuilder::from_shared();
+    absent_builder.content = builder.content.clone();
+    absent_builder.signer_serial = vec![0x7f; 8];
+    let signer_absent = absent_builder.build();
+    // One attribute whose value is a single OCTET STRING of the same size.
+    let flat_value = vec![0u8; count * tiny.len() - 20];
+    let mut flat_attribute = vec![0x30, 0x84];
+    let flat_body = [
+        &[0x02, 0x02, 0x23, 0x28, 0x02, 0x01, 0x01, 0x04, 0x84][..],
+        &u32::try_from(flat_value.len()).unwrap().to_be_bytes(),
+        &flat_value,
+    ]
+    .concat();
+    flat_attribute.extend_from_slice(&u32::try_from(flat_body.len()).unwrap().to_be_bytes());
+    flat_attribute.extend_from_slice(&flat_body);
+    builder.content = Some(set_of(&flat_attribute));
+    let flat = builder.build();
+    absent_builder.content = builder.content.clone();
+    let flat_absent = absent_builder.build();
+
+    let verifier = receipt_verifier();
+    let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
+    // Each tiny input is judged against the flat input of the same size
+    // and the same signer, which pays the same base64, decodes and copies
+    // (round-3 review F3; junk, which costs only its base64, made a
+    // control whose margin shrank with the optimiser). Without a signer
+    // the ratio is near 1 in every build. Under an embedded signer the tiny
+    // input also pays the payload walk up to the 100,000-value budget,
+    // which the flat value does not: 1.6 times the flat input in a debug
+    // build on the pinned toolchain, up to 2.0 on the 1.85.0 floor, so
+    // that bound allows three times. The regression these bounds guard,
+    // the payload read in full, cost about 30 times the flat input.
+    let inputs = [
+        encode(&common::receipt_der()),
+        encode(&flat_absent),
+        encode(&signer_absent),
+        encode(&flat),
+        encode(&signer_embedded),
+    ];
+    // Each input's cost is its fastest of seven interleaved calls: the
+    // bounds below are ratios between inputs, and on a loaded machine a
+    // sum or a mean carries whatever else ran during one call, while the
+    // fastest call is the closest to the work itself for every input alike.
+    let mut costs = [Duration::MAX; 5];
+    for _ in 0..7 {
+        for (index, input) in inputs.iter().enumerate() {
+            let started = Instant::now();
+            let result = verifier.verify_receipt(input);
+            costs[index] = costs[index].min(started.elapsed());
+            let expected = [
+                None,
+                Some(Reason::Malformed),
+                Some(Reason::Malformed),
+                Some(Reason::InvalidSignature),
+                Some(Reason::InvalidSignature),
+            ][index];
+            assert_eq!(
+                result.err().map(|failure| failure.reason()),
+                expected,
+                "input {index}"
+            );
+        }
+    }
+    let [genuine, flat_absent, absent, flat, embedded] = costs;
+    assert!(
+        absent < flat_absent * 2 + genuine * 10,
+        "unsigned content of {count} tiny attributes and no embedded signer cost {absent:?}, \
+         against {flat_absent:?} for one flat value of the same size and no embedded signer: \
+         the payload was read before a signer was found"
+    );
+    assert!(
+        embedded < flat * 3 + genuine * 10,
+        "unsigned content of {count} tiny attributes under an embedded signer cost {embedded:?}, \
+         against {flat:?} for one flat value of the same size"
     );
 }
 

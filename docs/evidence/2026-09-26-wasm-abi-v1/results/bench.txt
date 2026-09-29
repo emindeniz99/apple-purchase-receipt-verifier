@@ -1,0 +1,15 @@
+# 2026-09-26, x86_64, 4 cores; load average before: 1.51 0.79 0.36
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"node":"v22.22.2","warm":200,"n":1000,"mean_us":1267,"per_s":789.3}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"node":"v22.22.2","warm":200,"n":1000,"mean_us":1401,"per_s":713.6}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"node":"v22.22.2","warm":200,"n":1000,"mean_us":1343,"per_s":744.5}
+{"id":"transaction/verify-shared-sandbox","op":258,"node":"v22.22.2","warm":200,"n":1000,"mean_us":4819,"per_s":207.5}
+{"id":"transaction/verify-shared-sandbox","op":258,"node":"v22.22.2","warm":200,"n":1000,"mean_us":4334,"per_s":230.7}
+{"id":"transaction/verify-shared-sandbox","op":258,"node":"v22.22.2","warm":200,"n":1000,"mean_us":4825,"per_s":207.2}
+# 2026-09-26, x86_64, 4 cores (Intel(R) Xeon(R) Processor @ 2.10GHz), JDK 21, ByteArrayMemory. One instance per thread; warm then timed, per thread.
+# load average before: 1.33 0.81 0.38; other busy processes: 
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"java":"21.0.10","memory":"bytearray","threads":1,"warm_each":600,"n_each":600,"seconds":3.88,"total_per_s":154.7,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"java":"21.0.10","memory":"bytearray","threads":2,"warm_each":600,"n_each":600,"seconds":3.71,"total_per_s":323.0,"not_verified":0}
+{"id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","op":1,"java":"21.0.10","memory":"bytearray","threads":4,"warm_each":600,"n_each":600,"seconds":4.98,"total_per_s":482.2,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"java":"21.0.10","memory":"bytearray","threads":1,"warm_each":300,"n_each":300,"seconds":5.71,"total_per_s":52.6,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"java":"21.0.10","memory":"bytearray","threads":2,"warm_each":300,"n_each":300,"seconds":5.89,"total_per_s":101.9,"not_verified":0}
+{"id":"transaction/verify-shared-sandbox","op":258,"java":"21.0.10","memory":"bytearray","threads":4,"warm_each":300,"n_each":300,"seconds":7.2,"total_per_s":166.8,"not_verified":0}

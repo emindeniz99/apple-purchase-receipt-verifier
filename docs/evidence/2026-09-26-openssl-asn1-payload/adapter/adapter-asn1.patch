@@ -1,0 +1,45 @@
+diff -ru a/security-openssl/Cargo.toml b/security-openssl/Cargo.toml
+--- a/security-openssl/Cargo.toml	2026-09-26 13:29:52.528214049 +0000
++++ b/security-openssl/Cargo.toml	2026-09-26 13:30:01.910761851 +0000
+@@ -32,3 +32,13 @@
+ # and CMS_SignerInfo_verify_content) instead of the legacy PKCS7 API.
+ # OpenSSL and LibreSSL only; AWS-LC has no CMS API.
+ cms = []
++# Round 4: the receipt payload through OpenSSL's ASN.1 decoder (src/payload.rs).
++# Default: templates declared in src/payload.c (built by build.rs with cc).
++# payload-any: no C, the generic SET/SEQUENCE OF ANY items instead.
++payload-any = []
++# Spike diagnostics for the differential fuzz build only: keep OpenSSL's
++# reason codes for payload::last_refusal(). Off in every measured artifact.
++payload-diagnostics = []
++
++[build-dependencies]
++cc = "1"
+diff -ru a/security-openssl/build.rs b/security-openssl/build.rs
+--- a/security-openssl/build.rs	2026-09-26 13:29:52.524871679 +0000
++++ b/security-openssl/build.rs	2026-09-26 13:30:01.910891286 +0000
+@@ -14,4 +14,12 @@
+     } else {
+         println!("cargo:rustc-cfg=aprv_openssl");
+     }
++    // Round 4: the receipt payload templates, compiled against the headers
++    // of the OpenSSL openssl-sys links (its `include` metadata), for the
++    // same target and with the same C compiler as everything else.
++    if std::env::var_os("CARGO_FEATURE_PAYLOAD_ANY").is_none() {
++        println!("cargo:rerun-if-changed=src/payload.c");
++        let include = std::env::var("DEP_OPENSSL_INCLUDE").expect("openssl-sys exports its include dir");
++        cc::Build::new().file("src/payload.c").include(include).compile("aprv_payload");
++    }
+ }
+diff -ru a/security-openssl/src/lib.rs b/security-openssl/src/lib.rs
+--- a/security-openssl/src/lib.rs	2026-09-26 13:29:52.528032276 +0000
++++ b/security-openssl/src/lib.rs	2026-09-26 13:30:01.911110588 +0000
+@@ -938,6 +938,8 @@
+     }
+ }
+ 
++pub mod payload;
++
+ #[cfg(feature = "cms")]
+ mod cms_path;
+ #[cfg(feature = "cms")]

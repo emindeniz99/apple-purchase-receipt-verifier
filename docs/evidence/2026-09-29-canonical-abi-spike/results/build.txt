@@ -1,0 +1,48 @@
+# build.sh, 2026-09-29; rustc 1.98.1 (48a229cea 2026-09-01); wasi-sdk 34.0 clang: clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141); wasm-tools 1.259.0 (7fc33f279 2026-09-10); wit-bindgen-cli 0.62.0
+wire_view.rs: identical to ABI v1's
+cabi core module built in 4 s
+cabi component new: OK (no adapter)
+wire_view.rs: identical to ABI v1's
+checked core module built in 4 s
+checked component new: OK (no adapter)
+ABI v1 module (b14e14b2): 2952613 bytes, sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+    imports: aprv :: clock_now_ms;aprv :: random_get;
+    exports: memory;aprv_abi_version;aprv_alloc;aprv_call;aprv_dealloc;aprv_result_free;aprv_result_len;aprv_result_ptr;_initialize;
+    custom sections:  custom "name" | 0x2933d9 - 0x2d0c43 | 252010 bytes | 1 count; custom "producers" | 0x2d0c50 - 0x2d0cfe | 174 bytes | 1 count; custom "target_features" | 0x2d0d11 - 0x2d0da5 | 148 bytes | 1 count;
+canonical-ABI core module (as generated): 2966618 bytes, sha256 56edb9eeb4541509f5b071154f842ed221c1bf1cab9f39fc8c8eb91385a84929
+    imports: aprv:verifier/host@1.0.0 :: random-get;
+    exports: memory;aprv:verifier/verify@1.0.0#init;aprv:verifier/verify@1.0.0#verify-receipt;aprv:verifier/verify@1.0.0#verify-receipt-endpoint;aprv:verifier/verify@1.0.0#verify-signed-data;aprv_clock_now_ms;aprv_random_get;cabi_post_aprv:verifier/verify@1.0.0#init;cabi_realloc_wit_bindgen_0_62_0;cabi_realloc;cabi_post_aprv:verifier/verify@1.0.0#verify-receipt;cabi_post_aprv:verifier/verify@1.0.0#verify-receipt-endpoint;cabi_post_aprv:verifier/verify@1.0.0#verify-signed-data;_initialize;
+    custom sections:  custom "component-type:wit-bindgen:0.62.0:aprv:verifier@1.0.0:aprv:encoded world" | 0x29653a - 0x29670d | 467 bytes | 1 count; custom "name" | 0x296716 - 0x2d42f8 | 252898 bytes | 1 count; custom "producers" | 0x2d4305 - 0x2d43b3 | 174 bytes | 1 count; custom "target_features" | 0x2d43c6 - 0x2d445a | 148 bytes | 1 count;
+canonical-ABI core module (checked): 2980266 bytes, sha256 dc4771a11fe951e339cc558d86bdd883de4aced114ca7f0089c2a25527fcf92e
+    imports: aprv:verifier/host@1.0.0 :: random-get;
+    exports: memory;aprv:verifier/verify@1.0.0#init;aprv:verifier/verify@1.0.0#verify-receipt;aprv:verifier/verify@1.0.0#verify-receipt-endpoint;aprv:verifier/verify@1.0.0#verify-signed-data;aprv_clock_now_ms;aprv_random_get;cabi_post_aprv:verifier/verify@1.0.0#init;cabi_realloc_wit_bindgen_0_62_0;cabi_realloc;cabi_post_aprv:verifier/verify@1.0.0#verify-receipt;cabi_post_aprv:verifier/verify@1.0.0#verify-receipt-endpoint;cabi_post_aprv:verifier/verify@1.0.0#verify-signed-data;_initialize;
+    custom sections:  custom "component-type:wit-bindgen:0.62.0:aprv:verifier@1.0.0:aprv:encoded world" | 0x299305 - 0x2994d8 | 467 bytes | 1 count; custom "name" | 0x2994e1 - 0x2d7848 | 254823 bytes | 1 count; custom "producers" | 0x2d7855 - 0x2d7903 | 174 bytes | 1 count; custom "target_features" | 0x2d7916 - 0x2d79aa | 148 bytes | 1 count;
+component (checked): 2982815 bytes, sha256 cda89d47ba04d25931cd0cef71f2a2987b5b712b354c012a83265a32195f6b69
+component: 2969167 bytes, sha256 16c4796f89d4fbfb2cad8e0d0997c1aa618191d397e0fb1f7508c328fbd9811e
+component wit:
+    package root:component;
+    
+    world root {
+      import aprv:verifier/host@1.0.0;
+    
+      export aprv:verifier/verify@1.0.0;
+    }
+    package aprv:verifier@1.0.0 {
+      interface host {
+        random-get: func(len: u32) -> list<u8>;
+      }
+      interface verify {
+        enum environment {
+          production,
+          sandbox,
+        }
+    
+        init: func(config-json: string) -> string;
+    
+        verify-receipt: func(now-ms: u64, receipt-base64: string) -> string;
+    
+        verify-signed-data: func(now-ms: u64, jws: string) -> string;
+    
+        verify-receipt-endpoint: func(env: environment, now-ms: u64, request-json: string) -> string;
+      }
+    }

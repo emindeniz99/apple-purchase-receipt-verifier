@@ -1,0 +1,6 @@
+# disk, 2026-09-27
+at start of round 10: / 5846 MB free (after round 11's cleanup)
+lowest seen: / 3485 MB free, during the builds (x86_64 target dir deleted mid-run, back to 4416 MB)
+before cleanup: / 5311 MB free; r10 scratch 532 MB [target 68, alpine 70, run 6, bin 191, art 25, cargo-home 164]
+removed: target/, the Alpine rootfs and its tarball, run/ (logs, callgrind and strace outputs); kept: bin/ (the built binaries, 191 MB), art/ (the three .cwasm files), cargo-home/ (crate downloads), in/, src/ (patched server crate)
+after cleanup: / 5464 MB free; r10 scratch 379 MB

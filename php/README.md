@@ -10,14 +10,42 @@ certificates.
 
 ```bash
 composer require emindeniz99/apple-purchase-receipt-verifier
+vendor/bin/aprv-install
 ```
+
+The verification does not run in PHP. It runs in `aprv`, one small binary
+that hosts the module every language of this project shares (a WebAssembly
+module built on OpenSSL 4, in a Wasmtime sandbox). This package is the PHP
+API in front of it: it reads your clock, hands the bytes to `aprv` and maps
+the answer onto the types below. `vendor/bin/aprv-install` downloads the
+binary for your platform from the GitHub Release this package version was cut
+with and checks it against the SHA-256 that `binaries.json` pins in the
+package; a wrong hash installs nothing. Nothing downloads at request time.
+
+| Platform | Binary |
+|---|---|
+| Linux x86-64, arm64 (static, glibc and musl) | `aprv-x86_64-unknown-linux-musl`, `aprv-aarch64-unknown-linux-musl` |
+| macOS Intel, Apple silicon | `aprv-x86_64-apple-darwin`, `aprv-aarch64-apple-darwin` |
+| Windows x64, arm64 | `aprv-x86_64-pc-windows-msvc.exe`, `aprv-aarch64-pc-windows-msvc.exe` |
+
+Anywhere else, or where you would rather not run a process per call, run the
+same binary as a server (`aprv serve`, or the Docker image) and pass a
+`Transport\HttpTransport` (see "Two ways to reach aprv"). The installer says so
+on an unsupported platform.
+
+`aprv-install` writes to `php/bin/` inside the package directory, which
+`composer install` and `composer update` replace: run it again after either,
+or add it as a script of your project (`"post-install-cmd":
+"vendor/bin/aprv-install"`, and the same for `post-update-cmd`).
 
 **The package is the repository root, not this directory.** Packagist reads
 `composer.json` from a repository root and nowhere else, so the manifest
 Composer installs is the one at the top of this nine-language monorepo. It
-autoloads `EminDeniz99\ApplePurchaseReceiptVerifier\` from `php/src/`, and a
-root `.gitattributes` allowlist trims the archive Composer downloads to this
-port: the sources, the pinned Apple roots, the two licences and this file.
+autoloads `EminDeniz99\ApplePurchaseReceiptVerifier\` from `php/src/`, exposes
+`php/bin/aprv-install`, and a root `.gitattributes` allowlist trims the archive
+Composer downloads to this port: the sources, the installer, its manifest, the
+two licences and this file. It carries no certificate: Apple's three roots are
+compiled into the module `aprv` runs.
 `php/composer.json` stays the development manifest, with the require-dev block
 and the lockfile the test suite installs, and `tools/check-php-package.mjs`
 fails the build when the two disagree or when the archive loses something.
@@ -35,9 +63,11 @@ repository pointing at the repository root:
 }
 ```
 
-Requires **PHP 8.2+** (64-bit), `ext-openssl` and `ext-json`. One runtime
-dependency: `psr/clock`, the PSR-20 clock interface — a single interface, no
-code, no transitive dependencies.
+Requires **PHP 8.2+** (64-bit) and `ext-json`. One runtime dependency:
+`psr/clock`, the PSR-20 clock interface, a single interface with no code and
+no transitive dependencies. No `ext-openssl`: nothing in PHP touches a
+certificate. `ext-curl` is needed for the server transport, and lets the
+installer download over HTTPS without `ext-openssl`.
 
 ## Quick start
 
@@ -52,6 +82,10 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
 $verifier = Verifier::create(Config::defaults());  // Apple's three pinned roots, system clock
 ```
+
+`create` checks that `aprv` is where it should be and speaks the ABI this
+package was written for, and throws when it is not: at startup, never on the
+first request.
 
 **StoreKit 2 signed transaction or renewal info (compact JWS):**
 
@@ -88,6 +122,70 @@ string Apple's endpoint would have answered, `status` field included. See
 "The verifyReceipt-compatible endpoint" below for the raw-body caveat and the
 status table.
 
+## What runs per call
+
+**By default, one `aprv` process per call.** `Verifier::create()` starts
+nothing; each call starts `aprv verify-receipt` (or `verify-signed-data`,
+`verify-receipt-endpoint production|sandbox`) with an argv array, so no shell
+parses anything, writes the input to its stdin, reads the JSON from its
+stdout and waits for it to exit. The process lives about 12 ms and ends with
+the call, so a hostile input reaches nothing that outlives it. The exit status
+carries the outcome: 0 is a result (verified or not), 3 an input over the
+size cap, 70 a trap or a load failure, and 2 a configuration the module
+refuses (which `create` has already checked).
+
+**Or a server you run.** For a busy worker, run `aprv serve` beside PHP and
+pass a transport; one keep-alive curl handle then carries every call
+(about 3.5 ms for a genuine receipt in the spike, against 11.6 ms per process):
+
+```php
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
+
+$verifier = Verifier::create(
+    Config::defaults(),
+    new HttpTransport('http://127.0.0.1:8080', $token),   // the server's X-Aprv-Token, if it has one
+);
+```
+
+The server speaks plain HTTP, binds `127.0.0.1` unless `APRV_LISTEN` says
+otherwise, and should have a token when it listens beyond loopback; put TLS in
+front of it when the path is not a private one. No proxy is used. The roots
+live in the server (`aprv serve --roots FILE`, or the built-in ones), so
+`create` fetches `GET /v1/info` and refuses a server whose roots are not
+exactly your `Config`'s: a server that trusts something else would answer a
+different question than the one you asked.
+
+`Verifier::create(Config, ?Transport)` takes the transport as its second
+argument, so `Config` stays exactly the 0.7 one. `CliTransport` also takes an
+explicit binary path (`new CliTransport('/usr/local/bin/aprv')`), for a binary
+you installed yourself; without one it uses the one `aprv-install` put in
+`php/bin/`. A transport serves one `Verifier`.
+
+**The clock** is read once per call, before the input is looked at, and sent
+as `--now-ms` (or the `X-Aprv-Now-Ms` header). A clock that throws, or that is
+before 1970, is `INTERNAL_ERROR` (status 21009 at the endpoint).
+
+**Custom roots** go to `aprv` as one owner-only temporary file per `Verifier`
+(`--roots FILE`, one base64 DER certificate per line), written by `create` and
+deleted when the `Verifier` is destroyed. `create` runs the module once with
+them, so a root it refuses is an `InvalidArgumentException` at startup.
+
+**Six outcomes, kept distinct.**
+
+| Outcome | What you see |
+|---|---|
+| Verified | `$result->payload` |
+| Verification failure | a `Failure` with one of the eight `Reason`s, no `cause` |
+| Caller misuse | `InvalidArgumentException` from `create()`: an empty root list, a root that is not a certificate, a server that trusts other roots or refuses the token |
+| ABI mismatch, no binary | `RuntimeException` from `create()`, naming the ABI version this package expects and the one it found |
+| Trap or unreadable answer | `Reason::InternalError`, `cause` a `Transport\ModuleFaultException` |
+| `aprv` did not answer | `Reason::InternalError`, `cause` a `Transport\ServerProcessException` (it could not start, died, timed out, the connection broke, HTTP 5xx) |
+
+`Failure::$cause` is set only for the last two and for a clock that threw:
+the module's own verdicts, `INTERNAL_ERROR` and `UNREADABLE_PAYLOAD` included,
+carry none. An input over the 3 MiB cap is `TOO_LARGE` (status 21002 at the
+endpoint), as the module answers it.
+
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a
@@ -95,9 +193,9 @@ purchase can be honoured immediately and reconciled against the App Store
 Server API afterwards. Refunds and revocations still need that reconciliation
 pass — a signature proves what Apple signed, not what happened since.
 
-This is one of nine implementations sharing a single fixture suite, including
-Apple's own official test fixtures, on which they are required to agree on
-every verdict and every decoded value. See the [project README](../README.md) for the full picture and
+This is the PHP API of a project with nine language packages, held to one
+fixture suite that includes Apple's own official test fixtures, on which they
+are required to agree on every verdict and every decoded value. See the [project README](../README.md) for the full picture and
 [COMPARISON.md](../COMPARISON.md) for how it differs from Apple's official
 libraries.
 
@@ -326,6 +424,21 @@ every port:
   everything else as JSON numbers, through `json_encode()`: the same value
   every other port writes, though the bytes may differ.
 
+## Upgrading from 0.7
+
+The public API is 0.7's: `Verifier::create`, the three verify methods,
+`Config`, `Reason`, the result and payload types; only `AppleRootCerts` is
+gone. What changes is what runs underneath, and what you can see of it:
+
+| 0.7 | 0.8 |
+|---|---|
+| PHP parsed and verified, on `ext-openssl` | `aprv` verifies; `ext-openssl` is no longer required, and `vendor/bin/aprv-install` (or a server URL) is |
+| `Verifier::create(Config)` | `Verifier::create(Config, ?Transport)`: the second argument picks the CLI (default) or a server |
+| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER strings, and "Apple's plus mine" is all four |
+| `AppleRootCerts::pinnedRoots()` returned Apple's three roots | removed: the package carries no copy of them. Read them from Apple's PKI page or the repository's `certs/` |
+| `Failure::$cause` carried the parser's exception | it is set only when the wrapper produced `INTERNAL_ERROR` (the module trapped, `aprv` did not answer, the clock threw) |
+| a hostile input could exhaust `memory_limit` | it cannot: the parsing is out of PHP |
+
 ## Upgrading from 0.6
 
 0.7 is a breaking change: `JwsVerifier` and `ReceiptVerifier` are gone,
@@ -337,7 +450,7 @@ thrown `VerificationException`.
 |---|---|
 | `new ReceiptVerifier($roots, $bundleId)->verify($b64)` | `Verifier::create(Config::builder()->roots($roots)->build())->verifyReceipt($b64)`, then compare `$result->payload->bundleId` yourself |
 | `new JwsVerifier($roots, $bundleId, $environments)->verifyTransaction($jws)` | `Verifier::create(Config::builder()->roots($roots)->build())->verifySignedData($jws)`, then compare `$payload['bundleId']` / `$payload['environment']` yourself |
-| `AppleRootCerts::receiptRoots()` / `AppleRootCerts::jwsRoots()` | `AppleRootCerts::pinnedRoots()` (one method, one pinned set, for both paths) |
+| `AppleRootCerts::receiptRoots()` / `AppleRootCerts::jwsRoots()` | `Config::defaults()` (one pinned set, for both paths) |
 | thrown `VerificationException` with `->reason` | `VerificationResult::$failure` (`Failure::$reason`, `->message`, `->cause`); nothing throws |
 | `Reason::InvalidReceiptFormat`, `::InvalidJwsFormat` | `Reason::Malformed` |
 | `Reason::RequestTooLarge` | `Reason::TooLarge` |
@@ -353,195 +466,135 @@ thrown `VerificationException`.
 
 ## Trust model
 
-- **Pinned anchors only.** Trust comes from the anchors you pass and from
-  nothing else. This library has no code path to the operating system trust
-  store, to a distribution CA bundle, or to the process's `openssl.cafile`
-  setting: `openssl_cms_verify()`, `openssl_pkcs7_verify()` and
-  `openssl_x509_checkpurpose()` all take a CA path and none of them appears
-  anywhere in `src/`. A test tokenises every source file to keep it that way,
-  and another points OpenSSL's own `SSL_CERT_FILE` at a CA that signed the
-  chain and proves it buys an attacker nothing.
+- **Pinned anchors only.** Trust comes from the roots you pass and, when you
+  pass none, from the three Apple roots compiled into the module. Nothing in
+  this package, `aprv` or the module reads the operating system trust store, a
+  CA bundle or an OpenSSL configuration file, and PHP's `ext-openssl` is not
+  involved at all.
 - **No network, ever.** No OCSP, no CRL, no AIA fetch, no root download.
   Revocation checking is disabled by design; that is the accepted trade-off
   for offline verification, and it is what Apple's own libraries do in offline
-  mode.
-- **The chain is walked top-down.** A certificate's signature is checked only
-  against a key a pinned root has already vouched for; an untrusted
-  candidate's key is never decoded, let alone used to verify anything, so a
-  stranger certificate sitting among the embedded ones costs nothing beyond
-  being counted and ignored.
-- **Apple marker OIDs are mandatory.** The JWS leaf must carry
-  `1.2.840.113635.100.6.11.1` and the intermediate `1.2.840.113635.100.6.2.1`
-  with `CA:TRUE`; the receipt signer must carry `1.2.840.113635.100.6.11.1`
-  and its intermediate the WWDR marker too. Without the receipt check, any
-  Apple developer's own distribution certificate — which chains through the
-  same WWDR intermediate to the same root — could sign a fully forged
-  receipt.
-- **Validity at signing time.** Apple's signing certificates rotate and
-  expire; a receipt is valid if its chain was valid when Apple signed it, or,
-  when the receipt or JWS states no signing time, at the configured clock
-  (see "What the clock can move" below).
-- **Any receipt signer algorithm Apple has used.** RSA PKCS#1 v1.5 and
-  ECDSA over P-256/P-384, with MD5 through SHA-512 digests — no
-  algorithm allowlist beyond what the trusted chain and OpenSSL itself can
-  verify. A relabel — a `signatureAlgorithm` naming a different hash than
-  `digestAlgorithm` — is refused.
-- **No RSA-PSS receipt signers.** A SignerInfo signed with RSASSA-PSS fails
-  as `INVALID_SIGNATURE`, even when the signature is genuine. Apple has never
-  signed a receipt with PSS. PHP's `openssl_verify()` has no PSS mode, so
-  supporting it would take hand-written EMSA-PSS padding checks, and the
-  signer chooses its own algorithm, so that code would sit on the forgery
-  path. This port does not hand-write crypto. The other ports may verify PSS
-  signers; the shared conformance case leaves it to each port. Certificate
-  chain links are unaffected: OpenSSL checks those itself, PSS included.
-- **Several SignerInfos, and several certificates claiming the same
-  identity.** A receipt with more than one SignerInfo verifies when at least
-  one does, tried in order; when more than one embedded certificate carries a
-  SignerInfo's issuer and serial, each is tried in turn, and a key is used
-  only after its own chain and marker checks pass.
-- **All three published Apple roots are pinned**, in one shared set for both
-  verification paths. Apple documents the JWS chain as ending in "an Apple
-  root certificate" without naming one, so anchoring on a single root would
-  break silently if Apple ever re-anchored a path.
-- **Reject rather than repair.** A parser that cannot represent an input
-  fails it; it never substitutes a sentinel. An attribute type outside
-  `[0, 2^31-1]`, trailing bytes after the CMS blob: both rejected. A
-  negative INTEGER value is reported as the signed number it encodes. A
-  date or a known attribute's value that does not decode is kept raw and
-  the receipt still verifies — decode failures are not trust
-  failures — but the top-level attribute SET itself must be well formed.
+  mode. `aprv-install` is the one thing that downloads, once, when you run it.
+- **The verdict is the module's.** This package parses no ASN.1, checks no
+  signature and decides nothing about trust; a test tokenises every source
+  file and fails on a call to a crypto function. The chain rules, Apple's
+  marker OIDs, the signature algorithms and the validity-at-signing-time rule
+  are the module's and are the same in every language of the project
+  (`fixtures/cases.json` holds them all to the same answers).
+- **The process boundary.** In the default transport a receipt is parsed by a
+  process that starts for that call and ends with it, inside the module's
+  WebAssembly sandbox (256 MiB of memory, a 10 s time limit per call).
+  Isolation protects your PHP worker from a hostile input; it does not make a
+  wrong verdict right, which is why the module is checked by every language's
+  conformance suite and by fuzzing.
+- **The binary is pinned.** `aprv-install` runs a downloaded file only after
+  its SHA-256 matches the one in `binaries.json`, which ships inside the
+  package, so a replaced release asset installs nothing. A server you run
+  yourself is yours to trust; `create` checks its roots and ABI, not its
+  provenance.
+- **Reject rather than repair.** A wrapper that cannot read the module's answer
+  fails the call as `INTERNAL_ERROR`; it never substitutes a verdict.
 - **Only a `VerificationResult` failure escapes** a public entry point.
   Containment is categorical, not a list of expected types.
 
-You can pass your own anchors instead of the bundled ones — that is what
-`Config::builder()->roots(...)` is for — at your own risk.
+You can pass your own anchors instead of the built-in ones, as DER strings:
+`Config::builder()->roots([$myRootDer])->build()`. "Apple's roots plus mine"
+is all four DER strings, Apple's three read from Apple's PKI page or the
+repository's `certs/`: the package carries no copy. Leaving the roots out (`Config::defaults()`,
+or a builder that never calls `roots()`) means the built-in Apple roots. An
+empty list is not "no roots": `Verifier::create` refuses it with an
+`InvalidArgumentException`, so a list that came up empty by mistake never
+widens to Apple's roots.
 
 ## What the clock can move
 
 `Config` carries a PSR-20 `ClockInterface`; omitted, `SystemClock` is
-installed. It reaches exactly two things:
+installed. It reaches exactly two things in the module:
 
-- **`request_date`** in `verifyReceiptEndpoint()`'s response, read once per
-  call.
+- **`request_date`** in `verifyReceiptEndpoint()`'s response.
 - **The chain-validity instant**, but only when the receipt or JWS states no
-  signing time of its own — a receipt with no attribute 12, or a JWS payload
+  signing time of its own: a receipt with no attribute 12, or a JWS payload
   with no `signedDate` (or one that does not parse). When the input states a
   time, the chain is judged at that time regardless of what the clock reads.
 
-This is a deliberate change from 0.6, where the clock reached `request_date`
-only and a dateless input was always judged at real time. 0.7 makes the
-fallback instant configurable too, so a test can pin "now" for a dateless
-input the same way it pins `request_date`, without reaching for a
-process-wide time mock. A caller injecting a clock to work around skew, or to
-pin `request_date` in a test, must still not thereby be able to accept a
-chain that is not valid at the instant it actually cares about.
+The clock is read once per call and crosses to `aprv` as epoch milliseconds,
+so a test can pin "now" for a dateless input without a process-wide time mock.
+A caller injecting a clock to work around skew, or to pin `request_date` in a
+test, must still not thereby be able to accept a chain that is not valid at
+the instant it actually cares about.
 
-`SystemClock` is public API, and any PSR-20 implementation drops in —
+`SystemClock` is public API, and any PSR-20 implementation drops in:
 `symfony/clock`'s `MockClock`, `lcobucci/clock`, or four lines of your own.
 
 ## Input limits
 
-Base64 decoding and JSON parsing both allocate a multiple of their input
-before any signature is checked, so the input is measured first. The byte
-limits are Apple's, fixed in every port of this library, not `Config`
-options.
+The limits are the module's, fixed in every language of this library, and not
+`Config` options; this package adds none.
 
 - **Receipt size** (3 MiB, 3,145,728 bytes): the base64 text given to
-  `verifyReceipt()`, in UTF-8 bytes, before decoding. A larger receipt is
-  `Reason::TooLarge`.
-- **Request body size** (3 MiB, 3,145,728 bytes): the request body given to
-  `verifyReceiptEndpoint()`, before it is parsed. A larger body is
-  `Reason::TooLarge` (status 21002).
-- **JWS size** (256 KiB, 262,144 bytes): the compact JWS text given to
-  `verifySignedData()`, before it is split into segments. A larger JWS is
-  `Reason::TooLarge`.
-- **JSON nesting depth 64**, member names to 50,000 characters and numbers
-  to 1,000 characters: checked before any JSON is parsed — by a manual byte
-  scan, not `json_decode()`'s own depth parameter, which bounds nesting only
-  — in the request body, the JWS header and the JWS payload alike. Outside
-  any of those is `Reason::Malformed` for the request body and the JWS
-  header. A JWS payload is carried to the signature check: it is
-  `Reason::UnreadablePayload` if the signature verifies,
-  `Reason::InvalidSignature` if not.
-- **ASN.1 nesting depth 32**, 20,000 nodes and 48 MiB of retained parser
-  state per parse: checked before any certificate is decoded. Outside any of
-  those is `Reason::Malformed` in the CMS envelope and
-  `Reason::UnreadablePayload` in the signed receipt content.
-- **10 embedded certificates, 4 SignerInfos**, enforced before any
-  certificate is decoded or any signature is checked.
+  `verifyReceipt()`, in UTF-8 bytes. A larger receipt is `Reason::TooLarge`.
+- **Request body size** (3 MiB): the request body given to
+  `verifyReceiptEndpoint()`. A larger body is `Reason::TooLarge` (status 21002).
+- **JWS size** (256 KiB, 262,144 bytes): the compact JWS given to
+  `verifySignedData()`. A larger JWS is `Reason::TooLarge`.
+- **Anything over 3 MiB** never reaches the module: `aprv` refuses it (exit
+  status 3, HTTP 413) and the façade answers as the module answers an
+  over-cap input.
+- **JSON nesting depth 64**, member names to 50,000 characters and numbers to
+  1,000 characters, **ASN.1 nesting depth 32**, **10 embedded certificates**,
+  **4 SignerInfos** and **six certificates below the anchor**: the module
+  checks them before any certificate is decoded or any signature is checked,
+  and answers `Reason::Malformed` (or `UnreadablePayload` for a signed
+  payload) with no PHP memory cost.
 
-`fixtures/cases.json` holds every port to these same numbers, from both
-sides of each boundary.
+`fixtures/cases.json` holds every port to these numbers, from both sides of
+each boundary. Because the parsing is out of PHP, a hostile input can no
+longer exhaust a PHP worker's `memory_limit`: the façade holds the input, the
+module's JSON and their decoded copies, and nothing grows with an input's
+structure.
 
-### Why PHP needs its own headroom
+## Cost per call
 
-PHP has no zero-copy slice: every `substr()` allocates and every ASN.1 node
-is a real object, so a `Der` parse retains roughly `2 × depth × input` bytes
-— a megabyte of minimal two-byte DER nodes costs about 72 MB of parser state
-without the node budget above. Against a `php.ini-production` default
-`memory_limit` of 128M, that turns a megabyte of attacker bytes into a fatal
-out-of-memory error, which is **not a `Throwable`**: no `catch` in this
-library, nor in yours, can turn a fatal error into a verdict, and the worker
-dies with no answer at all. Every "never throws" promise in this README
-holds only because the input is bounded before it is allocated — the 48 MiB
-retained-byte budget above exists specifically because bounding depth and
-node count separately is not enough (a shape nested deep but built of many
-small siblings can be cheap on both of those axes and still cost tens of
-megabytes; the retained-byte budget bounds the product instead).
+Measured with `php bench/bench.php --aprv PATH`, which times the three
+operations on the two genuine sandbox receipts through each transport (PHP
+8.4.19 CLI, one thread, a shared 4-vCPU guest, against the release binary
+that embeds the 0.7 component). Other jobs kept the machine at a load average
+near 10 while this ran, so read the numbers as an order of magnitude (the
+script's JSON also carries the best sample of each, `us_per_op_min`):
 
-Give a worker that hands raw request bodies to `verifyReceiptEndpoint()` a
-`memory_limit` of at least 384M — `MemoryExhaustionTest` runs the costliest
-vectors this library knows about at that limit and asserts the process
-survives every one of them. Decoding the body yourself before calling the
-library does not avoid the cost, it only moves the same `json_decode` out of
-this library and back into your own code, unmeasured.
+| Call | Receipt | CLI, one process per call | HTTP, keep-alive |
+|---|---|---:|---:|
+| `verifyReceipt` | genuine g5 receipt (2 purchases) | 37.7 ms | 9.0 ms |
+| `verifyReceiptEndpoint` | genuine g5 receipt (2 purchases) | 30.5 ms | 7.3 ms |
+| `verifyReceipt`, tampered signature | genuine g5 receipt (2 purchases) | 34.5 ms | 6.6 ms |
+| `verifyReceipt` | genuine legacy receipt (187 purchases) | 56.3 ms | 23.8 ms |
+| `verifyReceiptEndpoint` | genuine legacy receipt (187 purchases) | 85.2 ms | 66.1 ms |
+| `verifyReceipt`, tampered signature | genuine legacy receipt (187 purchases) | 31.6 ms | 13.6 ms |
 
-## Measured worst-case CPU
-
-Measured on 2026-09-27 with `php bench/bench.php --worst-case`, which times
-every shared case in `fixtures/cases.json` that carries a time budget:
-oversized untrusted keys, a cross-signed certificate mesh, and the encoding
-oddities inside certificates. PHP 8.4.19 CLI (NTS, no OPcache) with OpenSSL
-3.0.13, one thread, on a shared 4-vCPU KVM guest (Intel Xeon Processor @
-2.10GHz); one second of warm-up, then ten samples of at least 100 ms each.
-
-| Call | Median | Slowest sample |
-|---|---:|---:|
-| Slowest hostile case: `receipt/verify-genuine-padded-with-oversized-strangers` (a valid receipt carrying oversized certificates it does not need) | 10 ms | 12 ms |
-| Next: `receipt/reject-untrusted-oversized-intermediates` | 5.0 ms | 6.3 ms |
-| Slowest hostile JWS: `signed-data/intermediate-with-a-non-minimal-certificate-length-does-not-crash` | 2.1 ms | 2.6 ms |
-| Every other budgeted case | under 3.3 ms | under 4.3 ms |
-| For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 13 ms | 14 ms |
-| For scale: `verifyReceiptEndpoint` on the same receipt | 21 ms | 22 ms |
-
-No hostile input in the shared suite costs more than an ordinary large
-receipt, though the slowest comes closest in this port: the cost of a call
-follows the size of the input, which the limits above bound, not the
-structure an attacker chooses. The machine was shared with other work, and
-a repeat run moved the genuine receipt's median by up to a third, so treat
-these as an order of magnitude. Run `php bench/bench.php --worst-case` for
-the hostile cases on your own hardware, and `php bench/bench.php` for the
-genuine receipts.
+The process start dominates the CLI figure: running `aprv verify-receipt`
+directly on the same g5 receipt took 30.5 ms (best 18.9 ms) under the same
+load, against 37.7 ms (best 26.3 ms) through the façade, whose own share is
+a `proc_open` and the JSON decode. The spike measured
+11.6 ms per call for the g5 receipt through the CLI and 3.56 ms over HTTP on
+a faster, idle machine. A worker that verifies many receipts per second
+should use the server transport.
 
 ## Known platform caveats
 
 - **64-bit only.** Apple ships epoch-millisecond timestamps (~1.7×10¹²),
-  which a 32-bit `int` cannot hold — `json_decode` would return floats and
-  every date comparison would silently drift. `Verifier::create()` refuses a
-  32-bit build with a `\RuntimeException` rather than drifting.
-- **Known issue: genuine legacy receipts fail on RHEL 9.** The legacy Apple
-  receipt chain and its CMS signature are SHA-1, and RHEL 9's DEFAULT crypto
-  policy (also Alma and Rocky) makes the system OpenSSL refuse SHA-1
-  signatures. `ext-openssl` uses that OpenSSL, so a genuine legacy receipt is
-  `Reason::UntrustedChain`. Observed on AlmaLinux 9.8 on 2026-09-24. Newer
-  receipts (SHA-256 chains) and every JWS are unaffected; FIPS mode is
-  untested. Until the fix ships, run
-  `update-crypto-policies --set DEFAULT:SHA1` on that host. The planned fix
-  checks SHA-1 signatures on Apple's pinned legacy chain only, through
-  phpseclib, and adds an AlmaLinux 9 CI job (ROADMAP.md).
-- **`ext-openssl` is not literally universal.** It is bundled everywhere in
-  practice, but a hardened build without it exists. The `"ext-openssl": "*"`
-  requirement turns that into a Composer error rather than a runtime fatal.
+  which a 32-bit `int` cannot hold: `Verifier::create()` refuses a 32-bit
+  build with a `\RuntimeException` rather than drifting.
+- **No binary, no verifier.** Without an `aprv` binary or a server the package
+  cannot verify anything, and says so at `create()`. Where the installer has
+  no binary for your platform it names the server option.
+- **`proc_open` must be allowed.** The default transport needs it (a hardened
+  `disable_functions` list often removes it); use `HttpTransport` there.
+- **The CLI transport on Windows** writes the whole input before it reads the
+  answer (Windows pipes cannot be polled), which `aprv` allows because it
+  reads its whole input first. It has not been exercised in CI yet.
+- **PHP-FPM and long-running workers** keep the `Verifier` (and so its roots
+  file) for their lifetime; the file is deleted when the object is destroyed
+  or the process ends normally.
 
 ## Debugging a receipt by hand
 
@@ -552,29 +605,36 @@ See the [project README](../README.md#debugging-a-receipt-by-hand) for the
 ## Development
 
 ```bash
-composer install                             # installs composer.lock
+composer install                              # installs composer.lock
+export APRV_BIN=/path/to/aprv                 # the suite runs against the real binary
 vendor/bin/phpunit                            # everything
-vendor/bin/phpunit --testsuite conformance    # the shared cross-language vectors
-vendor/bin/phpunit --group mutation           # the mutation pass
+vendor/bin/phpunit --testsuite conformance    # every shared case: CLI transport, then HTTP against a local aprv serve
 vendor/bin/phpstan analyse
 vendor/bin/php-cs-fixer fix
-fuzz/run.sh all 60                            # the six coverage-guided fuzz targets
+fuzz/run.sh all 60                            # the four coverage-guided fuzz targets
+php bench/bench.php --aprv "$APRV_BIN"        # per-call cost through both transports
 ```
 
-`fuzz/` holds coverage-guided targets over the DER, CMS and X.509 readers and
-the `Verifier`'s three entry points, run with a pinned `nikic/php-fuzzer`
-phar that the run script downloads and digest-checks. It is not a Composer
-dependency, and deliberately so — see `fuzz/README.md`, which also lists the
-targets and the invariant each one asserts beyond "nothing but a verdict
-escapes".
+The suite never skips for a missing binary: without `APRV_BIN` it looks where
+`aprv-install` puts one and fails loudly if there is none. The binary is never
+committed. Two suites hold the rest of the behaviour: `FacadeTest` (over a
+fake transport: the clock, the six outcomes, every way an answer can be
+unreadable) and `CliTransportTest` / `HttpTransportTest` (over a fake `aprv`
+and a fake server: argv, exit statuses, problem codes, the roots file, the
+fingerprint check), and `InstallerTest` serves the binary from a local HTTP
+server to check that a wrong hash installs nothing.
 
-`php/certs/` is a checked copy of the repository-root `certs/`, and
-`src/Internal/RootsData.php` is generated from that copy by
-`php/tools/gen-roots.php`. CI diffs both. Regenerate with:
+**The corpus.** `tools/corpus.php` runs the corpus call files (1,179 rows plus
+5,000 mutants, every clock pinned) through the façade over one transport and
+compares each row byte for byte with the module's own answers. A row whose
+input is over 3,145,728 bytes is refused by `aprv` first (exit 3, HTTP 413) and
+counts as answered when the module's answer is the size refusal.
+`tools/rerun.sh APRV_BINARY G1_DIR` runs the phpunit suites and the corpus over
+both transports as one command.
 
-```bash
-php php/tools/gen-roots.php
-```
+**Releasing.** `binaries.json` ships with no tag and no hashes. The release
+pins them with `php php/tools/update-binaries.php --tag vX.Y.Z --sums
+SHA256SUMS` on the release branch, before the tag (`CI-NOTES.md`).
 
 `composer.lock` is committed and CI installs from it, so no run resolves a
 version range. `config.platform.php` is `8.2.0` in `composer.json`, matching

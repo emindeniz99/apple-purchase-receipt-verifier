@@ -1,0 +1,17 @@
+# GraalVM CE 25.0.2+10.1 (graalvm-community-jdk-25.0.2_linux-x64_bin.tar.gz, sha256 e0be791c8fda4d03b6b0a0cb824fef3149736170057b3a515252b44419606af0, matches the published .sha256)
+# the newest CE release named in graalvm.org's release notes is 25.3.4.1 (2026-08-25); its asset URL could not be found: the GitHub releases page answers 403 here
+ Graal compiler: optimization level: 2, target machine: compatibility
+ Garbage collector: Serial GC (max heap size: 80% of RAM)
+    8,715 types,  13,969 fields, and  43,884 methods found reachable
+    3,114 types,     516 fields, and   2,717 methods registered for reflection
+  46.78MB in total image size, 44.37MB in total file size
+                        9.7s (9.8% of total time) in 675 GCs | Peak RSS: 2.87GB | CPU load: 3.49
+Finished generating 'libaprvj_ce' in 1m 38s.
+Elapsed (wall clock) seconds: 99.5
+Maximum resident set size (kbytes): 2805968
+Exit status: 0
+## conformance
+cases expect: 152 passed, 0 failed, 1 explained, 269 fields
+diff against JDK 25 oracle: cases 153/153, hostile 811/811, algorithms 22/22 identical
+## h-ni smoke: 0 failure(s)
+## NEEDED libz.so.1 libc.so.6; max GLIBC_2.34; size 44,370,024 bytes

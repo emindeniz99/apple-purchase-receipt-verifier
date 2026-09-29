@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Spike only (2026-09-26). The Route C aprv.wasm (Rust core + OpenSSL 4.0.2,
+  CMS path, template payload reader) compiled to JVM bytecode by Endive's
+  build-time compiler and packaged as an ordinary Maven library.
+
+  The .wasm is not in this folder: pass it with -Daprv.wasm=<path>
+  (scripts/build.sh uses the round-4 build, $SCRATCH/asn1/art/new-c.wasm).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>spike.aprv</groupId>
+  <artifactId>aprv-endive</artifactId>
+  <version>0.0.0-spike</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <endive.version>1.1.0</endive.version>
+    <!-- Endive's documented floor is Java 11; the library is compiled for it. -->
+    <maven.compiler.release>11</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <aprv.wasm>MISSING-pass-Daprv.wasm</aprv.wasm>
+    <!-- FAIL (the default) refuses to build if any function would need the
+         interpreter; scripts/build.sh keeps it. -->
+    <aprv.interpreterFallback>FAIL</aprv.interpreterFallback>
+  </properties>
+
+  <dependencies>
+    <!-- The only runtime dependency the consumer inherits. -->
+    <dependency>
+      <groupId>run.endive</groupId>
+      <artifactId>runtime</artifactId>
+      <version>${endive.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>run.endive</groupId>
+        <artifactId>endive-compiler-maven-plugin</artifactId>
+        <version>${endive.version}</version>
+        <executions>
+          <execution>
+            <id>aprv</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <wasmFile>${aprv.wasm}</wasmFile>
+              <name>spike.aprv.endive.AprvModule</name>
+              <interpreterFallback>${aprv.interpreterFallback}</interpreterFallback>
+              <methodPrefixer>run.endive.compiler.NameSectionMethodPrefixer</methodPrefixer>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -4,20 +4,25 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ConfigBuilder;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Failure;
 use EminDeniz99\ApplePurchaseReceiptVerifier\InAppPurchase;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Certificate;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Install\Installer;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Install\InstallException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\SystemClock;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\MintedPki;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\TestPki;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Outcome;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\InputTooLargeException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationResult;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use Error;
@@ -119,47 +124,15 @@ final class ApiShapeTest extends TestCase
         new VerificationResult(payload: 'x', failure: new Failure(Reason::Malformed, 'x'));
     }
 
-    /**
-     * Detail strings get logged by integrators, so they must not carry
-     * receipt bytes, claim values or key material. This walks a real
-     * failure path and checks the message against the secrets the input
-     * actually contained.
-     */
-    public function testFailureMessagesDoNotEchoTheInputBack(): void
-    {
-        $pki = MintedPki::get();
-        $secretBundle = 'com.secret.internal.build';
-        $payload = TestPki::payload(
-            TestPki::utf8Attribute(2, $secretBundle),
-            TestPki::dateAttribute(12, '2024-08-06T12:00:00Z'),
-        );
-        $receipt = $pki->receipt($payload);
-
-        $verifier = Verifier::create(Config::builder()->roots([$pki->foreignRootDer])->build());
-        $result = $verifier->verifyReceipt(base64_encode($receipt));
-
-        self::assertFalse($result->verified());
-        $message = $result->failure->message;
-        self::assertStringNotContainsString($secretBundle, $message);
-        self::assertStringNotContainsString(base64_encode($receipt), $message);
-        self::assertLessThan(200, strlen($message), 'a detail string this long is carrying data');
-    }
-
     /** @return iterable<string, array{callable(): mixed}> */
     public static function misconfigurationProvider(): iterable
     {
-        yield 'empty roots' => [
-            static fn () => Verifier::create(Config::builder()->roots([])->build()),
-        ];
         yield 'an empty-string root' => [
-            static fn () => Verifier::create(Config::builder()->roots([''])->build()),
-        ];
-        yield 'an unparseable root' => [
-            static fn () => Verifier::create(Config::builder()->roots(['not a certificate'])->build()),
+            static fn () => Verifier::create(Config::builder()->roots([''])->build(), FakeTransport::answering('{}')),
         ];
         yield 'a non-string root' => [
             /** @phpstan-ignore-next-line deliberate misuse */
-            static fn () => Verifier::create(Config::builder()->roots([123])->build()),
+            static fn () => Verifier::create(Config::builder()->roots([123])->build(), FakeTransport::answering('{}')),
         ];
     }
 
@@ -186,7 +159,9 @@ final class ApiShapeTest extends TestCase
             Verifier::class, Config::class, ConfigBuilder::class,
             ReceiptPayload::class, InAppPurchase::class, JsonPayload::class,
             VerificationResult::class, Failure::class, Reason::class, Environment::class,
-            AppleRootCerts::class, SystemClock::class,
+            SystemClock::class,
+            CliTransport::class, HttpTransport::class, Installer::class, InstallException::class,
+            InputTooLargeException::class, ModuleFaultException::class, ServerProcessException::class,
         ] as $class) {
             yield $class => [$class];
         }
@@ -215,7 +190,12 @@ final class ApiShapeTest extends TestCase
     public function testNoClassDefinesASerializationGadget(string $class): void
     {
         $reflection = new ReflectionClass($class);
-        foreach (['__wakeup', '__unserialize', '__destruct', '__call', '__get', '__set', '__invoke'] as $magic) {
+        // The CLI transport declares __destruct to delete its roots file; nothing else may.
+        $magics = ['__wakeup', '__unserialize', '__call', '__get', '__set', '__invoke'];
+        if ($class !== CliTransport::class) {
+            $magics[] = '__destruct';
+        }
+        foreach ($magics as $magic) {
             $declared = $reflection->hasMethod($magic)
                 && $reflection->getMethod($magic)->getDeclaringClass()->getName() === $class;
             self::assertFalse($declared, $class . ' declares ' . $magic . '()');
@@ -224,9 +204,7 @@ final class ApiShapeTest extends TestCase
 
     public function testValueObjectsAreReadOnly(): void
     {
-        $result = Verifier::create(Config::builder()->roots([MintedPki::get()->rootDer])->build())
-            ->verifyReceipt(base64_encode(MintedPki::get()->receipt()));
-        self::assertTrue($result->verified());
+        $result = self::verifiedReceipt();
 
         $this->expectException(Error::class);
         $this->expectExceptionMessageMatches('/readonly/');
@@ -236,10 +214,7 @@ final class ApiShapeTest extends TestCase
 
     public function testAVerifiedReceiptSurvivesASerializationRoundTrip(): void
     {
-        $result = Verifier::create(Config::builder()->roots([MintedPki::get()->rootDer])->build())
-            ->verifyReceipt(base64_encode(MintedPki::get()->receipt()));
-        self::assertTrue($result->verified());
-        $receipt = $result->payload;
+        $receipt = Outcome::payload(self::verifiedReceipt());
 
         /** @var ReceiptPayload $restored */
         $restored = unserialize(serialize($receipt));
@@ -308,41 +283,27 @@ final class ApiShapeTest extends TestCase
     }
 
     /**
-     * The compiled-in roots must be byte-identical to `php/certs/`, which CI
-     * separately diffs against the repository-root `certs/`. Otherwise the
-     * package could ship trust anchors nobody reviewed.
+     * The package carries no copy of Apple's roots: they are compiled into
+     * `aprv`, and the defaults name none. Nothing may bring a copy back, so
+     * the class that used to hand one out stays gone.
      */
-    public function testTheCompiledInRootsMatchTheCheckedCopy(): void
+    public function testThePackageCarriesNoCopyOfTheRoots(): void
     {
-        $dir = __DIR__ . '/../certs';
-        $files = ['AppleIncRootCertificate.cer', 'AppleRootCA-G2.cer', 'AppleRootCA-G3.cer'];
-        $onDisk = array_map(static fn (string $f): string => (string) file_get_contents($dir . '/' . $f), $files);
-
-        self::assertSame($onDisk, AppleRootCerts::pinnedRoots());
+        self::assertNull(Config::defaults()->roots);
+        self::assertNull(Config::builder()->build()->roots);
+        self::assertFalse(class_exists('EminDeniz99\\ApplePurchaseReceiptVerifier\\AppleRootCerts'));
+        self::assertDirectoryDoesNotExist(__DIR__ . '/../certs');
     }
 
-    /**
-     * All three published Apple roots, one shared set for both verification
-     * paths in 0.7 (docs/design/0.7-api.md, "Setup"). Do not "optimise" the
-     * set down — Apple documents the JWS chain as ending in "an Apple root
-     * certificate" without naming one.
-     */
-    public function testThePinnedRootsCarryAllThreePublishedAppleRoots(): void
+    /** @return VerificationResult<ReceiptPayload> */
+    private static function verifiedReceipt(): VerificationResult
     {
-        $roots = AppleRootCerts::pinnedRoots();
-        self::assertCount(3, $roots);
+        $wire = '{"verified":true,"payload":{"receipt_type":"ProductionSandbox","bundle_id":"com.example.app",'
+            . '"receipt_creation_date_ms":1722945600000,"in_app":[],"unknown_attributes":{}}}';
+        $result = Verifier::create(Config::defaults(), FakeTransport::answering($wire))->verifyReceipt('x');
+        self::assertTrue($result->verified());
 
-        $subjects = array_map(
-            static fn (string $der): string => Certificate::parse($der)->subjectDer,
-            $roots,
-        );
-        self::assertSame($subjects, array_unique($subjects), 'the three roots must be distinct');
-
-        foreach ($roots as $der) {
-            $cert = Certificate::parse($der);
-            self::assertTrue($cert->isCa);
-            self::assertSame($cert->subjectDer, $cert->issuerDer, 'a root is self-issued');
-        }
+        return $result;
     }
 
     /** @return list<string> */

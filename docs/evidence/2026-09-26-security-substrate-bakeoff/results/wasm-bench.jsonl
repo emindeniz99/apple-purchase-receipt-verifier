@@ -1,0 +1,16 @@
+{"module":"rust-wasm32-wasip1","runtime":"node","id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"mean_us":2953.7,"memory_bytes":1179648}
+{"module":"rust-wasm32-wasip1","runtime":"wazero","id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"mean_us":4973.5,"memory_bytes":1179648}
+{"module":"rust-wasm32-wasip1","runtime":"node","id":"transaction/verify-shared-sandbox","code":0,"n":1000,"mean_us":2976.6,"memory_bytes":1179648}
+{"module":"rust-wasm32-wasip1","runtime":"wazero","id":"transaction/verify-shared-sandbox","code":0,"n":1000,"mean_us":4478.6,"memory_bytes":1179648}
+{"module":"ossl402-w-wasm32-wasip1","runtime":"node","id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"mean_us":1045.5,"memory_bytes":2097152}
+{"module":"ossl402-w-wasm32-wasip1","runtime":"wazero","id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"mean_us":2495.4,"memory_bytes":2097152}
+{"module":"ossl402-w-wasm32-wasip1","runtime":"node","id":"transaction/verify-shared-sandbox","code":0,"n":1000,"mean_us":4075.6,"memory_bytes":2162688}
+{"module":"ossl402-w-wasm32-wasip1","runtime":"wazero","id":"transaction/verify-shared-sandbox","code":0,"n":1000,"mean_us":8110.0,"memory_bytes":2162688}
+{"module":"awslc-w-wasm32-wasip1","runtime":"node","id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"mean_us":1155.2,"memory_bytes":1441792}
+{"module":"awslc-w-wasm32-wasip1","runtime":"wazero","id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"mean_us":2132.4,"memory_bytes":1441792}
+{"module":"awslc-w-wasm32-wasip1","runtime":"node","id":"transaction/verify-shared-sandbox","code":0,"n":1000,"mean_us":2632.1,"memory_bytes":1376256}
+{"module":"awslc-w-wasm32-wasip1","runtime":"wazero","id":"transaction/verify-shared-sandbox","code":0,"n":1000,"mean_us":3224.3,"memory_bytes":1376256}
+{"module":"rust-uu-wasm32-unknown-unknown","runtime":"node","id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"mean_us":3171.1,"memory_bytes":1179648}
+{"module":"rust-uu-wasm32-unknown-unknown","runtime":"wazero","id":"receipt/verify-genuine-sandbox-g5-against-apple-roots","code":0,"n":1000,"mean_us":5217.6,"memory_bytes":1179648}
+{"module":"rust-uu-wasm32-unknown-unknown","runtime":"node","id":"transaction/verify-shared-sandbox","code":0,"n":1000,"mean_us":3003.5,"memory_bytes":1179648}
+{"module":"rust-uu-wasm32-unknown-unknown","runtime":"wazero","id":"transaction/verify-shared-sandbox","code":0,"n":1000,"mean_us":4420.3,"memory_bytes":1179648}

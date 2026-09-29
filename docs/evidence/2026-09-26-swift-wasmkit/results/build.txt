@@ -1,0 +1,5 @@
+package: release build 80 s wall (includes resolving WasmKit)
+resolved: swift-argument-parser 1.8.2, swift-syntax 603.0.2, wasmkit 0.4.0
+aprv-tool: 9857320 bytes
+consumer: release build 77 s wall, fresh .build
+consumer run: {"verified":true,"bundleId":"dev.bonzer.weeka.app"}

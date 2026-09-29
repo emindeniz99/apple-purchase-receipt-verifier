@@ -1,0 +1,16 @@
+# openjdk version "21.0.10" 2026-01-20, Endive 1.1.0 ByteArrayMemory
+cases (node): rows 153: endpoint-same 33, old-der-only 3, old-device-binding 2, old-policy-verdict 6, old-typed-model 6, same-failure 75, same-verified 28
+    endive: 153 of 153 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"endive","java":"21.0.10","calls":{"aprv.clock_now_ms":463,"aprv.random_get":1},"traps":0,"instances":1,"rows":153}
+hostile (node): rows 811: endpoint-same 95, old-abi-inexpressible 131, old-config-refusal 5, old-der-only 2, old-device-binding 4, same-failure 556, same-verified 18
+    endive: 811 of 811 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"endive","java":"21.0.10","calls":{"aprv.clock_now_ms":229,"aprv.random_get":1},"traps":0,"instances":1,"rows":811}
+algorithms (node): rows 22: same-verified 22
+    endive: 22 of 22 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"endive","java":"21.0.10","calls":{"aprv.clock_now_ms":68,"aprv.random_get":1},"traps":0,"instances":1,"rows":22}
+substrate (node): rows 193: old-der-only 1, same-failure 100, same-verified 92
+    endive: 193 of 193 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"endive","java":"21.0.10","calls":{"aprv.clock_now_ms":527,"aprv.random_get":1},"traps":0,"instances":1,"rows":193}
+fuzz (node): rows 5000: old-abi-inexpressible 175, old-der-only 22, same-failure 4775, same-verified 28
+    endive: 5000 of 5000 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"endive","java":"21.0.10","calls":{"aprv.clock_now_ms":4308,"aprv.random_get":1},"traps":0,"instances":1,"rows":5000}

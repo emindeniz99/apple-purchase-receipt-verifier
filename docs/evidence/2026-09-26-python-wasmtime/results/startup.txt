@@ -1,0 +1,5 @@
+{"import_ms": 43.6, "first_verifier_ms": 935.2, "second_verifier_ms": 0.4, "first_call_ms": 3.9, "second_call_ms": 1.7, "precompiled_bytes": 8552264, "deserialize_ms": 11.0}
+{"import_ms": 68.3, "first_verifier_ms": 822.0, "second_verifier_ms": 0.4, "first_call_ms": 4.0, "second_call_ms": 1.8, "precompiled_bytes": 8552264, "deserialize_ms": 11.0}
+{"import_ms": 40.3, "first_verifier_ms": 871.9, "second_verifier_ms": 0.4, "first_call_ms": 4.0, "second_call_ms": 1.6, "precompiled_bytes": 8552264, "deserialize_ms": 10.8}
+{"import_ms": 35.5, "first_verifier_ms": 812.1, "second_verifier_ms": 0.4, "first_call_ms": 4.1, "second_call_ms": 1.6, "precompiled_bytes": 8552264, "deserialize_ms": 11.0}
+{"import_ms": 44.9, "first_verifier_ms": 832.3, "second_verifier_ms": 0.3, "first_call_ms": 4.0, "second_call_ms": 2.1, "precompiled_bytes": 8552264, "deserialize_ms": 11.3}

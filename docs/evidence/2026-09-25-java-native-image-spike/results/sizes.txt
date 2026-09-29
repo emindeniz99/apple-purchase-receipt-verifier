@@ -1,0 +1,5 @@
+# bytes: file, gzip -9, xz -9
+libapple_purchase_receipt_verifier_java.so: 43845736 (stripped 43845736), gzip 17524223, xz 12625268
+libaprvj_pgo.so: 27723880 (stripped 27723880), gzip 11484420, xz 8729764
+libapple_purchase_receipt_verifier_ffi.so: 1068776 (stripped 877568), gzip 456491, xz 363988
+JVM: 11816131 bytes (verifier jar + 7 runtime deps: bcpkix-jdk18on-1.86.jar bcprov-jdk18on-1.86.jar bcutil-jdk18on-1.86.jar jackson-annotations-2.22.jar jackson-core-2.22.2.jar jackson-databind-2.22.2.jar jspecify-1.0.1.jar )

@@ -1,0 +1,11 @@
+# jco: 2026-09-29; load before: 1.05 1.09 0.67
+    jco: 151 of 153 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"node v22.22.2 + jco 1.35.0","rows":153,"traps":0,"instances":27} 2 s wall
+    jco: 742 of 811 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"node v22.22.2 + jco 1.35.0","rows":811,"traps":0,"instances":4} 1 s wall
+    jco: 22 of 22 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"node v22.22.2 + jco 1.35.0","rows":22,"traps":0,"instances":22} 1 s wall
+    jco: 193 of 193 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"node v22.22.2 + jco 1.35.0","rows":193,"traps":0,"instances":74} 1 s wall
+    jco: 4825 of 5000 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"node v22.22.2 + jco 1.35.0","rows":5000,"traps":0,"instances":96} 9 s wall

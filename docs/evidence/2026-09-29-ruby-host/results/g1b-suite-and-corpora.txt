@@ -1,0 +1,10 @@
+# module: aprv.wasm 3,009,278 B, sha256 9c0a581c5a0b6e4e7f7ba66675f07ec00096fa95772ae27ad86d6049a1a0f263 (G1b)
+# g1.sh: rake test with APRV_PACKAGING=1 (Ruby 3.3.6, wasmtime 48.0.1), then the five pinned corpora through bench/corpus.rb, compared with same.py
+422 runs, 33467 assertions, 0 failures, 0 errors, 0 skips
+test_case_* tests: 338, all passing
+cases: 153 rows: 153 identical, 0 differ, 0 traps
+hostile: 811 rows: 811 identical, 0 differ, 0 traps
+algorithms: 22 rows: 22 identical, 0 differ, 0 traps
+substrate: 193 rows: 193 identical, 0 differ, 0 traps
+fuzz: 5000 rows: 5000 identical, 0 differ, 0 traps
+total: 6179 of 6179 identical, 0 traps

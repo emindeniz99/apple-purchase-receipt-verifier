@@ -26,9 +26,15 @@
 //! `unknown_attributes`, except an empty date string, which means "not set".
 //! Only an attribute SET, or an attribute, that does not parse makes the
 //! whole payload unreadable.
+//!
+//! OpenSSL reads the ASN.1 (`aprv_openssl::payload`, the grammar declared
+//! as OpenSSL templates): the SET, each attribute's three fields, each
+//! value's INTEGER or string. What the types mean, which values are dates,
+//! and what does or does not decode as text is decided here.
 
-use crate::asn1::{parse_exact, tag, Asn1Error, Tlv};
 use crate::datetime::parse_receipt_date;
+use aprv_openssl::payload::{attribute_integer, attribute_string, receipt_attributes, StringKind};
+use aprv_openssl::Budget;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -312,8 +318,9 @@ fn keep_raw(unknown: &mut UnknownAttributes, attribute: Attribute) {
 
 /// The receipt creation date (attribute 12), read the only way anything in
 /// a payload is read before its signer is trusted: the top-level attribute
-/// SET is walked shallowly, each entry's type is read, and only the value of
-/// the first type 12 is decoded.
+/// SET is walked under the depth and node bounds, each entry's type is
+/// read, and only the value of the first type 12 is decoded. The node bound
+/// caps the work at 100,000 values whatever the input.
 ///
 /// `None` means "judge the chain at the clock": no attribute 12, a first one
 /// that is empty or does not decode, or a walk that fails anywhere. An entry
@@ -328,84 +335,43 @@ pub(crate) fn read_creation_date(content: &[u8]) -> Option<i64> {
     date(&first.value).ok().flatten()
 }
 
+/// How deep constructed values may nest in a value parsed on its own: the
+/// CMS envelope from its `ContentInfo`, the signed content from its
+/// attribute SET (0.7 bounds table). 32 is accepted and 33 refused.
+pub(crate) const MAX_ASN1_DEPTH: usize = 32;
+
+/// How many values, primitive ones included, a value parsed on its own may
+/// hold: 0.7's reader's node budget, kept so that no input makes a decode
+/// build more than this many values before it is refused.
+pub(crate) const MAX_ASN1_NODES: usize = 100_000;
+
+/// The walk budget of each attribute SET: the payload's, and each in-app
+/// purchase's, which is parsed on its own.
+const PAYLOAD_BUDGET: Budget = Budget {
+    depth: MAX_ASN1_DEPTH,
+    nodes: MAX_ASN1_NODES,
+};
+
 fn parse_attribute_set(der: &[u8], what: &str) -> Result<Vec<Attribute>, PayloadError> {
-    let outer = parse_exact(der).map_err(|err| unreadable(what, err))?;
-    // Xcode receipts double-wrap the payload in an extra OCTET STRING.
-    let unwrapped;
-    let node = if outer.is_octet_string() {
-        unwrapped = outer
-            .octet_string_value()
-            .ok_or_else(|| unreadable(what, "double-wrap is not an OCTET STRING"))?
-            .into_owned();
-        parse_exact(&unwrapped).map_err(|err| unreadable(what, err))?
-    } else {
-        outer
-    };
-    if node.tag != tag::SET {
-        return Err(unreadable(what, "not an ASN.1 SET"));
-    }
-    let mut attributes = Vec::with_capacity(node.children().len());
-    for child in node.children() {
-        attributes.push(attribute(child).map_err(|err| unreadable(what, err))?);
-    }
-    Ok(attributes)
-}
-
-/// One attribute. Fields after the third are tolerated, so a field Apple
-/// appends later does not break parsing; the version is not read.
-fn attribute(node: &Tlv<'_>) -> Result<Attribute, &'static str> {
-    let fields = node.children();
-    let (Some(type_node), Some(version_node), Some(value_node)) =
-        (fields.first(), fields.get(1), fields.get(2))
-    else {
-        return Err("malformed receipt attribute");
-    };
-    if node.tag != tag::SEQUENCE || type_node.tag != tag::INTEGER || !value_node.is_octet_string() {
-        return Err("malformed receipt attribute");
-    }
-    // The version is not read, but an INTEGER there must still be one.
-    if version_node.tag == tag::INTEGER && integer_value(version_node).is_none() {
-        return Err("malformed receipt attribute");
-    }
-    // Refused rather than narrowed: narrowing would invent an attribute the
-    // receipt never carried.
-    let attribute_type = integer_value(type_node)
-        .and_then(|value| u32::try_from(value).ok())
-        .filter(|value| i32::try_from(*value).is_ok())
-        .ok_or("receipt attribute type out of range")?;
-    let value = value_node
-        .octet_string_value()
-        .ok_or("malformed receipt attribute")?
-        .into_owned();
-    Ok(Attribute {
-        attribute_type,
-        value,
-    })
-}
-
-/// A DER INTEGER's value, or `None` for one that is empty, not minimally
-/// encoded, or wider than 64 bits.
-fn integer_value(node: &Tlv<'_>) -> Option<i64> {
-    let contents = node.contents;
-    let first = *contents.first()?;
-    if node.constructed || contents.len() > 8 {
-        return None;
-    }
-    if let Some(second) = contents.get(1) {
-        // X.690 8.3.2: the first nine bits are never all zero or all one.
-        if (first == 0x00 && second & 0x80 == 0) || (first == 0xff && second & 0x80 != 0) {
-            return None;
-        }
-    }
-    let mut value: i64 = if first & 0x80 == 0 { 0 } else { -1 };
-    for byte in contents {
-        value = (value << 8) | i64::from(*byte);
-    }
-    Some(value)
-}
-
-fn decode_nested(der: &[u8]) -> Result<Tlv<'_>, Undecodable> {
-    parse_exact(der).map_err(|_: Asn1Error| Undecodable)
+    // The Xcode double wrap (one more OCTET STRING around the SET) is
+    // unwrapped by the adapter.
+    let attributes =
+        receipt_attributes(der, PAYLOAD_BUDGET).map_err(|err| unreadable(what, err))?;
+    attributes
+        .into_iter()
+        .map(|attribute| {
+            // Refused rather than narrowed: narrowing would invent an
+            // attribute the receipt never carried.
+            let attribute_type = u32::try_from(attribute.attribute_type)
+                .ok()
+                .filter(|value| i32::try_from(*value).is_ok())
+                .ok_or_else(|| unreadable(what, "receipt attribute type out of range"))?;
+            Ok(Attribute {
+                attribute_type,
+                value: attribute.value,
+            })
+        })
+        .collect()
 }
 
 /// A `UTF8String` or an `IA5String`, the two string types Apple's receipts
@@ -413,23 +379,20 @@ fn decode_nested(der: &[u8]) -> Result<Tlv<'_>, Undecodable> {
 /// as IA5 is: a byte from 0x80 up does not decode, rather than being read as
 /// Latin-1.
 fn decode_string(der: &[u8]) -> Result<String, Undecodable> {
-    let node = decode_nested(der)?;
-    match node.tag {
-        tag::UTF8_STRING => String::from_utf8(node.contents.to_vec()).map_err(|_| Undecodable),
-        tag::IA5_STRING if node.contents.is_ascii() => {
-            Ok(node.contents.iter().map(|byte| char::from(*byte)).collect())
+    match attribute_string(der) {
+        Ok((StringKind::Utf8, octets)) => String::from_utf8(octets).map_err(|_| Undecodable),
+        Ok((StringKind::Ia5, octets)) if octets.is_ascii() => {
+            Ok(octets.iter().map(|byte| char::from(*byte)).collect())
         }
         _ => Err(Undecodable),
     }
 }
 
-/// An INTEGER that fits a signed 64-bit value, negative ones included.
+/// An INTEGER that fits a signed 64-bit value, negative ones included. One
+/// that is empty or has a redundant leading octet is not DER, and OpenSSL
+/// refuses it.
 fn decode_integer(der: &[u8]) -> Result<i64, Undecodable> {
-    let node = decode_nested(der)?;
-    if node.tag != tag::INTEGER {
-        return Err(Undecodable);
-    }
-    integer_value(&node).ok_or(Undecodable)
+    attribute_integer(der).map_err(|_| Undecodable)
 }
 
 /// A date in an `IA5String` or `UTF8String`, as epoch milliseconds. An
@@ -536,7 +499,18 @@ mod tests {
     //! parse runs only after the chain and the signature have passed.
 
     use super::{parse_receipt_payload, read_creation_date, InAppPurchase};
-    use crate::asn1::tag;
+
+    /// The universal tags these tests write.
+    mod tag {
+        pub const INTEGER: u8 = 0x02;
+        pub const OCTET_STRING: u8 = 0x04;
+        pub const IA5_STRING: u8 = 0x16;
+        pub const SEQUENCE: u8 = 0x30;
+        pub const SET: u8 = 0x31;
+    }
+
+    /// The ASN.1 nesting bound of 0.7's bounds table.
+    const MAX_DEPTH: usize = 32;
 
     fn der(tag: u8, contents: &[u8]) -> Vec<u8> {
         assert!(contents.len() < 0x80, "short-form lengths only");
@@ -674,11 +648,12 @@ mod tests {
 
     #[test]
     fn signed_content_nested_past_the_asn1_bound_is_unreadable() {
-        // The bound is the reader's (32 constructed values); signed content
-        // that exceeds it cannot be read, which the verifier reports as
-        // UNREADABLE_PAYLOAD, never MALFORMED.
+        // Signed content nested past the bound (32 constructed values)
+        // cannot be read, which the verifier reports as UNREADABLE_PAYLOAD,
+        // never MALFORMED. OpenSSL's template decoder refuses it well before
+        // any depth counting: a SET inside the SET is not an attribute.
         let mut nested: Vec<u8> = Vec::new();
-        for _ in 0..=crate::asn1::MAX_DEPTH {
+        for _ in 0..=MAX_DEPTH {
             let length = u8::try_from(nested.len()).unwrap();
             nested = if length < 0x80 {
                 [&[tag::SET, length][..], &nested].concat()
@@ -687,6 +662,299 @@ mod tests {
             };
         }
         assert!(parse_receipt_payload(&nested).is_err());
+    }
+
+    /// One TLV with a definite length of any size.
+    fn der_long(tag: u8, contents: &[u8]) -> Vec<u8> {
+        if contents.len() < 0x80 {
+            return der(tag, contents);
+        }
+        let length = contents.len().to_be_bytes();
+        let significant: Vec<u8> = length
+            .iter()
+            .copied()
+            .skip_while(|byte| *byte == 0)
+            .collect();
+        let mut out = vec![tag, 0x80 | u8::try_from(significant.len()).unwrap()];
+        out.extend_from_slice(&significant);
+        out.extend_from_slice(contents);
+        out
+    }
+
+    /// An attribute 9000 whose fourth field is `fourth`.
+    fn with_fourth_field(fourth: &[u8]) -> Vec<u8> {
+        der_long(
+            tag::SEQUENCE,
+            &[
+                int(&[0x23, 0x28]),
+                int(&[1]),
+                der(tag::OCTET_STRING, &int(&[1])),
+                fourth.to_vec(),
+            ]
+            .concat(),
+        )
+    }
+
+    fn nested_in(identifier: u8, levels: usize) -> Vec<u8> {
+        let mut value = int(&[1]);
+        for _ in 0..levels {
+            value = der_long(identifier, &value);
+        }
+        value
+    }
+
+    #[test]
+    fn signed_content_nested_33_deep_is_unreadable_whatever_the_tags() {
+        // C-F2, Rust-F3: the depth used to be measured through universal
+        // SEQUENCEs and SETs only, so 40 levels of context or application
+        // tags read. The SET is 1 and the attribute 2, so a fourth field of
+        // 30 levels is 32 deep and of 31 levels 33.
+        for identifier in [tag::SEQUENCE, 0xa0, 0x61] {
+            let at_bound = set(&[
+                date("2024-08-06T12:00:00Z"),
+                with_fourth_field(&nested_in(identifier, 30)),
+            ]);
+            assert!(parse_receipt_payload(&at_bound).is_ok(), "{identifier:02x}");
+            let over = set(&[
+                date("2024-08-06T12:00:00Z"),
+                with_fourth_field(&nested_in(identifier, 31)),
+            ]);
+            assert!(parse_receipt_payload(&over).is_err(), "{identifier:02x}");
+            assert_eq!(read_creation_date(&over), None, "{identifier:02x}");
+        }
+        let under_a_sequence = der(tag::SEQUENCE, &nested_in(0xa0, 30));
+        assert!(parse_receipt_payload(&set(&[with_fourth_field(&under_a_sequence)])).is_err());
+    }
+
+    #[test]
+    fn the_payload_holds_at_most_100000_values() {
+        // Rust-F4, Policy-F6: 0.7's reader capped a parse at 100,000 values;
+        // without it a 3 MiB payload of tiny values cost 300 to 700 ms
+        // before any signature. The SET, the attribute, its three fields
+        // and the fourth field's SEQUENCE are 6 values.
+        let flood = |count: usize| {
+            let fourth = der_long(tag::SEQUENCE, &[0x05, 0x00].repeat(count));
+            der_long(
+                tag::SET,
+                &[date("2024-08-06T12:00:00Z"), with_fourth_field(&fourth)].concat(),
+            )
+        };
+        // The date attribute is 4 more values and its string is inside a
+        // primitive OCTET STRING, so it adds none.
+        let at_budget = flood(100_000 - 6 - 4);
+        assert!(parse_receipt_payload(&at_budget).is_ok());
+        assert_eq!(read_creation_date(&at_budget), Some(1_722_945_600_000));
+        let over = flood(100_000 - 6 - 4 + 1);
+        assert!(parse_receipt_payload(&over).is_err());
+        assert_eq!(read_creation_date(&over), None);
+    }
+
+    /// An OCTET STRING of `levels` constructed levels around `inner`, the
+    /// innermost chunk tagged `leaf`.
+    fn chunked(levels: usize, leaf: u8, inner: &[u8]) -> Vec<u8> {
+        let mut value = der_long(leaf, inner);
+        for _ in 0..levels {
+            value = der_long(0x24, &value);
+        }
+        value
+    }
+
+    fn raw_attribute(type_tlv: &[u8], value_tlv: &[u8]) -> Vec<u8> {
+        der(tag::SEQUENCE, &[type_tlv, &int(&[1]), value_tlv].concat())
+    }
+
+    #[test]
+    fn a_value_or_a_wrap_with_a_chunk_that_is_not_an_octet_string_is_unreadable() {
+        // C-F3, Rust-F6, Policy-F5: OpenSSL joins the chunks of a
+        // constructed OCTET STRING whatever their tag; X.690 section 8.7.3
+        // allows only OCTET STRINGs, and 0.7 and Java refuse the others.
+        let bundle = der(0x0c, b"com.example.app");
+        let legal = set(&[raw_attribute(
+            &int(&[2]),
+            &chunked(2, tag::OCTET_STRING, &bundle),
+        )]);
+        let receipt = parse_receipt_payload(&legal).unwrap();
+        assert_eq!(receipt.bundle_id.as_deref(), Some("com.example.app"));
+        let foreign = set(&[raw_attribute(&int(&[2]), &chunked(1, 0x0c, &bundle))]);
+        assert!(parse_receipt_payload(&foreign).is_err());
+        // Six constructed levels decode, as OpenSSL decodes them; a
+        // seventh does not (DECISIONS.md R20).
+        let six = set(&[raw_attribute(
+            &int(&[2]),
+            &chunked(6, tag::OCTET_STRING, &bundle),
+        )]);
+        assert!(parse_receipt_payload(&six).is_ok());
+        let seven = set(&[raw_attribute(
+            &int(&[2]),
+            &chunked(7, tag::OCTET_STRING, &bundle),
+        )]);
+        assert!(parse_receipt_payload(&seven).is_err());
+
+        let payload = set(&[date("2024-08-06T12:00:00Z")]);
+        let wrapped = parse_receipt_payload(&chunked(1, tag::OCTET_STRING, &payload)).unwrap();
+        assert_eq!(wrapped.receipt_creation_date_ms, Some(1_722_945_600_000));
+        for leaf in [0x0c, tag::INTEGER] {
+            let foreign_wrap = chunked(1, leaf, &payload);
+            assert!(parse_receipt_payload(&foreign_wrap).is_err(), "{leaf:02x}");
+            assert_eq!(read_creation_date(&foreign_wrap), None, "{leaf:02x}");
+        }
+    }
+
+    #[test]
+    fn a_constructed_string_value_is_kept_raw() {
+        // C-F3: OpenSSL joins a constructed UTF8String's chunks; 0.7 did not
+        // read one as a string, and DER has none.
+        let mut constructed = vec![0x2c, 0x80];
+        constructed.extend(der(tag::OCTET_STRING, b"com.example.app"));
+        constructed.extend([0, 0]);
+        let receipt = parse_receipt_payload(&set(&[
+            raw_attribute(&int(&[2]), &der(tag::OCTET_STRING, &constructed)),
+            raw_attribute(&int(&[3]), &der(tag::OCTET_STRING, &constructed)),
+        ]))
+        .unwrap();
+        assert_eq!(receipt.bundle_id, None);
+        assert_eq!(receipt.bundle_id_bytes, Some(constructed.clone()));
+        assert_eq!(receipt.application_version, None);
+        assert_eq!(receipt.unknown_attributes.get(&3), Some(&vec![constructed]));
+    }
+
+    #[test]
+    fn a_tag_in_high_tag_form_or_a_five_octet_length_is_not_read() {
+        // C-F3: 0.7's reader refused both anywhere; OpenSSL reads them. In
+        // the SET they make the payload unreadable, in a value they keep the
+        // attribute raw.
+        let high_tag_type = raw_attribute(
+            &[0x1f, 0x02, 0x01, 0x02],
+            &der(tag::OCTET_STRING, &ia5("x")),
+        );
+        assert!(parse_receipt_payload(&set(&[high_tag_type])).is_err());
+        let high_tag_value = [0x1f, 0x02, 0x01, 0x05];
+        let receipt = parse_receipt_payload(&set(&[attribute(&[1], &high_tag_value)])).unwrap();
+        assert_eq!(receipt.app_item_id, None);
+        assert_eq!(
+            receipt.unknown_attributes.get(&1),
+            Some(&vec![high_tag_value.to_vec()])
+        );
+
+        let mut five_octets = vec![0x0c, 0x85, 0, 0, 0, 0, 15];
+        five_octets.extend(b"com.example.app");
+        let receipt = parse_receipt_payload(&set(&[attribute(&[2], &five_octets)])).unwrap();
+        assert_eq!(receipt.bundle_id, None);
+        assert_eq!(receipt.bundle_id_bytes, Some(five_octets));
+        let long_set = [&[tag::SET, 0x85, 0, 0, 0, 0, 0][..]].concat();
+        assert!(parse_receipt_payload(&long_set).is_err());
+        // Four length octets, not minimal, are read, as 0.7 read them.
+        let four_octets = [&[tag::SET, 0x84, 0, 0, 0, 0][..]].concat();
+        assert!(parse_receipt_payload(&four_octets).is_ok());
+    }
+
+    #[test]
+    fn fields_after_the_value_are_valid_asn1_at_every_depth() {
+        // C-F3: a BOOLEAN of two octets, a NULL with content or a padded
+        // INTEGER is not valid ASN.1 (X.690 sections 8.2, 8.8 and 8.3.2, BER
+        // and DER alike), so the payload is unreadable, whether the value is
+        // the fourth field itself, which OpenSSL's ANY decodes, or sits
+        // inside it, which the header walk hands to the same decoder. 0.7
+        // kept the fourth field opaque; Java refuses both.
+        let padded = [0x02, 0x02, 0x00, 0x01];
+        for fourth in [
+            vec![0x01, 0x02, 0x00, 0x00],
+            vec![0x05, 0x01, 0x00],
+            padded.to_vec(),
+            der(tag::SEQUENCE, &padded),
+            der(0xa0, &der(tag::SEQUENCE, &padded)),
+        ] {
+            let payload = set(&[with_fourth_field(&fourth)]);
+            assert!(parse_receipt_payload(&payload).is_err(), "{fourth:02x?}");
+        }
+        let valid = der(
+            0xa0,
+            &der(tag::SEQUENCE, &[int(&[1]), der(0x05, &[])].concat()),
+        );
+        assert!(parse_receipt_payload(&set(&[with_fourth_field(&valid)])).is_ok());
+    }
+
+    #[test]
+    fn what_openssl_refuses_on_its_own_is_refused_one_sequence_deeper_too() {
+        // Round-2 review F3: OpenSSL's ANY decoder refuses these as the
+        // fourth field, but the walk passed them one SEQUENCE deeper, where
+        // OpenSSL keeps the SEQUENCE whole, so the verdict depended on the
+        // depth. A short UTCTime or GeneralizedTime, a constructed BOOLEAN,
+        // INTEGER, NULL, OID or ENUMERATED, a primitive SEQUENCE, an
+        // end-of-contents inside a definite length, a constructed time
+        // whose joined octets are too short, and a string of seven
+        // constructed levels (ASN1_MAX_STRING_NEST).
+        let refused: [Vec<u8>; 12] = [
+            vec![0x17, 0x01, 0x30],
+            vec![0x18, 0x02, 0x32, 0x30],
+            vec![0x21, 0x03, 0x01, 0x01, 0xff],
+            vec![0x22, 0x03, 0x02, 0x01, 0x05],
+            vec![0x25, 0x02, 0x05, 0x00],
+            vec![0x26, 0x03, 0x06, 0x01, 0x2a],
+            vec![0x2a, 0x03, 0x0a, 0x01, 0x01],
+            vec![0x30, 0x02, 0x10, 0x00],
+            vec![0x24, 0x05, 0x04, 0x01, 0x41, 0x00, 0x00],
+            [&[0x37, 0x10][..], &der(4, b"240101"), &der(4, b"00000Z")].concat(),
+            chunked(7, tag::OCTET_STRING, b"x"),
+            chunked(7, 0x0c, b"x"),
+        ];
+        for value in &refused {
+            for fourth in [value.clone(), der_long(tag::SEQUENCE, value)] {
+                let payload = set(&[with_fourth_field(&fourth)]);
+                assert!(parse_receipt_payload(&payload).is_err(), "{fourth:02x?}");
+            }
+        }
+        // What OpenSSL decodes stays readable at both depths: a
+        // constructed time of 13 joined octets, a constructed BIT STRING,
+        // six constructed levels, a SEQUENCE-tagged chunk inside a string.
+        let accepted: [Vec<u8>; 4] = [
+            [&[0x37, 0x11][..], &der(4, b"240101"), &der(4, b"000000Z")].concat(),
+            vec![0x23, 0x04, 0x03, 0x02, 0x00, 0x01],
+            chunked(6, tag::OCTET_STRING, b"x"),
+            vec![0x24, 0x05, 0x30, 0x03, 0x04, 0x01, 0x41],
+        ];
+        for value in &accepted {
+            for fourth in [value.clone(), der_long(tag::SEQUENCE, value)] {
+                let payload = set(&[with_fourth_field(&fourth)]);
+                assert!(parse_receipt_payload(&payload).is_ok(), "{fourth:02x?}");
+            }
+        }
+    }
+
+    #[test]
+    fn seven_constructed_levels_are_refused_wherever_openssl_decodes_a_string() {
+        // N1, N2: OpenSSL joins six constructed levels of a string and no
+        // more, wherever it decodes one: the value, the version field, the
+        // Xcode wrap. Six read; seven are unreadable, and the detail names
+        // the nesting, not a chunk's type.
+        let bundle = der(0x0c, b"com.example.app");
+        let version = |levels| {
+            set(&[der(
+                tag::SEQUENCE,
+                &[
+                    int(&[2]),
+                    chunked(levels, tag::OCTET_STRING, &[1]),
+                    der(tag::OCTET_STRING, &bundle),
+                ]
+                .concat(),
+            )])
+        };
+        let value = |levels| {
+            set(&[raw_attribute(
+                &int(&[2]),
+                &chunked(levels, tag::OCTET_STRING, &bundle),
+            )])
+        };
+        let payload = set(&[date("2024-08-06T12:00:00Z")]);
+        let wrap = |levels| chunked(levels, tag::OCTET_STRING, &payload);
+        for build in [&version as &dyn Fn(usize) -> Vec<u8>, &value, &wrap] {
+            assert!(parse_receipt_payload(&build(6)).is_ok());
+            let refused = parse_receipt_payload(&build(7)).unwrap_err().to_string();
+            assert!(
+                refused.contains("nested deeper than OpenSSL decodes"),
+                "{refused}"
+            );
+        }
     }
 
     #[test]

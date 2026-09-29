@@ -1,0 +1,11 @@
+# wasmtime-rs: 2026-09-29; load before: 0.81 1.40 1.26
+    wasmtime-rs: 151 of 153 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wasmtime 49.0.1 (component, bindgen!)","rows":153,"traps":0} 6 s wall
+    wasmtime-rs: 810 of 811 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wasmtime 49.0.1 (component, bindgen!)","rows":811,"traps":0} 5 s wall
+    wasmtime-rs: 22 of 22 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wasmtime 49.0.1 (component, bindgen!)","rows":22,"traps":0} 4 s wall
+    wasmtime-rs: 193 of 193 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wasmtime 49.0.1 (component, bindgen!)","rows":193,"traps":0} 5 s wall
+    wasmtime-rs: 5000 of 5000 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wasmtime 49.0.1 (component, bindgen!)","rows":5000,"traps":0} 10 s wall

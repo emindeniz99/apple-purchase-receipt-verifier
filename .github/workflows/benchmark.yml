@@ -8,6 +8,12 @@ name: benchmark
 # job uses the same runner type) and, for Java, against the baseline in
 # java-bench/README.md. No job caches anything: a benchmark should not
 # depend on what a previous run left behind.
+#
+# Every port but java/ and rust/ runs aprv.wasm, which is not in git: the
+# module job builds it from this commit with the pinned toolchain, and
+# each host job downloads it and places it with
+# .github/scripts/place-module.sh, as ci.yml's host jobs do. PHP runs the
+# aprv binary the server job builds around the same component.
 
 on:
   workflow_dispatch:
@@ -16,6 +22,74 @@ permissions:
   contents: read
 
 jobs:
+  module:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      component-sha256: ${{ steps.build.outputs.component-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the pinned wasm toolchain and Rust
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/aprv-wasm-toolchain"
+          tools/wasm-toolchain.sh "$dir" > /dev/null
+          { echo "WASI_SDK_DIR=$dir/wasi-sdk"; echo "OPENSSL_WASM_DIR=$dir/openssl-wasm"; } >> "$GITHUB_ENV"
+          echo "$dir/bin" >> "$GITHUB_PATH"
+          # build.sh runs from the repository root, where rustup does not
+          # read rust/rust-toolchain.toml: name its channel explicitly.
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-wasip1
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - name: build aprv.wasm and the component
+        id: build
+        run: |
+          set -euo pipefail
+          rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
+          echo "component-sha256=$(sha256sum "$RUNNER_TEMP/aprv/aprv.component.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aprv-wasm
+          path: |
+            ${{ runner.temp }}/aprv/aprv.wasm
+            ${{ runner.temp }}/aprv/aprv.component.wasm
+            ${{ runner.temp }}/aprv/aprv.wit
+            ${{ runner.temp }}/aprv/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  server:
+    needs: module
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - name: the pinned Rust toolchain, the musl target and musl-gcc
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target x86_64-unknown-linux-musl
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+          sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: the static aprv binary
+        env:
+          COMPONENT_SHA256: ${{ needs.module.outputs.component-sha256 }}
+        run: rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" x86_64-unknown-linux-musl "$RUNNER_TEMP/server"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/server/aprv-x86_64-unknown-linux-musl
+          if-no-files-found: error
+          retention-days: 7
+
   java:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -39,12 +113,18 @@ jobs:
           if-no-files-found: error
 
   go:
+    needs: module
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
@@ -75,12 +155,18 @@ jobs:
           if-no-files-found: error
 
   node:
+    needs: module
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" node
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
@@ -96,12 +182,18 @@ jobs:
           if-no-files-found: error
 
   python:
+    needs: module
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" python
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.13"
@@ -117,18 +209,30 @@ jobs:
           if-no-files-found: error
 
   ruby:
+    needs: module
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # No bundle: the library and the benchmark use only what ships with Ruby.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
+      # The bundle, for the wasmtime gem the library runs the module on.
+      # bundler-cache is off like every cache here; bundle install runs
+      # from the committed Gemfile.lock.
       - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
         with:
           ruby-version: "3.4"
           bundler-cache: false
-      - run: ruby -Ilib bench/bench.rb > ../ruby-bench.json
+      - run: bundle install
+        working-directory: ruby
+        env:
+          BUNDLE_FROZEN: "true"
+      - run: bundle exec ruby -Ilib bench/bench.rb > ../ruby-bench.json
         working-directory: ruby
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -137,21 +241,29 @@ jobs:
           if-no-files-found: error
 
   php:
+    needs: server
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/aprv-bin
+      - run: chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.4"
-          extensions: openssl, json
+          extensions: json, curl, posix
           coverage: none
-      # Only the autoloader and psr/clock are needed, so no dev dependencies.
+      # Only the autoloader and the runtime dependencies, so no dev ones.
       - run: composer install --no-dev --no-scripts --no-progress --no-interaction
         working-directory: php
-      - run: php bench/bench.php > ../php-bench.json
+      # Each transport of the façade (the CLI and HTTP) over this commit's
+      # aprv; the JSON carries a transport field (php/CI-NOTES.md).
+      - run: php bench/bench.php --aprv "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" > ../php-bench.json
         working-directory: php
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -160,12 +272,18 @@ jobs:
           if-no-files-found: error
 
   dotnet:
+    needs: module
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" dotnet
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
@@ -180,6 +298,7 @@ jobs:
           if-no-files-found: error
 
   swift:
+    needs: module
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
@@ -187,6 +306,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
       - run: swift build -c release --package-path swift/bench --force-resolved-versions
       - run: swift/bench/.build/release/bench > swift-bench.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

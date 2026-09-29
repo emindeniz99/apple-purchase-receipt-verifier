@@ -1,0 +1,12 @@
+# Final module imports (wasm-tools print)
+new-c.wasm: aprv.clock_now_ms aprv.random_get 
+any-c.wasm: aprv.clock_now_ms aprv.random_get 
+# payload.c in the module: item functions present (wasm-tools print | grep)
+new-c.wasm: APRV_RECEIPT_PAYLOAD_it 2, DISPLAYTEXT_it 3, ASN1_SET_ANY_it 0
+any-c.wasm: APRV_RECEIPT_PAYLOAD_it 0, DISPLAYTEXT_it 2, ASN1_SET_ANY_it 2
+# bytes. raw | after wasm-tools strip | strip + gzip -9. Round 3's cms-c.wasm (CMS + asn1.rs payload): 3,000,116 raw, 986,315 strip+gz.
+new-c.wasm raw 2973532 | strip 2973178 | strip+gz 975767
+any-c.wasm raw 2973546 | strip 2973192 | strip+gz 975601
+native C ABI (base) raw 8619736 | stripped+gz 2789083
+native C ABI (new) raw 8532952 | stripped+gz 2750890
+native C ABI (any) raw 8534616 | stripped+gz 2750757

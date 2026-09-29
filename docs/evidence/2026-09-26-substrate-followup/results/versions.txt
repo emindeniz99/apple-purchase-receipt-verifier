@@ -1,0 +1,14 @@
+# Exact versions, 2026-09-26 (follow-up round)
+rustc (bake-off builds, system): rustc 1.94.1 (e408947bf 2026-03-25)
+rustc (this round, $SCRATCH/rustup): rustc 1.98.1 (48a229cea 2026-09-01); stable per static.rust-lang.org/dist/channel-rust-stable.toml dated 2026-09-03
+rustc nightly (fuzzing): rustc 1.100.0-nightly (5ceaf6608 2026-09-25)
+cargo-fuzz: cargo-fuzz 0.13.2
+libfuzzer-sys: version = "0.4.13"
+clang (C instrumentation): Ubuntu clang version 18.1.3 (1ubuntu1); compiler-rt: libclang-rt-18-dev 1:18.1.3-1ubuntu1 (apt, this round)
+OpenSSL 4.0.2: sha256 736b467530f916737b7031310ccb21d8218c6229e61e8e160cd1d3458cd543a8
+OpenSSL 4.1.0-beta1: github.com/openssl/openssl/releases/download/openssl-4.1.0-beta1, sha256 eae0566fc20b6c6056b2409b4fc1ca875d9095cbd54c55dcd69b0b7de17ad0ea (matches the published .sha256); OPENSSL_VERSION_TEXT "OpenSSL 4.1.0-beta1 23 Sep 2026"
+LibreSSL 4.3.2: sha256 edf01aee24c65d69e6a9efcb9d44bcda682ff9d4f3bbbd95e794e1dfa90847b5
+AWS-LC: 1.73.0 in aws-lc-sys 0.41.0 (links aws_lc_0_41_0); 5.7.0 in aws-lc-sys 0.45.0 (links aws_lc_0_45_0), both crates.io; AWSLC_VERSION_NUMBER_STRING from include/openssl/base.h
+rust-openssl: openssl 0.10.81, openssl-sys 0.9.117 (both newest on crates.io, 2026-09-26; openssl-sys requires aws-lc-sys ^0.41)
+Node, Bun, Deno, browsers, workerd, wrangler, Emscripten, wasi-sdk, jco: as the wasm bake-off's results/versions.txt
+Java oracle rows: JDK 25.0.4.1 + BC 1.86 (substrate bake-off, reused)

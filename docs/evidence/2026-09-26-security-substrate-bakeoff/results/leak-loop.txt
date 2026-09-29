@@ -1,0 +1,8 @@
+rust receipt: 100000 calls, VmRSS after call 1 2588 KB, after call 100000 2676 KB, growth 88 KB
+rust jws: 100000 calls, VmRSS after call 1 2632 KB, after call 100000 2724 KB, growth 92 KB
+ossl402 receipt: 100000 calls, VmRSS after call 1 6968 KB, after call 100000 7040 KB, growth 72 KB
+ossl402 jws: 100000 calls, VmRSS after call 1 7100 KB, after call 100000 7116 KB, growth 16 KB
+libressl432 receipt: 100000 calls, VmRSS after call 1 3988 KB, after call 100000 4092 KB, growth 104 KB
+libressl432 jws: 100000 calls, VmRSS after call 1 4044 KB, after call 100000 4108 KB, growth 64 KB
+awslc receipt: 100000 calls, VmRSS after call 1 3496 KB, after call 100000 3568 KB, growth 72 KB
+awslc jws: 100000 calls, VmRSS after call 1 3672 KB, after call 100000 3692 KB, growth 20 KB

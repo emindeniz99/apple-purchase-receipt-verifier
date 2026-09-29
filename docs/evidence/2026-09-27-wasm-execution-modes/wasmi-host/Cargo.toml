@@ -1,0 +1,43 @@
+[package]
+name = "aprv-rt-host"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Spike (2026-09-27): native Rust host for aprv.wasm (ABI v1) over Wasmi 1.1.0, Wasmi 2.0.0 or Wasmtime 49.0.1"
+
+[[bin]]
+name = "aprv-rt-host"
+path = "src/main.rs"
+
+# Exactly one engine feature per build. The Wasmi compilation mode
+# (Config::compilation_mode) and the Wasmtime compiler are chosen at run
+# time with --mode; the Wasmi 2.0 dispatch is a compile-time crate feature.
+[features]
+# Wasmi 1.1.0: default features minus `wat` (no dispatch features exist in 1.x).
+v1 = ["dep:wasmi_v1"]
+# Wasmi 2.0.0: default features are stable, std, wat, validate, memory64,
+# auto-dispatch. Every v2 row keeps std, validate and memory64, drops wat,
+# and picks the dispatch features below.
+v2 = ["dep:wasmi_v2"]
+v2-auto = ["v2", "wasmi_v2/stable", "wasmi_v2/auto-dispatch"]                          # the default dispatch
+v2-tail = ["v2", "wasmi_v2/stable"]                                                    # tail-call dispatch forced (no auto fallback)
+v2-tail-indirect = ["v2", "wasmi_v2/stable", "wasmi_v2/indirect-dispatch"]             # tail-call dispatch, op-code table
+v2-loop = ["v2", "wasmi_v2/stable", "wasmi_v2/portable-dispatch"]                      # portable loop calling handler pointers
+v2-loop-indirect = ["v2", "wasmi_v2/stable", "wasmi_v2/portable-dispatch", "wasmi_v2/indirect-dispatch"]  # portable loop over a `match`
+v2-unstable = ["v2", "wasmi_v2/unstable"]                                              # tail calls enforced with `become` (nightly Rust)
+# Wasmtime 49.0.1 for the comparison rows: Cranelift, Winch and Pulley.
+wt = ["dep:wasmtime"]
+
+[dependencies]
+wasmi_v1 = { package = "wasmi", version = "=1.1.0", default-features = false, features = ["std"], optional = true }
+wasmi_v2 = { package = "wasmi", version = "=2.0.0", default-features = false, features = ["std", "validate", "memory64"], optional = true }
+wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std", "cranelift", "winch", "pulley", "parallel-compilation"], optional = true }
+getrandom = "0.3"
+libc = "0.2"
+
+# Wasmi's usage guide (docs/usage.md at v2.0.0): "Use the following profile
+# to compile your application that uses Wasmi: lto = "fat", codegen-units = 1".
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

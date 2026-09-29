@@ -1,0 +1,13 @@
+<!-- Spike only (2026-09-26). The harness: ABI tests, corpus runner, benchmarks. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../AprvWasm/AprvWasm.csproj" />
+  </ItemGroup>
+</Project>

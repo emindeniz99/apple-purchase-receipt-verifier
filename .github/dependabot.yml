@@ -24,9 +24,10 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
   # uv, not pip: python/uv.lock is what CI installs from, and only the uv
-  # ecosystem reads and rewrites that file. This entry is also what carries
-  # the cryptography early-warning the `python` job used to get by resolving
-  # fresh on every push -- a bump arrives here after the cooldown instead.
+  # ecosystem reads and rewrites that file. The one runtime dependency is
+  # wasmtime, with no upper pin by design (R27): a new major changes the
+  # runtime under the module, and tests/test_cache.py is what notices a
+  # change in Wasmtime's cache configuration format.
   - package-ecosystem: uv
     directory: /python
     schedule:
@@ -65,30 +66,20 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # java-wasm (the -wasm artifact: Endive and the aprv-server engine) is a
+  # fourth standalone pom. The JUnit floor above applies here too: its
+  # java-wasm-runtime-8 job runs the suite on a real Java 8 JVM.
+  - package-ecosystem: maven
+    directory: /java-wasm
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "org.junit.jupiter:junit-jupiter"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: swift
     directory: /
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-  # The fuzz harnesses are packages of their own (a separate lockfile, a
-  # separate SwiftPM package, a separate crate) and dependabot only watches
-  # the directories it is told about. Same cooldown: a fuzz job runs the
-  # dependency's code on every push, so a hijacked release reaches it
-  # exactly as it would the library.
-  - package-ecosystem: npm
-    directory: /node/fuzz
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-  # rust/ffi is the C ABI: a third cargo manifest with its own lockfile, and
-  # dependabot only watches the directories it is told about. It holds one
-  # dependency (the library, by path) plus whatever that pulls, so a bump
-  # here is normally a transitive one — and the MSRV note on /rust applies
-  # unchanged, because this crate claims the same 1.85.0 floor.
-  - package-ecosystem: cargo
-    directory: /rust/ffi
     schedule:
       interval: weekly
     cooldown:
@@ -96,19 +87,30 @@ updates:
   # The Elixir consumer of the C ABI. It has no Hex dependencies today
   # (mix.exs says why), so this entry proposes nothing yet; it is here so a
   # dependency added later is watched from the start rather than drifting
-  # the way jvm-interop's did.
+  # the way jvm-interop's did. The C ABI crate itself (rust/ffi) is a member
+  # of the rust/ workspace with no lockfile of its own; /rust covers it.
   - package-ecosystem: mix
     directory: /rust/ffi/examples/elixir
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+  # The fuzz harnesses are packages of their own (a separate SwiftPM
+  # package, a separate crate) and dependabot only watches the directories
+  # it is told about. Same cooldown: a fuzz job runs the dependency's code
+  # on every push, so a hijacked release reaches it exactly as it would the
+  # library.
   - package-ecosystem: cargo
     directory: /rust/fuzz
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # The same OpenSSL pins as /rust, whose entry says why.
+      - dependency-name: openssl-sys
+      - dependency-name: openssl-src
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: swift
     directory: /swift/fuzz
     schedule:
@@ -134,6 +136,12 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # The go.mod floor (Go 1.22) is a tested claim: wazero 1.10 needs Go
+      # 1.23, 1.11 needs 1.24 and 1.12 needs 1.25. Raise the floor first,
+      # deliberately, then drop this rule (go/CI-NOTES.md).
+      - dependency-name: github.com/tetratelabs/wazero
+        versions: [">=1.10.0"]
   - package-ecosystem: gomod
     directory: /go/tools
     schedule:
@@ -144,7 +152,9 @@ updates:
   # ecosystem only discovers a manifest named Gemfile or gems.rb, so the lint
   # and type toolchain (rubocop, steep, rbs) and the fuzzer (ruzzy) are bumped
   # by hand until those files are renamed, even though both now have committed
-  # locks. The library itself has no runtime dependencies.
+  # locks. The library's one runtime dependency is wasmtime, which tracks
+  # Wasmtime majors: a bump that raises its floor changes the runtime under
+  # the module, like the Python and .NET runtime bumps.
   - package-ecosystem: bundler
     directory: /ruby
     schedule:
@@ -163,23 +173,42 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # The RustCrypto 0.11/0.14 wave matches this crate's 1.85.0 floor now,
-      # but rsa 0.9 still speaks digest 0.10 and rsa 0.10 is still a release
-      # candidate (0.10.0-rc.18 as of 2026-04-27; stable is 0.9.10), so the
-      # five crates move together in one deliberate PR once rsa 0.10 is
-      # stable (ROADMAP.md, "The RustCrypto 0.11/0.14 wave"). Explicit
-      # versions, not semver-major: for 0.x crates dependabot labels 0.10 ->
-      # 0.11 a minor.
-      - dependency-name: digest
-        versions: [">=0.11"]
-      - dependency-name: sha1
-        versions: [">=0.11"]
-      - dependency-name: sha2
-        versions: [">=0.11"]
-      - dependency-name: p256
-        versions: [">=0.14"]
-      - dependency-name: p384
-        versions: [">=0.14"]
+      # rust/vendor/openssl-sys is a patched copy of openssl-sys 0.9.117; a
+      # newer openssl-sys leaves the patch unused and brings back
+      # openssl-src 300.x (OpenSSL 3), which aprv-openssl refuses. Both move
+      # by hand with rust/vendor/refresh-openssl-sys.sh (rust/openssl/CI-NOTES.md).
+      - dependency-name: openssl-sys
+      - dependency-name: openssl-src
+        update-types: ["version-update:semver-major"]
+      # wit-bindgen's generated glue is part of the released module's bytes,
+      # so its exact pin moves only together with the wit-bindgen CLI in
+      # tools/wasm-toolchain.sh (rust/bindings/CI-NOTES.md).
+      - dependency-name: wit-bindgen
+  # The server and the ABI tests pin the same Wasmtime exactly: the ABI is
+  # tested on the runtime the server ships, so the group moves both in one
+  # pull request. rust/server is outside the rust/ workspace, with its own
+  # lockfile, and so is rust/bindings/abi/tests.
+  - package-ecosystem: cargo
+    directories:
+      - /rust/server
+      - /rust/bindings/abi/tests
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      wasmtime:
+        patterns:
+          - "wasmtime"
+          - "wasmtime-*"
+  # The server image's two bases (rust slim for the build, distroless
+  # static for the runtime) are pinned by digest.
+  - package-ecosystem: docker
+    directory: /rust/server
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   # No ignore rule: the multi-line PHPUnit constraint already lets each
   # runtime resolve its own line, so the @types/node and JUnit pattern has no
   # analogue here.
@@ -202,6 +231,22 @@ updates:
   # the library by project reference, so there is nothing for one to bump.
   - package-ecosystem: nuget
     directory: /dotnet/fuzz
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # tools/ has its own lockfile for the CI tools (ajv, for the wire-schema
+  # check); a bump there changes what CI validates answers with.
+  - package-ecosystem: npm
+    directory: /tools
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # The clean room tools/reproduce-wasm.sh --container builds: its Debian
+  # base is pinned by digest, and a pin without updates rots.
+  - package-ecosystem: docker
+    directory: /tools/reproduce
     schedule:
       interval: weekly
     cooldown:

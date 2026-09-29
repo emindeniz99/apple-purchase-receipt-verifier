@@ -1,0 +1,21 @@
+# Evidence only (2026-09-29). The native twin of aprv.wasm: the same four
+# bodies as rust/bindings/abi/src/lib.rs, over aprv-surface and aprv-wire,
+# as a native program. scripts/parity.sh copies this file next to src/ as
+# Cargo.toml with @RUST@ replaced by the repository's rust/ directory, and
+# the workspace's Cargo.lock beside it.
+[package]
+name = "aprv-native-calls"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+aprv-surface = { path = "@RUST@/bindings/surface", default-features = false }
+aprv-wire = { path = "@RUST@/bindings/wire", default-features = false }
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+serde_json = "1"
+
+[workspace]
+
+[patch.crates-io]
+openssl-sys = { path = "@RUST@/vendor/openssl-sys" }

@@ -1,0 +1,1838 @@
+Compiled from "Structure.java"
+class com.sun.jna.Structure$FFIType$FFITypes {
+  private static com.sun.jna.Pointer ffi_type_void;
+  private static com.sun.jna.Pointer ffi_type_float;
+  private static com.sun.jna.Pointer ffi_type_double;
+  private static com.sun.jna.Pointer ffi_type_longdouble;
+  private static com.sun.jna.Pointer ffi_type_uint8;
+  private static com.sun.jna.Pointer ffi_type_sint8;
+  private static com.sun.jna.Pointer ffi_type_uint16;
+  private static com.sun.jna.Pointer ffi_type_sint16;
+  private static com.sun.jna.Pointer ffi_type_uint32;
+  private static com.sun.jna.Pointer ffi_type_sint32;
+  private static com.sun.jna.Pointer ffi_type_uint64;
+  private static com.sun.jna.Pointer ffi_type_sint64;
+  private static com.sun.jna.Pointer ffi_type_pointer;
+  private com.sun.jna.Structure$FFIType$FFITypes();
+  static com.sun.jna.Pointer access$1000();
+  static com.sun.jna.Pointer access$1100();
+  static com.sun.jna.Pointer access$1200();
+  static com.sun.jna.Pointer access$1300();
+  static com.sun.jna.Pointer access$1400();
+  static com.sun.jna.Pointer access$1500();
+  static com.sun.jna.Pointer access$1600();
+  static com.sun.jna.Pointer access$1700();
+  static com.sun.jna.Pointer access$1800();
+  static com.sun.jna.Pointer access$1900();
+  static com.sun.jna.Pointer access$2000();
+  static com.sun.jna.Pointer access$2100();
+  static com.sun.jna.Pointer access$2200();
+}
+Compiled from "PointerType.java"
+public abstract class com.sun.jna.PointerType implements com.sun.jna.NativeMapped {
+  private com.sun.jna.Pointer pointer;
+  protected com.sun.jna.PointerType();
+  protected com.sun.jna.PointerType(com.sun.jna.Pointer);
+  public java.lang.Class<?> nativeType();
+  public java.lang.Object toNative();
+  public com.sun.jna.Pointer getPointer();
+  public void setPointer(com.sun.jna.Pointer);
+  public java.lang.Object fromNative(java.lang.Object, com.sun.jna.FromNativeContext);
+  public int hashCode();
+  public boolean equals(java.lang.Object);
+  public java.lang.String toString();
+}
+Compiled from "CallbackReference.java"
+public class com.sun.jna.CallbackReference extends java.lang.ref.WeakReference<com.sun.jna.Callback> implements java.io.Closeable {
+  static final java.util.Map<com.sun.jna.Callback, com.sun.jna.CallbackReference> callbackMap;
+  static final java.util.Map<com.sun.jna.Callback, com.sun.jna.CallbackReference> directCallbackMap;
+  static final java.util.Map<com.sun.jna.Pointer, java.lang.ref.Reference<com.sun.jna.Callback>[]> pointerCallbackMap;
+  static final java.util.Map<java.lang.Object, java.lang.Object> allocations;
+  private static final java.util.Map<java.lang.Long, java.lang.ref.Reference<com.sun.jna.CallbackReference>> allocatedMemory;
+  private static final java.lang.reflect.Method PROXY_CALLBACK_METHOD;
+  private static final java.lang.Class<?> DLL_CALLBACK_CLASS;
+  private static final java.util.Map<com.sun.jna.Callback, com.sun.jna.CallbackThreadInitializer> initializers;
+  com.sun.jna.internal.Cleaner$Cleanable cleanable;
+  com.sun.jna.Pointer cbstruct;
+  com.sun.jna.Pointer trampoline;
+  com.sun.jna.CallbackProxy proxy;
+  java.lang.reflect.Method method;
+  int callingConvention;
+  static com.sun.jna.CallbackThreadInitializer setCallbackThreadInitializer(com.sun.jna.Callback, com.sun.jna.CallbackThreadInitializer);
+  private static java.lang.ThreadGroup initializeThread(com.sun.jna.Callback, com.sun.jna.CallbackReference$AttachOptions);
+  public static com.sun.jna.Callback getCallback(java.lang.Class<?>, com.sun.jna.Pointer);
+  private static com.sun.jna.Callback getCallback(java.lang.Class<?>, com.sun.jna.Pointer, boolean);
+  private static com.sun.jna.Callback getTypeAssignableCallback(java.lang.Class<?>, java.lang.ref.Reference<com.sun.jna.Callback>[]);
+  private static java.lang.ref.Reference<com.sun.jna.Callback>[] addCallbackToArray(com.sun.jna.Callback, java.lang.ref.Reference<com.sun.jna.Callback>[]);
+  private static com.sun.jna.Callback createCallback(java.lang.Class<?>, com.sun.jna.Pointer);
+  private com.sun.jna.CallbackReference(com.sun.jna.Callback, int, boolean);
+  private java.lang.Class<?> getNativeType(java.lang.Class<?>);
+  private static java.lang.reflect.Method checkMethod(java.lang.reflect.Method);
+  static java.lang.Class<?> findCallbackClass(java.lang.Class<?>);
+  private static java.lang.reflect.Method getCallbackMethod(com.sun.jna.Callback);
+  private static java.lang.reflect.Method getCallbackMethod(java.lang.Class<?>);
+  private void setCallbackOptions(int);
+  public com.sun.jna.Pointer getTrampoline();
+  public void close();
+  protected void dispose();
+  static void disposeAll();
+  private com.sun.jna.Callback getCallback();
+  private static com.sun.jna.Pointer getNativeFunctionPointer(com.sun.jna.Callback);
+  public static com.sun.jna.Pointer getFunctionPointer(com.sun.jna.Callback);
+  private static com.sun.jna.Pointer getFunctionPointer(com.sun.jna.Callback, boolean);
+  private static boolean isAllowableNativeType(java.lang.Class<?>);
+  private static com.sun.jna.Pointer getNativeString(java.lang.Object, boolean);
+  static com.sun.jna.Callback access$000(com.sun.jna.CallbackReference);
+  static com.sun.jna.Pointer access$100(java.lang.Object, boolean);
+  static java.util.Map access$200();
+  static {};
+}
+Compiled from "Structure.java"
+class com.sun.jna.Structure$StructureSet extends java.util.AbstractCollection<com.sun.jna.Structure> implements java.util.Set<com.sun.jna.Structure> {
+  com.sun.jna.Structure[] elements;
+  private int count;
+  com.sun.jna.Structure$StructureSet();
+  private void ensureCapacity(int);
+  public com.sun.jna.Structure[] getElements();
+  public int size();
+  public boolean contains(java.lang.Object);
+  public boolean add(com.sun.jna.Structure);
+  private int indexOf(com.sun.jna.Structure);
+  public boolean remove(java.lang.Object);
+  public java.util.Iterator<com.sun.jna.Structure> iterator();
+  public boolean add(java.lang.Object);
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$5 implements java.security.PrivilegedAction<java.lang.reflect.Method> {
+  com.sun.jna.Native$5();
+  public java.lang.reflect.Method run();
+  public java.lang.Object run();
+}
+Compiled from "Function.java"
+public class com.sun.jna.Function extends com.sun.jna.Pointer {
+  public static final int MAX_NARGS;
+  public static final int C_CONVENTION;
+  public static final int ALT_CONVENTION;
+  private static final int MASK_CC;
+  public static final int THROW_LAST_ERROR;
+  public static final int USE_VARARGS;
+  private static final int USE_VARARGS_SHIFT;
+  static final java.lang.Integer INTEGER_TRUE;
+  static final java.lang.Integer INTEGER_FALSE;
+  private com.sun.jna.NativeLibrary library;
+  private final java.lang.String functionName;
+  final java.lang.String encoding;
+  final int callFlags;
+  final java.util.Map<java.lang.String, ?> options;
+  static final java.lang.String OPTION_INVOKING_METHOD;
+  private static final com.sun.jna.VarArgsChecker IS_VARARGS;
+  public static com.sun.jna.Function getFunction(java.lang.String, java.lang.String);
+  public static com.sun.jna.Function getFunction(java.lang.String, java.lang.String, int);
+  public static com.sun.jna.Function getFunction(java.lang.String, java.lang.String, int, java.lang.String);
+  public static com.sun.jna.Function getFunction(com.sun.jna.Pointer);
+  public static com.sun.jna.Function getFunction(com.sun.jna.Pointer, int);
+  public static com.sun.jna.Function getFunction(com.sun.jna.Pointer, int, java.lang.String);
+  com.sun.jna.Function(com.sun.jna.NativeLibrary, java.lang.String, int, java.lang.String);
+  com.sun.jna.Function(com.sun.jna.Pointer, int, java.lang.String);
+  private void checkCallingConvention(int) throws java.lang.IllegalArgumentException;
+  public java.lang.String getName();
+  public int getCallingConvention();
+  public java.lang.Object invoke(java.lang.Class<?>, java.lang.Object[]);
+  public java.lang.Object invoke(java.lang.Class<?>, java.lang.Object[], java.util.Map<java.lang.String, ?>);
+  java.lang.Object invoke(java.lang.reflect.Method, java.lang.Class<?>[], java.lang.Class<?>, java.lang.Object[], java.util.Map<java.lang.String, ?>);
+  java.lang.Object invoke(java.lang.Object[], java.lang.Class<?>, boolean);
+  java.lang.Object invoke(java.lang.Object[], java.lang.Class<?>, boolean, int);
+  private com.sun.jna.Pointer invokePointer(int, java.lang.Object[]);
+  private java.lang.Object convertArgument(java.lang.Object[], int, java.lang.reflect.Method, com.sun.jna.TypeMapper, boolean, java.lang.Class<?>);
+  private boolean isPrimitiveArray(java.lang.Class<?>);
+  public void invoke(java.lang.Object[]);
+  private java.lang.String invokeString(int, java.lang.Object[], boolean);
+  public java.lang.String toString();
+  public java.lang.Object invokeObject(java.lang.Object[]);
+  public com.sun.jna.Pointer invokePointer(java.lang.Object[]);
+  public java.lang.String invokeString(java.lang.Object[], boolean);
+  public int invokeInt(java.lang.Object[]);
+  public long invokeLong(java.lang.Object[]);
+  public float invokeFloat(java.lang.Object[]);
+  public double invokeDouble(java.lang.Object[]);
+  public void invokeVoid(java.lang.Object[]);
+  public boolean equals(java.lang.Object);
+  public int hashCode();
+  static java.lang.Object[] concatenateVarArgs(java.lang.Object[]);
+  static boolean isVarArgs(java.lang.reflect.Method);
+  static int fixedArgs(java.lang.reflect.Method);
+  static java.lang.Boolean valueOf(boolean);
+  static {};
+}
+Compiled from "Structure.java"
+class com.sun.jna.Structure$NativeStringTracking {
+  private final java.lang.Object value;
+  private com.sun.jna.NativeString peer;
+  com.sun.jna.Structure$NativeStringTracking(java.lang.Object);
+  static com.sun.jna.NativeString access$002(com.sun.jna.Structure$NativeStringTracking, com.sun.jna.NativeString);
+  static com.sun.jna.NativeString access$000(com.sun.jna.Structure$NativeStringTracking);
+  static java.lang.Object access$100(com.sun.jna.Structure$NativeStringTracking);
+}
+Compiled from "NativeLong.java"
+public class com.sun.jna.NativeLong extends com.sun.jna.IntegerType {
+  private static final long serialVersionUID;
+  public static final int SIZE;
+  public com.sun.jna.NativeLong();
+  public com.sun.jna.NativeLong(long);
+  public com.sun.jna.NativeLong(long, boolean);
+  static {};
+}
+Compiled from "Structure.java"
+class com.sun.jna.Structure$2 extends java.lang.ThreadLocal<java.util.Set<com.sun.jna.Structure>> {
+  com.sun.jna.Structure$2();
+  protected synchronized java.util.Set<com.sun.jna.Structure> initialValue();
+  protected java.lang.Object initialValue();
+}
+Compiled from "Library.java"
+final class com.sun.jna.Library$Handler$FunctionInfo {
+  final java.lang.reflect.InvocationHandler handler;
+  final com.sun.jna.Function function;
+  final boolean isVarArgs;
+  final java.lang.Object methodHandle;
+  final java.util.Map<java.lang.String, ?> options;
+  final java.lang.Class<?>[] parameterTypes;
+  com.sun.jna.Library$Handler$FunctionInfo(java.lang.Object);
+  com.sun.jna.Library$Handler$FunctionInfo(java.lang.reflect.InvocationHandler, com.sun.jna.Function, java.lang.Class<?>[], boolean, java.util.Map<java.lang.String, ?>);
+}
+Compiled from "FunctionParameterContext.java"
+public class com.sun.jna.FunctionParameterContext extends com.sun.jna.ToNativeContext {
+  private com.sun.jna.Function function;
+  private java.lang.Object[] args;
+  private int index;
+  com.sun.jna.FunctionParameterContext(com.sun.jna.Function, java.lang.Object[], int);
+  public com.sun.jna.Function getFunction();
+  public java.lang.Object[] getParameters();
+  public int getParameterIndex();
+}
+Compiled from "ELFAnalyser.java"
+class com.sun.jna.ELFAnalyser {
+  private static final byte[] ELF_MAGIC;
+  private static final int EF_ARM_ABI_FLOAT_HARD;
+  private static final int EF_ARM_ABI_FLOAT_SOFT;
+  private static final int EI_DATA_BIG_ENDIAN;
+  private static final int E_MACHINE_ARM;
+  private static final int EI_CLASS_64BIT;
+  private static final int SHN_UNDEF;
+  private static final int SHN_XINDEX;
+  private final java.lang.String filename;
+  private boolean ELF;
+  private boolean _64Bit;
+  private boolean bigEndian;
+  private boolean armHardFloatFlag;
+  private boolean armSoftFloatFlag;
+  private boolean armEabiAapcsVfp;
+  private boolean arm;
+  public static com.sun.jna.ELFAnalyser analyse(java.lang.String) throws java.io.IOException;
+  public boolean isELF();
+  public boolean is64Bit();
+  public boolean isBigEndian();
+  public java.lang.String getFilename();
+  public boolean isArmHardFloat();
+  public boolean isArmEabiAapcsVfp();
+  public boolean isArmHardFloatFlag();
+  public boolean isArmSoftFloatFlag();
+  public boolean isArm();
+  private com.sun.jna.ELFAnalyser(java.lang.String);
+  private void runDetection() throws java.io.IOException;
+  private void parseEabiAapcsVfp(java.nio.ByteBuffer, java.io.RandomAccessFile) throws java.io.IOException;
+  private static java.util.Map<java.lang.Integer, java.util.Map<com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag, java.lang.Object>> parseArmAttributes(java.nio.ByteBuffer);
+  private static java.util.Map<java.lang.Integer, java.util.Map<com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag, java.lang.Object>> parseAEABI(java.nio.ByteBuffer);
+  private static java.util.Map<com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag, java.lang.Object> parseFileAttribute(java.nio.ByteBuffer);
+  private static java.lang.String readNTBS(java.nio.ByteBuffer, java.lang.Integer);
+  private static java.math.BigInteger readULEB128(java.nio.ByteBuffer);
+  static {};
+}
+Compiled from "ELFAnalyser.java"
+class com.sun.jna.ELFAnalyser$ELFSectionHeaderEntry {
+  private final int nameOffset;
+  private java.lang.String name;
+  private final int type;
+  private final long flags;
+  private final long addr;
+  private final long offset;
+  private final long size;
+  private final int link;
+  public com.sun.jna.ELFAnalyser$ELFSectionHeaderEntry(boolean, java.nio.ByteBuffer);
+  public java.lang.String getName();
+  public void setName(java.lang.String);
+  public int getNameOffset();
+  public int getType();
+  public long getFlags();
+  public long getOffset();
+  public long getSize();
+  public long getAddr();
+  public int getLink();
+  public java.lang.String toString();
+}
+Compiled from "CallbackReference.java"
+class com.sun.jna.CallbackReference$DefaultCallbackProxy implements com.sun.jna.CallbackProxy {
+  private final java.lang.reflect.Method callbackMethod;
+  private com.sun.jna.ToNativeConverter toNative;
+  private final com.sun.jna.FromNativeConverter[] fromNative;
+  private final java.lang.String encoding;
+  final com.sun.jna.CallbackReference this$0;
+  public com.sun.jna.CallbackReference$DefaultCallbackProxy(com.sun.jna.CallbackReference, java.lang.reflect.Method, com.sun.jna.TypeMapper, java.lang.String);
+  public com.sun.jna.Callback getCallback();
+  private java.lang.Object invokeCallback(java.lang.Object[]);
+  public java.lang.Object callback(java.lang.Object[]);
+  private java.lang.Object convertArgument(java.lang.Object, java.lang.Class<?>);
+  private java.lang.Object convertResult(java.lang.Object);
+  public java.lang.Class<?>[] getParameterTypes();
+  public java.lang.Class<?> getReturnType();
+}
+Compiled from "Library.java"
+public interface com.sun.jna.Library {
+  public static final java.lang.String OPTION_TYPE_MAPPER;
+  public static final java.lang.String OPTION_FUNCTION_MAPPER;
+  public static final java.lang.String OPTION_INVOCATION_MAPPER;
+  public static final java.lang.String OPTION_STRUCTURE_ALIGNMENT;
+  public static final java.lang.String OPTION_STRING_ENCODING;
+  public static final java.lang.String OPTION_ALLOW_OBJECTS;
+  public static final java.lang.String OPTION_CALLING_CONVENTION;
+  public static final java.lang.String OPTION_OPEN_FLAGS;
+  public static final java.lang.String OPTION_CLASSLOADER;
+  public static final java.lang.String OPTION_SYMBOL_PROVIDER;
+}
+Compiled from "Native.java"
+public final class com.sun.jna.Native implements com.sun.jna.Version {
+  private static final java.util.logging.Logger LOG;
+  public static final java.nio.charset.Charset DEFAULT_CHARSET;
+  public static final java.lang.String DEFAULT_ENCODING;
+  public static final boolean DEBUG_LOAD;
+  public static final boolean DEBUG_JNA_LOAD;
+  private static final java.util.logging.Level DEBUG_JNA_LOAD_LEVEL;
+  static java.lang.String jnidispatchPath;
+  private static final java.util.Map<java.lang.Class<?>, java.util.Map<java.lang.String, java.lang.Object>> typeOptions;
+  private static final java.util.Map<java.lang.Class<?>, java.lang.ref.Reference<?>> libraries;
+  private static final java.lang.String _OPTION_ENCLOSING_LIBRARY;
+  private static final com.sun.jna.Callback$UncaughtExceptionHandler DEFAULT_HANDLER;
+  private static com.sun.jna.Callback$UncaughtExceptionHandler callbackExceptionHandler;
+  public static final int POINTER_SIZE;
+  public static final int LONG_SIZE;
+  public static final int WCHAR_SIZE;
+  public static final int SIZE_T_SIZE;
+  public static final int BOOL_SIZE;
+  public static final int LONG_DOUBLE_SIZE;
+  private static final int TYPE_VOIDP;
+  private static final int TYPE_LONG;
+  private static final int TYPE_WCHAR_T;
+  private static final int TYPE_SIZE_T;
+  private static final int TYPE_BOOL;
+  private static final int TYPE_LONG_DOUBLE;
+  private static final java.lang.reflect.Method stackWalkerGetInstance;
+  private static final java.lang.Enum stackWalkerRetainClassReference;
+  private static final java.lang.reflect.Method stackWalkerWalk;
+  private static final java.lang.Object stackWalkerFilter;
+  private static final java.lang.reflect.Constructor securityManagerExposerConstructor;
+  private static final java.lang.reflect.Method securityManagerGetClassContext;
+  private static final java.lang.reflect.Method accessControllerDoPrivileged;
+  static final int MAX_ALIGNMENT;
+  static final int MAX_PADDING;
+  private static final java.lang.Object finalizer;
+  static final java.lang.String JNA_TMPLIB_PREFIX;
+  private static final java.util.Map<java.lang.Class<?>, long[]> registeredClasses;
+  private static final java.util.Map<java.lang.Class<?>, com.sun.jna.NativeLibrary> registeredLibraries;
+  static final int CB_HAS_INITIALIZER;
+  private static final int CVT_UNSUPPORTED;
+  private static final int CVT_DEFAULT;
+  private static final int CVT_POINTER;
+  private static final int CVT_STRING;
+  private static final int CVT_STRUCTURE;
+  private static final int CVT_STRUCTURE_BYVAL;
+  private static final int CVT_BUFFER;
+  private static final int CVT_ARRAY_BYTE;
+  private static final int CVT_ARRAY_SHORT;
+  private static final int CVT_ARRAY_CHAR;
+  private static final int CVT_ARRAY_INT;
+  private static final int CVT_ARRAY_LONG;
+  private static final int CVT_ARRAY_FLOAT;
+  private static final int CVT_ARRAY_DOUBLE;
+  private static final int CVT_ARRAY_BOOLEAN;
+  private static final int CVT_BOOLEAN;
+  private static final int CVT_CALLBACK;
+  private static final int CVT_FLOAT;
+  private static final int CVT_NATIVE_MAPPED;
+  private static final int CVT_NATIVE_MAPPED_STRING;
+  private static final int CVT_NATIVE_MAPPED_WSTRING;
+  private static final int CVT_WSTRING;
+  private static final int CVT_INTEGER_TYPE;
+  private static final int CVT_POINTER_TYPE;
+  private static final int CVT_TYPE_MAPPER;
+  private static final int CVT_TYPE_MAPPER_STRING;
+  private static final int CVT_TYPE_MAPPER_WSTRING;
+  private static final int CVT_OBJECT;
+  private static final int CVT_JNIENV;
+  private static final int CVT_SHORT;
+  private static final int CVT_BYTE;
+  static final int CB_OPTION_DIRECT;
+  static final int CB_OPTION_IN_DLL;
+  private static final java.lang.ThreadLocal<com.sun.jna.Memory> nativeThreadTerminationFlag;
+  private static final java.util.Map<java.lang.Thread, com.sun.jna.Pointer> nativeThreads;
+  static boolean isCompatibleVersion(java.lang.String, java.lang.String);
+  private static void dispose();
+  static boolean deleteLibrary(java.io.File);
+  private com.sun.jna.Native();
+  private static native void initIDs();
+  public static synchronized native void setProtected(boolean);
+  public static synchronized native boolean isProtected();
+  public static long getWindowID(java.awt.Window) throws java.awt.HeadlessException;
+  public static long getComponentID(java.awt.Component) throws java.awt.HeadlessException;
+  public static com.sun.jna.Pointer getWindowPointer(java.awt.Window) throws java.awt.HeadlessException;
+  public static com.sun.jna.Pointer getComponentPointer(java.awt.Component) throws java.awt.HeadlessException;
+  static native long getWindowHandle0(java.awt.Component);
+  public static com.sun.jna.Pointer getDirectBufferPointer(java.nio.Buffer);
+  private static native long _getDirectBufferPointer(java.nio.Buffer);
+  private static java.nio.charset.Charset getCharset(java.lang.String);
+  public static java.lang.String toString(byte[]);
+  public static java.lang.String toString(byte[], java.lang.String);
+  public static java.lang.String toString(byte[], java.nio.charset.Charset);
+  public static java.lang.String toString(char[]);
+  public static java.util.List<java.lang.String> toStringList(char[]);
+  public static java.util.List<java.lang.String> toStringList(char[], int, int);
+  public static <T extends com.sun.jna.Library> T load(java.lang.Class<T>);
+  public static <T extends com.sun.jna.Library> T load(java.lang.Class<T>, java.util.Map<java.lang.String, ?>);
+  public static <T extends com.sun.jna.Library> T load(java.lang.String, java.lang.Class<T>);
+  public static <T extends com.sun.jna.Library> T load(java.lang.String, java.lang.Class<T>, java.util.Map<java.lang.String, ?>);
+  public static <T> T loadLibrary(java.lang.Class<T>);
+  public static <T> T loadLibrary(java.lang.Class<T>, java.util.Map<java.lang.String, ?>);
+  public static <T> T loadLibrary(java.lang.String, java.lang.Class<T>);
+  public static <T> T loadLibrary(java.lang.String, java.lang.Class<T>, java.util.Map<java.lang.String, ?>);
+  private static void loadLibraryInstance(java.lang.Class<?>);
+  static java.lang.Class<?> findEnclosingLibraryClass(java.lang.Class<?>);
+  public static java.util.Map<java.lang.String, java.lang.Object> getLibraryOptions(java.lang.Class<?>);
+  private static java.lang.Object lookupField(java.lang.Class<?>, java.lang.String, java.lang.Class<?>);
+  public static com.sun.jna.TypeMapper getTypeMapper(java.lang.Class<?>);
+  public static java.lang.String getStringEncoding(java.lang.Class<?>);
+  public static java.lang.String getDefaultStringEncoding();
+  public static int getStructureAlignment(java.lang.Class<?>);
+  static byte[] getBytes(java.lang.String);
+  static byte[] getBytes(java.lang.String, java.lang.String);
+  static byte[] getBytes(java.lang.String, java.nio.charset.Charset);
+  public static byte[] toByteArray(java.lang.String);
+  public static byte[] toByteArray(java.lang.String, java.lang.String);
+  public static byte[] toByteArray(java.lang.String, java.nio.charset.Charset);
+  public static char[] toCharArray(java.lang.String);
+  private static void loadNativeDispatchLibrary();
+  private static void loadNativeDispatchLibraryFromClasspath();
+  static boolean isUnpacked(java.io.File);
+  public static java.io.File extractFromResourcePath(java.lang.String) throws java.io.IOException;
+  public static java.io.File extractFromResourcePath(java.lang.String, java.lang.ClassLoader) throws java.io.IOException;
+  private static native int sizeof(int);
+  private static native java.lang.String getNativeVersion();
+  private static native java.lang.String getAPIChecksum();
+  public static native int getLastError();
+  public static native void setLastError(int);
+  public static com.sun.jna.Library synchronizedLibrary(com.sun.jna.Library);
+  public static java.lang.String getWebStartLibraryPath(java.lang.String);
+  static void markTemporaryFile(java.io.File);
+  static java.io.File getTempDir() throws java.io.IOException;
+  static void removeTemporaryFiles() throws java.io.IOException;
+  public static int getNativeSize(java.lang.Class<?>, java.lang.Object);
+  public static int getNativeSize(java.lang.Class<?>);
+  public static boolean isSupportedNativeType(java.lang.Class<?>);
+  public static void setCallbackExceptionHandler(com.sun.jna.Callback$UncaughtExceptionHandler);
+  public static com.sun.jna.Callback$UncaughtExceptionHandler getCallbackExceptionHandler();
+  public static void register(java.lang.String);
+  public static void register(com.sun.jna.NativeLibrary);
+  static java.lang.Class<?> findDirectMappedClass(java.lang.Class<?>);
+  static java.lang.Class<?> getCallingClass();
+  public static void setCallbackThreadInitializer(com.sun.jna.Callback, com.sun.jna.CallbackThreadInitializer);
+  private static void unregisterAll();
+  public static void unregister();
+  public static void unregister(java.lang.Class<?>);
+  public static boolean registered(java.lang.Class<?>);
+  private static native void unregister(java.lang.Class<?>, long[]);
+  static java.lang.String getSignature(java.lang.Class<?>);
+  static java.lang.String replace(java.lang.String, java.lang.String, java.lang.String);
+  private static int getConversion(java.lang.Class<?>, com.sun.jna.TypeMapper, boolean);
+  public static void register(java.lang.Class<?>, java.lang.String);
+  public static void register(java.lang.Class<?>, com.sun.jna.NativeLibrary);
+  public static com.sun.jna.NativeLibrary getNativeLibrary(com.sun.jna.Library);
+  public static com.sun.jna.NativeLibrary getNativeLibrary(java.lang.Class<?>);
+  private static java.util.Map<java.lang.String, java.lang.Object> cacheOptions(java.lang.Class<?>, java.util.Map<java.lang.String, ?>, java.lang.Object);
+  private static native long registerMethod(java.lang.Class<?>, java.lang.String, java.lang.String, int[], long[], long[], int, long, long, java.lang.reflect.Method, long, int, boolean, com.sun.jna.ToNativeConverter[], com.sun.jna.FromNativeConverter, java.lang.String);
+  private static com.sun.jna.NativeMapped fromNative(java.lang.Class<?>, java.lang.Object);
+  private static com.sun.jna.NativeMapped fromNative(java.lang.reflect.Method, java.lang.Object);
+  private static java.lang.Class<?> nativeType(java.lang.Class<?>);
+  private static java.lang.Object toNative(com.sun.jna.ToNativeConverter, java.lang.Object);
+  private static java.lang.Object fromNative(com.sun.jna.FromNativeConverter, java.lang.Object, java.lang.reflect.Method);
+  public static native long ffi_prep_cif(int, int, long, long);
+  public static native void ffi_call(long, long, long, long);
+  public static native long ffi_prep_closure(long, com.sun.jna.Native$ffi_callback);
+  public static native void ffi_free_closure(long);
+  static native int initialize_ffi_type(long);
+  public static void main(java.lang.String[]);
+  static synchronized native void freeNativeCallback(long);
+  static synchronized native long createNativeCallback(com.sun.jna.Callback, java.lang.reflect.Method, java.lang.Class<?>[], java.lang.Class<?>, int, int, java.lang.String);
+  static native int invokeInt(com.sun.jna.Function, long, int, java.lang.Object[]);
+  static native long invokeLong(com.sun.jna.Function, long, int, java.lang.Object[]);
+  static native void invokeVoid(com.sun.jna.Function, long, int, java.lang.Object[]);
+  static native float invokeFloat(com.sun.jna.Function, long, int, java.lang.Object[]);
+  static native double invokeDouble(com.sun.jna.Function, long, int, java.lang.Object[]);
+  static native long invokePointer(com.sun.jna.Function, long, int, java.lang.Object[]);
+  private static native void invokeStructure(com.sun.jna.Function, long, int, java.lang.Object[], long, long);
+  static com.sun.jna.Structure invokeStructure(com.sun.jna.Function, long, int, java.lang.Object[], com.sun.jna.Structure);
+  static native java.lang.Object invokeObject(com.sun.jna.Function, long, int, java.lang.Object[]);
+  static long open(java.lang.String);
+  static native long open(java.lang.String, int);
+  static native void close(long);
+  static native long findSymbol(long, java.lang.String);
+  static native long indexOf(com.sun.jna.Pointer, long, long, byte);
+  static native void read(com.sun.jna.Pointer, long, long, byte[], int, int);
+  static native void read(com.sun.jna.Pointer, long, long, short[], int, int);
+  static native void read(com.sun.jna.Pointer, long, long, char[], int, int);
+  static native void read(com.sun.jna.Pointer, long, long, int[], int, int);
+  static native void read(com.sun.jna.Pointer, long, long, long[], int, int);
+  static native void read(com.sun.jna.Pointer, long, long, float[], int, int);
+  static native void read(com.sun.jna.Pointer, long, long, double[], int, int);
+  static native void write(com.sun.jna.Pointer, long, long, byte[], int, int);
+  static native void write(com.sun.jna.Pointer, long, long, short[], int, int);
+  static native void write(com.sun.jna.Pointer, long, long, char[], int, int);
+  static native void write(com.sun.jna.Pointer, long, long, int[], int, int);
+  static native void write(com.sun.jna.Pointer, long, long, long[], int, int);
+  static native void write(com.sun.jna.Pointer, long, long, float[], int, int);
+  static native void write(com.sun.jna.Pointer, long, long, double[], int, int);
+  static native byte getByte(com.sun.jna.Pointer, long, long);
+  static native char getChar(com.sun.jna.Pointer, long, long);
+  static native short getShort(com.sun.jna.Pointer, long, long);
+  static native int getInt(com.sun.jna.Pointer, long, long);
+  static native long getLong(com.sun.jna.Pointer, long, long);
+  static native float getFloat(com.sun.jna.Pointer, long, long);
+  static native double getDouble(com.sun.jna.Pointer, long, long);
+  static com.sun.jna.Pointer getPointer(long);
+  private static native long _getPointer(long);
+  static native java.lang.String getWideString(com.sun.jna.Pointer, long, long);
+  static java.lang.String getString(com.sun.jna.Pointer, long);
+  static java.lang.String getString(com.sun.jna.Pointer, long, java.lang.String);
+  static native byte[] getStringBytes(com.sun.jna.Pointer, long, long);
+  static native void setMemory(com.sun.jna.Pointer, long, long, long, byte);
+  static native void setByte(com.sun.jna.Pointer, long, long, byte);
+  static native void setShort(com.sun.jna.Pointer, long, long, short);
+  static native void setChar(com.sun.jna.Pointer, long, long, char);
+  static native void setInt(com.sun.jna.Pointer, long, long, int);
+  static native void setLong(com.sun.jna.Pointer, long, long, long);
+  static native void setFloat(com.sun.jna.Pointer, long, long, float);
+  static native void setDouble(com.sun.jna.Pointer, long, long, double);
+  static native void setPointer(com.sun.jna.Pointer, long, long, long);
+  static native void setWideString(com.sun.jna.Pointer, long, long, java.lang.String);
+  static native java.nio.ByteBuffer getDirectByteBuffer(com.sun.jna.Pointer, long, long, long);
+  public static native long malloc(long);
+  public static native void free(long);
+  public static void detach(boolean);
+  static com.sun.jna.Pointer getTerminationFlag(java.lang.Thread);
+  private static native void setDetachState(boolean, long);
+  static java.util.logging.Logger access$000();
+  static void access$100();
+  static {};
+}
+Compiled from "NativeMappedConverter.java"
+public class com.sun.jna.NativeMappedConverter implements com.sun.jna.TypeConverter {
+  private static final java.util.Map<java.lang.Class<?>, java.lang.ref.Reference<com.sun.jna.NativeMappedConverter>> converters;
+  private final java.lang.Class<?> type;
+  private final java.lang.Class<?> nativeType;
+  private final com.sun.jna.NativeMapped instance;
+  public static com.sun.jna.NativeMappedConverter getInstance(java.lang.Class<?>);
+  public com.sun.jna.NativeMappedConverter(java.lang.Class<?>);
+  public com.sun.jna.NativeMapped defaultValue();
+  public java.lang.Object fromNative(java.lang.Object, com.sun.jna.FromNativeContext);
+  public java.lang.Class<?> nativeType();
+  public java.lang.Object toNative(java.lang.Object, com.sun.jna.ToNativeContext);
+  static {};
+}
+Compiled from "VarArgsChecker.java"
+final class com.sun.jna.VarArgsChecker$RealVarArgsChecker extends com.sun.jna.VarArgsChecker {
+  private com.sun.jna.VarArgsChecker$RealVarArgsChecker();
+  boolean isVarArgs(java.lang.reflect.Method);
+  int fixedArgs(java.lang.reflect.Method);
+  com.sun.jna.VarArgsChecker$RealVarArgsChecker(com.sun.jna.VarArgsChecker$1);
+}
+Compiled from "DefaultTypeMapper.java"
+class com.sun.jna.DefaultTypeMapper$Entry {
+  public java.lang.Class<?> type;
+  public java.lang.Object converter;
+  public com.sun.jna.DefaultTypeMapper$Entry(java.lang.Class<?>, java.lang.Object);
+}
+Compiled from "NativeString.java"
+class com.sun.jna.NativeString implements java.lang.CharSequence,java.lang.Comparable {
+  static final java.lang.String WIDE_STRING;
+  private com.sun.jna.Pointer pointer;
+  private java.lang.String encoding;
+  public com.sun.jna.NativeString(java.lang.String);
+  public com.sun.jna.NativeString(java.lang.String, boolean);
+  public com.sun.jna.NativeString(com.sun.jna.WString);
+  public com.sun.jna.NativeString(java.lang.String, java.lang.String);
+  public int hashCode();
+  public boolean equals(java.lang.Object);
+  public java.lang.String toString();
+  public com.sun.jna.Pointer getPointer();
+  public char charAt(int);
+  public int length();
+  public java.lang.CharSequence subSequence(int, int);
+  public int compareTo(java.lang.Object);
+}
+Compiled from "Function.java"
+class com.sun.jna.Function$PointerArray extends com.sun.jna.Memory implements com.sun.jna.Function$PostCallRead {
+  private final com.sun.jna.Pointer[] original;
+  public com.sun.jna.Function$PointerArray(com.sun.jna.Pointer[]);
+  public void read();
+}
+Compiled from "NativeLibrary.java"
+final class com.sun.jna.NativeLibrary$NativeLibraryDisposer implements java.lang.Runnable {
+  private long handle;
+  public com.sun.jna.NativeLibrary$NativeLibraryDisposer(long);
+  public synchronized void run();
+}
+Compiled from "IntegerType.java"
+public abstract class com.sun.jna.IntegerType extends java.lang.Number implements com.sun.jna.NativeMapped {
+  private static final long serialVersionUID;
+  private int size;
+  private java.lang.Number number;
+  private boolean unsigned;
+  private long value;
+  public com.sun.jna.IntegerType(int);
+  public com.sun.jna.IntegerType(int, boolean);
+  public com.sun.jna.IntegerType(int, long);
+  public com.sun.jna.IntegerType(int, long, boolean);
+  public void setValue(long);
+  public java.lang.Object toNative();
+  public java.lang.Object fromNative(java.lang.Object, com.sun.jna.FromNativeContext);
+  public java.lang.Class<?> nativeType();
+  public int intValue();
+  public long longValue();
+  public float floatValue();
+  public double doubleValue();
+  public boolean equals(java.lang.Object);
+  public java.lang.String toString();
+  public int hashCode();
+  public static <T extends com.sun.jna.IntegerType> int compare(T, T);
+  public static int compare(com.sun.jna.IntegerType, long);
+  public static final int compare(long, long);
+}
+Compiled from "StructureReadContext.java"
+public class com.sun.jna.StructureReadContext extends com.sun.jna.FromNativeContext {
+  private com.sun.jna.Structure structure;
+  private java.lang.reflect.Field field;
+  com.sun.jna.StructureReadContext(com.sun.jna.Structure, java.lang.reflect.Field);
+  public com.sun.jna.Structure getStructure();
+  public java.lang.reflect.Field getField();
+}
+Compiled from "VarArgsChecker.java"
+class com.sun.jna.VarArgsChecker$1 {
+}
+Compiled from "Function.java"
+class com.sun.jna.Function$NativeMappedArray extends com.sun.jna.Memory implements com.sun.jna.Function$PostCallRead {
+  private final com.sun.jna.NativeMapped[] original;
+  public com.sun.jna.Function$NativeMappedArray(com.sun.jna.NativeMapped[]);
+  public void read();
+}
+Compiled from "MethodParameterContext.java"
+public class com.sun.jna.MethodParameterContext extends com.sun.jna.FunctionParameterContext {
+  private java.lang.reflect.Method method;
+  com.sun.jna.MethodParameterContext(com.sun.jna.Function, java.lang.Object[], int, java.lang.reflect.Method);
+  public java.lang.reflect.Method getMethod();
+}
+Compiled from "NativeLibrary.java"
+public class com.sun.jna.NativeLibrary implements java.io.Closeable {
+  private static final java.util.logging.Logger LOG;
+  private static final java.util.logging.Level DEBUG_LOAD_LEVEL;
+  private static final com.sun.jna.SymbolProvider NATIVE_SYMBOL_PROVIDER;
+  private final com.sun.jna.internal.Cleaner$Cleanable cleanable;
+  private volatile long handle;
+  private final java.lang.String libraryName;
+  private final java.lang.String libraryPath;
+  private final java.util.Map<java.lang.String, com.sun.jna.Function> functions;
+  private final com.sun.jna.SymbolProvider symbolProvider;
+  private final int callFlags;
+  private final java.lang.String encoding;
+  private final java.util.Map<java.lang.String, ?> options;
+  private static final java.util.Map<java.lang.String, java.lang.ref.Reference<com.sun.jna.NativeLibrary>> libraries;
+  private static final java.util.Map<java.lang.String, java.util.List<java.lang.String>> searchPaths;
+  private static final java.util.LinkedHashSet<java.lang.String> librarySearchPath;
+  private static final int DEFAULT_OPEN_OPTIONS;
+  private static java.lang.reflect.Method addSuppressedMethod;
+  private static java.lang.String functionKey(java.lang.String, int, java.lang.String);
+  private com.sun.jna.NativeLibrary(java.lang.String, java.lang.String, long, java.util.Map<java.lang.String, ?>);
+  private static int openFlags(java.util.Map<java.lang.String, ?>);
+  private static com.sun.jna.NativeLibrary loadLibrary(java.lang.String, java.util.Map<java.lang.String, ?>);
+  private static void addSuppressedReflected(java.lang.Throwable, java.lang.Throwable);
+  static java.lang.String[] matchFramework(java.lang.String);
+  private java.lang.String getLibraryName(java.lang.String);
+  public static final com.sun.jna.NativeLibrary getInstance(java.lang.String);
+  public static final com.sun.jna.NativeLibrary getInstance(java.lang.String, java.lang.ClassLoader);
+  public static final com.sun.jna.NativeLibrary getInstance(java.lang.String, java.util.Map<java.lang.String, ?>);
+  public static final synchronized com.sun.jna.NativeLibrary getProcess();
+  public static final synchronized com.sun.jna.NativeLibrary getProcess(java.util.Map<java.lang.String, ?>);
+  public static final void addSearchPath(java.lang.String, java.lang.String);
+  public com.sun.jna.Function getFunction(java.lang.String);
+  com.sun.jna.Function getFunction(java.lang.String, java.lang.reflect.Method);
+  public com.sun.jna.Function getFunction(java.lang.String, int);
+  public com.sun.jna.Function getFunction(java.lang.String, int, java.lang.String);
+  public java.util.Map<java.lang.String, ?> getOptions();
+  public com.sun.jna.Pointer getGlobalVariableAddress(java.lang.String);
+  long getSymbolAddress(java.lang.String);
+  public java.lang.String toString();
+  public java.lang.String getName();
+  public java.io.File getFile();
+  static void disposeAll();
+  public void close();
+  public void dispose();
+  private static java.util.List<java.lang.String> initPaths(java.lang.String);
+  private static java.lang.String findLibraryPath(java.lang.String, java.util.Collection<java.lang.String>);
+  static java.lang.String mapSharedLibraryName(java.lang.String);
+  private static boolean isVersionedName(java.lang.String);
+  static java.lang.String matchLibrary(java.lang.String, java.util.Collection<java.lang.String>);
+  static double parseVersion(java.lang.String);
+  private static java.lang.String getMultiArchPath();
+  private static java.util.ArrayList<java.lang.String> getLinuxLdPaths();
+  static boolean access$000(java.lang.String);
+  static {};
+}
+Compiled from "Structure.java"
+public interface com.sun.jna.Structure$ByReference {
+}
+Compiled from "Platform.java"
+public final class com.sun.jna.Platform {
+  public static final int UNSPECIFIED;
+  public static final int MAC;
+  public static final int LINUX;
+  public static final int WINDOWS;
+  public static final int SOLARIS;
+  public static final int FREEBSD;
+  public static final int OPENBSD;
+  public static final int WINDOWSCE;
+  public static final int AIX;
+  public static final int ANDROID;
+  public static final int GNU;
+  public static final int KFREEBSD;
+  public static final int NETBSD;
+  public static final int DRAGONFLYBSD;
+  public static final boolean RO_FIELDS;
+  public static final boolean HAS_BUFFERS;
+  public static final boolean HAS_AWT;
+  public static final boolean HAS_JAWT;
+  public static final java.lang.String MATH_LIBRARY_NAME;
+  public static final java.lang.String C_LIBRARY_NAME;
+  public static final boolean HAS_DLL_CALLBACKS;
+  public static final java.lang.String RESOURCE_PREFIX;
+  private static final int osType;
+  public static final java.lang.String ARCH;
+  private com.sun.jna.Platform();
+  public static final int getOSType();
+  public static final boolean isMac();
+  public static final boolean isAndroid();
+  public static final boolean isLinux();
+  public static final boolean isAIX();
+  public static final boolean isWindowsCE();
+  public static final boolean isWindows();
+  public static final boolean isSolaris();
+  public static final boolean isDragonFlyBSD();
+  public static final boolean isFreeBSD();
+  public static final boolean isOpenBSD();
+  public static final boolean isNetBSD();
+  public static final boolean isGNU();
+  public static final boolean iskFreeBSD();
+  public static final boolean isX11();
+  public static final boolean hasRuntimeExec();
+  public static final boolean is64Bit();
+  public static final boolean isIntel();
+  public static final boolean isPPC();
+  public static final boolean isARM();
+  public static final boolean isSPARC();
+  public static final boolean isMIPS();
+  public static final boolean isLoongArch();
+  public static final boolean isRISCV();
+  static java.lang.String getCanonicalArchitecture(java.lang.String, int);
+  static boolean isSoftFloat();
+  static java.lang.String getNativeLibraryResourcePrefix();
+  static java.lang.String getNativeLibraryResourcePrefix(int, java.lang.String, java.lang.String);
+  static {};
+}
+Compiled from "FunctionResultContext.java"
+public class com.sun.jna.FunctionResultContext extends com.sun.jna.FromNativeContext {
+  private com.sun.jna.Function function;
+  private java.lang.Object[] args;
+  com.sun.jna.FunctionResultContext(java.lang.Class<?>, com.sun.jna.Function, java.lang.Object[]);
+  public com.sun.jna.Function getFunction();
+  public java.lang.Object[] getArguments();
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$Buffers {
+  private com.sun.jna.Native$Buffers();
+  static boolean isBuffer(java.lang.Class<?>);
+}
+Compiled from "CallbackParameterContext.java"
+public class com.sun.jna.CallbackParameterContext extends com.sun.jna.FromNativeContext {
+  private java.lang.reflect.Method method;
+  private java.lang.Object[] args;
+  private int index;
+  com.sun.jna.CallbackParameterContext(java.lang.Class<?>, java.lang.reflect.Method, java.lang.Object[], int);
+  public java.lang.reflect.Method getMethod();
+  public java.lang.Object[] getArguments();
+  public int getIndex();
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$1 implements com.sun.jna.Callback$UncaughtExceptionHandler {
+  com.sun.jna.Native$1();
+  public void uncaughtException(com.sun.jna.Callback, java.lang.Throwable);
+}
+Compiled from "Structure.java"
+public class com.sun.jna.Structure$FFIType$size_t extends com.sun.jna.IntegerType {
+  private static final long serialVersionUID;
+  public com.sun.jna.Structure$FFIType$size_t();
+  public com.sun.jna.Structure$FFIType$size_t(long);
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$2 implements java.util.function.Function<java.util.stream.Stream<java.lang.Object>, java.lang.Class<?>> {
+  final java.lang.reflect.Method val$stackFrameGetDeclaringClass;
+  com.sun.jna.Native$2();
+  public java.lang.Class<?> apply(java.util.stream.Stream<java.lang.Object>);
+  public java.lang.Object apply(java.lang.Object);
+}
+Compiled from "Native.java"
+public interface com.sun.jna.Native$ffi_callback {
+  public abstract void invoke(long, long, long);
+}
+Compiled from "Klass.java"
+abstract class com.sun.jna.Klass {
+  private com.sun.jna.Klass();
+  public static <T> T newInstance(java.lang.Class<T>);
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$6 implements java.io.FilenameFilter {
+  com.sun.jna.Native$6();
+  public boolean accept(java.io.File, java.lang.String);
+}
+Compiled from "Memory.java"
+class com.sun.jna.Memory$SharedMemory extends com.sun.jna.Memory {
+  final com.sun.jna.Memory this$0;
+  public com.sun.jna.Memory$SharedMemory(com.sun.jna.Memory, long, long);
+  protected synchronized void dispose();
+  protected void boundsCheck(long, long);
+  public java.lang.String toString();
+}
+Compiled from "MethodResultContext.java"
+public class com.sun.jna.MethodResultContext extends com.sun.jna.FunctionResultContext {
+  private final java.lang.reflect.Method method;
+  com.sun.jna.MethodResultContext(java.lang.Class<?>, com.sun.jna.Function, java.lang.Object[], java.lang.reflect.Method);
+  public java.lang.reflect.Method getMethod();
+}
+Compiled from "ELFAnalyser.java"
+class com.sun.jna.ELFAnalyser$ELFSectionHeaders {
+  private final java.util.List<com.sun.jna.ELFAnalyser$ELFSectionHeaderEntry> entries;
+  public com.sun.jna.ELFAnalyser$ELFSectionHeaders(boolean, boolean, java.nio.ByteBuffer, java.io.RandomAccessFile) throws java.io.IOException;
+  public java.util.List<com.sun.jna.ELFAnalyser$ELFSectionHeaderEntry> getEntries();
+}
+Compiled from "DefaultTypeMapper.java"
+public class com.sun.jna.DefaultTypeMapper implements com.sun.jna.TypeMapper {
+  private java.util.List<com.sun.jna.DefaultTypeMapper$Entry> toNativeConverters;
+  private java.util.List<com.sun.jna.DefaultTypeMapper$Entry> fromNativeConverters;
+  public com.sun.jna.DefaultTypeMapper();
+  private java.lang.Class<?> getAltClass(java.lang.Class<?>);
+  public void addToNativeConverter(java.lang.Class<?>, com.sun.jna.ToNativeConverter);
+  public void addFromNativeConverter(java.lang.Class<?>, com.sun.jna.FromNativeConverter);
+  public void addTypeConverter(java.lang.Class<?>, com.sun.jna.TypeConverter);
+  private java.lang.Object lookupConverter(java.lang.Class<?>, java.util.Collection<? extends com.sun.jna.DefaultTypeMapper$Entry>);
+  public com.sun.jna.FromNativeConverter getFromNativeConverter(java.lang.Class<?>);
+  public com.sun.jna.ToNativeConverter getToNativeConverter(java.lang.Class<?>);
+}
+Compiled from "TypeMapper.java"
+public interface com.sun.jna.TypeMapper {
+  public abstract com.sun.jna.FromNativeConverter getFromNativeConverter(java.lang.Class<?>);
+  public abstract com.sun.jna.ToNativeConverter getToNativeConverter(java.lang.Class<?>);
+}
+Compiled from "StructureWriteContext.java"
+public class com.sun.jna.StructureWriteContext extends com.sun.jna.ToNativeContext {
+  private com.sun.jna.Structure struct;
+  private java.lang.reflect.Field field;
+  com.sun.jna.StructureWriteContext(com.sun.jna.Structure, java.lang.reflect.Field);
+  public com.sun.jna.Structure getStructure();
+  public java.lang.reflect.Field getField();
+}
+Compiled from "SymbolProvider.java"
+public interface com.sun.jna.SymbolProvider {
+  public abstract long getSymbolAddress(long, java.lang.String, com.sun.jna.SymbolProvider);
+}
+Compiled from "ToNativeContext.java"
+public class com.sun.jna.ToNativeContext {
+  com.sun.jna.ToNativeContext();
+}
+Compiled from "Memory.java"
+final class com.sun.jna.Memory$MemoryDisposer implements java.lang.Runnable {
+  private long peer;
+  public com.sun.jna.Memory$MemoryDisposer(long);
+  public synchronized void run();
+}
+Compiled from "LastErrorException.java"
+public class com.sun.jna.LastErrorException extends java.lang.RuntimeException {
+  private static final long serialVersionUID;
+  private int errorCode;
+  private static java.lang.String formatMessage(int);
+  private static java.lang.String parseMessage(java.lang.String);
+  public int getErrorCode();
+  public com.sun.jna.LastErrorException(java.lang.String);
+  public com.sun.jna.LastErrorException(int);
+  protected com.sun.jna.LastErrorException(int, java.lang.String);
+}
+Compiled from "NativeLibrary.java"
+class com.sun.jna.NativeLibrary$1 implements com.sun.jna.SymbolProvider {
+  com.sun.jna.NativeLibrary$1();
+  public long getSymbolAddress(long, java.lang.String, com.sun.jna.SymbolProvider);
+}
+Compiled from "FromNativeConverter.java"
+public interface com.sun.jna.FromNativeConverter {
+  public abstract java.lang.Object fromNative(java.lang.Object, com.sun.jna.FromNativeContext);
+  public abstract java.lang.Class<?> nativeType();
+}
+Compiled from "CallbackReference.java"
+final class com.sun.jna.CallbackReference$CallbackReferenceDisposer implements java.lang.Runnable {
+  private com.sun.jna.Pointer cbstruct;
+  public com.sun.jna.CallbackReference$CallbackReferenceDisposer(com.sun.jna.Pointer);
+  public synchronized void run();
+}
+Compiled from "CallbackReference.java"
+class com.sun.jna.CallbackReference$NativeFunctionHandler implements java.lang.reflect.InvocationHandler {
+  private final com.sun.jna.Function function;
+  private final java.util.Map<java.lang.String, ?> options;
+  public com.sun.jna.CallbackReference$NativeFunctionHandler(com.sun.jna.Pointer, int, java.util.Map<java.lang.String, ?>);
+  public java.lang.Object invoke(java.lang.Object, java.lang.reflect.Method, java.lang.Object[]) throws java.lang.Throwable;
+  public com.sun.jna.Pointer getPointer();
+}
+Compiled from "NativeLongByReference.java"
+public class com.sun.jna.ptr.NativeLongByReference extends com.sun.jna.ptr.ByReference {
+  public com.sun.jna.ptr.NativeLongByReference();
+  public com.sun.jna.ptr.NativeLongByReference(com.sun.jna.NativeLong);
+  public void setValue(com.sun.jna.NativeLong);
+  public com.sun.jna.NativeLong getValue();
+  public java.lang.String toString();
+}
+Compiled from "IntByReference.java"
+public class com.sun.jna.ptr.IntByReference extends com.sun.jna.ptr.ByReference {
+  public com.sun.jna.ptr.IntByReference();
+  public com.sun.jna.ptr.IntByReference(int);
+  public void setValue(int);
+  public int getValue();
+  public java.lang.String toString();
+}
+Compiled from "DoubleByReference.java"
+public class com.sun.jna.ptr.DoubleByReference extends com.sun.jna.ptr.ByReference {
+  public com.sun.jna.ptr.DoubleByReference();
+  public com.sun.jna.ptr.DoubleByReference(double);
+  public void setValue(double);
+  public double getValue();
+  public java.lang.String toString();
+}
+Compiled from "LongByReference.java"
+public class com.sun.jna.ptr.LongByReference extends com.sun.jna.ptr.ByReference {
+  public com.sun.jna.ptr.LongByReference();
+  public com.sun.jna.ptr.LongByReference(long);
+  public void setValue(long);
+  public long getValue();
+  public java.lang.String toString();
+}
+Compiled from "FloatByReference.java"
+public class com.sun.jna.ptr.FloatByReference extends com.sun.jna.ptr.ByReference {
+  public com.sun.jna.ptr.FloatByReference();
+  public com.sun.jna.ptr.FloatByReference(float);
+  public void setValue(float);
+  public float getValue();
+  public java.lang.String toString();
+}
+Compiled from "ByteByReference.java"
+public class com.sun.jna.ptr.ByteByReference extends com.sun.jna.ptr.ByReference {
+  public com.sun.jna.ptr.ByteByReference();
+  public com.sun.jna.ptr.ByteByReference(byte);
+  public void setValue(byte);
+  public byte getValue();
+  public java.lang.String toString();
+}
+Compiled from "PointerByReference.java"
+public class com.sun.jna.ptr.PointerByReference extends com.sun.jna.ptr.ByReference {
+  public com.sun.jna.ptr.PointerByReference();
+  public com.sun.jna.ptr.PointerByReference(com.sun.jna.Pointer);
+  public void setValue(com.sun.jna.Pointer);
+  public com.sun.jna.Pointer getValue();
+}
+Compiled from "ByReference.java"
+public abstract class com.sun.jna.ptr.ByReference extends com.sun.jna.PointerType {
+  protected com.sun.jna.ptr.ByReference(int);
+  public java.lang.String toString();
+}
+Compiled from "ShortByReference.java"
+public class com.sun.jna.ptr.ShortByReference extends com.sun.jna.ptr.ByReference {
+  public com.sun.jna.ptr.ShortByReference();
+  public com.sun.jna.ptr.ShortByReference(short);
+  public void setValue(short);
+  public short getValue();
+  public java.lang.String toString();
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$7 extends java.lang.ThreadLocal<com.sun.jna.Memory> {
+  com.sun.jna.Native$7();
+  protected com.sun.jna.Memory initialValue();
+  protected java.lang.Object initialValue();
+}
+Compiled from "Structure.java"
+public abstract class com.sun.jna.Structure {
+  private static final java.util.logging.Logger LOG;
+  public static final int ALIGN_DEFAULT;
+  public static final int ALIGN_NONE;
+  public static final int ALIGN_GNUC;
+  public static final int ALIGN_MSVC;
+  protected static final int CALCULATE_SIZE;
+  static final java.util.concurrent.locks.ReentrantReadWriteLock cacheStructureLock;
+  static final java.util.Map<java.lang.Class<?>, com.sun.jna.Structure$LayoutInfo> layoutInfo;
+  static final java.util.Map<java.lang.Class<?>, java.util.List<java.lang.String>> fieldOrder;
+  static final java.util.Map<java.lang.Class<?>, java.util.List<java.lang.reflect.Field>> fieldList;
+  static final java.util.Map<java.lang.Class<?>, java.lang.Boolean> validationMap;
+  private com.sun.jna.Pointer memory;
+  private int size;
+  private int alignType;
+  private java.lang.String encoding;
+  private int actualAlignType;
+  private int structAlignment;
+  private java.util.Map<java.lang.String, com.sun.jna.Structure$StructField> structFields;
+  private final java.util.Map<java.lang.String, com.sun.jna.Structure$NativeStringTracking> nativeStrings;
+  private com.sun.jna.TypeMapper typeMapper;
+  private long typeInfo;
+  private boolean autoRead;
+  private boolean autoWrite;
+  private com.sun.jna.Structure[] array;
+  private boolean readCalled;
+  private static final java.lang.ThreadLocal<java.util.Map<com.sun.jna.Pointer, com.sun.jna.Structure>> reads;
+  private static final java.lang.ThreadLocal<java.util.Set<com.sun.jna.Structure>> busy;
+  private static final com.sun.jna.Pointer PLACEHOLDER_MEMORY;
+  protected com.sun.jna.Structure();
+  protected com.sun.jna.Structure(com.sun.jna.TypeMapper);
+  protected com.sun.jna.Structure(int);
+  protected com.sun.jna.Structure(int, com.sun.jna.TypeMapper);
+  protected com.sun.jna.Structure(com.sun.jna.Pointer);
+  protected com.sun.jna.Structure(com.sun.jna.Pointer, int);
+  protected com.sun.jna.Structure(com.sun.jna.Pointer, int, com.sun.jna.TypeMapper);
+  java.util.Map<java.lang.String, com.sun.jna.Structure$StructField> fields();
+  com.sun.jna.TypeMapper getTypeMapper();
+  private void initializeTypeMapper(com.sun.jna.TypeMapper);
+  private void layoutChanged();
+  protected void setStringEncoding(java.lang.String);
+  protected java.lang.String getStringEncoding();
+  protected void setAlignType(int);
+  protected com.sun.jna.Memory autoAllocate(int);
+  protected void useMemory(com.sun.jna.Pointer);
+  protected void useMemory(com.sun.jna.Pointer, int);
+  void useMemory(com.sun.jna.Pointer, int, boolean);
+  protected void ensureAllocated();
+  private void ensureAllocated(boolean);
+  protected void allocateMemory();
+  private void allocateMemory(boolean);
+  protected void allocateMemory(int);
+  public int size();
+  public void clear();
+  public com.sun.jna.Pointer getPointer();
+  static java.util.Set<com.sun.jna.Structure> busy();
+  static java.util.Map<com.sun.jna.Pointer, com.sun.jna.Structure> reading();
+  void conditionalAutoRead();
+  public void read();
+  protected int fieldOffset(java.lang.String);
+  public java.lang.Object readField(java.lang.String);
+  java.lang.Object getFieldValue(java.lang.reflect.Field);
+  void setFieldValue(java.lang.reflect.Field, java.lang.Object);
+  private void setFieldValue(java.lang.reflect.Field, java.lang.Object, boolean);
+  static <T extends com.sun.jna.Structure> T updateStructureByReference(java.lang.Class<T>, T, com.sun.jna.Pointer);
+  protected java.lang.Object readField(com.sun.jna.Structure$StructField);
+  public void write();
+  public void writeField(java.lang.String);
+  public void writeField(java.lang.String, java.lang.Object);
+  protected void writeField(com.sun.jna.Structure$StructField);
+  private void writeField(com.sun.jna.Structure$StructField, java.lang.Object);
+  protected java.util.List<java.lang.String> getFieldOrder();
+  protected void sortFields(java.util.List<java.lang.reflect.Field>, java.util.List<java.lang.String>);
+  protected java.util.List<java.lang.reflect.Field> getFieldList();
+  private java.util.List<java.lang.String> fieldOrder();
+  public static java.util.List<java.lang.String> createFieldsOrder(java.util.List<java.lang.String>, java.lang.String...);
+  public static java.util.List<java.lang.String> createFieldsOrder(java.util.List<java.lang.String>, java.util.List<java.lang.String>);
+  public static java.util.List<java.lang.String> createFieldsOrder(java.lang.String);
+  public static java.util.List<java.lang.String> createFieldsOrder(java.lang.String...);
+  private static <T extends java.lang.Comparable<T>> java.util.List<T> sort(java.util.Collection<? extends T>);
+  protected java.util.List<java.lang.reflect.Field> getFields(boolean);
+  protected int calculateSize(boolean);
+  static int size(java.lang.Class<? extends com.sun.jna.Structure>);
+  static <T extends com.sun.jna.Structure> int size(java.lang.Class<T>, T);
+  int calculateSize(boolean, boolean);
+  private void validateField(java.lang.String, java.lang.Class<?>);
+  private void validateFields();
+  private com.sun.jna.Structure$LayoutInfo deriveLayout(boolean, boolean);
+  private void initializeFields();
+  private java.lang.Object initializeField(java.lang.reflect.Field, java.lang.Class<?>);
+  private int addPadding(int);
+  private int addPadding(int, int);
+  protected int getStructAlignment();
+  protected int getNativeAlignment(java.lang.Class<?>, java.lang.Object, boolean);
+  public java.lang.String toString();
+  public java.lang.String toString(boolean);
+  private java.lang.String format(java.lang.Class<?>);
+  private java.lang.String toString(int, boolean, boolean);
+  public com.sun.jna.Structure[] toArray(com.sun.jna.Structure[]);
+  public com.sun.jna.Structure[] toArray(int);
+  private java.lang.Class<?> baseClass();
+  public boolean dataEquals(com.sun.jna.Structure);
+  public boolean dataEquals(com.sun.jna.Structure, boolean);
+  public boolean equals(java.lang.Object);
+  public int hashCode();
+  protected void cacheTypeInfo(com.sun.jna.Pointer);
+  com.sun.jna.Structure$FFIType getFieldTypeInfo(com.sun.jna.Structure$StructField);
+  com.sun.jna.Pointer getTypeInfo();
+  public void setAutoSynch(boolean);
+  public void setAutoRead(boolean);
+  public boolean getAutoRead();
+  public void setAutoWrite(boolean);
+  public boolean getAutoWrite();
+  static com.sun.jna.Structure$FFIType getTypeInfo(java.lang.Object);
+  private static <T extends com.sun.jna.Structure> T newInstance(java.lang.Class<T>, long);
+  public static <T extends com.sun.jna.Structure> T newInstance(java.lang.Class<T>, com.sun.jna.Pointer) throws java.lang.IllegalArgumentException;
+  public static <T extends com.sun.jna.Structure> T newInstance(java.lang.Class<T>) throws java.lang.IllegalArgumentException;
+  private static <T> java.lang.reflect.Constructor<T> getPointerConstructor(java.lang.Class<T>);
+  private static void structureArrayCheck(com.sun.jna.Structure[]);
+  public static void autoRead(com.sun.jna.Structure[]);
+  public void autoRead();
+  public static void autoWrite(com.sun.jna.Structure[]);
+  public void autoWrite();
+  protected int getNativeSize(java.lang.Class<?>);
+  protected int getNativeSize(java.lang.Class<?>, java.lang.Object);
+  static void validate(java.lang.Class<? extends com.sun.jna.Structure>);
+  static void access$2300(com.sun.jna.Structure, boolean);
+  static com.sun.jna.Pointer access$2400();
+  private java.lang.Boolean lambda$validateFields$0(java.lang.Class);
+  private java.util.List lambda$fieldOrder$0(java.lang.Class);
+  private static java.util.List lambda$getFieldList$0(java.lang.Class, java.lang.Class);
+  static {};
+}
+Compiled from "ELFAnalyser.java"
+public final class com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType extends java.lang.Enum<com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType> {
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType UINT32;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType NTBS;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType ULEB128;
+  private static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType[] $VALUES;
+  public static com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType[] values();
+  public static com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType valueOf(java.lang.String);
+  private com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType();
+  private static com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType[] $values();
+  static {};
+}
+Compiled from "TypeConverter.java"
+public interface com.sun.jna.TypeConverter extends com.sun.jna.FromNativeConverter,com.sun.jna.ToNativeConverter {
+}
+Compiled from "Structure.java"
+class com.sun.jna.Structure$3 extends com.sun.jna.Pointer {
+  com.sun.jna.Structure$3(long);
+  public com.sun.jna.Pointer share(long, long);
+}
+Compiled from "NativeLibrary.java"
+class com.sun.jna.NativeLibrary$3 implements java.io.FilenameFilter {
+  final java.lang.String val$libName;
+  com.sun.jna.NativeLibrary$3();
+  public boolean accept(java.io.File, java.lang.String);
+}
+Compiled from "Library.java"
+public class com.sun.jna.Library$Handler implements java.lang.reflect.InvocationHandler {
+  static final java.lang.reflect.Method OBJECT_TOSTRING;
+  static final java.lang.reflect.Method OBJECT_HASHCODE;
+  static final java.lang.reflect.Method OBJECT_EQUALS;
+  private final com.sun.jna.NativeLibrary nativeLibrary;
+  private final java.lang.Class<?> interfaceClass;
+  private final java.util.Map<java.lang.String, java.lang.Object> options;
+  private final com.sun.jna.InvocationMapper invocationMapper;
+  private final java.util.Map<java.lang.reflect.Method, com.sun.jna.Library$Handler$FunctionInfo> functions;
+  public com.sun.jna.Library$Handler(java.lang.String, java.lang.Class<?>, java.util.Map<java.lang.String, ?>);
+  public com.sun.jna.NativeLibrary getNativeLibrary();
+  public java.lang.String getLibraryName();
+  public java.lang.Class<?> getInterfaceClass();
+  public java.lang.Object invoke(java.lang.Object, java.lang.reflect.Method, java.lang.Object[]) throws java.lang.Throwable;
+  static {};
+}
+Compiled from "Pointer.java"
+class com.sun.jna.Pointer$Opaque extends com.sun.jna.Pointer {
+  private final java.lang.String MSG;
+  private com.sun.jna.Pointer$Opaque(long);
+  public com.sun.jna.Pointer share(long, long);
+  public void clear(long);
+  public long indexOf(long, byte);
+  public void read(long, byte[], int, int);
+  public void read(long, char[], int, int);
+  public void read(long, short[], int, int);
+  public void read(long, int[], int, int);
+  public void read(long, long[], int, int);
+  public void read(long, float[], int, int);
+  public void read(long, double[], int, int);
+  public void read(long, com.sun.jna.Pointer[], int, int);
+  public void write(long, byte[], int, int);
+  public void write(long, char[], int, int);
+  public void write(long, short[], int, int);
+  public void write(long, int[], int, int);
+  public void write(long, long[], int, int);
+  public void write(long, float[], int, int);
+  public void write(long, double[], int, int);
+  public void write(long, com.sun.jna.Pointer[], int, int);
+  public java.nio.ByteBuffer getByteBuffer(long, long);
+  public byte getByte(long);
+  public char getChar(long);
+  public short getShort(long);
+  public int getInt(long);
+  public long getLong(long);
+  public float getFloat(long);
+  public double getDouble(long);
+  public com.sun.jna.Pointer getPointer(long);
+  public java.lang.String getString(long, java.lang.String);
+  public java.lang.String getWideString(long);
+  public void setByte(long, byte);
+  public void setChar(long, char);
+  public void setShort(long, short);
+  public void setInt(long, int);
+  public void setLong(long, long);
+  public void setFloat(long, float);
+  public void setDouble(long, double);
+  public void setPointer(long, com.sun.jna.Pointer);
+  public void setString(long, java.lang.String, java.lang.String);
+  public void setWideString(long, java.lang.String);
+  public void setMemory(long, long, byte);
+  public java.lang.String dump(long, int);
+  public java.lang.String toString();
+  com.sun.jna.Pointer$Opaque(long, com.sun.jna.Pointer$1);
+}
+Compiled from "Structure.java"
+class com.sun.jna.Structure$AutoAllocated extends com.sun.jna.Memory {
+  public com.sun.jna.Structure$AutoAllocated(int);
+  public java.lang.String toString();
+}
+Compiled from "WString.java"
+public final class com.sun.jna.WString implements java.lang.CharSequence,java.lang.Comparable {
+  private java.lang.String string;
+  public com.sun.jna.WString(java.lang.String);
+  public java.lang.String toString();
+  public boolean equals(java.lang.Object);
+  public int hashCode();
+  public int compareTo(java.lang.Object);
+  public int length();
+  public char charAt(int);
+  public java.lang.CharSequence subSequence(int, int);
+}
+Compiled from "VarArgsChecker.java"
+final class com.sun.jna.VarArgsChecker$NoVarArgsChecker extends com.sun.jna.VarArgsChecker {
+  private com.sun.jna.VarArgsChecker$NoVarArgsChecker();
+  boolean isVarArgs(java.lang.reflect.Method);
+  int fixedArgs(java.lang.reflect.Method);
+  com.sun.jna.VarArgsChecker$NoVarArgsChecker(com.sun.jna.VarArgsChecker$1);
+}
+Compiled from "Version.java"
+interface com.sun.jna.Version {
+  public static final java.lang.String VERSION;
+  public static final java.lang.String VERSION_NATIVE;
+}
+Compiled from "WeakMemoryHolder.java"
+public class com.sun.jna.WeakMemoryHolder {
+  java.lang.ref.ReferenceQueue<java.lang.Object> referenceQueue;
+  java.util.IdentityHashMap<java.lang.ref.Reference<java.lang.Object>, com.sun.jna.Memory> backingMap;
+  public com.sun.jna.WeakMemoryHolder();
+  public synchronized void put(java.lang.Object, com.sun.jna.Memory);
+  public synchronized void clean();
+}
+Compiled from "NativeMapped.java"
+public interface com.sun.jna.NativeMapped {
+  public abstract java.lang.Object fromNative(java.lang.Object, com.sun.jna.FromNativeContext);
+  public abstract java.lang.Object toNative();
+  public abstract java.lang.Class<?> nativeType();
+}
+Compiled from "CallbackThreadInitializer.java"
+public class com.sun.jna.CallbackThreadInitializer {
+  private boolean daemon;
+  private boolean detach;
+  private java.lang.String name;
+  private java.lang.ThreadGroup group;
+  public com.sun.jna.CallbackThreadInitializer();
+  public com.sun.jna.CallbackThreadInitializer(boolean);
+  public com.sun.jna.CallbackThreadInitializer(boolean, boolean);
+  public com.sun.jna.CallbackThreadInitializer(boolean, boolean, java.lang.String);
+  public com.sun.jna.CallbackThreadInitializer(boolean, boolean, java.lang.String, java.lang.ThreadGroup);
+  public java.lang.String getName(com.sun.jna.Callback);
+  public java.lang.ThreadGroup getThreadGroup(com.sun.jna.Callback);
+  public boolean isDaemon(com.sun.jna.Callback);
+  public boolean detach(com.sun.jna.Callback);
+}
+Compiled from "NativeLibrary.java"
+class com.sun.jna.NativeLibrary$2 extends com.sun.jna.Function {
+  final com.sun.jna.NativeLibrary this$0;
+  com.sun.jna.NativeLibrary$2(com.sun.jna.NativeLibrary, com.sun.jna.NativeLibrary, java.lang.String, int, java.lang.String);
+  java.lang.Object invoke(java.lang.Object[], java.lang.Class<?>, boolean, int);
+  java.lang.Object invoke(java.lang.reflect.Method, java.lang.Class<?>[], java.lang.Class<?>, java.lang.Object[], java.util.Map<java.lang.String, ?>);
+}
+Compiled from "FunctionMapper.java"
+public interface com.sun.jna.FunctionMapper {
+  public abstract java.lang.String getFunctionName(com.sun.jna.NativeLibrary, java.lang.reflect.Method);
+}
+Compiled from "Structure.java"
+class com.sun.jna.Structure$LayoutInfo {
+  private int size;
+  private int alignment;
+  private final java.util.Map<java.lang.String, com.sun.jna.Structure$StructField> fields;
+  private int alignType;
+  private com.sun.jna.TypeMapper typeMapper;
+  private boolean variable;
+  private com.sun.jna.Structure$LayoutInfo();
+  static boolean access$200(com.sun.jna.Structure$LayoutInfo);
+  static int access$300(com.sun.jna.Structure$LayoutInfo);
+  static int access$400(com.sun.jna.Structure$LayoutInfo);
+  static com.sun.jna.TypeMapper access$500(com.sun.jna.Structure$LayoutInfo);
+  static int access$600(com.sun.jna.Structure$LayoutInfo);
+  static java.util.Map access$700(com.sun.jna.Structure$LayoutInfo);
+  com.sun.jna.Structure$LayoutInfo(com.sun.jna.Structure$1);
+  static int access$402(com.sun.jna.Structure$LayoutInfo, int);
+  static com.sun.jna.TypeMapper access$502(com.sun.jna.Structure$LayoutInfo, com.sun.jna.TypeMapper);
+  static boolean access$202(com.sun.jna.Structure$LayoutInfo, boolean);
+  static int access$602(com.sun.jna.Structure$LayoutInfo, int);
+  static int access$302(com.sun.jna.Structure$LayoutInfo, int);
+}
+Compiled from "StringArray.java"
+public class com.sun.jna.StringArray extends com.sun.jna.Memory implements com.sun.jna.Function$PostCallRead {
+  private java.lang.String encoding;
+  private java.util.List<com.sun.jna.NativeString> natives;
+  private java.lang.Object[] original;
+  public com.sun.jna.StringArray(java.lang.String[]);
+  public com.sun.jna.StringArray(java.lang.String[], boolean);
+  public com.sun.jna.StringArray(java.lang.String[], java.lang.String);
+  public com.sun.jna.StringArray(com.sun.jna.WString[]);
+  private com.sun.jna.StringArray(java.lang.Object[], java.lang.String);
+  public void read();
+  public java.lang.String toString();
+}
+Compiled from "ToNativeConverter.java"
+public interface com.sun.jna.ToNativeConverter {
+  public abstract java.lang.Object toNative(java.lang.Object, com.sun.jna.ToNativeContext);
+  public abstract java.lang.Class<?> nativeType();
+}
+Compiled from "Pointer.java"
+class com.sun.jna.Pointer$1 {
+}
+Compiled from "Pointer.java"
+public class com.sun.jna.Pointer {
+  public static final com.sun.jna.Pointer NULL;
+  protected long peer;
+  public static final com.sun.jna.Pointer createConstant(long);
+  public static final com.sun.jna.Pointer createConstant(int);
+  com.sun.jna.Pointer();
+  public com.sun.jna.Pointer(long);
+  public com.sun.jna.Pointer share(long);
+  public com.sun.jna.Pointer share(long, long);
+  public void clear(long);
+  public boolean equals(java.lang.Object);
+  public int hashCode();
+  public long indexOf(long, byte);
+  public void read(long, byte[], int, int);
+  public void read(long, short[], int, int);
+  public void read(long, char[], int, int);
+  public void read(long, int[], int, int);
+  public void read(long, long[], int, int);
+  public void read(long, float[], int, int);
+  public void read(long, double[], int, int);
+  public void read(long, com.sun.jna.Pointer[], int, int);
+  public void write(long, byte[], int, int);
+  public void write(long, short[], int, int);
+  public void write(long, char[], int, int);
+  public void write(long, int[], int, int);
+  public void write(long, long[], int, int);
+  public void write(long, float[], int, int);
+  public void write(long, double[], int, int);
+  public void write(long, com.sun.jna.Pointer[], int, int);
+  java.lang.Object getValue(long, java.lang.Class<?>, java.lang.Object);
+  private void readArray(long, java.lang.Object, java.lang.Class<?>);
+  public byte getByte(long);
+  public char getChar(long);
+  public short getShort(long);
+  public int getInt(long);
+  public long getLong(long);
+  public com.sun.jna.NativeLong getNativeLong(long);
+  public float getFloat(long);
+  public double getDouble(long);
+  public com.sun.jna.Pointer getPointer(long);
+  public java.nio.ByteBuffer getByteBuffer(long, long);
+  public java.lang.String getWideString(long);
+  public java.lang.String getString(long);
+  public java.lang.String getString(long, java.lang.String);
+  public byte[] getByteArray(long, int);
+  public char[] getCharArray(long, int);
+  public short[] getShortArray(long, int);
+  public int[] getIntArray(long, int);
+  public long[] getLongArray(long, int);
+  public float[] getFloatArray(long, int);
+  public double[] getDoubleArray(long, int);
+  public com.sun.jna.Pointer[] getPointerArray(long);
+  public com.sun.jna.Pointer[] getPointerArray(long, int);
+  public java.lang.String[] getStringArray(long);
+  public java.lang.String[] getStringArray(long, java.lang.String);
+  public java.lang.String[] getStringArray(long, int);
+  public java.lang.String[] getWideStringArray(long);
+  public java.lang.String[] getWideStringArray(long, int);
+  public java.lang.String[] getStringArray(long, int, java.lang.String);
+  void setValue(long, java.lang.Object, java.lang.Class<?>);
+  private void writeArray(long, java.lang.Object, java.lang.Class<?>);
+  public void setMemory(long, long, byte);
+  public void setByte(long, byte);
+  public void setShort(long, short);
+  public void setChar(long, char);
+  public void setInt(long, int);
+  public void setLong(long, long);
+  public void setNativeLong(long, com.sun.jna.NativeLong);
+  public void setFloat(long, float);
+  public void setDouble(long, double);
+  public void setPointer(long, com.sun.jna.Pointer);
+  public void setWideString(long, java.lang.String);
+  public void setString(long, com.sun.jna.WString);
+  public void setString(long, java.lang.String);
+  public void setString(long, java.lang.String, java.lang.String);
+  public java.lang.String dump(long, int);
+  public java.lang.String toString();
+  public static long nativeValue(com.sun.jna.Pointer);
+  public static void nativeValue(com.sun.jna.Pointer, long);
+  static {};
+}
+Compiled from "NativeString.java"
+class com.sun.jna.NativeString$StringMemory extends com.sun.jna.Memory {
+  final com.sun.jna.NativeString this$0;
+  public com.sun.jna.NativeString$StringMemory(com.sun.jna.NativeString, long);
+  public java.lang.String toString();
+}
+Compiled from "Structure.java"
+public class com.sun.jna.Structure$StructField {
+  public java.lang.String name;
+  public java.lang.Class<?> type;
+  public java.lang.reflect.Field field;
+  public int size;
+  public int offset;
+  public boolean isVolatile;
+  public boolean isReadOnly;
+  public com.sun.jna.FromNativeConverter readConverter;
+  public com.sun.jna.ToNativeConverter writeConverter;
+  public com.sun.jna.FromNativeContext context;
+  protected com.sun.jna.Structure$StructField();
+  public java.lang.String toString();
+}
+Compiled from "SecurityManagerExposer.java"
+class com.sun.jna.SecurityManagerExposer extends java.lang.SecurityManager {
+  com.sun.jna.SecurityManagerExposer();
+  protected java.lang.Class<?>[] getClassContext();
+}
+Compiled from "CallbackReference.java"
+class com.sun.jna.CallbackReference$AttachOptions extends com.sun.jna.Structure {
+  public static final java.util.List<java.lang.String> FIELDS;
+  public boolean daemon;
+  public boolean detach;
+  public java.lang.String name;
+  com.sun.jna.CallbackReference$AttachOptions();
+  protected java.util.List<java.lang.String> getFieldOrder();
+  static {};
+}
+Compiled from "Structure.java"
+class com.sun.jna.Structure$1 extends java.lang.ThreadLocal<java.util.Map<com.sun.jna.Pointer, com.sun.jna.Structure>> {
+  com.sun.jna.Structure$1();
+  protected synchronized java.util.Map<com.sun.jna.Pointer, com.sun.jna.Structure> initialValue();
+  protected java.lang.Object initialValue();
+}
+Compiled from "Structure.java"
+public interface com.sun.jna.Structure$ByValue {
+}
+Compiled from "CallbackResultContext.java"
+public class com.sun.jna.CallbackResultContext extends com.sun.jna.ToNativeContext {
+  private java.lang.reflect.Method method;
+  com.sun.jna.CallbackResultContext(java.lang.reflect.Method);
+  public java.lang.reflect.Method getMethod();
+}
+Compiled from "Callback.java"
+public interface com.sun.jna.Callback {
+  public static final java.lang.String METHOD_NAME;
+  public static final java.util.List<java.lang.String> FORBIDDEN_NAMES;
+  static {};
+}
+Compiled from "Function.java"
+public interface com.sun.jna.Function$PostCallRead {
+  public abstract void read();
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$4 implements java.lang.reflect.InvocationHandler {
+  final com.sun.jna.Library$Handler val$handler;
+  final com.sun.jna.Library val$library;
+  com.sun.jna.Native$4();
+  public java.lang.Object invoke(java.lang.Object, java.lang.reflect.Method, java.lang.Object[]) throws java.lang.Throwable;
+}
+Compiled from "ELFAnalyser.java"
+class com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag {
+  private final int value;
+  private final java.lang.String name;
+  private final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType parameterType;
+  private static final java.util.List<com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag> tags;
+  private static final java.util.Map<java.lang.Integer, com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag> valueMap;
+  private static final java.util.Map<java.lang.String, com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag> nameMap;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag File;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag Section;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag Symbol;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag CPU_raw_name;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag CPU_name;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag CPU_arch;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag CPU_arch_profile;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ARM_ISA_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag THUMB_ISA_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag FP_arch;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag WMMX_arch;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag Advanced_SIMD_arch;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag PCS_config;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_PCS_R9_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_PCS_RW_data;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_PCS_RO_data;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_PCS_GOT_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_PCS_wchar_t;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_FP_rounding;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_FP_denormal;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_FP_exceptions;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_FP_user_exceptions;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_FP_number_model;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_align_needed;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_align8_preserved;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_enum_size;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_HardFP_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_VFP_args;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_WMMX_args;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_optimization_goals;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_FP_optimization_goals;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag compatibility;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag CPU_unaligned_access;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag FP_HP_extension;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag ABI_FP_16bit_format;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag MPextension_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag DIV_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag nodefaults;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag also_compatible_with;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag conformance;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag T2EE_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag Virtualization_use;
+  public static final com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag MPextension_use2;
+  public com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag(int, java.lang.String, com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType);
+  public int getValue();
+  public java.lang.String getName();
+  public com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType getParameterType();
+  public java.lang.String toString();
+  public int hashCode();
+  public boolean equals(java.lang.Object);
+  private static com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag addTag(int, java.lang.String, com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType);
+  public static java.util.List<com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag> getTags();
+  public static com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag getByName(java.lang.String);
+  public static com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag getByValue(int);
+  private static com.sun.jna.ELFAnalyser$ArmAeabiAttributesTag$ParameterType getParameterType(int);
+  static {};
+}
+Compiled from "Cleaner.java"
+public interface com.sun.jna.internal.Cleaner$Cleanable {
+  public abstract void clean();
+}
+Compiled from "ReflectionUtils.java"
+public class com.sun.jna.internal.ReflectionUtils {
+  private static final java.util.logging.Logger LOG;
+  private static final java.lang.reflect.Method METHOD_IS_DEFAULT;
+  private static final java.lang.reflect.Method METHOD_HANDLES_LOOKUP;
+  private static final java.lang.reflect.Method METHOD_HANDLES_LOOKUP_IN;
+  private static final java.lang.reflect.Method METHOD_HANDLES_PRIVATE_LOOKUP_IN;
+  private static final java.lang.reflect.Method METHOD_HANDLES_LOOKUP_UNREFLECT_SPECIAL;
+  private static final java.lang.reflect.Method METHOD_HANDLES_LOOKUP_FIND_SPECIAL;
+  private static final java.lang.reflect.Method METHOD_HANDLES_BIND_TO;
+  private static final java.lang.reflect.Method METHOD_HANDLES_INVOKE_WITH_ARGUMENTS;
+  private static final java.lang.reflect.Method METHOD_TYPE;
+  private static java.lang.reflect.Constructor CONSTRUCTOR_LOOKUP_CLASS;
+  static final boolean $assertionsDisabled;
+  public com.sun.jna.internal.ReflectionUtils();
+  private static java.lang.reflect.Constructor getConstructorLookupClass();
+  private static java.lang.reflect.Constructor lookupDeclaredConstructor(java.lang.Class, java.lang.Class...);
+  private static java.lang.reflect.Method lookupMethod(java.lang.Class, java.lang.String, java.lang.Class...);
+  private static java.lang.Class lookupClass(java.lang.String);
+  public static boolean isDefault(java.lang.reflect.Method);
+  public static java.lang.Object getMethodHandle(java.lang.reflect.Method) throws java.lang.Exception;
+  private static java.lang.Object mhViaFindSpecial(java.lang.Object, java.lang.reflect.Method) throws java.lang.Exception;
+  private static java.lang.Object mhViaUnreflectSpecial(java.lang.Object, java.lang.reflect.Method) throws java.lang.Exception;
+  private static java.lang.Object createPrivateLookupIn(java.lang.Class, java.lang.Object) throws java.lang.Exception;
+  private static java.lang.Object createLookup() throws java.lang.Exception;
+  public static java.lang.Object invokeDefaultMethod(java.lang.Object, java.lang.Object, java.lang.Object...) throws java.lang.Throwable;
+  static {};
+}
+Compiled from "Cleaner.java"
+class com.sun.jna.internal.Cleaner$CleanerThread extends java.lang.Thread {
+  private static final long CLEANER_LINGER_TIME;
+  final com.sun.jna.internal.Cleaner this$0;
+  public com.sun.jna.internal.Cleaner$CleanerThread(com.sun.jna.internal.Cleaner);
+  public void run();
+}
+Compiled from "Cleaner.java"
+public class com.sun.jna.internal.Cleaner {
+  private static final com.sun.jna.internal.Cleaner INSTANCE;
+  private final java.lang.ref.ReferenceQueue<java.lang.Object> referenceQueue;
+  private java.lang.Thread cleanerThread;
+  private com.sun.jna.internal.Cleaner$CleanerRef firstCleanable;
+  public static com.sun.jna.internal.Cleaner getCleaner();
+  private com.sun.jna.internal.Cleaner();
+  public synchronized com.sun.jna.internal.Cleaner$Cleanable register(java.lang.Object, java.lang.Runnable);
+  private synchronized com.sun.jna.internal.Cleaner$CleanerRef add(com.sun.jna.internal.Cleaner$CleanerRef);
+  private synchronized boolean remove(com.sun.jna.internal.Cleaner$CleanerRef);
+  static boolean access$000(com.sun.jna.internal.Cleaner, com.sun.jna.internal.Cleaner$CleanerRef);
+  static java.lang.ref.ReferenceQueue access$100(com.sun.jna.internal.Cleaner);
+  static com.sun.jna.internal.Cleaner$CleanerRef access$200(com.sun.jna.internal.Cleaner);
+  static java.lang.Thread access$302(com.sun.jna.internal.Cleaner, java.lang.Thread);
+  static {};
+}
+Compiled from "Cleaner.java"
+class com.sun.jna.internal.Cleaner$CleanerRef extends java.lang.ref.PhantomReference<java.lang.Object> implements com.sun.jna.internal.Cleaner$Cleanable {
+  private final com.sun.jna.internal.Cleaner cleaner;
+  private final java.lang.Runnable cleanupTask;
+  private com.sun.jna.internal.Cleaner$CleanerRef previous;
+  private com.sun.jna.internal.Cleaner$CleanerRef next;
+  public com.sun.jna.internal.Cleaner$CleanerRef(com.sun.jna.internal.Cleaner, java.lang.Object, java.lang.ref.ReferenceQueue<? super java.lang.Object>, java.lang.Runnable);
+  public void clean();
+  com.sun.jna.internal.Cleaner$CleanerRef getPrevious();
+  void setPrevious(com.sun.jna.internal.Cleaner$CleanerRef);
+  com.sun.jna.internal.Cleaner$CleanerRef getNext();
+  void setNext(com.sun.jna.internal.Cleaner$CleanerRef);
+  static com.sun.jna.internal.Cleaner$CleanerRef access$400(com.sun.jna.internal.Cleaner$CleanerRef);
+  static java.lang.Runnable access$500(com.sun.jna.internal.Cleaner$CleanerRef);
+}
+Compiled from "W32APIOptions.java"
+class com.sun.jna.win32.W32APIOptions$2 extends java.util.HashMap<java.lang.String, java.lang.Object> {
+  private static final long serialVersionUID;
+  com.sun.jna.win32.W32APIOptions$2();
+}
+Compiled from "DLLCallback.java"
+public interface com.sun.jna.win32.DLLCallback extends com.sun.jna.Callback {
+  public static final int DLL_FPTRS;
+}
+Compiled from "StdCallLibrary.java"
+public interface com.sun.jna.win32.StdCallLibrary$StdCallCallback extends com.sun.jna.Callback,com.sun.jna.win32.StdCall {
+}
+Compiled from "StdCall.java"
+public interface com.sun.jna.win32.StdCall extends com.sun.jna.AltCallingConvention {
+}
+Compiled from "W32APIFunctionMapper.java"
+public class com.sun.jna.win32.W32APIFunctionMapper implements com.sun.jna.FunctionMapper {
+  public static final com.sun.jna.FunctionMapper UNICODE;
+  public static final com.sun.jna.FunctionMapper ASCII;
+  private final java.lang.String suffix;
+  protected com.sun.jna.win32.W32APIFunctionMapper(boolean);
+  public java.lang.String getFunctionName(com.sun.jna.NativeLibrary, java.lang.reflect.Method);
+  static {};
+}
+Compiled from "W32APITypeMapper.java"
+class com.sun.jna.win32.W32APITypeMapper$1 implements com.sun.jna.TypeConverter {
+  final com.sun.jna.win32.W32APITypeMapper this$0;
+  com.sun.jna.win32.W32APITypeMapper$1(com.sun.jna.win32.W32APITypeMapper);
+  public java.lang.Object toNative(java.lang.Object, com.sun.jna.ToNativeContext);
+  public java.lang.Object fromNative(java.lang.Object, com.sun.jna.FromNativeContext);
+  public java.lang.Class<?> nativeType();
+}
+Compiled from "StdCallLibrary.java"
+public interface com.sun.jna.win32.StdCallLibrary extends com.sun.jna.Library,com.sun.jna.win32.StdCall {
+  public static final int STDCALL_CONVENTION;
+  public static final com.sun.jna.FunctionMapper FUNCTION_MAPPER;
+  static {};
+}
+Compiled from "W32APITypeMapper.java"
+class com.sun.jna.win32.W32APITypeMapper$2 implements com.sun.jna.TypeConverter {
+  final com.sun.jna.win32.W32APITypeMapper this$0;
+  com.sun.jna.win32.W32APITypeMapper$2(com.sun.jna.win32.W32APITypeMapper);
+  public java.lang.Object toNative(java.lang.Object, com.sun.jna.ToNativeContext);
+  public java.lang.Object fromNative(java.lang.Object, com.sun.jna.FromNativeContext);
+  public java.lang.Class<?> nativeType();
+}
+Compiled from "StdCallFunctionMapper.java"
+public class com.sun.jna.win32.StdCallFunctionMapper implements com.sun.jna.FunctionMapper {
+  public com.sun.jna.win32.StdCallFunctionMapper();
+  protected int getArgumentNativeStackSize(java.lang.Class<?>);
+  public java.lang.String getFunctionName(com.sun.jna.NativeLibrary, java.lang.reflect.Method);
+}
+Compiled from "W32APIOptions.java"
+public interface com.sun.jna.win32.W32APIOptions extends com.sun.jna.win32.StdCallLibrary {
+  public static final java.util.Map<java.lang.String, java.lang.Object> UNICODE_OPTIONS;
+  public static final java.util.Map<java.lang.String, java.lang.Object> ASCII_OPTIONS;
+  public static final java.util.Map<java.lang.String, java.lang.Object> DEFAULT_OPTIONS;
+  static {};
+}
+Compiled from "W32APITypeMapper.java"
+public class com.sun.jna.win32.W32APITypeMapper extends com.sun.jna.DefaultTypeMapper {
+  public static final com.sun.jna.TypeMapper UNICODE;
+  public static final com.sun.jna.TypeMapper ASCII;
+  public static final com.sun.jna.TypeMapper DEFAULT;
+  protected com.sun.jna.win32.W32APITypeMapper(boolean);
+  static {};
+}
+Compiled from "W32APIOptions.java"
+class com.sun.jna.win32.W32APIOptions$1 extends java.util.HashMap<java.lang.String, java.lang.Object> {
+  private static final long serialVersionUID;
+  com.sun.jna.win32.W32APIOptions$1();
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$AWT {
+  private com.sun.jna.Native$AWT();
+  static long getWindowID(java.awt.Window) throws java.awt.HeadlessException;
+  static long getComponentID(java.lang.Object) throws java.awt.HeadlessException;
+}
+Compiled from "JNIEnv.java"
+public final class com.sun.jna.JNIEnv {
+  public static final com.sun.jna.JNIEnv CURRENT;
+  private com.sun.jna.JNIEnv();
+  static {};
+}
+Compiled from "AltCallingConvention.java"
+public interface com.sun.jna.AltCallingConvention {
+}
+Compiled from "Structure.java"
+public interface com.sun.jna.Structure$FieldOrder extends java.lang.annotation.Annotation {
+  public abstract java.lang.String[] value();
+}
+Compiled from "CallbackProxy.java"
+public interface com.sun.jna.CallbackProxy extends com.sun.jna.Callback {
+  public abstract java.lang.Object callback(java.lang.Object[]);
+  public abstract java.lang.Class<?>[] getParameterTypes();
+  public abstract java.lang.Class<?> getReturnType();
+}
+Compiled from "VarArgsChecker.java"
+abstract class com.sun.jna.VarArgsChecker {
+  private com.sun.jna.VarArgsChecker();
+  static com.sun.jna.VarArgsChecker create();
+  abstract boolean isVarArgs(java.lang.reflect.Method);
+  abstract int fixedArgs(java.lang.reflect.Method);
+  com.sun.jna.VarArgsChecker(com.sun.jna.VarArgsChecker$1);
+}
+Compiled from "Structure.java"
+class com.sun.jna.Structure$FFIType extends com.sun.jna.Structure {
+  private static final java.util.Map<java.lang.Class, java.util.Map<java.lang.Integer, com.sun.jna.Structure$FFIType>> typeInfoMap;
+  private static final java.util.Map<java.lang.Class, com.sun.jna.Structure$FFIType> unionHelper;
+  private static final java.util.Map<com.sun.jna.Pointer, com.sun.jna.Structure$FFIType> ffiTypeInfo;
+  private static final int FFI_TYPE_STRUCT;
+  public com.sun.jna.Structure$FFIType$size_t size;
+  public short alignment;
+  public short type;
+  public com.sun.jna.Pointer elements;
+  private static boolean isIntegerType(com.sun.jna.Structure$FFIType);
+  private static boolean isFloatType(com.sun.jna.Structure$FFIType);
+  public com.sun.jna.Structure$FFIType(com.sun.jna.Structure$FFIType);
+  public com.sun.jna.Structure$FFIType();
+  public com.sun.jna.Structure$FFIType(com.sun.jna.Structure);
+  public com.sun.jna.Structure$FFIType(java.lang.Object, java.lang.Class<?>);
+  private void init(com.sun.jna.Pointer[]);
+  static com.sun.jna.Structure$FFIType get(java.lang.Object);
+  private static com.sun.jna.Structure$FFIType get(java.lang.Object, java.lang.Class<?>);
+  private static com.sun.jna.Structure$FFIType getTypeInfo(java.lang.Class, int);
+  private static void storeTypeInfo(java.lang.Class, com.sun.jna.Structure$FFIType);
+  private static void storeTypeInfo(java.lang.Class, int, com.sun.jna.Structure$FFIType);
+  static com.sun.jna.Structure$FFIType access$900(java.lang.Object, java.lang.Class);
+  private static java.util.Map lambda$storeTypeInfo$0(java.lang.Class);
+  static {};
+}
+Compiled from "InvocationMapper.java"
+public interface com.sun.jna.InvocationMapper {
+  public abstract java.lang.reflect.InvocationHandler getInvocationHandler(com.sun.jna.NativeLibrary, java.lang.reflect.Method);
+}
+Compiled from "FromNativeContext.java"
+public class com.sun.jna.FromNativeContext {
+  private java.lang.Class<?> type;
+  com.sun.jna.FromNativeContext(java.lang.Class<?>);
+  public java.lang.Class<?> getTargetType();
+}
+Compiled from "Callback.java"
+public interface com.sun.jna.Callback$UncaughtExceptionHandler {
+  public abstract void uncaughtException(com.sun.jna.Callback, java.lang.Throwable);
+}
+Compiled from "Memory.java"
+public class com.sun.jna.Memory extends com.sun.jna.Pointer implements java.io.Closeable {
+  private static final java.util.Map<java.lang.Long, java.lang.ref.Reference<com.sun.jna.Memory>> allocatedMemory;
+  private static final com.sun.jna.WeakMemoryHolder buffers;
+  private final com.sun.jna.internal.Cleaner$Cleanable cleanable;
+  protected long size;
+  public static void purge();
+  public static void disposeAll();
+  public com.sun.jna.Memory(long);
+  protected com.sun.jna.Memory();
+  public com.sun.jna.Pointer share(long);
+  public com.sun.jna.Pointer share(long, long);
+  public com.sun.jna.Memory align(int);
+  public void close();
+  protected void dispose();
+  public void clear();
+  public boolean valid();
+  public long size();
+  protected void boundsCheck(long, long);
+  public void read(long, byte[], int, int);
+  public void read(long, short[], int, int);
+  public void read(long, char[], int, int);
+  public void read(long, int[], int, int);
+  public void read(long, long[], int, int);
+  public void read(long, float[], int, int);
+  public void read(long, double[], int, int);
+  public void read(long, com.sun.jna.Pointer[], int, int);
+  public void write(long, byte[], int, int);
+  public void write(long, short[], int, int);
+  public void write(long, char[], int, int);
+  public void write(long, int[], int, int);
+  public void write(long, long[], int, int);
+  public void write(long, float[], int, int);
+  public void write(long, double[], int, int);
+  public void write(long, com.sun.jna.Pointer[], int, int);
+  public byte getByte(long);
+  public char getChar(long);
+  public short getShort(long);
+  public int getInt(long);
+  public long getLong(long);
+  public float getFloat(long);
+  public double getDouble(long);
+  public com.sun.jna.Pointer getPointer(long);
+  public java.nio.ByteBuffer getByteBuffer(long, long);
+  public java.lang.String getString(long, java.lang.String);
+  public java.lang.String getWideString(long);
+  public void setByte(long, byte);
+  public void setChar(long, char);
+  public void setShort(long, short);
+  public void setInt(long, int);
+  public void setLong(long, long);
+  public void setFloat(long, float);
+  public void setDouble(long, double);
+  public void setPointer(long, com.sun.jna.Pointer);
+  public void setString(long, java.lang.String, java.lang.String);
+  public void setWideString(long, java.lang.String);
+  public java.lang.String toString();
+  protected static void free(long);
+  protected static long malloc(long);
+  public java.lang.String dump();
+  private com.sun.jna.Pointer shareReferenceIfInBounds(com.sun.jna.Pointer);
+  static java.util.Map access$000();
+  static {};
+}
+Compiled from "Native.java"
+class com.sun.jna.Native$3 {
+  com.sun.jna.Native$3();
+  protected void finalize() throws java.lang.Throwable;
+}
+Compiled from "Union.java"
+public abstract class com.sun.jna.Union extends com.sun.jna.Structure {
+  private com.sun.jna.Structure$StructField activeField;
+  protected com.sun.jna.Union();
+  protected com.sun.jna.Union(com.sun.jna.Pointer);
+  protected com.sun.jna.Union(com.sun.jna.Pointer, int);
+  protected com.sun.jna.Union(com.sun.jna.TypeMapper);
+  protected com.sun.jna.Union(com.sun.jna.Pointer, int, com.sun.jna.TypeMapper);
+  protected java.util.List<java.lang.String> getFieldOrder();
+  public void setType(java.lang.Class<?>);
+  public void setType(java.lang.String);
+  public java.lang.Object readField(java.lang.String);
+  public void writeField(java.lang.String);
+  public void writeField(java.lang.String, java.lang.Object);
+  public java.lang.Object getTypedValue(java.lang.Class<?>);
+  public java.lang.Object setTypedValue(java.lang.Object);
+  private com.sun.jna.Structure$StructField findField(java.lang.Class<?>);
+  protected void writeField(com.sun.jna.Structure$StructField);
+  protected java.lang.Object readField(com.sun.jna.Structure$StructField);
+  protected int getNativeAlignment(java.lang.Class<?>, java.lang.Object, boolean);
+}

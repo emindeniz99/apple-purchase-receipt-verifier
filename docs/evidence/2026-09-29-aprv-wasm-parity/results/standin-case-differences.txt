@@ -1,0 +1,187 @@
+# The 311 cases through tools/wasm-trap-host.mjs on round 13's stand-in module (core 0.6, sha256 da786ac853464e7b...):
+# every case it fails, with the trap host's reason. aprv.wasm at 4cbe2b02056a passes all 311 (cases-trap-host.txt).
+FAIL transaction/reject-foreign-root: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL transaction/reject-fresh-payload-under-expired-chain: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL transaction/reject-apple-official-missing-x5c: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL transaction/reject-xcode-signed-transaction: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL raw/reject-xcode-signed-renewal-info: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL receipt/verify-shared-with-device-hash: toJson value differs; /receipt_type: got undefined, want "ProductionSandbox"; /bundle_id: got undefined, want "com.example.app"; /application_version: got undefined, want "1.2.3"; /original_appli
+FAIL receipt/return-device-hash-inputs: /opaque_value: got undefined, want "AQIDBAUGBwg="; /sha1_hash: got undefined, want "o3ACutffcB0wrmAevzxMLcI6CcA="; /bundle_id_bytes: got undefined, want "DA9jb20uZXhhbXBsZS5hcHA="
+FAIL receipt/return-bundle-id-for-the-caller: /bundle_id: got undefined, want "com.example.app"; /bundle_id_bytes: got undefined, want "DA9jb20uZXhhbXBsZS5hcHA="
+FAIL receipt/reject-foreign-root: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/accept-double-wrapped-payload: /bundle_id: got undefined, want "com.example.app"; /application_version: got undefined, want "1.2.3"; /in_app length: got undefined, want 2
+FAIL receipt/accept-historical-creation-date-under-expired-chain: /bundle_id: got undefined, want "com.example.app"; /application_version: got undefined, want "1.2.3"; /receipt_creation_date_ms: got undefined, want 1590969600000; /in_app le
+FAIL receipt/reject-fresh-creation-date-under-expired-chain: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL receipt/expose-unknown-attributes: /bundle_id: got undefined, want "com.example.app"; /unknown_attributes/9999/0: got undefined, want "AQID"; /unknown_attributes/9999 length: got undefined, want 1
+FAIL receipt/verify-genuine-sandbox-g5-against-apple-roots: toJson value differs; /receipt_type: got undefined, want "ProductionSandbox"; /in_app length: got undefined, want 2
+FAIL receipt/verify-genuine-legacy-sha1-chain: toJson value differs; /in_app length: got undefined, want 187
+FAIL receipt/reject-xcode-signed-public-receipt: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-xcode-app-receipt-against-apple-roots: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-attribute-type-above-int32-max: answered INTERNAL_ERROR, want UNREADABLE_PAYLOAD
+FAIL receipt/accept-missing-creation-date: /receipt_type: got undefined, want "ProductionSandbox"; /bundle_id: got undefined, want "com.example.app"; /application_version: got undefined, want "1.2.3"; /original_application_version: got unde
+FAIL transaction/reject-dateless-payload-under-an-expired-chain: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL receipt/reject-attribute-type-that-truncates-to-a-modelled-type: answered INTERNAL_ERROR, want UNREADABLE_PAYLOAD
+FAIL transaction/reject-signature-segment-trailing-junk: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL transaction/reject-signature-segment-padding: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL transaction/reject-signature-segment-noncanonical: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL receipt-base64/accept-genuine: /receipt_type: got undefined, want "ProductionSandbox"; /in_app length: got undefined, want 2
+FAIL receipt-base64/reject-trailing-lf: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-pem-64-lf: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-pem-76-crlf: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-urlsafe-padded: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-urlsafe-unpadded: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-standard-unpadded: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-leading-trailing-space: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-junk-after-padding: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-b64chars-after-padding: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-mixed-alphabet: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-empty: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-junk-inside: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-overpadded: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-underpadded: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-impossible-length-padded: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/accept-noncanonical-trailing-bits: /receipt_type: got undefined, want "ProductionSandbox"; /in_app length: got undefined, want 2
+FAIL transaction/reject-x5c-entry-that-is-not-a-string: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL transaction/signed-date-out-of-range-falls-back-to-the-clock: answered INVALID_CHAIN (payload signing date 1e+300 is not a valid instant), want ok
+FAIL receipt/reject-signer-absent-beside-a-malformed-stranger: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL transaction/reject-all-segments-empty: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL transaction/reject-empty-header-segment: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL transaction/reject-empty-payload-segment: answered INVALID_JWS_FORMAT, want INVALID_SIGNATURE
+FAIL transaction/reject-header-that-is-a-json-array: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL transaction/reject-header-that-is-a-json-scalar: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL transaction/reject-payload-that-is-a-json-array: answered INVALID_JWS_FORMAT, want INVALID_SIGNATURE
+FAIL receipt/verify-at-the-byte-floor: /receipt_type: got undefined, want "ProductionSandbox"; /bundle_id: got undefined, want "com.example.app"; /application_version: got undefined, want "1.2.3"; /original_application_version: got undefine
+FAIL receipt/verify-at-the-node-floor: /receipt_type: got undefined, want "ProductionSandbox"; /bundle_id: got undefined, want "com.example.app"; /application_version: got undefined, want "1.2.3"; /original_application_version: got undefine
+FAIL receipt/ids-are-decoded: toJson value differs; /app_item_id: got undefined, want "1234567890"; /download_id: got undefined, want "9223372036854775807"; /version_external_identifier: got undefined, want "456789012"; /in_app/[product_id=
+FAIL receipt/genuine-sandbox-ids-are-zero: /app_item_id: got undefined, want "0"; /download_id: got undefined, want "0"; /version_external_identifier: got undefined, want "0"; /in_app/[transaction_id=2000001092134138]/is_trial_period: got u
+FAIL receipt/verify-genuine-sandbox-g5-device-hash: /receipt_type: got undefined, want "ProductionSandbox"; /opaque_value: got undefined, want "vh3T6pvPTQhlLrU5ueBWlA=="; /sha1_hash: got undefined, want "IViEdUNoOEfpOCoPxRhTyxerzW0="; /bund
+FAIL receipt/return-genuine-sandbox-g5-device-hash-inputs: /opaque_value: got undefined, want "vh3T6pvPTQhlLrU5ueBWlA=="; /sha1_hash: got undefined, want "IViEdUNoOEfpOCoPxRhTyxerzW0="; /bundle_id_bytes: got undefined, want "DBRkZXYuYm9uemV
+FAIL receipt/return-bundle-id-bytes-for-an-exact-comparison: /bundle_id: got undefined, want "com.example.app"; /bundle_id_bytes: got undefined, want "DA9jb20uZXhhbXBsZS5hcHA="
+FAIL receipt/reject-leaf-presented-as-intermediate: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-chain-missing-the-intermediate: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-empty-encapsulated-content: answered INTERNAL_ERROR, want UNREADABLE_PAYLOAD
+FAIL receipt/unreadable-creation-date-decodes-to-null: answered INTERNAL_ERROR (signed receipt content could not be read: unparseable receipt date), want ok
+FAIL receipt/reject-unreadable-creation-date-under-a-foreign-chain: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-unreadable-creation-date-under-an-expired-chain: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL receipt/unparseable-in-app-purchase-is-kept-raw: answered INTERNAL_ERROR (signed receipt content could not be read: in-app purchase attribute: double-wrapped payload is not a SET OF ReceiptAttribute), want ok
+FAIL receipt/creation-date-twice-uses-the-first: answered INVALID_CHAIN (signer chain does not validate to a pinned root (X509_V_ERR 10)), want ok
+FAIL receipt/reject-unreadable-entry-under-an-expired-chain: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL receipt/reject-unreadable-entry-under-a-trusted-chain: answered INTERNAL_ERROR, want UNREADABLE_PAYLOAD
+FAIL endpoint/unreadable-creation-date-answers-0: /status: got 21009, want 0; /environment: got undefined, want "Sandbox"; /receipt/bundle_id: got undefined, want "com.example.app"
+FAIL receipt-base64/accept-at-the-size-cap: /receipt_type: got undefined, want "ProductionSandbox"; /bundle_id: got undefined, want "com.example.app"; /application_version: got undefined, want "1.2.3"; /in_app/[product_id=com.example.app.co
+FAIL receipt-base64/reject-one-byte-over-the-size-cap: answered INVALID_RECEIPT_FORMAT, want TOO_LARGE
+FAIL base64/reject-empty: receipt-data texts[0] "" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64
+FAIL base64/reject-padding-omitted: receipt-data texts[0] "QQ" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QUI" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data 
+FAIL base64/reject-padding-partial: receipt-data texts[0] "QQ=" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QUJDQQ=" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-
+FAIL base64/reject-padding-extra: receipt-data texts[0] "QQ===" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QQ====" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-d
+FAIL base64/reject-padding-only: receipt-data texts[0] "=" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "==" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is no
+FAIL base64/reject-impossible-length: receipt-data texts[0] "Q" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "Q=" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data 
+FAIL base64/reject-data-after-padding: receipt-data texts[0] "QQ==QUJD" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QQ==QQ==" not refused by the decoder: INVALID_RECEIPT_FORMAT
+FAIL base64/reject-junk-inside: receipt-data texts[0] "QU!D" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QUJDQUJD!!QUJD" not refused by the decoder: INVALID_RECEIPT_FORMAT rece
+FAIL base64/reject-junk-around: receipt-data texts[0] "QQ==!!!!" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QUJD!!!!" not refused by the decoder: INVALID_RECEIPT_FORMAT receip
+FAIL base64/reject-alphabet-boundary: receipt-data texts[0] "QU@D" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QU[D" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-
+FAIL base64/reject-text-that-is-not-base64: receipt-data texts[0] "not base64" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "not base64!" not refused by the decoder: INVALID_RECE
+FAIL base64/reject-percent-encoded: receipt-data texts[0] "%2B%2F8=" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QUJD%3D" not refused by the decoder: INVALID_RECEIPT_FORMAT rec
+FAIL base64/reject-data-uri-prefix: receipt-data texts[0] "data:application/pkcs7-mime;base64,QUJD not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; x5c texts[0] "data:application/pkcs7-mime;base64,QUJD no
+FAIL base64/reject-whitespace-trailing: receipt-data texts[0] "QUJD\n" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QUJD\r\n" not refused by the decoder: INVALID_RECEIPT_FORMAT 
+FAIL base64/reject-whitespace-leading: receipt-data texts[0] " QUJD" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "\nQUJD" not refused by the decoder: INVALID_RECEIPT_FORMAT rece
+FAIL base64/reject-whitespace-inside: receipt-data texts[0] "QU JD" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QU\tJD" not refused by the decoder: INVALID_RECEIPT_FORMAT recei
+FAIL base64/reject-whitespace-around: receipt-data texts[0] "  QUJD  " not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] " " not refused by the decoder: INVALID_RECEIPT_FORMAT receipt
+FAIL base64/reject-line-breaks: receipt-data texts[0] "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJ not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQ
+FAIL base64/reject-base64url: receipt-data texts[0] "-_8=" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "-_8" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is n
+FAIL base64/reject-mixed-alphabet: receipt-data texts[0] "+_8=" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "-/8=" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-dat
+FAIL base64/reject-non-ascii: receipt-data texts[0] "QUJé" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QU D" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data i
+FAIL base64/reject-control-characters: receipt-data texts[0] "QU\u0000D" not refused by the decoder: INVALID_RECEIPT_FORMAT receipt-data is not valid base64; receipt-data texts[1] "QUJD\u0000" not refused by the decoder: INVALID_RECEIPT_FOR
+FAIL receipt-base64/pass-the-size-cap-then-fail-as-malformed: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt-base64/reject-a-signed-receipt-over-the-size-cap: answered INVALID_RECEIPT_FORMAT, want TOO_LARGE
+FAIL receipt-base64/reject-one-utf8-byte-over-the-size-cap: answered INVALID_RECEIPT_FORMAT, want TOO_LARGE
+FAIL raw/reject-jws-one-byte-over-the-size-cap: answered INVALID_JWS_FORMAT, want TOO_LARGE
+FAIL receipt/reject-one-trailing-byte-after-the-der: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL app-transaction/reject-xcode-signed-app-transaction: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL receipt/accept-one-valid-signer-beside-a-broken-one: answered INVALID_SIGNATURE (CMS signature check failed), want ok
+FAIL receipt/accept-four-signers-at-the-cap: /bundle_id: got undefined, want "com.example.app"
+FAIL receipt/reject-a-fifth-signer-info: answered ok, want MALFORMED
+FAIL receipt/unreadable-payload-under-a-valid-signature: answered INTERNAL_ERROR, want UNREADABLE_PAYLOAD
+FAIL signed-data/unreadable-json-array-payload: answered INVALID_JWS_FORMAT, want UNREADABLE_PAYLOAD
+FAIL signed-data/unreadable-empty-payload: answered INVALID_JWS_FORMAT, want UNREADABLE_PAYLOAD
+FAIL receipt/reject-intermediate-without-wwdr-marker-oid: answered ok, want INVALID_CERTIFICATE_PURPOSE
+FAIL receipt/to-json-non-ascii-product-id: toJson value differs; /in_app/0/product_id: got undefined, want "com.example.app.café/€/𝄞"
+FAIL receipt/web-order-line-item-id-zero-is-kept: toJson value differs; /in_app/[product_id=com.example.app.coins100]/web_order_line_item_id: got undefined, want "0"; /in_app/[product_id=com.example.app.vip]/web_order_line_item_id: got unde
+FAIL endpoint/web-order-line-item-id-zero-is-omitted: /receipt/in_app/[product_id=com.example.app.coins100]/web_order_line_item_id: got "0", want null
+FAIL receipt/creation-date-twice-first-wins: answered INVALID_CHAIN (signer chain does not validate to a pinned root (X509_V_ERR 10)), want ok
+FAIL receipt/in-app-attribute-twice-first-wins: answered INTERNAL_ERROR (signed receipt content could not be read: attribute value is not an INTEGER within 64 bits), want ok
+FAIL receipt/in-app-unparseable-fields-are-kept-raw: answered INTERNAL_ERROR (signed receipt content could not be read: attribute value is not an INTEGER within 64 bits), want ok
+FAIL receipt/to-json-escapes: toJson value differs; /in_app/0/transaction_id: got undefined, want "70000000000051"
+FAIL signed-data/reject-untrusted-oversized-x5c: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-untrusted-oversized-intermediates: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/verify-genuine-padded-with-oversized-strangers: /bundle_id: got undefined, want "com.example.app"; /receipt_creation_date_ms: got undefined, want 1722945600000
+FAIL receipt/verify-signer-ecdsa-p256: /bundle_id: got undefined, want "com.example.app"
+FAIL receipt/verify-signer-sha384-digest: /bundle_id: got undefined, want "com.example.app"
+FAIL signed-data/reject-four-segment-jws: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL receipt/reject-legacy-purchase-info: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL signed-data/reject-real-apple-chain-outside-validity: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL receipt/accept-ten-embedded-certificates: /bundle_id: got undefined, want "com.example.app"
+FAIL receipt/reject-eleven-embedded-certificates: answered INVALID_CHAIN, want MALFORMED
+FAIL receipt/reject-cross-signed-mesh: answered INVALID_CHAIN, want MALFORMED
+FAIL receipt/accept-a-path-of-six: /bundle_id: got undefined, want "com.example.app"
+FAIL receipt/reject-a-path-of-seven: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-a-path-of-seven-with-a-self-issued-tail: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-signer-issued-by-the-root: answered ok, want INVALID_CERTIFICATE_PURPOSE
+FAIL receipt/reject-twin-certificate: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash: answered INVALID_CHAIN, want one of ok, UNTRUSTED_CHAIN
+FAIL receipt/verify-signer-sha512: /bundle_id: got undefined, want "com.example.app"
+FAIL receipt/reject-zero-signer-infos: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt/first-failing-signer-decides-when-the-stranger-comes-first: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-malformed-signed-attrs-in-the-first-signer: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt/malformed-signed-attrs-in-the-second-signer-does-not-crash: answered INVALID_RECEIPT_FORMAT, want one of ok, MALFORMED
+FAIL receipt/verify-with-a-stranger-whose-key-is-unreadable: answered INVALID_RECEIPT_FORMAT (an embedded certificate is not a valid certificate), want ok
+FAIL receipt/reject-a-stranger-whose-signature-bit-string-is-unaligned: answered ok, want MALFORMED
+FAIL receipt/date-beyond-epoch-milliseconds-is-kept-raw: answered INTERNAL_ERROR (signed receipt content could not be read: unparseable receipt date), want ok
+FAIL receipt/attribute-type-int32-max-is-kept: toJson value differs; /unknown_attributes/2147483647/0: got undefined, want "AQID"; /unknown_attributes/9999/0: got undefined, want "AQID"
+FAIL receipt/printable-string-attributes-are-kept-raw: answered INTERNAL_ERROR (signed receipt content could not be read: attribute value is not a UTF8String or IA5String), want ok
+FAIL receipt/integers-at-the-64-bit-edge: answered INTERNAL_ERROR (signed receipt content could not be read: negative receipt integer), want ok
+FAIL receipt/invalid-utf8-strings-are-kept-raw: answered INTERNAL_ERROR (signed receipt content could not be read: unparseable receipt date), want ok
+FAIL receipt/to-json-escapes-html-and-separators: toJson value differs; /in_app/0/transaction_id: got undefined, want "70000000000091"
+FAIL signed-data/reject-a-header-nested-65-deep: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL signed-data/unreadable-payload-nested-65-deep: answered INVALID_JWS_FORMAT, want UNREADABLE_PAYLOAD
+FAIL signed-data/reject-an-unsigned-payload-nested-65-deep: answered INVALID_JWS_FORMAT, want INVALID_SIGNATURE
+FAIL signed-data/reject-alg-with-control-and-bidi-characters: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL signed-data/reject-alg-rs256: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL signed-data/reject-a-two-certificate-x5c: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL signed-data/unreadable-payload-that-is-not-utf8: answered ok, want UNREADABLE_PAYLOAD
+FAIL signed-data/reject-trailing-content-after-the-header: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL signed-data/unreadable-trailing-content-after-the-payload: answered INVALID_JWS_FORMAT, want UNREADABLE_PAYLOAD
+FAIL signed-data/reject-a-utf16-header: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL signed-data/reject-a-header-behind-a-bom: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL signed-data/signed-date-far-in-the-future: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL signed-data/signed-date-negative: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL signed-data/reject-an-x5c-leaf-with-an-unaligned-signature: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL signed-data/reject-foreign-chain-without-markers: answered INVALID_CERTIFICATE_PURPOSE, want UNTRUSTED_CHAIN
+FAIL receipt/reject-expired-chain-with-a-bad-signature: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL signed-data/reject-expired-chain-with-a-bad-signature: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL receipt/ia5-string-high-bytes-are-kept-raw: answered INTERNAL_ERROR (signed receipt content could not be read: unparseable receipt date), want ok
+FAIL receipt/malformed-integers-are-kept-raw: answered INTERNAL_ERROR (signed receipt content could not be read: attribute value is not an INTEGER within 64 bits), want ok
+FAIL receipt/date-grammar: answered INTERNAL_ERROR (signed receipt content could not be read: unparseable receipt date), want ok
+FAIL receipt/creation-date-outside-the-grammar-leaves-the-chain-to-the-clock: answered INTERNAL_ERROR (signed receipt content could not be read: unparseable receipt date), want ok
+FAIL receipt/accept-signed-content-nested-32-deep: answered INTERNAL_ERROR (signed receipt content could not be read: receipt payload: payload is not a SET OF ReceiptAttribute), want ok
+FAIL receipt/unreadable-signed-content-nested-33-deep: answered INTERNAL_ERROR, want UNREADABLE_PAYLOAD
+FAIL receipt/accept-an-envelope-nested-32-deep: /bundle_id: got undefined, want "com.example.app"
+FAIL receipt/reject-an-envelope-nested-33-deep: answered ok, want MALFORMED
+FAIL signed-data/reject-a-header-member-name-of-50001-characters: answered ok, want MALFORMED
+FAIL signed-data/accept-a-header-number-of-1000-digits: answered INVALID_JWS_FORMAT (header is not valid base64url JSON), want ok
+FAIL signed-data/reject-a-header-number-of-1001-digits: answered INVALID_JWS_FORMAT, want MALFORMED
+FAIL receipt/reject-intermediate-whose-key-usage-lacks-key-cert-sign: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL signed-data/reject-intermediate-whose-key-usage-lacks-key-cert-sign: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/intermediate-with-a-malformed-key-usage-does-not-crash: answered INVALID_RECEIPT_FORMAT, want one of ok, MALFORMED, INVALID_CERTIFICATE, UNTRUSTED_CHAIN
+FAIL receipt/reject-intermediate-with-an-unknown-critical-extension: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL signed-data/reject-intermediate-with-an-unknown-critical-extension: answered INVALID_CHAIN, want UNTRUSTED_CHAIN
+FAIL receipt/reject-a-signed-attribute-whose-type-is-not-an-object-identifier: answered INVALID_RECEIPT_FORMAT, want MALFORMED
+FAIL receipt/certificates-field-twice-does-not-crash: answered INVALID_RECEIPT_FORMAT, want one of ok, MALFORMED, INVALID_CERTIFICATE, UNTRUSTED_CHAIN
+FAIL receipt/intermediate-with-a-fourth-certificate-element-does-not-crash: answered INVALID_RECEIPT_FORMAT, want one of ok, MALFORMED, INVALID_CERTIFICATE, UNTRUSTED_CHAIN
+FAIL receipt/intermediate-with-an-empty-ca-boolean-does-not-crash: answered INVALID_RECEIPT_FORMAT, want one of ok, MALFORMED, INVALID_CERTIFICATE, UNTRUSTED_CHAIN
+FAIL receipt/intermediate-with-the-extensions-field-twice-does-not-crash: answered INVALID_RECEIPT_FORMAT, want one of ok, MALFORMED, INVALID_CERTIFICATE, UNTRUSTED_CHAIN
+FAIL receipt/reject-expired-chain-whose-signer-lacks-the-marker: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL receipt/reject-expired-chain-whose-intermediate-lacks-the-marker: answered INVALID_CHAIN, want INVALID_CERTIFICATE
+FAIL signed-data/reject-expired-chain-whose-leaf-lacks-the-marker: answered INVALID_CERTIFICATE_PURPOSE, want INVALID_CERTIFICATE
+FAIL signed-data/reject-expired-chain-whose-intermediate-lacks-the-marker: answered INVALID_CERTIFICATE_PURPOSE, want INVALID_CERTIFICATE
+summary: 311 cases, 127 passed, 184 failed, 0 traps, 0 unexpected imports called, 0 not run

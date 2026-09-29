@@ -1,0 +1,117 @@
+# unsafe keyword sites by crate and scope (all crates scanned)
+  bitflags             src    2
+  libm                 src    55
+  libm                 test   1
+  spin                 src    99
+  spin                 test   18
+  wasmi                src    289
+  wasmi                test   1
+  wasmi_c_api_impl     src    266
+  wasmi_c_api_macros   src    9
+  wasmi_collections    src    23
+  wasmi_collections    test   4
+  wasmi_core           src    7
+  wasmi_core           test   4
+  wasmi_ir             src    3
+  wasmparser           src    1
+
+# src sites by crate and kind
+  bitflags             impl    2
+  libm                 block   46
+  libm                 fn      9
+  spin                 block   43
+  spin                 fn      25
+  spin                 impl    31
+  wasmi                block   212
+  wasmi                fn      59
+  wasmi                impl    18
+  wasmi_c_api_impl     attr    152
+  wasmi_c_api_impl     block   75
+  wasmi_c_api_impl     fn      37
+  wasmi_c_api_impl     impl    2
+  wasmi_c_api_macros   attr    9
+  wasmi_collections    block   15
+  wasmi_collections    impl    8
+  wasmi_core           block   5
+  wasmi_core           impl    2
+  wasmi_ir             block   3
+  wasmparser           block   1
+
+# core src sites by risk class (wasmi, wasmi_core, wasmi_ir, wasmi_collections, wasmparser)
+  A-assume      14
+  A-inst        94
+  A-ip          74
+  A-mem         18
+  A-stack       20
+  B             62
+  C             28
+  D             13
+  total         323
+
+# core src sites by class and kind
+  A-assume      block   14
+  A-inst        block   58
+  A-inst        fn      36
+  A-ip          block   68
+  A-ip          fn      6
+  A-mem         block   18
+  A-stack       block   15
+  A-stack       fn      5
+  B             block   53
+  B             fn      9
+  C             impl    28
+  D             block   10
+  D             fn      3
+
+# core src sites by class and file
+  A-assume        3  wasmi/src/engine/executor/handler/exec.rs
+  A-assume        8  wasmi/src/engine/executor/handler/state.rs
+  A-assume        3  wasmi/src/engine/executor/handler/utils.rs
+  A-inst          5  wasmi/src/engine/executor/handler/args.rs
+  A-inst         12  wasmi/src/engine/executor/handler/exec.rs
+  A-inst          1  wasmi/src/engine/executor/handler/state.rs
+  A-inst         21  wasmi/src/engine/executor/handler/utils.rs
+  A-inst          7  wasmi/src/instance/cache.rs
+  A-inst         35  wasmi/src/instance/entity.rs
+  A-inst         10  wasmi/src/instance/handle.rs
+  A-inst          3  wasmi/src/instance/thin_ptr.rs
+  A-ip            7  wasmi/src/engine/executor/handler/args.rs
+  A-ip            1  wasmi/src/engine/executor/handler/dispatch/backend/loop.rs
+  A-ip            1  wasmi/src/engine/executor/handler/dispatch/backend/tail.rs
+  A-ip            3  wasmi/src/engine/executor/handler/dispatch/mod.rs
+  A-ip           39  wasmi/src/engine/executor/handler/exec.rs
+  A-ip            6  wasmi/src/engine/executor/handler/exec/macros.rs
+  A-ip            6  wasmi/src/engine/executor/handler/exec/simd.rs
+  A-ip           10  wasmi/src/engine/executor/handler/state.rs
+  A-ip            1  wasmi_ir/src/opcode.rs
+  A-mem          10  wasmi/src/engine/executor/handler/exec.rs
+  A-mem           1  wasmi/src/engine/executor/handler/state.rs
+  A-mem           4  wasmi/src/engine/executor/handler/utils.rs
+  A-mem           3  wasmi_core/src/memory/buffer.rs
+  A-stack        10  wasmi/src/engine/executor/handler/state.rs
+  A-stack         2  wasmi/src/engine/executor/handler/utils.rs
+  A-stack         8  wasmi/src/engine/executor/inout.rs
+  B              42  wasmi/src/engine/code_map/mod.rs
+  B               1  wasmi/src/engine/executor/handler/func.rs
+  B               1  wasmi/src/func/caller.rs
+  B               1  wasmi/src/func/mod.rs
+  B               2  wasmi/src/store/pruned.rs
+  B               1  wasmi/src/store/typeid.rs
+  B              14  wasmi_collections/src/arena/stable_vec.rs
+  C               6  wasmi/src/engine/code_map/mod.rs
+  C               5  wasmi/src/engine/executor/handler/state.rs
+  C               2  wasmi/src/engine/mod.rs
+  C               1  wasmi/src/engine/resumable.rs
+  C               4  wasmi/src/instance/cache.rs
+  C               2  wasmi_collections/src/arena/component_vec.rs
+  C               2  wasmi_collections/src/arena/mod.rs
+  C               2  wasmi_collections/src/arena/stable_arena.rs
+  C               2  wasmi_collections/src/arena/stable_vec.rs
+  C               2  wasmi_core/src/memory/buffer.rs
+  D               1  wasmi/src/module/custom_section.rs
+  D               2  wasmi/src/module/mod.rs
+  D               4  wasmi/src/module/parser/buffered.rs
+  D               1  wasmi_collections/src/string_interner/detail.rs
+  D               2  wasmi_core/src/simd.rs
+  D               2  wasmi_ir/src/decode/mod.rs
+  D               1  wasmparser/src/validator/names.rs

@@ -1,0 +1,22 @@
+{
+  "name": "aprv-spike-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Spike only (never published): Route C core wasm (AWS-LC or OpenSSL inside) behind a thin JS facade.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "workerd": "./workerd.js",
+      "worker": "./browser.js",
+      "browser": "./browser.js",
+      "node": "./node.js",
+      "deno": "./node.js",
+      "bun": "./node.js",
+      "default": "./browser.js"
+    }
+  },
+  "files": ["*.js", "index.d.ts", "aprv.wasm", "THIRD-PARTY-NOTICES.txt"],
+  "sideEffects": true
+}

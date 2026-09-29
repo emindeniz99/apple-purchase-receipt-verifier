@@ -1,0 +1,18 @@
+# pywasm 2.2.3 on Python 3.12.3, 2026-09-27, load 1.43 1.04 0.50
+PyPI: latest 2.2.3, requires_python None; files: pywasm-2.2.3-py2.py3-none-any.whl 44605 bytes, pywasm-2.2.3.tar.gz 631867 bytes
+README (github.com/libraries/pywasm, master): requires Python version >= 3.12.
+source uses typing.Self (Python >= 3.11): 48 sites in core.py; pywasm/__init__.py still says version = version = '2.2.1'
+installed: 306686 bytes of .py in 8 files (7088 lines), no native code; wheel 44,605 bytes
+## probe: g5 #1..#2, JWS #1 (budget 600 s per op), one fresh process
+{"step": "import", "ms": 36.2, "rss_kb": 15288, "hwm_kb": 15288}
+{"step": "parse", "ms": 4216.786, "rss_kb": 172244, "hwm_kb": 174064}
+{"step": "instantiate", "ms": 36.8, "rss_kb": 176932, "hwm_kb": 176932}
+{"step": "g5 #1", "ms": 87498.7, "verified": true, "first_result_mono_ns": 853935617703, "since_start_ms": 91789.3, "rss_kb": 179028, "hwm_kb": 179028}
+{"step": "g5 #2", "ms": 60306.8, "verified": true, "rss_kb": 179028, "hwm_kb": 179028}
+{"step": "jws #1", "ms": 170275.3, "verified": true, "rss_kb": 179092, "hwm_kb": 179092}
+## traps are asserts: the same three cases with python and python -O
+{"python_optimize": 0, "case": "aprv_call with ABI version 3 (the module's first instruction traps: unreachable)", "result": "trap: AssertionError:"}
+{"python_optimize": 0, "case": "aprv_result_ptr(0): invalid handle (the module traps: unreachable)", "result": "trap: AssertionError:"}
+{"python_optimize": 0, "case": "aprv_call(1, VERIFY_RECEIPT, ptr = memory size - 4, len 16): out-of-range input", "result": "trap: AssertionError:"}
+python -O: traceback while loading the module:
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc4 in position 6: invalid continuation byte

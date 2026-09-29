@@ -1,0 +1,41 @@
+# Conformance through the C ABI (ctypes, py/run_native.py), minimal metadata build
+## check.py expect cases.jsonl ni-cases.jsonl
+EXPLAINED endpoint/receipt-data-over-the-receipt-cap-answers-21002: failureReason: want INVALID_RECEIPT_FORMAT (9), got code 13. ConformanceCasesTest hands the endpoint a Map, skipping the 3,145,728-byte body cap; through a request-body ABI a receipt-data over the receipt cap always makes the body exceed the body cap, so failureReason is REQUEST_TOO_LARGE (13). The wire status is 21002 either way.
+expect: 152 passed, 0 failed, 1 explained, 0 not run, 269 expected fields checked
+## check.py diff jvm25-cases ni-cases
+diff: 153 identical, 0 different (0 with the same code), of 153
+## check.py diff jvm25-hostile ni-hostile
+diff: 811 identical, 0 different (0 with the same code), of 811
+## check.py diff jvm25-algorithms ni-algorithms
+diff: 22 identical, 0 different (0 with the same code), of 22
+## check.py diff jvm8-cases ni-cases
+diff: 153 identical, 0 different (0 with the same code), of 153
+## check.py diff jvm8-hostile ni-hostile
+diff: 811 identical, 0 different (0 with the same code), of 811
+## check.py diff jvm8-algorithms ni-algorithms
+diff: 22 identical, 0 different (0 with the same code), of 22
+## traced-metadata build (config/traced) on the algorithm corpus, against JDK 25
+diff: 6 identical, 16 different (0 with the same code), of 22
+id | JDK 25 | NI traced | NI minimal | Rust
+algorithms/receipt/rsa-sha256 | 0 | 0  | 0 | 0
+algorithms/receipt/rsa-sha1 | 0 | 0  | 0 | 0
+algorithms/receipt/rsa-sha224 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/rsa-sha384 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/rsa-sha512 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/rsa-sha3-256 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/rsa-md5 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/rsa-ripemd160 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/rsa-pss-sha256 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 5
+algorithms/receipt/ec-p256-sha256 | 0 | 0  | 0 | 5
+algorithms/receipt/ec-p384-sha384 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/ec-p521-sha512 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/ed25519 | 0 | 5 INVALID_SIGNATURE: CMS verifier refused the signer info | 0 | 9
+algorithms/receipt/chain-rsa-sha512 | 0 | 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificat | 0 | 0
+algorithms/receipt/chain-rsa-sha384 | 0 | 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificat | 0 | 0
+algorithms/receipt/chain-rsa-pss | 0 | 4 INVALID_CHAIN: signer chain does not validate to a pinned Apple root: No issuer certificat | 0 | 4
+algorithms/jws/chain-ec-sha256 | 0 | 0  | 0 | 0
+algorithms/jws/chain-ec-p384-sha384 | 0 | 0  | 0 | 0
+algorithms/jws/chain-ec-p521-sha512 | 0 | 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root | 0 | 2
+algorithms/jws/chain-rsa-sha256 | 0 | 0  | 0 | 0
+algorithms/jws/chain-rsa-sha512 | 0 | 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root | 0 | 0
+algorithms/jws/chain-rsa-pss | 0 | 4 INVALID_CHAIN: intermediate certificate is not signed by a pinned Apple root | 0 | 4

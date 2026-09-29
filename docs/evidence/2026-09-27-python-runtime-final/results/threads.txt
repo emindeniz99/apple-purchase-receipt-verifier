@@ -1,0 +1,21 @@
+{"op": "g5", "threads": 1, "per_s": 58.0, "each": [290], "not_verified": 0}
+{"op": "g5", "threads": 2, "per_s": 115.7, "each": [278, 303], "not_verified": 0}
+{"op": "g5", "threads": 4, "per_s": 239.6, "each": [301, 290, 302, 309], "not_verified": 0}
+{"op": "jws", "threads": 1, "per_s": 12.6, "each": [64], "not_verified": 0}
+{"op": "jws", "threads": 2, "per_s": 24.8, "each": [63, 62], "not_verified": 0}
+{"op": "jws", "threads": 4, "per_s": 47.9, "each": [63, 60, 61, 58], "not_verified": 0}
+{"facade": "aprv_wasmi_rs", "label": "python ctypes aprv-wasmi (Rust cdylib) lazy-translation fuel=0", "seconds": 5.0, "g5_threads_1": {"per_s": 58.0, "each": [290], "not_verified": 0}, "g5_threads_2": {"per_s": 115.7, "each": [278, 303], "not_verified": 0}, "g5_threads_4": {"per_s": 239.6, "each": [301, 290, 302, 309], "not_verified": 0}, "jws_threads_1": {"per_s": 12.6, "each": [64], "not_verified": 0}, "jws_threads_2": {"per_s": 24.8, "each": [63, 62], "not_verified": 0}, "jws_threads_4": {"per_s": 47.9, "each": [63, 60, 61, 58], "not_verified": 0}}
+{"op": "g5", "threads": 1, "per_s": 62.2, "each": [311], "not_verified": 0}
+{"op": "g5", "threads": 2, "per_s": 122.1, "each": [304, 308], "not_verified": 0}
+{"op": "g5", "threads": 4, "per_s": 246.0, "each": [301, 306, 314, 313], "not_verified": 0}
+{"op": "jws", "threads": 1, "per_s": 12.1, "each": [61], "not_verified": 0}
+{"op": "jws", "threads": 2, "per_s": 24.0, "each": [61, 61], "not_verified": 0}
+{"op": "jws", "threads": 4, "per_s": 47.8, "each": [64, 59, 60, 60], "not_verified": 0}
+{"facade": "aprv_wasmi_capi", "label": "python ctypes wasmi-c-api lazy-translation", "seconds": 5.0, "g5_threads_1": {"per_s": 62.2, "each": [311], "not_verified": 0}, "g5_threads_2": {"per_s": 122.1, "each": [304, 308], "not_verified": 0}, "g5_threads_4": {"per_s": 246.0, "each": [301, 306, 314, 313], "not_verified": 0}, "jws_threads_1": {"per_s": 12.1, "each": [61], "not_verified": 0}, "jws_threads_2": {"per_s": 24.0, "each": [61, 61], "not_verified": 0}, "jws_threads_4": {"per_s": 47.8, "each": [64, 59, 60, 60], "not_verified": 0}}
+{"op": "g5", "threads": 1, "per_s": 59.8, "each": [300], "not_verified": 0}
+{"op": "g5", "threads": 2, "per_s": 115.5, "each": [287, 292], "not_verified": 0}
+{"op": "g5", "threads": 4, "per_s": 237.0, "each": [292, 310, 298, 290], "not_verified": 0}
+{"op": "jws", "threads": 1, "per_s": 11.9, "each": [60], "not_verified": 0}
+{"op": "jws", "threads": 2, "per_s": 24.5, "each": [62, 62], "not_verified": 0}
+{"op": "jws", "threads": 4, "per_s": 47.7, "each": [62, 61, 61, 58], "not_verified": 0}
+{"facade": "aprv_wasmi_rs", "label": "python ctypes aprv-wasmi (Rust cdylib) lazy-translation fuel=10000000000", "seconds": 5.0, "g5_threads_1": {"per_s": 59.8, "each": [300], "not_verified": 0}, "g5_threads_2": {"per_s": 115.5, "each": [287, 292], "not_verified": 0}, "g5_threads_4": {"per_s": 237.0, "each": [292, 310, 298, 290], "not_verified": 0}, "jws_threads_1": {"per_s": 11.9, "each": [60], "not_verified": 0}, "jws_threads_2": {"per_s": 24.5, "each": [62, 62], "not_verified": 0}, "jws_threads_4": {"per_s": 47.7, "each": [62, 61, 61, 58], "not_verified": 0}}

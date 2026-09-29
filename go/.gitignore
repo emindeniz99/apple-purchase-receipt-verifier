@@ -1,0 +1,2 @@
+# aprv.wasm is committed here (DECISIONS.md R14): the Go module is the git
+# tree at a tag. Only tools/refresh-wasm-pins.sh rewrites it.

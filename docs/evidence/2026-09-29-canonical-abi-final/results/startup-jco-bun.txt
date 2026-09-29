@@ -1,0 +1,15 @@
+# bun start-up, 2026-09-29, taskset -c 0, fresh process per run, load before: 0.72 1.27 1.36
+{"module":"ABI v1","at_entry_ms":49.1,"load_compile_instantiate_ms":90.7,"first_g5_ms":214.4,"second_g5_ms":78.7,"at_first_result_ms":426.6,"process_wall_ms":530}
+{"module":"canonical ABI","at_entry_ms":30.9,"load_compile_instantiate_ms":102.6,"first_g5_ms":152,"second_g5_ms":89.4,"at_first_result_ms":338.2,"process_wall_ms":446}
+{"module":"ABI v1","at_entry_ms":29.1,"load_compile_instantiate_ms":96.7,"first_g5_ms":178.6,"second_g5_ms":98.1,"at_first_result_ms":362.4,"process_wall_ms":477}
+{"module":"canonical ABI","at_entry_ms":30.3,"load_compile_instantiate_ms":134.3,"first_g5_ms":165.7,"second_g5_ms":117.3,"at_first_result_ms":386.3,"process_wall_ms":522}
+{"module":"ABI v1","at_entry_ms":39.9,"load_compile_instantiate_ms":86.7,"first_g5_ms":213.3,"second_g5_ms":73.5,"at_first_result_ms":398,"process_wall_ms":491}
+{"module":"canonical ABI","at_entry_ms":30.9,"load_compile_instantiate_ms":97.5,"first_g5_ms":145.9,"second_g5_ms":24.8,"at_first_result_ms":328.8,"process_wall_ms":371}
+{"module":"ABI v1","at_entry_ms":32.2,"load_compile_instantiate_ms":85.7,"first_g5_ms":149.9,"second_g5_ms":30.6,"at_first_result_ms":324.1,"process_wall_ms":372}
+{"module":"canonical ABI","at_entry_ms":29.5,"load_compile_instantiate_ms":109.6,"first_g5_ms":148.1,"second_g5_ms":73.3,"at_first_result_ms":338.4,"process_wall_ms":430}
+{"module":"ABI v1","at_entry_ms":30.6,"load_compile_instantiate_ms":97.9,"first_g5_ms":135.3,"second_g5_ms":35.1,"at_first_result_ms":323.4,"process_wall_ms":376}
+{"module":"canonical ABI","at_entry_ms":30.4,"load_compile_instantiate_ms":99.4,"first_g5_ms":143.4,"second_g5_ms":30.1,"at_first_result_ms":329.5,"process_wall_ms":377}
+{"module":"ABI v1","at_entry_ms":31.7,"load_compile_instantiate_ms":84.3,"first_g5_ms":170.6,"second_g5_ms":53.9,"at_first_result_ms":344.2,"process_wall_ms":415}
+{"module":"canonical ABI","at_entry_ms":32.9,"load_compile_instantiate_ms":99.3,"first_g5_ms":151.8,"second_g5_ms":47.5,"at_first_result_ms":340.6,"process_wall_ms":405}
+{"module":"ABI v1","at_entry_ms":28.8,"load_compile_instantiate_ms":90.9,"first_g5_ms":148.6,"second_g5_ms":27.5,"at_first_result_ms":321.1,"process_wall_ms":366}
+{"module":"canonical ABI","at_entry_ms":32.2,"load_compile_instantiate_ms":102.9,"first_g5_ms":175.7,"second_g5_ms":57.5,"at_first_result_ms":372.3,"process_wall_ms":447}

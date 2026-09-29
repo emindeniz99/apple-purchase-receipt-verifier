@@ -1,0 +1,24 @@
+# AWS-LC wasm32-wasip1 (awslc-w1h), same rows
+30x aprv.clock_now_ms
+    aprv_wasm_shim.wasm.aprv_wasm_shimhost_clock::now::
+    aprv_wasm_shim.wasm._$LT$apple_purchase_receipt_verifier..clock..SystemClock$u20$as$u20$apple_purchase_receipt_verifier..clock..Clock$GT$now::
+    aprv_wasm_shim.wasm.aprv_verify_receipt_endpoint_json
+
+10x aprv.clock_now_ms
+    aprv_wasm_shim.wasm.aprv_wasm_shimhost_clock::now::
+    aprv_wasm_shim.wasm.apple_purchase_receipt_verifierreceipt::verify_receipt_core_unchecked::
+    aprv_wasm_shim.wasm.apple_purchase_receipt_verifierreceipt::15ReceiptVerifierverify::
+    aprv_wasm_shim.wasm.apple_purchase_receipt_verifier_ffireceipt_der_call::
+    aprv_wasm_shim.wasm.aprv_verify_receipt_der
+
+4x aprv.clock_now_ms
+    aprv_wasm_shim.wasm.aprv_wasm_shimhost_clock::now::
+    aprv_wasm_shim.wasm.apple_purchase_receipt_verifierreceipt::verify_receipt_core_unchecked::
+    aprv_wasm_shim.wasm.aprv_verify_receipt_endpoint_json
+
+3x aprv.clock_now_ms
+    aprv_wasm_shim.wasm.aprv_wasm_shimhost_clock::now::
+    aprv_wasm_shim.wasm.apple_purchase_receipt_verifierjws::11JwsVerifierverify_signature::
+    aprv_wasm_shim.wasm.apple_purchase_receipt_verifier_ffijws_call::
+    aprv_wasm_shim.wasm.aprv_verify_transaction
+

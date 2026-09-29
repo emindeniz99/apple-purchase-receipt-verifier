@@ -1,0 +1,8 @@
+# Two builds of the same inputs, same machine, same command (./build.sh, config/minimal), about an hour apart
+first:  .so sha256 709d6203d9e0554560b29b98abed602e0f187892f66051b7d4f67aa6b863c1d8, 43,845,736 bytes, 2m52s, peak RSS 3.05 GiB (native-image report), 3,195,780 kB (timev)
+second: .so sha256 52ac5f85f2e2839b8ea0e78ee2bc115c669abb1db0cf7d4f61f37974c4df059f, 43,845,736 bytes, 179.6 s, 3,384,964 kB (timev)
+cmp -l: 37,168,945 differing bytes
+graal_isolate.h and graal_isolate_dynamic.h: identical
+libapple_purchase_receipt_verifier_java.h: same declarations, different order (c4399dbb... vs beea5a3b...)
+no determinism option found in 'native-image --print-options' (only -H:DeterministicInternedStringsGrouping)
+behaviour: the second build answers the 153 cases identically to the first

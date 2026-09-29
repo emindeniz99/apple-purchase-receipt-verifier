@@ -1,0 +1,82 @@
+// Spike only (wasm architecture bake-off). A small but real APRV API in WIT,
+// shaped after docs/rust-core/SURFACE.md: typed arguments, typed errors,
+// resources for the three long-lived objects, verified payloads as JSON
+// text (SURFACE.md 3.2 allows it for complex outputs). No pointer, length
+// or free function reaches the caller: the canonical ABI owns every copy.
+package aprv:verifier@0.1.0;
+
+interface types {
+    /// The cross-port reason vocabulary (SURFACE.md 6, `Reason`), plus the
+    /// endpoint-only reasons. Same order as the C ABI's AprvReason 1..12.
+    enum reason {
+        invalid-jws-format,
+        invalid-certificate,
+        invalid-certificate-purpose,
+        invalid-chain,
+        invalid-signature,
+        wrong-bundle-id,
+        wrong-environment,
+        wrong-app-apple-id,
+        invalid-receipt-format,
+        device-hash-mismatch,
+        internal-error,
+        malformed-request,
+        request-too-large,
+    }
+
+    enum environment { production, sandbox, xcode, local-testing }
+
+    record verification-error {
+        reason: reason,
+        message: option<string>,
+    }
+
+    /// SURFACE.md 3.2: one error type, verification or configuration.
+    variant error {
+        verification(verification-error),
+        configuration(string),
+    }
+}
+
+interface verifier {
+    use types.{environment, error};
+
+    /// `trusted-roots: none` means Apple's pinned roots, compiled in.
+    resource receipt-verifier {
+        create: static func(bundle-id: string, trusted-roots: option<list<list<u8>>>) -> result<receipt-verifier, error>;
+        /// The verified receipt, as the C ABI's JSON view.
+        verify: func(receipt: list<u8>, device-guid: option<list<u8>>) -> result<string, error>;
+        verify-base64: func(receipt: string, device-guid: option<list<u8>>) -> result<string, error>;
+    }
+
+    resource jws-verifier {
+        create: static func(bundle-id: string, environments: list<environment>, app-apple-id: option<s64>,
+                            trusted-roots: option<list<list<u8>>>) -> result<jws-verifier, error>;
+        verify-transaction: func(jws: string) -> result<string, error>;
+        verify-app-transaction: func(jws: string) -> result<string, error>;
+        /// Every verified claim, as JSON text.
+        verify-raw: func(jws: string) -> result<string, error>;
+    }
+
+    /// Apple's retired verifyReceipt endpoint, answered locally.
+    resource endpoint {
+        /// `now-ms: some(..)` pins request_date (the C ABI's fixed clock).
+        create: static func(environment: environment, trusted-roots: option<list<list<u8>>>, now-ms: option<s64>) -> result<endpoint, error>;
+        /// Never fails: the answer is Apple's response JSON.
+        verify-receipt-json: func(request-body: string) -> string;
+    }
+}
+
+/// The capability-minimal world: the host supplies only a wall clock.
+world aprv-minimal {
+    /// Milliseconds since the Unix epoch, read only where the core falls
+    /// back to "now" (no signed date; the endpoint's request_date).
+    import clock-now-ms: func() -> f64;
+    export verifier;
+}
+
+/// The same exports over WASI 0.2 (wasm32-wasip2): whatever std and
+/// wasi-libc import comes along. Used to measure what WASI adds.
+world aprv-wasi {
+    export verifier;
+}

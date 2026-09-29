@@ -1,0 +1,21 @@
+<!--
+  Spike only (2026-09-26). A clean consumer: takes the facade as a NuGet
+  package from a local folder feed and Wasmtime from nuget.org (nuget.config
+  written by scripts/build.sh), with an empty NUGET_PACKAGES. The script
+  builds it with -p:AprvSpikePackageVersion=0.0.0-spike.
+
+  The PackageReference is conditional because tools restore this project
+  without that property: GitHub's dependency submission restores every csproj
+  in the repository, and the package exists only in the local feed the script
+  fills, so an unconditional reference failed that restore (NU1101).
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(AprvSpikePackageVersion)' != ''">
+    <PackageReference Include="Aprv.Wasm.Spike" Version="[$(AprvSpikePackageVersion)]" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,14 @@
+date: 2026-09-27
+os: Ubuntu 24.04.4 LTS, kernel 6.18.44-fc-v37, x86_64
+cpu: Intel(R) Xeon(R) Processor @ 2.80GHz, 4 vCPUs, 16 GB RAM
+rust: rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05); rust-std targets: x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
+rustlib self-contained musl libc.a: x86_64 sha256 e699c64b0c6b427d..., aarch64 sha256 b03473b6f1efb72f...; statx present (musl >= 1.2.5): 1
+host glibc: ldd (Ubuntu GLIBC 2.39-0ubuntu8.9) 2.39
+host C: cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0; musl-tools 1.2.4-2 (musl-gcc wrapper, used by cc-rs for mimalloc on x86_64 musl)
+zig: 0.16.0 (PyPI ziglang), cargo-zigbuild 0.23.4 (PyPI)
+crates (from the patched Cargo.lock): wasmtime 49.0.1, axum 0.8.9, tokio 1.53.1, mimalloc 0.1.52, libmimalloc-sys 0.1.49, cc 1.5.1, getrandom 0.3.4, 
+qemu: qemu-aarch64 version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18); valgrind: valgrind-3.22.0; strace: strace -- version 6.8
+module: aprv-abi1.wasm 2952613 bytes, sha256 b14e14b2c3b8a38953c6ac03d941e42647321fdb86cfb0e3629c006687b636b3
+cwasm x86_64-unknown-linux-gnu (baseline ISA): 8458112 bytes, sha256 d14a8819e751f2414cd3af4ad18c9ef162f0217049a79aee8a7ab7316e13b562, FDEs in .eh_frame: 13093
+cwasm x86_64-unknown-linux-musl (baseline ISA): 8458112 bytes, sha256 43d7102a5eb8db2115846dd2686546757785b03d2baf220e2f4e063d7eb3e1cd, FDEs in .eh_frame: 13093
+cwasm aarch64-unknown-linux-musl (baseline ISA): 8436824 bytes, sha256 94eb2d59ecf933c337d920530137085768b9272b93d0f02ce511cd2f051c8285, FDEs in .eh_frame: 13092

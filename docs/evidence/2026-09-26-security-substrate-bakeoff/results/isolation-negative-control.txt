@@ -1,0 +1,10 @@
+ossl402neg receipt pinned=pinned-other.der -> code 4, other file syscalls 2, network syscalls 0
+    27014 openat(AT_FDCWD, "$ISO/openssl.cnf", O_RDONLY) = 3
+    27014 openat(AT_FDCWD, "$ISO/ambient.pem", O_RDONLY) = 3
+ossl402neg jws pinned=pinned-other.der -> code 4, other file syscalls 1, network syscalls 0
+    27029 openat(AT_FDCWD, "$ISO/openssl.cnf", O_RDONLY) = 3
+ossl402neg receipt pinned=receipt-root.der -> code 4, other file syscalls 2, network syscalls 0
+    27044 openat(AT_FDCWD, "$ISO/openssl.cnf", O_RDONLY) = 3
+    27044 openat(AT_FDCWD, "$ISO/ambient.pem", O_RDONLY) = 3
+ossl402neg jws pinned=jws-root.der -> code 4, other file syscalls 1, network syscalls 0
+    27059 openat(AT_FDCWD, "$ISO/openssl.cnf", O_RDONLY) = 3

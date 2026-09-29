@@ -1,0 +1,15 @@
+# fetched 2026-09-26T23:04:50Z
+nuget.org Wasmtime: 83 versions; last 8: 19.0.0 (2024-03-27), 19.0.1 (2024-04-07), 20.0.2 (2024-06-28), 21.0.1 (2024-06-29), 22.0.0 (2024-07-09), 34.0.2 (2025-08-05), 44.0.0 (2026-05-23), 48.0.2 (2026-09-18)
+48.0.2 nuspec: <license type="expression">Apache-2.0 WITH LLVM-exception <licenseUrl>https://licenses.nuget.org/Apache-2.0%20WITH%20LLVM-exception targetFramework="net10.0" targetFramework="net8.0" targetFramework=".NETStandard2.0" <dependency id="IndexRange" version="1.0.2" <dependency id="System.Memory" version="4.5.5" targetFramework=".NETStandard2.1" 
+native files in the package: runtimes/linux-arm64/native/libwasmtime.so runtimes/linux-x64/native/libwasmtime.so runtimes/osx-arm64/native/libwasmtime.dylib runtimes/osx-x64/native/libwasmtime.dylib runtimes/win-arm64/native/wasmtime.dll runtimes/win-x64/native/wasmtime.dll 
+linux-x64 libwasmtime.so: highest glibc symbol version needed: GLIBC_2.28
+linux-arm64 libwasmtime.so: highest glibc symbol version needed: GLIBC_2.18
+git: 22 commits by 6 authors in the 12 months to 2026-09-26; latest:
+  2026-09-18 Added additional checks to compatibility shims, to produce correct edge-case behaviour
+  2026-09-18 Added `WithBranchHinting` config
+  2026-09-18 - Removed WASI permissions enums  - Added `mutable` parameter to preopen
+the package's own TargetFrameworks: <TargetFrameworks>netstandard2.1;netstandard2.0;net8.0;net10.0
+.NET 11.0: sts, go-live, latest SDK 11.0.100-rc.1.26425.128, end of support None
+.NET 10.0: lts, active, latest SDK 10.0.401, end of support 2028-11-14
+.NET 9.0: sts, maintenance, latest SDK 9.0.318, end of support 2026-11-10
+.NET 8.0: lts, maintenance, latest SDK 8.0.425, end of support 2026-11-10

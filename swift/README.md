@@ -13,13 +13,45 @@ product id, device binding, refunds, idempotency) is yours; see
 ```swift
 // The manifest lives at the repository root (SwiftPM resolves a package's
 // manifest only there); the sources stay under swift/.
-.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")
+.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.8.0")
 ```
 
-Swift **6.1** or newer, macOS 13+ or Linux (`Package.swift` declares
-`.macOS(.v13)`). Coming from 0.6? Read
-[Upgrading from 0.6](#upgrading-from-06): the API is smaller, synchronous,
-and every type name has changed.
+Swift **6.3** or newer, on macOS 15+, iOS 18+ or Linux (`Package.swift`
+declares `.macOS(.v15), .iOS(.v18)`). Those are the floors of
+[WasmKit](https://github.com/swiftwasm/WasmKit), the one dependency (see
+[How it works](#how-it-works)). Coming from 0.7? Read
+[Upgrading from 0.7](#upgrading-from-07): the API is the same except
+`Config.roots`, and the floors rose.
+
+## How it works
+
+Every verification runs inside `aprv.wasm`, the one verification module
+every port of this repository shares: a Rust core on OpenSSL, compiled to
+WebAssembly. The package carries the module as a resource, checks it
+against the SHA-256 in `aprv.wasm.sha256` before it is parsed, and runs it
+on WasmKit, a WebAssembly interpreter written in Swift. Nothing is compiled
+to machine code at run time, so no JIT entitlement is needed on iOS.
+
+**Building from a checkout of this branch:** `aprv.wasm` is not committed
+until the release module lands; copy the module whose SHA-256
+`aprv.wasm.sha256` names into `Sources/ApplePurchaseReceiptVerifier/Resources/`
+first, or the build stops with a missing-resource error.
+
+The Swift code holds no parser, no cryptography and no trust decision: it
+reads the clock, copies the input into the module, and turns the module's
+JSON answer into the types below. A hostile receipt meets the module inside
+the WebAssembly sandbox, never native code in your process. The module
+imports one function from the host, a source of random bytes (from
+`SystemRandomNumberGenerator`) that OpenSSL uses for ECDSA blinding; it has
+no file, network, clock or environment access.
+
+WasmKit checks the module's memory accesses in software. The package asks
+for that mode explicitly: WasmKit's default on Linux and macOS would reserve
+guard regions and install a process-wide `SIGSEGV`/`SIGBUS` handler, which a
+library has no business doing in its caller's process. Every range the host
+itself reads or writes in the module's memory is checked before the access,
+because WasmKit stops the process, rather than throwing, when a host access
+is out of range.
 
 ## Quick start
 
@@ -47,18 +79,17 @@ if let payload = jwsResult.payload {
 let responseJson = verifier.verifyReceiptEndpoint(environment: .production, requestJson: requestJson)
 ```
 
+**Inputs are cut at 3,145,729 bytes** (one over the largest cap) before they
+are copied into the module, which then answers `.tooLarge` (21002 at the
+endpoint) exactly as it would for any longer input.
+
 **No method throws for any input.** An empty `base64` / `jws` / `requestJson`
-is input and fails as `Reason.malformed`, the same as a garbled one. An
-unexpected error inside the library is reported by where it happened: before
-a signature has verified it is `.malformed` (input nobody vouched for must
-not be able to raise the internal-error alarm at will), while the signed
-receipt content is decoded `.unreadablePayload`, and anywhere else
-`.internalError`. Swift has no equivalent of Java's `catch (Throwable)` or
-Rust's `catch_unwind`: an out-of-bounds access or a forced unwrap traps and
-cannot be recovered from, in this library or any other. This containment
-comes from bounds-checked parsing throughout (`throw`, never a force-unwrap
-or an array index that can go out of range on unverified input), not from a
-runtime safety net that could catch a trap after the fact.
+is input and fails as `Reason.malformed`, the same as a garbled one. The
+verdict is the module's. When the machinery itself fails (the module traps,
+answers something this package cannot read, or cannot be loaded, or the
+clock answers a time before 1970) the call answers `.internalError`, 21009
+at the endpoint, with the category in `Failure.cause`. A module instance
+that trapped is discarded, and the next call runs on a fresh one.
 
 **A custom clock**, for tests or for pinning `request_date`:
 
@@ -67,23 +98,23 @@ let config = try Config.builder().clock { 1_735_689_600_000 }.build()  // 2025-0
 let verifier = Verifier(config: config)
 ```
 
-`Config.defaults()` uses Apple's three bundled, pinned roots and the system
-clock. The clock is read at most once per call, only when one of exactly two
-things needs it, after the input has passed every check that comes before:
-the chain-validity instant when the receipt or JWS states no signing date of
-its own, and `request_date` in the endpoint response. It never decides
-whether a certificate is expired when the input states a date; see
-[Trust anchors](#trust-anchors).
+`Config.defaults()` uses Apple's three published roots and the system clock.
+The roots are compiled into `aprv.wasm` and pinned there, so
+`Config.defaults().roots` is `nil`: "the module's built-in roots".
+`Config.builder().roots(...)` replaces them with your own DER certificates,
+which tests use; it hands them to a fresh module instance at once, so a
+certificate the module refuses throws `ConfigError` there, at startup, and
+never on a call. `build()` throws `ConfigError` for an empty root set, since
+a verifier with no roots would answer `.untrustedChain` to everything and
+nobody would notice until production.
 
-`Config.defaults()` cannot report a failure (there is nothing to throw to):
-should the bundled roots fail to load or match their pinned SHA-256
-fingerprints, it silently hands back an empty root set, and every
-`Verifier` call built from it then answers `.internalError`, never a
-misleading `.untrustedChain`, rather than crashing at startup. Building a
-`Config` explicitly through `Config.builder()...build()` DOES throw
-`ConfigError` for an empty root set, since a verifier with no roots would
-otherwise answer `.untrustedChain` to everything and nobody would notice
-until production.
+The clock is read once per call, before the input is looked at, and passed
+to the module. The module uses it for exactly two things: the
+chain-validity instant when the receipt or JWS states no signing date of its
+own, and `request_date` in the endpoint response. It never decides whether
+a certificate is expired when the input states a date; see
+[Trust anchors](#trust-anchors). A clock must be safe to call from several
+threads.
 
 ## Which method to call
 
@@ -114,7 +145,8 @@ check, in your own code:
 A legacy receipt's attribute 5 (`sha1Hash`) is Apple's device-binding hash:
 `SHA1(deviceId ‖ opaqueValue ‖ bundleIdBytes)`. The library takes no device
 id parameter; the check is yours to run, in constant time, on the fields it
-returns:
+returns. The example uses swift-crypto, a dependency of your own, not of
+this package:
 
 ```swift
 import Crypto
@@ -222,7 +254,8 @@ COMPARISON.md).
 
 `ReceiptPayload` fields follow Apple's own verifyReceipt vocabulary
 (`bundleId`, `applicationVersion`, `inApp`, …), one struct per receipt, one
-`InAppPurchase` per attribute-17 entry. Rules, pinned by the shared
+`InAppPurchase` per attribute-17 entry. The module decodes the receipt; this
+package reads its JSON into these structs. Rules, pinned by the shared
 conformance vectors:
 
 - A missing attribute decodes to `nil`. The library invents no values.
@@ -250,19 +283,19 @@ conformance vectors:
 
 ## Trust anchors
 
-`Config.defaults()` embeds Apple's three published roots (Apple Inc. Root
-CA, Apple Root CA - G2, Apple Root CA - G3), each checked against its
-published SHA-256 when loaded. No code path in this library reads the
-operating system's trust store, a distribution CA bundle, or anything
-downloaded. The only anchors are the bundled ones, or the ones a caller
-supplies through `Config.builder().roots(...)`.
+`Config.defaults()` trusts Apple's three published roots (Apple Inc. Root
+CA, Apple Root CA - G2, Apple Root CA - G3), compiled into `aprv.wasm`. The
+module cannot read the operating system's trust store, a distribution CA
+bundle, or anything downloaded: it has no file or network access at all. The
+only anchors are the built-in ones, or the ones a caller supplies through
+`Config.builder().roots(...)`. The package carries no certificate file of its
+own; the repository's `certs/` is the reviewable source of the compiled-in
+roots.
 
 The chain is walked top-down: from a pinned root outward, a certificate's
 signature is checked only once the key that will verify it has already been
 vouched for, directly or transitively, by a pinned root. A certificate no
-root vouches for, including one carrying a deliberately oversized or
-unusable key, is never decoded into a usable key and never has its
-signature checked; it is simply excluded from the path. A certificate on the
+root vouches for is simply excluded from the path. A certificate on the
 resulting path is then checked for validity at the chain instant, and last
 for Apple's marker OIDs (the receipt-signing / WWDR OIDs on the receipt
 path, the same pair on the JWS `x5c` chain).
@@ -282,41 +315,70 @@ path, the same pair on the JWS `x5c` chain).
 | SignerInfos in a receipt | 4 |
 | ASN.1 nesting depth (CMS envelope, signed content) | 32 |
 
-The ASN.1 depth is checked on the encoding by this library before
-`swift-asn1` parses it, because `swift-asn1`'s own bound (about 49 values)
-is looser. Past 32, the envelope is `MALFORMED` and the signed content
-`UNREADABLE_PAYLOAD`. Genuine Apple receipts nest 9 levels deep in the
-envelope.
+The module owns every bound; this package adds none. `maxReceiptBytes`,
+`maxEndpointRequestBytes` and `maxJwsBytes` are public so a caller can size
+an HTTP body limit from them. Past the ASN.1 depth, the envelope is
+`MALFORMED` and the signed content `UNREADABLE_PAYLOAD`. Genuine Apple
+receipts nest 9 levels deep in the envelope.
 
-## Measured worst-case CPU
+## Speed
 
-Measured on 2026-09-27 with `bench --worst-case`, which times every shared
-case in `fixtures/cases.json` that carries a time budget: oversized
-untrusted keys, a cross-signed certificate mesh, and the encoding oddities
-inside certificates. Swift 6.3.3, release build, one thread, on a shared
-4-vCPU KVM guest (Intel Xeon Processor @ 2.10GHz); one second of warm-up,
-then ten samples of at least 100 ms each.
+WasmKit interprets, so this is the slowest host of the nine ports. Measured
+on 2026-09-29 with `swift run -c release --package-path swift/bench bench
+--threads` on a shared 4-vCPU x86-64 Linux guest (Swift 6.3.3, WasmKit
+0.4.1, software bounds checking), with the 0.7 core's `aprv.wasm`, counted
+per CPU-second of the process because other work shared the machine:
 
-| Call | Median | Slowest sample |
+| Call | Per CPU-second | CPU per call |
 |---|---:|---:|
-| Slowest hostile case: `signed-data/reject-untrusted-oversized-x5c` (a JWS near the 256 KiB cap) | 2.5 ms | 2.5 ms |
-| Slowest hostile receipt: `receipt/verify-genuine-padded-with-oversized-strangers` | 0.64 ms | 0.76 ms |
-| Every other budgeted case | under 0.41 ms | under 0.55 ms |
-| For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 7.2 ms | 8.1 ms |
-| For scale: `verifyReceiptEndpoint` on the same receipt | 13.4 ms | 14.3 ms |
+| `verifyReceipt`, a genuine sandbox receipt (G5 chain) | 33 to 42 | 24 to 30 ms |
+| `verifySignedData`, the fixture StoreKit 2 transaction | 9 to 10 | 100 to 110 ms |
 
-No hostile input in the shared suite costs more than an ordinary large
-receipt: the cost of a call follows the size of the input, which the caps
-above bound, not the structure an attacker chooses. The machine was shared
-with other work, so treat these as an order of magnitude. Run
-`swift run -c release --package-path swift/bench bench --worst-case` for
-numbers on your own hardware.
+A JWS costs about 100 ms of CPU here, which is the project's guideline of
+about 10 verifications per second per core, with no margin on this machine.
+If you verify StoreKit 2 transactions at volume, measure on your own
+hardware first. Four threads on one shared `Verifier` scale with the free
+cores: each call runs on its own instance, and nothing is locked while the
+module runs. Start-up: the first `Verifier` of a process checks and parses
+the module in 45 to 170 ms; the first call on an instance then takes 150 to
+380 ms, because WasmKit translates each function on first use, and later
+receipt calls 25 to 45 ms (the higher figures on a fully busy machine). An
+instance's linear memory stays the same size over 500 calls, and the bench
+process, with five instances, peaked at about 90 MB resident.
+
+Those figures are WasmKit's direct-threaded interpreter loop, which the
+package uses only on Linux x86-64. Everywhere else, macOS and iOS included,
+it runs the token-threaded loop (see [Known issues](#known-issues)). On the
+same machine that loop verified the G5 receipt at half the rate (24 per
+CPU-second against 48) and the StoreKit 2 transaction at about 60 per cent
+(6 against 10).
 
 ## Thread safety
 
 `Config`, `Verifier`, `ReceiptPayload`, `JsonPayload`, `VerificationResult`
 and `Failure` are all `Sendable`. Build one `Verifier` and share it across
-every request; nothing about a call mutates shared state.
+every request. It owns a small pool of module instances: a call takes an
+idle one or creates one (a few milliseconds, then the roots are parsed once
+by `init`), runs on it alone, and gives it back. A trapped instance is
+discarded, and so is one whose memory grew past 64 MiB. The parsed module is
+shared by every `Verifier` of the process; nothing needs closing.
+
+## Upgrading from 0.7
+
+The API is 0.7's, and so are the answers: every port runs the same module
+against the same `fixtures/cases.json`. What changed:
+
+- **Floors**: Swift 6.3, macOS 15, iOS 18 (were 6.1 and macOS 13).
+- **`Config.roots`** is `[[UInt8]]?`, DER bytes, where it was
+  `[Certificate]` from swift-certificates: `nil` means Apple's roots built
+  into the module. `ConfigBuilder.roots(_:)` takes DER as before.
+- **Dependencies**: swift-certificates, swift-asn1 and swift-crypto are gone;
+  WasmKit is the one dependency.
+- **The clock is read once per call, always**, before the input is looked
+  at; 0.7 read it only when it was needed. The verdicts do not change.
+- **`Failure.cause`** is the host's error (a trap, an unusable answer) for
+  `.internalError`, and `nil` for the module's own verdicts: the core's
+  cause chain stays inside the module.
 
 ## Upgrading from 0.6
 
@@ -350,6 +412,22 @@ gone. The library returns the data, and you compare it yourself (see
 | `.internalError` for signed content that does not parse | `.unreadablePayload` |
 | `.wrongBundleId`, `.wrongEnvironment`, `.wrongAppAppleId`, `.deviceHashMismatch` | gone: the caller's own checks |
 
+## Known issues
+
+- **WasmKit's default interpreter loop crashed on macOS arm64 in a release
+  build.** With WasmKit 0.4.1, Swift 6.3.3 and Xcode 26.6, the first guest
+  call of a process failed inside WasmKit with an "error" that was really
+  an array of WasmKit's `ValueType`, and bridging it to `NSError` raised
+  `unrecognized selector` (`-domain`); the process then died. That loop,
+  direct threading, is the one part of WasmKit that hands Swift errors
+  through C as raw pointers. Linux x86-64 runs it cleanly, including under
+  AddressSanitizer. The package therefore picks WasmKit's token-threaded
+  loop, which is plain Swift, on every platform but Linux x86-64, at the
+  speed cost given under [Speed](#speed).
+
 ## Licence
 
-See the repository root.
+MIT; see the repository root. The code compiled into `aprv.wasm` keeps its
+own licences (OpenSSL, wasi-libc with musl, the Rust standard library),
+shipped beside it in `Sources/ApplePurchaseReceiptVerifier/Resources/licenses`
+and copied into the package's resource bundle.

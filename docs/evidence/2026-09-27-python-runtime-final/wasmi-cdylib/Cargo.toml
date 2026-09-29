@@ -1,0 +1,31 @@
+[package]
+name = "aprv-wasmi"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Spike (2026-09-27): APRV-specific C ABI around safe Wasmi 2.0.0 Rust APIs, for a ctypes facade"
+
+[lib]
+name = "aprv_wasmi"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Wasmi's default features minus `wat` (text parsing): stable, std, validate,
+# memory64, auto-dispatch. The same set as round 9's `wasmi2-auto` rows.
+wasmi = { version = "=2.0.0", default-features = false, features = ["stable", "std", "validate", "memory64", "auto-dispatch"] }
+getrandom = "0.3"
+
+# Wasmi's usage guide (docs/usage.md at v2.0.0): lto = "fat", codegen-units = 1.
+# panic = "unwind" (the default) so every entry point can turn a Rust panic
+# into an error code with catch_unwind instead of aborting the host process.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[features]
+# Wasmi's `extra-checks`: turns checks the executor elides in release builds
+# into panics (the security review's hardening suggestion); measured by
+# scripts/ab-extra-checks.sh.
+extra-checks = ["wasmi/extra-checks"]

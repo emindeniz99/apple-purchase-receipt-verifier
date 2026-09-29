@@ -1,0 +1,7 @@
+# build-wamr.sh fetch; build-wamr.sh libs  (2026-09-27, x86_64 Ubuntu 24.04, gcc 13, cmake 3.28, ninja)
+WAMR source: WAMR-2.4.5 = 25bd7eb63e828e4bd242cc9b38d260b4b31c6605
+wamrc: wamrc 2.4.5, release asset 29649007 bytes, sha256 fedda99950a70f7dc45470ce88e12bf9e435b9482058ae97ce2cadd760e2329f (the release publishes no checksum)
+libiwasm-fast.so: 516312 bytes, built in 12 s (-DWAMR_BUILD_FAST_INTERP=1 -DWAMR_BUILD_FAST_JIT=0)
+libiwasm-classic.so: 875216 bytes, built in 15 s (-DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_FAST_JIT=1)
+# Not run further: the owner limited round 8 to mature Python routes, and WAMR's is not one (see the note).
+# `build-wamr.sh aot` and any Python measurement of these libraries did not run.

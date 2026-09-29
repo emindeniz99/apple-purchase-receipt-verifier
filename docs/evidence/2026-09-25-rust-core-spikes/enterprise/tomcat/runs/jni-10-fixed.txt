@@ -1,0 +1,18 @@
+== initial
+app1: OK bundleId=dev.bonzer.weeka.app
+  ctx=/app1 cl@6d7fc27 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-fixed/temp/libaprv_jni-spike.so]
+== redeploy 1
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@1302f3de threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-fixed/temp/libaprv_jni-spike.so]
+== redeploy 2
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@3271c463 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-fixed/temp/libaprv_jni-spike.so]
+== redeploy 3
+app1: ERR java.lang.UnsatisfiedLinkError: Native Library $SCRATCH/enterprise1/runs/jni-10-fixed/temp/libaprv_jni-spike.so already loaded in another classloader | 
+  ctx=/app1 cl@34b8bea3 threads=17
+  mapped=1 [$SCRATCH/enterprise1/runs/jni-10-fixed/temp/libaprv_jni-spike.so]
+== findleaks: OK - No memory leaks found
+== log warnings/errors:

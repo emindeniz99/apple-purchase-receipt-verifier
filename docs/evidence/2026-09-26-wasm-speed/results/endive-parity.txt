@@ -1,0 +1,5 @@
+jdk21 bytearray cases: native 153 identical, 0 differ | {"host":"endive-build-time","java":"21.0.10","calls":{"aprv.clock_now_ms":463,"aprv.random_get":1},"traps":0,"rows":153,"instances":1,"init_ms":342.63}
+jdk21 bytearray hostile: native 811 identical, 0 differ | {"host":"endive-build-time","java":"21.0.10","calls":{"aprv.clock_now_ms":214,"aprv.random_get":1},"traps":0,"rows":811,"instances":1,"init_ms":298.97}
+jdk21 bytearray algorithms: native 22 identical, 0 differ | {"host":"endive-build-time","java":"21.0.10","calls":{"aprv.clock_now_ms":68,"aprv.random_get":1},"traps":0,"rows":22,"instances":1,"init_ms":324.31}
+jdk21 bytearray substrate: native 193 identical, 0 differ | {"host":"endive-build-time","java":"21.0.10","calls":{"aprv.clock_now_ms":527,"aprv.random_get":1},"traps":0,"rows":193,"instances":1,"init_ms":344.65}
+jdk21 bytearray fuzz: native 5000 identical, 0 differ | {"host":"endive-build-time","java":"21.0.10","calls":{"aprv.clock_now_ms":4308,"aprv.random_get":1},"traps":0,"rows":5000,"instances":1,"init_ms":328.67}

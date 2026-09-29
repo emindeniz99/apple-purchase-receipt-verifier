@@ -1,0 +1,19 @@
+# Spike only (2026-09-26). The facade package: pure Python plus aprv.wasm
+# (copied in by scripts/build.sh; not in the repository). All native code
+# comes from the wasmtime wheel on PyPI.
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aprv-wasm-spike"
+version = "0.0.0"
+description = "Spike: apple-purchase-receipt-verifier's aprv.wasm on wasmtime-py (ABI v1)"
+requires-python = ">=3.9"
+dependencies = ["wasmtime==49.0.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aprv_wasm = ["aprv.wasm"]

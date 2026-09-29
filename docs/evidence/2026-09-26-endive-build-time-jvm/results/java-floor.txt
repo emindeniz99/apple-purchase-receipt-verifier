@@ -1,0 +1,18 @@
+## JDK 8 (Endive's floor is 11; expected to refuse the class files)
+Error: A JNI error has occurred, please check your installation and try again
+Exception in thread "main" java.lang.UnsupportedClassVersionError: spike/consumer/Main has been compiled by a more recent version of the Java Runtime (class file version 55.0), this version of the Java Runtime only recognizes class file versions up to 52.0
+	at java.lang.ClassLoader.defineClass1(Native Method)
+## class-file major versions on the consumer classpath (52 = Java 8, 55 = Java 11), per jar: version -> class count
+aprv-endive-0.0.0-spike.jar: 55 -> 33  
+runtime-1.1.0.jar: 55 -> 71  
+wasm-1.1.0.jar: 55 -> 116  
+trap-probe-0.0.0-spike.jar: 55 -> 7  
+## JDK 11 (Temurin 11 JRE): the trap probe
+load 65533 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65536 but limit is: 65536 and size: 1 | load(100) after = 42, load(65532) after = 0
+load -1 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: -1 but limit is: 65536 and size: 1 | load(100) after = 42, load(65532) after = 0
+store 65534 7 -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65534 but limit is: 65536 and size: 4 | load(100) after = 42, load(65532) after = 0
+fill_oob -> run.endive.runtime.WasmRuntimeException: out of bounds memory access: attempted to access address: 65000 but limit is: 65536 and size: 1000 | load(100) after = 42, load(65532) after = 0
+unreachable -> run.endive.runtime.TrapException: Trapped on unreachable instruction | load(100) after = 42, load(65532) after = 0
+div0 0 -> run.endive.runtime.WasmRuntimeException: integer divide by zero | load(100) after = 42, load(65532) after = 0
+deep 0 -> run.endive.wasm.WasmEngineException: call stack exhausted | load(100) after = 42, load(65532) after = 0
+aprv_version after all traps: 0.6.0

@@ -1,0 +1,162 @@
+diff -ru a/Cargo.lock b/Cargo.lock
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -29,6 +29,7 @@
+ dependencies = [
+  "axum",
+  "getrandom",
++ "mimalloc",
+  "sha2",
+  "tokio",
+  "wasmtime",
+@@ -675,6 +676,15 @@
+ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+ 
+ [[package]]
++name = "libmimalloc-sys"
++version = "0.1.49"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
++dependencies = [
++ "cc",
++]
++
++[[package]]
+ name = "linux-raw-sys"
+ version = "0.12.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -714,6 +724,15 @@
+ ]
+ 
+ [[package]]
++name = "mimalloc"
++version = "0.1.52"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
++dependencies = [
++ "libmimalloc-sys",
++]
++
++[[package]]
+ name = "mime"
+ version = "0.3.17"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+diff -ru a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -29,6 +29,15 @@
+ spike = []
+ # Spike only, never default: POST /spike/crash aborts the process.
+ crash = []
++# Round 10 (2026-09-27), spike only: mimalloc as the Rust global allocator
++# instead of the platform malloc (musl's mallocng or glibc's ptmalloc).
++mimalloc = ["dep:mimalloc"]
++# Round 10, spike only: count every Rust heap allocation; `aprv bench`
++# reports allocations and bytes per call. Excludes `mimalloc`.
++alloc-count = []
++# Round 10, spike only: the one-shot CLI does not drop the Wasmtime runtime
++# before exiting (skips unwind-info deregistration; see src/main.rs).
++cli-fast-exit = []
+ 
+ [dependencies]
+ # B (runtime-only) is this line with no features added: "runtime" and "std"
+@@ -39,6 +48,7 @@
+ sha2 = { version = "0.10", default-features = false }
+ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"], optional = true }
+ tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "sync", "macros"], optional = true }
++mimalloc = { version = "=0.1.52", default-features = false, optional = true }
+ 
+ [profile.release]
+ opt-level = 3
+diff -ru a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -20,6 +20,49 @@
+ use std::sync::Arc;
+ use std::time::Instant;
+ 
++// Round 10: the allocator rows. Default: the platform malloc.
++#[cfg(feature = "mimalloc")]
++#[global_allocator]
++static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
++
++#[cfg(feature = "alloc-count")]
++mod alloc_count {
++    //! Counts Rust heap allocations (alloc, alloc_zeroed, realloc) on top of
++    //! the platform malloc. Guest linear memory is mmap'd by Wasmtime, not
++    //! allocated here, so it is not counted.
++    use std::alloc::{GlobalAlloc, Layout, System};
++    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
++    pub static ALLOCS: AtomicU64 = AtomicU64::new(0);
++    pub static BYTES: AtomicU64 = AtomicU64::new(0);
++    pub struct Counting;
++    // SAFETY: forwards every call unchanged to the system allocator.
++    unsafe impl GlobalAlloc for Counting {
++        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
++            ALLOCS.fetch_add(1, Relaxed);
++            BYTES.fetch_add(l.size() as u64, Relaxed);
++            System.alloc(l)
++        }
++        unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
++            ALLOCS.fetch_add(1, Relaxed);
++            BYTES.fetch_add(l.size() as u64, Relaxed);
++            System.alloc_zeroed(l)
++        }
++        unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
++            ALLOCS.fetch_add(1, Relaxed);
++            BYTES.fetch_add(n as u64, Relaxed);
++            System.realloc(p, l, n)
++        }
++        unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
++            System.dealloc(p, l)
++        }
++    }
++    #[global_allocator]
++    static GLOBAL: Counting = Counting;
++    pub fn now() -> (u64, u64) {
++        (ALLOCS.load(Relaxed), BYTES.load(Relaxed))
++    }
++}
++
+ fn main() {
+     let args: Vec<String> = std::env::args().skip(1).collect();
+     let code = match args.first().map(String::as_str) {
+@@ -79,6 +122,11 @@
+         Ok(r) => r,
+         Err(e) => return die(format!("{e:#}")),
+     };
++    // Round 10: with LLVM libunwind (static musl) Wasmtime deregisters the
++    // module's unwind info one FDE at a time at drop, which is quadratic in
++    // the FDE count. A one-shot process can leave that to the kernel.
++    #[cfg(feature = "cli-fast-exit")]
++    let runtime = std::mem::ManuallyDrop::new(runtime);
+     let out = match runtime.instantiate().and_then(|mut w| w.invoke(op, &input)) {
+         Ok(out) => out,
+         Err(e) => return die(e),
+@@ -159,6 +207,8 @@
+     for _ in 0..(n / 5).max(5) {
+         check(&v.invoke(op, &input).expect("warm"));
+     }
++    #[cfg(feature = "alloc-count")]
++    let a0 = alloc_count::now();
+     let t = Instant::now();
+     let hs: Vec<_> = (0..threads)
+         .map(|_| {
+@@ -176,6 +226,17 @@
+         .collect();
+     let mut lat: Vec<f64> = hs.into_iter().flat_map(|h| h.join().unwrap()).collect();
+     let secs = t.elapsed().as_secs_f64();
++    #[cfg(feature = "alloc-count")]
++    {
++        // Includes the latency Vec's own growth: a handful of reallocs per thread.
++        let a1 = alloc_count::now();
++        let calls = lat.len() as f64;
++        eprintln!(
++            "{{\"allocs_per_call\":{:.1},\"alloc_bytes_per_call\":{:.0}}}",
++            (a1.0 - a0.0) as f64 / calls,
++            (a1.1 - a0.1) as f64 / calls
++        );
++    }
+     lat.sort_by(|a, b| a.partial_cmp(b).unwrap());
+     let pct = |p: f64| lat[((lat.len() as f64 * p) as usize).min(lat.len() - 1)];
+     println!(

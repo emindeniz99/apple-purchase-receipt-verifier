@@ -1,0 +1,10 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
+<groupId>ch</groupId><artifactId>ch</artifactId><version>0</version>
+<properties><maven.compiler.release>11</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding><c>1.7.5</c></properties>
+<dependencies>
+<dependency><groupId>com.dylibso.chicory</groupId><artifactId>runtime</artifactId><version>${c}</version></dependency>
+<dependency><groupId>com.dylibso.chicory</groupId><artifactId>wasi</artifactId><version>${c}</version></dependency>
+<dependency><groupId>com.dylibso.chicory</groupId><artifactId>compiler</artifactId><version>${c}</version></dependency>
+</dependencies>
+<build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version>
+<executions><execution><phase>package</phase><goals><goal>copy-dependencies</goal></goals></execution></executions></plugin></plugins></build></project>

@@ -1,0 +1,10 @@
+# name | raw | wasm-tools strip (default: drops producers and target_features, keeps name) | the same + gzip -9 | code | data | name section | sha256 (16)
+r4-repro | 2973532 | 2973178 | 975768 | 2024425 | 673717 | 254524 | db31279e4b70ad1a
+base | 2973532 | 2973178 | 975754 | 2024425 | 673717 | 254524 | 2f449c45c289c35f
+nistp | 3265709 | 3265355 | 1066247 | 2299340 | 688373 | 256888 | 98c5e8c5f12aba68
+o2 | 2898609 | 2898255 | 963794 | 1950415 | 674933 | 252732 | e1871e61f6964357
+nopic | 2840377 | 2840023 | 957024 | 1901833 | 674140 | 245097 | 5bd97b9e607b01b7
+rust2 | 2957651 | 2957297 | 972916 | 2007080 | 674453 | 255237 | 1242fa5c7a88a4bd
+base-wo2 | 2213234 | 2212880 | 862782 | 1562892 | 634046 |  | 204e853414118a46
+base-wo3 | 2227405 | 2227051 | 861901 | 1577361 | 634046 |  | 00cbdfefca0052a3
+# r4-repro is round 4's recipe on round 4's OpenSSL install: byte-identical to $SCRATCH/asn1/art/new-c.wasm (db31279e4b70ad1a)

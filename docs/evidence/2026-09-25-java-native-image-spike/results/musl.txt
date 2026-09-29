@@ -1,0 +1,19 @@
+# --shared --libc=musl, Oracle GraalVM 25.4.4.1.1, Ubuntu 24.04 musl 1.2.4 (musl-gcc 13.3.0), zlib 1.3.1 built static with musl-gcc -fPIC
+# first attempt without a musl zlib: '/usr/bin/ld: cannot find -lz'
+  44.18MiB in total image size, 41.88MiB in total file size
+                      16.3s (9.5% of total time) in 1707 GCs | Peak RSS: 3.27GiB | CPU load: 3.62
+Finished generating 'libaprvj_musl' in 2m 50s.
+Elapsed (wall clock) seconds: 171.6
+Maximum resident set size (kbytes): 3427152
+Exit status: 0
+## readelf -d NEEDED
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so]
+## size
+43911024
+## h-ni smoke (harness built with musl-gcc, interpreter /lib/ld-musl-x86_64.so.1)
+23
+0 failure(s)
+## bench
+{"op":"receipt","threads":4,"shared_handles":0,"runtime_new_ms":1.44,"ctx_open_ms":23.93,"first_call_ms":12.42,"warmup_calls":3745,"mean_us":749.4,"p50_us":721.6,"p99_us":1415.5,"throughput_per_s":4488,"calls":22440,"mismatched":0,"rss_kb_after_runtime_new":6876,"rss_kb_after_warmup":55268,"rss_kb_after_load":78776}
+{"op":"jws","threads":4,"shared_handles":0,"runtime_new_ms":1.39,"ctx_open_ms":25.38,"first_call_ms":4.70,"warmup_calls":2244,"mean_us":1317.3,"p50_us":1204.9,"p99_us":2578.7,"throughput_per_s":3020,"calls":15100,"mismatched":0,"rss_kb_after_runtime_new":6908,"rss_kb_after_warmup":55192,"rss_kb_after_load":88952}
+{"op":"endpoint","threads":4,"shared_handles":0,"runtime_new_ms":1.42,"ctx_open_ms":22.56,"first_call_ms":12.53,"warmup_calls":3493,"mean_us":850.3,"p50_us":770.2,"p99_us":1777.1,"throughput_per_s":4560,"calls":22800,"mismatched":0,"rss_kb_after_runtime_new":6876,"rss_kb_after_warmup":55332,"rss_kb_after_load":83932}

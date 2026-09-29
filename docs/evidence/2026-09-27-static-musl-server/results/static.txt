@@ -1,0 +1,31 @@
+# 2026-09-27 x86_64, 4 vCPUs; load before: 0.81 1.26 1.21
+gnu-min: file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, not stripped
+    ldd:  linux-vdso.so.1 libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 /lib64/ld-linux-x86-64.so.2 
+    readelf: INTERP 1, NEEDED 3, type DYN (Position-Independent Executable file)
+musl-min: file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    ldd:  statically linked 
+    readelf: INTERP 0, NEEDED 0, type DYN (Position-Independent Executable file)
+musl-mimalloc-min: file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    ldd:  statically linked 
+    readelf: INTERP 0, NEEDED 0, type DYN (Position-Independent Executable file)
+a64-musl-min: file: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+    ldd:  not a dynamic executable 
+    readelf: INTERP 0, NEEDED 0, type EXEC (Executable file)
+a64-musl-mimalloc-min: file: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+    ldd:  not a dynamic executable 
+    readelf: INTERP 0, NEEDED 0, type EXEC (Executable file)
+gnu-spike: file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, not stripped
+    ldd:  linux-vdso.so.1 libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 /lib64/ld-linux-x86-64.so.2 
+    readelf: INTERP 1, NEEDED 3, type DYN (Position-Independent Executable file)
+musl-spike: file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    ldd:  statically linked 
+    readelf: INTERP 0, NEEDED 0, type DYN (Position-Independent Executable file)
+musl-mimalloc-spike: file: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, not stripped
+    ldd:  statically linked 
+    readelf: INTERP 0, NEEDED 0, type DYN (Position-Independent Executable file)
+a64-musl-spike: file: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+    ldd:  not a dynamic executable 
+    readelf: INTERP 0, NEEDED 0, type EXEC (Executable file)
+a64-rt-host-wt: file: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+    ldd:  not a dynamic executable 
+    readelf: INTERP 0, NEEDED 0, type EXEC (Executable file)

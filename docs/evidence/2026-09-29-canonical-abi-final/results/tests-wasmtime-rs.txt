@@ -1,0 +1,16 @@
+## aprv-wt-full tests aprv-cabi.component.wasm (Wasmtime 49.0.1, bindgen!, 2026-09-29)
+PASS verify before init traps: TRAP error while executing at wasm backtrace:
+PASS   ... and the trapped instance refuses further calls: TRAP wasm trap: cannot enter component instance
+PASS verify-receipt(genuine g5) verifies: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c146465762e626f6e7a65722e7765656b612e617070","bun
+PASS a second init traps: TRAP error while executing at wasm backtrace:
+PASS a config that is not JSON is {"ok":false}, and init can be retried: {"message":"config is not JSON: key must be a string at line 1 column 2","ok":false}
+PASS verify-signed-data(shared-sandbox JWS, its test roots) verifies: {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType":"PURCHASED","originalPurchaseDate":1722945600000,"original
+PASS verify-receipt-endpoint(env 1 = sandbox, g5) answers status 0: nal_identifier":0},"status":0}
+PASS a JWS that is not UTF-8 reaches the guest and is a value (ABI v1's answer): {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+PASS endpoint with env 2 traps: TRAP error while executing at wasm backtrace:; instance afterwards: TRAP wasm trap: cannot enter component instance
+PASS endpoint with env 255 traps: TRAP error while executing at wasm backtrace:; instance afterwards: TRAP wasm trap: cannot enter component instance
+PASS endpoint with env 4294967295 traps: TRAP error while executing at wasm backtrace:; instance afterwards: TRAP wasm trap: cannot enter component instance
+PASS random-get answering the wrong length traps: TRAP error while executing at wasm backtrace:
+PASS isolation: a trap (env 2) in one instance leaves another verifying: 
+NOT REACHABLE with typed bindings: a wrong argument type or count (compile error), pointers and lengths, post-return (the runtime runs it)
+summary: 0 failed

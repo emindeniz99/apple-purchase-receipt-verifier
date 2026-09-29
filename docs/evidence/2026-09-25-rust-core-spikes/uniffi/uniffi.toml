@@ -1,0 +1,8 @@
+[bindings.kotlin]
+package_name = "io.github.emindeniz99.applepurchasereceiptverifier"
+generate_immutable_records = true
+disable_java_cleaner = true
+
+[bindings.kotlin.rename]
+VerifyError = "VerificationError"
+"AppReceipt.creation_date_ms" = "created_at_millis"

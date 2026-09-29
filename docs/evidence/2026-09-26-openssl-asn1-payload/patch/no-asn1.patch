@@ -1,0 +1,803 @@
+diff -ru -x Cargo.lock -x target a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml	2026-09-26 13:36:49.780982875 +0000
++++ b/Cargo.toml	2026-09-26 13:39:53.960791040 +0000
+@@ -24,34 +24,19 @@
+ endpoint = []
+ # Spike only (security substrate bake-off).
+ substrate = ["dep:aprv-security-openssl"]
+-substrate-prescan = ["substrate"]
+ substrate-a1 = ["substrate", "aprv-security-openssl/a1"]
+ substrate-vendored = ["substrate", "aprv-security-openssl/vendored"]
+ substrate-aws-lc = ["substrate", "aprv-security-openssl/aws-lc"]
+ substrate-cms = ["substrate", "aprv-security-openssl/cms"]
++# Round 4: the payload through the generic SET/SEQUENCE OF ANY walk (no C).
++substrate-payload-any = ["substrate", "aprv-security-openssl/payload-any"]
+ substrate-negative-control = ["substrate", "aprv-security-openssl/negative-control"]
+ 
+-# Nine crates, all of them primitives. Every byte of attacker-supplied
+-# ASN.1 — certificates, CMS, receipt payloads, keys, signatures — is parsed
+-# by this crate's own bounded reader, so no third-party parser decides what a
+-# key or a signature is. What is delegated is arithmetic: modular
+-# exponentiation, two curves, three digests, and the base64 decode of
+-# `receipt-data` and `x5c` entries (`src/base64.rs`).
+-#
+-# `deny.toml` bans, as a build-breaking rule, every crate that could bring a
+-# system trust store or a network client into the tree.
+-#
+-# `u64_digit` is on `rsa`'s default list and is restored here after
+-# `default-features = false` dropped it. Without it `num-bigint-dig` works in
+-# 32-bit limbs and each RSA-2048 verify, three per receipt, costs about 1.7x
+-# as much. A unit test in `src/crypto.rs` fails if the feature goes missing.
++# Spike (round 4, no asn1.rs): every byte of attacker-supplied ASN.1 —
++# certificates, CMS, receipt payloads, keys, signatures — is parsed by
++# OpenSSL through aprv-security-openssl (the `substrate` features), and
++# the pure-Rust RSA/ECDSA/digest crates are gone with crypto.rs.
+ [dependencies]
+-rsa = { version = "0.9.10", default-features = false, features = ["std", "u64_digit"] }
+-p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
+-p384 = { version = "0.13.1", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
+-sha1 = { version = "0.10.7", default-features = false, features = ["oid"] }
+-sha2 = { version = "0.10.9", default-features = false, features = ["oid"] }
+-digest = "0.10.7"
+ subtle = "2.6"
+ serde_json = "1"
+ base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+diff -ru -x Cargo.lock -x target a/fuzz/Cargo.toml b/fuzz/Cargo.toml
+--- a/fuzz/Cargo.toml	2026-09-26 13:36:49.781323719 +0000
++++ b/fuzz/Cargo.toml	2026-09-26 13:39:53.961197749 +0000
+@@ -18,27 +18,6 @@
+ path = ".."
+ 
+ [[bin]]
+-name = "parse-der"
+-path = "fuzz_targets/parse-der.rs"
+-test = false
+-doc = false
+-bench = false
+-
+-[[bin]]
+-name = "parse-certificate"
+-path = "fuzz_targets/parse-certificate.rs"
+-test = false
+-doc = false
+-bench = false
+-
+-[[bin]]
+-name = "parse-cms"
+-path = "fuzz_targets/parse-cms.rs"
+-test = false
+-doc = false
+-bench = false
+-
+-[[bin]]
+ name = "verify-receipt"
+ path = "fuzz_targets/verify-receipt.rs"
+ test = false
+diff -ru -x Cargo.lock -x target a/src/jws.rs b/src/jws.rs
+--- a/src/jws.rs	2026-09-26 13:36:49.780495649 +0000
++++ b/src/jws.rs	2026-09-26 13:39:53.960619120 +0000
+@@ -6,19 +6,14 @@
+ //! fails an early check must report that check's reason, not a later one.
+ //! `PLAN.md` §2.1 and `fixtures/cases.json` pin it.
+ 
+-use crate::base64::{decode_base64url_strict, decode_receipt_base64};
+-use crate::chain::validate_pair;
+-use crate::clock::unix_millis;
+-use crate::crypto::{curve_field_size, verify_es256};
++use crate::base64::decode_base64url_strict;
+ use crate::environment::Environment;
+ use crate::error::{ConfigError, Reason, Result, VerificationError};
+ use crate::json_depth::{nesting_exceeds_limit, MAX_JSON_NESTING_DEPTH};
+ use crate::roots::{normalize_anchors, TrustAnchor};
+-use crate::x509::{Certificate, OID_EC_PUBLIC_KEY};
+ use serde_json::{Map, Value};
+ use std::collections::BTreeSet;
+ use std::sync::Arc;
+-use std::time::SystemTime;
+ 
+ /// Apple marker OID: a leaf certificate used for App Store signing.
+ pub const LEAF_OID: &str = "1.2.840.113635.100.6.11.1";
+@@ -108,7 +103,7 @@
+ /// oversight to be "improved" into a date type: converting loses the raw
+ /// claim, invites a timezone bug, and makes two ports disagree about what
+ /// the same payload says. Only *receipt attribute* dates become
+-/// [`SystemTime`].
++/// [`SystemTime`](std::time::SystemTime).
+ #[derive(Debug, Clone, PartialEq)]
+ #[non_exhaustive]
+ pub struct TransactionPayload {
+@@ -424,84 +419,9 @@
+     }
+ 
+     fn verify_signature(&self, jws: &str) -> Result<Claims> {
+-        #[cfg(feature = "substrate")]
+-        return crate::substrate::verify_jws(jws, &self.anchors);
+-        #[cfg(not(feature = "substrate"))]
+-        self.verify_signature_rust(jws)
+-    }
+-
+-    #[cfg_attr(feature = "substrate", allow(dead_code))]
+-    fn verify_signature_rust(&self, jws: &str) -> Result<Claims> {
+-        let segments = split_jws(jws)?;
+-        let leaf = parse_x5c_certificate(segments.x5c.first())?;
+-        let intermediate = parse_x5c_certificate(segments.x5c.get(1))?;
+-        // Parsed and then dropped: the third entry is trusted by nobody, and
+-        // reading it decides only whether it IS a certificate.
+-        parse_x5c_certificate(segments.x5c.get(2))?;
+-        // The marker OIDs are checked BEFORE the chain on the JWS path.
+-        // `cases.json` uses roots under which the chain would otherwise
+-        // validate, so the order is what the reason depends on.
+-        if !leaf.has_extension(LEAF_OID) {
+-            return Err(VerificationError::new(
+-                Reason::InvalidCertificatePurpose,
+-                format!("leaf certificate lacks Apple marker OID {LEAF_OID}"),
+-            ));
+-        }
+-        if !intermediate.has_extension(INTERMEDIATE_OID) {
+-            return Err(VerificationError::new(
+-                Reason::InvalidCertificatePurpose,
+-                format!("intermediate certificate lacks Apple marker OID {INTERMEDIATE_OID}"),
+-            ));
+-        }
+-
+-        let payload = parse_json_segment(segments.payload_b64, "payload")?;
+-        // Chain validity is judged at the payload's signing date, so a
+-        // payload signed with a since-rotated certificate keeps verifying.
+-        // Where the payload states no date, the fallback reads the system
+-        // clock.
+-        let signed_at_millis = signed_at_millis_of(&payload)?;
+-        let effective = signed_at_millis.unwrap_or_else(|| unix_millis(crate::clock::system_now()));
+-        validate_pair(&leaf, &intermediate, &self.anchors, effective)?;
+-
+-        if leaf.public_key_algorithm_oid() != OID_EC_PUBLIC_KEY {
+-            return Err(VerificationError::new(
+-                Reason::InvalidSignature,
+-                "leaf key is not EC",
+-            ));
+-        }
+-        // Strict, not lenient: see `base64`. Every port decodes this
+-        // segment strictly, and the transaction/reject-signature-segment-*
+-        // vectors hold them to it. A lenient reading would give one
+-        // Apple-signed transaction unboundedly many accepted wire forms, so
+-        // an integrator deduping on the JWS string would be defeated by one
+-        // character.
+-        //
+-        // A segment that isn't canonical base64url is a *format* failure,
+-        // decided before any cryptography runs — the same class as a header
+-        // that isn't base64url JSON, not a cryptographic verdict on a
+-        // signature that was actually checked.
+-        let Some(signature) = decode_base64url_strict(segments.signature_b64) else {
+-            return Err(invalid_jws("signature segment is not canonical base64url"));
+-        };
+-        if signature.len() != 64 {
+-            return Err(VerificationError::new(
+-                Reason::InvalidSignature,
+-                format!("ES256 signature must be 64 bytes, got {}", signature.len()),
+-            ));
+-        }
+-        let mut signing_input =
+-            Vec::with_capacity(segments.header_b64.len() + 1 + segments.payload_b64.len());
+-        signing_input.extend_from_slice(segments.header_b64.as_bytes());
+-        signing_input.push(b'.');
+-        signing_input.extend_from_slice(segments.payload_b64.as_bytes());
+-        if !verify_es256(leaf.public_key_bits(), &signature, &signing_input) {
+-            return Err(VerificationError::new(
+-                Reason::InvalidSignature,
+-                "ES256 signature check failed",
+-            ));
+-        }
+-
+-        Ok(payload)
++        // Spike (round 4): the only path (x509.rs, chain.rs and crypto.rs
++        // are deleted in this tree).
++        crate::substrate::verify_jws(jws, &self.anchors)
+     }
+ 
+     fn require_bundle_id(&self, actual: Option<&str>) -> Result<()> {
+@@ -653,52 +573,3 @@
+     }
+ }
+ 
+-/// `x5c[2]` is parsed like the other two and then discarded: it is never
+-/// compared to an anchor and never trusted, so swapping in a stranger's
+-/// root still changes nothing. Reading it settles only whether the entry is
+-/// a certificate at all — the differential the ports carried until
+-/// `transaction/reject-x5c-root-that-is-not-a-certificate` pinned java's
+-/// answer for all nine.
+-///
+-/// The entry itself must be standard base64 with canonical padding
+-/// (RFC 7515 §4.1.6), the `receipt-data` rule: junk, whitespace, a base64url
+-/// character or a wrong `=` count is refused by [`decode_receipt_base64`]
+-/// rather than skipped on the way to a genuine certificate.
+-fn parse_x5c_certificate(entry: Option<&String>) -> Result<Certificate> {
+-    let Some(entry) = entry else {
+-        return Err(VerificationError::new(
+-            Reason::InvalidCertificate,
+-            "x5c entry is not a valid certificate",
+-        ));
+-    };
+-    let Some(der) = decode_receipt_base64(entry) else {
+-        return Err(VerificationError::new(
+-            Reason::InvalidCertificate,
+-            "x5c entry is not a valid certificate",
+-        ));
+-    };
+-    let certificate = Certificate::from_der(&der).map_err(|_| {
+-        VerificationError::new(
+-            Reason::InvalidCertificate,
+-            "x5c entry is not a valid certificate",
+-        )
+-    })?;
+-    // An EC key on a curve this crate does not implement is a defect of the
+-    // certificate, not of the path it sits on: there is no key to check an
+-    // issuance against. Left to the chain it reads as INVALID_CHAIN, while
+-    // java, swift and go refuse the certificate in their decoders — the
+-    // reading the shared vector pins, so that no port defers a rejection
+-    // another already makes.
+-    if certificate.public_key_algorithm_oid() == OID_EC_PUBLIC_KEY
+-        && certificate
+-            .public_key_curve_oid()
+-            .and_then(curve_field_size)
+-            .is_none()
+-    {
+-        return Err(VerificationError::new(
+-            Reason::InvalidCertificate,
+-            "x5c entry uses an unimplemented elliptic curve",
+-        ));
+-    }
+-    Ok(certificate)
+-}
+diff -ru -x Cargo.lock -x target a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs	2026-09-26 13:36:49.780882903 +0000
++++ b/src/lib.rs	2026-09-26 13:39:53.960737728 +0000
+@@ -82,12 +82,8 @@
+ )]
+ #![doc(html_root_url = "https://docs.rs/apple-purchase-receipt-verifier")]
+ 
+-pub mod asn1;
+ pub mod base64;
+-pub mod chain;
+ pub mod clock;
+-pub mod cms;
+-pub mod crypto;
+ pub mod datetime;
+ mod environment;
+ mod error;
+@@ -98,7 +94,10 @@
+ mod roots;
+ #[cfg(feature = "substrate")]
+ mod substrate;
+-pub mod x509;
++// Spike (round 4): asn1.rs and everything built on it (x509, cms, crypto,
++// chain) are deleted in this tree, so OpenSSL is the only path.
++#[cfg(not(feature = "substrate"))]
++compile_error!("the no-asn1 spike tree verifies through OpenSSL only: build with --features substrate-cms");
+ 
+ #[cfg(feature = "endpoint")]
+ mod endpoint;
+diff -ru -x Cargo.lock -x target a/src/receipt.rs b/src/receipt.rs
+--- a/src/receipt.rs	2026-09-26 13:36:49.780258936 +0000
++++ b/src/receipt.rs	2026-09-26 13:39:53.960524148 +0000
+@@ -1,20 +1,11 @@
+ //! Verification of legacy PKCS#7 app receipts — the server-side port of
+ //! Apple's "Validating receipts on the device" procedure (`PLAN.md` §2.2).
+ 
+-use crate::asn1::{parse_exact, tag};
+ use crate::base64::decode_receipt_base64;
+-use crate::chain::build_and_validate_path;
+-use crate::cms::{
+-    find_message_digest_attribute, parse_cms, signed_attrs_signed_bytes, CmsSignerInfo, ParsedCms,
+-};
+-use crate::crypto::{constant_time_eq, curve_field_size, verify_rsa_pkcs1, DigestAlgorithm};
+-use crate::datetime::unix_millis_of;
+ use crate::error::{ConfigError, CoreError, Reason, Result, VerificationError};
+-use crate::receipt_payload::{parse_receipt_payload, read_creation_date};
+ use crate::roots::{normalize_anchors, TrustAnchor};
+-use crate::x509::{Certificate, OID_EC_PUBLIC_KEY, OID_RSA_ENCRYPTION};
+ use std::sync::Arc;
+-use std::time::SystemTime;
++use subtle::ConstantTimeEq;
+ 
+ pub use crate::receipt_payload::{AppReceipt, InAppPurchase};
+ 
+@@ -118,203 +109,9 @@
+             "receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes"
+         )));
+     }
+-    #[cfg(feature = "substrate")]
+-    if true {
+-        return crate::substrate::verify_receipt(der, trusted_roots);
+-    }
+-    let cms = parse_cms(der).map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
+-
+-    // Only the creation date is read before trust is established, because
+-    // chain validity anchors at signing time; nothing else in the payload is
+-    // decoded until the chain and the signature have passed. A date that is
+-    // missing, empty, unreadable or stated twice cannot blame anyone yet, so
+-    // it only moves the chain instant to "now" and never rejects by itself.
+-    //
+-    // "Now" is the SYSTEM clock, never an injected one: a caller injecting a
+-    // clock (to pin request_date, or to work around skew) must not thereby
+-    // accept an expired chain. That is why the receipt path takes no clock
+-    // option at all.
+-    let at_millis = read_creation_date(&cms.content)
+-        .map_or_else(|| unix_millis_of(crate::clock::system_now()), unix_millis_of);
+-
+-    // The embedded certificates are attacker-supplied and are walked into a
+-    // path below, so a receipt carrying more of them than a chain can hold
+-    // is rejected here rather than decoded and searched.
+-    if cms.certificates.len() > MAX_EMBEDDED_CERTIFICATES {
+-        return Err(VerificationError::new(
+-            Reason::InvalidChain,
+-            format!("receipt embeds more than {MAX_EMBEDDED_CERTIFICATES} certificates"),
+-        ));
+-    }
+-    // An entry that will not decode is held rather than returned, because
+-    // WHICH entry it is changes the verdict: a stranger the receipt merely
+-    // carries is a defect of the receipt, while the SIGNER being unreadable
+-    // is a defect of a certificate and gets the verdict an unreadable x5c
+-    // entry gets on the JWS path. Naming the signer needs the readable
+-    // entries matched against the SignerInfo first.
+-    let mut embedded = Vec::with_capacity(cms.certificates.len());
+-    let mut unreadable: Option<VerificationError> = None;
+-    let mut unreadable_signer = false;
+-    for raw in &cms.certificates {
+-        match Certificate::from_der(raw) {
+-            Ok(certificate) => embedded.push(certificate),
+-            Err(err) => {
+-                // Which entry this is has to be read out of the entry
+-                // ITSELF: an identity is still legible in bytes that are not
+-                // a certificate all the way down, and it is the only thing
+-                // that says whether the SignerInfo means this one. Asking
+-                // instead whether the signer turned up among the entries
+-                // that DID decode answers a different question, and answers
+-                // it wrongly whenever the receipt names a certificate it
+-                // does not carry — an unrelated malformed stranger would
+-                // take the blame for a signer that is simply absent.
+-                unreadable_signer = unreadable_signer || names_the_signer(raw, &cms.signer_info);
+-                unreadable.get_or_insert_with(|| {
+-                    malformed(format!("embedded certificate is malformed: {err}"))
+-                });
+-            }
+-        }
+-    }
+-    let signer = match embedded.iter().find(|cert| {
+-        cert.serial_number() == cms.signer_info.serial_contents.as_slice()
+-            && cert.issuer_der() == cms.signer_info.issuer_raw.as_slice()
+-    }) {
+-        Some(signer) => {
+-            if let Some(err) = unreadable {
+-                return Err(err);
+-            }
+-            signer
+-        }
+-        None => {
+-            return Err(match unreadable {
+-                Some(_) if unreadable_signer => VerificationError::new(
+-                    Reason::InvalidCertificate,
+-                    "receipt signer certificate is not a valid certificate",
+-                ),
+-                Some(err) => err,
+-                None => malformed("signer certificate not embedded"),
+-            });
+-        }
+-    };
+-    // The signer's key is used to check the CMS signature, so a key this
+-    // crate cannot build is a defect of the certificate rather than of the
+-    // signature it carries — the same reading `parse_x5c_certificate`
+-    // applies on the JWS path.
+-    if signer.public_key_algorithm_oid() == OID_EC_PUBLIC_KEY
+-        && signer
+-            .public_key_curve_oid()
+-            .and_then(curve_field_size)
+-            .is_none()
+-    {
+-        return Err(VerificationError::new(
+-            Reason::InvalidCertificate,
+-            "receipt signer certificate uses an unimplemented elliptic curve",
+-        ));
+-    }
+-
+-    build_and_validate_path(signer, &embedded, trusted_roots, at_millis)?;
+-    // Checked AFTER the chain, so a foreign chain still reports
+-    // INVALID_CHAIN rather than INVALID_CERTIFICATE_PURPOSE (`PLAN.md` D13).
+-    if !signer.has_extension(RECEIPT_SIGNER_OID) {
+-        return Err(VerificationError::new(
+-            Reason::InvalidCertificatePurpose,
+-            format!("receipt signer certificate lacks Apple receipt-signing marker OID {RECEIPT_SIGNER_OID}"),
+-        ));
+-    }
+-    // The chain is checked BEFORE the signature on purpose: checking the
+-    // signature first would run the attacker's own key (their choice of RSA
+-    // size and exponent) before anything about it is trusted.
+-    verify_cms_signature(&cms, signer)?;
+-    // A trusted signer signed these bytes, so a payload this crate cannot
+-    // read is the library's failure (or a format Apple added), not the
+-    // client's: INTERNAL_ERROR, never INVALID_RECEIPT_FORMAT, which the
+-    // endpoint answers as 21002 and an app server reads as "deny".
+-    parse_receipt_payload(&cms.content).map_err(|err| {
+-        VerificationError::new(
+-            Reason::InternalError,
+-            format!("signed receipt content could not be read: {}", err.detail()),
+-        )
+-    })
+-}
+-
+-/// Whether `raw` carries the issuer Name and serialNumber the `SignerInfo`
+-/// names, read as generic ASN.1 rather than as an X.509 certificate.
+-///
+-/// That is the whole point: the entries this is asked about are the ones
+-/// [`Certificate::from_der`] refused, and an identity is still legible in
+-/// bytes that are not a certificate all the way down. Node
+-/// (`findSignerCertIndex`), Swift (`unreadableNodes`) and Go
+-/// (`namesTheSigner`) resolve the signer the same way, so all of them agree
+-/// about which embedded entry a defect belongs to.
+-///
+-/// `TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber
+-/// INTEGER, signature AlgorithmIdentifier, issuer Name, ... }` — anything
+-/// that does not have that shape is not an identity and cannot match.
+-fn names_the_signer(raw: &[u8], info: &CmsSignerInfo) -> bool {
+-    let Ok(certificate) = parse_exact(raw) else {
+-        return false;
+-    };
+-    if certificate.tag != tag::SEQUENCE {
+-        return false;
+-    }
+-    let Some(tbs) = certificate
+-        .child(0)
+-        .filter(|node| node.tag == tag::SEQUENCE)
+-    else {
+-        return false;
+-    };
+-    let fields = tbs.children();
+-    let index = usize::from(matches!(fields.first(), Some(f) if f.tag == tag::CONTEXT_0));
+-    let (Some(serial), Some(issuer)) = (fields.get(index), fields.get(index + 2)) else {
+-        return false;
+-    };
+-    serial.tag == tag::INTEGER
+-        && issuer.tag == tag::SEQUENCE
+-        && serial.contents == info.serial_contents.as_slice()
+-        && issuer.full == info.issuer_raw.as_slice()
+-}
+-
+-fn verify_cms_signature(cms: &ParsedCms, signer: &Certificate) -> Result<()> {
+-    if signer.public_key_algorithm_oid() != OID_RSA_ENCRYPTION {
+-        return Err(VerificationError::new(
+-            Reason::InvalidSignature,
+-            "receipt signer key is not RSA",
+-        ));
+-    }
+-    let digest = cms.signer_info.digest;
+-    let valid = match &cms.signer_info.signed_attrs {
+-        Some(signed_attrs) => {
+-            let content_digest = digest.digest(&cms.content);
+-            let message_digest = find_message_digest_attribute(signed_attrs)
+-                .map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
+-            if !constant_time_eq(&message_digest, &content_digest) {
+-                return Err(VerificationError::new(
+-                    Reason::InvalidSignature,
+-                    "messageDigest attribute does not match content",
+-                ));
+-            }
+-            verify_rsa_pkcs1(
+-                signer.public_key_bits(),
+-                digest,
+-                &cms.signer_info.signature,
+-                &signed_attrs_signed_bytes(signed_attrs),
+-            )
+-        }
+-        None => verify_rsa_pkcs1(
+-            signer.public_key_bits(),
+-            digest,
+-            &cms.signer_info.signature,
+-            &cms.content,
+-        ),
+-    };
+-    if valid {
+-        Ok(())
+-    } else {
+-        Err(VerificationError::new(
+-            Reason::InvalidSignature,
+-            "CMS signature check failed",
+-        ))
+-    }
++    // Spike (round 4): the only path. Certificates, CMS and signatures are
++    // OpenSSL's; the payload is read by the adapter's ASN.1 templates.
++    crate::substrate::verify_receipt(der, trusted_roots)
+ }
+ 
+ /// Builds a [`ReceiptVerifier`].
+@@ -465,8 +262,8 @@
+     input.extend_from_slice(device_guid);
+     input.extend_from_slice(opaque);
+     input.extend_from_slice(bundle_id_bytes);
+-    let computed = DigestAlgorithm::Sha1.digest(&input);
+-    if constant_time_eq(&computed, sha1) {
++    let computed = aprv_security_openssl::sha1(&input);
++    if bool::from(computed.as_slice().ct_eq(sha1)) {
+         Ok(())
+     } else {
+         Err(VerificationError::new(
+diff -ru -x Cargo.lock -x target a/src/receipt_payload.rs b/src/receipt_payload.rs
+--- a/src/receipt_payload.rs	2026-09-26 13:36:49.780348042 +0000
++++ b/src/receipt_payload.rs	2026-09-26 13:39:53.960599319 +0000
+@@ -25,7 +25,7 @@
+ //! JSON numbers and 1713 as the string `"true"`/`"false"`, exactly as it
+ //! renders 1719.
+ 
+-use crate::asn1::{parse_exact, tag, Tlv};
++use aprv_security_openssl::payload as der;
+ use crate::datetime::{parse_rfc3339, system_time_from_millis};
+ use crate::error::{Reason, Result, VerificationError};
+ use std::collections::BTreeMap;
+@@ -272,50 +272,24 @@
+         .push(value.to_vec());
+ }
+ 
+-fn parse_attribute_set(der: &[u8], what: &str) -> Result<Vec<Attribute>> {
+-    let outer =
+-        parse_exact(der).map_err(|err| malformed(format!("{what} is not valid ASN.1: {err}")))?;
+-    // Xcode receipts double-wrap the payload in an extra OCTET STRING.
+-    let unwrapped;
+-    let node = if outer.is_octet_string() {
+-        unwrapped = outer
+-            .octet_string_value()
+-            .ok_or_else(|| malformed(format!("{what} double-wrap is not an OCTET STRING")))?
+-            .into_owned();
+-        parse_exact(&unwrapped)
+-            .map_err(|err| malformed(format!("{what} double-wrap is not valid ASN.1: {err}")))?
+-    } else {
+-        outer
+-    };
+-    if node.tag != tag::SET {
+-        return Err(malformed(format!("{what} is not an ASN.1 SET")));
+-    }
+-    let mut attributes = Vec::with_capacity(node.children().len());
+-    for child in node.children() {
+-        let fields = child.children();
+-        let (Some(type_node), Some(value_node)) = (fields.first(), fields.get(2)) else {
+-            return Err(malformed("malformed receipt attribute"));
+-        };
+-        if child.tag != tag::SEQUENCE
+-            || fields.len() < 3
+-            || type_node.tag != tag::INTEGER
+-            || !value_node.is_octet_string()
+-        {
+-            return Err(malformed("malformed receipt attribute"));
+-        }
+-        attributes.push(Attribute {
+-            attribute_type: attribute_type(type_node)?,
+-            value: value_node
+-                .octet_string_value()
+-                .ok_or_else(|| malformed("malformed receipt attribute"))?
+-                .into_owned(),
+-        });
+-    }
+-    Ok(attributes)
++/// Spike (round 4): the SET, each SEQUENCE and each field are decoded by
++/// OpenSSL (the adapter's `payload` module); what stays here is what the
++/// values mean.
++fn parse_attribute_set(bytes: &[u8], what: &str) -> Result<Vec<Attribute>> {
++    let attributes = der::receipt_attributes(bytes).map_err(|err| malformed(format!("{what}: {err}")))?;
++    attributes
++        .into_iter()
++        .map(|attribute| {
++            Ok(Attribute {
++                attribute_type: attribute_type(attribute.attribute_type)?,
++                value: attribute.value,
++            })
++        })
++        .collect()
+ }
+ 
+-fn attribute_type(node: &Tlv<'_>) -> Result<u32> {
+-    let value = integer_value(node)?;
++fn attribute_type(value: i64) -> Result<u32> {
++    let value = integer_value(value)?;
+     if value > MAX_ATTRIBUTE_TYPE {
+         return Err(malformed(
+             "receipt attribute type exceeds the 32-bit signed range",
+@@ -325,26 +299,18 @@
+ }
+ 
+ /// The exact value of an attribute INTEGER, bounds-checked but not narrowed
+-/// to the safe-integer range.
+-fn exact_integer_value(node: &Tlv<'_>) -> Result<i64> {
+-    // 8-byte cap: real receipts carry 7-byte integers
+-    // (web_order_line_item_id) and 8-byte ones (download_id).
+-    if node.contents.len() > 8 {
+-        return Err(malformed("attribute integer out of range"));
+-    }
++/// to the safe-integer range. OpenSSL has already refused anything wider
++/// than 64 signed bits.
++fn exact_integer_value(value: i64) -> Result<i64> {
+     // Negative attribute types and values never occur in receipts.
+-    if node.contents.first().is_some_and(|byte| *byte >= 0x80) {
++    if value < 0 {
+         return Err(malformed("negative receipt integer"));
+     }
+-    let mut value: i128 = 0;
+-    for byte in node.contents {
+-        value = value * 256 + i128::from(*byte);
+-    }
+-    i64::try_from(value).map_err(|_| malformed("receipt integer out of range"))
++    Ok(value)
+ }
+ 
+-fn integer_value(node: &Tlv<'_>) -> Result<i64> {
+-    let value = exact_integer_value(node)?;
++fn integer_value(value: i64) -> Result<i64> {
++    let value = exact_integer_value(value)?;
+     if value > MAX_ATTRIBUTE_VALUE {
+         return Err(malformed(
+             "receipt integer exceeds the shared safe-integer range",
+@@ -353,36 +319,21 @@
+     Ok(value)
+ }
+ 
+-fn decode_nested(der: &[u8]) -> Result<Tlv<'_>> {
+-    parse_exact(der).map_err(|err| malformed(format!("attribute value is not valid ASN.1: {err}")))
+-}
+-
+-fn decode_string(der: &[u8]) -> Result<String> {
+-    let node = decode_nested(der)?;
+-    if node.tag != tag::UTF8_STRING && node.tag != tag::IA5_STRING {
+-        return Err(malformed("attribute value is not an ASN.1 string"));
+-    }
+-    Ok(String::from_utf8_lossy(node.contents).into_owned())
++fn decode_string(bytes: &[u8]) -> Result<String> {
++    let text = der::attribute_string(bytes).map_err(malformed)?;
++    Ok(String::from_utf8_lossy(&text).into_owned())
+ }
+ 
+-fn integer_node(der: &[u8]) -> Result<Tlv<'_>> {
+-    let node = decode_nested(der)?;
+-    if node.tag != tag::INTEGER {
+-        return Err(malformed("attribute value is not an ASN.1 integer"));
+-    }
+-    Ok(node)
++fn decode_integer(bytes: &[u8]) -> Result<i64> {
++    integer_value(der::attribute_integer(bytes).map_err(malformed)?)
+ }
+ 
+-fn decode_integer(der: &[u8]) -> Result<i64> {
+-    integer_value(&integer_node(der)?)
+-}
+-
+-/// The same attribute INTEGER, kept exact. Same tag, 8-byte and non-negative
++/// The same attribute INTEGER, kept exact. Same tag and non-negative
+ /// checks as [`decode_integer`]; what it drops is that function's
+ /// safe-integer ceiling, which a genuine `download_id` sits above —
+ /// refusing one would turn a real production receipt away.
+-fn decode_exact_integer(der: &[u8]) -> Result<i64> {
+-    exact_integer_value(&integer_node(der)?)
++fn decode_exact_integer(bytes: &[u8]) -> Result<i64> {
++    exact_integer_value(der::attribute_integer(bytes).map_err(malformed)?)
+ }
+ 
+ /// An RFC 3339 date in an `IA5String`; an empty string means absent, which
+@@ -410,7 +361,17 @@
+     //! parse runs only after the chain and the signature have passed.
+ 
+     use super::{parse_receipt_payload, read_creation_date};
+-    use crate::asn1::tag;
++
++    /// The identifier octets these tests build with (asn1.rs's `tag`
++    /// module is deleted in this tree).
++    mod tag {
++        pub const INTEGER: u8 = 0x02;
++        pub const OCTET_STRING: u8 = 0x04;
++        pub const UTF8_STRING: u8 = 0x0c;
++        pub const SEQUENCE: u8 = 0x30;
++        pub const SET: u8 = 0x31;
++        pub const IA5_STRING: u8 = 0x16;
++    }
+     use crate::error::Reason;
+ 
+     fn der(tag: u8, contents: &[u8]) -> Vec<u8> {
+diff -ru -x Cargo.lock -x target a/src/roots.rs b/src/roots.rs
+--- a/src/roots.rs	2026-09-26 13:36:49.780230087 +0000
++++ b/src/roots.rs	2026-09-26 13:39:53.960483904 +0000
+@@ -12,7 +12,6 @@
+ //! `certs/`, and CI diffs the two.
+ 
+ use crate::error::ConfigError;
+-use crate::x509::Certificate;
+ use std::sync::{Arc, OnceLock};
+ 
+ /// The three published Apple roots, embedded at compile time.
+@@ -33,8 +32,12 @@
+ /// which is standard PKIX trust-anchor semantics and is what lets a receipt
+ /// signed years ago under a since-expired chain still verify at its own
+ /// creation date.
++///
++/// Spike (round 4, no asn1.rs): the anchor keeps the DER it was given, after
++/// OpenSSL has read it as one whole, readable X.509 certificate; the
++/// verification paths hand these bytes to OpenSSL again.
+ #[derive(Debug, Clone)]
+-pub struct TrustAnchor(Arc<Certificate>);
++pub struct TrustAnchor(Arc<Vec<u8>>);
+ 
+ impl TrustAnchor {
+     /// Parses a DER certificate as an anchor.
+@@ -43,9 +46,10 @@
+     /// [`ConfigError`] when the bytes are not a certificate. A bad anchor is
+     /// a configuration mistake, not a verification verdict.
+     pub fn from_der(der: &[u8]) -> Result<TrustAnchor, ConfigError> {
+-        Certificate::from_der(der)
+-            .map(|cert| TrustAnchor(Arc::new(cert)))
+-            .map_err(|err| ConfigError::new(format!("trust anchor is not a certificate: {err}")))
++        match aprv_security_openssl::Certificate::from_der(der) {
++            Some(cert) if cert.is_readable() => Ok(TrustAnchor(Arc::new(der.to_vec()))),
++            _ => Err(ConfigError::new("trust anchor is not a certificate")),
++        }
+     }
+ 
+     /// Parses a PEM certificate as an anchor.
+@@ -53,24 +57,24 @@
+     /// # Errors
+     /// [`ConfigError`] when the input holds no usable `CERTIFICATE` block.
+     pub fn from_pem(pem: &str) -> Result<TrustAnchor, ConfigError> {
+-        Certificate::from_pem(pem)
+-            .map(|cert| TrustAnchor(Arc::new(cert)))
+-            .map_err(|err| ConfigError::new(format!("trust anchor is not a certificate: {err}")))
++        // The first CERTIFICATE block, as x509.rs's `from_pem` read it.
++        const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
++        const END: &str = "-----END CERTIFICATE-----";
++        let body = pem
++            .find(BEGIN)
++            .and_then(|start| pem.get(start + BEGIN.len()..))
++            .and_then(|rest| rest.find(END).and_then(|end| rest.get(..end)))
++            .ok_or_else(|| ConfigError::new("trust anchor holds no PEM CERTIFICATE block"))?;
++        TrustAnchor::from_der(&crate::base64::decode_lenient(body))
+     }
+ 
+-    /// The parsed certificate.
++    /// The certificate's DER.
+     #[must_use]
+-    pub fn certificate(&self) -> &Certificate {
++    pub fn der(&self) -> &[u8] {
+         &self.0
+     }
+ }
+ 
+-impl From<Certificate> for TrustAnchor {
+-    fn from(certificate: Certificate) -> Self {
+-        TrustAnchor(Arc::new(certificate))
+-    }
+-}
+-
+ fn apple_roots() -> &'static [TrustAnchor] {
+     static ROOTS: OnceLock<Vec<TrustAnchor>> = OnceLock::new();
+     ROOTS.get_or_init(|| {
+diff -ru -x Cargo.lock -x target a/src/substrate.rs b/src/substrate.rs
+--- a/src/substrate.rs	2026-09-26 13:36:49.780468548 +0000
++++ b/src/substrate.rs	2026-09-26 13:39:53.960774104 +0000
+@@ -17,7 +17,6 @@
+ use crate::receipt_payload::{parse_receipt_payload, read_creation_date, AppReceipt};
+ use crate::roots::TrustAnchor;
+ use aprv_security_openssl as sub;
+-use std::time::SystemTime;
+ 
+ /// Anchor excluded: the target plus at most five intermediates.
+ const MAX_PATH_LENGTH: u32 = 6;
+@@ -29,7 +28,7 @@
+ fn anchors_of(anchors: &[TrustAnchor]) -> Vec<sub::Certificate> {
+     anchors
+         .iter()
+-        .filter_map(|anchor| sub::Certificate::from_der(anchor.certificate().der()))
++        .filter_map(|anchor| sub::Certificate::from_der(anchor.der()))
+         .collect()
+ }
+ 
+@@ -89,10 +88,6 @@
+ /// The legacy receipt core, after the size checks of
+ /// `verify_receipt_core_unchecked`.
+ pub(crate) fn verify_receipt(der: &[u8], trusted_roots: &[TrustAnchor]) -> Result<AppReceipt> {
+-    #[cfg(feature = "substrate-prescan")]
+-    crate::asn1::parse_exact(der)
+-        .map_err(|err| fail(Reason::InvalidReceiptFormat, format!("malformed CMS structure: {err}")))?;
+-
+     let mut cms = sub::SignedData::parse(der)
+         .map_err(|err| fail(Reason::InvalidReceiptFormat, format!("not a PKCS#7 signedData: {err:?}")))?;
+     // Java (Bouncy Castle) and the Rust core both refuse a SignerInfo

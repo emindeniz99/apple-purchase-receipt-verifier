@@ -1,0 +1,304 @@
+function	signature	panics	source
+wasm_byte_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:202 (declare_vecs!)
+wasm_byte_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:202 (declare_vecs!)
+wasm_byte_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:202 (declare_vecs!)
+wasm_byte_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:202 (declare_vecs!)
+wasm_byte_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:202 (declare_vecs!)
+wasm_config_delete	safe-sig	-	wasmi_c_api_impl/src/config.rs:13 (declare_own!)
+wasm_config_new	safe-sig	-	wasmi_c_api_impl/src/config.rs:25
+wasm_engine_delete	safe-sig	-	wasmi_c_api_impl/src/engine.rs:14 (declare_own!)
+wasm_engine_new	safe-sig	-	wasmi_c_api_impl/src/engine.rs:23
+wasm_engine_new_with_config	safe-sig	-	wasmi_c_api_impl/src/engine.rs:36
+wasm_exporttype_copy	safe-sig	-	wasmi_c_api_impl/src/types/export.rs:16 (declare_ty!)
+wasm_exporttype_delete	safe-sig	-	wasmi_c_api_impl/src/types/export.rs:16 (declare_ty!)
+wasm_exporttype_name	safe-sig	-	wasmi_c_api_impl/src/types/export.rs:47
+wasm_exporttype_new	safe-sig	-	wasmi_c_api_impl/src/types/export.rs:35
+wasm_exporttype_type	safe-sig	-	wasmi_c_api_impl/src/types/export.rs:54
+wasm_exporttype_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:266 (declare_vecs!)
+wasm_exporttype_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:266 (declare_vecs!)
+wasm_exporttype_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:266 (declare_vecs!)
+wasm_exporttype_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:266 (declare_vecs!)
+wasm_exporttype_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:266 (declare_vecs!)
+wasm_extern_as_func	safe-sig	-	wasmi_c_api_impl/src/extern.rs:55
+wasm_extern_as_func_const	safe-sig	-	wasmi_c_api_impl/src/extern.rs:64
+wasm_extern_as_global	safe-sig	-	wasmi_c_api_impl/src/extern.rs:73
+wasm_extern_as_global_const	safe-sig	-	wasmi_c_api_impl/src/extern.rs:82
+wasm_extern_as_memory	safe-sig	-	wasmi_c_api_impl/src/extern.rs:109
+wasm_extern_as_memory_const	safe-sig	-	wasmi_c_api_impl/src/extern.rs:118
+wasm_extern_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/extern.rs:22 (declare_ref!)
+wasm_extern_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/extern.rs:22 (declare_ref!)
+wasm_extern_as_table	safe-sig	-	wasmi_c_api_impl/src/extern.rs:91
+wasm_extern_as_table_const	safe-sig	-	wasmi_c_api_impl/src/extern.rs:100
+wasm_extern_copy	safe-sig	-	wasmi_c_api_impl/src/extern.rs:22 (declare_ref!)
+wasm_extern_delete	safe-sig	-	wasmi_c_api_impl/src/extern.rs:22 (declare_ref!)
+wasm_extern_get_host_info	safe-sig	-	wasmi_c_api_impl/src/extern.rs:22 (declare_ref!)
+wasm_extern_kind	safe-sig	-	wasmi_c_api_impl/src/extern.rs:27
+wasm_extern_same	safe-sig	unimplemented	wasmi_c_api_impl/src/extern.rs:22 (declare_ref!)
+wasm_extern_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/extern.rs:22 (declare_ref!)
+wasm_extern_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/extern.rs:22 (declare_ref!)
+wasm_extern_type	unsafe	-	wasmi_c_api_impl/src/extern.rs:44
+wasm_extern_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:290 (declare_vecs!)
+wasm_extern_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:290 (declare_vecs!)
+wasm_extern_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:290 (declare_vecs!)
+wasm_extern_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:290 (declare_vecs!)
+wasm_extern_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:290 (declare_vecs!)
+wasm_externtype_as_functype	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:80
+wasm_externtype_as_functype_const	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:89
+wasm_externtype_as_globaltype	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:98
+wasm_externtype_as_globaltype_const	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:107
+wasm_externtype_as_memorytype	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:134
+wasm_externtype_as_memorytype_const	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:143
+wasm_externtype_as_tabletype	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:116
+wasm_externtype_as_tabletype_const	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:125
+wasm_externtype_copy	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:22 (declare_ty!)
+wasm_externtype_delete	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:22 (declare_ty!)
+wasm_externtype_kind	safe-sig	-	wasmi_c_api_impl/src/types/extern.rs:68
+wasm_externtype_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:250 (declare_vecs!)
+wasm_externtype_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:250 (declare_vecs!)
+wasm_externtype_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:250 (declare_vecs!)
+wasm_externtype_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:250 (declare_vecs!)
+wasm_externtype_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:250 (declare_vecs!)
+wasm_foreign_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/foreign.rs:8 (declare_ref!)
+wasm_foreign_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/foreign.rs:8 (declare_ref!)
+wasm_foreign_copy	safe-sig	-	wasmi_c_api_impl/src/foreign.rs:8 (declare_ref!)
+wasm_foreign_delete	safe-sig	-	wasmi_c_api_impl/src/foreign.rs:8 (declare_ref!)
+wasm_foreign_get_host_info	safe-sig	-	wasmi_c_api_impl/src/foreign.rs:8 (declare_ref!)
+wasm_foreign_new	safe-sig	unimplemented	wasmi_c_api_impl/src/foreign.rs:17
+wasm_foreign_same	safe-sig	unimplemented	wasmi_c_api_impl/src/foreign.rs:8 (declare_ref!)
+wasm_foreign_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/foreign.rs:8 (declare_ref!)
+wasm_foreign_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/foreign.rs:8 (declare_ref!)
+wasm_frame_copy	safe-sig	unimplemented	wasmi_c_api_impl/src/frame.rs:65
+wasm_frame_delete	safe-sig	-	wasmi_c_api_impl/src/frame.rs:12 (declare_own!)
+wasm_frame_func_index	safe-sig	unimplemented	wasmi_c_api_impl/src/frame.rs:21
+wasm_frame_func_offset	safe-sig	unimplemented	wasmi_c_api_impl/src/frame.rs:32
+wasm_frame_instance	safe-sig	unimplemented	wasmi_c_api_impl/src/frame.rs:43
+wasm_frame_module_offset	safe-sig	unimplemented	wasmi_c_api_impl/src/frame.rs:54
+wasm_frame_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:282 (declare_vecs!)
+wasm_frame_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:282 (declare_vecs!)
+wasm_frame_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:282 (declare_vecs!)
+wasm_frame_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:282 (declare_vecs!)
+wasm_frame_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:282 (declare_vecs!)
+wasm_func_as_extern	safe-sig	-	wasmi_c_api_impl/src/func.rs:303
+wasm_func_as_extern_const	safe-sig	-	wasmi_c_api_impl/src/func.rs:310
+wasm_func_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/func.rs:25 (declare_ref!)
+wasm_func_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/func.rs:25 (declare_ref!)
+wasm_func_call	unsafe	-	wasmi_c_api_impl/src/func.rs:200
+wasm_func_copy	safe-sig	-	wasmi_c_api_impl/src/func.rs:25 (declare_ref!)
+wasm_func_delete	safe-sig	-	wasmi_c_api_impl/src/func.rs:25 (declare_ref!)
+wasm_func_get_host_info	safe-sig	-	wasmi_c_api_impl/src/func.rs:25 (declare_ref!)
+wasm_func_new	unsafe	-	wasmi_c_api_impl/src/func.rs:130
+wasm_func_new_with_env	unsafe	-	wasmi_c_api_impl/src/func.rs:151
+wasm_func_param_arity	unsafe	-	wasmi_c_api_impl/src/func.rs:280
+wasm_func_result_arity	unsafe	-	wasmi_c_api_impl/src/func.rs:296
+wasm_func_same	safe-sig	unimplemented	wasmi_c_api_impl/src/func.rs:25 (declare_ref!)
+wasm_func_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/func.rs:25 (declare_ref!)
+wasm_func_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/func.rs:25 (declare_ref!)
+wasm_func_type	unsafe	-	wasmi_c_api_impl/src/func.rs:264
+wasm_functype_as_externtype	safe-sig	-	wasmi_c_api_impl/src/types/func.rs:120
+wasm_functype_as_externtype_const	safe-sig	-	wasmi_c_api_impl/src/types/func.rs:127
+wasm_functype_copy	safe-sig	-	wasmi_c_api_impl/src/types/func.rs:14 (declare_ty!)
+wasm_functype_delete	safe-sig	-	wasmi_c_api_impl/src/types/func.rs:14 (declare_ty!)
+wasm_functype_new	safe-sig	panic	wasmi_c_api_impl/src/types/func.rs:81
+wasm_functype_params	safe-sig	-	wasmi_c_api_impl/src/types/func.rs:104
+wasm_functype_results	safe-sig	-	wasmi_c_api_impl/src/types/func.rs:113
+wasm_functype_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:218 (declare_vecs!)
+wasm_functype_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:218 (declare_vecs!)
+wasm_functype_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:218 (declare_vecs!)
+wasm_functype_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:218 (declare_vecs!)
+wasm_functype_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:218 (declare_vecs!)
+wasm_global_as_extern	safe-sig	-	wasmi_c_api_impl/src/global.rs:77
+wasm_global_as_extern_const	safe-sig	-	wasmi_c_api_impl/src/global.rs:84
+wasm_global_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/global.rs:15 (declare_ref!)
+wasm_global_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/global.rs:15 (declare_ref!)
+wasm_global_copy	safe-sig	-	wasmi_c_api_impl/src/global.rs:15 (declare_ref!)
+wasm_global_delete	safe-sig	-	wasmi_c_api_impl/src/global.rs:15 (declare_ref!)
+wasm_global_get	unsafe	-	wasmi_c_api_impl/src/global.rs:115
+wasm_global_get_host_info	safe-sig	-	wasmi_c_api_impl/src/global.rs:15 (declare_ref!)
+wasm_global_new	unsafe	-	wasmi_c_api_impl/src/global.rs:53
+wasm_global_same	safe-sig	unimplemented	wasmi_c_api_impl/src/global.rs:15 (declare_ref!)
+wasm_global_set	unsafe	-	wasmi_c_api_impl/src/global.rs:136
+wasm_global_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/global.rs:15 (declare_ref!)
+wasm_global_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/global.rs:15 (declare_ref!)
+wasm_global_type	unsafe	-	wasmi_c_api_impl/src/global.rs:98
+wasm_globaltype_as_externtype	safe-sig	-	wasmi_c_api_impl/src/types/global.rs:107
+wasm_globaltype_as_externtype_const	safe-sig	-	wasmi_c_api_impl/src/types/global.rs:116
+wasm_globaltype_content	safe-sig	-	wasmi_c_api_impl/src/types/global.rs:90
+wasm_globaltype_copy	safe-sig	-	wasmi_c_api_impl/src/types/global.rs:14 (declare_ty!)
+wasm_globaltype_delete	safe-sig	-	wasmi_c_api_impl/src/types/global.rs:14 (declare_ty!)
+wasm_globaltype_mutability	safe-sig	-	wasmi_c_api_impl/src/types/global.rs:97
+wasm_globaltype_new	safe-sig	-	wasmi_c_api_impl/src/types/global.rs:75
+wasm_globaltype_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:226 (declare_vecs!)
+wasm_globaltype_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:226 (declare_vecs!)
+wasm_globaltype_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:226 (declare_vecs!)
+wasm_globaltype_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:226 (declare_vecs!)
+wasm_globaltype_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:226 (declare_vecs!)
+wasm_importtype_copy	safe-sig	-	wasmi_c_api_impl/src/types/import.rs:18 (declare_ty!)
+wasm_importtype_delete	safe-sig	-	wasmi_c_api_impl/src/types/import.rs:18 (declare_ty!)
+wasm_importtype_module	safe-sig	-	wasmi_c_api_impl/src/types/import.rs:58
+wasm_importtype_name	safe-sig	-	wasmi_c_api_impl/src/types/import.rs:65
+wasm_importtype_new	safe-sig	-	wasmi_c_api_impl/src/types/import.rs:39
+wasm_importtype_type	safe-sig	-	wasmi_c_api_impl/src/types/import.rs:72
+wasm_importtype_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:258 (declare_vecs!)
+wasm_importtype_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:258 (declare_vecs!)
+wasm_importtype_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:258 (declare_vecs!)
+wasm_importtype_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:258 (declare_vecs!)
+wasm_importtype_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:258 (declare_vecs!)
+wasm_instance_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/instance.rs:21 (declare_ref!)
+wasm_instance_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/instance.rs:21 (declare_ref!)
+wasm_instance_copy	safe-sig	-	wasmi_c_api_impl/src/instance.rs:21 (declare_ref!)
+wasm_instance_delete	safe-sig	-	wasmi_c_api_impl/src/instance.rs:21 (declare_ref!)
+wasm_instance_exports	unsafe	-	wasmi_c_api_impl/src/instance.rs:87
+wasm_instance_get_host_info	safe-sig	-	wasmi_c_api_impl/src/instance.rs:21 (declare_ref!)
+wasm_instance_new	unsafe	-	wasmi_c_api_impl/src/instance.rs:48
+wasm_instance_same	safe-sig	unimplemented	wasmi_c_api_impl/src/instance.rs:21 (declare_ref!)
+wasm_instance_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/instance.rs:21 (declare_ref!)
+wasm_instance_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/instance.rs:21 (declare_ref!)
+wasm_memory_as_extern	safe-sig	-	wasmi_c_api_impl/src/memory.rs:72
+wasm_memory_as_extern_const	safe-sig	-	wasmi_c_api_impl/src/memory.rs:79
+wasm_memory_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/memory.rs:15 (declare_ref!)
+wasm_memory_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/memory.rs:15 (declare_ref!)
+wasm_memory_copy	safe-sig	-	wasmi_c_api_impl/src/memory.rs:15 (declare_ref!)
+wasm_memory_data	unsafe	-	wasmi_c_api_impl/src/memory.rs:110
+wasm_memory_data_size	unsafe	-	wasmi_c_api_impl/src/memory.rs:124
+wasm_memory_delete	safe-sig	-	wasmi_c_api_impl/src/memory.rs:15 (declare_ref!)
+wasm_memory_get_host_info	safe-sig	-	wasmi_c_api_impl/src/memory.rs:15 (declare_ref!)
+wasm_memory_grow	unsafe	-	wasmi_c_api_impl/src/memory.rs:160
+wasm_memory_new	unsafe	-	wasmi_c_api_impl/src/memory.rs:54
+wasm_memory_same	safe-sig	unimplemented	wasmi_c_api_impl/src/memory.rs:15 (declare_ref!)
+wasm_memory_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/memory.rs:15 (declare_ref!)
+wasm_memory_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/memory.rs:15 (declare_ref!)
+wasm_memory_size	unsafe	panic	wasmi_c_api_impl/src/memory.rs:138
+wasm_memory_type	unsafe	-	wasmi_c_api_impl/src/memory.rs:93
+wasm_memorytype_as_externtype	safe-sig	-	wasmi_c_api_impl/src/types/memory.rs:86
+wasm_memorytype_as_externtype_const	safe-sig	-	wasmi_c_api_impl/src/types/memory.rs:95
+wasm_memorytype_copy	safe-sig	-	wasmi_c_api_impl/src/types/memory.rs:14 (declare_ty!)
+wasm_memorytype_delete	safe-sig	-	wasmi_c_api_impl/src/types/memory.rs:14 (declare_ty!)
+wasm_memorytype_limits	safe-sig	-	wasmi_c_api_impl/src/types/memory.rs:79
+wasm_memorytype_new	safe-sig	-	wasmi_c_api_impl/src/types/memory.rs:71
+wasm_memorytype_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:242 (declare_vecs!)
+wasm_memorytype_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:242 (declare_vecs!)
+wasm_memorytype_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:242 (declare_vecs!)
+wasm_memorytype_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:242 (declare_vecs!)
+wasm_memorytype_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:242 (declare_vecs!)
+wasm_module_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/module.rs:21 (declare_ref!)
+wasm_module_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/module.rs:21 (declare_ref!)
+wasm_module_copy	safe-sig	-	wasmi_c_api_impl/src/module.rs:21 (declare_ref!)
+wasm_module_delete	safe-sig	-	wasmi_c_api_impl/src/module.rs:21 (declare_ref!)
+wasm_module_deserialize	unsafe	unimplemented	wasmi_c_api_impl/src/module.rs:203
+wasm_module_exports	safe-sig	-	wasmi_c_api_impl/src/module.rs:104
+wasm_module_get_host_info	safe-sig	-	wasmi_c_api_impl/src/module.rs:21 (declare_ref!)
+wasm_module_imports	safe-sig	-	wasmi_c_api_impl/src/module.rs:130
+wasm_module_new	unsafe	-	wasmi_c_api_impl/src/module.rs:54
+wasm_module_obtain	unsafe	-	wasmi_c_api_impl/src/module.rs:160
+wasm_module_same	safe-sig	unimplemented	wasmi_c_api_impl/src/module.rs:21 (declare_ref!)
+wasm_module_serialize	safe-sig	unimplemented	wasmi_c_api_impl/src/module.rs:183
+wasm_module_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/module.rs:21 (declare_ref!)
+wasm_module_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/module.rs:21 (declare_ref!)
+wasm_module_share	safe-sig	-	wasmi_c_api_impl/src/module.rs:142
+wasm_module_validate	unsafe	-	wasmi_c_api_impl/src/module.rs:76
+wasm_ref_as_extern	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:114
+wasm_ref_as_extern_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:125
+wasm_ref_as_foreign	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:136
+wasm_ref_as_foreign_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:149
+wasm_ref_as_func	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:162
+wasm_ref_as_func_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:173
+wasm_ref_as_global	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:184
+wasm_ref_as_global_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:195
+wasm_ref_as_instance	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:206
+wasm_ref_as_instance_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:219
+wasm_ref_as_memory	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:232
+wasm_ref_as_memory_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:243
+wasm_ref_as_module	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:254
+wasm_ref_as_module_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:265
+wasm_ref_as_table	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:276
+wasm_ref_as_table_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:287
+wasm_ref_as_trap	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:298
+wasm_ref_as_trap_const	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:309
+wasm_ref_copy	safe-sig	-	wasmi_c_api_impl/src/ref.rs:51
+wasm_ref_delete	safe-sig	-	wasmi_c_api_impl/src/ref.rs:33 (declare_own!)
+wasm_ref_get_host_info	safe-sig	-	wasmi_c_api_impl/src/ref.rs:75
+wasm_ref_same	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:62
+wasm_ref_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:86
+wasm_ref_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/ref.rs:99
+wasm_shared_module_delete	safe-sig	-	wasmi_c_api_impl/src/module.rs:40 (declare_own!)
+wasm_store_delete	safe-sig	-	wasmi_c_api_impl/src/store.rs:57 (declare_own!)
+wasm_store_new	safe-sig	-	wasmi_c_api_impl/src/store.rs:67
+wasm_table_as_extern	safe-sig	-	wasmi_c_api_impl/src/table.rs:193
+wasm_table_as_extern_const	safe-sig	-	wasmi_c_api_impl/src/table.rs:200
+wasm_table_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/table.rs:15 (declare_ref!)
+wasm_table_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/table.rs:15 (declare_ref!)
+wasm_table_copy	safe-sig	-	wasmi_c_api_impl/src/table.rs:15 (declare_ref!)
+wasm_table_delete	safe-sig	-	wasmi_c_api_impl/src/table.rs:15 (declare_ref!)
+wasm_table_get	unsafe	-	wasmi_c_api_impl/src/table.rs:111
+wasm_table_get_host_info	safe-sig	-	wasmi_c_api_impl/src/table.rs:15 (declare_ref!)
+wasm_table_grow	unsafe	-	wasmi_c_api_impl/src/table.rs:176
+wasm_table_new	unsafe	-	wasmi_c_api_impl/src/table.rs:65
+wasm_table_same	safe-sig	unimplemented	wasmi_c_api_impl/src/table.rs:15 (declare_ref!)
+wasm_table_set	unsafe	-	wasmi_c_api_impl/src/table.rs:132
+wasm_table_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/table.rs:15 (declare_ref!)
+wasm_table_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/table.rs:15 (declare_ref!)
+wasm_table_size	unsafe	panic	wasmi_c_api_impl/src/table.rs:156
+wasm_table_type	unsafe	-	wasmi_c_api_impl/src/table.rs:93
+wasm_tabletype_as_externtype	safe-sig	-	wasmi_c_api_impl/src/types/table.rs:103
+wasm_tabletype_as_externtype_const	safe-sig	-	wasmi_c_api_impl/src/types/table.rs:112
+wasm_tabletype_copy	safe-sig	-	wasmi_c_api_impl/src/types/table.rs:14 (declare_ty!)
+wasm_tabletype_delete	safe-sig	-	wasmi_c_api_impl/src/types/table.rs:14 (declare_ty!)
+wasm_tabletype_element	safe-sig	-	wasmi_c_api_impl/src/types/table.rs:89
+wasm_tabletype_limits	safe-sig	-	wasmi_c_api_impl/src/types/table.rs:96
+wasm_tabletype_new	safe-sig	-	wasmi_c_api_impl/src/types/table.rs:75
+wasm_tabletype_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:234 (declare_vecs!)
+wasm_tabletype_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:234 (declare_vecs!)
+wasm_tabletype_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:234 (declare_vecs!)
+wasm_tabletype_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:234 (declare_vecs!)
+wasm_tabletype_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:234 (declare_vecs!)
+wasm_trap_as_ref	safe-sig	unimplemented	wasmi_c_api_impl/src/trap.rs:27 (declare_ref!)
+wasm_trap_as_ref_const	safe-sig	unimplemented	wasmi_c_api_impl/src/trap.rs:27 (declare_ref!)
+wasm_trap_copy	safe-sig	-	wasmi_c_api_impl/src/trap.rs:27 (declare_ref!)
+wasm_trap_delete	safe-sig	-	wasmi_c_api_impl/src/trap.rs:27 (declare_ref!)
+wasm_trap_get_host_info	safe-sig	-	wasmi_c_api_impl/src/trap.rs:27 (declare_ref!)
+wasm_trap_message	safe-sig	-	wasmi_c_api_impl/src/trap.rs:81
+wasm_trap_new	safe-sig	panic	wasmi_c_api_impl/src/trap.rs:46
+wasm_trap_origin	safe-sig	unimplemented	wasmi_c_api_impl/src/trap.rs:96
+wasm_trap_same	safe-sig	unimplemented	wasmi_c_api_impl/src/trap.rs:27 (declare_ref!)
+wasm_trap_set_host_info	safe-sig	unimplemented	wasmi_c_api_impl/src/trap.rs:27 (declare_ref!)
+wasm_trap_set_host_info_with_finalizer	safe-sig	unimplemented	wasmi_c_api_impl/src/trap.rs:27 (declare_ref!)
+wasm_trap_trace	safe-sig	unimplemented	wasmi_c_api_impl/src/trap.rs:109
+wasm_val_copy	unsafe	-	wasmi_c_api_impl/src/val.rs:145
+wasm_val_delete	unsafe	-	wasmi_c_api_impl/src/val.rs:157
+wasm_val_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:274 (declare_vecs!)
+wasm_val_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:274 (declare_vecs!)
+wasm_val_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:274 (declare_vecs!)
+wasm_val_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:274 (declare_vecs!)
+wasm_val_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:274 (declare_vecs!)
+wasm_valtype_copy	safe-sig	-	wasmi_c_api_impl/src/types/val.rs:13 (declare_ty!)
+wasm_valtype_delete	safe-sig	-	wasmi_c_api_impl/src/types/val.rs:13 (declare_ty!)
+wasm_valtype_kind	safe-sig	-	wasmi_c_api_impl/src/types/val.rs:59
+wasm_valtype_new	safe-sig	-	wasmi_c_api_impl/src/types/val.rs:50
+wasm_valtype_vec_copy	safe-sig	panic	wasmi_c_api_impl/src/vec.rs:210 (declare_vecs!)
+wasm_valtype_vec_delete	safe-sig	-	wasmi_c_api_impl/src/vec.rs:210 (declare_vecs!)
+wasm_valtype_vec_new	unsafe	-	wasmi_c_api_impl/src/vec.rs:210 (declare_vecs!)
+wasm_valtype_vec_new_empty	safe-sig	-	wasmi_c_api_impl/src/vec.rs:210 (declare_vecs!)
+wasm_valtype_vec_new_uninitialized	safe-sig	-	wasmi_c_api_impl/src/vec.rs:210 (declare_vecs!)
+wasmi_config_compilation_mode_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:145
+wasmi_config_consume_fuel_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:126
+wasmi_config_floats_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:118
+wasmi_config_ignore_custom_sections_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:161
+wasmi_config_wasm_bulk_memory_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:80
+wasmi_config_wasm_extended_const_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:110
+wasmi_config_wasm_multi_value_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:47
+wasmi_config_wasm_mutable_globals_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:37
+wasmi_config_wasm_reference_types_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:90
+wasmi_config_wasm_saturating_float_to_int_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:67
+wasmi_config_wasm_sign_extension_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:57
+wasmi_config_wasm_tail_call_set	safe-sig	-	wasmi_c_api_impl/src/config.rs:100
+wasmi_context_get_data	safe-sig	-	wasmi_c_api_impl/src/store.rs:132
+wasmi_context_get_fuel	safe-sig	-	wasmi_c_api_impl/src/store.rs:155
+wasmi_context_set_data	safe-sig	-	wasmi_c_api_impl/src/store.rs:140
+wasmi_context_set_fuel	safe-sig	-	wasmi_c_api_impl/src/store.rs:172
+wasmi_engine_clone	safe-sig	-	wasmi_c_api_impl/src/engine.rs:48
+wasmi_error_delete	safe-sig	-	wasmi_c_api_impl/src/error.rs:15 (declare_own!)
+wasmi_error_new	safe-sig	-	wasmi_c_api_impl/src/error.rs:36
+wasmi_store_context	safe-sig	-	wasmi_c_api_impl/src/store.rs:124
+wasmi_store_delete	safe-sig	-	wasmi_c_api_impl/src/store.rs:87 (declare_own!)
+wasmi_store_new	safe-sig	-	wasmi_c_api_impl/src/store.rs:101
+wasmi_trap_new	unsafe	-	wasmi_c_api_impl/src/trap.rs:66

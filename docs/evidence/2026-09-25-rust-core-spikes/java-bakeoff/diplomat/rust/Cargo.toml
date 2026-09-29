@@ -1,0 +1,17 @@
+[package]
+name = "aprv-diplomat"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+name = "aprv_diplomat"
+
+[dependencies]
+aprv = { package = "apple-purchase-receipt-verifier", path = "$REPO/rust" }
+diplomat = "=0.16.1"
+diplomat-runtime = "=0.16.0"
+
+[profile.release]
+panic = "unwind"

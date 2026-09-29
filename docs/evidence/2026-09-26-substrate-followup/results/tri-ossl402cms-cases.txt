@@ -1,0 +1,5 @@
+kind            agree  cand=java  cand=rust   cand-own        abi
+endpoint           33          0          0          0          0
+jws                56          0          0          0          0
+receipt            64          0          0          0          0
+total             153          0          0          0          0
