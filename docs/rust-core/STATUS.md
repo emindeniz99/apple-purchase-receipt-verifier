@@ -596,8 +596,12 @@ work.
   windows, still with the 256 B budget and no skip; injected leaks of
   256 and 1,500 B per call fail every window on Linux (dotnet lane).
   All fifteen CodeQL review threads on the pull request are answered
-  and resolved. Still open: the `github-advanced-security` check, which
-  is Copilot Autofix failing on its own side, not a finding.
+  and resolved. **The run on 1309e4b (2026-09-29 18:20Z) is green**:
+  163 jobs with the one held skip (`smoke-crates`), CodeQL with no new
+  alerts across all ten languages, Socket with all alerts resolved, the
+  NuGet dependency submission succeeding. The one failing check is
+  `github-advanced-security`, which is Copilot Autofix failing on its
+  own side on every head, not a finding.
 - Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
   merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
   SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
