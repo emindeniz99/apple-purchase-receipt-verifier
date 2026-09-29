@@ -25,7 +25,7 @@ work.
 | C swift | `lane/host-swift` | step 5.4 | handed back 2026-09-29 (head 0ef6614 after the blob rewrite); parked until the real module: 57 tests with 46 passing, the 9 failures all stand-in; 311 cases 90 pass / 221 stand-in; corpus 6,176/2/1 in 116 s; `swift format lint --strict` clean; release builds on Linux; iOS and macOS are CI's |
 | C dotnet | `lane/host-dotnet` | step 5.6 | handed back 2026-09-29 (head 3966e00 after the blob rewrite); parked until the real module: 524 tests with 303 passing and the same 221 stand-in failures on net8 and net10 (net9 self-contained too), Floor project 9/9 on 8, 9, 10, corpus 6,176/2/1, `dotnet format` clean, nupkg 2,108,091 B with a clean consumer; evidence note `2026-09-29-dotnet-host` |
 | D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | **merged** 2026-09-29 (head cff064d); actionlint and zizmor at 0; jobs gated on the other lanes' files, see `.github/CI-NOTES.md` |
-| E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | started 2026-09-29 |
+| E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | handed back 2026-09-29 (head 87b0ab4 after the blob rewrite); parked until the real module: 380 tests green on JDK 21 and 379 on Temurin 8; the 311 cases through the server engine 93 pass / 218 stand-in on both; the spike's 31 checks pass; classifier jar built for x86_64 (4,179,407 B); `jvm-interop` and the Spring Boot smoke take the artifact as a property |
 | F php | `lane/php` | Phase 6 | started 2026-09-29 |
 
 ## Decisions taken by the orchestrator (owner to read at the end)
@@ -93,6 +93,19 @@ work.
   `APRV_WASM_CACHE_DIR` is the cache path variable (R27); an empty value
   turns the cache off. atheris has no CPython 3.11 wheel here, so the
   fuzz targets ran only with a stub.
+- Lane E (Java server engine): the cache directory defaults to
+  `~/.cache/aprv`, `~/Library/Caches/aprv` or `%USERPROFILE%\AppData\Local\aprv\cache`,
+  owner-only, symlinks and foreign or other-writable directories
+  refused; a noexec mount is detected from `/proc/self/mountinfo`;
+  `Platform.java` reads only the JDK's `os.name`, `os.arch` and
+  `user.home` (the source-rules test allows exactly those); a 413 maps to
+  `TOO_LARGE` / 21002; the two cause types are package-private so the
+  public API equals the main artifact's. `github()` answers 404 today
+  because v0.7.0 has no release asset. Maven Central: the classifier jars
+  bring a release to about 10.5 MB, so seven releases in a month would be
+  about 74 MB of the 80 MB allowance. A g5 call from Java 8 measured
+  8.55 ms mean here under load (spike: 3.87 ms); re-measure on a quiet
+  runner.
 - Lane Swift: **the WasmKit floor is 0.4.1, not 0.4.0.** 0.4.0 has a
   use-after-free under software bounds checking when a host function
   re-enters the guest and grows memory, which is exactly what
@@ -206,8 +219,8 @@ work.
   to drop only that file (every commit kept, same messages and authors,
   new hashes), force-pushed with a lease, and the package reads the
   module from an ignored path with `APRV_WASM`/`APRV_COMPONENT`
-  overriding it. Done: Node, Go, Python, Ruby, .NET, Swift. Pending:
-  Java (before its hand-back). A shared `pre-push` hook now refuses
+  overriding it. Done for every lane: Node, Go, Python, Ruby, .NET,
+  Swift, Java. A shared `pre-push` hook now refuses
   any new blob over 100 KB outside the two R14 paths; the same check
   becomes a CI job at integration. The real module is added once, in Go
   and Swift only, at integration.
