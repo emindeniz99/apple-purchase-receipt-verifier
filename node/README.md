@@ -129,7 +129,8 @@ const pinned = createConfig({
 ```
 
 `config.roots` is the DER of each root you passed, or `null` for Apple's
-roots. An empty `roots` array is a `TypeError`, from `createConfig` or
+roots, which are compiled into the module: the package ships no certificate
+files of its own. An empty `roots` array is a `TypeError`, from `createConfig` or
 `createVerifier`: a verifier with no roots would reject everything, and
 nobody would notice until production. A root the module cannot read as a
 certificate is a `TypeError` from `createVerifier`.
@@ -300,6 +301,10 @@ fixed, the same in every package of this library, and not options:
 - **the compact JWS**: 262,144 UTF-8 bytes, `TOO_LARGE`.
 - **JSON nesting depth 64** in a request body or JWS header.
 
+The package copies at most 3,145,729 bytes of an input into the module
+(one over the largest cap), so an oversized input costs no more module
+memory than that and still gets the module's own `TOO_LARGE`.
+
 `receipt-data` must be standard base64 with canonical `=` padding and
 nothing else, as Apple's `verifyReceipt` accepts it. `x5c` entries are
 standard base64, JWS segments unpadded canonical base64url.
@@ -308,10 +313,10 @@ standard base64, JWS segments unpadded canonical base64url.
 the cap: 3 MiB of tiny attributes in a CMS envelope with no signer. The
 module refuses it before it reads the payload. Measured on 2026-09-29 on
 Node 22.22.2: a fresh process peaked at 98 MiB for a tiny receipt and 113
-to 120 MiB for the hostile one, and the module's own memory grew from
+to 119 MiB for the hostile one, and the module's own memory grew from
 2 MiB to 16 MiB. An instance keeps the size it grew to for the life of its
 `Verifier`. `bench/memory-workerd.mjs` runs the same receipt in workerd,
-where the whole process peaked at 69 and 98 to 104 MiB.
+where the whole process peaked at 68 and 96 to 103 MiB.
 
 ## The endpoint
 

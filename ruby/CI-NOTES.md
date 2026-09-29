@@ -28,11 +28,11 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
   --assert`. It prints verifications per second at 1, 2 and 4 threads and
   fails unless four threads reach twice one thread (checked only when 4 CPUs
   are usable; ubuntu-latest has 4).
-- Keep `ruby script/gen_roots.rb && git diff --exit-code
-  lib/apple_purchase_receipt_verifier/roots_data.rb` until Phase 7 deletes
-  `roots_data.rb`, `ruby/certs` and the generator together.
+- Delete the `ruby script/gen_roots.rb && git diff --exit-code
+  lib/apple_purchase_receipt_verifier/roots_data.rb` step: Phase 7 removed
+  `roots_data.rb`, `ruby/certs` and the generator together (below).
 - The conformance test expects every case of `fixtures/cases.json` to pass
-  (338 of 338, checked at G1b: `aprv.wasm` sha256 `9c0a581c...f263`). It needs the module
+  (377 of 377, checked at G1c: `aprv.wasm` sha256 `a35b9fce...40a1`). It needs the module
   in place (see "The module").
 
 ### `ruby-gem` (Ruby 3.3 and 4.0)
@@ -104,3 +104,19 @@ elsewhere, and a test fails if anything under `lib/` mentions `ENV`.
 module in either place: the gem checks the module against it before it
 compiles it, so update it together with the module. The `wasm-copies` job
 compares the module's hash with the release build's.
+
+## Phase 7
+
+`ruby/certs`, `lib/apple_purchase_receipt_verifier/roots_data.rb` and
+`script/gen_roots.rb` are gone, with the `rake roots` task and their
+RuboCop and Steep exclusions. Nothing loaded them since the wasm host
+landed: `Config.defaults.roots` is empty and the module's compiled-in
+roots apply. `packaging_test.rb` still refuses any `certs/` or
+`roots_data` path in the gem.
+
+| Where | Change |
+|---|---|
+| `ci.yml` `ruby` job | delete the drift step (`ruby script/gen_roots.rb && git diff --exit-code lib/apple_purchase_receipt_verifier/roots_data.rb`). |
+| `release.yml` `publish-rubygems` want list | nothing further: it already lists only the entry points, `aprv.wasm`, its pin and `licenses/NOTICE`. |
+| `one-implementation` | nothing: `ruby/lib` has no allowlist entry and no hit. |
+

@@ -30,7 +30,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
 
         internal ReceiptDer()
         {
-            _trustedRoots = new List<X509Certificate2>(AppleRootCertificates.Bundled()) { Fixtures.ReceiptRoot() };
+            _trustedRoots = new List<X509Certificate2>(Fixtures.AppleRoots()) { Fixtures.ReceiptRoot() };
             _unrelatedRoots = new List<X509Certificate2> { Fixtures.JwsRoot() };
             _trusted = Verifier.Create(Config.CreateBuilder().Roots(_trustedRoots).Build());
             _unrelated = Verifier.Create(Config.CreateBuilder().Roots(_unrelatedRoots).Build());

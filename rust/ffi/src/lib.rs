@@ -315,7 +315,10 @@ unsafe fn borrow_bytes<'a>(input: *const u8, len: usize) -> Result<&'a [u8], i32
 }
 
 /// Copies the caller's DER anchors. `NULL`, `NULL`, `0` means "not given",
-/// an empty list, which the surface reads as the bundled Apple roots.
+/// an empty list, which the surface reads as the bundled Apple roots. A
+/// `count` or an anchor length over `PTRDIFF_MAX` is `InvalidArgument`, as
+/// [`borrow_bytes`] answers for the `_bytes` calls, before any slice is
+/// built.
 ///
 /// # Safety
 /// When `count` is non-zero, `ders` must point at `count` readable pointers
@@ -335,8 +338,13 @@ unsafe fn anchors_of(
     if ders.is_null() || lens.is_null() {
         return Err(AprvReason::NullPointer as i32);
     }
-    // SAFETY: both non-null, and the caller guarantees `count` readable
-    // elements behind each.
+    // Both arrays hold elements the size of a pointer.
+    let array_bytes = count.checked_mul(std::mem::size_of::<*const u8>());
+    if array_bytes.is_none_or(|bytes| isize::try_from(bytes).is_err()) {
+        return Err(AprvReason::InvalidArgument as i32);
+    }
+    // SAFETY: both non-null, `count` elements fit a slice, and the caller
+    // guarantees `count` readable elements behind each.
     let pointers = unsafe { std::slice::from_raw_parts(ders, count) };
     // SAFETY: as above.
     let lengths = unsafe { std::slice::from_raw_parts(lens, count) };
@@ -345,8 +353,9 @@ unsafe fn anchors_of(
         if pointer.is_null() {
             return Err(AprvReason::NullPointer as i32);
         }
-        // SAFETY: non-null, and the caller guarantees `len` readable bytes.
-        let der = unsafe { std::slice::from_raw_parts(*pointer, *len) };
+        // SAFETY: the caller guarantees `len` readable bytes behind the
+        // pointer; `borrow_bytes` refuses a length over `isize::MAX`.
+        let der = unsafe { borrow_bytes(*pointer, *len) }?;
         anchors.push(der.to_vec());
     }
     Ok(anchors)
@@ -991,6 +1000,34 @@ mod tests {
             assert!(
                 aprv_verifier_new(null_entry.as_ptr(), lens.as_ptr(), 1, std::ptr::null())
                     .is_null()
+            );
+        }
+    }
+
+    #[test]
+    fn anchor_lengths_over_ptrdiff_max_are_refused_before_a_slice_is_built() {
+        // Round-3 review F8: the header promises INVALID_ARGUMENT for a
+        // length over PTRDIFF_MAX, and building a slice that long is
+        // undefined behaviour before a byte is read.
+        let junk: [u8; 4] = [0, 1, 2, 3];
+        let ders = [junk.as_ptr()];
+        let too_long = [usize::try_from(isize::MAX).unwrap() + 1];
+        let invalid = Err(AprvReason::InvalidArgument as i32);
+        unsafe {
+            assert_eq!(anchors_of(ders.as_ptr(), too_long.as_ptr(), 1), invalid);
+            let lens = [junk.len()];
+            assert_eq!(
+                anchors_of(ders.as_ptr(), lens.as_ptr(), usize::MAX),
+                invalid
+            );
+            let count = usize::try_from(isize::MAX).unwrap() / 4;
+            assert_eq!(anchors_of(ders.as_ptr(), lens.as_ptr(), count), invalid);
+            assert_eq!(
+                anchors_of(ders.as_ptr(), lens.as_ptr(), 1),
+                Ok(vec![junk.to_vec()])
+            );
+            assert!(
+                aprv_verifier_new(ders.as_ptr(), too_long.as_ptr(), 1, std::ptr::null()).is_null()
             );
         }
     }

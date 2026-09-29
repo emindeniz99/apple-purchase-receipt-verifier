@@ -19,8 +19,9 @@ It is referenced by the csproj as `../../README.md` relative to
 The `nuget` job copies `.github/smoke/nuget-smoke/` outside the checkout and
 restores `ApplePurchaseReceiptVerifier` from nuget.org at the exact version —
 `Version="[$(SmokeVersion)]"`, an exact-version range, passed as
-`-p:SmokeVersion=$VERSION` — then runs it. `Program.cs` asserts three bundled
-roots, verifies `fixtures/public-receipts/receipt-sandbox-g5.b64` and checks
+`-p:SmokeVersion=$VERSION` — then runs it. `Program.cs` asserts that the
+defaults list no roots of their own (Apple's three are inside the module),
+verifies `fixtures/public-receipts/receipt-sandbox-g5.b64` and checks
 that the same receipt with one DER byte flipped in its signature fails with
 `VerificationReason.InvalidSignature`.
 

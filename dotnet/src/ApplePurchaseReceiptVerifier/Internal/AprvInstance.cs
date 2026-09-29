@@ -32,6 +32,15 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// <summary>The most linear memory one instance may hold.</summary>
         internal const long MemoryLimitBytes = 256L * 1024 * 1024;
 
+        /// <summary>
+        /// The most bytes of a verify input that reaches linear memory: one over
+        /// the largest cap (3,145,728 bytes for a receipt or an endpoint body,
+        /// 262,144 for a JWS). The module decides every cap on the length before
+        /// reading a byte, so a longer input is passed cut to this and gets the
+        /// same TOO_LARGE answer the whole input would.
+        /// </summary>
+        internal const int MaxLoweredInputBytes = 3_145_729;
+
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
 
         /// <summary>Each export's WIT parameters in order: <c>w</c> u32, <c>d</c> u64, <c>b</c> list&lt;u8&gt;.</summary>
@@ -157,8 +166,9 @@ namespace ApplePurchaseReceiptVerifier.Internal
                         break;
                     default:
                         byte[] bytes = (byte[])args[i];
-                        core.Add(Allocate(bytes));
-                        core.Add(bytes.Length);
+                        int count = operation == "init" ? bytes.Length : Math.Min(bytes.Length, MaxLoweredInputBytes);
+                        core.Add(Allocate(bytes, count));
+                        core.Add(count);
                         break;
                 }
             }
@@ -171,13 +181,13 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         private Function Export(string operation) => _exports[operation];
 
-        private int Allocate(byte[] bytes)
+        private int Allocate(byte[] bytes, int count)
         {
-            int address = ToAddress(_realloc.Invoke(0, 0, 1, bytes.Length));
-            if (bytes.Length > 0)
+            int address = ToAddress(_realloc.Invoke(0, 0, 1, count));
+            if (count > 0)
             {
-                CheckRange(address, bytes.Length);
-                bytes.AsSpan().CopyTo(_memory.GetSpan(unchecked((uint)address), bytes.Length));
+                CheckRange(address, count);
+                bytes.AsSpan(0, count).CopyTo(_memory.GetSpan(unchecked((uint)address), count));
             }
 
             return address;

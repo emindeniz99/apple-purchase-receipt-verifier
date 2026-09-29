@@ -33,19 +33,29 @@ defmodule AppleReceiptExample.Native do
           {:ok, reference()} | {:error, :invalid_argument}
   def verifier_new(_roots, _clock_unix_millis), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc "`aprv_verify_receipt`: the base64 receipt an app sends."
+  @doc """
+  `aprv_verify_receipt_bytes`: the base64 receipt an app sends, as bytes.
+  The binary is the document `aprv.wasm` answers,
+  `{"verified":true,"payload":...}` or
+  `{"verified":false,"reason":...,"message":...}`; it is empty for a status
+  of 100 or above, a mistake in the call.
+  """
   @spec verify_receipt(reference(), binary()) ::
           {:ok, binary()} | {:error, integer(), binary()}
   def verify_receipt(_verifier, _receipt_base64), do: :erlang.nif_error(:nif_not_loaded)
 
-  @doc "`aprv_verify_signed_data`: any Apple-signed compact JWS."
+  @doc """
+  `aprv_verify_signed_data_bytes`: any Apple-signed compact JWS, as bytes.
+  The same document as `verify_receipt/2`; a verified payload is a JSON
+  string holding the signed text, exactly.
+  """
   @spec verify_signed_data(reference(), binary()) ::
           {:ok, binary()} | {:error, integer(), binary()}
   def verify_signed_data(_verifier, _jws), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  `aprv_verify_receipt_endpoint`. The Apple verdict is a field of the body,
-  so `{:error, status}` here means the call itself was malformed.
+  `aprv_verify_receipt_endpoint_bytes`. The Apple verdict is a field of the
+  body, so `{:error, status}` here means the call itself was malformed.
   """
   @spec verify_receipt_endpoint(reference(), non_neg_integer(), binary()) ::
           {:ok, binary()} | {:error, integer()}

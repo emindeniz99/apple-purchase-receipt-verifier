@@ -10,8 +10,8 @@
 //
 // The archive half is the failure BOOTSTRAP.md named when it chose this
 // layout: the .gitattributes allowlist silently decides what every consumer
-// unpacks, and a mistake there ships a package with no php/certs/ or no
-// php/src/ that installs cleanly and fails at the first call.
+// unpacks, and a mistake there ships a package with no php/src/ or no
+// installer that installs cleanly and fails at the first call.
 //
 // Both halves are checked here, on every push, against the real `git archive`
 // rather than against a reading of the rules.
@@ -99,22 +99,18 @@ const entries = execFileSync('tar', ['-t'], { input: listing, encoding: 'utf8', 
   .split('\n')
   .filter((line) => line !== '' && !line.endsWith('/'));
 
-const roots = readdirSync(join(repoRoot, 'certs')).filter((n) => n.endsWith('.cer')).sort();
 const required = [
   'composer.json',
   'LICENSE',
   'php/composer.json',
   'php/LICENSE',
   'php/README.md',
-  'php/src/AppleRootCerts.php',
   'php/src/Config.php',
   'php/src/Verifier.php',
-  'php/src/Internal/RootsData.php',
   // What `vendor/bin/aprv-install` runs and reads: the command, and the
   // release the pinned SHA-256 of each binary belongs to.
   'php/bin/aprv-install',
   'php/binaries.json',
-  ...roots.map((n) => `php/certs/${n}`),
 ];
 for (const path of required) {
   if (!entries.includes(path)) problems.push(`git archive is missing ${path}`);
@@ -144,8 +140,7 @@ const allowed = (path) =>
   || path === 'php/README.md'
   || path === 'php/bin/aprv-install'
   || path === 'php/binaries.json'
-  || path.startsWith('php/src/')
-  || path.startsWith('php/certs/');
+  || path.startsWith('php/src/');
 const ports = new Set(['dotnet', 'go', 'java', 'jvm-interop', 'node', 'python', 'ruby', 'rust', 'swift']);
 for (const path of entries) {
   if (allowed(path)) continue;

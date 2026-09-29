@@ -189,9 +189,11 @@ class ConformanceTest < Minitest::Test
     return yield unless kase["maxMillis"]
 
     yield # warm-up, not measured
-    result = nil
-    elapsed = Benchmark.realtime { result = block.call }
-    millis = elapsed * 1000
+    # The monotonic clock, not the benchmark gem: it left the default gems
+    # in Ruby 4.0 and is not in the Gemfile (bench/bench.rb does the same).
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    result = block.call
+    millis = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000
     assert_operator millis, :<=, kase["maxMillis"],
                     "#{kase["id"]}: took #{millis.round(1)}ms, budget #{kase["maxMillis"]}ms"
     result

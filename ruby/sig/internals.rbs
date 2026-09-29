@@ -128,6 +128,7 @@ module ApplePurchaseReceiptVerifier
 
   class Guest
     LIMITS: Hash[Symbol, Integer]
+    MAX_INPUT_BYTES: Integer
 
     @broken: bool
     @store: Wasmtime::Store

@@ -14,7 +14,24 @@ struct AprvModule: Sendable {
     /// SIGBUS handler that jumps out of the interpreter. A library running in
     /// its caller's process takes neither; the software checks are what iOS
     /// and every other platform use anyway (THREAT-MODEL.md §2, class A).
-    static let configuration = EngineConfiguration(memoryBoundsChecking: .software)
+    ///
+    /// The interpreter loop is chosen too. WasmKit's default on x86-64 and
+    /// arm64 is direct threading, whose handlers are C functions that tail
+    /// call each other and hand a thrown Swift error back as a raw pointer.
+    /// On macOS arm64, in a release build, the first guest call of a process
+    /// failed inside WasmKit with an "error" that was an array of WasmKit's
+    /// `ValueType`, and the process died bridging it (README, known issues).
+    /// The token-threaded loop is plain Swift and throws ordinary errors, at
+    /// about half the speed, so it is used everywhere except the one platform
+    /// where the direct loop is tested, release build and AddressSanitizer
+    /// included: Linux on x86-64.
+    static let configuration = EngineConfiguration(threadingModel: threadingModel, memoryBoundsChecking: .software)
+
+    #if os(Linux) && arch(x86_64)
+        static let threadingModel = EngineConfiguration.ThreadingModel.direct
+    #else
+        static let threadingModel = EngineConfiguration.ThreadingModel.token
+    #endif
 
     /// The bundled module, loaded on first use: read, checked against
     /// aprv.wasm.sha256, parsed and checked against the ABI once per process.

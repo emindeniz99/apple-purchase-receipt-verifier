@@ -1,38 +1,68 @@
 # Review log: the OpenSSL core
 
 Status: written 2026-09-29 for the owner's one read at the final pull
-request. It closes MIGRATION.md step 1.10 for the core and records what
-each review found, what was done about it, and what nobody looked at.
+request, in three rounds. Round 1 (sections 2 to 9) reviewed the OpenSSL
+core; round 2 (section 10) reviewed round 1's fix commits and the ABI crate;
+round 3 (section 11) reviewed round 2's fix commits and lane A3's core work.
+This log records what each review found, what was done about it, and what
+nobody looked at. It works toward MIGRATION.md step 1.10: section 11.9 names
+the last commits with no second reader and what closes the step.
 
-The three reviews were done by agents that did not write the code. Their
+The six reviews were done by agents that did not write the code. Their
 findings files are not in the repository; this log is their record.
 Everything each finding did to the code is in git and in the evidence note
-[core review fixes](../evidence/2026-09-29-core-review-fixes.md).
+[core review fixes](../evidence/2026-09-29-core-review-fixes.md), whose
+"Round 2" and "Round 3" sections cover the later rounds.
 
 ## 1. The short version
 
-- Three reviews read every line of the OpenSSL adapter and the core's
-  policy layer at commit d5c2838 and tried to break it with crafted input.
-  They reported 34 findings: 2 blocking, 14 fix before merge, 18 notes.
-- Nothing in memory safety, isolation or trust broke. No double free, no
-  per-call leak, no panic path, valgrind clean. No input verified without a
-  valid signature under a pinned root, and none could move the instant at
-  which the chain is judged.
-- What did break was the set of cheap checks before the full CMS decode.
-  They covered less than 0.7's reader did: the certificate and SignerInfo
-  bounds ran only on a well-formed `signedData`, the depth bound counted
-  too little, the 100,000-node budget was gone, and some payload encodings
-  changed verdict without a record. Three reviewers found the same gaps
-  from three directions.
-- Every blocking and fix-before-merge finding is fixed on the branch. Three
-  notes are not fixed, each with a reason (section 6). The fixes are one
-  `ASN1_get_object` header walk, 27 new shared cases and seven new rows in
-  R20's divergence table.
-- The fixes were checked by tests, the shared cases and the parity runs.
-  No second review of the fix commits is recorded, so `walk.rs` and the
-  payload changes have had no reader other than their author.
+- Six reviews read every line of the OpenSSL adapter, the core's policy
+  layer, the ABI crate, and two rounds of fix commits, and tried to break them
+  with crafted input. They reported 61 findings: 2 blocking, 23 fix before
+  merge, 36 notes. Round 1 (three reviews, commit d5c2838) reported 34;
+  round 2 (two reviews, commit c0a6e15) reported 18, none blocking; round 3
+  (one review, c0a6e15..b863252) reported 9, none blocking.
+- Nothing in memory safety, isolation or trust broke in any round. No double
+  free, no per-call leak, no panic path, valgrind clean. No input verified
+  without a valid signature under a pinned root, and none could move the
+  instant at which the chain is judged.
+- What did break in round 1 was the set of cheap checks before the full CMS
+  decode. They covered less than 0.7's reader did: the certificate and
+  SignerInfo bounds ran only on a well-formed `signedData`, the depth bound
+  counted too little, the 100,000-node budget was gone, and some payload
+  encodings changed verdict without a record. Three reviewers found the same
+  gaps from three directions.
+- Round 2 found that the round 1 fix was itself incomplete in three places:
+  the header walk ran after a decode that still built a value per entry of
+  three sets, the root-order fix still let anchor order decide two custom
+  cases, and the walk checked fewer primitive rules than OpenSSL. In the ABI
+  crate it found an unpinned compiler in the release build, an over-cap input
+  copied whole into linear memory, and a C ABI that read C strings and
+  answered in documents the wire schemas reject.
+- Round 3 found two more gaps of the same kind, both failing closed: a
+  same-named intermediate placed first in the unsigned bag still decided the
+  path under custom anchors, and the walk judged the chunks of a constructed
+  string one by one where OpenSSL joins them. It also closed the four round-2
+  notes: a guest-side range guard, trap-host coverage, tighter wire schemas
+  and tests for the compiler pin.
+- Every blocking and fix-before-merge finding is fixed on `rust-core`, except
+  that ABI-F2 (the input cap before the copy) is closed host by host in G1c
+  and is not recorded here as finished. Three notes are not fixed (Rust-N2,
+  Rust-N5, Policy-F9) and one is documented rather than bounded tighter
+  (R3-F4, an unsigned attribute of about 100,000 OBJECT IDENTIFIERs that
+  costs 10 to 17 times a genuine call in Wasm), each with a reason. The fixes
+  are one `ASN1_get_object` header walk, 51 new shared cases from the three
+  rounds and ten rows in R20's divergence table.
+- **Still open.** Each round's fix commits were read by the next round,
+  except the last: lane A-fix3's 18 commits (`60b2091..b0a7f3d`) have had no
+  reader but their author. The step 1.10 gate closes with the owner's read of
+  this log, or with a round 4 on those commits if the owner asks for one
+  (section 11.9).
 
 ## 2. What was reviewed and how
+
+Sections 2 to 9 describe round 1. Section 10 describes round 2, in the same
+shape.
 
 **Commit.** `lane/core` at d5c2838, lane A1's hand-back: the core moved
 onto an OpenSSL 4.0.2 adapter, native build. The reviewers worked from a
@@ -86,18 +116,24 @@ measurements are in the
 
 ## 3. Counts
 
-| Review | Prefix | Blocking | Fix before merge | Notes | Total |
-|---|---|---|---|---|---|
-| Adapter, Rust side | `Rust-F`, `Rust-N` | 0 | 6 | 10 | 16 |
-| Adapter, C templates | `C-F` | 1 | 2 | 5 | 8 |
-| Core policy | `Policy-F` | 1 | 6 | 3 | 10 |
-| **All** | | **2** | **14** | **18** | **34** |
+| Round | Review | Prefix | Blocking | Fix before merge | Notes | Total |
+|---|---|---|---|---|---|---|
+| 1 | Adapter, Rust side | `Rust-F`, `Rust-N` | 0 | 6 | 10 | 16 |
+| 1 | Adapter, C templates | `C-F` | 1 | 2 | 5 | 8 |
+| 1 | Core policy | `Policy-F` | 1 | 6 | 3 | 10 |
+| | **Round 1** | | **2** | **14** | **18** | **34** |
+| 2 | The fix commits | `Fix-F`, `Fix-N` | 0 | 3 | 4 | 7 |
+| 2 | The ABI crate | `ABI-F` | 0 | 4 | 7 | 11 |
+| | **Round 2** | | **0** | **7** | **11** | **18** |
+| 3 | The round-2 fix commits and lane A3 | `R3-F` | 0 | 2 | 7 | 9 |
+| | **Round 3** | | **0** | **2** | **7** | **9** |
+| | **All three rounds** | | **2** | **23** | **36** | **61** |
 
-Verdicts: 25 CONFIRMED, 3 PLAUSIBLE (Rust-N3, Rust-N7, Policy-F9) and 6
+Round 1 verdicts: 25 CONFIRMED, 3 PLAUSIBLE (Rust-N3, Rust-N7, Policy-F9) and 6
 notes for which the review states no verdict (Rust-N4, N5, N6, N8, N9,
 N10). The Rust review numbers its notes `N1` to `N10` and its other
 findings `F1` to `F6`; the other two reviews number every finding `F1`
-upward, whatever its severity.
+upward, whatever its severity. The verdicts of round 2 are in section 10.2 and of round 3 in section 11.2.
 
 ## 4. The problems behind the findings
 
@@ -399,8 +435,9 @@ for the C templates, P for the policy layer.
 - No verdict accepts unsigned content [R, P].
 
 These checks were made at d5c2838. Code the fixes replaced (`signer_nesting`
-and the per-level re-decode) was checked in its old form; the walk that
-replaced it was not reviewed by anyone but its author.
+and the per-level re-decode) was checked in its old form. The walk that
+replaced it was reviewed in round 2, and section 10.8 holds that round's
+checks.
 
 ## 9. Not covered
 
@@ -421,10 +458,12 @@ replaced it was not reviewed by anyone but its author.
   full payload decode after the walk and the signature (R21). The fix lane
   did not measure it, and `THREAT-MODEL.md` §5 says so.
 - **`aprv-abi`, the C ABI and the link-time C file.** MIGRATION.md step 1.10
-  names `aprv-abi`, which lane A2 wrote after d5c2838, so no review saw it.
-  The adapter reviewer did not look at `rust/ffi` or the symbol visibility of
-  the static libcrypto; the policy reviewer did not look at the C ABI or the
-  fuzz targets.
+  names `aprv-abi`, which lane A2 wrote after d5c2838, so no round 1 review
+  saw it. The adapter reviewer did not look at `rust/ffi` or the symbol
+  visibility of the static libcrypto; the policy reviewer did not look at the
+  C ABI or the fuzz targets. Round 2 reviewed `aprv-abi`, `wasi-none.c`, the
+  surface, the wire crate and the C ABI (section 10); the symbol visibility
+  of the static libcrypto in the C ABI has still had no reviewer.
 - **The other eight ports.** How Java and the seven other ports answer the
   depth and payload rows was compared only against the 0.7 Rust reader and
   the 0.7 API text. The fix lane ran Java on the 27 new cases only. The
@@ -433,10 +472,563 @@ replaced it was not reviewed by anyone but its author.
   and JSON beyond their bounds, are unchanged since rust-core and were not
   re-read line by line. The policy reviewer read the adapter only where the
   policy depends on it.
-- **The fixes themselves.** No reviewer other than the author read commits
-  45c10a0, 2615d5d or 1aa7d98. Their evidence is the test suite (633 tests),
-  clippy, `cargo deny`, `check-layering`, the shared cases and the parity
-  runs.
+- **The fixes themselves.** When round 1 ended, no reviewer other than the
+  author had read commits 45c10a0, 2615d5d or 1aa7d98; their evidence was
+  the test suite (633 tests), clippy, `cargo deny`, `check-layering`, the
+  shared cases and the parity runs. Round 2 read them (section 10.4). The
+  same holds one level up: round 2's own fixes are unread (section 10.9).
 - **Scratch material.** The reviewers' probe sources and generators stayed
   outside the repository, and the build directories were deleted to free
   disk.
+
+## 10. Round 2: the fix commits and the ABI crate
+
+Round 1's log said what it did not cover: the fix commits had no reader but
+their author, and `aprv-abi` did not exist when the first reviews ran. Round
+2 closes that gap for both. Its dispositions come from lane A-fix2 (the core
+items, `lane/core-fix2`) and lane A3 (the ABI crate's items, `lane/core`),
+both merged into `rust-core` before this section was written.
+
+### 10.1 What was reviewed and how
+
+**Commit.** `rust-core` at c0a6e15, the merge of round 1's fixes. Two
+reviewers who had not written the code, in read-only checkouts with scratch
+builds, under the same method, severity scale and verdict labels as round 1
+(section 2). Their findings files are not in the repository either.
+
+| Review | Prefix | Files | Compared against |
+|---|---|---|---|
+| The fix commits (reviewer 4) | `Fix-F`, `Fix-N` | every line of `walk.rs`, `cms.rs`, `envelope.rs`, `envelope.c`, `item.rs`, `payload.rs`, `payload.c`, `path.rs`, the changed parts of `rust/src/receipt.rs` and `receipt_payload.rs`, and the tests `envelope_bounds.rs`, `hostile.rs`, `trust_pinning.rs` (commits 45c10a0, 1aa7d98, 2615d5d) | OpenSSL 4.0.2's `tasn_dec.c` and `asn1_lib.c`, the 0.7 bounds table, and two mutation loops of 30,000 envelope and 50,000 payload mutants |
+| The ABI crate (reviewer 5) | `ABI-F` | `rust/bindings/abi` (`lib.rs`, `wit/aprv.wit`, `wasi-none.c`, `build.sh`, README, tests), `rust/bindings/surface`, `rust/bindings/wire` and its four schemas, `rust/ffi/src/lib.rs` with its header and harnesses, `tools/wasm-trap-host.mjs` | the canonical ABI contract, ARCHITECTURE §7, MIGRATION steps 1.13 and 1.14; the module built twice with `build.sh` and driven through a hand-rolled Node host |
+
+### 10.2 Counts
+
+| Review | Blocking | Fix before merge | Notes | Total |
+|---|---|---|---|---|
+| The fix commits | 0 | 3 | 4 | 7 |
+| The ABI crate | 0 | 4 | 7 | 11 |
+| **Round 2** | **0** | **7** | **11** | **18** |
+| Rounds 1 and 2 | 2 | 21 | 29 | 52 |
+
+All 18 are CONFIRMED. Fix-N3 is confirmed by reading only, and ABI-F8, F9
+and F10 by reading (F8 also by running the trap host). Fix-N4 confirmed that
+the code is correct and untested.
+
+Neither reviewer found a memory-safety defect, an accepted forgery or a way
+to verify without a signature under a pinned root. What they found:
+
+- The header walk of round 1 ran after the shallow decode, so the
+  100,000-value budget did not bound the pre-crypto work (Fix-F1).
+- Round 1's root-order fix still let the order of pinned anchors decide a
+  verdict in two custom-anchor cases (Fix-F2).
+- The walk checked fewer primitive rules than OpenSSL's `ANY` decoder, so
+  the same invalid value was refused directly and accepted one SEQUENCE
+  deeper (Fix-F3).
+- The release build script did not pin the compiler (ABI-F1), an over-cap
+  input was copied whole into linear memory before the core's cap applied
+  (ABI-F2), and the C ABI read its inputs as C strings and answered in a
+  document the wire schemas reject (ABI-F3, F4).
+
+### 10.3 Decisions taken
+
+From STATUS.md "Review (step 1.10)":
+
+1. Lane A-fix2 takes the core items, lane A3 the ABI crate's items together
+   with the C ABI step (MIGRATION 1.13).
+2. Every wrapper lowers at most 3,145,729 bytes of any input, the largest
+   cap plus one, before the copy into linear memory. Each cap is decided on
+   the length alone, so the core's answer stays byte for byte the same. This
+   closes ABI-F2 per host, in G1c.
+3. The fixes that change a verdict get shared cases, and the divergences
+   that remain are R20 rows.
+
+### 10.4 The fix commits
+
+Commits on `rust-core`: 39d15e4 (walk before shallow decode), 8baa580 (the
+flood cost test), 8ab95db (one validation per candidate anchor), 128331d
+(the walk refuses what OpenSSL's `ANY` decoder refuses), 8c98e9d (walk edge
+tests, panic-safe counter), a5a9896 (17 shared cases). Merged by f36e76a.
+
+| Id | Severity | Defect | Verdict | Disposition | Pinned by |
+|---|---|---|---|---|---|
+| Fix-F1 | fix before merge | The shallow decode ran before the walk and built a value per entry of the `certificates`, `crls` and `signerInfos` sets: 1.17 million `30 00` entries cost 0.6 to 0.95 s and about 114 MB before the member bound refused them. `receipt.rs` and THREAT-MODEL §3.7 described the opposite order | CONFIRMED | Fixed in 39d15e4: the walk runs first, so the node budget refuses the set after 100,000 values. The comments, both READMEs and §3.7 state that order. The 1,057-certificate flood now costs the walk first (Wasm 2.3 to 6.0 ms before, 9.7 to 16.5 ms after), bounded by the node budget | `a_million_tiny_set_entries_are_refused_by_the_node_budget_first`, `a_tiny_entry_flood_costs_what_junk_of_its_size_costs` in `envelope_bounds.rs`; the cost test in `hostile.rs` (8baa580) |
+| Fix-F2 | fix before merge | One store held every anchor that issued something, so with two same-named pinned roots the order decided the verdict when the bag held a certificate from each tree, and an anchor named like the intermediate was taken as the leaf's issuer. Fails closed; custom anchors only, since Apple's three roots have distinct names | CONFIRMED | Fixed in 8ab95db: `X509_verify_cert` runs once per anchor that `X509_check_issued` pairs with the target or a vouched certificate, each time with a store of that anchor alone; the first passing path wins, and when none passes the problems come from the first run whose links hold, so the reason does not depend on order either. A chain that ends at an Apple root has one candidate and one run, as before | `a_certificate_from_a_same_named_roots_pki_in_the_bag_does_not_decide_the_path`, `an_anchor_named_as_the_intermediate_does_not_change_the_verdict` in `trust_pinning.rs`; two shared cases for a twin-issued bag certificate (either root first) and four for an anchor named as the intermediate (either order, receipt and transaction) |
+| Fix-F3 | fix before merge | The walk checked eight primitive tags; OpenSSL's `ANY` decoder also refuses a short UTCTime or GeneralizedTime, a constructed BOOLEAN, INTEGER, NULL, OID or ENUMERATED, and a string of seven levels. The same value was refused as the payload's fourth field and accepted one SEQUENCE deeper, and R20's stated reason for the row was false | CONFIRMED | Fixed in 128331d, which also found two more of the same class while checking against `tasn_dec.c` (a primitive SEQUENCE or SET, an end-of-contents inside a definite length). The walk checks tags 16, 17, 23 and 24, refuses the five primitive-only types when constructed, counts string levels as `asn1_collect` does, and hands each outermost constructed string to `d2i_ASN1_TYPE`. R20's row now lists every rule | `what_openssl_refuses_on_its_own_is_refused_in_the_envelope_at_every_depth` in `envelope_bounds.rs`; cases `unreadable-fourth-field-sequence-holding-{a-short-utctime,a-short-generalizedtime,a-constructed-integer,a-primitive-sequence,an-end-of-contents}`, `reject-an-unsigned-value-sequence-holding-a-short-utctime`; `accept-fourth-field-sequence-holding-a-constructed-utctime` (Java refuses it, an R20 row) |
+| Fix-N1 | note | Seven-level constructed strings are refused in more places than R20 recorded (version and later fields, the Xcode wrap, unsigned envelope values) | CONFIRMED | Documented: R20's row names every place. Wrap cases added in a5a9896 | `accept-double-wrap-rechunked-into-6-constructed-levels`, `unreadable-double-wrap-rechunked-into-7-constructed-levels`, `unreadable-fourth-field-sequence-holding-a-7-level-octet-string`, `reject-an-unsigned-value-sequence-holding-a-7-level-octet-string` |
+| Fix-N2 | note | A seven-level payload value was reported as a foreign chunk; the verdict was right, the message wrong | CONFIRMED | Fixed in 128331d: the walk refuses the seventh level first and names it; the chunk error keeps its kind as a second line of defence | the F3 test above |
+| Fix-N3 | note | `full_decodes_during` did not restore its counter after a panic, the class Rust-N8 fixed for `keys_used_during` | by reading | Fixed in 8c98e9d with a drop guard | `the_full_decode_counter_survives_a_panic_inside_it` |
+| Fix-N4 | note | Nothing pinned the walk on indefinite lengths, a missing end-of-contents or a length one octet past its container. The walk was correct | CONFIRMED correct, untested | Fixed in 8c98e9d: tests at 24, 25 and 3,000 indefinite levels, an indefinite flood at the budget and one over, a missing end-of-contents, an end-of-contents in a definite length, a length one octet past | `indefinite_lengths_meet_the_same_bounds_and_must_end`, `a_length_one_octet_past_its_container_is_refused` |
+
+### 10.5 The ABI crate
+
+Commits on `rust-core`: 617e85f (C ABI byte calls, lints, committed header),
+5b49152 (`build.sh`), 772dbbc (duplicate `roots`), 195a16d (README), 4a07b44
+(strip), d16e6fb (ABI tests), b863252 (ARCHITECTURE). Merged as f6059ee.
+Round 3 later closed ABI-F5, F8 and F9 and added automated tests for ABI-F1
+and F6 (section 11.5); the dispositions below are as round 2 left them.
+
+| Id | Severity | Defect | Verdict | Disposition | Pinned by |
+|---|---|---|---|---|---|
+| ABI-F1 | fix before merge | `build.sh` does not pin rustc. CI and the release run it from the repository root, where rustup does not read `rust/rust-toolchain.toml`, so the released `aprv.wasm` came from the runner's default compiler and `tools/reproduce-wasm.sh` could not reproduce it | CONFIRMED | Fixed in 5b49152: `build.sh` reads the channel from that file, exports `RUSTUP_TOOLCHAIN` and stops unless `rustc --version` names it, which also holds for a toolchain on `PATH` without rustup | checked by hand with a rustc that is not 1.98.1 (recorded in the commit); no automated test |
+| ABI-F2 | fix before merge | An over-cap input is copied whole into linear memory before the core answers `TOO_LARGE`, the memory is never returned, and an input of 2 GiB or more traps and reports `INTERNAL_ERROR` instead. A 256 MiB JWS grew an instance from 2 to 258 MiB, up to 8,000 times what the core ever reads | CONFIRMED | Closed per host in G1c: every wrapper lowers at most 3,145,729 bytes. The Java Endive engine already had it (c328219, merged in 6e44c84); each other host's pin, cap and re-run are STATUS.md's G1c entry, and this log does not record them as done. 195a16d documents the rule for hand-rolled hosts | `a_host_that_lowers_the_largest_cap_plus_one_gets_too_large` (d16e6fb) and the shared cap and cap-plus-one cases through the trap host; per-host tests come with G1c |
+| ABI-F3 | fix before merge | The C ABI reads its inputs as C strings: a NUL truncates the input (a genuine receipt, a NUL and junk verified where `aprv.wasm` answers `MALFORMED`), and non-UTF-8 is a call error where the module answers a verdict. The harnesses skipped the decodeBase64 group that would have failed | CONFIRMED | Fixed in 617e85f: three `_bytes` calls take a pointer and a length and answer `aprv-wire`'s documents through the surface, byte for byte as `aprv.wasm` does. The C-string calls stay, documented with their limits. The Elixir example still drives them and is not built here | both harnesses run all 340 cases at that commit, the decodeBase64 groups included through the verify calls, e.g. `base64/reject-control-characters` |
+| ABI-F4 | fix before merge | The step 1.14 gate and ARCHITECTURE §7.10 say the C ABI's JSON validates against the wire schemas; its failure document has no `verified` member and uses tokens outside the eight reasons, and its success answer is the bare payload | CONFIRMED | Fixed in 617e85f: the byte calls answer wire documents, and a call mistake carries no document | the ctypes harness writes the documents for `tools/validate-wire.mjs` |
+| ABI-F5 | note | The guest trusts every range the host hands it, and the README promised traps that do not happen: a wrapping range answers `TOO_LARGE` as a value and the later `free` of a pointer it never allocated leaves the heap undefined; `random-get`'s answer pointer is not checked; `cabi_realloc` accepts any old pointer | CONFIRMED | Documented in 195a16d: what a hand-rolled host can rely on and what it cannot, and that such a host discards the instance. Not fixed in code: component runtimes check ranges and every wrapper here lowers through `cabi_realloc`, so the guest-side trap the review proposed as optional was not added | none (documentation) |
+| ABI-F6 | note | `build.sh` leaves `aprv.wasm` and the component in the output directory when a contract check fails | CONFIRMED | Fixed in 5b49152: the module is built and checked in the work directory and copied out only after every check passes; earlier outputs are removed first | checked by hand with a toolchain whose OpenSSL embeds its install path (the output directory stays empty) |
+| ABI-F7 | note | `init`'s configuration reader keeps the last of two `roots` members, so `{"roots":["AQ=="],"roots":[]}` selected the Apple roots | CONFIRMED | Fixed in 772dbbc: the reader sees every member through serde's map visitor and refuses `roots` named more than once, in either order | `the_configuration_names_roots_or_nothing` in `rust/bindings/wire` |
+| ABI-F8 | note | The ABI tests and trap host do not cover `_initialize`, the over-cap copy, a wrong-length `random-get` answer, a non-UTF-8 JWS that reaches the UTF-8 check, or a vacuous `random-get` check | CONFIRMED (reading and running) | Partly fixed in d16e6fb: the Wasmtime ABI suite gains `_initialize` (optional, harmless after an export, traps the second time), the cap-plus-one lowering, and short and long `random-get` answers. Not fixed: the trap host is unchanged, so its 2-segment non-UTF-8 JWS, its `randomCalls === 0` pass and its missing `trim: -1` remain | `initialize_is_optional_once_and_harmless_after_an_export`, `a_host_that_lowers_the_largest_cap_plus_one_gets_too_large`, `a_random_get_answer_of_the_wrong_length_traps` |
+| ABI-F9 | note | The wire schemas admit values the core cannot produce (a 19-digit `id` above `i64::MAX`, attribute keys above `u32`, an `epochMillis` not ending in `000`). No answer the core produced was rejected: 5,888 answers from the corpora validate | CONFIRMED (reading) | Not fixed: no commit touches the schemas, and the review offered tightening as optional ("or leave as documented") | none |
+| ABI-F10 | note | Stale statements: the C ABI's `Cargo.toml` said `aprv_version()` reads `version.txt`; ARCHITECTURE §7 said a non-UTF-8 JWS answers `INVALID_JWS_FORMAT`; a comment said `json` is `NULL` only on allocation failure | CONFIRMED (reading) | Fixed in 617e85f (the two C ABI statements) and b863252 (ARCHITECTURE names the 0.7 reason) | none (documentation) |
+| ABI-F11 | note | `build.sh` strips nothing: the shipped module carries a 258 KB name section, 8.6% of its size | CONFIRMED | Decided and done in 4a07b44: the `name` section is stripped. The stripped module passed `check-wasm.sh`, every shared case, the trap host's ABI tests and the hostile corpus byte for byte. What goes is Rust names in trap stack frames; the build stays reproducible | `tools/check-wasm.sh`, the trap host |
+
+### 10.6 Other findings that went through the same fix
+
+| Source | Defect | Disposition | Pinned by |
+|---|---|---|---|
+| Differential campaign against the 0.7 Java implementation (7,647 calls, [note](../evidence/2026-09-29-differential-campaign.md)) | A genuine receipt was refused as `UNTRUSTED_CHAIN` when the caller pinned two roots with one subject name and the bag held a stranger certificate from the other tree, the other root listed first. Found on a fuzz seed; the campaign otherwise found no verdict or payload difference on the corpora and no forgery | Fixed in 9bf238a, which touches the same function as Fix-F2's rule (8ab95db); both are in `rust-core` | `a_root_verifies_when_a_same_named_root_vouches_for_a_stranger_in_the_bag` and two shared cases after `receipt/verify-with-a-stranger-whose-key-is-unreadable` |
+| Cost test in `hostile.rs` | The tiny-attribute cost test failed about one run in ten under shared load | 7b01ea9: each input is judged on its fastest of seven interleaved calls. The bound is unchanged and a margin of about 7% remains for CI to watch | `unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost` |
+
+### 10.7 Costs and parity after round 2
+
+Native release builds for the first table, through `aprv.wasm` in V8 (second
+call on a fresh instance) for the second. The reviewers' inputs were rebuilt
+from their descriptions; the committed tests rebuild each shape.
+
+| Input | Before | After |
+|---|---|---|
+| 1.17 million `30 00` entries in `certificates`, native | 605 to 711 ms, peak 20 to 134 MB, `TooManyCertificates` | 1.8 ms, flat, `TooManyNodes` |
+| The same in `crls` or `signerInfos`, native | 571 to 957 ms | 1.7 to 1.8 ms |
+| The `certificates` flood end to end through `verify_receipt`, 3 calls | 2.31 s against 14.8 ms for junk | 12.8 ms against 7.2 ms for junk |
+| The same in `certificates`, Wasm | 339 ms, 94.2 MB | 11.3 ms, 7.5 MB |
+| The same in `crls` or `signerInfos`, Wasm | 305 and 336 ms, 94.2 MB | 7.5 and 7.4 ms, 7.5 MB |
+| 1,057 real certificates, Wasm | 2.3 to 6.0 ms | 9.7 to 16.5 ms (the walk now runs first) |
+| A 256 MiB JWS through the ABI (ABI-F2) | answer in 429 ms, memory 2 to 258 MiB | bounded by the wrapper's 3,145,729-byte lowering; per-host figures are G1c's |
+
+- The module rebuilt for round 2 (3,009,376 bytes) answered as its native
+  twin on all 6,179 corpus rows and, against round 1's module, 6,134 rows
+  identically and 45 in the message only, none in the verdict, all in the
+  fuzz corpus. 42 mutants over the certificate or SignerInfo bound that also
+  break something the walk checks now report the walk's message, and 3 with a
+  string of seven levels now say so.
+- Java answers 354 of the 357 cases after the fix lane's own run; the three
+  it answered otherwise are R20 rows, and lane J-align's second round brought
+  it to 357 of 357 (STATUS.md).
+- After lane A3's merge the final module (name section stripped, 2,760,476
+  bytes) passes `check-wasm.sh` and the trap host on 377 of 377 cases with no
+  trap, and answers 6,134 rows as before and 45 in the message only (STATUS.md
+  G1c). The workspace has 660 tests after round 2's fixes and 689 after the
+  merge with A3's work.
+- R20 (DECISIONS.md) gained two rows: a string of seven or more constructed
+  levels one SEQUENCE deep, and a constructed UTCTime in a fourth field that
+  Java refuses. Its rows for the seven-level string and the fourth field now
+  list every place and rule of Fix-N1 and Fix-F3. One more Java divergence
+  stays open for the differential campaign: a constructed string of a type other than OCTET or
+  BIT STRING inside the envelope (an unsigned attribute value holding a
+  constructed UTCTime).
+
+### 10.8 Verified as sound
+
+Checked at c0a6e15 by reviewer 4 (fix commits) or reviewer 5 (ABI crate).
+
+**The header walk and the envelope order**
+
+- `walk::header`: the `ASN1_get_object` call is memory-safe, OpenSSL 4.0.2
+  reads at most `omax` octets, an error or `TOO_LONG` maps to `None`, and
+  `head + content <= len` is checked again. Nothing leaks on the error queue
+  [4].
+- `Walker::value`: the node count comes before the header, so exactly the
+  budget passes; depth counts constructed values of every class as 0.7 did;
+  each value consumes at least two octets; an indefinite value is bounded by
+  its parent's slice; recursion is at most 33 deep [4].
+- Budget edges: 100,000 values pass and 100,001 are refused [4].
+- `octet_string` and `MAX_STRING_NEST = 5`: six levels accepted and seven
+  refused, as `asn1_collect` does in the 4.0.2 source [4].
+- A mutation loop of 30,000 envelope mutants found no case where the full
+  decode ran and an independent walker measured depth over 32, more than
+  100,000 nodes or a size mismatch, no panic, and no case where `parse`
+  accepted what `d2i_CMS_ContentInfo` refused. A payload loop of 50,000
+  found no panic [4].
+- The shallow grammar accepts every envelope the full CMS grammar does, so
+  member counts equal what the full decode would build [4].
+- `Headers::Short` matches 0.7's `asn1.rs` exactly, and the Xcode wrap has its
+  own budget as in 0.7 [4].
+- `decodes_as_any` and `d2i_whole` own and free every value and drain the
+  error queue on refusal. The creation date is read once, and only after a
+  SignerInfo names an embedded certificate [4].
+- `store_anchors` used only anchor keys and was linear in anchors times
+  untrusted certificates (superseded by Fix-F2's rule) [4].
+
+**The module, its imports and its calls**
+
+- Imports are exactly `aprv:verifier/host@1.0.0 random-get`. Exports are the
+  four `@1.0.0` operations, their `cabi_post_` functions, `cabi_realloc`,
+  `memory` and `_initialize` [5].
+- A verify before `init`, a verify after a refused `init` and a second `init`
+  after success trap; a refused `init` can be retried; `env` 2, 255 and
+  2^32-1 trap before `init` is consulted [5].
+- A `random-get` answer of the wrong length traps before any byte is read, a
+  reentrant `init` from inside `random-get` traps, and ES256 asks the host
+  once per instance [5].
+- `wasi-none.c` defines every WASI function wasi-libc references and traps in
+  all but two; the panic path ends in a trap; panic locations name only
+  `/aprv/cargo/...` paths [5].
+- Two builds from different work directories gave identical modules and
+  components, so path remapping holds. The path check fired on a real leaked
+  path [5].
+- 2,000 calls each of init refusals, verified ES256 JWS, malformed receipts
+  and sandbox endpoint answers left linear memory unchanged [5].
+- The shared cases at the cap and cap plus one pass through the ABI: a
+  receipt of 3,145,728 `A`s is `MALFORMED` in 59 ms, cap plus one
+  `TOO_LARGE`; the endpoint and JWS likewise; 1.5 million levels of nesting
+  at the cap answer 21002 in 3 ms [5].
+- The corpora through the trap host on the reviewer's build: 22, 193, 811 and
+  5,000 rows with no trap and no unexpected import; 338 of 338 cases;
+  `abi-tests` with none failed [5].
+
+**Wire and C ABI**
+
+- The init-config schema's base64 pattern matches the reader exactly. Failure
+  objects have exactly three members, strings escape correctly, and
+  attribute types are `u32` in a `BTreeMap`, so keys are unique and ascending
+  [5]. 3,858 `verify-receipt`, 2,029 `verify-signed-data` and one `init`
+  answer validate against the schemas with Ajv [5].
+- C ABI: every export is inside `catch_unwind`; null pointers are reported,
+  not dereferenced; `anchors_of` refuses count and array disagreements; the
+  free functions accept NULL; `AprvVerifier` is `Send` and `Sync` by its
+  fields; the per-thread clock keeps concurrent calls' instants apart [5].
+
+### 10.9 Not covered by round 2
+
+- **The round-2 fixes themselves.** When round 2 ended, no reader other than
+  their authors had seen lane A-fix2's and lane A3's commits,
+  `c0a6e15..b863252`: the walk's
+  new order and primitive rules, the per-anchor validation, the C ABI's byte
+  calls, lints and header, the six fuzz targets, the `build.sh` changes, the
+  duplicate-`roots` reader and the stripped module. Round 3 read
+  them (section 11).
+- **The Wasm build under load.** Fix-F1's cost and memory in Wasm were not
+  measured by reviewer 4, and the linear-memory retention was an inference.
+  Lane A-fix2 measured them in V8 only.
+- **Java on the residual rows.** Reviewer 4 had no Java run for Fix-F2's and
+  Fix-F3's depth-dependent cases; lane A-fix2 ran Java on the 17 new cases.
+- **Parts of the adapter read only where the reviewed code calls them:**
+  `keys.rs`, `certificate.rs`, `sys.rs` and the `isolation.rs` changes of
+  45c10a0. `tools/check-layering.mjs` rule 6 and `gen_fixtures.py` were not
+  re-run by reviewer 4.
+- **The Wasmtime ABI suite** (`rust/bindings/abi/tests`) was not built or run
+  by reviewer 5, for disk and time; the trap host and Node probes cover the
+  same rules on the core module. The component path was not exercised under
+  Wasmtime by the review. The suite's later results are lane A3's.
+- **Byte parity with lane A2's module.** Reviewer 5's module linked a scratch
+  OpenSSL that embeds its install prefix, so `build.sh`'s path check failed on
+  it, and a fresh-clone reproduction with the pinned toolchain was not
+  rerun.
+- **The C ABI's lints, exported-symbol allowlist and fuzz target** were absent
+  at c0a6e15 (step 1.13, then pending). They landed in 617e85f and cc95875,
+  after the review.
+- **The Elixir NIF, the C++ and ctypes harnesses and the Python example**
+  were read only where they bear on ABI-F3, and their conformance runs were
+  not repeated. 0.7's C ABI was not built, so whether ABI-F3 is inherited is
+  not verified.
+- **Fuzzing.** Only the two in-process mutation loops ran during round 2.
+  Lane A3 ran its six targets for 600 s each with no finding, and that
+  campaign has no reader but its author either.
+- **Per-host wrapper caps.** ABI-F2's closure is a G1c result per host and
+  is not recorded here as complete.
+
+## 11. Round 3: lane A-fix2's and lane A3's own commits
+
+Round 2's log ended with a gap: the commits of lane A-fix2 and lane A3,
+`c0a6e15..b863252`, had no reader but their authors. Round 3 read them. Its
+dispositions come from lane A-fix3 (`lane/core-fix3`), merged into
+`rust-core` as b0a7f3d, whose 18 commits (`60b2091..b0a7f3d` on the core,
+fixtures, tools and Java paths) are listed with each finding below.
+
+### 11.1 What was reviewed and how
+
+**Commits.** `rust-core` from c0a6e15 to b863252, the merge of lanes A-fix2
+and A3, in a read-only checkout. One reviewer (reviewer 6) who had not
+written any of it, under the method, severity scale and verdict labels of
+section 2, in a scratch copy (native release build, rustc 1.98.1, OpenSSL
+4.0.2 static) and against the G1c `aprv.wasm` through Node. The findings
+file is not in the repository.
+
+Scope, in priority order:
+
+1. Lane A-fix2: `walk.rs`, `receipt.rs`, `path.rs`, `envelope.c` and its Rust
+   mirror, and their tests. For each bound: does it hold on every path to
+   the full decode, can a crafted input make the walk cost more than its
+   budget, does a fix change a verdict for an input signed under a pinned
+   root, and does the per-anchor loop stay bounded and agree with OpenSSL's
+   own chain building.
+2. Lane A3's core changes: the merged `path.rs`, the cost test, `build.sh`'s
+   compiler pin and cleanup, the stripped `name` section, the duplicate
+   `roots` refusal, the C ABI's byte-range calls and committed header, the
+   six fuzz targets and `asan-openssl.sh`, `tools/differential.sh`,
+   `tools/private-receipt-check.mjs` and `check-layering.mjs`'s new rule.
+3. The four round-2 notes recorded as partly fixed or untested: ABI-F5, F8,
+   F9, and F1 with F6.
+4. The 39 shared cases added since 338.
+
+### 11.2 Counts
+
+| Review | Blocking | Fix before merge | Notes | Total |
+|---|---|---|---|---|
+| Round 3, reviewer 6 | 0 | 2 | 7 | 9 |
+| Rounds 1, 2 and 3 | 2 | 23 | 36 | 61 |
+
+Verdicts: R3-F1 to F5 and F7 are CONFIRMED (F7 by reading Endive's
+bytecode), R3-F6 is PLAUSIBLE (by reading; a second full Wasm build did not
+fit on the shared disk), and R3-F8 and F9 were found by reading. The review
+also re-checked the four round-2 notes and proposed a patch for each; they
+are not counted as new findings.
+
+Reviewer 6 found no memory-safety defect and no verdict that accepts
+something unsigned. The two fixes it asked for both fail closed:
+
+- Per-anchor validation settled OpenSSL's choice among anchors, but not its
+  choice among the untrusted certificates in the bag, where it takes the
+  first name match and never backtracks (R3-F1).
+- The walk judged each primitive chunk inside a constructed string as a
+  value of its own, where OpenSSL joins chunks unchecked, so a re-chunked
+  signature `BIT STRING` was `MALFORMED` by its first octet (R3-F2).
+
+### 11.3 Decisions and deviations
+
+Lane A-fix3 took every finding and the four round-2 notes. It departed from
+the reviewer's proposal in two places, each on evidence:
+
+1. **R3-F1 links the bag by signature, not by `X509_check_issued`.** The
+   reviewer's prototype paired certificates with `issued_by`, which also
+   judges the issuer's `keyUsage`. The lane's first version did the same, and
+   seven corpus rows then lost their "not a CA" message (the verdict,
+   `UNTRUSTED_CHAIN`, was the same). The link is now the issuer name compared
+   as OpenSSL compares it, then the signature, which is how OpenSSL's lookup
+   pairs them. A test pins the "not a CA" report for an intermediate whose
+   `keyUsage` is `digitalSignature` only, and it fails with the first version.
+2. **R3-F3's second bound is three times the control, not two.** The
+   reviewer proposed twice the flat value for both bounds. Without a signer
+   the tiny input costs about the flat input, so twice holds. Under a signer
+   the tiny input also walks the payload up to the node budget, which the flat
+   value does not: 1.6 times the flat input on 1.98.1 and up to 2.0 on 1.85.0
+   in debug. Twice would have left 1.85.0 debug about 8% of margin, so the
+   bound is three times. The regression it guards, the payload read in full
+   before a signer is found, costs about 30 times the flat input.
+
+R3-F4 is documented, not bounded tighter: the reviewer's alternative
+(counting a checked primitive's content length against the budget) was not
+tried, because a bound change needs evidence that it keeps every shared
+case, and none was gathered.
+
+### 11.4 The findings
+
+Commits on `rust-core`: 1d44bc5 and 9b42d0c (bag narrowing), 6c81533 (chunk
+rule), c91ae4f (7 shared cases), e67b3be (cost test), 0632948 and 1110fe9
+(`build.sh`), a1dd695 and 33438da (Endive prefixer), 5b1eabe (C ABI anchor
+lengths), 25ddc5f and 63e1432 (scripts), e1535cd and c9979dd (docs and
+evidence). Merged as b0a7f3d.
+
+| Id | Severity | Defect | Verdict | Disposition | Pinned by |
+|---|---|---|---|---|---|
+| R3-F1 | fix before merge | With custom anchors that carry no key identifiers, a same-named intermediate placed first in the unsigned bag (from a second pinned root, or a sibling under the same root) made a genuine receipt `UNTRUSTED_CHAIN`, so pinning one more root could refuse a receipt that verified. Fails closed; Apple's roots are unaffected, since their key identifiers make `X509_check_issued` refuse a look-alike | CONFIRMED | Fixed in 1d44bc5 and 9b42d0c: before the per-anchor runs, the bag is narrowed to the certificates that signed the target or an already linked certificate, by issuer name and signature, at most n x (n + 1) name comparisons for the n certificates the cap allows. Deviation 1 above | `a_same_named_intermediate_placed_first_in_the_bag_does_not_decide_the_path`, `an_intermediate_without_key_cert_sign_is_still_reported_as_not_a_ca` in `trust_pinning.rs`; cases `verify-with-another-roots-same-named-intermediate-{before,after}-the-real-one-own-root-{first,second}` and `verify-with-a-same-named-sibling-intermediate-{before,after}-the-real-one` |
+| R3-F2 | fix before merge | The walk handed each primitive chunk inside a constructed string to OpenSSL as a value of its own; OpenSSL joins the chunks unchecked. A certificate whose outer signature `BIT STRING` was split in two chunks verified or was `MALFORMED` by the signature's first octet (0x96, 0x10, 0x11 on the shared receipt's three certificates). Fails closed; the chain is still signed under a pinned root | CONFIRMED | Fixed in 6c81533: no chunk check inside a constructed string; the nesting cap and the check of the whole string at its outermost level stay. R20's walk-rules row says so, and a new R20 row records Java's answer (`MALFORMED`); Java aligns in a follow-up | `chunks_inside_a_constructed_string_are_joined_not_judged` in `envelope_bounds.rs`; `receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks` |
+| R3-F3 | note | The tiny-attribute cost test judged against junk, which costs only its base64. It failed under `cargo test --release`, and its 7% debug margin was structural. Later the wired CI failed it twice on the 1.85.0 leg | CONFIRMED | Fixed in e67b3be: judged against the flat value of the same size with the same signer, twice its cost without a signer, three times with one. Deviation 2 above | `unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost` in `hostile.rs`; the full `hostile` suite passed five of five in debug 1.98.1, release 1.98.1 and debug 1.85.0 |
+| R3-F4 | note | The node budget admits one unsigned attribute of about 100,000 OBJECT IDENTIFIERs, which anyone can append to a genuine receipt outside its signature and which verifies: 82 ms natively and 112 to 268 ms through `aprv.wasm` for the reviewer, about 45 times a genuine call | CONFIRMED | Documented in e1535cd and c9979dd: the cost table below and THREAT-MODEL §5 name it as the costliest anonymous request found under the budget. No tighter bound was tried (section 11.3) | none (documentation) |
+| R3-F5 | note | `build.sh` left an earlier run's module in the output directory when a check before its cleanup failed (compiler pin, tool checks, SDK paths) | CONFIRMED | Fixed in 0632948: the four outputs are removed right after the argument check | `tools/test/build-sh.test.mjs`, which fails on the previous script |
+| R3-F6 | note | `build.sh` checked the `rustc` on `PATH`, but cargo honours `RUSTC`, `CARGO_BUILD_RUSTC` and wrappers, so a job that exports one passes the check and builds with another compiler | PLAUSIBLE | Fixed in 0632948: the compiler cargo would pick is the one checked and is handed to cargo by path; every wrapper variable is refused and cleared | `build-sh.test.mjs`: `RUSTC` and `CARGO_BUILD_RUSTC` name the compiler that is checked, and a wrapper is refused whichever variable sets it |
+| R3-F7 | note | The stripped module leaves Endive's name-section method prefixer with nothing to prefix, and the 2026-09-26 Endive note's claim that profiling works was stale. Nothing else in the repository reads the name section | CONFIRMED (Endive's bytecode) | Fixed in a1dd695 and 33438da: the prefixer line is gone from `java-wasm/pom.xml`, the READMEs say frames carry the function index, and the Endive note has a dated correction | none (documentation and build) |
+| R3-F8 | note | `anchors_of` in the C ABI built a slice from an unchecked caller length, where the header promises `INVALID_ARGUMENT` above `PTRDIFF_MAX`. Pre-existing, next to the new byte-range code | by reading | Fixed in 5b1eabe: each anchor goes through `borrow_bytes`, and the anchor count is checked the same way; the header is unchanged (`check-header.sh`) | `anchor_lengths_over_ptrdiff_max_are_refused_before_a_slice_is_built` |
+| R3-F9 | note | `asan-openssl.sh` stops at the first failing target, so its per-target design covered one target, not all; `differential.sh` takes the lexicographically first jar in `java/target` | by reading | Fixed in 25ddc5f (the five targets run one by one and every failure is named) and 63e1432 (the jar is named by `version.txt`) | a stand-in `run.sh` that fails two targets: all five ran and both failures were named; ShellCheck clean |
+
+### 11.5 The four round-2 notes
+
+| Note | Round 2 state | Disposition | Pinned by |
+|---|---|---|---|
+| ABI-F5 (the guest trusts every list range) | README only | Fixed in 077ec85: each export, and the `random-get` answer, traps on a range past the end of linear memory before a byte is read or the list freed. A range inside memory that `cabi_realloc` never returned is still not caught, and the README says so | `a_list_range_past_the_end_of_linear_memory_traps` in the Wasmtime ABI suite, calling both verify exports with ranges at the end of memory and one that wraps; it fails on the G1c module. The `random-get` answer guard has no test, since no host here places the answer elsewhere |
+| ABI-F8 (trap-host coverage) | ABI suite only | Fixed in d5bc38a as the reviewer proposed: a three-segment non-UTF-8 JWS reaches the UTF-8 check, and the short `random-get` check now requires a call | `tools/wasm-trap-host.mjs` `abi-tests` |
+| ABI-F9 (schemas admit what the core cannot write) | unchanged | Fixed in f80143e: attribute keys are decimal `u32`, receipt instants a multiple of 1,000 ms. `id` stays as documented | `rust/bindings/wire/tests/schema.rs`; every case answer (68 init, 369 receipt, 289 JWS) and every corpus answer (3,922 receipt, 2,085 JWS, 1 init) validates |
+| ABI-F1, ABI-F6 (compiler pin and failure cleanup untested) | hand checks | Tests added in 1110fe9, in under a second and without a build. They fail on the previous script | `tools/test/build-sh.test.mjs` |
+
+### 11.6 Findings from the first CI run that joined the round
+
+| Source | Defect | Disposition |
+|---|---|---|
+| `rust (beta)` | `exported_symbols.rs` looked for the cdylib beside the test binary, which cargo's build-dir layout moves | Fixed in 79737ed: the test searches the profile directory below cargo's `CACHEDIR.TAG` and takes the newest copy. Passes on 1.98.1 (debug and release) and on nightly 1.100, where the old lookup fails; the beta toolchain itself was not run |
+| `rust (1.85.0)` | the tiny-attribute cost test failed twice | R3-F3's fix, e67b3be; five of five on 1.85.0 in debug |
+| `rust-wasm-checks` | ShellCheck SC2010 in `differential.sh` | R3-F9's fix, 63e1432 |
+
+### 11.7 Costs, module and parity
+
+The cost test (fastest of seven interleaved calls, five runs each):
+
+| Build | Genuine | Flat, no signer | Tiny, no signer | Flat, signer | Tiny, signer |
+|---|---|---|---|---|---|
+| 1.98.1 debug | 0.86 to 0.90 ms | 38.2 to 42.8 ms | 37.3 to 39.3 ms | 45.4 to 46.7 ms | 71.4 to 76.2 ms |
+| 1.98.1 release | 0.58 to 0.64 ms | 10.8 to 15.8 ms | 9.9 to 15.5 ms | 17.7 to 28.6 ms | 27.8 to 42.2 ms |
+| 1.85.0 debug | 0.90 to 0.99 ms | 35.8 to 49.4 ms | 36.1 to 55.0 ms | 43.2 to 61.2 ms | 74.4 to 103.7 ms |
+
+The node budget's ceiling (R3-F4): the shared receipt with one unsigned
+attribute of OBJECT IDENTIFIERs, natively in a release build and through
+`aprv.wasm` in V8 (second call on a fresh instance), on a shared machine
+under load, so compare rows and not absolute figures:
+
+| Input | Answer | Native | `aprv.wasm` | Linear memory |
+|---|---|---|---|---|
+| the shared receipt | verifies | 0.45 ms | 7.3 to 9.9 ms | 1.9 MiB |
+| 99,830 OIDs `06 01 2a` (303 KB) | verifies | 60 to 67 ms | 62 to 87 ms | 4.8 MiB |
+| 99,830 OIDs of 20 octets (2.2 MB) | verifies | 126 to 149 ms | 101 to 128 ms | 16.9 MiB |
+| 99,831 OIDs `06 01 2a` | `MALFORMED`, over the budget | 20 to 26 ms | 30 to 48 ms | 2.6 MiB |
+
+The walk hands every OBJECT IDENTIFIER to OpenSSL and the full CMS decode
+builds each again, so an input at the budget costs about three times one just
+over it. That is the most one anonymous request costs under the budget as far
+as this round measured, 130 to 330 times a genuine call natively and 10 to 17
+times through `aprv.wasm` here. Interpreter hosts pay several times more.
+
+**The module.** Rebuilt with `build.sh`:
+
+| File | Bytes | SHA-256 |
+|---|---|---|
+| `aprv.wasm` | 2,764,700 | `4e9d2d85…` |
+| `aprv.component.wasm` | 2,767,142 | `ccccbfb5…` |
+
+The WIT is unchanged. `check-wasm.sh` passes with one import. The trap host
+answers 384 of 384 cases with no trap and its ABI tests with none failed
+(linear memory 2,097,152 bytes before and after 2,000 calls). The Wasmtime ABI
+tests pass 14 of 14, and the new range test fails on the G1c module.
+
+**Parity.** Against G1c's rows on the five corpora, the same pinned calls:
+6,173 of 6,179 identical, 6 differing in the message only, none in the
+verdict, no trap. All six are fuzz mutants of a chain whose intermediate is
+not a CA and whose mutation also broke that intermediate's signature over the
+signer. OpenSSL used to build the path through it and report that the
+intermediate is not a CA first. The narrowed bag no longer offers a
+certificate that signed nothing on the path, so they say that the chain does
+not reach a pinned root, which is R3-F1's shape. With the `keyUsage`-judging
+pairing the unmutated `intermediate-keyusage-without-certsign` row changed the
+same way; with the signature-only link it answers as before.
+
+**The suite.** 700 workspace tests pass in debug and in release; clippy with
+`-D warnings` is clean for the workspace and `aprv-abi`; `cargo fmt --check`,
+`cargo deny check bans licenses sources`, `tools/lint-cases.mjs` (384 cases),
+`check-layering.mjs` and `check-header.sh` are clean; `npm --prefix tools
+test` passes 31 of 31 with `APRV_WASM` set.
+
+**Java.** `ConformanceCasesTest` passes 385 of 386: Java answers the two-chunk
+signature `MALFORMED` ("receipt has trailing or unparseable bytes"). R20
+records that row, and Java aligns to it in a follow-up lane, since this round
+edited nothing under `java/`.
+
+**Shared cases.** Seven cases, fixtures `core-review-r3-*.der` from
+`gen_fixtures_round3.py`, all verifying. The G1c module answered four
+otherwise, so each group pins a fix; the other three are order twins. The
+certificates carry no key identifiers, so they exercise the lookup.
+
+The module's hash moved, so every host pin moves once more (G1d) before
+integration.
+
+### 11.8 Verified as sound
+
+Checked at b863252 by reviewer 6.
+
+**The header walk**
+
+- The walk runs before `Envelope::decode`, `within()` and
+  `d2i_CMS_ContentInfo`, and `SignedData::parse` is the only caller of the
+  shallow and full decodes. The 1.17 million tiny-entry floods in all three
+  sets are refused by the node budget with no full decode.
+- Budget edges hold: 100,000 values verify and 100,001 are refused, in
+  indefinite form too. Indefinite depth at 24, 25 and 3,000 behaves as
+  intended. A missing end-of-contents and a one-octet overrun are refused
+  before any decode.
+- The walk's cost is linear: each byte is under at most one outermost string
+  check, since outermost strings cannot nest, plus its own primitive check.
+  Recursion stays within the depth budget of 32 (256 for `size_of_value`) and
+  every value consumes at least two octets.
+- The string-nesting count matches `asn1_collect`: six levels pass, a seventh
+  is refused. `PRIMITIVE_ONLY_TAGS` matches `ASN1_R_TYPE_NOT_PRIMITIVE`, a
+  primitive SEQUENCE or SET and short times are refused through
+  `decodes_as_any` as `asn1_d2i_ex_primitive` refuses them, and an
+  end-of-contents in a definite length is refused as `asn1_collect` refuses
+  it. Below a SEQUENCE, R20 records the last as deliberate.
+
+**Path validation**
+
+- The per-anchor loop is bounded by the anchor count. Candidates use
+  `X509_check_issued` only, with no key. Every anchor that can end a passing
+  path is a candidate. The fallback to one store with every anchor fires only
+  when no anchor can pass, and the verdict is unchanged.
+- The merged `path.rs` is coherent: lane A3's `store_choices` and `vouched_by`
+  are gone, and A3's appended test passes on lane A-fix2's version.
+- `full_decodes_during`'s drop guard restores the previous count on unwind.
+
+**Lane A3's changes**
+
+- `read_init_config` refuses duplicate `roots` in either order, decodes
+  escaped member names before counting, and refuses non-objects before the
+  second parse.
+- The C ABI byte calls: `borrow_bytes` refuses (NULL, n > 0) and a length above
+  `isize::MAX`; `out` is written once; a verdict document cannot hold a NUL,
+  so `json` is non-NULL for every status below 100; every export is inside
+  `guard`. The fuzz target asserts byte-for-byte equality with `aprv-wire`
+  over the surface, and agreement between the C-string and byte calls.
+- `check-header.sh` pins cbindgen 0.29.0, regenerates to a temporary file and
+  diffs it.
+- `private-receipt-check.mjs` prints only the position, the kind, a reason
+  stripped to `[A-Z_]`, and attribute type numbers. It refuses a directory
+  inside the repository, replaces a trapped instance, and its test asserts
+  that no file name and no payload value reaches the output.
+- `check-layering.mjs` rule 6 passes on the tree (6 rules, 6 members, 26 core
+  packages), and the root package leaving the members list does not hide the
+  core from it.
+
+**The cases and the module**
+
+- Of the 39 cases added since 338, 14 fail on the G1b module and pass on G1c
+  (trap host: G1b 363 of 377, G1c 377 of 377, no trap). The other 25 are
+  port-inventory cases or accept and order twins, and each pins what its id
+  says. The decoy and twin roots carry no key identifiers, so they exercise
+  the lookup. No expected answer contradicts R20.
+- G1c's `abi-tests` pass with none failed, and 2,000 calls leave linear
+  memory at 2,097,152 bytes.
+
+### 11.9 Not covered by round 3, and what closes step 1.10
+
+- **Lane A-fix3's commits.** After round 3, the 18 commits of `60b2091..b0a7f3d`
+  (the bag narrowing and its signature link, the chunk rule, the cost test,
+  the `build.sh` rewrite and its test, the range guard, the tightened schema,
+  the C ABI anchor check, the script fixes and the seven cases) again have no
+  reader but their author. Their evidence is the 700-test suite, the shared
+  cases, the trap host, the Wasmtime ABI tests, the parity run and the new
+  tests named above.
+- **The fuzz campaign.** No reviewer ran `asan-openssl.sh` or the six targets,
+  for lack of an ASan OpenSSL build, a nightly toolchain with clang and disk.
+  Lane A-fix3 ran the script's new loop with a stand-in `run.sh` only. No
+  campaign has run since the fixes.
+- **`tools/differential.sh`.** Read by the reviewer and not run end to end by
+  the reviewer or the fix lane.
+- **The beta toolchain.** The `rust (beta)` fix was checked on nightly cargo
+  1.100.0 and 1.98.1, not on beta itself.
+- **A full `build.sh` run for R3-F6** and byte parity of the G1c module with a
+  fresh build. The `RUSTC` and wrapper handling is covered by the new tests,
+  which run without a build.
+- **Builds and harnesses.** The reviewer did not build `rust/ffi` tests, the
+  Wasmtime ABI suite or the C++ and ctypes harnesses; it relied on reading,
+  the fuzz target's assertions and G1c through the trap host. Lane A-fix3 ran
+  the workspace and the Wasmtime suite.
+- **The `random-get` answer guard** has no test.
+- **Java** on R3-F1's and R3-F2's inputs was not run by the reviewer; the fix
+  lane ran the shared cases through Java.
+- **Other lanes' commits in the range.** The `aprv-server` lane's commits
+  (`rust/server/**`) were outside this round's scope, as were the CI wiring,
+  the host lanes and the Phase 7 lane.
+- **Timings** in this round come from one shared, loaded machine, so the
+  ratios are sound and the absolute figures are not. Interpreter hosts were
+  not timed.
+
+**What closes step 1.10.** Every finding of the three rounds is fixed or has
+its reason recorded, and every core module has had a reader other than its
+author except lane A-fix3's 18 commits above. The host wrappers, `aprv-server`,
+the CI wiring and the Phase 7 lane were outside all three reviews' scope. The step closes with the owner's
+read of this log at the end, or with a round 4 on those commits if the owner
+asks for one.

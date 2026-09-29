@@ -255,8 +255,10 @@ final class Installer
             throw new InstallException("cannot download {$url}");
         }
         $status = 0;
-        // The wrapper sets $http_response_header in this scope; PHP 8.4 adds a function for it.
-        $headers = function_exists('http_get_last_response_headers') ? http_get_last_response_headers() : $http_response_header;
+        // The http wrapper's response headers, every hop's, from the stream
+        // itself: PHP 8.5 deprecates the magic local variable at compile
+        // time, even behind a function_exists() check.
+        $headers = stream_get_meta_data($source)['wrapper_data'] ?? [];
         foreach ((array) $headers as $line) {
             if (is_string($line) && preg_match('#^HTTP/\S+\s+(\d{3})#', $line, $match) === 1) {
                 $status = (int) $match[1];

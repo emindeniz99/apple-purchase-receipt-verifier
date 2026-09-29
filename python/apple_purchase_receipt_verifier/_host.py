@@ -60,6 +60,12 @@ _RANDOM_LIMIT = 1024 * 1024
 T = TypeVar("T")
 
 
+#: The most bytes of one verification input copied into linear memory: one
+#: over the core's 3 MiB cap (3,145,728), so that the core answers TOO_LARGE
+#: itself for anything larger.
+MAX_INPUT_COPY = 3_145_729
+
+
 class AbiMismatchError(RuntimeError):
     """The module is not one this package can run: it lacks an export of ABI
     version 1.0.0, or imports anything but ``random-get``."""
@@ -226,6 +232,10 @@ class Instance:
         this method as a pointer."""
         store, memory = self._store, self._memory
         try:
+            if export != "init" and len(data) > MAX_INPUT_COPY:
+                # One byte over the core's cap is all it needs to answer
+                # TOO_LARGE; the rest of a huge input never enters memory.
+                data = bytes(memoryview(data)[:MAX_INPUT_COPY])
             length = len(data)
             pointer = self._realloc(store, 0, 0, 1, length) & 0xFFFFFFFF
             if length:

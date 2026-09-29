@@ -16,14 +16,16 @@ from apple_purchase_receipt_verifier import Config, Reason, Verifier
 with open("receipt-sandbox-g5.b64", encoding="ascii") as handle:
     receipt_b64 = handle.read().strip()
 
-# A wheel that lost its bundled roots would still import; this is where it shows.
+# Apple's three roots are compiled into aprv.wasm, so the defaults name none
+# of their own (None means the module's); a wheel that lost the module fails
+# below, on the genuine receipt.
 config = Config.defaults()
-if len(config.roots) != 3:
-    raise SystemExit(f"expected three bundled Apple roots, got {len(config.roots)}")
+if config.roots is not None:
+    raise SystemExit(f"expected the module's built-in roots (None), got {len(config.roots)}")
 verifier = Verifier(config)
 
 # A real Apple-signed receipt against the real pinned root: exercises the
-# packaged certs, the DER reader, the chain build and the signature check.
+# packaged module, the chain build and the signature check inside it.
 result = verifier.verify_receipt(receipt_b64)
 if not result.verified:
     raise SystemExit(f"verification failed: {result.failure.reason}: {result.failure.message}")

@@ -5,8 +5,9 @@
             and to the first verified answer over HTTP
   cli       one `aprv verify-receipt` / `verify-signed-data` process per call:
             wall time from spawn to exit, verdict checked
-  http      N calls over one keep-alive connection to one server (fresh
-            lifecycle, the default): wall time per call
+  http      N calls over one keep-alive connection to one server, once with
+            the pool lifecycle (the default) and once with fresh: wall
+            time per call
 
 The inputs are fixtures/cases.json's g5 sandbox receipt (the built-in Apple
 roots) and its shared StoreKit 2 transaction JWS (its own test root).
@@ -39,8 +40,8 @@ def fixture(doc, fid):
     return raw
 
 
-def serve(aprv, roots):
-    args = [aprv, "serve", "--listen", "127.0.0.1:0"] + (["--roots", roots] if roots else [])
+def serve(aprv, roots, lifecycle="pool"):
+    args = [aprv, "serve", "--listen", "127.0.0.1:0", "--lifecycle", lifecycle] + (["--roots", roots] if roots else [])
     t = time.monotonic()
     p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
     host, port = p.stdout.readline().decode().strip().split("=", 1)[1].rsplit(":", 1)
@@ -87,8 +88,10 @@ def main():
         cli[name] = med(xs)
 
     keep = {}
-    for name, path, body, rf in (("g5", "/v1/receipt/verify", g5, None), ("jws", "/v1/signed-data/verify", jws, roots)):
-        p, c, _ = serve(a.aprv, rf)
+    for lc, name, path, body, rf in [(lc, *x) for lc in ("pool", "fresh") for x in
+                                     (("g5", "/v1/receipt/verify", g5, None), ("jws", "/v1/signed-data/verify", jws, roots))]:
+        name = f"{lc}-{name}"
+        p, c, _ = serve(a.aprv, rf, lc)
         for _ in range(10):
             post(c, path, body)
         xs = []
