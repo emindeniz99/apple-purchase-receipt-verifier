@@ -22,7 +22,7 @@ license = "MIT"
 [dependencies]
 # aprv-server's pin: the ABI is tested on the runtime the server ships.
 wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std", "cranelift", "component-model", "parallel-compilation"] }
-getrandom = "0.3"
+getrandom = "0.4"
 serde_json = "1"
 
 [workspace]
