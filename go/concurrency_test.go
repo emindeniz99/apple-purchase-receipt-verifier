@@ -2,6 +2,7 @@ package applereceipt_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -57,9 +58,15 @@ func caseRow(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 
 func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
 	dir, file := sharedCases(t)
+	// A case without a clock of its own gets a fixed one, so the endpoint's
+	// request_date is the same on every goroutine.
 	fixedClock := &clockSpec{Now: "2025-01-01T00:00:00Z"}
+	type job struct {
+		c conformanceCase
+		v *applereceipt.Verifier
+	}
 	verifiers := map[string]*applereceipt.Verifier{}
-	var cases []conformanceCase
+	var jobs []job
 	for _, c := range file.Cases {
 		if c.Operation == "decodeBase64" {
 			continue
@@ -68,21 +75,18 @@ func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
 		if clock == nil {
 			clock = fixedClock
 		}
+		// One Verifier per distinct configuration, shared by every case that
+		// uses it and so by every goroutine.
 		key := c.Config.TrustedRoots.Source + "|" + strings.Join(c.Config.TrustedRoots.Fixtures, ",") + "|" + clock.Now
 		if verifiers[key] == nil {
 			verifiers[key] = buildVerifier(t, buildConfig(t, dir, file.Fixtures, c.Config, clock))
 		}
-		c.Config = &caseConfigSpec{TrustedRoots: c.Config.TrustedRoots, Environment: c.Config.Environment}
-		c.Clock = &clockSpec{Now: key[strings.LastIndex(key, "|")+1:]}
-		cases = append(cases, c)
-	}
-	verifierOf := func(c conformanceCase) *applereceipt.Verifier {
-		return verifiers[c.Config.TrustedRoots.Source+"|"+strings.Join(c.Config.TrustedRoots.Fixtures, ",")+"|"+c.Clock.Now]
+		jobs = append(jobs, job{c, verifiers[key]})
 	}
 
-	want := make([]string, len(cases))
-	for i, c := range cases {
-		want[i] = caseRow(t, dir, file.Fixtures, c, verifierOf(c))
+	want := make([]string, len(jobs))
+	for i, j := range jobs {
+		want[i] = caseRow(t, dir, file.Fixtures, j.c, j.v)
 	}
 
 	goroutines := 4
@@ -90,17 +94,17 @@ func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
 		goroutines = 2
 	}
 	var wg sync.WaitGroup
-	errs := make(chan string, len(cases)*goroutines)
+	errs := make(chan string, len(jobs)*goroutines)
 	for g := 0; g < goroutines; g++ {
 		wg.Add(1)
 		go func(g int) {
 			defer wg.Done()
 			// Each goroutine starts at a different case, so they meet
 			// different inputs on the same Verifier at the same time.
-			for n := range cases {
-				i := (n + g*len(cases)/goroutines) % len(cases)
-				if got := caseRow(t, dir, file.Fixtures, cases[i], verifierOf(cases[i])); got != want[i] {
-					errs <- cases[i].ID + ": the answer on goroutine " + string(rune('0'+g)) + " differs from the single-goroutine row"
+			for n := range jobs {
+				i := (n + g*len(jobs)/goroutines) % len(jobs)
+				if got := caseRow(t, dir, file.Fixtures, jobs[i].c, jobs[i].v); got != want[i] {
+					errs <- fmt.Sprintf("%s: goroutine %d answered differently from the single-goroutine row", jobs[i].c.ID, g)
 				}
 			}
 		}(g)
@@ -110,7 +114,7 @@ func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
 	for message := range errs {
 		t.Error(message)
 	}
-	t.Logf("%d cases, %d goroutines, %d Verifiers", len(cases), goroutines, len(verifiers))
+	t.Logf("%d cases, %d goroutines, %d Verifiers", len(jobs), goroutines, len(verifiers))
 }
 
 // The bundled root set is lazily initialised, so it gets its own race.
