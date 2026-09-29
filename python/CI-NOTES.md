@@ -1,0 +1,176 @@
+# CI needs of the Python package (lane C, MIGRATION steps 5.1 to 5.3)
+
+For the integrator, who owns `.github/`. Nothing here has run in GitHub
+Actions: the only interpreter in the lane's environment was CPython 3.11 on
+glibc x86_64, and the results in the hand-back say which leg ran where.
+
+Every command runs in `python/`. The package has one runtime dependency,
+`wasmtime>=49`; the `dev` extra adds ruff, mypy and setuptools (the
+install-failure test builds this source tree with it).
+
+## 1. Test matrix (job `python`, replaces the current one)
+
+CPython 3.10, 3.11, 3.12, 3.13 and 3.14 on each of these, so the 3.10 floor and
+the platform claims are legs and not sentences:
+
+| Leg | Runner | Why |
+|---|---|---|
+| glibc x86_64 | `ubuntu-latest` | wasmtime-py's `manylinux1_x86_64` wheel (library needs glibc 2.28) |
+| glibc aarch64 | `ubuntu-24.04-arm` | `manylinux2014_aarch64` |
+| musl x86_64 | a container: `ghcr.io/astral-sh/uv:python3.<n>-alpine` on `ubuntu-latest` | `musllinux_1_2_x86_64`; root inside the container, so the read-only cache case is the simulated one |
+| musl aarch64 | the same image on `ubuntu-24.04-arm` | `musllinux_1_2_aarch64` |
+| macOS arm64 | `macos-15` | `macosx_11_0_arm64` |
+| macOS x86_64 | `macos-15-intel` | `macosx_10_13_x86_64` |
+| Windows amd64 | `windows-latest` | `win_amd64` |
+| Windows arm64 | `windows-11-arm` | `win_arm64` |
+
+Commands (every leg):
+
+```sh
+uv sync --locked --extra dev
+uv run --locked --extra dev python -m unittest discover -s tests
+```
+
+- `discover` picks up `test_conformance.py`, whose `tearDownModule` fails the
+  run unless all 311 case ids ran; `test_abi.py`, `test_facade.py`,
+  `test_concurrency.py`, `test_fuzz_targets.py`, `test_trust_isolation.py`,
+  `test_api_shape.py`, `test_cache.py` and `test_install_failure.py`.
+- `HOME` (and `LOCALAPPDATA` on Windows) must be writable: `test_cache.py`
+  points the cache at temporary directories but starts fresh interpreters.
+- Leave `APRV_WASM_CACHE_DIR` unset; the tests set it where they need it.
+- The suite takes about 1 minute on 4 CPUs; the cold compile is 1 to 3 s and
+  `test_cache.py` compiles five times. Budget 10 minutes per leg.
+- `test_cache.py` covers the cache rules with a real read-only directory when
+  the user is not root (every hosted runner) and a simulated one when it is
+  (the Alpine containers). The foreign-owned and group-writable cases skip on
+  Windows only, where the rule does not apply (`unittest` prints the reason).
+- While `aprv.wasm` is the stand-in module (the round-13 core on 0.6), 217 of
+  the 311 cases are expected to fail and the suite says so
+  (`tests/standin_differences.txt`, asserted case by case). The list is
+  ignored the moment the bundled module's SHA-256 is not the stand-in's, so
+  the release module must pass all of them: that is gate G5, and nothing has
+  to change in CI to get there.
+- Each leg should also run once with the cache warm (the second run of the
+  step above) and record the wall time of `tests/test_cache.py`'s printed
+  cold and warm starts, which feed the README's numbers.
+
+## 2. Corpus parity (after the release module lands)
+
+The 1,179 corpus rows plus the 5,000 mutants through the package's host layer,
+compared with the ABI v1 Node rows. The corpora and the Node rows are large
+and live in the parity job's workspace, not in the repository:
+
+```sh
+CAB=../docs/evidence/2026-09-29-canonical-abi-final
+for c in cases hostile algorithms substrate fuzz; do
+  python3 $CAB/py/calls_bytes.py $CALLS/$c.jsonl > $WORK/calls/$c.jsonl
+  uv run --locked python tests/corpus_rows.py $WORK/calls/$c.jsonl > $WORK/run/pkg-$c.jsonl
+done
+python3 $CAB/py/classify.py pkg $WORK/calls $NODE_ROWS $WORK/run/pkg
+```
+
+`classify.py` prints `AS EXPECTED` for 6,176 identical, 2
+`clock-moves-chain` and 1 `init-refusal` on the stand-in. Against the release
+module the expectation is the 0.7 one: every row identical to the native
+core's. The five files take about 25 s on 4 CPUs (the 5,000 mutants 17 s);
+a run near 226 s means something went back to the per-byte component API.
+
+## 3. Install failure (new job `python-install`, R28)
+
+On `ubuntu-latest`, Python 3.13:
+
+```sh
+python -m pip install build
+python tools/build_dist.py --out dist         # the sdist and the 8 platform wheels
+python tools/build_dist.py --check dist       # exactly those; no py3-none-any wheel
+sh tools/check-install.sh dist                # pip, platform faked as linux-i686
+sh tools/check-install.sh dist linux-s390x    # and as another unsupported one
+```
+
+`check-install.sh` needs network for wasmtime's and setuptools's wheels only;
+the package under test comes from `dist/`. It proves, at the level of pip:
+
+- on a faked unsupported platform pip picks the sdist, the build stops, and the
+  output names `aprv-server` and the C ABI; and
+- on the real platform the tagged wheel installs and verifies the genuine
+  sandbox receipt.
+
+One real leg on a machine that has no wasmtime-py wheel: 32-bit Linux under
+QEMU on `ubuntu-latest` (`docker run --platform linux/386` with
+`i386/python:3.12-slim`, `apt-get install -y build-essential` not needed):
+
+```sh
+docker run --rm --platform linux/386 -v "$PWD/dist:/dist:ro" i386/python:3.12-slim \
+  pip install --find-links /dist "apple-purchase-receipt-verifier==$VERSION"
+```
+
+It must exit non-zero with the message. Pin the version: before the release is
+published the index has no such version, and after it has no `py3-none-any`
+wheel, so the sdist is the only candidate either way. Not run in the lane
+(no container daemon).
+
+`uv pip install` was checked with the faked platform too and stops with the
+same message; a `uv` leg is optional.
+
+## 4. Release (`release.yml`, PyPI job)
+
+The job currently runs `python3 -m build`, which publishes one `py3-none-any`
+wheel: on the platforms wasmtime-py has no wheel for, pip would install it and
+`import` would fail later, which is what R28 removes. Replace that step with:
+
+```sh
+python3 -m pip install --upgrade build
+python3 tools/build_dist.py --out dist
+python3 tools/build_dist.py --check dist
+```
+
+and upload `python/dist/` as today (trusted publishing, no cache; the workflow
+file keeps its name). Before the build, put the release build's module in
+place and check it:
+
+```sh
+cp "$ARTIFACTS/aprv.wasm" apple_purchase_receipt_verifier/aprv.wasm
+(cd apple_purchase_receipt_verifier && sha256sum aprv.wasm > aprv.wasm.sha256 \
+  && test "$(cut -d' ' -f1 aprv.wasm.sha256)" = "$RELEASE_SHA256")
+```
+
+The package refuses to import when the two files disagree, and `tests/_support.py`
+recognises the stand-in by its SHA-256, so both files must be the release's.
+The committed copy is kept in step by the same rule as Go's and Swift's: a CI
+step rebuilds the module and fails when its SHA-256 differs from the committed
+`aprv.wasm.sha256`.
+
+The wheels carry OpenSSL's licence and NOTICE, wasi-libc's and Rust std's texts
+(ARCHITECTURE.md §9, "Licences ship with the code"): add them to
+`package-data` and the sdist's `MANIFEST.in` when Phase 1 produces them.
+
+Post-publish smoke (gate G5): in a clean venv on Python 3.10,
+`pip install apple-purchase-receipt-verifier==$VERSION` from PyPI, then verify
+the genuine sandbox receipt as `check-install.sh` does.
+
+## 5. Other jobs that touch this package
+
+- `python-tools`: `uv sync --locked --extra dev`, then `ruff check .`,
+  `ruff format --check .`, `mypy` (both clean), and the `runpy` import check of
+  `bench/bench.py`, which still resolves. The advisory `ty` step resolves
+  `wasmtime`'s types instead of `cryptography`'s.
+- `python-fuzz`: unchanged (`./run.sh all 60` in `python/fuzz`), but there are
+  three targets now (`receipt-base64`, `jws`, `endpoint-json`); the comment
+  above the job still says five and names the receipt attribute reader.
+  `atheris` publishes no wheel for CPython 3.11, the only interpreter in the
+  lane's environment, so the fuzzer itself has not run; the targets run
+  without it in `tests/test_fuzz_targets.py`.
+- `benchmark.yml`: `bench/bench.py` reports three operations now
+  (`verifierBase64`, `endpointJson`, `rejectTamperedSignature`); 0.7's
+  `decodeBase64` and `core` have no Python counterpart because the package has
+  no decoder and no DER entry point. BENCHMARKS.md's Python rows for those two
+  go blank in Phase 7.
+- Dependabot: the `uv` entry for `python/` now tracks `wasmtime`, with no upper
+  pin by design (R27), and its comment about the `cryptography` early warning is
+  stale. The early warning for a new wasmtime-py major is `tests/test_cache.py`:
+  the cache is switched off silently when Wasmtime rejects its configuration
+  file (49.0.0 reads `[cache]` with a `directory` and no `enabled` key), so the
+  test that asserts the cache filled is what notices a change of format.
+- The one-implementation job (ARCHITECTURE.md §9) may grep `python/` for
+  `cryptography`, `asn1crypto`, `hmac`, `OpenSSL` and `x509`: the package
+  imports none of them, and `tests/test_trust_isolation.py` asserts it.
