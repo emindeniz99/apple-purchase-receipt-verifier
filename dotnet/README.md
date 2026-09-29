@@ -413,6 +413,15 @@ and `-- --worst-case` for the hostile cases on your own hardware.
   new one, uses it alone, and hands it back; an instance that trapped, that
   answered something unreadable, or that grew past 64 MiB is thrown away
   and the next call takes another. Nothing needs closing.
+- **Address space, not memory.** Wasmtime reserves about 4 GiB of *virtual*
+  address space for each instance's linear memory, so 32 live instances show
+  about 188 GB of virtual size and 8 MiB more resident memory than none
+  (measured on Linux x86-64; `CorpusRun memory 32`). An instance holds about
+  1.8 MiB of linear memory after `init`. Nothing is committed beyond that,
+  so container memory limits are unaffected, but an environment that caps
+  virtual size (`ulimit -v`, strict overcommit) has to allow for it. The pool
+  keeps at most as many idle instances as there are CPUs, and never fewer
+  than two.
 - **Native library.** Wasmtime brings a native library per platform:
   `linux-x64` (glibc 2.28), `linux-arm64` (glibc 2.18), `osx-x64`,
   `osx-arm64`, `win-x64`, `win-arm64`. The package has no 32-bit or musl
