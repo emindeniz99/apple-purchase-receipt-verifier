@@ -45,7 +45,7 @@ compile = ["wasmtime/cranelift"]
 # Runtime-only Wasmtime plus the component model: no Cranelift, Winch,
 # cache, WAT parser, async, GC, threads, profiling or pooling allocator.
 wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std", "component-model"] }
-getrandom = "0.3"
+getrandom = "0.4"
 sha2 = { version = "0.10", default-features = false }
 # Only for the roots configuration: base64 DER lines (or PEM bodies) are
 # decoded to take each root's SHA-256 fingerprint for `GET /v1/info`.
