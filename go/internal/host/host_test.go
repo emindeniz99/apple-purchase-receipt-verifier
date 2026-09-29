@@ -4,7 +4,7 @@ package host
 // 2026-09-29-canonical-abi-final/hosts/wazero/tests.go) that apply to a
 // wrapper, run against the embedded module. They assert what the ABI
 // guarantees and nothing about the wire's payload shapes, so they hold for
-// the stand-in module and for the release build alike.
+// every module of the ABI.
 
 import (
 	"encoding/hex"
@@ -189,26 +189,24 @@ func TestEnvOtherThanZeroOrOneTraps(t *testing.T) {
 	}
 }
 
-func TestArgumentRangesOutsideMemoryTrap(t *testing.T) {
-	// What a hand-rolled host could get wrong; the wrapper cannot, and the
-	// guest still refuses. Called raw, past the wrapper's own lowering.
-	for name, args := range map[string][2]uint64{
-		"a range past the end of memory": {0, 16}, // ptr filled in below
-		"a range that overflows u32":     {0xFFFFFFF0, 0x20},
-	} {
-		g := freshGuest(t, nil)
-		ptr, n := args[0], args[1]
-		if ptr == 0 {
-			ptr = uint64(g.memorySize()) - 4
-		}
-		_, err := g.m.ExportedFunction(verifyIface+"verify-receipt").Call(ctx, now, ptr, n)
-		if err == nil {
-			t.Errorf("%s: no trap", name)
-		}
-		fresh := freshGuest(t, nil)
-		if _, err := fresh.Call("verify-receipt", now, "AAAA"); err != nil {
-			t.Errorf("%s: a fresh instance failed afterwards: %v", name, err)
-		}
+func TestArgumentRangesOutsideMemoryDoNotBreakOtherInstances(t *testing.T) {
+	// What a hand-rolled host could get wrong; the wrapper cannot, since it
+	// always allocates the input from cabi_realloc. Called raw, past the
+	// wrapper's own lowering. A range that overflows u32 must trap. A range
+	// that runs past the end of memory traps on a module that reads all of
+	// it, and is a plain answer on one that stops at the first bad byte (the
+	// release module does); either way no other instance is affected.
+	g := freshGuest(t, nil)
+	_, err := g.m.ExportedFunction(verifyIface+"verify-receipt").Call(ctx, now, uint64(g.memorySize())-4, 16)
+	t.Logf("a range past the end of memory: trap=%v", err != nil)
+	g = freshGuest(t, nil)
+	if _, err := g.m.ExportedFunction(verifyIface+"verify-receipt").Call(ctx, now, 0xFFFFFFF0, 0x20); err == nil {
+		t.Error("a range that overflows u32 did not trap")
+	}
+	fx := loadFixtures(t)
+	fresh := freshGuest(t, nil)
+	if answer, err := fresh.Call("verify-receipt", now, fx.g5); err != nil || !verified(answer) {
+		t.Errorf("a fresh instance failed afterwards: %q, %v", answer, err)
 	}
 }
 

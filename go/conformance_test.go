@@ -493,11 +493,12 @@ func parseJSONAny(t testing.TB, id, text string) any {
 // fail later for that), and a text the group expects to be refused must be
 // refused as base64. The refusal is told apart by its reason and by the
 // word "base64" in the core's message ("receipt is not valid base64",
-// "x5c entry is not valid base64"). What the bytes decode to (bytesHex) is
+// "x5c entry is not valid base64"), or "receipt is empty" for an empty
+// receipt. What the bytes decode to (bytesHex) is
 // not observable here, and is not checked.
 //
 //   - receipt-data goes through VerifyReceipt, which refuses as MALFORMED;
-//   - x5c goes through VerifySignedData, as the only entry of the x5c
+//   - x5c goes through VerifySignedData, as all three entries of the x5c
 //     header member of an otherwise empty JWS, which refuses as
 //     INVALID_CERTIFICATE.
 func runDecodeBase64(t testing.TB, c conformanceCase) {
@@ -549,12 +550,15 @@ func refusedAsBase64(err error, refusal applereceipt.Reason) bool {
 	if !errors.As(err, &failure) || failure.Reason != refusal {
 		return false
 	}
-	return strings.Contains(strings.ToLower(failure.Message), "base64")
+	message := strings.ToLower(failure.Message)
+	// An empty receipt-data has a message of its own, and is still refused.
+	return strings.Contains(message, "base64") || message == "receipt is empty"
 }
 
-// x5cProbe is a compact JWS whose header carries text as its one x5c
-// entry: the smallest input that sends text to the x5c decoder. Nothing
-// about it is signed; it never gets past the certificate.
+// x5cProbe is a compact JWS whose header carries text as each of its three
+// x5c entries (the core refuses any other count before it decodes one): the
+// smallest input that sends text to the x5c decoder. Nothing about it is
+// signed; it never gets past the certificates.
 func x5cProbe(t testing.TB, text string) string {
 	t.Helper()
 	if !utf8.ValidString(text) {
@@ -565,7 +569,7 @@ func x5cProbe(t testing.TB, text string) string {
 		t.Fatalf("harness error: %v", err)
 	}
 	segment := base64.RawURLEncoding.EncodeToString
-	return segment([]byte(`{"alg":"ES256","x5c":[`+string(entry)+`]}`)) + "." + segment([]byte(`{}`)) + "." + segment(make([]byte, 64))
+	return segment([]byte(`{"alg":"ES256","x5c":[`+string(entry)+`,`+string(entry)+`,`+string(entry)+`]}`)) + "." + segment([]byte(`{}`)) + "." + segment(make([]byte, 64))
 }
 
 // --- one case --------------------------------------------------------------

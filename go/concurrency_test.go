@@ -15,9 +15,7 @@ import (
 // CI, this is what makes it a tested claim rather than a doc comment: every
 // case of fixtures/cases.json is answered once on one goroutine, then
 // again on several at once through the same Verifiers, and each goroutine
-// must get the single-goroutine row for every case. Some cases trap the
-// module or come back as INTERNAL_ERROR with a stand-in module; the rows
-// still have to agree.
+// must get the single-goroutine row for every case.
 
 // caseRow is one case's outcome as a string: the payload JSON or the
 // endpoint body when it answered, REASON: message when it failed.
