@@ -47,6 +47,21 @@ final class AbiTests: XCTestCase {
         XCTAssertNoThrow(try AprvModule.bundled.get())
     }
 
+    /// Both choices are the package's, not WasmKit's defaults: mprotect bounds
+    /// checking would install a process-wide signal handler, and the
+    /// direct-threaded loop crashed the first guest call on macOS arm64 in a
+    /// release build (README, known issues). It runs only where this suite has
+    /// tested it, so each platform's run of this suite tests the loop it ships.
+    func testTheEngineChecksBoundsInSoftwareAndRunsTheDirectLoopOnlyOnLinuxX8664() throws {
+        let engine = try AprvModule.bundled.get().engine.configuration
+        XCTAssertEqual(engine.memoryBoundsChecking, .software)
+        #if os(Linux) && arch(x86_64)
+            XCTAssertEqual(engine.threadingModel, .direct)
+        #else
+            XCTAssertEqual(engine.threadingModel, .token)
+        #endif
+    }
+
     func testInitWithNoRootsAcceptsAndASecondInitTraps() throws {
         let guest = try initialized()
         assertTraps({ try guest.initialize(Config.initJson([])) }, "a second init")

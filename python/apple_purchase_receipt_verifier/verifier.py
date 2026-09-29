@@ -53,10 +53,10 @@ class Verifier:
     under a millisecond.
 
     :raises TypeError: if ``config`` is not a :class:`~.config.Config`
-    :raises ValueError: if ``config.roots`` is empty (a verifier with no roots
-        would answer ``UNTRUSTED_CHAIN`` to everything and nobody would notice
-        until production), or if the module refuses a root, for example one
-        that is not a certificate
+    :raises ValueError: if ``config.roots`` is an empty collection rather than
+        ``None`` (a verifier with no roots would answer ``UNTRUSTED_CHAIN`` to
+        everything and nobody would notice until production), or if the
+        module refuses a root, for example one that is not a certificate
     :raises RuntimeError: if the bundled module cannot be started; an ABI
         mismatch is a ``RuntimeError`` naming the ABI version expected
     """
@@ -69,12 +69,12 @@ class Verifier:
     def _setup(self, config: Config, runtime: "Callable[[], _host.Runtime]") -> None:
         if not isinstance(config, Config):
             raise TypeError("config must be a Config")
-        if not config.roots:
+        if config.roots is not None and not config.roots:
             raise ValueError("config.roots must not be empty")
         self._clock = config.clock
         try:
             self._pool = _host.Pool(
-                runtime(), _wire.init_config(config.roots), _pool_size(), _wire.init_accepted
+                runtime(), _wire.init_config(config.roots or ()), _pool_size(), _wire.init_accepted
             )
             refusal = _wire.check_init(self._pool.init_answer)
         except _host.AbiMismatchError:

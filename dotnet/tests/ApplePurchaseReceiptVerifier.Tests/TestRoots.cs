@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using ApplePurchaseReceiptVerifier.Internal;
 
@@ -41,6 +42,47 @@ internal static class TestRoots
     /// <c>issued-by-root</c> too).
     /// </summary>
     internal static IReadOnlyList<string> RootFixtureIds => RootIds.Value;
+
+    /// <summary>
+    /// Apple's three published roots, read from the repository's <c>certs/</c>
+    /// for the tests that pass them explicitly. The library carries no copy:
+    /// its defaults are the roots compiled into the module.
+    /// </summary>
+    internal static IReadOnlyList<X509Certificate2> AppleRoots()
+    {
+        List<X509Certificate2> roots = new();
+        foreach (string name in AppleRootFiles)
+        {
+            roots.Add(Certificates.TryLoad(File.ReadAllBytes(Path.Combine(CertsDirectory(), name)))
+                ?? throw new InvalidOperationException($"harness error: certs/{name} is not a certificate"));
+        }
+
+        return roots;
+    }
+
+    /// <summary>The file names in <c>certs/</c>, in a fixed order.</summary>
+    internal static readonly string[] AppleRootFiles =
+    {
+        "AppleIncRootCertificate.cer", "AppleRootCA-G2.cer", "AppleRootCA-G3.cer",
+    };
+
+    /// <summary>The repository's <c>certs/</c> directory, found by walking up from the test binary.</summary>
+    internal static string CertsDirectory()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            string candidate = Path.Combine(directory.FullName, "certs");
+            if (File.Exists(Path.Combine(candidate, "AppleRootCA-G3.cer")))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("could not locate the repository certs/ directory");
+    }
 
     /// <summary>A certificate from the fixture registry.</summary>
     internal static X509Certificate2 FixtureCertificate(string id) =>

@@ -1,0 +1,9 @@
+verdict      bitstring/openssl-raw-join
+    core: verified
+    java: MALFORMED: receipt has trailing or unparseable bytes
+verdict      bitstring/x690-two-segments
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: verified
+summary: 3 rows; 1 same, 2 verdict; 2 not recorded in R20; 0 recorded rows now agree
+NOT RECORDED bitstring/openssl-raw-join
+NOT RECORDED bitstring/x690-two-segments

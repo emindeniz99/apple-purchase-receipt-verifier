@@ -101,22 +101,17 @@ func Example_errorHandling() {
 }
 
 func Example_customTrustAnchors() {
-	// Anchors always come from the Config. AppleRoots() is what
-	// DefaultConfig uses, not the only option: an integrator running
-	// their own root rotation pipeline passes their own certificates via
+	// Anchors always come from the Config. DefaultConfig trusts the three
+	// published Apple roots compiled into the verification module, so it
+	// names none of its own: Roots() is nil. An integrator running their
+	// own root rotation pipeline passes their own certificates via
 	// ConfigOptions.Roots, and nothing in this library ever consults the
 	// operating system trust store.
-	anchors := applereceipt.AppleRoots()
-	fmt.Println(len(anchors), "pinned Apple roots")
-	for _, anchor := range anchors {
-		fmt.Println(anchor.Subject.CommonName)
-	}
+	defaults := applereceipt.DefaultConfig()
+	fmt.Println("the defaults use the module's Apple roots:", defaults.Roots() == nil)
 
 	// Output:
-	// 3 pinned Apple roots
-	// Apple Root CA
-	// Apple Root CA - G2
-	// Apple Root CA - G3
+	// the defaults use the module's Apple roots: true
 }
 
 // Stand-ins so the examples above read like calling code rather than like

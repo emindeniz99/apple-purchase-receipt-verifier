@@ -29,7 +29,7 @@ changes `node/` now needs there and in the root documents.
 | `node-runtimes-web` | Delete: the `/web` entry point runs the same module as `.`, and every runtime leg above smokes both entry points. The `test:runtimes:web` script is gone |
 | `node-runtimes-fastly` | Delete (R5): Fastly Compute runs no WebAssembly. The `test:runtimes:fastly` script and the `@fastly/js-compute` dev dependency are gone |
 | `node-fuzz` | Delete: `node/fuzz/` fuzzed the JavaScript DER, CMS and JWS readers, which are gone. The core's own fuzz jobs cover the parser now. Also drop the `/node/fuzz` entry in `.github/dependabot.yml` and `node/fuzz/**` in `.github/codeql/codeql-config.yml` |
-| `node-roots-generated` | Keep until Phase 7, as the lane brief says. `src/roots-data.ts` is excluded from the TypeScript build and no longer ships |
+| `node-roots-generated` | Deleted in Phase 7 (below) |
 | `node-lint` | Unchanged. Its "link bench/bench.mjs" step still works: the bench no longer imports `decodeReceiptBase64` |
 | new `node-browsers` | `npm ci --ignore-scripts && npm i --no-save playwright@1.56.1 && npx playwright install --with-deps chromium firefox webkit && npm run build && npm run runtime:browser -- chromium firefox webkit`. Only Chromium ran in the lane's container (`/opt/pw-browsers` has no Firefox or WebKit); Firefox and WebKit are untested |
 
@@ -225,3 +225,15 @@ the re-run. Chromium 141 and Firefox 142 passed in the same job.
   a recurrence five times as likely to show up with the diagnostics above,
   at about 5 s per extra load. If it recurs, the message and memory sizes
   decide between a JavaScriptCore report upstream and a module fault.
+
+## Phase 7
+
+`node/certs`, `src/roots-data.ts` and `scripts/gen-roots.mjs` are gone:
+Apple's three roots live only in the module, and `defaultConfig().roots`
+was already `null`. The tarball never carried them (`files` is `dist` and
+`licenses`).
+
+| Where | Change |
+|---|---|
+| `ci.yml` `node-roots-generated` | delete the job: there is no generator and no generated file left. |
+| `one-implementation` | nothing: `node/src` has no allowlist entry and no hit. |

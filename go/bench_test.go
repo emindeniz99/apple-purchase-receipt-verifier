@@ -29,7 +29,7 @@ func BenchmarkNewVerifier(b *testing.B) {
 }
 
 func BenchmarkVerifyReceiptG5(b *testing.B) {
-	verifier := benchVerifier(b, applereceipt.AppleRoots())
+	verifier := benchVerifier(b, nil)
 	input := fixtureString(b, "public-receipt-sandbox-g5")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -41,7 +41,7 @@ func BenchmarkVerifyReceiptG5(b *testing.B) {
 }
 
 func BenchmarkVerifyReceiptG5Parallel(b *testing.B) {
-	verifier := benchVerifier(b, applereceipt.AppleRoots())
+	verifier := benchVerifier(b, nil)
 	input := fixtureString(b, "public-receipt-sandbox-g5")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -83,7 +83,7 @@ func BenchmarkVerifySignedDataParallel(b *testing.B) {
 }
 
 func BenchmarkVerifyReceiptEndpoint(b *testing.B) {
-	verifier := benchVerifier(b, applereceipt.AppleRoots())
+	verifier := benchVerifier(b, nil)
 	body := `{"receipt-data":"` + fixtureString(b, "public-receipt-sandbox-g5") + `"}`
 	b.ReportAllocs()
 	b.ResetTimer()

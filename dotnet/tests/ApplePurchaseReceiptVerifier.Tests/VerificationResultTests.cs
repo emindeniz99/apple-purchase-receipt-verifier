@@ -19,7 +19,7 @@ public class VerificationResultTests
 
     private static readonly Lazy<IVerifier> EveryRoot = new(() =>
     {
-        List<X509Certificate2> roots = AppleRootCertificates.Bundled().ToList();
+        List<X509Certificate2> roots = TestRoots.AppleRoots().ToList();
         roots.AddRange(TestRoots.RootFixtureIds.Select(TestRoots.FixtureCertificate));
         return TestRoots.Verifier(roots, Now);
     });

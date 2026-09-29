@@ -41,12 +41,14 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from apple_purchase_receipt_verifier import Config, Reason, Verifier, _host, default_roots
+from apple_purchase_receipt_verifier import Config, Reason, Verifier, _host
 
-import _support  # noqa: F401  (puts the module APRV_WASM names in place, for tooling)
+import _support  # also puts the module APRV_WASM names in place, for tooling
 
 
-def verifier(roots: "Sequence[bytes]") -> Verifier:
+def verifier(roots: "Sequence[bytes] | None") -> Verifier:
+    """Anchored on ``roots``; ``None`` is the defaults, the Apple roots
+    compiled into the module."""
     return Verifier(Config.create(roots=roots))
 
 
@@ -191,8 +193,8 @@ class ProcessTrustStoreTest(unittest.TestCase):
         result = verifier([root]).verify_receipt(text)
         self.assertTrue(result.verified, result.failure)
 
-        with self.subTest(anchors="the bundled Apple roots"):
-            result = verifier(default_roots()).verify_receipt(text)
+        with self.subTest(anchors="the module's Apple roots"):
+            result = verifier(None).verify_receipt(text)
             assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
 
     def test_a_jws_ca_the_process_trusts_is_still_not_an_anchor(self) -> None:
@@ -200,7 +202,7 @@ class ProcessTrustStoreTest(unittest.TestCase):
         jws = fixture_text("generated", "transaction.jws")
         self.plant(root)
 
-        result = verifier(default_roots()).verify_signed_data(jws)
+        result = verifier(None).verify_signed_data(jws)
         assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
 
     def test_the_jws_root_the_process_trusts_verifies_when_the_caller_passes_it(self) -> None:
@@ -239,7 +241,7 @@ class HostTrustStoreTest(unittest.TestCase):
 
         # And it gains nothing from sitting next to Apple's roots in the
         # caller's list.
-        result = verifier([public_root, *default_roots()]).verify_receipt(text)
+        result = verifier([public_root, *_support.apple_roots()]).verify_receipt(text)
         assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
 
     def test_the_host_roots_do_not_verify_genuine_apple_material(self) -> None:
@@ -248,18 +250,11 @@ class HostTrustStoreTest(unittest.TestCase):
         # is refused, because none of those roots issued it.
         genuine = fixture_text("public-receipts", "receipt-sandbox-g5.b64")
 
-        result = verifier(default_roots()).verify_receipt(genuine)
+        result = verifier(None).verify_receipt(genuine)
         self.assertTrue(result.verified, result.failure)
 
         result = verifier(self.host_roots).verify_receipt(genuine)
         assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
-
-    def test_no_bundled_anchor_came_from_this_machines_trust_store(self) -> None:
-        # If the package ever started folding the host's roots into its own
-        # set, this is the first thing that would change.
-        host = set(self.host_roots)
-        for index, anchor in enumerate(default_roots()):
-            self.assertNotIn(anchor, host, f"bundled root {index} came from the host trust store")
 
 
 class AnchorsReachTheModuleUnchangedTest(unittest.TestCase):
@@ -270,7 +265,7 @@ class AnchorsReachTheModuleUnchangedTest(unittest.TestCase):
     *added*: an anchor list is not augmented, reordered, or substituted
     between the constructor and the module."""
 
-    def sent_to_init(self, roots: "Sequence[bytes]") -> "list[bytes]":
+    def sent_to_init(self, roots: "Sequence[bytes] | None") -> "list[bytes]":
         seen: list[bytes] = []
         real = _host.Pool
 
@@ -290,9 +285,12 @@ class AnchorsReachTheModuleUnchangedTest(unittest.TestCase):
         self.assertEqual(passed, self.sent_to_init(passed))
         self.assertEqual(passed[::-1], self.sent_to_init(passed[::-1]))
 
-    def test_the_default_list_is_the_three_bundled_roots_and_nothing_else(self) -> None:
-        self.assertEqual(list(default_roots()), self.sent_to_init(Config.defaults().roots))
-        self.assertEqual(3, len(default_roots()))
+    def test_the_defaults_send_an_empty_list_and_nothing_else(self) -> None:
+        # Empty means the three Apple roots compiled into the module. The
+        # package carries no copy of them, so nothing from this machine, or
+        # anywhere else, can be folded into the default set on the way.
+        self.assertIsNone(Config.defaults().roots)
+        self.assertEqual([], self.sent_to_init(Config.defaults().roots))
 
     def test_a_duplicate_is_dropped_by_config_and_nothing_is_added(self) -> None:
         one = cert("generated", "jws-root.der")

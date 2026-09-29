@@ -35,8 +35,8 @@
 //
 // Verification is entirely offline and anchored only to the certificates
 // in the [Config] — in production, the three published Apple roots that
-// [AppleRoots] returns and [DefaultConfig] uses, compiled into the
-// binary. The operating system trust store is never read. There is no
+// [DefaultConfig] uses, compiled into the verification module. The
+// operating system trust store is never read. There is no
 // OCSP, no CRL, no AIA fetch and no runtime root download: the module
 // imports neither net nor net/http, and CI greps for the symbols that
 // would reintroduce either (PLAN.md D12).

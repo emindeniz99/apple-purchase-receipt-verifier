@@ -11,7 +11,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
 /**
- * The 338 cases over HTTP against a locally started `aprv serve`. The
+ * The shared cases over HTTP against a locally started `aprv serve`. The
  * server's roots are fixed at its start, so one server runs per distinct
  * root set (the case's roots, or the built-in ones), and `Verifier::create`
  * checks each against the fingerprints `GET /v1/info` reports.
@@ -26,10 +26,10 @@ final class ConformanceHttpTest extends ConformanceBase
 
     protected static function verifierFor(Config $config): Verifier
     {
-        $key = implode("\n", array_map('base64_encode', $config->roots));
+        $key = implode("\n", array_map('base64_encode', $config->roots ?? []));
         if (!isset(self::$servers[$key])) {
             $file = null;
-            if ($config->roots !== []) {
+            if ($config->roots !== null) {
                 $file = (string) tempnam(sys_get_temp_dir(), 'aprv-roots-');
                 file_put_contents($file, $key . "\n");
                 self::$rootsFiles[] = $file;

@@ -25,10 +25,15 @@
  * or verifies is therefore ERL_NIF_DIRTY_JOB_CPU_BOUND, which runs it on a
  * dirty scheduler instead.
  *
- * STRINGS. The ABI takes NUL-terminated char *; an Erlang binary is a length
- * and bytes. Each one is copied into a NUL-terminated buffer for the call,
- * so a binary holding an embedded NUL is truncated at it, exactly as it
- * would be for a C caller.
+ * BYTES. An Erlang binary is a length and bytes, and so is the input of the
+ * ABI's _bytes calls, which this shim uses: aprv_verify_receipt_bytes,
+ * aprv_verify_signed_data_bytes and aprv_verify_receipt_endpoint_bytes.
+ * Each binary is passed as it is, without a copy, so a binary holding a NUL
+ * or bytes that are not UTF-8 gets the verdict aprv.wasm gives it, as it
+ * would from every other host. On a verdict (status below 100) the JSON is
+ * the document aprv.wasm answers, {"verified":true,"payload":...} or
+ * {"verified":false,"reason":...,"message":...}; on a mistake in the call
+ * (100 and above) there is none and the binary handed back is empty.
  *
  * TWO SENTINELS mirror the ABI's own: an empty roots list means "the bundled
  * Apple roots" (NULL, NULL, 0), and a nil clock means "read the system
@@ -68,21 +73,6 @@ static AprvVerifier *handle_of(ErlNifEnv *env, ERL_NIF_TERM term) {
 
 /* --- conversions -------------------------------------------------------- */
 
-/* A NUL-terminated copy of a binary, released with enif_free. */
-static char *cstring(ErlNifEnv *env, ERL_NIF_TERM term) {
-  ErlNifBinary binary;
-  if (!enif_inspect_binary(env, term, &binary)) {
-    return NULL;
-  }
-  char *copy = enif_alloc(binary.size + 1);
-  if (copy == NULL) {
-    return NULL;
-  }
-  memcpy(copy, binary.data, binary.size);
-  copy[binary.size] = '\0';
-  return copy;
-}
-
 static ERL_NIF_TERM binary_of(ErlNifEnv *env, const char *text) {
   size_t length = text == NULL ? 0 : strlen(text);
   ERL_NIF_TERM term;
@@ -93,8 +83,9 @@ static ERL_NIF_TERM binary_of(ErlNifEnv *env, const char *text) {
   return term;
 }
 
-/* `{:ok, json}` on APRV_REASON_OK, `{:error, status, json}` otherwise. The
- * Rust allocation is freed here either way. */
+/* `{:ok, json}` on APRV_REASON_OK, `{:error, status, json}` otherwise, with
+ * an empty binary when the ABI answered no JSON. The Rust allocation is
+ * freed here either way. */
 static ERL_NIF_TERM make_result(ErlNifEnv *env, int32_t status, char *json) {
   ERL_NIF_TERM payload = binary_of(env, json);
   aprv_string_free(json);
@@ -193,52 +184,46 @@ static ERL_NIF_TERM nif_verifier_new(ErlNifEnv *env, int argc, const ERL_NIF_TER
   return enif_make_tuple2(env, atom_ok, term);
 }
 
-typedef int32_t (*verify_call)(const AprvVerifier *, const char *, AprvResult *);
+typedef int32_t (*verify_call)(const AprvVerifier *, const uint8_t *, size_t, AprvResult *);
 
 static ERL_NIF_TERM verify(ErlNifEnv *env, const ERL_NIF_TERM argv[], verify_call call) {
   AprvVerifier *verifier = handle_of(env, argv[0]);
-  if (verifier == NULL) {
-    return enif_make_badarg(env);
-  }
-  char *input = cstring(env, argv[1]);
-  if (input == NULL) {
+  ErlNifBinary input;
+  if (verifier == NULL || !enif_inspect_binary(env, argv[1], &input)) {
     return enif_make_badarg(env);
   }
   AprvResult result = {0, NULL};
-  call(verifier, input, &result);
-  enif_free(input);
+  call(verifier, input.data, input.size, &result);
   return make_result(env, result.status, result.json);
 }
 
 static ERL_NIF_TERM nif_verify_receipt(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
   (void)argc;
-  return verify(env, argv, aprv_verify_receipt);
+  return verify(env, argv, aprv_verify_receipt_bytes);
 }
 
 static ERL_NIF_TERM nif_verify_signed_data(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
   (void)argc;
-  return verify(env, argv, aprv_verify_signed_data);
+  return verify(env, argv, aprv_verify_signed_data_bytes);
 }
 
 /* The endpoint never reports a verdict through the return value: every
- * verdict is the `status` field inside the body it answers. A non-zero
- * return means the call itself was malformed, and *response is untouched. */
+ * verdict is the `status` field inside the body it answers, a body that is
+ * not UTF-8 or holds a NUL included. A non-zero return means the call itself
+ * was malformed, and *response is untouched. */
 static ERL_NIF_TERM nif_verify_receipt_endpoint(ErlNifEnv *env, int argc,
                                                 const ERL_NIF_TERM argv[]) {
   (void)argc;
   AprvVerifier *verifier = handle_of(env, argv[0]);
   unsigned int environment = 0;
-  if (verifier == NULL || !enif_get_uint(env, argv[1], &environment)) {
-    return enif_make_badarg(env);
-  }
-  char *request = cstring(env, argv[2]);
-  if (request == NULL) {
+  ErlNifBinary request;
+  if (verifier == NULL || !enif_get_uint(env, argv[1], &environment) ||
+      !enif_inspect_binary(env, argv[2], &request)) {
     return enif_make_badarg(env);
   }
   char *response = NULL;
-  int32_t status =
-      aprv_verify_receipt_endpoint(verifier, (uint32_t)environment, request, &response);
-  enif_free(request);
+  int32_t status = aprv_verify_receipt_endpoint_bytes(verifier, (uint32_t)environment,
+                                                      request.data, request.size, &response);
   if (status != APRV_REASON_OK) {
     return enif_make_tuple2(env, atom_error, enif_make_int(env, status));
   }

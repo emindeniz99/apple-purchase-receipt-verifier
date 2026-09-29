@@ -80,7 +80,7 @@ final class HttpTransportTest extends TestCase
             'default' => ['status' => 200, 'body' => $answer],
         ]);
         $transport = new HttpTransport($server->url . '/', 'sekret');
-        $transport->open([]);
+        $transport->open(null);
         $bytes = "a\0b\xff\xfe\r\n";
 
         foreach ([
@@ -110,7 +110,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
         $transport = new HttpTransport($server->url);
-        $transport->open([]);
+        $transport->open(null);
         $transport->call(Operation::Receipt, 'x', 1);
 
         foreach ($server->requests() as $request) {
@@ -124,7 +124,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
         $transport = new HttpTransport($server->url);
-        $transport->open([]);
+        $transport->open(null);
         $handle = new ReflectionProperty($transport, 'curl');
 
         $first = $handle->getValue($transport);
@@ -161,7 +161,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => $response]);
         $transport = new HttpTransport($server->url);
-        $transport->open([]);
+        $transport->open(null);
 
         $this->expectException($exception);
         $transport->call(Operation::Receipt, 'x', 1);
@@ -208,7 +208,7 @@ final class HttpTransportTest extends TestCase
         $server->stop();
 
         $this->expectException(ServerProcessException::class);
-        (new HttpTransport($url, timeoutSeconds: 3))->open([]);
+        (new HttpTransport($url, timeoutSeconds: 3))->open(null);
     }
 
     public function testARefusedTokenIsAnArgumentErrorAtCreate(): void
@@ -217,7 +217,7 @@ final class HttpTransportTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('token');
-        (new HttpTransport($server->url, 'wrong'))->open([]);
+        (new HttpTransport($server->url, 'wrong'))->open(null);
     }
 
     public function testAServerThatIsNotAprvFailsCreate(): void
@@ -230,7 +230,7 @@ final class HttpTransportTest extends TestCase
         ] as [$info]) {
             $server = $this->server([self::INFO_PATH => $info]);
             try {
-                (new HttpTransport($server->url))->open([]);
+                (new HttpTransport($server->url))->open(null);
                 self::fail('create must refuse ' . json_encode($info));
             } catch (RuntimeException $e) {
                 // An ABI or shape problem is a RuntimeException, not caller misuse.
@@ -245,7 +245,7 @@ final class HttpTransportTest extends TestCase
         $server = $this->server([self::INFO_PATH => self::info('defaults', [], 'aprv:verifier@2.0.0')]);
 
         try {
-            (new HttpTransport($server->url))->open([]);
+            (new HttpTransport($server->url))->open(null);
             self::fail('an ABI mismatch is a hard failure');
         } catch (RuntimeException $e) {
             self::assertStringContainsString('aprv:verifier@2.0.0', $e->getMessage());
@@ -253,7 +253,7 @@ final class HttpTransportTest extends TestCase
         }
     }
 
-    /** @return iterable<string, array{list<string>, array<string, mixed>, bool}> */
+    /** @return iterable<string, array{list<string>|null, array<string, mixed>, bool}> */
     public static function rootsProvider(): iterable
     {
         $a = "\x30\x01\x0a";
@@ -261,8 +261,8 @@ final class HttpTransportTest extends TestCase
         $fa = hash('sha256', $a);
         $fb = hash('sha256', $b);
 
-        yield 'built-in roots on a server with the built-in roots' => [[], self::info('defaults'), true];
-        yield 'built-in roots on a server with custom roots' => [[], self::info('configured', [$fa]), false];
+        yield 'built-in roots on a server with the built-in roots' => [null, self::info('defaults'), true];
+        yield 'built-in roots on a server with custom roots' => [null, self::info('configured', [$fa]), false];
         yield 'custom roots on a server with the built-in roots' => [[$a], self::info('defaults'), false];
         yield 'the same roots' => [[$a, $b], self::info('configured', [$fa, $fb]), true];
         yield 'the same roots in another order' => [[$b, $a], self::info('configured', [$fa, $fb]), true];
@@ -274,11 +274,11 @@ final class HttpTransportTest extends TestCase
     }
 
     /**
-     * @param list<string> $roots
+     * @param list<string>|null $roots
      * @param array<string, mixed> $info
      */
     #[DataProvider('rootsProvider')]
-    public function testTheServersRootsMustBeExactlyTheConfigsRoots(array $roots, array $info, bool $accepted): void
+    public function testTheServersRootsMustBeExactlyTheConfigsRoots(?array $roots, array $info, bool $accepted): void
     {
         $server = $this->server([self::INFO_PATH => $info]);
         $transport = new HttpTransport($server->url);
@@ -302,10 +302,10 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info()]);
         $transport = new HttpTransport($server->url);
-        $transport->open([]);
+        $transport->open(null);
 
         $this->expectException(LogicException::class);
-        $transport->open([]);
+        $transport->open(null);
     }
 
     /** @return iterable<string, array{string, string|null}> */
@@ -392,7 +392,7 @@ final class HttpTransportTest extends TestCase
     public function testARealServerWithCustomRootsRefusesADefaultConfigAndAcceptsItsOwn(): void
     {
         // A server refuses roots that are not certificates at its own start, so the root is a real one.
-        $certificate = (string) file_get_contents(__DIR__ . '/../certs/AppleRootCA-G3.cer');
+        $certificate = (string) file_get_contents(__DIR__ . '/../../certs/AppleRootCA-G3.cer');
         $file = (string) tempnam(sys_get_temp_dir(), 'aprv-roots-');
         file_put_contents($file, base64_encode($certificate) . "\n");
         $server = Aprv::startServer($file);

@@ -145,7 +145,12 @@ pub fn verify_path(
 /// does not try another when the signature then fails. With every anchor
 /// in one store, the order of the caller's list, or an anchor that merely
 /// carries an intermediate's name, would decide whether a path verifies. A
-/// store of one anchor leaves OpenSSL nothing to choose. The candidates are
+/// store of one anchor leaves OpenSSL nothing to choose among anchors. The
+/// same lookup runs over `untrusted`, where it also takes the first match
+/// and never backtracks, so `untrusted` is first narrowed to the
+/// certificates that sign the target or one another up the path
+/// ([`linked_above`]): a same-named certificate that signed nothing on the
+/// path is never offered to OpenSSL, whatever its place. The candidates are
 /// the anchors `X509_check_issued` pairs with the target or a certificate
 /// of `untrusted` (name, key identifiers, `keyUsage`; no key is used to
 /// pick them), plus an anchor that is one of those certificates: at most
@@ -163,6 +168,8 @@ fn run(
     at_secs: i64,
     max_intermediates: u32,
 ) -> Option<PathOutcome> {
+    let linked = linked_above(target, untrusted, max_intermediates);
+    let untrusted: &[Certificate] = &linked;
     let candidates: Vec<&Certificate> = anchors
         .iter()
         .filter(|anchor| {
@@ -203,6 +210,58 @@ fn run(
         }
     }
     first_linked.or(first)
+}
+
+/// The certificates of `untrusted` that signed the target, or signed a
+/// certificate already linked this way, under the name it names as its
+/// issuer ([`Certificate::signed_by`]), found in at most
+/// `max_intermediates` + 1 rounds and returned in their order in
+/// `untrusted`. An issuer's `keyUsage` is not judged here: OpenSSL's lookup
+/// does not judge it either, and reports it on the path (not a CA).
+///
+/// OpenSSL's `find_issuer` takes the first certificate of `untrusted` that
+/// `X509_check_issued` pairs with the current one, and does not try another
+/// when that signature then fails. Among certificates without key
+/// identifiers, a same-named certificate placed first, from another pinned
+/// root's tree or from the same one, would decide the path; narrowed to the
+/// certificates that really sign the path, the bag's order no longer does.
+/// A key certified under two names stays: the per-anchor runs of [`run`]
+/// settle that.
+///
+/// Only keys of `untrusted` are used, which the caller has authenticated
+/// top-down. Each linked certificate is checked once against the
+/// certificates not yet linked, so the work is at most n × (n + 1) name
+/// comparisons, each followed by a signature check only on a name match,
+/// for the n certificates of `untrusted`, which the certificate cap bounds
+/// (10 for a receipt, 1 for a JWS).
+fn linked_above(
+    target: &Certificate,
+    untrusted: &[Certificate],
+    max_intermediates: u32,
+) -> Vec<Certificate> {
+    let mut linked: Vec<&Certificate> = Vec::new();
+    let mut frontier: Vec<&Certificate> = vec![target];
+    for _ in 0..=max_intermediates {
+        let next: Vec<&Certificate> = untrusted
+            .iter()
+            .filter(|candidate| !linked.iter().any(|seen| seen.same_as(candidate)))
+            .filter(|candidate| {
+                frontier
+                    .iter()
+                    .any(|below| !below.same_as(candidate) && below.signed_by(candidate))
+            })
+            .collect();
+        if next.is_empty() {
+            break;
+        }
+        linked.extend(next.iter().copied());
+        frontier = next;
+    }
+    untrusted
+        .iter()
+        .filter(|candidate| linked.iter().any(|seen| seen.same_as(candidate)))
+        .cloned()
+        .collect()
 }
 
 /// Whether OpenSSL's issuer lookup would pair `issuer` with `certificate`

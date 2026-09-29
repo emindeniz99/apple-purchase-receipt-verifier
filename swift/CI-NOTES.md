@@ -38,8 +38,8 @@ secret.
   from the Node host's `node/licenses/`, and ships as a resource.
 - The hand-written verifier is gone. The last commit that has it is the
   lane's branch point `9ffbf70`; use it as the oracle and as the source of
-  the port-only tests (Phase 7 step 1). `swift/Sources/.../certs` stays for
-  `check-cert-copies.mjs` (Phase 7 deletes it); the manifest excludes it.
+  the port-only tests (Phase 7 step 1). `swift/Sources/.../certs` is gone
+  since Phase 7 (below).
 
 ## Tests need a release build
 
@@ -72,7 +72,7 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 | `release-please.yml` `refresh-wasm-copies` | **must also rewrite each copy's `.sha256`**: today it copies `aprv.wasm` over every committed copy and leaves `aprv.wasm.sha256` stale, which breaks both the Go and the Swift package on the release branch. For each copy `f`: `printf '%s  aprv.wasm\n' "$WASM_SHA256" > "$f.sha256"`, and add those files to the commit. |
 | `one-implementation` | add `swift` to `--enforce`. `swift/Sources` imports only Foundation and WasmKit now; the SHA-256 that checks the module is 60 lines of Swift in `Host/SHA256.swift` (no crypto module), which the gate allows by design. `SourceIsolationTests` holds the same rule inside the test suite. |
 | `dependabot.yml` | the three `swift` entries stay; the swift-crypto/-asn1/-certificates history goes with them. Add an ignore for WasmKit `>= 0.5.0` only if 0.5 raises a floor; 0.4.x patch releases should arrive (0.4.1 was a security fix). |
-| `certs` job (`check-cert-copies.mjs`) | unchanged: the copy is still in the tree. |
+| `certs` job (`check-cert-copies.mjs`) | the Swift copy is gone in Phase 7 (below); the job needs no change. |
 
 ## The gate, in one command
 
@@ -108,3 +108,41 @@ plan's numbers, and the JWS is at the 10 per second per core floor on it.
 `APRV_BENCH_SECONDS`) prints start-up (hash and parse, instance, init, first
 and second g5) and g5 and JWS throughput through the public API on one and
 four threads. Not a CI job; the numbers are in the README and the hand-back.
+
+## Phase 7
+
+`swift/Sources/ApplePurchaseReceiptVerifier/certs` is gone, with the
+`exclude: ["certs"]` line in the root `Package.swift`: the library had not
+read it since the WasmKit host landed (`Config.defaults().roots` is `nil`,
+the module's compiled-in roots). The README's SwiftPM line now reads
+`from: "0.8.0"`, the first release built this way.
+
+| Where | Change |
+|---|---|
+| `ci.yml` | nothing: no job generated or diffed the Swift copy beyond `check-cert-copies.mjs`, which no longer finds it. |
+| `one-implementation` | nothing: `swift/Sources` has no allowlist entry and no hit. |
+
+
+## macOS arm64: the interpreter loop
+
+The first `swift-macos` run (macos-26, Xcode 26.6, Swift 6.3.3, WasmKit
+0.4.1, release build) died in the first test: `Execution.swift:470`, WasmKit's
+`runRoot`, reported `-[_ContiguousArrayStorage<ValueType> domain]:
+unrecognized selector`, then signal 11. An `Error` value that was really an
+array of WasmKit's `ValueType` reached code that bridged it to `NSError`.
+The failing test's own steps are not involved: it was the first guest call
+of the process, and a refused configuration is a JSON answer, not a thrown
+error or a trap. A trapped instance is never called again (`Guest.dead`).
+
+The same release build passes on Linux x86-64, and so does a release build
+with AddressSanitizer (`--sanitize=address`, `AbiTests`: no memory error).
+WasmKit's own CI runs its macOS tests in debug only. The one place WasmKit
+turns a raw pointer into a Swift `Error` is its direct-threaded loop
+(`runDirectThreaded`: `unsafeBitCast(rawError, to: Error.self)` after the C
+handlers return), the default on x86-64 and arm64. The package now picks
+the token-threaded loop, which is plain Swift, everywhere except Linux
+x86-64 (`AprvModule.threadingModel`), and a test pins the choice per
+platform. `MeasurementTests.testSpeed` with `APRV_BENCH_THREADING` compares
+the two loops on one machine: on Linux x86-64 the token loop verified g5 at
+24 per CPU-second against 48 and the JWS at 6 against 10. Whether the token
+loop clears macOS is shown by the next `swift-macos` run, not here.

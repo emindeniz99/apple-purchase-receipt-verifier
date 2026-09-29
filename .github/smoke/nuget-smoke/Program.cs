@@ -7,16 +7,11 @@ using ApplePurchaseReceiptVerifier;
 string receiptB64 = File.ReadAllText("receipt-sandbox-g5.b64").Trim();
 
 // The defaults trust the module's built-in Apple roots, so Config.Roots is
-// empty; AppleRootCertificates.Bundled() still lists Apple's three for a
-// caller who adds a root of their own.
+// empty; the package ships no copy of them.
 Config config = Config.Defaults();
 if (config.Roots.Count != 0)
 {
     throw new Exception($"expected the defaults to use the module's roots, got {config.Roots.Count} configured");
-}
-if (AppleRootCertificates.Bundled().Count != 3)
-{
-    throw new Exception($"expected three bundled Apple roots, got {AppleRootCertificates.Bundled().Count}");
 }
 IVerifier verifier = Verifier.Create(config);
 

@@ -1,8 +1,6 @@
 package applereceipt
 
 import (
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,7 +64,7 @@ func checkConfig(config *Config) error {
 	if config == nil {
 		return errors.New("applereceipt: config must not be nil")
 	}
-	if len(config.roots) == 0 {
+	if !config.builtin && len(config.roots) == 0 {
 		return errors.New("applereceipt: config has no trust anchors")
 	}
 	for _, root := range config.roots {
@@ -75,23 +73,6 @@ func checkConfig(config *Config) error {
 		}
 	}
 	return nil
-}
-
-// initConfig is init's argument: {"roots":["<base64 DER>", ...]}. An empty
-// list means the built-in Apple roots, which is what the default Config
-// sends.
-func initConfig(roots []*x509.Certificate, builtin bool) []byte {
-	encoded := []string{}
-	if !builtin {
-		for _, root := range roots {
-			encoded = append(encoded, base64.StdEncoding.EncodeToString(root.Raw))
-		}
-	}
-	// Marshal cannot fail on a list of strings.
-	out, _ := json.Marshal(struct {
-		Roots []string `json:"roots"`
-	}{encoded})
-	return out
 }
 
 // VerifyReceipt verifies a legacy PKCS#7 app receipt, given as the base64
