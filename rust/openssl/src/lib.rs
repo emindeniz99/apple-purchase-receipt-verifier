@@ -45,6 +45,7 @@
 
 mod certificate;
 mod cms;
+mod envelope;
 mod item;
 mod keys;
 mod path;
@@ -54,6 +55,7 @@ mod sys;
 
 pub use certificate::Certificate;
 pub use cms::{CmsError, SignedAttributes, SignedData, SignerNesting};
+pub use envelope::{envelope_members, EnvelopeMembers};
 pub use keys::keys_used_during;
 pub use path::{verify_path, PathOutcome, PathProblem, PathProblemKind};
 pub use signature::{sha256, verify_es256};

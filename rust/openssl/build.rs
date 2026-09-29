@@ -1,11 +1,12 @@
-//! Compiles `payload.c`, the receipt payload grammar as OpenSSL ASN.1
-//! templates, against the headers of the OpenSSL that openssl-sys links
+//! Compiles `payload.c` and `envelope.c`, the receipt payload grammar and
+//! a shallow CMS envelope as OpenSSL ASN.1 templates, against the headers of the OpenSSL that openssl-sys links
 //! (its `include` metadata), for the same target and with the C compiler
 //! the `cc` crate picks for it (`CC_<target>` and `CFLAGS_<target>` for
 //! wasm32-wasip1).
 
 fn main() {
     println!("cargo:rerun-if-changed=payload.c");
+    println!("cargo:rerun-if-changed=envelope.c");
     // The adapter is written and tested against OpenSSL 4.0: it calls 4.0
     // API (ASN1_BIT_STRING_get_length) and relies on 4.0's inclusive
     // notAfter. An older OpenSSL is refused here rather than linked and
@@ -30,6 +31,7 @@ fn main() {
     };
     cc::Build::new()
         .file("payload.c")
+        .file("envelope.c")
         .include(include)
         .warnings(true)
         .extra_warnings(true)

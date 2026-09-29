@@ -225,7 +225,7 @@ fn object_octets(object: &Asn1ObjectRef) -> Vec<u8> {
     // SAFETY: both calls only read the live object: OBJ_length is the
     // length of the encoding OBJ_get0_data points at, both owned by it.
     unsafe {
-        let length = usize::try_from(ffi::OBJ_length(object.as_ptr())).unwrap_or(0);
+        let length = ffi::OBJ_length(object.as_ptr());
         let data = ffi::OBJ_get0_data(object.as_ptr());
         if data.is_null() || length == 0 {
             Vec::new()

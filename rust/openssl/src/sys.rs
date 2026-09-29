@@ -1,5 +1,5 @@
 //! Declarations of public libcrypto functions that openssl-sys does not
-//! carry, and of the two template items `payload.c` defines. Nothing here
+//! carry, and of the template items `payload.c` and `envelope.c` define. Nothing here
 //! is called from outside this crate, and nothing outside the small safe
 //! wrappers in the sibling modules calls these.
 
@@ -18,12 +18,41 @@ pub(crate) const BIO_C_SET_MD: c_int = 111;
 pub(crate) const V_ASN1_UTF8STRING: c_int = 12;
 pub(crate) const V_ASN1_IA5STRING: c_int = 22;
 
+/// `V_ASN1_UNIVERSAL` and `V_ASN1_CONTEXT_SPECIFIC`, the class values
+/// `ASN1_get_object` reports (asn1.h).
+pub(crate) const V_ASN1_UNIVERSAL: c_int = 0x00;
+pub(crate) const V_ASN1_CONTEXT_SPECIFIC: c_int = 0x80;
+/// The bits of `ASN1_get_object`'s answer: a constructed encoding, an
+/// indefinite length, an error (`asn1.h`, `asn1_lib.c`).
+pub(crate) const V_ASN1_CONSTRUCTED: c_int = 0x20;
+pub(crate) const ASN1_GET_OBJECT_INDEFINITE: c_int = 0x01;
+pub(crate) const ASN1_GET_OBJECT_ERROR: c_int = 0x80;
+
 /// Opaque `ASN1_ITEM` (asn1t.h).
 pub(crate) enum ASN1_ITEM {}
 /// Opaque `CMS_SignerInfo` (cms.h).
 pub(crate) enum CMS_SignerInfo {}
 /// Opaque `STACK_OF(CMS_SignerInfo)`.
 pub(crate) enum stack_st_CMS_SignerInfo {}
+
+/// `APRV_SIGNED_DATA` as `envelope.c` declares it: six pointers, in
+/// declaration order. Only the three stacks are read.
+#[repr(C)]
+pub(crate) struct APRV_SIGNED_DATA {
+    pub(crate) version: *mut ffi::ASN1_TYPE,
+    pub(crate) digest_algorithms: *mut ffi::ASN1_TYPE,
+    pub(crate) encapsulated_content: *mut ffi::ASN1_TYPE,
+    pub(crate) certificates: *mut ffi::OPENSSL_STACK,
+    pub(crate) crls: *mut ffi::OPENSSL_STACK,
+    pub(crate) signer_infos: *mut ffi::OPENSSL_STACK,
+}
+
+/// `APRV_ENVELOPE` as `envelope.c` declares it.
+#[repr(C)]
+pub(crate) struct APRV_ENVELOPE {
+    pub(crate) content_type: *mut ffi::ASN1_OBJECT,
+    pub(crate) content: *mut APRV_SIGNED_DATA,
+}
 
 /// The verify callback of an `X509_STORE_CTX`.
 pub(crate) type VerifyCallback =
@@ -86,6 +115,13 @@ extern "C" {
         it: *const ASN1_ITEM,
     ) -> *mut ffi::ASN1_VALUE;
     pub(crate) fn ASN1_item_free(val: *mut ffi::ASN1_VALUE, it: *const ASN1_ITEM);
+    pub(crate) fn ASN1_get_object(
+        pp: *mut *const u8,
+        plength: *mut c_long,
+        ptag: *mut c_int,
+        pclass: *mut c_int,
+        omax: c_long,
+    ) -> c_int;
     pub(crate) fn ASN1_INTEGER_get_int64(out: *mut i64, a: *const ffi::ASN1_INTEGER) -> c_int;
     pub(crate) fn ASN1_OCTET_STRING_it() -> *const ASN1_ITEM;
     pub(crate) fn ASN1_INTEGER_it() -> *const ASN1_ITEM;
@@ -94,4 +130,6 @@ extern "C" {
     pub(crate) fn ASN1_SET_ANY_it() -> *const ASN1_ITEM;
     /// Defined by `payload.c`.
     pub(crate) fn APRV_RECEIPT_PAYLOAD_it() -> *const ASN1_ITEM;
+    /// Defined by `envelope.c`.
+    pub(crate) fn APRV_ENVELOPE_it() -> *const ASN1_ITEM;
 }

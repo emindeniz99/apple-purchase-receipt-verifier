@@ -10,6 +10,7 @@
 //! the unsigned `digestAlgorithms` set of the `SignedData`.
 
 use crate::certificate::Certificate;
+use crate::envelope::Envelope;
 use crate::item::{nesting_depth, nesting_depth_of};
 use crate::sys::{self, CMS_SignerInfo};
 use crate::{d2i_whole, drain_errors, init, keys};
@@ -36,6 +37,10 @@ pub enum CmsError {
     NoContent,
     /// No `SignerInfo`.
     NoSignerInfo,
+    /// The encapsulated content is a constructed `OCTET STRING` with a
+    /// chunk, at some depth, that is not an `OCTET STRING`. X.690 section
+    /// 8.7.3 allows no other; OpenSSL joins any universal chunk.
+    ForeignContentChunk,
 }
 
 impl core::fmt::Display for CmsError {
@@ -46,6 +51,9 @@ impl core::fmt::Display for CmsError {
             CmsError::NotSignedData => "not a CMS SignedData",
             CmsError::NoContent => "no encapsulated payload",
             CmsError::NoSignerInfo => "no signer info",
+            CmsError::ForeignContentChunk => {
+                "encapsulated payload has a chunk that is not an OCTET STRING"
+            }
         })
     }
 }
@@ -125,6 +133,13 @@ impl SignedData {
         let parsed = SignedData { cms, content };
         if parsed.signer_count() == 0 {
             return Err(CmsError::NoSignerInfo);
+        }
+        // The shallow grammar is looser than OpenSSL's in every member, so
+        // an envelope OpenSSL decoded that it does not is refused rather
+        // than left unchecked.
+        let envelope = Envelope::decode(der).ok_or(CmsError::Malformed)?;
+        if !envelope.content_chunks_are_octet_strings() {
+            return Err(CmsError::ForeignContentChunk);
         }
         Ok(parsed)
     }
@@ -233,6 +248,15 @@ impl SignedData {
     /// against the content; without, the signature over the content. The
     /// content is digested with the `SignerInfo`'s own `digestAlgorithm`.
     /// No chain, no store: the core has already judged the certificate.
+    ///
+    /// A `signatureAlgorithm` that names a hash (`sha256WithRSAEncryption`,
+    /// `ecdsa-with-SHA384`) must name that digest, or the answer is `false`
+    /// before the key is touched: a label that disagrees with what was
+    /// hashed is not one signature under two names. OpenSSL takes the hash
+    /// from `digestAlgorithm` alone and never compares the two, except for
+    /// RSASSA-PSS, whose parameters it checks itself. Key-type OIDs
+    /// (`rsaEncryption`, `id-ecPublicKey`) and OIDs OpenSSL does not know
+    /// name no hash.
     #[must_use]
     pub fn verify_signer(&mut self, index: usize, signer: &Certificate) -> bool {
         init();
@@ -240,7 +264,7 @@ impl SignedData {
             return false;
         };
         let md = signer_md(si);
-        if md.is_null() {
+        if md.is_null() || !signature_names_digest(si, md) {
             drain_errors();
             return false;
         }
@@ -384,13 +408,12 @@ pub(crate) fn string_octets(string: *const ffi::ASN1_STRING) -> Vec<u8> {
             ffi::ASN1_STRING_length(string),
         )
     };
-    match usize::try_from(length) {
-        // SAFETY: as above; the bytes are copied before the owner is freed.
-        Ok(length) if length > 0 && !data.is_null() => {
-            unsafe { std::slice::from_raw_parts(data, length) }.to_vec()
-        }
-        _ => Vec::new(),
+    let length = usize::try_from(length).unwrap_or(0);
+    if length == 0 || data.is_null() {
+        return Vec::new();
     }
+    // SAFETY: as above; the bytes are copied before the owner is freed.
+    unsafe { std::slice::from_raw_parts(data, length) }.to_vec()
 }
 
 /// `si`'s `digestAlgorithm` and `signatureAlgorithm`, borrowed from it.
@@ -443,6 +466,28 @@ fn signer_md(si: *mut CMS_SignerInfo) -> *const ffi::EVP_MD {
     }
     // SAFETY: returns a static method table or null.
     unsafe { ffi::EVP_get_digestbynid(nid) }
+}
+
+/// Whether `si`'s `signatureAlgorithm` names no hash, or names `md`'s.
+fn signature_names_digest(si: *mut CMS_SignerInfo, md: *const ffi::EVP_MD) -> bool {
+    let (_, signature) = algorithms(si);
+    if signature.is_null() {
+        return false;
+    }
+    let mut object: *const ffi::ASN1_OBJECT = ptr::null();
+    // SAFETY: `signature` is borrowed from the live SignerInfo; the call
+    // stores a borrowed pointer to its OID.
+    unsafe { ffi::X509_ALGOR_get0(&raw mut object, ptr::null_mut(), ptr::null_mut(), signature) };
+    // SAFETY: OBJ_obj2nid accepts null.
+    let nid = unsafe { ffi::OBJ_obj2nid(object) };
+    let (mut digest_nid, mut key_nid) = (ffi::NID_undef, ffi::NID_undef);
+    // SAFETY: a table lookup writing through two valid out-pointers; it
+    // answers 0 for a NID that is no signature algorithm (NID_undef too).
+    let names_one = unsafe { ffi::OBJ_find_sigid_algs(nid, &raw mut digest_nid, &raw mut key_nid) };
+    // SAFETY: `md` is a live method table (checked non-null by the caller).
+    names_one != 1
+        || digest_nid == ffi::NID_undef
+        || digest_nid == unsafe { ffi::EVP_MD_get_type(md) }
 }
 
 /// Signed attribute `position` of `si`, borrowed from it.

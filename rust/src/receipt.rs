@@ -9,7 +9,7 @@ use crate::receipt_payload::{
 };
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
-use aprv_openssl::{Certificate, SignedData};
+use aprv_openssl::{envelope_members, Certificate, SignedData};
 
 /// How many certificates a receipt may embed. Every embedded certificate is
 /// parsed and then tried as an issuer before anything about the receipt is
@@ -76,6 +76,21 @@ pub(crate) fn verify(
     payload
 }
 
+/// The `SignerInfo` and embedded-certificate bounds.
+fn within_member_bounds(signer_infos: usize, certificates: usize) -> Result<(), Failure> {
+    if signer_infos > MAX_SIGNER_INFOS {
+        return Err(malformed(format!(
+            "receipt carries {signer_infos} SignerInfos, more than the maximum of {MAX_SIGNER_INFOS}"
+        )));
+    }
+    if certificates > MAX_EMBEDDED_CERTIFICATES {
+        return Err(malformed(format!(
+            "receipt embeds {certificates} certificates, more than the maximum of {MAX_EMBEDDED_CERTIFICATES}"
+        )));
+    }
+    Ok(())
+}
+
 /// Every check up to and including a signature; returns the signed payload,
 /// not yet decoded.
 fn verify_signature(
@@ -83,24 +98,20 @@ fn verify_signature(
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<Vec<u8>, Failure> {
+    // Bounded first, from a shallow decode that keeps every member as its
+    // raw bytes: the full decode below builds each embedded certificate's
+    // public key, and an unverified receipt would otherwise get to make the
+    // caller pay for a thousand of them before a single one is judged or
+    // tried as an issuer. A blob without that shape is left to the full
+    // decode to name, and the bounds are checked again on what it found.
+    if let Some(members) = envelope_members(der) {
+        within_member_bounds(members.signer_infos, members.certificates)?;
+    }
     let mut cms = SignedData::parse(der)
         .map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
     let signer_count = cms.signer_count();
-    if signer_count > MAX_SIGNER_INFOS {
-        return Err(malformed(format!(
-            "receipt carries {signer_count} SignerInfos, more than the maximum of {MAX_SIGNER_INFOS}"
-        )));
-    }
-    // Bounded here, before a single embedded certificate is judged or tried
-    // as an issuer, all of which an unverified receipt would otherwise get
-    // to pay for out of the caller's CPU.
     let certificates = cms.certificates();
-    if certificates.len() > MAX_EMBEDDED_CERTIFICATES {
-        return Err(malformed(format!(
-            "receipt embeds {} certificates, more than the maximum of {MAX_EMBEDDED_CERTIFICATES}",
-            certificates.len()
-        )));
-    }
+    within_member_bounds(signer_count, certificates.len())?;
 
     // The ASN.1 depth bound, for the values OpenSSL keeps whole without
     // looking inside (attribute values, algorithm parameters): unsigned
