@@ -4,6 +4,7 @@
 //   CorpusRun probe FN CONFIG NOW ENV BASE64    one call, the module's answer on stdout
 //   CorpusRun startup                           compile, first instance, later instances, first call
 //   CorpusRun speed FN CALLS.jsonl ID SECONDS THREADS...   calls per second per thread count
+//   CorpusRun memory N                          resident and virtual size with N live instances
 //
 // `calls` takes the canonical-ABI calls files (docs/evidence/
 // 2026-09-29-canonical-abi-final/py/calls_bytes.py makes them) and writes rows in
@@ -46,6 +47,8 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
                     return Startup();
                 case "speed":
                     return Speed(args);
+                case "memory":
+                    return Memory(int.Parse(args[1], CultureInfo.InvariantCulture));
                 default:
                     Console.Error.WriteLine("unknown mode " + args[0]);
                     return 2;
@@ -212,6 +215,31 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
                     "compile_ms={0:F1} first_instance_with_init_ms={1:F1} later_instance_with_init_ms_median={2:F2} later_min={3:F2} later_max={4:F2} linear_memory_after_init_bytes={5}",
                     compile, firstInstance, later[later.Count / 2], later[0], later[later.Count - 1], first.MemoryBytes));
             first.Dispose();
+            return 0;
+        }
+
+        private static int Memory(int count)
+        {
+            Process self = Process.GetCurrentProcess();
+            AprvRuntime runtime = AprvRuntime.Shared;
+            self.Refresh();
+            Console.WriteLine(
+                string.Format(CultureInfo.InvariantCulture, "after compile: resident {0:F0} MiB, virtual {1:F0} MiB", self.WorkingSet64 / 1048576.0, self.VirtualMemorySize64 / 1048576.0));
+            List<AprvInstance> live = new List<AprvInstance>();
+            for (int i = 1; i <= count; i++)
+            {
+                AprvInstance instance = new AprvInstance(runtime);
+                instance.Init(Utf8.GetBytes("{}"));
+                live.Add(instance);
+                if (i == 1 || i == count || i % 8 == 0)
+                {
+                    self.Refresh();
+                    Console.WriteLine(
+                        string.Format(CultureInfo.InvariantCulture, "{0} instance(s): resident {1:F0} MiB, virtual {2:F0} MiB", i, self.WorkingSet64 / 1048576.0, self.VirtualMemorySize64 / 1048576.0));
+                }
+            }
+
+            GC.KeepAlive(live);
             return 0;
         }
 

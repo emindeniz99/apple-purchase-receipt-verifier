@@ -56,6 +56,34 @@ public class AbiTests
         Assert.Equal("{\"ok\":true}", braces.Init(Encoding.UTF8.GetBytes("{}")));
     }
 
+    /// <summary>
+    /// "Apple's roots plus mine" is all the DER passed to <c>init</c>: the three
+    /// published Apple roots given explicitly answer exactly what the built-in
+    /// ones do, and a fourth root of the caller's does not disturb them.
+    /// </summary>
+    [Fact]
+    public void AppleRootsPassedExplicitlyAnswerLikeTheBuiltInOnes()
+    {
+        System.Collections.Generic.List<string> roots = new();
+        foreach (System.Security.Cryptography.X509Certificates.X509Certificate2 root in AppleRootCertificates.Bundled())
+        {
+            roots.Add(Convert.ToBase64String(root.RawData));
+        }
+
+        byte[] apple = Encoding.UTF8.GetBytes("{\"roots\":[\"" + string.Join("\",\"", roots) + "\"]}");
+        roots.Add(Convert.ToBase64String(Fixtures070.Bytes("jws-root")));
+        byte[] applePlusMine = Encoding.UTF8.GetBytes("{\"roots\":[\"" + string.Join("\",\"", roots) + "\"]}");
+        long now = 1735689600000L;
+
+        using AprvInstance builtIn = Fresh(Encoding.UTF8.GetBytes("{}"));
+        using AprvInstance explicitApple = Fresh(apple);
+        using AprvInstance plusMine = Fresh(applePlusMine);
+
+        string expected = builtIn.VerifyReceipt(now, G5);
+        Assert.Equal(expected, explicitApple.VerifyReceipt(now, G5));
+        Assert.Equal(expected, plusMine.VerifyReceipt(now, G5));
+    }
+
     [Fact]
     public void AVerifyBeforeInitTraps()
     {
