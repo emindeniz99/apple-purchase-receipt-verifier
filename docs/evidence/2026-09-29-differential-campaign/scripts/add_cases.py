@@ -167,6 +167,17 @@ def inventory():
                         separators=(",", ":"))),
         21003, root="receipt-expired-root", tags=["negative", "clock", "validity-window"],
         clock="2020-06-01T00:00:00Z"))
+    cases.append({
+        "id": "endpoint/intro-offer-and-trial-flags-are-the-strings-true-and-false",
+        "description": "The receipt of receipt/integers-at-the-64-bit-edge through the endpoint: Apple's response renders an in-app purchase's is_in_intro_offer_period and is_trial_period as the strings \"true\" and \"false\", not JSON booleans; its flags of 2 and -1 are \"true\".",
+        "operation": "verifyReceiptEndpoint",
+        "input": {"fixture": "review-receipt-integer-edges"},
+        "config": {**roots("review-receipt-root"), "environment": "SANDBOX"},
+        "expected": {"fields": {"/status": 0,
+                                "/receipt/in_app/0/is_in_intro_offer_period": "true",
+                                "/receipt/in_app/0/is_trial_period": "true"}},
+        "tags": ["endpoint", "positive", "wire-format", *TAGS],
+    })
     cases.append(refusal(
         "receipt/pinned-clock-does-not-rescue-a-fresh-creation-date", "verifyReceipt",
         "The expired chain (valid 2020 to 2021) over a receipt created 2024-08-06, with the clock pinned inside the chain's window: the creation date is the chain instant whatever the clock says, so INVALID_CERTIFICATE.",
