@@ -170,36 +170,39 @@ fn a_wide_flat_structure_is_refused_at_a_bounded_cost() {
 fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
     // 1,057 embedded certificates — the shape that measured 26 to 45 times
     // the cost of a genuine verification in a port without the bound.
-    // OpenSSL's CMS decoder builds every certificate's public key, so the
-    // bound is enforced on a shallow decode that keeps each certificate as
-    // raw bytes, before the full one.
+    // OpenSSL's CMS decoder builds every certificate's public key (about
+    // 45 ms for this flood), so the bound is enforced on a shallow decode
+    // that keeps each certificate as raw bytes, before the full one.
     let mut builder = common::CmsBuilder::from_shared();
     let original = builder.certificates[0].clone();
     while builder.certificates.len() < 1057 {
         builder.certificates.push(original.clone());
     }
     let flood_der = builder.build();
-    // The same flood with one byte after it, which the shallow decode
-    // refuses: it must not then fall through to the full decode.
-    let mut trailing_der = flood_der.clone();
-    trailing_der.push(0x00);
-    // The same 770 KB with a first byte no ContentInfo starts with: refused
-    // as soon as its base64 is decoded. Decoding a megabyte of base64 is
-    // the one cost the flood's size alone forces on any reader (the 3 MiB
-    // cap bounds it), and in an unoptimised test build it outweighs a
-    // genuine verification, so the bound is judged on what the flood costs
-    // past that. Half the junk's cost again is headroom for timing noise;
-    // decoding the 1,057 certificates in full costs several times more.
-    let mut junk_der = flood_der.clone();
-    junk_der[0] = 0x04;
+    // The same flood with one byte after it. The header walk runs before
+    // anything is decoded: it reads every header of the flood, hands each
+    // of its 20,000 or so checked primitives to OpenSSL's decoder, and then
+    // refuses the byte. That is what any reader of the flood pays past its
+    // base64, and in an unoptimised test build it is one to two times the
+    // base64's cost, so it, not junk, is the control the flood and the
+    // broken envelope are judged against.
+    let mut walked_der = flood_der.clone();
+    walked_der.push(0x00);
+    // The same flood with its signerInfos SET written as a SEQUENCE: the
+    // walk passes it and the shallow decode refuses it, which must not
+    // then fall through to the full decode.
+    let signer_infos = common::der_set(&[builder.signer_info()]);
+    let mut broken_der = flood_der.clone();
+    let at = broken_der.len() - signer_infos.len();
+    broken_der[at] = 0x30;
     let verifier = receipt_verifier();
     // Encoded once, outside the clock: the test's own base64 is not the
     // library's cost.
     let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
-    let (flood, trailing, junk, genuine) = (
+    let (flood, walked, broken, genuine) = (
         encode(&flood_der),
-        encode(&trailing_der),
-        encode(&junk_der),
+        encode(&walked_der),
+        encode(&broken_der),
         encode(&common::receipt_der()),
     );
 
@@ -212,9 +215,10 @@ fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
         costs[0] += started.elapsed();
 
         let started = Instant::now();
-        let refused = verifier.verify_receipt(&junk).unwrap_err();
+        let refused = verifier.verify_receipt(&walked).unwrap_err();
         costs[1] += started.elapsed();
         assert_eq!(refused.reason(), Reason::Malformed);
+        assert!(refused.to_string().contains("bytes follow"), "{refused}");
 
         let started = Instant::now();
         let refused = verifier.verify_receipt(&flood).unwrap_err();
@@ -226,23 +230,26 @@ fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
         );
 
         let started = Instant::now();
-        let refused = verifier.verify_receipt(&trailing).unwrap_err();
+        let refused = verifier.verify_receipt(&broken).unwrap_err();
         costs[3] += started.elapsed();
         assert_eq!(refused.reason(), Reason::Malformed);
     }
-    let [genuine_cost, junk_cost, flood_cost, trailing_cost] = costs;
+    let [genuine_cost, walked_cost, flood_cost, broken_cost] = costs;
 
+    // Half the walk's cost again, plus ten genuine verifications, is
+    // headroom for the shallow decode and for timing noise; the full
+    // decode alone costs more than that.
     assert!(
-        flood_cost < junk_cost * 3 / 2 + genuine_cost * 10,
-        "rejecting a 1057-certificate receipt cost {flood_cost:?}, against {junk_cost:?} for \
-         junk of the same size and {genuine_cost:?} for a genuine receipt — the \
-         ten-certificate bound is not being enforced before the envelope decode"
+        flood_cost < walked_cost * 3 / 2 + genuine_cost * 10,
+        "rejecting a 1057-certificate receipt cost {flood_cost:?}, against {walked_cost:?} for \
+         walking it and {genuine_cost:?} for a genuine receipt — the ten-certificate bound is \
+         not being enforced before the envelope decode"
     );
     assert!(
-        trailing_cost < junk_cost * 3 / 2 + genuine_cost * 10,
-        "rejecting the flood with one trailing byte cost {trailing_cost:?}, against \
-         {junk_cost:?} for junk of the same size and {genuine_cost:?} for a genuine receipt — \
-         an envelope the shallow decode refuses is reaching the full decode"
+        broken_cost < walked_cost * 3 / 2 + genuine_cost * 10,
+        "rejecting the flood with a broken signerInfos cost {broken_cost:?}, against \
+         {walked_cost:?} for walking it and {genuine_cost:?} for a genuine receipt — an \
+         envelope the shallow decode refuses is reaching the full decode"
     );
 }
 
