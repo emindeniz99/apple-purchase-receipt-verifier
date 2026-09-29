@@ -132,7 +132,7 @@ class AbiTest < Minitest::Test
   # --- the import ---------------------------------------------------------------------------
 
   def test_random_get_answering_the_wrong_length_traps
-    short = APRV::Runtime.new(APRV::Runtime.read_module, random: ->(n) { SecureRandom.random_bytes(n - 1) })
+    short = APRV::Runtime.new(TestSupport.read_module, random: ->(n) { SecureRandom.random_bytes(n - 1) })
     instance = APRV::Guest.new(short, jws_config)
     assert trapped?(instance) { instance.call("verify-signed-data", [NOW], jws) }
   end

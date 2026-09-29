@@ -188,6 +188,20 @@ class ApiShapeTest < Minitest::Test
     /\bCMS\b/, /\bx5c\b/i, /base64url/i, /\bECDSA\b/i, /Signature/
   ].freeze
 
+  # An environment variable that swaps the module would let whoever controls
+  # a process's environment replace the verifier inside it. The library reads
+  # none, comments included; only this repository's tests and bench scripts
+  # may read APRV_WASM, and they hand the path to the loader explicitly.
+  def test_the_library_reads_no_environment_variable
+    files = Dir[File.expand_path("../lib/**/*.rb", __dir__)]
+    refute_empty files
+    files.each do |file|
+      File.readlines(file, chomp: true, encoding: "UTF-8").each_with_index do |line, index|
+        refute_match(/\bENV\b/, line, "#{File.basename(file)}:#{index + 1} mentions ENV")
+      end
+    end
+  end
+
   def test_the_library_holds_no_verification_code
     files = Dir[File.expand_path("../lib/**/*.rb", __dir__)].reject { |f| f.end_with?("roots_data.rb") }
     refute_empty files

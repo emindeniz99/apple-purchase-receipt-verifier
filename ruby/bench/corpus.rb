@@ -30,7 +30,11 @@ module CorpusRun
   end
 
   def main(path)
-    runtime = APRV::Runtime.shared
+    # APRV_WASM is this script's own option (the library reads no
+    # environment variable): it names the module to measure, checked
+    # against the same recorded hash.
+    override = ENV.fetch("APRV_WASM", "")
+    runtime = override.empty? ? APRV::Runtime.shared : APRV::Runtime.new(APRV::Runtime.read_module(override))
     guests = {}
     rows = traps = created = 0
     output = $stdout

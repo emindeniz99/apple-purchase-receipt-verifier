@@ -686,7 +686,7 @@ anywhere in this library. Read every reason through
 
 ## Development
 
-`aprv.wasm` is not committed: copy the module into `lib/apple_purchase_receipt_verifier/` (or point `APRV_WASM` at it) before running anything; its SHA-256 is checked against `aprv.wasm.sha256`.
+`aprv.wasm` is not committed: copy the module into `lib/apple_purchase_receipt_verifier/` before running anything; its SHA-256 is checked against `aprv.wasm.sha256`. The library reads no environment variable; only the test suite and `bench/corpus.rb` accept `APRV_WASM`, for a copy elsewhere.
 
 ```sh
 bundle exec rake test                  # facade, ABI and conformance suites

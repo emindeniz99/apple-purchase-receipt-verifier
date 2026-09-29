@@ -99,11 +99,14 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
 
 `lib/apple_purchase_receipt_verifier/aprv.wasm` is **not tracked**: it is in
 `ruby/.gitignore`, and every job that loads the library or builds the gem
-must copy the release build there first (or set `APRV_WASM` to its path for
-the tests; `gem build` needs the copy, and the gemspec stops with a message
-when it is missing). A missing file is an error naming both ways to supply
-it, never a skip. `aprv.wasm.sha256` (`sha256sum` format) is tracked and is
-the pin for either location: the gem checks the module against it before it
+must copy the release build there first (`gem build` needs the copy, and the
+gemspec stops with a message when it is missing). A missing file is an error
+naming where it belongs, never a skip. The library reads no environment
+variable, so nothing in a caller's environment can swap the module; only the
+test suite and `bench/corpus.rb` accept `APRV_WASM`, to run a copy kept
+elsewhere, and a test fails if anything under `lib/` mentions `ENV`.
+`aprv.wasm.sha256` (`sha256sum` format) is tracked and is the pin for the
+module in either place: the gem checks the module against it before it
 compiles it, so update it together with the module. The `wasm-copies` job
 compares the module's hash with the release build's. Until G1 the file to
 copy is the round-13 stand-in from the migration's scratch area.
