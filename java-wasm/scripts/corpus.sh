@@ -10,9 +10,12 @@
 # CALLS_DIR holds <corpus>.pinned.jsonl (round 13's calls_bytes.py format,
 # every clock pinned), ROWS_DIR holds module-<corpus>.jsonl. Needs the jar
 # and test classes built with that aprv.wasm (mvn -f java-wasm verify) and
-# python3; JAVA picks the java binary (default: java on PATH). Writes
-# OUT_DIR/endive-t<THREADS>-<corpus>.jsonl and .err, prints one line per
-# corpus, and exits non-zero if any row differs or traps.
+# python3; JAVA picks the java binary (default: java on PATH). With
+# APRV_SERVER set to an aprv-server binary, the calls go through the server
+# engine's managed child instead (ServerCorpusMain), and a body the server
+# refuses with 413 is answered as the facade answers it. Writes
+# OUT_DIR/<endive|server>-t<THREADS>-<corpus>.jsonl and .err, prints one line
+# per corpus, and exits non-zero if any row differs or traps.
 set -eu
 calls=$1
 rows=$2
@@ -26,10 +29,17 @@ cp="$out/classpath.txt"
 jar=$(ls "$here"/target/apple-purchase-receipt-verifier-wasm-*.jar | grep -v -e sources -e javadoc -e linux- | head -1)
 status=0
 for c in cases hostile algorithms substrate fuzz; do
-  row="$out/endive-t$threads-$c"
-  "$java" -cp "$jar:$here/target/test-classes:$(cat "$cp")" \
-    io.github.emindeniz99.applepurchasereceiptverifier.CorpusMain "$calls/$c.pinned.jsonl" "$threads" \
-    > "$row.jsonl" 2> "$row.err"
+  if [ -n "${APRV_SERVER:-}" ]; then
+    row="$out/server-t$threads-$c"
+    "$java" -cp "$jar:$here/target/test-classes:$(cat "$cp")" \
+      io.github.emindeniz99.applepurchasereceiptverifier.ServerCorpusMain "$calls/$c.pinned.jsonl" "$APRV_SERVER" "$threads" \
+      > "$row.jsonl" 2> "$row.err"
+  else
+    row="$out/endive-t$threads-$c"
+    "$java" -cp "$jar:$here/target/test-classes:$(cat "$cp")" \
+      io.github.emindeniz99.applepurchasereceiptverifier.CorpusMain "$calls/$c.pinned.jsonl" "$threads" \
+      > "$row.jsonl" 2> "$row.err"
+  fi
   python3 - "$row.jsonl" "$rows/module-$c.jsonl" "$c" <<'PY' || status=1
 import json, sys
 a = [json.loads(l) for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
