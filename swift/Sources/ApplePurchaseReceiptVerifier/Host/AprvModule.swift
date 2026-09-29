@@ -94,6 +94,7 @@ struct AprvModule: Sendable {
             try want(Abi.verify + name, scalars + [.i32, .i32], [.i32])
             try want("cabi_post_" + Abi.verify + name, [.i32], [])
         }
+        if instance.exports[function: "_initialize"] != nil { try want("_initialize", [], []) }
         guard instance.exports[memory: "memory"] != nil else {
             throw .abiMismatch("aprv.wasm exports no memory; the module exports [\(have)]")
         }

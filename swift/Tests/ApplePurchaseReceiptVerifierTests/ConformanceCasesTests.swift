@@ -530,9 +530,9 @@ final class ConformanceCasesTests: XCTestCase {
     /// decode to (`bytesHex`) is not observable here and is not checked.
     ///
     /// - receipt-data goes through `verifyReceipt`, which refuses as MALFORMED;
-    /// - x5c goes through `verifySignedData`, as the only entry of the x5c
-    ///   header member of an otherwise empty JWS, which refuses as
-    ///   INVALID_CERTIFICATE.
+    /// - x5c goes through `verifySignedData`, as every one of the three x5c
+    ///   entries of an otherwise empty JWS (the core refuses any other count
+    ///   before it decodes an entry), which refuses as INVALID_CERTIFICATE.
     private func runDecodeBase64(_ kase: [String: Any], id: String, texts: [String]?) throws {
         guard let decoders = kase["decoders"] as? [String], !decoders.isEmpty, let texts, !texts.isEmpty,
             let expected = kase["expected"] as? [String: Any], let status = expected["status"] as? String
@@ -554,7 +554,11 @@ final class ConformanceCasesTests: XCTestCase {
                 default:
                     throw HarnessError("\(id): no decoder \"\(decoder)\"")
                 }
-                let refused = failure?.reason == refusal && failure?.message.lowercased().contains("base64") == true
+                // An empty text has no characters for the rule to name, so
+                // its refusal is read from the reason alone, as the trap host's
+                // runner does.
+                let refused =
+                    failure?.reason == refusal && (text.isEmpty || failure?.message.lowercased().contains("base64") == true)
                 if ok && refused { XCTFail("\(at) was refused as base64 (\(failure!)), want it decoded") }
                 if !ok && !refused {
                     XCTFail("\(at) was not refused as base64 (\(failure.map { "\($0)" } ?? "verified")), want it refused")
@@ -563,12 +567,13 @@ final class ConformanceCasesTests: XCTestCase {
         }
     }
 
-    /// A compact JWS whose header carries `text` as its one x5c entry: the
-    /// smallest input that sends `text` to the x5c decoder. Nothing about it
-    /// is signed; it never gets past the certificate.
+    /// A compact JWS whose header carries `text` as each of its three x5c
+    /// entries: the smallest input that sends `text` to the x5c decoder.
+    /// Nothing about it is signed; it never gets past the certificate.
     private func x5cProbe(_ text: String) -> String {
         let entry = String(
-            decoding: try! JSONSerialization.data(withJSONObject: [text], options: [.withoutEscapingSlashes]), as: UTF8.self)
+            decoding: try! JSONSerialization.data(withJSONObject: [text, text, text], options: [.withoutEscapingSlashes]),
+            as: UTF8.self)
         return base64URL(Array(#"{"alg":"ES256","x5c":\#(entry)}"#.utf8)) + "." + base64URL(Array("{}".utf8)) + "."
             + base64URL([UInt8](repeating: 0, count: 64))
     }

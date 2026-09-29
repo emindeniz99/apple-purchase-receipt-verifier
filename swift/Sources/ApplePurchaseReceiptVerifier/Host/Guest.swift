@@ -96,6 +96,16 @@ final class Guest: @unchecked Sendable {
         else { throw .abiMismatch("aprv.wasm exports no memory or no cabi_realloc") }
         self.memory = memory
         self.realloc = realloc
+        // A WASI reactor's _initialize runs its static constructors once,
+        // before any export is called (the trap host does the same). The
+        // module need not have one; AprvModule checks its signature.
+        if let initialize = instance.exports[function: "_initialize"] {
+            do {
+                _ = try initialize.invoke([])
+            } catch {
+                throw .trap(export: "_initialize", detail: String(describing: error))
+            }
+        }
     }
 
     /// The instance's linear memory, in bytes.
