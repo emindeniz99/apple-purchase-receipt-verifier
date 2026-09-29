@@ -715,9 +715,9 @@ crafted input. The full record, finding by finding, is
   it, is undefined behaviour, and a string the ABI returned that is
   released with `free()` rather than `aprv_string_free()` corrupts the
   allocator. What is closed from inside: a null argument is a status code
-  and never a dereference, inputs are taken as pointer and length so an
-  embedded NUL cannot truncate them, no input pointer is retained past the
-  call, and every exported function runs inside `catch_unwind`. No
+  and never a dereference, the `_bytes` calls take a pointer and a length
+  so an embedded NUL cannot truncate an input (the older C-string calls
+  read up to the first NUL), no input pointer is retained past the call, and every exported function runs inside `catch_unwind`. No
   verification logic lives in the ABI.
 - **Temurin 8 builds end in late 2026.** The Java 8 CI legs move to Zulu
   or Corretto; Java 8 security then depends on the consumer's JVM vendor.
