@@ -1,3 +1,0 @@
-import FuzzSupport
-
-runFuzzer(fuzzReceiptPayload)

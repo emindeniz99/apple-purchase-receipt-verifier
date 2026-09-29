@@ -144,7 +144,8 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         else
         {
             Assert.False(verified, $"{id}: expected {Str(expected, "reason")} but the call verified");
-            Assert.Equal(Str(expected, "reason"), reason is VerificationReason r ? VerificationReasonCodes.ToCode(r) : null);
+            string got = reason is VerificationReason r ? VerificationReasonCodes.ToCode(r) : "?";
+            Assert.True(Str(expected, "reason") == got, $"{id}: expected {Str(expected, "reason")}, got {got} ({message})");
             if (expected.TryGetValue("messageMustNotContain", out object? forbidden) && forbidden is List<object?> codePoints)
             {
                 foreach (object? cp in codePoints)
@@ -210,6 +211,10 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         Assert.True(allowed.Contains(got), $"{id}: answered {got}, want one of {string.Join(", ", allowed)}");
     }
 
+    /// <summary>The failure's message, and the wrapper's own cause when it has one, for a failing case's report.</summary>
+    private static string Describe(Failure failure) =>
+        failure.Cause is null ? failure.Message : failure.Message + " <" + failure.Cause.Message + ">";
+
     private static (bool Verified, object? PayloadJson, VerificationReason? Reason, string? Message) ReadOutcome(
         string operation, object outcome)
     {
@@ -218,11 +223,11 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
             case VerificationResult<ReceiptPayload> receiptResult:
                 return receiptResult.Verified
                     ? (true, Json.Parse(receiptResult.Payload!.ToJson()), null, null)
-                    : (false, null, receiptResult.Failure!.Reason, receiptResult.Failure!.Message);
+                    : (false, null, receiptResult.Failure!.Reason, Describe(receiptResult.Failure!));
             case VerificationResult<JsonPayload> jwsResult:
                 return jwsResult.Verified
                     ? (true, Json.Parse(jwsResult.Payload!.Json), null, null)
-                    : (false, null, jwsResult.Failure!.Reason, jwsResult.Failure!.Message);
+                    : (false, null, jwsResult.Failure!.Reason, Describe(jwsResult.Failure!));
             default:
                 throw new InvalidOperationException($"harness error: unexpected result type for \"{operation}\"");
         }
@@ -309,10 +314,14 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     private static object RunCase(string operation, OrderedMap kase)
     {
         OrderedMap configSpec = AsMap(kase["config"]);
-        IReadOnlyList<X509Certificate2> roots = Roots(configSpec);
-        Func<long> clock = Clock(kase);
-        Config config = Config.CreateBuilder().Roots(roots).Clock(clock).Build();
-        IVerifier verifier = Verifier.Create(config);
+        Config.Builder builder = Config.CreateBuilder().Clock(Clock(kase));
+        IReadOnlyList<X509Certificate2>? roots = Roots(configSpec);
+        if (roots is not null)
+        {
+            builder.Roots(roots);
+        }
+
+        IVerifier verifier = Verifier.Create(builder.Build());
 
         switch (operation)
         {
@@ -362,12 +371,13 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         }
     }
 
-    private static IReadOnlyList<X509Certificate2> Roots(OrderedMap config)
+    /// <summary>The registered trust anchors, or <see langword="null"/> for the defaults (the module's built-in Apple roots).</summary>
+    private static IReadOnlyList<X509Certificate2>? Roots(OrderedMap config)
     {
         OrderedMap spec = AsMap(config["trustedRoots"]);
         if (Str(spec, "source") == "defaults")
         {
-            return AppleRootCertificates.Bundled();
+            return null;
         }
 
         List<X509Certificate2> roots = new();
@@ -396,61 +406,68 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         return () => fixedMs;
     }
 
-    private static readonly Dictionary<string, (Func<string, byte[]> Decode, string Refusal)> Base64Decoders =
-        new(StringComparer.Ordinal)
-        {
-            ["receipt-data"] = (ReceiptVerifierCore.DecodeBase64, "MALFORMED"),
-            ["x5c"] = (
-                text => CanonicalBase64.Decode(text) ?? throw new ArgumentException("not base64"),
-                "INVALID_CERTIFICATE"),
-        };
-
+    /// <summary>
+    /// A <c>decodeBase64</c> case through the module, which is the only decoder
+    /// there is. A host cannot read the decoded bytes, so each text is judged
+    /// on which side of the rule it lands: a text the case says decodes must
+    /// not be refused as base64, and one it says is refused must come back as
+    /// the decoder's refusal (MALFORMED for <c>receipt-data</c>,
+    /// INVALID_CERTIFICATE for an <c>x5c</c> entry) with a message that says
+    /// base64 (or, for the empty text, says it is empty: the core refuses it
+    /// before decoding). The decoded bytes are checked by the core's own tests.
+    /// </summary>
     private static List<string> DecodeBase64Failures(OrderedMap kase)
     {
         string id = Str(kase, "id");
         OrderedMap expected = AsMap(kase["expected"]);
         bool ok = Str(expected, "status") == "ok";
-        string want = ok ? Str(expected, "bytesHex") : string.Empty;
         List<object?> texts = AsMap(kase["input"])["texts"] as List<object?>
             ?? throw new InvalidOperationException("harness error: input.texts is not a list");
         List<object?> decoders = kase["decoders"] as List<object?>
             ?? throw new InvalidOperationException("harness error: decoders is not a list");
+        IVerifier verifier = Verifier.Create(Config.Defaults());
         List<string> failures = new();
         foreach (object? decoder in decoders)
         {
             string name = (string)decoder!;
-            (Func<string, byte[]> decode, string refusal) = Base64Decoders[name];
             for (int index = 0; index < texts.Count; index++)
             {
                 string text = (string)texts[index]!;
+                Failure? failure = name switch
+                {
+                    "receipt-data" => verifier.VerifyReceipt(text).Failure,
+                    "x5c" => verifier.VerifySignedData(JwsCarryingX5c(text)).Failure,
+                    _ => throw new InvalidOperationException($"harness error: unknown decoder \"{name}\""),
+                };
+                string refusal = name == "receipt-data" ? "MALFORMED" : "INVALID_CERTIFICATE";
+                bool refused = failure is not null
+                    && VerificationReasonCodes.ToCode(failure.Reason) == refusal
+                    && (failure.Message.Contains("base64", StringComparison.OrdinalIgnoreCase)
+                        || (text.Length == 0 && failure.Message.Contains("empty", StringComparison.OrdinalIgnoreCase)));
                 string where = $"{id}: {name} texts[{index}] {Escape(text)}";
-                string decoded;
-                try
+                if (ok && refused)
                 {
-                    decoded = Convert.ToHexString(decode(text)).ToLowerInvariant();
+                    failures.Add($"{where} was refused as base64: {failure}");
                 }
-                catch (Exception)
+                else if (!ok && !refused)
                 {
-                    if (ok)
-                    {
-                        failures.Add($"{where} was refused, want {want}");
-                    }
-
-                    continue;
-                }
-
-                if (!ok)
-                {
-                    failures.Add($"{where} was accepted (decoded to {decoded})");
-                }
-                else if (decoded != want)
-                {
-                    failures.Add($"{where} decoded to {decoded}, want {want}");
+                    failures.Add($"{where} was not refused as base64: {(failure is null ? "verified" : failure.ToString())}");
                 }
             }
         }
 
         return failures;
+    }
+
+    /// <summary>A JWS whose header carries <paramref name="entry"/> as its first <c>x5c</c> element, then two more.</summary>
+    private static string JwsCarryingX5c(string entry)
+    {
+        OrderedMap header = new();
+        header.Set("alg", "ES256");
+        header.Set("x5c", new List<object?> { entry, "AAAA", "AAAA" });
+        string Segment(string json) =>
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(json)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return Segment(Json.Write(header)) + "." + Segment("{}") + ".AAAA";
     }
 
     private static string Escape(string text)

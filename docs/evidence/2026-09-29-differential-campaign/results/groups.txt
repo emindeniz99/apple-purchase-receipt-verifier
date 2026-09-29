@@ -1,0 +1,26 @@
+cases        message-only                         {'rows': 458} 
+cases        recorded case row                    {'reason': 3, 'verdict': 8, 'payload': 1} 
+cases.pinned check-order-marker-before-key        {'reason': 1} {'same as 0.7': 1}
+cases.pinned message-only                         {'rows': 44} 
+cases.pinned recorded case row                    {'reason': 3} 
+fuzz.pinned  bouncycastle-refuses-first           {'reason': 20} {'same as 0.7': 19, '0.7 MALFORMED': 1}
+fuzz.pinned  check-order-marker-before-key        {'reason': 4} {'same as 0.7': 4}
+fuzz.pinned  envelope-decode-stage                {'reason': 27} {'0.7 UNTRUSTED_CHAIN': 14, 'same as 0.7': 7, '0.7 INVALID_CERTIFICATE_PURPOSE': 3, '0.7 INVALID_CERTIFICATE': 3}
+fuzz.pinned  java-no-call                         {'rows': 175} 
+fuzz.pinned  message-only                         {'rows': 4092} 
+fuzz.pinned  signer-certificate-refusal-stage     {'reason': 10} {'same as 0.7': 10}
+fuzz.pinned  x5c-jdk-refuses-first                {'reason': 15} {'same as 0.7': 13, '0.7 INVALID_CERTIFICATE': 2}
+fuzz.pinned  x5c-openssl-refuses-first            {'reason': 22} {'same as 0.7': 15, '0.7 UNTRUSTED_CHAIN': 6, '0.7 INVALID_SIGNATURE': 1}
+hostile.pinned bouncycastle-refuses-first           {'reason': 6} {'same as 0.7': 5, '0.7 INVALID_CERTIFICATE': 1}
+hostile.pinned envelope-decode-stage                {'reason': 2} {'0.7 UNTRUSTED_CHAIN': 1, 'same as 0.7': 1}
+hostile.pinned java-catch-all                       {'reason': 1} {'same as 0.7': 1}
+hostile.pinned java-no-call                         {'rows': 129} 
+hostile.pinned message-only                         {'rows': 465} 
+seeds        envelope-decode-stage                {'reason': 1} 
+seeds        java-aligns                          {'reason': 2, 'verdict': 3, 'payload': 1} 
+seeds        message-only                         {'rows': 558} 
+seeds        signer-certificate-refusal-stage     {'reason': 12} 
+seeds        signer-identity-twin                 {'verdict': 1} 
+seeds        tolerant-envelope-decoding           {'reason': 4, 'verdict': 4} 
+substrate.pinned envelope-decode-stage                {'reason': 1} {'0.7 INVALID_CERTIFICATE_PURPOSE': 1}
+substrate.pinned message-only                         {'rows': 97} 

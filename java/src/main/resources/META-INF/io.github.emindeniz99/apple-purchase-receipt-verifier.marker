@@ -1,0 +1,1 @@
+This jar is io.github.emindeniz99:apple-purchase-receipt-verifier. Verifier.create refuses a classpath that also holds apple-purchase-receipt-verifier-wasm.

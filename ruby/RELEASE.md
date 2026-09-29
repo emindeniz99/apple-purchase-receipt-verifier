@@ -24,11 +24,15 @@ GEM_HOME="$RUNNER_TEMP/rubygems-smoke/gems" gem install --no-document \
 GEM_HOME=... ruby rubygems-smoke.rb
 ```
 
-It requires the gem by both the underscored and the dashed name, asserts the
-three bundled roots — the check that catches `certs/` falling out of
-`spec.files` — verifies a genuine Apple-signed receipt, and expects
+It requires the gem by both the underscored and the dashed name, verifies a
+genuine Apple-signed receipt (which fails if `aprv.wasm` or its hash fell out
+of `spec.files`, the Ruby shape of the empty-tarball incident), and expects
 `INVALID_SIGNATURE` for the same receipt with one DER byte flipped in its
-signature.
+signature. Since 0.8 it must also see that RubyGems installed a platform
+`wasmtime` gem, and it can no longer assert three roots on `Config.defaults`,
+whose `roots` is empty: Apple's roots are inside the module. `CI-NOTES.md`
+lists that change for `.github/smoke/rubygems-smoke.rb`. The install must not
+use `--local`, since `wasmtime` comes from RubyGems too.
 
 It is a new program rather than `ruby/script/consumer_smoke.rb`, which this
 file used to name, because the other smoke programs all live in

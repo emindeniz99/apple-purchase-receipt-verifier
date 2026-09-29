@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # Verifier#verify_receipt_endpoint, the one entry point that takes a
-# request body rather than a receipt: JSON parse, receipt-data extraction, the
-# receipt-base64 rule, then the DER path.
+# request body rather than a receipt: the wasm module's JSON parse,
+# receipt-data extraction, base64 rule and DER path.
 #
 # Its contract is stronger than "raises nothing typed": it must never raise at
 # all, and every body — any bytes whatsoever — must come back as a JSON object
@@ -19,8 +19,8 @@ require "json"
 
 APRV = FuzzSupport::APRV
 
-ROOTS = (APRV::Config.defaults.roots +
-         [FuzzSupport.fixture_certificate("generated-0.7/receipt-root.der")]).freeze
+ROOTS = (FuzzSupport.apple_roots_der +
+         [FuzzSupport.fixture_der("generated-0.7/receipt-root.der")]).freeze
 VERIFIER = APRV::Verifier.create(APRV::Config.new(roots: ROOTS))
 
 TEST_ONE_INPUT = lambda do |data|

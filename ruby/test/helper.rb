@@ -2,7 +2,6 @@
 
 require "minitest/autorun"
 require "json"
-require "openssl"
 require "time"
 require "digest"
 require "benchmark"
@@ -14,6 +13,18 @@ module TestSupport
   APRV = ApplePurchaseReceiptVerifier
 
   class << self
+    # The module the suite runs: the in-gem file, or the file APRV_WASM
+    # names. Only this harness reads that variable; the library never does.
+    def module_path
+      override = ENV.fetch("APRV_WASM", "")
+      override.empty? ? APRV::Runtime::MODULE_PATH : override
+    end
+
+    # The module's bytes, hash-checked like the library's own read.
+    def read_module
+      APRV::Runtime.read_module(module_path)
+    end
+
     # Walks up from this file rather than counting "../.." levels, so the
     # suite keeps working wherever it is run from.
     def fixtures_root
@@ -99,9 +110,13 @@ module TestSupport
 
       @fixture_cache[id] = bytes
     end
-
-    def fixture_certificate(id)
-      OpenSSL::X509::Certificate.new(fixture_bytes(id))
-    end
   end
+end
+
+# Every Verifier of the suite runs the module TestSupport names: hand it to
+# the process-wide runtime before the first test asks for one.
+unless TestSupport.module_path == ApplePurchaseReceiptVerifier::Runtime::MODULE_PATH
+  ApplePurchaseReceiptVerifier::Runtime.instance_variable_set(
+    :@shared, ApplePurchaseReceiptVerifier::Runtime.new(TestSupport.read_module)
+  )
 end

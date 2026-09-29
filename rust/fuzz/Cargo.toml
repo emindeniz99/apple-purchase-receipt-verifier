@@ -1,4 +1,4 @@
-# Fuzz targets for the three public verifiers and the endpoint. Not published — `..`'s `exclude` keeps this directory out of
+# Fuzz targets for the three public verifiers, the endpoint and the C ABI. Not published — `..`'s `exclude` keeps this directory out of
 # the tarball — and run with `./run.sh <target> [seconds]`, which pairs each
 # target with the fixture directories that seed it. See README.md.
 [package]
@@ -15,6 +15,17 @@ libfuzzer-sys = "0.4"
 
 [dependencies.apple-purchase-receipt-verifier]
 path = ".."
+
+# The `ffi` target: the C ABI's exports as Rust functions (its rlib), and
+# the surface and wire crates it is checked against.
+[dependencies.apple-purchase-receipt-verifier-ffi]
+path = "../ffi"
+
+[dependencies.aprv-surface]
+path = "../bindings/surface"
+
+[dependencies.aprv-wire]
+path = "../bindings/wire"
 
 [[bin]]
 name = "verify-receipt"
@@ -40,6 +51,13 @@ bench = false
 [[bin]]
 name = "endpoint-json"
 path = "fuzz_targets/endpoint-json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ffi"
+path = "fuzz_targets/ffi.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,5 @@
+reason       substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    recorded: reason
+summary: 193 rows; 97 message-only, 1 reason, 95 same; 0 not recorded in R20; 0 recorded rows now agree

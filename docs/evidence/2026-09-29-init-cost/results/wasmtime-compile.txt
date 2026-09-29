@@ -1,0 +1,1 @@
+compile (module and component): 12419 ms
