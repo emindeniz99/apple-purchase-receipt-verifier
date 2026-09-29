@@ -29,10 +29,10 @@ secret.
   match `aprv.wasm.sha256`. A job that tests the module `rust-wasm` built
   writes that build's hash into `aprv.wasm.sha256` in its own checkout (the
   sha256sum line, `<hex>  aprv.wasm`), as `refresh-wasm-copies` will.
-- `aprv.wasm.sha256` (committed) pins the G1b module: the review-fixed 0.7
-  core on OpenSSL 4 (`lane/core` c4410c7), 3,009,278 bytes,
-  `9c0a581c...0f263`. The module itself stays uncommitted on the lane
-  branch; the integrator commits the release module and its pin together.
+- `aprv.wasm.sha256` (committed) pins the G1c module, the final one before
+  integration (`rust-core` b863252), 2,760,476 bytes, `a35b9fce...40a1`.
+  The module itself stays uncommitted on the lane branch; the integrator
+  commits the release module and its pin together.
 - `Resources/licenses/` holds the licence texts of the code compiled into the
   module (OpenSSL, wasi-libc with musl, the Rust standard library), copied
   from the Node host's `node/licenses/`, and ships as a resource.
@@ -88,7 +88,7 @@ and with `--bench` times the public API. `SCRATCH_PATH` and `OUT` set the
 build and output directories. The corpus is scratch data, not in the
 repository, so the corpus step is a manual or nightly job, not a push gate.
 
-G1b (2026-09-29): 338 of 338 cases, the whole suite green (57 tests, 2
+G1c (2026-09-29): 377 of 377 cases, the whole suite green (59 tests, 2
 measurement tests skipped), 6,179 of 6,179 corpus rows identical to the
 module's reference rows, 0 traps.
 
