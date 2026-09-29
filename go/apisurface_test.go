@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -111,6 +112,71 @@ func TestLibraryMentionsNoForbiddenIdentifier(t *testing.T) {
 				t.Errorf("%s uses %s outside a comment; the path builder is hand-written "+
 					"precisely so the platform verifier is never reached",
 					filepath.Base(path), identifier)
+			}
+		}
+	}
+}
+
+// This package is a wrapper: aprv.wasm decides, and no file here parses
+// ASN.1, reads a certificate, checks a signature, validates base64 or walks
+// a chain. The imports a verifier would need are refused outright, and the
+// few that only carry data are allowed in the one file that carries it.
+// This is the Go half of the one-implementation gate of
+// docs/rust-core/ARCHITECTURE.md section 9; CI runs a cruder grep beside it.
+var verificationImports = map[string][]string{
+	"encoding/asn1":    nil,
+	"encoding/pem":     nil,
+	"crypto/ecdsa":     nil,
+	"crypto/ed25519":   nil,
+	"crypto/elliptic":  nil,
+	"crypto/rsa":       nil,
+	"crypto/dsa":       nil,
+	"crypto/sha1":      nil,
+	"crypto/sha512":    nil,
+	"crypto/hmac":      nil,
+	"crypto/subtle":    nil,
+	"math/big":         nil,
+	"crypto/x509/pkix": nil,
+	"crypto/x509":      {"config.go", "roots.go", "verifier.go"}, // the Config's trust-anchor type, and .Raw
+	"crypto/sha256":    {"roots.go", "wasm.go"},                  // pins the bundled roots and the embedded module
+	"encoding/hex":     {"roots.go", "wasm.go"},
+	"encoding/base64":  {"receiptpayload.go", "verifier.go"}, // the wire's bytes fields, and init's roots
+}
+
+func TestLibraryHoldsNoVerificationLogic(t *testing.T) {
+	fileSet := token.NewFileSet()
+	for _, path := range libraryFiles(t) {
+		file, err := parser.ParseFile(fileSet, path, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		for _, spec := range file.Imports {
+			name, _ := strconv.Unquote(spec.Path.Value)
+			allowed, listed := verificationImports[name]
+			if !listed {
+				continue
+			}
+			if !slices.Contains(allowed, filepath.Base(path)) {
+				t.Errorf("%s imports %q: a wrapper holds no verification logic (allowed only in %v)",
+					filepath.Base(path), name, allowed)
+			}
+		}
+	}
+}
+
+// Of what crypto/x509 offers, the library reads a certificate in one place:
+// the bundled roots, when AppleRoots parses them to hand back to the
+// caller. Nothing checks a signature, builds a path or reads a name.
+func TestOnlyTheRootsAreEverParsedAsCertificates(t *testing.T) {
+	for _, path := range libraryFiles(t) {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := stripComments(t, path, source)
+		for _, identifier := range []string{"x509.ParseCertificate", "x509.ParseCertificates", "x509.ParseCertificateRequest"} {
+			if strings.Contains(text, identifier) && filepath.Base(path) != "roots.go" {
+				t.Errorf("%s uses %s: only roots.go reads a certificate, to return the bundled roots", filepath.Base(path), identifier)
 			}
 		}
 	}

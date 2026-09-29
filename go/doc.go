@@ -16,6 +16,21 @@
 // product id, device binding, refunds and replay are the caller's checks;
 // no method takes a parameter for any of them.
 //
+// # Implementation
+//
+// The verification is not written in Go. Every decision (the chain, the
+// signature, the receipt's attributes, the bounds) is made by aprv.wasm, the
+// one module every port of this library runs, embedded in this package and
+// run with wazero: pure Go, so CGO_ENABLED=0, cross-compilation and a
+// FROM scratch image keep working. The package reads the [Config] clock,
+// moves the input in and the answer out, and turns the answer into Go
+// values; it parses no receipt and decides nothing.
+//
+// The first [NewVerifier] in a process compiles the module, which takes
+// about a second. Each Verifier keeps a few instances of it, created when
+// needed and dropped with the Verifier; there is nothing to close. The
+// module is 2.9 MB and its SHA-256 is checked when the package loads.
+//
 // # Trust model
 //
 // Verification is entirely offline and anchored only to the certificates
@@ -59,9 +74,15 @@
 // VerifyReceiptEndpoint returns no error at all: like Apple's endpoint,
 // every failure is the status field of the response body.
 //
-// A configuration mistake — a nil Config, no trust anchors — is a plain
-// error from [NewVerifier] instead, because misconfiguration is a
-// programming bug and not a verdict about a receipt.
+// A configuration mistake — a nil Config, no trust anchors, a trust anchor
+// that is not a certificate — is a plain error from [NewVerifier] instead,
+// because misconfiguration is a programming bug and not a verdict about a
+// receipt. So is a module this package cannot bind.
+//
+// The machinery failing is not a verdict either, but it is not allowed to
+// look like a pass: a module that traps, an answer this package cannot
+// read, or a [Config] clock that panics is [ReasonInternalError], with the
+// category in the cause, and a trapped instance is discarded.
 //
 // # Concurrency
 //
