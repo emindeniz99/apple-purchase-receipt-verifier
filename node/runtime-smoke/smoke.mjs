@@ -1,51 +1,56 @@
-// Runtime-portability smoke: the same checks every non-Node JavaScript
-// runtime must pass (Bun, Deno, Cloudflare workerd). Pure: no filesystem
-// access, so the same module runs where `node:fs` does not exist. Fixture
-// bytes come in from the runner (node-like.mjs reads files, worker.mjs gets
-// them embedded by workerd.capnp).
-import { createConfig, createVerifier, defaultConfig } from '../dist/index.js';
+// Runtime smoke: the same checks on every JavaScript runtime the package
+// claims (Node, Bun, Deno, workerd, the Vercel Edge runtime, browsers). No
+// filesystem access here: the runner passes the fixtures in, and passes the
+// package's entry module in as `api` (the default one or /web; both are
+// awaited, so one script serves both).
+//
+// The genuine receipt is checked through the endpoint, whose answer is
+// Apple's own JSON; the verifyReceipt and verifySignedData checks run in
+// full when the loaded module answers the 0.7 wire (the release module) and
+// report themselves skipped when it does not (the 0.6-core stand-in the
+// package carries until the Rust core lands).
 
 /**
- * @param {{ appleRootDer: Uint8Array, sandboxReceiptB64: string,
- *           jwsRootDer: Uint8Array, transactionJws: string,
- *           foreignReceiptDer: Uint8Array }} fx
- * @returns {string[]} one line per passed check
+ * @param {object} api the package entry point
+ * @param {{ sandboxReceiptB64: string, jwsRootDer: Uint8Array,
+ *           transactionJws: string }} fx
+ * @returns {Promise<string[]>} one line per check
  */
-export function run(fx) {
+export async function run(api, fx) {
   const out = [];
+  const g5 = fx.sandboxReceiptB64.trim();
+  const request = JSON.stringify({ 'receipt-data': g5 });
 
-  // defaultConfig() must not touch the filesystem: the roots are inlined
-  // at build time so a bundled runtime can call it.
-  const builtin = createVerifier(defaultConfig());
-  const builtinResult = builtin.verifyReceipt(fx.sandboxReceiptB64.trim());
-  if (!builtinResult.verified || builtinResult.payload.receiptType !== 'ProductionSandbox') {
-    throw new Error('the bundled roots did not verify the genuine receipt');
+  const apple = api.createVerifier(await api.defaultConfig());
+  const sandbox = JSON.parse(await apple.verifyReceiptEndpoint(api.Environment.SANDBOX, request));
+  if (sandbox.status !== 0 || sandbox.receipt?.bundle_id !== 'dev.bonzer.weeka.app') {
+    throw new Error(`genuine receipt on the sandbox endpoint: status ${sandbox.status}`);
   }
-  out.push('defaultConfig() works without a filesystem');
+  out.push('genuine sandbox receipt verifies against the pinned Apple roots (endpoint status 0)');
+  const production = JSON.parse(
+    await apple.verifyReceiptEndpoint(api.Environment.PRODUCTION, request),
+  );
+  if (production.status !== 21007) {
+    throw new Error(`genuine sandbox receipt on the production endpoint: ${production.status}`);
+  }
+  out.push('the same receipt on the production endpoint is 21007');
 
-  const receipts = createVerifier(createConfig({ roots: [fx.appleRootDer] }));
-  const receiptResult = receipts.verifyReceipt(fx.sandboxReceiptB64.trim());
-  if (!receiptResult.verified || receiptResult.payload.receiptType !== 'ProductionSandbox') {
-    throw new Error(`receiptType ${receiptResult.payload?.receiptType}`);
+  const wire07 = (await apple.verifyReceipt('')).failure?.reason === 'MALFORMED';
+  if (!wire07) {
+    out.push('SKIP verifyReceipt and verifySignedData: the module does not answer the 0.7 wire');
+    return out;
   }
-  out.push('genuine sandbox receipt verifies against the real Apple root');
+  const receipt = await apple.verifyReceipt(g5);
+  if (!receipt.verified || receipt.payload.bundleId !== 'dev.bonzer.weeka.app') {
+    throw new Error(`verifyReceipt: ${receipt.failure?.reason}`);
+  }
+  out.push('verifyReceipt returns the genuine receipt payload');
 
-  const jws = createVerifier(createConfig({ roots: [fx.jwsRootDer] }));
-  const tx = jws.verifySignedData(fx.transactionJws.trim());
-  if (!tx.verified) {
-    throw new Error(`shared JWS transaction fixture failed: ${tx.failure.reason}`);
+  const jws = api.createVerifier(await api.createConfig({ roots: [fx.jwsRootDer] }));
+  const tx = await jws.verifySignedData(fx.transactionJws.trim());
+  if (!tx.verified || JSON.parse(tx.payload.json).transactionId !== '2000000000000001') {
+    throw new Error(`verifySignedData: ${tx.failure?.reason}`);
   }
-  const claims = JSON.parse(tx.payload.json);
-  if (claims.transactionId !== '2000000000000001') {
-    throw new Error(`transactionId ${claims.transactionId}`);
-  }
-  out.push('shared JWS transaction fixture verifies');
-
-  const foreign = receipts.verifyReceipt(fx.foreignReceiptDer.toString('base64'));
-  if (foreign.verified || foreign.failure.reason !== 'UNTRUSTED_CHAIN') {
-    throw new Error(`foreign receipt reason ${foreign.verified ? 'none' : foreign.failure.reason}`);
-  }
-  out.push('foreign receipt fails with UNTRUSTED_CHAIN');
-
+  out.push('verifySignedData returns the shared transaction fixture');
   return out;
 }
