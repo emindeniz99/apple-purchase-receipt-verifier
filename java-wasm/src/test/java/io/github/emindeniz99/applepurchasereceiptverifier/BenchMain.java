@@ -18,7 +18,7 @@ import java.util.concurrent.Future;
  * parsing the stripped module, {@code _initialize}, {@code init}) and the
  * median of 20 later ones. Throughput: the genuine g5 sandbox receipt and
  * the shared sandbox transaction JWS (with its own root), each thread on an
- * instance of its own, after a warm-up, for a fixed time.
+ * instance of its own, warmed up for as long as it is then measured.
  *
  * <pre>java -cp JAR:TEST_CLASSES:DEPS ...BenchMain [SECONDS] [THREADS...]</pre>
  */
@@ -93,7 +93,10 @@ public final class BenchMain {
                 workers.add(pool.submit(() -> {
                     Guest guest = new EndiveGuest(new SecureRandom());
                     guest.init(config);
-                    for (int i = 0; i < (jws ? 100 : 300); i++) {
+                    // Warm-up for as long as the measurement: Endive's generated
+                    // methods are large, and C2 takes a while to reach them.
+                    long warm = System.nanoTime() + seconds * 1_000_000_000L;
+                    while (System.nanoTime() < warm) {
                         call(guest, jws, now, input);
                     }
                     start.await();

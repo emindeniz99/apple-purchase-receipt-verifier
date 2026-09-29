@@ -92,9 +92,10 @@ class ConformanceCasesTest {
             Set<String> unknown = new TreeSet<>(known);
             unknown.removeAll(ids);
             assertTrue(unknown.isEmpty(), StandIn.FILE + " lists ids that are not cases: " + unknown);
-            System.out.println("conformance (Endive): " + ran.size() + " ran, "
-                    + (ran.size() - differed.size() - failed.size()) + " passed, " + failed.size() + " failed, "
-                    + differed.size() + " stand-in differences, 0 skipped");
+            System.out.println(
+                    "conformance (Endive, Java " + Engine.javaFeatureVersion() + "): " + ran.size() + " ran, "
+                            + (ran.size() - differed.size() - failed.size()) + " passed, " + failed.size() + " failed, "
+                            + differed.size() + " stand-in differences, 0 skipped");
         }));
         return tests;
     }

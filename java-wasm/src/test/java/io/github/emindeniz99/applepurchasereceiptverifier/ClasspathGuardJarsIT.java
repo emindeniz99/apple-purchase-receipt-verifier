@@ -122,9 +122,8 @@ class ClasspathGuardJarsIT {
             Class<?> config = loader.loadClass(PACKAGE + ".Config");
             Class<?> engine = loader.loadClass(PACKAGE + ".Engine");
             Method create = loader.loadClass(PACKAGE + ".Verifier").getMethod("create", config, engine);
-            Object server = engine.getMethod("server", loader.loadClass("[L" + PACKAGE + ".ServerSource;"))
-                    .invoke(null, (Object)
-                            java.lang.reflect.Array.newInstance(loader.loadClass(PACKAGE + ".ServerSource"), 0));
+            Object noSources = java.lang.reflect.Array.newInstance(loader.loadClass(PACKAGE + ".ServerSource"), 0);
+            Object server = engine.getMethod("server", noSources.getClass()).invoke(null, noSources);
             InvocationTargetException pending = assertThrows(
                     InvocationTargetException.class,
                     () -> create.invoke(null, config.getMethod("defaults").invoke(null), server));

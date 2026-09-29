@@ -54,7 +54,7 @@
     <jackson.version>2.22.2</jackson.version>
     <jspecify.version>1.0.1</jspecify.version>
     <junit.version>5.14.4</junit.version>
-    <!-- The JVM surefire forks; the jdk-runtime profile points it at another. -->
+    <!-- The JVM surefire forks; -Dtest.jvm=/path/to/java runs the tests on another. -->
     <test.jvm>${java.home}/bin/java</test.jvm>
   </properties>
 
@@ -283,10 +283,10 @@
   </build>
 
   <profiles>
-    <!-- Runs the tests on another JVM while Maven and javac stay modern:
-         mvn verify -Pjdk-runtime -Dtest.jvm=/path/to/jdk/bin/java
+    <!-- The tests run on another JVM while Maven and javac stay modern:
+         mvn verify -Dtest.jvm=/path/to/jdk/bin/java
          On a Java 8 JVM add -Pjava8-tests, which leaves out the tests that
-         need the Endive engine (tagged "endive"). -->
+         need the Endive engine. -->
     <profile>
       <id>java8-tests</id>
       <build>
@@ -296,6 +296,14 @@
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
               <excludedGroups>endive</excludedGroups>
+              <!-- By class too: JUnit loads a test class before it reads its
+                   tags, and these name the Java 11 Endive classes. -->
+              <excludes>
+                <exclude>**/*IT.java</exclude>
+                <exclude>**/ConformanceCasesTest.java</exclude>
+                <exclude>**/EndiveAbiTest.java</exclude>
+                <exclude>**/WasmVerifierTest.java</exclude>
+              </excludes>
             </configuration>
           </plugin>
         </plugins>
