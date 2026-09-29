@@ -60,6 +60,21 @@ Rust (bounds and borrow checks in std and the dependencies can reach it),
 and every such path ends in a trap: the hook's write to stderr traps in
 `wasi-none.c`, and the abort is `unreachable`.
 
+A `list<u8>` argument is the host's to place: the canonical ABI requires
+the range to come from `cabi_realloc`, and the module does not check it.
+The core reads its input front to back and decides as early as it can: a
+length over the input cap (3,145,728 bytes for a receipt or an endpoint
+body, 262,144 for a JWS) is `TOO_LARGE` before any byte is read, and base64
+that goes wrong early is `MALFORMED` without the rest being read. So a raw
+call whose range runs past the end of linear memory answers a value when
+those rules decide before the first byte outside memory, and traps
+(out-of-bounds access) when a byte outside memory is read; a range whose
+length overflows 32 bits traps in the lift. No read outside linear memory
+can happen without a trap. The list is also freed with the module's
+allocator after the call, so a range the host did not allocate corrupts
+that instance's heap, as it would for any canonical-ABI guest; hosts built
+on a bindings generator cannot make such a call.
+
 `_initialize` need not be called: each export runs the module's one
 constructor on its first call. Calling it first is harmless; calling it
 twice traps.
