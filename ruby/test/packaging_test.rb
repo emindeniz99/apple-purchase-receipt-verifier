@@ -49,7 +49,7 @@ class PackagingTest < Minitest::Test
   end
 
   # Nothing that holds no purpose in the artifact: Apple's roots are inside
-  # the module, so the certs and their inlined form stay out.
+  # the module, so no certificate file or inlined copy of one may come back.
   def test_the_gemspec_ships_no_roots
     spec = Gem::Specification.load(File.join(root, "apple-purchase-receipt-verifier.gemspec"))
     spec.files.each do |path|

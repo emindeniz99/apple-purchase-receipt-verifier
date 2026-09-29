@@ -13,6 +13,8 @@
 //! OpenSSL's `ANY` decoder would judge, were it standing alone, to a check
 //! the caller supplies ([`Primitive`]): every primitive of a type whose
 //! content has rules, and every constructed string at its outermost level.
+//! The chunks inside a constructed string are not checked one by one:
+//! OpenSSL joins their contents unchecked and judges the joined value.
 //! So a value OpenSSL keeps whole inside an `ANY` is refused at any depth
 //! when OpenSSL would refuse it on its own, and the verdict does not depend
 //! on how deep the value sits.
@@ -154,10 +156,12 @@ pub(crate) fn header(input: &[u8]) -> Option<Header> {
 
 /// Walks the one value `input` must be, within `budget`, with nothing after
 /// it. With a `primitive` check, it hands that check every primitive value
-/// of a [`CHECKED_TAGS`] type and every universal constructed value other
-/// than a SEQUENCE or a SET (a string OpenSSL joins) at its outermost
-/// level, and applies OpenSSL's rules on constructed values itself: no
-/// constructed form of a [`PRIMITIVE_ONLY_TAGS`] type, at most
+/// of a [`CHECKED_TAGS`] type outside a constructed string (a chunk inside
+/// one is joined, not judged, as `asn1_collect` does) and every universal
+/// constructed value other than a SEQUENCE or a SET (a string OpenSSL
+/// joins) at its outermost level, and applies OpenSSL's rules on
+/// constructed values itself: no constructed form of a
+/// [`PRIMITIVE_ONLY_TAGS`] type, at most
 /// [`MAX_STRING_NEST`] + 1 constructed levels in a string, and no
 /// end-of-contents in a value of definite length.
 pub(crate) fn walk_exact(
@@ -204,7 +208,10 @@ impl Walker {
         }
         if !header.constructed {
             let size = header.definite_size();
-            if let Some(check) = self.primitive {
+            // A chunk of a constructed string is not a value of its own:
+            // `asn1_collect` joins the chunks' contents whatever their tags,
+            // and the whole string is checked at its outermost level below.
+            if let Some(check) = self.primitive.filter(|_| string == 0) {
                 if header.class == sys::V_ASN1_UNIVERSAL
                     && CHECKED_TAGS.contains(&header.tag)
                     && !check(input.get(..size).ok_or(WalkError::Malformed)?)

@@ -12,7 +12,9 @@
 //!
 //! - a verify before a successful `init`, and an `init` after one;
 //! - an `env` other than 0 (production) or 1 (sandbox);
-//! - a `random-get` answer that is not exactly the length asked for.
+//! - a `random-get` answer that is not exactly the length asked for;
+//! - a `list<u8>` argument, or a `random-get` answer, whose range runs past
+//!   the end of linear memory.
 //!
 //! The module is built with `panic = "abort"`, so a panic anywhere below
 //! (none is expected: the core denies `unwrap`, `expect`, indexing and
@@ -69,6 +71,27 @@ fn trap() -> ! {
     }
 }
 
+/// Traps unless `bytes` lies inside linear memory. The canonical ABI has
+/// the host place each `list<u8>` it lowers, and wit-bindgen builds the
+/// `Vec` from that range without looking at it; a range past the end of
+/// memory would otherwise be answered on its length alone and then freed
+/// by the allocator, which corrupts the heap. Checked before anything
+/// reads the bytes or drops the `Vec`. A range inside memory that
+/// `cabi_realloc` never returned is not caught (rust/bindings/abi/README.md).
+fn in_memory(bytes: &[u8]) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let start = u64::try_from(bytes.as_ptr().addr()).unwrap_or(u64::MAX);
+        let length = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        let pages = u64::try_from(core::arch::wasm32::memory_size(0)).unwrap_or(0);
+        if start.saturating_add(length) > pages.saturating_mul(65_536) {
+            trap();
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = bytes;
+}
+
 thread_local! {
     /// The verifier `init` made, or `None` before a successful `init`.
     static VERIFIER: RefCell<Option<Verifier>> = const { RefCell::new(None) };
@@ -86,6 +109,7 @@ unsafe extern "C" fn random_source(buf: *mut u8, len: usize) -> i32 {
         trap()
     };
     let bytes = bindings::aprv::verifier::host::random_get(wanted);
+    in_memory(&bytes);
     if bytes.len() != len {
         trap();
     }
@@ -147,6 +171,7 @@ struct Aprv;
 
 impl Guest for Aprv {
     fn init(config_json: Vec<u8>) -> String {
+        in_memory(&config_json);
         VERIFIER.with(|slot| {
             if slot.borrow().is_some() {
                 trap();
@@ -164,6 +189,7 @@ impl Guest for Aprv {
     }
 
     fn verify_receipt(now_ms: u64, receipt_base64: Vec<u8>) -> String {
+        in_memory(&receipt_base64);
         with_verifier(now_ms, |verifier| {
             let result = aprv_surface::now_ms_from_u64(now_ms)
                 .and_then(|now| verifier.verify_receipt(&receipt_base64, now));
@@ -172,6 +198,7 @@ impl Guest for Aprv {
     }
 
     fn verify_signed_data(now_ms: u64, jws: Vec<u8>) -> String {
+        in_memory(&jws);
         with_verifier(now_ms, |verifier| {
             let result = aprv_surface::now_ms_from_u64(now_ms)
                 .and_then(|now| verifier.verify_signed_data(&jws, now));
@@ -180,6 +207,7 @@ impl Guest for Aprv {
     }
 
     fn verify_receipt_endpoint(env: u32, now_ms: u64, request_json: Vec<u8>) -> String {
+        in_memory(&request_json);
         // Matched before anything else: jco and wasmtime-py do not range-check
         // a u32, and a value that names no environment is a caller's bug.
         let environment = match env {

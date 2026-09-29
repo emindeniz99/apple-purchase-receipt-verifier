@@ -27,7 +27,7 @@ final class NoVerificationLogicTest extends TestCase
     private const BANNED_PREFIXES = ['openssl_', 'sodium_crypto', 'gmp_', 'bcpowmod', 'hash_hmac', 'mcrypt_'];
 
     /** What `src/Internal` may hold: data and mapping, never a parser. */
-    private const INTERNAL_FILES = ['Info.php', 'RootsData.php', 'Text.php', 'Wire.php'];
+    private const INTERNAL_FILES = ['Info.php', 'Text.php', 'Wire.php'];
 
     public function testNoCryptoFunctionIsCalledAnywhereInTheSourceTree(): void
     {
@@ -77,7 +77,6 @@ final class NoVerificationLogicTest extends TestCase
         $files = [];
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__ . '/../src'));
         foreach ($iterator as $file) {
-            // RootsData is data (base64 of the pinned roots), generated and deleted in Phase 7.
             if ($file instanceof SplFileInfo && $file->getExtension() === 'php') {
                 $files[] = $file->getPathname();
             }

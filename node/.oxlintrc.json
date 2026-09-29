@@ -10,5 +10,5 @@
   "env": {
     "builtin": true
   },
-  "ignorePatterns": ["dist/**", "node_modules/**", "certs/**", "src/generated/**"]
+  "ignorePatterns": ["dist/**", "node_modules/**", "src/generated/**"]
 }

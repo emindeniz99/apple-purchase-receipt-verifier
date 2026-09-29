@@ -65,7 +65,7 @@ public class AbiTests
     public void AppleRootsPassedExplicitlyAnswerLikeTheBuiltInOnes()
     {
         System.Collections.Generic.List<string> roots = new();
-        foreach (System.Security.Cryptography.X509Certificates.X509Certificate2 root in AppleRootCertificates.Bundled())
+        foreach (System.Security.Cryptography.X509Certificates.X509Certificate2 root in TestRoots.AppleRoots())
         {
             roots.Add(Convert.ToBase64String(root.RawData));
         }

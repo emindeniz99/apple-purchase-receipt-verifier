@@ -1,0 +1,17 @@
+verdict      receipt/verify-with-a-signing-time-in-month-13
+    core: verified
+    java: MALFORMED: receipt has trailing or unparseable bytes
+verdict      receipt/verify-with-an-unknown-signed-attribute-holding-invalid-utf8
+    core: verified
+    java: INVALID_SIGNATURE: CMS signature does not match the signer certificate's key
+reason       signed-data/reject-an-rsa-leaf-under-es256
+    core: INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    java: INVALID_CERTIFICATE: x5c[0] does not decode
+reason       receipt/reject-a-signer-valid-from-month-13
+    core: INVALID_CERTIFICATE: certificate is outside its validity window at the chain instant
+    java: MALFORMED: receipt has trailing or unparseable bytes
+summary: 82 rows; 38 message-only, 2 reason, 40 same, 2 verdict; 4 not recorded in R20; 0 recorded rows now agree
+NOT RECORDED receipt/verify-with-a-signing-time-in-month-13
+NOT RECORDED receipt/verify-with-an-unknown-signed-attribute-holding-invalid-utf8
+NOT RECORDED signed-data/reject-an-rsa-leaf-under-es256
+NOT RECORDED receipt/reject-a-signer-valid-from-month-13

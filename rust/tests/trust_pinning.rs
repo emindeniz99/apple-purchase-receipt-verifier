@@ -604,3 +604,160 @@ fn a_root_verifies_when_a_same_named_root_vouches_for_a_stranger_in_the_bag() {
         assert_eq!(payload.bundle_id.as_deref(), Some("com.example.app"));
     }
 }
+
+/// Round-3 review F1: OpenSSL's issuer lookup over the untrusted
+/// certificates also takes the first name match and never backtracks, so a
+/// same-named intermediate placed before the real one in the unsigned bag
+/// decided the path: one issued by a second pinned root (the verdict then
+/// depended on pinning that root), or a second one under the same root.
+/// P-256, minted here, no key identifiers (Apple's certificates carry them,
+/// and `X509_check_issued` then refuses the look-alike on its own).
+#[test]
+fn a_same_named_intermediate_placed_first_in_the_bag_does_not_decide_the_path() {
+    use common::mint;
+    let (first_key, second_key, real_key, other_key, same_root_key, leaf_key) = (
+        mint::key(61),
+        mint::key(62),
+        mint::key(63),
+        mint::key(64),
+        mint::key(65),
+        mint::key(66),
+    );
+    let anchor = |der: Vec<u8>| TrustAnchor::from_der(&der).unwrap();
+    let certificate = |der: Vec<u8>| Certificate::from_der(&der).unwrap();
+    let intermediate = |key, root: &str, root_key, serial| {
+        certificate(mint::certificate(
+            "Shared WWDR",
+            key,
+            root,
+            root_key,
+            serial,
+            true,
+            Some(mint::WWDR_MARKER),
+        ))
+    };
+    let first_root = anchor(mint::certificate(
+        "Root One", &first_key, "Root One", &first_key, 1, true, None,
+    ));
+    let second_root = anchor(mint::certificate(
+        "Root Two",
+        &second_key,
+        "Root Two",
+        &second_key,
+        2,
+        true,
+        None,
+    ));
+    let real = intermediate(&real_key, "Root One", &first_key, 3);
+    let other_root_twin = intermediate(&other_key, "Root Two", &second_key, 4);
+    let same_root_twin = intermediate(&same_root_key, "Root One", &first_key, 5);
+    let leaf = certificate(mint::certificate(
+        "Leaf",
+        &leaf_key,
+        "Shared WWDR",
+        &real_key,
+        6,
+        false,
+        Some(mint::RECEIPT_SIGNER_MARKER),
+    ));
+    let pinnings = [
+        vec![first_root.clone()],
+        vec![first_root.clone(), second_root.clone()],
+        vec![second_root.clone(), first_root.clone()],
+    ];
+    for twin in [&other_root_twin, &same_root_twin] {
+        for embedded in [
+            [leaf.clone(), real.clone(), twin.clone()],
+            [leaf.clone(), twin.clone(), real.clone()],
+        ] {
+            for roots in &pinnings {
+                let authenticated = path::authenticated_top_down(&embedded, roots);
+                let chain = path::receipt_path(&leaf, &authenticated, roots, now_millis())
+                    .expect("the genuine chain verifies whatever the bag's order and the pinning");
+                assert_eq!(chain.len(), 2);
+                assert!(
+                    chain[1].same_as(&real),
+                    "the path runs through the real issuer"
+                );
+            }
+        }
+    }
+    // A leaf the real intermediate did not sign still reaches no root: the
+    // narrowing drops every candidate, and the reason is the same.
+    let stranger = certificate(mint::certificate(
+        "Leaf",
+        &leaf_key,
+        "Shared WWDR",
+        &mint::key(67),
+        7,
+        false,
+        Some(mint::RECEIPT_SIGNER_MARKER),
+    ));
+    for roots in &pinnings {
+        let embedded = [stranger.clone(), other_root_twin.clone(), real.clone()];
+        let authenticated = path::authenticated_top_down(&embedded, roots);
+        let failure =
+            path::receipt_path(&stranger, &authenticated, roots, now_millis()).unwrap_err();
+        assert_eq!(failure.reason(), Reason::UntrustedChain, "{failure}");
+    }
+}
+
+/// The bag is narrowed by signature alone, not by `keyUsage`: an
+/// intermediate whose `keyUsage` lacks `keyCertSign` still signed the leaf,
+/// so OpenSSL still builds the path through it and reports it as not a CA,
+/// as before the narrowing. A narrowing through `X509_check_issued`, which
+/// judges `keyUsage`, dropped it and reported no path at all (seven corpus
+/// rows' messages, round 3).
+#[test]
+fn an_intermediate_without_key_cert_sign_is_still_reported_as_not_a_ca() {
+    use common::{der, der_int, der_oid, der_seq, mint};
+    let (root_key, intermediate_key, leaf_key) = (mint::key(71), mint::key(72), mint::key(73));
+    let root = TrustAnchor::from_der(&mint::certificate(
+        "KU Root", &root_key, "KU Root", &root_key, 1, true, None,
+    ))
+    .unwrap();
+    // keyUsage (critical) with digitalSignature only: 03 02 07 80.
+    let algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
+    let extensions = der_seq(&[
+        der_seq(&[
+            der_oid("2.5.29.19"),
+            der(0x01, &[0xFF]),
+            der(0x04, &der_seq(&[der(0x01, &[0xFF])])),
+        ]),
+        der_seq(&[
+            der_oid("2.5.29.15"),
+            der(0x01, &[0xFF]),
+            der(0x04, &der(0x03, &[0x07, 0x80])),
+        ]),
+        der_seq(&[der_oid(mint::WWDR_MARKER), der(0x04, &[0x05, 0x00])]),
+    ]);
+    let tbs = der_seq(&[
+        der(0xA0, &der_int(2)),
+        der_int(2),
+        algorithm.clone(),
+        mint::name("KU Root"),
+        der_seq(&[der(0x17, b"200101000000Z"), der(0x18, b"20991231000000Z")]),
+        mint::name("KU WWDR"),
+        mint::spki(&intermediate_key),
+        der(0xA3, &extensions),
+    ]);
+    let signature = root_key.sign_der(&tbs);
+    let intermediate = Certificate::from_der(&mint::assemble(tbs, algorithm, &signature)).unwrap();
+    let leaf = Certificate::from_der(&mint::certificate(
+        "KU Leaf",
+        &leaf_key,
+        "KU WWDR",
+        &intermediate_key,
+        3,
+        false,
+        Some(mint::RECEIPT_SIGNER_MARKER),
+    ))
+    .unwrap();
+    let roots = [root];
+    let authenticated = path::authenticated_top_down(&[leaf.clone(), intermediate], &roots);
+    let failure = path::receipt_path(&leaf, &authenticated, &roots, now_millis()).unwrap_err();
+    assert_eq!(
+        failure.to_string(),
+        "UNTRUSTED_CHAIN: an intermediate is not a CA"
+    );
+}

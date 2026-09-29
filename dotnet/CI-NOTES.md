@@ -47,7 +47,7 @@ runs the whole re-check for a new module as one command.
 |---|---|
 | `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. With the release module all 377 conformance cases pass and so do the other 217 tests (594 in all), on .NET 8 and 10 (.NET 9 was last run at 524 of 524 with the 311 cases of G1). Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
 | `dotnet-mono` | Unchanged and still meaningful only as far as it goes: `monop` reflects the netstandard2.0 assembly, which proves it loads and not that it runs. Running the wrapper on Mono needs Mono to find `libwasmtime` (it does not read NuGet's `runtimes/` folders), which was not tried; a job for it should copy `runtimes/linux-x64/native/libwasmtime.so` beside the test binary and set `LD_LIBRARY_PATH`. No Mono here |
-| `dotnet-roots` | Unchanged until Phase 7: `AppleRootData.cs` and `tools/GenerateRootData` stay for `AppleRootCertificates.Bundled()` and are untouched |
+| `dotnet-roots` | Deleted in Phase 7 (below) |
 | `dotnet-trim` | Unchanged command. The sample was rewritten to read verdicts from the endpoint's `status` and passes here: `dotnet publish samples/TrimAotSmoke -c Release -warnaserror` (net9.0, self-contained, trimmed, `linux-x64`) then running it prints `trimmed smoke ok`. Wasmtime is trim-clean under `-warnaserror` in that configuration |
 | `dotnet-fuzz` | Unchanged: `./run.sh all 60`. It builds and runs against the new library; 15 s per target here gave 0 crashes and 0 invariant failures (json 173,909 runs, receipt 44,333, receipt-base64 51,220, jws 32,611, endpoint-json 75,738). SharpFuzz instruments .NET IL only, so the module is a black box to it; the README says so. `dotnet/bench` builds (its `decodeBase64` row has no successor: the package has no public decoder) |
 | `dotnet-format` | Unchanged: `dotnet format --verify-no-changes --severity info` is clean |
@@ -83,6 +83,31 @@ G5 receipt from a local feed on .NET 10.
 - `BENCHMARKS.md`: the .NET column loses `decodeBase64`.
 - The CHANGELOG entry comes from the lane's `feat(dotnet)!:` commit and its
   `BREAKING CHANGE:` footer.
+
+## Phase 7
+
+`Internal/AppleRootData.cs`, `tools/GenerateRootData` (and its solution
+entry) and the public `AppleRootCertificates` class with its `Bundled()`
+are gone: Apple's three roots live only in the module. `Bundled()` was
+removed rather than made to return an empty list, because an empty
+"Apple's roots" list would turn "Apple's roots plus mine" into "mine
+only" without a compile error; the README's "Upgrading from 0.7" table
+says what replaces it. `Config.Defaults().Roots` stays empty.
+
+| Where | Change |
+|---|---|
+| `ci.yml` `dotnet-roots` | delete the job: no generator and no generated file are left. |
+| `one-implementation` | the .NET allowlist keeps `Config.cs` (`Config.Roots` and `Config.Builder.Roots` are `X509Certificate2`, the 0.7 API; only `RawData` reaches the module) and `Internal/Certificates.cs` (rebuilds an `X509Certificate2` from the DER `Config.Roots` hands back; no chain, key or signature). The `AppleRootCertificates.cs` entry is stale and must go. |
+| `.github/smoke/nuget-smoke/Program.cs` | changed on this lane: the `AppleRootCertificates.Bundled().Count != 3` check is gone; the empty-`Roots` assertion and the genuine receipt stay. |
+| `release.yml` `publish-nuget` | nothing: the package never listed the roots as a packed file. |
+
+Verified here with G1c (`a35b9fce...40a1`): `dotnet test` project on
+net10.0 and net8.0, 592 of 592 each (377 conformance cases plus 2
+registry checks among them; two roots tests went with `Bundled()`), the
+floor project 9 of 9 on net10.0 and net8.0, the corpora 6,179 of 6,179
+identical through `tools/CorpusRun`. The net9.0 floor leg was built but
+not run: no .NET 9 runtime here.
+
 
 ## The first Windows and macOS runs (run 36581848218)
 

@@ -63,7 +63,6 @@ namespace ApplePurchaseReceiptVerifier.Bench
         private static List<Result> CrossPort()
         {
             Config config = Config.CreateBuilder()
-                .Roots(AppleRootCertificates.Bundled())
                 .Clock(() => NowMillis)
                 .Build();
             IVerifier verifier = Verifier.Create(config);
@@ -138,12 +137,15 @@ namespace ApplePurchaseReceiptVerifier.Bench
                 string id = kase.GetProperty("id").GetString()!;
                 string operation = kase.GetProperty("operation").GetString()!;
                 JsonElement trusted = kase.GetProperty("config").GetProperty("trustedRoots");
-                IEnumerable<X509Certificate2> roots = trusted.GetProperty("source").GetString() == "fixtures"
-                    ? trusted.GetProperty("fixtures").EnumerateArray()
+                Config.Builder builder = Config.CreateBuilder().Clock(() => NowMillis);
+                if (trusted.GetProperty("source").GetString() == "fixtures")
+                {
+                    builder.Roots(trusted.GetProperty("fixtures").EnumerateArray()
                         .Select(root => X509CertificateLoader.LoadCertificate(FixtureBytes(root.GetString()!)))
-                        .ToList()
-                    : AppleRootCertificates.Bundled();
-                IVerifier verifier = Verifier.Create(Config.CreateBuilder().Roots(roots).Clock(() => NowMillis).Build());
+                        .ToList());
+                }
+
+                IVerifier verifier = Verifier.Create(builder.Build());
                 string fixture = kase.GetProperty("input").GetProperty("fixture").GetString()!;
                 byte[] bytes = FixtureBytes(fixture);
                 string codec = registry.GetProperty(fixture).GetProperty("codec").GetString()!;

@@ -1,0 +1,33 @@
+== algorithms
+{"host":"node v22.22.2 (trap host)","rows":22,"traps":0,"unexpected_imports":[],"instances_left":22}
+22 rows: 22 identical, 0 differ, 0 traps
+== substrate
+{"host":"node v22.22.2 (trap host)","rows":193,"traps":0,"unexpected_imports":[],"instances_left":74}
+193 rows: 193 identical, 0 differ, 0 traps
+== cases
+{"host":"node v22.22.2 (trap host)","rows":153,"traps":0,"unexpected_imports":[],"instances_left":27}
+153 rows: 153 identical, 0 differ, 0 traps
+== hostile
+{"host":"node v22.22.2 (trap host)","rows":811,"traps":0,"unexpected_imports":[],"instances_left":3}
+811 rows: 811 identical, 0 differ, 0 traps
+== fuzz
+{"host":"node v22.22.2 (trap host)","rows":5000,"traps":0,"unexpected_imports":[],"instances_left":96}
+5000 rows: 4994 identical, 6 differ, 0 traps
+  fuzz/419/substrate/pkix/receipt/intermediate-version-1
+    a: {"id": "fuzz/419/substrate/pkix/receipt/intermediate-version-1", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"an intermediate is not a CA\"}"}
+    b: {"id": "fuzz/419/substrate/pkix/receipt/intermediate-version-1", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"chain does not reach a pinned root\"}"}
+  fuzz/2201/receipt/reject-leaf-presented-as-intermediate
+    a: {"id": "fuzz/2201/receipt/reject-leaf-presented-as-intermediate", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"an intermediate is not a CA\"}"}
+    b: {"id": "fuzz/2201/receipt/reject-leaf-presented-as-intermediate", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"chain does not reach a pinned root\"}"}
+  fuzz/2789/substrate/pkix/receipt/intermediate-no-basic-constraints
+    a: {"id": "fuzz/2789/substrate/pkix/receipt/intermediate-no-basic-constraints", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"an intermediate is not a CA\"}"}
+    b: {"id": "fuzz/2789/substrate/pkix/receipt/intermediate-no-basic-constraints", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"chain does not reach a pinned root\"}"}
+  fuzz/3052/receipt/reject-leaf-presented-as-intermediate
+    a: {"id": "fuzz/3052/receipt/reject-leaf-presented-as-intermediate", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"an intermediate is not a CA\"}"}
+    b: {"id": "fuzz/3052/receipt/reject-leaf-presented-as-intermediate", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"chain does not reach a pinned root\"}"}
+  fuzz/3128/substrate/pkix/receipt/intermediate-not-ca
+    a: {"id": "fuzz/3128/substrate/pkix/receipt/intermediate-not-ca", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"an intermediate is not a CA\"}"}
+    b: {"id": "fuzz/3128/substrate/pkix/receipt/intermediate-not-ca", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"chain does not reach a pinned root\"}"}
+  fuzz/3431/receipt/reject-leaf-presented-as-intermediate
+    a: {"id": "fuzz/3431/receipt/reject-leaf-presented-as-intermediate", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"an intermediate is not a CA\"}"}
+    b: {"id": "fuzz/3431/receipt/reject-leaf-presented-as-intermediate", "out": "{\"verified\":false,\"reason\":\"UNTRUSTED_CHAIN\",\"message\":\"chain does not reach a pinned root\"}"}
