@@ -85,6 +85,14 @@ paths-ignore:
   - swift/Tests/**
   - rust/tests/**
   - rust/ffi/tests/**
+  # The workspace's other crates keep their integration tests in the same
+  # place. rust/openssl/tests/isolation.rs plants a certificate and prints
+  # the path problems it produces in an assertion message, which the
+  # cleartext-logging query reads as logging the certificate.
+  - rust/openssl/tests/**
+  - rust/server/tests/**
+  - rust/bindings/abi/tests/**
+  - rust/bindings/wire/tests/**
   - "**/*_test.go"
 
   # ---- fuzz harnesses --------------------------------------------------
