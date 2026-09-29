@@ -20,7 +20,7 @@ work.
 | C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head e2d151c after the blob rewrite); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
 | C go | `lane/host-go` | steps 4.6, 4.7 | handed back 2026-09-29 (head 8764a29 after the blob rewrite); parked until the real module: 90 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 as expected, `-race` clean, staticcheck 0, static binary runs in an empty chroot |
 | C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | handed back 2026-09-29 (head b4cfcb1); parked until the real module: 366 tests green on JDK 21, the 311 cases on 11, 17 and 21 with 90 passing and 221 listed stand-in differences, Java 8 leg 32 tests green, `java/` unchanged (516 tests), corpus 6,176/2/1 at 1 and 4 threads, class majors 52/55 proven, 0 native references across 475 classes, classpath guard proven with Maven and Gradle |
-| C python | `lane/host-python` | steps 5.1 to 5.3 | handed back 2026-09-29 (head 64a6cfe after the blob rewrite); parked until the real module: 94 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 in 13 s, CPython 3.10 to 3.14 green (218 expected failures each), ruff and mypy clean, 8 platform-tagged wheels built and the install-failure path proven with a faked platform |
+| C python | `lane/host-python` | steps 5.1 to 5.3 | handed back 2026-09-29 (head d4613dc after the blob rewrite and the env-override fix); parked until the real module: 94 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 in 13 s, CPython 3.10 to 3.14 green (218 expected failures each), ruff and mypy clean, 8 platform-tagged wheels built and the install-failure path proven with a faked platform |
 | C ruby | `lane/host-ruby` | step 5.5 | handed back 2026-09-29 (head d223f7b after the blob rewrite and the env-override fix); parked until the real module: 90 of 311 cases on the stand-in (221 differ), corpus 6,176/2/1, rubocop, steep and rbs clean, gem 1,025,024 B, clean install picks the prebuilt native gem; thread scaling and the first-create time to be re-measured on a quiet machine (5.6 s here against the spike's 1.3 s) |
 | C swift | `lane/host-swift` | step 5.4 | handed back 2026-09-29 (head 0ef6614 after the blob rewrite); parked until the real module: 57 tests with 46 passing, the 9 failures all stand-in; 311 cases 90 pass / 221 stand-in; corpus 6,176/2/1 in 116 s; `swift format lint --strict` clean; release builds on Linux; iOS and macOS are CI's |
 | C dotnet | `lane/host-dotnet` | step 5.6 | handed back 2026-09-29 (head 3966e00 after the blob rewrite); parked until the real module: 524 tests with 303 passing and the same 221 stand-in failures on net8 and net10 (net9 self-contained too), Floor project 9/9 on 8, 9, 10, corpus 6,176/2/1, `dotnet format` clean, nupkg 2,108,091 B with a clean consumer; evidence note `2026-09-29-dotnet-host` |
@@ -116,8 +116,9 @@ work.
   variable that swaps the verification module inside a caller's process
   is a hole. Node, Go, Java and .NET honour `APRV_WASM`/`APRV_COMPONENT`
   at build time only; Swift copies the file into the resource path;
-  Python and Ruby, which had read the variable at run time, are being
-  corrected so only their test and build tooling honours it.
+  Python and Ruby, which had read the variable at run time, are
+  corrected: neither library reads it, only their test and build tooling,
+  and a test in each greps the library for environment reads.
 - Lane Swift, for the integrator: `release-please.yml`'s
   `refresh-wasm-copies` copies `aprv.wasm` but never rewrites the
   `.sha256` beside it, which would break the Go and Swift packages on the
