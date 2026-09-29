@@ -1910,6 +1910,114 @@
       "role": "input",
       "codec": "raw",
       "contentSha256": "53e2a84b33eae2fd7f8799bed153dec88e09ddda6e173fab3ea3017c75e83ad8"
+    },
+    "inventory-body-empty": {
+      "path": "generated-0.7/inventory-body-empty.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "inventory-body-not-json": {
+      "path": "generated-0.7/inventory-body-not-json.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "92628a747890d02d1459c6eb45fd13cfa63bbb6d346412cff190297cf9c33d39"
+    },
+    "inventory-body-truncated": {
+      "path": "generated-0.7/inventory-body-truncated.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "1bdff2db3e124f4e7db67c987303233271542e316a6951885314a2dcdae1bd3f"
+    },
+    "inventory-body-status": {
+      "path": "generated-0.7/inventory-body-status.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "add65f6fafcbf44cc6b3704a62d23f247ca9a01bd6def4b76edc03e0edc059a1"
+    },
+    "inventory-body-brackets-in-a-string": {
+      "path": "generated-0.7/inventory-body-brackets-in-a-string.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "7b6341a6b4d1bac5e0971a73d4d79f89733653c5099de56e19bccd2c305feacb"
+    },
+    "inventory-body-expired-fresh": {
+      "path": "generated-0.7/inventory-body-expired-fresh.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "dfaf295b3a6393e2638796a612d7bca98ccb0c001b1911de2023fcb8a4e12e86"
+    },
+    "inventory-receipt-truncated-200": {
+      "path": "generated-0.7/inventory-receipt-truncated-200.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "a1cf4af76b39889ec58fa4e20a7a94484a567fb08f0c67b89c7dfe8e6e1ddeff"
+    },
+    "inventory-transaction-signature-63": {
+      "path": "generated-0.7/inventory-transaction-signature-63.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "88211a069ef192f6d1ca1a8991c02b83f54872033b5b5e078ab10f3d66a36f48"
+    },
+    "inventory-transaction-signature-65": {
+      "path": "generated-0.7/inventory-transaction-signature-65.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "3180b0eb796d5ec8d834867a2e4630bd71b4992f2310d100354a7ec5ac5668d1"
+    },
+    "inventory-transaction-signature-zero": {
+      "path": "generated-0.7/inventory-transaction-signature-zero.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "022eae7e38c4b1c3fa46039423c75351f5a104749aa21dfa33cfb4d8805ce999"
+    },
+    "inventory-transaction-payload-array": {
+      "path": "generated-0.7/inventory-transaction-payload-array.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "f14e075bdcaa7f1b4b9033845e08252c61ecec804738194c79597106227679c9"
+    },
+    "inventory-transaction-signature-junk": {
+      "path": "generated-0.7/inventory-transaction-signature-junk.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "bb321e21ed6453035f9cd1e9a62085222b71bbd66b49c1f72c201b1f27f74853"
+    },
+    "inventory-x5c-that-is-an-object": {
+      "path": "generated-0.7/inventory-x5c-that-is-an-object.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "2b2186952f00eb12c8948385d6a32915bf658698c9df50e62fadc3f54704ba3c"
+    },
+    "inventory-x5c-of-numbers": {
+      "path": "generated-0.7/inventory-x5c-of-numbers.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "9bac65f9697979a59fbf0ed6d99aba887a8a4dab3d62db429b95bcb2d424ba0c"
+    },
+    "inventory-x5c-with-null-and-a-list": {
+      "path": "generated-0.7/inventory-x5c-with-null-and-a-list.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "ebe3aa612c6172dafd7e4c177650ebd58eaab7aade79b671871827a81db76f56"
+    },
+    "inventory-a-four-certificate-x5c": {
+      "path": "generated-0.7/inventory-a-four-certificate-x5c.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "426f686018e2cb9870431f7a6068555102135aa31b50f30b975e7c32aa5932e6"
+    },
+    "inventory-alg-in-lower-case": {
+      "path": "generated-0.7/inventory-alg-in-lower-case.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "92ad397a55b2a5af308bb656c3a79601a667b5560e63164836c7cfeef6a1fcfc"
+    },
+    "inventory-x5c-leaf-behind-a-byte-order-mark": {
+      "path": "generated-0.7/inventory-x5c-leaf-behind-a-byte-order-mark.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "71c611eed40f0033a6a59791c55a840e0463a82f646ecd55cbb57bee9b4835f2"
     }
   },
   "cases": [
@@ -12375,6 +12483,551 @@
         "chain",
         "negative",
         "core-review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/empty-body-answers-21002",
+      "description": "A request body of no bytes at all is not a verifyReceipt request: 21002, as Apple's endpoint answers a body it cannot read.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-empty"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/body-that-is-not-json-answers-21002",
+      "description": "A request body that is not JSON at all: 21002.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-not-json"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/truncated-object-answers-21002",
+      "description": "A request body cut off inside the receipt-data string, so the object never closes: 21002, whatever the base64 before the cut would have read as.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-truncated"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/literal-status-body-answers-21002",
+      "description": "A request body that is itself a verifyReceipt response, {\"status\":21002}: no receipt-data member, so 21002, and nothing of the body is echoed.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-status"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/brackets-inside-a-string-are-not-nesting-answers-0",
+      "description": "The shared receipt with a password of a hundred [ and a hundred { characters: brackets inside a JSON string are text, not nesting, so the 64-level depth bound does not apply and the receipt verifies: 0.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-brackets-in-a-string"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 0
+        }
+      },
+      "tags": [
+        "endpoint",
+        "positive",
+        "limits",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/pinned-clock-does-not-rescue-a-fresh-creation-date-answers-21003",
+      "description": "The expired chain (valid 2020 to 2021) over a receipt created 2024-08-06, with the clock pinned inside the chain's window: the receipt's own creation date is the chain instant and the clock never replaces it, so the chain fails: 21003.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-expired-fresh"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-expired-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "clock": {
+        "now": "2020-06-01T00:00:00Z"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21003
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "clock",
+        "validity-window",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/pinned-clock-does-not-rescue-a-fresh-creation-date",
+      "description": "The expired chain (valid 2020 to 2021) over a receipt created 2024-08-06, with the clock pinned inside the chain's window: the creation date is the chain instant whatever the clock says, so INVALID_CERTIFICATE.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-expired-fresh"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-expired-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2020-06-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "creation-date-outside-certificate-validity-window",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "clock",
+        "validity-window",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-receipt-truncated-to-200-bytes",
+      "description": "The first 200 bytes of the shared receipt: the ContentInfo's length runs past the end, so MALFORMED before anything is verified.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "inventory-receipt-truncated-200"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "truncated-envelope",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "der",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-signature-of-63-bytes",
+      "description": "The shared transaction with its 64-byte ES256 signature cut to 63 bytes: an ES256 signature is exactly 64 bytes (R || S), so INVALID_SIGNATURE before any curve arithmetic.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-signature-63"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "signature-one-byte-short",
+      "tags": [
+        "jws",
+        "negative",
+        "signature",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-signature-of-65-bytes",
+      "description": "The shared transaction with its 64-byte ES256 signature followed by one zero byte: an ES256 signature is exactly 64 bytes (R || S), so INVALID_SIGNATURE before any curve arithmetic.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-signature-65"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "signature-one-byte-long",
+      "tags": [
+        "jws",
+        "negative",
+        "signature",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-an-all-zero-signature",
+      "description": "The shared transaction with 64 zero bytes as its signature: R and S of zero are outside the group, so INVALID_SIGNATURE, never a crash in the curve code.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-signature-zero"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "signature-scalars-zero",
+      "tags": [
+        "jws",
+        "negative",
+        "signature",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-a-payload-swapped-for-an-array",
+      "description": "The shared transaction's payload segment replaced with the JSON array [], its signature kept: the signature covers the header and payload segments, so INVALID_SIGNATURE, and the payload is never read as claims.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-payload-array"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "payload-segment-replaced",
+      "tags": [
+        "jws",
+        "negative",
+        "verification-order",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-broken-signature-segment-under-a-foreign-chain",
+      "description": "The shared transaction with four characters outside base64url after its signature, under Apple's roots, which did not issue its chain: the segments are decoded before the chain is looked at, so MALFORMED rather than UNTRUSTED_CHAIN.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-signature-junk"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "signature-segment-not-base64url",
+      "tags": [
+        "jws",
+        "negative",
+        "verification-order",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-x5c-that-is-an-object",
+      "description": "The header's x5c is an object holding the leaf, not an array: MALFORMED, as for any x5c that is not three certificates.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-x5c-that-is-an-object"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "x5c-not-an-array",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-x5c-of-numbers",
+      "description": "The header's x5c holds three numbers: MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-x5c-of-numbers"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "x5c-entries-not-strings",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-x5c-with-null-and-a-list",
+      "description": "The header's x5c holds the leaf, a null and an empty list: MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-x5c-with-null-and-a-list"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "x5c-entries-not-strings",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-a-four-certificate-x5c",
+      "description": "The genuine x5c with its root repeated as a fourth entry: the chain is exactly leaf, intermediate and root, so MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-a-four-certificate-x5c"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "x5c-four-certificates",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-alg-in-lower-case",
+      "description": "The header's alg is es256: algorithm names are case-sensitive (RFC 7518 section 3.1), so MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-alg-in-lower-case"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "alg-lower-case",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-x5c-leaf-behind-a-byte-order-mark",
+      "description": "The leaf's x5c entry starts with U+FEFF: an x5c entry is strict standard base64, so the leaf does not decode: INVALID_CERTIFICATE.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-x5c-leaf-behind-a-byte-order-mark"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "x5c-entry-byte-order-mark",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
         "new-in-0-7"
       ]
     }
