@@ -245,6 +245,18 @@ work.
   becomes a CI job at integration. The real module is added once, in Go
   and Swift only, at integration.
 
+## Review (step 1.10) and integration prep
+
+- 2026-09-29: three adversarial reviewers (agents other than the
+  author) started on lane A1's commit d5c2838: the adapter's Rust and
+  `unsafe`, the C ASN.1 templates, and the core's policy against the 0.7
+  contract and the threat model. Findings land in the review log
+  (`docs/rust-core/REVIEW-LOG.md`, written at integration from their
+  files); blocking and fix-before-merge findings go back to the core
+  lane before G1 closes.
+- A consolidated integration checklist is being compiled from every
+  lane's `CI-NOTES.md` for the workflow edits after the merges.
+
 ## Merge policy on this branch
 
 Host lanes are parked on their branches after hand-back and merged only
