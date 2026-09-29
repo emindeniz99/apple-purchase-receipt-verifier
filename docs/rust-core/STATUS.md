@@ -17,13 +17,14 @@ work.
 | A2 core | `lane/core` | steps 1.3, 1.4, 1.5 (build script), 1.14: workspace, surface, wire, canonical ABI, schemas | waits on A1 |
 | A3 core | `lane/core` | steps 1.7, 1.8, 1.10, 1.12, 1.13 | waits on A2 |
 | B server | `lane/server` | Phase 2 against the stand-in component | started 2026-09-29 |
-| C node | `lane/host-node` | steps 4.1 to 4.5 | started 2026-09-29 |
+| C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head 5fd91f7); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
 | C go | `lane/host-go` | steps 4.6, 4.7 | started 2026-09-29 |
 | C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | started 2026-09-29 |
 | C python | `lane/host-python` | steps 5.1 to 5.3 | started 2026-09-29 |
 | C ruby | `lane/host-ruby` | step 5.5 | started 2026-09-29 |
-| C swift, dotnet | `lane/host-swift`, `lane/host-dotnet` | steps 5.4, 5.6 | wave 2, after wave 1 frees CPU and disk |
-| D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | started 2026-09-29 |
+| C swift | `lane/host-swift` | step 5.4 | started 2026-09-29 |
+| C dotnet | `lane/host-dotnet` | step 5.6 | wave 2 |
+| D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | **merged** 2026-09-29 (head cff064d); actionlint and zizmor at 0; jobs gated on the other lanes' files, see `.github/CI-NOTES.md` |
 | E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | waits on B |
 | F php | `lane/php` | Phase 6 | waits on B |
 
@@ -40,6 +41,43 @@ work.
   module and component (0.6 core); each lane records the cases that
   differ because of it and changes nothing to make them pass. Parity
   gates run again with the real module after G1.
+
+## Hand-back findings the owner should know
+
+- Lane D: fuzz findings in CI do **not** open an issue (the repository is
+  public; an auto-opened issue would disclose a memory-safety crash). The
+  job fails and keeps the input for 7 days. Owner decision if a private
+  channel is wanted instead.
+- Lane D: `actions/attest-sbom` is deprecated; SBOMs are attested with
+  `actions/attest` and `sbom-path`.
+- Lane D: `wasm-copies` is strict only on `release-please--*` branches
+  (the committed Go and Swift copies lag the core between releases);
+  `build-wasm` in `release.yml` enforces the match on a tag.
+- Lane D: `rust/rust-toolchain.toml` pins 1.98.1; cargo commands without a
+  toolchain override now use it; lane A adds the file to the crate's
+  `exclude`.
+- Lane Node (cross-host API decision, orchestrator): `Config.roots` in a
+  wrapper is the caller's DER list or "the module's built-in roots"
+  (`null`/empty); `defaults().roots` no longer lists the three Apple
+  certificates, because the wrappers no longer carry a copy. "Apple's
+  roots plus mine" is expressed by passing all four DERs. Every host
+  follows this. Node also dropped its two Node-only test hooks
+  (`decodeReceiptBase64`, `decodeX5cEntry`), which were not in the 0.7
+  API document.
+- Lane Node: `unknownAttributes` order across types is lost on the JSON
+  wire (an object keyed by type); order within a type is kept. Inherent
+  to the wire shape (SURFACE §4).
+- Lane Node: jco's glue reads `process.env.JCO_DEBUG`; Deno needs
+  `--allow-env=JCO_DEBUG`. Documented; no transpile flag removes it.
+- Lane Node: the Bun WASI `random_get` bug is fixed in Bun 1.4.0; nothing
+  to file. It never affected the package (no WASI import).
+
+## Merge policy on this branch
+
+Host lanes are parked on their branches after hand-back and merged only
+after their conformance run is green on the real module (after A2), so
+`rust-core`'s CI stays meaningful. Infrastructure lanes (D) merge at
+hand-back.
 
 ## Gates
 
