@@ -4,11 +4,11 @@
 use crate::error::{malformed, Failure, Reason};
 use crate::path::{authenticated_top_down, receipt_path};
 use crate::receipt_payload::{
-    parse_receipt_payload, read_creation_date, ReceiptPayload, MAX_ASN1_DEPTH,
+    parse_receipt_payload, read_creation_date, ReceiptPayload, MAX_ASN1_DEPTH, MAX_ASN1_NODES,
 };
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
-use aprv_openssl::{envelope_members, Certificate, SignedData};
+use aprv_openssl::{Certificate, CmsError, EnvelopeLimits, SignedData};
 
 /// How many certificates a receipt may embed. Every embedded certificate is
 /// parsed and then tried as an issuer before anything about the receipt is
@@ -19,15 +19,20 @@ pub(crate) const MAX_EMBEDDED_CERTIFICATES: usize = 10;
 /// signature is checked.
 pub(crate) const MAX_SIGNER_INFOS: usize = 4;
 
-/// The depth of a `SignerInfo`'s attribute values in the CMS envelope,
-/// counting the `ContentInfo` as 1: `ContentInfo`, `[0]`, `SignedData`,
-/// the `signerInfos` SET, the `SignerInfo`, the `[0]` or `[1]` attribute
-/// set, the attribute SEQUENCE and its SET of values are 1 to 8.
-const ATTRIBUTE_VALUE_BASE: usize = 8;
+/// How many CRLs a receipt may embed. Apple's receipts carry none; like the
+/// certificates, each one is decoded in full before anything is verified,
+/// so the count is bounded before a single one is.
+pub(crate) const MAX_EMBEDDED_CRLS: usize = 10;
 
-/// The depth of a `SignerInfo`'s algorithm parameters: its
-/// `AlgorithmIdentifier` SEQUENCE is 6.
-const ALGORITHM_PARAMETER_BASE: usize = 6;
+/// The bounds the adapter enforces on an envelope, in its order, before
+/// the full decode builds any certificate (0.7 bounds table).
+const ENVELOPE_LIMITS: EnvelopeLimits = EnvelopeLimits {
+    depth: MAX_ASN1_DEPTH,
+    nodes: MAX_ASN1_NODES,
+    signer_infos: MAX_SIGNER_INFOS,
+    certificates: MAX_EMBEDDED_CERTIFICATES,
+    crls: MAX_EMBEDDED_CRLS,
+};
 
 /// The largest receipt string, in UTF-8 bytes: 3 MiB, Apple's own request
 /// limit, checked before anything is decoded. No receipt Apple accepts can
@@ -77,16 +82,43 @@ pub(crate) fn verify(
 /// The `SignerInfo` and embedded-certificate bounds.
 fn within_member_bounds(signer_infos: usize, certificates: usize) -> Result<(), Failure> {
     if signer_infos > MAX_SIGNER_INFOS {
-        return Err(malformed(format!(
-            "receipt carries {signer_infos} SignerInfos, more than the maximum of {MAX_SIGNER_INFOS}"
-        )));
+        return Err(too_many_signer_infos(signer_infos));
     }
     if certificates > MAX_EMBEDDED_CERTIFICATES {
-        return Err(malformed(format!(
-            "receipt embeds {certificates} certificates, more than the maximum of {MAX_EMBEDDED_CERTIFICATES}"
-        )));
+        return Err(too_many_certificates(certificates));
     }
     Ok(())
+}
+
+fn too_many_signer_infos(count: usize) -> Failure {
+    malformed(format!(
+        "receipt carries {count} SignerInfos, more than the maximum of {MAX_SIGNER_INFOS}"
+    ))
+}
+
+fn too_many_certificates(count: usize) -> Failure {
+    malformed(format!(
+        "receipt embeds {count} certificates, more than the maximum of {MAX_EMBEDDED_CERTIFICATES}"
+    ))
+}
+
+/// The failure for an envelope the adapter refused: always `MALFORMED`,
+/// since nothing in it has been verified.
+fn envelope_failure(err: CmsError) -> Failure {
+    match err {
+        CmsError::TooManySignerInfos(count) => too_many_signer_infos(count),
+        CmsError::TooManyCertificates(count) => too_many_certificates(count),
+        CmsError::TooManyCrls(count) => malformed(format!(
+            "receipt embeds {count} CRLs, more than the maximum of {MAX_EMBEDDED_CRLS}"
+        )),
+        CmsError::TooDeep => malformed(format!(
+            "malformed CMS structure: nested deeper than {MAX_ASN1_DEPTH} constructed values"
+        )),
+        CmsError::TooManyNodes => malformed(format!(
+            "malformed CMS structure: more than {MAX_ASN1_NODES} ASN.1 values"
+        )),
+        other => malformed(format!("malformed CMS structure: {other}")),
+    }
 }
 
 /// Every check up to and including a signature; returns the signed payload,
@@ -96,46 +128,26 @@ fn verify_signature(
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<Vec<u8>, Failure> {
-    // Bounded first, from a shallow decode that keeps every member as its
-    // raw bytes: the full decode below builds each embedded certificate's
-    // public key, and an unverified receipt would otherwise get to make the
-    // caller pay for a thousand of them before a single one is judged or
-    // tried as an issuer. A blob without that shape is left to the full
-    // decode to name, and the bounds are checked again on what it found.
-    if let Some(members) = envelope_members(der) {
-        within_member_bounds(members.signer_infos, members.certificates)?;
-    }
-    let mut cms = SignedData::parse(der)
-        .map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
+    // The adapter bounds the envelope before its full decode, which builds
+    // each embedded certificate's public key: a header walk under the depth
+    // and node bounds, then a shallow decode that keeps every member raw
+    // and is counted against the SignerInfo, certificate and CRL bounds.
+    // An unverified receipt cannot make the caller pay for a thousand keys
+    // before a single one is judged or tried as an issuer, and an envelope
+    // the walk or the shallow decode refuses never reaches the full decode.
+    let mut cms = SignedData::parse(der, &ENVELOPE_LIMITS).map_err(envelope_failure)?;
     let signer_count = cms.signer_count();
     let certificates = cms.certificates();
     within_member_bounds(signer_count, certificates.len())?;
 
-    // The ASN.1 depth bound, for the values OpenSSL keeps whole without
-    // looking inside (attribute values, algorithm parameters): unsigned
-    // attributes are outside every signature, so deep nesting there is
-    // refused as a broken envelope before any cryptography.
-    for index in 0..signer_count {
-        let within = cms
-            .signer_nesting(index, MAX_ASN1_DEPTH)
-            .is_some_and(|nesting| {
-                ATTRIBUTE_VALUE_BASE.saturating_add(nesting.attribute_values) <= MAX_ASN1_DEPTH
-                    && ALGORITHM_PARAMETER_BASE.saturating_add(nesting.algorithm_parameters)
-                        <= MAX_ASN1_DEPTH
-            });
-        if !within {
-            return Err(malformed(format!(
-                "malformed CMS structure: a SignerInfo value is not ASN.1 nested at most {MAX_ASN1_DEPTH} deep"
-            )));
-        }
-    }
-
     // Only the creation date is read before trust is established, because
     // chain validity is anchored at signing time; nothing else in the payload
-    // is decoded until the chain and a signature have passed. A date that is
-    // missing or unreadable cannot blame anyone yet, so it only moves the
-    // chain instant to the clock and never rejects by itself.
-    let creation_date = read_creation_date(cms.content());
+    // is decoded until the chain and a signature have passed. It is read
+    // once a SignerInfo has named an embedded certificate, since only a
+    // chain needs it. A date that is missing or unreadable cannot blame
+    // anyone yet, so it only moves the chain instant to the clock and never
+    // rejects by itself.
+    let mut creation_date: Option<Option<i64>> = None;
 
     let embedded = Embedded::sort(certificates);
     // Signer-independent, so walked once for all SignerInfos, and only once
@@ -144,7 +156,8 @@ fn verify_signature(
     let mut first_failure: Option<Failure> = None;
     for index in 0..signer_count {
         let verdict = signer_certificates(&cms, index, &embedded).and_then(|matches| {
-            let at_millis = match creation_date {
+            let date = *creation_date.get_or_insert_with(|| read_creation_date(cms.content()));
+            let at_millis = match date {
                 Some(millis) => millis,
                 None => clock.now()?,
             };

@@ -15,9 +15,12 @@
  * 0.7 contract requires a reader to accept (fixtures/cases.json,
  * receipt/accept-signed-content-nested-32-deep), and a template cannot say
  * "and whatever follows". Every field is still decoded by OpenSSL by its
- * tag: an INTEGER anywhere must be a valid INTEGER.
+ * tag: a primitive INTEGER, BOOLEAN, NULL or OBJECT IDENTIFIER anywhere
+ * must be a valid one. A constructed field is kept as its encoding.
  */
 #include <openssl/asn1t.h>
+
+DECLARE_ASN1_ITEM(APRV_RECEIPT_PAYLOAD)
 
 ASN1_ITEM_TEMPLATE(APRV_RECEIPT_PAYLOAD) =
     ASN1_EX_TEMPLATE_TYPE(ASN1_TFLG_SET_OF, 0, Payload, ASN1_SEQUENCE_ANY)

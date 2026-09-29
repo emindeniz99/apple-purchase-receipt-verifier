@@ -688,3 +688,73 @@ fn an_unvouched_signer_on_an_unimplemented_curve_is_an_untrusted_chain() {
     builder.signer_serial = vec![7];
     assert_eq!(reason_of(&builder.build()), Reason::UntrustedChain);
 }
+
+/// Policy-F8, the receipt twin: a receipt without a creation date is
+/// judged at the clock, which has milliseconds. The minted chain is valid
+/// until 2099-12-31T00:00:00Z, that instant included.
+#[test]
+fn a_dateless_receipt_is_judged_at_the_clock_to_the_millisecond() {
+    use apple_purchase_receipt_verifier::Config;
+    use common::mint::{certificate, key, name, RECEIPT_SIGNER_MARKER, WWDR_MARKER};
+    const NOT_AFTER: i64 = 4_102_358_400_000;
+    let (root_key, intermediate_key, signer_key) = (key(1), key(2), key(3));
+    let root = certificate(
+        "Test Root",
+        &root_key,
+        "Test Root",
+        &root_key,
+        1,
+        true,
+        None,
+    );
+    let intermediate = certificate(
+        "Test WWDR",
+        &intermediate_key,
+        "Test Root",
+        &root_key,
+        2,
+        true,
+        Some(WWDR_MARKER),
+    );
+    let signer = certificate(
+        "Test Signer",
+        &signer_key,
+        "Test WWDR",
+        &intermediate_key,
+        3,
+        false,
+        Some(RECEIPT_SIGNER_MARKER),
+    );
+    // One bundle id attribute and no attribute 12.
+    let content = common::der_set(&[common::der_seq(&[
+        common::der_int(2),
+        common::der_int(1),
+        common::der(0x04, &common::der(0x0c, b"com.example.app")),
+    ])]);
+    let mut builder = common::CmsBuilder::from_shared();
+    builder.certificates = vec![signer, intermediate];
+    builder.signer_issuer = name("Test WWDR");
+    builder.signer_serial = vec![3];
+    builder.signed_attrs = None;
+    builder.signature_algorithm =
+        common::der_seq(&[common::der_oid(common::mint::ECDSA_WITH_SHA256)]);
+    builder.signature = signer_key.sign_der(&content);
+    builder.content = Some(content);
+    let receipt = builder.build();
+    let at = |millis: i64| {
+        let verifier = Verifier::new(
+            Config::builder()
+                .roots([TrustAnchor::from_der(&root).unwrap()])
+                .clock(move || millis)
+                .build()
+                .unwrap(),
+        );
+        common::verify_der(&verifier, &receipt)
+            .err()
+            .map(|failure| failure.reason())
+    };
+    assert_eq!(at(NOT_AFTER), None);
+    for outside in [NOT_AFTER + 1, NOT_AFTER + 999] {
+        assert_eq!(at(outside), Some(Reason::InvalidCertificate), "{outside}");
+    }
+}

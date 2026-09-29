@@ -96,7 +96,10 @@ impl Certificate {
         usable
     }
 
-    /// Whether the certificate carries an extension with this dotted OID.
+    /// Whether the certificate carries an extension with this OID.
+    /// `OBJ_txt2obj` reads the text, so a name OpenSSL knows
+    /// (`basicConstraints`) matches as its dotted OID would; the core
+    /// passes dotted constants only.
     #[must_use]
     pub fn has_extension(&self, dotted_oid: &str) -> bool {
         init();

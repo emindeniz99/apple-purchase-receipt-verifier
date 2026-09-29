@@ -17,7 +17,11 @@
 //      rust/ffi and aprv-server, or the core, aprv-surface or aprv-wire
 //      lacks `#![forbid(unsafe_code)]`;
 //   5. the core has a module named asn1, x509, cms, chain or crypto, or an
-//      ASN.1, X.509 or signature crate in its graph (DECISIONS.md R21).
+//      ASN.1, X.509 or signature crate in its graph (DECISIONS.md R21);
+//   6. `ASN1_get_object`, OpenSSL's TLV header decoder, appears in the
+//      core's code, or in the adapter's code outside the header walk
+//      rust/openssl/README.md names (src/walk.rs, which decodes no value;
+//      src/sys.rs may only declare it).
 //
 // "Graph" means what `cargo tree -e normal,build` resolves for one package
 // on each target the project ships (Linux, macOS and Windows on x86_64 and
@@ -61,6 +65,10 @@ const PARSERS = [
   /^webpki$/,
 ];
 const FORBIDDEN_MODULES = ['asn1', 'x509', 'cms', 'chain', 'crypto'];
+// Rule 6: the header walk, the one adapter file that may call the header
+// decoder, and the file that declares it (paths inside the adapter crate).
+const HEADER_WALK = 'src/walk.rs';
+const DECLARATIONS = 'src/sys.rs';
 const MAY_BE_UNSAFE = new Set([ADAPTER, ABI, FFI, SERVER]);
 const MUST_FORBID_UNSAFE = [CORE, SURFACE, WIRE];
 
@@ -249,10 +257,35 @@ for (const name of coreGraph) {
   if (PARSERS.some((re) => re.test(name))) fail(5, `the core's graph contains ${name}, an ASN.1, X.509 or signature crate`);
 }
 
+// 6. The header decoder only in the adapter's header walk.
+/** C source with comments blanked. */
+function cCode(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+}
+for (const file of rustFiles(coreSrc)) {
+  if (/\bASN1_get_object\b/.test(code(readFileSync(file, 'utf8')))) {
+    fail(6, `${relative(rustDir, file)} names ASN1_get_object; the core reads no ASN.1 header itself`);
+  }
+}
+const adapterDir = dirname(byName(ADAPTER).manifest_path);
+const adapterFiles = [
+  ...rustFiles(join(adapterDir, 'src')),
+  ...readdirSync(adapterDir).filter((f) => f.endsWith('.c') || f.endsWith('.h')).map((f) => join(adapterDir, f)),
+];
+for (const file of adapterFiles) {
+  const inside = relative(adapterDir, file).split('\\').join('/');
+  if (inside === HEADER_WALK) continue;
+  const text = file.endsWith('.rs') ? code(readFileSync(file, 'utf8')) : cCode(readFileSync(file, 'utf8'));
+  for (const match of text.matchAll(/(\bfn\s+)?\bASN1_get_object\b/g)) {
+    if (inside === DECLARATIONS && match[1]) continue;
+    fail(6, `${relative(rustDir, file)} calls ASN1_get_object outside the header walk (${HEADER_WALK})`);
+  }
+}
+
 if (violations.length) {
   for (const v of violations) console.error(`check-layering: FAIL ${v}`);
   process.exit(1);
 }
 console.log(
-  `check-layering: ok, 5 rules over ${members.length} workspace members; the core ships with ${coreGraph.size} packages: ${[...coreGraph].sort().join(', ')}`,
+  `check-layering: ok, 6 rules over ${members.length} workspace members; the core ships with ${coreGraph.size} packages: ${[...coreGraph].sort().join(', ')}`,
 );

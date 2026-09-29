@@ -784,3 +784,34 @@ fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
         Reason::UntrustedChain
     );
 }
+
+/// Policy-F8: OpenSSL judges validity in whole seconds, and the core adds
+/// the milliseconds. The minted chain is valid from 2020-01-01T00:00:00Z to
+/// 2099-12-31T00:00:00Z, both instants included (RFC 5280 section
+/// 4.1.2.5), so one millisecond either side is outside it.
+#[test]
+fn validity_is_judged_to_the_millisecond() {
+    const NOT_BEFORE: i64 = 1_577_836_800_000;
+    const NOT_AFTER: i64 = 4_102_358_400_000;
+    let at = |millis: i64| {
+        let payload = format!(r#"{{"signedDate":{millis}}}"#);
+        let (root, jws) = common::mint::signed_jws(payload.as_bytes());
+        let verifier = Verifier::new(
+            Config::builder()
+                .roots([TrustAnchor::from_der(&root).unwrap()])
+                .clock(|| 0)
+                .build()
+                .unwrap(),
+        );
+        verifier
+            .verify_signed_data(&jws)
+            .err()
+            .map(|failure| failure.reason())
+    };
+    for inside in [NOT_BEFORE, NOT_BEFORE + 1, NOT_AFTER - 1, NOT_AFTER] {
+        assert_eq!(at(inside), None, "{inside}");
+    }
+    for outside in [NOT_BEFORE - 1, NOT_AFTER + 1, NOT_AFTER + 999] {
+        assert_eq!(at(outside), Some(Reason::InvalidCertificate), "{outside}");
+    }
+}

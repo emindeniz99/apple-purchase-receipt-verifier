@@ -18,10 +18,9 @@ pub(crate) const BIO_C_SET_MD: c_int = 111;
 pub(crate) const V_ASN1_UTF8STRING: c_int = 12;
 pub(crate) const V_ASN1_IA5STRING: c_int = 22;
 
-/// `V_ASN1_UNIVERSAL` and `V_ASN1_CONTEXT_SPECIFIC`, the class values
-/// `ASN1_get_object` reports (asn1.h).
+/// `V_ASN1_UNIVERSAL`, the class value `ASN1_get_object` reports for a
+/// universal tag (asn1.h).
 pub(crate) const V_ASN1_UNIVERSAL: c_int = 0x00;
-pub(crate) const V_ASN1_CONTEXT_SPECIFIC: c_int = 0x80;
 /// The bits of `ASN1_get_object`'s answer: a constructed encoding, an
 /// indefinite length, an error (`asn1.h`, `asn1_lib.c`).
 pub(crate) const V_ASN1_CONSTRUCTED: c_int = 0x20;
@@ -36,7 +35,9 @@ pub(crate) enum CMS_SignerInfo {}
 pub(crate) enum stack_st_CMS_SignerInfo {}
 
 /// `APRV_SIGNED_DATA` as `envelope.c` declares it: six pointers, in
-/// declaration order. Only the three stacks are read.
+/// declaration order. Only the encapsulated content and the three stacks
+/// are read. The assertions below and `envelope.c`'s own pin the layout
+/// both sides assume.
 #[repr(C)]
 pub(crate) struct APRV_SIGNED_DATA {
     pub(crate) version: *mut ffi::ASN1_TYPE,
@@ -47,12 +48,23 @@ pub(crate) struct APRV_SIGNED_DATA {
     pub(crate) signer_infos: *mut ffi::OPENSSL_STACK,
 }
 
-/// `APRV_ENVELOPE` as `envelope.c` declares it.
+/// `APRV_CONTENT_INFO` as `envelope.c` declares it: two pointers.
 #[repr(C)]
-pub(crate) struct APRV_ENVELOPE {
+pub(crate) struct APRV_CONTENT_INFO {
     pub(crate) content_type: *mut ffi::ASN1_OBJECT,
-    pub(crate) content: *mut APRV_SIGNED_DATA,
+    pub(crate) content: *mut ffi::ASN1_TYPE,
 }
+
+const POINTER: usize = core::mem::size_of::<*mut c_void>();
+const _: () = {
+    assert!(core::mem::size_of::<APRV_CONTENT_INFO>() == 2 * POINTER);
+    assert!(core::mem::offset_of!(APRV_CONTENT_INFO, content) == POINTER);
+    assert!(core::mem::size_of::<APRV_SIGNED_DATA>() == 6 * POINTER);
+    assert!(core::mem::offset_of!(APRV_SIGNED_DATA, encapsulated_content) == 2 * POINTER);
+    assert!(core::mem::offset_of!(APRV_SIGNED_DATA, certificates) == 3 * POINTER);
+    assert!(core::mem::offset_of!(APRV_SIGNED_DATA, crls) == 4 * POINTER);
+    assert!(core::mem::offset_of!(APRV_SIGNED_DATA, signer_infos) == 5 * POINTER);
+};
 
 /// The verify callback of an `X509_STORE_CTX`.
 pub(crate) type VerifyCallback =
@@ -102,11 +114,6 @@ extern "C" {
         si: *const CMS_SignerInfo,
         loc: c_int,
     ) -> *mut ffi::X509_ATTRIBUTE;
-    pub(crate) fn CMS_unsigned_get_attr_count(si: *const CMS_SignerInfo) -> c_int;
-    pub(crate) fn CMS_unsigned_get_attr(
-        si: *const CMS_SignerInfo,
-        loc: c_int,
-    ) -> *mut ffi::X509_ATTRIBUTE;
 
     pub(crate) fn ASN1_item_d2i(
         val: *mut *mut ffi::ASN1_VALUE,
@@ -126,10 +133,10 @@ extern "C" {
     pub(crate) fn ASN1_OCTET_STRING_it() -> *const ASN1_ITEM;
     pub(crate) fn ASN1_INTEGER_it() -> *const ASN1_ITEM;
     pub(crate) fn DISPLAYTEXT_it() -> *const ASN1_ITEM;
-    pub(crate) fn ASN1_SEQUENCE_ANY_it() -> *const ASN1_ITEM;
-    pub(crate) fn ASN1_SET_ANY_it() -> *const ASN1_ITEM;
     /// Defined by `payload.c`.
     pub(crate) fn APRV_RECEIPT_PAYLOAD_it() -> *const ASN1_ITEM;
     /// Defined by `envelope.c`.
-    pub(crate) fn APRV_ENVELOPE_it() -> *const ASN1_ITEM;
+    pub(crate) fn APRV_CONTENT_INFO_it() -> *const ASN1_ITEM;
+    /// Defined by `envelope.c`.
+    pub(crate) fn APRV_SIGNED_DATA_it() -> *const ASN1_ITEM;
 }

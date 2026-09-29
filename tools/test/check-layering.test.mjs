@@ -119,6 +119,42 @@ expectFailure(
   /rule 5: the core has a module file named asn1[\s\S]*rule 5: src\/lib\.rs declares a module named asn1/,
 );
 
+expectFailure(
+  'rule 6: the header decoder named in the core fails',
+  (copy) => {
+    const file = join(copy, 'src', 'receipt.rs');
+    writeFileSync(file, `${readFileSync(file, 'utf8')}\nfn planted() { ASN1_get_object(); }\n`);
+  },
+  /rule 6: src\/receipt\.rs names ASN1_get_object/,
+);
+
+expectFailure(
+  'rule 6: the header decoder called in the adapter outside the walk fails',
+  (copy) => {
+    const file = join(copy, 'openssl', 'src', 'envelope.rs');
+    writeFileSync(
+      file,
+      `${readFileSync(file, 'utf8')}\nfn planted() { let _ = unsafe { sys::ASN1_get_object(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), 0) }; }\n`,
+    );
+  },
+  /rule 6: openssl\/src\/envelope\.rs calls ASN1_get_object outside the header walk/,
+);
+
+test('rule 6: the declaration in sys.rs and the walk itself pass', () => {
+  const { copy, cleanup } = planted((dir) => {
+    const walk = readFileSync(join(dir, 'openssl', 'src', 'walk.rs'), 'utf8');
+    assert.match(walk, /sys::ASN1_get_object\(/);
+    const sys = readFileSync(join(dir, 'openssl', 'src', 'sys.rs'), 'utf8');
+    assert.match(sys, /fn ASN1_get_object\(/);
+  });
+  try {
+    const { status, output } = run(copy);
+    assert.equal(status, 0, output);
+  } finally {
+    cleanup();
+  }
+});
+
 test('unsafe inside a comment or a string is not code', () => {
   const { copy, cleanup } = planted((dir) => {
     const lib = join(dir, 'bindings', 'wire', 'src', 'lib.rs');

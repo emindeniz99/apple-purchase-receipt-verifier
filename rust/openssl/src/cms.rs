@@ -10,9 +10,9 @@
 //! the unsigned `digestAlgorithms` set of the `SignedData`.
 
 use crate::certificate::Certificate;
-use crate::envelope::Envelope;
-use crate::item::{nesting_depth, nesting_depth_of};
+use crate::envelope::{Envelope, EnvelopeMembers, ShallowError};
 use crate::sys::{self, CMS_SignerInfo};
+use crate::walk::{self, Budget, ChunkError, Headers, WalkError};
 use crate::{d2i_whole, drain_errors, init, keys};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use libc::c_int;
@@ -21,18 +21,31 @@ use openssl::cms::CmsContentInfo;
 use openssl::stack::Stack;
 use openssl::x509::X509;
 use openssl_sys as ffi;
+use std::cell::Cell;
 use std::ptr;
 
 /// Why a blob is not a `SignedData` the core can look at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CmsError {
     /// OpenSSL does not decode it as a `ContentInfo`, which includes an
-    /// embedded certificate or a signed attribute set it cannot parse.
+    /// embedded certificate or a signed attribute set it cannot parse, or a
+    /// header OpenSSL's header decoder does not read.
     Malformed,
     /// Bytes follow the outer value.
     Trailing,
+    /// Constructed values nest deeper than [`EnvelopeLimits::depth`].
+    TooDeep,
+    /// More values than [`EnvelopeLimits::nodes`].
+    TooManyNodes,
     /// A `ContentInfo` of another type than `signedData`.
     NotSignedData,
+    /// More `SignerInfo`s than [`EnvelopeLimits::signer_infos`]: how many.
+    TooManySignerInfos(usize),
+    /// More embedded certificates than [`EnvelopeLimits::certificates`]:
+    /// how many.
+    TooManyCertificates(usize),
+    /// More CRLs than [`EnvelopeLimits::crls`]: how many.
+    TooManyCrls(usize),
     /// No encapsulated content (a detached signature).
     NoContent,
     /// No `SignerInfo`.
@@ -41,24 +54,69 @@ pub enum CmsError {
     /// chunk, at some depth, that is not an `OCTET STRING`. X.690 section
     /// 8.7.3 allows no other; OpenSSL joins any universal chunk.
     ForeignContentChunk,
+    /// The encapsulated content's constructed `OCTET STRING` nests more
+    /// levels than OpenSSL decodes (six).
+    ContentChunksTooDeep,
 }
 
 impl core::fmt::Display for CmsError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(match self {
-            CmsError::Malformed => "not a CMS ContentInfo",
-            CmsError::Trailing => "bytes follow the CMS ContentInfo",
-            CmsError::NotSignedData => "not a CMS SignedData",
-            CmsError::NoContent => "no encapsulated payload",
-            CmsError::NoSignerInfo => "no signer info",
+        match self {
+            CmsError::Malformed => f.write_str("not a CMS ContentInfo"),
+            CmsError::Trailing => f.write_str("bytes follow the CMS ContentInfo"),
+            CmsError::TooDeep => f.write_str("the CMS envelope nests too deep"),
+            CmsError::TooManyNodes => f.write_str("the CMS envelope holds too many values"),
+            CmsError::NotSignedData => f.write_str("not a CMS SignedData"),
+            CmsError::TooManySignerInfos(count) => write!(f, "{count} SignerInfos"),
+            CmsError::TooManyCertificates(count) => write!(f, "{count} embedded certificates"),
+            CmsError::TooManyCrls(count) => write!(f, "{count} embedded CRLs"),
+            CmsError::NoContent => f.write_str("no encapsulated payload"),
+            CmsError::NoSignerInfo => f.write_str("no signer info"),
             CmsError::ForeignContentChunk => {
-                "encapsulated payload has a chunk that is not an OCTET STRING"
+                f.write_str("encapsulated payload has a chunk that is not an OCTET STRING")
             }
-        })
+            CmsError::ContentChunksTooDeep => f.write_str(
+                "encapsulated payload's OCTET STRING chunks nest deeper than OpenSSL decodes",
+            ),
+        }
     }
 }
 
 impl std::error::Error for CmsError {}
+
+/// The bounds [`SignedData::parse`] enforces before the full decode. The
+/// core owns their values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnvelopeLimits {
+    /// The deepest nesting of constructed values, the `ContentInfo`
+    /// counted as 1.
+    pub depth: usize,
+    /// The most values, primitive ones included, in the whole envelope.
+    pub nodes: usize,
+    /// The most `SignerInfo`s.
+    pub signer_infos: usize,
+    /// The most entries of the `certificates` set.
+    pub certificates: usize,
+    /// The most entries of the `crls` set.
+    pub crls: usize,
+}
+
+std::thread_local! {
+    /// How many times this thread ran `d2i_CMS_ContentInfo` while
+    /// [`full_decodes_during`] counts; `None` otherwise.
+    static FULL_DECODES: Cell<Option<usize>> = const { Cell::new(None) };
+}
+
+/// Runs `body` and returns, beside its result, how many times this crate
+/// ran the full CMS decode (`d2i_CMS_ContentInfo`, which builds every
+/// embedded certificate's key) on this thread meanwhile: the tests' seam
+/// for "refused before the full decode".
+pub fn full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
+    let previous = FULL_DECODES.with(|count| count.replace(Some(0)));
+    let result = body();
+    let counted = FULL_DECODES.with(|count| count.replace(previous));
+    (result, counted.unwrap_or(0))
+}
 
 /// What a `SignerInfo`'s signed attributes hold, for the RFC 5652 section
 /// 5.3 and 11 rules the core applies.
@@ -78,16 +136,6 @@ pub struct SignedAttributes {
     pub message_digest_values: usize,
 }
 
-/// How deep SEQUENCEs and SETs nest in the values of one `SignerInfo` that
-/// OpenSSL keeps whole without looking inside, each 0 when none is one.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SignerNesting {
-    /// The deepest signed or unsigned attribute value.
-    pub attribute_values: usize,
-    /// The deeper of the digest and signature algorithm parameters.
-    pub algorithm_parameters: usize,
-}
-
 /// A parsed CMS `SignedData` with attached content and at least one
 /// `SignerInfo`.
 pub struct SignedData {
@@ -104,15 +152,56 @@ impl core::fmt::Debug for SignedData {
 }
 
 impl SignedData {
-    /// Parses a DER or BER `ContentInfo` (`d2i_CMS_ContentInfo`) and checks
-    /// its outer shape.
+    /// Parses a DER or BER `ContentInfo` and checks its outer shape, in an
+    /// order that keeps the cost of a hostile envelope bounded before the
+    /// full decode (`d2i_CMS_ContentInfo`) builds every embedded
+    /// certificate's key:
+    ///
+    /// 1. the shallow decode: one `ContentInfo` of type `signedData` whose
+    ///    `SignedData` has the shape, every member kept as its raw
+    ///    encoding, and nothing after it;
+    /// 2. the member bounds, on the shallow decode's counts;
+    /// 3. the header walk over the whole input, within `limits.depth` and
+    ///    `limits.nodes`;
+    /// 4. the full decode, then the chunks of the encapsulated content.
+    ///
+    /// An envelope refused at steps 1 to 3 never reaches the full decode.
+    /// The shallow grammar accepts every envelope the full decode does, so
+    /// step 1 refuses nothing step 4 would accept. When step 1 refuses, the
+    /// walk runs anyway to say why (bytes after the value, the depth or
+    /// node bound); both are linear in the input, and neither builds a key.
     ///
     /// # Errors
     /// [`CmsError`] for anything but one `signedData` with attached content
-    /// and at least one `SignerInfo`.
-    pub fn parse(der: &[u8]) -> Result<SignedData, CmsError> {
+    /// and at least one `SignerInfo`, within `limits`.
+    pub fn parse(der: &[u8], limits: &EnvelopeLimits) -> Result<SignedData, CmsError> {
         init();
+        let walk = || {
+            let budget = Budget {
+                depth: limits.depth,
+                nodes: limits.nodes,
+            };
+            walk::walk_exact(der, budget, Headers::Ber).map_err(|err| match err {
+                WalkError::Malformed => CmsError::Malformed,
+                WalkError::Trailing => CmsError::Trailing,
+                WalkError::TooDeep => CmsError::TooDeep,
+                WalkError::TooManyNodes => CmsError::TooManyNodes,
+            })
+        };
+        let envelope = match Envelope::decode(der) {
+            Ok(envelope) => envelope,
+            Err(shallow) => {
+                walk()?;
+                return Err(match shallow {
+                    ShallowError::Malformed => CmsError::Malformed,
+                    ShallowError::NotSignedData => CmsError::NotSignedData,
+                });
+            }
+        };
+        within(envelope.members(), limits)?;
+        walk()?;
         let (raw, whole) = d2i_whole(der, |cursor, len| {
+            FULL_DECODES.with(|count| count.set(count.get().map(|n| n.saturating_add(1))));
             // SAFETY: `cursor` points at `len` readable bytes of `der`;
             // d2i_CMS_ContentInfo reads at most `len` of them, advances the
             // cursor within them and returns a new structure the caller
@@ -134,13 +223,10 @@ impl SignedData {
         if parsed.signer_count() == 0 {
             return Err(CmsError::NoSignerInfo);
         }
-        // The shallow grammar is looser than OpenSSL's in every member, so
-        // an envelope OpenSSL decoded that it does not is refused rather
-        // than left unchecked.
-        let envelope = Envelope::decode(der).ok_or(CmsError::Malformed)?;
-        if !envelope.content_chunks_are_octet_strings() {
-            return Err(CmsError::ForeignContentChunk);
-        }
+        envelope.content_chunks().map_err(|err| match err {
+            ChunkError::TooDeep => CmsError::ContentChunksTooDeep,
+            ChunkError::Foreign | ChunkError::Malformed => CmsError::ForeignContentChunk,
+        })?;
         Ok(parsed)
     }
 
@@ -294,60 +380,6 @@ impl SignedData {
         verified
     }
 
-    /// How deep SEQUENCEs and SETs nest in the values of `SignerInfo`
-    /// `index` that OpenSSL keeps whole: its signed and unsigned attribute
-    /// values and its two algorithm parameters, each measured up to `cap`
-    /// (see [`SignerNesting`]). `None` when one does not decode as the
-    /// SEQUENCE or SET it claims to be.
-    #[must_use]
-    pub fn signer_nesting(&self, index: usize, cap: usize) -> Option<SignerNesting> {
-        let si = self.signer_info(index)?;
-        let mut nesting = SignerNesting::default();
-        for (count, get) in [
-            (
-                sys::CMS_signed_get_attr_count
-                    as unsafe extern "C" fn(*const CMS_SignerInfo) -> c_int,
-                sys::CMS_signed_get_attr
-                    as unsafe extern "C" fn(
-                        *const CMS_SignerInfo,
-                        c_int,
-                    ) -> *mut ffi::X509_ATTRIBUTE,
-            ),
-            (sys::CMS_unsigned_get_attr_count, sys::CMS_unsigned_get_attr),
-        ] {
-            // SAFETY: reads the attribute count of a live SignerInfo (-1
-            // when the field is absent).
-            let attributes = unsafe { count(si) };
-            for position in 0..attributes.max(0) {
-                // SAFETY: `position` is below that count; the attribute is
-                // owned by `si`.
-                let attribute = unsafe { get(si, position) };
-                if attribute.is_null() {
-                    continue;
-                }
-                for value in 0..attribute_value_count(attribute) {
-                    let value = c_int::try_from(value).ok()?;
-                    // SAFETY: `value` is below the attribute's value count;
-                    // the result is owned by the attribute, or null.
-                    let typed = unsafe { ffi::X509_ATTRIBUTE_get0_type(attribute, value) };
-                    if typed.is_null() {
-                        continue;
-                    }
-                    nesting.attribute_values =
-                        nesting.attribute_values.max(nesting_depth(typed, cap)?);
-                }
-            }
-        }
-        let (digest, signature) = algorithms(si);
-        for algorithm in [digest, signature] {
-            nesting.algorithm_parameters = nesting
-                .algorithm_parameters
-                .max(parameter_nesting(algorithm, cap)?);
-        }
-        drain_errors();
-        Some(nesting)
-    }
-
     fn signer_infos(&self) -> *mut sys::stack_st_CMS_SignerInfo {
         // SAFETY: the stack is owned by the live structure (null for a type
         // without SignerInfos, which `parse` has refused).
@@ -371,6 +403,20 @@ impl SignedData {
         // SAFETY: a non-null object stays valid while `self` is borrowed.
         (!object.is_null()).then(|| unsafe { Asn1ObjectRef::from_ptr(object.cast_mut()) })
     }
+}
+
+/// The member bounds, `SignerInfo`s first.
+fn within(members: EnvelopeMembers, limits: &EnvelopeLimits) -> Result<(), CmsError> {
+    if members.signer_infos > limits.signer_infos {
+        return Err(CmsError::TooManySignerInfos(members.signer_infos));
+    }
+    if members.certificates > limits.certificates {
+        return Err(CmsError::TooManyCertificates(members.certificates));
+    }
+    if members.crls > limits.crls {
+        return Err(CmsError::TooManyCrls(members.crls));
+    }
+    Ok(())
 }
 
 fn content_type_nid(cms: &CmsContentInfo) -> c_int {
@@ -432,20 +478,6 @@ fn algorithms(si: *mut CMS_SignerInfo) -> (*mut ffi::X509_ALGOR, *mut ffi::X509_
         );
     }
     (digest, signature)
-}
-
-/// [`nesting_depth`] of an `AlgorithmIdentifier`'s parameters.
-fn parameter_nesting(algorithm: *mut ffi::X509_ALGOR, cap: usize) -> Option<usize> {
-    if algorithm.is_null() {
-        return Some(0);
-    }
-    let mut kind: c_int = 0;
-    let mut value: *const libc::c_void = ptr::null();
-    // SAFETY: `algorithm` is live; the out-values receive the parameter's
-    // type and a pointer the algorithm owns (for a SEQUENCE or SET, the
-    // ASN1_STRING holding its encoding).
-    unsafe { ffi::X509_ALGOR_get0(ptr::null_mut(), &raw mut kind, &raw mut value, algorithm) };
-    nesting_depth_of(kind, value.cast(), cap)
 }
 
 /// The digest `si`'s `digestAlgorithm` names, or null when OpenSSL
@@ -550,7 +582,15 @@ impl<'a> DigestBio<'a> {
                 drain_errors();
                 return None;
             }
-            ffi::BIO_ctrl(digest, sys::BIO_C_SET_MD, 0, md.cast_mut().cast());
+            // BIO_set_md fails when the digest cannot be initialised (a
+            // legacy method with no provider implementation); the BIO would
+            // then pass the bytes through undigested.
+            if ffi::BIO_ctrl(digest, sys::BIO_C_SET_MD, 0, md.cast_mut().cast()) <= 0 {
+                ffi::BIO_free_all(source);
+                ffi::BIO_free_all(digest);
+                drain_errors();
+                return None;
+            }
             sys::BIO_push(digest, source)
         };
         let bio = DigestBio {

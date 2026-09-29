@@ -30,8 +30,19 @@ pub(crate) fn record(key: &PKeyRef<Public>) {
 /// is given once more, with the keys of that path; those uses are not
 /// listed.
 pub fn keys_used_during<R>(body: impl FnOnce() -> R) -> (R, Vec<Vec<u8>>) {
-    let previous = KEYS_USED.with(|keys| keys.replace(Some(Vec::new())));
+    /// Puts the previous record back when dropped, so a panic in `body`
+    /// that is caught does not leave every later signature check
+    /// recording.
+    struct Restore(Option<Vec<Vec<u8>>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            KEYS_USED.with(|keys| keys.replace(previous));
+        }
+    }
+    let restore = Restore(KEYS_USED.with(|keys| keys.replace(Some(Vec::new()))));
     let result = body();
-    let used = KEYS_USED.with(|keys| keys.replace(previous));
+    let used = KEYS_USED.with(RefCell::take);
+    drop(restore);
     (result, used.unwrap_or_default())
 }

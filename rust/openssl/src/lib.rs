@@ -52,13 +52,14 @@ mod path;
 pub mod payload;
 mod signature;
 mod sys;
+mod walk;
 
 pub use certificate::Certificate;
-pub use cms::{CmsError, SignedAttributes, SignedData, SignerNesting};
-pub use envelope::{envelope_members, EnvelopeMembers};
+pub use cms::{full_decodes_during, CmsError, EnvelopeLimits, SignedAttributes, SignedData};
 pub use keys::keys_used_during;
 pub use path::{verify_path, PathOutcome, PathProblem, PathProblemKind};
 pub use signature::{sha256, verify_es256};
+pub use walk::Budget;
 
 use std::sync::Once;
 

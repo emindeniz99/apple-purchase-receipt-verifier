@@ -115,7 +115,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Not part of the public API, and not covered by semver.
 ///
 /// The internals this crate's own tests, fuzz targets and benchmark reach
-/// directly: the date reader, the path policy, the key-use seam, and the two base64
+/// directly: the date reader, the path policy, the key-use and full-decode
+/// seams, and the two base64
 /// decoders the shared decodeBase64 cases call. The shared cases name them
 /// as an internal hook; 0.7 exposes no decoder.
 #[doc(hidden)]
@@ -139,6 +140,13 @@ pub mod __internal {
     /// check a signature on this thread meanwhile.
     pub fn keys_used_during<R>(body: impl FnOnce() -> R) -> (R, Vec<Vec<u8>>) {
         aprv_openssl::keys_used_during(body)
+    }
+
+    /// Runs `body` and returns, beside its result, how many times the
+    /// OpenSSL adapter ran its full CMS decode (the one that builds every
+    /// embedded certificate's key) on this thread meanwhile.
+    pub fn cms_full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
+        aprv_openssl::full_decodes_during(body)
     }
 
     /// The linked OpenSSL, as it reports itself.

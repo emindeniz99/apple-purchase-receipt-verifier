@@ -1,0 +1,374 @@
+//! The CMS envelope's bounds, and the order in which they run.
+//!
+//! Before OpenSSL's full decode (`d2i_CMS_ContentInfo`) builds any embedded
+//! certificate's key, the adapter decodes the envelope shallowly and counts
+//! its members, then walks every header of the whole envelope under 0.7's
+//! depth bound (32 constructed values, the `ContentInfo` counted as 1) and
+//! node budget (100,000 values). Each test here states one input the core
+//! review found (docs/evidence/2026-09-29-core-review-fixes.md), the verdict
+//! 0.7 gave it, and, through the adapter's full-decode counter, that a
+//! refusal happened before the full decode. A timing bound can drift with
+//! the machine; the counter cannot.
+
+mod common;
+
+use apple_purchase_receipt_verifier::__internal::cms_full_decodes_during;
+use apple_purchase_receipt_verifier::{Failure, Reason, ReceiptPayload};
+use common::der::{parse_exact, tag, Tlv};
+use common::{der, der_int, der_oid, der_seq, der_set, CmsBuilder};
+
+const OID_SIGNED_DATA: &str = "1.2.840.113549.1.7.2";
+const OID_ENVELOPED_DATA: &str = "1.2.840.113549.1.7.3";
+const OID_DATA: &str = "1.2.840.113549.1.7.1";
+const OID_SHA256: &str = "2.16.840.1.101.3.4.2.1";
+const SHA256_WITH_RSA: &str = "1.2.840.113549.1.1.11";
+
+/// The shared receipt's verdict and how many full CMS decodes it took.
+fn verify(der: &[u8]) -> (Result<ReceiptPayload, Failure>, usize) {
+    let verifier = common::receipt_verifier();
+    cms_full_decodes_during(|| common::verify_der(&verifier, der))
+}
+
+/// Refused as `MALFORMED` with `message` in the detail, before the full
+/// decode.
+fn assert_refused_early(der: &[u8], message: &str) {
+    let (result, full_decodes) = verify(der);
+    let failure = result.expect_err("must be refused");
+    assert_eq!(failure.reason(), Reason::Malformed, "{failure}");
+    assert!(failure.to_string().contains(message), "{failure}");
+    assert_eq!(
+        full_decodes, 0,
+        "{failure}: refused only after the full decode"
+    );
+}
+
+fn assert_verifies(der: &[u8]) {
+    let (result, full_decodes) = verify(der);
+    let payload = result.unwrap_or_else(|failure| panic!("must verify: {failure}"));
+    assert_eq!(payload.bundle_id.as_deref(), Some("com.example.app"));
+    assert_eq!(full_decodes, 1);
+}
+
+/// `levels` nested SEQUENCEs, the innermost empty.
+fn nested(levels: usize) -> Vec<u8> {
+    nested_in(tag::SEQUENCE, levels)
+}
+
+/// `levels` nested constructed values with identifier `identifier`, the
+/// innermost empty.
+fn nested_in(identifier: u8, levels: usize) -> Vec<u8> {
+    let mut value = der(identifier, &[]);
+    for _ in 1..levels {
+        value = der(identifier, &value);
+    }
+    value
+}
+
+/// The shared receipt rebuilt with the parts `CmsBuilder` does not expose:
+/// the `digestAlgorithms` set, extra `CertificateChoices`, a `crls` field
+/// and unsigned attributes. The signature covers none of them.
+struct Envelope {
+    builder: CmsBuilder,
+    digest_algorithms: Vec<u8>,
+    extra_choices: Vec<Vec<u8>>,
+    crls: Option<Vec<u8>>,
+    unsigned_attributes: Option<Vec<u8>>,
+}
+
+impl Envelope {
+    fn shared() -> Envelope {
+        Envelope {
+            builder: CmsBuilder::from_shared(),
+            digest_algorithms: der_set(&[der_seq(&[der_oid(OID_SHA256)])]),
+            extra_choices: Vec::new(),
+            crls: None,
+            unsigned_attributes: None,
+        }
+    }
+
+    fn build(&self) -> Vec<u8> {
+        let content = self.builder.content.clone().unwrap();
+        let encap = der_seq(&[
+            der_oid(OID_DATA),
+            der(tag::CONTEXT_0, &der(tag::OCTET_STRING, &content)),
+        ]);
+        let mut choices = self.builder.certificates.concat();
+        for extra in &self.extra_choices {
+            choices.extend_from_slice(extra);
+        }
+        let mut signer_info = self.builder.signer_info();
+        if let Some(unsigned) = &self.unsigned_attributes {
+            let mut body = parse_exact(&signer_info).unwrap().contents.to_vec();
+            body.extend_from_slice(unsigned);
+            signer_info = der(tag::SEQUENCE, &body);
+        }
+        let mut parts = vec![
+            der_int(1),
+            self.digest_algorithms.clone(),
+            encap,
+            der(tag::CONTEXT_0, &choices),
+        ];
+        if let Some(crls) = &self.crls {
+            parts.push(crls.clone());
+        }
+        parts.push(der_set(&[signer_info]));
+        der_seq(&[
+            der_oid(OID_SIGNED_DATA),
+            der(tag::CONTEXT_0, &der_seq(&parts)),
+        ])
+    }
+}
+
+/// `[1] IMPLICIT` unsigned attributes holding one attribute whose one value
+/// is `value`.
+fn unsigned_attribute(value: &[u8]) -> Vec<u8> {
+    der(
+        tag::CONTEXT_1,
+        &der_seq(&[der_oid("1.2.3.4"), der_set(&[value.to_vec()])]),
+    )
+}
+
+/// A minimal `CertificateList` whose signature algorithm carries
+/// `parameters`.
+fn crl(parameters: &[u8]) -> Vec<u8> {
+    let algorithm = der_seq(&[der_oid(SHA256_WITH_RSA), parameters.to_vec()]);
+    let tbs = der_seq(&[
+        algorithm.clone(),
+        common::mint::name("CRL Issuer"),
+        der(tag::UTC_TIME, b"240101000000Z"),
+    ]);
+    der_seq(&[tbs, algorithm, der(tag::BIT_STRING, &[0, 1, 2, 3])])
+}
+
+fn count_nodes(value: &Tlv<'_>) -> usize {
+    1 + value.children().iter().map(count_nodes).sum::<usize>()
+}
+
+#[test]
+fn the_genuine_receipt_takes_one_full_decode() {
+    // The seam's control: the counter sees the one full decode a receipt
+    // that reaches it takes.
+    assert_verifies(&common::receipt_der());
+    assert_verifies(&Envelope::shared().build());
+}
+
+#[test]
+fn a_certificate_flood_behind_a_broken_envelope_never_reaches_the_full_decode() {
+    // C-F1, Rust-F2, Policy-F3: the ten-certificate bound used to run only
+    // on an envelope the shallow decode accepted, so one trailing byte, a
+    // broken signerInfos or another content type sent 1,057 certificates
+    // (or 5,440 with explicit curves) through the full decode, 85 to 120
+    // times the bounded cost, before the input was refused anyway.
+    let mut flood = CmsBuilder::from_shared();
+    let original = flood.certificates[0].clone();
+    while flood.certificates.len() < 1057 {
+        flood.certificates.push(original.clone());
+    }
+    let well_formed = flood.build();
+    assert_refused_early(&well_formed, "1057 certificates");
+
+    let mut trailing = well_formed.clone();
+    trailing.push(0x00);
+    assert_refused_early(&trailing, "bytes follow the CMS ContentInfo");
+
+    // signerInfos written as a SEQUENCE, where the grammar has a SET.
+    let broken = {
+        let content = flood.content.clone().unwrap();
+        let encap = der_seq(&[
+            der_oid(OID_DATA),
+            der(tag::CONTEXT_0, &der(tag::OCTET_STRING, &content)),
+        ]);
+        let signed_data = der_seq(&[
+            der_int(1),
+            der_set(&[der_seq(&[der_oid(OID_SHA256)])]),
+            encap,
+            der(tag::CONTEXT_0, &flood.certificates.concat()),
+            der_seq(&[flood.signer_info()]),
+        ]);
+        der_seq(&[der_oid(OID_SIGNED_DATA), der(tag::CONTEXT_0, &signed_data)])
+    };
+    assert_refused_early(&broken, "not a CMS ContentInfo");
+
+    // An EnvelopedData whose originatorInfo carries the certificates:
+    // OpenSSL's full decode builds them there too.
+    let enveloped = {
+        let originator = der(
+            tag::CONTEXT_0,
+            &der(tag::CONTEXT_0, &flood.certificates.concat()),
+        );
+        let encrypted = der_seq(&[
+            der_oid(OID_DATA),
+            der_seq(&[der_oid("2.16.840.1.101.3.4.1.42")]),
+        ]);
+        let body = der_seq(&[der_int(2), originator, der_set(&[]), encrypted]);
+        der_seq(&[der_oid(OID_ENVELOPED_DATA), der(tag::CONTEXT_0, &body)])
+    };
+    let (result, full_decodes) = verify(&enveloped);
+    assert_eq!(result.unwrap_err().reason(), Reason::Malformed);
+    assert_eq!(full_decodes, 0);
+
+    // Eleven certificates and a trailing byte: the smallest input of the
+    // shape, for a port that states the bound on the count.
+    let mut eleven = CmsBuilder::from_shared();
+    while eleven.certificates.len() < 11 {
+        eleven.certificates.push(original.clone());
+    }
+    let mut eleven = eleven.build();
+    eleven.push(0x00);
+    assert_refused_early(&eleven, "bytes follow the CMS ContentInfo");
+}
+
+#[test]
+fn the_depth_bound_counts_every_constructed_value_of_the_envelope() {
+    // C-F2, Rust-F3, Policy-F2: the depth used to be measured only in
+    // SignerInfo attribute values and algorithm parameters, and only through
+    // universal SEQUENCEs and SETs, so these places verified at depth 33 and
+    // at depth 2,000. 0.7 and Java refuse each one; 32 verifies.
+    //
+    // ContentInfo 1, [0] 2, SignedData 3, then per place:
+    // digestAlgorithms: SET 4, AlgorithmIdentifier 5, parameters from 6.
+    for (levels, refused) in [(27, false), (28, true), (2_000, true)] {
+        let mut envelope = Envelope::shared();
+        envelope.digest_algorithms = der_set(&[der_seq(&[der_oid(OID_SHA256), nested(levels)])]);
+        check_depth(&envelope.build(), refused);
+    }
+    // certificates: [0] 4, a [2] choice 5, its content from 6.
+    for (levels, refused) in [(27, false), (28, true)] {
+        let mut envelope = Envelope::shared();
+        envelope.extra_choices = vec![der(tag::CONTEXT_2, &nested(levels))];
+        check_depth(&envelope.build(), refused);
+    }
+    // crls: [1] 4, CertificateList 5, TBSCertList 6, AlgorithmIdentifier
+    // 7, parameters from 8.
+    for (levels, refused) in [(25, false), (26, true)] {
+        let mut envelope = Envelope::shared();
+        envelope.crls = Some(der(tag::CONTEXT_1, &crl(&nested(levels))));
+        check_depth(&envelope.build(), refused);
+    }
+    // An unsigned attribute value nested in context tags, or in an
+    // application tag, or a context tag under a SEQUENCE: signerInfos 4,
+    // SignerInfo 5, [1] 6, Attribute 7, SET 8, the value from 9.
+    for identifier in [0xa0, 0x61] {
+        for (levels, refused) in [(24, false), (25, true)] {
+            let mut envelope = Envelope::shared();
+            envelope.unsigned_attributes = Some(unsigned_attribute(&nested_in(identifier, levels)));
+            check_depth(&envelope.build(), refused);
+        }
+    }
+    let mut envelope = Envelope::shared();
+    envelope.unsigned_attributes = Some(unsigned_attribute(&der_seq(&[nested_in(0xa0, 24)])));
+    check_depth(&envelope.build(), true);
+    // An embedded certificate's outer signature algorithm parameters:
+    // [0] 4, Certificate 5, AlgorithmIdentifier 6, parameters from 7.
+    let intermediate = Envelope::shared().builder.certificates[1].clone();
+    let certificate = parse_exact(&intermediate).unwrap();
+    let copy = der_seq(&[
+        certificate.child(0).unwrap().full.to_vec(),
+        der_seq(&[
+            certificate
+                .child(1)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .full
+                .to_vec(),
+            nested(27),
+        ]),
+        certificate.child(2).unwrap().full.to_vec(),
+    ]);
+    let mut envelope = Envelope::shared();
+    envelope.extra_choices = vec![copy];
+    check_depth(&envelope.build(), true);
+}
+
+fn check_depth(der: &[u8], refused: bool) {
+    if refused {
+        assert_refused_early(der, "nested deeper than 32 constructed values");
+    } else {
+        assert_verifies(der);
+    }
+}
+
+#[test]
+fn the_envelope_holds_at_most_100000_values() {
+    // Rust-F4, Policy-F6: the node budget of 0.7's reader was gone, so an
+    // unsigned attribute of 1.17 million empty SEQUENCEs cost 0.6 s and
+    // about 130 MB before any cryptography, and verified. The walk restores
+    // the budget over the whole envelope: 100,000 values verify, 100,001 are
+    // MALFORMED before the full decode.
+    let base = Envelope::shared().build();
+    let base_nodes = count_nodes(&parse_exact(&base).unwrap());
+    // [1], the Attribute, its OID and its SET, then the values.
+    let values = 100_000 - base_nodes - 4;
+    for (count, refused) in [(values, false), (values + 1, true)] {
+        let mut envelope = Envelope::shared();
+        envelope.unsigned_attributes = Some(der(
+            tag::CONTEXT_1,
+            &der_seq(&[
+                der_oid("1.2.3.4"),
+                der(tag::SET, &[0x05, 0x00].repeat(count)),
+            ]),
+        ));
+        let der = envelope.build();
+        if refused {
+            assert_refused_early(&der, "more than 100000 ASN.1 values");
+        } else {
+            assert_verifies(&der);
+        }
+    }
+}
+
+#[test]
+fn at_most_ten_crls_are_embedded() {
+    // C-F5: the crls field was neither counted nor bounded, so a genuine
+    // receipt padded with 39,121 junk CRLs verified after 319 ms of CRL
+    // decoding. Apple's receipts carry none; the certificate bound applies.
+    let ten = der(tag::CONTEXT_1, &crl(&der(0x05, &[])).repeat(10));
+    let mut envelope = Envelope::shared();
+    envelope.crls = Some(ten);
+    assert_verifies(&envelope.build());
+    envelope.crls = Some(der(tag::CONTEXT_1, &crl(&der(0x05, &[])).repeat(11)));
+    assert_refused_early(&envelope.build(), "embeds 11 CRLs");
+}
+
+/// The shared receipt with its eContent re-chunked into `levels`
+/// constructed `OCTET STRING`s around the original octets, `leaf` the
+/// innermost chunk's identifier. The signature covers the joined octets,
+/// which do not change.
+fn rechunked(levels: usize, leaf: u8) -> Vec<u8> {
+    let mut builder = CmsBuilder::from_shared();
+    let mut value = der(leaf, builder.content.as_ref().unwrap());
+    for _ in 0..levels {
+        value = der(tag::OCTET_STRING_CONSTRUCTED, &value);
+    }
+    builder.content_tlv = Some(value);
+    builder.build()
+}
+
+#[test]
+fn econtent_rechunked_into_six_constructed_levels_verifies() {
+    // Rust-F1, C-F4, Policy-F4: OpenSSL decodes six constructed levels of
+    // OCTET STRING (its ASN1_MAX_STRING_NEST is 5, counted from 0), and the
+    // adapter's chunk check stopped at five, with a message that blamed a
+    // chunk's type. Seven is refused by OpenSSL's own bound, which 0.7 and
+    // Java do not have (DECISIONS.md R20).
+    for levels in [1, 5, 6] {
+        let (result, _) = verify(&rechunked(levels, tag::OCTET_STRING));
+        assert!(result.is_ok(), "{levels} levels: {result:?}");
+    }
+    let (result, _) = verify(&rechunked(7, tag::OCTET_STRING));
+    let failure = result.unwrap_err();
+    assert_eq!(failure.reason(), Reason::Malformed);
+    assert!(
+        !failure.to_string().contains("not an OCTET STRING"),
+        "{failure}"
+    );
+    // A chunk of another type is still named as such.
+    let (result, _) = verify(&rechunked(6, tag::UTF8_STRING));
+    let failure = result.unwrap_err();
+    assert_eq!(failure.reason(), Reason::Malformed);
+    assert!(
+        failure.to_string().contains("not an OCTET STRING"),
+        "{failure}"
+    );
+}

@@ -187,9 +187,9 @@ fn install_callback(ctx: &mut X509StoreContextRef) {
 
 /// The verify callback: records each problem OpenSSL reports and lets it
 /// continue, except the ones [`waived`] says an anchor or the notAfter
-/// second may have. Returns 1 always, so every problem is seen; the
-/// verdict is taken from the record, never from OpenSSL's return value
-/// alone.
+/// second may have. Returns 1, so every problem is seen, unless a problem
+/// cannot be recorded; the verdict is taken from the record, never from
+/// OpenSSL's return value alone.
 unsafe extern "C" fn record_problem(ok: c_int, ctx: *mut ffi::X509_STORE_CTX) -> c_int {
     if ok == 1 {
         return 1;
@@ -206,12 +206,14 @@ unsafe extern "C" fn record_problem(ok: c_int, ctx: *mut ffi::X509_STORE_CTX) ->
         depth: usize::try_from(ctx.error_depth()).unwrap_or(usize::MAX),
         kind: kind_of(error.as_raw()),
     };
-    PROBLEMS.with(|slot| {
-        if let Ok(mut problems) = slot.try_borrow_mut() {
-            problems.push(problem);
-        }
+    // A problem that cannot be recorded stops the verification instead of
+    // passing unseen (fail closed; no caller holds that borrow today).
+    let recorded = PROBLEMS.with(|slot| {
+        slot.try_borrow_mut()
+            .map(|mut problems| problems.push(problem))
+            .is_ok()
     });
-    1
+    c_int::from(recorded)
 }
 
 /// A trust anchor is trusted by fiat, as a PKIX trust anchor is: its own

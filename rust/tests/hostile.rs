@@ -179,6 +179,10 @@ fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
         builder.certificates.push(original.clone());
     }
     let flood_der = builder.build();
+    // The same flood with one byte after it, which the shallow decode
+    // refuses: it must not then fall through to the full decode.
+    let mut trailing_der = flood_der.clone();
+    trailing_der.push(0x00);
     // The same 770 KB with a first byte no ContentInfo starts with: refused
     // as soon as its base64 is decoded. Decoding a megabyte of base64 is
     // the one cost the flood's size alone forces on any reader (the 3 MiB
@@ -192,15 +196,16 @@ fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
     // Encoded once, outside the clock: the test's own base64 is not the
     // library's cost.
     let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
-    let (flood, junk, genuine) = (
+    let (flood, trailing, junk, genuine) = (
         encode(&flood_der),
+        encode(&trailing_der),
         encode(&junk_der),
         encode(&common::receipt_der()),
     );
 
-    // Interleaved, so all three see the same load from the tests running
+    // Interleaved, so all four see the same load from the tests running
     // alongside this one.
-    let mut costs = [Duration::ZERO; 3];
+    let mut costs = [Duration::ZERO; 4];
     for _ in 0..5 {
         let started = Instant::now();
         verifier.verify_receipt(&genuine).unwrap();
@@ -219,14 +224,108 @@ fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
             refused.to_string().contains("1057 certificates"),
             "{refused}"
         );
+
+        let started = Instant::now();
+        let refused = verifier.verify_receipt(&trailing).unwrap_err();
+        costs[3] += started.elapsed();
+        assert_eq!(refused.reason(), Reason::Malformed);
     }
-    let [genuine_cost, junk_cost, flood_cost] = costs;
+    let [genuine_cost, junk_cost, flood_cost, trailing_cost] = costs;
 
     assert!(
         flood_cost < junk_cost * 3 / 2 + genuine_cost * 10,
         "rejecting a 1057-certificate receipt cost {flood_cost:?}, against {junk_cost:?} for \
          junk of the same size and {genuine_cost:?} for a genuine receipt — the \
          ten-certificate bound is not being enforced before the envelope decode"
+    );
+    assert!(
+        trailing_cost < junk_cost * 3 / 2 + genuine_cost * 10,
+        "rejecting the flood with one trailing byte cost {trailing_cost:?}, against \
+         {junk_cost:?} for junk of the same size and {genuine_cost:?} for a genuine receipt — \
+         an envelope the shallow decode refuses is reaching the full decode"
+    );
+}
+
+#[test]
+fn unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost() {
+    // Policy-F6: the creation date is read before any chain or signature,
+    // and a 3 MiB payload of 180,000 tiny attributes cost 300 ms natively
+    // and 0.8 s in Wasm there, with linear memory grown to 74 MiB, even
+    // when no SignerInfo named an embedded certificate. The date is now read
+    // only once a signer has been found, under the 100,000-value budget, so
+    // the tiny attributes cost what one flat value of the same size costs.
+    let tiny = [
+        0x30, 0x0b, 0x02, 0x02, 0x23, 0x28, 0x02, 0x01, 0x01, 0x04, 0x02, 0x05, 0x00,
+    ];
+    let count = (3_145_728 / 4 * 3 - 20_000) / tiny.len();
+    let set_of = |body: &[u8]| {
+        let mut set = vec![0x31, 0x84];
+        set.extend_from_slice(&u32::try_from(body.len()).unwrap().to_be_bytes());
+        set.extend_from_slice(body);
+        set
+    };
+    let mut builder = common::CmsBuilder::from_shared();
+    builder.content = Some(set_of(&tiny.repeat(count)));
+    let signer_embedded = builder.build();
+    let mut absent_builder = common::CmsBuilder::from_shared();
+    absent_builder.content = builder.content.clone();
+    absent_builder.signer_serial = vec![0x7f; 8];
+    let signer_absent = absent_builder.build();
+    // One attribute whose value is a single OCTET STRING of the same size.
+    let flat_value = vec![0u8; count * tiny.len() - 20];
+    let mut flat_attribute = vec![0x30, 0x84];
+    let flat_body = [
+        &[0x02, 0x02, 0x23, 0x28, 0x02, 0x01, 0x01, 0x04, 0x84][..],
+        &u32::try_from(flat_value.len()).unwrap().to_be_bytes(),
+        &flat_value,
+    ]
+    .concat();
+    flat_attribute.extend_from_slice(&u32::try_from(flat_body.len()).unwrap().to_be_bytes());
+    flat_attribute.extend_from_slice(&flat_body);
+    builder.content = Some(set_of(&flat_attribute));
+    let flat = builder.build();
+    let mut junk_der = signer_embedded.clone();
+    junk_der[0] = 0x04;
+
+    let verifier = receipt_verifier();
+    let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
+    let inputs = [
+        encode(&common::receipt_der()),
+        encode(&junk_der),
+        encode(&signer_absent),
+        encode(&flat),
+        encode(&signer_embedded),
+    ];
+    let mut costs = [Duration::ZERO; 5];
+    for _ in 0..3 {
+        for (index, input) in inputs.iter().enumerate() {
+            let started = Instant::now();
+            let result = verifier.verify_receipt(input);
+            costs[index] += started.elapsed();
+            let expected = [
+                None,
+                Some(Reason::Malformed),
+                Some(Reason::Malformed),
+                Some(Reason::InvalidSignature),
+                Some(Reason::InvalidSignature),
+            ][index];
+            assert_eq!(
+                result.err().map(|failure| failure.reason()),
+                expected,
+                "input {index}"
+            );
+        }
+    }
+    let [genuine, junk, absent, flat, embedded] = costs;
+    assert!(
+        absent < junk * 3 / 2 + genuine * 10,
+        "unsigned content of {count} tiny attributes and no embedded signer cost {absent:?}, \
+         against {junk:?} for junk of the same size: the payload was read before a signer was found"
+    );
+    assert!(
+        embedded < flat * 3 / 2 + genuine * 10,
+        "unsigned content of {count} tiny attributes under an embedded signer cost {embedded:?}, \
+         against {flat:?} for one flat value of the same size"
     );
 }
 

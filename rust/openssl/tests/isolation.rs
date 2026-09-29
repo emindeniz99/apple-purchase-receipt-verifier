@@ -82,7 +82,14 @@ fn child() {
         unsafe { OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, std::ptr::null()) };
     }
     // The adapter's first call: it must initialise OpenSSL itself.
-    let mut cms = SignedData::parse(&fixture("receipt.der")).expect("fixture receipt");
+    let limits = aprv_openssl::EnvelopeLimits {
+        depth: 32,
+        nodes: 100_000,
+        signer_infos: 4,
+        certificates: 10,
+        crls: 10,
+    };
+    let mut cms = SignedData::parse(&fixture("receipt.der"), &limits).expect("fixture receipt");
     let (leaf, intermediate) = chain(&cms);
     let root = Certificate::from_der(&fixture("receipt-root.der")).unwrap();
     let unrelated = Certificate::from_der(&fixture("jws-root.der")).unwrap();
