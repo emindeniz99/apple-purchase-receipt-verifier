@@ -57,7 +57,7 @@
     "@bytecodealliance/jco": "1.35.0",
     "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^20.19.0",
-    "oxlint": "^1.81.0",
+    "oxlint": "^1.85.0",
     "prettier": "^3.9.6",
     "typescript": "^7.0.2"
   },
