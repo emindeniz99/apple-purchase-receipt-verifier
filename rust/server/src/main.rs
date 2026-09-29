@@ -25,7 +25,7 @@ pub const MAX_BODY: usize = 3_145_728;
 const USAGE: &str = "\
 usage:
   aprv serve [--listen ADDR] [--managed] [--roots FILE] [--token-file FILE]
-             [--lifecycle fresh|pool] [--workers N] [--time-limit-ms N]
+             [--lifecycle pool|fresh] [--workers N] [--time-limit-ms N]
   aprv verify-receipt [--now-ms N] [--roots FILE] [--time-limit-ms N]         stdin -> stdout
   aprv verify-signed-data [--now-ms N] [--roots FILE] [--time-limit-ms N]     stdin -> stdout
   aprv verify-receipt-endpoint <production|sandbox> [--now-ms N] [--roots FILE] [--time-limit-ms N]
@@ -80,7 +80,8 @@ struct Opts {
     managed: bool,
     roots: Option<String>,
     token_file: Option<String>,
-    pool: bool,
+    /// `--lifecycle fresh`; the default is the pool (DECISIONS.md R23).
+    fresh: bool,
     workers: Option<usize>,
     time_limit_ms: Option<u64>,
     now_ms: Option<u64>,
@@ -102,10 +103,10 @@ fn parse(args: &[String], allowed: &[&str]) -> Result<Opts, String> {
             "--token-file" => o.token_file = Some(val()?),
             "--component" => o.component = Some(val()?),
             "--lifecycle" => {
-                o.pool = match val()?.as_str() {
-                    "fresh" => false,
-                    "pool" => true,
-                    other => return Err(format!("--lifecycle takes fresh or pool, not {other}")),
+                o.fresh = match val()?.as_str() {
+                    "pool" => false,
+                    "fresh" => true,
+                    other => return Err(format!("--lifecycle takes pool or fresh, not {other}")),
                 }
             }
             "--workers" => {
@@ -376,7 +377,7 @@ fn serve(args: &[String]) -> i32 {
     };
     let load_ms = t0.elapsed().as_secs_f64() * 1e3;
     let mut info = build_info(&runtime);
-    let verifier = match Verifier::new(runtime, roots.config_json(), o.pool) {
+    let verifier = match Verifier::new(runtime, roots.config_json(), !o.fresh) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("aprv: {e}");
@@ -497,4 +498,27 @@ async fn shutdown() {
     }
     #[cfg(not(unix))]
     let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::parse;
+
+    const SERVE: &[&str] = &["--lifecycle", "--workers"];
+
+    #[test]
+    fn serve_defaults_to_the_pool_and_fresh_stays_selectable() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(
+            !parse(&args(&[]), SERVE).unwrap().fresh,
+            "the default lifecycle is pool"
+        );
+        assert!(!parse(&args(&["--lifecycle", "pool"]), SERVE).unwrap().fresh);
+        assert!(
+            parse(&args(&["--lifecycle", "fresh"]), SERVE)
+                .unwrap()
+                .fresh
+        );
+        assert!(parse(&args(&["--lifecycle", "other"]), SERVE).is_err());
+    }
 }

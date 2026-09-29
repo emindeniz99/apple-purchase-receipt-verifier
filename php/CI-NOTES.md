@@ -73,8 +73,7 @@ Unchanged except:
 - `node tools/php-consumer-smoke.mjs` needs `APRV_BIN` in its environment. It
   installs the archive into a throwaway project and verifies through the
   default CLI transport.
-- The `gen-roots.php` drift guard stays until Phase 7 deletes `RootsData.php`
-  and `php/certs/`.
+- The `gen-roots.php` drift guard is deleted in Phase 7 (below).
 
 ## Jobs to delete or change
 
@@ -92,7 +91,7 @@ Unchanged except:
 - **`one-implementation`:** add `php` to `--enforce` (see `.github/CI-NOTES.md`).
   `tests/NoVerificationLogicTest.php` is the PHP half of the gate: no crypto
   call anywhere in `php/src`, no `ext-openssl` in either manifest, and only
-  `Info`, `RootsData`, `Text` and `Wire` under `src/Internal`.
+  `Info`, `Text` and `Wire` under `src/Internal`.
 
 ## Release: pinning the binaries' hashes
 
@@ -145,3 +144,20 @@ php verify-smoke.php    # Verifier::create(Config::defaults()) verifies the genu
 
 This is acceptance test 8's PHP leg: `aprv install`, then g5 verifies through
 the default transport.
+
+## Phase 7
+
+`php/certs/`, `src/Internal/RootsData.php`, `tools/gen-roots.php` and the
+public `AppleRootCerts` class (its `pinnedRoots()` read `RootsData`) are
+gone: Apple's three roots live only in the module `aprv` runs.
+`Config::defaults()->roots` stays `null`, and an empty list is still refused
+at `Verifier::create`. The root `.gitattributes` allowlist no longer names
+`php/certs`, and `tools/check-php-package.mjs` no longer requires it,
+`AppleRootCerts.php` or `RootsData.php` in the archive.
+
+| Where | Change |
+|---|---|
+| `ci.yml` `php-static` | delete the drift step (`php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php`) and its comment. |
+| `ci.yml` `one-implementation` | nothing for PHP: `php/src` has no allowlist entry and no hit. |
+| `.github/smoke/packagist-smoke.php` | nothing: it already verifies through `Config::defaults()`. |
+

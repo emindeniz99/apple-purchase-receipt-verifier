@@ -35,8 +35,9 @@ package lives or reach the server:
 
 WasmKit's class is its execution model, an interpreter that generates no
 machine code. The Swift note records software bounds checks and an
-mprotect-based mode compiled for Linux and macOS ([Swift][swift]); Phase 5
-records which one the shipped configuration uses.
+mprotect-based mode compiled for Linux and macOS ([Swift][swift]); the
+shipped configuration uses software bounds checks, so the package installs
+no process-wide signal handler (swift/README.md, "How it works").
 
 ## 3. What a guest compromise reaches
 
@@ -119,11 +120,20 @@ near 16 to 18 MiB: the signerless receipt grew linear memory from 1.9 to
 one with a signer certificate peaked near 18 MiB ([core review
 fixes][corefix]). The signed-payload path (R21) reaches the full payload
 decode after the walk and the signature, and was not re-measured, so no
-current figure exists for it.
+current figure exists for it. The node budget bounds the envelope's walk,
+not the cost of every shape under it: one unsigned attribute of about
+100,000 OBJECT IDENTIFIERs, which anyone can append to any genuine
+receipt outside its signature, is walked, decoded in full and verifies.
+With 20-octet identifiers (2.2 MB) it cost 126 to 149 ms natively and
+101 to 128 ms through `aprv.wasm` in V8, with 16.9 MiB of linear memory,
+against 0.45 ms and 7 to 10 ms for the receipt alone on the same loaded
+machine ([core review fixes][corefix], round 3). That is the costliest
+anonymous request found under the budget so far; interpreter hosts pay
+several times more.
 
 | Host | Memory | CPU and time | Concurrency |
 |---|---|---|---|
-| `aprv-server` | `StoreLimits`: 256 MiB of linear memory, one instance, `trap_on_grow_failure` | none yet: epoch interruption is an open item ([aprv-server §11][server]); a looping input holds one worker | a semaphore of N workers, N = CPU count; the 3 MiB body cap, answered with 413 |
+| `aprv-server` | `StoreLimits`: 256 MiB of linear memory, one instance, `trap_on_grow_failure` | 10 s of guest time per call by default (`--time-limit-ms`), by epoch interruption (rust/server/README.md, "Limits") | a semaphore of N workers, N = CPU count; the 3 MiB body cap, answered with 413 |
 | wasmtime-py, the Ruby gem, Wasmtime .NET | Wasmtime's store limits, available in each binding; Phase 5 sets the server's 256 MiB and tests it | epoch interruption and fuel are Wasmtime features; not exercised in the evidence | one instance per call; the pool bounds the count |
 | wazero (Go) | wazero's memory page limit; Phase 4 sets and tests it | context cancellation; not exercised in the evidence | the pool |
 | JS engines | the engine's limit for a 32-bit memory; workerd's 128 MB isolate, measured in Phase 4 | the platform's own CPU limits | one instance |
@@ -244,7 +254,7 @@ directory can plant code the next Python process runs
 - **Endive** is young (1.0 on 2026-06-26, 1.1.0 on 2026-09-03) and does
   no post-compilation verification ([Endive §2, §10][endive]); JDK 17 and
   earlier run with its workaround for a C2 miscompilation.
-- **No time limit yet** in `aprv-server` or the in-process Wasmtime hosts
+- **No time limit yet** in the in-process Wasmtime hosts
   (§5).
 - **Python's cache** is native code on disk (§8).
 - **Downloaded server binaries** move trust to our release process; the

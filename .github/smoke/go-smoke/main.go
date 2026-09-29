@@ -7,10 +7,10 @@
 //	cp <repo>/.github/smoke/go-smoke/main.go <repo>/fixtures/public-receipts/receipt-sandbox-g5.b64 .
 //	go run .
 //
-// go:embed cannot reach outside a module, so go/roots/certs is a generated copy
-// of the repo-root certs/. If that copy ever falls out of the module zip the
-// library compiles and then has no trust anchors at all — the Go-shaped version
-// of the two empty npm releases. The root count below is what catches it.
+// Apple's three roots are compiled into aprv.wasm, which go:embed carries in
+// the module zip, so the defaults name no roots of their own (nil means the
+// module's). A module zip that lost aprv.wasm or its hash fails below, on the
+// genuine receipt.
 //
 // This file is deliberately outside go/ so it never becomes part of the
 // published module.
@@ -33,8 +33,8 @@ func main() {
 	receiptB64 := strings.TrimSpace(string(raw))
 
 	config := applereceipt.DefaultConfig()
-	if roots := config.Roots(); len(roots) != 3 {
-		fail("expected three embedded Apple roots, got %d", len(roots))
+	if roots := config.Roots(); roots != nil {
+		fail("expected the module's built-in roots (nil), got %d configured", len(roots))
 	}
 	verifier, err := applereceipt.NewVerifier(config)
 	if err != nil {
@@ -42,7 +42,7 @@ func main() {
 	}
 
 	// A real Apple-signed receipt against the real pinned root: exercises the
-	// embedded certs, the DER reader, the chain build and the signature check.
+	// embedded module, the chain build and the signature check inside it.
 	receipt, err := verifier.VerifyReceipt(receiptB64)
 	if err != nil {
 		fail("verification failed: %v", err)

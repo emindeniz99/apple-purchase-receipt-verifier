@@ -1,22 +1,22 @@
 // Smoke-tests the package as published to nuget.org. Everything it touches —
-// the verifier, the result types, the bundled root certificates — comes from
-// the restored package, so a nupkg missing an asset or its embedded certs fails
-// here rather than in a user's build.
+// the verifier, the result types, aprv.wasm and Wasmtime's native library —
+// comes from the restored package, so a nupkg missing an asset fails here
+// rather than in a user's build.
 using ApplePurchaseReceiptVerifier;
 
 string receiptB64 = File.ReadAllText("receipt-sandbox-g5.b64").Trim();
 
-// Config.Defaults() throws if the bundled roots are missing or unreadable; the
-// count catches a package that lost one of them.
+// The defaults trust the module's built-in Apple roots, so Config.Roots is
+// empty; the package ships no copy of them.
 Config config = Config.Defaults();
-if (config.Roots.Count != 3)
+if (config.Roots.Count != 0)
 {
-    throw new Exception($"expected three bundled Apple roots, got {config.Roots.Count}");
+    throw new Exception($"expected the defaults to use the module's roots, got {config.Roots.Count} configured");
 }
 IVerifier verifier = Verifier.Create(config);
 
 // A real Apple-signed receipt against the real pinned root: exercises the
-// packaged certs, the DER reader, the chain build and the signature check.
+// packaged module, the chain build and the signature check inside it.
 VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(receiptB64);
 ReceiptPayload receipt = result.Payload
     ?? throw new Exception($"verification failed: {result.Failure}");

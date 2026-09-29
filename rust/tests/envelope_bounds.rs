@@ -642,3 +642,57 @@ fn a_length_one_octet_past_its_container_is_refused() {
     envelope.unsigned_attributes = Some(der(tag::CONTEXT_1, &attribute));
     assert_refused_early(&envelope.build(), "not a CMS ContentInfo");
 }
+
+/// A certificate with its outer signature `BIT STRING` (outside the signed
+/// TBS) re-encoded as a constructed `BIT STRING` of two chunks, `03 01 00`
+/// and `03 L sig`: OpenSSL joins the chunks to the same `00 || sig`.
+fn signature_in_two_chunks(certificate: &[u8]) -> Vec<u8> {
+    let parsed = parse_exact(certificate).unwrap();
+    let bits = parsed.child(2).unwrap();
+    assert_eq!((bits.tag, bits.contents[0]), (0x03, 0));
+    let chunks = [der(0x03, &[0x00]), der(0x03, &bits.contents[1..])].concat();
+    der_seq(&[
+        parsed.child(0).unwrap().full.to_vec(),
+        parsed.child(1).unwrap().full.to_vec(),
+        der(0x23, &chunks),
+    ])
+}
+
+#[test]
+fn chunks_inside_a_constructed_string_are_joined_not_judged() {
+    // Round-3 review F2: the walk judged each primitive chunk of a
+    // constructed string as a value of its own. OpenSSL's `asn1_collect`
+    // joins chunk contents whatever their tags, and the walk already hands
+    // the whole string to OpenSSL. So a certificate whose signature
+    // BIT STRING was split in two verified or was MALFORMED by the
+    // signature's first octet (above 7, it read as an unused-bits count).
+    let shared = CmsBuilder::from_shared();
+    let mut pinned = 0;
+    for index in 0..shared.certificates.len() {
+        let original = &shared.certificates[index];
+        let first_octet = parse_exact(original).unwrap().child(2).unwrap().contents[1];
+        pinned += usize::from(first_octet > 7);
+        let mut builder = CmsBuilder::from_shared();
+        builder.certificates[index] = signature_in_two_chunks(original);
+        assert_verifies(&builder.build());
+    }
+    assert!(
+        pinned > 0,
+        "no signature starts above 7: the test pins nothing"
+    );
+    // The same inside an unsigned attribute value: a constructed OCTET
+    // STRING whose chunks are a padded INTEGER and a short UTCTime by tag.
+    // Each alone is a value OpenSSL refuses; as chunks they are octets.
+    let chunks = [
+        der(0x02, &[0x00, 0x00, 0x01]),
+        der(0x17, b"0"),
+        der(tag::OCTET_STRING, b"x"),
+    ]
+    .concat();
+    let value = der(tag::OCTET_STRING_CONSTRUCTED, &chunks);
+    for placed in [value.clone(), der_seq(std::slice::from_ref(&value))] {
+        let mut envelope = Envelope::shared();
+        envelope.unsigned_attributes = Some(unsigned_attribute(&placed));
+        assert_verifies(&envelope.build());
+    }
+}

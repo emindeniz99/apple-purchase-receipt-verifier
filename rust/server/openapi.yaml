@@ -355,7 +355,8 @@ components:
                 pattern: '^[0-9a-f]{64}$'
         lifecycle:
           type: string
-          enum: [fresh, pool]
+          description: '`pool` (the default) keeps instances between requests; `fresh` makes one per request.'
+          enum: [pool, fresh]
         workers:
           type: integer
         time_limit_ms:

@@ -15,8 +15,6 @@ AllCops:
   TargetRubyVersion: 3.3
   NewCops: enable
   SuggestExtensions: false
-  Exclude:
-    - "lib/apple_purchase_receipt_verifier/roots_data.rb"
 
 # The library is written to read top to bottom; the order the checks run in is
 # normative, and splitting a verification routine to satisfy a length metric

@@ -27,7 +27,7 @@ packages = ["apple_purchase_receipt_verifier"]
 license-files = ["LICENSE"]
 
 [tool.setuptools.package-data]
-apple_purchase_receipt_verifier = ["certs/*.cer", "py.typed", "aprv.wasm", "aprv.wasm.sha256"]
+apple_purchase_receipt_verifier = ["py.typed", "aprv.wasm", "aprv.wasm.sha256"]
 
 [project.optional-dependencies]
 dev = [

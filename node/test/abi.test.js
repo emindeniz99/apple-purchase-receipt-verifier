@@ -151,3 +151,51 @@ test('2,000 calls leave linear memory the same size', () => {
   }
   assert.equal(memory.buffer.byteLength, before);
 });
+
+// --- the input cap (ABI review) --------------------------------------------
+
+const CAP = 3_145_728;
+
+test('the facade copies at most one byte over the cap, and the module still answers TOO_LARGE', async () => {
+  const { inputBytes, MAX_INPUT_BYTES } = await import('../dist/verifier.js');
+  const { createVerifier, defaultConfig, Environment } = await import('../dist/index.js');
+  assert.equal(MAX_INPUT_BYTES, CAP + 1);
+  const huge = 'A'.repeat(4 * 1024 * 1024);
+  assert.equal(inputBytes(huge).length, CAP + 1);
+
+  // The facade's answer is byte for byte the module's answer to the whole input.
+  const whole = ready().verifyReceipt(now(), utf8.encode(huge));
+  const result = createVerifier(defaultConfig()).verifyReceipt(huge);
+  assert.equal(result.failure?.reason, 'TOO_LARGE');
+  assert.deepEqual({ verified: false, ...result.failure }, JSON.parse(whole));
+  const body = `{"receipt-data":"${huge}"}`;
+  assert.equal(
+    createVerifier(defaultConfig()).verifyReceiptEndpoint(Environment.SANDBOX, body),
+    ready().verifyReceiptEndpoint(1, now(), utf8.encode(body)),
+  );
+
+  // Linear memory holds the capped copy, not the 4 MiB input.
+  const grown = (bytes) => {
+    let memory;
+    const b = ready(DEFAULTS, { onCore: (instance) => (memory = instance.exports.memory) });
+    const before = memory.buffer.byteLength;
+    b.verifyReceipt(now(), bytes);
+    return memory.buffer.byteLength - before;
+  };
+  const MiB = 1024 * 1024;
+  assert.ok(grown(inputBytes(huge)) < 4 * MiB, 'the capped input grows memory by under 4 MiB');
+  assert.ok(grown(utf8.encode(huge)) >= 4 * MiB, 'the whole input would have grown it by 4 MiB');
+});
+
+test('an input of exactly the cap is passed whole; one code point over it is not', async () => {
+  const { inputBytes } = await import('../dist/verifier.js');
+  for (const text of ['A'.repeat(CAP), 'é'.repeat(CAP / 2), `${'A'.repeat(CAP - 4)}\u{1F600}`]) {
+    const bytes = inputBytes(text);
+    assert.equal(bytes.length, CAP);
+    assert.deepEqual(bytes, utf8.encode(text));
+  }
+  // A four-byte code point straddling the cap: at least one byte over it.
+  const over = inputBytes(`${'A'.repeat(CAP - 1)}\u{1F600}`);
+  assert.equal(over.length, CAP + 1);
+  assert.match(ready().verifyReceipt(now(), over), /"reason":"TOO_LARGE"/);
+});
