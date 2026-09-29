@@ -306,10 +306,11 @@ standard base64, JWS segments unpadded canonical base64url.
 
 **Memory.** `bench/memory.mjs` measures one call on a hostile receipt at
 the cap: 3 MiB of tiny attributes the module must read before it finds no
-signer. Measured on 2026-09-29 with the round-13 stand-in module (the 0.6
-core), Node 22.22.2: a fresh process peaked at 96 MiB for a tiny receipt and
-151 MiB for the hostile one; the module's own memory grew to 53 MiB, and an
-instance keeps that size for the life of its `Verifier`.
+signer. Measured on 2026-09-29 on Node 22.22.2: a fresh process peaked at
+98 MiB for a tiny receipt and 176 MiB for the hostile one. The module's own
+memory grew from 2 MiB to 74 MiB on it, and an instance keeps that size for
+the life of its `Verifier`. `bench/memory-workerd.mjs` runs the same
+receipt in workerd, where the whole process peaked at 69 and 161 MiB.
 
 ## The endpoint
 
@@ -386,6 +387,10 @@ npm run runtime:browser -- chromium firefox webkit   # needs playwright
 `npm run build` transpiles `wasm/aprv.component.wasm`, which is not in git:
 copy it into place (CI takes it from the rust-wasm job), or set
 `APRV_COMPONENT` to its path.
+
+`node scripts/g1.mjs DROP_DIR` runs everything above plus the cross-host
+corpus parity, timings and memory against a directory holding a new
+module's component, call files and reference rows.
 
 `test/conformance.test.js` runs `fixtures/cases.json`, the cross-language
 vector file every package of this library answers, as one named test per
