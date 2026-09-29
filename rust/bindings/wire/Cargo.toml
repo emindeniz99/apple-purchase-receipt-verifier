@@ -25,6 +25,13 @@ serde_json = "1"
 default = ["vendored"]
 vendored = ["aprv-surface/vendored"]
 
+[dev-dependencies]
+# The schema test validates what this crate writes, and every expected
+# result in fixtures/cases.json, against schema/ (JSON Schema 2020-12). No
+# network: `resolve-http` and `resolve-file` stay off, the schemas are
+# registered in memory.
+jsonschema = { version = "0.58.2", default-features = false }
+
 [lints.clippy]
 cast_possible_truncation = "deny"
 cast_possible_wrap = "deny"
