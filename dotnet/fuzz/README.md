@@ -1,8 +1,15 @@
 # Fuzz targets
 
-Five [SharpFuzz] targets under [libFuzzer], over the parsers this package
-hand-writes and the verifiers a consumer calls. `run.sh` pairs each with the
+Five [SharpFuzz] targets under [libFuzzer], over the JSON reader this package
+still carries and the verifiers a consumer calls. `run.sh` pairs each with the
 shared fixtures that seed it, so nothing under `fixtures/` is copied here.
+
+Since 0.8 the parsers behind the verifiers are inside `aprv.wasm`, and
+SharpFuzz instruments only .NET IL: coverage guidance reaches the wrapper
+(the host layer and the JSON reader), and the module is exercised as a
+black box. The targets keep asserting what a caller relies on: nothing
+escapes, and an accepted input fails against an unrelated anchor set. The
+core's own fuzz jobs cover its parsers.
 
 ```bash
 sudo apt-get install -y clang          # the driver needs -fsanitize=fuzzer
