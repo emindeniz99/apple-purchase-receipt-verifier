@@ -159,11 +159,18 @@ jobs:
       attestations: read    # gh attestation verify reads them
       packages: read        # and the image's from GHCR
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
       - name: download the release's artifacts
         id: assets
         env:
@@ -226,11 +233,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       # The engines floor, not the newest runtime: a consumer on the oldest
       # version we claim is the one most likely to hit a packaging problem.
@@ -275,11 +289,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       # requires-python floor, same reasoning as the node job.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -321,11 +342,18 @@ jobs:
     # Central's sync lags the portal release by tens of minutes.
     timeout-minutes: 60
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       # The jar is Java 8 bytecode; run it on a current LTS, as consumers do.
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -378,11 +406,18 @@ jobs:
     # job.
     container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       - name: resolve the published tag, outside the checkout
         # The swift image's /bin/sh is dash, which has no `pipefail`.
@@ -410,11 +445,18 @@ jobs:
     timeout-minutes: 20
     if: contains(needs.resolve.outputs.registries, ',go,')
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       # The go.mod floor, with GOTOOLCHAIN=local so Go cannot quietly download
       # a newer toolchain and test something other than the floor.
@@ -464,11 +506,18 @@ jobs:
     timeout-minutes: 30
     if: contains(needs.resolve.outputs.registries, ',php,')
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       # The composer.json floor, with the two extensions the package needs
       # and nothing else. setup-php caches nothing unless asked.
@@ -517,11 +566,18 @@ jobs:
     # Skipped, not failed, while RubyGems is unbootstrapped (BOOTSTRAP.md).
     if: contains(needs.resolve.outputs.registries, ',rubygems,')
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       # The gemspec's required_ruby_version floor, same reasoning as the node
       # and python jobs.
@@ -576,11 +632,18 @@ jobs:
     # owner sets the repository variable APRV_PUBLISH_CRATES to true.
     if: contains(needs.resolve.outputs.registries, ',crates,') && vars.APRV_PUBLISH_CRATES == 'true'
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       # No Swatinem/rust-cache or actions/cache here, deliberately: this leg
       # has no setup action to turn caching off in, and it must not grow one.
@@ -624,11 +687,18 @@ jobs:
     # Skipped, not failed, while NuGet is unbootstrapped (BOOTSTRAP.md).
     if: contains(needs.resolve.outputs.registries, ',nuget,')
     steps:
-      # A release tag of this repository, which resolve checked exists.
+      # The release tag resolve checked, fetched by name in a step rather
+      # than handed to actions/checkout (.github/CI-NOTES.md, "Why the
+      # smoke jobs fetch the tag themselves").
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.ref }}
           persist-credentials: false
+      - name: switch to the release tag
+        env:
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          git -c safe.directory="$PWD" fetch --no-tags --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+          git -c safe.directory="$PWD" checkout --detach "refs/tags/$REF"
 
       # net8.0 is the floor of the two shipped assets and selects
       # lib/net8.0; the netstandard2.0 asset needs a net4x consumer on a
