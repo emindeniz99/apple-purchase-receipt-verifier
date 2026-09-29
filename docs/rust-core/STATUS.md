@@ -19,7 +19,7 @@ work.
 | B server | `lane/server` | Phase 2 against the stand-in component | started 2026-09-29 |
 | C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head 5fd91f7); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
 | C go | `lane/host-go` | steps 4.6, 4.7 | handed back 2026-09-29 (head 6d1d069); parked until the real module: 90 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 as expected, `-race` clean, staticcheck 0, static binary runs in an empty chroot |
-| C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | started 2026-09-29 |
+| C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | handed back 2026-09-29 (head b4cfcb1); parked until the real module: 366 tests green on JDK 21, the 311 cases on 11, 17 and 21 with 90 passing and 221 listed stand-in differences, Java 8 leg 32 tests green, `java/` unchanged (516 tests), corpus 6,176/2/1 at 1 and 4 threads, class majors 52/55 proven, 0 native references across 475 classes, classpath guard proven with Maven and Gradle |
 | C python | `lane/host-python` | steps 5.1 to 5.3 | handed back 2026-09-29 (head 2c78909); parked until the real module: 94 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 in 13 s, CPython 3.10 to 3.14 green (218 expected failures each), ruff and mypy clean, 8 platform-tagged wheels built and the install-failure path proven with a faked platform |
 | C ruby | `lane/host-ruby` | step 5.5 | handed back 2026-09-29 (head 22c464b); parked until the real module: 90 of 311 cases on the stand-in (221 differ), corpus 6,176/2/1, rubocop, steep and rbs clean, gem 1,025,024 B, clean install picks the prebuilt native gem; thread scaling and the first-create time to be re-measured on a quiet machine (5.6 s here against the spike's 1.3 s) |
 | C swift | `lane/host-swift` | step 5.4 | started 2026-09-29 |
@@ -100,7 +100,17 @@ work.
   orchestrator's; attribution is truthful, so the history stands. It
   wrote an evidence note (`2026-09-29-ruby-host`) that the integrator
   audits before the merge.
-- Every host lane so far: `_initialize` is not called, the first export
+- Lane Java: the `-wasm` public API copies `java/`'s types rather than
+  sharing them (R33); `release-please-config.json` entries for
+  `java-wasm/pom.xml`, `Version.java` and `java-wasm/README.md` are the
+  integrator's (listed in `java-wasm/CI-NOTES.md`); the jar ships no
+  licence texts yet because the repository has no shared bundle
+  (integration item: one `licenses/` bundle for every package, replacing
+  Node's and Ruby's own copies); `Verifier.create(config)` on Java 8
+  throws until the server engine lands; the Endive host calls
+  `_initialize` once per instance (the other hosts do not; parity holds
+  either way).
+- Every host lane so far except Java: `_initialize` is not called, the first export
   call runs the constructors; A2 confirms the release module needs no
   start call.
 - Both Node, Go and Python tell the `decodeBase64` fixture groups apart through
