@@ -20,7 +20,7 @@ work.
 | C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head 5fd91f7); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
 | C go | `lane/host-go` | steps 4.6, 4.7 | handed back 2026-09-29 (head 6d1d069); parked until the real module: 90 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 as expected, `-race` clean, staticcheck 0, static binary runs in an empty chroot |
 | C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | started 2026-09-29 |
-| C python | `lane/host-python` | steps 5.1 to 5.3 | started 2026-09-29 |
+| C python | `lane/host-python` | steps 5.1 to 5.3 | handed back 2026-09-29 (head 2c78909); parked until the real module: 94 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 in 13 s, CPython 3.10 to 3.14 green (218 expected failures each), ruff and mypy clean, 8 platform-tagged wheels built and the install-failure path proven with a faked platform |
 | C ruby | `lane/host-ruby` | step 5.5 | started 2026-09-29 |
 | C swift | `lane/host-swift` | step 5.4 | started 2026-09-29 |
 | C dotnet | `lane/host-dotnet` | step 5.6 | started 2026-09-29 |
@@ -83,7 +83,17 @@ work.
   that is neither constant answers `{"status":21009}` rather than
   panicking (the 0.7 "never throws" contract). A clock before 1970 is
   `INTERNAL_ERROR` (`now-ms` is a `u64`).
-- Both Node and Go tell the `decodeBase64` fixture groups apart through
+- Lane Python: `Config` roots are DER `bytes` (the cross-host decision;
+  `cryptography` is gone). The release publishes platform-tagged wheels
+  and no `py3-none-any` wheel, so a platform without a wasmtime-py wheel
+  falls to the sdist, which stops with the pointer to `aprv-server` and
+  the C ABI (R28); `release.yml`'s Python build must become
+  `python/tools/build_dist.py` plus `--check` (integrator). A libc too
+  old for wasmtime-py's wheel still fails at import, not install.
+  `APRV_WASM_CACHE_DIR` is the cache path variable (R27); an empty value
+  turns the cache off. atheris has no CPython 3.11 wheel here, so the
+  fuzz targets ran only with a stub.
+- Both Node, Go and Python tell the `decodeBase64` fixture groups apart through
   the core's message text ("receipt is not valid base64", "x5c entry is
   not valid base64"); lane A2 keeps those messages stable or gives the
   runners a hook.
