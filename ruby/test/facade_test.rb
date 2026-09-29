@@ -151,10 +151,31 @@ class FacadeTest < Minitest::Test
     end
   end
 
-  def test_the_shipped_module_matches_its_recorded_hash
-    lib = File.expand_path("../lib/apple_purchase_receipt_verifier", __dir__)
-    bytes = APRV::Runtime.read_module(File.join(lib, "aprv.wasm"), File.join(lib, "aprv.wasm.sha256"))
+  # The module is not tracked in git: it is copied into place, or APRV_WASM
+  # names it. Either way it must be there, and it must be the pinned one.
+  def test_the_module_in_use_matches_its_recorded_hash
+    bytes = APRV::Runtime.read_module
     assert_operator bytes.bytesize, :>, 1_000_000
+  end
+
+  def test_a_missing_module_is_a_clear_error_naming_both_ways_to_supply_it
+    Dir.mktmpdir do |dir|
+      error = assert_raises(APRV::ModuleIntegrityError) do
+        APRV::Runtime.read_module(File.join(dir, "aprv.wasm"), File.join(dir, "aprv.wasm.sha256"))
+      end
+      assert_includes error.message, "APRV_WASM"
+      assert_includes error.message, "aprv.wasm"
+    end
+  end
+
+  def test_aprv_wasm_overrides_the_default_path
+    original = ENV.fetch("APRV_WASM", nil)
+    ENV["APRV_WASM"] = "/nonexistent/aprv.wasm"
+    assert_equal "/nonexistent/aprv.wasm", APRV::Runtime.module_path
+    ENV["APRV_WASM"] = ""
+    assert_equal APRV::Runtime::MODULE_PATH, APRV::Runtime.module_path
+  ensure
+    original.nil? ? ENV.delete("APRV_WASM") : ENV["APRV_WASM"] = original
   end
 
   # --- outcome 5: a trap or an internal failure ---------------------------------

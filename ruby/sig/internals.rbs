@@ -116,6 +116,7 @@ module ApplePurchaseReceiptVerifier
     attr_reader linker: Wasmtime::Linker
 
     def self.shared: () -> Runtime
+    def self.module_path: () -> String
     def self.read_module: (?String path, ?String hash_path) -> String
     def initialize: (String bytes, ?random: ^(Integer) -> String) -> void
 

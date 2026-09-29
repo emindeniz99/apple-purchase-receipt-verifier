@@ -686,6 +686,8 @@ anywhere in this library. Read every reason through
 
 ## Development
 
+`aprv.wasm` is not committed: copy the module into `lib/apple_purchase_receipt_verifier/` (or point `APRV_WASM` at it) before running anything; its SHA-256 is checked against `aprv.wasm.sha256`.
+
 ```sh
 bundle exec rake test                  # facade, ABI and conformance suites
 APRV_PACKAGING=1 bundle exec rake test # also builds the gem and installs it into an empty GEM_HOME

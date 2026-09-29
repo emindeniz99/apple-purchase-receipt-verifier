@@ -29,6 +29,9 @@ module ApplePurchaseReceiptVerifier
     # bytes at a time; refuse a request no verification needs.
     MAX_RANDOM_BYTES = 1 << 20
 
+    # Where the module is read from unless `APRV_WASM` names another file.
+    # The file is not tracked (a build or a release job copies it into
+    # place); the SHA-256 beside it is, and is the pin for either location.
     MODULE_PATH = File.join(File.dirname(__FILE__), "aprv.wasm")
     HASH_PATH = "#{MODULE_PATH}.sha256".freeze
 
@@ -47,13 +50,29 @@ module ApplePurchaseReceiptVerifier
         LOCK.synchronize { @shared ||= new(read_module) }
       end
 
-      # The module's bytes, checked against the SHA-256 recorded beside them.
+      # The file the module is read from: `APRV_WASM` when set, otherwise
+      # {MODULE_PATH}.
+      #
+      # @return [String]
+      def module_path
+        override = ENV.fetch("APRV_WASM", "")
+        override.empty? ? MODULE_PATH : override
+      end
+
+      # The module's bytes, checked against the SHA-256 recorded in
+      # {HASH_PATH}.
       #
       # @param path [String]
       # @param hash_path [String] a `sha256sum` line: 64 hex digits first
       # @return [String]
-      # @raise [ModuleIntegrityError]
-      def read_module(path = MODULE_PATH, hash_path = HASH_PATH)
+      # @raise [ModuleIntegrityError] the file is missing, or does not match
+      def read_module(path = module_path, hash_path = HASH_PATH)
+        unless File.file?(path)
+          raise ModuleIntegrityError,
+                "the module #{File.basename(path)} is not at #{path}: copy the release build " \
+                "to lib/apple_purchase_receipt_verifier/aprv.wasm, or set APRV_WASM to its path"
+        end
+
         bytes = File.binread(path)
         recorded = File.read(hash_path)[/\A\h{64}/]
         raise ModuleIntegrityError, "#{File.basename(hash_path)} does not hold a SHA-256" if recorded.nil?

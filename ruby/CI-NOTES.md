@@ -40,7 +40,8 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
 
 ### `ruby-gem` (Ruby 3.3 and 4.0)
 
-- Same `bundler-cache: true` and frozen bundle.
+- Same `bundler-cache: true` and frozen bundle, and a step before the tests
+  that copies the module into place (see "The module").
 - Keeps `APRV_PACKAGING=1 bundle exec rake test TEST=test/packaging_test.rb`.
   The test builds the gem, installs it into an empty `GEM_HOME` outside the
   checkout (this fetches `wasmtime` from rubygems.org, so the runner needs
@@ -96,8 +97,13 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
 
 ## The module
 
-`lib/apple_purchase_receipt_verifier/aprv.wasm` and `aprv.wasm.sha256` are
-the release build's file and its hash (`sha256sum` format). The `wasm-copies`
-job compares the module's hash with the release build's; the gem checks it
-against `aprv.wasm.sha256` before it compiles it, so overwrite both together.
-The shipped copy in this branch is the round-13 stand-in.
+`lib/apple_purchase_receipt_verifier/aprv.wasm` is **not tracked**: it is in
+`ruby/.gitignore`, and every job that loads the library or builds the gem
+must copy the release build there first (or set `APRV_WASM` to its path for
+the tests; `gem build` needs the copy, and the gemspec stops with a message
+when it is missing). A missing file is an error naming both ways to supply
+it, never a skip. `aprv.wasm.sha256` (`sha256sum` format) is tracked and is
+the pin for either location: the gem checks the module against it before it
+compiles it, so update it together with the module. The `wasm-copies` job
+compares the module's hash with the release build's. Until G1 the file to
+copy is the round-13 stand-in from the migration's scratch area.

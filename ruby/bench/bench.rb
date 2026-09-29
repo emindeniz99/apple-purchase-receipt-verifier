@@ -123,7 +123,7 @@ module CrossPortBench
   end
 
   def module_sha256
-    Digest::SHA256.file(APRV::Runtime::MODULE_PATH).hexdigest
+    Digest::SHA256.file(APRV::Runtime.module_path).hexdigest
   end
 
   def main

@@ -37,6 +37,15 @@ Gem::Specification.new do |spec|
   # against; licenses/ holds the texts its third-party code requires. Not
   # shipped: roots_data.rb (Apple's roots live inside the module now, and the
   # file only waits for the release that deletes it), certs/, and the tests.
+  #
+  # The module is not tracked in git: the release job copies it to the path
+  # below before `gem build`, and a build without it stops here.
+  module_file = File.join(__dir__, "lib/apple_purchase_receipt_verifier/aprv.wasm")
+  unless File.file?(module_file)
+    raise "lib/apple_purchase_receipt_verifier/aprv.wasm is missing: copy the release " \
+          "build of the module there before `gem build`"
+  end
+
   spec.files = Dir[
     "lib/**/*.rb",
     "lib/**/aprv.wasm",
