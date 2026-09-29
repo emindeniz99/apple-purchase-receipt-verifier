@@ -7,7 +7,7 @@
 # and same.py (the layout the core lane hands over). The steps:
 #   1. copy aprv.wasm into the package (git-ignored) and rewrite the tracked
 #      aprv.wasm.sha256 from it; `git diff` then shows the pin to commit;
-#   2. the whole test suite, the 311 conformance cases included;
+#   2. the whole test suite, every conformance case included;
 #   3. every corpus through the host layer, compared byte for byte with the
 #      module's own rows. A differing row is reported, never adjusted.
 # Exit status is 0 only when all of it passed. Nothing here is committed but

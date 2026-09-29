@@ -37,7 +37,7 @@ uv run --locked --extra dev python -m unittest discover -s tests
 ```
 
 - `discover` picks up `test_conformance.py`, whose `tearDownModule` fails the
-  run unless all 311 case ids ran; `test_abi.py`, `test_facade.py`,
+  run unless every case id ran; `test_abi.py`, `test_facade.py`,
   `test_concurrency.py`, `test_fuzz_targets.py`, `test_trust_isolation.py`,
   `test_api_shape.py`, `test_cache.py` and `test_install_failure.py`.
 - `HOME` (and `LOCALAPPDATA` on Windows) must be writable: `test_cache.py`
@@ -50,8 +50,8 @@ uv run --locked --extra dev python -m unittest discover -s tests
   the user is not root (every hosted runner) and a simulated one when it is
   (the Alpine containers). The foreign-owned and group-writable cases skip on
   Windows only, where the rule does not apply (`unittest` prints the reason).
-- All 311 cases must pass against the release module (checked: 311 of 311 on
-  the G1 module, sha256 `4cbe2b02...826e`); there is no list of expected
+- Every case must pass against the release module (checked: 338 of 338 on
+  the G1b module, sha256 `9c0a581c...a263`); there is no list of expected
   differences. `tools/g1.sh G1_DIR` runs the whole re-run for a new module in
   one command (see "Re-running against a new module" below).
 - Each leg should also run once with the cache warm (the second run of the
