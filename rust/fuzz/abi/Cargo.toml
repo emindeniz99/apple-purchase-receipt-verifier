@@ -1,0 +1,28 @@
+# The `abi-call` fuzz target: aprv.wasm entered through its exports, the
+# way every hand-rolled host enters it (MIGRATION.md step 1.12). A package
+# of its own so Wasmtime is compiled only for this target, not for the four
+# core targets and `ffi` beside it (`../Cargo.toml`); `../run.sh abi-call`
+# runs it with `--fuzz-dir`. It builds nothing of the library: it reads the
+# module rust/bindings/abi/build.sh wrote, from APRV_WASM.
+[package]
+name = "aprv-fuzz-abi"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# aprv-server's and the ABI tests' pin.
+wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std", "cranelift"] }
+
+[[bin]]
+name = "abi-call"
+path = "fuzz_targets/abi-call.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

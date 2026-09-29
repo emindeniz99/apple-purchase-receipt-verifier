@@ -322,13 +322,14 @@ pub fn init_result(result: &Result<(), String>) -> String {
 /// by the one rule the core makes public ([`aprv_surface::decode_base64`]).
 /// Anything else is refused with a message, so a wrapper that misspells a
 /// member finds out at `create` instead of getting the Apple roots it did
-/// not ask for. Whether a root is a certificate is the surface's question,
+/// not ask for; so is `roots` named twice, which a JSON reader that keeps
+/// the last member would read as whichever came last. Whether a root is a certificate is the surface's question,
 /// asked when the verifier is made.
 ///
 /// # Errors
 /// A message naming what is wrong: not UTF-8, not JSON, not an object, a
-/// member other than `roots`, `roots` not a list, or a root that is not a
-/// string or not base64 (by its index).
+/// member other than `roots`, `roots` more than once, `roots` not a list,
+/// or a root that is not a string or not base64 (by its index).
 pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let text =
         core::str::from_utf8(config).map_err(|_| "the configuration is not UTF-8".to_owned())?;
@@ -337,9 +338,14 @@ pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     }
     let value: serde_json::Value =
         serde_json::from_str(text).map_err(|_| "the configuration is not JSON".to_owned())?;
-    let serde_json::Value::Object(members) = value else {
+    if !value.is_object() {
         return Err("the configuration is not a JSON object".to_owned());
-    };
+    }
+    let Members(members) =
+        serde_json::from_str(text).map_err(|_| "the configuration is not JSON".to_owned())?;
+    if members.iter().filter(|(name, _)| name == "roots").count() > 1 {
+        return Err("the configuration names \"roots\" more than once".to_owned());
+    }
     let mut roots = Vec::new();
     for (name, value) in members {
         if name != "roots" {
@@ -358,6 +364,32 @@ pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
         }
     }
     Ok(roots)
+}
+
+/// Every member of a JSON object, repeated names included, in order.
+struct Members(Vec<(String, serde_json::Value)>);
+
+impl<'de> serde::Deserialize<'de> for Members {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Members, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Members;
+            fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Members, A::Error> {
+                let mut members = Vec::new();
+                while let Some(name) = map.next_key::<String>()? {
+                    members.push((name, map.next_value()?));
+                }
+                Ok(Members(members))
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
 }
 
 #[cfg(test)]
@@ -460,7 +492,17 @@ mod tests {
             read_init_config(b"{\"roots\":[\"AQID\",\"BA==\"]}"),
             Ok(vec![vec![1, 2, 3], vec![4]])
         );
-        let refused: [(&[u8], &str); 9] = [
+        let refused: [(&[u8], &str); 11] = [
+            // Named twice, a reader keeping the last member would take the
+            // Apple roots here, and the first root in the other order.
+            (
+                b"{\"roots\":[\"AQ==\"],\"roots\":[]}",
+                "the configuration names \"roots\" more than once",
+            ),
+            (
+                b"{\"roots\":[],\"roots\":[\"AQ==\"]}",
+                "the configuration names \"roots\" more than once",
+            ),
             (b"\xff", "the configuration is not UTF-8"),
             (b"{", "the configuration is not JSON"),
             (b"[]", "the configuration is not a JSON object"),

@@ -1,0 +1,141 @@
+== cases: 153 rows: 153 identical, 0 message, 0 verdict, 0 missing
+== hostile: 811 rows: 811 identical, 0 message, 0 verdict, 0 missing
+== algorithms: 22 rows: 22 identical, 0 message, 0 verdict, 0 missing
+== substrate: 193 rows: 193 identical, 0 message, 0 verdict, 0 missing
+== fuzz: 5000 rows: 4955 identical, 45 message, 0 verdict, 0 missing
+  message fuzz/0/receipt/reject-attribute-type-above-int32-max
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: a constructed string nests deeper than OpenSSL decodes
+  message fuzz/1133/substrate/time/receipt/valid-now-not-at-signing
+          05b4ad9: MALFORMED: receipt embeds 12 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/1296/substrate/pkix/receipt/intermediates-6
+          05b4ad9: MALFORMED: receipt embeds 15 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/1444/substrate/pkix/receipt/chain-sha1
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/1447/substrate/time/receipt/na-plus-999ms
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/1489/substrate/pkix/receipt/name-printable-vs-utf8
+          05b4ad9: MALFORMED: receipt embeds 13 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/191/receipt/reject-empty-encapsulated-content
+          05b4ad9: MALFORMED: receipt embeds 14 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2010/substrate/pkix/receipt/signer-marker-critical
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: a constructed string nests deeper than OpenSSL decodes
+  message fuzz/2027/substrate/time/receipt/gentime-na-plus-1ms
+          05b4ad9: MALFORMED: receipt embeds 12 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/206/substrate/flood/signerinfos-1000
+          05b4ad9: MALFORMED: receipt carries 1000 SignerInfos, more than the maximum of 4
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2063/substrate/pkix/receipt/intermediates-6
+          05b4ad9: MALFORMED: receipt embeds 13 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2181/substrate/pkix/receipt/chain-through-impostor-root
+          05b4ad9: MALFORMED: receipt embeds 12 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2192/receipt/reject-unreadable-creation-date-under-an-expired-chain
+          05b4ad9: MALFORMED: receipt embeds 14 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/260/substrate/cms/contenttype-is-signeddata
+          05b4ad9: MALFORMED: receipt embeds 12 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2662/substrate/cms/crls-empty
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2697/substrate/pkix/receipt/intermediate-version-1
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/276/substrate/pkix/receipt/chain-through-impostor-root
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2835/substrate/flood/certificates-11
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2911/substrate/cms/crls-garbage
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/296/substrate/flood/certificates-11
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2964/substrate/time/receipt/intermediate-na-plus-1ms
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/2989/substrate/pkix/receipt/signer-rsa-1024
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3029/substrate/time/receipt/na-plus-1s
+          05b4ad9: MALFORMED: receipt embeds 12 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3102/substrate/pkix/receipt/signer-no-basic-constraints
+          05b4ad9: MALFORMED: receipt embeds 13 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3150/substrate/flood/certificates-11
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3206/receipt/reject-signer-certificate-version-11
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3334/receipt/expose-unknown-attributes
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3348/receipt/reject-unreadable-entry-under-a-trusted-chain
+          05b4ad9: MALFORMED: receipt embeds 13 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3506/substrate/time/receipt/na
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3564/substrate/cms/unsigned-attributes
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/3751/receipt/reject-attribute-type-above-int32-max
+          05b4ad9: MALFORMED: receipt embeds 12 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/4026/receipt/reject-attribute-type-above-int32-max
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/405/substrate/pkix/receipt/intermediates-6
+          05b4ad9: MALFORMED: receipt embeds 14 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/4260/receipt/reject-signer-certificate-version-11
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/43/substrate/time/receipt/intermediate-expired-at-signing
+          05b4ad9: MALFORMED: receipt embeds 13 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/4337/receipt/ids-are-decoded
+          05b4ad9: MALFORMED: receipt embeds 12 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/4441/substrate/cms/crls-empty
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/4659/substrate/flood/certificates-10
+          05b4ad9: MALFORMED: receipt embeds 19 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/4705/receipt/reject-unreadable-entry-under-a-trusted-chain
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: a constructed string nests deeper than OpenSSL decodes
+  message fuzz/4768/receipt/reject-signer-without-receipt-signing-oid
+          05b4ad9: MALFORMED: receipt embeds 13 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/4783/receipt/reject-signer-on-an-unimplemented-curve
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/4831/substrate/flood/signerinfos-1000
+          05b4ad9: MALFORMED: receipt carries 1011 SignerInfos, more than the maximum of 4
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/545/receipt/unreadable-creation-date-is-judged-at-now
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/66/receipt/reject-leaf-presented-as-intermediate
+          05b4ad9: MALFORMED: receipt embeds 11 certificates, more than the maximum of 10
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/664/substrate/time/receipt/na-plus-999ms
+          05b4ad9: MALFORMED: receipt carries 7 SignerInfos, more than the maximum of 4
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+== all: 6134 identical, 45 message, 0 verdict, 0 missing

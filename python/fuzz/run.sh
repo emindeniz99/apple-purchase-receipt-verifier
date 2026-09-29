@@ -9,10 +9,11 @@
 # directory. A crasher lands under artifacts/<target>/; reduce it and pin it
 # as a test under ../tests/ rather than committing it here.
 #
-# Requires uv. The fuzzer is installed into an ephemeral environment, so
-# nothing here is a dependency of the package: `uv pip install -e .` in
-# python/ never sees atheris. FUZZ_PYTHON overrides the interpreter, which is
-# pinned to a line atheris publishes a wheel for (see README.md).
+# Requires uv. The fuzzer is installed into an ephemeral environment next to
+# wasmtime, the package's one dependency, so nothing here is a dependency of
+# the package: `uv pip install -e .` in python/ never sees atheris. FUZZ_PYTHON
+# overrides the interpreter, which is pinned to a line atheris publishes a
+# wheel for (see README.md).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,41 +27,29 @@ seconds="${2:-60}"
 # without importing it ahead of the instrumentation block.
 export PYTHONPATH="$here/..:$here"
 python=(uv run --no-project --python "${FUZZ_PYTHON:-3.13}"
-  --with atheris --with cryptography --with asn1crypto python)
+  --with atheris --with wasmtime python)
 
-# Two seeds are built here from shared fixtures rather than checked in, so
-# each of those receipts keeps exactly one copy in the repository: the
-# endpoint's request body carrying a genuine receipt, and the raw attribute
-# SET out of the generated receipt -- the payload bytes the hand-written
-# reader takes, which no fixture holds on its own.
+# One seed is built here from a shared fixture rather than checked in, so the
+# genuine receipt keeps exactly one copy in the repository: the endpoint's
+# request body carrying it.
 generated="$here/.seeds-generated"
-mkdir -p "$generated/endpoint-json" "$generated/receipt-attributes"
+mkdir -p "$generated/endpoint-json"
 "${python[@]}" - "$fixtures" "$generated" <<'PY'
 import json
 import sys
 from pathlib import Path
-
-from asn1crypto import cms
 
 fixtures, generated = Path(sys.argv[1]), Path(sys.argv[2])
 b64 = fixtures.joinpath("public-receipts", "receipt-sandbox-g5.b64").read_text().split()
 (generated / "endpoint-json" / "sandbox-g5.json").write_text(
     json.dumps({"receipt-data": "".join(b64)})
 )
-for name in ("receipt", "receipt-type-vpp", "receipt-no-type"):
-    der = fixtures.joinpath("generated-0.7", f"{name}.der").read_bytes()
-    payload = cms.ContentInfo.load(der)["content"]["encap_content_info"]["content"].native
-    (generated / "receipt-attributes" / name).write_bytes(payload)
 PY
 
 run_one() {
   local name="$1"
   local seeds
   case "$name" in
-    receipt-der)
-      seeds=("$fixtures/generated-0.7" "$fixtures/generated" "$fixtures/apple-official/certs") ;;
-    receipt-attributes)
-      seeds=("$generated/receipt-attributes" "$fixtures/generated") ;;
     receipt-base64)
       seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
     jws)
@@ -76,7 +65,7 @@ run_one() {
 }
 
 if [ "$target" = all ]; then
-  for name in receipt-der receipt-attributes receipt-base64 jws endpoint-json; do
+  for name in receipt-base64 jws endpoint-json; do
     run_one "$name"
   done
 else

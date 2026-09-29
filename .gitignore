@@ -1,3 +1,5 @@
+# The module is copied into place, never committed.
+python/apple_purchase_receipt_verifier/aprv.wasm
 __pycache__/
 *.py[cod]
 .venv/

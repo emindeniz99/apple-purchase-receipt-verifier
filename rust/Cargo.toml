@@ -74,10 +74,12 @@ name = "bench"
 # aprv.wasm through Wasmtime and depends on no crate here; it keeps its
 # own lockfile, so Wasmtime's graph stays out of this one. `vendor/` is
 # the patched openssl-sys. `bindings/abi/tests/` is the ABI test host, a
-# package of its own for the same reason as the server.
+# package of its own for the same reason as the server. The root package is
+# a member by being the root: listing "." among the members as well made it
+# an ancestor member that overrode `exclude`, so an excluded crate without a
+# `[workspace]` table of its own could not run cargo.
 [workspace]
 members = [
-    ".",
     "openssl",
     "bindings/surface",
     "bindings/wire",

@@ -32,15 +32,55 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Security.Cryptography.Pkcs" />
-    <PackageReference Include="System.Formats.Asn1" />
+    <!-- The Wasm host. Everything that verifies runs inside aprv.wasm. -->
+    <PackageReference Include="Wasmtime" />
+  </ItemGroup>
+
+  <!-- The one module, embedded in both targets. Its SHA-256 sits beside it and
+       is checked at first use. The default is wasm/aprv.wasm, which is not in git
+       (it is listed in .gitignore; wasm/aprv.wasm.sha256 is committed and
+       names the file that belongs there). The release builds the module once
+       and points APRV_WASM at it, and the hash is then taken from that file
+       (the release checks the file against the hash it published before it
+       packs). A missing file stops the build with a message. -->
+  <ItemGroup Condition="'$(APRV_WASM)' == ''">
+    <EmbeddedResource Include="wasm/aprv.wasm" LogicalName="aprv.wasm" />
+    <EmbeddedResource Include="wasm/aprv.wasm.sha256" LogicalName="aprv.wasm.sha256" />
+  </ItemGroup>
+
+  <Target Name="CheckAprvWasmIsThere" BeforeTargets="AssignTargetPaths">
+    <Error Condition="'$(APRV_WASM)' == '' And !Exists('$(MSBuildThisFileDirectory)wasm/aprv.wasm')"
+           Text="aprv.wasm is not in wasm/ (it is not committed). Copy the module there, or set APRV_WASM to its path; wasm/aprv.wasm.sha256 has the SHA-256 of the file that belongs there." />
+    <Error Condition="'$(APRV_WASM)' != '' And !Exists('$(APRV_WASM)')"
+           Text="APRV_WASM is set to '$(APRV_WASM)', which does not exist." />
+  </Target>
+
+  <Target Name="EmbedTheGivenAprvWasm" BeforeTargets="AssignTargetPaths" Condition="'$(APRV_WASM)' != ''">
+    <GetFileHash Files="$(APRV_WASM)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Items" ItemName="_AprvWasmHash" />
+    </GetFileHash>
+    <WriteLinesToFile File="$(IntermediateOutputPath)aprv.wasm.sha256" Lines="%(_AprvWasmHash.FileHash)  aprv.wasm" Overwrite="true" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(APRV_WASM)" LogicalName="aprv.wasm" />
+      <EmbeddedResource Include="$(IntermediateOutputPath)aprv.wasm.sha256" LogicalName="aprv.wasm.sha256" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <!-- Licence texts for what is compiled into the module (OpenSSL, wasi-libc, Rust std). -->
+    <None Include="../../licenses/*" Pack="true" PackagePath="licenses/" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The test project dogfoods the hand-rolled JSON reader and asserts on
-         the internal parsing helpers; nothing else sees them. -->
+    <!-- The test project asserts on the host layer (the canonical-ABI call, the
+         pool, the module's answers) and dogfoods the JSON reader; the corpus
+         runner under tools/ drives the same layer over the shared corpora.
+         Nothing else sees them. -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>ApplePurchaseReceiptVerifier.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ApplePurchaseReceiptVerifier.CorpusRun</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 

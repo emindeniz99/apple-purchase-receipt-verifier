@@ -15,9 +15,19 @@ Plus a local, drop-in replacement for that endpoint, so a Rails or Sinatra
 service can delete its `Net::HTTP.post` to Apple and keep the same response
 shape.
 
-Zero runtime dependencies: `openssl` and `json` are default gems.
+The verification itself runs in `aprv.wasm`, one WebAssembly module built from
+one Rust core and shared by every language package of this repository. This
+gem is a thin wrapper: it loads the module into the
+[`wasmtime`](https://rubygems.org/gems/wasmtime) gem, reads your clock, moves
+bytes in and JSON out, and turns the answer into Ruby values. It parses no
+receipt, checks no signature and decides no trust. See
+[How it runs](#how-it-runs) for what that means for start-up, threads and
+platforms.
 
-**This is 0.7.** It is a verifier, not business logic: no bundle id,
+One runtime dependency: `wasmtime`. No native code of ours, no system OpenSSL,
+no network.
+
+**This is 0.7's API.** It is a verifier, not business logic: no bundle id,
 environment, product id or device-binding parameter exists anywhere in this
 API. Every verify call returns Apple's own signed data and nothing tells you
 whether to trust it beyond the fact that it verified. See
@@ -38,7 +48,48 @@ require "apple-purchase-receipt-verifier"   # the gem name also works
 Ruby **3.3 or newer**. The floor moved from 3.1 in 0.6 because the 0.7 data
 types are built on `Data.define`, a Ruby 3.2 feature that needs 3.3 for
 keyword-only construction with defaults to behave the way this library
-depends on.
+depends on. The `wasmtime` gem's prebuilt native gems need 3.3 as well.
+
+Installing pulls in `wasmtime` 48.0.1 or newer as a prebuilt native gem, so no
+Rust toolchain is needed on Linux (glibc and musl), macOS or Windows, on x86_64
+and arm64 (Windows arm64 needs Ruby 3.4). On a platform with no prebuilt gem
+RubyGems builds `wasmtime` from source, which needs Rust and a Cranelift
+backend: not possible on 32-bit targets. There, use `aprv-server` (see the
+repository README).
+
+## How it runs
+
+- **The module is compiled once per process.** The first `Verifier.create`
+  compiles `aprv.wasm`: about 6 seconds of CPU spread over the machine's cores,
+  which the spike measured as 1.2 to 1.4 s of wall time on 4 free CPUs. Every
+  later `Verifier` in the process takes a few milliseconds (a new instance
+  that loads the trust roots). Create your verifier once, at boot, not per
+  request. A process that starts for one call (a Lambda cold start, a
+  one-off script) pays the compile every time.
+- **Threads verify in parallel.** One `Verifier` is safe to share. Each call
+  takes an idle instance of the module from the verifier's pool, or makes
+  one, and runs it without the GVL (`to_func(gvl: false)`), so threads verify in
+  parallel: the spike measured four threads at 3.3 times one thread's rate,
+  where with the GVL held they did not scale at all. A busy pool grows to the
+  number of concurrent callers and keeps at most eight idle instances.
+- **Forked servers** (Puma cluster mode, Unicorn, Passenger): create the
+  `Verifier` in each worker after the fork, for example in Puma's
+  `on_worker_boot`. Creating it before the fork and sharing it with the
+  workers is untested.
+- **Memory.** Each instance holds its own linear memory, about 2 MiB after a
+  first call and more after a large receipt, capped at 256 MiB per instance.
+  An instance that reaches the cap answers `INTERNAL_ERROR` and is
+  discarded, as one that traps does.
+- **The module is sandboxed.** It imports exactly one function, `random-get`,
+  which this gem answers from `SecureRandom`. It cannot open a file, read the
+  environment, reach the network or read the clock: the gem reads the
+  `Config` clock and passes the value in. The gem checks the module against
+  its recorded SHA-256 before compiling it, and refuses a module that imports
+  anything else.
+- **A trap is contained.** If the module traps or answers something the gem
+  cannot read, that call is `INTERNAL_ERROR` (status 21009 at the endpoint)
+  with the cause in `failure.cause`, the instance is thrown away, and the
+  next call gets a fresh one. Alert on it and do not retry.
 
 ## Quick start
 
@@ -83,7 +134,7 @@ Custom roots or a custom clock:
 
 ```ruby
 config = APRV::Config.new(
-  roots: [my_pem_or_der_string],           # defaults to Apple's three pinned roots
+  roots: [my_pem_or_der_string],           # certificate objects (#to_der) work too; defaults to Apple's three pinned roots
   clock: -> { (Time.now.to_r * 1000).to_i } # defaults to the system clock, epoch milliseconds
 )
 verifier = APRV::Verifier.create(config)
@@ -399,12 +450,14 @@ is the receipt's creation-date attribute (legacy path) or the JWS
 `signedDate` claim, and, when that is missing or is not a representable
 instant (such as `1e300`), the **configured clock** stands in.
 
-`clock:` on `Config` is read in exactly two places: the chain-validity
-fallback described above, and the endpoint's `request_date` / `_ms` / `_pst`
-triple, once per `verify_receipt_endpoint` call. It never otherwise decides
-whether a payload verifies: injecting a clock to control `request_date`, or
-to work around skew, must not let you authenticate an expired chain, and
-cannot. No payload is rejected for its age — how old one may be is your
+`clock:` on `Config` is read once per call, before the input is looked at, and
+its value is handed to the module. The module uses it for exactly two things:
+the chain-validity fallback described above, and the endpoint's `request_date`
+/ `_ms` / `_pst` triple. It never otherwise decides whether a payload
+verifies: injecting a clock to control `request_date`, or to work around skew,
+must not let you authenticate an expired chain, and cannot. A clock that
+raises, or answers anything but an Integer from 0 to `2**63 - 1`, makes that
+call `INTERNAL_ERROR` whatever the input. No payload is rejected for its age — how old one may be is your
 decision, per [Post-verification checklist](#post-verification-checklist).
 
 Anything responding to `#call` and returning an Integer epoch-millisecond
@@ -496,11 +549,17 @@ parse was signed by a trusted signer, so it is `UNREADABLE_PAYLOAD`, not
 `MALFORMED`.
 
 **Misconfiguration is not a verification verdict.** `Verifier.create` raises
-`ArgumentError` for an empty root set; `Config.new` raises it for a `clock:`
-that does not respond to `#call` or a `roots:` entry that is neither a
-certificate nor a DER/PEM String; `verify_receipt_endpoint` raises it for an
-`environment` that is not `Environment::PRODUCTION` or `Environment::SANDBOX`.
-You cannot catch a typo as though a receipt were forged.
+`ArgumentError` for an empty root set, and for a root the module does not
+accept as a certificate; `Config.new` raises it for a `clock:` that does not
+respond to `#call` or a `roots:` entry that is neither a certificate object
+nor a DER/PEM String; `verify_receipt_endpoint` raises it for an `environment`
+that is not `Environment::PRODUCTION` or `Environment::SANDBOX`. You cannot
+catch a typo as though a receipt were forged.
+
+`Verifier.create` also raises `AbiMismatchError` when the module does not
+speak the interface this gem binds, `ModuleIntegrityError` when the module
+does not match its recorded SHA-256, and `TrapError` if the module fails
+while starting. All three are hard failures at startup, never a verdict.
 
 Nothing else escapes `verify_receipt` or `verify_signed_data`. Containment is
 categorical and explicitly covers `SystemStackError`, which is not a
@@ -510,11 +569,9 @@ request with it.
 ## Security model
 
 - **Pinned anchors only.** Trust anchors come from `Config#roots`, or from
-  the three bundled Apple roots. The operating system's trust store is never
-  consulted on any code path — there is no `OpenSSL::X509::Store` holding
-  certificates anywhere in the gem, `set_default_paths` appears nowhere, and
-  a test proves that a chain the platform's own default store accepts is
-  still rejected.
+  the three Apple roots compiled into the module. The operating system's trust
+  store is never consulted: the module cannot read a file, and this gem
+  contains no certificate or trust-store code at all.
 - **No network.** No OCSP, no CRL, no AIA fetch, no root download. Revocation
   is disabled by design, the same trade-off Apple's official libraries make
   in offline mode.
@@ -536,62 +593,76 @@ request with it.
   differs from the content's own type, is `INVALID_SIGNATURE`.
 - **Reject rather than repair.** An input the grammar cannot represent
   fails; it is never substituted with a sentinel.
-- **Bounded parsing.** Attacker-supplied bytes go through an iterative,
-  explicit-stack scanner before anything else sees them — see
-  [Input limits](#input-limits). The budgets count structural elements, so
-  the cost *inside* one element is bounded separately where it can grow. The
-  CMS structure and the creation date are read before any cryptographic
+- **Bounded parsing.** The module measures and bounds attacker-supplied
+  bytes before anything else sees them — see [Input limits](#input-limits).
+  The CMS structure and the creation date are read before any cryptographic
   check, because the creation date is what the chain's validity is judged
   at, so these ceilings are what an unsigned blob can spend; the rest of the
   payload is parsed only after the signature.
+- **Isolation.** Hostile bytes are only ever parsed inside the WebAssembly
+  sandbox, in an instance with a 256 MiB memory cap. A guest trap costs that
+  one call and that one instance.
 - **No logging, no metrics, no callbacks.** `failure.reason` is the entire
   observability surface, and messages carry no receipt bytes, claims or key
   material.
 
-### One platform caveat worth knowing
+### No system OpenSSL
 
-**Known issue: genuine legacy receipts fail on RHEL 9.** The legacy Apple
-receipt chain and its CMS signature are SHA-1, and RHEL 9's DEFAULT crypto
-policy (also Alma, Rocky, and Fedora with `rh-allow-sha1-signatures = no`)
-makes the system OpenSSL refuse SHA-1 signatures. This port uses the system
-OpenSSL, so every genuine legacy receipt there is `UNTRUSTED_CHAIN`. Observed
-on AlmaLinux 9.8 on 2026-09-24. Newer receipts (SHA-256 chains) and every JWS
-are unaffected. FIPS mode is untested.
-
-Until the fix ships, allow SHA-1 signatures on that host with
-`update-crypto-policies --set DEFAULT:SHA1`. The planned fix checks SHA-1
-signatures on Apple's pinned legacy chain only, with OpenSSL's RSA
-`verify_recover` and an exact byte comparison, and adds an AlmaLinux 9 CI job
-(ROADMAP.md).
+0.7 used the system OpenSSL, so hosts whose crypto policy refuses SHA-1
+signatures (RHEL 9 and its rebuilds, in the default policy) failed genuine
+legacy receipts, whose chain and CMS signature are SHA-1. The crypto now runs
+inside the module, which carries its own OpenSSL, so the host's crypto policy
+does not reach it.
 
 ## Trust anchors
 
-`APRV::Config.defaults.roots` returns all three published Apple roots — Apple
-Inc. Root, Apple Root CA - G2 and Apple Root CA - G3 — used for both the
-legacy receipt path and the JWS path; Apple deliberately documents the JWS
-chain as ending in "an Apple root certificate" rather than a specific one, so
+`APRV::Config.defaults` pins all three published Apple roots — Apple Inc.
+Root, Apple Root CA - G2 and Apple Root CA - G3 — used for both the legacy
+receipt path and the JWS path; Apple deliberately documents the JWS chain as
+ending in "an Apple root certificate" rather than a specific one, so
 narrowing either set would fail closed, silently, the day Apple re-anchored a
 path.
 
-The bytes are compiled into the gem rather than read from disk when a config
-is built, so it works from a read-only or bundled deployment.
+The bytes are compiled into `aprv.wasm`, each checked there against its
+published SHA-256 fingerprint, so the gem works from a read-only or bundled
+deployment and reads no certificate file. `Config.defaults.roots` is
+therefore empty: it means "the module's roots", and `Config.new(roots: [])`
+is not the same thing and is refused by `Verifier.create`.
 
-To pin your own anchors, pass them: `Config.new(roots:)` accepts
-`OpenSSL::X509::Certificate` objects or DER/PEM strings.
+To pin your own anchors, pass them: `Config.new(roots:)` accepts certificate
+objects (anything answering `#to_der`, such as an OpenSSL certificate) or
+DER/PEM strings, and `Config#roots` returns them as DER. Whether a root is a
+certificate is the module's to say, at `Verifier.create`.
 
 ## Performance
 
-Measured with `bench/bench.rb` (`ruby -Ilib bench/bench.rb`) on this host,
-under load shared with other work, so treat these as an order of magnitude
-rather than a guarantee: a synthetic 2-in-app-purchase receipt verifies
-(`verify_receipt`) at a median of ~2.1 ms; a genuine 187-in-app-purchase
-receipt — the largest fixture in the shared corpus, and the port's practical
-worst case — at a median of ~27 ms and up to ~28 ms across ten samples.
-Rendering that same large receipt through `verify_receipt_endpoint` costs
-more (median ~65 ms, up to ~71 ms), since it also walks and JSON-encodes
-every in-app purchase into Apple's response shape. Memory, not CPU, is
-usually the limit for a server handling many concurrent calls; do not rely on
-CPU headroom alone.
+`ruby -Ilib bench/startup.rb` prints these rows for a fresh process, and
+`ruby -Ilib bench/threads.rb` the rate at 1, 2 and 4 threads. Two sets of
+numbers, because the second was taken on a machine other work had saturated
+(a load average of 17 to 20 on 4 cores): its wall-clock times are upper
+bounds and its CPU times are the ones to read.
+
+| | spike, quiet 4-core machine (ABI v1 module) | this gem, release module, loaded 4-core machine |
+|---|---:|---:|
+| `require` | 10 to 16 ms | 12 to 53 ms |
+| first `Verifier.create` (compiles the module) | 1.22 to 1.35 s | 8.6 to 13.8 s wall, 5.7 to 6.2 s of CPU |
+| a later `Verifier.create` | 0.1 ms | 3.3 to 3.6 ms of CPU (4 to 11 ms wall) |
+| one genuine G5 sandbox receipt, module call | 1.33 ms | 2.0 to 2.2 ms of CPU (3.3 to 4.4 ms wall) |
+| the same through `verify_receipt`, typed result included | | 2.3 to 2.5 ms of CPU (4.0 to 4.8 ms wall) |
+| one shared-sandbox JWS, module call | 4.71 ms | 8.1 to 9.4 ms of CPU (13 to 18 ms wall) |
+| the same through `verify_signed_data` | | 8.9 to 9.5 ms of CPU (16 to 20 ms wall) |
+| resident set of the process | | 29 MB after `require`, 149 to 153 MB after the compile, 151 to 154 MB after about 2,000 calls |
+| linear memory one instance has used | | 2.0 MiB |
+| four threads, G5 receipts per second | 2,358 | not measurable while the cores are shared |
+
+The compile is once per process and dominates a process that starts for one
+call. `Wasmtime::Engine#precompile_module` exists for that case and is not used
+here: a precompiled file is tied to one Wasmtime version, which would tie this
+gem to it.
+
+A test (`test/thread_test.rb`) shows the parallelism without needing free
+cores: a 100 ms verification of the 1 MiB byte-floor receipt leaves a
+millisecond-sleeping thread ticking, and with the GVL held it would not.
 
 ## Upgrading from 0.6
 
@@ -602,7 +673,7 @@ anywhere in this library. Read every reason through
 
 | 0.6 | 0.7 |
 |---|---|
-| `ApplePurchaseReceiptVerifier.apple_jws_roots` / `.apple_receipt_roots` | `Config.defaults.roots` (one shared set for both paths) |
+| `ApplePurchaseReceiptVerifier.apple_jws_roots` / `.apple_receipt_roots` | `Config.defaults` (one shared set for both paths; the roots live inside the module) |
 | `ReceiptVerifier.new(trusted_roots:, bundle_id:)` | `Verifier.create(Config.new(roots:))`; compare `result.payload.bundle_id` yourself |
 | `verifier.verify_der(bytes)` / `#verify_base64(text)` / `#verify(either)` | `verifier.verify_receipt(base64)`; DER callers encode first: `[der].pack("m0")` |
 | `verifier.verify_base64(text, device_guid:)` | `verifier.verify_receipt(base64)`, then compare the device hash yourself — see [Device hash](#device-hash) |
@@ -621,34 +692,62 @@ anywhere in this library. Read every reason through
 
 ## Development
 
+`aprv.wasm` is not committed: copy the module into `lib/apple_purchase_receipt_verifier/` before running anything; its SHA-256 is checked against `aprv.wasm.sha256`. The library reads no environment variable; only the test suite and `bench/corpus.rb` accept `APRV_WASM`, for a copy elsewhere.
+
 ```sh
-bundle exec rake test                  # conformance + native suites
-APRV_PACKAGING=1 bundle exec rake test # also builds and installs the gem
-ruby script/gen_roots.rb               # regenerate the inlined anchors
+bundle exec rake test                  # facade, ABI and conformance suites
+APRV_PACKAGING=1 bundle exec rake test # also builds the gem and installs it into an empty GEM_HOME
+ruby -Ilib bench/threads.rb            # verifications per second at 1, 2 and 4 threads
+ruby -Ilib bench/startup.rb            # require, compile, first call, per-call cost
+ruby script/gen_roots.rb               # regenerate the inlined anchors (see below)
 ```
 
-`rake test` on its own works too, and that is what CI's Ruby matrix runs: the
-library has no runtime dependencies and the suite uses only gems that ship
-with Ruby.
-
-`Gemfile` lists minitest and rake directly instead of calling `gemspec`. A
-`gemspec` line puts this library into `Gemfile.lock` as a path gem carrying
-its own version, and a release commit that bumps only `version.rb` would then
-break every frozen install. `Gemfile.lock` and the two files under
+`Gemfile` lists minitest, rake and wasmtime directly instead of calling
+`gemspec`. A `gemspec` line puts this library into `Gemfile.lock` as a path gem
+carrying its own version, and a release commit that bumps only `version.rb`
+would then break every frozen install. `Gemfile.lock` and the two files under
 `gemfiles/` are committed, and CI installs them with `BUNDLE_FROZEN=true`.
 
-`test/conformance_test.rb` runs `fixtures/cases.json`, the normative
-cross-language vectors every implementation in this repository answers. It
-carries no per-case knowledge and no skip list.
+The tests, in the order they matter:
 
-`fuzz/` holds six coverage-guided [ruzzy](https://github.com/trailofbits/ruzzy)
-targets — the ASN.1 scanner and the CMS walk on their own, the receipt and
-JWS verifiers, and the endpoint body — seeded from the shared fixtures and
-run by CI for a fixed budget on every push. `fuzz/README.md` lists them and
-the invariant each asserts beyond "nothing escapes". Its one dependency lives
-in `gemfiles/fuzz.gemfile`, out of the gemspec and out of the test Gemfile:
-ruzzy needs clang and a libFuzzer runtime, and a tool the library does not
-need must not be able to fail the Ruby 3.3 leg.
+- `test/conformance_test.rb` runs `fixtures/cases.json`, the normative
+  cross-language vectors every implementation in this repository answers,
+  against the module the gem ships. It carries no per-case knowledge and no
+  skip list, and asserts that every case ran.
+- `test/facade_test.rb`, `api_shape_test.rb` and `thread_test.rb` test the
+  wrapper against `test/fake_module.rb`, a small WebAssembly module that speaks
+  the same interface and answers from a table. They pin the six outcomes
+  (verified, a verification failure, caller misuse, an ABI mismatch, a trap or
+  internal failure), trap recovery, the clock, `env`, and what one `Verifier`
+  does under several threads, without depending on which core the shipped
+  module holds.
+- `test/wire_test.rb` pins how the module's JSON becomes Ruby values.
+- `test/abi_test.rb` runs the canonical-ABI misuse and isolation tests of the
+  spike round on the shipped module.
+- `test/packaging_test.rb` checks the file list, and with `APRV_PACKAGING=1`
+  installs the built gem into an empty `GEM_HOME` and verifies a genuine
+  receipt with it.
+
+The gem holds no verification logic, and a test greps `lib/` to keep it that
+way. `lib/apple_purchase_receipt_verifier/roots_data.rb` and `certs/` are the
+0.7 copy of Apple's roots. Nothing loads them any more, and neither ships in
+the gem; they go, with their generator, in the release that deletes the 0.7
+implementations.
+
+`fuzz/` holds four coverage-guided [ruzzy](https://github.com/trailofbits/ruzzy)
+targets over the entry points a consumer calls, seeded from the shared
+fixtures and run by CI for a fixed budget on every push. `fuzz/README.md` lists
+them and the invariant each asserts beyond "nothing escapes". Its one
+dependency lives in `gemfiles/fuzz.gemfile`, out of the gemspec and out of the
+test Gemfile: ruzzy needs clang and a libFuzzer runtime, and a tool the library
+does not need must not be able to fail the Ruby 3.3 leg.
+
+## Licences
+
+The gem's own code is MIT (`LICENSE`). `aprv.wasm` contains third-party code
+under its own licences, whose texts ship in `licenses/`: OpenSSL (Apache-2.0),
+wasi-libc (with musl and cloudlibc) and the Rust standard library
+(MIT OR Apache-2.0). `licenses/NOTICE` lists them.
 
 ## License
 

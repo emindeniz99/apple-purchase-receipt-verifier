@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -38,41 +37,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
             {
                 return null;
             }
-        }
-
-        /// <summary>Snapshots caller-supplied anchors so the caller may dispose theirs.</summary>
-        /// <exception cref="ArgumentException">The set is null or empty.</exception>
-        internal static List<X509Certificate2> CopyAnchors(
-            IEnumerable<X509Certificate2>? trustedRoots, string parameterName)
-        {
-            if (trustedRoots is null)
-            {
-                throw new ArgumentException("trustedRoots must not be empty", parameterName);
-            }
-
-            List<X509Certificate2> anchors = new List<X509Certificate2>();
-            foreach (X509Certificate2 root in trustedRoots)
-            {
-                if (root is null)
-                {
-                    throw new ArgumentException("trustedRoots must not contain null", parameterName);
-                }
-
-                X509Certificate2? copy = TryLoad(root.RawData);
-                if (copy is null)
-                {
-                    throw new ArgumentException("trustedRoots contains an unreadable certificate", parameterName);
-                }
-
-                anchors.Add(copy);
-            }
-
-            if (anchors.Count == 0)
-            {
-                throw new ArgumentException("trustedRoots must not be empty", parameterName);
-            }
-
-            return anchors;
         }
     }
 }
