@@ -12,7 +12,6 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Aprv;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\JsonPointer;
@@ -37,11 +36,6 @@ use Throwable;
  * that fails here is a fault of the module `aprv` runs (or of the façade's
  * mapping of its JSON), never of PHP code. There is no skip list and no
  * per-case fixup: a case it cannot map is a hard harness failure.
- *
- * The one allowance is the round-13 stand-in component, which carries the
- * 0.6 core: the cases in `standin-differences.txt` are asserted to fail
- * while that component runs, and a listed case that passes fails as much as
- * an unlisted one that does not. Any other component must pass every case.
  */
 #[CoversNothing]
 abstract class ConformanceBase extends TestCase
@@ -82,18 +76,7 @@ abstract class ConformanceBase extends TestCase
         $id = $case['id'];
         self::$executed[static::class][$id] = true;
 
-        $factory = static::verifierFor(...);
-        if (Aprv::isStandIn() && isset(Aprv::standInDifferences()[1][$id])) {
-            try {
-                self::execute($case, $factory);
-            } catch (Throwable) {
-                $this->addToAssertionCount(1);
-
-                return;
-            }
-            self::fail("{$id} is listed as a stand-in difference but passes: regenerate standin-differences.txt");
-        }
-        self::execute($case, $factory);
+        self::execute($case, static::verifierFor(...));
     }
 
     /**
@@ -115,7 +98,6 @@ abstract class ConformanceBase extends TestCase
 
     /**
      * Runs one case and asserts its expectation; throws on any mismatch.
-     * Public and static so `record-standin-differences.php` can reuse it.
      *
      * @param array<string, mixed> $case
      * @param Closure(Config): Verifier $factory
@@ -406,9 +388,10 @@ abstract class ConformanceBase extends TestCase
     {
         $failure = $result->failure;
 
+        // The module refuses an empty receipt-data before it decodes anything.
         return $failure !== null
             && $failure->reason === $reason
-            && str_contains(strtolower($failure->message), 'base64');
+            && (str_contains(strtolower($failure->message), 'base64') || $failure->message === 'receipt is empty');
     }
 
     private static function jwsWithX5c(string $text): string

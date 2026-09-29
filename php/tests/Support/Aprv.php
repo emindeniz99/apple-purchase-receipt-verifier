@@ -15,11 +15,6 @@ use RuntimeException;
  */
 final class Aprv
 {
-    private static ?string $standInHash = null;
-
-    /** @var array<string, true> */
-    private static array $standInIds = [];
-
     private static ?string $componentSha256 = null;
 
     public static function binary(): string
@@ -50,38 +45,6 @@ final class Aprv
         }
 
         return self::$componentSha256;
-    }
-
-    /**
-     * The conformance cases the round-13 stand-in component cannot pass
-     * (it carries the 0.6 core, so its JSON is not 0.7's), and the hash of
-     * the component the list is for. The list applies to that component
-     * only: any other must pass every case.
-     *
-     * @return array{string, array<string, true>} the stand-in's component hash and the ids
-     */
-    public static function standInDifferences(): array
-    {
-        if (self::$standInHash === null) {
-            $hash = '';
-            $ids = [];
-            foreach (file(__DIR__ . '/../standin-differences.txt', FILE_IGNORE_NEW_LINES) ?: [] as $line) {
-                if (preg_match('/^# component_sha256 ([0-9a-f]{64})$/', $line, $match) === 1) {
-                    $hash = $match[1];
-                } elseif ($line !== '' && $line[0] !== '#') {
-                    $ids[$line] = true;
-                }
-            }
-            self::$standInHash = $hash;
-            self::$standInIds = $ids;
-        }
-
-        return [self::$standInHash, self::$standInIds];
-    }
-
-    public static function isStandIn(): bool
-    {
-        return self::standInDifferences()[0] === self::componentSha256();
     }
 
     /**
