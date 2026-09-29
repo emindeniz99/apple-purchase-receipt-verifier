@@ -50,6 +50,8 @@ python3 scripts/corpus.py --aprv $BIN --calls $CALLS --node $NODE_ROWS --mode cl
 
 npx --yes @stoplight/spectral-cli@6.16.3 lint --fail-severity=hint --ruleset .spectral.yaml openapi.yaml
 
+# Schemathesis writes .schemathesis/ and .hypothesis/ into its working
+# directory (both in the root .gitignore); run it from a scratch directory.
 $BIN serve --listen 127.0.0.1:18080 & sleep 1
 schemathesis run http://127.0.0.1:18080/openapi.json --checks all --max-examples 50 --workers 1
 T=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
