@@ -20,7 +20,8 @@ recorded here.
   has no Java-8-style long tail; Apple's own Swift library requires 6). Java is built `--release 8`
   (no records/`var`/`List.of`; ES256 raw-signature conversion done manually
   since `SHA256withECDSAinP1363Format` is Java 9+). CI should matrix-test
-  oldest + current LTS.
+  oldest + current LTS. **Amended in 0.8.0** by D25: the Wasm runtimes set
+  Swift's floor to 6.3 with macOS 15 and iOS 18; the other floors stand.
 - **D3 — Environment routing is an accept-set** (grill Q4, option A): the
   verifier takes a *set* of accepted environments and reports which one
   matched. Rationale: App Review runs production builds against sandbox —
@@ -70,6 +71,9 @@ recorded here.
   audited lines that Apple's own fixture bytes exercise. Java (BouncyCastle),
   Python (`cryptography`+`asn1crypto`) and Swift (apple/swift-*) already sit
   on the strongest maintained options for their ecosystems.
+  **Superseded in 0.8.0 for the eight non-Java packages** by D17 and D18:
+  no package keeps a parser of its own; the Rust core parses through
+  OpenSSL. Java keeps BouncyCastle.
 - **D11 — Observability is the caller's job** (owner decision,
   2026-08-05): this is a library; it exposes machine-readable reason codes
   and nothing else — no logging, no metrics, no callbacks. Integrators wire
@@ -229,9 +233,167 @@ recorded here.
   noise, not a weakness in how it is used here. **Superseded in 0.7**
   ([docs/design/0.7-api.md](./docs/design/0.7-api.md), "Removed in 0.7"):
   Java dropped `jackson-databind` and `jackson-annotations` and keeps only
-  `jackson-core`'s streaming parser and generator. **To be superseded in
-  0.8.0 for the eight non-Java ports** by one Rust core over OpenSSL 4
-  ([docs/rust-core/README.md](./docs/rust-core/README.md)).
+  `jackson-core`'s streaming parser and generator. **Superseded in 0.8.0
+  for the eight non-Java packages** by D17 and D18: their hand-written
+  readers are deleted, and they run one Rust core whose ASN.1, CMS and
+  X.509 work is OpenSSL's. **Kept for Java**, the independent
+  implementation (D27): BouncyCastle for the structures, `jackson-core`
+  for JSON, and the Jazzer fuzz targets.
+
+The records below settle the 0.8.0 architecture. Each is the outcome of a
+record in [docs/rust-core/DECISIONS.md](./docs/rust-core/DECISIONS.md)
+(named in brackets), which carries the options, the evidence and the
+rejected alternatives with their measured reasons.
+
+- **D17 — One Rust core, run as one `aprv.wasm`, under eight packages; one
+  Java implementation beside it** (owner, 2026-09-25, rewritten on the
+  Wasm-first basis 2026-09-28; R1, R22). The Rust core in `rust/` is the
+  only implementation behind npm, the Go module, PyPI, SwiftPM, RubyGems,
+  NuGet, Packagist and the Java `-wasm` artifact. It ships in one form, a
+  `wasm32-wasip1` module built once per release, and each language runs it
+  in a Wasm runtime it already has: jco's bindings on the JS engines,
+  wazero (Go), wasmtime-py (Python), the `wasmtime` gem (Ruby), WasmKit
+  (Swift), Wasmtime .NET, Endive on Java 11+. Java 8 and PHP reach the
+  same module through `aprv-server` (D22). Wrappers read the clock, move
+  bytes in and JSON out, pool instances and map the outcome; they parse,
+  verify and decide nothing, and the `one-implementation` CI job holds
+  them to it. Why: one build artifact carries every security decision to
+  every language, with one hash to check, and a memory-safety bug in the
+  parser stays inside the module's sandbox instead of the caller's
+  process. The cost is speed, above the owner's floor of about 10
+  verifications per second per core on every host (BENCHMARKS.md), and
+  monoculture, which D27 answers. The C ABI (`rust/ffi`) stays, source
+  only, for platforms no runtime reaches. Fastly Compute JS and Akamai
+  EdgeWorkers are dropped: neither runs WebAssembly (R5).
+- **D18 — The core's substrate is OpenSSL 4 with the CMS API** (owner,
+  2026-09-26; R21). The risk the owner named is code we write ourselves
+  for generic security protocols, and speed does not matter. OpenSSL
+  parses the ASN.1, CMS and X.509 and does the signature arithmetic
+  (`CMS_SignerInfo_verify` and `X509_verify_cert` over a store of the
+  pinned roots only, never `CMS_verify`); the receipt payload is decoded
+  with OpenSSL's ASN.1 templates; the Rust code keeps Apple's policy
+  (roots, markers, the chain instant, the bounds, the reasons and their
+  order) under `#![forbid(unsafe_code)]`, and `unsafe` lives only in the
+  adapter (`rust/openssl`), the ABI crate, the C ABI and the server. One
+  header walk (`rust/openssl/src/walk.rs`) applies 0.7's depth, value,
+  certificate, SignerInfo and CRL bounds before OpenSSL decodes anything
+  (the review, THREAT-MODEL.md §11). OpenSSL loads no configuration and no
+  default trust path. The core's own `asn1`, `x509`, `cms`, `chain` and
+  `crypto` modules and the RustCrypto dependencies are gone, and
+  `tools/check-layering.mjs` keeps them gone.
+- **D19 — The module's ABI is the canonical ABI over one WIT file**
+  (owner, 2026-09-29; R23). `rust/bindings/abi/wit/aprv.wit`
+  (`aprv:verifier@1.0.0`) declares four operations (`init`,
+  `verify-receipt`, `verify-signed-data`, `verify-receipt-endpoint`),
+  inputs as `list<u8>`, the environment as a `u32` the guest checks,
+  `now-ms` as a `u64`, outputs as JSON strings, and one import,
+  `random-get`. Component runtimes bind it with generated code (jco,
+  Wasmtime `bindgen!`); the others call the core exports by hand in 35 to
+  66 lines. The WIT is the contract: CI diffs the interface read back from
+  the built module against the file, and the export names carry the
+  version, so a wrapper of another version fails at `create`. The
+  instance model: `Verifier.create(config)` owns a small pool, each
+  instance gets `init` once with the roots, one call at a time per
+  instance, a trapped instance is discarded, no handles cross the API.
+  Node holds one instance. `aprv-server` makes a fresh instance per
+  request; `--lifecycle pool` keeps them, and the `init` measurement of
+  2026-09-29 met R23's rule for making the pool the default.
+- **D20 — Time crosses as `now-ms` on every call; the module has no clock**
+  (owner, 2026-09-28; R24, superseding R10). The wrapper reads its
+  `Config` clock once per call and passes the value. The core uses it
+  where 0.7 does: the chain instant when the input carries no usable date,
+  and `request_date`. No public per-call time is added.
+- **D21 — Java ships two artifacts, both on Java 8** (owner, 2026-09-28;
+  R25, R26). `apple-purchase-receipt-verifier` stays the independent
+  BouncyCastle implementation, unchanged in API. `-wasm` has the same
+  package, class names and `Config`, and runs the module on Endive
+  (compiled to JVM bytecode at build time, no native code) on Java 11+ or
+  through `aprv-server` as a supervised child on Java 8. The engine is
+  chosen in code only, `Engine.endive()` or
+  `Engine.server(ServerSource...)` with `url`, `executable`, `maven`,
+  `github` and `download` sources in the user's order; the library reads
+  no system property and no environment variable of its own. A classpath
+  guard refuses both artifacts at once. The static Linux server binaries
+  ship as `linux-x86_64` and `linux-aarch64` classifier jars of `-wasm`,
+  each pinned by SHA-256 inside the jar; macOS and Windows binaries come
+  from the GitHub Release. The artifact lives in `java-wasm/` beside
+  `java/` rather than as a module of one reactor, so no path moved.
+- **D22 — `aprv-server` is a product and an engine** (owner, 2026-09-25
+  and 2026-09-28; R17, R31). One Rust binary, `aprv`, runs the released
+  component on Wasmtime 49 runtime-only, precompiled at build time for an
+  explicit baseline target and embedded: an HTTP server, the managed child
+  of a Java 8 or PHP parent, and a one-shot CLI. It adds no verification
+  logic. It binds `127.0.0.1` unless `APRV_LISTEN` says otherwise, takes a
+  token, refuses a body over 3 MiB with 413, limits each store to 256 MiB
+  and each call to 10 s of guest time. Linux builds are fully static musl
+  for x86_64 and aarch64; macOS and Windows builds ship for x86_64 and
+  arm64; a distroless, non-root image goes to GHCR, and to Docker Hub once
+  the owner creates the namespace. Exotic CPUs without a Cranelift backend
+  stay open.
+- **D23 — Python runs the plain module on wasmtime-py and compiles it at
+  start** (owner, 2026-09-28; R27, R28). wasmtime-py at or above the
+  current major with no pin to one major; Wasmtime's compile cache on by
+  default in the user's own cache directory, silently off when the
+  directory is read-only or not the user's, moved by
+  `APRV_WASM_CACHE_DIR`. A precompiled module in the wheel was rejected
+  because it ties the wheel to one Wasmtime major. On a platform with no
+  wasmtime-py wheel, installation stops with a pointer to `aprv-server`
+  or the C ABI.
+- **D24 — PHP calls `aprv-server`** (owner, 2026-09-28; R29). One `aprv`
+  process per call by default, or a server URL the user runs; an
+  `aprv-install` command downloads the binary from the GitHub Release and
+  checks a SHA-256 pinned in the package. Nothing downloads at request
+  time, and no PHP code touches a certificate, so `ext-openssl` is no
+  longer needed.
+- **D25 — Floors for 0.8.0** (owner, 2026-09-28; R30). Java 8 (both
+  artifacts; Endive needs 11), Python 3.10, Swift 6.3 with macOS 15 and
+  iOS 18 (raised from 6.1 and macOS 13, because WasmKit declares them),
+  Ruby 3.3, .NET netstandard2.0 tested on .NET 8 and later, Node 20, Go
+  1.22 (wazero v1.9.0 is the newest release that builds on it), PHP 8.2.
+  The Java 8 CI legs move from Temurin to Zulu or Corretto before Temurin
+  8 builds end. SUPPORT-MATRIX.md lists what each floor rests on.
+- **D26 — The isolation invariant** (owner, 2026-09-28; R32). Every
+  shipped host puts at least one boundary between a hostile receipt and
+  the caller's process: a Wasm sandbox in process, or a separate process
+  that runs the sandbox too. Native in-process verification is not
+  shipped by default; the Rust crate and the C ABI are for callers who
+  choose it. THREAT-MODEL.md §6 classifies every package.
+- **D27 — The Java implementation is maintained as the second opinion,
+  and a behaviour change moves both** (owner, 2026-09-28; R33, superseding
+  R8's frozen jar). The Java implementation stays in the repository,
+  maintained. A verification behaviour change touches the Rust core, the
+  Java implementation and `fixtures/cases.json` in the same PR; every
+  package runs every case as one test. The nightly differential job runs
+  both implementations over every input it collects. A frozen jar was
+  rejected because every intended change in the core would have become a
+  recorded divergence.
+- **D28 — Apple compatibility is the goal, and differences are recorded**
+  (owner, 2026-09-26; R20). `fixtures/cases.json` is the contract. The
+  core accepts any signer and chain signature algorithm the pinned Apple
+  chain vouches for. Differences between the core and Java are listed in
+  docs/rust-core/DECISIONS.md R20 with their reasons; one that changes an
+  Apple-signed input's verdict, or accepts something unsigned, is a bug,
+  and no check is added to the core only to match Java.
+- **D29 — Standards** (owner, 2026-09-29; R34). The canonical ABI over WIT
+  (D19); JSON Schema 2020-12 for the wire shapes
+  (`rust/bindings/wire/schema/`), against which CI validates every answer;
+  OpenAPI 3.1 for `aprv-server` (`rust/server/openapi.yaml`), linted by
+  Spectral and exercised by Schemathesis; RFC 9457 problem documents for
+  the server's non-result errors; SLSA build provenance and a CycloneDX
+  SBOM per release artifact; `tools/reproduce-wasm.sh` for the module's
+  hash; OCI annotations on the image; cbindgen for the C header.
+  `wasi:random` was measured as the module's import and not adopted; JCS
+  was considered and not adopted, since no signature is computed over our
+  JSON.
+- **D30 — One release, 0.8.0, and what is built or committed** (owner,
+  2026-09-25 and 2026-09-28; R14, R19). Every package moves to the core in
+  one release under the 0.7 API. `aprv.wasm` is built once per release and
+  every package's copy is checked against its SHA-256; only Go and the
+  Swift package commit it, because their registries build from the git
+  tree, and the release branch refreshes both copies and every pin
+  together. The core's crate stays at 0.7 on crates.io until `openssl-sys`
+  accepts OpenSSL 4; a crates.io build would get OpenSSL 3, which the
+  adapter refuses.
 
 ## 1. Existing solutions (research, 2026-08)
 
@@ -411,7 +573,8 @@ JWS models and the bundle id, environment and device-guid parameters are
 gone; each port README's "Upgrading from 0.6" maps them.
 
 Apple root certs are **not** hard-wired: a `Config` takes trust anchors,
-and `Config.defaults()` holds the bundled `certs/*.cer`. Tests inject a
+and `Config.defaults()` means the three roots of `certs/`, compiled into
+the Rust core (and so into `aprv.wasm`) and into the Java implementation. Tests inject a
 generated fake "Apple" PKI (root → intermediate-with-OID → leaf-with-OID)
 and sign fixtures with it — the same technique Apple's own libraries use —
 so tests need no real Apple secrets and prove the anchor pinning works.
@@ -439,3 +602,10 @@ so tests need no real Apple secrets and prove the anchor pinning works.
    port plus its runtime, lint, format and fuzz legs; alongside it sit
    `release.yml`, `release-please.yml`, `post-publish-smoke.yml` and the
    scheduled `apple-root-watch.yml`. ✅
+9. **0.7: one API** — one `Verifier`, no policy parameters, the eight
+   reasons, the shared cases ([docs/design/0.7-api.md](./docs/design/0.7-api.md)). ✅
+10. **0.8.0: one core** (D17 to D30) — the Rust core on OpenSSL 4 as
+    `aprv.wasm`, eight wrappers over it, `aprv-server`, the Java `-wasm`
+    artifact, and the Java implementation kept beside them; the plan and
+    its evidence are in [docs/rust-core/](./docs/rust-core/README.md). 0.8.0
+    is the first release of this design.

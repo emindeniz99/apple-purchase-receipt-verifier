@@ -26,7 +26,7 @@ printf '%s  aprv.wasm\n' "$digest" > "$PKG/aprv.wasm.sha256"
 echo "== module $digest"
 
 echo "== tests"
-(cd "$HERE" && "$PYTHON" -m pytest -q tests --tb=short -p no:cacheprovider) || status=1
+(cd "$HERE" && "$PYTHON" -m unittest discover -s tests) || status=1
 
 echo "== corpora (rows written to $OUT)"
 for calls in "$G1"/calls/*.pinned.jsonl; do

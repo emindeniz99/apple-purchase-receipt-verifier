@@ -114,21 +114,3 @@ func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
 	}
 	t.Logf("%d cases, %d goroutines, %d Verifiers", len(jobs), goroutines, len(verifiers))
 }
-
-// The bundled root set is lazily initialised, so it gets its own race.
-func TestAppleRootsIsSafeForConcurrentUse(t *testing.T) {
-	var wg sync.WaitGroup
-	for g := 0; g < 32; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 20; i++ {
-				if len(applereceipt.AppleRoots()) != 3 {
-					t.Error("the bundled root set changed size under concurrency")
-					return
-				}
-			}
-		}()
-	}
-	wg.Wait()
-}

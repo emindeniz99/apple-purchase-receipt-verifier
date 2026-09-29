@@ -13,11 +13,12 @@ import { Reason, createVerifier, defaultConfig } from 'apple-purchase-receipt-ve
 
 const receiptB64 = readFileSync('receipt-sandbox-g5.b64', 'ascii').trim()
 
-// A package that lost its bundled roots would still load; this is where it
-// shows. defaultConfig() also throws if they fail their pinned fingerprints.
+// Apple's three roots are compiled into aprv.wasm, so the defaults name no
+// roots of their own (null means the module's); a package that lost the
+// module or its glue fails below, on the genuine receipt.
 const config = defaultConfig()
-if (config.roots.length !== 3) {
-  throw new Error(`expected three bundled Apple roots, got ${config.roots.length}`)
+if (config.roots !== null) {
+  throw new Error(`expected the module's built-in roots (null), got ${config.roots}`)
 }
 const verifier = createVerifier(config)
 

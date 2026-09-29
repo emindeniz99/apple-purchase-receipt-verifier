@@ -19,7 +19,7 @@ and in `benchmark.yml`.
   before. **`openssl` is no longer needed** by the package or the suite; leave it
   out of one leg (8.2) to prove it.
 - **The binary must carry the release component** (the 0.7 core). The suite
-  has no allowance for any other: every one of the 338 cases must pass through
+  has no allowance for any other: every shared case must pass through
   both transports. A binary that embeds an older core fails some of them.
 - No secrets.
 
@@ -30,10 +30,10 @@ Working directory `php`:
 ```sh
 composer install --no-scripts --no-progress --no-interaction --prefer-dist
 vendor/bin/phpunit --exclude-testsuite conformance   # façade, transports, installer, gates: no network
-vendor/bin/phpunit tests/ConformanceCasesTest.php    # the 338 cases through the CLI transport
+vendor/bin/phpunit tests/ConformanceCasesTest.php    # the shared cases through the CLI transport
 ```
 
-**One leg (8.4) also runs the 338 cases over HTTP** against a locally started
+**One leg (8.4) also runs the shared cases over HTTP** against a locally started
 `aprv serve` (one server per root set, each on a free loopback port):
 
 ```sh
@@ -73,8 +73,7 @@ Unchanged except:
 - `node tools/php-consumer-smoke.mjs` needs `APRV_BIN` in its environment. It
   installs the archive into a throwaway project and verifies through the
   default CLI transport.
-- The `gen-roots.php` drift guard stays until Phase 7 deletes `RootsData.php`
-  and `php/certs/`.
+- The `gen-roots.php` drift guard is deleted in Phase 7 (below).
 
 ## Jobs to delete or change
 
@@ -92,7 +91,7 @@ Unchanged except:
 - **`one-implementation`:** add `php` to `--enforce` (see `.github/CI-NOTES.md`).
   `tests/NoVerificationLogicTest.php` is the PHP half of the gate: no crypto
   call anywhere in `php/src`, no `ext-openssl` in either manifest, and only
-  `Info`, `RootsData`, `Text` and `Wire` under `src/Internal`.
+  `Info`, `Text` and `Wire` under `src/Internal`.
 
 ## Release: pinning the binaries' hashes
 
@@ -145,3 +144,20 @@ php verify-smoke.php    # Verifier::create(Config::defaults()) verifies the genu
 
 This is acceptance test 8's PHP leg: `aprv install`, then g5 verifies through
 the default transport.
+
+## Phase 7
+
+`php/certs/`, `src/Internal/RootsData.php`, `tools/gen-roots.php` and the
+public `AppleRootCerts` class (its `pinnedRoots()` read `RootsData`) are
+gone: Apple's three roots live only in the module `aprv` runs.
+`Config::defaults()->roots` stays `null`, and an empty list is still refused
+at `Verifier::create`. The root `.gitattributes` allowlist no longer names
+`php/certs`, and `tools/check-php-package.mjs` no longer requires it,
+`AppleRootCerts.php` or `RootsData.php` in the archive.
+
+| Where | Change |
+|---|---|
+| `ci.yml` `php-static` | delete the drift step (`php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php`) and its comment. |
+| `ci.yml` `one-implementation` | nothing for PHP: `php/src` has no allowlist entry and no hit. |
+| `.github/smoke/packagist-smoke.php` | nothing: it already verifies through `Config::defaults()`. |
+

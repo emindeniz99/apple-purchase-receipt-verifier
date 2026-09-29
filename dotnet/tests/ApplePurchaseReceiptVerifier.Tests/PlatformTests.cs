@@ -100,26 +100,29 @@ public class PlatformTests
         pool.Return(again);
     }
 
-    /// <summary>The verifications each measured round performs.</summary>
-    private const int LiveSetRoundSize = 500;
+    /// <summary>The verifications of a small measured round.</summary>
+    private const int SmallRound = 500;
+
+    /// <summary>The verifications of a large measured round.</summary>
+    private const int LargeRound = 2000;
 
     /// <summary>
-    /// Measured rounds. The assertion is on the smallest growth of any round:
-    /// retention grows the live set in every round, a background allocation
-    /// lands in one.
+    /// Measured rounds of each size. The growth of a size is the smallest of
+    /// its rounds: retention grows the live set in every round, a background
+    /// allocation lands in one.
     /// </summary>
     private const int LiveSetRounds = 3;
 
     /// <summary>
     /// What one verification may leave behind, in bytes. A single retained
     /// <c>X509Certificate2</c> is ~1.5 kB of <c>RawData</c> alone (a measured
-    /// leak of one per call read 1,730 B/call), so this is still well under
-    /// one leaked object per call. Linux and Windows measure ~2.5 B/call on a
-    /// clean run; macOS/arm64 has read up to 110 B/call in every round of a
-    /// run with nothing of ours retaining it, so the budget sits above that
-    /// platform's noise rather than at the Linux figure.
+    /// leak of one per call read 1,730 B/call), so this is well under one
+    /// leaked object per call. Linux measures 0 B/call, net of the control.
     /// </summary>
     private const int LiveSetBudgetPerVerification = 256;
+
+    /// <summary>The last object <see cref="Churn"/> made, so the allocations are not optimised away.</summary>
+    private static object? _churned;
 
     /// <summary>
     /// Repeated verification must not grow unboundedly: each call moves bytes
@@ -128,15 +131,25 @@ public class PlatformTests
     /// isolates the wrapper's own retention from the real module's.
     /// </summary>
     /// <remarks>
-    /// The bound is a budget per verification rather than a flat ceiling, so it
-    /// scales with the round and fails on retention that is real but small.
-    /// It can be that tight only because this class runs in a collection of its
-    /// own (<see cref="ProcessWideCollection"/>): <see cref="GC.GetTotalMemory"/>
-    /// reports the whole process's live set, so a sibling collection allocating
-    /// on another thread lands in the delta. A quiet process is still not a
-    /// silent one, so the round is measured <see cref="LiveSetRounds"/> times
-    /// and the smallest growth is judged; retention of one object per call,
-    /// the failure this test exists for, exceeds the budget in every round.
+    /// <para>What is judged is the marginal live-set growth per verification: the
+    /// growth of a round of <see cref="LargeRound"/> minus that of a round of
+    /// <see cref="SmallRound"/>, over the difference in calls. A cost that does
+    /// not depend on the number of calls (jitting, a runtime's own caches, a
+    /// heap that commits a region while it is measured) is in both and cancels;
+    /// retention grows with the calls and does not.</para>
+    /// <para>The same loop is then run with a control that allocates as many
+    /// bytes per iteration as one verification does and keeps none of them.
+    /// A collector that reports some share of what a loop allocated as live
+    /// (a platform's accounting, not a leak) shows that share in the control
+    /// too, and it is taken out. Only what the wrapper keeps beyond the
+    /// control's figure counts against the budget.</para>
+    /// <para>The bound is a budget per verification rather than a flat ceiling,
+    /// so it scales with the round and fails on retention that is real but
+    /// small. It can be that tight only because this class runs in a collection
+    /// of its own (<see cref="ProcessWideCollection"/>):
+    /// <see cref="GC.GetTotalMemory"/> reports the whole process's live set, so
+    /// a sibling collection allocating on another thread lands in the delta.
+    /// The failure message carries every figure and the platform.</para>
     /// </remarks>
     [Fact]
     public void RepeatedVerificationDoesNotGrowUnboundedly()
@@ -147,31 +160,69 @@ public class PlatformTests
         string receipt = "x";
 
         // Warm up: first-call statics and JIT are a one-off cost, not
-        // per-call retention.
+        // per-call retention. The allocation per call sizes the control.
         for (int i = 0; i < 50; i++)
         {
             Assert.True(verifier.VerifyReceipt(receipt).Verified);
         }
 
-        long smallestGrowth = long.MaxValue;
+        long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++)
+        {
+            verifier.VerifyReceipt(receipt);
+        }
+
+        int allocatedPerCall = (int)((GC.GetAllocatedBytesForCurrentThread() - allocatedBefore) / 100);
+
+        double wrapper = MarginalGrowthPerCall(() => verifier.VerifyReceipt(receipt));
+        double control = MarginalGrowthPerCall(() => Churn(allocatedPerCall));
+
+        // A control that reads below zero is noise, not credit to the wrapper.
+        double wrapperShare = wrapper - Math.Max(control, 0);
+        Assert.True(
+            wrapperShare < LiveSetBudgetPerVerification,
+            $"each verification left {wrapper:F1} B on the live set against {control:F1} B for a control that allocates the same "
+            + $"{allocatedPerCall} B and keeps none, so {wrapperShare:F1} B are the wrapper's; the budget is {LiveSetBudgetPerVerification} B "
+            + $"({System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, "
+            + $"{System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier})");
+    }
+
+    /// <summary>Bytes of live set per call from round to round: (large round - small round) / (large - small calls).</summary>
+    private static double MarginalGrowthPerCall(Action call)
+    {
+        long small = SmallestGrowth(call, SmallRound);
+        long large = SmallestGrowth(call, LargeRound);
+        return (large - small) / (double)(LargeRound - SmallRound);
+    }
+
+    private static long SmallestGrowth(Action call, int calls)
+    {
+        long smallest = long.MaxValue;
         long before = LiveSet();
         for (int round = 0; round < LiveSetRounds; round++)
         {
-            for (int i = 0; i < LiveSetRoundSize; i++)
+            for (int i = 0; i < calls; i++)
             {
-                verifier.VerifyReceipt(receipt);
+                call();
             }
 
             long after = LiveSet();
-            smallestGrowth = Math.Min(smallestGrowth, after - before);
+            smallest = Math.Min(smallest, after - before);
             before = after;
         }
 
-        long budget = LiveSetRoundSize * LiveSetBudgetPerVerification;
-        Assert.True(
-            smallestGrowth < budget,
-            $"live set grew by at least {smallestGrowth} bytes in each of {LiveSetRounds} rounds "
-            + $"of {LiveSetRoundSize} verifications, which is more than the {budget} bytes budgeted per round");
+        return smallest;
+    }
+
+    /// <summary>Allocates about <paramref name="bytes"/> in small objects and keeps none.</summary>
+    private static void Churn(int bytes)
+    {
+        for (int allocated = 0; allocated < bytes; allocated += 128)
+        {
+            _churned = new byte[100];
+        }
+
+        _churned = null;
     }
 
     /// <summary>The managed live set, with everything collectable collected.</summary>

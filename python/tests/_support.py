@@ -10,6 +10,7 @@ from apple_purchase_receipt_verifier import Config, Verifier, _host
 
 TESTS = Path(__file__).resolve().parent
 FIXTURES = TESTS.parents[1] / "fixtures"
+CERTS = TESTS.parents[1] / "certs"
 
 
 def use_module_from_environment() -> bytes:
@@ -35,6 +36,13 @@ def fixture(*segments: str) -> bytes:
 
 def fixture_text(*segments: str) -> str:
     return fixture(*segments).decode("ascii").strip()
+
+
+def apple_roots() -> "tuple[bytes, ...]":
+    """Apple's three roots from the repository's ``certs/``, for a test that
+    passes them explicitly. The package carries no copy: its defaults are the
+    roots compiled into the module."""
+    return tuple(path.read_bytes() for path in sorted(CERTS.glob("*.cer")))
 
 
 _double: "_host.Runtime | None" = None

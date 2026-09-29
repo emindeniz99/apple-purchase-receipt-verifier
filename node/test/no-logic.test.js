@@ -16,9 +16,7 @@ function files(dir, suffix) {
     .map((e) => `${e.parentPath.slice(here('').length)}/${e.name}`.replace(/^\/+/, ''));
 }
 
-const SOURCES = files('src', '.ts').filter(
-  (f) => !f.startsWith('src/generated/') && f !== 'src/roots-data.ts',
-);
+const SOURCES = files('src', '.ts').filter((f) => !f.startsWith('src/generated/'));
 
 test('the scan sees the facade sources', () => {
   for (const f of ['src/engine.ts', 'src/verifier.ts', 'src/payload.ts', 'src/load/node.ts']) {

@@ -495,6 +495,9 @@ not `Config` options.
 | Chain length below the anchor | 6 certificates | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
+The gem never copies more than 3,145,729 bytes (one over the largest cap) of
+an input into the module's memory; the module answers `TOO_LARGE` itself.
+
 Measured against both of Apple's verifyReceipt endpoints, a request body of
 3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP
 413; Apple counts UTF-8 bytes, not characters. `verify_receipt_endpoint`
@@ -625,7 +628,7 @@ path.
 
 The bytes are compiled into `aprv.wasm`, each checked there against its
 published SHA-256 fingerprint, so the gem works from a read-only or bundled
-deployment and reads no certificate file. `Config.defaults.roots` is
+deployment, reads no certificate file and ships none. `Config.defaults.roots` is
 therefore empty: it means "the module's roots", and `Config.new(roots: [])`
 is not the same thing and is refused by `Verifier.create`.
 
@@ -699,7 +702,6 @@ bundle exec rake test                  # facade, ABI and conformance suites
 APRV_PACKAGING=1 bundle exec rake test # also builds the gem and installs it into an empty GEM_HOME
 ruby -Ilib bench/threads.rb            # verifications per second at 1, 2 and 4 threads
 ruby -Ilib bench/startup.rb            # require, compile, first call, per-call cost
-ruby script/gen_roots.rb               # regenerate the inlined anchors (see below)
 ```
 
 `Gemfile` lists minitest, rake and wasmtime directly instead of calling
@@ -729,10 +731,8 @@ The tests, in the order they matter:
   receipt with it.
 
 The gem holds no verification logic, and a test greps `lib/` to keep it that
-way. `lib/apple_purchase_receipt_verifier/roots_data.rb` and `certs/` are the
-0.7 copy of Apple's roots. Nothing loads them any more, and neither ships in
-the gem; they go, with their generator, in the release that deletes the 0.7
-implementations.
+way. It holds no copy of Apple's roots either: they are compiled into the
+module, and the repository's `certs/` is their reviewable source.
 
 `fuzz/` holds four coverage-guided [ruzzy](https://github.com/trailofbits/ruzzy)
 targets over the entry points a consumer calls, seeded from the shared

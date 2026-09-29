@@ -43,11 +43,9 @@ var forbiddenIdentifiers = []string{
 	"SetDefaultPaths",
 }
 
-// libraryFiles are the non-test Go files a consumer compiles. Two commands
-// are excluded by name, since the library never imports them:
-// internal/gencerts, the `go generate` command whose entire job is reading
-// certs/ from disk, and internal/corpusrun, the corpus runner that reads a
-// calls file.
+// libraryFiles are the non-test Go files a consumer compiles. One command
+// is excluded by name, since the library never imports it:
+// internal/corpusrun, the corpus runner that reads a calls file.
 func libraryFiles(t *testing.T) []string {
 	t.Helper()
 	root, err := os.Getwd()
@@ -61,7 +59,7 @@ func libraryFiles(t *testing.T) []string {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case "testdata", "tools", "gencerts", "corpusrun":
+			case "testdata", "tools", "corpusrun":
 				return filepath.SkipDir
 			}
 			return nil
@@ -138,10 +136,10 @@ var verificationImports = map[string][]string{
 	"crypto/subtle":    nil,
 	"math/big":         nil,
 	"crypto/x509/pkix": nil,
-	"crypto/x509":      {"config.go", "roots.go", "verifier.go"}, // the Config's trust-anchor type, and .Raw
-	"crypto/sha256":    {"roots.go", "wasm.go"},                  // pins the bundled roots and the embedded module
-	"encoding/hex":     {"roots.go", "wasm.go"},
-	"encoding/base64":  {"receiptpayload.go", "verifier.go"}, // the wire's bytes fields, and init's roots
+	"crypto/x509":      {"config.go"}, // the Config's trust-anchor type, and .Raw
+	"crypto/sha256":    {"wasm.go"},   // pins the embedded module
+	"encoding/hex":     {"wasm.go"},
+	"encoding/base64":  {"receiptpayload.go", "config.go"}, // the wire's bytes fields, and init's roots
 }
 
 func TestLibraryHoldsNoVerificationLogic(t *testing.T) {
@@ -165,10 +163,11 @@ func TestLibraryHoldsNoVerificationLogic(t *testing.T) {
 	}
 }
 
-// Of what crypto/x509 offers, the library reads a certificate in one place:
-// the bundled roots, when AppleRoots parses them to hand back to the
-// caller. Nothing checks a signature, builds a path or reads a name.
-func TestOnlyTheRootsAreEverParsedAsCertificates(t *testing.T) {
+// Of what crypto/x509 offers, the library uses the certificate type and its
+// .Raw DER, nothing else: the Apple roots are compiled into the module, so
+// no file here reads a certificate. Nothing checks a signature, builds a
+// path or reads a name.
+func TestNoCertificateIsEverParsed(t *testing.T) {
 	for _, path := range libraryFiles(t) {
 		source, err := os.ReadFile(path)
 		if err != nil {
@@ -176,8 +175,8 @@ func TestOnlyTheRootsAreEverParsedAsCertificates(t *testing.T) {
 		}
 		text := stripComments(t, path, source)
 		for _, identifier := range []string{"x509.ParseCertificate", "x509.ParseCertificates", "x509.ParseCertificateRequest"} {
-			if strings.Contains(text, identifier) && filepath.Base(path) != "roots.go" {
-				t.Errorf("%s uses %s: only roots.go reads a certificate, to return the bundled roots", filepath.Base(path), identifier)
+			if strings.Contains(text, identifier) {
+				t.Errorf("%s uses %s: the wrapper reads no certificate; the module holds the roots", filepath.Base(path), identifier)
 			}
 		}
 	}
@@ -271,7 +270,6 @@ func TestPublicAPIShape(t *testing.T) {
 		_ func(*applereceipt.Config) (*applereceipt.Verifier, error) = applereceipt.NewVerifier
 		_ func() *applereceipt.Config                                = applereceipt.DefaultConfig
 		_ func(applereceipt.ConfigOptions) *applereceipt.Config      = applereceipt.NewConfig
-		_ func() []*x509.Certificate                                 = applereceipt.AppleRoots
 		_ func(error) (applereceipt.Reason, bool)                    = applereceipt.ReasonOf
 		_ func() []applereceipt.Reason                               = applereceipt.AllReasons
 		_ string                                                     = applereceipt.Version

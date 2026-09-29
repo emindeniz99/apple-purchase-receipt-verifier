@@ -1,0 +1,6 @@
+  ConformanceCasesTest.lambda$conformanceCases$0:87->runCase:203 receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks: expected ok but failed with MALFORMED: receipt has trailing or unparseable bytes
+BUILD FAILURE
+Tests run: 386, Failures: 1, Errors: 0, Skipped: 0
+Tests run: 386, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 18.09 s <<< FAILURE! -- in io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest
+io.github.emindeniz99.applepurchasereceiptverifier.ConformanceCasesTest.conformanceCases()[384] -- Time elapsed: 0.009 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks: expected ok but failed with MALFORMED: receipt has trailing or unparseable bytes

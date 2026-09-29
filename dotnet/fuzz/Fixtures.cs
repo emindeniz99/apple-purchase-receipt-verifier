@@ -5,8 +5,8 @@ using System.Security.Cryptography.X509Certificates;
 namespace ApplePurchaseReceiptVerifier.Fuzz
 {
     /// <summary>
-    /// The two generated fixture roots the anchor-set invariants need, loaded
-    /// from <c>fixtures/</c> at startup.
+    /// The two generated fixture roots the anchor-set invariants need, and
+    /// Apple's three from <c>certs/</c>, loaded at startup.
     /// </summary>
     /// <remarks>
     /// Read from the shared directory rather than embedded, so nothing under
@@ -24,6 +24,17 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
 
         /// <summary>The generated fake-Apple JWS root.</summary>
         internal static X509Certificate2 JwsRoot() => Load("generated/jws-root.der");
+
+        /// <summary>
+        /// Apple's three published roots, from the repository's <c>certs/</c>
+        /// beside <c>fixtures/</c>: the library carries no copy of them.
+        /// </summary>
+        internal static X509Certificate2[] AppleRoots() => new[]
+        {
+            Load("../certs/AppleIncRootCertificate.cer"),
+            Load("../certs/AppleRootCA-G2.cer"),
+            Load("../certs/AppleRootCA-G3.cer"),
+        };
 
         private static X509Certificate2 Load(string relative)
         {

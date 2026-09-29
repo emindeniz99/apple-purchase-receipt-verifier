@@ -13,7 +13,7 @@ go get github.com/emindeniz99/apple-purchase-receipt-verifier/go
 ```go
 import applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 
-// Build once, share everywhere: the roots are parsed once, not per call.
+// Build once, share everywhere: the module is set up once, not per call.
 // Verifier is safe for concurrent use by multiple goroutines.
 verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
 
@@ -67,7 +67,7 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   verifying at that moment, at least one kept), each a few MiB, and
   releases them when it is garbage collected. There is nothing to close.
 - **No I/O, no goroutines started, no global state beyond the compiled
-  module and the bundled roots.** `*Verifier` is safe for concurrent use by
+  module.** `*Verifier` is safe for concurrent use by
   multiple goroutines.
 
 ## What it will never do
@@ -115,7 +115,10 @@ everything, and nobody would notice until production, and a caller
 switching on `Reason` must never see a misconfiguration. So is a trust anchor
 the module refuses (one that is not a certificate). `DefaultConfig()` and
 `NewConfig` with no `Roots` send the module an empty list, which means the
-three Apple roots compiled into it.
+three Apple roots compiled into it. The package carries no copy of those
+roots, so `DefaultConfig().Roots()` is nil; `Roots()` returns certificates
+only when you passed your own. An explicitly empty, non-nil `Roots` slice is
+refused by `NewVerifier`.
 
 ### `Verifier`: three methods
 
@@ -361,7 +364,7 @@ the returned payload.
 | `..._WithDeviceGUID` | compute the device hash from `OpaqueValue` and `BundleIDBytes` |
 | `JWSVerifier.VerifyTransaction`, `VerifyAppTransaction`, `VerifyRaw` | `Verifier.VerifySignedData`, then read the claims from `JSON()` |
 | `VerifyReceiptEndpoint.VerifyReceiptJSON` | `Verifier.VerifyReceiptEndpoint` |
-| `AppleJWSRoots()`, `AppleReceiptRoots()` | `AppleRoots()` (one pinned set for both paths) |
+| `AppleJWSRoots()`, `AppleReceiptRoots()` | `DefaultConfig()` (one pinned set for both paths) |
 | a per-verifier `Now func() time.Time` | `ConfigOptions.Clock func() int64` (epoch milliseconds) |
 | `VerificationError` | `Failure` |
 | `AppReceipt` | `ReceiptPayload` (`*_ms` epoch milliseconds, pointer fields) |
@@ -374,20 +377,27 @@ the returned payload.
 | `ReasonInternalError` for signed content that does not parse | `ReasonUnreadablePayload` |
 | `ReasonWrongBundleID`, `ReasonWrongEnvironment`, `ReasonWrongAppAppleID`, a device-hash mismatch | gone: the caller's checks |
 
+## Upgrading from 0.7
+
+0.8 verifies inside `aprv.wasm`, which compiles the three Apple roots in, so
+the package no longer carries its own copy of them:
+
+- `AppleRoots()` is gone. `DefaultConfig()` still trusts exactly those three
+  roots; nothing else changes for a caller who used them through it.
+- `DefaultConfig().Roots()` and the `Roots()` of a `NewConfig` without
+  `Roots` return nil instead of three certificates.
+- A caller who passed `AppleRoots()` into `ConfigOptions.Roots` next to a
+  root of their own now loads Apple's certificates themselves, from
+  Apple's PKI page or the repository's `certs/` directory.
+
 ## Vendoring
 
 To build the module from a copy rather than `go get`, copy the `go/`
-directory whole. Two things are embedded and must come along:
-
-- `internal/wasm/aprv.wasm` and `aprv.wasm.sha256`, the verification module
-  and its hash. Never replace one without the other; the package refuses to
-  load when they disagree.
-- `roots/certs/`, `go generate`'s copy of the repository's canonical root
-  certificates in the root `certs/`, which `AppleRoots()` and
-  `DefaultConfig().Roots()` return. An embed pattern cannot reach outside its
-  module directory, so the copy exists precisely so `go build` needs nothing
-  outside `go/`. The roots the module verifies against are compiled into the
-  module itself.
+directory whole. One thing is embedded and must come along:
+`internal/wasm/aprv.wasm` and `aprv.wasm.sha256`, the verification module
+and its hash. Never replace one without the other; the package refuses to
+load when they disagree. The pinned Apple roots are compiled into the
+module, so there is no certificate file to carry.
 
 **The tests need the shared fixtures.** They look for `fixtures/` with
 `cases.json` above the module directory, or read `APRV_FIXTURES_DIR`
