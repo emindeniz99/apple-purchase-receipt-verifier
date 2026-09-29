@@ -179,6 +179,11 @@ async fn the_body_cap_is_413_before_the_module_sees_it() {
     .await;
     assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(problem(&ct, &body)["code"], "PAYLOAD_TOO_LARGE");
+    // Far over the cap (past what the server drains) is 413 as well.
+    let big = vec![b'A'; http::MAX_DRAIN + 1];
+    let (s, ct, body) = send(&r, "POST", "/v1/verify-receipt/sandbox", &[], big).await;
+    assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(problem(&ct, &body)["code"], "PAYLOAD_TOO_LARGE");
     // Exactly at the cap the module answers (a result, not a 413).
     let (s, _, _) = send(&r, "POST", "/v1/receipt/verify", &[], vec![b'A'; MAX_BODY]).await;
     assert_eq!(s, StatusCode::OK);

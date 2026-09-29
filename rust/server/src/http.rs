@@ -7,14 +7,14 @@
 
 use crate::runtime::{InvokeError, Op, Verifier};
 use crate::MAX_BODY;
-use axum::body::Bytes;
-use axum::extract::rejection::BytesRejection;
-use axum::extract::{DefaultBodyLimit, Request, State};
+use axum::body::Body;
+use axum::extract::{Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
+use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -84,7 +84,6 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(v1)
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
-        .layer(DefaultBodyLimit::max(MAX_BODY))
         .with_state(app)
 }
 
@@ -168,62 +167,84 @@ fn now_ms(headers: &HeaderMap) -> Result<u64, Box<Response>> {
     }
 }
 
-async fn verify_receipt(
-    s: State<Arc<App>>,
-    h: HeaderMap,
-    b: Result<Bytes, BytesRejection>,
-) -> Response {
+async fn verify_receipt(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response {
     run(s, &h, b, |now_ms| Op::VerifyReceipt { now_ms }).await
 }
-async fn verify_signed_data(
-    s: State<Arc<App>>,
-    h: HeaderMap,
-    b: Result<Bytes, BytesRejection>,
-) -> Response {
+async fn verify_signed_data(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response {
     run(s, &h, b, |now_ms| Op::VerifySignedData { now_ms }).await
 }
-async fn endpoint_production(
-    s: State<Arc<App>>,
-    h: HeaderMap,
-    b: Result<Bytes, BytesRejection>,
-) -> Response {
+async fn endpoint_production(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response {
     run(s, &h, b, |now_ms| Op::Endpoint { env: 0, now_ms }).await
 }
-async fn endpoint_sandbox(
-    s: State<Arc<App>>,
-    h: HeaderMap,
-    b: Result<Bytes, BytesRejection>,
-) -> Response {
+async fn endpoint_sandbox(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response {
     run(s, &h, b, |now_ms| Op::Endpoint { env: 1, now_ms }).await
+}
+
+/// Past the cap the server keeps reading, and discards, up to this many
+/// bytes before it answers 413: a client that is still sending when the
+/// answer comes would otherwise see its connection reset instead of the
+/// 413 (measured: Python's http.client got EPIPE on corpus rows over the
+/// cap). A body larger than this is answered 413 and the connection closed.
+pub const MAX_DRAIN: usize = 16 << 20;
+
+/// The request body, at most MAX_BODY bytes; `Err` is the problem to send.
+async fn read_capped(headers: &HeaderMap, body: Body) -> Result<Vec<u8>, Box<Response>> {
+    let too_large = || {
+        problem(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "PAYLOAD_TOO_LARGE",
+            "Content Too Large",
+            &format!("the request body is larger than {MAX_BODY} bytes"),
+        )
+    };
+    let announced = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    if announced.is_some_and(|n| n > MAX_DRAIN as u64) {
+        return Err(Box::new(too_large()));
+    }
+    let mut body = body;
+    let mut buf = Vec::with_capacity(announced.map_or(0, |n| n.min(MAX_BODY as u64) as usize));
+    let mut total = 0usize;
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(|e| {
+            Box::new(problem(
+                StatusCode::BAD_REQUEST,
+                "BAD_REQUEST",
+                "Bad Request",
+                &format!("reading the body: {e}"),
+            ))
+        })?;
+        let Ok(data) = frame.into_data() else {
+            continue;
+        };
+        total += data.len();
+        if total <= MAX_BODY {
+            buf.extend_from_slice(&data);
+        } else if total > MAX_DRAIN {
+            break;
+        }
+    }
+    if total > MAX_BODY {
+        return Err(Box::new(too_large()));
+    }
+    Ok(buf)
 }
 
 async fn run(
     State(app): State<Arc<App>>,
     headers: &HeaderMap,
-    body: Result<Bytes, BytesRejection>,
+    body: Body,
     op: impl FnOnce(u64) -> Op,
 ) -> Response {
-    let body = match body {
-        Ok(b) => b,
-        Err(r) if r.status() == StatusCode::PAYLOAD_TOO_LARGE => {
-            return problem(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                "PAYLOAD_TOO_LARGE",
-                "Content Too Large",
-                &format!("the request body is larger than {MAX_BODY} bytes"),
-            )
-        }
-        Err(r) => {
-            return problem(
-                StatusCode::BAD_REQUEST,
-                "BAD_REQUEST",
-                "Bad Request",
-                &r.body_text(),
-            )
-        }
-    };
+    // The clock header is checked first, so a bad one costs no body read.
     let op = match now_ms(headers) {
         Ok(n) => op(n),
+        Err(p) => return *p,
+    };
+    let body = match read_capped(headers, body).await {
+        Ok(b) => b,
         Err(p) => return *p,
     };
     let Ok(permit) = app.permits.acquire().await else {
