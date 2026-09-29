@@ -55,6 +55,40 @@ floor is 11 (Endive's), and the plan asks for 11 to 27.
   native-loading reference, or a `System.getProperty`/`System.getenv` in
   `src/main`.
 
+### Measured in this lane (2026-09-29, the stand-in module)
+
+On a shared 4-CPU Linux x86_64 machine with a load average of 6 to 20
+from other builds, so timings are for the record, not for comparison:
+
+- `mvn verify`: 366 tests, 0 failures, 2 skipped (the two Java-8-only
+  tests) on JDK 21 (OpenJDK 21.0.10), Temurin 11.0.32.1 (a JRE; tests
+  forked onto it) and Temurin 17.0.20.1. `ClassFileTest`: 33 classes at
+  major 52, 34 at major 55; 475 classes scanned on the consumer
+  classpath, no native method and no native-loading reference. The 311 cases on each JDK: 311 ran, 90 passed,
+  221 listed stand-in differences, 0 failed, 0 skipped.
+- Java 8 leg (`-Pjava8-tests`, Temurin 8u504): 32 tests, 0 failures,
+  1 skipped (the Java-11-only test).
+- The main artifact after the guard change: `mvn -f java verify` 516
+  tests, 0 failures, 1 skipped (the fixture generator, as before), on
+  JDK 21 and with `-Pjdk8-runtime` on Temurin 8u504; `spotless:check`
+  clean in both modules.
+- `-Pclasspath-guard`: `ClasspathGuardJarsIT` 3 of 3; the Gradle
+  project above fails with "Cannot select module with conflict on
+  capability 'io.github.emindeniz99:apple-purchase-receipt-verifier:0.7.0'"
+  (Gradle 8.14.3), and resolves the `-wasm` artifact alone to its jar,
+  Endive's `runtime` and `wasm`, and jackson-core.
+- Corpus through the built jar, JDK 21: 6,176 identical, 2
+  `clock-moves-chain`, 1 `init-refusal` (AS EXPECTED), 0 traps, both
+  single-threaded and on 4 threads; the 4-thread rows equal the
+  single-thread rows on all 6,179 (30 wall-clock endpoint rows compared
+  with `request_date*` masked).
+- `scripts/bench.sh 45 1 2 4` on JDK 21: first instance 842 ms, later
+  instances 7.0 ms (median of 20), first g5 call 489 ms; g5 receipts
+  81.0, 136.3 and 96.3 per second and JWS 25.6, 32.2 and 20.0 per second
+  at 1, 2 and 4 threads. The Endive evaluation measured 154.7 g5 and
+  52.6 JWS per second on one thread on an idle machine; rerun on a quiet
+  runner before quoting these.
+
 ### The stand-in module
 
 Until lane A's release build replaces `src/main/wasm/aprv.wasm` (and its
