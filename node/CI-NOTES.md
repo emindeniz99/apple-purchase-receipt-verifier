@@ -14,8 +14,8 @@ changes `node/` now needs there and in the root documents.
   must first provide the rust-wasm job's `aprv.component.wasm`: set
   `APRV_COMPONENT` to its path (used as given), or copy it into place and
   update `node/wasm/aprv.component.wasm.sha256`, which the build checks the
-  in-place copy against (it pins the G1 component of lane/core 05b4ad9
-  today). A missing
+  in-place copy against (it pins the G1b component of lane/core
+  c4410c7 today). A missing
   file fails the build with a message saying so. The build prints the
   file's SHA-256 and writes it to `dist/generated/component.sha256`.
 - `src/generated/` is build output and is gitignored.
@@ -24,7 +24,7 @@ changes `node/` now needs there and in the root documents.
 
 | Job | Change |
 |---|---|
-| `node` (Node 20, 22, 24, 26) | Unchanged command (`npm ci --ignore-scripts && npm test`). Needs the component provided first (above). With the G1 component (lane/core 05b4ad9): 676 of 676 tests, the 311 cases passing on both entry points |
+| `node` (Node 20, 22, 24, 26) | Unchanged command (`npm ci --ignore-scripts && npm test`). Needs the component provided first (above). With the G1b component (lane/core c4410c7): 730 of 730 tests, the 338 cases passing on both entry points |
 | `node-runtimes` | Matrix becomes `node, bun, deno, workerd, edge`, and each leg runs `npm ci --ignore-scripts && npm run build && npm run runtime:${{ matrix.runtime }}`. The three `workerd-*` legs collapse to one: the package needs no compatibility flag, so the floor date and `nodejs_compat_v2` legs no longer test anything of ours |
 | `node-runtimes-web` | Delete: the `/web` entry point runs the same module as `.`, and every runtime leg above smokes both entry points. The `test:runtimes:web` script is gone |
 | `node-runtimes-fastly` | Delete (R5): Fastly Compute runs no WebAssembly. The `test:runtimes:fastly` script and the `@fastly/js-compute` dev dependency are gone |
@@ -81,8 +81,8 @@ the package's host layer, compared byte for byte with
 stops at the first failure. A CI job for the corpus parity can run
 `node scripts/corpus.mjs CALLS_DIR ROWS_DIR` alone after `npm run build`.
 
-G1 (lane/core 05b4ad9, component sha256 `8f758c0b…`), 2026-09-29, Node
-22.22.2:
+G1b (lane/core c4410c7, component sha256 `11798a29…`), 2026-09-29, Node
+22.22.2, the same counts as G1 (05b4ad9) had against its own rows:
 
 | Corpus | Rows | Identical to the module's reference rows | Traps |
 |---|---:|---:|---:|
@@ -92,7 +92,7 @@ G1 (lane/core 05b4ad9, component sha256 `8f758c0b…`), 2026-09-29, Node
 | hostile | 811 | 811 | 0 |
 | substrate | 193 | 193 | 0 |
 
-## Timing, G1 module
+## Timing
 
 Two runs of `node bench/bench.mjs` (median µs per call) and
 `node bench/startup.mjs` (median of 7 fresh processes, ms), Node 22.22.2,
@@ -117,6 +117,13 @@ g5 receipt through ABI v1 on a quiet run of the same container type.
 | first `verifyReceipt`, g5 | 62.2 | 48.4 |
 | second `verifyReceipt`, g5 | 27.6 | 30.8 |
 
+G1b, one run under a load average of 21 to 30: `verifyReceipt` g5
+8,013 µs, endpoint g5 7,064 µs, tampered g5 6,767 µs, legacy 58,135 /
+46,844 / 10,415 µs; start-up medians 52.4 ms import, 250.2 ms first
+`createVerifier`, 59.7 ms second, 66.7 ms and 48.7 ms for the first two
+g5 calls. These track the machine's load, not the module: the G1 and G1b
+figures are both upper bounds.
+
 The facade adds nothing measurable over calling jco's bindings directly (a
 g5 `verifyReceipt` at 9.9 to 12.3 ms through the facade against 11.7 to
 12.3 ms raw, in the same loaded process).
@@ -124,23 +131,25 @@ g5 `verifyReceipt` at 9.9 to 12.3 ms through the facade against 11.7 to
 ## Memory (MIGRATION 4.3)
 
 `node bench/memory.mjs` and `node bench/memory-workerd.mjs` (workerd
-1.20260903.1, peak RSS of the whole `workerd test` process), G1 module:
+1.20260903.1, peak RSS of the whole `workerd test` process), G1b module:
 
 | Runtime | Receipt | Call | Peak RSS |
 |---|---|---|---|
-| Node 22.22.2 | tiny (156 B of base64) | `verifyReceipt` / endpoint | 98 / 98 MiB |
-| Node 22.22.2 | flat-max (3,145,704 B) | `verifyReceipt` / endpoint | 176 / 177 MiB |
-| workerd | tiny | `verifyReceipt` / endpoint | 68 / 69 MiB |
-| workerd | flat-max | `verifyReceipt` / endpoint | 153 / 161 MiB |
+| Node 22.22.2 | tiny (156 B of base64) | `verifyReceipt` / endpoint | 98 / 99 MiB |
+| Node 22.22.2 | flat-max (3,145,704 B) | `verifyReceipt` / endpoint | 113 / 120 MiB |
+| workerd | tiny | `verifyReceipt` / endpoint | 69 / 69 MiB |
+| workerd | flat-max | `verifyReceipt` / endpoint | 98 / 104 MiB |
 
-The module reads the whole payload (about 0.8 s here) before it answers
-`MALFORMED` ("signer certificate not embedded"). Its linear memory grows
-from 2 MiB to 73.9 MiB on that receipt (the stand-in grew to 53.2 MiB) and
-does not shrink afterwards. workerd run locally does not enforce the 128 MB
-isolate limit, so whether a production Worker admits this receipt is not
-measured; the whole process peaked at 153 to 161 MiB, workerd's own
-runtime included. If the isolate refuses it, the owner decides
-(MIGRATION 4.3).
+The review-fixed core refuses the flat-max receipt (`MALFORMED`, "signer
+certificate not embedded") before it reads the payload: 84 ms through the
+facade on the loaded machine, with linear memory growing from 2 MiB to
+16.1 MiB. G1 read the whole payload first (about 0.8 s, 73.9 MiB of linear
+memory, 176 MiB on Node and 161 MiB in workerd). Linear memory never
+shrinks, so an instance keeps what it grew to. workerd run locally does
+not enforce the 128 MB isolate limit, so a production Worker is not
+measured, but the whole workerd process now peaks at 104 MiB, runtime
+included (104 MiB is 109 MB), so the isolate itself stayed under 128 MB
+here; how production counts it is not measured.
 
 ## Bun's WASI `random_get` bug (MIGRATION 4.5)
 

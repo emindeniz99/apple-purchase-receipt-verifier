@@ -305,12 +305,13 @@ nothing else, as Apple's `verifyReceipt` accepts it. `x5c` entries are
 standard base64, JWS segments unpadded canonical base64url.
 
 **Memory.** `bench/memory.mjs` measures one call on a hostile receipt at
-the cap: 3 MiB of tiny attributes the module must read before it finds no
-signer. Measured on 2026-09-29 on Node 22.22.2: a fresh process peaked at
-98 MiB for a tiny receipt and 176 MiB for the hostile one. The module's own
-memory grew from 2 MiB to 74 MiB on it, and an instance keeps that size for
-the life of its `Verifier`. `bench/memory-workerd.mjs` runs the same
-receipt in workerd, where the whole process peaked at 69 and 161 MiB.
+the cap: 3 MiB of tiny attributes in a CMS envelope with no signer. The
+module refuses it before it reads the payload. Measured on 2026-09-29 on
+Node 22.22.2: a fresh process peaked at 98 MiB for a tiny receipt and 113
+to 120 MiB for the hostile one, and the module's own memory grew from
+2 MiB to 16 MiB. An instance keeps the size it grew to for the life of its
+`Verifier`. `bench/memory-workerd.mjs` runs the same receipt in workerd,
+where the whole process peaked at 69 and 98 to 104 MiB.
 
 ## The endpoint
 
