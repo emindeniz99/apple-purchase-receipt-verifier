@@ -329,6 +329,12 @@ check. `ByteArrayMemory` names `ByteOrder.LITTLE_ENDIAN` in its code (the
 Endive round's facts addendum counts the references), but nothing has run
 it on a big-endian JVM yet.
 
+Wired (lane D2) as `nightly.yml` `java-wasm-s390x`: Maven runs natively on
+an x86_64 hosted runner and surefire's `-Dtest.jvm` names a wrapper that
+runs a digest-pinned s390x Temurin 21 under QEMU user emulation, for
+`ConformanceCasesTest` and `EndiveAbiTest`. The corpus stays with the
+nightly `corpus` job, which needs the OD-05 archive.
+
 ## Release
 
 - `release-please-config.json` `extra-files`, in the commit that wires the
@@ -364,5 +370,18 @@ it on a big-endian JVM yet.
   allowance; count it before cutting a release.
 - The jar embeds code compiled from OpenSSL, wasi-libc and the Rust
   standard library. Their licence texts must ship inside it (ARCHITECTURE
-  §9, "Licences ship with the code"); this lane found no licence bundle in
-  the repository to copy into `META-INF/`, so that is still open.
+  §9, "Licences ship with the code"). The one source is now
+  `licenses/wasm/` at the repository root (OD-11), and this is a change to
+  the Java package, not to `.github/`:
+  - `pom.xml` `<build><resources>`: one more `<resource>` with
+    `<directory>../licenses/wasm</directory>` and
+    `<targetPath>META-INF/licenses/aprv-wasm</targetPath>`, the same way
+    the existing entry takes `../java/LICENSE`. Maven reads it in place, so
+    there is no copy in `java-wasm/` and nothing for
+    `tools/check-licence-copies.mjs` to diff: it needs no Java entry.
+  - A test that proves the packaged file set, since nothing else would
+    notice a dropped file: for every file in `../licenses/wasm`, the
+    classpath resource `META-INF/licenses/aprv-wasm/<name>` exists and is
+    byte-identical (a JUnit test beside `ClassFileTest`, which runs in
+    `java-wasm-endive` on every JDK leg).
+  - The README's licence paragraph names the directory.

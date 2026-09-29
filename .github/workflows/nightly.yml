@@ -7,9 +7,10 @@
 #                      evidence campaigns were;
 #   java-differential  the maintained Java implementation against the core
 #                      on every input the script collects (R33, step 1.8);
-#                      a new difference fails the run until R20 records it.
-#                      It waits for tools/differential.sh (lane A3) and says
-#                      so until then;
+#                      a new difference fails the run until R20 records it;
+#   java-wasm-s390x    the -wasm artifact's Endive cases on a big-endian JVM
+#                      (QEMU), the check java-wasm/CI-NOTES.md asks for
+#                      before each release;
 #   corpus             every host's one-command gate over the generated
 #                      corpora (6,179 calls), each row compared byte for
 #                      byte with the module's own. The corpora are 200 MB of
@@ -83,29 +84,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: is the differential here yet?
-        id: gate
-        run: |
-          if [ -f tools/differential.sh ]; then echo "present=true"
-          else echo "::notice::tools/differential.sh (lane A3, MIGRATION.md step 1.8) does not exist yet" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        if: steps.gate.outputs.present == 'true'
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        if: steps.gate.outputs.present == 'true'
         with:
           node-version: "22"
           package-manager-cache: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.gate.outputs.present == 'true'
         with:
           path: ~/.cache/aprv-wasm-toolchain
           key: aprv-wasm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wasm-toolchain.sh') }}
       - name: build aprv.wasm with the pinned toolchain
-        if: steps.gate.outputs.present == 'true'
         run: |
           set -euo pipefail
           dir="$HOME/.cache/aprv-wasm-toolchain"
@@ -119,15 +111,81 @@ jobs:
           rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target wasm32-wasip1
           rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
       - name: the Java implementation against the core
-        if: steps.gate.outputs.present == 'true'
         run: tools/differential.sh "$RUNNER_TEMP/aprv/aprv.wasm" "$RUNNER_TEMP/differential"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always() && steps.gate.outputs.present == 'true'
+        if: always()
         with:
           name: differential-report
           path: ${{ runner.temp }}/differential/
           if-no-files-found: warn
           retention-days: 14
+
+  # The -wasm artifact on a big-endian JVM (java-wasm/CI-NOTES.md,
+  # "java-wasm-s390x"): Endive compiles aprv.wasm to JVM bytecode, and its
+  # linear memory is a byte array read little-endian by name, which nothing
+  # but an s390x JVM can prove. Hosted runners have no s390x machine, so
+  # the forked test JVM is a digest-pinned s390x Temurin 21 under QEMU user
+  # emulation (Ubuntu's qemu-user-static registers it), reached through a
+  # wrapper that surefire's -Dtest.jvm names; Maven itself runs natively.
+  # The Endive cases and the ABI tests run there; the corpus needs the
+  # OD-05 archive and is the corpus job's java-wasm leg on x86_64.
+  java-wasm-s390x:
+    if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'emindeniz99'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/aprv-wasm-toolchain
+          key: aprv-wasm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wasm-toolchain.sh') }}
+      - name: build aprv.wasm with the pinned toolchain and put it in place
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/aprv-wasm-toolchain"
+          tools/wasm-toolchain.sh "$dir" > "$RUNNER_TEMP/toolchain.env"
+          . "$RUNNER_TEMP/toolchain.env"
+          export WASI_SDK_DIR OPENSSL_WASM_DIR PATH
+          RUSTUP_TOOLCHAIN="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          export RUSTUP_TOOLCHAIN
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target wasm32-wasip1
+          rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
+          .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" java
+      - name: QEMU for s390x binaries
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y qemu-user-static
+          docker run --rm --platform linux/s390x \
+            eclipse-temurin:21-jre-noble@sha256:0c324fbe2e1455c3159184717440f3b52906ef82a39c4a6efc9edb401d31971a \
+            sh -c 'uname -m && java -XshowSettings:properties -version 2>&1 | grep sun.cpu.endian'
+      # Surefire starts the test JVM with absolute paths into the checkout,
+      # ~/.m2 and the runner's temporary directory, and talks to it over
+      # stdin and stdout, so the container mounts those paths unchanged and
+      # keeps stdin open.
+      - name: a java that runs on s390x
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/java-s390x" <<'SH'
+          #!/bin/sh
+          exec docker run --rm -i --platform linux/s390x \
+            --user "$(id -u):$(id -g)" -e HOME="$HOME" \
+            -v "$HOME/.m2:$HOME/.m2" -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$RUNNER_TEMP:$RUNNER_TEMP" \
+            -w "$PWD" \
+            eclipse-temurin:21-jre-noble@sha256:0c324fbe2e1455c3159184717440f3b52906ef82a39c4a6efc9edb401d31971a \
+            java "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/java-s390x"
+      - name: the Endive cases and ABI tests on s390x
+        run: |
+          mvn -B -f java-wasm verify "-Dtest.jvm=$RUNNER_TEMP/java-s390x" \
+            -Dtest='ConformanceCasesTest,EndiveAbiTest' -Dsurefire.failIfNoSpecifiedTests=false
 
   # OD-05. The archive is a .tar.gz with the G1 layout at its top level:
   # aprv.wasm and aprv.component.wasm (the release's module), same.py,
