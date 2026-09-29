@@ -545,6 +545,26 @@ work.
   besides the two copies and text files (ci.yml, cases.json, lockfiles,
   the inventory, two evidence results), no scratch path, no model name,
   no credential pattern; `main` has not moved since the branch point.
+- Final integration (2026-09-29 17:15Z): PHP green on the round-3
+  binary (384 of 384 on both transports, 961 tests), Java's server
+  engine pinned to it (942a425), the `-wasm` jars carry the module's
+  licence texts (3105634), lane D2's Phase 7 workflow changes merged
+  (b543320: the root generators' jobs retired, `--enforce all`, CodeQL
+  over `java-wasm`, an s390x nightly leg; its draft PRs #185 and #186
+  closed). The last complete run on the head (e905d09, run 789): 98
+  green, 1 skipped (`smoke-crates`, held), 1 red: the .NET growth test
+  on macOS arm64, which reports kilobytes retained per verification
+  against a 0 B control on that platform alone (Linux 0 B); the test
+  prints which layer retains, the .NET lane is on the latest figures
+  (the native call and the answer reading are tiny, the growth sits in
+  the lowering path), and it stays red on purpose until it is
+  understood. **Pull request #187 (`rust-core` into `main`) opened
+  2026-09-29 17:14Z for the owner's review**; merge with a real merge
+  commit and the `Merges #187: …` body per CLAUDE.md. Left for the owner:
+  the items in BOOTSTRAP.md "Owner actions", plus the licence texts of
+  the server binary's own dependencies (not in the classifier jars),
+  the first real `java-wasm-s390x` run, the WasmKit and Wasmi upstream
+  reports, the `macos-15-intel` label check before tagging.
 - Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
   merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
   SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
