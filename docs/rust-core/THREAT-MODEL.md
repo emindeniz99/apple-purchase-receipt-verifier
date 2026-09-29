@@ -35,8 +35,9 @@ package lives or reach the server:
 
 WasmKit's class is its execution model, an interpreter that generates no
 machine code. The Swift note records software bounds checks and an
-mprotect-based mode compiled for Linux and macOS ([Swift][swift]); Phase 5
-records which one the shipped configuration uses.
+mprotect-based mode compiled for Linux and macOS ([Swift][swift]); the
+shipped configuration uses software bounds checks, so the package installs
+no process-wide signal handler (swift/README.md, "How it works").
 
 ## 3. What a guest compromise reaches
 
@@ -123,7 +124,7 @@ current figure exists for it.
 
 | Host | Memory | CPU and time | Concurrency |
 |---|---|---|---|
-| `aprv-server` | `StoreLimits`: 256 MiB of linear memory, one instance, `trap_on_grow_failure` | none yet: epoch interruption is an open item ([aprv-server §11][server]); a looping input holds one worker | a semaphore of N workers, N = CPU count; the 3 MiB body cap, answered with 413 |
+| `aprv-server` | `StoreLimits`: 256 MiB of linear memory, one instance, `trap_on_grow_failure` | 10 s of guest time per call by default (`--time-limit-ms`), by epoch interruption (rust/server/README.md, "Limits") | a semaphore of N workers, N = CPU count; the 3 MiB body cap, answered with 413 |
 | wasmtime-py, the Ruby gem, Wasmtime .NET | Wasmtime's store limits, available in each binding; Phase 5 sets the server's 256 MiB and tests it | epoch interruption and fuel are Wasmtime features; not exercised in the evidence | one instance per call; the pool bounds the count |
 | wazero (Go) | wazero's memory page limit; Phase 4 sets and tests it | context cancellation; not exercised in the evidence | the pool |
 | JS engines | the engine's limit for a 32-bit memory; workerd's 128 MB isolate, measured in Phase 4 | the platform's own CPU limits | one instance |
@@ -244,7 +245,7 @@ directory can plant code the next Python process runs
 - **Endive** is young (1.0 on 2026-06-26, 1.1.0 on 2026-09-03) and does
   no post-compilation verification ([Endive §2, §10][endive]); JDK 17 and
   earlier run with its workaround for a C2 miscompilation.
-- **No time limit yet** in `aprv-server` or the in-process Wasmtime hosts
+- **No time limit yet** in the in-process Wasmtime hosts
   (§5).
 - **Python's cache** is native code on disk (§8).
 - **Downloaded server binaries** move trust to our release process; the
