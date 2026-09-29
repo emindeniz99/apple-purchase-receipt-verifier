@@ -71,6 +71,7 @@ SELF_SHA256="$(sha256sum "${BASH_SOURCE[0]}" | cut -c1-64)"
 print_env() {
   printf 'export WASI_SDK_DIR=%q\n' "$DIR/wasi-sdk"
   printf 'export OPENSSL_WASM_DIR=%q\n' "$DIR/openssl-wasm"
+  # shellcheck disable=SC2016 # "$PATH" is for the shell that evaluates this line
   printf 'export PATH=%q:"$PATH"\n' "$DIR/bin"
 }
 
@@ -124,14 +125,14 @@ install -m 0755 "$work/wit-bindgen-$WIT_BINDGEN_VERSION-x86_64-linux/wit-bindgen
 # OpenSSL for wasm32-wasip1.
 PREFIX=/aprv/openssl-wasm
 tar -C "$work" -xzf "$openssl_tgz"
-EMU="-D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_GETPID"
+EMU=(-D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_GETPID)
 (
   cd "$work/openssl-$OPENSSL_VERSION"
   export PATH="$DIR/wasi-sdk/bin:$PATH" SOURCE_DATE_EPOCH="$OPENSSL_SOURCE_DATE_EPOCH"
   CC="clang --target=wasm32-wasip1" AR=llvm-ar RANLIB=llvm-ranlib \
   ./Configure linux-generic32 no-shared no-module no-dso no-engine no-tests no-docs no-apps \
     no-autoload-config no-asm no-threads no-sock no-ui-console no-afalgeng \
-    -DNO_SYSLOG -DNO_CHMOD -DOPENSSL_NO_AFALGENG=1 $EMU \
+    -DNO_SYSLOG -DNO_CHMOD -DOPENSSL_NO_AFALGENG=1 "${EMU[@]}" \
     --prefix="$PREFIX" --openssldir=/nonexistent/aprv-openssl --libdir=lib >&2
   make -j"$(nproc)" build_libs >&2
   make DESTDIR="$work/stage" install_dev >&2

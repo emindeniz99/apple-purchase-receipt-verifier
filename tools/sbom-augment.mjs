@@ -18,7 +18,8 @@
 //   rust/rust-toolchain.toml  rustc's version (--rustc-vv adds the commit
 //                             hash from `rustc -vV` and checks the release)
 //   <wasi-sdk>/VERSION        wasi-libc's commit inside that wasi-sdk
-//   rust/Cargo.lock           wasmtime's version and crate checksum
+//   rust/Cargo.lock           wasmtime's version and crate checksum (or
+//                             rust/server/Cargo.lock)
 //   java-wasm/pom.xml         Endive's version (the endive.version property)
 //
 // What each kind must name:
@@ -64,11 +65,15 @@ function rustcPin() {
   return m[1];
 }
 
+// The workspace lockfile, or the server's own if it stays outside the workspace.
 function wasmtimePin() {
-  const lock = readFileSync(`${REPO}rust/Cargo.lock`, 'utf8');
-  const m = /\[\[package\]\]\nname = "wasmtime"\nversion = "([^"]+)"\nsource = "[^"]+"\nchecksum = "([0-9a-f]{64})"/.exec(lock);
-  if (!m) fail('rust/Cargo.lock locks no wasmtime from a registry (is the server in the workspace?)');
-  return { version: m[1], sha256: m[2] };
+  const re = /\[\[package\]\]\nname = "wasmtime"\nversion = "([^"]+)"\nsource = "[^"]+"\nchecksum = "([0-9a-f]{64})"/;
+  for (const lock of ['rust/Cargo.lock', 'rust/server/Cargo.lock']) {
+    if (!existsSync(`${REPO}${lock}`)) continue;
+    const m = re.exec(readFileSync(`${REPO}${lock}`, 'utf8'));
+    if (m) return { version: m[1], sha256: m[2], lock };
+  }
+  fail('neither rust/Cargo.lock nor rust/server/Cargo.lock locks wasmtime from a registry');
 }
 
 function endivePin() {
@@ -146,7 +151,7 @@ function extraComponents(kind, opts) {
     out.push(
       component({ ref: 'aprv-build:wasmtime', name: 'wasmtime', version: w.version, scope: 'required',
         purl: `pkg:cargo/wasmtime@${w.version}`, sha256: w.sha256,
-        properties: [prop('role', 'linked'), prop('hash-of', 'crate (Cargo.lock checksum)'), prop('pinned-by', 'rust/Cargo.lock')] }),
+        properties: [prop('role', 'linked'), prop('hash-of', 'crate (Cargo.lock checksum)'), prop('pinned-by', w.lock)] }),
       component({ ref: 'aprv-build:musl', name: 'musl', version: `rustc-${rustcPin()}`, scope: 'required',
         purl: 'pkg:generic/musl',
         properties: [prop('role', 'linked'), prop('shipped-in', `the self-contained musl of rustc ${rustcPin()}'s *-unknown-linux-musl targets`)],
