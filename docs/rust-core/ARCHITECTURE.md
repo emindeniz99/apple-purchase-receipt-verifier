@@ -25,15 +25,15 @@ the Wasm-first basis** (R22). The decisions it rests on are in
     │ plain Rust API
 ┌───▼──────────────────────────┐    ┌──────────────────────────────┐
 │ aprv-surface: the 0.7 model  │───►│ aprv-wire: the 0.7 canonical │
-│ (three operations, Reason,   │    │ JSON bytes, INIT config JSON │
+│ (three operations, Reason,   │    │ JSON bytes, init config JSON │
 │ payloads, Failure). No       │    └──────────────┬───────────────┘
 │ generator, no serializer.    │                   │
 └───┬──────────────────────────┘                   │
     ├──────────────────────────────┐               │
 ┌───▼──────────────────────────┐ ┌─▼───────────────▼──────────────┐
 │ rust/ffi: the C ABI          │ │ aprv-abi → aprv.wasm           │
-│ escape hatch, source only,   │ │ wasm32-wasip1, ABI v1,         │
-│ class E (the user's choice)  │ │ imports only aprv.random_get   │
+│ escape hatch, source only,   │ │ wasm32-wasip1, canonical ABI   │
+│ class E (the user's choice)  │ │ (WIT), imports only random-get │
 └──────────────────────────────┘ └─┬──────────────────────────────┘
                                    │ the same file, one SHA-256
      ┌───────────┬──────────┬──────┼───────────┬───────────┬──────────────┐
@@ -64,8 +64,10 @@ rust/openssl/                 aprv-openssl: the OpenSSL adapter (R21)
 rust/openssl/payload.c        the receipt payload grammar as ASN.1 templates
 rust/bindings/surface/        aprv-surface: the binding-neutral model of the 0.7 API
 rust/bindings/wire/           aprv-wire: the 0.7 canonical JSON bytes
-rust/bindings/abi/            aprv-abi: the ABI v1 exports, built as aprv.wasm
+rust/bindings/abi/            aprv-abi: the canonical-ABI exports, built as aprv.wasm
+rust/bindings/abi/wit/aprv.wit the interface: the contract every host binds (§4)
 rust/bindings/abi/wasi-none.c the link-time C file: WASI answered inside the module
+rust/bindings/wire/schema/    JSON Schema 2020-12 for the wire shapes (§4, R34)
 rust/server/                  aprv-server: the `aprv` binary (serve, CLI, precompile)
 rust/ffi/                     the C ABI, rebased on aprv-surface and aprv-wire
 rust/fuzz/                    verify-receipt, verify-transaction, the ABI entry
@@ -84,10 +86,14 @@ Package.swift, swift/         the Swift wrapper over WasmKit
   and never on a binding generator, a runtime or a wire format
   (SURFACE.md §4).
 - **aprv-wire** turns surface values into the 0.7 canonical JSON bytes
-  and reads the INIT configuration JSON. The C ABI and `aprv.wasm` both
-  use it, so the two boundaries cannot drift apart.
-- **aprv-abi** is the ABI v1 export list (§4). It is `unsafe` at the
-  boundary only, like `rust/ffi`, and holds no security logic.
+  and reads `init`'s configuration JSON. The C ABI and `aprv.wasm` both
+  use it, so the two boundaries cannot drift apart. Its three shapes are
+  described by JSON Schema 2020-12 files that CI validates every corpus
+  answer against (R34).
+- **aprv-abi** is the guest side of the canonical ABI (§4): the WIT file,
+  wit-bindgen's generated glue, and four function bodies that call the
+  surface. It is `unsafe` at the boundary only, like `rust/ffi`, and holds
+  no security logic.
 - **aprv-server** depends on `wasmtime`, not on the core. It runs the
   released `aprv.wasm` like any other host, so the server cannot
   disagree with the other packages about a verdict.
@@ -110,106 +116,175 @@ builds the module **once**, with no cache, publishes its SHA-256 with the
 release, and every package that carries it checks its copy against that
 hash (§9).
 
-**Size.** The ABI v1 spike module was 2,952,613 bytes
-([ABI v1][abi]); the template-payload module it grew from was 2,973,532 B
-raw and 975,767 B stripped and gzipped ([ASN.1 payload §3][payload]).
+**Size.** The canonical-ABI core module of the final round was
+2,967,116 bytes raw, 2,713,063 stripped and 905,373 stripped and gzipped
+([canonical ABI final][cabifinal]); the ABI v1 spike module was 2,952,613
+bytes ([ABI v1][abi]) and the template-payload module it grew from was
+2,973,532 B raw and 975,767 B stripped and gzipped
+([ASN.1 payload §3][payload]).
 `wasm-opt` stays out: it saved 25% raw and 12% gzipped, changed no speed
 beyond noise, and adds a second optimiser whose output would need
 re-proving each release ([wasm speed §4][speed]).
 
-**One import.** The module imports exactly `aprv.random_get(ptr, len)`.
-OpenSSL draws random bytes only for EC blinding inside ECDSA verification;
-the host fills them from its CSPRNG and bounds-checks the range before it
-writes guest memory. A failing `random_get` makes OpenSSL refuse ECDSA
-verification: 0 new acceptances over 1,179 rows
-([wasm bake-off §10][wasmbake]). The measured modules also imported
-`aprv.clock_now_ms`; ABI v1 as planned drops it (§6, R24).
+**One import.** The module imports exactly one function, the WIT import
+`random-get: func(len: u32) -> list<u8>` (§4). OpenSSL draws random bytes
+only for EC blinding inside ECDSA verification; the host answers from its
+CSPRNG, and the guest traps when the answer is not exactly `len` bytes
+([canonical ABI final][cabifinal]). A failing `random_get` makes OpenSSL
+refuse ECDSA verification: 0 new acceptances over 1,179 rows
+([wasm bake-off §10][wasmbake]). The measured modules of the earlier
+rounds also imported `aprv.clock_now_ms`; `now-ms` is an argument now, so
+that import is gone (§6, R24). Phase 1 checks whether the import can be
+the standard `wasi:random/random@0.2` `get-random-bytes` instead of our
+own interface, so a WASI 0.2 host supplies it without any code of ours;
+either way it stays the module's only import (R34).
 
 **The link-time C file** (`wasi-none.c`, 74 code lines in the evidence)
 defines every WASI function wasi-libc would import, inside the module. In
 the shipped build every one of them **traps**, except two:
-`random_get`, which forwards to `aprv.random_get`, and `clock_time_get`,
+`random_get`, which forwards to the `random-get` import, and `clock_time_get`,
 which answers from the `now_ms` of the call in progress (§6). An
 unexpected call to a file, directory, environment, argument or exit
 function stops the verification instead of taking a path nobody measured;
 on the evidence corpus no run called any of them
 ([wasm bake-off §5][wasmbake]).
 
-**Features.** Core Wasm 2.0 (`lime1`) only: no SIMD, no threads, no
-Component Model ([CMS everywhere §2][cms]). Endive's build-time compiler
-has no SIMD support ([wasm speed §5][speed]), and one module serves every
-host.
+**Features.** Core Wasm 2.0 (`lime1`) only: no SIMD, no threads
+([CMS everywhere §2][cms]). Endive's build-time compiler has no SIMD
+support ([wasm speed §5][speed]), and one module serves every host.
+The canonical ABI needs no Wasm feature: it is a calling convention over
+plain core exports (§4). The release also publishes the same core module
+wrapped as a component by `wasm-tools component new`, 2,442 bytes larger,
+for the hosts that bind components (jco, Wasmtime `bindgen!`); the
+component adds no code, and `wasm-tools component unbundle` would give the
+core back ([canonical ABI final][cabifinal]).
 
-## 4. ABI v1
+## 4. The ABI: the canonical ABI over a WIT interface (R23)
 
-Measured as the four-operation spike of 2026-09-26 ([ABI v1][abi]); the
-plan adds INIT and `now_ms` (R23, R24).
+`aprv.wasm` exposes its four operations through the **canonical ABI**,
+the Component Model's calling convention, described once in a WIT file
+and generated on the guest side by wit-bindgen. It was measured in two
+rounds on the same `wasm32-wasip1` core module as ABI v1
+([canonical ABI][cabi], [canonical ABI final][cabifinal]).
 
-```text
-_initialize()                                 WASI reactor start, once per instance
-aprv_abi_version() -> i32                     == 1
-aprv_alloc(len) -> ptr                        0 when impossible
-aprv_dealloc(ptr, len)
-aprv_call(abi_version, op, ptr, len) -> handle
-aprv_result_ptr(handle) -> ptr
-aprv_result_len(handle) -> len
-aprv_result_free(handle)
+```wit
+package aprv:verifier@1.0.0;
+
+interface verify {
+  /// Once per instance. `{"roots":["<base64 DER>", ...]}`; empty or {} = the built-in Apple roots.
+  /// Answers {"ok":true} or {"ok":false,"message":"..."}; a second call after {"ok":true} traps.
+  init: func(config-json: list<u8>) -> string;
+  verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
+  verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
+  /// env: 0 production, 1 sandbox; anything else traps.
+  verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+}
+
+interface host {
+  random-get: func(len: u32) -> list<u8>;
+}
+
+world aprv {
+  import host;
+  export verify;
+}
 ```
 
-**Operations.** Numbers are stable and never reused. 0 and every number
-not in the table trap.
+The WIT file is the contract. It lives in `rust/bindings/abi/wit/`, and
+CI diffs it against what `wasm-tools component wit` reads back from the
+built module (§9). The version in the package name is the ABI version:
+export names carry it (`aprv:verifier/verify@1.0.0#init`), so a wrapper
+built for one version finds no export on a module of another and fails at
+`create` instead of misreading arguments.
 
-| Op | Name | Input | Output (UTF-8 JSON, aprv-wire) |
-|---:|---|---|---|
-| 1 | VERIFY_RECEIPT | `now_ms`, then the `receipt-data` string (standard base64) | `{"verified":true,"payload":<ReceiptPayload JSON>}` or a failure |
-| 2 | VERIFY_SIGNED_DATA | `now_ms`, then the compact JWS | `{"verified":true,"payload":"<the signed payload JSON, exactly>"}` or a failure |
-| 3 | VERIFY_RECEIPT_ENDPOINT_PRODUCTION | `now_ms`, then the verifyReceipt request body | Apple's response JSON, byte for byte |
-| 4 | VERIFY_RECEIPT_ENDPOINT_SANDBOX | as 3 | as 3 |
-| 5 | INIT | `{"roots":["<base64 DER>", ...]}` | `{"ok":true}` or `{"ok":false,"message":"..."}` |
+**What the core module exports** (the canonical ABI's flattening of the
+WIT; `list<u8>` and `string` become `(ptr, len)`, `u64` becomes `i64`,
+`u32` becomes `i32`, and a returned string comes back through a return
+area):
+
+```text
+import  "aprv:verifier/host@1.0.0" "random-get"                     (len i32, retptr i32) -> ()
+export  "aprv:verifier/verify@1.0.0#init"                            (ptr, len) -> retptr
+export  "aprv:verifier/verify@1.0.0#verify-receipt"                  (now i64, ptr, len) -> retptr
+export  "aprv:verifier/verify@1.0.0#verify-signed-data"              (now i64, ptr, len) -> retptr
+export  "aprv:verifier/verify@1.0.0#verify-receipt-endpoint"         (env i32, now i64, ptr, len) -> retptr
+export  "cabi_post_aprv:verifier/verify@1.0.0#<each of the four>"   (retptr) -> ()
+export  "cabi_realloc"                                                (old, old_size, align, new_size) -> ptr
+export  memory, _initialize
+```
+
+| Operation | Input | Output (UTF-8 JSON, aprv-wire) |
+|---|---|---|
+| `init` | the configuration JSON, roots as base64 DER | `{"ok":true}` or `{"ok":false,"message":"..."}` |
+| `verify-receipt` | `now-ms`, the `receipt-data` string's bytes (standard base64) | `{"verified":true,"payload":<ReceiptPayload JSON>}` or a failure |
+| `verify-signed-data` | `now-ms`, the compact JWS's bytes | `{"verified":true,"payload":"<the signed payload JSON, exactly>"}` or a failure |
+| `verify-receipt-endpoint` | `env`, `now-ms`, the verifyReceipt request body | Apple's response JSON, byte for byte |
 
 A failure is `{"verified":false,"reason":"<0.7 Reason>","message":"..."}`.
-Ops 1 to 4 keep the spike's numbers; INIT is new.
 
-- **`now_ms`** is the first eight bytes of every verify op's input: epoch
-  milliseconds as a little-endian signed 64-bit integer, followed by the
-  UTF-8 text. A prefix keeps a 3 MiB receipt out of a JSON string that
-  would have to be escaped and copied again. This layout is the plan's;
-  Phase 1 fixes it with the ABI tests.
-- **INIT** parses the roots once per instance. An empty list means the
+- **Inputs are bytes, outputs are strings.** A WIT `string` must be UTF-8
+  and the lift is unchecked in release builds of wit-bindgen, so the three
+  payloads and the configuration cross as `list<u8>`: any bytes reach the
+  core, which answers a non-UTF-8 JWS with `INVALID_JWS_FORMAT` as a
+  value, the same 243 rows ABI v1 answered ([canonical ABI final][cabifinal]).
+  Every output is JSON text the guest produced, so `string` is safe there.
+- **`env` is a `u32`, not a WIT enum.** An enum lifts with an unchecked
+  `transmute` in release builds; the `u32` is matched in the guest, which
+  traps on anything but 0 and 1 (2, 255 and 2^32-1 all trapped on every
+  host). Generated bindings do not range-check it: jco applies ToUint32
+  (`2**32 + 1` becomes 1) and wasmtime-py wraps through ctypes, so the
+  wrapper's own `Environment` type is what keeps a caller on 0 or 1
+  ([canonical ABI final][cabifinal], finding 2).
+- **`now-ms` is a `u64` argument** on every verify call (§6). The core's
+  chain instant takes at most `i64::MAX`.
+- **`init`** parses the roots once per instance. An empty list means the
   three Apple roots compiled into the module. A wrapper never sends an
   empty list for a caller's own empty root set: 0.7's `Verifier.create`
-  refuses that before INIT (SURFACE.md §2). A root that does not parse is
+  refuses that before `init` (SURFACE.md §2). A root that does not parse is
   `{"ok":false}`, which the wrapper turns into its language's
-  configuration error at `create`. A second INIT on one instance traps.
-- **A verify op before INIT** is a programmer error and traps. Wrappers
-  cannot reach it: they INIT every instance they create.
-- **Order of checks in `aprv_call`**: the ABI version first, before any
-  other argument is read and before any host import runs; then the
-  operation; then the input range. A mismatch branches straight to
-  `unreachable` ([ABI v1][abi]).
-- **No policy.** No bundle id, environment, app Apple id or device id
-  crosses the boundary. The environment in ops 3 and 4 is which of
-  Apple's two URLs the endpoint imitates, as in 0.7.
+  configuration error at `create`; `init` may then be retried on the same
+  instance. A second `init` after `{"ok":true}` traps.
+- **A verify before `init`** is a programmer error and traps. Wrappers
+  cannot reach it: they `init` every instance they create.
+- **No policy.** No bundle id, environment filter, app Apple id or device
+  id crosses the boundary. `env` is which of Apple's two URLs the endpoint
+  imitates, as in 0.7.
 - **Base64 only.** Receipts cross as the `receipt-data` string, decoded
   in the module by the core's strict rule. The 3,145,728-byte cap applies
-  to that string, so the largest receipt ABI v1 takes is 2,359,296 bytes
+  to that string, so the largest receipt the ABI takes is 2,359,296 bytes
   of DER, as Apple's own endpoint takes base64 ([ABI v1][abi]).
+- **Traps** are `core::arch::wasm32::unreachable()`: no panic path, no
+  message formatting.
 
-**Lifecycle of one call**, the same in every wrapper:
+**Two ways to call it.** A host with a component runtime binds the WIT
+and writes no ABI code: jco on Node, Deno and Bun (a generated `aprv.js`),
+Wasmtime `bindgen!` in `aprv-server`, wasmtime-py's typed component API.
+A host without one calls the four core exports by hand, in 35 to 66 lines
+including the `random-get` import: Endive (35), WasmKit (37), wazero (66)
+([canonical ABI final][cabifinal]). Both kinds answered all 6,179 rows
+identically.
 
-1. `aprv_alloc(len)`;
-2. copy the input into guest memory;
-3. `aprv_call(1, op, ptr, len)`;
-4. check `aprv_result_ptr`/`aprv_result_len` against the memory size;
-5. copy the result out into host memory;
-6. `aprv_result_free(handle)`;
-7. `aprv_dealloc(ptr, len)`;
-8. decode the JSON.
+**Lifecycle of one hand-rolled call**, the same in every such wrapper:
 
-No guest pointer leaves a public call. After a trap the wrapper runs
-nothing more in that instance and discards it. The spike's bridges did
-exactly this on Node and Endive, and linear memory stayed at 2,097,152
-bytes over 2,000 further calls ([ABI v1][abi]).
+1. `cabi_realloc(0, 0, 1, len)` for the input, then copy it in; the guest
+   owns and frees that buffer;
+2. call the export with the scalars in declaration order, then `(ptr, len)`;
+3. read the return area, `ptr` then `len` as little-endian `u32`, at the
+   returned address, bounds-check
+   both against the memory size, and copy the result out;
+4. call `cabi_post_<export>(retptr)`, which frees the result;
+5. decode the JSON.
+
+No guest pointer leaves a public call, and one call runs at a time per
+instance: the return area is one static slot. Component runtimes do all
+of this in their generated code. After a trap a component runtime refuses
+the instance ("cannot enter component instance"); a hand-rolled host must
+discard it itself, since wazero, Endive and WasmKit let a trapped
+instance keep answering ([canonical ABI final][cabifinal], finding 4).
+The same applies to heap discipline: a double post-return does not trap
+on a hand-rolled host (finding 5), so a wrapper never exposes a result
+pointer or calls post-return twice. On wazero, 2,000 calls left linear
+memory the same size.
 
 **Six outcomes, kept distinct.** A wrapper never folds one into another:
 
@@ -217,8 +292,8 @@ bytes over 2,000 further calls ([ABI v1][abi]).
 |---|---|---|
 | Verified | the module's result | the payload (0.7) |
 | Verification failure | the module's result | a result with the 0.7 `Reason` |
-| Caller misuse | the wrapper's own checks (a null `Config` or `Environment`, an empty root set, a root INIT refuses) | the language's programmer error at `create` or at the call, as in 0.7 |
-| ABI mismatch | `aprv_abi_version()` ≠ the wrapper's version, or a trap in `aprv_call` before anything ran | a hard failure at `create` naming both versions ("APRV Wasm ABI mismatch: module=1, caller=N"); never a verdict |
+| Caller misuse | the wrapper's own checks (a null `Config` or `Environment`, an empty root set, a root `init` refuses) | the language's programmer error at `create` or at the call, as in 0.7 |
+| ABI mismatch | the module lacks the `@1.0.0` exports the wrapper binds, or the runtime rejects the imports | a hard failure at `create` naming the version the wrapper expects and the export names the module has; never a verdict |
 | Trap or internal failure | a guest trap, a runtime error, an out-of-range result pointer, malformed result JSON | `INTERNAL_ERROR` (21009 at the endpoint); the instance is discarded; the cause names the trap |
 | Server process failure | `aprv-server` did not answer: start failed, the child died, the connection broke, HTTP 5xx | `INTERNAL_ERROR` (21009 at the endpoint) with a cause of its own type, so it is never mistaken for a trap |
 
@@ -226,10 +301,16 @@ The 0.7 contract holds: the verify methods never throw for any input
 (0.7-api.md, Setup). Both failure rows answer `INTERNAL_ERROR` and keep
 their category in the cause.
 
+**Cost against ABI v1**, measured: the stripped core module is +0.47%
+(2,713,063 bytes against 2,700,240) and the component +0.53%; wazero's
+first result +3.2% with equal throughput; Endive, WasmKit and Bun within
+noise; jco on Node and Deno +8%, which is loading the generated glue
+([canonical ABI final][cabifinal]).
+
 ## 5. The instance model (R23, owner Q49 d)
 
 - `Verifier.create(config)` owns a small pool of instances of one
-  compiled module. Each instance is INITed once, when it is created, so
+  compiled module. Each instance gets `init` once, when it is created, so
   the roots are parsed once per instance.
 - One instance serves one call at a time. A shared Endive instance
   livelocked inside OpenSSL's allocator in the spike, with no exception
@@ -240,13 +321,14 @@ their category in the cause.
 - Instances die with the `Verifier`. There are no handles in the public
   API and nothing for the caller to free or close.
 - **Node:** one instance. JavaScript runs one call at a time per isolate.
-- **aprv-server:** a fresh instance and INIT per request by default, so
+- **aprv-server:** a fresh instance and `init` per request by default, so
   nothing from one hostile input reaches the next request. Phase 1
-  measures INIT; if it costs more than 10% of a call, the default flips to
-  the existing `--lifecycle pool` flag (R31). The spike's fresh lifecycle
-  cost about 1.6 ms more per receipt than the pool, which it attributed to
-  the guest initialising OpenSSL and its roots on an instance's first call
-  ([aprv-server §3][server]); INIT separates that cost from the call.
+  measures `init`; if it costs more than 10% of a call, the default flips
+  to the existing `--lifecycle pool` flag (R31). The spike's fresh
+  lifecycle cost about 1.6 ms more per receipt than the pool, which it
+  attributed to the guest initialising OpenSSL and its roots on an
+  instance's first call ([aprv-server §3][server]); `init` separates that
+  cost from the call.
 
 What an instance costs to create, measured: Endive 335 to 380 ms for the
 first, 2 to 4 ms after ([Endive §9][endive]); wasmtime-py 0.4 to 0.6 ms
@@ -272,12 +354,12 @@ after the compile ([Python wasmtime][pywt]); WasmKit about 3 ms
 - OpenSSL's own `time()` calls come from its DRBG, not from certificate
   checks: the core sets the check time explicitly to the signing instant
   (R21). The link-time C file answers `clock_time_get` from the `now_ms`
-  of the call in progress, and with 0 during INIT. Whether OpenSSL's DRBG
-  reads the clock during INIT at all is unmeasured; Phase 1's gate is
-  that the module imports only `aprv.random_get` and answers the corpus
-  as before.
-- No public API takes a per-call time. 0.7 dropped it; ABI v1 carries
-  `now_ms` per call anyway, so a per-call override later is additive.
+  of the call in progress, and with 0 during `init`. Whether OpenSSL's
+  DRBG reads the clock during `init` at all is unmeasured; Phase 1's gate
+  is that the module imports only `random-get` and answers the corpus as
+  before.
+- No public API takes a per-call time. 0.7 dropped it; the ABI carries
+  `now-ms` per call anyway, so a per-call override later is additive.
 - Callers still cannot move the validity instant of an input that
   carries its own date, which is THREAT-MODEL §3.5 of the root threat
   model.
@@ -285,9 +367,12 @@ after the compile ([Python wasmtime][pywt]); WasmKit about 3 ms
 ## 7. Hosts
 
 Each host chapter names the runtime, how it holds the instance model,
-what it supplies for `aprv.random_get`, and what was measured. Every host
+what it supplies for `random-get`, and what was measured. Every host
 ran the 6,179 rows byte-identically to Node and passed 37 of 37 ABI and
-facade tests unless a line says otherwise.
+facade tests unless a line says otherwise. Which hosts bind the WIT and
+which call the core exports by hand is fixed in §4; the line counts are
+the hand-written ABI code of the final round
+([canonical ABI final][cabifinal]).
 
 ### 7.1 Endive: Java 11+ in the `-wasm` artifact
 
@@ -303,13 +388,19 @@ facade tests unless a line says otherwise.
   by `unreachable` ([Endive §4][endive]).
 - Memory: `ByteArrayMemory`, 24 to 42% faster than the default with
   byte-identical output ([wasm speed][speed]).
-- `aprv.random_get` from `SecureRandom`, range-checked before it writes.
+- **Hand-rolled canonical ABI, 35 lines**: a four-entry signature table
+  (`u32`, `u64`, `list<u8>`), `cabi_realloc` for the input, the export by
+  its `@1.0.0` name, the return area read, `cabi_post_*`. A wrong Java
+  type or argument count is a host error before any call. `random-get`
+  from `SecureRandom`, written through `cabi_realloc` into guest memory.
 - A trap reaches Java as `WasmRuntimeException`, `TrapException` or
   `WasmEngineException`; the JVM survives ([Endive §7][endive]). The
   wrapper discards the instance.
 - Speed through ABI v1 on JDK 21: 154.7, 323.0 and 482.2 g5 receipts and
   52.6, 101.9 and 166.8 JWS per second at 1, 2 and 4 threads
-  ([ABI v1][abi]). The first instance takes 335 to 380 ms.
+  ([ABI v1][abi]). The canonical ABI's first result is within noise of
+  that ([canonical ABI final][cabifinal]). The first instance takes 335
+  to 380 ms.
 - Endive's compiler does no post-compilation verification ([Endive
   §10][endive]). The guard is CI: the corpus through the built jar, byte
   for byte against native, on every change (§9).
@@ -348,7 +439,15 @@ facade tests unless a line says otherwise.
   processes ([Python wasmtime][pywt]). Python deployments use worker
   processes (gunicorn, uvicorn) with one `Verifier` each. The pool still
   gives each thread its own instance.
-- `aprv.random_get` from `os.urandom`/`secrets`.
+- **The call path is the hand-rolled one over the core module**, as
+  Endive's, not wasmtime-py's typed component API. That API lowers a
+  `list<u8>` one element at a time in Python (`ListType.convert_to_c` in
+  49.0.0): about 1.1 µs per input byte, 226 s for the corpus against 17 s
+  with strings ([canonical ABI final][cabifinal], finding 3). Writing the
+  bytes into guest memory with `Memory.write` costs nothing of the kind.
+  Phase 5 reopens the component API only if upstream adds a bytes fast
+  path.
+- `random-get` from `os.urandom`/`secrets`.
 - **Platforms without a wasmtime-py wheel** fail at install with a
   message that points to `aprv-server` or the C ABI (R28). Today the
   failure would come at import: pip picks wasmtime-py's `py3-none-any`
@@ -363,14 +462,19 @@ facade tests unless a line says otherwise.
   committed under `go/`, and CI rebuilds it and fails when its SHA-256
   differs from the release build.
 - One compiled module per process (`sync.Once`), a `sync.Pool` of
-  instances, `aprv.random_get` from `crypto/rand`. Any other import is
-  refused at instantiation.
+  instances, `random-get` from `crypto/rand`. Any other import is
+  refused at instantiation. wazero has no Component Model, so the
+  canonical ABI is called by hand: 66 lines, the largest of the three
+  hand-rolled hosts because of Go's error checks
+  ([canonical ABI final][cabifinal]).
 - It stays cgo-free, so `CGO_ENABLED=0`, cross-compilation and `FROM
   scratch` keep working. The CMS module answered 1,179 of 1,179 rows on
   wazero 1.12.0 ([CMS everywhere §2][cms]); an OpenSSL module took
   2,495 µs per receipt and 8,110 µs per JWS there on the PKCS7 path
-  ([substrate bake-off §13][substrate]). ABI v1 on wazero is measured in
-  Phase 4.
+  ([substrate bake-off §13][substrate]). Through the canonical ABI on
+  wazero 1.12.0: 238.5 g5 and 77.0 JWS per second steady, the corpus in
+  23 s, first result 1,279 ms including runtime and compile
+  ([canonical ABI final][cabifinal]).
 - The floor stays as today (R30) if the wazero release we need builds on
   it; wazero 1.12.0 fetched a Go 1.25 toolchain in the spikes
   ([rust-core spikes, Method][spikes]). Phase 4 checks, and raises the
@@ -381,16 +485,29 @@ facade tests unless a line says otherwise.
 
 ### 7.4 JavaScript: native WebAssembly
 
-- One npm package, zero runtime `dependencies`. It carries `aprv.wasm`, a
-  hand-written façade and a hand-written `index.d.ts`: no wasm-bindgen,
-  no Emscripten glue, no jco output. The Route C package of this shape was
-  1,001,740 bytes and passed on Node, Bun, Deno, Chromium, Firefox,
-  WebKitGTK, a `node --permission` run and `wrangler dev --local`
-  ([CMS everywhere §2][cms]).
-- One instance per module load. The façade supplies `aprv.random_get`
-  from `crypto.getRandomValues` in 65,536-byte chunks, never
-  `Math.random`, and refuses any other import. It decodes strings with
-  `TextDecoder` and `ignoreBOM: true` ([wasm bake-off §8][wasmbake]).
+- One npm package, zero runtime `dependencies`. It carries the core
+  module, **jco's transpiled bindings** of the component (`aprv.js`,
+  132,241 bytes as generated, 63,523 minified, 0 hand-written ABI lines)
+  and a thin façade with a hand-written `index.d.ts` over them: no
+  wasm-bindgen, no Emscripten glue. jco 1.35.0 answered the corpus
+  identically on Node 22, Deno 2.9 and Bun 1.3; its glue costs 8 to 11 ms
+  at start on Node and Deno ([canonical ABI final][cabifinal]). The Route
+  C package of the earlier shape was 1,001,740 bytes and passed on Node,
+  Bun, Deno, Chromium, Firefox, WebKitGTK, a `node --permission` run and
+  `wrangler dev --local` ([CMS everywhere §2][cms]); Phase 4 repeats that
+  list with jco's output, and falls back to a hand-rolled façade over the
+  core exports (Endive's 35 lines in JavaScript) on any runtime where the
+  glue does not load.
+- Two quirks of the glue to carry: jco reads `process.env.JCO_DEBUG` on
+  every call, so Deno needs `--allow-env=JCO_DEBUG` (documented; Phase 4
+  checks whether a build flag removes the read); and jco coerces a JS
+  string passed where the WIT says `list<u8>`, so the façade converts
+  with `TextEncoder` itself and never passes a caller's value through
+  ([canonical ABI final][cabifinal], findings 2 and 6).
+- One instance per module load. The façade supplies `random-get` from
+  `crypto.getRandomValues` in 65,536-byte chunks, never `Math.random`,
+  and refuses any other import. It decodes strings with `TextDecoder`
+  and `ignoreBOM: true` ([wasm bake-off §8][wasmbake]).
 - A trap (`WebAssembly.RuntimeError`) drops the instance, the next call
   instantiates a fresh one, and the call answers `INTERNAL_ERROR`.
 - `exports` conditions load the module the way each runtime needs:
@@ -416,7 +533,11 @@ facade tests unless a line says otherwise.
   `platforms: [.macOS(.v15), .iOS(.v18)]`, which sets the Swift floors
   (R30).
 - `Engine` and `Module` are `Sendable` and shared; stores and instances
-  are per thread. `aprv.random_get` from `SystemRandomNumberGenerator`.
+  are per thread. `random-get` from `SystemRandomNumberGenerator`. The
+  canonical ABI is called by hand, 37 lines, with the bounds-checked
+  read and write helpers below ([canonical ABI final][cabifinal]);
+  WasmKit 0.4.0's opt-in `ComponentModel` trait is untested and not
+  used.
 - **Every range is checked before memory is touched.** WasmKit's
   `Memory.withUnsafe*BufferPointer` stops the whole process with a
   precondition failure on an out-of-range access instead of throwing, so
@@ -448,7 +569,10 @@ aarch64).
   through a variable a closure can capture: the spike's first harness
   shared one verifier across threads that way by accident.
 - Compile at start 1.22 to 1.35 s; later verifiers 0.1 ms.
-  `aprv.random_get` from `SecureRandom`.
+  `random-get` from `SecureRandom`. The canonical ABI is called by hand
+  over the core exports, as on Endive; neither the gem's nor Wasmtime
+  .NET's component support was measured, and Phase 5 keeps the
+  hand-rolled call unless a binding's component API costs nothing.
 
 **.NET** runs the `Wasmtime` NuGet package (48.0.2 in the evidence).
 
@@ -461,18 +585,32 @@ aarch64).
 - The package ships no `linux-musl-*` library; on Alpine the `linux-x64`
   library needs glibc and is expected to fail without `gcompat`
   ([.NET][dotnet]). Alpine .NET users take `aprv-server`.
-- Compile at start 0.92 to 0.98 s. `aprv.random_get` from
+- Compile at start 0.92 to 0.98 s. `random-get` from
   `RandomNumberGenerator`.
 
 ### 7.7 aprv-server
 
 One Rust binary, `aprv`, built on axum and tokio with Wasmtime 49
-**runtime-only**: Cranelift, Winch, the cache, the Component Model and
-every other optional feature are off. The release precompiles
-`aprv.wasm` to a Cranelift `.cwasm` for an **explicit baseline target**
-per platform and embeds it ([aprv-server §2][server]). The binary has no
-base64, CMS, JWS, certificate or policy code: a route or command picks
-the operation and passes the bytes through the ABI lifecycle (§4).
+**runtime-only** plus `component-model`: Cranelift, Winch, the cache and
+every other optional feature are off. The release precompiles the
+component to a Cranelift `.ccwasm` for an **explicit baseline target**
+per platform and embeds it; `bindgen!` over the WIT gives the typed
+calls, with 0 hand-written ABI lines ([aprv-server §2][server],
+[canonical ABI final][cabifinal]). The binary has no base64, CMS, JWS,
+certificate or policy code: a route or command picks the operation and
+calls the binding.
+
+- **The component costs** +328,528 bytes of engine (+143,633 gzipped,
+  about 30% of the runtime-only engine) and +34,072 bytes of precompiled
+  file; time to the first result stays 14 ms in process, the same as the
+  core `.cwasm` ([canonical ABI final][cabifinal]).
+- **Precompile and runtime must agree on Wasm features.** A precompiled
+  file records the features of the engine that wrote it, and Wasmtime
+  refuses a mismatch at load time ("compiled with support for WebAssembly
+  feature component_model but it is not enabled for the host"). The
+  `precompile` step therefore runs with the same Wasmtime features as the
+  serving binary, in the same build, and `info` reports both the module
+  hash and the feature set ([canonical ABI final][cabifinal], finding 1).
 
 - **Why a precompiled module here.** Runtime-only Wasmtime starts in
   9.8 ms instead of 900 ms, idles at 20.7 MiB instead of 115.6 MiB, and
@@ -505,9 +643,16 @@ the operation and passes the bytes through the ABI lifecycle (§4).
   (`StoreLimits`, `trap_on_grow_failure`); a worker semaphore of N
   concurrent verifications, N = CPU count; the 3 MiB body cap. A guest time
   limit (epoch interruption) is open (THREAT-MODEL.md §5).
-- **Lifecycle.** A fresh store and instance, INITed, per request; `--lifecycle
-  pool` keeps instances and destroys one on any trap or ABI error, never
-  sharing one between two requests (§5).
+- **Lifecycle.** A fresh store and instance, with `init`, per request;
+  `--lifecycle pool` keeps instances and destroys one on any trap or ABI
+  error, never sharing one between two requests (§5).
+- **The HTTP contract is an OpenAPI 3.1 document** (`rust/server/openapi.yaml`),
+  the wire shapes referenced from the JSON Schema 2020-12 files of
+  `aprv-wire`; Spectral lints it and Schemathesis runs it against the
+  server in CI. Errors that are not verification results (401, 413, 500
+  `WASM_TRAP`, `ABI_ERROR`, `INTERNAL_ERROR`) are RFC 9457 Problem Details
+  (`application/problem+json`) with the existing code in a `code` member;
+  a verification result stays HTTP 200 with the module's JSON (R34).
 - **The configuration a host passes.** The `Config` of a Java or PHP
   caller travels with the call: the per-call `now_ms` in a request header
   or CLI argument, and the roots once, at start (the managed child reads
@@ -532,8 +677,10 @@ the operation and passes the bytes through the ABI lifecycle (§4).
   non-root image pinned by digest, entrypoint `aprv serve`. Inside the
   container the server listens on `127.0.0.1:8080` until `APRV_LISTEN` is
   set, so a published port reaches nothing by accident. Published to GHCR
-  and, once the owner creates the namespace and token, Docker Hub. The
-  image has not been built yet ([aprv-server §8][server]).
+  and, once the owner creates the namespace and token, Docker Hub, with
+  the `org.opencontainers.image.*` labels (source, revision, version,
+  licenses, description) and a CycloneDX SBOM attached (R34). The image
+  has not been built yet ([aprv-server §8][server]).
 - **Exotic CPUs** where Wasmtime has no compiler (ppc64le, loongarch64,
   32-bit): open. Pulley ran 4.6 JWS per second and Wasmi 2.0 12.5 on the
   same machine ([execution modes][modes]); nothing is decided.
@@ -609,8 +756,8 @@ Verifier v3 = Verifier.create(config,
   have two artifactIds. macOS and Windows binaries come from GitHub
   Releases.
 - `Config.runtimeProbe` stays in the API. What the `-wasm` artifact probes
-  at `create` (the engine instantiating and INITing one instance) is fixed
-  in Phase 3.
+  at `create` (the engine instantiating one instance and calling `init`)
+  is fixed in Phase 3.
 
 ### 7.9 PHP
 
@@ -630,9 +777,10 @@ Verifier v3 = Verifier.create(config,
 
 ### 7.10 The C ABI
 
-`rust/ffi` stays: a `cdylib` and `staticlib` with a cbindgen header, now
+`rust/ffi` stays: a `cdylib` and `staticlib` with a header cbindgen
+generates from the source and CI diffs against the committed copy, now
 over `aprv-surface` and `aprv-wire`, so its JSON is the same bytes
-`aprv.wasm` returns. It is the escape hatch for a language with no host
+`aprv.wasm` returns and validates against the same schemas. It is the escape hatch for a language with no host
 above: C, C++, Elixir, or a platform no Wasm runtime reaches. It runs
 OpenSSL and the core as native code in the caller's process (class E),
 which is the caller's choice. 0.8.0 ships it as source, as today;
@@ -666,10 +814,13 @@ workspace ([CMS everywhere §1][cms]).
 | The Java implementation stays independent | The main artifact depends on no Rust artifact; the `-wasm` module shares its API, not its code (R33) |
 | No hand-written ASN.1, CMS or X.509 in the core (R21) | `tools/check-layering.mjs` fails on a module named `asn1`, `x509`, `cms`, `chain` or `crypto` in `rust/src`, an ASN.1, X.509 or signature crate in the core's graph, or a call to `ASN1_get_object` in the adapter |
 | `unsafe` only at the edges | `#![forbid(unsafe_code)]` in the core, the surface and the wire crate; `unsafe` only in `aprv-openssl`, `aprv-abi`, `rust/ffi` and `aprv-server` (for `Module::deserialize`), each block with a `// SAFETY:` comment |
-| `aprv.wasm` imports exactly `aprv.random_get` | CI lists the module's imports with `wasm-tools` and fails on anything else |
+| `aprv.wasm` imports exactly `random-get` | CI lists the module's imports with `wasm-tools` and fails on anything else |
+| The WIT is the contract | CI reads the interface back from the built module with `wasm-tools component wit` and diffs it against `rust/bindings/abi/wit/aprv.wit`; a change to the file is a change to the ABI version |
 | `aprv.wasm` takes no unmeasured path | Every change runs the corpus through a host whose import object traps on anything unexpected, with the module's own WASI stubs trapping; any trap or any row that differs from native fails |
 | One `aprv.wasm` everywhere | The release builds it once; every package's copy (npm, Go, Swift, PyPI, RubyGems, NuGet, the Endive input, the server's `.cwasm` input) is checked against its published SHA-256; the committed Go and Swift copies are rebuilt in CI and diffed |
-| ABI v1 holds | The 33 mandatory ABI tests plus each facade's own run on every host on every change |
+| The canonical ABI holds | The ABI tests of the final round (env 2, 255 and 2^32-1 trap; verify before `init` and a second `init` trap; a wrong-length `random-get` traps; a trap in one instance leaves another verifying; 2,000 calls leave memory the same size) plus each facade's own run on every host on every change |
+| The wire shapes match their schemas | Every corpus answer and every `init` configuration and answer validates against the JSON Schema 2020-12 files in `rust/bindings/wire/schema/`, from the core, the C ABI and `aprv.wasm` |
+| The server's HTTP contract is its OpenAPI document | Spectral lints `rust/server/openapi.yaml`; Schemathesis runs it against the server in the `aprv-server` job; non-result errors are RFC 9457 |
 | Same verdicts everywhere | Every host runs all 311 `fixtures/cases.json` cases as one test each; the `-wasm` artifact runs them once per engine; the main Java artifact runs them too (SURFACE.md §6) |
 | Endive answers as native | The corpus (1,179 rows plus 5,000 mutants) through the built `-wasm` jar on every change, byte for byte against native, on Linux x64 and arm64, macOS arm64, Windows x64 and arm64; s390x under QEMU before each release |
 | One Java artifact per classpath | A test puts both jars on one classpath and asserts the guard's failure; a Gradle build that requests both fails at resolution |
@@ -677,13 +828,16 @@ workspace ([CMS everywhere §1][cms]).
 | Pinned roots only | Root `certs/` stays canonical; `rust/certs` is the copy compiled into the core; the Java artifact keeps its constants. `check-cert-copies.mjs` checks what remains |
 | Caps in one place | The core owns every bound of the 0.7 table; wrappers add none. `aprv-server` adds only the HTTP body cap, equal to the receipt cap |
 | Precompiled code is only what we built | `aprv-server` deserializes only its embedded `.cwasm`; no host loads a `.cwasm` from anywhere else; wasmtime-py's cache follows THREAT-MODEL.md §8 |
-| Artifacts are what CI built | Publish jobs never cache. `aprv.wasm`, every server binary and every classifier jar get a SHA-256 and a build-provenance attestation. Post-publish smoke installs from the real registries |
+| Artifacts are what CI built | Publish jobs never cache. `aprv.wasm`, the component, every server binary, every classifier jar and the image get a SHA-256, a SLSA build-provenance attestation and a CycloneDX SBOM that names the OpenSSL, wasi-sdk, rustc and Wasmtime versions inside them. Post-publish smoke installs from the real registries |
+| `aprv.wasm` is reproducible | `tools/reproduce-wasm.sh` rebuilds the module from a tag in the pinned toolchain and compares the hash; the release job runs it once against its own artifact |
 | Licences ship with the code | Every package that carries `aprv.wasm` or a server binary ships OpenSSL's licence and NOTICE, wasi-libc's and Rust std's texts; the server adds Wasmtime's |
 | Floors are tested | Each floor in SUPPORT-MATRIX.md keeps a CI leg, the Java 8 server engine on a real Java 8 JVM |
 
 [wasmbake]: ../evidence/2026-09-26-wasm-architecture-bakeoff.md
 [cms]: ../evidence/2026-09-26-openssl-cms-everywhere.md
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
+[cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
+[cabifinal]: ../evidence/2026-09-29-canonical-abi-final.md
 [payload]: ../evidence/2026-09-26-openssl-asn1-payload.md
 [speed]: ../evidence/2026-09-26-wasm-speed.md
 [endive]: ../evidence/2026-09-26-endive-build-time-jvm.md

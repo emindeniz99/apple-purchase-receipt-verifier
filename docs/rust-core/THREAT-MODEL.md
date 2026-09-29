@@ -7,7 +7,7 @@ hostile-byte bounds. It holds unchanged for 0.8.0, since the API and the
 fixtures do not change. This file covers what 0.8.0 adds: where the one
 Rust core runs, what separates a hostile receipt from the caller's
 process, and what each package trusts. The decisions it rests on are
-DECISIONS.md R22 to R33.
+DECISIONS.md R22 to R34.
 
 ## 1. Assets and inputs
 
@@ -61,7 +61,7 @@ Beyond that, per class:
 
 | Class | The guest can reach | To escape it needs |
 |---|---|---|
-| A | its linear memory; `aprv.random_get`, which only writes random bytes into a range the host bounds-checks | a bug in the interpreter. WasmKit stops the process with a precondition failure on an out-of-range memory access by the host, so the wrapper checks every range first ([Swift][swift]); a host-side slip there is a crash, not an escape |
+| A | its linear memory; `random-get`, which only returns random bytes the guest copies into its own memory | a bug in the interpreter. WasmKit stops the process with a precondition failure on an out-of-range memory access by the host, so the wrapper checks every range first ([Swift][swift]); a host-side slip there is a crash, not an escape |
 | B | the same | a bug in the runtime's compiler, its bounds checking or its signal handling; the prize is the caller's process |
 | C | the same, held in a Java `byte[]` or `ByteBuffer` | a miscompile gives wrong answers or exceptions, since the JVM verifies the generated classes for type safety when they load ([Endive §10][endive]); memory corruption would need a JVM bug |
 | D | the server process, with the operating-system rights of its user: files and network, not the caller's memory. Inside, class B still holds | an escape from Wasmtime, then whatever the server's user may do |
@@ -82,10 +82,15 @@ inside the guest's linear memory ([aprv-server §10][server]).
   attestation. Every package that carries the module checks its copy
   against that hash in its release job; the committed copies in `go/` and
   the Swift package are rebuilt in CI and compared.
-- **Its only import is `aprv.random_get`.** CI lists the imports and fails
+- **Its only import is `random-get`.** CI lists the imports and fails
   on anything else, and the link-time C file traps on every other WASI
   function (ARCHITECTURE.md §3). A host refuses to instantiate a module
-  that asks for more.
+  that asks for more. The WIT file is the contract: CI reads the
+  interface back from the built module and diffs it (ARCHITECTURE.md §9).
+- **Its SHA-256 is reproducible and its contents are named.** The
+  release job rebuilds the module once with `tools/reproduce-wasm.sh`
+  and compares the hash; a CycloneDX SBOM and SLSA provenance travel
+  with it (R34).
 - **Endive compiles only this module.** Endive's documentation says its
   compiler does no post-compilation verification and to compile only
   trusted modules ([Endive §10][endive]); ours is built by our CI, so the

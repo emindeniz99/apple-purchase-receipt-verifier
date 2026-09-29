@@ -7,12 +7,14 @@ the decision. Status is one of:
 - **Superseded**: a later record replaced it; the record says which, and
   keeps one paragraph of history.
 
-Every record is settled as of 2026-09-28. The owner's brief of that date
-rewrote the plan on the Wasm-first basis (R22) and settled the last open
-questions (R23 to R33). Phase 7 moves the outcomes into PLAN.md as D17
-onward and marks D16 superseded for the eight non-Java ports.
+Every record is settled as of 2026-09-29. The owner's brief of
+2026-09-28 rewrote the plan on the Wasm-first basis (R22) and settled the
+last open questions (R23 to R33); on 2026-09-29 the owner reopened the
+export ABI and chose the canonical ABI after two spike rounds (R23), and
+adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
+D17 onward and marks D16 superseded for the eight non-Java ports.
 
-The evidence is the 21 notes of 2026-09-25 to 2026-09-27 under
+The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/). Links use the short names defined at the end
 of this file. Rejected alternatives are in one table at the end, each with
 its measured reason and its note.
@@ -469,7 +471,7 @@ native parser runs inside a caller's process (R32).
 | Java 11+ (`-wasm` artifact) | Endive 1.1.0 build-time compiler to JVM bytecode, no native code | [Endive][endive], [ABI v1][abi] |
 | Java 8 (`-wasm` artifact) | `aprv-server` as a managed child, pure-Java client | [aprv-server §6][server] |
 | Java 8+ (main artifact) | the pure-Java BouncyCastle implementation, unchanged | 0.7.0 |
-| Node and every JS runtime | native WebAssembly, hand-written façade | [CMS everywhere §2][cms], [ABI v1][abi] |
+| Node and every JS runtime | native WebAssembly through jco's generated bindings, a thin façade over them | [CMS everywhere §2][cms], [canonical ABI final][cabifinal] |
 | Go | wazero | [CMS everywhere §2][cms] |
 | Python | wasmtime-py, plain `.wasm` compiled at start, disk cache on (R27) | [Python wasmtime][pywt], [runtime options][pyopt], [final Python round][pyfinal] |
 | Swift 6.3 | WasmKit 0.4.0 | [Swift WasmKit][swift] |
@@ -487,38 +489,94 @@ The measured cost is speed, above the floor on every host (R4).
 
 ---
 
-## R23. ABI v1 and the instance model
+## R23. The canonical ABI and the instance model
 
-**Status: accepted** (owner, 2026-09-28; Q49 option d).
+**Status: accepted** (owner, 2026-09-29 for the ABI; 2026-09-28 for the
+instance model, Q49 option d). Supersedes the ABI v1 export list of the
+2026-09-28 record.
 
-**The ABI.** `aprv_abi_version() == 1`; `aprv_alloc`/`aprv_dealloc`;
-`aprv_call(abi_version, op, ptr, len) -> handle`;
-`aprv_result_ptr`/`len`/`free`. The version is checked first and a
-mismatch fails hard. Operations, with stable numbers never reused: INIT,
-VERIFY_RECEIPT, VERIFY_SIGNED_DATA, VERIFY_RECEIPT_ENDPOINT_PRODUCTION,
-VERIFY_RECEIPT_ENDPOINT_SANDBOX (ARCHITECTURE.md §4 numbers them). INIT
-takes the configuration JSON, roots as base64 DER, empty for the three
-built-in Apple roots. Every verify op's input carries `now_ms`. A verify
-op before INIT is a programmer error and fails hard. Output is aprv-wire
-JSON. Six outcomes stay distinct: verified, verification failure, caller
-misuse, ABI mismatch, trap or internal failure, server process failure.
+**The ABI.** `aprv.wasm` exports its four operations through the
+canonical ABI, the Component Model's calling convention, from one WIT
+file (ARCHITECTURE.md §4):
 
-**Evidence.** The four-operation spike kept every verdict on all 6,179
-rows, with 0 traps and 0 differences, passed 33 of 33 mandatory tests on
-Node and Endive, and cost nothing measurable against the earlier bridge.
-It took receipts as base64 only ([ABI v1][abi]). Each later host added
-four facade tests (37 in all).
+```wit
+init: func(config-json: list<u8>) -> string;
+verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
+verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
+verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+import random-get: func(len: u32) -> list<u8>;
+```
+
+Inputs are bytes, so any input reaches the core and a non-UTF-8 JWS is
+a value; outputs are the guest's own JSON. `env` is a `u32` the guest
+matches, trapping on anything but 0 and 1. `now-ms` is a `u64` argument
+on every verify call. A verify before `init`, and a second `init` after a
+successful one, trap. The export names carry the package version
+(`aprv:verifier/verify@1.0.0#init`), so a wrapper of another version
+finds no export and fails at `create`. The WIT file is the contract and
+CI diffs it against the built module. Output is aprv-wire JSON. Six
+outcomes stay distinct: verified, verification failure, caller misuse,
+ABI mismatch, trap or internal failure, server process failure.
+
+**Why the canonical ABI rather than our own export list.** The owner's
+reasons, in order:
+
+1. It is a written rulebook rather than a convention of ours: the
+   argument flattening, the return area, `cabi_realloc` and post-return
+   are the Component Model's canonical ABI, specified and versioned, so a
+   new host has a document to bind against and not a spike to read.
+2. Hosts with a component runtime write no ABI code: jco on Node, Deno
+   and Bun, Wasmtime `bindgen!` in `aprv-server`, wasmtime-py's typed
+   API. Hosts without one call the same core exports by hand in 35 to 66
+   lines (Endive 35, WasmKit 37, wazero 66), about what ABI v1's bridges
+   cost.
+3. Nothing about it needs the Component Model at run time: the core
+   module stays core Wasm 2.0 on `wasm32-wasip1`, and the component is
+   the same module wrapped by `wasm-tools component new` with no adapter,
+   2,442 bytes larger, for the hosts that want it.
+4. Typed exports replace operation numbers, a handle table and a byte
+   prefix for `now_ms`, three conventions each wrapper would have had to
+   get right by hand.
+
+**Evidence.** Round 12 ran the interface with `string` inputs and an
+`enum` on wazero, Endive, jco, wasmtime-py and a Rust host: PASS WITH
+CAVEATS, 5,933 of 6,179 rows identical, the 246 differences all from the
+interface (243 non-UTF-8 JWS rows that a WIT `string` cannot carry), and
+wit-bindgen's release-mode lifts found to trust the caller
+([canonical ABI][cabi]). Round 13 changed inputs to `list<u8>` and `env`
+to `u32` and ran eight hosts: PASS, 6,176 rows identical on every host
+plus the 3 intended differences (two `injected-clock` endpoint rows under
+the 0.7 `now-ms` rule, one `init` refusal of a root that is not a
+certificate), 0 traps, every misuse trapping on every host, trap
+isolation holding, and `aprv-server`'s runtime-only Wasmtime loading an
+embedded precompiled component in 14 ms to the first result, the same as
+the core module ([canonical ABI final][cabifinal]). Size +0.47% stripped;
+start-up within noise except jco's glue at +8%.
+
+**Findings carried into the plan** ([canonical ABI final][cabifinal]):
+generated bindings do not range-check the `u32` (the wrapper's
+`Environment` type keeps callers on 0 and 1; the guest traps otherwise);
+wasmtime-py 49.0.0 lowers `list<u8>` byte by byte, so Python calls the
+core exports by hand (ARCHITECTURE.md §7.2); a precompiled Wasmtime file
+records the engine's Wasm features and a mismatch is refused at load
+(§7.7); component runtimes refuse a trapped instance while hand-rolled
+hosts must discard it; a double post-return is silent on hand-rolled
+hosts, so no wrapper exposes a result pointer; Deno needs
+`--allow-env=JCO_DEBUG` for jco's glue.
 
 **The instance model.** `Verifier.create(config)` owns a small pool; each
-new instance is INITed once, so the roots are parsed once per instance;
+new instance gets `init` once, so the roots are parsed once per instance;
 one instance serves one call at a time; a trapped instance is discarded
 with everything in it; instances die with the `Verifier`; no handles,
 nothing to free. Node: one instance. `aprv-server`: a fresh instance and
-INIT per request by default. Phase 1 measures INIT; if it exceeds 10% of a
-call, the server's default flips to `--lifecycle pool`.
+`init` per request by default. Phase 1 measures `init`; if it exceeds 10%
+of a call, the server's default flips to `--lifecycle pool`.
 
-**Options rejected** (table at the end): a handle-based ABI, DER input,
-Protobuf, CBOR, FlatBuffers or WIT as the encoding.
+**Options rejected** (table at the end): ABI v1's `aprv_call` with
+operation numbers and result handles; `now_ms` as an 8-byte prefix; one
+generic `call(op, ...)` export; WIT `string` inputs and a WIT `enum`;
+WASI 0.2 as the build target; memory64; DER input; Protobuf, CBOR or
+FlatBuffers as the encoding.
 
 ---
 
@@ -529,11 +587,12 @@ Protobuf, CBOR, FlatBuffers or WIT as the encoding.
 - The wrapper reads its `Config` clock once per call and passes the value
   as `now_ms`. The core uses it for the chain instant when the receipt or
   JWS carries no usable date, and for `request_date` (the 0.7 rule).
-- The module therefore imports only `aprv.random_get`; the clock import
-  goes.
+- The module therefore imports only `random-get`; the clock import
+  goes. The guest defines the C clock symbol `wasi-none.c` calls to
+  return the call's `now-ms` ([canonical ABI][cabi]).
 - No public per-call `now`: 0.7 dropped it ([0.7 API][api07], Dropped).
-  ABI v1 carries `now_ms` per call anyway, so an override later is
-  additive.
+  The ABI carries `now-ms: u64` on every verify call anyway, so an
+  override later is additive.
 
 ---
 
@@ -690,7 +749,7 @@ from Temurin to Zulu or Corretto before Temurin 8 builds end.
   (the runtime in `ManuallyDrop`), which removes a 55 ms libunwind
   teardown.
 - **Lifecycle:** a fresh instance per request, with `--lifecycle pool` as
-  the flag R23's INIT measurement may make the default.
+  the flag R23's `init` measurement may make the default.
 - **Surface:** managed mode, the CLI (`aprv verify-receipt |
   verify-signed-data | verify-receipt-endpoint <env>`, stdin to stdout,
   exit codes 0, 3 and 70, about 12 ms per process), HTTP; binds `127.0.0.1`
@@ -737,6 +796,34 @@ classes and classifies every host.
 
 ---
 
+## R34. Standards adopted for 0.8.0
+
+**Status: accepted** (owner, 2026-09-29: "all of them").
+
+Each is a published standard with tooling that checks it, chosen so a
+consumer or auditor reads a document they already know instead of one of
+ours. None changes a verdict. Where each lands is in MIGRATION.md.
+
+| Standard | Where | What it replaces | Checked by |
+|---|---|---|---|
+| The canonical ABI over WIT (Component Model) | `aprv.wasm`'s exports (R23) | ABI v1's own export list | `wasm-tools component wit` diffed against the file |
+| JSON Schema 2020-12 | the three wire shapes of `aprv-wire`: the verify-receipt result, the verify-signed-data result, `init`'s configuration and answer; the endpoint response is Apple's format and keeps 0.7's description | prose in `0.7-api.md` alone | every corpus answer from the core, the C ABI and `aprv.wasm` validated in CI |
+| OpenAPI 3.1 | `aprv-server`'s HTTP API, referencing the schemas above; 3.1 because it takes JSON Schema 2020-12 unchanged, and every generator and linter in use supports it, PHP's included | the route list in the evidence note | Spectral (lint) and Schemathesis (property tests against the running server) in the `aprv-server` job |
+| RFC 9457 Problem Details | `aprv-server`'s non-result errors: 401, 413, 500 `WASM_TRAP`, `ABI_ERROR`, `INTERNAL_ERROR`, as `application/problem+json` with the code in a `code` member; verification results stay HTTP 200 with the module's JSON | ad hoc error bodies | the OpenAPI document and Schemathesis |
+| SLSA build provenance | every release artifact: `aprv.wasm`, the component, the server binaries, the classifier jars, the image | the "build-provenance attestation" already planned, now named by its level and format | `gh attestation verify` in the post-publish smoke |
+| CycloneDX SBOM | one per artifact, from `cargo cyclonedx` plus the components Cargo cannot see, named by version and hash: OpenSSL, wasi-sdk and wasi-libc, rustc, Wasmtime (server), Endive (Java) | the licence texts alone | the SBOM attested with the artifact; a script checks it names the pinned versions |
+| Reproducible build | `tools/reproduce-wasm.sh`: rebuild `aprv.wasm` from a tag in the pinned toolchain and compare the hash; the same for the server binaries where the platform allows | THREAT-MODEL.md §4's "paths remapped so a second build can reproduce the hash" as a claim | run once in the release job against its own artifact; documented for anyone to rerun |
+| OCI image annotations | `org.opencontainers.image.source`, `.revision`, `.version`, `.licenses`, `.description` on the Docker image | none | inspected in the image smoke |
+| cbindgen | the C ABI's header, generated from the source | a hand-maintained header | regenerated and diffed in `rust-ffi`, as today |
+| `wasi:random/random@0.2` | the module's one import, if Phase 1 confirms `get-random-bytes` can replace our `host.random-get` without a size or speed cost; a WASI 0.2 host then supplies it with no code of ours | our own `host` interface | the import list check either way |
+
+**Considered and not adopted.** JCS (RFC 8785, JSON canonicalisation):
+the 0.7 contract compares JSON by value (`cases.json`), the endpoint
+answer is Apple's bytes, and no signature is computed over our JSON, so
+canonical form buys nothing here; recorded so it is not proposed again.
+
+---
+
 ## Rejected alternatives
 
 One table for everything the plan measured or considered and rejected.
@@ -765,10 +852,18 @@ One table for everything the plan measured or considered and rejected.
 | mimalloc in `aprv-server` | No throughput gain; 11 MiB more peak RSS in the CLI and 17 MiB in the server; the first verification 18 ms instead of 6 ms; C built by a second compiler | [static musl §4][musl] | — |
 | Cosmopolitan (one binary for every OS) | Not measured; rejected by the owner | The owner's brief of 2026-09-28; no evidence note | — |
 | napi-rs (native Node addon) | Native core in the Node process (class E), per-platform npm packages; the Wasm module reaches every JS runtime at 1,343 µs per g5 and 4,819 µs per JWS | [ABI v1][abi]; [rust-core spikes][spikes] | — |
-| WIT and the Component Model as the ABI | jco adds 202,031 to 236,337 B of generated glue to do what a 100-line façade does; wazero has no Component Model | [wasm bake-off §8, §9][wasmbake]; [CMS everywhere §2][cms] | a required host runs only components |
+| ABI v1: `aprv_call(version, op, ptr, len)` with result handles and our own alloc/dealloc | Worked on every host and cost nothing; rejected by the owner on 2026-09-29 for a specified calling convention with generated bindings where a runtime has them (R23). Operation numbers, a handle table and a byte prefix are three conventions per wrapper that the canonical ABI's typed exports remove | [ABI v1][abi]; [canonical ABI][cabi]; [canonical ABI final][cabifinal] | — |
+| `now_ms` as an 8-byte little-endian prefix on the input | A private framing rule inside a byte string; the canonical ABI passes `now-ms` as a typed `u64` argument at no cost | [canonical ABI][cabi] | — |
+| One generic `call(op, args...)` export | Loses the per-function signature; a hand-rolled host would have to encode an argument list, which is what the canonical ABI's flattening already specifies | the owner's discussion of 2026-09-29; no evidence note | — |
+| WIT `string` for the inputs | A WIT `string` must be UTF-8 and the release-mode lift is unchecked, so 243 non-UTF-8 JWS rows could not cross; `list<u8>` carries any bytes and the core answers as ABI v1 did | [canonical ABI][cabi]; [canonical ABI final][cabifinal] | — |
+| A WIT `enum` for the environment | Lifted with an unchecked `transmute` in release builds; a `u32` the guest matches traps on every out-of-range value on every host | [canonical ABI][cabi]; [canonical ABI final][cabifinal] | — |
+| WASI 0.2 (`wasm32-wasip2`) as the build target | The canonical ABI is independent of the WASI version; the p1 module with the link-time C file has no WASI imports left to adapt, and the component wrapper needs no adapter. p2 would add the adapter and the `wasi:*` imports the C file exists to remove | [canonical ABI][cabi] | a host needs WASI 0.2 interfaces from the guest |
+| memory64 | A 3 MiB input and a 256 MiB limit fit 32-bit addressing with room; memory64 costs bounds checks and is unsupported on Endive | the owner's discussion of 2026-09-29; no evidence note | inputs approach 4 GiB |
+| JCS, RFC 8785 canonical JSON | No signature is computed over our JSON and the fixtures compare by value; canonical form has no consumer here (R34) | [0.7 API][api07] | our JSON is ever signed or hashed |
+| jco's WASI 0.2 glue as the JS package | 202,031 to 236,337 B of generated glue for the WASI shims; with no WASI imports left, jco's glue for the component is 63,523 B minified and costs 8 to 11 ms at start | [wasm bake-off §8, §9][wasmbake]; [canonical ABI final][cabifinal] | — |
 | Protobuf, CBOR or FlatBuffers as the ABI encoding | Not measured. The 0.7 contract is already JSON (canonical JSON, compared by value in `cases.json`); ABI v1's JSON out cost nothing measurable against the earlier bridge, and a binary codec would add a decoder to every host | [ABI v1][abi]; [0.7 API][api07] | — |
 | Executing the server from memory (`memfd_create` + `fexecve`) | Pure Java cannot do it, and security tools treat fileless execution as malware behaviour | R17 of 2026-09-25 (git history of this file); no evidence note | — |
-| A public per-call `now` | Dropped in 0.7: the `Config` clock covers the chain fallback and `request_date`. ABI v1 carries `now_ms`, so adding it later is additive | [0.7 API][api07], Dropped | a user needs it |
+| A public per-call `now` | Dropped in 0.7: the `Config` clock covers the chain fallback and `request_date`. The ABI carries `now-ms` per call, so adding it later is additive | [0.7 API][api07], Dropped | a user needs it |
 | A handle-based ABI (verifier handles across the boundary) | Handles are state a caller can double-free or share across threads; the measured ABI passed with no verifier state at all, and the instance is the verifier (R23) | [ABI v1][abi]; root THREAT-MODEL.md §5 (C ABI handles) | — |
 | DER input | Apple's endpoint and clients carry base64; ABI v1 took base64 only, and 0.7 dropped the DER overload. The cap then admits at most 2,359,296 bytes of DER | [ABI v1][abi]; [0.7 API][api07], Dropped | an overload is wanted; it is additive |
 | Fastly Compute JS and Akamai EdgeWorkers as targets | Neither can run WebAssembly | [rust-core spikes][spikes], "Findings from outside the container" | they gain WebAssembly |
@@ -781,6 +876,8 @@ One table for everything the plan measured or considered and rejected.
 | AWS-LC, LibreSSL, pure Rust as the substrate | See R21's options table | [substrate bake-off][substrate]; [follow-up][followup] | — |
 
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
+[cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
+[cabifinal]: ../evidence/2026-09-29-canonical-abi-final.md
 [api07]: ../design/0.7-api.md
 [cms]: ../evidence/2026-09-26-openssl-cms-everywhere.md
 [dotnet]: ../evidence/2026-09-26-dotnet-wasmtime.md

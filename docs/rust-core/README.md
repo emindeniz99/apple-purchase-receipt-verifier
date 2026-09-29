@@ -1,7 +1,8 @@
 # One Rust core: the migration plan
 
-Status on 2026-09-28: **accepted plan, rewritten on the Wasm-first
-basis.** 0.7.0 shipped on 2026-09-28 (tag `v0.7.0`, merged into
+Status on 2026-09-29: **accepted plan, rewritten on the Wasm-first
+basis; the export ABI fixed as the canonical ABI over WIT (R23) and the
+standards of R34 adopted.** 0.7.0 shipped on 2026-09-28 (tag `v0.7.0`, merged into
 `plan/one-rust-core`) with nine hand-written implementations of one API.
 The Rust core lands in **0.8.0 under the same API and the same
 `fixtures/cases.json`**. Every package moves in that one release (R19).
@@ -19,7 +20,8 @@ In 0.8.0:
   policy.
 - **One canonical `aprv.wasm`**, built once per release for
   `wasm32-wasip1` with wasi-sdk's libc and a link-time C file. It imports
-  exactly one function, `aprv.random_get`, and exposes ABI v1 (R23).
+  exactly one function, `random-get`, and exposes four typed operations
+  through the canonical ABI, described in one WIT file (R23).
 - **Thin wrappers in nine languages** run that one file. Each host is a
   Wasm runtime the language already has: Endive (Java 11+), native
   WebAssembly (JS), wazero (Go), wasmtime-py (Python), WasmKit (Swift),
@@ -41,19 +43,19 @@ themselves (R32).
 1. [INVENTORY.md](./INVENTORY.md): what 0.7.0 ships, where, and how big.
 2. [SURFACE.md](./SURFACE.md): the 0.7 API is the surface; the fixture
    file is the contract.
-3. [ARCHITECTURE.md](./ARCHITECTURE.md): crates, `aprv.wasm`, ABI v1,
-   the instance model, time, and one chapter per host.
+3. [ARCHITECTURE.md](./ARCHITECTURE.md): crates, `aprv.wasm`, the
+   canonical ABI, the instance model, time, and one chapter per host.
 4. [THREAT-MODEL.md](./THREAT-MODEL.md): the isolation classes A to E,
    per host, and what a guest compromise reaches.
 5. [SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md): floors and platforms per
    language in 0.8.0.
-6. [DECISIONS.md](./DECISIONS.md): R1 to R33 in their final state, and
+6. [DECISIONS.md](./DECISIONS.md): R1 to R34 in their final state, and
    one table of rejected alternatives.
 7. [MIGRATION.md](./MIGRATION.md): seven phases with gates, CI, release
    artifacts, risks and the owner's actions.
 
 The evidence behind every number is under [../evidence/](../evidence/),
-dated 2026-09-25 to 2026-09-27.
+dated 2026-09-25 to 2026-09-29.
 
 ## What the spikes settled
 
@@ -74,6 +76,14 @@ dated 2026-09-25 to 2026-09-27.
   rows plus 5,000 mutants), trapped on every misuse the 33 mandatory tests
   try, and cost nothing measurable against the earlier bridge
   ([ABI v1][abi]).
+- **The canonical ABI carries it just as well.** The same core module
+  with four typed exports from a WIT file answered 6,176 of the 6,179
+  rows byte-identically on eight hosts (wazero, Endive and WasmKit by
+  hand; jco on Node, Deno and Bun, wasmtime-py and Rust Wasmtime through
+  bindings), the other 3 being intended; every misuse trapped on every
+  host; the module grew 0.47%; `aprv-server`'s runtime-only Wasmtime
+  loaded the precompiled component in 14 ms to the first result
+  ([canonical ABI][cabi], [canonical ABI final][cabifinal]).
 
 **The hosts.** Every host below answered all 6,179 rows byte-identically
 to Node and passed the 37 ABI and facade tests (the 33 mandatory tests
@@ -92,7 +102,8 @@ plus 4 of the facade's contract):
 Every row clears the owner's guideline of about 10 verifications per
 second per core (R4). WasmKit's JWS row is the thinnest margin, 1.7 to 1.9
 times the floor. wazero ran the same corpus identically
-([CMS everywhere §2][cms]); its ABI v1 speed is measured in Phase 4.
+([CMS everywhere §2][cms]) and, through the canonical ABI, 238.5 g5 and
+77.0 JWS per second ([canonical ABI final][cabifinal]).
 
 **Java 8 without native code in the JVM.** A pure-Java client supervising
 `aprv-server` as a child passed 31 of 31 checks on Temurin 8: it survives
@@ -125,9 +136,11 @@ gain, 11 to 17 MiB more RSS), Wasmi as the Python default
 | # | Question | Decision |
 |---|---|---|
 | R22 (2026-09-28) | The principle? | Wasm first everywhere: one `aprv.wasm`; a native parser never runs inside a caller's process by default |
-| Q49 (d), R23 (2026-09-28) | Instance model? | `Verifier.create(config)` owns a small pool; each instance gets INIT once; one call at a time per instance; a trapped instance is discarded; no handles, nothing to free. Node: one instance. `aprv-server`: fresh instance per request unless Phase 1 measures INIT above 10% of a call, then `--lifecycle pool` |
-| Q51 (b), R24 (2026-09-28) | What does the clock decide, and where is it read? | Once per call in the wrapper, passed as `now_ms`; used for the chain instant when the input carries no date and for `request_date` (the 0.7 rule). The module imports only `aprv.random_get` |
-| Per-call `now` (2026-09-28) | A public per-call time argument? | Dropped, as in 0.7. ABI v1 carries `now_ms` per call anyway, so an override later is additive |
+| Export ABI, R23 (2026-09-29) | What is `aprv.wasm`'s export ABI? | The canonical ABI (the Component Model's calling convention) over one WIT file: `init`, `verify-receipt`, `verify-signed-data`, `verify-receipt-endpoint`, inputs as `list<u8>`, `env` as `u32`, `now-ms` as `u64`, outputs as `string`. Component runtimes bind it (jco, Wasmtime `bindgen!`); the others call the core exports by hand in 35 to 66 lines. Confirmed by two spike rounds on eight hosts |
+| Q49 (d), R23 (2026-09-28) | Instance model? | `Verifier.create(config)` owns a small pool; each instance gets `init` once; one call at a time per instance; a trapped instance is discarded; no handles, nothing to free. Node: one instance. `aprv-server`: fresh instance per request unless Phase 1 measures `init` above 10% of a call, then `--lifecycle pool` |
+| Q51 (b), R24 (2026-09-28) | What does the clock decide, and where is it read? | Once per call in the wrapper, passed as `now-ms`; used for the chain instant when the input carries no date and for `request_date` (the 0.7 rule). The module imports only `random-get` |
+| Per-call `now` (2026-09-28) | A public per-call time argument? | Dropped, as in 0.7. The ABI carries `now-ms` per call anyway, so an override later is additive |
+| Standards, R34 (2026-09-29) | Which published standards does 0.8.0 adopt? | JSON Schema 2020-12 for the wire shapes; OpenAPI 3.1 with Spectral and Schemathesis for `aprv-server`; RFC 9457 for its non-result errors; SLSA provenance and a CycloneDX SBOM per artifact; a reproducible-build script; OCI image annotations; cbindgen for the C header; `wasi:random/random@0.2` as the import if Phase 1 confirms it. JCS considered and not adopted |
 | Java artifacts, R25 (2026-09-28) | How many, and on which floor? | Two, both Java 8: the pure-Java BouncyCastle artifact, unchanged and maintained, and `apple-purchase-receipt-verifier-wasm` with the same package and class names; a classpath guard refuses both at once |
 | Engine / ServerSource, R25 (2026-09-28) | How does `-wasm` choose its engine? | Programmatically and explicitly, never through system properties or environment variables of ours: `Verifier.create(config)` picks by JVM version (Endive on 11+, the server on 8); `Engine.endive()`; `Engine.server(ServerSource...)` with `url`, `executable`, `maven`, `github`, `download`, in the user's order, default `[maven, github]` |
 | Q44, R26 (2026-09-28) | Server binaries on Maven Central? | Classifier jars of the static musl server for `linux-x86_64` and `linux-aarch64`; macOS and Windows binaries from GitHub Releases |
@@ -147,6 +160,8 @@ owner's brief of 2026-09-28.
 [followup]: ../evidence/2026-09-26-substrate-followup.md
 [cms]: ../evidence/2026-09-26-openssl-cms-everywhere.md
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
+[cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
+[cabifinal]: ../evidence/2026-09-29-canonical-abi-final.md
 [endive]: ../evidence/2026-09-26-endive-build-time-jvm.md
 [pywt]: ../evidence/2026-09-26-python-wasmtime.md
 [swift]: ../evidence/2026-09-26-swift-wasmkit.md

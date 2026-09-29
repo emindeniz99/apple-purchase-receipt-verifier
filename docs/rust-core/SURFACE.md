@@ -20,7 +20,7 @@ wrappers            Java (-wasm), JS, Go, Python, Swift, Ruby, .NET, PHP;
                     rust/ffi (C ABI); aprv-server
       │  own loading, pooling, idiom, the clock read; no policy, no parsing
       ▼
-aprv-abi / aprv-wire   ABI v1 exports; the 0.7 canonical JSON bytes
+aprv-abi / aprv-wire   the canonical-ABI exports (WIT); the 0.7 canonical JSON bytes
       ▼
 aprv-surface        the 0.7 model: operations, Reason, payloads, Failure, roots
       │  depends on the core only; no generator, no runtime, no wire format
@@ -32,7 +32,7 @@ aprv-core           every security decision
 - **The surface** names the 0.7 concepts once, in plain Rust, with checked
   conversions. It holds no crypto, no parsing, no policy.
 - **The wire** writes the surface's values as the JSON that 0.7 defines,
-  and reads INIT's configuration.
+  and reads `init`'s configuration.
 - **Wrappers** present the API in one language: names, idiomatic types,
   the clock read, instance pooling, trap recovery. Nothing else.
 
@@ -61,13 +61,13 @@ type of each, and 0.8.0 keeps every row.
   or device id. The environment of `verifyReceiptEndpoint` is which of
   Apple's two URLs the call imitates.
 - **No per-call time.** The `Config` clock is read once per call by the
-  wrapper and crosses the ABI as `now_ms` (ARCHITECTURE.md §6). ABI v1
-  carries `now_ms` per call, so a public override later is additive
+  wrapper and crosses the ABI as `now-ms` (ARCHITECTURE.md §6). The ABI
+  carries `now-ms` per call, so a public override later is additive
   (DECISIONS.md R24).
 - **Startup failures** stay where 0.7 puts them: an empty root set is
   refused by `Verifier.create`; bundled roots that do not parse fail
   `Config.defaults()`. A Wasm host adds two of its own at `create`: an ABI
-  mismatch, and a root INIT refuses.
+  mismatch, and a root `init` refuses.
 - **The verify methods never throw for any input.** A null or empty input
   string is `MALFORMED`; a null `Config` or `Environment` is the
   language's programmer error. A trap or a server failure is
@@ -124,10 +124,10 @@ Apple's endpoint refuses it ([aprv-server §1][server]).
 - A case's `config.trustedRoots` is either the defaults or registered
   trust-anchor fixtures; its `config.now`, when present, is the instant
   the `Config` clock answers. A Wasm host expresses both through the
-  public API: the roots go into `Config` and so into INIT, and the clock
-  becomes `now_ms`. The spike's test-only operations (op + 256, anchors and
-  a pinned clock in the envelope) are therefore not part of ABI v1
-  ([ABI v1][abi], open questions).
+  public API: the roots go into `Config` and so into `init`, and the
+  clock becomes `now-ms`. The ABI v1 spike's test-only operations (op +
+  256, anchors and a pinned clock in the envelope) are therefore not part
+  of the ABI ([ABI v1][abi], open questions; [canonical ABI][cabi]).
 - A `oneOf` case lists the outcomes a port may give; `INTERNAL_ERROR` is
   never among them, and no exception or panic may escape. 23 cases carry
   `maxMillis` 2,000, measured after one warm-up call of the same case.
@@ -150,8 +150,9 @@ Apple's endpoint refuses it ([aprv-server §1][server]).
   agree (DECISIONS.md R33).
 - **The C ABI** runs them through its C++ and ctypes harnesses, and
   `aprv-server` through its HTTP routes and its CLI.
-- **ABI tests.** The 33 mandatory ABI tests of the spike, plus each
-  facade's own, run on every host ([ABI v1][abi]).
+- **ABI tests.** The ABI tests of the canonical-ABI final round, plus
+  each facade's own, run on every host ([canonical ABI final][cabifinal];
+  ARCHITECTURE.md §9).
 - **Reason parity.** Each wrapper's test lists its reason names and
   compares them with the surface's eight.
 - **The corpus** (1,179 rows plus 5,000 mutants) runs on every change
@@ -160,14 +161,14 @@ Apple's endpoint refuses it ([aprv-server §1][server]).
 
 ## 8. How the crates map onto the surface
 
-| 0.7 concept (Java spelling) | `aprv-surface` | `aprv-wire` / ABI v1 |
+| 0.7 concept (Java spelling) | `aprv-surface` | `aprv-wire` / the WIT |
 |---|---|---|
-| `Config.roots()` | `Vec<Vec<u8>>` of DER roots, empty = the three compiled-in Apple roots | INIT: `{"roots":["<base64 DER>", ...]}` |
-| `Config.clock()` | not modelled: the wrapper reads it | `now_ms`, 8 bytes little-endian, ahead of each verify op's input |
-| `verifyReceipt(base64)` | `verify_receipt(&str, now_ms)` | op 1 |
-| `verifySignedData(jws)` | `verify_signed_data(&str, now_ms)` | op 2 |
-| `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &str, now_ms)` | ops 3 and 4 |
-| `Environment` (2) | `Environment` (2) | the op number |
+| `Config.roots()` | `Vec<Vec<u8>>` of DER roots, empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER>", ...]}` |
+| `Config.clock()` | not modelled: the wrapper reads it | `now-ms: u64`, the first argument of each verify export |
+| `verifyReceipt(base64)` | `verify_receipt(&[u8], now_ms)` | `verify-receipt(now-ms, receipt-base64: list<u8>)` |
+| `verifySignedData(jws)` | `verify_signed_data(&[u8], now_ms)` | `verify-signed-data(now-ms, jws: list<u8>)` |
+| `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &[u8], now_ms)` | `verify-receipt-endpoint(env: u32, now-ms, request-json: list<u8>)` |
+| `Environment` (2) | `Environment` (2) | `env`: 0 production, 1 sandbox; anything else traps |
 | `Reason` (8) | `Reason` (8), with `token()` | `"reason":"<TOKEN>"` |
 | `Failure` (reason, message, cause) | `Failure { reason, message }` | `{"verified":false,"reason":...,"message":...}` |
 | `ReceiptPayload`, `InAppPurchase` | records of `Option<String>`, `Option<i64>`, `Option<bool>`, `Vec<u8>`, lists; unknown attributes as `(i64, Vec<Vec<u8>>)` in receipt order | 0.7's "Our JSON" |
@@ -190,8 +191,9 @@ fails when:
 
 1. the core's graph contains a binding-generator or Wasm-runtime crate
    (`wasm-bindgen*`, `js-sys`, `pyo3*`, `jni*`, `napi*`, `wasmtime*`,
-   `cbindgen`, `serde_derive`, and the generators of DECISIONS.md's
-   rejected table);
+   `wit-bindgen*`, `cbindgen`, `serde_derive`, and the generators of
+   DECISIONS.md's rejected table); `wit-bindgen` belongs to `aprv-abi`
+   alone;
 2. the surface's graph contains anything outside the core's, or
    `serde`/`serde_json`;
 3. a boundary crate (`aprv-abi`, `rust/ffi`) reaches the core except
@@ -220,4 +222,6 @@ a second implementation, not a wrapper (DECISIONS.md R33).
 
 [api07]: ../design/0.7-api.md
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
+[cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
+[cabifinal]: ../evidence/2026-09-29-canonical-abi-final.md
 [server]: ../evidence/2026-09-26-aprv-server.md
