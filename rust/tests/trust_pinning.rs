@@ -269,8 +269,9 @@ fn no_source_file_names_a_system_trust_store_or_a_network_client() {
 fn the_openssl_adapter_never_loads_a_trust_path_a_configuration_or_a_socket() {
     // What would let OpenSSL trust or read anything the caller did not
     // hand over: the default certificate paths, a lookup method or file
-    // loader on a store, the configuration file, a network BIO.
-    const FORBIDDEN: [&str; 16] = [
+    // loader on a store, the configuration file, a provider or engine
+    // load, a network BIO.
+    const FORBIDDEN: [&str; 19] = [
         "set_default_paths",
         "X509_STORE_load",
         "load_locations",
@@ -280,6 +281,9 @@ fn the_openssl_adapter_never_loads_a_trust_path_a_configuration_or_a_socket() {
         "CONF_modules",
         "INIT_LOAD_CONFIG",
         "OPENSSL_config",
+        "OSSL_LIB_CTX_load_config",
+        "OSSL_PROVIDER",
+        "ENGINE_",
         "SSL_CERT",
         "BIO_new_connect",
         "BIO_s_connect",

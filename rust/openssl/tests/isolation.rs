@@ -242,12 +242,12 @@ fn a_planted_trust_store_configuration_and_module_path_are_ignored() {
     );
     let log = std::fs::read_to_string(&log_path).unwrap();
     let _ = std::fs::remove_file(&log_path);
+    let openssldir = openssldir();
     eprintln!(
-        "traced {} file and network system calls of the isolated child",
+        "traced {} file and network system calls of the isolated child; OPENSSLDIR {openssldir}",
         log.lines().count()
     );
     let planted_dir = planted.dir.to_string_lossy().into_owned();
-    let openssldir = openssldir();
     for (what, path) in [
         ("a planted path", &planted_dir),
         ("OPENSSLDIR", &openssldir),
