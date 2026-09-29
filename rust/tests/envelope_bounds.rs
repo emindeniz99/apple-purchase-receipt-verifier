@@ -361,12 +361,10 @@ fn econtent_rechunked_into_six_constructed_levels_verifies() {
         let (result, _) = verify(&rechunked(levels, tag::OCTET_STRING));
         assert!(result.is_ok(), "{levels} levels: {result:?}");
     }
-    let (result, _) = verify(&rechunked(7, tag::OCTET_STRING));
-    let failure = result.unwrap_err();
-    assert_eq!(failure.reason(), Reason::Malformed);
-    assert!(
-        !failure.to_string().contains("not an OCTET STRING"),
-        "{failure}"
+    // The walk refuses the seventh level before any decode, and names it.
+    assert_refused_early(
+        &rechunked(7, tag::OCTET_STRING),
+        "a constructed string nests deeper than OpenSSL decodes",
     );
     // A chunk of another type is still named as such.
     let (result, _) = verify(&rechunked(6, tag::UTF8_STRING));
@@ -503,4 +501,56 @@ fn a_tiny_entry_flood_costs_what_junk_of_its_size_costs() {
              decode is building the set before the node budget refuses it"
         );
     }
+}
+
+#[test]
+fn what_openssl_refuses_on_its_own_is_refused_in_the_envelope_at_every_depth() {
+    // Round-2 review F3: an unsigned attribute value OpenSSL's ANY decoder
+    // refuses (a short UTCTime or GeneralizedTime, a constructed INTEGER,
+    // NULL or OID, a string of seven constructed levels) was MALFORMED
+    // directly and verified inside one SEQUENCE, which OpenSSL keeps whole.
+    // The walk now applies OpenSSL's rules at every depth. Six levels, and
+    // a constructed time of 13 joined octets, verify at both.
+    let seven_levels = rechunked_value(7);
+    let refused = [
+        (vec![0x17, 0x01, 0x30], "not a CMS ContentInfo"),
+        (vec![0x18, 0x02, 0x32, 0x30], "not a CMS ContentInfo"),
+        (vec![0x22, 0x03, 0x02, 0x01, 0x05], "not a CMS ContentInfo"),
+        (vec![0x25, 0x02, 0x05, 0x00], "not a CMS ContentInfo"),
+        (vec![0x26, 0x03, 0x06, 0x01, 0x2a], "not a CMS ContentInfo"),
+        (vec![0x10, 0x00], "not a CMS ContentInfo"),
+        (
+            seven_levels,
+            "a constructed string nests deeper than OpenSSL decodes",
+        ),
+    ];
+    for (value, message) in &refused {
+        for placed in [value.clone(), der_seq(std::slice::from_ref(value))] {
+            let mut envelope = Envelope::shared();
+            envelope.unsigned_attributes = Some(unsigned_attribute(&placed));
+            assert_refused_early(&envelope.build(), message);
+        }
+    }
+    let time = [
+        &[0x37, 0x11][..],
+        &der(tag::OCTET_STRING, b"240101"),
+        &der(tag::OCTET_STRING, b"000000Z"),
+    ]
+    .concat();
+    for value in [rechunked_value(6), time] {
+        for placed in [value.clone(), der_seq(std::slice::from_ref(&value))] {
+            let mut envelope = Envelope::shared();
+            envelope.unsigned_attributes = Some(unsigned_attribute(&placed));
+            assert_verifies(&envelope.build());
+        }
+    }
+}
+
+/// An `OCTET STRING` of `levels` constructed levels around one octet.
+fn rechunked_value(levels: usize) -> Vec<u8> {
+    let mut value = der(tag::OCTET_STRING, b"x");
+    for _ in 0..levels {
+        value = der(tag::OCTET_STRING_CONSTRUCTED, &value);
+    }
+    value
 }

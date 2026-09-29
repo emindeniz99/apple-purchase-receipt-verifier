@@ -55,9 +55,9 @@ pub enum CmsError {
     /// chunk, at some depth, that is not an `OCTET STRING`. X.690 section
     /// 8.7.3 allows no other; OpenSSL joins any universal chunk.
     ForeignContentChunk,
-    /// The encapsulated content's constructed `OCTET STRING` nests more
-    /// levels than OpenSSL decodes (six).
-    ContentChunksTooDeep,
+    /// A constructed string, the encapsulated content's or one kept whole
+    /// inside another value, nests more levels than OpenSSL decodes (six).
+    StringTooDeep,
 }
 
 impl core::fmt::Display for CmsError {
@@ -76,9 +76,9 @@ impl core::fmt::Display for CmsError {
             CmsError::ForeignContentChunk => {
                 f.write_str("encapsulated payload has a chunk that is not an OCTET STRING")
             }
-            CmsError::ContentChunksTooDeep => f.write_str(
-                "encapsulated payload's OCTET STRING chunks nest deeper than OpenSSL decodes",
-            ),
+            CmsError::StringTooDeep => {
+                f.write_str("a constructed string nests deeper than OpenSSL decodes")
+            }
         }
     }
 }
@@ -189,6 +189,7 @@ impl SignedData {
                 WalkError::Trailing => CmsError::Trailing,
                 WalkError::TooDeep => CmsError::TooDeep,
                 WalkError::TooManyNodes => CmsError::TooManyNodes,
+                WalkError::StringTooDeep => CmsError::StringTooDeep,
             },
         )?;
         let envelope = Envelope::decode(der).map_err(|shallow| match shallow {
@@ -220,7 +221,7 @@ impl SignedData {
             return Err(CmsError::NoSignerInfo);
         }
         envelope.content_chunks().map_err(|err| match err {
-            ChunkError::TooDeep => CmsError::ContentChunksTooDeep,
+            ChunkError::TooDeep => CmsError::StringTooDeep,
             ChunkError::Foreign | ChunkError::Malformed => CmsError::ForeignContentChunk,
         })?;
         Ok(parsed)
