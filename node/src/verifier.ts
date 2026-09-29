@@ -57,12 +57,31 @@ function readClock(clock: () => number): bigint {
 }
 
 /**
- * The input as UTF-8 bytes. A value that is not a string is input, not a
- * programming error, and reaches the module as no bytes, which it answers
- * as `MALFORMED`. The caller's value itself never reaches the bindings.
+ * The most bytes of an input the facade copies into the module: one over
+ * the largest cap the module applies (3,145,728 bytes, the receipt and the
+ * request body), so the module still sees an oversized input as oversized
+ * and answers `TOO_LARGE` itself, while linear memory never has to hold
+ * more than this. The JWS cap is lower, so the same holds for it.
  */
-function inputBytes(value: unknown): Uint8Array {
-  return utf8.encode(typeof value === 'string' ? value : '');
+export const MAX_INPUT_BYTES = 3_145_729;
+
+/**
+ * The input as UTF-8 bytes, at most {@link MAX_INPUT_BYTES} of them. A
+ * value that is not a string is input, not a programming error, and
+ * reaches the module as no bytes, which it answers as `MALFORMED`. The
+ * caller's value itself never reaches the bindings.
+ */
+export function inputBytes(value: unknown): Uint8Array {
+  const text = typeof value === 'string' ? value : '';
+  if (text.length * 3 <= MAX_INPUT_BYTES) {
+    return utf8.encode(text);
+  }
+  // Encode only a prefix. encodeInto stops before a code point that does
+  // not fit, so with 3 bytes of room past the limit an input that does
+  // not fit has written at least MAX_INPUT_BYTES bytes.
+  const buffer = new Uint8Array(MAX_INPUT_BYTES + 3);
+  const { written } = utf8.encodeInto(text, buffer);
+  return buffer.subarray(0, Math.min(written, MAX_INPUT_BYTES));
 }
 
 function environmentCode(environment: Environment): number {
