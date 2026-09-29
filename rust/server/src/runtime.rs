@@ -265,7 +265,7 @@ fn load_file(engine: &Engine, path: &str) -> Result<(Component, Source), String>
         ));
     }
     let component = Component::new(engine, &bytes).map_err(|e| format!("{path}: {e:#}"))?;
-    let sha = sha256_hex(&bytes);
+    let sha = crate::manifest::sha256_hex(&bytes);
     Ok((
         component,
         Source {
