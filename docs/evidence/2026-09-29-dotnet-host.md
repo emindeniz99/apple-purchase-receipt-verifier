@@ -26,6 +26,15 @@ Labels: TESTED (ran here), EXPECTED (inferred, not run).
 
 ## Result
 
+G1d (the final module after review round 3, rust-core b0a7f3d, 2,764,700
+bytes, SHA-256 `4e9d2d85...c9dd`, 384 cases): 384 of 384 conformance cases and
+599 of 599 tests pass on .NET 8 and 10, the Floor project passes 9 of 9, and
+the five corpora give this module's rows byte for byte, 6,179 of 6,179, 0
+traps. No wrapper change. One loaded speed run (load 14): compile 6.6 s, first
+instance 53 ms, later instances 2.9 ms at the median, 308 receipts per second
+on one thread (`results/speed-run5.txt`). The G1c paragraph below is the one
+before it.
+
 G1c (the final module, rust-core b863252, 2,760,476 bytes, SHA-256
 `a35b9fce...40a1`, 377 cases): 377 of 377 conformance cases and 594 of 594
 tests pass on .NET 8 and 10, the Floor project passes 9 of 9, and the five
