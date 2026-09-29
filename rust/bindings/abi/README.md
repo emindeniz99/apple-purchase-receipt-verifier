@@ -38,6 +38,21 @@ reach the module (the source tree, the cargo home, the target directory)
 is remapped, so a build in another directory gives the same bytes
 (`tools/reproduce-wasm.sh`).
 
+The module ships without its `name` section (review round 2, F11). On the
+2026-09-29 build that section was 256,982 of 3,013,162 bytes (8.5%; 71 KB
+of 990 KB gzipped); the stripped module passed `tools/check-wasm.sh`, all
+360 shared cases and the ABI tests of `tools/wasm-trap-host.mjs`, and
+answered 811 hostile-corpus calls byte for byte as the named one. What
+the section bought was trap stack frames with Rust names: without it a
+frame reads `wasm-function[33]:0xa956` instead of
+`aprv_abi.wasm.aprv:verifier/verify@1.0.0#verify-receipt`. Stripping moves
+no code, so the index and offset are the same in the named module cargo
+leaves at `$CARGO_TARGET_DIR/wasm32-wasip1/wasm/aprv_abi.wasm`, and
+`wasm-tools print` of it names the function; the build is reproducible, so
+rebuilding a release's commit gives that module back. `producers` and
+`target_features` (322 bytes) stay, and `component-type` must: `wasm-tools
+component new` reads the interface from it.
+
 No build output is committed on a lane branch: packages read the module
 from their own ignored path, or from `APRV_WASM` (`APRV_COMPONENT` for the
 component).

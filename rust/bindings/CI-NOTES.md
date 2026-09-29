@@ -24,6 +24,10 @@ contracts below; each item says whether that job changes.
    `aprv.wasm`, component, `aprv.wit` or `SHA256SUMS` in the output
    directory (F6), so a later step that copies the module without reading
    the exit status finds nothing to copy.
+   The module is now built without its `name` section (F11: 8.5% smaller;
+   the measurement is in `rust/bindings/abi/README.md`), so its hash
+   differs from every build before this change; any recorded hash moves
+   with it.
 2. **`aprv.wit` in the output is the committed file**, written only after
    the component's interface, read back with `wasm-tools component wit`,
    matched it. That is what `tools/check-wasm.sh` check 5 compares byte for

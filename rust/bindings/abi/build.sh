@@ -6,7 +6,8 @@
 #
 # Writes into <out-dir>:
 #
-#   aprv.wasm             the core module (wasm32-wasip1, canonical ABI)
+#   aprv.wasm             the core module (wasm32-wasip1, canonical ABI),
+#                         its `name` section stripped
 #   aprv.component.wasm   the same module wrapped by `wasm-tools component
 #                         new`, with no adapter
 #   aprv.wit              the interface: rust/bindings/abi/wit/aprv.wit,
@@ -127,7 +128,13 @@ env -u RUSTFLAGS -u CARGO_BUILD_RUSTFLAGS \
 # check below reaches the output directory.
 MOD="$WORK/aprv.wasm"
 COMP="$WORK/aprv.component.wasm"
-cp "$TARGET_DIR/wasm32-wasip1/wasm/aprv_abi.wasm" "$MOD"
+# The `name` section goes: it is 8.5% of the module (257 KB of 3.0 MB,
+# 71 KB gzipped) and no host reads it. Stripping moves no code, so a
+# trap's `wasm-function[N]:0x...` is the same function and offset in the
+# named module cargo leaves at $TARGET_DIR/wasm32-wasip1/wasm/aprv_abi.wasm,
+# which `wasm-tools print` names; the build is reproducible, so rebuilding
+# the release's commit gives that module back (rust/bindings/abi/README.md).
+wasm-tools strip --delete '^name$' "$TARGET_DIR/wasm32-wasip1/wasm/aprv_abi.wasm" -o "$MOD"
 wasm-tools validate "$MOD"
 wasm-tools component new "$MOD" -o "$COMP"
 wasm-tools validate --features component-model "$COMP"
