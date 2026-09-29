@@ -73,8 +73,9 @@ module ApplePurchaseReceiptVerifier
 
     private
 
-    PEM = /-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----/m
-    private_constant :PEM
+    PEM_BEGIN = "-----BEGIN CERTIFICATE-----"
+    PEM_END = "-----END CERTIFICATE-----"
+    private_constant :PEM_BEGIN, :PEM_END
 
     def none
       empty = [] #: Array[String]
@@ -97,11 +98,21 @@ module ApplePurchaseReceiptVerifier
               "roots entries must be certificate objects (#to_der) or DER/PEM Strings, got #{root.class}"
       end
 
-      match = PEM.match(root)
-      return root.b.freeze if match.nil? && !root.include?("-----BEGIN")
-      raise ArgumentError, "a PEM roots entry is not a CERTIFICATE block" if match.nil?
+      return root.b.freeze unless root.include?("-----BEGIN")
 
-      match[1].to_s.gsub(/\s+/, "").unpack1("m").to_s.freeze
+      pem_body(root).delete(" \t\r\n\f\v").unpack1("m").to_s.freeze
+    end
+
+    # The text between the first BEGIN CERTIFICATE marker and the first END
+    # marker after it (at least one character between them). Two index
+    # scans, so the cost is linear in the string however the markers repeat.
+    def pem_body(root)
+      start = root.byteindex(PEM_BEGIN)
+      stop = start && root.byteindex(PEM_END, start + PEM_BEGIN.bytesize + 1)
+      raise ArgumentError, "a PEM roots entry is not a CERTIFICATE block" if start.nil? || stop.nil?
+
+      first = start + PEM_BEGIN.bytesize
+      root.byteslice(first, stop - first).to_s.b
     end
 
     # Builds a {Config} from parts set one at a time. Every 0.7 port offers

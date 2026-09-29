@@ -41,6 +41,27 @@ def cache_entries(directory: Path) -> int:
     return sum(1 for _ in modules.rglob("*") if _.is_file()) if modules.is_dir() else 0
 
 
+def module_entries(directory: Path) -> "dict[str, tuple[int, int]]":
+    """The compiled modules the cache holds: name to (size, mtime in ns).
+
+    Wasmtime keeps bookkeeping beside each module, written by a background
+    thread after the process's own work: ``<name>.stats``, and while it
+    updates that a ``<name>.tmp-atomic-write-stats`` file that a process can
+    exit in the middle of. Neither says whether anything was compiled, and
+    counting them made the test depend on that race. A module entry is a
+    file whose name is the key alone (no dot), stored by an atomic
+    rename: a process that compiled and stored again would replace the file
+    (a new mtime) or add another key.
+    """
+    found: dict[str, tuple[int, int]] = {}
+    modules = directory / "modules"
+    for path in modules.rglob("*") if modules.is_dir() else ():
+        if path.is_file() and "." not in path.name:
+            info = path.stat()
+            found[str(path.relative_to(modules))] = (info.st_size, info.st_mtime_ns)
+    return found
+
+
 def run_child(env: "dict[str, str]", prelude: str = "") -> "dict[str, object]":
     receipt = PACKAGE_ROOT.parent / "fixtures" / "public-receipts" / "receipt-sandbox-g5.b64"
     code = CHILD.format(prelude=textwrap.dedent(prelude), receipt=str(receipt))
@@ -179,15 +200,31 @@ class EndToEndTest(Sandbox):
         env = {_cache.ENV_VAR: str(directory)}
         cold = run_child(env)
         self.assertTrue(cold["verified"])
-        entries = cache_entries(directory)
-        self.assertGreater(entries, 0, "the first process left nothing in the cache")
+        # run_child returns after the process exits, and the module is stored
+        # by an atomic rename before the compile returns, so the entry is in
+        # place before the second process starts.
+        stored = module_entries(directory)
+        self.assertEqual(1, len(stored), f"the first process should store the one module: {stored}")
         warm = run_child(env)
         self.assertTrue(warm["verified"])
-        self.assertEqual(entries, cache_entries(directory), "the second process compiled again")
+        self.assertEqual(stored, module_entries(directory), "the second process compiled again")
         print(
             f"\ncold start {cold['seconds']:.3f} s, warm start {warm['seconds']:.3f} s",
             file=sys.stderr,
         )
+
+    @unittest.skipUnless(POSIX, "a symbolic link needs no privilege here")
+    def test_the_same_directory_by_another_path_serves_the_entry(self) -> None:
+        """The key holds no path: a directory reached through a symbolic link
+        (macOS's /var against /private/var) finds what the other path stored."""
+        directory = self.directory()
+        alias = directory.parent / "alias"
+        alias.symlink_to(directory, target_is_directory=True)
+        self.assertTrue(run_child({_cache.ENV_VAR: str(directory)})["verified"])
+        stored = module_entries(directory)
+        self.assertEqual(1, len(stored), stored)
+        self.assertTrue(run_child({_cache.ENV_VAR: str(alias)})["verified"])
+        self.assertEqual(stored, module_entries(directory), "the other path compiled again")
 
     def test_a_read_only_directory_still_verifies_and_holds_nothing(self) -> None:
         directory = self.directory()

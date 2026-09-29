@@ -565,6 +565,24 @@ work.
   the server binary's own dependencies (not in the classifier jars),
   the first real `java-wasm-s390x` run, the WasmKit and Wasmi upstream
   reports, the `macos-15-intel` label check before tagging.
+- PR #187 checks (2026-09-29 17:40Z): the review bots' findings fixed
+  and merged with real merge commits. CodeQL's one high (a Ruby PEM
+  regex) replaced by a linear scan (fac0f38); the evidence spikes taken
+  out of CodeQL's scope and the release workflows' checkouts pinned to
+  repository-controlled refs (366425f); Tomcat 10.1.58 pinned in the
+  Spring Boot spike poms (cb3a8b8, Socket); the two .NET evidence
+  consumers and the 2026-09-26 spike's facade restore with no properties
+  set, so GitHub's dependency submission gets through every project
+  (43b46a2, 23f0fc1); Python's compile-cache test judges by the module
+  entries, not by the stats files Wasmtime writes beside them from a
+  background thread, which failed the macOS 3.13 leg once (47473df);
+  the Node dev tree overrides weval to 0.5.0 to drop `decompress`
+  (Socket's critical CVE; jco is dev-only, nothing of it ships, and
+  `jco transpile` never loads it), after which Socket reports all alerts
+  resolved (0998f3f). Still open: the .NET macOS arm64 growth test (the
+  one justified red; the next macOS run's diagnostics decide) and the
+  `github-advanced-security` check, which is Copilot Autofix failing on
+  its own side, not a finding.
 - Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
   merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
   SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16

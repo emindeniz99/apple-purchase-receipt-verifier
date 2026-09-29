@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
@@ -167,8 +170,13 @@ public class PlatformTests
         string receipt = "x";
 
         // Warm up: first-call statics and JIT are a one-off cost, not
-        // per-call retention. The allocation per call sizes the control.
-        for (int i = 0; i < 50; i++)
+        // per-call retention. Tiered compilation counts calls only after 100 ms
+        // without new tier-0 code and then recompiles on a background thread, so
+        // a warm-up of a few calls (about 2 ms on an arm64 Mac) leaves that
+        // inside the measured rounds. Run past it: at least 500 calls and 400 ms.
+        // The allocation per call, measured next, sizes the control.
+        System.Diagnostics.Stopwatch warmUp = System.Diagnostics.Stopwatch.StartNew();
+        for (int calls = 0; calls < 500 || warmUp.ElapsedMilliseconds < 400; calls++)
         {
             Assert.True(verifier.VerifyReceipt(receipt).Verified);
         }
@@ -262,31 +270,46 @@ public class PlatformTests
     }
 
     /// <summary>
-    /// Where a growth is, for the failure message: the native call alone, the
-    /// reading of a fixed answer alone, how many result objects outlive their
-    /// collection, whether the pool hands the same instance back and what its
-    /// store keeps.
+    /// Where a growth is, for the failure message: the whole path again (warm),
+    /// then its pieces one at a time, each as marginal bytes per call: the
+    /// clock, the UTF-8 encoding, taking an instance and handing it back, the
+    /// lowering alone (<c>cabi_realloc</c> and the copy into linear memory), the
+    /// export called with an input lowered once, that plus the post-return, the
+    /// whole native call, and the reading of a fixed answer. Then how many result
+    /// objects outlive their collection, whether the pool hands the same instance
+    /// back and what its store keeps.
     /// </summary>
     private static string Breakdown(VerifierImpl verifier, string receipt)
     {
-        AprvInstance instance = verifier.Pool.Rent();
-        string answerText;
-        long linearMemory;
-        string caches;
-        byte[] input = System.Text.Encoding.UTF8.GetBytes(receipt);
-        string answer = instance.VerifyReceipt(1_700_000_000_000L, input);
-        Measured nativeOnly = Marginal(() => instance.VerifyReceipt(1_700_000_000_000L, input));
-        Measured readOnly = Marginal(() => ModuleAnswers.ReadReceipt(answer));
+        const long now = 1_700_000_000_000L;
+        UTF8Encoding utf8 = new(false, false);
+        Config config = Config.Defaults();
+        byte[] input = utf8.GetBytes(receipt);
 
-        object? store = typeof(AprvInstance).GetField("_store", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(instance);
-        caches = string.Join(
+        Measured warm = Marginal(() => verifier.VerifyReceipt(receipt));
+        Measured clock = Marginal(() => CallClock.Read(config.Clock));
+        Measured encode = Marginal(() => utf8.GetBytes(receipt));
+        Measured rentReturn = Marginal(() => verifier.Pool.Return(verifier.Pool.Rent()));
+
+        AprvInstance instance = verifier.Pool.Rent();
+        string answer = instance.VerifyReceipt(now, input);
+        Measured lower = Marginal(() => instance.Lower("verify-receipt", now, input));
+
+        Wasmtime.ValueBox[] core = instance.Lower("verify-receipt", now, input);
+        Wasmtime.Function export = instance.Raw.GetFunction(AprvRuntime.Iface + "verify-receipt")!;
+        Wasmtime.Function post = instance.Raw.GetFunction("cabi_post_" + AprvRuntime.Iface + "verify-receipt")!;
+        Measured invoke = Marginal(() => export.Invoke(core));
+        Measured invokeAndPost = Marginal(() => post.Invoke((int)export.Invoke(core)!));
+        Measured nativeCall = Marginal(() => instance.VerifyReceipt(now, input));
+        Measured read = Marginal(() => ModuleAnswers.ReadReceipt(answer));
+
+        object? store = typeof(AprvInstance).GetField("_store", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(instance);
+        string caches = string.Join(
             ", ",
             new[] { "_externFunctionCache", "_externMemoryCache", "_externGlobalCache" }.Select(name =>
-                name + "=" + ((store?.GetType().GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(store)
-                    as System.Collections.ICollection)?.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?")));
-
-        linearMemory = instance.MemoryBytes;
-        answerText = $"native call alone {nativeOnly.BytesPerCall:F1} B, reading the answer alone {readOnly.BytesPerCall:F1} B";
+                name + "=" + ((store?.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(store)
+                    as System.Collections.ICollection)?.Count.ToString(CultureInfo.InvariantCulture) ?? "?")));
+        long linearMemory = instance.MemoryBytes;
 
         verifier.Pool.Return(instance);
         (int results, int alive) = ResultsAfterCollection(verifier, receipt);
@@ -294,8 +317,12 @@ public class PlatformTests
         bool same = ReferenceEquals(instance, again);
         verifier.Pool.Return(again);
 
-        return $"{answerText}, {alive} of {results} dropped results still alive after two collections, "
-            + $"the pool hands back the same instance: {same}, linear memory {linearMemory} B, store caches {caches}, "
+        return $"the whole path again {warm.BytesPerCall:F1} B; clock {clock.BytesPerCall:F1} B, UTF-8 encoding {encode.BytesPerCall:F1} B, "
+            + $"take and return an instance {rentReturn.BytesPerCall:F1} B, lowering alone {lower.BytesPerCall:F1} B, "
+            + $"export with a pre-lowered input {invoke.BytesPerCall:F1} B, that and the post-return {invokeAndPost.BytesPerCall:F1} B, "
+            + $"the whole native call {nativeCall.BytesPerCall:F1} B, reading the answer alone {read.BytesPerCall:F1} B; "
+            + $"{alive} of {results} dropped results still alive after two collections, the pool hands back the same instance: {same}, "
+            + $"linear memory {linearMemory} B (the stub module's, four pages, on every platform), store caches {caches}, "
             + $"process working set {Environment.WorkingSet} B";
     }
 
