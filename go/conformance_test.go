@@ -2,7 +2,9 @@ package applereceipt_test
 
 // Runs every vector in fixtures/cases.json, the normative
 // cross-language conformance set for the 0.7 API, through the three
-// public Verifier methods and the two base64 decoders.
+// public Verifier methods. The two base64 decoders have no public entry
+// point, so the decodeBase64 groups run through the methods that use them
+// (see runDecodeBase64).
 //
 // This adapter knows nothing about any individual case. It loads the
 // file, resolves fixture ids to bytes and checks their recorded digest,
@@ -21,6 +23,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,9 +34,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
-	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/chain"
 )
 
 const casesFileName = "cases.json"
@@ -478,9 +481,26 @@ func parseJSONAny(t testing.TB, id, text string) any {
 
 // --- decodeBase64 --------------------------------------------------------
 
-// runDecodeBase64 runs every text of the group through every decoder it
-// names and reports every text that got the wrong answer, by decoder,
-// index and escaped text, rather than stopping at the first.
+// runDecodeBase64 runs every text of the group through the Verifier method
+// that uses each decoder it names, and reports every text that landed on
+// the wrong side of the rule, by decoder, index and escaped text, rather
+// than stopping at the first.
+//
+// 0.7 exposes no public decoder, and this port has none of its own, so the
+// only observable is which side of the base64 rule a text falls on: a text
+// the group expects to decode must not be refused as base64 (whatever the
+// bytes it decodes to are, they are not a receipt or a certificate, and
+// fail later for that), and a text the group expects to be refused must be
+// refused as base64. The refusal is told apart by its reason and by the
+// word "base64" in the core's message ("receipt is not valid base64",
+// "x5c entry is not valid base64"), or "receipt is empty" for an empty
+// receipt. What the bytes decode to (bytesHex) is
+// not observable here, and is not checked.
+//
+//   - receipt-data goes through VerifyReceipt, which refuses as MALFORMED;
+//   - x5c goes through VerifySignedData, as all three entries of the x5c
+//     header member of an otherwise empty JWS, which refuses as
+//     INVALID_CERTIFICATE.
 func runDecodeBase64(t testing.TB, c conformanceCase) {
 	if len(c.Input.Texts) == 0 {
 		t.Fatalf("harness error: decodeBase64 needs input.texts")
@@ -489,47 +509,67 @@ func runDecodeBase64(t testing.TB, c conformanceCase) {
 		t.Fatalf("harness error: decodeBase64 needs decoders")
 	}
 	ok := c.Expected.Status == "ok"
-	var want string
 	if ok {
 		if c.Expected.BytesHex == "" {
 			t.Fatalf("harness error: an ok group with no bytesHex")
 		}
-		want = c.Expected.BytesHex
-	} else if c.Expected.Reason == "MALFORMED" {
-		want = ""
-	} else {
+	} else if c.Expected.Reason != "MALFORMED" {
 		t.Fatalf("harness error: an error group states a reason other than MALFORMED")
 	}
+	verifier := buildVerifier(t, applereceipt.DefaultConfig())
 	for _, decoderName := range c.Decoders {
-		var decode func(string) ([]byte, error)
-		var refusal applereceipt.Reason
-		switch decoderName {
-		case "receipt-data":
-			decode, refusal = applereceipt.DecodeReceiptDataForTest, applereceipt.ReasonMalformed
-		case "x5c":
-			decode, refusal = applereceipt.DecodeX5CEntryForTest, applereceipt.ReasonInvalidCertificate
-		default:
-			t.Fatalf("harness error: no decoder %q", decoderName)
-		}
 		for index, text := range c.Input.Texts {
 			at := fmt.Sprintf("%s %s texts[%d] %q", c.ID, decoderName, index, text)
-			bytes, err := decode(text)
-			switch {
-			case err == nil && !ok:
-				t.Errorf("%s was accepted (decoded to %x)", at, bytes)
-			case err == nil && hex.EncodeToString(bytes) != want:
-				t.Errorf("%s decoded to %x, want %s", at, bytes, want)
-			case err != nil && ok:
-				t.Errorf("%s was refused (%v), want ok", at, err)
+			var err error
+			var refusal applereceipt.Reason
+			switch decoderName {
+			case "receipt-data":
+				_, err = verifier.VerifyReceipt(text)
+				refusal = applereceipt.ReasonMalformed
+			case "x5c":
+				_, err = verifier.VerifySignedData(x5cProbe(t, text))
+				refusal = applereceipt.ReasonInvalidCertificate
 			default:
-				if err != nil {
-					if reason, _ := applereceipt.ReasonOf(err); reason != refusal {
-						t.Errorf("%s: reason %s, want %s", at, reason, refusal)
-					}
-				}
+				t.Fatalf("harness error: no decoder %q", decoderName)
+			}
+			refused := refusedAsBase64(err, refusal)
+			switch {
+			case ok && refused:
+				t.Errorf("%s was refused as base64 (%v), want it decoded", at, err)
+			case !ok && !refused:
+				t.Errorf("%s was not refused as base64 (%v), want it refused", at, err)
 			}
 		}
 	}
+}
+
+// refusedAsBase64 reports whether err is the base64 rule refusing a text:
+// a *Failure with the decoder's reason and a message that names base64.
+func refusedAsBase64(err error, refusal applereceipt.Reason) bool {
+	var failure *applereceipt.Failure
+	if !errors.As(err, &failure) || failure.Reason != refusal {
+		return false
+	}
+	message := strings.ToLower(failure.Message)
+	// An empty receipt-data has a message of its own, and is still refused.
+	return strings.Contains(message, "base64") || message == "receipt is empty"
+}
+
+// x5cProbe is a compact JWS whose header carries text as each of its three
+// x5c entries (the core refuses any other count before it decodes one): the
+// smallest input that sends text to the x5c decoder. Nothing about it is
+// signed; it never gets past the certificates.
+func x5cProbe(t testing.TB, text string) string {
+	t.Helper()
+	if !utf8.ValidString(text) {
+		t.Fatalf("harness error: %q is not UTF-8, so no JWS header can carry it", text)
+	}
+	entry, err := json.Marshal(text)
+	if err != nil {
+		t.Fatalf("harness error: %v", err)
+	}
+	segment := base64.RawURLEncoding.EncodeToString
+	return segment([]byte(`{"alg":"ES256","x5c":[`+string(entry)+`,`+string(entry)+`,`+string(entry)+`]}`)) + "." + segment([]byte(`{}`)) + "." + segment(make([]byte, 64))
 }
 
 // --- one case --------------------------------------------------------------
@@ -624,23 +664,9 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 		} else {
 			_, _ = call() // warm-up
 			start := time.Now()
-			used := chain.KeysUsedDuring(func() {
-				jsonText, callErr = call()
-			})
-			elapsed := time.Since(start)
-			budget := time.Duration(*c.MaxMillis) * time.Millisecond
-			if elapsed > budget {
+			jsonText, callErr = call()
+			if elapsed, budget := time.Since(start), time.Duration(*c.MaxMillis)*time.Millisecond; elapsed > budget {
 				t.Fatalf("%s: took %v, over the %dms budget", c.ID, elapsed, *c.MaxMillis)
-			}
-			// The direct form of the budget: every stranger in these
-			// cases carries a key far over the 8192-bit cap, so an SPKI
-			// that large among the keys used means a stranger's key
-			// reached a signature check. An 8192-bit RSA SPKI is about
-			// 1,050 bytes.
-			for _, spki := range used {
-				if len(spki) > 1100 {
-					t.Fatalf("%s: a %d-byte stranger key checked a signature", c.ID, len(spki))
-				}
 			}
 		}
 

@@ -1,0 +1,22 @@
+build.sh: FAIL the module must import exactly aprv:verifier/host@1.0.0 random-get; it imports: wasi:random/random@0.2.6 get-random-bytes;
+host.random-get module: 3005922 bytes, sha256 4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e
+  imports: "aprv:verifier/host@1.0.0" "random-get" 
+wasi:random module: 3005965 bytes, sha256 eb0a27b3f42a63871dbcc9a683bca4080812a70bc84ef6e3451969f99fe31e16
+  imports: "wasi:random/random@0.2.6" "get-random-bytes" 
+host.random-get component: 3008364 bytes
+wasi:random component: 3008419 bytes
+world root {
+  import wasi:random/random@0.2.6;
+
+  export aprv:verifier/verify@1.0.0;
+}
+== cases: host.random-get 1402 ms, wasi:random 1101 ms; {"host":"node v22.22.2 (trap host)","rows":153,"traps":0,"unexpected_imports":[],"instances_left":27}
+  153 rows: 153 identical, 0 differ, 0 traps
+== hostile: host.random-get 659 ms, wasi:random 617 ms; {"host":"node v22.22.2 (trap host)","rows":811,"traps":0,"unexpected_imports":[],"instances_left":3}
+  811 rows: 811 identical, 0 differ, 0 traps
+== algorithms: host.random-get 405 ms, wasi:random 348 ms; {"host":"node v22.22.2 (trap host)","rows":22,"traps":0,"unexpected_imports":[],"instances_left":22}
+  22 rows: 22 identical, 0 differ, 0 traps
+== substrate: host.random-get 1075 ms, wasi:random 1200 ms; {"host":"node v22.22.2 (trap host)","rows":193,"traps":0,"unexpected_imports":[],"instances_left":74}
+  193 rows: 193 identical, 0 differ, 0 traps
+== fuzz: host.random-get 7286 ms, wasi:random 7983 ms; {"host":"node v22.22.2 (trap host)","rows":5000,"traps":0,"unexpected_imports":[],"instances_left":96}
+  5000 rows: 5000 identical, 0 differ, 0 traps

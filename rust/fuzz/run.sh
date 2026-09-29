@@ -22,7 +22,7 @@ run_one() {
   local name="$1"
   local seeds
   case "$name" in
-    parse-der|parse-certificate|parse-cms|verify-receipt)
+    verify-receipt)
       seeds=("$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/certs") ;;
     verify-receipt-base64)
       seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
@@ -37,7 +37,7 @@ run_one() {
 }
 
 if [ "$target" = all ]; then
-  for name in parse-der parse-certificate parse-cms verify-receipt verify-receipt-base64 verify-transaction endpoint-json; do
+  for name in verify-receipt verify-receipt-base64 verify-transaction endpoint-json; do
     run_one "$name"
   done
 else

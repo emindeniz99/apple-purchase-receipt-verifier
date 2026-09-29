@@ -11,8 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.cert.TrustAnchor;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -26,14 +29,29 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.BERSequence;
 import org.bouncycastle.asn1.DERBMPString;
 import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DERPrintableString;
+import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.DERUniversalString;
+import org.bouncycastle.asn1.DLSet;
+import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
+import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.cert.X509v2CRLBuilder;
 import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -103,6 +121,43 @@ class ReceiptVerificationTest {
     /** One receipt attribute whose value is the DER of {@code value}. */
     private static ASN1Encodable integerAttribute(int type, long value) throws Exception {
         return TestPki.attribute(type, new ASN1Integer(value).getEncoded());
+    }
+
+    private static SignedData signedData(byte[] der) throws Exception {
+        return SignedData.getInstance(
+                ContentInfo.getInstance(ASN1Primitive.fromByteArray(der)).getContent());
+    }
+
+    /**
+     * {@code genuine} with its encapContentInfo replaced and, when given, a
+     * crls field added; the SignerInfos are untouched. Assembled as a raw BER
+     * SEQUENCE so a chunked eContent keeps its chunks.
+     */
+    private static byte[] respun(SignedData genuine, ASN1Encodable encapContentInfo, ASN1Set crls) throws Exception {
+        ASN1EncodableVector fields = new ASN1EncodableVector();
+        fields.add(genuine.getVersion());
+        fields.add(genuine.getDigestAlgorithms());
+        fields.add(encapContentInfo);
+        fields.add(new DERTaggedObject(false, 0, genuine.getCertificates()));
+        if (crls != null) {
+            fields.add(new DERTaggedObject(false, 1, crls));
+        }
+        fields.add(genuine.getSignerInfos());
+        return new ContentInfo(CMSObjectIdentifiers.signedData, new BERSequence(fields)).getEncoded();
+    }
+
+    /** {@code count} minimal CertificateLists, each signed by a key of its own issuer. */
+    private static ASN1Set crls(int count) throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        KeyPair key = generator.generateKeyPair();
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(key.getPrivate());
+        ASN1EncodableVector crls = new ASN1EncodableVector();
+        for (int i = 0; i < count; i++) {
+            X509v2CRLBuilder builder = new X509v2CRLBuilder(new X500Name("CN=CRL issuer " + i), new Date());
+            crls.add(builder.build(signer).toASN1Structure());
+        }
+        return new DLSet(crls);
     }
 
     private static InAppPurchase byProduct(ReceiptPayload receipt, String productId) {
@@ -342,6 +397,62 @@ class ReceiptVerificationTest {
         VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, flooded));
         assertEquals(Reason.MALFORMED, e.reason());
         assertTrue(e.getMessage().contains("11 certificates, more than the maximum of 10"), e.getMessage());
+    }
+
+    /**
+     * The eContent's chunks nest at most six constructed levels, OpenSSL's
+     * bound, which the other implementations meet in their decoder. The
+     * joined octets, which the signature covers, are the same at any depth,
+     * so only the bound tells six from seven.
+     */
+    @Test
+    void rejectsAnEContentChunkedPastSixConstructedLevels() throws Exception {
+        SignedData genuine = signedData(receiptDer);
+        byte[] content = ASN1OctetString.getInstance(
+                        genuine.getEncapContentInfo().getContent())
+                .getOctets();
+        ASN1ObjectIdentifier type = genuine.getEncapContentInfo().getContentType();
+
+        byte[] six = respun(genuine, new ContentInfo(type, TestPki.chunked(content, 6)), null);
+        assertEquals(BUNDLE, verify(pki, six).bundleId());
+
+        byte[] seven = respun(genuine, new ContentInfo(type, TestPki.chunked(content, 7)), null);
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, seven));
+        assertEquals(Reason.MALFORMED, e.reason());
+        assertTrue(e.getMessage().contains("deeper than 6 constructed levels"), e.getMessage());
+    }
+
+    /**
+     * Apple's receipts carry no CRLs and nothing here reads one, but the
+     * other implementations decode each before any signature, so the count
+     * is bounded as the certificates are: ten verify, eleven are MALFORMED.
+     */
+    @Test
+    void rejectsReceiptEmbeddingMoreCrlsThanTheLimit() throws Exception {
+        SignedData genuine = signedData(receiptDer);
+        assertEquals(
+                BUNDLE,
+                verify(pki, respun(genuine, genuine.getEncapContentInfo(), crls(10)))
+                        .bundleId());
+
+        byte[] flooded = respun(genuine, genuine.getEncapContentInfo(), crls(11));
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, flooded));
+        assertEquals(Reason.MALFORMED, e.reason());
+        assertTrue(e.getMessage().contains("11 CRLs, more than the maximum of 10"), e.getMessage());
+    }
+
+    /** Eleven entries that are no CRL at all: the count, not a decode, is what refuses them. */
+    @Test
+    void countsEmbeddedCrlsWithoutDecodingAnyOfThem() throws Exception {
+        SignedData genuine = signedData(receiptDer);
+        ASN1EncodableVector junk = new ASN1EncodableVector();
+        for (int i = 0; i < 11; i++) {
+            junk.add(new ASN1Integer(i));
+        }
+        byte[] flooded = respun(genuine, genuine.getEncapContentInfo(), new DLSet(junk));
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, flooded));
+        assertEquals(Reason.MALFORMED, e.reason());
+        assertTrue(e.getMessage().contains("11 CRLs, more than the maximum of 10"), e.getMessage());
     }
 
     @Test

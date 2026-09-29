@@ -520,8 +520,11 @@ the hand-written ABI code of the final round
 - Speed through ABI v1 on Node 22: 1,343 µs per g5 and 4,819 µs per JWS
   ([ABI v1][abi]).
 - Memory: a hostile 3 MiB receipt of tiny attributes peaked at 145 MiB in
-  Node against 67 MiB for a tiny one ([ASN.1 payload §3][payload]).
-  Phase 4 measures it in workerd, whose isolate limit is 128 MB.
+  Node against 67 MiB for a tiny one ([ASN.1 payload §3][payload]) before
+  the core's header walk; after it the unsigned and signerless forms are
+  refused before the payload is read and linear memory peaks near 16 MiB
+  ([core review fixes][corefix]). Phase 4 measures it in workerd, whose
+  isolate limit is 128 MB.
 - Runtimes kept: Node 20/22/24/26, Bun, Deno, workerd, Vercel Edge through
   `@edge-runtime/vm`, Chromium, Firefox and WebKit. Fastly Compute JS and
   Akamai EdgeWorkers are dropped: neither runs WebAssembly (R5).
@@ -812,7 +815,7 @@ workspace ([CMS everywhere §1][cms]).
 |---|---|
 | One Rust implementation under eight languages | A CI job greps the non-Java wrappers for crypto, X.509 and ASN.1 APIs (`node:crypto`, `crypto.subtle`, `cryptography`, `crypto/x509`, `System.Security.Cryptography.Pkcs`, `openssl_*`, `OpenSSL::`, swift-crypto, ...) and fails on a hit outside tests |
 | The Java implementation stays independent | The main artifact depends on no Rust artifact; the `-wasm` module shares its API, not its code (R33) |
-| No hand-written ASN.1, CMS or X.509 in the core (R21) | `tools/check-layering.mjs` fails on a module named `asn1`, `x509`, `cms`, `chain` or `crypto` in `rust/src`, an ASN.1, X.509 or signature crate in the core's graph, or a call to `ASN1_get_object` in the adapter |
+| No hand-written ASN.1, CMS or X.509 in the core (R21) | `tools/check-layering.mjs` fails on a module named `asn1`, `x509`, `cms`, `chain` or `crypto` in `rust/src`, an ASN.1, X.509 or signature crate in the core's graph, `ASN1_get_object` anywhere in `rust/src`, or `ASN1_get_object` in the adapter outside its documented header walk (`rust/openssl/src/walk.rs`, which reads headers and decodes no value; rule 6) |
 | `unsafe` only at the edges | `#![forbid(unsafe_code)]` in the core, the surface and the wire crate; `unsafe` only in `aprv-openssl`, `aprv-abi`, `rust/ffi` and `aprv-server` (for `Module::deserialize`), each block with a `// SAFETY:` comment |
 | `aprv.wasm` imports exactly `random-get` | CI lists the module's imports with `wasm-tools` and fails on anything else |
 | The WIT is the contract | CI reads the interface back from the built module with `wasm-tools component wit` and diffs it against `rust/bindings/abi/wit/aprv.wit`; a change to the file is a change to the ABI version |
@@ -852,3 +855,4 @@ workspace ([CMS everywhere §1][cms]).
 [dotnet]: ../evidence/2026-09-26-dotnet-wasmtime.md
 [substrate]: ../evidence/2026-09-26-security-substrate-bakeoff.md
 [spikes]: ../evidence/2026-09-25-rust-core-spikes.md
+[corefix]: ../evidence/2026-09-29-core-review-fixes.md

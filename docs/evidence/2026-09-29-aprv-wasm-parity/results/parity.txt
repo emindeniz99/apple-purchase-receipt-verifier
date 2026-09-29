@@ -1,0 +1,71 @@
+module: 3005922 bytes, sha256 4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e
+== cases
+trap host: {"host":"node v22.22.2 (trap host)","rows":153,"traps":0,"unexpected_imports":[],"instances_left":27}
+aprv.wasm against its native twin:
+  153 rows: 153 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+    153 identical
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+     31 different verdict, pre-existing (old core agrees with new)
+    122 same verdict
+           13 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+           10 ref endpoint 0  ->  0.7 endpoint 21003
+            3 ref endpoint 21007  ->  0.7 endpoint 21003
+            2 ref endpoint 21008  ->  0.7 endpoint 21003
+            2 ref endpoint 21009  ->  0.7 endpoint 21003
+            1 ref refused INVALID_CHAIN  ->  0.7 verified
+== hostile
+trap host: {"host":"node v22.22.2 (trap host)","rows":811,"traps":0,"unexpected_imports":[],"instances_left":3}
+aprv.wasm against its native twin:
+  811 rows: 811 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+     88 NOT_UTF8 in the text API, a value through the bytes
+     19 endpoint body not UTF-8: read lossily there, 21002 through the bytes
+    704 identical
+           20 verify-receipt: MALFORMED
+           19 verify-receipt-endpoint: 0 -> 21002
+           68 verify-signed-data: MALFORMED
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+      9 different verdict, pre-existing (old core agrees with new)
+      2 not comparable (no 0.7 call, or the reference ABI refused the input)
+    800 same verdict
+            7 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            2 ref endpoint 21002  ->  0.7 endpoint 0
+== algorithms
+trap host: {"host":"node v22.22.2 (trap host)","rows":22,"traps":0,"unexpected_imports":[],"instances_left":22}
+aprv.wasm against its native twin:
+  22 rows: 22 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+     22 identical
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+     16 different verdict, pre-existing (old core agrees with new)
+      6 same verdict
+           16 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+== substrate
+trap host: {"host":"node v22.22.2 (trap host)","rows":193,"traps":0,"unexpected_imports":[],"instances_left":74}
+aprv.wasm against its native twin:
+  193 rows: 193 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+    193 identical
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+     65 different verdict, pre-existing (old core agrees with new)
+    128 same verdict
+           55 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            7 ref verified  ->  0.7 refused INVALID_CERTIFICATE
+            3 ref verified  ->  0.7 refused MALFORMED
+== fuzz
+trap host: {"host":"node v22.22.2 (trap host)","rows":5000,"traps":0,"unexpected_imports":[],"instances_left":96}
+aprv.wasm against its native twin:
+  5000 rows: 5000 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+    175 NOT_UTF8 in the text API, a value through the bytes
+   4825 identical
+          175 verify-signed-data: MALFORMED
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+     28 different verdict, pre-existing (old core agrees with new)
+   4972 same verdict
+           20 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            8 ref verified  ->  0.7 refused MALFORMED
+validate-wire: 3922 answers in answers-verify-receipt.jsonl validate against verify-receipt-result.schema.json
+validate-wire: 2085 answers in answers-verify-signed-data.jsonl validate against verify-signed-data-result.schema.json
+validate-wire: 1 answers in answers-init.jsonl validate against init-result.schema.json

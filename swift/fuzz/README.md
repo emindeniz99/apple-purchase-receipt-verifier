@@ -1,12 +1,17 @@
 # Fuzz targets
 
-Six coverage-guided targets over the readers this port hand-writes and the
-verifiers a consumer calls. `run.sh` pairs each with the fixture directories
+Four coverage-guided targets over the three methods a consumer calls. Since
+0.8 the library holds no parser of its own: every verification runs inside
+aprv.wasm on WasmKit, so these targets fuzz the host around the module (the
+canonical-ABI call, the bounds checks before every memory access, the
+reading of the module's JSON) and WasmKit's interpreter under it, with the
+module's answers as the oracle. The core itself is fuzzed natively, with
+OpenSSL instrumented, in `rust/fuzz`. `run.sh` pairs each with the fixture directories
 that seed it, so nothing under `fixtures/` is copied here.
 
 ```bash
 ./run.sh all              # every target, 60 s each
-./run.sh readers 600      # one target, ten minutes
+./run.sh jws 600          # one target, ten minutes
 FUZZ_SANITIZERS=fuzzer,address ./run.sh receipt-der 600
 ```
 
@@ -28,10 +33,9 @@ public func fuzz(_ start: UnsafePointer<UInt8>?, _ count: Int) -> CInt
 then *is* a libFuzzer binary and takes libFuzzer's corpus directories and
 flags directly, which is why `run.sh` is close to a copy of
 `rust/fuzz/run.sh`. The flag is passed to every target in the graph, not only
-to the six that define an entry point: coverage instrumentation has to reach
-swift-asn1 and swift-certificates for the fuzzer to steer into them.
-`-enable-testing` goes with it, so `Sources/FuzzSupport` can
-`@testable import` the library and drive its internal readers.
+to the four that define an entry point: coverage instrumentation has to reach
+WasmKit and the library for the fuzzer to steer into them. aprv.wasm itself
+is data to the interpreter and carries no coverage counters.
 
 No third-party fuzzing dependency exists for Swift that is worth preferring
 to this: the toolchain already carries libFuzzer, so a wrapper would add a
@@ -58,7 +62,7 @@ collides. `FuzzSupport.runFuzzer` is the whole of it.
 
 ## Why a separate package
 
-A published package's manifest is part of its public surface. Declaring six
+A published package's manifest is part of its public surface. Declaring four
 libFuzzer executables in the root `Package.swift` would put them in front of
 every consumer who reads it, and SwiftPM would build them for anyone who ran
 `swift build` at the root — for targets nobody outside this directory can
@@ -80,21 +84,22 @@ with `--force-resolved-versions`, so this package builds the revisions its own
 
 | target | what it reaches | invariant beyond "nothing traps" |
 |---|---|---|
-| `receipt-der` | `Verifier.verifyReceipt` on the base64 of the input bytes: the BER-tolerant CMS walk, the unverified creation-date read, the certificate-bag walk, the top-down chain check, the marker OIDs, the signer signature, then the payload parse | an accepted receipt fails against an unrelated anchor set |
+| `receipt-der` | `Verifier.verifyReceipt` on the base64 of the input bytes: the whole receipt path inside the module | an accepted receipt fails against an unrelated anchor set |
 | `receipt-base64` | `Verifier.verifyReceipt(base64:)` on the input text — the receipt-base64 rule, then the whole DER path | the same anchor-set invariant, through the transport form a client sends |
-| `jws` | `Verifier.verifySignedData`: segment split, strict base64url, header and payload JSON under their bounds, `x5c`, chain at the signed date, marker OIDs, ES256 | a JWS accepted under the fixture root is refused under Apple's pinned roots |
+| `jws` | `Verifier.verifySignedData`: the whole JWS path inside the module | a JWS accepted under the fixture root is refused under Apple's pinned roots |
 | `endpoint-json` | `Verifier.verifyReceiptEndpoint` on a request body, through to the response rendering | the answer is always a JSON object with a numeric `status` from the 0.7 status table |
-| `receipt-payload` | the payload parser (attribute-SET walk, string/integer/date decoders) and the unverified creation-date read, called directly | a parse failure is `PayloadError`, and the creation-date read agrees with the parsed `receiptCreationDateMs` |
-| `readers` | `decodeReceiptBase64`, `decodeBase64URLStrict` | each reader's own documented rule, restated independently — see below |
+
+0.7's `receipt-payload` and `readers` targets drove the hand-written payload
+parser and base64 readers directly; both went with that code in 0.8.
 
 The verify methods never throw in 0.7, so every verifier target instead
 requires that the answer is never `INTERNAL_ERROR`: input must not be able to
-raise the internal-error alarm, and no target configures the one thing that
-legitimately produces it (an empty root set). In Swift the "nothing traps"
+raise the internal-error alarm, which in 0.8 means the module trapped or
+answered something the host could not read. In Swift the "nothing traps"
 half is worth as much again, because `fatalError`, a force-unwrap of `nil`,
 an out-of-range index and an arithmetic overflow all abort the process rather
-than throw — none of them are catchable, and all of them are reachable from a
-parser handed hostile bytes.
+than throw, and so does WasmKit when the host touches guest memory out of
+range — none of them are catchable.
 
 The anchor-set invariant is what lets a fuzzer find "accepts what it should
 not" rather than only crashes: without it, an input that verifies tells you
@@ -106,31 +111,6 @@ explore what lies beyond it; the unrelated set is the fixture *JWS* root — a
 real anchor from the same generator that signed none of them. The 0.6
 receipts under `fixtures/generated/` stay in the seed set, but their
 intermediates lack the WWDR marker 0.7 requires, so they stop at that check.
-
-### What `readers` restates
-
-Each internal reader has a documented rule, and the target re-derives that
-rule rather than re-running the implementation:
-
-- `decodeReceiptBase64`: an accepted string decodes to exactly as many bytes
-  as its data characters encode (four characters carry three bytes; a
-  trailing group of two or three carries one or two), so no padding rule can
-  drop or invent a byte.
-- `decodeBase64URLStrict`: re-encoding an accepted segment's bytes reproduces
-  the segment character for character — the canonicity claim, which is what
-  gives a segment whose last character carries non-zero unused bits somewhere
-  to fail.
-
-### Reaching the payload parser
-
-In 0.7 the full payload parse runs only after the chain and a signer
-signature have verified, so the verifier targets reach it only for inputs
-that verify. `receipt-payload` therefore calls the parser directly, through
-the `@testable` shim in `Sources/FuzzSupport`, and drives the one read that
-does run on unverified bytes — the attribute-12 creation date that picks the
-chain instant — on the same input. The two must agree whenever the set
-parses: both take the first attribute 12, and a disagreement would judge the
-chain at an instant other than the date the caller is handed.
 
 ## Seeds, corpus, crashers
 

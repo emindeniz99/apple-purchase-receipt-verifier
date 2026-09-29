@@ -18,7 +18,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.CMSTypedData;
@@ -39,6 +41,16 @@ final class ReceiptCore {
 
     /** Genuine receipts carry one; each SignerInfo costs a chain build and a signature check. */
     static final int MAX_SIGNER_INFOS = 4;
+
+    /**
+     * Genuine receipts carry none and nothing reads them; bounded as the
+     * certificates are, since the other implementations decode each one
+     * before any signature.
+     */
+    static final int MAX_EMBEDDED_CRLS = 10;
+
+    /** ContentInfo, then [0], SignedData, encapContentInfo, [0], eContent. */
+    private static final int[] E_CONTENT = {1, 0, 2, 1, 0};
 
     /**
      * Certificates below the anchor, leaf included. PKIX's own limit counts
@@ -92,6 +104,12 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.MALFORMED, "receipt nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
         }
+        if (Asn1Depth.octetStringNestExceeded(receiptDer, Asn1Depth.find(receiptDer, E_CONTENT))) {
+            throw new VerificationException(
+                    Reason.MALFORMED,
+                    "receipt eContent nests its chunks deeper than " + Asn1Depth.MAX_STRING_NEST
+                            + " constructed levels");
+        }
         ASN1Primitive parsed;
         try {
             // Throws when the input is not used up, so appended bytes cannot ride along.
@@ -121,6 +139,15 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
+        }
+        // Counted, never decoded: nothing here reads a CRL.
+        ASN1Set crls =
+                SignedData.getInstance(cms.toASN1Structure().getContent()).getCRLs();
+        int crlCount = crls == null ? 0 : crls.size();
+        if (crlCount > MAX_EMBEDDED_CRLS) {
+            throw new VerificationException(
+                    Reason.MALFORMED,
+                    "receipt embeds " + crlCount + " CRLs, more than the maximum of " + MAX_EMBEDDED_CRLS);
         }
         // The one payload read before trust: the sender's own creation date
         // picks the instant the chain must be valid at. That only moves the

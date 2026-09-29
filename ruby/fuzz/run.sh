@@ -18,7 +18,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fixtures="$here/../../fixtures"
 
-TARGETS=(parse_der parse_cms verify_receipt verify_receipt_base64 verify_transaction endpoint_json)
+TARGETS=(verify_receipt verify_receipt_base64 verify_transaction endpoint_json)
 
 target="${1:?usage: run.sh <target>|all|list [seconds]}"
 seconds="${2:-60}"
@@ -42,8 +42,7 @@ asan_path="$("${runner[@]}" -e 'require "ruzzy"; print Ruzzy::ASAN_PATH')"
 # detect_leaks: Ruby's own allocations are not this fuzzer's business.
 # use_sigaltstack=0 keeps ASAN's alternate signal stack away from the one Ruby
 # installs to turn stack overflow into SystemStackError — without it a deep
-# input crashes the process instead of raising, and the depth bound the
-# scanner exists to enforce cannot be observed.
+# input crashes the process instead of raising.
 export ASAN_OPTIONS="detect_leaks=0:allocator_may_return_null=1:use_sigaltstack=0:${ASAN_OPTIONS:-}"
 
 # No -timeout: libFuzzer's per-unit watchdog is a SIGALRM it declines to
@@ -58,7 +57,7 @@ run_one() {
   local seeds
 
   case "$name" in
-    parse_der|parse_cms|verify_receipt)
+    verify_receipt)
       seeds=("$fixtures/generated" "$fixtures/apple-official/certs") ;;
     verify_receipt_base64)
       seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;

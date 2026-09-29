@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -42,10 +43,11 @@ var forbiddenIdentifiers = []string{
 	"SetDefaultPaths",
 }
 
-// libraryFiles are the non-test Go files a consumer compiles. The
-// generator under internal/gencerts is excluded by name: it is a
-// `go generate` command, never imported by the library, and reading
-// certs/ from disk is its entire job.
+// libraryFiles are the non-test Go files a consumer compiles. Two commands
+// are excluded by name, since the library never imports them:
+// internal/gencerts, the `go generate` command whose entire job is reading
+// certs/ from disk, and internal/corpusrun, the corpus runner that reads a
+// calls file.
 func libraryFiles(t *testing.T) []string {
 	t.Helper()
 	root, err := os.Getwd()
@@ -59,7 +61,7 @@ func libraryFiles(t *testing.T) []string {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case "testdata", "tools", "gencerts":
+			case "testdata", "tools", "gencerts", "corpusrun":
 				return filepath.SkipDir
 			}
 			return nil
@@ -116,6 +118,71 @@ func TestLibraryMentionsNoForbiddenIdentifier(t *testing.T) {
 	}
 }
 
+// This package is a wrapper: aprv.wasm decides, and no file here parses
+// ASN.1, reads a certificate, checks a signature, validates base64 or walks
+// a chain. The imports a verifier would need are refused outright, and the
+// few that only carry data are allowed in the one file that carries it.
+// This is the Go half of the one-implementation gate of
+// docs/rust-core/ARCHITECTURE.md section 9; CI runs a cruder grep beside it.
+var verificationImports = map[string][]string{
+	"encoding/asn1":    nil,
+	"encoding/pem":     nil,
+	"crypto/ecdsa":     nil,
+	"crypto/ed25519":   nil,
+	"crypto/elliptic":  nil,
+	"crypto/rsa":       nil,
+	"crypto/dsa":       nil,
+	"crypto/sha1":      nil,
+	"crypto/sha512":    nil,
+	"crypto/hmac":      nil,
+	"crypto/subtle":    nil,
+	"math/big":         nil,
+	"crypto/x509/pkix": nil,
+	"crypto/x509":      {"config.go", "roots.go", "verifier.go"}, // the Config's trust-anchor type, and .Raw
+	"crypto/sha256":    {"roots.go", "wasm.go"},                  // pins the bundled roots and the embedded module
+	"encoding/hex":     {"roots.go", "wasm.go"},
+	"encoding/base64":  {"receiptpayload.go", "verifier.go"}, // the wire's bytes fields, and init's roots
+}
+
+func TestLibraryHoldsNoVerificationLogic(t *testing.T) {
+	fileSet := token.NewFileSet()
+	for _, path := range libraryFiles(t) {
+		file, err := parser.ParseFile(fileSet, path, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		for _, spec := range file.Imports {
+			name, _ := strconv.Unquote(spec.Path.Value)
+			allowed, listed := verificationImports[name]
+			if !listed {
+				continue
+			}
+			if !slices.Contains(allowed, filepath.Base(path)) {
+				t.Errorf("%s imports %q: a wrapper holds no verification logic (allowed only in %v)",
+					filepath.Base(path), name, allowed)
+			}
+		}
+	}
+}
+
+// Of what crypto/x509 offers, the library reads a certificate in one place:
+// the bundled roots, when AppleRoots parses them to hand back to the
+// caller. Nothing checks a signature, builds a path or reads a name.
+func TestOnlyTheRootsAreEverParsedAsCertificates(t *testing.T) {
+	for _, path := range libraryFiles(t) {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := stripComments(t, path, source)
+		for _, identifier := range []string{"x509.ParseCertificate", "x509.ParseCertificates", "x509.ParseCertificateRequest"} {
+			if strings.Contains(text, identifier) && filepath.Base(path) != "roots.go" {
+				t.Errorf("%s uses %s: only roots.go reads a certificate, to return the bundled roots", filepath.Base(path), identifier)
+			}
+		}
+	}
+}
+
 func stripComments(t *testing.T, path string, source []byte) string {
 	t.Helper()
 	fileSet := token.NewFileSet()
@@ -140,22 +207,59 @@ func stripComments(t *testing.T, path string, source []byte) string {
 	return out.String()
 }
 
-// The published module has no third-party dependencies at all, which is
-// what makes "audit the supply chain" a one-line answer.
-func TestModuleHasNoDependencies(t *testing.T) {
+// The published module has one dependency, wazero, pinned to an exact
+// release, and wazero itself has none: "audit the supply chain" is still a
+// short answer, and a second requirement fails here.
+func TestModuleDependsOnlyOnWazero(t *testing.T) {
 	source, err := os.ReadFile("go.mod")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(source)
-	if strings.Contains(text, "require") {
-		t.Fatalf("go.mod has grown a require block:\n%s", text)
+	var requires []string
+	for _, line := range strings.Split(string(source), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "require "); ok {
+			requires = append(requires, rest)
+		}
 	}
-	if _, err := os.Stat("go.sum"); err == nil {
-		t.Error("go.sum exists; the library module is supposed to have no dependencies")
+	if len(requires) != 1 || !strings.HasPrefix(requires[0], "github.com/tetratelabs/wazero v1.") ||
+		strings.Contains(requires[0], "//") || strings.Contains(string(source), "require (") {
+		t.Errorf("go.mod requires %q; want exactly github.com/tetratelabs/wazero at one release:\n%s", requires, source)
 	}
-	if !strings.Contains(text, "module github.com/emindeniz99/apple-purchase-receipt-verifier/go") {
-		t.Errorf("the module path is not the published one:\n%s", text)
+	sums, err := os.ReadFile("go.sum")
+	if err != nil {
+		t.Fatalf("go.sum is missing: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(sums)), "\n") {
+		if !strings.HasPrefix(line, "github.com/tetratelabs/wazero ") {
+			t.Errorf("go.sum names another module: %s", line)
+		}
+	}
+	if !strings.Contains(string(source), "module github.com/emindeniz99/apple-purchase-receipt-verifier/go") {
+		t.Errorf("the module path is not the published one:\n%s", source)
+	}
+}
+
+// The bounds are the core's, and this package only states them. The
+// numbers are Apple's own for the two 3 MiB caps (measured 2026-09-23: a
+// 3,145,728-byte request body is answered and one byte more gets HTTP 413)
+// and the same in every port (fixtures/cases.schema.json, 0.7-api.md,
+// Bounds).
+func TestCapNumbersMatchTheOtherPorts(t *testing.T) {
+	for _, entry := range []struct {
+		name      string
+		got, want int
+	}{
+		{"MaxReceiptBytes", applereceipt.MaxReceiptBytes, 3145728},
+		{"MaxRequestBytes", applereceipt.MaxRequestBytes, 3145728},
+		{"MaxJWSBytes", applereceipt.MaxJWSBytes, 262144},
+		{"MaxJSONNestingDepth", applereceipt.MaxJSONNestingDepth, 64},
+		{"MaxJSONMemberNameLength", applereceipt.MaxJSONMemberNameLength, 50000},
+		{"MaxJSONNumberDigits", applereceipt.MaxJSONNumberDigits, 1000},
+	} {
+		if entry.got != entry.want {
+			t.Errorf("%s = %d, want %d (the number every port uses)", entry.name, entry.got, entry.want)
+		}
 	}
 }
 

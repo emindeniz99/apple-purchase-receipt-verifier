@@ -9,89 +9,66 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
 /// What the config clock drives, and what it must never be able to reach.
-/// The clock answers "what time is it now?" and is read in two places only:
-/// the chain instant when the input states no signing date, and the
-/// endpoint's <c>request_date</c> (design, Setup). No payload is rejected
-/// for its age.
+/// The wrapper reads it once per call, before it looks at the input, and
+/// hands the value to the module as <c>now-ms</c>; the module decides what to
+/// use it for (the chain instant when the input states no signing date, and
+/// <c>request_date</c> in the endpoint response). The wrapper rejects
+/// nothing for a payload's age.
 /// </summary>
 public class ClockTests
 {
-    /// <summary>2099-01-01T00:00:00Z, far past every chain the fixtures carry.</summary>
-    private const long Year2099Ms = 4070908800000L;
+    private const long Now = 1735689600000L;
 
-    /// <summary>
-    /// Freshness is the caller's decision: a payload that states its signing
-    /// date is judged at that date, so a clock far past the chain's end does
-    /// not reject it.
-    /// </summary>
+    /// <summary>One read per call, for every entry point, whatever the input and however it ends.</summary>
     [Fact]
-    public void AStatedSigningDateIsNeverOverriddenByTheClock()
+    public void TheClockIsReadOnceForEveryCall()
     {
-        CountingClock clock = new(Year2099Ms);
-        IVerifier verifier = Verifier.Create(TestPki.FixtureConfig("jws-root", clock.Read));
-        Assert.True(verifier.VerifySignedData(Fixtures070.ForSignedData("transaction")).Verified);
+        CountingClock clock = new(Now);
+        IVerifier verifier = Verifier.Create(TestRoots.FixtureConfig("receipt-root", clock.Read));
 
-        IVerifier receipts = Verifier.Create(TestPki.FixtureConfig("receipt-root", clock.Read));
-        Assert.True(receipts.VerifyReceipt(Fixtures070.ForReceipt("receipt")).Verified);
-
-        Assert.Equal(0, clock.Reads);
-    }
-
-    /// <summary>The clock stands in for a missing date, and is read once for it.</summary>
-    [Fact]
-    public void TheClockIsReadOnlyWhenTheInputStatesNoDate()
-    {
-        CountingClock clock = new(TestPki.SignedAtMs);
-        IVerifier verifier = Verifier.Create(TestPki.FixtureConfig("divergence-jws-root", clock.Read));
-        Assert.True(verifier.VerifySignedData(Fixtures070.ForSignedData("transaction-no-signed-date")).Verified);
+        verifier.VerifyReceipt(Fixtures070.ForReceipt("receipt"));
         Assert.Equal(1, clock.Reads);
-
-        CountingClock receiptClock = new(TestPki.SignedAtMs);
-        IVerifier receipts = Verifier.Create(TestPki.FixtureConfig("divergence-receipt-root", receiptClock.Read));
-        Assert.True(receipts.VerifyReceipt(Fixtures070.ForReceipt("receipt-no-creation-date")).Verified);
-        Assert.Equal(1, receiptClock.Reads);
+        verifier.VerifyReceipt("not base64");
+        Assert.Equal(2, clock.Reads);
+        verifier.VerifyReceipt(null!);
+        Assert.Equal(3, clock.Reads);
+        verifier.VerifySignedData("a.b");
+        Assert.Equal(4, clock.Reads);
+        verifier.VerifySignedData(string.Empty);
+        Assert.Equal(5, clock.Reads);
+        verifier.VerifyReceiptEndpoint(
+            AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt") + "\"}");
+        Assert.Equal(6, clock.Reads);
+        verifier.VerifyReceiptEndpoint(AppleEnvironment.Production, "not json");
+        Assert.Equal(7, clock.Reads);
     }
 
-    /// <summary>Input that fails its own checks never reaches the clock.</summary>
+    /// <summary>The value the clock answered is the <c>now-ms</c> the module gets, for every operation (a stub module records it).</summary>
     [Fact]
-    public void MalformedInputNeverReadsTheClock()
+    public void EveryOperationPassesTheClockToTheModule()
     {
-        CountingClock clock = new(TestPki.SignedAtMs);
-        IVerifier verifier = Verifier.Create(TestPki.FixtureConfig("receipt-root", clock.Read));
-        Assert.Equal(VerificationReason.Malformed, verifier.VerifyReceipt("not base64").Failure?.Reason);
-        Assert.Equal(VerificationReason.Malformed, verifier.VerifySignedData("a.b").Failure?.Reason);
-        Assert.Equal(0, clock.Reads);
-    }
+        AprvRuntime runtime = new(new StubModule().ToWasm(), null);
+        VerifierImpl verifier = new(Config.CreateBuilder().Clock(() => Now).Build(), runtime);
 
-    /// <summary>
-    /// A request carries exactly one request date: the endpoint reads the
-    /// clock once per call, and a dateless receipt is judged at that same
-    /// reading rather than at a second one.
-    /// </summary>
-    [Fact]
-    public void TheEndpointReadsTheClockOncePerRequest()
-    {
-        CountingClock clock = new(TestPki.SignedAtMs);
-        IVerifier verifier = Verifier.Create(TestPki.FixtureConfig("divergence-receipt-root", clock.Read));
-        string body = "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt-no-creation-date") + "\"}";
-
-        string answer = verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, body);
-        Assert.StartsWith("{\"status\":0,", answer, StringComparison.Ordinal);
-        Assert.Contains("\"request_date_ms\":\"1722945600000\"", answer, StringComparison.Ordinal);
-        Assert.Equal(1, clock.Reads);
+        verifier.VerifyReceipt("x");
+        Assert.Equal(Now, LastNow(verifier));
+        long later = Now + 1;
+        VerifierImpl second = new(Config.CreateBuilder().Clock(() => later).Build(), runtime);
+        second.VerifySignedData("x");
+        Assert.Equal(later, LastNow(second));
+        long third = Now + 2;
+        VerifierImpl endpoint = new(Config.CreateBuilder().Clock(() => third).Build(), runtime);
+        endpoint.VerifyReceiptEndpoint(AppleEnvironment.Production, "x");
+        Assert.Equal(third, LastNow(endpoint));
     }
 
     [Fact]
     public void TheDefaultClockIsTheSystemClock()
     {
-        IVerifier verifier = Verifier.Create(
-            Config.CreateBuilder().Roots(new[] { TestPki.FixtureCertificate("receipt-root") }).Build());
-        string answer = verifier.VerifyReceiptEndpoint(
-            AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt") + "\"}");
-
-        OrderedMap receipt = (OrderedMap)Json.ParseObject(answer)["receipt"]!;
-        long stamped = long.Parse((string)receipt["request_date_ms"]!, System.Globalization.CultureInfo.InvariantCulture);
-        Assert.True(Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - stamped) < 60_000);
+        AprvRuntime runtime = new(new StubModule().ToWasm(), null);
+        VerifierImpl verifier = new(Config.Defaults(), runtime);
+        verifier.VerifyReceipt("x");
+        Assert.True(Math.Abs(LastNow(verifier) - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) < 60_000);
     }
 
     /// <summary>
@@ -106,20 +83,53 @@ public class ClockTests
         InvalidOperationException broken = new("broken clock");
         long Throwing() => throw broken;
 
-        IVerifier jws = Verifier.Create(TestPki.FixtureConfig("divergence-jws-root", Throwing));
-        Failure jwsFailure = jws.VerifySignedData(Fixtures070.ForSignedData("transaction-no-signed-date")).Failure!;
-        Assert.Equal(VerificationReason.InternalError, jwsFailure.Reason);
-        Assert.Same(broken, jwsFailure.Cause);
+        IVerifier verifier = Verifier.Create(TestRoots.FixtureConfig("receipt-root", Throwing));
 
-        IVerifier receipts = Verifier.Create(TestPki.FixtureConfig("divergence-receipt-root", Throwing));
-        Failure receiptFailure = receipts.VerifyReceipt(Fixtures070.ForReceipt("receipt-no-creation-date")).Failure!;
+        Failure receiptFailure = verifier.VerifyReceipt(Fixtures070.ForReceipt("receipt")).Failure!;
         Assert.Equal(VerificationReason.InternalError, receiptFailure.Reason);
         Assert.Same(broken, receiptFailure.Cause);
 
+        Failure jwsFailure = verifier.VerifySignedData(Fixtures070.ForSignedData("transaction")).Failure!;
+        Assert.Equal(VerificationReason.InternalError, jwsFailure.Reason);
+        Assert.Same(broken, jwsFailure.Cause);
+
+        Failure malformed = verifier.VerifyReceipt("not base64").Failure!;
+        Assert.Equal(VerificationReason.InternalError, malformed.Reason);
+
         Assert.Equal(
             "{\"status\":21009}",
-            receipts.VerifyReceiptEndpoint(
+            verifier.VerifyReceiptEndpoint(
                 AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt") + "\"}"));
+    }
+
+    /// <summary>A negative time cannot be a u64 <c>now-ms</c>; it is the host's fault too.</summary>
+    [Fact]
+    public void ANegativeClockIsAnInternalError()
+    {
+        IVerifier verifier = Verifier.Create(TestRoots.FixtureConfig("receipt-root", () => -1));
+        Failure failure = verifier.VerifyReceipt("x").Failure!;
+        Assert.Equal(VerificationReason.InternalError, failure.Reason);
+        Assert.NotNull(failure.Cause);
+        Assert.Equal("{\"status\":21009}", verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, "{}"));
+    }
+
+    private static long LastNow(VerifierImpl verifier)
+    {
+        AprvInstance instance = verifier.Pool.Rent();
+        try
+        {
+            return ReadNowMs(instance, 0);
+        }
+        finally
+        {
+            verifier.Pool.Return(instance);
+        }
+    }
+
+    private static long ReadNowMs(AprvInstance instance, long fallback)
+    {
+        Wasmtime.Function? lastNow = instance.Raw.GetFunction("last_now");
+        return lastNow is null ? fallback : (long)lastNow.Invoke()!;
     }
 
     /// <summary>
@@ -131,7 +141,7 @@ public class ClockTests
     public void TheSystemClockIsReadAtExactlyOneSite()
     {
         List<string> hits = new();
-        foreach (string file in Directory.GetFiles(SourceRoot(), "*.cs", SearchOption.AllDirectories))
+        foreach (string file in SourceTree.LibraryFiles())
         {
             string[] lines = File.ReadAllLines(file);
             for (int i = 0; i < lines.Length; i++)
@@ -157,23 +167,6 @@ public class ClockTests
 
         string hit = Assert.Single(hits);
         Assert.StartsWith("Config.cs:", hit, StringComparison.Ordinal);
-    }
-
-    private static string SourceRoot()
-    {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            string candidate = Path.Combine(directory.FullName, "dotnet", "src", "ApplePurchaseReceiptVerifier");
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("could not locate the library sources");
     }
 
     /// <summary>A test-side clock that counts its reads; the library itself has no such hook.</summary>

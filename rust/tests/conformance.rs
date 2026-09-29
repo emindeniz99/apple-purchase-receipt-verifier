@@ -20,7 +20,6 @@ use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, 
 use libtest_mimic::{Arguments, Failed, Trial};
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -222,7 +221,7 @@ fn fixture_bytes(
             )))
         }
     };
-    let actual = hex::encode(Sha256::digest(&bytes));
+    let actual = hex::encode(openssl::sha::sha256(&bytes));
     if actual != entry.content_sha256 {
         return Err(Failed::from(format!(
             "fixture \"{id}\" ({}, codec {}) has drifted: {CASES} records contentSha256 {}, \
