@@ -29,11 +29,19 @@ fn main() {
         println!("cargo:warning=openssl-sys exported no include directory");
         std::process::exit(1);
     };
-    cc::Build::new()
+    let mut build = cc::Build::new();
+    build
         .file("payload.c")
         .file("envelope.c")
         .include(include)
         .warnings(true)
-        .extra_warnings(true)
-        .compile("aprv_payload");
+        .extra_warnings(true);
+    // envelope.c checks its struct layouts with C11's _Static_assert, which
+    // MSVC compiles only in its C11 mode. Only there: every other compiler
+    // accepts it by default, and a flag there would change the objects the
+    // released aprv.wasm is built from.
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        build.flag("/std:c11");
+    }
+    build.compile("aprv_payload");
 }

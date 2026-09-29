@@ -87,7 +87,6 @@ paths-ignore:
   # ---- fuzz harnesses --------------------------------------------------
   # Drivers and seed corpora. They exist to feed malformed bytes to the
   # library on purpose; the driver itself is not shipped to anyone.
-  - node/fuzz/**
   - python/fuzz/**
   - ruby/fuzz/**
   - php/fuzz/**

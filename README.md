@@ -15,18 +15,25 @@ Verifies Apple in-app purchases **locally, with zero Apple server calls**, as
 a replacement for the deprecated `verifyReceipt` endpoint. It proves
 cryptographically that purchase data a client presents (StoreKit 2 signed JWS
 transactions, or legacy PKCS#7 app receipts) was signed by Apple, by
-validating the certificate chain against pinned Apple root CAs. Nine
-implementations, one normative algorithm, one shared fixture set on which
-they agree on every verdict and every decoded value: **Java** (8+), **Node**
-(20+, zero runtime deps), **Python** (3.10+), **Swift** (6.1+), **Go**
-(1.22+), **Ruby** (3.3+), **Rust** (1.85+), **PHP** (8.2+) and **.NET**
-(netstandard2.0 and net8.0), plus **C and C++ via a C ABI over the Rust
-port**, which any FFI-capable runtime (Elixir NIFs, Lua, ctypes, P/Invoke)
-can load. [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and
-the rule that adds or drops one. [PORTS.md](PORTS.md) shows which features
-each port ships.
+validating the certificate chain against pinned Apple root CAs.
 
-Every implementation exposes the same three methods on one `Verifier`, built
+One Rust core does the verification. It is compiled to one WebAssembly
+module, `aprv.wasm`, and packages for nine languages run it: **Java**
+(8+), **Node** (20+, zero runtime deps), **Python** (3.10+), **Swift**
+(6.3+), **Go** (1.22+), **Ruby** (3.3+), **Rust** (1.85+), **PHP** (8.2+)
+and **.NET** (netstandard2.0, tested on .NET 8 and later). Java also keeps
+its own, independent implementation over BouncyCastle, maintained beside
+the core as a second opinion on every verdict. **`aprv-server`** runs the
+same module as an HTTP server, a Docker image or a one-shot CLI for any
+other language, and **C and C++** can link the core through a C ABI, which
+any FFI-capable runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load. The
+core and the Java implementation answer the same 377 cases of
+[`fixtures/cases.json`](./fixtures/cases.json), and every package runs all
+of them. [PORTS.md](PORTS.md) shows what each package runs on, and
+[SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the
+rule that adds or drops one.
+
+Every package exposes the same three methods on one `Verifier`, built
 once from a `Config` (the pinned roots and a clock):
 
 - **`verifyReceipt(base64)`** checks a legacy PKCS#7 app receipt and returns
@@ -107,62 +114,116 @@ if (transaction.bundleId !== 'com.example.app') {
 }
 ```
 
-The other seven ports have the same three methods, in their own casing:
-[Python](python/README.md), [Swift](swift/README.md), [Go](go/README.md),
-[Ruby](ruby/README.md), [Rust](rust/README.md), [PHP](php/README.md) and
-[.NET](dotnet/README.md). The [Java](java/README.md) and [Node](node/README.md)
-READMEs document the full API.
+The other packages have the same three methods, in their own casing:
+[Java `-wasm`](java-wasm/README.md), [Python](python/README.md),
+[Swift](swift/README.md), [Go](go/README.md), [Ruby](ruby/README.md),
+[Rust](rust/README.md), [PHP](php/README.md) and [.NET](dotnet/README.md).
+The [Java](java/README.md) and [Node](node/README.md) READMEs document the
+full API; [aprv-server](rust/server/README.md) documents the server and
+its CLI.
 
 ## Installing
 
-Five of the nine implementations are published today, all as
-**`apple-purchase-receipt-verifier`**, in lockstep versions cut from this
-repository's tags.
+Every package is published as **`apple-purchase-receipt-verifier`**, or
+that name in its ecosystem's casing, in lockstep versions cut from this
+repository's tags. 0.8.0 is the first release of the one-core design; the
+API is 0.7's.
 
 The version is `0.x`. Until 1.0, a minor release may break the API: 0.7
-replaces the 0.6 classes with a new `Verifier` without a deprecation
+replaced the 0.6 classes with a new `Verifier` without a deprecation
 period. Read the [CHANGELOG](./CHANGELOG.md) before you bump the minor
 version, and pin it.
 
 | Registry | Install | How you import it |
 |---|---|---|
-| [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` | `import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;` |
+| [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` (the Java implementation) or `io.github.emindeniz99:apple-purchase-receipt-verifier-wasm` (the core); depend on one, never both | `import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;` |
 | [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier';` |
 | [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import Config, Verifier` |
 | [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")` | `import ApplePurchaseReceiptVerifier` |
 | [Go module proxy](https://pkg.go.dev/github.com/emindeniz99/apple-purchase-receipt-verifier/go) | `go get github.com/emindeniz99/apple-purchase-receipt-verifier/go` | `import applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"` |
+| RubyGems | `gem "apple-purchase-receipt-verifier"` | `require "apple_purchase_receipt_verifier"` |
+| NuGet | `dotnet add package ApplePurchaseReceiptVerifier` | `using ApplePurchaseReceiptVerifier;` |
+| Packagist | `composer require emindeniz99/apple-purchase-receipt-verifier`, then `vendor/bin/aprv-install` | `use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;` |
+| crates.io | `cargo add apple-purchase-receipt-verifier` | `use apple_purchase_receipt_verifier::{Config, Verifier};` |
+| GitHub Releases, GHCR | the `aprv` binary for your platform, or `ghcr.io/emindeniz99/aprv-server` | HTTP, or `aprv verify-receipt` on stdin |
 
 The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`), one name everywhere.
 
-Ruby, Rust, .NET and PHP are not in the table yet. Ruby, Rust and .NET are
-wired into `release.yml` and wait on one owner action each (a
-pending trusted publisher for RubyGems, a first manual publish for crates.io
-and NuGet), listed in [BOOTSTRAP.md](./BOOTSTRAP.md); each gains a row once
-its first release goes out. PHP will install from Packagist with
-`composer require emindeniz99/apple-purchase-receipt-verifier` and
-`use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;`, starting at the
-first tag after the owner submits the repository to Packagist
-([BOOTSTRAP.md](./BOOTSTRAP.md#packagist-php--layout-a-is-landed-two-owner-actions-remain)
-explains the root `composer.json`). C and C++ have no registry entry and are
-not meant to: they build from source against the Rust port, and
-[rust/ffi/README.md](rust/ffi/README.md) covers the ABI, the example
-consumers and the prebuilt binaries still to come.
+Maven Central, npm, PyPI, SwiftPM and the Go proxy publish on every
+release. RubyGems, NuGet, Packagist and Docker Hub each wait on a one-time
+owner action, listed in [BOOTSTRAP.md](./BOOTSTRAP.md). The Rust crate
+stays at 0.7 on crates.io until `openssl-sys` accepts OpenSSL 4; building
+the 0.8 core from source needs `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL
+4>` ([rust/openssl/README.md](rust/openssl/README.md)). C and C++ build
+from source against the core, and [rust/ffi/README.md](rust/ffi/README.md)
+covers the ABI and the example consumers.
+
+## How it runs
+
+| Package | Runs the core on |
+|---|---|
+| Java `-wasm` | Endive (the module compiled to JVM bytecode, no native code) on Java 11+; `aprv-server` as a supervised child process on Java 8 |
+| Java (main artifact) | its own implementation over BouncyCastle |
+| Node | the JS engine's WebAssembly, through bindings jco generates |
+| Go | wazero, with no cgo |
+| Python | wasmtime-py |
+| Ruby | the `wasmtime` gem |
+| Swift | WasmKit, an interpreter; no JIT entitlement |
+| .NET | Wasmtime .NET |
+| PHP | `aprv-server`, one process per call or a server URL |
+| Rust, C ABI | natively, in the caller's process |
+
+No wrapper parses a receipt, checks a signature or decides trust: each
+reads the clock, moves the input into the module, and maps the module's
+JSON answer onto its language's types. A fix in the core reaches every
+package in the next release, and the packages cannot disagree about a
+verdict. The module imports one function, a source of random bytes: it
+cannot read a file, the network, the environment or the clock, so a
+parser bug a hostile receipt reaches stays inside the module's sandbox
+rather than running in your process. Each package checks its copy of the
+module against a pinned SHA-256; the release publishes the hash with SLSA
+provenance and a CycloneDX SBOM, and `tools/reproduce-wasm.sh` rebuilds
+the module from a tag and compares it. [THREAT-MODEL.md](./THREAT-MODEL.md)
+§6 to §10 says what the sandbox does and does not protect.
+
+What was measured before the release:
+
+- The module answers all 377 cases through a host that traps on any
+  import but `random-get`, with no trap, and answered every one of the
+  6,179 rows of the generated corpora (1,179 receipts and 5,000 mutants)
+  byte for byte as its native build
+  ([aprv.wasm parity](docs/evidence/2026-09-29-aprv-wasm-parity.md),
+  [review fixes](docs/evidence/2026-09-29-core-review-fixes.md)).
+- Every package answered the shared cases and the corpora through its own
+  host layer, row for row as the module does; `aprv-server` refuses the 27
+  rows over the 3 MiB cap before the module, as Apple's endpoint does
+  ([migration status](docs/rust-core/STATUS.md)).
+- Against the Java implementation, over 7,647 calls (the cases, the
+  corpora and the fuzz seeds), the core never differed in verdict or
+  payload on the corpora and never accepted anything unsigned; every
+  other difference is recorded with its reason
+  ([differential campaign](docs/evidence/2026-09-29-differential-campaign.md)).
+- Five adversarial reviews of the core found nothing in memory safety,
+  isolation or trust; what they did find is fixed and logged
+  ([REVIEW-LOG.md](docs/rust-core/REVIEW-LOG.md)).
+
+Speed depends on the host; [BENCHMARKS.md](./BENCHMARKS.md) has the
+numbers. Python and Ruby compile the module once per process (seconds on
+a loaded machine, a tenth of a second from Python's cache), so build the
+`Verifier` at start-up, never per request.
 
 ## JavaScript runtimes
 
-The npm package has two entry points. The default,
-`apple-purchase-receipt-verifier`, is synchronous and runs on Node 20+, Bun,
-Deno and Cloudflare Workers (with `nodejs_compat` and a compatibility date of
-2024-09-23 or later, or `nodejs_compat_v2` on an older date).
-`apple-purchase-receipt-verifier/web` does the same verification on
-`crypto.subtle` alone, with every method returning a Promise, for runtimes
-that only have WebCrypto: the Vercel Edge runtime, Next.js edge middleware,
-Cloudflare Workers without flags and Fastly Compute. Akamai EdgeWorkers is
-expected to work but untested. The runtime table, what CI proves on each and
-how the two APIs differ are in
-[node/README.md](node/README.md#webcrypto-only-runtimes).
+The npm package runs the same module on every runtime; its two entry
+points differ only in that `apple-purchase-receipt-verifier/web` returns
+Promises. It runs on Node 20+, Bun, Deno (with
+`--allow-read --allow-env=JCO_DEBUG`), Cloudflare Workers with no
+compatibility flag, Vercel Edge and browsers through a bundler. Fastly
+Compute and Akamai EdgeWorkers are not supported: neither runs
+WebAssembly. The runtime table and what CI proves on each are in
+[node/README.md](node/README.md#runtimes).
 
 ## Using the result
 
@@ -204,16 +265,16 @@ all.
 | `UNTRUSTED_CHAIN` | possible fraud | Deny and alert. The path does not reach a pinned Apple root. `21003` at the endpoint. |
 | `INVALID_SIGNATURE` | possible fraud | Deny and alert. The bytes were altered after Apple signed them. `21003` at the endpoint. |
 | `INVALID_CERTIFICATE_PURPOSE` | possible fraud | Deny and alert. A certificate chaining to an Apple root without the marker OID its position requires: a developer's own certificate signing a forged payload looks exactly like this. `21003` at the endpoint. |
-| `UNREADABLE_PAYLOAD` | not the client's | The chain and signature verified, but the content Apple signed does not parse. Deterministic: the same bytes fail the same way, so do not retry the library. Log the cause with the library version, alert, and settle the purchase through the App Store Server API by transaction id; grant provisionally only if the business accepts that. `21009` at the endpoint. |
-| `INTERNAL_ERROR` | not the client's | The library itself failed before it could decide: a runtime missing an algorithm, or a clock that throws. Alert, do not retry. `21009` at the endpoint. |
+| `UNREADABLE_PAYLOAD` | not the client's | The chain and signature verified, but the content Apple signed does not parse. Deterministic: the same bytes fail the same way, so do not retry the library. Log the failure with the library version, alert, and settle the purchase through the App Store Server API by transaction id; grant provisionally only if the business accepts that. `21009` at the endpoint. |
+| `INTERNAL_ERROR` | not the client's | The library itself failed before it could decide: a trap inside the module, an `aprv-server` that did not answer, a runtime missing an algorithm, or a clock that throws. Alert, do not retry. `21009` at the endpoint. |
 
 A payload for another app, another environment or another app Apple id
 verifies: the library returns what Apple signed and leaves those checks to
 you (step 2 of each branch in [INTEGRATION.md](./INTEGRATION.md)).
 
-The vocabulary is closed and identical in all nine ports, so this table is one
-policy across every backend language. What signatures still cannot tell you,
-and why replay and refund bookkeeping are the caller's job, is in
+The vocabulary is closed and identical in every package, so this table is
+one policy across every backend language. What signatures still cannot tell
+you, and why replay and refund bookkeeping are the caller's job, is in
 [INTENT.md](./INTENT.md) and [THREAT-MODEL.md](./THREAT-MODEL.md) section 4.
 
 ## Upstream
@@ -233,25 +294,26 @@ So there is no official implementation to wait for. This repository is
 where signature verification of legacy receipts lives, in the four languages
 of Apple's libraries and in five more, against the same root certificates:
 the chain check to Apple's pinned roots, the `verifyReceipt`-compatible
-endpoint, the Java 8 floor and the zero-dependency Node build.
+endpoint, the Java 8 floor and the zero-dependency Node package.
 
 ## Documentation map
 
 Start with INTENT, then PLAN, then ROADMAP.
 
 - [INTENT.md](./INTENT.md): why the library exists, and its trust model.
-- [PLAN.md](./PLAN.md): algorithms, numbered decisions, API shape, prior-art survey (section 1).
+- [PLAN.md](./PLAN.md): algorithms, numbered decisions (D17 onward are the one-core design), API shape, prior-art survey (section 1).
 - [ROADMAP.md](./ROADMAP.md): what is next.
-- [THREAT-MODEL.md](./THREAT-MODEL.md): attacker-controlled inputs, each mitigation with its test, non-goals, residual risks.
+- [THREAT-MODEL.md](./THREAT-MODEL.md): attacker-controlled inputs, each mitigation with its test, where the core runs and what isolates it, non-goals, residual risks.
 - [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md): every receipt attribute the genuine fixtures carry, which ones Apple documents, and Apple's chain-of-trust steps mapped onto the code.
 - [COMPARISON.md](./COMPARISON.md): field-by-field fidelity, and the gaps only Apple's servers can fill.
-- [SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md): every runtime line CI runs, and the rule that adds or drops one.
-- [PORTS.md](./PORTS.md): which features each port ships.
-- [BENCHMARKS.md](./BENCHMARKS.md): cross-port benchmarks, same operations on the same fixtures.
+- [PORTS.md](./PORTS.md): what each package runs the core on, its floor, platforms and one-command check.
+- [SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md): every runtime line CI runs, the platforms each package reaches, and the rule that adds or drops one.
+- [BENCHMARKS.md](./BENCHMARKS.md): per-host benchmarks, same operations on the same fixtures.
 - [INTEGRATION.md](./INTEGRATION.md): the full flow from verified payload to entitlement.
-- [CONTRIBUTING.md](./CONTRIBUTING.md): test suites, fixture tiers, conformance vectors, fuzzing, commits, releases.
+- [CONTRIBUTING.md](./CONTRIBUTING.md): building the module, the test suites, fixture tiers, conformance vectors, behaviour changes, adding a wrapper, commits, releases.
 - [SECURITY.md](./SECURITY.md): reporting a vulnerability, supported versions, dependency policy.
 - [BOOTSTRAP.md](./BOOTSTRAP.md): the one-time owner action each registry needs before CI can publish to it.
+- [docs/rust-core/](./docs/rust-core/README.md): the plan behind 0.8.0, its decisions (R1 to R34), the review log and the migration's status.
 
 ## Trust anchors
 
@@ -261,8 +323,9 @@ Production trust anchors are all three published Apple root certificates in
 Today's chains end at Apple Inc. Root (legacy PKCS#7 receipts) and Apple Root
 CA - G3 (JWS signed data), but Apple's own guidance is to trust every root on
 its PKI page rather than a specific one; PLAN.md D15 has the sourced
-rationale. Each language bundles its own copy as packaged resources or
-compiled-in constants; a `Config` also accepts caller-supplied roots.
+rationale. The Rust core compiles them in, so every package that runs the
+module carries them inside `aprv.wasm`; the Java implementation carries them
+as constants. A `Config` also accepts caller-supplied roots.
 
 ## Debugging a receipt by hand
 
@@ -300,3 +363,8 @@ and your bundle id.
   the renewal info), `isUpgraded` and later refunds need App Store Server
   Notifications V2 or the App Store Server API. How old a signed payload may
   be is likewise the caller's decision, made on its `signedDate`.
+- **One core, one second opinion**: nine hand-written implementations
+  became one Rust core on OpenSSL in 0.8.0, so a security fix is made once.
+  The Java implementation stays independent on purpose: a bug in the core
+  or in OpenSSL would reach every Wasm package at once, and a second
+  implementation answering the same cases is what catches it.

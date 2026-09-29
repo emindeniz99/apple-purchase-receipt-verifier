@@ -409,6 +409,7 @@ and `-- --worst-case` for the hostile cases on your own hardware.
   `InvalidOperationException`. The module imports exactly one function,
   `random-get`, answered from `RandomNumberGenerator`; anything else it asks
   for is refused.
+- **Input cap.** At most 3,145,729 bytes of an input (one over the largest cap) are copied into the module's memory; the core decides every cap on the length, so a longer input gets the `TooLarge` answer (21002 at the endpoint) it would get whole.
 - **Instances.** One compiled module per process. Each `IVerifier` owns a
   small pool of instances, each in a `Store` of its own limited to one
   instance and 256 MiB of linear memory. A call takes an idle instance or a

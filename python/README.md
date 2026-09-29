@@ -435,6 +435,8 @@ limits are Apple's, fixed constants in every port of this library, not
 `fixtures/cases.json` holds every port to these same numbers, from both
 sides of each boundary.
 
+The package copies at most 3,145,729 bytes of any input into the module (one over the cap), so the module itself answers `TOO_LARGE` and a huge input costs no memory.
+
 ## Why offline
 
 Signature verification cannot fail because a vendor endpoint is down, so a
