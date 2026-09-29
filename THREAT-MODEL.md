@@ -48,7 +48,12 @@ counts (PLAN.md §2.1 step 4).
 
 Chain validation terminates at anchors the caller handed in, and no port links
 a code path that can reach the platform store or the network. PLAN.md D16
-lists that as one reason the readers are hand-written.
+lists that as one reason the readers are hand-written. The Rust core reads
+with OpenSSL instead (docs/rust-core/DECISIONS.md R21), and holds the same
+line there: the store holds the caller's anchors and nothing else, no
+default trust path, lookup, configuration file or provider is loaded, and
+nothing opens a socket (`rust/openssl/README.md`, Isolation). The order of
+the anchors does not matter, even between two that share a subject name.
 
 *Proof.* `transaction/reject-foreign-root`, `receipt/reject-foreign-root`
 (both `UNTRUSTED_CHAIN`), `endpoint/foreign-root-answers-21003`, and Apple's own
@@ -59,9 +64,12 @@ Xcode receipts rejected against the real roots
 requiring rejection anyway: `go/systemtrust_test.go`,
 `python/tests/test_trust_isolation.py`,
 `swift/Tests/ApplePurchaseReceiptVerifierTests/TrustStoreIsolationTests.swift`,
-`rust/tests/trust_pinning.rs`, `php/tests/PinnedAnchorsTest.php`,
+`rust/tests/trust_pinning.rs` with `rust/openssl/tests/isolation.rs`,
+`php/tests/PinnedAnchorsTest.php`,
 `ruby/test/hostile_input_test.rb`, `node/test/trust-store-isolation.test.js`,
-`java/src/test/.../TrustStoreIsolationTest.java`.
+`java/src/test/.../TrustStoreIsolationTest.java`. Anchor order:
+`receipt/verify-under-the-second-of-two-roots-sharing-a-subject` and
+`transaction/verify-under-the-second-of-two-roots-sharing-a-subject`.
 
 ### 3.2 Marker OIDs stop the wrong-purpose certificate
 
@@ -88,7 +96,13 @@ so a change on Apple's side cannot reject genuine receipts; an RSA signature
 binds its hash algorithm in the DigestInfo, and a weak hash helps only an
 attacker holding an Apple signature over it). No port re-encodes the input
 first: the readers keep input slices, one reason library parsers that
-normalise to DER were rejected (PLAN.md D16).
+normalise to DER were rejected (PLAN.md D16). One exception, in the Rust
+core: OpenSSL's `CMS_SignerInfo_verify` re-encodes the signedAttrs
+(`ASN1_item_i2d` with `CMS_Attributes_Verify`) before it checks the
+signature over them, so a set the signer really signed but sent in non-DER
+order verifies there where Java refuses it (docs/rust-core/DECISIONS.md
+R20). It is still the signer's own signature; the content is digested as
+the octets that arrived, chunks joined.
 
 Since 0.7 the library checks no claim. Bundle id, environment, app Apple id
 and device binding are the caller's to compare on the payload it gets back
@@ -101,11 +115,15 @@ sandbox (PLAN.md D3).
 A legacy receipt is verified in a fixed order, the same in all nine ports:
 
 1. Decode the base64 and parse the CMS. Bad base64, trailing bytes, absent
-   content, no `SignerInfo` or more than four are `MALFORMED`.
+   content, no `SignerInfo` or more than four, more than ten embedded
+   certificates, and an envelope over the depth bound (§3.7) are
+   `MALFORMED`.
 2. Read the receipt creation date, attribute 12, and nothing else: walk the
-   top-level attribute SET, read each entry's type, decode only the value of
-   the first type 12. No usable date means the chain is judged at the
-   `Config` clock. This step never rejects.
+   top-level attribute SET under the depth bound (and, in Rust, the node
+   budget), read each entry's type, decode only the value of the first
+   type 12. No usable date means the chain is judged at the `Config` clock.
+   This step never rejects. The Rust core takes it only once a `SignerInfo`
+   names an embedded certificate, since only a chain needs the date.
 3. Build the chain top-down from the pinned roots at that instant, with each
    certificate's validity window, then check the marker OIDs on the signer
    and the WWDR intermediate (`UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`,
@@ -230,16 +248,34 @@ Before the signer is trusted the payload is read only as far as attribute
 12 (§3.3), so the attacker's bytes reach the full payload grammar only
 under a trusted signature; a bound hit there is `UNREADABLE_PAYLOAD`, since
 only a trusted signer could have put the bytes in front of it. Several
-ports also cap the decoded node count. Failures surface as the library's
-own result, never as a language-level crash.
+ports also cap the decoded node count; the Rust core caps each value parsed
+on its own at 100,000 values. There, OpenSSL decodes, and a walk over the
+headers alone (`rust/openssl/src/walk.rs`) runs first: over the whole CMS
+envelope, after a shallow decode has counted the certificates, CRLs and
+SignerInfos and before `d2i_CMS_ContentInfo` builds any certificate's key,
+it applies the depth bound to constructed values of every class and the
+node budget, so no envelope reaches the full decode over a bound. Failures
+surface as the library's own result, never as a language-level crash.
 
-*Proof.* Trailing bytes: `parse_exact` in `rust/src/asn1.rs`,
-`ErrTrailingBytes` in `go/internal/der/der.go`, `node/src/der.ts`.
+*Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
+in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header
+walk) with `rust/tests/receipt_negative.rs`
+(`trailing_bytes_after_the_cms_blob_are_rejected`); `ErrTrailingBytes` in
+`go/internal/der/der.go`, `node/src/der.ts`.
 Amplification, size bounds and certificate flooding:
+`rust/tests/envelope_bounds.rs` (a full-decode counter proves the flood,
+behind a trailing byte or a broken envelope too, never reaches
+`d2i_CMS_ContentInfo`), `rust/tests/hostile.rs`,
 `go/internal/der/amplification_test.go`, `go/sizebound_test.go`,
 `php/tests/MemoryExhaustionTest.php`, `php/tests/ResourceBoundsTest.php`,
 `ruby/test/certificate_flood_test.rb`. Depth, as shared vectors:
-`receipt/unreadable-signed-content-nested-33-deep` and
+`receipt/unreadable-signed-content-nested-33-deep`,
+`receipt/reject-an-envelope-nested-33-deep`,
+`receipt/reject-an-envelope-nested-33-deep-in-context-tags`,
+`receipt/reject-digest-algorithm-parameters-nested-33-deep`,
+`receipt/reject-a-crls-entry-nested-33-deep`,
+`receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep`,
+`receipt/unreadable-signed-content-nested-33-deep-in-context-tags` and
 `signed-data/unreadable-payload-nested-65-deep`.
 Hostile-input suites: `java/src/test/.../HostileReceiptInputTest.java`,
 `php/tests/HostileInputTest.php`, `ruby/test/hostile_input_test.rb`,
@@ -259,7 +295,7 @@ both paths: `transaction/reject-x5c-certificate-version-11`,
 `receipt/reject-signer-on-an-unimplemented-curve`.
 
 *Fuzzing.* Coverage-guided targets run in CI over the readers and the public
-entry points: [`rust/fuzz/README.md`](./rust/fuzz/README.md) (seven targets),
+entry points: [`rust/fuzz/README.md`](./rust/fuzz/README.md) (four targets),
 [`node/fuzz/README.md`](./node/fuzz/README.md) (six),
 [`dotnet/fuzz/README.md`](./dotnet/fuzz/README.md) (five),
 [`go/fuzz_test.go`](./go/fuzz_test.go) (three). Each carries an anchor-set

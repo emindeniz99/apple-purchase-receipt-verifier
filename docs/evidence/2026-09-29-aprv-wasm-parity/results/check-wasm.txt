@@ -1,0 +1,6 @@
+# tools/check-wasm.sh (rust-core)
+check-wasm: ok   SHA256SUMS lists and matches aprv.wasm, aprv.component.wasm and aprv.wit
+check-wasm: ok   imports exactly aprv:verifier/host@1.0.0 random-get
+check-wasm: ok   exports the four operations, their post-return functions, cabi_realloc, memory and _initialize, nothing else
+check-wasm: ok   the component's interface reads back as rust/bindings/abi/wit/aprv.wit (world aprv)
+check-wasm: ok   <out>/aprv.wit is rust/bindings/abi/wit/aprv.wit

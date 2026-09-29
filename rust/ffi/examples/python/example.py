@@ -5,7 +5,7 @@ signed it, and the genuine sandbox receipt verified against the three
 bundled Apple roots.
 
     cargo build --locked --release --manifest-path rust/ffi/Cargo.toml
-    python3 rust/ffi/examples/python/example.py rust/ffi/target/release
+    python3 rust/ffi/examples/python/example.py rust/target/release
 
 The same two verifications examples/cpp/example.cpp and
 examples/elixir/example.exs do, against the same three files. ctypes opens

@@ -10,13 +10,12 @@
 //! reports that check's reason, and the shared cases pin it.
 
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
-use crate::chain::validate_pair;
-use crate::crypto::{has_unimplemented_curve, verify_es256_under};
 use crate::error::{malformed, Failure, Reason};
 use crate::json::{instant, whole_object_members, JsonError, Value};
+use crate::path::validate_pair;
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
-use crate::x509::{Certificate, OID_EC_PUBLIC_KEY};
+use aprv_openssl::{verify_es256, Certificate};
 use core::fmt;
 
 /// The longest compact JWS, in UTF-8 bytes, checked before the string is
@@ -103,7 +102,7 @@ impl std::error::Error for Unreadable {
 /// if it does. Nothing unverified gets to decide which of the two a caller
 /// sees.
 pub(crate) fn verify(
-    jws: &str,
+    jws: &[u8],
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<JsonPayload, Failure> {
@@ -116,7 +115,9 @@ pub(crate) fn verify(
             format!("jws exceeds the maximum accepted size of {MAX_JWS_BYTES} bytes"),
         ));
     }
-    let parts: Vec<&str> = jws.split('.').collect();
+    // Split as bytes: input that is not UTF-8 is judged by the same rules,
+    // and cannot be canonical base64url.
+    let parts: Vec<&[u8]> = jws.split(|byte| *byte == b'.').collect();
     let [header_b64, payload_b64, signature_b64] = parts.as_slice() else {
         return Err(malformed(format!(
             "expected 3 dot-separated segments, got {}",
@@ -169,9 +170,9 @@ pub(crate) fn verify(
             format!("intermediate certificate lacks Apple marker OID {WWDR_INTERMEDIATE_OID}"),
         ));
     }
-    if has_unimplemented_curve(&leaf) {
+    if !leaf.has_usable_key() {
         return Err(invalid_certificate(
-            "x5c entry uses an unimplemented elliptic curve",
+            "x5c entry has a public key this library cannot use",
         ));
     }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
@@ -239,13 +240,10 @@ fn read_payload(bytes: &[u8]) -> Result<(String, Option<i64>), Unreadable> {
 
 fn verify_signature(
     leaf: &Certificate,
-    header_b64: &str,
-    payload_b64: &str,
+    header_b64: &[u8],
+    payload_b64: &[u8],
     signature: &[u8],
 ) -> Result<(), Failure> {
-    if leaf.public_key_algorithm_oid() != OID_EC_PUBLIC_KEY {
-        return Err(Failure::new(Reason::InvalidSignature, "leaf key is not EC"));
-    }
     if signature.len() != 64 {
         return Err(Failure::new(
             Reason::InvalidSignature,
@@ -253,10 +251,12 @@ fn verify_signature(
         ));
     }
     let mut signing_input = Vec::with_capacity(header_b64.len() + 1 + payload_b64.len());
-    signing_input.extend_from_slice(header_b64.as_bytes());
+    signing_input.extend_from_slice(header_b64);
     signing_input.push(b'.');
-    signing_input.extend_from_slice(payload_b64.as_bytes());
-    if verify_es256_under(leaf, signature, &signing_input) {
+    signing_input.extend_from_slice(payload_b64);
+    // False for a key that is not EC on P-256 as well as for a signature
+    // that does not match.
+    if verify_es256(leaf, signature, &signing_input) {
         Ok(())
     } else {
         Err(Failure::new(
@@ -270,17 +270,19 @@ fn verify_signature(
 /// (RFC 7515 4.1.6), then a certificate. Package-internal so the shared
 /// decodeBase64 cases can reach the decoder directly.
 pub(crate) fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, Failure> {
-    decode_receipt_base64(text).ok_or_else(|| invalid_certificate("x5c entry is not valid base64"))
+    decode_receipt_base64(text.as_bytes())
+        .ok_or_else(|| invalid_certificate("x5c entry is not valid base64"))
 }
 
-/// Only whether the entry IS a certificate. Its key is judged when it is
-/// about to be used, once a pinned anchor has vouched for it: the curve of
-/// the intermediate in [`validate_pair`], the leaf's before ES256, and the
-/// third entry's never.
+/// Only whether the entry IS a certificate: one that OpenSSL parses whole
+/// and a strict reader decodes. Its key is judged when it is about to be
+/// used, once a pinned anchor has vouched for it: the intermediate's in
+/// [`validate_pair`], the leaf's before ES256, and the third entry's never.
 fn parse_x5c_certificate(entry: &str) -> Result<Certificate, Failure> {
     let der = decode_x5c_entry(entry)?;
     Certificate::from_der(&der)
-        .map_err(|_| invalid_certificate("x5c entry is not a valid certificate"))
+        .filter(Certificate::is_readable)
+        .ok_or_else(|| invalid_certificate("x5c entry is not a valid certificate"))
 }
 
 #[cfg(test)]
