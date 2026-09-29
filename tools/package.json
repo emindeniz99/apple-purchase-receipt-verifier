@@ -1,0 +1,16 @@
+{
+  "name": "apple-purchase-receipt-verifier-tools",
+  "private": true,
+  "description": "Repository tooling for CI: the wire-schema validator, the SBOM augmenter and the Wasm trap host. Never published.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.20.0"
+  }
+}

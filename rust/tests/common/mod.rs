@@ -1,14 +1,16 @@
-//! Shared helpers for the native suite: fixture loading, a tiny DER writer,
-//! and a CMS rebuilder that lets a test state one structural fault at a time.
+//! Shared helpers for the native suite: fixture loading, a tiny DER writer
+//! and reader, and a CMS rebuilder that lets a test state one structural
+//! fault at a time.
 #![allow(dead_code)]
 
-use apple_purchase_receipt_verifier::__internal::asn1::tag;
-use apple_purchase_receipt_verifier::__internal::{
-    asn1, base64_decode_lenient, base64_encode, cms,
-};
+pub mod cms;
+pub mod der;
+
+use apple_purchase_receipt_verifier::__internal::{base64_decode_lenient, base64_encode};
 use apple_purchase_receipt_verifier::{
     Config, Failure, InAppPurchase, JsonPayload, ReceiptPayload, TrustAnchor, Verifier,
 };
+use der::tag;
 use std::path::{Path, PathBuf};
 
 /// The shared fixtures: `APRV_FIXTURES_DIR` when set, else the first
@@ -73,6 +75,16 @@ pub fn receipt_der() -> Vec<u8> {
 
 pub fn receipt_root() -> TrustAnchor {
     anchor("generated-0.7/receipt-root.der")
+}
+
+/// A certificate's `serialNumber` content octets and issuer `Name` TLV,
+/// read with the test DER reader.
+pub fn certificate_identity(certificate: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    let certificate = der::parse_exact(certificate).ok()?;
+    let fields = certificate.child(0)?.children();
+    let index = usize::from(matches!(fields.first(), Some(f) if f.tag == tag::CONTEXT_0));
+    let (serial, issuer) = (fields.get(index)?, fields.get(index + 2)?);
+    Some((serial.contents.to_vec(), issuer.full.to_vec()))
 }
 
 // --- the 0.7 API, shortened ----------------------------------------------
@@ -200,7 +212,7 @@ pub fn der_set(parts: &[Vec<u8>]) -> Vec<u8> {
 }
 
 pub fn der_oid(dotted: &str) -> Vec<u8> {
-    der(tag::OID, &asn1::encode_oid(dotted).expect("bad OID"))
+    der(tag::OID, &der::encode_oid(dotted).expect("bad OID"))
 }
 
 pub fn der_int(value: u64) -> Vec<u8> {
@@ -216,16 +228,66 @@ pub fn der_int(value: u64) -> Vec<u8> {
 
 /// A P-256 test PKI minted on the spot from fixed scalars, for tests that
 /// need a signer no fixture has: a key type or digest Apple does not use, or
-/// a payload of the test's own.
+/// a payload of the test's own. Keys and signatures come from OpenSSL.
 pub mod mint {
-    use super::{der, der_int, der_oid, der_seq, der_set};
-    use apple_purchase_receipt_verifier::__internal::asn1::tag;
-    use p256::ecdsa::signature::Signer;
-    use p256::ecdsa::{DerSignature, SigningKey};
+    use super::{der, der_int, der_oid, der_seq, der_set, tag};
+    use openssl::bn::{BigNum, BigNumContext};
+    use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
+    use openssl::ecdsa::EcdsaSig;
+    use openssl::hash::MessageDigest;
+    use openssl::nid::Nid;
+    use openssl::pkey::{PKey, Private};
 
     pub const ECDSA_WITH_SHA256: &str = "1.2.840.10045.4.3.2";
     pub const RECEIPT_SIGNER_MARKER: &str = "1.2.840.113635.100.6.11.1";
     pub const WWDR_MARKER: &str = "1.2.840.113635.100.6.2.1";
+
+    /// A P-256 private key.
+    pub struct SigningKey(EcKey<Private>);
+
+    impl SigningKey {
+        /// The DER `ECDSA-Sig-Value` over SHA-256 of `data`.
+        pub fn sign_der(&self, data: &[u8]) -> Vec<u8> {
+            self.sign_digest_der(MessageDigest::sha256(), data)
+        }
+
+        /// The DER `ECDSA-Sig-Value` over `digest` of `data`.
+        pub fn sign_digest_der(&self, digest: MessageDigest, data: &[u8]) -> Vec<u8> {
+            let hashed = openssl::hash::hash(digest, data).unwrap();
+            EcdsaSig::sign(&hashed, &self.0).unwrap().to_der().unwrap()
+        }
+
+        /// The DER `ECDSA-Sig-Value` over an already computed digest.
+        pub fn sign_prehash_der(&self, prehash: &[u8]) -> Vec<u8> {
+            EcdsaSig::sign(prehash, &self.0).unwrap().to_der().unwrap()
+        }
+
+        /// The raw 64-byte `r || s` ES256 signature of `data`.
+        pub fn sign_raw(&self, data: &[u8]) -> Vec<u8> {
+            let hashed = openssl::sha::sha256(data);
+            let signature = EcdsaSig::sign(&hashed, &self.0).unwrap();
+            let mut raw = signature.r().to_vec_padded(32).unwrap();
+            raw.extend(signature.s().to_vec_padded(32).unwrap());
+            raw
+        }
+
+        /// The uncompressed public point.
+        pub fn public_point(&self) -> Vec<u8> {
+            let mut context = BigNumContext::new().unwrap();
+            self.0
+                .public_key()
+                .to_bytes(
+                    self.0.group(),
+                    PointConversionForm::UNCOMPRESSED,
+                    &mut context,
+                )
+                .unwrap()
+        }
+
+        pub fn pkey(&self) -> PKey<Private> {
+            PKey::from_ec_key(self.0.clone()).unwrap()
+        }
+    }
 
     /// A JWS over `payload`, ES256-signed by a minted leaf whose x5c chain
     /// carries both Apple marker OIDs, and the DER of the root to pin.
@@ -261,18 +323,20 @@ pub mod mint {
             super::base64url(header.as_bytes()),
             super::base64url(payload)
         );
-        let signature: p256::ecdsa::Signature = leaf_key.sign(signing_input.as_bytes());
-        let jws = format!(
-            "{signing_input}.{}",
-            super::base64url(&signature.to_bytes())
-        );
+        let signature = leaf_key.sign_raw(signing_input.as_bytes());
+        let jws = format!("{signing_input}.{}", super::base64url(&signature));
         (root, jws)
     }
 
     pub fn key(scalar: u8) -> SigningKey {
-        let mut bytes = [0u8; 32];
-        bytes[31] = scalar;
-        SigningKey::from_bytes(&bytes.into()).unwrap()
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
+        let private = BigNum::from_u32(u32::from(scalar)).unwrap();
+        let mut context = BigNumContext::new().unwrap();
+        let mut public = EcPoint::new(&group).unwrap();
+        public
+            .mul_generator2(&group, &private, &mut context)
+            .unwrap();
+        SigningKey(EcKey::from_private_components(&group, &private, &public).unwrap())
     }
 
     pub fn name(common_name: &str) -> Vec<u8> {
@@ -283,9 +347,8 @@ pub mod mint {
     }
 
     pub fn spki(key: &SigningKey) -> Vec<u8> {
-        let point = key.verifying_key().to_encoded_point(false);
         let mut bits = vec![0x00];
-        bits.extend_from_slice(point.as_bytes());
+        bits.extend_from_slice(&key.public_point());
         der_seq(&[
             der_seq(&[der_oid("1.2.840.10045.2.1"), der_oid("1.2.840.10045.3.1.7")]),
             der(0x03, &bits),
@@ -332,8 +395,8 @@ pub mod mint {
             marker,
             &algorithm,
         );
-        let signature: DerSignature = issuer_key.sign(&tbs);
-        assemble(tbs, algorithm, signature.as_bytes())
+        let signature = issuer_key.sign_der(&tbs);
+        assemble(tbs, algorithm, &signature)
     }
 
     /// A `TBSCertificate` stating `algorithm` as its signature algorithm.

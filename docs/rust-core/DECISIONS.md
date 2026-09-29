@@ -372,6 +372,20 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 - **New Apple fields** land in `unknownAttributes`, which the 0.7 rules
   keep raw. The private-receipt drift check (MIGRATION.md 1.9) reports
   new type numbers.
+- **Recorded divergences from the core review** (2026-09-29,
+  [core review fixes][corefix]). "0.7" is the Rust core before the
+  migration; Java is the 0.7 Java implementation. Rows where all three now
+  agree are in the note, not here.
+
+  | Input | 0.7 | Java | Core | Why the core answers so | Case |
+  |---|---|---|---|---|---|
+  | eContent as an `OCTET STRING` of 7 or more constructed levels | ok | ok | `MALFORMED` | OpenSSL decodes six (`ASN1_MAX_STRING_NEST`); changing it means patching OpenSSL. Substrate divergence, fails closed | `receipt/reject-econtent-rechunked-into-7-constructed-levels` |
+  | A payload attribute value of 7 or more constructed levels | ok | ok | `UNREADABLE_PAYLOAD` | The same bound, under a verified signature | `receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels` |
+  | More than 100,000 values in the envelope, or in one attribute SET | `MALFORMED` / `UNREADABLE_PAYLOAD` | ok | as 0.7 | 0.7's node budget, restored: without it a 3 MiB receipt cost 0.3 to 0.7 s before any signature. Inputs are 200 KB or more, so Rust tests pin it, not a shared case | `rust/tests/envelope_bounds.rs`, `receipt_payload.rs` unit tests |
+  | More than 10 CRLs | ok | ok | `MALFORMED` | Each CRL is decoded in full before anything is verified; bounded like the certificates. The 0.7 contract is silent; this fails closed. Apple sends none | `receipt/reject-eleven-embedded-crls` |
+  | A payload string whose length takes more than four octets | kept raw | read | kept raw | The payload is DER; 0.7's header rules restored | `receipt/bundle-id-with-a-five-octet-length-is-kept-raw` |
+  | A fourth attribute field that is, or holds, an invalid primitive (BOOLEAN of two octets, padded INTEGER) | ok | `UNREADABLE_PAYLOAD` | as Java | Not valid ASN.1 in BER either (X.690 8.2, 8.3.2); OpenSSL decodes every primitive the walk passes | `receipt/unreadable-fourth-field-boolean-of-two-octets`, `receipt/unreadable-fourth-field-sequence-holding-a-padded-integer` |
+  | An invalid primitive inside an unsigned envelope value | ok | not measured | `MALFORMED` | As above, over the envelope | `rust/tests/envelope_bounds.rs` |
 
 ---
 
@@ -897,3 +911,4 @@ One table for everything the plan measured or considered and rejected.
 [swift]: ../evidence/2026-09-26-swift-wasmkit.md
 [wasmbake]: ../evidence/2026-09-26-wasm-architecture-bakeoff.md
 [wasmi]: ../evidence/2026-09-27-wasmi-security-review.md
+[corefix]: ../evidence/2026-09-29-core-review-fixes.md

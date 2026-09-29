@@ -1,0 +1,6 @@
+# git clone --depth 1 --branch lane/core, then cargo build --locked --manifest-path $SCRATCH/clone/rust/Cargo.toml
+# (an earlier --workspace run in the same target compiled openssl-sys 0.9.117 from rust/vendor, build script included,
+# and every dependency; it stopped linking aprv-abi, a wasm32 cdylib, natively. Tail of the second run:)
+   Compiling aprv-openssl v0.7.0 ($SCRATCH/clone/rust/openssl)
+   Compiling apple-purchase-receipt-verifier v0.7.0 ($SCRATCH/clone/rust)
+    Finished `dev` profile [unoptimized] target(s) in 2.25s

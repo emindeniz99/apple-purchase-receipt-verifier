@@ -1,0 +1,423 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/rust/bindings/wire/schema/verify-receipt-result.schema.json",
+  "title": "The answer of verify-receipt",
+  "description": "What aprv.wasm's verify-receipt export returns (aprv-wire): a verified receipt with its payload, or a failure. Nothing else is ever a member.",
+  "oneOf": [
+    {
+      "description": "The receipt verified.",
+      "type": "object",
+      "required": [
+        "verified",
+        "payload"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verified": {
+          "const": true
+        },
+        "payload": {
+          "$ref": "#/$defs/receiptPayload"
+        }
+      }
+    },
+    {
+      "$ref": "#/$defs/failure"
+    }
+  ],
+  "$defs": {
+    "receiptPayload": {
+      "description": "A verified receipt's payload, 0.7's ReceiptPayload.toJson() (docs/design/0.7-api.md, Our JSON). Every key is present; a missing attribute is null.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_type",
+        "app_item_id",
+        "bundle_id",
+        "bundle_id_bytes",
+        "application_version",
+        "opaque_value",
+        "sha1_hash",
+        "receipt_creation_date_ms",
+        "download_id",
+        "version_external_identifier",
+        "in_app",
+        "original_purchase_date_ms",
+        "original_application_version",
+        "expiration_date_ms",
+        "unknown_attributes"
+      ],
+      "properties": {
+        "receipt_type": {
+          "description": "Attribute 0, such as Production or ProductionSandbox.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "app_item_id": {
+          "description": "Attribute 1.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bundle_id": {
+          "description": "Attribute 2, decoded.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bundle_id_bytes": {
+          "description": "Attribute 2, the value octets as they sit in the receipt.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/base64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "application_version": {
+          "description": "Attribute 3.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opaque_value": {
+          "description": "Attribute 4.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/base64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha1_hash": {
+          "description": "Attribute 5.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/base64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipt_creation_date_ms": {
+          "description": "Attribute 12.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochMillis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "download_id": {
+          "description": "Attribute 15.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version_external_identifier": {
+          "description": "Attribute 16.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "in_app": {
+          "description": "Attribute 17, one entry per copy, in receipt order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inAppPurchase"
+          }
+        },
+        "original_purchase_date_ms": {
+          "description": "Attribute 18.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochMillis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "original_application_version": {
+          "description": "Attribute 19.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expiration_date_ms": {
+          "description": "Attribute 21.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochMillis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unknown_attributes": {
+          "$ref": "#/$defs/unknownAttributes"
+        }
+      }
+    },
+    "inAppPurchase": {
+      "description": "One in-app purchase, attribute 17 (docs/design/0.7-api.md section 1).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quantity",
+        "product_id",
+        "transaction_id",
+        "purchase_date_ms",
+        "original_transaction_id",
+        "original_purchase_date_ms",
+        "expires_date_ms",
+        "web_order_line_item_id",
+        "cancellation_date_ms",
+        "is_trial_period",
+        "is_in_intro_offer_period",
+        "unknown_attributes"
+      ],
+      "properties": {
+        "quantity": {
+          "description": "1701",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/int64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "product_id": {
+          "description": "1702",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transaction_id": {
+          "description": "1703",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purchase_date_ms": {
+          "description": "1704",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochMillis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "original_transaction_id": {
+          "description": "1705",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "original_purchase_date_ms": {
+          "description": "1706",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochMillis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expires_date_ms": {
+          "description": "1708",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochMillis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "web_order_line_item_id": {
+          "description": "1711",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cancellation_date_ms": {
+          "description": "1712",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochMillis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_trial_period": {
+          "description": "1713: 0 is false, any other value true",
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_in_intro_offer_period": {
+          "description": "1719: 0 is false, any other value true",
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unknown_attributes": {
+          "$ref": "#/$defs/unknownAttributes"
+        }
+      }
+    },
+    "failure": {
+      "description": "A verification failure. Match on reason; message is safe to log, never embeds raw input, and is not meant to be parsed.",
+      "type": "object",
+      "required": [
+        "verified",
+        "reason",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verified": {
+          "const": false
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "reason": {
+      "description": "The eight 0.7 reasons (docs/design/0.7-api.md, Result).",
+      "type": "string",
+      "enum": [
+        "MALFORMED",
+        "TOO_LARGE",
+        "INVALID_SIGNATURE",
+        "UNTRUSTED_CHAIN",
+        "INVALID_CERTIFICATE",
+        "INVALID_CERTIFICATE_PURPOSE",
+        "UNREADABLE_PAYLOAD",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "id": {
+      "description": "A 64-bit id as a decimal string, so no JavaScript reader rounds it; an ASN.1 INTEGER in hostile input can be negative. The pattern admits at most 19 digits; the value is an int64.",
+      "type": "string",
+      "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+    },
+    "int64": {
+      "description": "A signed 64-bit integer.",
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "epochMillis": {
+      "description": "An instant in milliseconds since 1970-01-01T00:00:00Z, UTC. Receipt dates carry whole seconds, so the last three digits are 000.",
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "base64": {
+      "description": "Bytes as padded standard base64 (RFC 4648 section 4).",
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+    },
+    "unknownAttributes": {
+      "description": "Every attribute that did not end up in a typed field, keyed by its decimal attribute type, each value the attribute's raw value octets in receipt order.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^(?:0|[1-9][0-9]*)$"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/base64"
+        }
+      }
+    }
+  }
+}

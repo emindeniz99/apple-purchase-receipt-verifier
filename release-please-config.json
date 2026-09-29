@@ -31,6 +31,15 @@
           "jsonpath": "$.package.version"
         },
         {
+          "type": "generic",
+          "path": "rust/Cargo.toml"
+        },
+        {
+          "type": "toml",
+          "path": "rust/openssl/Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
           "type": "xml",
           "path": "dotnet/Directory.Build.props",
           "xpath": "//project/propertyGroup/version"

@@ -1,0 +1,36 @@
+# The ABI tests of aprv.wasm on Wasmtime (MIGRATION.md step 1.4,
+# ARCHITECTURE.md §9 "The canonical ABI holds"): the built module through
+# a hand-rolled host over the core exports, and the built component through
+# Wasmtime's component runtime (`bindgen!` over ../wit/aprv.wit).
+#
+# A package of its own, outside the rust/ workspace, with its own lockfile:
+# Wasmtime's graph (and its licences) stays out of the library's, as the
+# server's does. It builds nothing of the library; it reads the module and
+# the component rust/bindings/abi/build.sh wrote:
+#
+#   APRV_WASM=<out>/aprv.wasm APRV_COMPONENT=<out>/aprv.component.wasm \
+#     cargo test --locked --manifest-path rust/bindings/abi/tests/Cargo.toml
+#
+# A missing path fails every test with that message; nothing is skipped.
+[package]
+name = "aprv-abi-tests"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+# aprv-server's pin: the ABI is tested on the runtime the server ships.
+wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std", "cranelift", "component-model", "parallel-compilation"] }
+getrandom = "0.3"
+serde_json = "1"
+
+[workspace]
+
+# Cranelift compiling a 3 MB module is slow without optimisation; the tests
+# themselves stay debuggable.
+[profile.dev]
+debug = false
+
+[profile.dev.package."*"]
+opt-level = 2

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/aprv-test/payload.schema.json",
+  "type": "object",
+  "required": ["id", "date"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^-?[0-9]+$" },
+    "date": { "type": ["integer", "null"] }
+  }
+}

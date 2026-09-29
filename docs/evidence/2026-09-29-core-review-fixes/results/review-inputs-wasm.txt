@@ -1,0 +1,108 @@
+== out
+e-crls.der: 434.6 ms, memory 34734080 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+e-deepwide.der: 287.1 ms, memory 123469824 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+e-many-attrs.der: 294.0 ms, memory 81002496 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+e-nosigners.der: 0.4 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS ContentInfo"}
+e-nulls.der: 351.7 ms, memory 57671680 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+e-trailing.der: 0.4 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+e-unsigned-deepwide.der: 282.8 ms, memory 104595456 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+e-unsigned-flat.der: 540.2 ms, memory 106692608 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+enveloped.der: 1032.7 ms, memory 26279936 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS ContentInfo"}
+many-brainpoolP160r1-trailing.der: 1043.2 ms, memory 24903680 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-certs-trailing.der: 157.0 ms, memory 17432576 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-certs.der: 10.3 ms, memory 9961472 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 3219 certificates, more than the maximum of 10"}
+many-dsa-trailing.der: 138.2 ms, memory 17039360 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-dsa.der: 8.9 ms, memory 9895936 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 2110 certificates, more than the maximum of 10"}
+many-ec2m-trailing.der: 604.7 ms, memory 18808832 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-ec2m.der: 5.9 ms, memory 9895936 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 2414 certificates, more than the maximum of 10"}
+many-ecx-trailing.der: 770.8 ms, memory 21692416 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-ecx.der: 9.5 ms, memory 10027008 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 3819 certificates, more than the maximum of 10"}
+many-rsa-trailing.der: 105.1 ms, memory 14942208 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-rsa.der: 8.6 ms, memory 9895936 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 1834 certificates, more than the maximum of 10"}
+many-secp112r1-trailing.der: 995.7 ms, memory 26279936 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-secp521r1-trailing.der: 421.1 ms, memory 19070976 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+nosigners.der: 1177.6 ms, memory 26279936 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS ContentInfo"}
+genuine.der: 1.5 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+crls-other-seq-40.der: 1.6 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+digestalgorithms-param-seq-40.der: 1.5 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+fanout-empty-seq.der: 720.9 ms, memory 106823680 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+fanout-null.der: 204.4 ms, memory 52953088 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+flood-enveloped.der: 126.0 ms, memory 18284544 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS SignedData"}
+flood-signed.der: 7.9 ms, memory 10027008 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 3271 certificates, more than the maximum of 10"}
+md4-no-signed-attrs.der: 1.3 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+md4-signed-attrs.der: 2.2 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+mdc2-no-attrs.der: 2.3 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+mdc2-signed-attrs.der: 2.1 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+orig.der: 1.4 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+reenc.der: 1.6 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+shake128-no-attrs.der: 1.7 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+shake128-signed-attrs.der: 1.7 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+signer-digestalg-param-seq-40.der: 0.3 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep"}
+string-nest-0.der: 2.2 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-1.der: 2.0 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-2.der: 2.0 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-3.der: 2.1 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-4.der: 2.2 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-5.der: 2.3 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-6.der: 0.3 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: encapsulated payload has a chunk that is not an OCTET STRING"}
+string-nest-7.der: 0.1 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS ContentInfo"}
+unsigned-ctx-40.der: 1.3 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+unsigned-ctx-wrapped-seq-40.der: 1.7 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+unsigned-octet-constructed-5.der: 1.3 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+unsigned-seq-40.der: 0.2 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep"}
+whirlpool-no-attrs.der: 1.0 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+whirlpool-signed-attrs.der: 1.0 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+== out2
+e-crls.der: 22.7 ms, memory 17301504 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 39121 CRLs, more than the maximum of 10"}
+e-deepwide.der: 43.7 ms, memory 19202048 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+e-many-attrs.der: 40.2 ms, memory 19202048 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+e-nosigners.der: 0.1 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS ContentInfo"}
+e-nulls.der: 44.9 ms, memory 19202048 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+e-trailing.der: 0.0 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+e-unsigned-deepwide.der: 28.3 ms, memory 14483456 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+e-unsigned-flat.der: 12.2 ms, memory 14483456 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+enveloped.der: 21.3 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+many-brainpoolP160r1-trailing.der: 21.0 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+many-certs-trailing.der: 20.5 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+many-certs.der: 7.8 ms, memory 14614528 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 3219 certificates, more than the maximum of 10"}
+many-dsa-trailing.der: 28.2 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-dsa.der: 9.2 ms, memory 14548992 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 2110 certificates, more than the maximum of 10"}
+many-ec2m-trailing.der: 26.2 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+many-ec2m.der: 8.1 ms, memory 14614528 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 2414 certificates, more than the maximum of 10"}
+many-ecx-trailing.der: 19.9 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+many-ecx.der: 8.1 ms, memory 14680064 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 3819 certificates, more than the maximum of 10"}
+many-rsa-trailing.der: 22.0 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: bytes follow the CMS ContentInfo"}
+many-rsa.der: 9.3 ms, memory 14548992 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 1834 certificates, more than the maximum of 10"}
+many-secp112r1-trailing.der: 18.8 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+many-secp521r1-trailing.der: 20.3 ms, memory 9764864 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+nosigners.der: 22.9 ms, memory 14811136 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+genuine.der: 1.6 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+crls-other-seq-40.der: 0.0 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: nested deeper than 32 constructed values"}
+digestalgorithms-param-seq-40.der: 0.0 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: nested deeper than 32 constructed values"}
+fanout-empty-seq.der: 10.2 ms, memory 14548992 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+fanout-null.der: 24.3 ms, memory 14548992 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+flood-enveloped.der: 20.2 ms, memory 9830400 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+flood-signed.der: 7.9 ms, memory 14745600 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 3271 certificates, more than the maximum of 10"}
+md4-no-signed-attrs.der: 1.3 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+md4-signed-attrs.der: 1.1 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+mdc2-no-attrs.der: 2.8 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+mdc2-signed-attrs.der: 2.1 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+orig.der: 1.5 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+reenc.der: 1.6 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+shake128-no-attrs.der: 1.2 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+shake128-signed-attrs.der: 1.3 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+signer-digestalg-param-seq-40.der: 0.0 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: nested deeper than 32 constructed values"}
+string-nest-0.der: 1.5 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-1.der: 1.4 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-2.der: 1.5 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-3.der: 2.1 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-4.der: 2.0 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-5.der: 1.9 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-6.der: 2.0 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+string-nest-7.der: 0.1 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS ContentInfo"}
+unsigned-ctx-40.der: 0.1 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: nested deeper than 32 constructed values"}
+unsigned-ctx-wrapped-seq-40.der: 0.1 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: nested deeper than 32 constructed values"}
+unsigned-octet-constructed-5.der: 1.9 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+unsigned-seq-40.der: 0.1 ms, memory 1966080 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: nested deeper than 32 constructed values"}
+whirlpool-no-attrs.der: 1.6 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}
+whirlpool-signed-attrs.der: 1.3 ms, memory 2031616 B: {"verified":false,"reason":"INVALID_SIGNATURE","message":"CMS signature check failed"}

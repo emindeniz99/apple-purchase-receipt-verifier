@@ -1,0 +1,11 @@
+# compare.py same: OpenSSL core, OPENSSL_DIR build vs vendored build
+== cases
+153 rows: 153 identical, 0 differ
+== hostile
+811 rows: 811 identical, 0 differ
+== algorithms
+22 rows: 22 identical, 0 differ
+== substrate
+193 rows: 193 identical, 0 differ
+== fuzz
+5000 rows: 5000 identical, 0 differ

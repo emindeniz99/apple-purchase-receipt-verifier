@@ -1,0 +1,92 @@
+//! Values decoded by OpenSSL's generic template decoder (`ASN1_item_d2i`).
+
+use crate::{d2i_whole, init, sys};
+use libc::{c_int, c_long};
+use openssl_sys as ffi;
+use std::ptr;
+
+/// A value OpenSSL decoded as one item, freed with that item's own free
+/// routine (which frees the whole tree under it) when dropped.
+pub(crate) struct Decoded {
+    value: *mut ffi::ASN1_VALUE,
+    item: *const sys::ASN1_ITEM,
+}
+
+impl Decoded {
+    /// The decoded value, owned by `self`.
+    pub(crate) fn value(&self) -> *mut ffi::ASN1_VALUE {
+        self.value
+    }
+}
+
+impl Drop for Decoded {
+    fn drop(&mut self) {
+        // SAFETY: `value` came from ASN1_item_d2i for exactly `item`, is
+        // owned by this value alone, and is freed once, here.
+        unsafe { sys::ASN1_item_free(self.value, self.item) }
+    }
+}
+
+/// Exactly one value of `item` from `der`: `None` when OpenSSL refuses it
+/// or a byte is left over. `item` is one of the static item getters' results.
+pub(crate) fn decode_exact(der: &[u8], item: *const sys::ASN1_ITEM) -> Option<Decoded> {
+    init();
+    let (value, whole) = d2i_whole(der, |cursor, len: c_long| {
+        // SAFETY: `cursor` points at `len` readable bytes of `der`;
+        // ASN1_item_d2i reads at most `len` of them, advances the cursor
+        // within them and returns a new value of `item` the caller owns, or
+        // null. `item` is a static ASN1_ITEM.
+        unsafe { sys::ASN1_item_d2i(ptr::null_mut(), cursor, len, item) }
+    })?;
+    let decoded = Decoded { value, item };
+    whole.then_some(decoded)
+}
+
+/// The elements of a decoded `STACK_OF(T)`, borrowed from its owner.
+pub(crate) fn elements<T>(stack: *const ffi::OPENSSL_STACK) -> Vec<*mut T> {
+    // SAFETY: `stack` is a live stack a `Decoded` the caller holds owns.
+    let count = unsafe { ffi::OPENSSL_sk_num(stack) };
+    (0..count)
+        // SAFETY: every index below the count is in range.
+        .map(|index| unsafe { ffi::OPENSSL_sk_value(stack, index) }.cast::<T>())
+        .filter(|element| !element.is_null())
+        .collect()
+}
+
+/// An `ASN1_TYPE`'s type, and its value when that is held as a string
+/// (every universal type but BOOLEAN, OBJECT and NULL; a SEQUENCE, a SET or
+/// a value of another class as its whole encoding).
+pub(crate) fn typed(value: *const ffi::ASN1_TYPE) -> (c_int, *const ffi::ASN1_STRING) {
+    // SAFETY: `value` is a live ASN1_TYPE its owner keeps. The union member
+    // is read as a string pointer only for the types that store one.
+    unsafe {
+        let kind = (*value).type_;
+        let string = match kind {
+            ffi::V_ASN1_BOOLEAN | ffi::V_ASN1_OBJECT | ffi::V_ASN1_NULL => ptr::null(),
+            _ => (*value).value.asn1_string.cast_const(),
+        };
+        (kind, string)
+    }
+}
+
+/// Whether `tlv` is exactly one value OpenSSL's `ANY` decoder
+/// (`d2i_ASN1_TYPE`) accepts: for a primitive of a universal type, that its
+/// content keeps the type's rules (a BOOLEAN of one octet, a minimal
+/// INTEGER, an empty NULL, a well-formed OBJECT IDENTIFIER, ...). The
+/// header walk hands it the primitive values OpenSSL would otherwise keep
+/// whole, unchecked, inside another `ANY`.
+pub(crate) fn decodes_as_any(tlv: &[u8]) -> bool {
+    init();
+    let Some((value, whole)) = d2i_whole(tlv, |cursor, len: c_long| {
+        // SAFETY: `cursor` points at `len` readable bytes of `tlv`;
+        // d2i_ASN1_TYPE reads at most `len` of them, advances the cursor
+        // within them and returns a new value the caller owns, or null.
+        unsafe { ffi::d2i_ASN1_TYPE(ptr::null_mut(), cursor, len) }
+    }) else {
+        return false;
+    };
+    // SAFETY: `value` is the new ASN1_TYPE the call above returned, owned
+    // here alone and freed once.
+    unsafe { ffi::ASN1_TYPE_free(value) };
+    whole
+}

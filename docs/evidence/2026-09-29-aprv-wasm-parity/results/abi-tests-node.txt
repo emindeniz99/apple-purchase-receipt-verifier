@@ -1,0 +1,20 @@
+# tools/wasm-trap-host.mjs abi-tests
+PASS init with no roots of its own answers {"ok":true}: {"ok":true}
+PASS verify-receipt(genuine g5) verifies
+PASS verify-signed-data(shared JWS, init with its own root) verifies: {"verified":true,"payload":"{\"bundleId\":\"com.example.app\",\"environment\":\"Sandbox\",\"signedDa
+PASS endpoint env 1 (sandbox) answers status 0 for the sandbox g5: {"status":0,"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2"
+PASS endpoint env 0 (production) answers status 21007 for the sandbox g5: {"status":21007}
+PASS empty input is a verification failure value, not a trap: {"verified":false,"reason":"MALFORMED","message":"receipt is empty"}
+PASS a JWS that is not UTF-8 reaches the guest and is a value: {"verified":false,"reason":"MALFORMED","message":"expected 3 dot-separated segments, got 2"}
+PASS verify before init traps: trap: unreachable
+PASS a second init traps: trap: unreachable
+PASS a root that does not parse is {"ok":false}, and init can be retried: {"ok":false,"message":"roots[0]: trust anchor is not a certificate: OpenSSL does not read it as one ; retry: {"ok":true}
+PASS a configuration that is not JSON is {"ok":false}: {"ok":false,"message":"the configuration is not JSON"}
+PASS endpoint with env 2 traps: trap: unreachable
+PASS endpoint with env 255 traps: trap: unreachable
+PASS endpoint with env 4294967295 traps: trap: unreachable
+PASS random-get answering one byte short traps (if random-get is called at all): random-get calls: 1; trap: unreachable
+INFO random-get calls for one ES256 JWS verification: 1
+PASS isolation: a trap in one instance leaves another verifying: trap: unreachable
+PASS 2,000 more calls leave linear memory the same size: 2097152 -> 2097152 bytes; 1.79 ms per call
+summary: 0 failed

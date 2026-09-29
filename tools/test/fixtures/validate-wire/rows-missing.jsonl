@@ -1,0 +1,2 @@
+{"id":"case/a","out":"{\"verified\":false,\"reason\":\"MALFORMED\",\"message\":\"x\"}"}
+{"id":"case/trapped","trap":"unreachable"}
