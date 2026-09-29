@@ -392,7 +392,7 @@ final class HttpTransportTest extends TestCase
     public function testARealServerWithCustomRootsRefusesADefaultConfigAndAcceptsItsOwn(): void
     {
         // A server refuses roots that are not certificates at its own start, so the root is a real one.
-        $certificate = (string) file_get_contents(__DIR__ . '/../certs/AppleRootCA-G3.cer');
+        $certificate = (string) file_get_contents(__DIR__ . '/../../certs/AppleRootCA-G3.cer');
         $file = (string) tempnam(sys_get_temp_dir(), 'aprv-roots-');
         file_put_contents($file, base64_encode($certificate) . "\n");
         $server = Aprv::startServer($file);

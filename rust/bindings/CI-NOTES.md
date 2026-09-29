@@ -170,7 +170,7 @@ lane branch.
 | Where | Change |
 |---|---|
 | `ci.yml` `one-implementation` | `node tools/check-one-implementation.mjs --enforce all` replaces the per-language list (`--enforce node,python,go,swift,ruby,dotnet,php,java-wasm`). The two are the same set today; `all` also covers a language added to the tool later. The allowlist is down to `go/config.go`, `dotnet/.../Config.cs`, `dotnet/.../Internal/Certificates.cs` and the four `java-wasm` files; an entry whose file stops using its token is reported as stale, so the list only shrinks. |
-| `ci.yml` `conformance` (`check-cert-copies.mjs`) | unchanged command. It now finds `rust/certs` alone (with `php/certs` until the PHP step lands). |
+| `ci.yml` `conformance` (`check-cert-copies.mjs`) | unchanged command. It now finds `rust/certs` alone. |
 | `ci.yml` jobs to delete | `node-roots-generated`, `go-generate-check`, `dotnet-roots`, the Ruby drift step in `ruby` (`script/gen_roots.rb`) and, with the PHP step, the drift step in `php-static` (`tools/gen-roots.php`). |
 | `ci.yml` `go-lint` | `--exclude-dir=gencerts` in the "no system trust store, no network" grep now excludes nothing; drop it. |
 | `ci.yml` `rust-ffi` | the header step's comment ("the same regenerate-and-diff guard the generated roots files elsewhere in this workflow get") names generators that no longer exist. |
