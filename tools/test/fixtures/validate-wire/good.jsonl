@@ -1,0 +1,4 @@
+{"verified":true,"payload":{"id":"9223372036854775807","date":1722945600000}}
+
+{"verified":true,"payload":{"id":"-1","date":null}}
+{"verified":false,"reason":"MALFORMED","message":"receipt is not valid base64"}
