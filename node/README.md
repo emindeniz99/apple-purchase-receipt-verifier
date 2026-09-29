@@ -300,6 +300,10 @@ fixed, the same in every package of this library, and not options:
 - **the compact JWS**: 262,144 UTF-8 bytes, `TOO_LARGE`.
 - **JSON nesting depth 64** in a request body or JWS header.
 
+The package copies at most 3,145,729 bytes of an input into the module
+(one over the largest cap), so an oversized input costs no more module
+memory than that and still gets the module's own `TOO_LARGE`.
+
 `receipt-data` must be standard base64 with canonical `=` padding and
 nothing else, as Apple's `verifyReceipt` accepts it. `x5c` entries are
 standard base64, JWS segments unpadded canonical base64url.
