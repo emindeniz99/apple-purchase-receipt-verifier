@@ -131,16 +131,31 @@ G1d (the final module, `4e9d2d85...c9dd`, 384 cases): `dotnet test` project 599 
   sub-code was not seen. If the next run still crashes, run the net10.0 host
   under WER/ProcDump for the faulting address; the README documents the
   limitation for consumers.
-- **`dotnet (macos-latest)`, net10.0 arm64:
-  `PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly`.** Not
-  established whether it was retention. Linux measures 0 B per call over
-  500 to 8,000 calls on net8.0 and net10.0 with 26,280 B allocated per call,
-  and the managed code is the same everywhere, but the collector is not. The
-  test now judges the marginal growth per call (a 2,000-call round minus a
-  500-call round), takes out what a control that allocates the same bytes and
-  keeps none reports, and prints every figure and the runtime id when it fails.
-  It still fails a wrapper that keeps 256 B per call (injected leaks of 64, 256
-  and 1,730 B per call read 85, 277 and 1,763 B), passes on Linux under seven
-  GC and JIT settings, and a fixed cost or a platform's share of allocated
-  bytes that the control reproduces no longer counts. If macOS still fails,
-  its message says which of the two it is.
+- **`dotnet (macos-latest)`, osx-arm64:
+  `PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly`.** The first run
+  failed net10.0 (at least 559,224 B per 500 calls); the second, with the
+  per-call test of the first fix, failed net8.0 (1,570.2 B per call against a
+  control of 5.5 B) and passed net9.0 and net10.0. Linux x64 measures 0 B per
+  call on net8.0 and net10.0. Not established which layer keeps it: there is
+  no Mac here. What was read: the decompiled `Wasmtime.Dotnet` 48.0.2
+  (`Function.Invoke`, `Memory.GetSpan`, `ValueBox`, `Store` and its three extern
+  caches, the callbacks) keeps nothing per call, the store's `GCHandle`s and
+  the callbacks' are made once per store or linker, and this library's managed
+  path has no static cache, no `ThreadLocal`, no `ConditionalWeakTable` and no
+  exception on the success path. The verdict is unchanged (budget 256 B per
+  call, no skip); on a failure the message now carries where the growth is,
+  and the next macOS run's output decides:
+  - "native call alone" large: Wasmtime .NET or the native library keeps it on
+    osx-arm64 (a per-call handle or allocation the managed side never frees);
+    report upstream with that figure.
+  - "reading the answer alone" large: the managed reading (JSON, the payload
+    objects), a collector's accounting of their shape or a real leak there.
+  - both small and the wrapper large: `Rent`/`Return`, the UTF-8 input or the
+    pooled instance; the instance identity and the store caches on the same
+    line say which.
+  - "for one that idles as long" as large as the wrapper: something in the test
+    host or the runtime grows the live set with time, not with calls. Then the
+    verdict should subtract that control too; that change waits for the figure.
+  - dropped results still alive: a caller-visible object graph is retained.
+  If none is conclusive, this test is the one justified red for the pull
+  request to main, with the run's figures attached.
