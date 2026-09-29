@@ -34,8 +34,6 @@ cargo fmt --check
 cargo clippy --locked --all-targets --features compile -- -D warnings
 cargo clippy --locked --all-targets -- -D warnings            # the runtime-only feature set
 APRV_TEST_COMPONENT=$COMPONENT cargo test --locked --features compile
-# once lane A's rust/bindings/abi/wit/aprv.wit and rust/bindings/wire/schema/ exist, also:
-APRV_TEST_COMPONENT=$COMPONENT cargo test --locked --features compile -- --ignored
 
 # the two-stage static build, readelf checked inside the script
 COMPONENT_SHA256=<rust-wasm output> sh scripts/build-static.sh $COMPONENT            # x86_64 leg

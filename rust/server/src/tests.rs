@@ -311,11 +311,9 @@ async fn the_openapi_document_lists_exactly_the_routes_the_server_answers() {
     assert!(!String::from_utf8(body).unwrap().contains("../bindings/"));
 }
 
-/// Until lane A2 writes rust/bindings/wire/schema/, the served document
-/// carries placeholders for the two result schemas. Run with --ignored
-/// once they exist; CI runs it (CI-NOTES.md).
+/// The served document carries the wire schemas of rust/bindings/wire/schema/,
+/// not the placeholders a build without them would leave.
 #[tokio::test]
-#[ignore = "needs rust/bindings/wire/schema/ (lane A2)"]
 async fn the_wire_schemas_are_bundled() {
     assert!(!http::OPENAPI_JSON.contains("not present when this binary was built"));
 }

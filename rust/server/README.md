@@ -231,7 +231,7 @@ of 2 to 4 (`scripts/startup.py`, medians of 7 runs and of 200 calls):
 
 | What | How |
 |---|---|
-| Unit and in-process tests | `APRV_TEST_COMPONENT=<component .wasm> cargo test --features compile` (the real component over the router; hostile components: an infinite loop, a 1 GiB grow, a non-UTF-8 result, a 1 GiB `random-get`). Two tests are `#[ignore]`d until lane A's files exist: the WIT against `rust/bindings/abi/wit/aprv.wit`, and the wire schemas bundled into `/openapi.json` |
+| Unit and in-process tests | `APRV_TEST_COMPONENT=<component .wasm> cargo test --features compile` (the real component over the router; hostile components: an infinite loop, a 1 GiB grow, a non-UTF-8 result, a 1 GiB `random-get`). Two tests tie the server to `rust/bindings/`: its WIT equals `rust/bindings/abi/wit/aprv.wit`, and `/openapi.json` bundles the wire schemas |
 | The 311 cases | `scripts/cases.py --aprv <binary>`, over HTTP and the CLI |
 | The corpus | `scripts/corpus.py --aprv <binary> --calls ... --node ... --mode http\|cli` |
 | Limits in a real process | `scripts/hostile-smoke.sh <full build>` (the hostile component of `tests/hostile.wat`) |

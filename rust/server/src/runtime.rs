@@ -489,11 +489,9 @@ impl Verifier {
 mod tests {
     use super::*;
 
-    /// The server binds the WIT of the ABI crate, byte for byte. Until lane
-    /// A lands rust/bindings/abi/wit/aprv.wit, the server's copy is the text
-    /// of docs/rust-core/ARCHITECTURE.md §4. CI runs it with --ignored.
+    /// The server binds the WIT of the ABI crate, byte for byte: its copy in
+    /// wit/ must not drift from rust/bindings/abi/wit/aprv.wit.
     #[test]
-    #[ignore = "needs rust/bindings/abi/wit/aprv.wit (lane A)"]
     fn the_wit_is_the_abi_crates() {
         let dir = env!("CARGO_MANIFEST_DIR");
         let ours = std::fs::read(format!("{dir}/wit/aprv.wit")).unwrap();
