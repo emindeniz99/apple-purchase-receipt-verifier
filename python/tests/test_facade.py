@@ -206,6 +206,19 @@ class AbiMismatchTest(unittest.TestCase):
         with self.assertRaises(_host.AbiMismatchError):
             self.create(wasm)
 
+    def test_a_module_that_does_not_compile_is_a_runtime_error(self) -> None:
+        with self.assertRaises(RuntimeError) as caught:
+            _host.Runtime(b"\x00asm\x01\x00\x00\x00garbage")
+        self.assertNotIsInstance(caught.exception, _host.AbiMismatchError)
+
+    def test_a_module_whose_initialize_traps_is_a_runtime_error_at_create(self) -> None:
+        wasm = double_wat(
+            {'(func (export "_initialize"))': '(func (export "_initialize") unreachable)'}
+        )
+        with self.assertRaises(RuntimeError) as caught:
+            self.create(wasm)
+        self.assertIn("could not be started", str(caught.exception))
+
     def test_the_bundled_module_is_accepted(self) -> None:
         _host.default_runtime()  # compiles and checks the bundled module
 
@@ -429,7 +442,7 @@ class PoolTest(unittest.TestCase):
     def test_threads_never_share_an_instance_at_one_moment(self) -> None:
         verifier = double_verifier()
         runtime = double_runtime()
-        pool = _host.Pool(runtime, _wire.init_config([ROOT]), 2)
+        pool = _host.Pool(runtime, _wire.init_config([ROOT]), 2, _wire.init_accepted)
         inside = 0
         peak = 0
         guard = threading.Lock()
@@ -459,7 +472,7 @@ class PoolTest(unittest.TestCase):
         self.assertEqual(Reason.MALFORMED, failure_of(verifier.verify_receipt("x")).reason)
 
     def test_a_pool_of_one_makes_the_second_caller_wait(self) -> None:
-        pool = _host.Pool(double_runtime(), _wire.init_config([ROOT]), 1)
+        pool = _host.Pool(double_runtime(), _wire.init_config([ROOT]), 1, _wire.init_accepted)
         first_inside, release, second_entered = (
             threading.Event(),
             threading.Event(),
@@ -490,7 +503,7 @@ class PoolTest(unittest.TestCase):
         self.assertTrue(second_entered.is_set())
 
     def test_a_failing_parse_or_an_interrupt_frees_the_slot_and_drops_the_instance(self) -> None:
-        pool = _host.Pool(double_runtime(), _wire.init_config([ROOT]), 1)
+        pool = _host.Pool(double_runtime(), _wire.init_config([ROOT]), 1, _wire.init_accepted)
 
         def broken(answer: str) -> str:
             raise KeyError(answer)

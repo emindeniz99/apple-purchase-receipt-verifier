@@ -153,10 +153,13 @@ class Runtime:
     """One compiled module and the ``Linker`` that supplies its import."""
 
     def __init__(self, wasm: bytes) -> None:
-        config = wasmtime.Config()
-        _cache.enable(config)
-        self.engine = wasmtime.Engine(config)
-        self.module = wasmtime.Module(self.engine, wasm)
+        try:
+            config = wasmtime.Config()
+            _cache.enable(config)
+            self.engine = wasmtime.Engine(config)
+            self.module = wasmtime.Module(self.engine, wasm)
+        except wasmtime.WasmtimeError as error:
+            raise RuntimeError("aprv.wasm could not be compiled") from error
         _check_abi(self.module)
         i32 = wasmtime.ValType.i32()
         self.linker = wasmtime.Linker(self.engine)
@@ -190,15 +193,20 @@ class Instance:
     __slots__ = ("_functions", "_memory", "_posts", "_realloc", "_store")
 
     def __init__(self, runtime: Runtime) -> None:
-        store = wasmtime.Store(runtime.engine)
-        store.set_limits(memory_size=MEMORY_LIMIT, instances=1)
-        exports = runtime.linker.instantiate(store, runtime.module).exports(store)
-        _function(exports["_initialize"])(store)
-        self._store = store
-        self._memory = _memory(exports["memory"])
-        self._realloc = _function(exports[_REALLOC[0]])
-        self._functions = {n: _function(exports[_VERIFY + n]) for n in _EXPORTS}
-        self._posts = {n: _function(exports["cabi_post_" + _VERIFY + n]) for n in _EXPORTS}
+        try:
+            store = wasmtime.Store(runtime.engine)
+            store.set_limits(memory_size=MEMORY_LIMIT, instances=1)
+            exports = runtime.linker.instantiate(store, runtime.module).exports(store)
+            _function(exports["_initialize"])(store)
+            self._store = store
+            self._memory = _memory(exports["memory"])
+            self._realloc = _function(exports[_REALLOC[0]])
+            self._functions = {n: _function(exports[_VERIFY + n]) for n in _EXPORTS}
+            self._posts = {n: _function(exports["cabi_post_" + _VERIFY + n]) for n in _EXPORTS}
+        except Exception as error:  # a trap in _initialize, a refused instantiation
+            raise Fault(
+                f"the Wasm instance could not be created: {type(error).__name__}"
+            ) from error
 
     def memory_size(self) -> int:
         return int(self._memory.data_len(self._store))
@@ -238,9 +246,19 @@ class Pool:
     one call runs on one instance at a time; an instance that faulted, or
     grew large, is dropped and the next call makes another."""
 
-    def __init__(self, runtime: Runtime, config_json: bytes, size: int) -> None:
+    def __init__(
+        self,
+        runtime: Runtime,
+        config_json: bytes,
+        size: int,
+        accepts: Callable[[str], bool],
+    ) -> None:
+        """``accepts(answer)`` says whether an ``init`` answer means the
+        roots were taken; it is what a later instance must answer as the
+        first did."""
         self._runtime = runtime
         self._config_json = config_json
+        self._accepts = accepts
         self._free: list[Instance] = []
         self._lock = threading.Lock()
         self._slots = threading.BoundedSemaphore(size)
@@ -266,7 +284,7 @@ class Pool:
                 instance = self._free.pop() if self._free else None
             if instance is None:
                 instance, answer = self._create()
-                if answer != '{"ok":true}':
+                if not self._accepts(answer):
                     raise Fault("init refused a configuration it accepted before")
             answer = instance.call(export, scalars, data)
             try:

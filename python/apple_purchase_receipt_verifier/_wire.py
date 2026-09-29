@@ -37,6 +37,14 @@ def check_init(answer: str) -> "str | None":
     raise ResultShapeError("init answered neither ok nor a refusal")
 
 
+def init_accepted(answer: str) -> bool:
+    """Whether ``answer`` is ``init`` taking the roots."""
+    try:
+        return check_init(answer) is None
+    except ResultShapeError:
+        return False
+
+
 def _object(text: str) -> "dict[str, Any]":
     try:
         value = json.loads(text)

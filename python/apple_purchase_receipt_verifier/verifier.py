@@ -73,7 +73,9 @@ class Verifier:
             raise ValueError("config.roots must not be empty")
         self._clock = config.clock
         try:
-            self._pool = _host.Pool(runtime(), _wire.init_config(config.roots), _pool_size())
+            self._pool = _host.Pool(
+                runtime(), _wire.init_config(config.roots), _pool_size(), _wire.init_accepted
+            )
             refusal = _wire.check_init(self._pool.init_answer)
         except _host.AbiMismatchError:
             raise

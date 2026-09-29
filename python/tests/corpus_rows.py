@@ -26,7 +26,7 @@ import json
 import sys
 import time
 
-from apple_purchase_receipt_verifier import _host
+from apple_purchase_receipt_verifier import _host, _wire
 
 _POOL_SIZE = 2
 
@@ -51,7 +51,9 @@ def main(path: str) -> int:
             else:
                 config = row["config"]
                 if config not in pools:
-                    pool = _host.Pool(runtime, config.encode("utf-8"), _POOL_SIZE)
+                    pool = _host.Pool(
+                        runtime, config.encode("utf-8"), _POOL_SIZE, _wire.init_accepted
+                    )
                     pools[config] = pool if pool.init_answer == '{"ok":true}' else pool.init_answer
                 pool_or_refusal = pools[config]
                 if isinstance(pool_or_refusal, str):

@@ -1,6 +1,15 @@
 # Cases of fixtures/cases.json that fail on the stand-in module (sha256 da786ac853464e7b837c5483f9b04a27a3a5c2ff0340fa526f60482fd80fdb68): 217 of 311.
 # The stand-in is the round-13 core module on the 0.6 core: it answers 0.6's
 # JSON shapes and reason names, which the wrapper does not read as 0.7.
+# Why, by count:
+#    98  rejected under a 0.6 reason name (INTERNAL_ERROR here)
+#    38  verified, but the payload is 0.6's camelCase shape (every field reads None)
+#    34  verified, but the signed payload is an object where 0.7 has a JSON string
+#    22  text refused as base64 comes back as an unknown reason name (INTERNAL_ERROR)
+#    19  answered INTERNAL_ERROR (the 0.6 answer could not be read)
+#     3  answered INVALID_CERTIFICATE_PURPOSE, where 0.7 answers something else (the 0.6 core's own behaviour)
+#     2  the endpoint's answer differs from 0.7's
+#     1  answered INVALID_SIGNATURE, where 0.7 answers something else (the 0.6 core's own behaviour)
 # Regenerate with `python tests/record_standin_differences.py`; the list is
 # ignored for any other module.
 transaction/verify-shared-sandbox

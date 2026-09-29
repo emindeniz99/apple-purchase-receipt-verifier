@@ -278,9 +278,9 @@ class AnchorsReachTheModuleUnchangedTest(unittest.TestCase):
         seen: list[bytes] = []
         real = _host.Pool
 
-        def spy(runtime: Any, config_json: bytes, size: int) -> Any:
+        def spy(runtime: Any, config_json: bytes, *rest: Any) -> Any:
             seen.append(config_json)
-            return real(runtime, config_json, size)
+            return real(runtime, config_json, *rest)
 
         with mock.patch.object(_host, "Pool", spy):
             verifier(roots)
