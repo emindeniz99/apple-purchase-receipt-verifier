@@ -54,8 +54,7 @@ func FuzzVerifyReceipt(f *testing.F) {
 	f.Add("")
 	f.Add("!!!!not base64!!!!")
 
-	roots := applereceipt.AppleRoots()
-	verifier := verifierFor(f, roots)
+	verifier := verifierFor(f, nil) // the defaults: the module's Apple roots
 	// A second, unrelated anchor set, used to prove that an accepted
 	// receipt was accepted because of the anchors and not despite them.
 	other := verifierFor(f, []*x509.Certificate{fuzzRoot(f)})
@@ -94,7 +93,7 @@ func FuzzVerifySignedData(f *testing.F) {
 
 	root := fuzzRoot(f)
 	verifier := verifierFor(f, []*x509.Certificate{root})
-	unrelated := verifierFor(f, applereceipt.AppleRoots())
+	unrelated := verifierFor(f, nil) // the module's Apple roots
 
 	f.Fuzz(func(t *testing.T, input string) {
 		_, err := verifier.VerifySignedData(input)
