@@ -225,8 +225,8 @@ A failure is `{"verified":false,"reason":"<0.7 Reason>","message":"..."}`.
 - **Inputs are bytes, outputs are strings.** A WIT `string` must be UTF-8
   and the lift is unchecked in release builds of wit-bindgen, so the three
   payloads and the configuration cross as `list<u8>`: any bytes reach the
-  core, which answers a non-UTF-8 JWS with `INVALID_JWS_FORMAT` as a
-  value, the same 243 rows ABI v1 answered ([canonical ABI final][cabifinal]).
+  core, which answers a non-UTF-8 JWS with `MALFORMED` as a value (the
+  0.6 core's `INVALID_JWS_FORMAT`), the same 243 rows ABI v1 answered ([canonical ABI final][cabifinal]).
   Every output is JSON text the guest produced, so `string` is safe there.
 - **`env` is a `u32`, not a WIT enum.** An enum lifts with an unchecked
   `transmute` in release builds; the `u32` is matched in the guest, which
@@ -644,8 +644,9 @@ calls the binding.
   of Docker.
 - **Limits.** 256 MiB of linear memory and one instance per store
   (`StoreLimits`, `trap_on_grow_failure`); a worker semaphore of N
-  concurrent verifications, N = CPU count; the 3 MiB body cap. A guest time
-  limit (epoch interruption) is open (THREAT-MODEL.md §5).
+  concurrent verifications, N = CPU count; the 3 MiB body cap; a guest time
+  limit of 10 s per call by default, by epoch interruption
+  (`--time-limit-ms`, rust/server/README.md).
 - **Lifecycle.** A fresh store and instance, with `init`, per request;
   `--lifecycle pool` keeps instances and destroys one on any trap or ABI
   error, never sharing one between two requests (§5).

@@ -1,0 +1,50 @@
+reason       receipt/reject-signer-certificate-version-11
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       receipt/reject-signer-carrying-one-extension-twice
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       receipt/reject-signer-with-a-corrupt-extension
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+verdict      receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash
+    core: verified
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: verdict
+verdict      receipt/malformed-signed-attrs-in-the-second-signer-does-not-crash
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: verified
+    recorded: verdict
+verdict      receipt/certificates-field-twice-does-not-crash
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: verified
+    recorded: verdict
+verdict      receipt/intermediate-with-the-extensions-field-twice-does-not-crash
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: verified
+    recorded: verdict
+verdict      signed-data/intermediate-with-the-extensions-field-twice-does-not-crash
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: verified
+    recorded: verdict
+verdict      receipt/reject-econtent-rechunked-into-7-constructed-levels
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: verified
+    recorded: verdict
+verdict      receipt/reject-eleven-embedded-crls
+    core: MALFORMED: receipt embeds 11 CRLs, more than the maximum of 10
+    java: verified
+    recorded: verdict
+payload      receipt/bundle-id-with-a-five-octet-length-is-kept-raw
+    core: verified
+    java: verified
+    recorded: payload
+verdict      receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels
+    core: UNREADABLE_PAYLOAD: signed receipt content could not be read
+    java: verified
+    recorded: verdict
+summary: 661 rows; 458 message-only, 1 payload, 3 reason, 191 same, 8 verdict; 0 not recorded in R20; 1 recorded rows now agree
+STALE receipt/reject-signer-on-an-unimplemented-curve

@@ -410,12 +410,16 @@ impl Instance {
     }
 }
 
-/// The instance lifecycle (ARCHITECTURE.md §5).
+/// The instance lifecycle (ARCHITECTURE.md §5). `aprv serve` defaults to
+/// the pool: `init` costs 2.3 to 3.7 ms and a fresh instance 1.45 to 4
+/// times a pooled call (docs/evidence/2026-09-29-init-cost.md), past
+/// DECISIONS.md R23's 10% rule.
 pub enum Lifecycle {
-    /// A fresh store, instance and `init` per call (the default).
+    /// A fresh store, instance and `init` per call.
     Fresh,
     /// Instances kept between calls, one call at a time each; an instance
-    /// that trapped or broke the interface is dropped, never returned.
+    /// that trapped or broke the interface is dropped, never returned. At
+    /// most one instance per worker exists, since each call holds one.
     Pool(Mutex<Vec<Instance>>),
 }
 

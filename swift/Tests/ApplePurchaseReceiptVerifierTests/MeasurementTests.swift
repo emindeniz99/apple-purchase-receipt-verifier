@@ -105,6 +105,8 @@ final class MeasurementTests: XCTestCase {
     ///
     /// APRV_BENCH_BOUNDS=mprotect measures WasmKit's other bounds-checking
     /// mode, for comparison only: the package always uses software checks.
+    /// APRV_BENCH_THREADING=direct or =token measures that interpreter loop
+    /// instead of the one the package picks for this platform.
     func testSpeed() throws {
         guard Self.env["APRV_BENCH"] == "1" else { throw XCTSkip("set APRV_BENCH=1 to measure") }
         let g5Text = try TestFixtures.text(TestFixtures.g5)
@@ -118,8 +120,17 @@ final class MeasurementTests: XCTestCase {
         _ = try AprvModule.load(wasm, sumFile: sum)
         let bounds: EngineConfiguration.MemoryBoundsChecking =
             Self.env["APRV_BENCH_BOUNDS"] == "mprotect" ? .mprotect : .software
-        let module = try AprvModule.load(wasm, engine: EngineConfiguration(memoryBoundsChecking: bounds))
-        print("bounds: \(bounds), engine: \(module.engine.configuration.memoryBoundsChecking)")
+        let threading: EngineConfiguration.ThreadingModel =
+            switch Self.env["APRV_BENCH_THREADING"] {
+            case "direct": .direct
+            case "token": .token
+            default: AprvModule.threadingModel
+            }
+        let module = try AprvModule.load(
+            wasm, engine: EngineConfiguration(threadingModel: threading, memoryBoundsChecking: bounds))
+        print(
+            "bounds: \(bounds), engine: \(module.engine.configuration.memoryBoundsChecking), "
+                + "threading: \(module.engine.configuration.threadingModel)")
         let t2 = Date()
         let guest = try Guest(module)
         let t3 = Date()

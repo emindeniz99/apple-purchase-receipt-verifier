@@ -2000,6 +2000,150 @@
       "role": "input",
       "codec": "raw",
       "contentSha256": "4ec071c431ac7808b66bd665cf5e7a3efcce3db3bc8cbe29bfeb092511c1fa0c"
+    },
+    "inventory-body-empty": {
+      "path": "generated-0.7/inventory-body-empty.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "inventory-body-not-json": {
+      "path": "generated-0.7/inventory-body-not-json.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "92628a747890d02d1459c6eb45fd13cfa63bbb6d346412cff190297cf9c33d39"
+    },
+    "inventory-body-truncated": {
+      "path": "generated-0.7/inventory-body-truncated.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "1bdff2db3e124f4e7db67c987303233271542e316a6951885314a2dcdae1bd3f"
+    },
+    "inventory-body-status": {
+      "path": "generated-0.7/inventory-body-status.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "add65f6fafcbf44cc6b3704a62d23f247ca9a01bd6def4b76edc03e0edc059a1"
+    },
+    "inventory-body-brackets-in-a-string": {
+      "path": "generated-0.7/inventory-body-brackets-in-a-string.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "7b6341a6b4d1bac5e0971a73d4d79f89733653c5099de56e19bccd2c305feacb"
+    },
+    "inventory-body-expired-fresh": {
+      "path": "generated-0.7/inventory-body-expired-fresh.json",
+      "role": "input",
+      "codec": "text",
+      "contentSha256": "dfaf295b3a6393e2638796a612d7bca98ccb0c001b1911de2023fcb8a4e12e86"
+    },
+    "inventory-receipt-truncated-200": {
+      "path": "generated-0.7/inventory-receipt-truncated-200.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "a1cf4af76b39889ec58fa4e20a7a94484a567fb08f0c67b89c7dfe8e6e1ddeff"
+    },
+    "inventory-transaction-signature-63": {
+      "path": "generated-0.7/inventory-transaction-signature-63.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "88211a069ef192f6d1ca1a8991c02b83f54872033b5b5e078ab10f3d66a36f48"
+    },
+    "inventory-transaction-signature-65": {
+      "path": "generated-0.7/inventory-transaction-signature-65.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "3180b0eb796d5ec8d834867a2e4630bd71b4992f2310d100354a7ec5ac5668d1"
+    },
+    "inventory-transaction-signature-zero": {
+      "path": "generated-0.7/inventory-transaction-signature-zero.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "022eae7e38c4b1c3fa46039423c75351f5a104749aa21dfa33cfb4d8805ce999"
+    },
+    "inventory-transaction-payload-array": {
+      "path": "generated-0.7/inventory-transaction-payload-array.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "f14e075bdcaa7f1b4b9033845e08252c61ecec804738194c79597106227679c9"
+    },
+    "inventory-transaction-signature-junk": {
+      "path": "generated-0.7/inventory-transaction-signature-junk.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "bb321e21ed6453035f9cd1e9a62085222b71bbd66b49c1f72c201b1f27f74853"
+    },
+    "inventory-x5c-that-is-an-object": {
+      "path": "generated-0.7/inventory-x5c-that-is-an-object.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "2b2186952f00eb12c8948385d6a32915bf658698c9df50e62fadc3f54704ba3c"
+    },
+    "inventory-x5c-of-numbers": {
+      "path": "generated-0.7/inventory-x5c-of-numbers.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "9bac65f9697979a59fbf0ed6d99aba887a8a4dab3d62db429b95bcb2d424ba0c"
+    },
+    "inventory-x5c-with-null-and-a-list": {
+      "path": "generated-0.7/inventory-x5c-with-null-and-a-list.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "ebe3aa612c6172dafd7e4c177650ebd58eaab7aade79b671871827a81db76f56"
+    },
+    "inventory-a-four-certificate-x5c": {
+      "path": "generated-0.7/inventory-a-four-certificate-x5c.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "426f686018e2cb9870431f7a6068555102135aa31b50f30b975e7c32aa5932e6"
+    },
+    "inventory-alg-in-lower-case": {
+      "path": "generated-0.7/inventory-alg-in-lower-case.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "92ad397a55b2a5af308bb656c3a79601a667b5560e63164836c7cfeef6a1fcfc"
+    },
+    "inventory-x5c-leaf-behind-a-byte-order-mark": {
+      "path": "generated-0.7/inventory-x5c-leaf-behind-a-byte-order-mark.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "71c611eed40f0033a6a59791c55a840e0463a82f646ecd55cbb57bee9b4835f2"
+    },
+    "core-review-r3-certificate-signature-in-two-chunks": {
+      "path": "generated-0.7/core-review-r3-certificate-signature-in-two-chunks.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "4e99b1f2066d099ecf3954c0dfa87952e38b509008bb39e41095fd2f8308f28e"
+    },
+    "core-review-r3-other-roots-namesake-after": {
+      "path": "generated-0.7/core-review-r3-other-roots-namesake-after.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "cf38e1f76e80acee886a187e9956f3b108ac76010bf70f1f0e3990334b9c3c97"
+    },
+    "core-review-r3-other-roots-namesake-before": {
+      "path": "generated-0.7/core-review-r3-other-roots-namesake-before.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "bcb0e9943e590efb51a02804aa7b7996e1c32891bb96cd818bff4f30006260fc"
+    },
+    "core-review-r3-second-root": {
+      "path": "generated-0.7/core-review-r3-second-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "fe2189839c2db76d65245691777728d9c4d022b9b5d199e8364953eea2fcee08"
+    },
+    "core-review-r3-sibling-namesake-after": {
+      "path": "generated-0.7/core-review-r3-sibling-namesake-after.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "9665725e6e47b6026182e5cf63e43cbda29dcddc7cc10f5f42e2421ca7993afe"
+    },
+    "core-review-r3-sibling-namesake-before": {
+      "path": "generated-0.7/core-review-r3-sibling-namesake-before.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "17d7efd3967cff11814056f622c6edfcef55b6eedbd8f1644db61f9fd06b08cc"
     }
   },
   "cases": [
@@ -9186,6 +9330,70 @@
       ]
     },
     {
+      "id": "receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-first",
+      "description": "The receipt of receipt/verify-with-a-stranger-whose-key-is-unreadable with both roots pinned, the stranger's root first. The two roots share a subject name and each vouches for certificates in the unsigned bag: the genuine chain, and the stranger's intermediate and signer (a key on an unimplemented curve). The receipt verifies whatever the order of the roots. The core answered UNTRUSTED_CHAIN with the stranger's root first, because OpenSSL's issuer lookup takes the first root whose name matches (the differential campaign of 2026-09-29). Apple's three roots have distinct names.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "review-receipt-stranger-unreadable-key"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-signer-root",
+            "review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "differential",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-second",
+      "description": "The receipt of receipt/verify-with-a-stranger-whose-key-is-unreadable with both roots pinned, the stranger's root second. The two roots share a subject name and each vouches for certificates in the unsigned bag: the genuine chain, and the stranger's intermediate and signer (a key on an unimplemented curve). The receipt verifies whatever the order of the roots. The core answered UNTRUSTED_CHAIN with the stranger's root first, because OpenSSL's issuer lookup takes the first root whose name matches (the differential campaign of 2026-09-29). Apple's three roots have distinct names.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "review-receipt-stranger-unreadable-key"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "review-receipt-root",
+            "receipt-signer-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "differential",
+        "new-in-0-7"
+      ]
+    },
+    {
       "id": "receipt/reject-a-stranger-whose-signature-bit-string-is-unaligned",
       "description": "A genuine receipt whose bag also holds a certificate whose signature BIT STRING declares one unused bit. An embedded entry that is not the signer and does not decode is a defect of the receipt: MALFORMED.",
       "operation": "verifyReceipt",
@@ -12405,6 +12613,582 @@
       ]
     },
     {
+      "id": "endpoint/empty-body-answers-21002",
+      "description": "A request body of no bytes at all is not a verifyReceipt request: 21002, as Apple's endpoint answers a body it cannot read.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-empty"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/body-that-is-not-json-answers-21002",
+      "description": "A request body that is not JSON at all: 21002.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-not-json"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/truncated-object-answers-21002",
+      "description": "A request body cut off inside the receipt-data string, so the object never closes: 21002, whatever the base64 before the cut would have read as.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-truncated"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/literal-status-body-answers-21002",
+      "description": "A request body that is itself a verifyReceipt response, {\"status\":21002}: no receipt-data member, so 21002, and nothing of the body is echoed.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-status"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21002
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/brackets-inside-a-string-are-not-nesting-answers-0",
+      "description": "The shared receipt with a password of a hundred [ and a hundred { characters: brackets inside a JSON string are text, not nesting, so the 64-level depth bound does not apply and the receipt verifies: 0.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-brackets-in-a-string"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 0
+        }
+      },
+      "tags": [
+        "endpoint",
+        "positive",
+        "limits",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/pinned-clock-does-not-rescue-a-fresh-creation-date-answers-21003",
+      "description": "The expired chain (valid 2020 to 2021) over a receipt created 2024-08-06, with the clock pinned inside the chain's window: the receipt's own creation date is the chain instant and the clock never replaces it, so the chain fails: 21003.",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "requestBody": "inventory-body-expired-fresh"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-expired-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "clock": {
+        "now": "2020-06-01T00:00:00Z"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21003
+        }
+      },
+      "tags": [
+        "endpoint",
+        "negative",
+        "clock",
+        "validity-window",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/pinned-clock-does-not-rescue-a-fresh-creation-date",
+      "description": "The expired chain (valid 2020 to 2021) over a receipt created 2024-08-06, with the clock pinned inside the chain's window: the creation date is the chain instant whatever the clock says, so INVALID_CERTIFICATE.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-expired-fresh"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-expired-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2020-06-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "creation-date-outside-certificate-validity-window",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "clock",
+        "validity-window",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-receipt-truncated-to-200-bytes",
+      "description": "The first 200 bytes of the shared receipt: the ContentInfo's length runs past the end, so MALFORMED before anything is verified.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "inventory-receipt-truncated-200"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "truncated-envelope",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "der",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-signature-of-63-bytes",
+      "description": "The shared transaction with its 64-byte ES256 signature cut to 63 bytes: an ES256 signature is exactly 64 bytes (R || S), so INVALID_SIGNATURE before any curve arithmetic.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-signature-63"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "signature-one-byte-short",
+      "tags": [
+        "jws",
+        "negative",
+        "signature",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-signature-of-65-bytes",
+      "description": "The shared transaction with its 64-byte ES256 signature followed by one zero byte: an ES256 signature is exactly 64 bytes (R || S), so INVALID_SIGNATURE before any curve arithmetic.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-signature-65"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "signature-one-byte-long",
+      "tags": [
+        "jws",
+        "negative",
+        "signature",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-an-all-zero-signature",
+      "description": "The shared transaction with 64 zero bytes as its signature: R and S of zero are outside the group, so INVALID_SIGNATURE, never a crash in the curve code.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-signature-zero"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "signature-scalars-zero",
+      "tags": [
+        "jws",
+        "negative",
+        "signature",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-a-payload-swapped-for-an-array",
+      "description": "The shared transaction's payload segment replaced with the JSON array [], its signature kept: the signature covers the header and payload segments, so INVALID_SIGNATURE, and the payload is never read as claims.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-payload-array"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "payload-segment-replaced",
+      "tags": [
+        "jws",
+        "negative",
+        "verification-order",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "transaction/reject-broken-signature-segment-under-a-foreign-chain",
+      "description": "The shared transaction with four characters outside base64url after its signature, under Apple's roots, which did not issue its chain: the segments are decoded before the chain is looked at, so MALFORMED rather than UNTRUSTED_CHAIN.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-transaction-signature-junk"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "signature-segment-not-base64url",
+      "tags": [
+        "jws",
+        "negative",
+        "verification-order",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-x5c-that-is-an-object",
+      "description": "The header's x5c is an object holding the leaf, not an array: MALFORMED, as for any x5c that is not three certificates.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-x5c-that-is-an-object"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "x5c-not-an-array",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-x5c-of-numbers",
+      "description": "The header's x5c holds three numbers: MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-x5c-of-numbers"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "x5c-entries-not-strings",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-x5c-with-null-and-a-list",
+      "description": "The header's x5c holds the leaf, a null and an empty list: MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-x5c-with-null-and-a-list"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "x5c-entries-not-strings",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-a-four-certificate-x5c",
+      "description": "The genuine x5c with its root repeated as a fourth entry: the chain is exactly leaf, intermediate and root, so MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-a-four-certificate-x5c"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "x5c-four-certificates",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-alg-in-lower-case",
+      "description": "The header's alg is es256: algorithm names are case-sensitive (RFC 7518 section 3.1), so MALFORMED.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-alg-in-lower-case"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "alg-lower-case",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-x5c-leaf-behind-a-byte-order-mark",
+      "description": "The leaf's x5c entry starts with U+FEFF: an x5c entry is strict standard base64, so the leaf does not decode: INVALID_CERTIFICATE.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "inventory-x5c-leaf-behind-a-byte-order-mark"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "x5c-entry-byte-order-mark",
+      "tags": [
+        "jws",
+        "negative",
+        "format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/intro-offer-and-trial-flags-are-the-strings-true-and-false",
+      "description": "The receipt of receipt/integers-at-the-64-bit-edge through the endpoint: Apple's response renders an in-app purchase's is_in_intro_offer_period and is_trial_period as the strings \"true\" and \"false\", not JSON booleans; its flags of 2 and -1 are \"true\".",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "review-receipt-integer-edges"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "review-receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 0,
+          "/receipt/in_app/0/is_in_intro_offer_period": "true",
+          "/receipt/in_app/0/is_trial_period": "true"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "positive",
+        "wire-format",
+        "test-inventory",
+        "new-in-0-7"
+      ]
+    },
+    {
       "id": "receipt/verify-under-the-second-of-two-same-named-roots-with-the-other-roots-certificate-in-the-bag",
       "description": "The shared receipt with a certificate added to its unsigned certificates bag, issued by a second pinned root that has the receipt root's subject name and another key; the receipt's own root is second. Each root that issued something used to stay in one store, where OpenSSL's issuer lookup takes the first name match and never tries a second, so with the twin first the chain did not verify. The path is now validated once per candidate root, each alone: it verifies in either order.",
       "operation": "verifyReceipt",
@@ -12971,6 +13755,233 @@
         "der",
         "limits",
         "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-another-roots-same-named-intermediate-before-the-real-one-own-root-first",
+      "description": "A receipt signed under the minted PKI (no key identifiers) whose unsigned certificates bag holds, before the real intermediate, an intermediate of the same subject name issued by a second pinned root; the receipt's own root is pinned first. OpenSSL's issuer lookup over the bag takes the first name match and never tries another, so with the namesake first the genuine receipt was UNTRUSTED_CHAIN once the second root was pinned. The bag is now narrowed to the certificates that sign the path: it verifies in every order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-other-roots-namesake-before"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root",
+            "core-review-r3-second-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-another-roots-same-named-intermediate-before-the-real-one-own-root-second",
+      "description": "A receipt signed under the minted PKI (no key identifiers) whose unsigned certificates bag holds, before the real intermediate, an intermediate of the same subject name issued by a second pinned root; the receipt's own root is pinned second. OpenSSL's issuer lookup over the bag takes the first name match and never tries another, so with the namesake first the genuine receipt was UNTRUSTED_CHAIN once the second root was pinned. The bag is now narrowed to the certificates that sign the path: it verifies in every order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-other-roots-namesake-before"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-r3-second-root",
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-another-roots-same-named-intermediate-after-the-real-one-own-root-first",
+      "description": "A receipt signed under the minted PKI (no key identifiers) whose unsigned certificates bag holds, after the real intermediate, an intermediate of the same subject name issued by a second pinned root; the receipt's own root is pinned first. OpenSSL's issuer lookup over the bag takes the first name match and never tries another, so with the namesake first the genuine receipt was UNTRUSTED_CHAIN once the second root was pinned. The bag is now narrowed to the certificates that sign the path: it verifies in every order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-other-roots-namesake-after"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root",
+            "core-review-r3-second-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-another-roots-same-named-intermediate-after-the-real-one-own-root-second",
+      "description": "A receipt signed under the minted PKI (no key identifiers) whose unsigned certificates bag holds, after the real intermediate, an intermediate of the same subject name issued by a second pinned root; the receipt's own root is pinned second. OpenSSL's issuer lookup over the bag takes the first name match and never tries another, so with the namesake first the genuine receipt was UNTRUSTED_CHAIN once the second root was pinned. The bag is now narrowed to the certificates that sign the path: it verifies in every order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-other-roots-namesake-after"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-r3-second-root",
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-a-same-named-sibling-intermediate-before-the-real-one",
+      "description": "A receipt signed under the minted PKI whose unsigned certificates bag holds, before the real intermediate, a second intermediate of the same subject name issued by the same root with another key. Both are vouched for by the root; only the real one signed the leaf. With the sibling first the core answered UNTRUSTED_CHAIN; it verifies in either order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-sibling-namesake-before"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-a-same-named-sibling-intermediate-after-the-real-one",
+      "description": "A receipt signed under the minted PKI whose unsigned certificates bag holds, after the real intermediate, a second intermediate of the same subject name issued by the same root with another key. Both are vouched for by the root; only the real one signed the leaf. With the sibling first the core answered UNTRUSTED_CHAIN; it verifies in either order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-sibling-namesake-after"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks",
+      "description": "The shared receipt with its first embedded certificate's outer signature, outside the signed TBS, written as a constructed BIT STRING of two primitive chunks, 03 01 00 and the signature octets. BER allows a constructed BIT STRING and OpenSSL joins the chunks to the same signature, so the chain still verifies. The header walk used to judge each chunk as a value of its own, reading the signature's first octet as an unused-bits count, and answered MALFORMED whenever it was above 7.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-certificate-signature-in-two-chunks"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "der",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
       ]
     }
   ]

@@ -60,7 +60,7 @@ final class HttpTransport implements Transport
         $this->baseUrl = rtrim($baseUrl, '/');
     }
 
-    public function open(array $roots): void
+    public function open(?array $roots): void
     {
         if ($this->opened) {
             throw new LogicException('a transport serves one Verifier');
@@ -100,9 +100,9 @@ final class HttpTransport implements Transport
 
     /**
      * @param array<array-key, mixed> $info
-     * @param list<string> $roots
+     * @param list<string>|null $roots
      */
-    private function checkRoots(array $info, array $roots): void
+    private function checkRoots(array $info, ?array $roots): void
     {
         $served = $info['roots'] ?? null;
         $source = is_array($served) ? ($served['source'] ?? null) : null;
@@ -110,7 +110,7 @@ final class HttpTransport implements Transport
         if (!is_string($source) || !is_array($fingerprints)) {
             throw new RuntimeException('the server did not report its roots');
         }
-        if ($roots === []) {
+        if ($roots === null) {
             if ($source !== 'defaults') {
                 throw new InvalidArgumentException(
                     'the server runs custom roots; give the Config those roots, or start the server without --roots',

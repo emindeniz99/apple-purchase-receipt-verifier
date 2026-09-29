@@ -291,24 +291,38 @@ fn unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost() {
     flat_attribute.extend_from_slice(&flat_body);
     builder.content = Some(set_of(&flat_attribute));
     let flat = builder.build();
-    let mut junk_der = signer_embedded.clone();
-    junk_der[0] = 0x04;
+    absent_builder.content = builder.content.clone();
+    let flat_absent = absent_builder.build();
 
     let verifier = receipt_verifier();
     let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
+    // Each tiny input is judged against the flat input of the same size
+    // and the same signer, which pays the same base64, decodes and copies
+    // (round-3 review F3; junk, which costs only its base64, made a
+    // control whose margin shrank with the optimiser). Without a signer
+    // the ratio is near 1 in every build. Under an embedded signer the tiny
+    // input also pays the payload walk up to the 100,000-value budget,
+    // which the flat value does not: 1.6 times the flat input in a debug
+    // build on the pinned toolchain, up to 2.0 on the 1.85.0 floor, so
+    // that bound allows three times. The regression these bounds guard,
+    // the payload read in full, cost about 30 times the flat input.
     let inputs = [
         encode(&common::receipt_der()),
-        encode(&junk_der),
+        encode(&flat_absent),
         encode(&signer_absent),
         encode(&flat),
         encode(&signer_embedded),
     ];
-    let mut costs = [Duration::ZERO; 5];
-    for _ in 0..3 {
+    // Each input's cost is its fastest of seven interleaved calls: the
+    // bounds below are ratios between inputs, and on a loaded machine a
+    // sum or a mean carries whatever else ran during one call, while the
+    // fastest call is the closest to the work itself for every input alike.
+    let mut costs = [Duration::MAX; 5];
+    for _ in 0..7 {
         for (index, input) in inputs.iter().enumerate() {
             let started = Instant::now();
             let result = verifier.verify_receipt(input);
-            costs[index] += started.elapsed();
+            costs[index] = costs[index].min(started.elapsed());
             let expected = [
                 None,
                 Some(Reason::Malformed),
@@ -323,14 +337,15 @@ fn unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost() {
             );
         }
     }
-    let [genuine, junk, absent, flat, embedded] = costs;
+    let [genuine, flat_absent, absent, flat, embedded] = costs;
     assert!(
-        absent < junk * 3 / 2 + genuine * 10,
+        absent < flat_absent * 2 + genuine * 10,
         "unsigned content of {count} tiny attributes and no embedded signer cost {absent:?}, \
-         against {junk:?} for junk of the same size: the payload was read before a signer was found"
+         against {flat_absent:?} for one flat value of the same size and no embedded signer: \
+         the payload was read before a signer was found"
     );
     assert!(
-        embedded < flat * 3 / 2 + genuine * 10,
+        embedded < flat * 3 + genuine * 10,
         "unsigned content of {count} tiny attributes under an embedded signer cost {embedded:?}, \
          against {flat:?} for one flat value of the same size"
     );

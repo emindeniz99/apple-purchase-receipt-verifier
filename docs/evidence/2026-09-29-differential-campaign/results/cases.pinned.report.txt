@@ -1,0 +1,17 @@
+reason       receipt/reject-signer-certificate-version-11
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       receipt/reject-signer-carrying-one-extension-twice
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       receipt/reject-signer-on-an-unimplemented-curve
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    recorded: reason
+reason       receipt/reject-signer-with-a-corrupt-extension
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+summary: 153 rows; 44 message-only, 4 reason, 105 same; 0 not recorded in R20; 0 recorded rows now agree

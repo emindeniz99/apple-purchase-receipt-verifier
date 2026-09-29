@@ -1,4 +1,4 @@
-# The two long campaigns that do not fit a push (docs/rust-core/MIGRATION.md,
+# The long campaigns that do not fit a push (docs/rust-core/MIGRATION.md,
 # "CI matrix"):
 #
 #   rust-fuzz-openssl  the fuzz targets over an OpenSSL build instrumented
@@ -8,9 +8,18 @@
 #   java-differential  the maintained Java implementation against the core
 #                      on every input the script collects (R33, step 1.8);
 #                      a new difference fails the run until R20 records it.
+#                      It waits for tools/differential.sh (lane A3) and says
+#                      so until then;
+#   corpus             every host's one-command gate over the generated
+#                      corpora (6,179 calls), each row compared byte for
+#                      byte with the module's own. The corpora are 200 MB of
+#                      generated rows and stay out of the repository (OD-05
+#                      in docs/rust-core/STATUS.md): the job runs only when
+#                      the repository variable APRV_CORPUS_URL names an
+#                      owner-hosted archive, checked against
+#                      APRV_CORPUS_SHA256, and prints a notice otherwise.
 #
-# Each job waits for its input to land (rust/openssl, tools/differential.sh)
-# and says so until then. Scheduled runs happen on the default branch only.
+# Scheduled runs happen on the default branch only.
 #
 # A fuzz finding fails the run and keeps the crashing input as a short-lived
 # artifact. It does not open an issue: this repository is public, and a
@@ -39,35 +48,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: is the OpenSSL adapter here yet?
-        id: gate
-        run: |
-          if [ -d rust/openssl ]; then echo "present=true"
-          else echo "::notice::rust/openssl (the aprv-openssl adapter, MIGRATION.md step 1.1) does not exist yet; nothing links OpenSSL to fuzz" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
       # The same pinned tarball as aprv.wasm, instrumented; cargo-fuzz needs
       # nightly rustc for -Zsanitizer, which is why this is not the pinned
       # toolchain (rust/fuzz stays outside the workspace for that reason).
       - name: OpenSSL with AddressSanitizer and fuzzer-no-link
-        if: steps.gate.outputs.present == 'true'
         run: |
           set -euo pipefail
           tools/openssl-asan.sh "$RUNNER_TEMP/openssl-asan" > "$RUNNER_TEMP/openssl-asan.env"
           . "$RUNNER_TEMP/openssl-asan.env"
           { echo "OPENSSL_DIR=$OPENSSL_DIR"; echo "OPENSSL_STATIC=1"; echo "OPENSSL_NO_VENDOR=1"; } >> "$GITHUB_ENV"
       - name: nightly Rust and cargo-fuzz
-        if: steps.gate.outputs.present == 'true'
         run: |
           rustup toolchain install nightly --profile minimal
           cargo install cargo-fuzz --locked
       - name: fuzz every target for ten minutes
-        if: steps.gate.outputs.present == 'true'
         working-directory: rust/fuzz
         env:
           FUZZ_TOOLCHAIN: nightly
           ASAN_OPTIONS: detect_leaks=1:allocator_may_return_null=0
         run: ./run.sh all 600
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure() && steps.gate.outputs.present == 'true'
+        if: failure()
         with:
           name: fuzz-findings
           path: rust/fuzz/artifacts/
@@ -85,8 +86,8 @@ jobs:
       - name: is the differential here yet?
         id: gate
         run: |
-          if [ -f tools/differential.sh ] && [ -f rust/bindings/abi/build.sh ]; then echo "present=true"
-          else echo "::notice::tools/differential.sh or rust/bindings/abi/build.sh does not exist yet (MIGRATION.md steps 1.4 and 1.8)" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
+          if [ -f tools/differential.sh ]; then echo "present=true"
+          else echo "::notice::tools/differential.sh (lane A3, MIGRATION.md step 1.8) does not exist yet" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         if: steps.gate.outputs.present == 'true'
         with:
@@ -111,7 +112,11 @@ jobs:
           tools/wasm-toolchain.sh "$dir" > "$RUNNER_TEMP/toolchain.env"
           . "$RUNNER_TEMP/toolchain.env"
           export WASI_SDK_DIR OPENSSL_WASM_DIR PATH
-          (cd rust && rustup toolchain install)
+          # build.sh runs from the repository root, where rustup does not
+          # read rust/rust-toolchain.toml: name its channel explicitly.
+          RUSTUP_TOOLCHAIN="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          export RUSTUP_TOOLCHAIN
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target wasm32-wasip1
           rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
       - name: the Java implementation against the core
         if: steps.gate.outputs.present == 'true'
@@ -123,3 +128,163 @@ jobs:
           path: ${{ runner.temp }}/differential/
           if-no-files-found: warn
           retention-days: 14
+
+  # OD-05. The archive is a .tar.gz with the G1 layout at its top level:
+  # aprv.wasm and aprv.component.wasm (the release's module), same.py,
+  # calls/<corpus>.pinned.jsonl (every clock pinned) and
+  # rows/module-<corpus>.jsonl (the module's own answers). Each leg runs its
+  # lane's one-command gate over it, which puts that module in place, runs
+  # the whole suite and compares every corpus row. The rows belong to the
+  # archive's module, so after a release changes the module the owner
+  # uploads a new archive (a stale one is reported by the first step).
+  corpus:
+    if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'emindeniz99'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [go, python, ruby, node, dotnet, java-wasm, swift, server-php]
+    env:
+      CORPUS_URL: ${{ vars.APRV_CORPUS_URL }}
+      CORPUS_SHA256: ${{ vars.APRV_CORPUS_SHA256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is a corpus archive configured?
+        id: gate
+        run: |
+          if [ -n "$CORPUS_URL" ]; then echo "present=true"
+          else echo "::notice::the repository variable APRV_CORPUS_URL is not set, so there is no corpus to run (OD-05)" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
+      - name: fetch the archive and check it
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          if [ -z "$CORPUS_SHA256" ]; then
+            echo "::error::APRV_CORPUS_URL is set but APRV_CORPUS_SHA256 is not; the archive is only used after its hash is checked"
+            exit 1
+          fi
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/corpus.tar.gz" "$CORPUS_URL"
+          echo "$CORPUS_SHA256  $RUNNER_TEMP/corpus.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/g1" "$RUNNER_TEMP/out"
+          tar -xzf "$RUNNER_TEMP/corpus.tar.gz" -C "$RUNNER_TEMP/g1"
+          for f in aprv.wasm aprv.component.wasm same.py calls rows; do
+            if [ ! -e "$RUNNER_TEMP/g1/$f" ]; then echo "::error::the archive has no $f at its top level (the G1 layout)"; exit 1; fi
+          done
+          got="$(sha256sum < "$RUNNER_TEMP/g1/aprv.wasm" | cut -c1-64)"
+          pinned="$(cut -c1-64 go/internal/wasm/aprv.wasm.sha256)"
+          if [ "$got" != "$pinned" ]; then
+            echo "::warning::the archive's aprv.wasm is $got and this tree pins $pinned; its rows describe another module, so a leg that checks the committed pin (java-wasm) fails until the archive is refreshed"
+          fi
+          echo "G1=$RUNNER_TEMP/g1" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'go'
+        with:
+          go-version-file: go/go.mod
+          cache: false
+      - name: go
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'go'
+        run: sh go/internal/corpusrun/g1.sh "$G1" "$RUNNER_TEMP/out"
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'python'
+        with:
+          python-version: "3.13"
+          enable-cache: false
+      - name: python
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'python'
+        run: |
+          set -euo pipefail
+          uv sync --locked --extra dev --project python
+          PYTHON="$GITHUB_WORKSPACE/python/.venv/bin/python" G1_OUT="$RUNNER_TEMP/out" sh python/tools/g1.sh "$G1"
+
+      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'ruby'
+        with:
+          ruby-version: "3.4"
+          working-directory: ruby
+          bundler-cache: true
+      - name: ruby
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'ruby'
+        run: sh docs/evidence/2026-09-29-ruby-host/scripts/g1.sh "$G1" "$RUNNER_TEMP/out"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'node'
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: node
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'node'
+        working-directory: node
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          node scripts/g1.mjs "$G1"
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'dotnet'
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+          cache: false
+      - name: dotnet
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'dotnet'
+        run: |
+          set -euo pipefail
+          d=dotnet/src/ApplePurchaseReceiptVerifier/wasm
+          cp "$G1/aprv.wasm" "$d/aprv.wasm"
+          printf '%s  aprv.wasm\n' "$(sha256sum < "$d/aprv.wasm" | cut -c1-64)" > "$d/aprv.wasm.sha256"
+          REPO="$GITHUB_WORKSPACE" SCRATCH="$RUNNER_TEMP/out" sh docs/evidence/2026-09-29-dotnet-host/scripts/corpus.sh
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'java-wasm'
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: java-wasm
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'java-wasm'
+        env:
+          BENCH_SECONDS: "0"
+        run: sh java-wasm/scripts/g1.sh "$G1" "$RUNNER_TEMP/out"
+
+      # swift:6.3, digest-pinned as in ci.yml; python3 is for same.py.
+      - name: swift
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'swift'
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/w" -v "$G1:/g1:ro" -w /w \
+            swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54 \
+            sh -euc 'apt-get update -qq && apt-get install -y -qq python3 > /dev/null
+                     OUT=/tmp/gate sh swift/scripts/gate.sh /g1 --pin'
+
+      # rust/server's check-component.sh builds the static binary around the
+      # archive's component and runs the server's corpus over HTTP (fresh
+      # and pooled) and the CLI; PHP's façade then runs the corpus through
+      # that binary.
+      - name: the pinned Rust toolchain, the musl target and musl-gcc
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'server-php'
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target x86_64-unknown-linux-musl
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+          sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: server
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'server-php'
+        run: |
+          APRV_COMPONENT="$G1/aprv.component.wasm" OUT="$RUNNER_TEMP/out" \
+            CALLS="$G1/calls" ROWS="$G1/rows" sh rust/server/scripts/check-component.sh
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'server-php'
+        with:
+          php-version: "8.4"
+          extensions: json, curl, posix
+          coverage: none
+      - name: php
+        if: steps.gate.outputs.present == 'true' && matrix.host == 'server-php'
+        run: |
+          set -euo pipefail
+          composer install --working-dir=php --no-scripts --no-progress --no-interaction
+          sh php/tools/rerun.sh "$RUNNER_TEMP/out/aprv-x86_64-unknown-linux-musl" "$G1"

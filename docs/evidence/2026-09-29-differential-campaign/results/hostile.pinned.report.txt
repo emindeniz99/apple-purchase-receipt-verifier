@@ -1,0 +1,37 @@
+reason       hostile/receipt-der/g5-m1-853597831
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       hostile/receipt-der/g5-m1-127707244
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       hostile/receipt-der/g5-m1-236749769
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       hostile/receipt-der/g5-m1-893548114
+    core: INVALID_SIGNATURE: unsupported digest algorithm
+    java: MALFORMED: unexpected java.lang.IllegalArgumentException
+    recorded: reason
+reason       hostile/receipt-der/g5-m1-324520034
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       hostile/receipt-der/g5-m0-701123523
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       hostile/receipt-der/gen-m1-280546414
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       hostile/receipt-der/gen-m1-619385370
+    core: MALFORMED: malformed CMS structure: not a CMS SignedData
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       hostile/receipt-der/gen-m1-933684943
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+summary: 811 rows; 129 java-no-call, 465 message-only, 9 reason, 208 same; 0 not recorded in R20; 0 recorded rows now agree
