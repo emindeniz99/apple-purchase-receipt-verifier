@@ -5,9 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.security.cert.TrustAnchor;
 import java.util.Collections;
 import org.bouncycastle.asn1.ASN1Encodable;
@@ -257,23 +260,114 @@ class ReceiptDecoderTest {
     }
 
     /**
-     * The bound counts constructed levels in either length form, and only
-     * in a constructed OCTET STRING: other nesting is {@link
-     * Asn1Depth#MAX_DEPTH}'s.
+     * The bound counts constructed levels in either length form, in any
+     * universal constructed value but a SEQUENCE or a SET, at any depth:
+     * OpenSSL refuses a seventh level wherever it decodes a string, and a
+     * string one SEQUENCE deeper is still one it would decode alone.
      */
     @Test
-    void octetStringChunksNestAtMostSixConstructedLevels() throws Exception {
+    void constructedStringsNestAtMostSixLevelsAtAnyDepth() throws Exception {
         assertEquals(6, Asn1Depth.MAX_STRING_NEST);
-        assertFalse(Asn1Depth.octetStringNestExceeded(definiteChunks(6), 0));
-        assertTrue(Asn1Depth.octetStringNestExceeded(definiteChunks(7), 0));
-        assertFalse(Asn1Depth.octetStringNestExceeded(
-                TestPki.chunked(new byte[] {1}, 6).getEncoded(), 0));
-        assertTrue(Asn1Depth.octetStringNestExceeded(
-                TestPki.chunked(new byte[] {1}, 7).getEncoded(), 0));
-        assertFalse(Asn1Depth.octetStringNestExceeded(nestedSets(7), 0));
-        // An absent value (-1) or one past the end is not over the bound.
-        assertFalse(Asn1Depth.octetStringNestExceeded(definiteChunks(7), -1));
-        assertFalse(Asn1Depth.octetStringNestExceeded(definiteChunks(7), definiteChunks(7).length));
+        assertFalse(Asn1Depth.stringNestExceeded(definiteChunks(6)));
+        assertTrue(Asn1Depth.stringNestExceeded(definiteChunks(7)));
+        assertFalse(
+                Asn1Depth.stringNestExceeded(TestPki.chunked(new byte[] {1}, 6).getEncoded()));
+        assertTrue(
+                Asn1Depth.stringNestExceeded(TestPki.chunked(new byte[] {1}, 7).getEncoded()));
+        assertFalse(Asn1Depth.stringNestExceeded(nestedSets(7)));
+        // Inside a SEQUENCE, and inside a SET inside that.
+        assertTrue(Asn1Depth.stringNestExceeded(new BERSequence(TestPki.chunked(new byte[] {1}, 7)).getEncoded()));
+        assertTrue(Asn1Depth.stringNestExceeded(
+                new BERSequence(new BERSet(TestPki.chunked(new byte[] {1}, 7))).getEncoded()));
+        assertFalse(Asn1Depth.stringNestExceeded(
+                new BERSequence(new BERSet(TestPki.chunked(new byte[] {1}, 6))).getEncoded()));
+        // A UTCTime counts its chunks the same way: 0x37 is a constructed UTCTime.
+        byte[] utcTime = definiteChunks(7);
+        utcTime[0] = 0x37;
+        assertTrue(Asn1Depth.stringNestExceeded(utcTime));
+        // A context-tagged value is no string, so nested ones are not levels.
+        byte[] tagged = definiteChunks(7);
+        tagged[0] = (byte) 0xA0;
+        assertFalse(Asn1Depth.stringNestExceeded(tagged));
+    }
+
+    /**
+     * A fourth field that is a SEQUENCE holding a string of seven levels is
+     * refused, and the signed payload is unreadable; at six levels the
+     * attribute reads, the field ignored as ever.
+     */
+    @Test
+    void aFourthFieldHoldingAStringOfSevenLevelsIsUnreadable() throws Exception {
+        byte[] bundle = new DERUTF8String("com.example.app").getEncoded();
+        assertEquals(
+                "com.example.app",
+                ReceiptDecoder.parse(fourthFieldSet(
+                                bundle,
+                                sequence(TestPki.chunked(new byte[] {1}, 6).getEncoded())))
+                        .bundleId());
+        VerificationException e = assertThrows(
+                VerificationException.class,
+                () -> ReceiptDecoder.parse(fourthFieldSet(
+                        bundle, sequence(TestPki.chunked(new byte[] {1}, 7).getEncoded()))));
+        assertEquals(Reason.UNREADABLE_PAYLOAD, e.reason());
+    }
+
+    /**
+     * BER sends a string of any type in chunks and OpenSSL joins them, so a
+     * constructed UTCTime is a UTCTime: it reads when its joined octets are
+     * one, and is refused when they are not, as the primitive would be. The
+     * joining is Java's, since BouncyCastle builds no constructed UTCTime.
+     */
+    @Test
+    void aConstructedUtcTimeIsReadAsItsJoinedOctets() throws Exception {
+        byte[] bundle = new DERUTF8String("com.example.app").getEncoded();
+        byte[] time = {
+            0x37, 0x11, 0x04, 0x06, '2', '5', '0', '1', '0', '1', 0x04, 0x07, '0', '0', '0', '0', '0', '0', 'Z'
+        };
+        byte[] definite = fourthFieldSet(bundle, sequence(time));
+        assertEquals("com.example.app", ReceiptDecoder.parse(definite).bundleId());
+        // Without the join BouncyCastle refuses the payload outright.
+        assertThrows(IOException.class, () -> ASN1Primitive.fromByteArray(definite));
+
+        // Twelve joined octets are no UTCTime, constructed or not.
+        byte[] shortTime = {
+            0x37, 0x10, 0x04, 0x06, '2', '5', '0', '1', '0', '1', 0x04, 0x06, '0', '0', '0', '0', '0', '0'
+        };
+        VerificationException e = assertThrows(
+                VerificationException.class, () -> ReceiptDecoder.parse(fourthFieldSet(bundle, sequence(shortTime))));
+        assertEquals(Reason.UNREADABLE_PAYLOAD, e.reason());
+    }
+
+    /**
+     * The join rewrites only the strings BouncyCastle cannot build and the
+     * lengths around them, in either length form; an encoding without one
+     * is handed back as it is.
+     */
+    @Test
+    void theJoinRewritesOnlyWhatBouncyCastleCannotBuild() throws Exception {
+        byte[] plain = set(attribute(2, new DERUTF8String("com.example.app").getEncoded()));
+        assertSame(plain, ConstructedStrings.joined(plain));
+        byte[] octets = TestPki.chunked(new byte[] {1, 2}, 3).getEncoded();
+        assertSame(octets, ConstructedStrings.joined(octets));
+
+        // SEQUENCE { constructed UTF8String "ab" in two chunks }, definite and indefinite.
+        byte[] definite = {0x30, 0x08, 0x2C, 0x06, 0x04, 0x01, 'a', 0x04, 0x01, 'b'};
+        assertArrayEquals(new byte[] {0x30, 0x04, 0x0C, 0x02, 'a', 'b'}, ConstructedStrings.joined(definite));
+        byte[] indefinite = {0x30, (byte) 0x80, 0x2C, (byte) 0x80, 0x04, 0x01, 'a', 0x04, 0x01, 'b', 0, 0, 0, 0};
+        assertArrayEquals(
+                new byte[] {0x30, (byte) 0x80, 0x0C, 0x02, 'a', 'b', 0, 0}, ConstructedStrings.joined(indefinite));
+        // A string with no chunks keeps its size and is still rewritten.
+        assertArrayEquals(
+                new byte[] {0x30, 0x02, 0x0C, 0x00}, ConstructedStrings.joined(new byte[] {0x30, 0x02, 0x2C, 0x00}));
+        // Bytes after the value stay, for BouncyCastle to refuse.
+        assertArrayEquals(
+                new byte[] {0x0C, 0x01, 'a', 0x05},
+                ConstructedStrings.joined(new byte[] {0x2C, 0x03, 0x04, 0x01, 'a', 0x05}));
+        // An end-of-contents inside a definite string is left for BouncyCastle, as are types that must be primitive.
+        byte[] endOfContents = {0x2C, 0x05, 0x04, 0x01, 'a', 0x00, 0x00};
+        assertSame(endOfContents, ConstructedStrings.joined(endOfContents));
+        byte[] integer = {0x22, 0x03, 0x02, 0x01, 0x01};
+        assertSame(integer, ConstructedStrings.joined(integer));
     }
 
     /**
@@ -320,6 +414,47 @@ class ReceiptDecoderTest {
             encoding = outer;
         }
         return encoding;
+    }
+
+    /**
+     * A payload SET of one bundle id attribute carrying {@code fourth}, an
+     * encoding BouncyCastle need not be able to parse, as a fourth field.
+     */
+    private static byte[] fourthFieldSet(byte[] bundle, byte[] fourth) throws Exception {
+        byte[] fields = concat(
+                new ASN1Integer(2).getEncoded(),
+                new ASN1Integer(1).getEncoded(),
+                new DEROctetString(bundle).getEncoded(),
+                fourth);
+        return tlv(0x31, tlv(0x30, fields));
+    }
+
+    /** A SEQUENCE holding {@code content} as it is. */
+    private static byte[] sequence(byte[] content) {
+        return tlv(0x30, content);
+    }
+
+    /** One value of tag {@code tag} and content {@code content}, its length in short or one-octet long form. */
+    private static byte[] tlv(int tag, byte[] content) {
+        int head = content.length < 0x80 ? 2 : 3;
+        byte[] value = new byte[head + content.length];
+        value[0] = (byte) tag;
+        if (head == 2) {
+            value[1] = (byte) content.length;
+        } else {
+            value[1] = (byte) 0x81;
+            value[2] = (byte) content.length;
+        }
+        System.arraycopy(content, 0, value, head, content.length);
+        return value;
+    }
+
+    private static byte[] concat(byte[]... parts) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        for (byte[] part : parts) {
+            out.write(part, 0, part.length);
+        }
+        return out.toByteArray();
     }
 
     /** {@code levels} SETs inside one another, the innermost empty. */

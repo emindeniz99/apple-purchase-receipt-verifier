@@ -7,9 +7,11 @@
     "homepage": "https://github.com/emindeniz99/apple-purchase-receipt-verifier",
     "require": {
         "php": ">=8.2",
-        "ext-openssl": "*",
         "ext-json": "*",
         "psr/clock": "^1.0"
+    },
+    "suggest": {
+        "ext-curl": "Needed by HttpTransport, and by aprv-install to download the binary over HTTPS without ext-openssl"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.95",
@@ -26,6 +28,9 @@
             "EminDeniz99\\ApplePurchaseReceiptVerifier\\Tests\\": "tests/"
         }
     },
+    "bin": [
+        "bin/aprv-install"
+    ],
     "config": {
         "sort-packages": true,
         "platform": {
