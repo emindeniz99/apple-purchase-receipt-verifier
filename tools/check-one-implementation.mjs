@@ -108,6 +108,16 @@ const LANGS = {
     banned: [
       [/\borg\.bouncycastle\b|\bjava\.security\.cert\b|\bjava\.security\.Signature\b|\bjavax\.crypto\b|\bjava\.security\.KeyFactory\b|\bsun\.security\b/, 'a Java crypto/X.509 API'],
     ],
+    // The -wasm artifact copies java/'s 0.7 public API (R33), whose roots
+    // are java.security.cert.X509Certificate: the same case as Go's and
+    // .NET's entries (OD-04). Only the imports are allowed; any other use of
+    // java.security.cert, or these imports anywhere else, is still a hit.
+    allow: [
+      { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/Config.java', token: /import java\.security\.cert\.X509Certificate;/, why: 'Config.roots() holds X509Certificate (the 0.7 API); only getEncoded(), the DER, reaches the module' },
+      { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/AppleRootCerts.java', token: /import java\.security\.cert\.(CertificateException|CertificateFactory|X509Certificate);/, why: 'AppleRootCerts returns the three bundled roots as X509Certificate for the 0.7 API; the module holds its own copy and decides trust' },
+      { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/WasmVerifier.java', token: /import java\.security\.cert\.(CertificateEncodingException|X509Certificate);/, why: "takes each root's getEncoded() DER for the Endive engine's init; nothing is parsed or checked" },
+      { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ServerSources.java', token: /import java\.security\.cert\.(CertificateEncodingException|X509Certificate);/, why: "takes each root's getEncoded() DER for the server engine's roots file; nothing is parsed or checked" },
+    ],
   },
 };
 
