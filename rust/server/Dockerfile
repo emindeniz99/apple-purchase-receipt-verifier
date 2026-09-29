@@ -40,7 +40,8 @@ RUN case "$TARGETARCH" in \
  && rustup target add "$(cat /target)"
 # The two-stage build: precompile with the full build, embed in the
 # runtime-only static build; the script checks the result with readelf.
-RUN apt-get update && apt-get install -y --no-install-recommends binutils && rm -rf /var/lib/apt/lists/* \
+# musl-tools: musl-gcc compiles Wasmtime's C helpers for the musl target.
+RUN apt-get update && apt-get install -y --no-install-recommends binutils musl-tools && rm -rf /var/lib/apt/lists/* \
  && COMPONENT_SHA256="$COMPONENT_SHA256" CARGO_TARGET_DIR=/tmp/target \
     sh rust/server/scripts/build-static.sh /in/aprv.component.wasm "$(cat /target)" /out \
  && cp "/out/aprv-$(cat /target)" /aprv

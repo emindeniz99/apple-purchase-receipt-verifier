@@ -13,7 +13,8 @@
 #
 # TARGET defaults to x86_64-unknown-linux-musl: a fully static binary
 # (static-pie, musl's own malloc; no INTERP, no NEEDED), which the script
-# checks with readelf. OUTDIR defaults to rust/server/dist. Set
+# checks with readelf; it needs musl-gcc (musl-tools) for the C that
+# Wasmtime compiles. OUTDIR defaults to rust/server/dist. Set
 # COMPONENT_SHA256 to refuse any other component (the release does). A
 # Windows TARGET writes aprv-TARGET.exe.
 #
@@ -43,6 +44,21 @@ if [ -n "${COMPONENT_SHA256:-}" ] && [ "$got" != "$COMPONENT_SHA256" ]; then
   exit 1
 fi
 echo "component: $component, sha256 $got"
+
+# cc-rs compiles Wasmtime's C helpers with TARGET's C compiler and, for a
+# musl TARGET, looks for <arch>-linux-musl-gcc (and musl-gcc for x86_64
+# only). Debian's and Ubuntu's musl-tools package installs musl-gcc for
+# the machine's own architecture, so name it for a native musl TARGET
+# unless CC_<target> already says otherwise.
+case "$target" in
+*-linux-musl*)
+  ccvar="CC_$(echo "$target" | tr - _)"
+  if [ "${target%%-*}" = "${host%%-*}" ] && [ -z "$(eval "echo \${$ccvar:-}")" ] \
+    && command -v musl-gcc >/dev/null 2>&1; then
+    export "$ccvar=musl-gcc"
+  fi
+  ;;
+esac
 
 features=compile
 [ "${target%%-*}" = "${host%%-*}" ] || features="compile,wasmtime/all-arch"
