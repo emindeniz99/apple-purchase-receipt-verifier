@@ -10,13 +10,15 @@ use Psr\Clock\ClockInterface;
  * What a {@see Verifier} trusts and what time it thinks it is
  * (docs/design/0.7-api.md, "Setup"). Immutable.
  *
- * **Roots** are the caller's trust anchors as DER strings, or the module's
- * built-in ones: an empty list means the three pinned Apple roots that
- * `aprv` carries. This package holds no copy of them on the verification
- * path, so {@see defaults()} lists none. "Apple's roots plus mine" is
- * written by passing all four DER strings ({@see AppleRootCerts::pinnedRoots()}
- * has Apple's three for now). A value that is not a certificate is refused
- * by {@see Verifier::create()}, which is where `aprv` first reads the roots.
+ * **Roots** are the caller's trust anchors as DER strings, or `null` for the
+ * module's built-in ones: no roots given means the three pinned Apple roots
+ * that `aprv` carries. This package holds no copy of them on the verification
+ * path, so {@see defaults()} names none. An empty list is not "no roots": it
+ * is a mistake, and {@see Verifier::create()} refuses it. "Apple's roots plus
+ * mine" is written by passing all four DER strings
+ * ({@see AppleRootCerts::pinnedRoots()} has Apple's three for now). A value
+ * that is not a certificate is refused by {@see Verifier::create()}, which is
+ * where `aprv` first reads the roots.
  *
  * **The clock** answers "what time is it now?" and nothing else. The
  * library reads it once per call and sends the value to `aprv` as `now-ms`;
@@ -26,9 +28,9 @@ use Psr\Clock\ClockInterface;
  */
 final readonly class Config
 {
-    /** @param list<string> $roots DER bytes of the trust anchors; empty means the module's built-in Apple roots */
+    /** @param list<string>|null $roots DER bytes of the trust anchors; null means the module's built-in Apple roots */
     public function __construct(
-        public array $roots,
+        public ?array $roots,
         public ClockInterface $clock,
     ) {
     }
@@ -36,7 +38,7 @@ final readonly class Config
     /** The module's built-in Apple roots and the system clock. */
     public static function defaults(): self
     {
-        return new self([], new SystemClock());
+        return new self(null, new SystemClock());
     }
 
     public static function builder(): ConfigBuilder
