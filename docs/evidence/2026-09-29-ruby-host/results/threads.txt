@@ -1,0 +1,12 @@
+# load average 9.23 11.59 14.21, 4 CPUs shared with other work
+measured through the pool of instances (module answers are not decoded); 4 CPUs, Ruby 3.3.6, wasmtime 48.0.1
+1 thread(s): g5    426.3/s   jws    109.0/s
+2 thread(s): g5    714.0/s   jws    161.0/s
+4 thread(s): g5    376.7/s   jws    154.3/s
+4 threads / 1 thread: g5 0.88x   jws 1.42x
+# load average 8.46 11.22 14.02
+measured through the pool of instances (module answers are not decoded); 4 CPUs, Ruby 3.3.6, wasmtime 48.0.1
+1 thread(s): g5    399.7/s   jws    103.0/s
+2 thread(s): g5    250.3/s   jws    119.0/s
+4 thread(s): g5    375.0/s   jws    145.3/s
+4 threads / 1 thread: g5 0.94x   jws 1.41x

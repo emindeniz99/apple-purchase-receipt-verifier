@@ -638,15 +638,15 @@ certificate is the module's to say, at `Verifier.create`.
 `ruby -Ilib bench/startup.rb` prints these rows for a fresh process, and
 `ruby -Ilib bench/threads.rb` the rate at 1, 2 and 4 threads. Two sets of
 numbers, because the second was taken on a machine other work had saturated
-(a load average of 13 to 16 on 4 cores) and is an upper bound:
+(a load average of about 9 on 4 cores) and is an upper bound:
 
 | | spike, quiet 4-core machine (ABI v1 module) | this gem, loaded 4-core machine (round-13 module) |
 |---|---:|---:|
-| `require` | 10 to 16 ms | 16 to 27 ms |
-| first `Verifier.create` (compiles the module) | 1.22 to 1.35 s | 6.7 to 8.3 s wall, 5.3 to 5.5 s of CPU |
-| a later `Verifier.create` | 0.1 ms | 0.3 to 0.6 ms |
-| one genuine G5 sandbox receipt | 1.33 ms | 3.2 to 3.8 ms wall, 2.4 ms of CPU |
-| one shared-sandbox JWS | 4.71 ms | 10 to 11 ms wall, 8 to 10 ms of CPU |
+| `require` | 10 to 16 ms | 15 to 23 ms |
+| first `Verifier.create` (compiles the module) | 1.22 to 1.35 s | 5.6 to 6.5 s wall, 5.6 to 6.8 s of CPU |
+| a later `Verifier.create` | 0.1 ms | 0.2 to 0.4 ms |
+| one genuine G5 sandbox receipt | 1.33 ms | 2.5 to 3.6 ms wall, 2.4 to 2.6 ms of CPU |
+| one shared-sandbox JWS | 4.71 ms | 9.2 to 11.5 ms wall, 8.4 to 10.2 ms of CPU |
 | four threads, G5 receipts per second | 2,358 | not measurable while the cores are shared |
 
 The compile is once per process and dominates a process that starts for one
