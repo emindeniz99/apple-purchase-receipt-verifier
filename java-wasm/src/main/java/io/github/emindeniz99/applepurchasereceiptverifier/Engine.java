@@ -53,8 +53,9 @@ public abstract class Engine {
      * works; with none, {@code [maven(), github()]}. With the runtime probe
      * on (the default), {@link Verifier#create(Config, Engine)} resolves the
      * sources and throws {@link IllegalStateException} with each source's
-     * reason when none works; with it off, the first call does, and answers
-     * {@link Reason#INTERNAL_ERROR} instead.
+     * reason when none works, and {@link IllegalArgumentException} when the
+     * module refuses one of the config's roots, as on Endive; with it off,
+     * the first call does, and answers {@link Reason#INTERNAL_ERROR} instead.
      *
      * @throws NullPointerException if {@code sources} or one of them is null
      */
@@ -210,7 +211,7 @@ public abstract class Engine {
                     () -> {
                         try {
                             return ServerSources.open(config, this);
-                        } catch (IllegalStateException e) {
+                        } catch (IllegalStateException | IllegalArgumentException e) {
                             if (probe) {
                                 throw e;
                             }

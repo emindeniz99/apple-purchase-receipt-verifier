@@ -175,8 +175,10 @@ server reports (a trap in the module, an ABI error, a refused token) is
 `Failure.cause()`, whose message names the HTTP status and the server's
 code. A server that cannot be started or reached is `INTERNAL_ERROR`
 with a `ServerProcessFailure` as the cause, so it is never mistaken for
-a trap. An input over the 3 MiB cap is `TOO_LARGE` (21002). Both cause
-classes are internal; tell them apart by `getClass().getName()` in logs.
+a trap. The server refuses a body over 3 MiB before the module sees it;
+the engine answers such an input as the module does, `TOO_LARGE` (21002
+from the endpoint) with the core's own message. Both cause classes are
+internal; tell them apart by `getClass().getName()` in logs.
 
 ## The runtime probe
 
@@ -191,7 +193,9 @@ the module refuses one of your roots.
 On the server engine, the probe resolves the sources: `create` starts
 the child (or reaches the `url()` server), asks it for `/v1/info`, and
 refuses a server that trusts other roots than your `Config`, since it
-would answer for another trust anchor. On Java 8 the default
+would answer for another trust anchor. A root the module refuses stops
+the child at start, and `create` throws `IllegalArgumentException` with
+the module's reason, as on Endive. On Java 8 the default
 `Verifier.create(config)` therefore returns a verifier whose server is
 already running.
 

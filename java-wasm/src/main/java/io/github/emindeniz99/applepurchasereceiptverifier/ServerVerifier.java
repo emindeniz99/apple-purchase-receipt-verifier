@@ -30,8 +30,20 @@ import org.jspecify.annotations.Nullable;
  */
 final class ServerVerifier implements Verifier, Closeable {
 
-    private static final String TOO_LARGE_MESSAGE =
-            "the input is over the server's size cap of 3145728 bytes; it was not read";
+    /**
+     * What the core answers for an input over its cap. The server refuses a
+     * body over 3,145,728 bytes with 413 before the module sees it; the
+     * engine answers as the module would have, so both engines agree.
+     */
+    static String tooLargeAnswer(String path) {
+        if (path.startsWith("/v1/verify-receipt/")) {
+            return "{\"status\":" + AppleStatus.MALFORMED_RECEIPT_DATA + "}";
+        }
+        String message = path.equals("/v1/signed-data/verify")
+                ? "jws exceeds the maximum accepted size of 262144 bytes"
+                : "receipt exceeds the maximum accepted size of 3145728 bytes";
+        return "{\"verified\":false,\"reason\":\"TOO_LARGE\",\"message\":\"" + message + "\"}";
+    }
 
     private final Clock clock;
     private final Holder holder;
@@ -76,7 +88,7 @@ final class ServerVerifier implements Verifier, Closeable {
                 return Wire.endpointAnswer(response.text());
             }
             if (response.status == 413) {
-                return "{\"status\":" + AppleStatus.MALFORMED_RECEIPT_DATA + "}";
+                return Wire.endpointAnswer(tooLargeAnswer(path));
             }
             return "{\"status\":" + AppleStatus.INTERNAL_DATA_ACCESS_ERROR + "}";
         } catch (RuntimeException e) {
@@ -93,7 +105,7 @@ final class ServerVerifier implements Verifier, Closeable {
                 return decode.apply(response.text());
             }
             if (response.status == 413) {
-                return VerificationResult.failed(new Failure(Reason.TOO_LARGE, TOO_LARGE_MESSAGE, null));
+                return decode.apply(tooLargeAnswer(path));
             }
             ServerProblem problem = ServerJson.problem(response);
             return VerificationResult.failed(new Failure(Reason.INTERNAL_ERROR, problem.getMessage(), problem));

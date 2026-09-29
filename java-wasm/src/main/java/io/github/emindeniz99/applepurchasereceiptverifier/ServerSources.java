@@ -36,6 +36,10 @@ final class ServerSources {
                 connection = connect(source, cache, rootsLine);
                 checkInfo(connection, fingerprints);
                 return connection;
+            } catch (InitRefused e) {
+                // Every source runs the same module, which would refuse the same roots.
+                throw new IllegalArgumentException(
+                        "the verifier module refused a root in the config: " + e.getMessage(), e);
             } catch (IOException | RuntimeException e) {
                 if (connection != null) {
                     connection.close();

@@ -134,7 +134,8 @@ final class ServerProcess {
             throw new ServerProcessFailure(ServerBinary.explainStartFailure(executable, e), e);
         }
         StderrTail stderr = new StderrTail(child.getErrorStream());
-        daemon("aprv-stderr", stderr).start();
+        Thread stderrReader = daemon("aprv-stderr", stderr);
+        stderrReader.start();
         SynchronousQueue<String> firstLine = new SynchronousQueue<>();
         BufferedReader stdout =
                 new BufferedReader(new InputStreamReader(child.getInputStream(), StandardCharsets.US_ASCII));
@@ -171,6 +172,10 @@ final class ServerProcess {
                     "aprv-server did not take the handshake: " + e + exitAndStderr(child, stderr), e);
         }
         if (line == null || !line.startsWith(LISTEN)) {
+            InitRefused refused = rootsRefusal(child, stderrReader, stderr);
+            if (refused != null) {
+                throw refused;
+            }
             child.destroyForcibly();
             throw new ServerProcessFailure("aprv-server did not report its port"
                     + (line == null ? " within " + PORT_TIMEOUT_SECONDS + " s" : "")
@@ -235,6 +240,43 @@ final class ServerProcess {
         } catch (ReflectiveOperationException | RuntimeException e) {
             return -1;
         }
+    }
+
+    private static final String REFUSED = "the component refused the roots configuration: ";
+
+    /**
+     * The child exited 2 because the module's {@code init} refused the roots
+     * of the handshake: the caller's mistake, as on Endive, not a process
+     * failure. Null for any other exit.
+     */
+    private static @Nullable InitRefused rootsRefusal(Process child, Thread stderrReader, StderrTail stderr) {
+        try {
+            if (!child.waitFor(2, TimeUnit.SECONDS) || child.exitValue() != 2) {
+                return null;
+            }
+            stderrReader.join(2000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+        return rootsRefusal(stderr.tail());
+    }
+
+    /** The refusal in the child's stderr, {@code aprv: ... refused the roots configuration: <init answer>}. */
+    static @Nullable InitRefused rootsRefusal(String stderr) {
+        int at = stderr.indexOf(REFUSED);
+        if (at < 0) {
+            return null;
+        }
+        String answer = stderr.substring(at + REFUSED.length()).trim();
+        try {
+            Wire.initAnswer(answer);
+        } catch (InitRefused e) {
+            return new InitRefused(e.getMessage(), answer);
+        } catch (RuntimeException e) {
+            return null;
+        }
+        return null;
     }
 
     private static String exitAndStderr(Process child, StderrTail stderr) {

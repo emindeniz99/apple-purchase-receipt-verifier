@@ -101,6 +101,20 @@ class ServerSourcesTest {
         System.out.println("no source worked: " + message);
     }
 
+    /**
+     * A root the module refuses stops the child at start (exit 2, the
+     * {@code init} answer on stderr). That is the caller's mistake, as on
+     * Endive: the module's own answer, not a process failure.
+     */
+    @Test
+    void aRootTheModuleRefusesIsTheModulesInitAnswer() {
+        ServerProcess process = new ServerProcess(ServerTests.binary(), null, "{\"roots\":[\"AAAA\"]}");
+        InitRefused refused = assertThrows(InitRefused.class, process::target);
+        assertTrue(refused.answer().startsWith("{\"ok\":false,\"message\":\"roots[0]: "), refused.answer());
+        assertTrue(refused.getMessage().startsWith("roots[0]: "), refused.getMessage());
+        process.stop();
+    }
+
     /** With the runtime probe off, the sources are tried at the first call, whose failure is a value. */
     @Test
     void withTheProbeOffTheFirstCallTriesTheSources() throws Exception {

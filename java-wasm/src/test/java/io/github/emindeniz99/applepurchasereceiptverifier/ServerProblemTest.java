@@ -235,6 +235,35 @@ class ServerProblemTest {
     }
 
     @Test
+    void aRootsRefusalIsReadFromTheChildsStderr() {
+        String answer = "{\"ok\":false,\"message\":\"roots[0]: trust anchor is not a certificate\"}";
+        InitRefused refused =
+                ServerProcess.rootsRefusal("aprv: the component refused the roots configuration: " + answer);
+        assertEquals(answer, refused.answer());
+        assertEquals("roots[0]: trust anchor is not a certificate", refused.getMessage());
+        assertEquals(null, ServerProcess.rootsRefusal("aprv: bad handshake: the token is too short"));
+        assertEquals(
+                null,
+                ServerProcess.rootsRefusal("aprv: the component refused the roots configuration: not json"),
+                "an unreadable answer is a process failure, not a refusal");
+    }
+
+    /** The server's 413 is answered as the core answers an input over its cap. */
+    @Test
+    void anInputOverTheCapIsAnsweredAsTheCoreAnswersIt() {
+        Verifier verifier = verifier(Config.defaults());
+        answer("/v1/receipt/verify", 413, problemText(413, "PAYLOAD_TOO_LARGE"));
+        Failure receipt = verifier.verifyReceipt("AAAA").failure();
+        assertEquals(Reason.TOO_LARGE, receipt.reason());
+        assertEquals("receipt exceeds the maximum accepted size of 3145728 bytes", receipt.message());
+        assertEquals(
+                "{\"verified\":false,\"reason\":\"TOO_LARGE\",\"message\":\"jws exceeds the maximum accepted"
+                        + " size of 262144 bytes\"}",
+                ServerVerifier.tooLargeAnswer("/v1/signed-data/verify"));
+        assertEquals("{\"status\":21002}", ServerVerifier.tooLargeAnswer("/v1/verify-receipt/production"));
+    }
+
+    @Test
     void theNoexecParserFindsTheMountHoldingThePath() {
         List<String> mountinfo = Arrays.asList(
                 "22 1 0:21 / / rw,relatime shared:1 - ext4 /dev/root rw",
