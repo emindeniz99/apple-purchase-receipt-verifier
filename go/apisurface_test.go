@@ -43,10 +43,11 @@ var forbiddenIdentifiers = []string{
 	"SetDefaultPaths",
 }
 
-// libraryFiles are the non-test Go files a consumer compiles. The
-// generator under internal/gencerts is excluded by name: it is a
-// `go generate` command, never imported by the library, and reading
-// certs/ from disk is its entire job.
+// libraryFiles are the non-test Go files a consumer compiles. Two commands
+// are excluded by name, since the library never imports them:
+// internal/gencerts, the `go generate` command whose entire job is reading
+// certs/ from disk, and internal/corpusrun, the corpus runner that reads a
+// calls file.
 func libraryFiles(t *testing.T) []string {
 	t.Helper()
 	root, err := os.Getwd()
@@ -60,7 +61,7 @@ func libraryFiles(t *testing.T) []string {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case "testdata", "tools", "gencerts":
+			case "testdata", "tools", "gencerts", "corpusrun":
 				return filepath.SkipDir
 			}
 			return nil
