@@ -140,22 +140,36 @@ func stripComments(t *testing.T, path string, source []byte) string {
 	return out.String()
 }
 
-// The published module has no third-party dependencies at all, which is
-// what makes "audit the supply chain" a one-line answer.
-func TestModuleHasNoDependencies(t *testing.T) {
+// The published module has one dependency, wazero, pinned to an exact
+// release, and wazero itself has none: "audit the supply chain" is still a
+// short answer, and a second requirement fails here.
+func TestModuleDependsOnlyOnWazero(t *testing.T) {
 	source, err := os.ReadFile("go.mod")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(source)
-	if strings.Contains(text, "require") {
-		t.Fatalf("go.mod has grown a require block:\n%s", text)
+	var requires []string
+	for _, line := range strings.Split(string(source), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "require "); ok {
+			requires = append(requires, rest)
+		}
 	}
-	if _, err := os.Stat("go.sum"); err == nil {
-		t.Error("go.sum exists; the library module is supposed to have no dependencies")
+	if len(requires) != 1 || !strings.HasPrefix(requires[0], "github.com/tetratelabs/wazero v1.") ||
+		strings.Contains(requires[0], "//") || strings.Contains(string(source), "require (") {
+		t.Errorf("go.mod requires %q; want exactly github.com/tetratelabs/wazero at one release:\n%s", requires, source)
 	}
-	if !strings.Contains(text, "module github.com/emindeniz99/apple-purchase-receipt-verifier/go") {
-		t.Errorf("the module path is not the published one:\n%s", text)
+	sums, err := os.ReadFile("go.sum")
+	if err != nil {
+		t.Fatalf("go.sum is missing: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(sums)), "\n") {
+		if !strings.HasPrefix(line, "github.com/tetratelabs/wazero ") {
+			t.Errorf("go.sum names another module: %s", line)
+		}
+	}
+	if !strings.Contains(string(source), "module github.com/emindeniz99/apple-purchase-receipt-verifier/go") {
+		t.Errorf("the module path is not the published one:\n%s", source)
 	}
 }
 
