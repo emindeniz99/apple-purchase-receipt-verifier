@@ -29,7 +29,7 @@
 // The first [NewVerifier] in a process compiles the module, which takes
 // about a second. Each Verifier keeps a few instances of it, created when
 // needed and dropped with the Verifier; there is nothing to close. The
-// module is 2.9 MB and its SHA-256 is checked when the package loads.
+// module is 3 MB and its SHA-256 is checked when the package loads.
 //
 // # Trust model
 //

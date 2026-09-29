@@ -61,7 +61,7 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   receipt that breaks the parser inside it stays in the module's 256 MiB of
   linear memory, and an instance that traps is discarded.
 - **Memory and start-up.** The first `NewVerifier` in a process compiles the
-  module, about a second on a 4-core machine; later ones take milliseconds. A
+  module, about two seconds on a 4-core machine; later ones take tens of milliseconds. A
   `Verifier` keeps a small pool of instances (one per goroutine that is
   verifying at that moment, at least one kept), each a few MiB, and
   releases them when it is garbage collected. There is nothing to close.
@@ -302,25 +302,25 @@ does.
 
 Measured with `go test -bench` on a shared 4-vCPU guest (Intel Xeon
 Processor @ 2.80GHz, Go 1.24.7, wazero v1.9.0's compiler), one goroutine, on
-the module of the 2026-09-29 canonical-ABI round while other jobs kept the
-machine busy, so treat the figures as a floor. Re-measure on the release
-module before quoting them:
+the 0.7 module (3,005,922 bytes). The machine was busy with other jobs during
+every run (load average 8 to 18), so the figures are the best of several runs
+and a floor:
 
 | Call | Per second | Time per call |
 |---|---:|---:|
-| `VerifyReceipt`, the genuine sandbox G5 receipt | about 200 | 5.0 ms |
-| `VerifySignedData`, a StoreKit 2 transaction | about 60 | 15.9 ms |
-| `NewVerifier`, after the first | | 2.5 ms |
-| the first `NewVerifier` in a process (compiles the module) | | about 1.3 s |
+| `VerifyReceipt`, the genuine sandbox G5 receipt | about 180 | 5.5 ms |
+| `VerifySignedData`, a StoreKit 2 transaction | about 45 | 22 ms |
+| `NewVerifier`, after the first (a new instance and its `init`) | | 13 to 20 ms |
+| the first `NewVerifier` in a process (compiles the module) | | about 2.3 s |
 
-A quiet machine measured 238 receipts and 77 JWS per second on wazero
-v1.12.0 in the canonical-ABI round. The pool gives each goroutine its own
-instance, so throughput grows with cores. The cost of a call follows the
-size of the input, which the caps below bound, not the structure an
-attacker chooses. For numbers on your own hardware:
+An instance's linear memory is 2 MiB and does not grow across 2,000 calls; each
+instance also costs about 4.3 MB of Go heap. The pool gives each goroutine its
+own instance, so throughput grows with cores. The cost of a call follows the
+size of the input, which the caps below bound, not the structure an attacker
+chooses. For numbers on your own hardware:
 
 ```sh
-go test -run '^$' -bench . -benchtime 3s -cpu 1,4 .              # through the API (needs the release module)
+go test -run '^$' -bench . -benchtime 3s -cpu 1,4 .              # through the API
 go test -run '^$' -bench . -benchtime 3s ./internal/host         # the module and the ABI alone
 ```
 

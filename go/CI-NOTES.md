@@ -12,35 +12,28 @@ secret.
   `GOFLAGS=-mod=readonly` in the `go` job works, since `go.sum` is committed.
 - `go/internal/wasm/aprv.wasm` is git-ignored until integration: CI copies the module into place before building, since `//go:embed` needs it present. `aprv.wasm.sha256` is committed.
 - `go/internal/wasm/aprv.wasm` and `aprv.wasm.sha256` are the embedded
-  module. **They are the round-13 stand-in (0.6 core) until the release build
-  overwrites both**; see `wasm-copies` below. One thing differs from the
-  round-13 artifact: its panic-location strings held the build directory
-  (11 paths, all under a scratch directory), which may not be committed, so
-  that fixed-length prefix was overwritten in place with `/buildxxx...`. The
-  module is otherwise byte for byte the original (`da786ac8...fb68`, 2,967,116
-  bytes, unchanged length), validates with `wasm-tools`, and answers the corpus
-  identically; its committed hash is `f837e7a3...7e4a`. The release build remaps
-  its paths and needs no such step.
+  module and its hash. The committed hash is the 0.7 module of G1
+  (`4cbe2b02...826e`, 3,005,922 bytes); the module itself is copied into
+  place until the integrator commits it once.
 - The hand-written verifier is gone. The last commit that has it is
   `ac000fd`, the parent of the commit that removed it; use it as the oracle
   for a differential run and as the source of the port-only tests
   (Phase 7 step 1).
-- 221 of the 311 cases differ with the stand-in, because its wire is the 0.6
-  one (`payloadJson`, camelCase receipts, `INVALID_*_FORMAT` reasons). With
-  the release build the wire is the 0.7 one this package reads, and the
-  conformance job is the gate that says so. Until then `go test ./...` is red
-  on `TestConformance` only.
+- All 311 cases pass against the G1 module. `internal/corpusrun/g1.sh G1_DIR`
+  runs the whole re-run in one command: copy the module and write its hash,
+  `go vet`, `go test ./...`, then the five corpora through the host layer
+  compared byte for byte with the reference rows.
 
 ## Jobs
 
 | Job | Change |
 |---|---|
-| `go` (matrix `1.22` to `1.27`, `GOTOOLCHAIN=local`) | none to the command (`go test ./...`). Each leg downloads wazero once; give the job a module cache. Expect about 45 s per leg on 4 cores. The `1.22` leg is the floor claim: it builds wazero v1.9.0 on the oldest toolchain. |
+| `go` (matrix `1.22` to `1.27`, `GOTOOLCHAIN=local`) | none to the command (`go test ./...`). Each leg downloads wazero once; give the job a module cache. Expect about 30 s per leg on 4 cores. The `1.22` leg is the floor claim: it builds wazero v1.9.0 on the oldest toolchain. |
 | `go-race` | `go test -race -count=2 ./...` as today. Slow: the host tests alone take about 80 s under `-race` on 4 shared cores, the root package several times that. Raise `timeout-minutes` to 40. |
 | `go-platforms` | keep macOS and Windows on Go 1.27 with `go test ./...`. Add `CGO_ENABLED=0` to both. wazero's compiler runs on both; no leg-specific code. |
 | `go-cross` (new) | `CGO_ENABLED=0 GOOS=<os> GOARCH=<arch> go build ./... && go vet ./...` for `darwin/amd64`, `darwin/arm64`, `windows/amd64`, `linux/arm64`. All four pass on this lane (Go 1.24.7). Add `linux/386` if 32-bit is claimed: it builds too, but wazero runs it on its interpreter, and the 256 MiB memory limit is a 32-bit hazard nobody has measured. |
 | `go-scratch` (new) | the `FROM scratch` check with no daemon: `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$RUNNER_TEMP/scratch/corpusrun" ./internal/corpusrun`, copy one calls file next to it, `sudo chroot "$RUNNER_TEMP/scratch" /corpusrun /calls.jsonl` with an empty environment, and compare the rows with an ordinary run. Also `ldd` must say "not a dynamic executable". Passed here: 22 rows, identical output. |
-| `go-fuzz` | **delete the `internal/der` step**: `FuzzParseDER` went with the package. The `FuzzVerifyReceipt` and `FuzzVerifySignedData` step stays. Each execution costs about 5 ms (a receipt) to 15 ms (a JWS) now, so 60 s is about 10k executions; raise `-fuzztime` if that matters. |
+| `go-fuzz` | **delete the `internal/der` step**: `FuzzParseDER` went with the package. The `FuzzVerifyReceipt` and `FuzzVerifySignedData` step stays. Each execution costs about 6 ms (a receipt) to 25 ms (a JWS) now, so 60 s is a few thousand executions; raise `-fuzztime` if that matters. |
 | `go-lint` | unchanged. `govulncheck ./...` now sees wazero: the comment "the library has no dependencies, so anything it reports is a standard-library advisory" is out of date. The grep for `x509.SystemCertPool` and friends still passes. |
 | `go-generate-check` | unchanged until Phase 7 deletes `go/roots/certs` and `go generate`. |
 | `wasm-copies` | for Go: `cd go/internal/wasm && sha256sum -c aprv.wasm.sha256`, and the hash in that file must equal the release build's `aprv.wasm` SHA-256 (`test "$(cut -d' ' -f1 aprv.wasm.sha256)" = "$BUILD_SHA256"`). The package also checks the pair when it loads, so a copy swapped without its hash file fails every test on import. `release-please.yml` must refresh **both files together** on the release branch. |
@@ -52,24 +45,18 @@ secret.
 
 `go/internal/corpusrun` runs a calls file through the package's host layer
 (the same pool and canonical-ABI call `Verifier` uses) and prints rows in the
-Node runner's format, so round 13's classifier reads them unchanged:
+Node runner's format. `g1.sh` runs it over the pinned call files and compares
+each corpus with the reference rows using the release evidence's `same.py`:
 
 ```sh
-cd go && CGO_ENABLED=0 go build -o "$OUT/corpusrun" ./internal/corpusrun
-for c in cases hostile algorithms substrate fuzz; do
-  "$OUT/corpusrun" [-module path/to/aprv.wasm] "$CALLS/$c.jsonl" > "$OUT/pkg-$c.jsonl"
-done
-python3 docs/evidence/2026-09-29-canonical-abi-final/py/classify.py pkg "$CALLS" "$NODEROWS" "$OUT/pkg"
+go/internal/corpusrun/g1.sh "$G1_DIR" [work-dir]   # exit 0 only when all pass
 ```
 
-`$CALLS` is the directory `py/calls_bytes.py` writes (one file per corpus)
-and `$NODEROWS` the ABI v1 Node rows. `-module` runs a candidate build without
-copying it into the package first. With the stand-in this gives 6,176
-identical, 2 `clock-moves-chain` and 1 `init-refusal`, as round 13 expects;
-against the release build the reference rows change with the wire and the
-classifier's categories are Phase 1's to redefine. The host layer is compared
-byte for byte; the typed reading in `receiptFromJSON` and `readResult` is what
-the 311 cases pin.
+Against the G1 module: 6,179 of 6,179 rows identical (cases 153, hostile 811,
+algorithms 22, substrate 193, fuzz 5,000), 0 traps. `corpusrun -module` runs a
+candidate without copying it into the package. The host layer is compared byte
+for byte; the typed reading in `receiptFromJSON` and `readResult` is what the
+311 cases pin.
 
 ## Suggested legs, not built here
 

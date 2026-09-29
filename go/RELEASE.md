@@ -16,7 +16,7 @@ does, and why the fixtures stay at the repository root and never move inside
 never needs.
 
 The subtree carries `internal/wasm/aprv.wasm`, the verification module (about
-2.9 MB, roughly 1 MB in the zip), and `aprv.wasm.sha256` beside it. The Go
+3 MB, roughly 1 MB in the zip), and `aprv.wasm.sha256` beside it. The Go
 module is published from a git tag, so both files are committed, and they
 change together: the release job refreshes the pair on the release branch, CI
 checks the pair against the release build's SHA-256, and the package refuses
