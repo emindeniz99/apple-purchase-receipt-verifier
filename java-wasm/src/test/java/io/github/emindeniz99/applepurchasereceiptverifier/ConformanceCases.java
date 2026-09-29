@@ -29,11 +29,7 @@ import org.junit.jupiter.api.TestFactory;
  * Endive, {@link ServerConformanceCasesTest} on the server engine.
  *
  * <p>Each case is its own {@link DynamicTest} named by its case id, and a last
- * test asserts that every case id in the file ran. Every case must pass,
- * unless an engine runs a stand-in and lists the cases the stand-in answers
- * differently ({@link #standInFile()}): such a case passes only if it still
- * differs, and a listed case that starts passing fails, so the list can only
- * shrink.</p>
+ * test asserts that every case id in the file ran. Every case must pass.</p>
  */
 abstract class ConformanceCases {
 
@@ -43,55 +39,39 @@ abstract class ConformanceCases {
     /** A verifier on this engine for {@code config}. */
     abstract Verifier verifier(Config config) throws Exception;
 
-    /** The listed stand-in differences; none unless the engine runs a stand-in. */
-    Set<String> standInDifferences() throws Exception {
-        return Collections.emptySet();
-    }
-
-    /** The file {@link #standInDifferences()} reads. */
-    String standInFile() {
-        return "(no stand-in list)";
-    }
-
     private static final ObjectMapper MAPPER = Cases.MAPPER;
 
     @TestFactory
     List<DynamicTest> conformanceCases() throws Exception {
         JsonNode document = Cases.document();
-        Set<String> known = standInDifferences();
         List<DynamicTest> tests = new ArrayList<>();
         List<String> ids = new ArrayList<>();
         Set<String> ran = Collections.synchronizedSet(new TreeSet<String>());
-        Set<String> differed = Collections.synchronizedSet(new TreeSet<String>());
         Set<String> failed = Collections.synchronizedSet(new TreeSet<String>());
+        int decodeBase64 = 0;
         for (JsonNode kase : document.get("cases")) {
             String id = kase.get("id").asText();
             ids.add(id);
+            if ("decodeBase64".equals(kase.get("operation").asText())) {
+                decodeBase64++;
+            }
             tests.add(DynamicTest.dynamicTest(id, () -> {
                 ran.add(id);
-                Throwable failure = null;
                 try {
                     runCase(kase);
-                } catch (AssertionError | Exception e) {
-                    failure = e;
-                }
-                if (known.contains(id)) {
-                    if (failure == null) {
-                        fail(id + ": listed in " + standInFile() + " but now passes; remove it from the list");
-                    }
-                    differed.add(id);
-                    System.out.println("stand-in difference: " + oneLine(failure));
-                } else if (failure instanceof AssertionError) {
+                } catch (AssertionError e) {
                     failed.add(id);
-                    throw (AssertionError) failure;
-                } else if (failure != null) {
+                    throw e;
+                } catch (Exception e) {
                     failed.add(id);
-                    throw new AssertionError(id + ": the runner threw " + failure, failure);
+                    throw new AssertionError(id + ": the runner threw " + e, e);
                 }
             }));
         }
+        int throughTheApi = decodeBase64;
         System.out.println("conformance (" + engineName() + "): " + ids.size() + " cases in fixtures/" + Cases.CASES
-                + ", " + known.size() + " listed as stand-in differences");
+                + ", " + throughTheApi + " of them decodeBase64 cases run through verifyReceipt and"
+                + " verifySignedData");
         tests.add(DynamicTest.dynamicTest(Cases.CASES + " every case ran", () -> {
             List<String> missing = new ArrayList<>();
             for (String id : ids) {
@@ -102,22 +82,11 @@ abstract class ConformanceCases {
             assertTrue(
                     missing.isEmpty(),
                     missing.size() + " of " + ids.size() + " cases did not run: " + String.join(", ", missing));
-            Set<String> unknown = new TreeSet<>(known);
-            unknown.removeAll(ids);
-            assertTrue(unknown.isEmpty(), standInFile() + " lists ids that are not cases: " + unknown);
             System.out.println("conformance (" + engineName() + ", Java " + Engine.javaFeatureVersion() + "): "
-                    + ran.size() + " ran, "
-                    + (ran.size() - differed.size() - failed.size()) + " passed, " + failed.size() + " failed, "
-                    + differed.size() + " stand-in differences, 0 skipped");
+                    + ran.size() + " ran, " + (ran.size() - failed.size()) + " passed (" + throughTheApi
+                    + " decodeBase64), " + failed.size() + " failed, 0 skipped");
         }));
         return tests;
-    }
-
-    private static String oneLine(Throwable failure) {
-        String message = String.valueOf(failure.getMessage());
-        int newline = message.indexOf('\n');
-        message = newline < 0 ? message : message.substring(0, newline);
-        return message.length() > 300 ? message.substring(0, 300) + "..." : message;
     }
 
     // Surefire reports a dynamic test by its index, so every message repeats the case id.

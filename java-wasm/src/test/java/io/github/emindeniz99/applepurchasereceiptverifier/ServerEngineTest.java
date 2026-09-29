@@ -28,10 +28,9 @@ import org.junit.jupiter.api.TestMethodOrder;
  * spike-only route; here the child is sent {@code SIGABRT}, which is what an
  * abort in the child does.
  *
- * <p>The module inside the stand-in server is the 0.6 core, whose verified
- * results the facade cannot decode (it answers {@code INTERNAL_ERROR}, as on
- * Endive), so the operations are checked on the bytes the server returns;
- * the endpoint passes through the facade unchanged.</p>
+ * <p>The operations are checked on the bytes the server returns, as the
+ * spike checked them; {@link ServerConformanceCasesTest} checks the facade's
+ * decoded results.</p>
  */
 @Tag("server")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
