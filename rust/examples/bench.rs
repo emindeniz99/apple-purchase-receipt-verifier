@@ -27,7 +27,6 @@
 use apple_purchase_receipt_verifier::__internal::{base64_encode, decode_receipt_data};
 use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, Verifier};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::hint::black_box;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -87,7 +86,7 @@ fn cross_port() -> Vec<Value> {
     let mut results = Vec::new();
     for (name, bundle_id, in_app_count, sha256) in FIXTURES {
         let der = read_fixture(name);
-        let digest: String = Sha256::digest(&der)
+        let digest: String = openssl::sha::sha256(&der)
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();

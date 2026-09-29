@@ -1,0 +1,43 @@
+# compare.py same: pre-migration 0.7 core (old) vs the OpenSSL core (openssl-dir), per corpus
+== cases
+153 rows: 150 identical, 3 differ
+      2 refused MALFORMED  ->  refused MALFORMED
+      1 refused INVALID_CERTIFICATE  ->  refused INVALID_CERTIFICATE
+== hostile
+811 rows: 515 identical, 296 differ
+    283 refused MALFORMED  ->  refused MALFORMED
+      4 refused UNTRUSTED_CHAIN  ->  refused MALFORMED
+      3 refused INVALID_CERTIFICATE  ->  refused UNTRUSTED_CHAIN
+      1 refused INVALID_SIGNATURE  ->  refused INVALID_SIGNATURE
+      1 refused INVALID_CERTIFICATE  ->  refused MALFORMED
+      1 refused MALFORMED  ->  refused INVALID_SIGNATURE
+      1 refused MALFORMED  ->  refused INVALID_CERTIFICATE_PURPOSE
+      1 refused UNTRUSTED_CHAIN  ->  refused INVALID_CERTIFICATE
+      1 error CONFIGURATION  ->  error CONFIGURATION
+== algorithms
+22 rows: 21 identical, 1 differ
+      1 refused UNTRUSTED_CHAIN  ->  verified
+== substrate
+193 rows: 125 identical, 68 differ
+     57 refused MALFORMED  ->  refused MALFORMED
+      4 refused UNTRUSTED_CHAIN  ->  refused INVALID_CERTIFICATE_PURPOSE
+      4 refused UNTRUSTED_CHAIN  ->  verified
+      1 refused INVALID_CERTIFICATE_PURPOSE  ->  refused MALFORMED
+      1 refused MALFORMED  ->  refused INVALID_CERTIFICATE_PURPOSE
+      1 refused UNTRUSTED_CHAIN  ->  refused UNTRUSTED_CHAIN
+== fuzz
+5000 rows: 2253 identical, 2747 differ
+   2614 refused MALFORMED  ->  refused MALFORMED
+     33 refused UNTRUSTED_CHAIN  ->  refused INVALID_CERTIFICATE
+     30 refused UNTRUSTED_CHAIN  ->  refused MALFORMED
+     16 refused UNTRUSTED_CHAIN  ->  refused INVALID_SIGNATURE
+     12 refused INVALID_CERTIFICATE  ->  refused MALFORMED
+      9 refused INVALID_CERTIFICATE  ->  refused UNTRUSTED_CHAIN
+      6 refused INVALID_CERTIFICATE  ->  refused INVALID_CERTIFICATE
+      6 refused UNTRUSTED_CHAIN  ->  refused UNTRUSTED_CHAIN
+      6 refused MALFORMED  ->  refused UNTRUSTED_CHAIN
+      4 refused INVALID_SIGNATURE  ->  refused INVALID_CERTIFICATE
+      4 refused INVALID_CERTIFICATE_PURPOSE  ->  refused MALFORMED
+      4 refused MALFORMED  ->  refused INVALID_CERTIFICATE_PURPOSE
+      2 refused INVALID_CERTIFICATE  ->  refused INVALID_SIGNATURE
+      1 refused UNTRUSTED_CHAIN  ->  refused INVALID_CERTIFICATE_PURPOSE

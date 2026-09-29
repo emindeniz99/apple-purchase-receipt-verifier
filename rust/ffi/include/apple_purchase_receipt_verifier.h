@@ -140,9 +140,9 @@ typedef struct AprvVerifier AprvVerifier;
 // [`aprv_string_free`]. It is `NULL` only when the allocation itself could
 // not be made.
 //
-// * `status == APRV_REASON_OK`: `json` is the verified payload, exactly
-//   `ReceiptPayload::to_json()` for a receipt and the signed JSON text for
-//   a JWS.
+// * `status == APRV_REASON_OK`: `json` is the verified payload: for a
+//   receipt the 0.7 `ReceiptPayload` JSON, the bytes `aprv.wasm` returns
+//   as its payload; for a JWS the signed JSON text, exactly.
 // * anything else: `json` is `{"reason":"<token>","message":"<detail>"}`.
 //   The token is the `SCREAMING_SNAKE` spelling every port of this library
 //   shares; the message is a short, non-sensitive description that never
@@ -202,7 +202,7 @@ AprvVerifier *aprv_verifier_new(const uint8_t *const *ders,
 void aprv_verifier_free(AprvVerifier *verifier);
 
 // Verifies a legacy app receipt given as the base64 string an app sends.
-// On success `out->json` is exactly `ReceiptPayload::to_json()`.
+// On success `out->json` is the 0.7 `ReceiptPayload` JSON.
 //
 // Returns the status, which is also written to `out->status`. `out` may be
 // `NULL` for a caller that only wants the status.
