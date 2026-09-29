@@ -339,7 +339,7 @@ afterwards.
 | A Wasmtime major bump in the server | certain (monthly majors) | low | The server's `.cwasm` is rebuilt with the binary; hosts' runtime floors move independently |
 | ARM64 speed unknown | unknown | medium | The ARM64 spike branch above |
 | The Go floor has to rise for wazero | medium | low | Step 4.7; a minor-version bump before 1.0 (root SUPPORT-MATRIX rule 2) |
-| workerd's 128 MB isolate against a hostile receipt's 145 MiB peak in Node | medium | medium on workerd | Step 4.3; fail closed |
+| workerd's 128 MB isolate against a hostile receipt's peak in Node (145 MiB before the core's header walk, near 16 MiB of linear memory after it for the unsigned and signerless forms; the signed-payload path not re-measured) | low | medium on workerd | Step 4.3; fail closed |
 | The `x5c` `decodeBase64` cases need a JWS harness in each host (SURFACE.md §6) | certain | low | Phase 1 builds it once for the runners |
 | Monoculture: one core or OpenSSL bug reaches every Wasm-hosted package | low to medium | high | The maintained Java implementation (R33), fuzzing into OpenSSL, the owner's review |
 | A replaced GitHub Release asset | low | high | The SHA-256 pins inside the `-wasm` jar and the Composer package |

@@ -465,7 +465,7 @@ never by `ordinal()`.
 
 | `Reason` | Meaning |
 |---|---|
-| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check |
+| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, more than 10 embedded certificates or CRLs, more than 4 SignerInfos). Decided before any signature check |
 | `TOO_LARGE` | Over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt or an endpoint request body, 262,144 for a JWS. Decided before anything is decoded |
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
 | `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or has more than six certificates below the anchor |
@@ -549,6 +549,8 @@ anything is decoded; the others as the structure they bound is read:
 | JSON number, characters | 1,000 | as nesting depth |
 | ASN.1 nesting, constructed values, the outermost included | 32 | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
+| CRLs embedded in a receipt, counted and never decoded | 10 | `MALFORMED` |
+| Constructed levels of one `OCTET STRING`, itself included: the eContent, the Xcode wrap, an attribute value | 6 | `MALFORMED` (eContent), `UNREADABLE_PAYLOAD` (signed receipt content) |
 | Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
@@ -842,6 +844,11 @@ keeps stream state between calls) and every `Signature`.
   primitive value that BouncyCastle decodes eagerly (an extension value
   inside a certificate, for example) is guarded by BouncyCastle's bound
   alone, which is why that bound must still exist after an upgrade.
+- BouncyCastle joins the chunks of a constructed string at any depth and
+  reads a length of more than four octets. `Asn1Depth` bounds the
+  chunk levels of the eContent, the Xcode wrap and each attribute value at
+  6, OpenSSL's bound, and `ReceiptDecoder` keeps a value whose length takes
+  more than four octets raw.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
   `ReceiptCertificates.decode`).

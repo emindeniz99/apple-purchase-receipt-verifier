@@ -1,0 +1,28 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "library",
+      "bom-ref": "path+file:///src/rust/bindings/abi#aprv-abi@0.8.0",
+      "name": "aprv-abi",
+      "version": "0.8.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#openssl-sys@0.9.110",
+      "name": "openssl-sys",
+      "version": "0.9.110",
+      "purl": "pkg:cargo/openssl-sys@0.9.110"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "path+file:///src/rust/bindings/abi#aprv-abi@0.8.0",
+      "dependsOn": ["registry+https://github.com/rust-lang/crates.io-index#openssl-sys@0.9.110"]
+    }
+  ]
+}

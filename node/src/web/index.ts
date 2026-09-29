@@ -1,19 +1,23 @@
 /**
- * `apple-purchase-receipt-verifier/web` — the WebCrypto-only entry point.
+ * `apple-purchase-receipt-verifier/web` — the Promise-returning entry
+ * point, kept from 0.7 so code written for it keeps working.
  *
- * Same shape and the same `Reason`s as the default entry point; every
- * verify method (and `createConfig`/`defaultConfig`, since loading the
- * bundled roots checks a fingerprint through `crypto.subtle`) returns a
- * Promise, because `crypto.subtle` is async. Porting between the two is
- * adding or removing `await`.
- *
- * It uses nothing but `crypto.subtle`, `TextDecoder` and plain
- * `Uint8Array`s — no `node:*`, no `Buffer`, no filesystem — so it runs on
- * Node, Bun, Deno, Cloudflare Workers with or without `nodejs_compat`, the
- * Vercel Edge runtime and other WebCrypto-only isolates.
+ * Same verifier, same module, same `Reason`s as the default entry point;
+ * `createConfig`, `defaultConfig` and every `Verifier` method return a
+ * Promise. Porting between the two is adding or removing `await`.
  */
-export { createConfig, defaultConfig, type Config, type CreateConfigOptions } from './config.js';
-export { createVerifier, type Verifier } from './verifier.js';
+import {
+  createConfig as createConfigSync,
+  defaultConfig as defaultConfigSync,
+  type Config,
+  type CreateConfigOptions,
+} from '../config.js';
+import type { Environment } from '../environment.js';
+import type { VerificationResult } from '../errors.js';
+import type { JsonPayload, ReceiptPayload } from '../payload.js';
+import { createVerifier as createVerifierSync } from '../verifier.js';
+
+export type { Config, CreateConfigOptions, RootInput } from '../config.js';
 export {
   Reason,
   VerificationError,
@@ -28,9 +32,45 @@ export {
   environmentFromJwsEnvironment,
   environmentFromReceiptType,
 } from '../environment.js';
-export type { JsonPayload } from './jws.js';
-export { createJsonPayload, decodeX5cEntry } from './jws.js';
-export type { InAppPurchase, RawAttributes, ReceiptPayload } from '../receipt-payload.js';
-export { createInAppPurchase, createReceiptPayload } from '../receipt-payload.js';
-export { decodeReceiptBase64 } from './receipt.js';
-export type { RootInput } from './chain.js';
+export {
+  createInAppPurchase,
+  createJsonPayload,
+  createReceiptPayload,
+  type InAppPurchase,
+  type JsonPayload,
+  type RawAttributes,
+  type ReceiptPayload,
+} from '../payload.js';
+
+export interface Verifier {
+  verifyReceipt(base64: string): Promise<VerificationResult<ReceiptPayload>>;
+  verifySignedData(jws: string): Promise<VerificationResult<JsonPayload>>;
+  verifyReceiptEndpoint(environment: Environment, requestJson: string): Promise<string>;
+}
+
+/** Apple's three pinned roots and the system clock. */
+export async function defaultConfig(): Promise<Config> {
+  return defaultConfigSync();
+}
+
+/** A config with explicit roots and/or clock; anything left out takes the default. */
+export async function createConfig(options: CreateConfigOptions = {}): Promise<Config> {
+  return createConfigSync(options);
+}
+
+/**
+ * A `Verifier` for `config`.
+ *
+ * @throws {TypeError} if `config` is null/undefined, its roots are empty, or
+ * aprv.wasm refuses one of them.
+ * @throws {Error} if aprv.wasm is not the module this package binds.
+ */
+export function createVerifier(config: Config): Verifier {
+  const verifier = createVerifierSync(config);
+  return {
+    verifyReceipt: async (base64) => verifier.verifyReceipt(base64),
+    verifySignedData: async (jws) => verifier.verifySignedData(jws),
+    verifyReceiptEndpoint: async (environment, requestJson) =>
+      verifier.verifyReceiptEndpoint(environment, requestJson),
+  };
+}

@@ -1,0 +1,8 @@
+# aprv.wasm rebuilt from a fresh `git clone` of lane/core at 947a5bb, in
+# another directory, with another CARGO_TARGET_DIR, by that clone's own
+# rust/bindings/abi/build.sh (same toolchain pins, same cargo home):
+first build (the worktree)      aprv.wasm 4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e  aprv.component.wasm 8f758c0b032f5d288b214250437f5085e79344211055b729d155fea0a4460dd5
+second build (the fresh clone)  aprv.wasm 4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e  aprv.component.wasm 8f758c0b032f5d288b214250437f5085e79344211055b729d155fea0a4460dd5
+cmp: identical, both files
+# The first attempt at 2f9dfc1 failed in the clone: rust/vendor/openssl-sys/build/
+# was never committed (the root .gitignore ignores build/); fixed in 947a5bb.

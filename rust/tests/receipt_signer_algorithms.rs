@@ -1,5 +1,5 @@
-//! No algorithm or key-type allowlist on the receipt signer beyond what the
-//! crate implements.
+//! No algorithm or key-type allowlist on the receipt signer beyond what
+//! OpenSSL implements.
 //!
 //! Apple signs receipts with RSA and SHA-1 or SHA-256 today, but a signer
 //! that chains to a pinned root and carries Apple's marker is trusted
@@ -10,22 +10,21 @@
 //! PKI (root, WWDR-marked intermediate, marked signer) on P-256 with fixed
 //! scalars, and pins that root. The RSA-PSS signer is an RSA-2048 key built
 //! from two fixed primes, for this file only, so no test waits on key
-//! generation.
+//! generation. Keys and signatures come from OpenSSL.
 
 mod common;
 
 use apple_purchase_receipt_verifier::{Config, Reason, TrustAnchor, Verifier};
+use common::mint::SigningKey;
 use common::mint::{
     certificate, certificate_for_spki, key, name, RECEIPT_SIGNER_MARKER, WWDR_MARKER,
 };
 use common::{der, der_int, der_oid, der_seq, CmsBuilder};
-use p256::ecdsa::signature::hazmat::PrehashSigner;
-use p256::ecdsa::signature::Signer;
-use p256::ecdsa::{DerSignature, SigningKey};
-use rsa::rand_core::{CryptoRng, RngCore};
-use rsa::traits::PublicKeyParts;
-use rsa::{BigUint, Pss, RsaPrivateKey};
-use sha2::{Digest, Sha224, Sha256, Sha384, Sha512};
+use openssl::bn::{BigNum, BigNumContext};
+use openssl::hash::{hash, MessageDigest};
+use openssl::pkey::{PKey, Private};
+use openssl::rsa::{Padding, Rsa};
+use openssl::sign::{RsaPssSaltlen, Signer};
 
 use common::mint::ECDSA_WITH_SHA256;
 const ECDSA_WITH_SHA384: &str = "1.2.840.10045.4.3.3";
@@ -42,6 +41,8 @@ const MD5: &str = "1.2.840.113549.2.5";
 /// `SignerInfo`'s digest is the one checked.
 const ID_EC_PUBLIC_KEY: &str = "1.2.840.10045.2.1";
 const SHA3_256: &str = "2.16.840.1.101.3.4.2.8";
+/// An OID under the IANA example arc: no digest anyone implements.
+const NO_SUCH_DIGEST: &str = "1.3.6.1.4.1.32473.1";
 const SHA512: &str = "2.16.840.1.101.3.4.2.3";
 const NOW: i64 = 1_735_689_600_000;
 
@@ -130,16 +131,19 @@ fn content() -> Vec<u8> {
     CmsBuilder::from_shared().content.unwrap()
 }
 
+fn digest(md: MessageDigest, data: &[u8]) -> Vec<u8> {
+    hash(md, data).unwrap().to_vec()
+}
+
 fn sign_prehash(key: &SigningKey, prehash: &[u8]) -> Vec<u8> {
-    let signature: p256::ecdsa::Signature = key.sign_prehash(prehash).unwrap();
-    signature.to_der().as_bytes().to_vec()
+    key.sign_prehash_der(prehash)
 }
 
 #[test]
 fn the_control_an_ec_signer_under_the_pinned_root_verifies() {
     let pki = pki();
-    let signature: DerSignature = pki.signer_key.sign(&content());
-    let der = receipt(&pki, SHA256, ECDSA_WITH_SHA256, signature.as_bytes());
+    let signature = pki.signer_key.sign_der(&content());
+    let der = receipt(&pki, SHA256, ECDSA_WITH_SHA256, &signature);
     let payload = common::verify_der(&pki.verifier, &der).unwrap();
     assert_eq!(payload.bundle_id.as_deref(), Some("com.example.app"));
 }
@@ -151,17 +155,24 @@ fn a_digest_apple_does_not_use_today_verifies_when_the_signature_holds() {
         (
             SHA224,
             ECDSA_WITH_SHA224,
-            Sha224::digest(content()).to_vec(),
+            digest(MessageDigest::sha224(), &content()),
         ),
         (
             SHA384,
             ECDSA_WITH_SHA384,
-            Sha384::digest(content()).to_vec(),
+            digest(MessageDigest::sha384(), &content()),
         ),
         (
             SHA512,
             ECDSA_WITH_SHA512,
-            Sha512::digest(content()).to_vec(),
+            digest(MessageDigest::sha512(), &content()),
+        ),
+        // SHA3-256, which the pure-Rust core of 0.7 did not implement and
+        // OpenSSL does: Java accepts it too (DECISIONS.md R20).
+        (
+            SHA3_256,
+            ID_EC_PUBLIC_KEY,
+            digest(MessageDigest::sha3_256(), &content()),
         ),
     ] {
         let signature = sign_prehash(&pki.signer_key, &prehash);
@@ -177,7 +188,10 @@ fn a_digest_apple_does_not_use_today_verifies_when_the_signature_holds() {
 fn a_signature_that_does_not_hold_as_labelled_is_an_invalid_signature() {
     let pki = pki();
     // Signed over SHA-512, labelled SHA-1: the label is what is checked.
-    let signature = sign_prehash(&pki.signer_key, &Sha512::digest(content()));
+    let signature = sign_prehash(
+        &pki.signer_key,
+        &digest(MessageDigest::sha512(), &content()),
+    );
     let der = receipt(&pki, SHA1, ECDSA_WITH_SHA512, &signature);
     let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
     assert_eq!(failure.reason(), Reason::InvalidSignature, "{failure}");
@@ -189,18 +203,18 @@ fn an_md5_digest_under_the_pinned_root_verifies() {
     // MD5 included, as Java accepts it. A relabelling attack needs an Apple
     // signature and a collision.
     let pki = pki();
-    let signature = sign_prehash(&pki.signer_key, &md5::Md5::digest(content()));
+    let signature = sign_prehash(&pki.signer_key, &digest(MessageDigest::md5(), &content()));
     let der = receipt(&pki, MD5, ID_EC_PUBLIC_KEY, &signature);
     assert!(common::verify_der(&pki.verifier, &der).is_ok());
 }
 
 #[test]
-fn a_digest_the_crate_does_not_implement_is_an_invalid_signature() {
-    // SHA3-256: a real digest no crate here implements, so a signer naming
-    // it cannot be checked and fails as a signature.
+fn a_digest_openssl_does_not_implement_is_an_invalid_signature() {
+    // A digest OID nobody implements: a signer naming it cannot be checked,
+    // and fails as a signature.
     let pki = pki();
-    let signature: DerSignature = pki.signer_key.sign(&content());
-    let der = receipt(&pki, SHA3_256, ID_EC_PUBLIC_KEY, signature.as_bytes());
+    let signature = pki.signer_key.sign_der(&content());
+    let der = receipt(&pki, NO_SUCH_DIGEST, ID_EC_PUBLIC_KEY, &signature);
     let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
     assert_eq!(failure.reason(), Reason::InvalidSignature, "{failure}");
 }
@@ -212,13 +226,13 @@ fn a_signature_algorithm_that_names_another_hash_than_the_digest_is_an_invalid_s
     // with any other hash it is not the signature the label describes, even
     // though the key would verify it over the SignerInfo's digest.
     let pki = pki();
-    let signature: DerSignature = pki.signer_key.sign(&content());
+    let signature = pki.signer_key.sign_der(&content());
     for label in [ECDSA_WITH_SHA256, ID_EC_PUBLIC_KEY] {
-        let der = receipt(&pki, SHA256, label, signature.as_bytes());
+        let der = receipt(&pki, SHA256, label, &signature);
         assert!(common::verify_der(&pki.verifier, &der).is_ok(), "{label}");
     }
     for label in [ECDSA_WITH_SHA224, ECDSA_WITH_SHA384, ECDSA_WITH_SHA512] {
-        let der = receipt(&pki, SHA256, label, signature.as_bytes());
+        let der = receipt(&pki, SHA256, label, &signature);
         let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
         assert_eq!(failure.reason(), Reason::InvalidSignature, "{label}");
     }
@@ -228,40 +242,56 @@ fn a_signature_algorithm_that_names_another_hash_than_the_digest_is_an_invalid_s
 
 /// A fixed RSA-2048 test key: two 1024-bit primes found once with a seeded
 /// Miller-Rabin search. It signs nothing outside this file.
-fn pss_key() -> RsaPrivateKey {
-    let p = BigUint::parse_bytes(
-        b"fc9b3a6af4c921059147d0a57ba46848567e8f477f8bf1fd75a4c97f4fad4a79\
-          df3c75de5d9f6b19c5dd895be1441068ac432254c5a4a27f8f3c0b82c1c3b833\
-          a8f3a554d792006087926cc36c20d7735193809c5c42dd6882f5bce002f06334\
-          181437dcd7eeda787f11964f3a54fea974934fcfce382d0d6b011e6048a1d101",
-        16,
-    )
+fn pss_key() -> PKey<Private> {
+    let p = BigNum::from_hex_str(concat!(
+        "fc9b3a6af4c921059147d0a57ba46848567e8f477f8bf1fd75a4c97f4fad4a79",
+        "df3c75de5d9f6b19c5dd895be1441068ac432254c5a4a27f8f3c0b82c1c3b833",
+        "a8f3a554d792006087926cc36c20d7735193809c5c42dd6882f5bce002f06334",
+        "181437dcd7eeda787f11964f3a54fea974934fcfce382d0d6b011e6048a1d101",
+    ))
     .unwrap();
-    let q = BigUint::parse_bytes(
-        b"e4ff0b3817ba3d75741cb558108c6a152c21d90154fb4dc1422362501a0d1549\
-          d6ca48f03589ad19b1b3e8f30dcc19d61a99336cc4031d3de042a2719cdf4f46\
-          633c0ba4dfed762cfb028e0267ba0f3169ec4c9e6e6e39e851cdc9e0315e21e1\
-          da67b7601377123d70162811d97e5bb46576579f92a5f6afb757abd656484e8b",
-        16,
-    )
+    let q = BigNum::from_hex_str(concat!(
+        "e4ff0b3817ba3d75741cb558108c6a152c21d90154fb4dc1422362501a0d1549",
+        "d6ca48f03589ad19b1b3e8f30dcc19d61a99336cc4031d3de042a2719cdf4f46",
+        "633c0ba4dfed762cfb028e0267ba0f3169ec4c9e6e6e39e851cdc9e0315e21e1",
+        "da67b7601377123d70162811d97e5bb46576579f92a5f6afb757abd656484e8b",
+    ))
     .unwrap();
-    RsaPrivateKey::from_p_q(p, q, BigUint::from(65_537u32)).unwrap()
+    let mut context = BigNumContext::new().unwrap();
+    let one = BigNum::from_u32(1).unwrap();
+    let e = BigNum::from_u32(65_537).unwrap();
+    let mut n = BigNum::new().unwrap();
+    n.checked_mul(&p, &q, &mut context).unwrap();
+    let (mut p1, mut q1, mut phi) = (
+        BigNum::new().unwrap(),
+        BigNum::new().unwrap(),
+        BigNum::new().unwrap(),
+    );
+    p1.checked_sub(&p, &one).unwrap();
+    q1.checked_sub(&q, &one).unwrap();
+    phi.checked_mul(&p1, &q1, &mut context).unwrap();
+    let mut d = BigNum::new().unwrap();
+    d.mod_inverse(&e, &phi, &mut context).unwrap();
+    let (mut dmp1, mut dmq1, mut iqmp) = (
+        BigNum::new().unwrap(),
+        BigNum::new().unwrap(),
+        BigNum::new().unwrap(),
+    );
+    dmp1.nnmod(&d, &p1, &mut context).unwrap();
+    dmq1.nnmod(&d, &q1, &mut context).unwrap();
+    iqmp.mod_inverse(&q, &p, &mut context).unwrap();
+    let rsa = Rsa::from_private_components(n, e, d, p, q, dmp1, dmq1, iqmp).unwrap();
+    PKey::from_rsa(rsa).unwrap()
 }
 
-fn rsa_spki(key: &RsaPrivateKey) -> Vec<u8> {
-    let integer = |value: &BigUint| {
-        let mut bytes = value.to_bytes_be();
-        if bytes.first().is_some_and(|b| *b >= 0x80) {
-            bytes.insert(0, 0);
-        }
-        der(0x02, &bytes)
-    };
-    let mut bits = vec![0x00];
-    bits.extend_from_slice(&der_seq(&[integer(key.n()), integer(key.e())]));
-    der_seq(&[
-        der_seq(&[der_oid("1.2.840.113549.1.1.1"), der(0x05, &[])]),
-        der(0x03, &bits),
-    ])
+fn rsa_spki(key: &PKey<Private>) -> Vec<u8> {
+    key.public_key_to_der().unwrap()
+}
+
+/// A PKCS#1 v1.5 signature of `data` over `md`.
+fn pkcs1_sign(key: &PKey<Private>, md: MessageDigest, data: &[u8]) -> Vec<u8> {
+    let mut signer = Signer::new(md, key).unwrap();
+    signer.sign_oneshot_to_vec(data).unwrap()
 }
 
 /// `RSASSA-PSS-params` naming `hash_oid` for the hash and MGF1, and a salt
@@ -278,44 +308,25 @@ fn pss_algorithm(hash_oid: &str, salt_length: u64) -> Vec<u8> {
     ])
 }
 
-/// A fixed byte stream for the PSS salt: the salt is part of what is
-/// signed, not a secret, and a fixed one keeps the test replayable.
-struct FixedSalt(u8);
-
-impl RngCore for FixedSalt {
-    fn next_u32(&mut self) -> u32 {
-        u32::from(self.next_u8())
-    }
-    fn next_u64(&mut self) -> u64 {
-        u64::from(self.next_u8())
-    }
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        for byte in dest {
-            *byte = self.next_u8();
-        }
-    }
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rsa::rand_core::Error> {
-        self.fill_bytes(dest);
-        Ok(())
-    }
+/// A PSS signature of `content` over `md` and MGF1 with `md`, with a salt of
+/// `salt_length` bytes.
+fn pss_sign_with(
+    key: &PKey<Private>,
+    md: MessageDigest,
+    salt_length: i32,
+    content: &[u8],
+) -> Vec<u8> {
+    let mut signer = Signer::new(md, key).unwrap();
+    signer.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
+    signer
+        .set_rsa_pss_saltlen(RsaPssSaltlen::custom(salt_length))
+        .unwrap();
+    signer.set_rsa_mgf1_md(md).unwrap();
+    signer.sign_oneshot_to_vec(content).unwrap()
 }
 
-impl FixedSalt {
-    fn next_u8(&mut self) -> u8 {
-        self.0 = self.0.wrapping_mul(29).wrapping_add(7);
-        self.0
-    }
-}
-
-impl CryptoRng for FixedSalt {}
-
-fn pss_sign(key: &RsaPrivateKey, content: &[u8]) -> Vec<u8> {
-    key.sign_with_rng(
-        &mut FixedSalt(1),
-        Pss::new_with_salt::<Sha256>(32),
-        &Sha256::digest(content),
-    )
-    .unwrap()
+fn pss_sign(key: &PKey<Private>, content: &[u8]) -> Vec<u8> {
+    pss_sign_with(key, MessageDigest::sha256(), 32, content)
 }
 
 #[test]
@@ -358,17 +369,14 @@ fn an_rsa_pss_signature_over_other_content_or_parameters_is_an_invalid_signature
 
 // --- certificate signature algorithms --------------------------------------
 
-/// Every certificate signature algorithm the crypto crates verify is
-/// accepted under the pinned chain (owner, 2026-09-27: no stricter list than
-/// what the library itself refuses). An intermediate signed by the pinned
-/// root with each one is authenticated, top-down, by that root.
+/// Every certificate signature algorithm OpenSSL verifies is accepted
+/// under the pinned chain (owner, 2026-09-27: no stricter list than what the
+/// library itself refuses). An intermediate signed by the pinned root with
+/// each one is authenticated, top-down, by that root.
 #[test]
-fn every_certificate_signature_algorithm_the_crates_verify_is_accepted() {
-    use apple_purchase_receipt_verifier::__internal::{chain, x509::Certificate};
+fn every_certificate_signature_algorithm_openssl_verifies_is_accepted() {
+    use apple_purchase_receipt_verifier::__internal::path::{self, Certificate};
     use common::mint::{assemble, spki, tbs};
-    use p256::ecdsa::signature::hazmat::PrehashSigner as _;
-    use rsa::Pkcs1v15Sign;
-    use sha1::Sha1;
 
     let intermediate_spki = spki(&key(2));
     let intermediate = |algorithm: Vec<u8>, sign: &dyn Fn(&[u8]) -> Vec<u8>| {
@@ -386,10 +394,7 @@ fn every_certificate_signature_algorithm_the_crates_verify_is_accepted() {
     };
     let authenticated = |root: &[u8], certificate: &Certificate| {
         let roots = [TrustAnchor::from_der(root).unwrap()];
-        chain::authenticated_top_down(std::slice::from_ref(certificate), &roots)
-            .certificates()
-            .len()
-            == 1
+        path::authenticated_top_down(std::slice::from_ref(certificate), &roots).len() == 1
     };
 
     // ECDSA, over a P-256 root, with every digest the crate computes.
@@ -404,10 +409,8 @@ fn every_certificate_signature_algorithm_the_crates_verify_is_accepted() {
         None,
     );
     let ecdsa = |oid: &str, prehash: Vec<u8>| {
-        let signature: p256::ecdsa::Signature = ec_root_key.sign_prehash(&prehash).unwrap();
-        intermediate(der_seq(&[der_oid(oid)]), &|_| {
-            signature.to_der().as_bytes().to_vec()
-        })
+        let signature = ec_root_key.sign_prehash_der(&prehash);
+        intermediate(der_seq(&[der_oid(oid)]), &|_| signature.clone())
     };
     let tbs_bytes = |algorithm: &str| {
         tbs(
@@ -423,23 +426,23 @@ fn every_certificate_signature_algorithm_the_crates_verify_is_accepted() {
     for (oid, prehash) in [
         (
             "1.2.840.10045.4.1",
-            Sha1::digest(tbs_bytes("1.2.840.10045.4.1")).to_vec(),
+            digest(MessageDigest::sha1(), &tbs_bytes("1.2.840.10045.4.1")),
         ),
         (
             "1.2.840.10045.4.3.1",
-            Sha224::digest(tbs_bytes("1.2.840.10045.4.3.1")).to_vec(),
+            digest(MessageDigest::sha224(), &tbs_bytes("1.2.840.10045.4.3.1")),
         ),
         (
             "1.2.840.10045.4.3.2",
-            Sha256::digest(tbs_bytes("1.2.840.10045.4.3.2")).to_vec(),
+            digest(MessageDigest::sha256(), &tbs_bytes("1.2.840.10045.4.3.2")),
         ),
         (
             "1.2.840.10045.4.3.3",
-            Sha384::digest(tbs_bytes("1.2.840.10045.4.3.3")).to_vec(),
+            digest(MessageDigest::sha384(), &tbs_bytes("1.2.840.10045.4.3.3")),
         ),
         (
             "1.2.840.10045.4.3.4",
-            Sha512::digest(tbs_bytes("1.2.840.10045.4.3.4")).to_vec(),
+            digest(MessageDigest::sha512(), &tbs_bytes("1.2.840.10045.4.3.4")),
         ),
     ] {
         assert!(authenticated(&ec_root, &ecdsa(oid, prehash)), "{oid}");
@@ -458,63 +461,41 @@ fn every_certificate_signature_algorithm_the_crates_verify_is_accepted() {
             None,
             &algorithm,
         );
-        let signature = rsa_key
-            .sign(Pkcs1v15Sign::new::<Sha256>(), &Sha256::digest(&tbs))
-            .unwrap();
+        let signature = pkcs1_sign(&rsa_key, MessageDigest::sha256(), &tbs);
         assemble(tbs, algorithm, &signature)
     };
-    let pkcs1 = |oid: &str, padding: Pkcs1v15Sign, digest: fn(&[u8]) -> Vec<u8>| {
+    let pkcs1 = |oid: &str, md: MessageDigest| {
         intermediate(der_seq(&[der_oid(oid), der(0x05, &[])]), &|tbs| {
-            rsa_key.sign(padding.clone(), &digest(tbs)).unwrap()
+            pkcs1_sign(&rsa_key, md, tbs)
         })
     };
     for (oid, certificate) in [
         (
             "sha1WithRSAEncryption",
-            pkcs1("1.2.840.113549.1.1.5", Pkcs1v15Sign::new::<Sha1>(), |t| {
-                Sha1::digest(t).to_vec()
-            }),
+            pkcs1("1.2.840.113549.1.1.5", MessageDigest::sha1()),
         ),
         (
             "sha224WithRSAEncryption",
-            pkcs1(
-                "1.2.840.113549.1.1.14",
-                Pkcs1v15Sign::new::<Sha224>(),
-                |t| Sha224::digest(t).to_vec(),
-            ),
+            pkcs1("1.2.840.113549.1.1.14", MessageDigest::sha224()),
         ),
         (
             "sha512WithRSAEncryption",
-            pkcs1(
-                "1.2.840.113549.1.1.13",
-                Pkcs1v15Sign::new::<Sha512>(),
-                |t| Sha512::digest(t).to_vec(),
-            ),
+            pkcs1("1.2.840.113549.1.1.13", MessageDigest::sha512()),
         ),
         (
             "RSASSA-PSS",
             intermediate(pss_algorithm(SHA384, 48), &|tbs| {
-                rsa_key
-                    .sign_with_rng(
-                        &mut FixedSalt(3),
-                        Pss::new_with_salt::<Sha384>(48),
-                        &Sha384::digest(tbs),
-                    )
-                    .unwrap()
+                pss_sign_with(&rsa_key, MessageDigest::sha384(), 48, tbs)
             }),
         ),
     ] {
         assert!(authenticated(&rsa_root, &certificate), "{oid}");
     }
 
-    // MD5 with RSA too (Q14), and DSA with SHA-256, which no crate here
-    // implements, is not authenticated. Its signature bytes do not matter;
-    // nothing gets far enough to read them.
-    let md5 = pkcs1(
-        "1.2.840.113549.1.1.4",
-        Pkcs1v15Sign::new::<md5::Md5>(),
-        |t| md5::Md5::digest(t).to_vec(),
-    );
+    // MD5 with RSA too (Q14). DSA with SHA-256 over the RSA root's key is
+    // not authenticated: the algorithm does not match the issuer's key, so
+    // its signature bytes are never read.
+    let md5 = pkcs1("1.2.840.113549.1.1.4", MessageDigest::md5());
     assert!(authenticated(&rsa_root, &md5), "md5WithRSAEncryption");
     let dsa = intermediate(der_seq(&[der_oid("2.16.840.1.101.3.4.3.2")]), &|_| {
         vec![0; 64]

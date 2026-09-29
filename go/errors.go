@@ -54,11 +54,13 @@ func AllReasons() []Reason { return append([]Reason(nil), apperr.AllReasons...) 
 // characters and bidi controls quoted from the input are neutralised) but
 // is not meant to be parsed and may change between releases.
 //
-// Cause, reached through errors.Unwrap, carries the parser or provider
-// error behind ReasonUnreadablePayload and ReasonInternalError, so an
-// operator can see why Apple-signed content did not parse; it is nil
-// otherwise, and it never carries raw library text that might quote
-// certificate names from the input.
+// Cause, reached through errors.Unwrap, is nil for every verdict of the
+// verification module: its own cause chain stays inside the module, and
+// Message carries the reason. It is set when ReasonInternalError comes from
+// this package's machinery rather than from the module, and names what
+// happened (a trap, an answer that could not be read, the clock); it never
+// carries raw library text that might quote certificate names from the
+// input.
 //
 // Read it with errors.As:
 //

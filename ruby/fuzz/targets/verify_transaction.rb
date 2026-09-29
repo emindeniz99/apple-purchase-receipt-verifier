@@ -14,9 +14,9 @@ require_relative "../support"
 APRV = FuzzSupport::APRV
 
 FIXTURE = APRV::Verifier.create(
-  APRV::Config.new(roots: [FuzzSupport.fixture_certificate("generated/jws-root.der")])
+  APRV::Config.new(roots: [FuzzSupport.fixture_der("generated/jws-root.der")])
 )
-UNRELATED = APRV::Verifier.create(APRV::Config.new(roots: APRV::Config.defaults.roots))
+UNRELATED = APRV::Verifier.create(APRV::Config.defaults)
 
 TEST_ONE_INPUT = lambda do |data|
   # verify_signed_data never raises: a VerificationResult carries the

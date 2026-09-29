@@ -1,29 +1,24 @@
 package applereceipt_test
 
 import (
-	"crypto/ecdsa"
-	"crypto/rand"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
 
+// Shared conveniences for every _test.go file in this package: a single
+// fixture's bytes by id, read from the same fixtures/cases.json the
+// conformance suite runs, and the two assertions most tests make: the
+// Reason a call failed with, and a substring of its message.
+
 // applereceiptBase64 is standard padded base64, the form every receipt
 // string entry point takes.
 func applereceiptBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
-
-// Shared conveniences for every _test.go file in this package: a single
-// fixture's bytes by id, read from the same fixtures/cases.json the
-// conformance suite runs, and the two assertions almost every hand-written
-// test makes: the Reason a call failed with, and a substring of its
-// message.
 
 var (
 	sharedCasesOnce sync.Once
@@ -55,43 +50,6 @@ func fixtureString(t testing.TB, id string) string {
 	return receiptString(t, dir, file.Fixtures, id)
 }
 
-// signRawJWS signs already-encoded header and payload bytes with leaf's
-// key, so a test can put bytes on the wire that signJWS's
-// json.Marshal(map[string]any) could never produce (a non-object payload,
-// an extra header member, a byte-exact size) while still producing a
-// signature verifyES256 genuinely accepts.
-func signRawJWS(t testing.TB, leaf *testCert, header, payload []byte) string {
-	t.Helper()
-	headerB64 := base64.RawURLEncoding.EncodeToString(header)
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
-	key, ok := leaf.key.(*ecdsa.PrivateKey)
-	if !ok {
-		t.Fatal("signRawJWS needs an ECDSA leaf key")
-	}
-	digest := sha256.Sum256([]byte(headerB64 + "." + payloadB64))
-	r, s, err := ecdsa.Sign(rand.Reader, key, digest[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	signature := make([]byte, 64)
-	r.FillBytes(signature[:32])
-	s.FillBytes(signature[32:])
-	return headerB64 + "." + payloadB64 + "." + base64.RawURLEncoding.EncodeToString(signature)
-}
-
-// transactionClaims is a well-formed synthesized JWS payload, the default
-// input every JWS test builds on unless it needs to vary a specific claim.
-func transactionClaims() map[string]any {
-	return map[string]any{
-		"bundleId":      "com.example.app",
-		"environment":   "Sandbox",
-		"productId":     "com.example.app.pro",
-		"transactionId": "2000000000000001",
-		"quantity":      1,
-		"signedDate":    time.Now().UnixMilli(),
-	}
-}
-
 // requireReason asserts that err is a *applereceipt.Failure with Reason
 // want.
 func requireReason(t testing.TB, err error, want applereceipt.Reason) {
@@ -105,6 +63,19 @@ func requireReason(t testing.TB, err error, want applereceipt.Reason) {
 	}
 	if failure.Reason != want {
 		t.Fatalf("expected reason %s, got %s: %v", want, failure.Reason, err)
+	}
+}
+
+// requireMessage asserts that err is a *applereceipt.Failure whose
+// message contains want.
+func requireMessage(t testing.TB, err error, want string) {
+	t.Helper()
+	var failure *applereceipt.Failure
+	if !errors.As(err, &failure) {
+		t.Fatalf("not a *Failure: %v", err)
+	}
+	if !strings.Contains(failure.Message, want) {
+		t.Fatalf("message %q does not contain %q", failure.Message, want)
 	}
 }
 
@@ -127,27 +98,4 @@ func verifierFor(t testing.TB, roots []*x509.Certificate) *applereceipt.Verifier
 		t.Fatal(err)
 	}
 	return verifier
-}
-
-// nestedSequences is depth ASN.1 SEQUENCEs wrapped around one INTEGER, a
-// nesting bomb for the depth-bounded reader.
-func nestedSequences(depth int) []byte {
-	out := derInt(1)
-	for i := 0; i < depth; i++ {
-		out = derSequence(out)
-	}
-	return out
-}
-
-// requireMessage asserts that err is a *applereceipt.Failure whose
-// message contains want.
-func requireMessage(t testing.TB, err error, want string) {
-	t.Helper()
-	var failure *applereceipt.Failure
-	if !errors.As(err, &failure) {
-		t.Fatalf("not a *Failure: %v", err)
-	}
-	if !strings.Contains(failure.Message, want) {
-		t.Fatalf("message %q does not contain %q", failure.Message, want)
-	}
 }

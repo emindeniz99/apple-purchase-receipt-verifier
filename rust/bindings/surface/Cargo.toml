@@ -1,0 +1,32 @@
+# aprv-surface: the 0.7 API as plain Rust values, the one model every
+# boundary shares (docs/rust-core/SURFACE.md §4 and §8). It depends on the
+# core only: no binding generator, no runtime, no wire format, no serde.
+# tools/check-layering.mjs holds that. Not published; the C ABI and
+# aprv.wasm are built from this workspace.
+[package]
+name = "aprv-surface"
+version = "0.0.0"
+publish = false
+edition = "2021"
+rust-version = "1.85.0"
+description = "The 0.7 API of apple-purchase-receipt-verifier as plain Rust values, for the bindings."
+license = "MIT"
+
+[dependencies.apple-purchase-receipt-verifier]
+path = "../.."
+default-features = false
+
+[features]
+default = ["vendored"]
+# OpenSSL 4.0.2 built from source (the core's feature). aprv.wasm turns it
+# off and links the wasi-sdk build of OpenSSL through OPENSSL_DIR.
+vendored = ["apple-purchase-receipt-verifier/vendored"]
+
+[lints.clippy]
+# SURFACE.md §8: no value may change on the way through. A conversion that
+# can fail is a TryFrom whose failure is INTERNAL_ERROR, never a cast.
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+cast_lossless = "deny"
+cast_precision_loss = "deny"

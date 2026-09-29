@@ -2,7 +2,7 @@
 
 # Writes the endpoint_json seed corpus into a scratch directory.
 #
-# The other five targets are seeded straight from fixtures/, which libFuzzer
+# The other three targets are seeded straight from fixtures/, which libFuzzer
 # reads as extra read-only corpus directories. The endpoint takes a JSON
 # request body, and no fixture is one, so its seeds have to be built —
 # generated here at run time rather than committed, so a receipt fixture is

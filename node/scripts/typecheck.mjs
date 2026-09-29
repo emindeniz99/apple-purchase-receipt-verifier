@@ -1,4 +1,5 @@
-// Runs the two TypeScript passes at once.
+// Runs the two TypeScript passes at once (scripts/build.mjs calls it after
+// the transpile, since both passes read src/generated/).
 //
 // tsconfig.json builds dist/. tsconfig.web.json emits nothing: it re-checks
 // the web entry point without @types/node, so a stray Buffer or node: import

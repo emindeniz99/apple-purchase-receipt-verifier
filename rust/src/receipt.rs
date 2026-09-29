@@ -1,19 +1,14 @@
 //! [`Verifier::verify_receipt`](crate::Verifier::verify_receipt): legacy
 //! PKCS#7 app receipts, verified offline.
 
-use crate::asn1::{parse_exact, tag};
-use crate::base64::decode_receipt_base64;
-use crate::chain::{authenticated_top_down, build_and_validate_path, Authenticated};
-use crate::cms::{
-    is_unverifiable_attribute_set, parse_cms, signed_attribute_values, signed_attrs_signed_bytes,
-    CmsSignerInfo, ParsedCms,
-};
-use crate::crypto::{constant_time_eq, has_unimplemented_curve, verify_signer_signature};
 use crate::error::{malformed, Failure, Reason};
-use crate::receipt_payload::{parse_receipt_payload, read_creation_date, ReceiptPayload};
+use crate::path::{authenticated_top_down, receipt_path};
+use crate::receipt_payload::{
+    parse_receipt_payload, read_creation_date, ReceiptPayload, MAX_ASN1_DEPTH, MAX_ASN1_NODES,
+};
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
-use crate::x509::Certificate;
+use aprv_openssl::{Certificate, CmsError, EnvelopeLimits, SignedData};
 
 /// How many certificates a receipt may embed. Every embedded certificate is
 /// parsed and then tried as an issuer before anything about the receipt is
@@ -23,6 +18,21 @@ pub(crate) const MAX_EMBEDDED_CERTIFICATES: usize = 10;
 /// How many `SignerInfo`s a receipt may carry. A fifth is refused before any
 /// signature is checked.
 pub(crate) const MAX_SIGNER_INFOS: usize = 4;
+
+/// How many CRLs a receipt may embed. Apple's receipts carry none; like the
+/// certificates, each one is decoded in full before anything is verified,
+/// so the count is bounded before a single one is.
+pub(crate) const MAX_EMBEDDED_CRLS: usize = 10;
+
+/// The bounds the adapter enforces on an envelope, in its order, before
+/// the full decode builds any certificate (0.7 bounds table).
+const ENVELOPE_LIMITS: EnvelopeLimits = EnvelopeLimits {
+    depth: MAX_ASN1_DEPTH,
+    nodes: MAX_ASN1_NODES,
+    signer_infos: MAX_SIGNER_INFOS,
+    certificates: MAX_EMBEDDED_CERTIFICATES,
+    crls: MAX_EMBEDDED_CRLS,
+};
 
 /// The largest receipt string, in UTF-8 bytes: 3 MiB, Apple's own request
 /// limit, checked before anything is decoded. No receipt Apple accepts can
@@ -36,7 +46,7 @@ pub(crate) const MAX_RECEIPT_BYTES: usize = 3_145_728;
 /// is missing or does not parse, and is read only then, once a signer has
 /// been found.
 pub(crate) fn verify(
-    base64: &str,
+    base64: &[u8],
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<ReceiptPayload, Failure> {
@@ -51,8 +61,7 @@ pub(crate) fn verify(
             format!("receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes"),
         ));
     }
-    let der =
-        decode_receipt_base64(base64).ok_or_else(|| malformed("receipt is not valid base64"))?;
+    let der = crate::decode_receipt_data(base64)?;
     let content = verify_signature(&der, anchors, clock)?;
     verifier::enter(Stage::PayloadParse);
     // A trusted signer signed these bytes, so a payload this crate cannot
@@ -70,6 +79,48 @@ pub(crate) fn verify(
     payload
 }
 
+/// The `SignerInfo` and embedded-certificate bounds.
+fn within_member_bounds(signer_infos: usize, certificates: usize) -> Result<(), Failure> {
+    if signer_infos > MAX_SIGNER_INFOS {
+        return Err(too_many_signer_infos(signer_infos));
+    }
+    if certificates > MAX_EMBEDDED_CERTIFICATES {
+        return Err(too_many_certificates(certificates));
+    }
+    Ok(())
+}
+
+fn too_many_signer_infos(count: usize) -> Failure {
+    malformed(format!(
+        "receipt carries {count} SignerInfos, more than the maximum of {MAX_SIGNER_INFOS}"
+    ))
+}
+
+fn too_many_certificates(count: usize) -> Failure {
+    malformed(format!(
+        "receipt embeds {count} certificates, more than the maximum of {MAX_EMBEDDED_CERTIFICATES}"
+    ))
+}
+
+/// The failure for an envelope the adapter refused: always `MALFORMED`,
+/// since nothing in it has been verified.
+fn envelope_failure(err: CmsError) -> Failure {
+    match err {
+        CmsError::TooManySignerInfos(count) => too_many_signer_infos(count),
+        CmsError::TooManyCertificates(count) => too_many_certificates(count),
+        CmsError::TooManyCrls(count) => malformed(format!(
+            "receipt embeds {count} CRLs, more than the maximum of {MAX_EMBEDDED_CRLS}"
+        )),
+        CmsError::TooDeep => malformed(format!(
+            "malformed CMS structure: nested deeper than {MAX_ASN1_DEPTH} constructed values"
+        )),
+        CmsError::TooManyNodes => malformed(format!(
+            "malformed CMS structure: more than {MAX_ASN1_NODES} ASN.1 values"
+        )),
+        other => malformed(format!("malformed CMS structure: {other}")),
+    }
+}
+
 /// Every check up to and including a signature; returns the signed payload,
 /// not yet decoded.
 fn verify_signature(
@@ -77,43 +128,41 @@ fn verify_signature(
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<Vec<u8>, Failure> {
-    let cms = parse_cms(der).map_err(|err| malformed(format!("malformed CMS structure: {err}")))?;
-    if cms.signer_infos.len() > MAX_SIGNER_INFOS {
-        return Err(malformed(format!(
-            "receipt carries {} SignerInfos, more than the maximum of {MAX_SIGNER_INFOS}",
-            cms.signer_infos.len()
-        )));
-    }
-    // Bounded here, before a single embedded certificate is decoded or tried
-    // as an issuer, all of which an unverified receipt would otherwise get to
-    // pay for out of the caller's CPU.
-    if cms.certificates.len() > MAX_EMBEDDED_CERTIFICATES {
-        return Err(malformed(format!(
-            "receipt embeds {} certificates, more than the maximum of {MAX_EMBEDDED_CERTIFICATES}",
-            cms.certificates.len()
-        )));
-    }
+    // The adapter bounds the envelope before its full decode, which builds
+    // each embedded certificate's public key: a header walk under the depth
+    // and node bounds, then a shallow decode that keeps every member raw
+    // and is counted against the SignerInfo, certificate and CRL bounds.
+    // An unverified receipt cannot make the caller pay for a thousand keys
+    // before a single one is judged or tried as an issuer, and an envelope
+    // the walk or the shallow decode refuses never reaches the full decode.
+    let mut cms = SignedData::parse(der, &ENVELOPE_LIMITS).map_err(envelope_failure)?;
+    let signer_count = cms.signer_count();
+    let certificates = cms.certificates();
+    within_member_bounds(signer_count, certificates.len())?;
 
     // Only the creation date is read before trust is established, because
     // chain validity is anchored at signing time; nothing else in the payload
-    // is decoded until the chain and a signature have passed. A date that is
-    // missing or unreadable cannot blame anyone yet, so it only moves the
-    // chain instant to the clock and never rejects by itself.
-    let creation_date = read_creation_date(&cms.content);
+    // is decoded until the chain and a signature have passed. It is read
+    // once a SignerInfo has named an embedded certificate, since only a
+    // chain needs it. A date that is missing or unreadable cannot blame
+    // anyone yet, so it only moves the chain instant to the clock and never
+    // rejects by itself.
+    let mut creation_date: Option<Option<i64>> = None;
 
-    let embedded = decode_embedded(&cms);
+    let embedded = Embedded::sort(certificates);
     // Signer-independent, so walked once for all SignerInfos, and only once
     // one of them has named an embedded certificate that decodes.
-    let mut authenticated: Option<Authenticated<'_>> = None;
+    let mut authenticated: Option<Vec<Certificate>> = None;
     let mut first_failure: Option<Failure> = None;
-    for info in &cms.signer_infos {
-        let verdict = signer_certificates(info, &embedded).and_then(|matches| {
-            let at_millis = match creation_date {
+    for index in 0..signer_count {
+        let verdict = signer_certificates(&cms, index, &embedded).and_then(|matches| {
+            let date = *creation_date.get_or_insert_with(|| read_creation_date(cms.content()));
+            let at_millis = match date {
                 Some(millis) => millis,
                 None => clock.now()?,
             };
             let authenticated = authenticated
-                .get_or_insert_with(|| authenticated_top_down(&embedded.decoded, anchors));
+                .get_or_insert_with(|| authenticated_top_down(&embedded.readable, anchors));
             // The bag is unsigned, so a certificate carrying the signer's
             // identity on another key can sit ahead of the genuine one. Each
             // match is tried as the SignerInfos are: one passing is enough,
@@ -121,7 +170,7 @@ fn verify_signature(
             // No match's key is used before its chain has passed.
             let mut first_match_failure: Option<Failure> = None;
             for signer in matches {
-                match verify_signer(&cms, info, signer, authenticated, anchors, at_millis) {
+                match verify_signer(&mut cms, index, &signer, authenticated, anchors, at_millis) {
                     Ok(()) => return Ok(()),
                     Err(failure) => {
                         first_match_failure.get_or_insert(failure);
@@ -131,7 +180,7 @@ fn verify_signature(
             Err(first_match_failure.unwrap_or_else(|| malformed("signer certificate not embedded")))
         });
         match verdict {
-            Ok(()) => return Ok(cms.content),
+            Ok(()) => return Ok(cms.content().to_vec()),
             // Every SignerInfo signs the same content, so another one
             // passing proves the same bytes; only when none does is the
             // first one's failure the verdict.
@@ -143,36 +192,33 @@ fn verify_signature(
     Err(first_failure.unwrap_or_else(|| malformed("no signer info")))
 }
 
-/// The embedded certificates, decoded once for every `SignerInfo`: the ones
-/// that decoded, and the raw bytes of the ones that did not.
-struct Embedded<'a> {
-    decoded: Vec<Certificate>,
-    unreadable: Vec<&'a [u8]>,
+/// The embedded certificates, judged once for every `SignerInfo`: the ones
+/// a strict reader decodes, and the ones it does not. OpenSSL has parsed
+/// all of them, or the envelope would not have parsed.
+struct Embedded {
+    readable: Vec<Certificate>,
+    unreadable: Vec<Certificate>,
 }
 
-fn decode_embedded(cms: &ParsedCms) -> Embedded<'_> {
-    let mut embedded = Embedded {
-        decoded: Vec::with_capacity(cms.certificates.len()),
-        unreadable: Vec::new(),
-    };
-    for raw in &cms.certificates {
-        match Certificate::from_der(raw) {
-            Ok(certificate) => embedded.decoded.push(certificate),
-            Err(_) => embedded.unreadable.push(raw),
+impl Embedded {
+    fn sort(certificates: Vec<Certificate>) -> Embedded {
+        let (readable, unreadable) = certificates.into_iter().partition(Certificate::is_readable);
+        Embedded {
+            readable,
+            unreadable,
         }
     }
-    embedded
 }
 
-fn verify_signer<'a>(
-    cms: &ParsedCms,
-    info: &CmsSignerInfo,
-    signer: &'a Certificate,
-    authenticated: &Authenticated<'a>,
+fn verify_signer(
+    cms: &mut SignedData,
+    index: usize,
+    signer: &Certificate,
+    authenticated: &[Certificate],
     anchors: &[TrustAnchor],
     at_millis: i64,
 ) -> Result<(), Failure> {
-    let path = build_and_validate_path(signer, authenticated, anchors, at_millis)?;
+    let path = receipt_path(signer, authenticated, anchors, at_millis)?;
     // Checked after the chain, so a foreign chain still reports
     // UNTRUSTED_CHAIN rather than INVALID_CERTIFICATE_PURPOSE.
     if !signer.has_extension(SIGNING_LEAF_OID) {
@@ -192,39 +238,37 @@ fn verify_signer<'a>(
             format!("receipt intermediate certificate lacks Apple WWDR marker OID {WWDR_INTERMEDIATE_OID}"),
         ));
     }
-    // The signer's key is used to check the CMS signature, so a key this
-    // crate cannot build is a defect of the certificate rather than of the
+    // The signer's key is used to check the CMS signature, so a key OpenSSL
+    // cannot build is a defect of the certificate rather than of the
     // signature it carries, the reading the JWS path applies to x5c. Judged
     // only once the chain has vouched for the certificate.
-    if has_unimplemented_curve(signer) {
+    if !signer.has_usable_key() {
         return Err(Failure::new(
             Reason::InvalidCertificate,
-            "receipt signer certificate uses an unimplemented elliptic curve",
+            "receipt signer certificate has a public key this library cannot use",
         ));
     }
     // The chain is checked BEFORE the signature on purpose: checking the
     // signature first would run the attacker's own key (their choice of RSA
     // size and exponent) before anything about it is trusted.
-    verify_cms_signature(cms, info, signer)
+    verify_cms_signature(cms, index, signer)
 }
 
-/// The certificates carrying the issuer and serial `info` names, never
-/// empty, or the verdict for the bag. The signer's own entry not decoding is
+/// The certificates `SignerInfo` `index` names as its signer, never empty,
+/// or the verdict for the bag. The signer's own entry not decoding is
 /// `INVALID_CERTIFICATE`, as an unreadable `x5c` entry is on the JWS path;
 /// any other entry not decoding is `MALFORMED`, because the bag is unsigned
 /// and bytes that cannot be read there are a defect of the receipt, not of a
 /// certificate. A broken signer outranks a broken stranger.
-fn signer_certificates<'e>(
-    info: &CmsSignerInfo,
-    embedded: &'e Embedded<'_>,
-) -> Result<Vec<&'e Certificate>, Failure> {
-    // Which entry an unreadable one is has to be read out of the entry
-    // itself: an identity is still legible in bytes that are not a
-    // certificate all the way down.
+fn signer_certificates(
+    cms: &SignedData,
+    index: usize,
+    embedded: &Embedded,
+) -> Result<Vec<Certificate>, Failure> {
     if embedded
         .unreadable
         .iter()
-        .any(|raw| names_the_signer(raw, info))
+        .any(|certificate| cms.names_signer(index, certificate))
     {
         return Err(Failure::new(
             Reason::InvalidCertificate,
@@ -236,13 +280,11 @@ fn signer_certificates<'e>(
             "an embedded certificate is not a valid certificate",
         ));
     }
-    let matches: Vec<&Certificate> = embedded
-        .decoded
+    let matches: Vec<Certificate> = embedded
+        .readable
         .iter()
-        .filter(|cert| {
-            cert.serial_number() == info.serial_contents.as_slice()
-                && cert.issuer_der() == info.issuer_raw.as_slice()
-        })
+        .filter(|certificate| cms.names_signer(index, certificate))
+        .cloned()
         .collect();
     if matches.is_empty() {
         return Err(malformed("signer certificate not embedded"));
@@ -250,106 +292,50 @@ fn signer_certificates<'e>(
     Ok(matches)
 }
 
-/// Whether `raw` carries the issuer Name and serialNumber the `SignerInfo`
-/// names, read as generic ASN.1 rather than as an X.509 certificate, since
-/// the entries asked about are the ones [`Certificate::from_der`] refused.
-///
-/// `TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber
-/// INTEGER, signature AlgorithmIdentifier, issuer Name, ... }`: anything
-/// without that shape is not an identity and cannot match.
-fn names_the_signer(raw: &[u8], info: &CmsSignerInfo) -> bool {
-    let Ok(certificate) = parse_exact(raw) else {
-        return false;
-    };
-    if certificate.tag != tag::SEQUENCE {
-        return false;
-    }
-    let Some(tbs) = certificate
-        .child(0)
-        .filter(|node| node.tag == tag::SEQUENCE)
-    else {
-        return false;
-    };
-    let fields = tbs.children();
-    let index = usize::from(matches!(fields.first(), Some(f) if f.tag == tag::CONTEXT_0));
-    let (Some(serial), Some(issuer)) = (fields.get(index), fields.get(index + 2)) else {
-        return false;
-    };
-    serial.tag == tag::INTEGER
-        && issuer.tag == tag::SEQUENCE
-        && serial.contents == info.serial_contents.as_slice()
-        && issuer.full == info.issuer_raw.as_slice()
-}
-
 fn invalid_signature(detail: &'static str) -> Failure {
     Failure::new(Reason::InvalidSignature, detail)
 }
 
-/// No algorithm or key-type allowlist beyond what this crate's crypto
-/// crates implement (RSASSA-PKCS1-v1_5, RSASSA-PSS, and ECDSA on P-256 and
-/// P-384; SHA-1, SHA-224, SHA-256, SHA-384, SHA-512): the
+/// No algorithm or key-type allowlist beyond what OpenSSL implements: the
 /// signer is already pinned to an Apple root and carries Apple's
-/// receipt-signing marker, so a change of algorithm on Apple's side does not
-/// reject genuine receipts. An RSA signature binds its hash algorithm in the
-/// `DigestInfo`, so relabelling the field fails.
+/// receipt-signing marker, so a change of algorithm on Apple's side does
+/// not reject genuine receipts (DECISIONS.md R20).
+///
+/// With signed attributes, RFC 5652 section 5.3 makes `contentType` and
+/// `messageDigest` mandatory, each once and single-valued, and section 11.1
+/// makes `contentType` name the content the signature covers. A set that
+/// breaks either cannot be checked, so it fails as a signature. The
+/// separation is a real control: genuine receipts carry no signed
+/// attributes, so their signature covers the payload SET itself, and a
+/// forger who re-labelled that SET as signed attributes would reuse
+/// Apple's signature over content of their own; that SET has neither
+/// attribute.
 fn verify_cms_signature(
-    cms: &ParsedCms,
-    info: &CmsSignerInfo,
+    cms: &mut SignedData,
+    index: usize,
     signer: &Certificate,
 ) -> Result<(), Failure> {
-    let Some(digest) = info.digest else {
+    if !cms.signer_digest_known(index) {
         return Err(invalid_signature("unsupported digest algorithm"));
-    };
-    let algorithm = (
-        info.signature_algorithm_oid.as_str(),
-        info.signature_algorithm_params.as_deref(),
-    );
-    let valid = match &info.signed_attrs {
-        Some(signed_attrs) => {
-            let content_digest = digest.digest(&cms.content);
-            // RFC 5652 5.3 makes contentType and messageDigest mandatory
-            // whenever signedAttrs are present: a set without one of them
-            // cannot be checked, so it fails as a signature. A set that is
-            // not an attribute set at all is a broken structure, which
-            // parse_cms has already refused for every SignerInfo. That
-            // separation is a real control, not an accident of Apple's
-            // grammar: genuine receipts carry no signedAttrs, so their
-            // signature covers `0x31 || payload[1..]`, the very bytes the
-            // signedAttrs branch would sign for `0xA0 || payload[1..]`, and
-            // only the attribute walk refuses that forgery.
-            let (message_digest, content_type) = match signed_attribute_values(signed_attrs) {
-                Ok(values) => values,
-                Err(err) if is_unverifiable_attribute_set(&err) => {
-                    return Err(invalid_signature(
-                        "signedAttrs lack a contentType or messageDigest attribute, or carry one twice",
-                    ));
-                }
-                Err(err) => return Err(malformed(format!("malformed signedAttrs: {err}"))),
-            };
-            // RFC 5652 11.1: the contentType attribute names the content
-            // the signature covers, so one that names another type is a
-            // signature over something else.
-            if content_type != cms.content_type {
-                return Err(invalid_signature(
-                    "contentType attribute differs from the eContentType",
-                ));
-            }
-            if !constant_time_eq(&message_digest, &content_digest) {
-                return Err(invalid_signature(
-                    "messageDigest attribute does not match content",
-                ));
-            }
-            verify_signer_signature(
-                signer,
-                digest,
-                algorithm,
-                &info.signature,
-                &signed_attrs_signed_bytes(signed_attrs),
-            )
+    }
+    let attributes = cms.signed_attributes(index);
+    if attributes.present {
+        if attributes.content_type_count != 1
+            || attributes.content_type_values != 1
+            || attributes.message_digest_count != 1
+            || attributes.message_digest_values != 1
+        {
+            return Err(invalid_signature(
+                "signedAttrs lack a contentType or messageDigest attribute, or carry one twice",
+            ));
         }
-        None => verify_signer_signature(signer, digest, algorithm, &info.signature, &cms.content),
-    };
-    if valid {
+        if !attributes.content_type_matches {
+            return Err(invalid_signature(
+                "contentType attribute differs from the eContentType",
+            ));
+        }
+    }
+    if cms.verify_signer(index, signer) {
         Ok(())
     } else {
         Err(invalid_signature("CMS signature check failed"))

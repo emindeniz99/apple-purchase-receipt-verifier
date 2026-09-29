@@ -4,7 +4,11 @@ nothing about any individual case: it loads the file, resolves fixture ids
 to bytes, builds a ``Config``/``Verifier`` from the generic config,
 dispatches on "operation", normalizes the result and reads the reason off a
 failure. A vector that disagrees with the library is a bug report against
-one of the two; it is never something to special-case here."""
+one of the two; it is never something to special-case here.
+
+The package holds no verification logic, so a case that fails here is a
+fault of ``aprv.wasm`` (or of the wrapper's mapping of its JSON), never of
+Python code. Every case must pass."""
 
 import base64
 import hashlib
@@ -16,10 +20,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from apple_purchase_receipt_verifier import Config, Environment, Verifier
-from apple_purchase_receipt_verifier._receipt_base64 import decode_canonical_base64
-from apple_purchase_receipt_verifier.reason import Reason
-from cryptography import x509
+from apple_purchase_receipt_verifier import Config, Environment, Reason, Verifier
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 # Read as UTF-8 explicitly rather than in the locale encoding: the file
@@ -78,7 +79,7 @@ def fixture_bytes(fixture_id):
 def trusted_roots(spec):
     if spec["source"] == "defaults":
         return list(Config.defaults().roots)
-    return [x509.load_der_x509_certificate(fixture_bytes(i)) for i in spec["fixtures"]]
+    return [fixture_bytes(i) for i in spec["fixtures"]]
 
 
 def _config(case):
@@ -127,48 +128,65 @@ OPERATIONS = {
 
 # --- decodeBase64 -------------------------------------------------------
 
+# 0.7 exposes no public decoder, and this package holds none. The rule is the
+# module's, so each text is run through the public API where the module reads
+# it, and must land on its group's side of the rule: refused as base64, or
+# decoded and refused later for what the bytes are. The two are told apart by
+# the failure message naming base64, which is the only place the module says
+# which rule refused (a message is not a contract, so only this harness reads
+# it). A receipt-data text is a receipt; an x5c text is the three chain
+# entries of a JWS header, which the module decodes in order.
 
-def _decode_x5c_entry(text):
-    return decode_canonical_base64(text)
+
+def _b64url(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-BASE64_DECODERS = {
-    "receipt-data": (decode_canonical_base64, Reason.MALFORMED),
-    "x5c": (_decode_x5c_entry, Reason.INVALID_CERTIFICATE),
-}
+def _jws_with_x5c(text):
+    header = json.dumps({"alg": "ES256", "x5c": [text, text, text]}).encode("utf-8")
+    return ".".join([_b64url(header), _b64url(b"{}"), _b64url(bytes(64))])
+
+
+def _refused_as_base64(failure, reason):
+    return failure is not None and failure.reason == reason and "base64" in failure.message.lower()
+
+
+def _decode_receipt_data(verifier, text):
+    failure = verifier.verify_receipt(text).failure
+    if text == "":
+        # Nothing to decode: the module refuses the empty receipt by name,
+        # before it reaches the decoder ("each port refuses it before decoding").
+        return failure is not None and failure.reason == Reason.MALFORMED
+    return _refused_as_base64(failure, Reason.MALFORMED)
+
+
+def _decode_x5c(verifier, text):
+    failure = verifier.verify_signed_data(_jws_with_x5c(text)).failure
+    return _refused_as_base64(failure, Reason.INVALID_CERTIFICATE)
+
+
+BASE64_DECODERS = {"receipt-data": _decode_receipt_data, "x5c": _decode_x5c}
 
 
 def decode_base64_failures(case):
-    """Every text of the group that got the wrong answer from a decoder the
-    group names, by case id, decoder, index and repr of the text.
-
-    0.7 exposes no public decoder; each decoder here is the internal
-    ``decode_canonical_base64`` the accept side shares, with the refusal
-    reason the case's operation (receipt-data or x5c) carries at the public
-    surface, per the file's own comment."""
+    """Every text of the group that landed on the wrong side of the rule
+    for a decoder the group names, by case id, decoder, index and repr of
+    the text."""
     expected = case["expected"]
     texts = case["input"]["texts"]
     if not texts or not case["decoders"]:
         raise AssertionError(f"harness error: {case['id']}: no texts or no decoders")
+    verifier = Verifier(Config.defaults())
     failures = []
     for name in case["decoders"]:
-        decode, _refusal = BASE64_DECODERS[name]
+        refused_as_base64 = BASE64_DECODERS[name]
         for index, text in enumerate(texts):
             where = f"{case['id']}: {name} texts[{index}] {text!r}"
-            try:
-                decoded = decode(text).hex()
-            except ValueError:
-                if expected["status"] == "ok":
-                    want = expected["bytesHex"]
-                    failures.append(f"{where} was refused, want {want}")
-                continue
-            except Exception as e:
-                failures.append(f"{where}: harness error: raised {type(e).__name__} ({e})")
-                continue
-            if expected["status"] == "error":
-                failures.append(f"{where} was accepted (decoded to {decoded})")
-            elif decoded != expected["bytesHex"]:
-                failures.append(f"{where} decoded to {decoded}, want {expected['bytesHex']}")
+            refused = refused_as_base64(verifier, text)
+            if expected["status"] == "ok" and refused:
+                failures.append(f"{where} was refused as base64, want it decoded")
+            elif expected["status"] == "error" and not refused:
+                failures.append(f"{where} was not refused as base64")
     return failures
 
 
@@ -393,12 +411,15 @@ def _method_name(case_id):
     return "test_" + re.sub(r"[^0-9a-z]+", "_", case_id)
 
 
+def _make_test(case):
+    def test(self):
+        self.run_case(case)
+
+    return test
+
+
 for _case in CASES["cases"]:
-    setattr(
-        ConformanceCasesTest,
-        _method_name(_case["id"]),
-        (lambda case: lambda self: self.run_case(case))(_case),
-    )
+    setattr(ConformanceCasesTest, _method_name(_case["id"]), _make_test(_case))
 
 
 def setUpModule():

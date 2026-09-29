@@ -14,9 +14,8 @@
 //! `certs/`, and CI diffs the two.
 
 use crate::error::ConfigError;
-use crate::x509::Certificate;
+use aprv_openssl::Certificate;
 use core::fmt::Write;
-use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
 
 /// The three published Apple roots, embedded at compile time.
@@ -57,7 +56,15 @@ pub(crate) const WWDR_INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
 /// signed years ago under a since-expired chain still verify at its own
 /// creation date.
 #[derive(Debug, Clone)]
-pub struct TrustAnchor(Arc<Certificate>);
+pub struct TrustAnchor(Arc<Anchor>);
+
+#[derive(Debug)]
+struct Anchor {
+    /// The bytes the anchor was given as.
+    der: Vec<u8>,
+    /// Those bytes as OpenSSL parsed them, once.
+    certificate: Certificate,
+}
 
 impl TrustAnchor {
     /// Parses a DER certificate as an anchor.
@@ -66,29 +73,45 @@ impl TrustAnchor {
     /// [`ConfigError`] when the bytes are not a certificate. A bad anchor is
     /// a configuration mistake, not a verification verdict.
     pub fn from_der(der: &[u8]) -> Result<TrustAnchor, ConfigError> {
-        Certificate::from_der(der)
-            .map(|cert| TrustAnchor(Arc::new(cert)))
-            .map_err(|err| ConfigError::new(format!("trust anchor is not a certificate: {err}")))
+        // One whole certificate that a strict reader decodes: the same bar
+        // as a certificate a receipt or a JWS carries.
+        match Certificate::from_der(der) {
+            Some(certificate) if certificate.is_readable() => Ok(TrustAnchor(Arc::new(Anchor {
+                der: der.to_vec(),
+                certificate,
+            }))),
+            _ => Err(ConfigError::new(
+                "trust anchor is not a certificate: OpenSSL does not read it as one X.509 certificate",
+            )),
+        }
     }
 
-    /// Parses a PEM certificate as an anchor.
+    /// Parses a PEM certificate as an anchor: the first `CERTIFICATE` block.
     ///
     /// # Errors
     /// [`ConfigError`] when the input holds no usable `CERTIFICATE` block.
     pub fn from_pem(pem: &str) -> Result<TrustAnchor, ConfigError> {
-        Certificate::from_pem(pem)
-            .map(|cert| TrustAnchor(Arc::new(cert)))
-            .map_err(|err| ConfigError::new(format!("trust anchor is not a certificate: {err}")))
+        const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+        const END: &str = "-----END CERTIFICATE-----";
+        let (_, rest) = pem.split_once(BEGIN).ok_or_else(|| {
+            ConfigError::new("trust anchor is not a certificate: no PEM CERTIFICATE block")
+        })?;
+        let (body, _) = rest.split_once(END).ok_or_else(|| {
+            ConfigError::new(
+                "trust anchor is not a certificate: unterminated PEM CERTIFICATE block",
+            )
+        })?;
+        TrustAnchor::from_der(&crate::base64::decode_lenient(body))
     }
 
-    /// The anchor's DER encoding.
+    /// The anchor's DER encoding, as given.
     #[must_use]
     pub fn der(&self) -> &[u8] {
-        self.0.der()
+        &self.0.der
     }
 
     pub(crate) fn certificate(&self) -> &Certificate {
-        &self.0
+        &self.0.certificate
     }
 }
 
@@ -125,7 +148,7 @@ fn load_roots(ders: &[&[u8]], fingerprints: &[&str]) -> Vec<TrustAnchor> {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hex = String::with_capacity(64);
-    for byte in Sha256::digest(bytes) {
+    for byte in aprv_openssl::sha256(bytes) {
         // Writing to a String cannot fail.
         let _ = write!(hex, "{byte:02x}");
     }

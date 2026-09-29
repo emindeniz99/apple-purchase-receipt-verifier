@@ -92,7 +92,7 @@ const RECEIPT_ENGINE: ::base64::engine::GeneralPurpose = ::base64::engine::Gener
 /// this uses its own configuration of the same engine; the empty string,
 /// which every engine decodes to nothing, is refused first.
 #[must_use]
-pub fn decode_receipt_base64(text: &str) -> Option<Vec<u8>> {
+pub fn decode_receipt_base64(text: &[u8]) -> Option<Vec<u8>> {
     use ::base64::Engine as _;
     if text.is_empty() {
         return None;
@@ -133,7 +133,7 @@ const JWS_SEGMENT_ENGINE: ::base64::engine::GeneralPurpose = ::base64::engine::G
 /// - a length that leaves one dangling character, which encodes nothing;
 /// - a final character whose unused low bits are not zero.
 #[must_use]
-pub fn decode_base64url_strict(text: &str) -> Option<Vec<u8>> {
+pub fn decode_base64url_strict(text: &[u8]) -> Option<Vec<u8>> {
     use ::base64::Engine as _;
     JWS_SEGMENT_ENGINE.decode(text).ok()
 }
@@ -228,7 +228,7 @@ mod tests {
                 })
                 .collect();
             assert_eq!(
-                decode_base64url_strict(&text),
+                decode_base64url_strict(text.as_bytes()),
                 old_strict(&text),
                 "{text:?}"
             );

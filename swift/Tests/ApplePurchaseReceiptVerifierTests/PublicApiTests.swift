@@ -34,7 +34,7 @@ final class PublicApiTests: XCTestCase {
             .roots([try fixture("generated-0.7/receipt-root.der")])
             .clock { 1_735_689_600_000 }
             .build()
-        XCTAssertEqual(config.roots.count, 1)
+        XCTAssertEqual(config.roots?.count, 1)
         let verifier = Verifier(config: config)
         let base64 = Data(try fixture("generated-0.7/receipt.der")).base64EncodedString()
 
@@ -60,12 +60,14 @@ final class PublicApiTests: XCTestCase {
 
     /// A verifier with no roots would answer UNTRUSTED_CHAIN to everything
     /// and nobody would notice until production, so it is refused once, at
-    /// startup, and a certificate that does not parse is refused the same
-    /// way. `Config.defaults()` never throws.
+    /// startup, and a certificate the verification module does not accept is
+    /// refused the same way. `Config.defaults()` never throws, and its roots
+    /// are the module's built-in Apple roots, which `nil` names.
     func testConfigRefusesMisconfigurationAtStartup() {
         XCTAssertThrowsError(try Config.builder().roots([]).build()) { XCTAssertTrue($0 is ConfigError) }
         XCTAssertThrowsError(try Config.builder().roots([[0x30, 0x00]])) { XCTAssertTrue($0 is ConfigError) }
-        XCTAssertEqual(Config.defaults().roots.count, 3)
+        XCTAssertNil(Config.defaults().roots)
+        XCTAssertNil(try Config.builder().build().roots)
     }
 
     /// The closed set of reasons, in the design's spelling. Adding a value

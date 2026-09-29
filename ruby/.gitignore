@@ -1,4 +1,6 @@
 *.gem
+# The module is copied into place, never committed (its SHA-256 beside it is).
+/lib/apple_purchase_receipt_verifier/aprv.wasm
 /pkg/
 /tmp/
 /vendor/

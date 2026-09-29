@@ -16,6 +16,16 @@
 // suite bounds in time. Each call is run once first and must give the answer
 // the case expects. The README's worst-case CPU figure comes from this mode.
 //
+//     swift run -c release --package-path swift/bench bench --threads
+//
+// is the host's own speed: calls per second and per CPU-second of the
+// process, for the g5 receipt and the fixture StoreKit 2 JWS, on one thread
+// and on four threads sharing one Verifier, plus the start-up to the first
+// answer. It counts every call that returned, whatever the verdict, so it
+// also runs on a module whose answers this package does not read (the
+// round-13 stand-in), and prints the verdict it got beside each row.
+// APRV_BENCH_SECONDS sets each window (default 10).
+//
 // decodeBase64 is the one operation missing here: the library's receipt-data
 // decoder is internal, and reaching it would take `-enable-testing`, which
 // changes how the library itself is compiled and so what every other number
@@ -239,9 +249,96 @@ func worstCase(repository: URL) throws -> [Result] {
 let repository = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     .deletingLastPathComponent().deletingLastPathComponent()
+/// CPU time of the whole process, user and system, in seconds.
+func cpuSeconds() -> Double {
+    var time = timespec()
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time)
+    return Double(time.tv_sec) + Double(time.tv_nsec) / 1_000_000_000
+}
+
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    func add(_ n: Int) {
+        lock.lock()
+        value += n
+        lock.unlock()
+    }
+    var total: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+/// The `--threads` mode: see the comment at the top.
+func threads(repository: URL) throws {
+    let fixturesDirectory = repository.appendingPathComponent("fixtures")
+    let g5 = try String(
+        contentsOf: fixturesDirectory.appendingPathComponent("public-receipts/receipt-sandbox-g5.b64"), encoding: .utf8
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    let jws = try String(contentsOf: fixturesDirectory.appendingPathComponent("generated/transaction.jws"), encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    let jwsRoot = [UInt8](try Data(contentsOf: fixturesDirectory.appendingPathComponent("generated/jws-root.der")))
+
+    let start = ContinuousClock.now
+    let apple = Verifier(config: .defaults())
+    let created = ContinuousClock.now
+    let first = apple.verifyReceipt(base64: g5)
+    let answered = ContinuousClock.now
+    _ = apple.verifyReceipt(base64: g5)
+    let second = ContinuousClock.now
+    print(
+        #"startup: {"verifier_ms":\#(microseconds(created - start) / 1000),"first_g5_ms":\#(microseconds(answered - created) / 1000),"#
+            + #""second_g5_ms":\#(microseconds(second - answered) / 1000),"first_answer":"\#(first.failure?.reason.rawValue ?? "verified")"}"#)
+
+    let jwses = Verifier(config: try Config.builder().roots([jwsRoot]).build())
+    let seconds = Double(ProcessInfo.processInfo.environment["APRV_BENCH_SECONDS"] ?? "") ?? 10
+    let rows: [(String, @Sendable () -> String)] = [
+        ("g5", { apple.verifyReceipt(base64: g5).failure?.reason.rawValue ?? "verified" }),
+        ("jws", { jwses.verifySignedData(jws: jws).failure?.reason.rawValue ?? "verified" }),
+    ]
+    for (name, call) in rows {
+        for threads in [1, 4] {
+            // Warm every instance first: WasmKit translates a function on its
+            // first call.
+            DispatchQueue.concurrentPerform(iterations: threads) { _ in for _ in 0..<3 { _ = call() } }
+            let counts = Counter()
+            let cpuStart = cpuSeconds()
+            let wallStart = Date()
+            DispatchQueue.concurrentPerform(iterations: threads) { _ in
+                var n = 0
+                while Date().timeIntervalSince(wallStart) < seconds {
+                    _ = call()
+                    n += 1
+                }
+                counts.add(n)
+            }
+            let wall = Date().timeIntervalSince(wallStart)
+            let cpu = cpuSeconds() - cpuStart
+            print(
+                #"throughput: {"row":"\#(name)","threads":\#(threads),"answer":"\#(call())","calls":\#(counts.total),"#
+                    + #""per_second":\#(String(format: "%.1f", Double(counts.total) / wall)),"#
+                    + #""per_cpu_second":\#(String(format: "%.1f", Double(counts.total) / cpu)),"#
+                    + #""cpu_ms_per_call":\#(String(format: "%.1f", 1000 * cpu / Double(counts.total)))}"#)
+        }
+    }
+}
+
+/// The process's peak resident set, from /proc on Linux; nil elsewhere.
+func peakRssKilobytes() -> Int? {
+    guard let status = try? String(contentsOfFile: "/proc/self/status", encoding: .utf8) else { return nil }
+    let line = status.split(separator: "\n").first { $0.hasPrefix("VmHWM:") }
+    return line?.split(separator: " ").dropFirst().first.flatMap { Int($0) }
+}
+
 var results: [Result] = []
 let mode: String
-if CommandLine.arguments.dropFirst().contains("--worst-case") {
+if CommandLine.arguments.dropFirst().contains("--threads") {
+    try threads(repository: repository)
+    print(#"memory: {"peak_rss_kb":\#(peakRssKilobytes().map(String.init) ?? "null")}"#)
+    exit(0)
+} else if CommandLine.arguments.dropFirst().contains("--worst-case") {
     mode = "worst-case"
     results = try worstCase(repository: repository)
 } else {

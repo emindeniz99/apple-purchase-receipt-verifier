@@ -71,12 +71,12 @@ pub(crate) const MAX_REQUEST_BYTES: usize = 3_145_728;
 /// Apple's response body for one request.
 pub(crate) fn respond(
     environment: Environment,
-    request_json: &str,
+    request_json: &[u8],
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> String {
-    let verified =
-        receipt_data(request_json).and_then(|data| receipt::verify(&data, anchors, clock));
+    let verified = receipt_data(request_json)
+        .and_then(|data| receipt::verify(data.as_bytes(), anchors, clock));
     match verified {
         Ok(payload) => {
             let production = Environment::from_receipt_type(payload.receipt_type.as_deref())
@@ -129,13 +129,18 @@ pub(crate) fn status_only(status: i32) -> String {
 /// still refused, and the last `receipt-data` wins, as it would in a map.
 /// Anything after the object is not read. `password` and
 /// `exclude-old-transactions` are read and ignored.
-fn receipt_data(request_json: &str) -> Result<String, Failure> {
+fn receipt_data(request_json: &[u8]) -> Result<String, Failure> {
     if request_json.len() > MAX_REQUEST_BYTES {
         return Err(Failure::new(
             Reason::TooLarge,
             format!("request body exceeds the maximum of {MAX_REQUEST_BYTES} bytes"),
         ));
     }
+    // JSON text is UTF-8 (RFC 8259 section 8.1), so bytes that are not are
+    // no JSON at all.
+    let request_json = core::str::from_utf8(request_json).map_err(|err| {
+        Failure::new(Reason::Malformed, "request body is not valid JSON").with_source(err)
+    })?;
     let members = top_level_members(request_json).map_err(|err| {
         Failure::new(Reason::Malformed, "request body is not valid JSON").with_source(err)
     })?;

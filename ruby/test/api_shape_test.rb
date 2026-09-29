@@ -1,21 +1,27 @@
 # frozen_string_literal: true
 
 require_relative "helper"
-require_relative "test_pki"
+require_relative "fake_module"
 
 # The public surface: the names, the error vocabulary, what misconfiguration
-# does, and the thread-safety claim.
+# does, the values a result carries, and that the library holds no
+# verification code of its own.
 class ApiShapeTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
+  FAKE = APRV::Runtime.new(FakeModule.wat)
 
-  def receipt_roots
-    [TestSupport.fixture_certificate("receipt-root")]
+  def assert_maps(expected, actual)
+    expected.nil? ? assert_nil(actual) : assert_equal(expected, actual)
+  end
+
+  def fake_verifier
+    APRV::Verifier.send(:new, APRV::Config.defaults, runtime: FAKE)
   end
 
   def test_the_public_classes_exist
     [APRV::Config, APRV::Config::Builder, APRV::Verifier, APRV::VerificationResult, APRV::Failure,
      APRV::ReceiptPayload, APRV::InAppPurchase, APRV::JsonPayload,
-     APRV::VerificationError].each do |klass|
+     APRV::AbiMismatchError, APRV::ModuleIntegrityError, APRV::TrapError].each do |klass|
       assert_kind_of Class, klass
     end
   end
@@ -46,35 +52,46 @@ class ApiShapeTest < Minitest::Test
     assert_equal "SANDBOX", APRV::Environment::SANDBOX
   end
 
-  def test_a_verification_error_carries_its_reason_as_data_and_in_its_message
-    error = APRV::VerificationError.new(APRV::Reason::UNTRUSTED_CHAIN, "detail")
-    assert_equal :UNTRUSTED_CHAIN, error.reason
-    assert_equal "detail", error.message
-    assert_kind_of StandardError, error
+  # docs/design/0.7-api.md, section 3: the status table the wrapper uses when
+  # a call fails before the module can answer (21002 for a non-String body,
+  # 21009 for a trap or a clock that failed).
+  def test_the_endpoint_status_for_each_reason_is_the_documented_table
+    {
+      MALFORMED: 21_002, TOO_LARGE: 21_002, INVALID_SIGNATURE: 21_003, UNTRUSTED_CHAIN: 21_003,
+      INVALID_CERTIFICATE: 21_003, INVALID_CERTIFICATE_PURPOSE: 21_003, UNREADABLE_PAYLOAD: 21_009,
+      INTERNAL_ERROR: 21_009
+    }.each { |reason, status| assert_equal status, APRV::AppleStatus.for_reason(reason), reason }
+  end
+
+  # The two helpers that state what Apple's strings mean and decide nothing.
+  def test_the_environment_helpers_map_apples_strings
+    {
+      "Production" => "PRODUCTION", "ProductionVPP" => "PRODUCTION", "ProductionSandbox" => "SANDBOX",
+      "ProductionVPPSandbox" => "SANDBOX", "Xcode" => nil, "" => nil, nil => nil
+    }.each { |type, environment| assert_maps(environment, APRV::Environment.from_receipt_type(type)) }
+    { "Production" => "PRODUCTION", "Sandbox" => "SANDBOX", "Xcode" => nil, "LocalTesting" => nil, nil => nil }
+      .each { |claim, environment| assert_maps(environment, APRV::Environment.from_jws_environment(claim)) }
   end
 
   # Misconfiguration is a programming error, not a verification verdict: a
   # caller must not be able to catch a typo as though a receipt were forged.
-  def test_misconfiguration_raises_argument_error_never_verification_error
+  def test_misconfiguration_raises_argument_error
     bad_constructions = [
       -> { APRV::Config.new(roots: "x") },
       -> { APRV::Config.new(roots: [42]) },
       -> { APRV::Config.new(clock: "not callable") },
       -> { APRV::Verifier.create("not a config") },
       -> { APRV::Verifier.create(APRV::Config.new(roots: [])) },
-      lambda {
-        APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
-                      .verify_receipt_endpoint("Sandbox", "{}")
-      }
+      -> { fake_verifier.verify_receipt_endpoint("Sandbox", "{}") },
+      -> { fake_verifier.verify_receipt_endpoint(nil, "{}") }
     ]
     bad_constructions.each_with_index do |construction, index|
-      error = assert_raises(ArgumentError, "construction #{index}") { construction.call }
-      refute_kind_of APRV::VerificationError, error
+      assert_raises(ArgumentError, "construction #{index}") { construction.call }
     end
   end
 
   # Freshness and any per-call clock override are gone: the clock lives on
-  # Config, read at most once per call, never a per-call parameter.
+  # Config, read once per call, never a per-call parameter.
   def test_verify_receipt_and_verify_signed_data_take_no_clock_parameter
     %i[verify_receipt verify_signed_data].each do |name|
       parameters = APRV::Verifier.instance_method(name).parameters.map(&:last)
@@ -84,80 +101,117 @@ class ApiShapeTest < Minitest::Test
   end
 
   def test_config_and_verifier_instances_are_frozen
-    config = APRV::Config.new(roots: receipt_roots)
-    verifier = APRV::Verifier.create(config)
+    config = APRV::Config.new(roots: ["der".b])
     assert_predicate config, :frozen?
-    assert_predicate verifier, :frozen?
-  end
-
-  # The "thread-safe once constructed" claim the other ports make in a doc
-  # comment and never test.
-  def test_one_verifier_is_usable_from_many_threads_at_once
-    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
-    base64 = [TestSupport.fixture_bytes("receipt")].pack("m0")
-    results = Array.new(8) do
-      Thread.new { verifier.verify_receipt(base64).payload.in_app.map(&:transaction_id) }
-    end.map(&:value)
-    assert_equal 8, results.size
-    assert_equal 1, results.uniq.size
-    assert_equal %w[70000000000001 70000000000002], results.first
+    assert_predicate config.roots, :frozen?
+    assert_predicate fake_verifier, :frozen?
   end
 
   def test_returned_value_objects_are_frozen
-    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
-    base64 = [TestSupport.fixture_bytes("receipt")].pack("m0")
-    result = verifier.verify_receipt(base64)
+    result = fake_verifier.verify_receipt("v")
     assert_predicate result, :frozen?
     receipt = result.payload
     assert_predicate receipt, :frozen?
     assert_predicate receipt.in_app, :frozen?
     assert_predicate receipt.in_app.first, :frozen?
     assert_predicate receipt.unknown_attributes, :frozen?
+    assert_predicate receipt.in_app.first.unknown_attributes, :frozen?
+    assert_predicate fake_verifier.verify_signed_data("v").payload, :frozen?
   end
 
   # A caller reads verified? before trusting anything, then payload or
   # failure. That only works if exactly one of the two is set for every
   # outcome the public methods can produce.
   def test_a_result_carries_exactly_one_of_payload_and_failure
-    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
+    verifier = fake_verifier
     results = {
-      "verified" => verifier.verify_receipt([TestSupport.fixture_bytes("receipt")].pack("m0")),
-      "malformed" => verifier.verify_receipt("AQIDBA=="),
-      "untrusted chain" => verifier.verify_receipt([TestSupport.fixture_bytes("receipt-foreign")].pack("m0")),
-      "malformed jws" => verifier.verify_signed_data("a.b")
+      "verified receipt" => verifier.verify_receipt("v"),
+      "verified jws" => verifier.verify_signed_data("v"),
+      "refused" => verifier.verify_receipt("f"),
+      "malformed" => verifier.verify_receipt(""),
+      "not a string" => verifier.verify_receipt(nil),
+      "trap" => verifier.verify_receipt("t")
     }
     results.each do |label, result|
       refute_equal result.payload.nil?, result.failure.nil?, "#{label}: exactly one of payload and failure"
       assert_equal !result.payload.nil?, result.verified?, label
       assert_predicate result, :frozen?, label
     end
-    assert_predicate results["verified"], :verified?
+    assert_predicate results["verified receipt"], :verified?
+    assert_equal APRV::Reason::UNTRUSTED_CHAIN, results["refused"].failure.reason
     assert_equal APRV::Reason::MALFORMED, results["malformed"].failure.reason
-    assert_equal APRV::Reason::UNTRUSTED_CHAIN, results["untrusted chain"].failure.reason
-    assert_equal APRV::Reason::MALFORMED, results["malformed jws"].failure.reason
+    assert_equal APRV::Reason::MALFORMED, results["not a string"].failure.reason
+    assert_equal APRV::Reason::INTERNAL_ERROR, results["trap"].failure.reason
   end
 
   # A Ruby String can carry bytes that are not valid in its encoding. The
-  # public methods must treat that as malformed input, not raise on it.
-  def test_input_that_is_not_valid_utf8_is_malformed_not_a_raise
-    verifier = APRV::Verifier.create(APRV::Config.new(roots: receipt_roots))
-    text = "QU\xffD".b
-    assert_equal APRV::Reason::MALFORMED, verifier.verify_receipt(text).failure.reason
-    assert_equal APRV::Reason::MALFORMED, verifier.verify_receipt(+"QU\xffD").failure.reason
-    assert_equal APRV::Reason::MALFORMED, verifier.verify_signed_data(+"a\xff.b.c").failure.reason
+  # public methods pass the bytes on and answer with a value, never a raise.
+  def test_input_that_is_not_valid_utf8_is_passed_on_and_answered_as_a_value
+    verifier = fake_verifier
+    ["QU\xffD".b, +"QU\xffD", +"a\xff.b.c"].each do |text|
+      assert_kind_of APRV::VerificationResult, verifier.verify_receipt(text)
+      assert_kind_of APRV::VerificationResult, verifier.verify_signed_data(text)
+    end
     body = +"{\"receipt-data\":\"QU\xffD\"}"
-    assert_equal 21_002, JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, body))["status"]
+    assert_equal({ "status" => 0 }, JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, body)))
+  end
+
+  # The 0.7 rule for a null or non-String input: MALFORMED, not a raise, and
+  # nothing reaches the module.
+  def test_an_input_that_is_not_a_string_is_malformed
+    verifier = fake_verifier
+    [nil, 42, :sym, ["v"]].each do |input|
+      assert_equal APRV::Reason::MALFORMED, verifier.verify_receipt(input).failure.reason
+      assert_equal APRV::Reason::MALFORMED, verifier.verify_signed_data(input).failure.reason
+      assert_equal({ "status" => 21_002 },
+                   JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, input)))
+    end
   end
 
   def test_the_dashed_require_path_works_too
     path = File.expand_path("../lib/apple-purchase-receipt-verifier.rb", __dir__)
     assert_path_exists path
-    output = `ruby -I#{File.expand_path("../lib",
-                                        __dir__)} -e 'require "apple-purchase-receipt-verifier"; print ApplePurchaseReceiptVerifier::VERSION'`
+    output = `ruby -I#{File.expand_path("../lib", __dir__)} -e 'require "apple-purchase-receipt-verifier"; print ApplePurchaseReceiptVerifier::VERSION'`
     assert_equal APRV::VERSION, output
   end
 
   def test_the_version_is_a_semver_string
     assert_match(/\A\d+\.\d+\.\d+\z/, APRV::VERSION)
+  end
+
+  # No wrapper holds verification logic (docs/rust-core/ARCHITECTURE.md, the
+  # invariants): nothing under lib/ may reach for a crypto, X.509, ASN.1,
+  # CMS or JWS API. The CI job `one-implementation` greps for the same names
+  # across every wrapper.
+  FORBIDDEN = [
+    /require\s+["']openssl["']/, /OpenSSL/, /\bOpenSSL::/, /\bX509\b/i, /\bPKCS7\b/i, /\bASN1\b/i,
+    /\bCMS\b/, /\bx5c\b/i, /base64url/i, /\bECDSA\b/i, /Signature/
+  ].freeze
+
+  # An environment variable that swaps the module would let whoever controls
+  # a process's environment replace the verifier inside it. The library reads
+  # none, comments included; only this repository's tests and bench scripts
+  # may read APRV_WASM, and they hand the path to the loader explicitly.
+  def test_the_library_reads_no_environment_variable
+    files = Dir[File.expand_path("../lib/**/*.rb", __dir__)]
+    refute_empty files
+    files.each do |file|
+      File.readlines(file, chomp: true, encoding: "UTF-8").each_with_index do |line, index|
+        refute_match(/\bENV\b/, line, "#{File.basename(file)}:#{index + 1} mentions ENV")
+      end
+    end
+  end
+
+  def test_the_library_holds_no_verification_code
+    files = Dir[File.expand_path("../lib/**/*.rb", __dir__)].reject { |f| f.end_with?("roots_data.rb") }
+    refute_empty files
+    files.each do |file|
+      File.readlines(file, chomp: true, encoding: "UTF-8").each_with_index do |line, index|
+        code = line.sub(/#.*\z/, "")
+        FORBIDDEN.each do |pattern|
+          refute_match pattern, code, "#{File.basename(file)}:#{index + 1} looks like verification code"
+        end
+      end
+    end
   end
 end

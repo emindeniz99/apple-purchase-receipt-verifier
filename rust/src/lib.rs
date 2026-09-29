@@ -66,23 +66,19 @@
 )]
 #![doc(html_root_url = "https://docs.rs/apple-purchase-receipt-verifier")]
 
-mod asn1;
 mod base64;
-mod chain;
-mod cms;
 mod config;
-mod crypto;
 mod datetime;
 mod endpoint;
 mod environment;
 mod error;
 mod json;
 mod jws;
+mod path;
 mod receipt;
 mod receipt_payload;
 mod roots;
 mod verifier;
-mod x509;
 
 pub use config::{Config, ConfigBuilder};
 pub use endpoint::AppleStatus;
@@ -93,42 +89,70 @@ pub use receipt_payload::{InAppPurchase, ReceiptPayload, UnknownAttributes};
 pub use roots::TrustAnchor;
 pub use verifier::Verifier;
 
+/// Decodes a `receipt-data` text by the rule
+/// [`Verifier::verify_receipt`] applies before anything else: non-empty
+/// standard base64 carrying exactly its canonical `=` padding, with no
+/// whitespace and nothing after the padding (the rule Apple's
+/// `verifyReceipt` applies, measured 2026-09-23). Bytes that are not UTF-8
+/// are refused like any other character outside the alphabet.
+///
+/// The one decoder this crate makes public, for the bindings that read
+/// base64 text of their own with the same rule (the roots of the Wasm
+/// module's configuration). It decides nothing about a receipt: decoding
+/// is not verifying.
+///
+/// # Errors
+/// [`Failure`] with [`Reason::Malformed`] and the message `receipt is not
+/// valid base64`, the refusal `verify_receipt` gives for the same text.
+pub fn decode_receipt_data(text: &[u8]) -> Result<Vec<u8>, Failure> {
+    base64::decode_receipt_base64(text)
+        .ok_or_else(|| Failure::new(Reason::Malformed, "receipt is not valid base64"))
+}
+
 /// This library's version, for startup logs.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Not part of the public API, and not covered by semver.
 ///
 /// The internals this crate's own tests, fuzz targets and benchmark reach
-/// directly: the ASN.1, CMS, X.509 and date readers, and the two base64
+/// directly: the date reader, the path policy, the key-use and full-decode
+/// seams, and the two base64
 /// decoders the shared decodeBase64 cases call. The shared cases name them
 /// as an internal hook; 0.7 exposes no decoder.
 #[doc(hidden)]
 pub mod __internal {
-    /// The bounded BER/DER reader.
-    pub mod asn1 {
-        pub use crate::asn1::*;
-    }
-    /// Certificate path validation.
-    pub mod chain {
-        pub use crate::chain::*;
-    }
-    /// The CMS `SignedData` walk.
-    pub mod cms {
-        pub use crate::cms::*;
-    }
     /// Calendar arithmetic and Apple's date renderings.
     pub mod datetime {
         pub use crate::datetime::*;
     }
-    /// The X.509 certificate reader.
-    pub mod x509 {
-        pub use crate::x509::*;
+
+    /// The certificate path policy, over the OpenSSL adapter's
+    /// certificates.
+    pub mod path {
+        pub use crate::path::{
+            authenticated_top_down, receipt_path, validate_pair, MAX_PATH_LENGTH,
+        };
+        pub use aprv_openssl::Certificate;
     }
 
-    /// Runs `body` and returns, beside its result, the SPKI of every key used
-    /// to check a signature on this thread meanwhile.
+    /// Runs `body` and returns, beside its result, the
+    /// `SubjectPublicKeyInfo` DER of every key the OpenSSL adapter used to
+    /// check a signature on this thread meanwhile.
     pub fn keys_used_during<R>(body: impl FnOnce() -> R) -> (R, Vec<Vec<u8>>) {
-        crate::crypto::keys_used_during(body)
+        aprv_openssl::keys_used_during(body)
+    }
+
+    /// Runs `body` and returns, beside its result, how many times the
+    /// OpenSSL adapter ran its full CMS decode (the one that builds every
+    /// embedded certificate's key) on this thread meanwhile.
+    pub fn cms_full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
+        aprv_openssl::full_decodes_during(body)
+    }
+
+    /// The linked OpenSSL, as it reports itself.
+    #[must_use]
+    pub fn openssl_version() -> &'static str {
+        aprv_openssl::library_version()
     }
 
     /// Standard base64 with padding.
@@ -148,9 +172,7 @@ pub mod __internal {
     /// # Errors
     /// [`Failure`](crate::Failure) with [`Reason::Malformed`](crate::Reason::Malformed).
     pub fn decode_receipt_data(text: &str) -> Result<Vec<u8>, crate::Failure> {
-        crate::base64::decode_receipt_base64(text).ok_or_else(|| {
-            crate::Failure::new(crate::Reason::Malformed, "receipt is not valid base64")
-        })
+        crate::decode_receipt_data(text.as_bytes())
     }
 
     /// The `x5c` entry decoder. A refusal is `INVALID_CERTIFICATE`.
