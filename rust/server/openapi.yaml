@@ -203,16 +203,22 @@ components:
         type: string
   requestBodies:
     Text:
-      required: true
-      description: At most 3,145,728 bytes, passed to the component unchanged.
+      required: false
+      description: |
+        At most 3,145,728 bytes, passed to the component unchanged. Any
+        bytes are an input: an absent or empty body is the empty string,
+        which the component answers as a verification failure (HTTP 200).
       content:
         text/plain:
           schema:
             type: string
             maxLength: 3145728
     EndpointRequest:
-      required: true
-      description: At most 3,145,728 bytes, passed to the component unchanged.
+      required: false
+      description: |
+        At most 3,145,728 bytes, passed to the component unchanged. Any
+        bytes are a request: a body that is absent, not JSON or not the
+        object below is answered with Apple's status for it (HTTP 200).
       content:
         application/json:
           schema:
@@ -288,14 +294,16 @@ components:
             - ABI_ERROR
             - INTERNAL_ERROR
     EndpointRequest:
-      type: object
       description: |
-        Apple's verifyReceipt request. Only `receipt-data` is read; the
-        component answers a body that is not such an object with Apple's
-        status for it, not with an HTTP error.
+        Apple's verifyReceipt request, `{"receipt-data":"<base64>"}`; only
+        `receipt-data` is read. The schema constrains nothing, because the
+        component answers every body, this shape or not, with Apple's
+        status for it rather than with an HTTP error.
+      examples:
+        - receipt-data: MIIT...
       properties:
         receipt-data:
-          type: string
+          description: The receipt, standard base64 of its DER.
     EndpointResponse:
       type: object
       description: Apple's verifyReceipt response format. `status` is always present.
