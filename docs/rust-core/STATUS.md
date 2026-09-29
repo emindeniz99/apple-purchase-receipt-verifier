@@ -420,6 +420,22 @@ work.
   its rows. Expected: 338 of 338 (the server: every expressible case)
   and 6,179 of 6,179. Lanes are merged into `rust-core` as they come back
   green.
+- G1c started 2026-09-29 13:50Z on the final module (rust-core b863252,
+  with lanes A3 and A-fix2 merged; aprv.wasm 2,760,476 B sha256
+  `a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1`,
+  component 2,762,918 B sha256
+  `84fe428c9458c923407e5539234fe5ea4aa3212ce704249f323036059b836adf`,
+  WIT unchanged, `name` section stripped). Staging checks: the trap host
+  runs 377 of 377 cases with 0 traps, `tools/check-wasm.sh` passes, and
+  against G1b's rows 6,134 are identical and 45 differ in the message
+  only (the fuzz mutants the round-2 evidence note lists). `rust-core`
+  was merged back into every lane branch (a real merge each) so their
+  runners read the 377 cases. Each lane adds the ABI review's wrapper
+  input cap (at most 3,145,729 bytes copied into linear memory; Java
+  already had it), moves its pin, and re-runs its one-command check;
+  the server rebuilds on the new component first, then Java's server
+  engine and PHP run on that binary. Lanes are merged into `rust-core`
+  as they come back green.
 
 ## Merge policy on this branch
 
