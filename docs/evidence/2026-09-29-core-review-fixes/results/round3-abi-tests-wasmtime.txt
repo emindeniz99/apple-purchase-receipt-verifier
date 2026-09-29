@@ -1,0 +1,17 @@
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test a_clock_beyond_i64_is_an_internal_error ... ok
+test a_refused_configuration_is_a_value_and_init_may_be_retried ... ok
+test a_list_range_past_the_end_of_linear_memory_traps ... ok
+test a_second_init_after_a_successful_one_traps ... ok
+test a_verify_before_init_traps ... ok
+test an_environment_other_than_0_or_1_traps ... ok
+test a_trap_in_one_instance_leaves_another_verifying ... ok
+test a_random_get_answer_of_the_wrong_length_traps ... ok
+test input_that_is_not_utf8_is_a_value ... ok
+test the_module_imports_random_get_and_exports_the_interface_only ... ok
+test initialize_is_optional_once_and_harmless_after_an_export ... ok
+test a_host_that_lowers_the_largest_cap_plus_one_gets_too_large ... ok
+test no_start_function_is_needed_and_the_calls_answer_the_wire ... ok
+test two_thousand_calls_leave_linear_memory_the_same_size ... ok
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.27s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

@@ -255,9 +255,13 @@ class ModuleFileTest(unittest.TestCase):
             environment.update(env or {})
             environment["PYTHONPATH"] = directory
             # The working directory leads sys.path for ``-c``: make it the copy.
+            # Both sides resolved: macOS's temporary directory is a symlink
+            # (/var -> /private/var) and Windows's may be an 8.3 short name,
+            # so the child's __file__ can spell the same directory otherwise.
             check = (
-                "import apple_purchase_receipt_verifier as p;"
-                f"assert p.__file__.startswith({directory!r}), p.__file__;"
+                "import os, apple_purchase_receipt_verifier as p;"
+                "assert os.path.realpath(p.__file__).startswith("
+                f"os.path.realpath({directory!r})), p.__file__;"
             )
             return subprocess.run(
                 [sys.executable, "-c", check + script],

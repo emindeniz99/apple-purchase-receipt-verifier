@@ -2108,6 +2108,42 @@
       "role": "input",
       "codec": "utf8",
       "contentSha256": "71c611eed40f0033a6a59791c55a840e0463a82f646ecd55cbb57bee9b4835f2"
+    },
+    "core-review-r3-certificate-signature-in-two-chunks": {
+      "path": "generated-0.7/core-review-r3-certificate-signature-in-two-chunks.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "4e99b1f2066d099ecf3954c0dfa87952e38b509008bb39e41095fd2f8308f28e"
+    },
+    "core-review-r3-other-roots-namesake-after": {
+      "path": "generated-0.7/core-review-r3-other-roots-namesake-after.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "cf38e1f76e80acee886a187e9956f3b108ac76010bf70f1f0e3990334b9c3c97"
+    },
+    "core-review-r3-other-roots-namesake-before": {
+      "path": "generated-0.7/core-review-r3-other-roots-namesake-before.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "bcb0e9943e590efb51a02804aa7b7996e1c32891bb96cd818bff4f30006260fc"
+    },
+    "core-review-r3-second-root": {
+      "path": "generated-0.7/core-review-r3-second-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "fe2189839c2db76d65245691777728d9c4d022b9b5d199e8364953eea2fcee08"
+    },
+    "core-review-r3-sibling-namesake-after": {
+      "path": "generated-0.7/core-review-r3-sibling-namesake-after.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "9665725e6e47b6026182e5cf63e43cbda29dcddc7cc10f5f42e2421ca7993afe"
+    },
+    "core-review-r3-sibling-namesake-before": {
+      "path": "generated-0.7/core-review-r3-sibling-namesake-before.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "17d7efd3967cff11814056f622c6edfcef55b6eedbd8f1644db61f9fd06b08cc"
     }
   },
   "cases": [
@@ -13719,6 +13755,233 @@
         "der",
         "limits",
         "verification-order"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-another-roots-same-named-intermediate-before-the-real-one-own-root-first",
+      "description": "A receipt signed under the minted PKI (no key identifiers) whose unsigned certificates bag holds, before the real intermediate, an intermediate of the same subject name issued by a second pinned root; the receipt's own root is pinned first. OpenSSL's issuer lookup over the bag takes the first name match and never tries another, so with the namesake first the genuine receipt was UNTRUSTED_CHAIN once the second root was pinned. The bag is now narrowed to the certificates that sign the path: it verifies in every order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-other-roots-namesake-before"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root",
+            "core-review-r3-second-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-another-roots-same-named-intermediate-before-the-real-one-own-root-second",
+      "description": "A receipt signed under the minted PKI (no key identifiers) whose unsigned certificates bag holds, before the real intermediate, an intermediate of the same subject name issued by a second pinned root; the receipt's own root is pinned second. OpenSSL's issuer lookup over the bag takes the first name match and never tries another, so with the namesake first the genuine receipt was UNTRUSTED_CHAIN once the second root was pinned. The bag is now narrowed to the certificates that sign the path: it verifies in every order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-other-roots-namesake-before"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-r3-second-root",
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-another-roots-same-named-intermediate-after-the-real-one-own-root-first",
+      "description": "A receipt signed under the minted PKI (no key identifiers) whose unsigned certificates bag holds, after the real intermediate, an intermediate of the same subject name issued by a second pinned root; the receipt's own root is pinned first. OpenSSL's issuer lookup over the bag takes the first name match and never tries another, so with the namesake first the genuine receipt was UNTRUSTED_CHAIN once the second root was pinned. The bag is now narrowed to the certificates that sign the path: it verifies in every order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-other-roots-namesake-after"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root",
+            "core-review-r3-second-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-another-roots-same-named-intermediate-after-the-real-one-own-root-second",
+      "description": "A receipt signed under the minted PKI (no key identifiers) whose unsigned certificates bag holds, after the real intermediate, an intermediate of the same subject name issued by a second pinned root; the receipt's own root is pinned second. OpenSSL's issuer lookup over the bag takes the first name match and never tries another, so with the namesake first the genuine receipt was UNTRUSTED_CHAIN once the second root was pinned. The bag is now narrowed to the certificates that sign the path: it verifies in every order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-other-roots-namesake-after"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-r3-second-root",
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-a-same-named-sibling-intermediate-before-the-real-one",
+      "description": "A receipt signed under the minted PKI whose unsigned certificates bag holds, before the real intermediate, a second intermediate of the same subject name issued by the same root with another key. Both are vouched for by the root; only the real one signed the leaf. With the sibling first the core answered UNTRUSTED_CHAIN; it verifies in either order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-sibling-namesake-before"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/verify-with-a-same-named-sibling-intermediate-after-the-real-one",
+      "description": "A receipt signed under the minted PKI whose unsigned certificates bag holds, after the real intermediate, a second intermediate of the same subject name issued by the same root with another key. Both are vouched for by the root; only the real one signed the leaf. With the sibling first the core answered UNTRUSTED_CHAIN; it verifies in either order.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-sibling-namesake-after"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "core-review-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "chain",
+        "pinning",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks",
+      "description": "The shared receipt with its first embedded certificate's outer signature, outside the signed TBS, written as a constructed BIT STRING of two primitive chunks, 03 01 00 and the signature octets. BER allows a constructed BIT STRING and OpenSSL joins the chunks to the same signature, so the chain still verifies. The header walk used to judge each chunk as a value of its own, reading the signature's first octet as an unused-bits count, and answered MALFORMED whenever it was above 7.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "core-review-r3-certificate-signature-in-two-chunks"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "der",
+        "positive",
+        "core-review",
+        "core-review-3",
+        "new-in-0-7"
       ]
     }
   ]

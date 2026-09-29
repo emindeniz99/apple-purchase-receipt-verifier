@@ -93,7 +93,10 @@ method and no call that loads native code.
 - A trap in the module (a bug in the core, never a verdict on your input)
   answers `INTERNAL_ERROR` (21009 from the endpoint) with the trap in
   `Failure.cause()`, and the instance is thrown away. The next call gets a
-  fresh one.
+  fresh one. The shipped module carries no `name` section, so the
+  compiled methods in a stack trace or a JFR recording carry the wasm
+  function's index, not its name, as a `wasm-function[N]` frame does;
+  `rust/bindings/abi/README.md` says how to map an index to its function.
 - On `Engine.endive()`, a Java 8 JVM fails at `Verifier.create` with an
   `IllegalStateException` that says so.
 

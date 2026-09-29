@@ -278,7 +278,7 @@ fn every_expected_value_in_the_shared_cases_fits_the_schemas() {
 
 #[test]
 fn a_planted_wrong_type_fails_every_rule() {
-    let receipt = r#"{"receipt_type":"ProductionSandbox","app_item_id":"0","bundle_id":"a","bundle_id_bytes":"DAFh","application_version":"1","opaque_value":"AQ==","sha1_hash":"AQI=","receipt_creation_date_ms":1722945600000,"download_id":"-5","version_external_identifier":null,"in_app":[{"quantity":1,"product_id":"p","transaction_id":"1","purchase_date_ms":1,"original_transaction_id":"1","original_purchase_date_ms":null,"expires_date_ms":null,"web_order_line_item_id":"0","cancellation_date_ms":null,"is_trial_period":false,"is_in_intro_offer_period":null,"unknown_attributes":{}}],"original_purchase_date_ms":null,"original_application_version":null,"expiration_date_ms":null,"unknown_attributes":{"13":["AA=="]}}"#;
+    let receipt = r#"{"receipt_type":"ProductionSandbox","app_item_id":"0","bundle_id":"a","bundle_id_bytes":"DAFh","application_version":"1","opaque_value":"AQ==","sha1_hash":"AQI=","receipt_creation_date_ms":1722945600000,"download_id":"-5","version_external_identifier":null,"in_app":[{"quantity":1,"product_id":"p","transaction_id":"1","purchase_date_ms":1000,"original_transaction_id":"1","original_purchase_date_ms":null,"expires_date_ms":null,"web_order_line_item_id":"0","cancellation_date_ms":null,"is_trial_period":false,"is_in_intro_offer_period":null,"unknown_attributes":{}}],"original_purchase_date_ms":null,"original_application_version":null,"expiration_date_ms":null,"unknown_attributes":{"13":["AA=="]}}"#;
     let good = format!("{{\"verified\":true,\"payload\":{receipt}}}");
     let receipt_schema = validator(SCHEMAS[0]);
     check(&receipt_schema, SCHEMAS[0], "the control", &good);
@@ -306,6 +306,15 @@ fn a_planted_wrong_type_fails_every_rule() {
             "\"unknown_attributes\":{\"13\":[\"AA==\"]",
             "\"unknown_attributes\":{\"13\":\"AA==\"",
         ),
+        ("\"purchase_date_ms\":1000", "\"purchase_date_ms\":1001"),
+        (
+            "\"unknown_attributes\":{\"13\":",
+            "\"unknown_attributes\":{\"4294967296\":",
+        ),
+        (
+            "\"unknown_attributes\":{\"13\":",
+            "\"unknown_attributes\":{\"42949672950\":",
+        ),
         ("\"version_external_identifier\":null,", ""),
         ("\"bundle_id\":\"a\"", "\"bundle_id\":\"a\",\"adam_id\":0"),
     ];
@@ -313,6 +322,18 @@ fn a_planted_wrong_type_fails_every_rule() {
         assert!(good.contains(from), "{from}");
         let planted: Value = serde_json::from_str(&good.replacen(from, to, 1)).expect("json");
         assert!(!receipt_schema.is_valid(&planted), "accepted {to}");
+    }
+    // The edges of the tightened rules still validate: the largest
+    // attribute type, and a whole second before the epoch.
+    for (from, to) in [
+        (
+            "\"unknown_attributes\":{\"13\":",
+            "\"unknown_attributes\":{\"4294967295\":",
+        ),
+        ("\"purchase_date_ms\":1000", "\"purchase_date_ms\":-1000"),
+    ] {
+        let edge: Value = serde_json::from_str(&good.replacen(from, to, 1)).expect("json");
+        assert!(receipt_schema.is_valid(&edge), "refused {to}");
     }
     let failure_plants = [
         r#"{"verified":false,"reason":"INVALID_CHAIN","message":"m"}"#,

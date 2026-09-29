@@ -136,6 +136,36 @@ impl Certificate {
         verified
     }
 
+    /// Whether this certificate names `issuer`'s subject as its issuer
+    /// (`X509_NAME_cmp`, as OpenSSL's issuer lookup compares them) and
+    /// `issuer`'s key verifies its signature (`X509_verify`): the link a
+    /// path follows, whether or not the path is valid. Unlike
+    /// [`Certificate::issued_by`], the issuer's `keyUsage` and the key
+    /// identifiers are not judged here; OpenSSL judges them on the path it
+    /// builds and reports what fails. The issuer's key is built only once
+    /// the names match.
+    #[must_use]
+    pub(crate) fn signed_by(&self, issuer: &Certificate) -> bool {
+        init();
+        let named = issuer
+            .0
+            .subject_name()
+            .try_cmp(self.0.issuer_name())
+            .is_ok_and(|order| order == core::cmp::Ordering::Equal);
+        if !named {
+            drain_errors();
+            return false;
+        }
+        let Ok(key) = issuer.0.public_key() else {
+            drain_errors();
+            return false;
+        };
+        keys::record(&key);
+        let verified = self.0.verify(&key).unwrap_or(false);
+        drain_errors();
+        verified
+    }
+
     /// Whether `notBefore` is at or before `secs` (Unix seconds).
     #[must_use]
     pub fn not_before_at_most(&self, secs: i64) -> bool {

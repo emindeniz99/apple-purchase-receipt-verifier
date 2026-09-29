@@ -397,6 +397,7 @@
     "epochMillis": {
       "description": "An instant in milliseconds since 1970-01-01T00:00:00Z, UTC. Receipt dates carry whole seconds, so the last three digits are 000.",
       "type": "integer",
+      "multipleOf": 1000,
       "minimum": -9223372036854775808,
       "maximum": 9223372036854775807
     },
@@ -406,11 +407,11 @@
       "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
     },
     "unknownAttributes": {
-      "description": "Every attribute that did not end up in a typed field, keyed by its decimal attribute type, each value the attribute's raw value octets in receipt order.",
+      "description": "Every attribute that did not end up in a typed field, keyed by its decimal attribute type (an unsigned 32-bit integer, 0 to 4294967295), each value the attribute's raw value octets in receipt order.",
       "type": "object",
       "propertyNames": {
         "type": "string",
-        "pattern": "^(?:0|[1-9][0-9]*)$"
+        "pattern": "^(?:0|[1-9][0-9]{0,8}|[1-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5])$"
       },
       "additionalProperties": {
         "type": "array",

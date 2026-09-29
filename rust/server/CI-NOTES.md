@@ -85,6 +85,10 @@ Notes on the steps:
   against A2's schemas: 653 of 653 passed with G1. Now that the files
   are in the tree, the committed document lints at 0 findings and the
   served `/openapi.json` bundles them.
+- `aprv serve` defaults to `--lifecycle pool` (DECISIONS.md R23, after
+  `docs/evidence/2026-09-29-init-cost.md`); the corpus runs both
+  lifecycles explicitly, and `cases.py`, `managed-smoke.py` and
+  `hostile-smoke.sh` run the default.
 - `python3 scripts/startup.py --aprv $BIN` prints start-up and per-call
   times for the record; it is not a gate (README.md, "Measured").
 - `sudo chroot` needs root; on GitHub's hosted runners `sudo` works.
