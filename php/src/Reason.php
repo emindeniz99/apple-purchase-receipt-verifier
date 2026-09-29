@@ -33,9 +33,9 @@ enum Reason: string
     /** A certificate that chains to a pinned root but is of the wrong kind: a marker OID is missing. */
     case InvalidCertificatePurpose = 'INVALID_CERTIFICATE_PURPOSE';
 
-    /** The signature and chain verified — the payload bytes are Apple's — but they do not parse. `Failure::$cause` carries the parser's exception. Deterministic: alert, do not retry. */
+    /** The signature and chain verified — the payload bytes are Apple's — but they do not parse. Deterministic: alert, do not retry. */
     case UnreadablePayload = 'UNREADABLE_PAYLOAD';
 
-    /** The library itself failed before it could decide. `Failure::$cause` carries the exception. Deterministic: alert, do not retry. */
+    /** The library itself failed before it could decide: the module trapped, `aprv` did not answer, or the clock threw. `Failure::$cause` says which when this library produced it. Deterministic: alert, do not retry. */
     case InternalError = 'INTERNAL_ERROR';
 }

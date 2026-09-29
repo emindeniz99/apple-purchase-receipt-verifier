@@ -9,15 +9,18 @@ use Throwable;
 /**
  * Why a verification failed (docs/design/0.7-api.md, "Result").
  *
- * `$message` is safe to log as is: control characters and bidi controls in
- * anything quoted from the input are neutralised ({@see Internal\SafeText}),
- * so it can go into a log line as is. Match on {@see $reason}; the text may
- * change between releases and is not meant to be parsed.
+ * `$message` is safe to log as is: the module neutralises control characters
+ * and bidi controls in anything it quotes from the input. Match on
+ * {@see $reason}; the text may change between releases and is not meant to
+ * be parsed.
  *
- * `$cause` carries the parser or provider exception behind
- * {@see Reason::UnreadablePayload} and {@see Reason::InternalError}, sanitised
- * (never a raw library message that could quote certificate text). `null`
- * for every other reason.
+ * `$cause` is set only when this library, not the verification module,
+ * produced {@see Reason::InternalError}: a {@see Transport\ModuleFaultException}
+ * (the module trapped or answered unreadably), a
+ * {@see Transport\ServerProcessException} (`aprv` did not answer) or the
+ * exception the configured clock threw. `null` for every verdict of the
+ * module, {@see Reason::UnreadablePayload} and the module's own
+ * {@see Reason::InternalError} included.
  */
 final readonly class Failure
 {
