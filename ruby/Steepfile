@@ -3,5 +3,8 @@
 target :lib do
   signature "sig"
   check "lib"
-  library "openssl", "json", "time", "digest"
+  # Not loaded: Apple's roots live inside aprv.wasm now, and the file waits
+  # for the release that deletes it.
+  ignore "lib/apple_purchase_receipt_verifier/roots_data.rb"
+  library "json", "digest", "securerandom"
 end

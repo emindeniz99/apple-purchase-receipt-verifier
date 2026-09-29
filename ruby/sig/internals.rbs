@@ -1,329 +1,198 @@
 # Signatures for everything `sig/apple_purchase_receipt_verifier.rbs` leaves
 # out: private methods, module-internal constants, and the modules that are
-# implementation detail (Cms, Receipt, ReceiptAttributes, Jws, Endpoint,
-# Signature, Json).
+# implementation detail (Runtime, Guest, InstancePool, Wire, PayloadJson),
+# plus the slice of the `wasmtime` gem they call, which ships no signatures.
 #
 # A consumer type-checks against the public file; this one exists so
 # `steep check` can prove the implementation itself, and it is checked by CI
 # for exactly that reason. Nothing here is API: a name in this file may change
 # in any release.
+module Wasmtime
+  VERSION: String
+
+  class Error < StandardError
+  end
+
+  class Trap < Error
+    def code: () -> Symbol?
+  end
+
+  class Engine
+    def self.new: () -> Engine
+  end
+
+  class Module
+    def self.new: (Engine engine, String bytes) -> Module
+    def imports: () -> Array[Hash[String, untyped]]
+  end
+
+  class Linker
+    def self.new: (Engine engine) -> Linker
+    def func_new: (String module_name, String name, Array[Symbol] params, Array[Symbol] results) { (Caller, *Integer) -> untyped } -> void
+    def instantiate: (Store store, Module wasm_module) -> Instance
+  end
+
+  class Store
+    def self.new: (Engine engine, ?limits: Hash[Symbol, Integer]) -> Store
+    def close: () -> void
+    def closed?: () -> bool
+    def linear_memory_limit_hit?: () -> bool
+    def max_linear_memory_consumed: () -> Integer
+  end
+
+  class Instance
+    def exports: () -> Hash[String, Extern]
+  end
+
+  class Extern
+    def to_memory: () -> Memory
+    def to_func: (?gvl: bool) -> Func
+  end
+
+  class Caller
+    def export: (String name) -> Extern
+  end
+
+  class Memory
+    def data_size: () -> Integer
+    def read: (Integer offset, Integer size) -> String
+    def read_u32: (Integer offset) -> Integer
+    def write: (Integer offset, String data) -> untyped
+    def write_u32: (Integer offset, Integer value) -> untyped
+  end
+
+  class Func
+    def call: (*untyped args) -> untyped
+  end
+end
+
 module ApplePurchaseReceiptVerifier
-  module PacificTime
-    # Both UTC instants, or both nil for a year before the modelled rules.
-    def self.daylight_window: (Integer year) -> [Time?, Time?]
-    def self.transition: (Integer year, Integer month, Integer day, Integer utc_hour) -> Time
-    def self.nth_sunday: (Integer year, Integer month, Integer nth) -> Integer
-    def self.last_sunday: (Integer year, Integer month) -> Integer
-    def self.days_in_month: (Integer year, Integer month) -> Integer
-  end
+  class Verifier
+    ENV_CODES: Hash[String, Integer]
+    MAX_CLOCK_MILLIS: Integer
 
-  module CertificateStructure
-    def self.signature_bit_string_aligned?: (OpenSSL::X509::Certificate certificate) -> bool
-  end
-
-  module Roots
-    private
-
-    def self.none: () -> Array[OpenSSL::X509::Certificate]
-  end
-
-  module Asn1
-    # Returns the node and the offset just past it.
-    def self.read_node: (String bytes, Integer off, Integer limit, Integer depth,
-                         Integer depth_limit) -> [Node, Integer]
-
-    class Node
-      def self.new: (String buffer, Integer tag, bool constructed, Integer start,
-                     Integer finish, Integer content_start, Integer content_end,
-                     Array[Node]? children) -> Node
+    class ClockError < StandardError
     end
-  end
 
-  module SafeText
+    def initialize: (Config config, ?runtime: Runtime) -> void
+
     private
 
-    def self.unsafe?: (Integer code) -> bool
+    def verify: (String operation, untyped input) { (String) -> VerificationResult } -> VerificationResult
+    def call: [T] (String operation, Array[Integer] scalars, String input) { (String) -> T } -> T
+    def read_clock: () -> Integer
+    def endpoint_answer: (Integer env, untyped request_json) -> String
+    def internal_error: (Exception cause) -> VerificationResult
+    def status_only: (Symbol reason) -> String
   end
 
   class Config
-    private
-
-    def normalize: (roots) -> Array[OpenSSL::X509::Certificate]
-  end
-
-  class Verifier
-    @roots: Array[OpenSSL::X509::Certificate]
-    @clock_proc: clock
-
-    def initialize: (Config config) -> void
+    PEM: Regexp
 
     private
 
-    def contained: [T < (ReceiptPayload | JsonPayload)] () { (ClockOnce) -> T } -> VerificationResult
+    def none: () -> Array[String]
+    def normalize: (untyped roots) -> Array[String]
+    def der_of: (untyped root) -> String
   end
 
-  module Chain
-    def self.unprocessed_critical_extension?: (OpenSSL::X509::Certificate cert, leaf: bool) -> bool
-    def self.record_key_use: (OpenSSL::X509::Certificate issuer) -> void
-    def self.cert_sign_permitted?: (OpenSSL::X509::Certificate cert) -> bool
+  class RootsRejected < StandardError
   end
 
-  # signature.rb — CMS SignerInfo signature verification.
-  module Signature
-    OID_RSASSA_PSS: String
-    OID_MGF1: String
-    NAMED_DIGEST_SCHEMES: Hash[String, String]
+  class Runtime
+    ABI: String
+    HOST: String
+    RANDOM_GET: String
+    OPERATIONS: Array[String]
+    MAX_RANDOM_BYTES: Integer
+    MODULE_PATH: String
+    LOCK: Thread::Mutex
+    HASH_PATH: String
 
-    def self.digest_name_for_oid: (String oid) -> String?
-    def self.verify_signer_signature: (public_key: untyped, digest_name: String,
-                                       signature_algorithm_oid: String,
-                                       signature_algorithm_params: String?,
-                                       signature: String, data: String) -> bool
+    self.@shared: Runtime?
+
+    attr_reader engine: Wasmtime::Engine
+    attr_reader wasm_module: Wasmtime::Module
+    attr_reader linker: Wasmtime::Linker
+
+    def self.shared: () -> Runtime
+    def self.read_module: (?String path, ?String hash_path) -> String
+    def initialize: (String bytes, ?random: ^(Integer) -> String) -> void
 
     private
 
-    def self.verify_generic: (untyped key, String digest_name, String signature, String data) -> bool
-    def self.verify_pss: (untyped public_key, String digest_name, String? params_der,
-                          String signature, String data) -> bool
-    def self.pss_parameters: (String? params_der) -> [String?, String?, Integer?]
-    def self.hash_algorithm_name: (Asn1::Node node) -> String?
-    def self.small_integer: (Asn1::Node node) -> Integer?
+    def compile: (String bytes) -> Wasmtime::Module
+    def refuse_other_imports: () -> void
+    def random_get: (Wasmtime::Caller caller, Integer length, Integer retptr) -> void
   end
 
-  # cms.rb — the structural read of a PKCS#7 SignedData.
-  module Cms
-    OID_SIGNED_DATA: String
-    OID_CONTENT_TYPE: String
-    OID_MESSAGE_DIGEST: String
+  class Guest
+    LIMITS: Hash[Symbol, Integer]
 
-    class SignerInfo
-      attr_accessor issuer_der: String
-      attr_accessor serial: Integer
-      attr_accessor digest_oid: String
-      attr_accessor digest_name: String?
-      attr_accessor signature_algorithm_oid: String
-      attr_accessor signature_algorithm_params: String?
-      attr_accessor signed_attrs: String?
-      attr_accessor content_type_attribute: String?
-      attr_accessor message_digest_attribute: String?
-      attr_accessor signed_attrs_duplicate_attribute: bool
-      attr_accessor signature: String
+    @broken: bool
+    @store: Wasmtime::Store
+    @memory: Wasmtime::Memory
+    @realloc: Wasmtime::Func
+    @operations: Hash[String, [Wasmtime::Func, Wasmtime::Func]]
 
-      def self.new: (issuer_der: String, serial: Integer, digest_oid: String, digest_name: String?,
-                     signature_algorithm_oid: String, signature_algorithm_params: String?,
-                     signed_attrs: String?, content_type_attribute: String?,
-                     message_digest_attribute: String?, signed_attrs_duplicate_attribute: bool,
-                     signature: String) -> SignerInfo
-      def signed_attrs_incomplete?: () -> bool
-    end
-
-    class Parsed
-      attr_accessor content_type: String
-      attr_accessor content: String
-      attr_accessor certificate_ders: Array[String]
-      attr_accessor signer_infos: Array[SignerInfo]
-
-      def self.new: (content_type: String, content: String, certificate_ders: Array[String],
-                     signer_infos: Array[SignerInfo]) -> Parsed
-    end
-
-    def self.parse: (String der) -> Parsed
-    def self.signed_attrs_signed_bytes: (String signed_attrs) -> String
+    def initialize: (Runtime runtime, String? config_json) -> void
+    def broken?: () -> bool
+    def close: () -> void
+    def call: (String name, Array[Integer] scalars, String input) -> String
 
     private
 
-    def self.signed_data?: (Asn1::Node content_info, Array[Asn1::Node] info) -> bool
-    def self.encapsulated_content: (Asn1::Node? encap) -> [String, String]
-    def self.certificate_ders: (Array[Asn1::Node] parts) -> Array[String]
-    def self.signer_infos: (Asn1::Node? node) -> Array[SignerInfo]
-    def self.signer_info: (Asn1::Node node) -> SignerInfo
-    def self.signed_attributes: (Asn1::Node node) -> [String?, String?, bool]
-    def self.unsigned_integer: (String bytes) -> Integer
-    def self.malformed: (String message) -> VerificationError
+    def instantiate: (Runtime runtime) -> Hash[String, Wasmtime::Extern]
+    def start: (String config_json) -> void
+    def discard: () -> void
+    def lower: (String bytes) -> Integer
+    def lift: (Integer retptr) -> String
+    def check_memory_limit: () -> void
+    def describe: (Wasmtime::Error error) -> String
   end
 
-  # receipt.rb — the legacy PKCS#7 receipt pipeline.
-  module Receipt
-    MAX_RECEIPT_BASE64_BYTES: Integer
-    MAX_EMBEDDED_CERTIFICATES: Integer
-    MAX_SIGNER_INFOS: Integer
-    BASE64_DISALLOWED: String
+  class InstancePool
+    MAX_IDLE: Integer
 
-    def self.verify: (String base64, Array[OpenSSL::X509::Certificate] roots, ClockOnce clock) -> ReceiptPayload
-    def self.decode_canonical_base64: (String text) -> String?
+    @runtime: Runtime
+    @config_json: String
+    @idle: Thread::Queue
+
+    def initialize: (Runtime runtime, String config_json) -> void
+    def with_guest: [T] () { (Guest) -> T } -> T
+    def idle_count: () -> Integer
 
     private
 
-    def self.contained: [T] (Symbol fallback_reason, String what) { () -> T } -> T
-    def self.verify_signature: (String der, Array[OpenSSL::X509::Certificate] roots, ClockOnce clock) -> String
-    def self.signer_certificates: (Cms::SignerInfo info, Array[OpenSSL::X509::Certificate] embedded,
-                                   Array[String] unreadable) -> Array[OpenSSL::X509::Certificate]
-    def self.verify_one_signer: (cms: Cms::Parsed, info: Cms::SignerInfo, signer: OpenSSL::X509::Certificate,
-                                 authenticated: Array[OpenSSL::X509::Certificate],
-                                 roots: Array[OpenSSL::X509::Certificate], at_millis: Integer) -> void
-    def self.verify_cms_signature: (Cms::Parsed cms, Cms::SignerInfo info,
-                                    OpenSSL::X509::Certificate signer) -> void
-    def self.signing_input: (Cms::Parsed cms, Cms::SignerInfo info) -> [String, String?, String?]
-    def self.assert_content_agrees_with_openssl: (String der, String content) -> void
-    def self.secure_equal?: (String one, String other) -> bool
-    def self.decode_embedded_certificates: (Array[String] ders)
-                                         -> [Array[OpenSSL::X509::Certificate], Array[String]]
-    def self.names_the_signer?: (String der, Cms::SignerInfo info) -> bool
-    def self.parse_signed_payload: (String content) -> ReceiptPayload
+    def checkout: () -> Guest
   end
 
-  # receipt_payload.rb — the receipt attribute grammar.
-  module ReceiptAttributes
-    RECEIPT_TYPE: Integer
-    APP_ITEM_ID: Integer
-    BUNDLE_ID: Integer
-    APP_VERSION: Integer
-    OPAQUE_VALUE: Integer
-    SHA1_HASH: Integer
-    CREATION_DATE: Integer
-    DOWNLOAD_ID: Integer
-    VERSION_EXTERNAL_IDENTIFIER: Integer
-    IN_APP: Integer
-    ORIGINAL_PURCHASE_DATE: Integer
-    ORIGINAL_APP_VERSION: Integer
-    EXPIRATION_DATE: Integer
+  module Wire
+    DECIMAL: Regexp
+    UNKNOWN_KEY: Regexp
+    REASON_TOKEN: Regexp
 
-    IAP_QUANTITY: Integer
-    IAP_PRODUCT_ID: Integer
-    IAP_TRANSACTION_ID: Integer
-    IAP_PURCHASE_DATE: Integer
-    IAP_ORIGINAL_TRANSACTION_ID: Integer
-    IAP_ORIGINAL_PURCHASE_DATE: Integer
-    IAP_EXPIRES_DATE: Integer
-    IAP_WEB_ORDER_LINE_ITEM_ID: Integer
-    IAP_CANCELLATION_DATE: Integer
-    IAP_IS_TRIAL_PERIOD: Integer
-    IAP_IS_IN_INTRO_OFFER_PERIOD: Integer
+    def self.init_status: (String text) -> String?
+    def self.receipt_result: (String text) -> VerificationResult
+    def self.signed_data_result: (String text) -> VerificationResult
 
-    KNOWN_TOP_LEVEL: Array[Integer]
-    KNOWN_IN_APP: Array[Integer]
-    MAX_ATTRIBUTE_TYPE: Integer
-    MAX_ATTRIBUTES: Integer
-    DAYS_IN_MONTH: Array[Integer]
-    RECEIPT_DATE: Regexp
-
-    type unknown_attributes = Hash[Integer, Array[String]]
-    type fields = Hash[Symbol, untyped]
-
-    def self.creation_date: (String content) -> Integer?
-    def self.parse: (String content) -> ReceiptPayload
-    def self.unknown_attributes_json: (unknown_attributes attributes) -> Hash[String, Array[String]]
-
-    private
-
-    def self.assign: (Hash[Symbol, untyped] fields, Symbol key, ?optional: bool) { () -> untyped } -> bool
-    def self.later_copy?: (Array[Integer] seen, Integer type) -> bool
-    def self.keep_raw: (unknown_attributes unknown, Integer type, String value) -> void
-    def self.freeze_unknown: (unknown_attributes unknown) -> unknown_attributes
-    def self.parse_in_app: (String bytes) -> InAppPurchase?
-    def self.each_attribute: (String bytes, String what) { (Integer, String) -> void } -> void
-    def self.bounded_scan!: (String bytes, String what) -> void
-    def self.outer: (String bytes, String what) -> [Integer, Integer, Integer]
-    def self.header: (String bytes, Integer offset, Integer limit, String what)
-                   -> [Integer, Integer, Integer, Integer]
-    def self.ber_octets: (String bytes, String what) -> String
-    def self.attribute_type: (String raw) -> Integer
-    def self.integer_value: (String bytes) -> Integer
-    def self.single_value: (String bytes) -> [Integer, String]
-    def self.decode_string: (String bytes) -> String
-    def self.decode_integer: (String bytes) -> Integer
-    def self.decode_flag?: (String bytes) -> bool
-    def self.date: (String bytes) -> Integer?
-    def self.leap_year?: (Integer year) -> bool
-    def self.days_in_month: (Integer year, Integer month) -> Integer
-    def self.days_from_civil: (Integer year, Integer month, Integer day) -> Integer
-    def self.parse_receipt_date: (String text) -> Integer?
-    def self.format_error: (String message) -> VerificationError
+    def self.result: (String text, String operation) { (untyped) -> (ReceiptPayload | JsonPayload) } -> VerificationResult
+    def self.failure: (Hash[String, untyped] answer, String operation) -> Failure
+    def self.object: (String text, String operation) -> Hash[String, untyped]
+    def self.receipt_payload: (untyped payload) -> ReceiptPayload
+    def self.in_app_purchase: (untyped purchase) -> InAppPurchase
+    def self.unknown_attributes: (Hash[String, untyped] container) -> Hash[Integer, Array[String]]
+    def self.list: [T] (Hash[String, untyped] container, String key) { (untyped) -> T } -> Array[T]
+    def self.string: (Hash[String, untyped] container, String key) -> String?
+    def self.required_string: (Hash[String, untyped] container, String key) -> String
+    def self.integer: (Hash[String, untyped] container, String key) -> Integer?
+    def self.boolean: (Hash[String, untyped] container, String key) -> bool?
+    def self.id: (Hash[String, untyped] container, String key) -> Integer?
+    def self.bytes: (Hash[String, untyped] container, String key) -> String?
+    def self.decode_base64: (untyped value, String where) -> String
   end
 
-  # jws.rb — the StoreKit 2 JWS pipeline.
-  module Jws
-    MAX_JWS_BYTES: Integer
-    I64_MIN: Integer
-    I64_MAX: Integer
-    EC_ORDER: OpenSSL::BN
-
-    def self.verify: (String jws, Array[OpenSSL::X509::Certificate] roots, ClockOnce clock) -> JsonPayload
-
-    private
-
-    def self.contained: [T] () { () -> T } -> T
-    def self.verify_signature: (String jws, Array[OpenSSL::X509::Certificate] roots,
-                                ClockOnce clock) -> JsonPayload
-    def self.split_segments: (String jws) -> [String, String, String]
-    def self.base64url_decode: (String segment, String what) -> String
-    def self.read_header: (String bytes) -> untyped
-    def self.read_payload: (String bytes) -> [String, Integer?, bool]
-    def self.numeric_instant: (untyped value) -> Integer?
-    def self.parse_x5c_certificate: (String entry) -> OpenSSL::X509::Certificate
-    def self.verify_es256: (OpenSSL::X509::Certificate leaf, String signing_input, String signature) -> void
-  end
-
-  # endpoint.rb — the local verifyReceipt-compatible endpoint.
-  module Endpoint
-    MAX_REQUEST_BYTES: Integer
-
-    def self.respond: (String environment, String request_json, Array[OpenSSL::X509::Certificate] roots,
-                       ClockOnce clock) -> String
-
-    private
-
-    def self.status_only: (Integer status) -> String
-    def self.receipt_data: (String request_json) -> String
-    def self.render: (String environment, ReceiptPayload receipt, Integer request_date_millis) -> String
-    def self.apple_environment_label: (String environment) -> String
-    def self.receipt_json: (ReceiptPayload receipt, Integer request_date_millis) -> Hash[String, untyped]
-    def self.purchase_json: (InAppPurchase purchase) -> Hash[String, untyped]
-    def self.boolean_string: (bool? value) -> String?
-    def self.present: (Hash[String, untyped] json, String key, (String | Integer)? value) -> void
-    def self.apple_dates: (Hash[String, untyped] json, String prefix, Integer? millis) -> void
-  end
-
-  # json.rb — the bounded strict JSON reader.
-  module Json
-    MAX_NESTING_DEPTH: Integer
-    MAX_NUMBER_DIGITS: Integer
-    MAX_NAME_UTF16_LENGTH: Integer
-
-    class Error < StandardError
-    end
-
-    def self.parse_whole_object: (String text) -> Hash[String, untyped]
-    def self.parse_leading_object: (String text) -> Hash[String, untyped]
-
-    class Reader
-      def initialize: (String text) -> void
-      def eof?: () -> bool
-      def read_object: () -> Hash[String, untyped]
-      def skip_whitespace: () -> void
-
-      private
-
-      def peek: () -> Integer?
-      def next_byte: () -> Integer
-      def expect: (Integer byte) -> void
-      def enter: () -> void
-      def leave: () -> void
-      def read_value: () -> untyped
-      def read_object_body: () -> Hash[String, untyped]
-      def read_member_name: () -> String
-      def read_array: () -> Array[untyped]
-      def read_literal: (String word, untyped value) -> untyped
-      def ascii_alnum?: (Integer byte) -> bool
-      def read_number: () -> (Integer | Float)
-      def read_digits: () -> Integer
-      def read_string: () -> String
-      def read_escape: (String out) -> void
-      def read_unicode_escape: () -> String
-      def read_hex4: () -> Integer
-
-      ESCAPES: Hash[Integer, String]
-      HEX_DIGIT: Hash[Integer, Integer]
-    end
+  module PayloadJson
+    def self.unknown_attributes: (Hash[Integer, Array[String]] attributes) -> Hash[String, Array[String]]
   end
 end
