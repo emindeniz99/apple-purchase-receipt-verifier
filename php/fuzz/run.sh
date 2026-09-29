@@ -7,6 +7,8 @@
 #
 # The fuzzer is nikic/php-fuzzer, downloaded as a pinned phar on first use
 # (see README.md for why it is not a Composer dependency of the library).
+# The targets run the façade over the real aprv binary: set APRV_BIN to it, or
+# run bin/aprv-install first.
 #
 # php-fuzzer takes exactly ONE corpus directory and WRITES new and reduced
 # entries into it, so the libFuzzer trick of passing fixtures/ as an extra
@@ -48,7 +50,7 @@ PHP_INI_ARGS=(
   -d opcache.enable_cli=0
 )
 
-TARGETS=(parse-der parse-cms verify-receipt verify-receipt-base64 verify-transaction endpoint-json)
+TARGETS=(verify-receipt verify-receipt-base64 verify-transaction endpoint-json)
 
 fetch_phar() {
   if [ -f "$phar" ] && echo "${PHAR_SHA256}  ${phar}" | sha256sum --check --status; then
@@ -68,7 +70,7 @@ fetch_phar() {
 # Fills SEED_DIRS for the named target.
 seed_dirs() {
   case "$1" in
-    parse-der|parse-cms|verify-receipt)
+    verify-receipt)
       SEED_DIRS=("$fixtures/generated" "$fixtures/apple-official/certs") ;;
     verify-receipt-base64)
       SEED_DIRS=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
