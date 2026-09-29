@@ -28,3 +28,15 @@ crate-type = ["cdylib", "staticlib"]
 # banned-crate list keeps meaning what it means.
 [dependencies.apple-purchase-receipt-verifier]
 path = ".."
+
+# Its own workspace root. `..` declares a workspace whose members include
+# "." (the library), and Cargo counts every package below an explicit
+# member as a member, whatever `exclude` says; the empty table stops the
+# search here.
+[workspace]
+
+# The same one-line openssl-sys copy the library's workspace patches in
+# (../Cargo.toml says why): a patch applies only to the workspace that
+# declares it, and this crate is its own.
+[patch.crates-io]
+openssl-sys = { path = "../vendor/openssl-sys" }
