@@ -21,7 +21,7 @@ work.
 | C go | `lane/host-go` | steps 4.6, 4.7 | handed back 2026-09-29 (head 6d1d069); parked until the real module: 90 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 as expected, `-race` clean, staticcheck 0, static binary runs in an empty chroot |
 | C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | started 2026-09-29 |
 | C python | `lane/host-python` | steps 5.1 to 5.3 | handed back 2026-09-29 (head 2c78909); parked until the real module: 94 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 in 13 s, CPython 3.10 to 3.14 green (218 expected failures each), ruff and mypy clean, 8 platform-tagged wheels built and the install-failure path proven with a faked platform |
-| C ruby | `lane/host-ruby` | step 5.5 | started 2026-09-29 |
+| C ruby | `lane/host-ruby` | step 5.5 | handed back 2026-09-29 (head 22c464b); parked until the real module: 90 of 311 cases on the stand-in (221 differ), corpus 6,176/2/1, rubocop, steep and rbs clean, gem 1,025,024 B, clean install picks the prebuilt native gem; thread scaling and the first-create time to be re-measured on a quiet machine (5.6 s here against the spike's 1.3 s) |
 | C swift | `lane/host-swift` | step 5.4 | started 2026-09-29 |
 | C dotnet | `lane/host-dotnet` | step 5.6 | started 2026-09-29 |
 | D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | **merged** 2026-09-29 (head cff064d); actionlint and zizmor at 0; jobs gated on the other lanes' files, see `.github/CI-NOTES.md` |
@@ -93,6 +93,16 @@ work.
   `APRV_WASM_CACHE_DIR` is the cache path variable (R27); an empty value
   turns the cache off. atheris has no CPython 3.11 wheel here, so the
   fuzz targets ran only with a stub.
+- Lane Ruby: `VerificationError` (private) removed; new public
+  `AbiMismatchError`, `ModuleIntegrityError`, `TrapError`. The gemspec
+  floor is open-ended (`wasmtime >= 48.0.1`), as R27's rule for Python.
+  Its commits carry the Sonnet 5.5 and session trailers but not the
+  orchestrator's; attribution is truthful, so the history stands. It
+  wrote an evidence note (`2026-09-29-ruby-host`) that the integrator
+  audits before the merge.
+- Every host lane so far: `_initialize` is not called, the first export
+  call runs the constructors; A2 confirms the release module needs no
+  start call.
 - Both Node, Go and Python tell the `decodeBase64` fixture groups apart through
   the core's message text ("receipt is not valid base64", "x5c entry is
   not valid base64"); lane A2 keeps those messages stable or gives the
