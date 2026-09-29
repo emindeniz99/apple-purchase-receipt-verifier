@@ -40,7 +40,7 @@
     "lint": "oxlint",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "test:runtimes": "npm run runtime:node && npm run runtime:bun && npm run runtime:deno && npm run runtime:workerd && npm run runtime:edge",
+    "test:runtimes": "npm run build && npm run runtime:node && npm run runtime:bun && npm run runtime:deno && npm run runtime:workerd && npm run runtime:edge",
     "runtime:node": "node runtime-smoke/node-like.mjs",
     "runtime:bun": "npx --yes bun@1.3.11 runtime-smoke/node-like.mjs",
     "runtime:deno": "npx --yes deno@2.9.7 run --allow-read --allow-env=JCO_DEBUG runtime-smoke/node-like.mjs",

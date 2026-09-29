@@ -1,24 +1,24 @@
-// Runner for Cloudflare workerd: fixtures arrive as embedded text/data
-// modules declared in workerd.capnp (the `../fixtures/` names exist only
-// there). Data modules are ArrayBuffers; the library takes Buffers, which
-// nodejs_compat provides. `workerd test` invokes `test()`.
-import { Buffer } from 'node:buffer';
+// Runner for Cloudflare workerd: fixtures arrive as embedded text and data
+// modules declared in workerd.capnp (the `fixtures/` names exist only
+// there). `workerd test` invokes `test()`.
 import { run } from './smoke.mjs';
-import appleRootDer from '../fixtures/AppleIncRootCertificate.cer';
+import * as main from '../dist/index.js';
+import * as web from '../dist/web/index.js';
 import sandboxReceiptB64 from '../fixtures/receipt-sandbox-g5.b64';
 import jwsRootDer from '../fixtures/jws-root.der';
 import transactionJws from '../fixtures/transaction.jws';
-import foreignReceiptDer from '../fixtures/receipt-foreign.der';
 
 export default {
   async test() {
-    const lines = run({
-      appleRootDer: Buffer.from(appleRootDer),
-      sandboxReceiptB64,
-      jwsRootDer: Buffer.from(jwsRootDer),
-      transactionJws,
-      foreignReceiptDer: Buffer.from(foreignReceiptDer),
-    });
-    for (const l of lines) console.log(`ok - ${l}`);
+    const fx = { sandboxReceiptB64, jwsRootDer: new Uint8Array(jwsRootDer), transactionJws };
+    for (const [name, api] of [
+      ['.', main],
+      ['./web', web],
+    ]) {
+      // oxlint-disable-next-line no-await-in-loop -- one entry point after the other
+      for (const line of await run(api, fx)) {
+        console.log(`${line.startsWith('SKIP') ? '#' : 'ok -'} ${name}: ${line}`);
+      }
+    }
   },
 };
