@@ -1,16 +1,16 @@
 //! Receipt rejections, one structural fault at a time.
 //!
 //! Most of these are built by taking the shared generated receipt apart with
-//! the crate's own CMS reader and putting it back together with exactly one
+//! the tests' own CMS reader and putting it back together with exactly one
 //! thing changed — so the fault under test is the only difference, and a
 //! test that stops failing because something else broke first is visible.
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::asn1::{encode_oid, parse_exact, tag};
 use apple_purchase_receipt_verifier::__internal::base64_encode;
-use apple_purchase_receipt_verifier::__internal::cms::parse_cms;
 use apple_purchase_receipt_verifier::{Failure, Reason, ReceiptPayload, TrustAnchor, Verifier};
+use common::cms::parse_cms;
+use common::der::{encode_oid, parse_exact, tag};
 
 /// A verifier pinned to one root, taking DER for this file's rebuilt blobs.
 struct DerVerifier(Verifier);
@@ -151,7 +151,6 @@ fn more_than_ten_embedded_certificates_is_malformed() {
 
 #[test]
 fn a_copy_of_the_signer_identity_ahead_of_the_signer_does_not_decide_the_verdict() {
-    use apple_purchase_receipt_verifier::__internal::x509::Certificate;
     // The bag is unsigned, so anyone relaying a receipt can put a second
     // certificate with the signer's issuer and serial in front of the real
     // one. Taking the first match would fail a genuine receipt on it.
@@ -160,16 +159,15 @@ fn a_copy_of_the_signer_identity_ahead_of_the_signer_does_not_decide_the_verdict
         .certificates
         .iter()
         .position(|raw| {
-            let cert = Certificate::from_der(raw).unwrap();
-            cert.serial_number() == builder.signer_serial.as_slice()
-                && cert.issuer_der() == builder.signer_issuer.as_slice()
+            common::certificate_identity(raw)
+                == Some((builder.signer_serial.clone(), builder.signer_issuer.clone()))
         })
         .expect("the shared receipt embeds its signer");
     // Same identity, a signature no issuer made: it decodes, and nothing
     // vouches for it.
     let mut copy = builder.certificates[signer].clone();
     *copy.last_mut().unwrap() ^= 0x01;
-    assert!(Certificate::from_der(&copy).is_ok());
+    assert!(TrustAnchor::from_der(&copy).is_ok());
     builder.certificates.insert(0, copy);
     assert!(verifier().verify(&builder.build()).is_ok());
 }

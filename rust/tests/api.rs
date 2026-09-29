@@ -12,7 +12,6 @@ use apple_purchase_receipt_verifier::{
     AppleStatus, Config, ConfigError, Environment, Failure, InAppPurchase, JsonPayload, Reason,
     ReceiptPayload, TrustAnchor, Verifier, VERSION,
 };
-use sha1::{Digest, Sha1};
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -301,11 +300,11 @@ fn the_device_hash_is_computable_from_the_returned_fields() {
     // fields and the device identifier, with the formula the README shows.
     let receipt = common::verify_der(&common::receipt_verifier(), &common::receipt_der()).unwrap();
     let hash = |guid: &[u8]| {
-        let mut sha1 = Sha1::new();
+        let mut sha1 = openssl::sha::Sha1::new();
         sha1.update(guid);
         sha1.update(receipt.opaque_value.as_deref().unwrap());
         sha1.update(receipt.bundle_id_bytes.as_deref().unwrap());
-        sha1.finalize().to_vec()
+        sha1.finish().to_vec()
     };
     assert_eq!(
         receipt.sha1_hash.as_deref(),

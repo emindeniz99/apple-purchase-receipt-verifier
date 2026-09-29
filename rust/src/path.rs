@@ -25,7 +25,7 @@ use aprv_openssl::{verify_path, Certificate, PathOutcome, PathProblem, PathProbl
 
 /// The longest path, anchor excluded: the target and five certificates
 /// above it.
-pub(crate) const MAX_PATH_LENGTH: usize = 6;
+pub const MAX_PATH_LENGTH: usize = 6;
 
 fn untrusted(detail: &'static str) -> Failure {
     Failure::new(Reason::UntrustedChain, detail)
@@ -57,7 +57,8 @@ fn anchor_certificates(anchors: &[TrustAnchor]) -> Vec<Certificate> {
 /// Walking down means the only keys used are ones an anchor vouched for: a
 /// certificate carrying the attacker's own key (their choice of size and
 /// exponent) costs a name comparison per issuer, and is simply left out.
-pub(crate) fn authenticated_top_down(
+#[must_use]
+pub fn authenticated_top_down(
     embedded: &[Certificate],
     anchors: &[TrustAnchor],
 ) -> Vec<Certificate> {
@@ -267,7 +268,7 @@ fn structural_failure(kind: PathProblemKind) -> Failure {
 /// `INVALID_CERTIFICATE` when a certificate on the path is outside its
 /// validity window at `at_millis`; `UNTRUSTED_CHAIN` when one marks
 /// critical an extension OpenSSL does not process.
-pub(crate) fn receipt_path(
+pub fn receipt_path(
     signer: &Certificate,
     authenticated: &[Certificate],
     anchors: &[TrustAnchor],
@@ -316,7 +317,7 @@ pub(crate) fn receipt_path(
 /// process, or a path other than leaf, intermediate, anchor;
 /// `INVALID_CERTIFICATE` for a certificate outside its validity window, or
 /// a vouched-for intermediate whose key OpenSSL cannot build.
-pub(crate) fn validate_pair(
+pub fn validate_pair(
     leaf: &Certificate,
     intermediate: &Certificate,
     anchors: &[TrustAnchor],

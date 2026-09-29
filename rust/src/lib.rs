@@ -95,7 +95,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Not part of the public API, and not covered by semver.
 ///
 /// The internals this crate's own tests, fuzz targets and benchmark reach
-/// directly: the date reader, the key-use seam, and the two base64
+/// directly: the date reader, the path policy, the key-use seam, and the two base64
 /// decoders the shared decodeBase64 cases call. The shared cases name them
 /// as an internal hook; 0.7 exposes no decoder.
 #[doc(hidden)]
@@ -103,6 +103,15 @@ pub mod __internal {
     /// Calendar arithmetic and Apple's date renderings.
     pub mod datetime {
         pub use crate::datetime::*;
+    }
+
+    /// The certificate path policy, over the OpenSSL adapter's
+    /// certificates.
+    pub mod path {
+        pub use crate::path::{
+            authenticated_top_down, receipt_path, validate_pair, MAX_PATH_LENGTH,
+        };
+        pub use aprv_openssl::Certificate;
     }
 
     /// Runs `body` and returns, beside its result, the
