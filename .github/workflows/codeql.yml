@@ -23,9 +23,11 @@
 #      without a build is C/C++ (examples only) and Rust (no other mode).
 #   3. `persist-credentials: false` on the checkout, as everywhere else in
 #      this repository. A scan never pushes.
-#   4. A config file. fixtures/, tools/ and every port's test and fuzz
-#      harness are repository-controlled inputs, not library code — see
-#      .github/codeql/codeql-config.yml for the full reasoning.
+#   4. A config file. fixtures/, tools/, docs/evidence/ and every port's
+#      test and fuzz harness are repository-controlled inputs, not library
+#      code — see .github/codeql/codeql-config.yml for the full reasoning
+#      (c-cpp reads codeql-config-c-cpp.yml, which excludes docs/evidence/
+#      alone).
 #
 # Kept deliberately from the template so existing alerts keep their
 # identity: the workflow name, the job name, the language list, the weekly
@@ -97,16 +99,16 @@ jobs:
             config: .github/codeql/codeql-config.yml
 
           # --- compiled, analysed without a build -----------------------
-          # C/C++ deliberately runs WITHOUT the config file. The only C and
-          # C++ in this repository is rust/ffi/examples/ and the .NET fuzz
-          # driver, both of which the config excludes — applying it here
-          # would leave the extractor with no source at all. Analysing the
-          # examples is the honest alternative to analysing nothing.
+          # C/C++ has a config of its own: the shared one excludes
+          # rust/ffi/examples/, which with rust/openssl/'s ASN.1 templates,
+          # rust/bindings/abi/'s WASI glue and the C ABI header is the C
+          # worth reading. It excludes docs/evidence/ alone (spike code that
+          # never ships); build-mode none honours paths-ignore.
           - language: c-cpp
             runner: ubuntu-latest
             build-mode: none
             timeout: 45
-            config: ""
+            config: .github/codeql/codeql-config-c-cpp.yml
 
           # --- compiled, built on purpose -------------------------------
           # Both of these are scanned against a real, fully resolved
@@ -174,11 +176,10 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           config-file: ${{ matrix.config }}
-          # The suite the owner selected in the UI. The config file names it
-          # too; it is repeated here because the c-cpp job runs without that
-          # config (see the matrix) and would otherwise silently fall back to
-          # the smaller default suite. The action merges the two lists, so
-          # naming the same suite twice costs nothing.
+          # The suite the owner selected in the UI. Both config files name
+          # it too; it is repeated here so a config that ever loses the line
+          # cannot silently fall back to the smaller default suite. The
+          # action merges the two lists, so naming it twice costs nothing.
           queries: security-extended
 
       # --- manual builds, java-kotlin and csharp ---------------------------
