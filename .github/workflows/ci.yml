@@ -3273,13 +3273,39 @@ jobs:
           gem install --no-document "$RUNNER_TEMP/aprv.gem"
           ruby rubygems-smoke.rb
 
-  # smoke-crates (the packed crate as a path dependency outside the
-  # checkout) is held with crates.io itself (OD-03 in
-  # docs/rust-core/STATUS.md): the core stays at 0.7 on crates.io until
-  # openssl-sys accepts openssl-src 400.x, because a registry build of this
-  # tree would get OpenSSL 3, which aprv-openssl refuses, and aprv-openssl
-  # is not on crates.io yet. It comes back with publish-crates in
-  # release.yml; .github/smoke/crates-smoke is kept for it.
+  # Held with crates.io itself (OD-03 in docs/rust-core/STATUS.md;
+  # checklist rows RL-16 and PS-07): the core stays at 0.7 on crates.io
+  # until openssl-sys accepts openssl-src 400.x, because a registry build of
+  # this tree would get OpenSSL 3, which aprv-openssl refuses, and
+  # aprv-openssl is not on crates.io yet. It runs again, with
+  # release.yml's publish-crates, once the owner sets the repository
+  # variable APRV_PUBLISH_CRATES to true.
+  smoke-crates:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' && vars.APRV_PUBLISH_CRATES == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      # The smoke depends on the unpacked .crate, not on rust/: Cargo.toml's
+      # `exclude` makes the published file set differ from the repository's,
+      # and that difference is what the smoke exists to catch.
+      - run: cargo +stable package --locked --no-verify
+        working-directory: rust
+      - name: depend on the packaged crate, outside the checkout
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/crates-smoke"
+          mkdir -p "$SMOKE/crate"
+          tar -xzf rust/target/package/apple-purchase-receipt-verifier-*.crate -C "$SMOKE/crate"
+          cp -R .github/smoke/crates-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          cargo +stable add apple-purchase-receipt-verifier --path "$(echo crate/apple-purchase-receipt-verifier-*)"
+          cargo +stable run
 
   smoke-nuget:
     needs: [changes, rust-wasm]
