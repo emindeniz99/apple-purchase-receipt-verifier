@@ -413,7 +413,8 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     /// not be refused as base64, and one it says is refused must come back as
     /// the decoder's refusal (MALFORMED for <c>receipt-data</c>,
     /// INVALID_CERTIFICATE for an <c>x5c</c> entry) with a message that says
-    /// base64. The decoded bytes are checked by the core's own tests.
+    /// base64 (or, for the empty text, says it is empty: the core refuses it
+    /// before decoding). The decoded bytes are checked by the core's own tests.
     /// </summary>
     private static List<string> DecodeBase64Failures(OrderedMap kase)
     {
@@ -441,7 +442,8 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
                 string refusal = name == "receipt-data" ? "MALFORMED" : "INVALID_CERTIFICATE";
                 bool refused = failure is not null
                     && VerificationReasonCodes.ToCode(failure.Reason) == refusal
-                    && failure.Message.Contains("base64", StringComparison.OrdinalIgnoreCase);
+                    && (failure.Message.Contains("base64", StringComparison.OrdinalIgnoreCase)
+                        || (text.Length == 0 && failure.Message.Contains("empty", StringComparison.OrdinalIgnoreCase)));
                 string where = $"{id}: {name} texts[{index}] {Escape(text)}";
                 if (ok && refused)
                 {
