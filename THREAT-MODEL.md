@@ -677,8 +677,9 @@ fixes of the first round and the ABI crate, and tried to break each with
 crafted input. The full record, finding by finding, is
 [docs/rust-core/REVIEW-LOG.md](./docs/rust-core/REVIEW-LOG.md).
 
-- They reported 52 findings: 2 blocking, 21 to fix before merge, 29 notes.
-  Nothing in memory safety, isolation or trust broke in either round: no
+- Three rounds reported 61 findings: 2 blocking, 23 to fix before merge,
+  36 notes. Nothing in memory safety, isolation or trust broke in any
+  round: no
   double free, no per-call leak, no panic path, valgrind clean, no input
   verified without a valid signature under a pinned root, and none could
   move the instant at which the chain is judged.
@@ -691,13 +692,21 @@ crafted input. The full record, finding by finding, is
   cases, the walk checked fewer primitive rules than OpenSSL) and, in the
   ABI crate, an unpinned compiler in the release build, over-cap inputs
   copied whole into the module's memory, and a C ABI that read C strings.
-  All are fixed; the input cap is applied in every wrapper.
-- 44 shared cases came from the two rounds, and nine rows of R20's
+  All are fixed; the input cap is applied in every wrapper. The third
+  round read the second round's own fixes and found two more gaps, both
+  failing closed: with custom anchors, a same-named decoy certificate
+  placed first in the unsigned bag still refused a genuine receipt (the
+  bag is now filtered by signature link before the per-anchor runs;
+  Apple's roots carry key identifiers and were never affected), and the
+  walk refused chunked strings that OpenSSL joins (it now joins them
+  too). It also added the guest-side range guard, tighter wire schemas
+  and tests for the compiler pin.
+- 51 shared cases came from the three rounds, and ten rows of R20's
   divergence table record the differences from Java they exposed.
-- **Still open.** The second round's own fixes and the last ABI work have
-  had no reader but their authors; a third round is planned for them
-  (REVIEW-LOG.md §10.9). No review ran the interpreter hosts' timings, and
-  no fuzz campaign has run since the fixes.
+- **Still open.** The third round's own fixes have had no reader but
+  their author (REVIEW-LOG.md §11.9 says what closes the gate). No review
+  ran the interpreter hosts' timings, and no fuzz campaign has run since
+  the fixes.
 
 ## 12. Residual risks of the 0.8 architecture
 
