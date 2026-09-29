@@ -1,7 +1,6 @@
 //! [`Verifier::verify_receipt`](crate::Verifier::verify_receipt): legacy
 //! PKCS#7 app receipts, verified offline.
 
-use crate::base64::decode_receipt_base64;
 use crate::error::{malformed, Failure, Reason};
 use crate::path::{authenticated_top_down, receipt_path};
 use crate::receipt_payload::{
@@ -42,7 +41,7 @@ pub(crate) const MAX_RECEIPT_BYTES: usize = 3_145_728;
 /// is missing or does not parse, and is read only then, once a signer has
 /// been found.
 pub(crate) fn verify(
-    base64: &str,
+    base64: &[u8],
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<ReceiptPayload, Failure> {
@@ -57,8 +56,7 @@ pub(crate) fn verify(
             format!("receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes"),
         ));
     }
-    let der =
-        decode_receipt_base64(base64).ok_or_else(|| malformed("receipt is not valid base64"))?;
+    let der = crate::decode_receipt_data(base64)?;
     let content = verify_signature(&der, anchors, clock)?;
     verifier::enter(Stage::PayloadParse);
     // A trusted signer signed these bytes, so a payload this crate cannot

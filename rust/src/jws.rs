@@ -102,7 +102,7 @@ impl std::error::Error for Unreadable {
 /// if it does. Nothing unverified gets to decide which of the two a caller
 /// sees.
 pub(crate) fn verify(
-    jws: &str,
+    jws: &[u8],
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<JsonPayload, Failure> {
@@ -115,7 +115,9 @@ pub(crate) fn verify(
             format!("jws exceeds the maximum accepted size of {MAX_JWS_BYTES} bytes"),
         ));
     }
-    let parts: Vec<&str> = jws.split('.').collect();
+    // Split as bytes: input that is not UTF-8 is judged by the same rules,
+    // and cannot be canonical base64url.
+    let parts: Vec<&[u8]> = jws.split(|byte| *byte == b'.').collect();
     let [header_b64, payload_b64, signature_b64] = parts.as_slice() else {
         return Err(malformed(format!(
             "expected 3 dot-separated segments, got {}",
@@ -238,8 +240,8 @@ fn read_payload(bytes: &[u8]) -> Result<(String, Option<i64>), Unreadable> {
 
 fn verify_signature(
     leaf: &Certificate,
-    header_b64: &str,
-    payload_b64: &str,
+    header_b64: &[u8],
+    payload_b64: &[u8],
     signature: &[u8],
 ) -> Result<(), Failure> {
     if signature.len() != 64 {
@@ -249,9 +251,9 @@ fn verify_signature(
         ));
     }
     let mut signing_input = Vec::with_capacity(header_b64.len() + 1 + payload_b64.len());
-    signing_input.extend_from_slice(header_b64.as_bytes());
+    signing_input.extend_from_slice(header_b64);
     signing_input.push(b'.');
-    signing_input.extend_from_slice(payload_b64.as_bytes());
+    signing_input.extend_from_slice(payload_b64);
     // False for a key that is not EC on P-256 as well as for a signature
     // that does not match.
     if verify_es256(leaf, signature, &signing_input) {
@@ -268,7 +270,8 @@ fn verify_signature(
 /// (RFC 7515 4.1.6), then a certificate. Package-internal so the shared
 /// decodeBase64 cases can reach the decoder directly.
 pub(crate) fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, Failure> {
-    decode_receipt_base64(text).ok_or_else(|| invalid_certificate("x5c entry is not valid base64"))
+    decode_receipt_base64(text.as_bytes())
+        .ok_or_else(|| invalid_certificate("x5c entry is not valid base64"))
 }
 
 /// Only whether the entry IS a certificate: one that OpenSSL parses whole
