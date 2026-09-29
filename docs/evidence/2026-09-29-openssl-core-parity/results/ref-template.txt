@@ -1,0 +1,39 @@
+# compare.py ref: template reference rows vs the OpenSSL core, old = pre-migration 0.7 core
+== cases
+     40 different verdict, pre-existing (old core agrees with new)
+    113 same verdict
+           10 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+           10 ref endpoint 0  ->  0.7 endpoint 21003
+            6 ref refused INTERNAL_ERROR  ->  0.7 verified
+            3 ref endpoint 21007  ->  0.7 endpoint 21003
+            2 ref refused WRONG_BUNDLE_ID  ->  0.7 verified
+            2 ref endpoint 21008  ->  0.7 endpoint 21003
+            2 ref endpoint 21009  ->  0.7 endpoint 21003
+            1 ref refused WRONG_ENVIRONMENT  ->  0.7 verified
+            1 ref refused WRONG_APP_APPLE_ID  ->  0.7 verified
+            1 ref refused INVALID_CHAIN  ->  0.7 verified
+            1 ref refused DEVICE_HASH_MISMATCH  ->  0.7 verified
+            1 ref verified  ->  0.7 refused TOO_LARGE
+== hostile
+     13 different verdict, pre-existing (old core agrees with new)
+    136 not comparable (no 0.7 call, or the reference ABI refused the input)
+    662 same verdict
+            7 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            4 ref refused DEVICE_HASH_MISMATCH  ->  0.7 verified
+            2 ref endpoint 21002  ->  0.7 endpoint 0
+== algorithms
+     16 different verdict, pre-existing (old core agrees with new)
+      6 same verdict
+           16 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+== substrate
+     65 different verdict, pre-existing (old core agrees with new)
+    128 same verdict
+           55 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            7 ref verified  ->  0.7 refused INVALID_CERTIFICATE
+            3 ref verified  ->  0.7 refused MALFORMED
+== fuzz
+     28 different verdict, pre-existing (old core agrees with new)
+    175 not comparable (no 0.7 call, or the reference ABI refused the input)
+   4797 same verdict
+           20 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            8 ref verified  ->  0.7 refused MALFORMED

@@ -1,0 +1,33 @@
+# aprv-abi: the guest side of the canonical ABI, built as aprv.wasm
+# (docs/rust-core/ARCHITECTURE.md §3 and §4). wit-bindgen generates the
+# exports, `cabi_realloc` and the post-return functions from wit/aprv.wit;
+# four bodies call aprv-surface and answer aprv-wire's JSON. The C file
+# wasi-none.c answers WASI inside the module. build.sh is the one way to
+# build it (the flags, the C object, the component, the checks). Not
+# published: the module is.
+[package]
+name = "aprv-abi"
+version = "0.0.0"
+publish = false
+edition = "2021"
+# wit-bindgen 0.62's generator (wit-parser, wasm-encoder 0.259) needs 1.88;
+# the module is built only with the pinned toolchain (rust-toolchain.toml).
+rust-version = "1.88.0"
+description = "The canonical-ABI exports of apple-purchase-receipt-verifier, built as aprv.wasm."
+license = "MIT"
+# tests/ is the ABI test host, a package of its own (it depends on Wasmtime,
+# which stays out of this workspace's graph).
+autotests = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+# OpenSSL comes from OPENSSL_DIR (the wasi-sdk build), never vendored here.
+aprv-surface = { path = "../surface", default-features = false }
+aprv-wire = { path = "../wire", default-features = false }
+# The generator macro and cabi_realloc only: no async support, no bitflags,
+# no std-only helpers. Pinned exactly: the generated glue is part of the
+# module, and tools/wasm-toolchain.sh pins the CLI of the same version.
+wit-bindgen = { version = "=0.62.0", default-features = false, features = ["macros", "realloc"] }

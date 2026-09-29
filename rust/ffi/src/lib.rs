@@ -14,9 +14,16 @@
 //! into the ABI, and every addition would then be a breaking change for
 //! every consumer. Handing back one UTF-8 JSON document instead keeps the
 //! ABI at a handful of functions and moves the schema question into a
-//! parser the caller already has. The documents are the library's own: a
-//! receipt is exactly `ReceiptPayload::to_json()`, a JWS payload exactly
+//! parser the caller already has. The documents are the library's own, and
+//! the same bytes `aprv.wasm` returns: a receipt is `aprv-wire`'s receipt
+//! payload (0.7's `ReceiptPayload.toJson()` value), a JWS payload exactly
 //! the signed JSON text.
+//!
+//! # One layer below
+//!
+//! This crate reaches the library through `aprv-surface` (the calls) and
+//! `aprv-wire` (the JSON), the boundary `aprv.wasm` uses too
+//! (docs/rust-core/SURFACE.md §9), so the two cannot drift apart.
 //!
 //! # The clock is an instant, not a callback
 //!
@@ -26,7 +33,7 @@
 //! as long as the handle, and unwind-proof, and getting any of that wrong is
 //! a crash rather than a rejected argument. So the ABI takes the one thing a
 //! fixed clock actually is, a single instant in milliseconds since the Unix
-//! epoch, and a null pointer means the system clock.
+//! epoch, and a null pointer means the system clock, read once per call.
 //!
 //! # Panics never cross the boundary
 //!
@@ -42,9 +49,7 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::missing_panics_doc)]
 
-use apple_purchase_receipt_verifier::{
-    Config, Environment, Failure, Reason, TrustAnchor, Verifier,
-};
+use aprv_surface::{Environment, Failure, Reason, Verifier};
 use std::ffi::{c_char, CStr, CString};
 use std::fmt::Write as _;
 use std::sync::OnceLock;
@@ -126,9 +131,9 @@ pub enum AprvEnvironment {
 /// [`aprv_string_free`]. It is `NULL` only when the allocation itself could
 /// not be made.
 ///
-/// * `status == APRV_REASON_OK`: `json` is the verified payload, exactly
-///   `ReceiptPayload::to_json()` for a receipt and the signed JSON text for
-///   a JWS.
+/// * `status == APRV_REASON_OK`: `json` is the verified payload: for a
+///   receipt the 0.7 `ReceiptPayload` JSON, the bytes `aprv.wasm` returns
+///   as its payload; for a JWS the signed JSON text, exactly.
 /// * anything else: `json` is `{"reason":"<token>","message":"<detail>"}`.
 ///   The token is the `SCREAMING_SNAKE` spelling every port of this library
 ///   shares; the message is a short, non-sensitive description that never
@@ -153,6 +158,26 @@ pub struct AprvResult {
 /// while another thread is inside a call is not.
 pub struct AprvVerifier {
     inner: Verifier,
+    /// The pinned instant, or `None` for the system clock.
+    fixed_now: Option<i64>,
+}
+
+impl AprvVerifier {
+    /// The instant of one call: the pinned one, or the system clock read
+    /// now, once.
+    fn now_ms(&self) -> i64 {
+        self.fixed_now.unwrap_or_else(system_millis)
+    }
+}
+
+/// The system clock in milliseconds since the Unix epoch; negative before
+/// it, and saturated at the ends of `i64`, which no clock reaches.
+fn system_millis() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(after) => i64::try_from(after.as_millis()).unwrap_or(i64::MAX),
+        Err(before) => i64::try_from(before.duration().as_millis()).map_or(i64::MIN, |ms| -ms),
+    }
 }
 
 // --- the panic boundary --------------------------------------------------
@@ -198,7 +223,7 @@ const REASON_CODES: [(i32, &str); 8] = [
 fn reason_code(reason: Reason) -> i32 {
     REASON_CODES
         .iter()
-        .find(|(_, token)| *token == reason.as_str())
+        .find(|(_, token)| *token == reason.token())
         .map_or(AprvReason::UnknownReason as i32, |(code, _)| *code)
 }
 
@@ -234,7 +259,8 @@ unsafe fn borrow_str<'a>(pointer: *const c_char) -> Result<&'a str, i32> {
         .map_err(|_| AprvReason::InvalidUtf8 as i32)
 }
 
-/// Parses the caller's DER anchors. `NULL`, `NULL`, `0` means "not given".
+/// Copies the caller's DER anchors. `NULL`, `NULL`, `0` means "not given",
+/// an empty list, which the surface reads as the bundled Apple roots.
 ///
 /// # Safety
 /// When `count` is non-zero, `ders` must point at `count` readable pointers
@@ -244,10 +270,10 @@ unsafe fn anchors_of(
     ders: *const *const u8,
     lens: *const usize,
     count: usize,
-) -> Result<Option<Vec<TrustAnchor>>, i32> {
+) -> Result<Vec<Vec<u8>>, i32> {
     if count == 0 {
         if ders.is_null() && lens.is_null() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         return Err(AprvReason::InvalidArgument as i32);
     }
@@ -266,9 +292,9 @@ unsafe fn anchors_of(
         }
         // SAFETY: non-null, and the caller guarantees `len` readable bytes.
         let der = unsafe { std::slice::from_raw_parts(*pointer, *len) };
-        anchors.push(TrustAnchor::from_der(der).map_err(|_| AprvReason::InvalidArgument as i32)?);
+        anchors.push(der.to_vec());
     }
-    Ok(Some(anchors))
+    Ok(anchors)
 }
 
 /// Moves an owned Rust string across the boundary. `None` becomes `NULL`,
@@ -336,8 +362,8 @@ fn outcome(result: Result<String, Failure>) -> (i32, String) {
     match result {
         Ok(json) => (AprvReason::Ok as i32, json),
         Err(failure) => {
-            let status = reason_code(failure.reason());
-            (status, error_json(status, failure.message()))
+            let status = reason_code(failure.reason);
+            (status, error_json(status, &failure.message))
         }
     }
 }
@@ -352,10 +378,8 @@ fn outcome(result: Result<String, Failure>) -> (i32, String) {
 #[no_mangle]
 pub extern "C" fn aprv_version() -> *const c_char {
     static VERSION: OnceLock<CString> = OnceLock::new();
-    let version = VERSION.get_or_init(|| {
-        CString::new(apple_purchase_receipt_verifier::VERSION)
-            .unwrap_or_else(|_| CString::default())
-    });
+    let version = VERSION
+        .get_or_init(|| CString::new(aprv_surface::VERSION).unwrap_or_else(|_| CString::default()));
     version.as_ptr()
 }
 
@@ -396,20 +420,15 @@ pub unsafe extern "C" fn aprv_verifier_new(
         let Ok(anchors) = (unsafe { anchors_of(ders, lens, count) }) else {
             return std::ptr::null_mut();
         };
-        let mut builder = Config::builder();
-        if let Some(anchors) = anchors {
-            builder = builder.roots(anchors);
-        }
-        if !fixed_clock_unix_millis.is_null() {
+        let fixed_now = if fixed_clock_unix_millis.is_null() {
+            None
+        } else {
             // SAFETY: non-null, and the caller guarantees one readable,
             // aligned `int64_t`.
-            let now = unsafe { *fixed_clock_unix_millis };
-            builder = builder.clock(move || now);
-        }
-        match builder.build() {
-            Ok(config) => Box::into_raw(Box::new(AprvVerifier {
-                inner: Verifier::new(config),
-            })),
+            Some(unsafe { *fixed_clock_unix_millis })
+        };
+        match Verifier::new(&anchors) {
+            Ok(inner) => Box::into_raw(Box::new(AprvVerifier { inner, fixed_now })),
             Err(_) => std::ptr::null_mut(),
         }
     })
@@ -434,7 +453,7 @@ pub unsafe extern "C" fn aprv_verifier_free(verifier: *mut AprvVerifier) {
 }
 
 /// Verifies a legacy app receipt given as the base64 string an app sends.
-/// On success `out->json` is exactly `ReceiptPayload::to_json()`.
+/// On success `out->json` is the 0.7 `ReceiptPayload` JSON.
 ///
 /// Returns the status, which is also written to `out->status`. `out` may be
 /// `NULL` for a caller that only wants the status.
@@ -454,8 +473,9 @@ pub unsafe extern "C" fn aprv_verify_receipt(
         unsafe {
             call(verifier, receipt_base64, out, |verifier, input| {
                 verifier
-                    .verify_receipt(input)
-                    .map(|payload| payload.to_json())
+                    .inner
+                    .verify_receipt(input.as_bytes(), verifier.now_ms())
+                    .map(|payload| aprv_wire::receipt_payload(&payload))
             })
         }
     })
@@ -478,8 +498,9 @@ pub unsafe extern "C" fn aprv_verify_signed_data(
         unsafe {
             call(verifier, jws, out, |verifier, input| {
                 verifier
-                    .verify_signed_data(input)
-                    .map(apple_purchase_receipt_verifier::JsonPayload::into_json)
+                    .inner
+                    .verify_signed_data(input.as_bytes(), verifier.now_ms())
+                    .map(|payload| payload.json)
             })
         }
     })
@@ -495,7 +516,7 @@ unsafe fn call(
     verifier: *const AprvVerifier,
     input: *const c_char,
     out: *mut AprvResult,
-    verify: impl FnOnce(&Verifier, &str) -> Result<String, Failure>,
+    verify: impl FnOnce(&AprvVerifier, &str) -> Result<String, Failure>,
 ) -> i32 {
     if verifier.is_null() {
         let status = AprvReason::NullPointer as i32;
@@ -516,7 +537,7 @@ unsafe fn call(
         }
     };
     // SAFETY: non-null, and a live handle per the contract.
-    let verifier = unsafe { &(*verifier).inner };
+    let verifier = unsafe { &*verifier };
     let (status, json) = outcome(verify(verifier, input));
     // SAFETY: as above.
     unsafe { finish(out, status, json) }
@@ -559,8 +580,11 @@ pub unsafe extern "C" fn aprv_verify_receipt_endpoint(
             Err(status) => return status,
         };
         // SAFETY: non-null, and a live handle per the contract.
-        let verifier = unsafe { &(*verifier).inner };
-        let response = verifier.verify_receipt_endpoint(environment, body);
+        let verifier = unsafe { &*verifier };
+        let response =
+            verifier
+                .inner
+                .verify_receipt_endpoint(environment, body.as_bytes(), verifier.now_ms());
         // SAFETY: non-null, and a writable `char *` per the contract.
         unsafe { response_json.write(into_c_string(Some(response))) };
         AprvReason::Ok as i32
@@ -633,13 +657,13 @@ mod tests {
     /// enum growing a name to match.
     #[test]
     fn reason_codes_mirror_the_library() {
-        assert_eq!(Reason::all().len(), REASON_CODES.len());
-        for (reason, (code, token)) in Reason::all().iter().zip(REASON_CODES.iter()) {
-            assert_eq!(reason_code(*reason), *code, "code for {reason}");
-            assert_eq!(*token, reason.as_str(), "token for {reason}");
+        assert_eq!(Reason::ALL.len(), REASON_CODES.len());
+        for (reason, (code, token)) in Reason::ALL.iter().zip(REASON_CODES.iter()) {
+            assert_eq!(reason_code(*reason), *code, "code for {reason:?}");
+            assert_eq!(*token, reason.token(), "token for {reason:?}");
             assert_eq!(
                 status_token(*code),
-                reason.as_str(),
+                reason.token(),
                 "status_token for {code}"
             );
         }
@@ -829,26 +853,20 @@ mod tests {
         unsafe { aprv_verifier_free(verifier) };
     }
 
-    /// The receipt document is the library's own `to_json()`, byte for
-    /// byte, which is what the design promises the ABI returns.
+    /// The receipt document is aprv-wire's, byte for byte: the bytes
+    /// aprv.wasm returns as its payload, which is what the design promises
+    /// the ABI returns.
     #[test]
-    fn a_verified_receipt_is_exactly_to_json() {
+    fn a_verified_receipt_is_exactly_the_wire_payload() {
         let der = std::fs::read(fixture("generated-0.7/receipt.der")).unwrap();
         let root = std::fs::read(fixture("generated-0.7/receipt-root.der")).unwrap();
-        let base64 = CString::new(apple_purchase_receipt_verifier::__internal::base64_encode(
-            &der,
-        ))
-        .unwrap();
-        let expected = Verifier::new(
-            Config::builder()
-                .roots([TrustAnchor::from_der(&root).unwrap()])
-                .clock(|| NOW)
-                .build()
+        let base64 = CString::new(base64_encode(&der)).unwrap();
+        let expected = aprv_wire::receipt_payload(
+            &Verifier::new(&[root])
+                .unwrap()
+                .verify_receipt(base64.as_bytes(), NOW)
                 .unwrap(),
-        )
-        .verify_receipt(base64.to_str().unwrap())
-        .unwrap()
-        .to_json();
+        );
         let verifier = pinned("generated-0.7/receipt-root.der");
         let mut out = empty_result();
         let status = unsafe { aprv_verify_receipt(verifier, base64.as_ptr(), &raw mut out) };
@@ -935,10 +953,7 @@ mod tests {
     #[test]
     fn a_pinned_clock_stamps_the_endpoint_request_date() {
         let der = std::fs::read(fixture("generated-0.7/receipt.der")).unwrap();
-        let body = format!(
-            "{{\"receipt-data\":\"{}\"}}",
-            apple_purchase_receipt_verifier::__internal::base64_encode(&der)
-        );
+        let body = format!("{{\"receipt-data\":\"{}\"}}", base64_encode(&der));
         let body = CString::new(body).unwrap();
         let verifier = pinned("generated-0.7/receipt-root.der");
         let mut response: *mut c_char = std::ptr::null_mut();
@@ -976,10 +991,7 @@ mod tests {
     fn a_pinned_clock_judges_a_dateless_receipt() {
         let der = std::fs::read(fixture("generated-0.7/receipt-no-creation-date.der")).unwrap();
         let root = std::fs::read(fixture("generated-0.7/divergence-receipt-root.der")).unwrap();
-        let base64 = CString::new(apple_purchase_receipt_verifier::__internal::base64_encode(
-            &der,
-        ))
-        .unwrap();
+        let base64 = CString::new(base64_encode(&der)).unwrap();
         let ders = [root.as_ptr()];
         let lens = [root.len()];
         for (now, expected) in [
@@ -1000,7 +1012,7 @@ mod tests {
     #[test]
     fn the_version_is_the_library_version() {
         let version = unsafe { CStr::from_ptr(aprv_version()) }.to_str().unwrap();
-        assert_eq!(version, apple_purchase_receipt_verifier::VERSION);
+        assert_eq!(version, aprv_surface::VERSION);
         assert_eq!(version.split('.').count(), 3, "{version} is not x.y.z");
         assert!(version.split('.').all(|part| part.parse::<u32>().is_ok()));
         // Static: the same pointer every call, and never freed.
@@ -1028,6 +1040,11 @@ mod tests {
         assert_eq!(status, AprvReason::UntrustedChain as i32);
         assert!(take_json(out).contains("UNTRUSTED_CHAIN"));
         unsafe { aprv_verifier_free(verifier) };
+    }
+
+    fn base64_encode(bytes: &[u8]) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
     /// Walks up from this crate to the repository's `fixtures/`, never a

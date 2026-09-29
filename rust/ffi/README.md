@@ -17,7 +17,9 @@ cargo build --locked --manifest-path rust/ffi/Cargo.toml            # debug
 cargo build --locked --release --manifest-path rust/ffi/Cargo.toml  # release
 ```
 
-That produces both a `cdylib` and a `staticlib` in `rust/ffi/target/<profile>`:
+That produces both a `cdylib` and a `staticlib` in `rust/target/<profile>`
+(the crate is a member of the `rust/` workspace, whose target directory that
+is):
 
 | Platform | Shared | Static |
 |---|---|---|
@@ -37,12 +39,17 @@ cd rust/ffi && cbindgen --config cbindgen.toml \
   --output include/apple_purchase_receipt_verifier.h
 ```
 
-The crate builds on the same Rust 1.85.0 floor as the library, from a
-committed `Cargo.lock` resolved for that floor:
+The crate builds on the same Rust 1.85.0 floor as the library, from the
+`rust/` workspace's one committed `Cargo.lock`, resolved for that floor
+(run in `rust/`):
 
 ```bash
 CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile
 ```
+
+It reaches the library through `aprv-surface` (the calls) and `aprv-wire`
+(the JSON), the boundary `aprv.wasm` is built on too, so the C ABI and the
+Wasm module hand out the same bytes.
 
 **Phase 2 — prebuilt binaries — does not exist yet.** There is no
 `.so`/`.dylib`/`.dll` attached to a release and no package on any registry.
@@ -124,8 +131,9 @@ the JSON.
 ### Why JSON is the interchange
 
 `AprvResult.json` carries the answer: the signed JSON text for a JWS,
-exactly `ReceiptPayload::to_json()` for a receipt, Apple's own response body
-for the endpoint call.
+`aprv-wire`'s receipt payload for a receipt (the value of 0.7's
+`ReceiptPayload.toJson()`, and the bytes `aprv.wasm` returns as its
+payload), Apple's own response body for the endpoint call.
 
 A verified transaction is an open-ended JSON claim set and a verified receipt
 is a tree with repeated groups and raw byte attributes. Modelling either as C
@@ -139,7 +147,8 @@ The receipt encoding is the JSON value every 0.7 port shares and the
 conformance vectors pin (the value, not the bytes): snake_case keys, dates as `*_ms` epoch
 milliseconds, 64-bit ids as strings, bytes as standard base64,
 `unknown_attributes` keyed by the attribute number. JWS claims are passed
-through exactly as Apple signed them.
+through exactly as Apple signed them. `rust/bindings/wire/schema/` describes
+the receipt value as JSON Schema 2020-12.
 
 ### Status codes are stable and append-only
 
@@ -217,7 +226,7 @@ cmake --build rust/ffi/target/cppbuild --config Debug
 rust/ffi/target/cppbuild/bin/aprv_conformance rust/ffi/target/manifest
 
 # 3. the same vectors from a language with no compiler in the loop
-python3 rust/ffi/tests/conformance.py rust/ffi/target/debug
+python3 rust/ffi/tests/conformance.py rust/target/debug
 ```
 
 **Layer 2 is the primary evidence.** A passing C++ run says the header
@@ -272,7 +281,7 @@ the exported symbols by name, so there is no compiler and no package in the
 loop; the conformance harness in `tests/` is built the same way.
 
 ```bash
-python3 rust/ffi/examples/python/example.py rust/ffi/target/release
+python3 rust/ffi/examples/python/example.py rust/target/release
 ```
 
 ## Elixir

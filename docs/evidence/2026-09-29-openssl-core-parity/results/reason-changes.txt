@@ -1,0 +1,103 @@
+verdict flips: 5
+  algorithms: algorithms/jws/chain-ec-p521-sha512: old UNTRUSTED_CHAIN (intermediate is not issued by a pinned root), new verified
+  substrate: substrate/pkix/jws/name-case-differs: old UNTRUSTED_CHAIN (leaf is not issued by the intermediate), new verified
+  substrate: substrate/pkix/jws/name-printable-vs-utf8: old UNTRUSTED_CHAIN (leaf is not issued by the intermediate), new verified
+  substrate: substrate/pkix/jws/name-extra-whitespace: old UNTRUSTED_CHAIN (leaf is not issued by the intermediate), new verified
+  substrate: substrate/pkix/jws/name-trailing-space: old UNTRUSTED_CHAIN (leaf is not issued by the intermediate), new verified
+reason changes: 138 rows in 32 groups
+    33 UNTRUSTED_CHAIN: chain does not reach a pinned root
+       -> MALFORMED: malformed CMS structure: not a CMS ContentInfo
+       e.g. hostile:hostile/receipt-der/g5-m1-990678718
+    21 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_CERTIFICATE: certificate is outside its validity window at the chain instant
+       e.g. fuzz:fuzz/87/substrate/pkix/jws/name-trailing-space
+     8 INVALID_CERTIFICATE: receipt signer certificate does not decode
+       -> MALFORMED: malformed CMS structure: not a CMS ContentInfo
+       e.g. hostile:hostile/receipt-der/g5-m1-233102848
+     8 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_CERTIFICATE: x5c entry is not a valid certificate
+       e.g. hostile:hostile/jws/m0-867798168
+     6 INVALID_CERTIFICATE: receipt signer certificate does not decode
+       -> UNTRUSTED_CHAIN: chain does not reach a pinned root
+       e.g. hostile:hostile/receipt-der/g5-m1-119436138
+     6 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature does not match the leaf key
+       e.g. fuzz:fuzz/144/substrate/pkix/jws/name-printable-vs-utf8
+     5 INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.1
+       -> MALFORMED: malformed CMS structure: not a CMS ContentInfo
+       e.g. substrate:substrate/cms/crls-garbage
+     5 UNTRUSTED_CHAIN: chain does not reach a pinned root
+       -> INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.1
+       e.g. substrate:substrate/pkix/receipt/name-case-differs
+     5 INVALID_CERTIFICATE: certificate is outside its validity window at the chain instant
+       -> MALFORMED: malformed CMS structure: not a CMS ContentInfo
+       e.g. fuzz:fuzz/796/substrate/cms/messagedigest-two-values
+     4 INVALID_SIGNATURE: ES256 signature does not match the leaf key
+       -> INVALID_CERTIFICATE: x5c entry is not a valid certificate
+       e.g. fuzz:fuzz/635/transaction/internal-error-on-bundle-id-number
+     3 INVALID_CERTIFICATE: x5c entry is not a valid certificate
+       -> UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       e.g. hostile:hostile/jws/m0-575934545
+     3 MALFORMED: malformed CMS structure: malformed CMS structure
+       -> UNTRUSTED_CHAIN: chain does not reach a pinned root
+       e.g. fuzz:fuzz/748/substrate/cms/signer-identified-by-ski
+     3 MALFORMED: an embedded certificate is not a valid certificate
+       -> UNTRUSTED_CHAIN: chain does not reach a pinned root
+       e.g. fuzz:fuzz/881/substrate/cms/first-signerinfo-bad-second-good
+     3 UNTRUSTED_CHAIN: intermediate is not issued by a pinned root
+       -> INVALID_CERTIFICATE: x5c entry is not a valid certificate
+       e.g. fuzz:fuzz/1399/substrate/time/jws/gentime-na
+     3 INVALID_CERTIFICATE: x5c entry is not a valid certificate
+       -> UNTRUSTED_CHAIN: intermediate is not issued by a pinned root
+       e.g. fuzz:fuzz/1546/transaction/accept-null-and-unmodelled-claims
+     3 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 63
+       e.g. fuzz:fuzz/2295/substrate/pkix/jws/name-trailing-space
+     2 MALFORMED: an embedded certificate is not a valid certificate
+       -> INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.1
+       e.g. hostile:hostile/receipt-der/gen-m0-776246130
+     2 MALFORMED: malformed CMS structure: malformed CMS structure
+       -> INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.1
+       e.g. substrate:substrate/cms/signer-identified-by-ski
+     2 INVALID_CERTIFICATE: x5c entry is not a valid certificate
+       -> INVALID_SIGNATURE: ES256 signature does not match the leaf key
+       e.g. fuzz:fuzz/1317/transaction/reject-environment-outside-accept-set
+     1 MALFORMED: signer certificate not embedded
+       -> INVALID_SIGNATURE: CMS signature check failed
+       e.g. hostile:hostile/receipt-der/g5-m1-648951490
+     1 UNTRUSTED_CHAIN: chain does not reach a pinned root
+       -> INVALID_CERTIFICATE: certificate is outside its validity window at the chain instant
+       e.g. fuzz:fuzz/52/substrate/pkix/receipt/name-trailing-space
+     1 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 113
+       e.g. fuzz:fuzz/895/substrate/pkix/jws/name-case-differs
+     1 MALFORMED: malformed CMS structure: multi-byte ASN.1 tags are not supported
+       -> INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.1
+       e.g. fuzz:fuzz/985/substrate/flood/unsigned-attribute-values-10000
+     1 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 80
+       e.g. fuzz:fuzz/1879/substrate/pkix/jws/name-printable-vs-utf8
+     1 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 69
+       e.g. fuzz:fuzz/2119/substrate/pkix/jws/name-trailing-space
+     1 UNTRUSTED_CHAIN: intermediate is not a CA
+       -> INVALID_CERTIFICATE: x5c entry is not a valid certificate
+       e.g. fuzz:fuzz/2268/substrate/pkix/jws/intermediate-no-basic-constraints
+     1 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 102
+       e.g. fuzz:fuzz/2923/substrate/pkix/jws/name-extra-whitespace
+     1 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 25
+       e.g. fuzz:fuzz/2997/substrate/pkix/jws/name-case-differs
+     1 UNTRUSTED_CHAIN: an intermediate is not a CA
+       -> MALFORMED: malformed CMS structure: not a CMS ContentInfo
+       e.g. fuzz:fuzz/3079/substrate/pkix/receipt/intermediate-version-1
+     1 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 13
+       e.g. fuzz:fuzz/3455/substrate/pkix/jws/name-extra-whitespace
+     1 MALFORMED: malformed CMS structure: unsupported ASN.1 length
+       -> INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.1
+       e.g. fuzz:fuzz/4378/substrate/flood/unsigned-attribute-values-10000
+     1 UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+       -> INVALID_SIGNATURE: ES256 signature must be 64 bytes, got 33
+       e.g. fuzz:fuzz/4952/substrate/pkix/jws/name-extra-whitespace

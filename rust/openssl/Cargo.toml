@@ -1,0 +1,39 @@
+# aprv-openssl: the OpenSSL adapter under apple-purchase-receipt-verifier
+# (docs/rust-core/DECISIONS.md R21). The one crate below the core that holds
+# `unsafe` code: every raw openssl-sys call sits in a small safe function
+# with a `// SAFETY:` comment. It knows nothing about JSON, the C ABI or
+# Wasm; the core calls it and keeps Apple's policy.
+#
+# Which OpenSSL is linked is openssl-sys's decision at build time:
+#   - by default, OpenSSL 4.0.2 built from source by openssl-src 400.x
+#     (the `vendored` feature; the workspace's [patch.crates-io] points
+#     openssl-sys at ../vendor/openssl-sys, whose one changed manifest
+#     line lets it take openssl-src 400.x; see README.md);
+#   - OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<install> OPENSSL_STATIC=1 links a
+#     prebuilt OpenSSL instead, as the wasm32-wasip1 build must.
+[package]
+name = "aprv-openssl"
+version = "0.7.0"
+edition = "2021"
+rust-version = "1.85.0"
+description = "OpenSSL adapter for apple-purchase-receipt-verifier: CMS, X.509 path validation over pinned anchors, EVP signatures and the receipt payload's ASN.1 templates."
+license = "MIT"
+repository = "https://github.com/emindeniz99/apple-purchase-receipt-verifier"
+readme = "README.md"
+build = "build.rs"
+exclude = ["tests/**", "CI-NOTES.md"]
+
+[features]
+default = ["vendored"]
+# OpenSSL built from source by openssl-src. OPENSSL_NO_VENDOR=1 overrides it
+# at build time without changing features.
+vendored = ["openssl/vendored"]
+
+[dependencies]
+openssl = "0.10.81"
+openssl-sys = "0.9.117"
+foreign-types = "0.3.2"
+libc = "0.2"
+
+[build-dependencies]
+cc = "1.2"
