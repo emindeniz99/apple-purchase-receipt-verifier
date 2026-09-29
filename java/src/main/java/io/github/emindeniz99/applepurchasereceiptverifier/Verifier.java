@@ -30,7 +30,10 @@ public interface Verifier {
      * @throws NullPointerException     if {@code config} is null
      * @throws IllegalArgumentException if {@code config} has no roots, since
      *                                  such a verifier would reject everything
-     * @throws IllegalStateException    if a dependency does not load: a
+     * @throws IllegalStateException    if the {@code -wasm} artifact, which
+     *                                  has the same class names, is on the
+     *                                  classpath too; if a dependency does
+     *                                  not load: a
      *                                  jackson-core below 2.16, a
      *                                  BouncyCastle that fails to initialise,
      *                                  or a time-zone database without
