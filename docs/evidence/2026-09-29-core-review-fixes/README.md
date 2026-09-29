@@ -9,7 +9,9 @@ The note is [`../2026-09-29-core-review-fixes.md`](../2026-09-29-core-review-fix
 | `against_a2.py` | Which corpus rows of the rebuilt module differ from lane A2's module, and is it the verdict or only the message? |
 | `gen_fixtures_round2.py` | Round 2: which shared cases do the second review's findings become? Writes `fixtures/generated-0.7/core-review-r2-*.der` and their 17 cases |
 | `flood_inputs.py` | Round 2: the F1 floods (1.17 million `30 00` entries in each of the three sets), junk of their size and the 1,057-certificate flood, for `wasm_cost.mjs files` |
-| `results/` | The output of each command below, local paths replaced by `$REPO` and `$SCRATCH`; `round2-*` are round 2's |
+| `gen_fixtures_round3.py` | Round 3: which shared cases do the third review's F1 and F2 become? Writes `fixtures/generated-0.7/core-review-r3-*.der` and their 7 cases |
+| `node_budget_inputs.py` | Round 3 (F4): the costliest inputs the envelope's node budget admits, for `wasm_cost.mjs files` |
+| `results/` | The output of each command below, local paths replaced by `$REPO` and `$SCRATCH`; `round2-*` are round 2's, `round3-*` round 3's |
 
 ## Reproduce
 
@@ -89,3 +91,44 @@ The native costs in the note come from the second review's probes, rerun
 on this branch; like round 1's, they stay outside the repository, and
 `rust/tests/envelope_bounds.rs`, `rust/tests/trust_pinning.rs` and the unit
 tests of `rust/src/receipt_payload.rs` rebuild each shape.
+
+### Round 3
+
+`$SCRATCH/core-fix3/out` holds this round's module, `$SCRATCH/g1c` the
+G1c module, its pinned calls (`calls/<corpus>.pinned.jsonl`), its rows
+(`rows/module-<corpus>.jsonl`) and `same.py`. The generators need
+`cryptography`; the fixture one is run once, since ECDSA signatures are
+randomised.
+
+```sh
+python3 docs/evidence/2026-09-29-core-review-fixes/gen_fixtures_round3.py
+node tools/lint-cases.mjs
+rust/bindings/abi/build.sh "$SCRATCH/core-fix3/out"
+tools/check-wasm.sh "$SCRATCH/core-fix3/out" rust/bindings/abi/wit/aprv.wit  # results/round3-check-wasm.txt
+node tools/wasm-trap-host.mjs cases "$SCRATCH/core-fix3/out/aprv.wasm" fixtures/cases.json \
+  --answers "$SCRATCH/core-fix3/answers"                                # results/round3-cases-trap-host.txt
+node tools/wasm-trap-host.mjs abi-tests "$SCRATCH/core-fix3/out/aprv.wasm" fixtures/cases.json  # round3-abi-tests-node.txt
+node tools/wasm-trap-host.mjs cases "$SCRATCH/g1c/aprv.wasm" fixtures/cases.json  # G1c on the new cases
+APRV_WASM="$SCRATCH/core-fix3/out/aprv.wasm" APRV_COMPONENT="$SCRATCH/core-fix3/out/aprv.component.wasm" \
+  cargo test --locked --manifest-path rust/bindings/abi/tests/Cargo.toml  # results/round3-abi-tests-wasmtime.txt
+for c in algorithms substrate cases hostile fuzz; do
+  node tools/wasm-trap-host.mjs calls "$SCRATCH/core-fix3/out/aprv.wasm" "$SCRATCH/g1c/calls/$c.pinned.jsonl" \
+    > "$SCRATCH/core-fix3/rows/module-$c.jsonl"
+  python3 "$SCRATCH/g1c/same.py" "$SCRATCH/g1c/rows/module-$c.jsonl" "$SCRATCH/core-fix3/rows/module-$c.jsonl" --list
+  python3 docs/evidence/2026-09-29-aprv-wasm-parity/scripts/split.py "$SCRATCH/g1c/calls/$c.pinned.jsonl" \
+    "$SCRATCH/core-fix3/rows/module-$c.jsonl" "$SCRATCH/core-fix3/answers-"
+done                                                                    # results/round3-against-g1c.txt
+node tools/validate-wire.mjs rust/bindings/wire/schema/verify-receipt-result.schema.json \
+  "$SCRATCH/core-fix3/answers-verify-receipt.jsonl"                     # and the other answers: round3-schemas.txt
+python3 docs/evidence/2026-09-29-core-review-fixes/node_budget_inputs.py "$SCRATCH/core-fix3/budget"
+node docs/evidence/2026-09-29-core-review-fixes/wasm_cost.mjs files "$SCRATCH/core-fix3/out/aprv.wasm" \
+  fixtures/generated-0.7/receipt-root.der "$SCRATCH"/core-fix3/budget/*.der  # round3-node-budget-wasm.txt
+(cd rust && cargo test --locked --workspace && cargo test --release --locked --workspace && \
+  cargo clippy --locked --workspace --all-targets -- -D warnings && \
+  cargo fmt --all -- --check && cargo deny check bans licenses sources)  # round3-deny.txt
+cargo +1.85.0 test --locked --manifest-path rust/Cargo.toml --test hostile  # F3 on the floor, five times
+node tools/check-layering.mjs
+APRV_WASM="$SCRATCH/core-fix3/out/aprv.wasm" npm --prefix tools test
+mvn -B -T 1 -f java -Dtest=ConformanceCasesTest test                    # round3-java.txt
+```
+

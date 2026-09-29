@@ -1,0 +1,12 @@
+genuine.der: 8.0 ms, memory 2031616 B: {"verified":true
+oids-20.der: 100.7 ms, memory 17760256 B: {"verified":true
+oids-over.der: 29.9 ms, memory 2686976 B: {"verified":false,"reason":"MALFORMED"
+oids-short.der: 62.3 ms, memory 5046272 B: {"verified":true
+genuine.der: 9.9 ms, memory 2031616 B: {"verified":true
+oids-20.der: 112.6 ms, memory 17760256 B: {"verified":true
+oids-over.der: 31.8 ms, memory 2686976 B: {"verified":false,"reason":"MALFORMED"
+oids-short.der: 86.6 ms, memory 5046272 B: {"verified":true
+genuine.der: 7.3 ms, memory 2031616 B: {"verified":true
+oids-20.der: 128.0 ms, memory 17760256 B: {"verified":true
+oids-over.der: 48.3 ms, memory 2686976 B: {"verified":false,"reason":"MALFORMED"
+oids-short.der: 67.4 ms, memory 5046272 B: {"verified":true
