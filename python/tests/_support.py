@@ -4,7 +4,6 @@ the record of what the stand-in module is known to answer differently."""
 import hashlib
 import unittest
 from collections.abc import Callable
-from importlib import resources
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -21,9 +20,7 @@ FIXTURES = TESTS.parents[1] / "fixtures"
 #: some of what these tests expect of 0.7's wire shape cannot hold yet.
 STANDIN_SHA256 = "da786ac853464e7b837c5483f9b04a27a3a5c2ff0340fa526f60482fd80fdb68"
 
-MODULE_SHA256 = hashlib.sha256(
-    resources.files("apple_purchase_receipt_verifier").joinpath("aprv.wasm").read_bytes()
-).hexdigest()
+MODULE_SHA256 = hashlib.sha256(_host._WASM).hexdigest()
 IS_STANDIN = MODULE_SHA256 == STANDIN_SHA256
 
 

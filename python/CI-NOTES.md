@@ -4,7 +4,11 @@ For the integrator, who owns `.github/`. Nothing here has run in GitHub
 Actions: the only interpreter in the lane's environment was CPython 3.11 on
 glibc x86_64, and the results in the hand-back say which leg ran where.
 
-Every command runs in `python/`. The package has one runtime dependency,
+Every command runs in `python/`. `aprv.wasm` is git-ignored: every job copies
+the module into `apple_purchase_receipt_verifier/aprv.wasm` (or sets `APRV_WASM`)
+before anything imports the package; a missing file is an error at import.
+While it is the stand-in, the file to copy is the round-13
+`aprv-cabi.core.wasm` (SHA-256 in `aprv.wasm.sha256`). The package has one runtime dependency,
 `wasmtime>=49`; the `dev` extra adds ruff, mypy and setuptools (the
 install-failure test builds this source tree with it).
 
@@ -129,16 +133,15 @@ file keeps its name). Before the build, put the release build's module in
 place and check it:
 
 ```sh
-cp "$ARTIFACTS/aprv.wasm" apple_purchase_receipt_verifier/aprv.wasm
-(cd apple_purchase_receipt_verifier && sha256sum aprv.wasm > aprv.wasm.sha256 \
-  && test "$(cut -d' ' -f1 aprv.wasm.sha256)" = "$RELEASE_SHA256")
+export APRV_WASM="$ARTIFACTS/aprv.wasm"     # tools/build_dist.py copies it in
+echo "$RELEASE_SHA256  aprv.wasm" | (cd "$ARTIFACTS" && sha256sum -c -)
 ```
 
-The package refuses to import when the two files disagree, and `tests/_support.py`
-recognises the stand-in by its SHA-256, so both files must be the release's.
-The committed copy is kept in step by the same rule as Go's and Swift's: a CI
-step rebuilds the module and fails when its SHA-256 differs from the committed
-`aprv.wasm.sha256`.
+`build_dist.py` writes `aprv.wasm.sha256` from the module it copies, and the
+package refuses to import when the two disagree. `tests/_support.py` recognises
+the stand-in by its SHA-256, so the release module must not carry it. The
+module is not committed on this branch; only `go/` and the Swift package commit
+the real one, once, at integration (DECISIONS.md R14).
 
 The wheels carry OpenSSL's licence and NOTICE, wasi-libc's and Rust std's texts
 (ARCHITECTURE.md §9, "Licences ship with the code"): add them to

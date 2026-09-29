@@ -7,9 +7,14 @@ verdicts are the module's own business (test_conformance.py, test_abi.py)."""
 import contextlib
 import gc
 import json
+import os
+import subprocess
+import sys
+import tempfile
 import threading
 import unittest
 import weakref
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -221,6 +226,47 @@ class AbiMismatchTest(unittest.TestCase):
 
     def test_the_bundled_module_is_accepted(self) -> None:
         _host.default_runtime()  # compiles and checks the bundled module
+
+
+class ModuleFileTest(unittest.TestCase):
+    """The module is not committed: it is read from the package or from
+    ``APRV_WASM``, checked against ``aprv.wasm.sha256``, and a missing or
+    swapped file is an error that says so."""
+
+    def run_import(self, override: "str | None") -> "subprocess.CompletedProcess[str]":
+        package_root = str(Path(__file__).resolve().parents[1])
+        environment = {k: v for k, v in os.environ.items() if k != "APRV_WASM"}
+        environment["PYTHONPATH"] = package_root
+        if override is not None:
+            environment["APRV_WASM"] = override
+        return subprocess.run(
+            [sys.executable, "-c", "import apple_purchase_receipt_verifier"],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+
+    def test_a_missing_module_is_a_clear_error_naming_the_variable(self) -> None:
+        done = self.run_import("/nonexistent/aprv.wasm")
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("APRV_WASM", done.stderr)
+        self.assertIn("not found", done.stderr)
+
+    def test_the_variable_overrides_the_package_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            copy = Path(directory) / "elsewhere.wasm"
+            copy.write_bytes(_host._WASM)
+            self.assertEqual(0, self.run_import(str(copy)).returncode)
+
+    def test_a_module_that_does_not_match_the_recorded_hash_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            other = Path(directory) / "other.wasm"
+            other.write_bytes(_host._WASM + b"\x00")
+            done = self.run_import(str(other))
+        self.assertNotEqual(0, done.returncode)
+        self.assertIn("SHA-256", done.stderr)
 
 
 class TrapAndInternalFailureTest(unittest.TestCase):

@@ -10,10 +10,18 @@ refuses the platform with a message that points to aprv-server and the C ABI
 (``_wheel_platform.py``, docs/rust-core R28). A plain ``python -m build``
 would publish the ``any`` wheel and quietly undo that, so the release job
 uses this script, and its check step, instead. Needs the ``build`` package.
+
+The module is not in git: the release job hands it over and names it in
+``APRV_WASM``. ``build`` copies that file into the package, writes its SHA-256
+beside it (``aprv.wasm.sha256``, which the package checks at import) and stops
+when the variable is unset or the file is missing.
 """
 
 import argparse
+import hashlib
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +34,19 @@ from _wheel_platform import WHEEL_TAGS  # noqa: E402
 DISTRIBUTION = "apple_purchase_receipt_verifier"
 
 
+def install_module() -> None:
+    """Puts the release's ``aprv.wasm``, from ``APRV_WASM``, into the package."""
+    source = os.environ.get("APRV_WASM")
+    if not source or not Path(source).is_file():
+        raise SystemExit("APRV_WASM must name the release's aprv.wasm; it is not in git")
+    package = PROJECT / DISTRIBUTION
+    shutil.copyfile(source, package / "aprv.wasm")
+    digest = hashlib.sha256(Path(source).read_bytes()).hexdigest()
+    (package / "aprv.wasm.sha256").write_text(f"{digest}  aprv.wasm\n", encoding="ascii")
+
+
 def build(out: Path) -> None:
+    install_module()
     out.mkdir(parents=True, exist_ok=True)
     base = [sys.executable, "-m", "build", "--outdir", str(out)]
     subprocess.run([*base, "--sdist", str(PROJECT)], check=True)

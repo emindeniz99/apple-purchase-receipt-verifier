@@ -16,6 +16,7 @@ handle at start and never frees it.
 """
 
 import hashlib
+import os
 import secrets
 import struct
 import threading
@@ -70,14 +71,33 @@ class Fault(Exception):
     instance involved is discarded; ``__cause__`` names what happened."""
 
 
+#: The environment variable that names the module file, instead of the one
+#: inside the package. Developers and CI copy the file into place; it is not
+#: committed (it is git-ignored), and a release wheel carries the release's.
+MODULE_ENV_VAR = "APRV_WASM"
+
+
 def _read_pinned_module() -> bytes:
-    """The bundled module, checked against the SHA-256 recorded beside it,
-    so a corrupted or swapped file stops the import instead of running."""
+    """The module (``$APRV_WASM``, else ``aprv.wasm`` inside the package),
+    checked against the SHA-256 in the package's ``aprv.wasm.sha256``, so a
+    corrupted or swapped file stops the import instead of running. A missing
+    file is an error that says where it looked."""
     package = resources.files(__package__)
-    wasm = package.joinpath("aprv.wasm").read_bytes()
+    override = os.environ.get(MODULE_ENV_VAR)
+    try:
+        if override:
+            with open(override, "rb") as handle:
+                wasm = handle.read()
+        else:
+            wasm = package.joinpath("aprv.wasm").read_bytes()
+    except OSError as error:
+        raise RuntimeError(
+            f"aprv.wasm not found ({override or 'inside the package'}): copy the module into "
+            f"the package directory, or set {MODULE_ENV_VAR} to its path"
+        ) from error
     recorded = package.joinpath("aprv.wasm.sha256").read_text(encoding="ascii").split()
     if not recorded or hashlib.sha256(wasm).hexdigest() != recorded[0]:
-        raise RuntimeError("the bundled aprv.wasm does not match its recorded SHA-256")
+        raise RuntimeError("aprv.wasm does not match the SHA-256 in aprv.wasm.sha256")
     return wasm
 
 

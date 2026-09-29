@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -224,6 +225,16 @@ class ReleaseFilesTest(unittest.TestCase):
             ["missing apple_purchase_receipt_verifier-0.8.0-py3-none-win_arm64.whl"],
             self.problems(names),
         )
+
+    def test_the_release_build_stops_without_the_module(self) -> None:
+        module = load_build_dist()
+        environment = {k: v for k, v in os.environ.items() if k != "APRV_WASM"}
+        with (
+            unittest.mock.patch.dict(os.environ, environment, clear=True),
+            self.assertRaises(SystemExit) as caught,
+        ):
+            module.install_module()  # type: ignore[attr-defined]
+        self.assertIn("APRV_WASM", str(caught.exception))
 
     def test_no_sdist_is_refused(self) -> None:
         names = [n for n in self.complete() if not n.endswith(".tar.gz")]

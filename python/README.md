@@ -17,7 +17,8 @@ The import package is `apple_purchase_receipt_verifier`; the distribution is
 
 The verification core is one WebAssembly module, `aprv.wasm`, that this package
 runs on [wasmtime-py](https://pypi.org/project/wasmtime/). The Python code moves
-bytes in and out and parses nothing.
+bytes in and out and parses nothing. In a source checkout the module is not
+committed: copy it into `apple_purchase_receipt_verifier/`, or point `APRV_WASM` at it.
 
 - **It compiles at start.** The first `Verifier` in a process compiles the
   module: about 1 s on 4 CPUs, about 3 s on one. Later ones take under a
