@@ -448,7 +448,9 @@ security protocols, and speed does not matter.
 - Memory (owner, Q32 a): a hostile 3 MiB payload of tiny attributes peaks
   at 92 MiB in the template reader against 33 MiB for a tiny one; a whole
   such receipt at 145 MiB in Node against 67 MiB ([ASN.1 payload §2,
-  §3][payload]). Accepted, bounded by the 3 MiB cap.
+  §3][payload]). Accepted, bounded by the 3 MiB cap. The figure predates
+  the header walk of the core review; the unsigned and signerless forms
+  now peak near 16 MiB ([core review fixes][corefix]).
 
 **Build.** Native: `openssl-src` 400.x through a one-line
 `[patch.crates-io]` of `openssl-sys` 0.9.117's manifest, or
