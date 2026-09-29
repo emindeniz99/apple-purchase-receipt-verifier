@@ -1,14 +1,14 @@
 //! The CMS envelope's bounds, and the order in which they run.
 //!
 //! Before OpenSSL's full decode (`d2i_CMS_ContentInfo`) builds any embedded
-//! certificate's key, the adapter decodes the envelope shallowly and counts
-//! its members, then walks every header of the whole envelope under 0.7's
-//! depth bound (32 constructed values, the `ContentInfo` counted as 1) and
-//! node budget (100,000 values). Each test here states one input the core
-//! review found (docs/evidence/2026-09-29-core-review-fixes.md), the verdict
-//! 0.7 gave it, and, through the adapter's full-decode counter, that a
-//! refusal happened before the full decode. A timing bound can drift with
-//! the machine; the counter cannot.
+//! certificate's key, the adapter walks every header of the whole envelope
+//! under 0.7's depth bound (32 constructed values, the `ContentInfo`
+//! counted as 1) and node budget (100,000 values), then decodes the
+//! envelope shallowly and counts its members. Each test here states one
+//! input the core reviews found (docs/evidence/2026-09-29-core-review-fixes.md),
+//! the verdict 0.7 gave it, and, through the adapter's full-decode counter,
+//! that a refusal happened before the full decode. A timing bound can drift
+//! with the machine; the counter cannot.
 
 mod common;
 
@@ -16,6 +16,7 @@ use apple_purchase_receipt_verifier::__internal::cms_full_decodes_during;
 use apple_purchase_receipt_verifier::{Failure, Reason, ReceiptPayload};
 use common::der::{parse_exact, tag, Tlv};
 use common::{der, der_int, der_oid, der_seq, der_set, CmsBuilder};
+use std::time::{Duration, Instant};
 
 const OID_SIGNED_DATA: &str = "1.2.840.113549.1.7.2";
 const OID_ENVELOPED_DATA: &str = "1.2.840.113549.1.7.3";
@@ -73,6 +74,8 @@ struct Envelope {
     extra_choices: Vec<Vec<u8>>,
     crls: Option<Vec<u8>>,
     unsigned_attributes: Option<Vec<u8>>,
+    /// Encoded values written after the one `SignerInfo`, inside its SET.
+    extra_signer_infos: Vec<u8>,
 }
 
 impl Envelope {
@@ -83,6 +86,7 @@ impl Envelope {
             extra_choices: Vec::new(),
             crls: None,
             unsigned_attributes: None,
+            extra_signer_infos: Vec::new(),
         }
     }
 
@@ -111,7 +115,8 @@ impl Envelope {
         if let Some(crls) = &self.crls {
             parts.push(crls.clone());
         }
-        parts.push(der_set(&[signer_info]));
+        signer_info.extend_from_slice(&self.extra_signer_infos);
+        parts.push(der(tag::SET, &signer_info));
         der_seq(&[
             der_oid(OID_SIGNED_DATA),
             der(tag::CONTEXT_0, &der_seq(&parts)),
@@ -396,4 +401,106 @@ fn values_kept_whole_in_the_envelope_are_valid_asn1() {
         &[der_int(1), der(0x01, &[0xff]), der(0x05, &[])].concat(),
     )));
     assert_verifies(&envelope.build());
+}
+
+/// The shared receipt with `count` two-octet `30 00` entries added to one of
+/// the three sets the shallow decode keeps as `SET OF ANY`, each of which
+/// would cost it an allocation.
+fn tiny_entry_flood(set: &str, count: usize) -> Vec<u8> {
+    let entries = [0x30, 0x00].repeat(count);
+    let mut envelope = Envelope::shared();
+    match set {
+        "certificates" => envelope.extra_choices = vec![entries],
+        "crls" => envelope.crls = Some(der(tag::CONTEXT_1, &entries)),
+        "signerInfos" => envelope.extra_signer_infos = entries,
+        other => unreachable!("{other}"),
+    }
+    envelope.build()
+}
+
+/// As many two-octet entries as keep the envelope inside the 3 MiB base64
+/// cap on receipts: about 1.17 million.
+const TINY_ENTRIES: usize = (2_359_296 - 8_000) / 2;
+
+#[test]
+fn a_million_tiny_set_entries_are_refused_by_the_node_budget_first() {
+    // Round-2 review F1: the shallow decode keeps the certificates, crls
+    // and signerInfos sets as SET OF ANY, so OpenSSL allocated a value per
+    // entry, 1.17 million of them (0.6 to 0.95 s and about 114 MB), before
+    // the member bounds refused the count. The walk now runs first, so the
+    // node budget refuses the set after 100,000 values; the answer names
+    // the budget, not the member count, which is the order this pins.
+    for set in ["certificates", "crls", "signerInfos"] {
+        assert_refused_early(
+            &tiny_entry_flood(set, TINY_ENTRIES),
+            "more than 100000 ASN.1 values",
+        );
+    }
+    // Under the budget, the member bounds still answer, with the count.
+    assert_refused_early(
+        &tiny_entry_flood("certificates", 20),
+        "embeds 23 certificates",
+    );
+    assert_refused_early(&tiny_entry_flood("crls", 11), "embeds 11 CRLs");
+    assert_refused_early(&tiny_entry_flood("signerInfos", 4), "carries 5 SignerInfos");
+}
+
+#[test]
+fn a_tiny_entry_flood_costs_what_junk_of_its_size_costs() {
+    // F1's cost, end to end through `verify_receipt`, base64 included: the
+    // reviewer measured about 770 ms a call for the certificates flood
+    // against 5 ms for junk of the same size, and the process's peak memory
+    // grew from 21 to 146 MB. The junk is refused at its first header, so
+    // what it costs is decoding 3 MiB of base64, which any reader of the
+    // flood pays; the flood may add the walk of 100,000 values on top.
+    // Half the junk's cost again, plus ten genuine verifications, is
+    // headroom for that walk and for timing noise; a shallow decode of the
+    // 1.17 million entries costs several times more.
+    let verifier = common::receipt_verifier();
+    let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
+    let floods: Vec<String> = ["certificates", "crls", "signerInfos"]
+        .into_iter()
+        .map(|set| encode(&tiny_entry_flood(set, TINY_ENTRIES)))
+        .collect();
+    let mut junk_der = tiny_entry_flood("certificates", TINY_ENTRIES);
+    junk_der[0] = 0x04;
+    let (junk, genuine) = (encode(&junk_der), encode(&common::receipt_der()));
+
+    let mut genuine_cost = Duration::ZERO;
+    let mut junk_cost = Duration::ZERO;
+    let mut flood_costs = [Duration::ZERO; 3];
+    for _ in 0..3 {
+        let started = Instant::now();
+        verifier.verify_receipt(&genuine).unwrap();
+        genuine_cost += started.elapsed();
+
+        let started = Instant::now();
+        let refused = verifier.verify_receipt(&junk).unwrap_err();
+        junk_cost += started.elapsed();
+        assert_eq!(refused.reason(), Reason::Malformed);
+
+        for (flood, cost) in floods.iter().zip(&mut flood_costs) {
+            let started = Instant::now();
+            let refused = verifier.verify_receipt(flood).unwrap_err();
+            *cost += started.elapsed();
+            assert_eq!(refused.reason(), Reason::Malformed);
+            assert!(
+                refused
+                    .to_string()
+                    .contains("more than 100000 ASN.1 values"),
+                "{refused}"
+            );
+        }
+    }
+    for (set, cost) in ["certificates", "crls", "signerInfos"]
+        .into_iter()
+        .zip(flood_costs)
+    {
+        assert!(
+            cost < junk_cost * 3 / 2 + genuine_cost * 10,
+            "a flood of {TINY_ENTRIES} tiny {set} entries cost {cost:?}, against {junk_cost:?} \
+             for junk of the same size and {genuine_cost:?} for a genuine receipt: the shallow \
+             decode is building the set before the node budget refuses it"
+        );
+    }
 }
