@@ -13,7 +13,7 @@
 #     and copies the module to the package's resource path (gitignored);
 #  2. builds the package and its tests, optimised (WasmKit interprets, and
 #     a debug build is far too slow for the suite), and runs the whole
-#     suite, the 311 cases included;
+#     suite, every case in fixtures/cases.json included;
 #  3. runs the five corpora through the package's host layer and compares
 #     each corpus's rows with DIR/rows/module-<corpus>.jsonl;
 #  4. with --bench, builds swift/bench and times the public API

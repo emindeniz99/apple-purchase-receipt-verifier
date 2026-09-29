@@ -80,7 +80,7 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 checks against one module build, where `DIR` has the G1 layout (`aprv.wasm`,
 `calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`, `same.py`):
 it checks the module against the pin (`--pin` rewrites the pin), copies it
-into place, builds optimised, runs the whole suite with the 311 cases, runs
+into place, builds optimised, runs the whole suite with every shared case, runs
 the five corpora through the package's host layer
 (`MeasurementTests.testCorpus`, the `Guest` the `Verifier` uses) and
 compares each corpus's rows byte for byte with the module's reference rows,
@@ -91,6 +91,11 @@ repository, so the corpus step is a manual or nightly job, not a push gate.
 G1c (2026-09-29): 377 of 377 cases, the whole suite green (59 tests, 2
 measurement tests skipped), 6,179 of 6,179 corpus rows identical to the
 module's reference rows, 0 traps.
+
+G1d (2026-09-29, the final module, pin `4e9d2d85...dd`): 384 of 384 cases,
+the whole suite green (60 tests, 2 measurement tests skipped), 6,179 of
+6,179 corpus rows identical to the module's reference rows, 0 traps, with
+no wrapper change.
 
 ## Speed
 
