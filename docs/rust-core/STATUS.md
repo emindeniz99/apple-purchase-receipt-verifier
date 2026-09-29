@@ -528,6 +528,23 @@ work.
   that binary. Lane D2 takes the Phase 7 workflow changes (the gate to
   `--enforce all`, the roots jobs and drift steps deleted, the Go zip
   check entries).
+- G1d results (2026-09-29, by 16:45Z), all on aprv.wasm `4e9d2d85…`,
+  each 384 of 384 cases and 6,179 of 6,179 rows identical, no wrapper
+  change: python (516 tests), go (`-race` clean), ruby (470 runs), dotnet
+  (599 tests on .NET 8 and 10), node (824 tests, smokes on Node,
+  workerd, Bun, Deno, edge-runtime, Chromium; the WebKit trap of the
+  first browser run is not reproduced in 350 loads and the harness now
+  records what a recurrence needs), swift (60 tests), java Endive and
+  server engines on JDK 21 and Temurin 8 (864 and 455 tests). The server
+  on component `ccccbfb5…` with the pool default: binary 11,547,568 B
+  sha256 `e6292f78…`, every expressible case on HTTP and the CLI, 6,152
+  identical plus the 27 over-cap rows on three transports; Java's server
+  pin moved to it (942a425). The two committed module copies (R14) are
+  in: `go/internal/wasm/aprv.wasm` and the Swift resource (e9cff0e).
+  Pre-final scan of `origin/main..rust-core`: no blob over 100 KB
+  besides the two copies and text files (ci.yml, cases.json, lockfiles,
+  the inventory, two evidence results), no scratch path, no model name,
+  no credential pattern; `main` has not moved since the branch point.
 - Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
   merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
   SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
