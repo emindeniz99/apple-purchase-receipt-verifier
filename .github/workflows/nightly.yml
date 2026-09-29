@@ -1,0 +1,125 @@
+# The two long campaigns that do not fit a push (docs/rust-core/MIGRATION.md,
+# "CI matrix"):
+#
+#   rust-fuzz-openssl  the fuzz targets over an OpenSSL build instrumented
+#                      with AddressSanitizer and libFuzzer coverage (step
+#                      1.12), so the fuzzer is guided into OpenSSL as the
+#                      evidence campaigns were;
+#   java-differential  the maintained Java implementation against the core
+#                      on every input the script collects (R33, step 1.8);
+#                      a new difference fails the run until R20 records it.
+#
+# Each job waits for its input to land (rust/openssl, tools/differential.sh)
+# and says so until then. Scheduled runs happen on the default branch only.
+#
+# A fuzz finding fails the run and keeps the crashing input as a short-lived
+# artifact. It does not open an issue: this repository is public, and a
+# memory-safety crash is reported privately (SECURITY.md) before anything
+# about it is published.
+name: nightly
+
+on:
+  schedule:
+    - cron: "23 3 * * *" # daily, 03:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  rust-fuzz-openssl:
+    if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'emindeniz99'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the OpenSSL adapter here yet?
+        id: gate
+        run: |
+          if [ -d rust/openssl ]; then echo "present=true"
+          else echo "::notice::rust/openssl (the aprv-openssl adapter, MIGRATION.md step 1.1) does not exist yet; nothing links OpenSSL to fuzz" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
+      # The same pinned tarball as aprv.wasm, instrumented; cargo-fuzz needs
+      # nightly rustc for -Zsanitizer, which is why this is not the pinned
+      # toolchain (rust/fuzz stays outside the workspace for that reason).
+      - name: OpenSSL with AddressSanitizer and fuzzer-no-link
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          tools/openssl-asan.sh "$RUNNER_TEMP/openssl-asan" > "$RUNNER_TEMP/openssl-asan.env"
+          . "$RUNNER_TEMP/openssl-asan.env"
+          { echo "OPENSSL_DIR=$OPENSSL_DIR"; echo "OPENSSL_STATIC=1"; echo "OPENSSL_NO_VENDOR=1"; } >> "$GITHUB_ENV"
+      - name: nightly Rust and cargo-fuzz
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
+      - name: fuzz every target for ten minutes
+        if: steps.gate.outputs.present == 'true'
+        working-directory: rust/fuzz
+        env:
+          FUZZ_TOOLCHAIN: nightly
+          ASAN_OPTIONS: detect_leaks=1:allocator_may_return_null=0
+        run: ./run.sh all 600
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure() && steps.gate.outputs.present == 'true'
+        with:
+          name: fuzz-findings
+          path: rust/fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  java-differential:
+    if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'emindeniz99'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the differential here yet?
+        id: gate
+        run: |
+          if [ -f tools/differential.sh ] && [ -f rust/bindings/abi/build.sh ]; then echo "present=true"
+          else echo "::notice::tools/differential.sh or rust/bindings/abi/build.sh does not exist yet (MIGRATION.md steps 1.4 and 1.8)" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        if: steps.gate.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.gate.outputs.present == 'true'
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.gate.outputs.present == 'true'
+        with:
+          path: ~/.cache/aprv-wasm-toolchain
+          key: aprv-wasm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wasm-toolchain.sh') }}
+      - name: build aprv.wasm with the pinned toolchain
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/aprv-wasm-toolchain"
+          tools/wasm-toolchain.sh "$dir" > "$RUNNER_TEMP/toolchain.env"
+          . "$RUNNER_TEMP/toolchain.env"
+          export WASI_SDK_DIR OPENSSL_WASM_DIR PATH
+          (cd rust && rustup toolchain install)
+          rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
+      - name: the Java implementation against the core
+        if: steps.gate.outputs.present == 'true'
+        run: tools/differential.sh "$RUNNER_TEMP/aprv/aprv.wasm" "$RUNNER_TEMP/differential"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.gate.outputs.present == 'true'
+        with:
+          name: differential-report
+          path: ${{ runner.temp }}/differential/
+          if-no-files-found: warn
+          retention-days: 14

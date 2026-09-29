@@ -12,9 +12,16 @@
 # every port. A path this script does not know about may cost a slower run;
 # it must never skip a test. A port's own README is under its folder, so it
 # counts as that port: several jobs test README examples.
+#
+# Under rust/ the rule follows what ships from it (MIGRATION.md, "CI
+# matrix"): the core, its OpenSSL adapter and the aprv.wasm bindings
+# become the one module every host runs, so a change there selects every
+# area; aprv-server (rust/server) is an area of its own; the C ABI, the
+# fuzz targets, the tests, the examples and the crate's own docs select
+# `rust` alone. java-wasm/ (the -wasm artifact) is part of `java`.
 set -euo pipefail
 
-AREAS=(java node python ruby php go rust swift dotnet)
+AREAS=(java node python ruby php go rust swift dotnet server)
 declare -A selected=()
 for area in "${AREAS[@]}"; do selected[$area]=false; done
 
@@ -41,13 +48,17 @@ fi
 # Prints the area for a path, `docs` for documentation, or `all`.
 classify() {
   case "$1" in
-    java/* | java-bench/* | jvm-interop/*) echo java ;;
+    java/* | java-wasm/* | java-bench/* | jvm-interop/*) echo java ;;
     node/*) echo node ;;
     python/*) echo python ;;
     ruby/*) echo ruby ;;
     php/* | composer.json) echo php ;;
     go/*) echo go ;;
-    rust/*) echo rust ;;
+    rust/server/*) echo server ;;
+    rust/ffi/* | rust/fuzz/* | rust/tests/* | rust/examples/*) echo rust ;;
+    rust/*/*) echo all ;;
+    rust/*.md) echo rust ;;
+    rust/*) echo all ;;
     swift/* | Package.swift | Package.resolved) echo swift ;;
     dotnet/*) echo dotnet ;;
     docs/* | .claude/* | .github/ISSUE_TEMPLATE/* | .github/PULL_REQUEST_TEMPLATE*) echo docs ;;

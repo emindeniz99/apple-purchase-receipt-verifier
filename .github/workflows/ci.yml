@@ -4,7 +4,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # rust-core is the 0.8.0 integration branch (docs/rust-core/MIGRATION.md):
+    # every lane merges into it, so every merge runs the full suite there.
+    branches: [main, rust-core]
   pull_request:
   workflow_dispatch:
 
@@ -29,8 +31,10 @@ jobs:
   # allowlist, so a path it does not know -- fixtures/, certs/, tools/, this
   # file -- runs every port: a forgotten path may cost minutes, never
   # coverage. Pushes to main are not filtered because release.yml's
-  # ci-passed gate needs a full run on the exact tagged SHA. conformance and
-  # zizmor are not filtered either: they guard shared files and take seconds.
+  # ci-passed gate needs a full run on the exact tagged SHA, and neither are
+  # pushes to rust-core, the integration branch. conformance, zizmor and
+  # one-implementation are not filtered either: they guard shared files and
+  # take seconds.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -44,6 +48,7 @@ jobs:
       rust: ${{ steps.areas.outputs.rust }}
       swift: ${{ steps.areas.outputs.swift }}
       dotnet: ${{ steps.areas.outputs.dotnet }}
+      server: ${{ steps.areas.outputs.server }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1442,6 +1447,439 @@ jobs:
       # is a property of the project, not of one crate.
       - run: cargo deny --manifest-path ffi/Cargo.toml --config deny.toml check
         working-directory: rust
+
+  # aprv.wasm, built the way release.yml's build-wasm builds it, then held to
+  # its contract (ARCHITECTURE.md §9, MIGRATION.md steps 1.4, 1.5, 1.14):
+  # exactly one import, random-get; the export list; the WIT read back from
+  # the component equal to rust/bindings/abi/wit/aprv.wit; the ABI tests on a
+  # hand-rolled host; every case of fixtures/cases.json through a host whose
+  # import object traps on anything but random-get; every answer valid
+  # against the wire schemas; and a second build, in a fresh clone, that
+  # reproduces the hash.
+  #
+  # The reference rows here are the 311 cases' own expectations. The spike
+  # corpora (1,179 rows and 5,000 mutants) are scratch data of the evidence
+  # rounds and not in the repository; tools/wasm-trap-host.mjs `calls` runs
+  # them wherever they are (docs/evidence/2026-09-29-canonical-abi-final).
+  #
+  # Until rust/bindings/abi/build.sh exists (step 1.4) the job says so and
+  # runs only the tools' own tests, so the branch stays green. It may cache
+  # the toolchain directory, keyed by the hash of the script that makes it:
+  # this is a test job, and the cached tree is re-verified by nothing but its
+  # key, which is why release.yml's build-wasm never restores it.
+  rust-wasm:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      built: ${{ steps.gate.outputs.built }}
+      wasm-sha256: ${{ steps.build.outputs.wasm-sha256 }}
+      component-sha256: ${{ steps.build.outputs.component-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: the CI tools' own tests
+        run: |
+          npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+          npm --prefix tools test
+          shellcheck tools/*.sh tools/reproduce/entrypoint.sh .github/scripts/*.sh
+      - name: is there a module to build yet?
+        id: gate
+        run: |
+          if [ -f rust/bindings/abi/build.sh ]; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::rust/bindings/abi/build.sh does not exist yet (MIGRATION.md step 1.4); the aprv.wasm build and its checks wait for it"
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.gate.outputs.built == 'true'
+        with:
+          path: ~/.cache/aprv-wasm-toolchain
+          key: aprv-wasm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wasm-toolchain.sh') }}
+      - name: install the pinned wasm toolchain
+        if: steps.gate.outputs.built == 'true'
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/aprv-wasm-toolchain"
+          tools/wasm-toolchain.sh "$dir" > /dev/null
+          { echo "WASI_SDK_DIR=$dir/wasi-sdk"; echo "OPENSSL_WASM_DIR=$dir/openssl-wasm"; } >> "$GITHUB_ENV"
+          echo "$dir/bin" >> "$GITHUB_PATH"
+      # rustup installs what rust/rust-toolchain.toml names: the pinned rustc
+      # with the wasm32-wasip1 target.
+      - name: install the pinned Rust toolchain
+        if: steps.gate.outputs.built == 'true'
+        working-directory: rust
+        run: rustup toolchain install
+      - name: build aprv.wasm and the component
+        id: build
+        if: steps.gate.outputs.built == 'true'
+        run: |
+          set -euo pipefail
+          rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
+          wasm=$(sha256sum "$RUNNER_TEMP/aprv/aprv.wasm" | cut -c1-64)
+          component=$(sha256sum "$RUNNER_TEMP/aprv/aprv.component.wasm" | cut -c1-64)
+          echo "wasm-sha256=$wasm" >> "$GITHUB_OUTPUT"
+          echo "component-sha256=$component" >> "$GITHUB_OUTPUT"
+          {
+            echo "| file | bytes | SHA-256 |"
+            echo "|---|---:|---|"
+            for f in aprv.wasm aprv.component.wasm aprv.wit; do
+              echo "| $f | $(wc -c < "$RUNNER_TEMP/aprv/$f") | \`$(sha256sum "$RUNNER_TEMP/aprv/$f" | cut -c1-64)\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: imports, exports, WIT read-back and SHA256SUMS
+        if: steps.gate.outputs.built == 'true'
+        run: tools/check-wasm.sh "$RUNNER_TEMP/aprv" rust/bindings/abi/wit/aprv.wit
+      - name: the ABI tests on a hand-rolled host
+        if: steps.gate.outputs.built == 'true'
+        run: node tools/wasm-trap-host.mjs abi-tests "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json
+      - name: every case through the trap-on-anything host
+        if: steps.gate.outputs.built == 'true'
+        run: node tools/wasm-trap-host.mjs cases "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json --answers "$RUNNER_TEMP/answers"
+      # Every answer the cases produced, against its JSON Schema 2020-12 file
+      # (step 1.14), then one planted wrong type, which must fail: a schema
+      # that accepts everything would pass the first half alone.
+      - name: every answer validates against the wire schemas
+        if: steps.gate.outputs.built == 'true'
+        run: |
+          set -euo pipefail
+          S=rust/bindings/wire/schema
+          if [ ! -d "$S" ]; then
+            echo "::notice::$S does not exist yet (MIGRATION.md step 1.14); the answers are not validated"
+            exit 0
+          fi
+          A="$RUNNER_TEMP/answers"
+          node tools/validate-wire.mjs "$S/init-config.schema.json" "$A/init-config.jsonl"
+          node tools/validate-wire.mjs "$S/init-result.schema.json" "$A/init.jsonl"
+          node tools/validate-wire.mjs "$S/verify-receipt-result.schema.json" "$A/verify-receipt.jsonl"
+          node tools/validate-wire.mjs "$S/verify-signed-data-result.schema.json" "$A/verify-signed-data.jsonl"
+          head -1 "$A/verify-receipt.jsonl" | sed -E 's/"verified":(true|false)/"verified":"planted"/' > "$RUNNER_TEMP/planted.jsonl"
+          if node tools/validate-wire.mjs "$S/verify-receipt-result.schema.json" "$RUNNER_TEMP/planted.jsonl"; then
+            echo "::error::a planted wrong type validated; verify-receipt-result.schema.json does not constrain \"verified\""
+            exit 1
+          fi
+      # A second build of the same commit in a fresh clone and a directory it
+      # never ran in: a path leaking into the module, or anything else that
+      # is not a function of the source and the pins, shows as a mismatch.
+      - name: the build reproduces in a fresh clone
+        if: steps.gate.outputs.built == 'true'
+        env:
+          EXPECTED: ${{ steps.build.outputs.wasm-sha256 }}
+        run: |
+          APRV_REPO_URL="file://$GITHUB_WORKSPACE" APRV_TOOLCHAIN_DIR="$HOME/.cache/aprv-wasm-toolchain" \
+            tools/reproduce-wasm.sh "$GITHUB_SHA" "$EXPECTED"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.gate.outputs.built == 'true'
+        with:
+          name: aprv-wasm
+          path: |
+            ${{ runner.temp }}/aprv/aprv.wasm
+            ${{ runner.temp }}/aprv/aprv.component.wasm
+            ${{ runner.temp }}/aprv/aprv.wit
+            ${{ runner.temp }}/aprv/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  # Every committed aprv.wasm (the Go module's and the Swift package's, R14)
+  # against the module rust-wasm just built from the same tree. On a
+  # release-please branch a difference fails: that tree becomes the tag, and
+  # a Go tag is forever. Anywhere else the copies are allowed to lag the core
+  # until release-please.yml refreshes them on the release branch, so a
+  # difference is a warning that says which copy and which hash.
+  wasm-copies:
+    needs: rust-wasm
+    if: needs.rust-wasm.outputs.built == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: compare every committed copy with the build
+        env:
+          BUILT: ${{ needs.rust-wasm.outputs.wasm-sha256 }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          strict=false
+          case "$HEAD_REF" in release-please--*) strict=true ;; esac
+          copies=$(git ls-files -- '*aprv.wasm')
+          if [ -z "$copies" ]; then
+            echo "::notice::no committed aprv.wasm yet (go/internal/wasm/aprv.wasm and the Swift resource land with their hosts)"
+            exit 0
+          fi
+          bad=0
+          for f in $copies; do
+            got=$(sha256sum "$f" | cut -c1-64)
+            if [ "$got" = "$BUILT" ]; then
+              echo "$f matches the build ($BUILT)"
+            elif [ "$strict" = true ]; then
+              echo "::error file=$f::$f is $got; this tree builds $BUILT, and a release must carry the module it builds"
+              bad=1
+            else
+              echo "::warning file=$f::$f is $got; this tree builds $BUILT (release-please.yml refreshes the copy on the release branch)"
+            fi
+          done
+          exit "$bad"
+
+  # The grep gate of ARCHITECTURE.md §9: no non-Java wrapper reaches a
+  # crypto, X.509, ASN.1 or CMS API outside its tests, since aprv.wasm makes
+  # every such decision. It reports only, per language, until the wrappers
+  # replace the 0.7 verifiers; `--enforce <lang>` turns on each language as
+  # its host lands and `--enforce all` is MIGRATION.md Phase 7 step 5.
+  one-implementation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: node tools/check-one-implementation.mjs --enforce java-wasm
+
+  # aprv-server (MIGRATION.md Phase 2): the build and its tests on every
+  # platform the release ships a binary for, with the component rust-wasm
+  # built from this same tree embedded. Each step waits for its input to
+  # exist (rust/server's lane lands them); .github/CI-NOTES.md lists the
+  # gates. The static musl legs check what the release promises of them: no
+  # interpreter and no dynamic dependency.
+  aprv-server:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.server == 'true' && needs.rust-wasm.outputs.built == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the server here yet?
+        id: gate
+        shell: bash
+        run: |
+          if [ -f rust/server/Cargo.toml ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::rust/server does not exist yet (MIGRATION.md Phase 2)"; echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.gate.outputs.present == 'true'
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - name: check the component is the one rust-wasm built
+        if: steps.gate.outputs.present == 'true'
+        shell: bash
+        env:
+          COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
+        run: echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+      - name: install the pinned Rust toolchain and the target
+        if: steps.gate.outputs.present == 'true'
+        shell: bash
+        working-directory: rust
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+      - name: build and test
+        if: steps.gate.outputs.present == 'true'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          export APRV_COMPONENT="$RUNNER_TEMP/aprv/aprv.component.wasm"
+          case "$TARGET" in
+            *-linux-musl) rust/server/scripts/build-static.sh "$APRV_COMPONENT" "$TARGET" "$RUNNER_TEMP/server" ;;
+            *) cargo build --locked --release --manifest-path rust/server/Cargo.toml --target "$TARGET" ;;
+          esac
+          cargo test --locked --manifest-path rust/server/Cargo.toml --target "$TARGET"
+      - name: the static binary has no interpreter and no dynamic dependency
+        if: steps.gate.outputs.present == 'true' && endsWith(matrix.target, '-linux-musl')
+        run: |
+          set -euo pipefail
+          readelf -lW "$RUNNER_TEMP/server/aprv" | tee "$RUNNER_TEMP/readelf.txt"
+          if grep -q INTERP "$RUNNER_TEMP/readelf.txt"; then echo "::error::the static binary has a program interpreter"; exit 1; fi
+          if readelf -dW "$RUNNER_TEMP/server/aprv" | grep -q NEEDED; then echo "::error::the static binary needs a shared library"; exit 1; fi
+          "$RUNNER_TEMP/server/aprv" info
+
+  # The server's HTTP contract (R34): Spectral lints rust/server/openapi.yaml
+  # with the committed ruleset; Schemathesis runs the document against a
+  # started server; the Docker image builds, answers g5 with APRV_LISTEN set,
+  # and carries the org.opencontainers.image annotations. Both tools are
+  # pinned by version and run from ephemeral installs.
+  aprv-server-contract:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.server == 'true' && needs.rust-wasm.outputs.built == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: which parts of the server exist yet?
+        id: gate
+        run: |
+          have() { if [ -e "$1" ]; then echo "$2=true"; else echo "::notice::$1 does not exist yet" >&2; echo "$2=false"; fi; }
+          {
+            have rust/server/Cargo.toml server
+            have rust/server/openapi.yaml openapi
+            have rust/server/.spectral.yaml spectral
+            have rust/server/Dockerfile dockerfile
+            have rust/server/scripts/image-smoke.sh smoke
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.gate.outputs.openapi == 'true' && steps.gate.outputs.spectral == 'true'
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Spectral over the OpenAPI document
+        if: steps.gate.outputs.openapi == 'true' && steps.gate.outputs.spectral == 'true'
+        run: npx --yes @stoplight/spectral-cli@6.16.3 lint --fail-severity=hint --ruleset rust/server/.spectral.yaml rust/server/openapi.yaml
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.gate.outputs.server == 'true'
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - name: build the server
+        if: steps.gate.outputs.server == 'true'
+        working-directory: rust
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustup target add x86_64-unknown-linux-musl
+          server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" x86_64-unknown-linux-musl "$RUNNER_TEMP/server"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        if: steps.gate.outputs.server == 'true' && steps.gate.outputs.openapi == 'true'
+        with:
+          enable-cache: false
+      - name: Schemathesis against a started server
+        if: steps.gate.outputs.server == 'true' && steps.gate.outputs.openapi == 'true'
+        run: |
+          set -euo pipefail
+          APRV_LISTEN=127.0.0.1:18080 "$RUNNER_TEMP/server/aprv" serve > "$RUNNER_TEMP/serve.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; cat "$RUNNER_TEMP/serve.log"' EXIT
+          for _ in $(seq 1 50); do curl -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1 && break; sleep 0.2; done
+          uvx --from schemathesis==4.28.0 schemathesis run --checks all http://127.0.0.1:18080/openapi.json
+      - name: the Docker image, its smoke test and its annotations
+        if: steps.gate.outputs.dockerfile == 'true' && steps.gate.outputs.smoke == 'true'
+        run: |
+          set -euo pipefail
+          docker build -t aprv-server:ci \
+            --build-arg APRV_COMPONENT=aprv.component.wasm \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            -f rust/server/Dockerfile .
+          rust/server/scripts/image-smoke.sh aprv-server:ci
+          for key in source revision version licenses description; do
+            docker inspect --format "{{ index .Config.Labels \"org.opencontainers.image.$key\" }}" aprv-server:ci | grep -q . \
+              || { echo "::error::the image has no org.opencontainers.image.$key"; exit 1; }
+          done
+
+  # The -wasm Java artifact (java-wasm/, MIGRATION.md Phase 3) with the
+  # Endive engine: the 311 cases on every Temurin line from 11, and on the
+  # five platforms the corpus runs on (Linux x64 and arm64, macOS arm64,
+  # Windows x64 and arm64). Endive compiles the aprv.wasm rust-wasm built
+  # from this tree. Waits for java-wasm/pom.xml.
+  java-wasm-endive:
+    needs: [changes, rust-wasm]
+    if: >-
+      !cancelled() && needs.changes.outputs.java == 'true'
+      && (needs.rust-wasm.result == 'success' || needs.rust-wasm.result == 'skipped')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, jdk: "11" }
+          - { os: ubuntu-latest, jdk: "17" }
+          - { os: ubuntu-latest, jdk: "21" }
+          - { os: ubuntu-latest, jdk: "25" }
+          - { os: ubuntu-latest, jdk: "27" }
+          - { os: ubuntu-24.04-arm, jdk: "21" }
+          - { os: macos-latest, jdk: "21" }
+          - { os: windows-latest, jdk: "21" }
+          - { os: windows-11-arm, jdk: "21" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the -wasm artifact here yet?
+        id: gate
+        shell: bash
+        env:
+          BUILT: ${{ needs.rust-wasm.outputs.built }}
+        run: |
+          if [ -f java-wasm/pom.xml ]; then echo "present=true"; else echo "::notice::java-wasm/pom.xml does not exist yet (MIGRATION.md Phase 3)" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
+          echo "module=${BUILT:-false}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.gate.outputs.present == 'true' && steps.gate.outputs.module == 'true'
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        if: steps.gate.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      # With no module built in this run (a Java-only change) the build uses
+      # the aprv.wasm its own pom names.
+      - name: the 311 cases with the Endive engine
+        if: steps.gate.outputs.present == 'true'
+        shell: bash
+        working-directory: java-wasm
+        env:
+          MODULE: ${{ steps.gate.outputs.module }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$MODULE" = true ]; then args+=("-Daprv.wasm=$RUNNER_TEMP/aprv/aprv.wasm"); fi
+          mvn -B verify "${args[@]}"
+
+  # Both Java artifacts on one classpath must fail fast, and a Gradle build
+  # that asks for both must fail at resolution (the capability conflict).
+  # The -wasm lane supplies the script; the job waits for it.
+  java-classpath-guard:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the guard here yet?
+        id: gate
+        run: |
+          if [ -f java-wasm/scripts/classpath-guard.sh ]; then echo "present=true"
+          else echo "::notice::java-wasm/scripts/classpath-guard.sh does not exist yet (MIGRATION.md step 3.5)" >&2; echo "present=false"; fi >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        if: steps.gate.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: both jars on one classpath fail; Gradle refuses both
+        if: steps.gate.outputs.present == 'true'
+        run: java-wasm/scripts/classpath-guard.sh
 
   # Every line the composer.json floor admits. 8.2 is the floor since 0.7 (for
   # readonly class); it stays here for exactly as long as the manifest claims
