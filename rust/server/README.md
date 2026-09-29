@@ -211,6 +211,22 @@ Inside the container the server listens on `127.0.0.1:8080`, so a published
 port reaches nothing until `APRV_LISTEN=0.0.0.0:8080` is set; set a token
 too. `scripts/docker-smoke.sh IMAGE` checks all of this.
 
+## Measured
+
+With the G1 component (the 0.7 core, component SHA-256 `8f758c0b…`),
+`x86_64-unknown-linux-musl`, on a shared 4-CPU machine at a load average
+of 2 to 4 (`scripts/startup.py`, medians of 7 runs and of 200 calls):
+
+| What | Value |
+|---|---|
+| Shipped binary (runtime-only, static, stripped) | 11,989,936 B; 4,193,642 B gzip -9 |
+| Embedded `.ccwasm` | 9,653,248 B |
+| Full (Cranelift) glibc build | 12,478,096 B; 4,476,180 B gzip -9 |
+| Load: engine and embedded component (`aprv info`) | 13 to 16 ms |
+| `aprv serve` to its address line; to the first g5 result | 20.1 ms; 29.8 ms |
+| One-shot CLI process, g5 receipt; JWS | 25.1 ms; 31.3 ms |
+| HTTP keep-alive, fresh lifecycle, per call: g5; JWS | 7.3 ms; 16.5 ms |
+
 ## Tests and checks
 
 | What | How |
@@ -220,7 +236,8 @@ too. `scripts/docker-smoke.sh IMAGE` checks all of this.
 | The corpus | `scripts/corpus.py --aprv <binary> --calls ... --node ... --mode http\|cli` |
 | Limits in a real process | `scripts/hostile-smoke.sh <full build>` (the hostile component of `tests/hostile.wat`) |
 | Managed mode | `scripts/managed-smoke.py --aprv <binary>` |
-| Start-up, for the record | `scripts/startup.py --aprv <binary>` |
+| Start-up and per-call cost, for the record | `scripts/startup.py --aprv <binary>` |
+| All of the above against one component | `scripts/check-component.sh` (APRV_COMPONENT, OUT; see its header) |
 | OpenAPI | `npx @stoplight/spectral-cli lint --fail-severity=hint openapi.yaml` (ruleset `.spectral.yaml`); Schemathesis against a running server |
 | Image | `scripts/docker-smoke.sh IMAGE` |
 

@@ -6,7 +6,8 @@ is wired yet; lane B does not edit `.github/`.
 ## Inputs every leg needs
 
 - The component: `aprv.component.wasm` from the `rust-wasm` job (its
-  SHA-256 is that job's output). Until G1 the round-13 stand-in serves.
+  SHA-256 is that job's output). Lane B checked G1's component (the 0.7
+  core, sha256 8f758c0b…) with the commands below.
 - Rust 1.98.1 (the toolchain the evidence used), with the
   `x86_64-unknown-linux-musl` target; `binutils` for `readelf`.
 - Python 3.10+ (standard library only for the scripts); Node 22 for
@@ -23,7 +24,10 @@ run the tests only (`cargo test --features compile`); their release
 binaries are not built in this lane (MIGRATION.md step 2.4 leaves them
 open).
 
-Steps, working directory `rust/server`, `COMPONENT` = the component path:
+Steps, working directory `rust/server`, `COMPONENT` = the component path.
+`scripts/check-component.sh` runs all of the non-lint steps below in one
+command (APRV_COMPONENT, OUT, and optionally CALLS, ROWS, SCHEMATHESIS,
+SPECTRAL; see its header) and is how lane B takes a new component.
 
 ```sh
 cargo fmt --check
@@ -44,9 +48,10 @@ mkdir -p /tmp/empty && cp $BIN /tmp/empty/aprv && sudo chroot /tmp/empty /aprv i
 python3 scripts/cases.py --aprv $BIN --mode both --list     # the 311 cases
 python3 scripts/managed-smoke.py --aprv $BIN
 sh scripts/hostile-smoke.sh target/<host triple>/release/aprv   # the full build step 1 left; needs wasm-tools
-python3 scripts/corpus.py --aprv $BIN --calls $CALLS --node $NODE_ROWS --mode http --lifecycle fresh
-python3 scripts/corpus.py --aprv $BIN --calls $CALLS --node $NODE_ROWS --mode http --lifecycle pool
-python3 scripts/corpus.py --aprv $BIN --calls $CALLS --node $NODE_ROWS --mode cli
+R="--calls $CALLS --suffix .pinned --reference $ROWS"
+python3 scripts/corpus.py --aprv $BIN $R --mode http --lifecycle fresh
+python3 scripts/corpus.py --aprv $BIN $R --mode http --lifecycle pool
+python3 scripts/corpus.py --aprv $BIN $R --mode cli
 
 npx --yes @stoplight/spectral-cli@6.16.3 lint --fail-severity=hint --ruleset .spectral.yaml openapi.yaml
 
@@ -62,17 +67,26 @@ kill %1 %2
 
 Notes on the steps:
 
-- `cases.py` exits 1 while the stand-in (0.6 core) runs: the hand-back of
-  lane B lists the ids that differ. After G1 it must exit 0.
-- The corpus inputs (`$CALLS`, `$NODE_ROWS`) are the evidence rounds'
-  artifacts: round 13's `py/calls_bytes.py` over ABI v1's calls, and ABI
-  v1's Node rows. After G1 the reference rows are the core's native rows;
-  the integrator decides where they live (lane D's corpus job).
-- Spectral resolves the two `$ref`s to `../bindings/wire/schema/`; until
-  lane A2 writes those files it reports 2 `invalid-ref` errors and
-  nothing else. Lane B linted a copy beside stand-in schemas: 0 findings.
-- `python3 scripts/startup.py --aprv $BIN` prints start-up times for
-  the record; it is not a gate.
+- `cases.py` must exit 0: with the G1 component, 278 of 278 expressible
+  cases pass on each transport. The 33 `decodeBase64` cases are not
+  expressible through the server (it exposes no decoder) and are
+  reported as such.
+- The corpus inputs are the call files with every clock pinned
+  (`$CALLS/<corpus>.pinned.jsonl`) and the module's own answers to them
+  (`$ROWS/module-<corpus>.jsonl`, identical to the native core); lane D's
+  corpus job produces both. Expected per transport: every row identical
+  except the 27 whose body is over 3,145,728 bytes, which the module
+  refuses for size and the server answers 413 (the CLI exits 3) before
+  the module sees them. With G1: 6,152 identical, 27 over-cap, 0
+  different, on HTTP fresh, HTTP pool and the CLI.
+- Spectral resolves the two `$ref`s to `../bindings/wire/schema/`; on a
+  branch without lane A2's files it reports 2 `invalid-ref` errors and
+  nothing else. With A2's files beside it: 0 findings. Schemathesis can
+  also load `openapi.yaml` from that tree (`schemathesis run openapi.yaml
+  --url http://127.0.0.1:18080`), which validates every response body
+  against A2's schemas: 653 of 653 passed with G1.
+- `python3 scripts/startup.py --aprv $BIN` prints start-up and per-call
+  times for the record; it is not a gate (README.md, "Measured").
 - `sudo chroot` needs root; on GitHub's hosted runners `sudo` works.
 
 ## Job `aprv-server-image` (after the static builds)
