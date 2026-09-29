@@ -1,5 +1,0 @@
-cases: {"host":"ruby 3.3.6, wasmtime 48.0.1","rows":153,"traps":0,"instances":27}
-hostile: {"host":"ruby 3.3.6, wasmtime 48.0.1","rows":811,"traps":0,"instances":4}
-algorithms: {"host":"ruby 3.3.6, wasmtime 48.0.1","rows":22,"traps":0,"instances":22}
-substrate: {"host":"ruby 3.3.6, wasmtime 48.0.1","rows":193,"traps":0,"instances":74}
-fuzz: {"host":"ruby 3.3.6, wasmtime 48.0.1","rows":5000,"traps":0,"instances":96}
