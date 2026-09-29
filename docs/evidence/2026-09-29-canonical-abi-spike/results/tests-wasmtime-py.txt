@@ -1,0 +1,18 @@
+engine + compile: 1249.0 ms
+PASS init("") answers {"ok":true}: 
+PASS verify-receipt(genuine g5) verifies: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c14646576
+PASS verify before init traps: WasmtimeError: error while executing at wasm backtrace:
+PASS a second init traps: WasmtimeError: error while executing at wasm backtrace:
+PASS   ... and the trapped instance refuses further calls: WasmtimeError: wasm trap: cannot enter component instance
+PASS an enum value outside the WIT is refused by the binding: WasmtimeError: enum variant name `xcode` is not valid
+     instance afterwards: WasmtimeError: wasm trap: cannot enter component instance
+FAIL a negative u64 is refused by the binding: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c14646576
+     instance afterwards: usable
+FAIL a u64 above 2^64-1 is refused by the binding: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundleIdBytes":"0c14646576
+     instance afterwards: usable
+PASS a str with a lone surrogate is refused by the binding: UnicodeEncodeError: 'utf-8' codec can't encode character '\udcff' in position 0: surrogates not allowed
+     instance afterwards: usable
+PASS 2,000 calls under a 4 MiB memory limit, no post_return in host code (the runtime frees the results): {"verified":true,"payload":{"appItemId":0,"appVersion":"2","
+PASS random-get answering the wrong length traps (if random-get is called at all): WasmtimeError: error while executing at wasm backtrace:
+PASS isolation: a trap in one instance leaves another untouched: 
+summary: 2 failed

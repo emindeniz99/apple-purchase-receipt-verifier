@@ -1,0 +1,11 @@
+## node run-calls.mjs out tests (jco transpile of aprv-cabi-checked.component.wasm, 2026-09-29)
+init("") -> {"ok":true}
+verify-receipt(g5) -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundle (386.1 ms from import to first result; first call 42.0 ms)
+second init -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed
+verify before init -> THROWS RuntimeError: wasm trap: wasm `unreachable` instruction executed
+verify-signed-data(shared-sandbox, test roots) -> {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwnershipType
+endpoint with env "xcode" (not in the enum) -> THROWS TypeError: "xcode" is not one of the cases of environment
+endpoint with a lone surrogate in the string -> {"status":21002}
+now-ms as a Number, not a BigInt -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundle
+now-ms negative -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundle
+the same instance after those -> {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.app","bundle

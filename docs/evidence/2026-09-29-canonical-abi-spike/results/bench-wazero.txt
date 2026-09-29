@@ -1,0 +1,15 @@
+# wazero bench, 2026-09-29, Intel(R) Xeon(R) Processor @ 2.80GHz, taskset -c 0, load before: 0.37 0.51 0.37
+## modules: aprv-abi1.wasm vs aprv-cabi-checked.core.wasm
+{"module":"ABI v1","rounds":7,"runtime_and_compile_ms":1257.6,"instantiate_ms":2.39,"init_ms":0.00,"first_g5_ms":10.86,"second_g5_ms":4.29,"to_first_result_ms":1270.8}
+{"module":"canonical ABI","rounds":7,"runtime_and_compile_ms":1310.8,"instantiate_ms":2.57,"init_ms":0.03,"first_g5_ms":12.13,"second_g5_ms":4.19,"to_first_result_ms":1325.5}
+{"module":"ABI v1","op":"g5","calls":665,"per_s":221.4}
+{"module":"ABI v1","op":"jws","calls":222,"per_s":73.9}
+{"module":"canonical ABI","op":"g5","calls":746,"per_s":248.5}
+{"module":"canonical ABI","op":"jws","calls":219,"per_s":72.9}
+## modules: aprv-abi1.wasm vs aprv-cabi.core.wasm
+{"module":"ABI v1","rounds":7,"runtime_and_compile_ms":1263.4,"instantiate_ms":3.41,"init_ms":0.00,"first_g5_ms":12.32,"second_g5_ms":4.50,"to_first_result_ms":1279.1}
+{"module":"canonical ABI","rounds":7,"runtime_and_compile_ms":1291.0,"instantiate_ms":2.45,"init_ms":0.03,"first_g5_ms":9.96,"second_g5_ms":3.86,"to_first_result_ms":1303.4}
+{"module":"ABI v1","op":"g5","calls":688,"per_s":229.2}
+{"module":"ABI v1","op":"jws","calls":237,"per_s":78.8}
+{"module":"canonical ABI","op":"g5","calls":719,"per_s":239.5}
+{"module":"canonical ABI","op":"jws","calls":246,"per_s":81.9}

@@ -1,0 +1,11 @@
+# 2026-09-29, wasm-tools 1.259.0, gzip -9
+module                                  bytes       gzip   stripped  gz(strip)  delta stripped vs ABI v1
+aprv-abi1.wasm                        2952613     968850    2700240     898495  +0 (+0.00%)
+aprv-cabi.core.wasm                   2966618     975858    2712814     904984  +12574 (+0.47%)
+aprv-cabi-checked.core.wasm           2980266     979331    2724537     908243  +24297 (+0.90%)
+aprv-cabi.component.wasm              2969167     976768    2714549     905990  +14309 (+0.53%)
+aprv-cabi-checked.component.wasm      2982815     980321    2726272     909011  +26032 (+0.96%)
+## code and data sections (bytes | functions or segments)
+aprv-abi1.wasm:  code | 2007146 bytes | 8447 count; data | 673157 bytes | 2 count;
+aprv-cabi.core.wasm:  code | 2017255 bytes | 8454 count; data | 675221 bytes | 2 count;
+aprv-cabi-checked.core.wasm:  code | 2023564 bytes | 8470 count; data | 680613 bytes | 2 count;

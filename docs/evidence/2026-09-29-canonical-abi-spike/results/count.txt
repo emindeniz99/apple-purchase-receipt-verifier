@@ -1,0 +1,11 @@
+# hand-written host lines, 2026-09-29 (non-blank, non-comment)
+## the whole marked region
+wazero (Go), canonical ABI by hand        38 lines  Guest type, random-get import, Call
+Endive (Java), canonical ABI by hand      35 lines  fields, random-get import, instance builder (5 lines), call
+jco (Node), generated bindings             9 lines  glue import, core-module loader, random-get
+wasmtime-py, wasmtime.component           15 lines  instantiate, export lookup, call, random-get
+## the string->string call alone (argument in, result out, post-return)
+wazero (Go): Guest.Call                   19 lines  with error returns
+Endive (Java): call                       12 lines  traps surface as exceptions
+jco (Node)                                 0 lines  a generated function: verify.verifyReceipt(nowMs, text)
+wasmtime-py: Aprv.call                     2 lines  a runtime-typed call; the runtime runs post-return

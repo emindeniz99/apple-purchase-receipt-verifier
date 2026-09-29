@@ -1,0 +1,11 @@
+# wazero: 2026-09-29; load before: 0.55 0.57 0.38
+    wazero: 151 of 153 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wazero v1.12.0","rows":153,"traps":0,"instances_left":27} 4 s wall
+    wazero: 742 of 811 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wazero v1.12.0","rows":811,"traps":0,"instances_left":3} 3 s wall
+    wazero: 22 of 22 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wazero v1.12.0","rows":22,"traps":0,"instances_left":22} 2 s wall
+    wazero: 193 of 193 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wazero v1.12.0","rows":193,"traps":0,"instances_left":74} 3 s wall
+    wazero: 4825 of 5000 rows byte-identical to the first host (request_date* masked on endpoint rows with no pinned clock: the wall clock)
+    {"host":"wazero v1.12.0","rows":5000,"traps":0,"instances_left":96} 11 s wall

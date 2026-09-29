@@ -1,0 +1,59 @@
+## aprv-wazero tests aprv-cabi.core.wasm (2026-09-29)
+PASS init("") answers {"ok":true}: {"ok":true}
+PASS verify before init traps: TRAP wasm error: unreachable; fresh instance verifies g5: true
+PASS a second init traps: TRAP wasm error: unreachable; fresh instance verifies g5: true
+PASS a config that is not JSON is {"ok":false}, and init can be retried: {"message":"config is not JSON: key must be a string at line 1 column 2","ok":false}
+PASS a root that is not base64 is {"ok":false}: {"message":"roots[0] is not canonical base64","ok":false}
+PASS verify-receipt(genuine g5) verifies: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap...
+PASS verify-signed-data(shared-sandbox JWS, init with its test roots) verifies with payloadJson: {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwn...
+PASS verify-receipt-endpoint(sandbox, g5) answers status 0: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2",...
+PASS empty input is a verification failure value: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified"...
+PASS a JWS that is not a JWS is a value: {"message":"expected 3 dot-separated segments, got 2","reason":"INVALID_JWS_FORMAT","verif...
+FAIL misuse: endpoint with enum value 2 traps (want: trap): {"error":"CONFIGURATION","message":"environment must be Production or Sandbox, got Xcode"}
+FAIL misuse: endpoint with enum value 255 traps (want: trap): {"error":"CONFIGURATION","message":"environment is required"}
+FAIL misuse: endpoint with enum value 4294967295 traps (want: trap): {"error":"CONFIGURATION","message":"environment is required"}
+FAIL misuse: a string argument that is not UTF-8 traps (want: trap): {"message":"jws is not valid UTF-8","reason":"INVALID_JWS_FORMAT","verified":false}
+PASS misuse: argument range past the end of memory traps (want: trap): TRAP wasm error: out of bounds memory access; fresh instance verifies g5: true
+PASS misuse: argument range that overflows u32 traps (want: trap): TRAP wasm error: out of bounds memory access; fresh instance verifies g5: true
+FAIL misuse: argument pointer not from cabi_realloc (the guest frees it) traps (want: trap): {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified"...
+PASS   ... and the instance still verifies g5 afterwards: 
+FAIL misuse: post-return twice on the same result traps (want: trap): first: <nil>; second: 
+PASS   ... and the instance still verifies g5 twice afterwards: true true
+FAIL misuse: post-return with a return pointer that was never returned traps (want: trap): 
+PASS   ... and the instance still verifies g5 afterwards: 
+PASS misuse: 300 calls with no post-return leak the results (memory before/after, bytes): 1769472 -> 2752512
+PASS the return area is one static slot: a second call before post-return overwrites the first result's (ptr, len): retptr 1723816 and 1723816; first result now reads "{\"message\":\"receipt-data is not valid base64\",\"reason\":\"INVALID_RECEIPT_FORMAT\",\"verified\"..."
+PASS random-get answering the wrong length traps (want: trap, if random-get is called at all): random-get calls: 1; TRAP wasm error: unreachable
+PASS isolation: a trap in one instance leaves another untouched: TRAP wasm error: out of bounds memory access
+PASS no growth of linear memory over 2,000 more calls (with post-return): 2097152 -> 2097152 bytes; 4.11 ms/call
+summary: 7 failed
+
+## aprv-wazero tests aprv-cabi-checked.core.wasm (2026-09-29)
+PASS init("") answers {"ok":true}: {"ok":true}
+PASS verify before init traps: TRAP wasm error: unreachable; fresh instance verifies g5: true
+PASS a second init traps: TRAP wasm error: unreachable; fresh instance verifies g5: true
+PASS a config that is not JSON is {"ok":false}, and init can be retried: {"message":"config is not JSON: key must be a string at line 1 column 2","ok":false}
+PASS a root that is not base64 is {"ok":false}: {"message":"roots[0] is not canonical base64","ok":false}
+PASS verify-receipt(genuine g5) verifies: {"verified":true,"payload":{"appItemId":0,"appVersion":"2","bundleId":"dev.bonzer.weeka.ap...
+PASS verify-signed-data(shared-sandbox JWS, init with its test roots) verifies with payloadJson: {"verified":true,"payload":{"bundleId":"com.example.app","environment":"Sandbox","inAppOwn...
+PASS verify-receipt-endpoint(sandbox, g5) answers status 0: {"environment":"Sandbox","receipt":{"adam_id":0,"app_item_id":0,"application_version":"2",...
+PASS empty input is a verification failure value: {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified"...
+PASS a JWS that is not a JWS is a value: {"message":"expected 3 dot-separated segments, got 2","reason":"INVALID_JWS_FORMAT","verif...
+PASS misuse: endpoint with enum value 2 traps (want: trap): TRAP wasm error: unreachable
+PASS misuse: endpoint with enum value 255 traps (want: trap): TRAP wasm error: unreachable
+PASS misuse: endpoint with enum value 4294967295 traps (want: trap): TRAP wasm error: unreachable
+PASS misuse: a string argument that is not UTF-8 traps (want: trap): TRAP wasm error: unreachable
+PASS misuse: argument range past the end of memory traps (want: trap): TRAP wasm error: out of bounds memory access; fresh instance verifies g5: true
+PASS misuse: argument range that overflows u32 traps (want: trap): TRAP wasm error: out of bounds memory access; fresh instance verifies g5: true
+FAIL misuse: argument pointer not from cabi_realloc (the guest frees it) traps (want: trap): {"message":"receipt-data is not valid base64","reason":"INVALID_RECEIPT_FORMAT","verified"...
+PASS   ... and the instance still verifies g5 afterwards: 
+FAIL misuse: post-return twice on the same result traps (want: trap): first: <nil>; second: 
+PASS   ... and the instance still verifies g5 twice afterwards: true true
+PASS misuse: post-return with a return pointer that was never returned traps (want: trap): TRAP wasm error: unreachable
+PASS misuse: 300 calls with no post-return leak the results (memory before/after, bytes): 1769472 -> 2752512
+PASS the return area is one static slot: a second call before post-return overwrites the first result's (ptr, len): retptr 1729192 and 1729192; first result now reads "{\"message\":\"receipt-data is not valid base64\",\"reason\":\"INVALID_RECEIPT_FORMAT\",\"verified\"..."
+PASS random-get answering the wrong length traps (want: trap, if random-get is called at all): random-get calls: 1; TRAP wasm error: unreachable
+PASS isolation: a trap in one instance leaves another untouched: TRAP wasm error: out of bounds memory access
+PASS no growth of linear memory over 2,000 more calls (with post-return): 2097152 -> 2097152 bytes; 3.96 ms/call
+summary: 2 failed
+

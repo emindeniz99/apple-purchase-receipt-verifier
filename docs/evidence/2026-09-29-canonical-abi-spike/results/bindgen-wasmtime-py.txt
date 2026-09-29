@@ -1,0 +1,67 @@
+# wasmtime-py bindgen, 2026-09-29
+## wasmtime-py 49.0.0 (latest on PyPI): python -m wasmtime.bindgen
+$SCRATCH/pyvenv/bin/python: No module named wasmtime.bindgen
+(bindgen and wasmtime.loader were deleted by bytecodealliance/wasmtime-py#310, merged 2025-11-05;
+ PyPI upload dates: 38.0.0 2025-10-20, 39.0.0 2025-11-20, so 38.0.0 is the last release that ships it)
+
+## wasmtime-py 38.0.0 (pip --target, scratch): python -m wasmtime.bindgen aprv-cabi.component.wasm
+thread '<unnamed>' panicked at src/bindgen.rs:1226:52:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "$SCRATCH/r12/wt38/wasmtime/bindgen/__main__.py", line 40, in <module>
+    main()
+  File "$SCRATCH/r12/wt38/wasmtime/bindgen/__main__.py", line 30, in main
+    files = generate(name, contents)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$SCRATCH/r12/wt38/wasmtime/bindgen/__init__.py", line 151, in generate
+    result = root.generate(store, name, component)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$SCRATCH/r12/wt38/wasmtime/bindgen/generated/__init__.py", line 301, in generate
+    ret = self.lift_callee0(caller, ptr, len0, ptr1, len2)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$SCRATCH/r12/wt38/wasmtime/_func.py", line 93, in __call__
+    with enter_wasm(store) as trap:
+  File "<stdlib>/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "$SCRATCH/r12/wt38/wasmtime/_func.py", line 265, in enter_wasm
+    raise trap_obj
+wasmtime._trap.Trap: error while executing at wasm backtrace:
+Caused by:
+    wasm trap: wasm `unreachable` instruction executed
+files written: 0
+
+## wasmtime-py 38.0.0 (pip --target, scratch): python -m wasmtime.bindgen aprv-cabi-checked.component.wasm
+thread '<unnamed>' panicked at src/bindgen.rs:1226:52:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "$SCRATCH/r12/wt38/wasmtime/bindgen/__main__.py", line 40, in <module>
+    main()
+  File "$SCRATCH/r12/wt38/wasmtime/bindgen/__main__.py", line 30, in main
+    files = generate(name, contents)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$SCRATCH/r12/wt38/wasmtime/bindgen/__init__.py", line 151, in generate
+    result = root.generate(store, name, component)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$SCRATCH/r12/wt38/wasmtime/bindgen/generated/__init__.py", line 301, in generate
+    ret = self.lift_callee0(caller, ptr, len0, ptr1, len2)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$SCRATCH/r12/wt38/wasmtime/_func.py", line 93, in __call__
+    with enter_wasm(store) as trap:
+  File "<stdlib>/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "$SCRATCH/r12/wt38/wasmtime/_func.py", line 265, in enter_wasm
+    raise trap_obj
+wasmtime._trap.Trap: error while executing at wasm backtrace:
+Caused by:
+    wasm trap: wasm `unreachable` instruction executed
+files written: 0
+
+## the panic site, rust/src/bindgen.rs at tag 38.0.0, line 1226
+        if let Some(ns) = ns {
+            let src = self.gen.exports.get_mut(ns).unwrap();

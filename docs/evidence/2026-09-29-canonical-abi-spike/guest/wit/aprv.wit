@@ -1,0 +1,28 @@
+// Spike only (2026-09-29, round 12): the coordinator's interface, verbatim
+// in substance. Payloads are strings carrying the existing wire JSON.
+package aprv:verifier@1.0.0;
+
+interface verify {
+  enum environment { production, sandbox }
+
+  // {"roots":[base64 DER, ...]}; empty (or no roots) = the built-in Apple roots.
+  // Answers {"ok":true} or {"ok":false,"message":...}. A second successful
+  // init traps; a verify before a successful init traps.
+  init: func(config-json: string) -> string;
+
+  // now-ms: the instant for the chain check when the input carries no date,
+  // and request_date at the endpoint. Verification failures are values.
+  verify-receipt: func(now-ms: u64, receipt-base64: string) -> string;
+  verify-signed-data: func(now-ms: u64, jws: string) -> string;
+  verify-receipt-endpoint: func(env: environment, now-ms: u64, request-json: string) -> string;
+}
+
+interface host {
+  // OpenSSL's randomness (EC blinding): exactly len bytes.
+  random-get: func(len: u32) -> list<u8>;
+}
+
+world aprv {
+  import host;
+  export verify;
+}
