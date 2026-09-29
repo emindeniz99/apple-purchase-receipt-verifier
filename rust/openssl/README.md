@@ -76,7 +76,10 @@ values: DER in, certificates, facts and booleans out.
   - the chunks of a constructed `OCTET STRING` (the `eContent`, a payload
     attribute value, the Xcode wrap) must be `OCTET STRING`s, as X.690
     section 8.7.3 says; OpenSSL joins any tag. Six constructed levels
-    pass, as OpenSSL decodes six (`ASN1_MAX_STRING_NEST`);
+    pass, as OpenSSL decodes six (`ASN1_MAX_STRING_NEST`). Elsewhere a
+    constructed string's chunks are joined unchecked, as OpenSSL's
+    `asn1_collect` joins them, and the whole string is handed to OpenSSL
+    at its outermost level;
   - over the receipt payload, the same budgets plus the header forms 0.7's
     reader refused and OpenSSL reads: a tag in high-tag-number form, a
     length of more than four octets, and a constructed string value.
