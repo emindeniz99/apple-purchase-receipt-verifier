@@ -132,45 +132,31 @@ G1d (the final module, `4e9d2d85...c9dd`, 384 cases): `dotnet test` project 599 
   under WER/ProcDump for the faulting address; the README documents the
   limitation for consumers.
 - **`dotnet (macos-latest)`, osx-arm64:
-  `PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly`.** The first run
-  failed net10.0 (at least 559,224 B per 500 calls); the second, with the
-  per-call test of the first fix, failed net8.0 (1,570.2 B per call against a
-  control of 5.5 B) and passed net9.0 and net10.0. Linux x64 measures 0 B per
-  call on net8.0 and net10.0. Not established which layer keeps it: there is
-  no Mac here. What was read: the decompiled `Wasmtime.Dotnet` 48.0.2
-  (`Function.Invoke`, `Memory.GetSpan`, `ValueBox`, `Store` and its three extern
-  caches, the callbacks) keeps nothing per call, the store's `GCHandle`s and
-  the callbacks' are made once per store or linker, and this library's managed
-  path has no static cache, no `ThreadLocal`, no `ConditionalWeakTable` and no
-  exception on the success path. The verdict is unchanged (budget 256 B per
-  call, no skip); on a failure the message now carries where the growth is,
-  and the next macOS run's output decides:
-  - "native call alone" large: Wasmtime .NET or the native library keeps it on
-    osx-arm64 (a per-call handle or allocation the managed side never frees);
-    report upstream with that figure.
-  - "reading the answer alone" large: the managed reading (JSON, the payload
-    objects), a collector's accounting of their shape or a real leak there.
-  - both small and the wrapper large: `Rent`/`Return`, the UTF-8 input or the
-    pooled instance; the instance identity and the store caches on the same
-    line say which.
-  - "for one that idles as long" as large as the wrapper: something in the test
-    host or the runtime grows the live set with time, not with calls. Then the
-    verdict should subtract that control too; that change waits for the figure.
-  - dropped results still alive: a caller-visible object graph is retained.
-  The third run (net8.0 arm64) printed 3,460.9 B per call for the wrapper
-  against 0.0 B for both controls, with the native call alone at 95.6 B, the
-  reading alone at -5.5 B, no result retained, the same pooled instance and
-  constant store caches. Every piece measured small once the wrapper had failed,
-  so the growth sits either in a piece not yet measured (the clock, the UTF-8
-  encoding, taking and returning an instance, the lowering, the call with a
-  pre-lowered input) or in the cold start of the first measurement. The linear
-  memory of 262,144 B is the stub module's four pages, on every platform, not a
-  platform reading. The failure message now measures all of those pieces one at
-  a time and the whole path a second time, warm. The warm-up before the rounds
-  is now at least 500 calls and 400 ms, because tiered compilation starts
-  counting calls only after 100 ms and recompiles on a background thread, and
-  the old 50 calls (about 2 ms on a Mac) left that inside the measured rounds;
-  that is a hypothesis the "whole path again" figure will confirm or refute, not
-  a finding.
-  If none is conclusive, this test is the one justified red for the pull
-  request to main, with the run's figures attached.
+  `PlatformTests.RepeatedVerificationDoesNotGrowUnboundedly`.** Diagnosed: a
+  warm-up tail, not retention. The runs failed different runtimes (net10.0,
+  then net8.0, then net8.0, and on PR #187 head 45815dc net9.0 and net8.0 while
+  net10.0 passed), never Linux, where every figure reads 0.0 B per call. The
+  figures of that last run, from the failure message:
+  - net9.0 (9.0.20): 1,533.2 B per call (27 us each) in the measured window;
+    the whole path measured again 0.0 B; clock -5.5, UTF-8 encoding 0.0, taking
+    and returning an instance 0.0, lowering alone 5.5, export with a
+    pre-lowered input 0.0, that plus the post-return 0.0, the whole native call
+    0.0, reading the answer 0.0 B; 0 of 200 dropped results alive; the same
+    pooled instance; store caches 10/1/0.
+  - net8.0 (8.0.31): 3,504.6 B per call (105 us each); the whole path again
+    -0.7 B; the pieces -5.9 to 16.5 B (one piece, -3,413.1 B, is a window that
+    shrank); the same other facts.
+  The growth exists only in the first window after the warm-up and is gone
+  when the identical path is measured again, and no piece keeps anything, so
+  it is the runtime's tiering and caches settling later on osx-arm64 than the
+  400 ms warm-up allows. A per-call leak would be in the second window too.
+  Earlier ideas that the figures ruled out: the linear memory of 262,144 B is
+  the stub module's four pages on every platform, nothing in Wasmtime .NET
+  48.0.2 or the wrapper's managed path keeps anything per call, and the
+  time-control (an idle stretch as long as the calls) never grew.
+  The test now judges the steady state: up to three consecutive windows of the
+  whole path, passing on the first within the budget (256 B per call, net of
+  the allocation control) and failing only when every window exceeds it, with
+  every window's figure and the piece breakdown in the message. The budget is
+  unchanged and there is no skip. A real leak grows in every window and still
+  fails: injected leaks of 256 and 1,500 B per call fail on Linux in all three.

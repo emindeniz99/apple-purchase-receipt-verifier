@@ -116,6 +116,9 @@ public class PlatformTests
     /// </summary>
     private const int LiveSetRounds = 3;
 
+    /// <summary>The most consecutive windows of the whole path the test measures; one within the budget passes.</summary>
+    private const int MeasuredWindows = 3;
+
     /// <summary>
     /// What one verification may leave behind, in bytes. A single retained
     /// <c>X509Certificate2</c> is ~1.5 kB of <c>RawData</c> alone (a measured
@@ -140,6 +143,13 @@ public class PlatformTests
     /// not depend on the number of calls (jitting, a runtime's own caches, a
     /// heap that commits a region while it is measured) is in both and cancels;
     /// retention grows with the calls and does not.</para>
+    /// <para>It is judged on the steady state: up to <see cref="MeasuredWindows"/>
+    /// consecutive windows of the whole path, and the first within the budget
+    /// passes. On osx-arm64 the first window after the warm-up read 1.5 to
+    /// 3.5 kB per call on .NET 8 and 9 (and none on Linux), while the same path
+    /// measured again read 0.0 and -0.7 B and no single piece kept anything:
+    /// the runtime's tiering and caches were still settling. A tail like that is
+    /// gone in the next window; unbounded growth is in every window and fails.</para>
     /// <para>A control is measured the same way and taken out: it allocates as
     /// many bytes per iteration as a verification does and keeps none, so a
     /// collector that reports some share of what a loop allocated as live (a
@@ -156,10 +166,9 @@ public class PlatformTests
     /// of its own (<see cref="ProcessWideCollection"/>):
     /// <see cref="GC.GetTotalMemory"/> reports the whole process's live set, so
     /// a sibling collection allocating on another thread lands in the delta.
-    /// When it fails, the message carries every figure, the platform and a
-    /// breakdown of where the growth is: the native call alone, the reading of
-    /// the answer alone, the result objects, and the state of the pooled
-    /// instance.</para>
+    /// When it fails, the message carries every window's figure, the platform
+    /// and a breakdown of where the growth is: each piece of the path alone,
+    /// the result objects, and the state of the pooled instance.</para>
     /// </remarks>
     [Fact]
     public void RepeatedVerificationDoesNotGrowUnboundedly()
@@ -189,22 +198,34 @@ public class PlatformTests
 
         int allocatedPerCall = (int)((GC.GetAllocatedBytesForCurrentThread() - allocatedBefore) / 100);
 
-        Measured wrapper = Marginal(() => verifier.VerifyReceipt(receipt));
         Measured alloc = Marginal(() => Churn(allocatedPerCall));
+        double control = Math.Max(alloc.BytesPerCall, 0);
 
-        // A control that reads below zero is noise, not credit to the wrapper.
-        double share = wrapper.BytesPerCall - Math.Max(alloc.BytesPerCall, 0);
-        if (share < LiveSetBudgetPerVerification)
+        // Judge the steady state: up to three consecutive windows of the whole
+        // path, passing on the first that is within the budget. A warm-up tail
+        // (on osx-arm64 the runtime's tiering and caches settled after the
+        // warm-up, in the first window only) is gone in the next window;
+        // retention grows in every window.
+        List<Measured> windows = new();
+        for (int window = 0; window < MeasuredWindows; window++)
         {
-            return;
+            Measured wrapper = Marginal(() => verifier.VerifyReceipt(receipt));
+            windows.Add(wrapper);
+            if (wrapper.BytesPerCall - control < LiveSetBudgetPerVerification)
+            {
+                return;
+            }
         }
 
-        Measured idle = MarginalIdle(wrapper.MicrosPerCall);
+        Measured idle = MarginalIdle(windows[0].MicrosPerCall);
+        string figures = string.Join(
+            ", ",
+            windows.Select(w => w.BytesPerCall.ToString("F1", CultureInfo.InvariantCulture) + " B (" + w.MicrosPerCall.ToString("F0", CultureInfo.InvariantCulture) + " us each)"));
 
         Assert.Fail(
-            $"each verification left {wrapper.BytesPerCall:F1} B on the live set ({wrapper.MicrosPerCall:F0} us each) against "
+            $"each verification left {figures} on the live set in each of {MeasuredWindows} consecutive windows, against "
             + $"{alloc.BytesPerCall:F1} B for a control that allocates the same {allocatedPerCall} B and keeps none and "
-            + $"{idle.BytesPerCall:F1} B for one that idles as long (reported, not subtracted), so {share:F1} B are the wrapper's; the budget is "
+            + $"{idle.BytesPerCall:F1} B for one that idles as long (reported, not subtracted); the budget is "
             + $"{LiveSetBudgetPerVerification} B ({System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, "
             + $"{System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier}). Where it is: {Breakdown(verifier, receipt)}");
     }
