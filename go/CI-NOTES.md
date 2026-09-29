@@ -12,7 +12,14 @@ secret.
   `GOFLAGS=-mod=readonly` in the `go` job works, since `go.sum` is committed.
 - `go/internal/wasm/aprv.wasm` and `aprv.wasm.sha256` are the embedded
   module. **They are the round-13 stand-in (0.6 core) until the release build
-  overwrites both**; see `wasm-copies` below.
+  overwrites both**; see `wasm-copies` below. One thing differs from the
+  round-13 artifact: its panic-location strings held the build directory
+  (11 paths, all under a scratch directory), which may not be committed, so
+  that fixed-length prefix was overwritten in place with `/buildxxx...`. The
+  module is otherwise byte for byte the original (`da786ac8...fb68`, 2,967,116
+  bytes, unchanged length), validates with `wasm-tools`, and answers the corpus
+  identically; its committed hash is `f837e7a3...7e4a`. The release build remaps
+  its paths and needs no such step.
 - The hand-written verifier is gone. The last commit that has it is
   `ac000fd`, the parent of the commit that removed it; use it as the oracle
   for a differential run and as the source of the port-only tests
