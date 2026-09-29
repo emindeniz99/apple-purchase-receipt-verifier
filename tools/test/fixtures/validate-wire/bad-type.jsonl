@@ -1,0 +1,3 @@
+{"verified":true,"payload":{"id":"1","date":1}}
+{"verified":true,"payload":{"id":1,"date":1}}
+{"verified":false,"reason":"MALFORMED","message":"never reached"}
