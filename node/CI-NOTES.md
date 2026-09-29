@@ -226,6 +226,42 @@ the re-run. Chromium 141 and Firefox 142 passed in the same job.
   at about 5 s per extra load. If it recurs, the message and memory sizes
   decide between a JavaScriptCore report upstream and a module fault.
 
+## `decompress` alert (Socket, GHSA-mp2f-45pm-3cg9)
+
+Socket flagged `decompress@4.2.1`: archive entries can be written outside
+the target directory, and no patched release exists. It came in through
+the lockfile as `@bytecodealliance/jco@1.35.0` →
+`@bytecodealliance/componentize-js@0.22.0` →
+`@bytecodealliance/weval@0.4.1` → `decompress@4.2.1`.
+
+- **Not shipped.** jco is a devDependency. The package has no
+  `dependencies`, `files` is `["dist", "licenses"]`, and
+  `npm pack --dry-run` lists no path from jco, weval or decompress.
+- **Not reached by our build.** weval's `getWeval()` downloads a weval
+  release archive from GitHub and extracts it with decompress.
+  componentize-js calls it only with `enableAot`, and jco loads
+  componentize-js only for `jco componentize` (a dynamic import in
+  `dist/cmd/componentize.js`). `scripts/build.mjs` runs `jco transpile` on
+  a local component file. A module-load trace of that run showed no
+  componentize-js, weval or decompress module loaded.
+- **No newer jco.** 1.35.0 is the registry's latest and still depends on
+  componentize-js 0.22.0.
+- **Override.** weval 0.5.0 keeps the same `getWeval()` export and
+  replaces decompress with `tar`, `fflate` and `@napi-rs/lzma`. It extracts
+  only the entry whose basename is `weval`, into a path it builds itself,
+  so an archive entry name cannot pick the destination. componentize-js
+  asks for `^0.4.1`, so `package.json` pins it with
+  `"overrides": {"@bytecodealliance/weval": "0.5.0"}`. After that,
+  `npm ls decompress` is empty and `npm audit` reports 0 vulnerabilities.
+  Transpiling the G1d component gave byte-identical files before and after
+  the override, and `node scripts/g1.mjs` on G1d passed: 824/824 tests,
+  6,179/6,179 corpus rows identical, 0 traps.
+
+Remove the override when a jco release depends on weval 0.5 or later.
+If Socket still reports the old path from a cached scan, the alert can be
+marked acceptable: dev-time tool, path unreachable from `jco transpile`,
+nothing of it in the tarball.
+
 ## Phase 7
 
 `node/certs`, `src/roots-data.ts` and `scripts/gen-roots.mjs` are gone:
