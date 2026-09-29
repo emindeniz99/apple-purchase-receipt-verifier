@@ -473,7 +473,31 @@ work.
   through an empty `init` list, `check-cert-copies.mjs` down to
   `rust/certs`, the one-implementation gate to `--enforce all`, the 78
   inventory rows proposed or declared moot, the Elixir example moved
-  to the byte-range calls; PHP last, after its G1c merge.
+  to the byte-range calls; PHP last, after its G1c merge. Handed back
+  2026-09-29 15:55Z (head 4b73900, PHP pending): Go, Node, Python,
+  Ruby, .NET and Swift commits (Go, Python and .NET breaking: `Roots()`
+  nil, `default_roots()` and `AppleRootCertificates.Bundled()` removed,
+  `bump-minor-pre-major` keeps 0.8.0), `--enforce all` at 0 hits, 76
+  proposed cases in `docs/evidence/2026-09-29-phase7-proposed-cases.md`
+  (seven differ from the deleted port tests and go through Java first),
+  the Elixir NIF on the byte-range calls (not built: no Elixir here).
+  rust-core back-merged (f477f81); PHP step running.
+- Lane A-fix3 merged 2026-09-29 15:58Z (head c9979dd, merge b0a7f3d):
+  every round-3 finding fixed (F1 bag filtered by signature link; F2
+  chunks joined; F3 cost control, 3x bound under an embedded signer,
+  measured; F4 documented; F5/F6 build.sh cleanup and compiler check
+  with no-build tests; F7 pom; F8 ffi anchor lengths; F9 scripts) plus
+  the four round-2 notes (guest range guard, trap host, schemas, pin
+  tests) and the three Rust CI items (beta cdylib lookup, 1.85.0 cost
+  bound, shellcheck); 700 tests, 384 cases (7 new; Java fails one, the
+  two-chunk BIT STRING, aligned by lane J-align round 3). G1d module
+  built from the merged tree, byte-identical to the lane's: aprv.wasm
+  2,764,700 B sha256 `4e9d2d85…`, component 2,767,142 B sha256
+  `ccccbfb5…`; 384 of 384 through the trap host, 6,173 of 6,179 rows
+  identical to G1c and 6 fuzz rows changed in the message only. The
+  server rebuilds on it (lane B); the host pins move to it once lane
+  P7-code merges. REVIEW-LOG.md round 3 merged (77fa78b); root
+  THREAT-MODEL.md §11 updated to three rounds.
 - Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
   merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
   SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
