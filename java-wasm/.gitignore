@@ -4,3 +4,5 @@ target/
 .vscode/
 .gradle/
 build/
+# The module is not in git (R14): copy the release aprv.wasm here.
+/src/main/wasm/aprv.wasm
