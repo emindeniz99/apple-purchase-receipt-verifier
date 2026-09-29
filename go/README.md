@@ -29,6 +29,8 @@ fmt.Println(payload.JSON())
 
 Go 1.22 or newer, one dependency (wazero, which has none), no cgo.
 
+`internal/wasm/aprv.wasm` is git-ignored until the real module is committed at integration: copy the file into place (it must match `aprv.wasm.sha256`), because `//go:embed` needs it present to build.
+
 The library answers one question: did Apple sign this? It checks the chain
 to a pinned root, Apple's marker OIDs and the signature, and hands back
 everything the payload says. Whether the payload is for your app, your

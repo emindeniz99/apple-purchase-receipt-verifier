@@ -10,6 +10,7 @@ secret.
   v1.9.0`, and a `go.sum`. The directive reads `go 1.22.0`, not `go 1.22`,
   because wazero v1.9.0's own `go.mod` does; the floor is still Go 1.22.
   `GOFLAGS=-mod=readonly` in the `go` job works, since `go.sum` is committed.
+- `go/internal/wasm/aprv.wasm` is git-ignored until integration: CI copies the module into place before building, since `//go:embed` needs it present. `aprv.wasm.sha256` is committed.
 - `go/internal/wasm/aprv.wasm` and `aprv.wasm.sha256` are the embedded
   module. **They are the round-13 stand-in (0.6 core) until the release build
   overwrites both**; see `wasm-copies` below. One thing differs from the
