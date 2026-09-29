@@ -54,7 +54,7 @@ final class CliTransportTest extends TestCase
     private function opened(int $timeoutSeconds = 30): CliTransport
     {
         $transport = $this->transport($timeoutSeconds);
-        $transport->open([]);
+        $transport->open(null);
         file_put_contents($this->cli->directory . '/log.jsonl', '');
 
         return $transport;
@@ -173,7 +173,7 @@ final class CliTransportTest extends TestCase
 
     public function testOpenRunsInfoAndACustomRootsProbeWithARootsFileOnlyWhenRootsAreGiven(): void
     {
-        $this->transport()->open([]);
+        $this->transport()->open(null);
         self::assertSame([['info']], array_column($this->cli->log(), 'argv'));
 
         $this->cli->remove();
@@ -256,7 +256,7 @@ final class CliTransportTest extends TestCase
             new CliTransport($this->cli->directory . '/mode.json'),
         ] as $transport) {
             try {
-                $transport->open([]);
+                $transport->open(null);
                 self::fail('no binary, no verifier');
             } catch (RuntimeException $e) {
                 self::assertStringContainsString('aprv-install', $e->getMessage());
@@ -270,7 +270,7 @@ final class CliTransportTest extends TestCase
         $this->cli->behave(['info' => '{"abi":"aprv:verifier@2.0.0"}']);
 
         try {
-            $this->transport()->open([]);
+            $this->transport()->open(null);
             self::fail('an ABI mismatch is a hard failure');
         } catch (RuntimeException $e) {
             self::assertStringContainsString('aprv:verifier@2.0.0', $e->getMessage());
@@ -283,7 +283,7 @@ final class CliTransportTest extends TestCase
         foreach (['not json', '{"abi":42}', '[]'] as $info) {
             $this->cli->behave(['info' => $info]);
             try {
-                $this->transport()->open([]);
+                $this->transport()->open(null);
                 self::fail("aprv info answered {$info}: create must refuse it");
             } catch (RuntimeException) {
                 $this->addToAssertionCount(1);
@@ -294,10 +294,10 @@ final class CliTransportTest extends TestCase
     public function testATransportServesOneVerifier(): void
     {
         $transport = $this->transport();
-        $transport->open([]);
+        $transport->open(null);
 
         $this->expectException(LogicException::class);
-        $transport->open([]);
+        $transport->open(null);
     }
 
     public function testWhatTheBinaryPrintsOnStderrNeverReachesTheCallersOutput(): void
@@ -331,7 +331,7 @@ final class CliTransportTest extends TestCase
     /** A root is DER: Apple's own root opens, the same certificate as PEM text is refused (0.7 accepted PEM). */
     public function testARealRootIsAcceptedAsDerAndAsPemItIsRefused(): void
     {
-        $der = (string) file_get_contents(__DIR__ . '/../certs/AppleRootCA-G3.cer');
+        $der = (string) file_get_contents(__DIR__ . '/../../certs/AppleRootCA-G3.cer');
         Verifier::create(Config::builder()->roots([$der])->build(), new CliTransport(Aprv::binary()));
         $this->addToAssertionCount(1);
 

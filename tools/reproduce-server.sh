@@ -18,8 +18,8 @@
 #   rust/server/scripts/build-static.sh <component.wasm> <target-triple> <out-dir>
 #
 # which precompiles the component and builds the binary that embeds it,
-# leaving <out-dir>/aprv. That interface is the one this script asks of
-# aprv-server's build (.github/CI-NOTES.md).
+# leaving <out-dir>/aprv-<target-triple> (rust/server's own interface,
+# OD-08).
 #
 # Environment: APRV_REPO_URL, APRV_TOOLCHAIN_DIR and APRV_REPRODUCE_OUT as
 # for tools/reproduce-wasm.sh. Exit status: 0 on a match, 1 on a mismatch or
@@ -81,7 +81,7 @@ if [[ -n "${APRV_EXPECTED_COMPONENT_SHA256:-}" && "$component_sha" != "$APRV_EXP
 fi
 
 (cd "$src" && rust/server/scripts/build-static.sh "$out/wasm/aprv.component.wasm" "$TARGET" "$out" >&2)
-actual="$(sha256sum "$out/aprv" | cut -c1-64)"
+actual="$(sha256sum "$out/aprv-$TARGET" | cut -c1-64)"
 echo "reproduce-server: aprv ($TARGET) $actual (rebuilt from $commit)"
 echo "reproduce-server: expected      $EXPECTED"
 if [[ "$actual" != "$EXPECTED" ]]; then

@@ -34,9 +34,9 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 3.3.0"
 
   # lib/ holds the WebAssembly module and the SHA-256 the gem checks it
-  # against; licenses/ holds the texts its third-party code requires. Not
-  # shipped: roots_data.rb (Apple's roots live inside the module now, and the
-  # file only waits for the release that deletes it), certs/, and the tests.
+  # against; licenses/ holds the texts its third-party code requires. Apple's
+  # roots live inside the module, so the gem carries no certificate file. The
+  # tests are not shipped.
   #
   # The module is not tracked in git: the release job copies it to the path
   # below before `gem build`, and a build without it stops here.
@@ -54,7 +54,7 @@ Gem::Specification.new do |spec|
     "licenses/**/*",
     "README.md",
     "LICENSE"
-  ] - ["lib/apple_purchase_receipt_verifier/roots_data.rb"]
+  ]
   spec.require_paths = ["lib"]
 
   # The one runtime dependency: Bytecode Alliance's Wasmtime, whose prebuilt

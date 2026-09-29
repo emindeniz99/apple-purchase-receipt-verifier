@@ -12,7 +12,7 @@ use Throwable;
 /** A transport that answers from a closure and records what it was asked. */
 final class FakeTransport implements Transport
 {
-    /** @var list<list<string>> the roots each open() got */
+    /** @var list<list<string>|null> the roots each open() got, null for the built-in ones */
     public array $opened = [];
 
     /** @var list<array{Operation, string, int}> */
@@ -28,7 +28,7 @@ final class FakeTransport implements Transport
         return new self(static fn (): string => $json);
     }
 
-    public function open(array $roots): void
+    public function open(?array $roots): void
     {
         $this->opened[] = $roots;
         if ($this->openFails !== null) {

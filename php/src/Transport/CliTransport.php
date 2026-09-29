@@ -48,7 +48,7 @@ final class CliTransport implements Transport
         return dirname(__DIR__, 2) . '/bin/aprv' . (PHP_OS_FAMILY === 'Windows' ? '.exe' : '');
     }
 
-    public function open(array $roots): void
+    public function open(?array $roots): void
     {
         if ($this->opened) {
             throw new LogicException('a transport serves one Verifier');
@@ -69,7 +69,7 @@ final class CliTransport implements Transport
         }
         Info::decode($out, 'aprv info');
 
-        if ($roots === []) {
+        if ($roots === null) {
             return;
         }
         $this->rootsFile = $this->writeRoots($roots);

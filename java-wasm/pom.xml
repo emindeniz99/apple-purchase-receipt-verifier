@@ -190,7 +190,6 @@
               <wasmFile>${aprv.wasm}</wasmFile>
               <name>io.github.emindeniz99.applepurchasereceiptverifier.endive.AprvModule</name>
               <interpreterFallback>FAIL</interpreterFallback>
-              <methodPrefixer>run.endive.compiler.NameSectionMethodPrefixer</methodPrefixer>
             </configuration>
           </execution>
         </executions>

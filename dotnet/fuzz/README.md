@@ -65,7 +65,7 @@ Two things about that arrangement are worth knowing before reading its output:
   finding new paths in the library; `cov:` will read 2 forever.
 - **Instrumented code must not run before `Fuzzer.LibFuzzer.Run`.** The
   instrumentation writes edge counters through a shared-memory pointer that
-  `Run` installs, so an eager `AppleRootCertificates.Bundled()` in `Main`
+  `Run` installs, so an eager `Config.Defaults()` in `Main`
   dereferences a pointer that does not exist yet and dies with an
   `AccessViolationException` that reads like a library crash. Every target here
   therefore builds its anchors and verifiers on its first execution — see the

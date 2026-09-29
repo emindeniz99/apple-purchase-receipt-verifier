@@ -17,6 +17,14 @@
          VSTest for `dotnet test`; MTP 2.x errors on this property under
          SDK 10 itself, so it's kept but restricted to the older SDKs. -->
     <TestingPlatformDotnetTestSupport Condition="$([MSBuild]::VersionLessThan('$(NETCoreSdkVersion)', '10.0'))">true</TestingPlatformDotnetTestSupport>
+    <!-- Since .NET 9 the SDK marks the generated apphost /CETCOMPAT, which turns
+         on the hardware shadow stack on Windows. Wasmtime recovers from a guest
+         trap by restoring a thread context to a landing pad the shadow stack
+         does not know, and Windows then fail-fasts the process (0xC0000409,
+         exit -1073740791) instead of letting the trap surface. Several tests
+         make the module trap on purpose, and the test host is the apphost.
+         net8.0 is unaffected; bytecodealliance/wasmtime-dotnet#374. -->
+    <CETCompat>false</CETCompat>
   </PropertyGroup>
 
   <ItemGroup>

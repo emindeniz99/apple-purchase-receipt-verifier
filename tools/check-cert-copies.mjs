@@ -1,17 +1,18 @@
 // Every copy of the pinned Apple roots must equal the repository's certs/.
 //
 // The roots live in certs/ and apple-root-watch diffs that directory against
-// Apple's published bytes every week. Most ports then carry their own copy,
-// because a package has to ship the anchors it uses; several compile them
-// into source as well. That is three links in a chain, and only the middle
-// one was being checked.
+// Apple's published bytes every week. Since MIGRATION.md Phase 7 exactly one
+// copy is expected: rust/certs, the one the core compiles into aprv.wasm and
+// every wrapper runs, because a crate cannot reach outside its package. The
+// wrappers carry none, and Java's main artifact inlines the roots as
+// constants that its own AppleRootCertsTest pins to certs/ (no .cer file, so
+// nothing here to find).
 //
-// The failure this prevents: someone refreshes certs/ after the watch fires,
-// updates most ports, misses one, and that port keeps shipping the old
-// anchors with CI fully green. Its own generated file still matches its own
-// stale copy, so a per-port regenerate-and-diff cannot see it.
+// The failure this prevents: someone refreshes certs/ after the watch fires
+// and the copy the module is built from keeps the old anchors with CI fully
+// green. Any copy that comes back is held to the same rule.
 //
-// Copies are DISCOVERED rather than listed, so a port added later is covered
+// Copies are DISCOVERED rather than listed, so a copy added later is covered
 // the day it lands instead of the day someone remembers to add it here.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';

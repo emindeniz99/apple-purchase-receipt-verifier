@@ -34,6 +34,12 @@ check signed-data/verify WASM_TRAP             # the 1 GiB grow
 check verify-receipt/production ABI_ERROR      # a result that is not UTF-8
 check verify-receipt/sandbox WASM_TRAP         # a 1 GiB random-get
 check receipt/verify WASM_TRAP                 # and again: nothing carried over
+# In the pool (the default lifecycle) a trapped instance must be dropped:
+# reused, Wasmtime would refuse to enter it at once (ABI_ERROR), so this
+# second loop must again run into the time limit.
+t=$(curl -s -o /dev/null -m 10 -X POST --data x -w '%{time_total}' "http://127.0.0.1:$port/v1/receipt/verify")
+if awk "BEGIN{exit !($t >= 0.25)}"; then echo "PASS a trapped instance is not reused (the loop ran again: $t s)"
+else echo "FAIL receipt/verify answered in $t s: a trapped instance may have been reused"; fail=1; fi
 if kill -0 "$pid" && [ "$(curl -s "http://127.0.0.1:$port/healthz")" = ok ]; then
   echo "PASS the process survived; RSS $(ps -o rss= -p "$pid" | tr -d ' ') KiB"
 else echo "FAIL the process is gone"; fail=1; fi

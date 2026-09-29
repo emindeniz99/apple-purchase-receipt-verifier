@@ -35,7 +35,7 @@ secret.
 | `go-scratch` (new) | the `FROM scratch` check with no daemon: `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$RUNNER_TEMP/scratch/corpusrun" ./internal/corpusrun`, copy one calls file next to it, `sudo chroot "$RUNNER_TEMP/scratch" /corpusrun /calls.jsonl` with an empty environment, and compare the rows with an ordinary run. Also `ldd` must say "not a dynamic executable". Passed here: 22 rows, identical output. |
 | `go-fuzz` | **delete the `internal/der` step**: `FuzzParseDER` went with the package. The `FuzzVerifyReceipt` and `FuzzVerifySignedData` step stays. Each execution costs about 6 ms (a receipt) to 25 ms (a JWS) now, so 60 s is a few thousand executions; raise `-fuzztime` if that matters. |
 | `go-lint` | unchanged. `govulncheck ./...` now sees wazero: the comment "the library has no dependencies, so anything it reports is a standard-library advisory" is out of date. The grep for `x509.SystemCertPool` and friends still passes. |
-| `go-generate-check` | unchanged until Phase 7 deletes `go/roots/certs` and `go generate`. |
+| `go-generate-check` | deleted in Phase 7 (see below). |
 | `wasm-copies` | for Go: `cd go/internal/wasm && sha256sum -c aprv.wasm.sha256`, and the hash in that file must equal the release build's `aprv.wasm` SHA-256 (`test "$(cut -d' ' -f1 aprv.wasm.sha256)" = "$BUILD_SHA256"`). The package also checks the pair when it loads, so a copy swapped without its hash file fails every test on import. `release-please.yml` must refresh **both files together** on the release branch. |
 | `one-implementation` | the grep gate must allow, in `go/`: `crypto/x509` in `config.go`, `roots.go`, `verifier.go` (the Config's trust-anchor type and `.Raw`; nothing is parsed or checked there); `crypto/sha256` and `encoding/hex` in `roots.go` and `internal/wasm/wasm.go` (pinning the roots and the module); `encoding/base64` in `verifier.go` and `receiptpayload.go` (init's roots, the wire's bytes fields). `x509.ParseCertificate` appears only in `roots.go`, which Phase 7 deletes with `go/roots/`. `apisurface_test.go` (`TestLibraryHoldsNoVerificationLogic`, `TestOnlyTheRootsAreEverParsedAsCertificates`) holds the same lines in Go and fails on a new import, so keep the two in step. |
 | post-publish `smoke-go` | the smoke module resolves `go/vX.Y.Z` from the proxy on the floor toolchain with `GOTOOLCHAIN=local`. It now downloads wazero too, so it needs `go mod tidy` (or `go get`) in the scratch module and a `go.sum`, and `GOFLAGS=-mod=mod` or an explicit `go mod download`. Keep the assertion that `DefaultConfig().Roots()` returns three certificates, and add one genuine receipt verifying through the embedded module. |
@@ -78,3 +78,17 @@ for byte; the typed reading in `receiptFromJSON` and `readResult` is what the
 (v1.10: 1.23, v1.11: 1.24, v1.12: 1.25), and the `go` matrix would then start
 at the new floor. The Go module is published from a `go/v*` tag: never move
 or delete one; a bad release is fixed forward with `retract`.
+
+## Phase 7
+
+The package no longer carries the roots: `go/roots/certs`, `roots.go`,
+`gen.go` (`go generate`) and `internal/gencerts` are gone. The module
+compiles the three Apple roots in, `DefaultConfig().Roots()` is nil, and
+`AppleRoots()` is removed (README, "Upgrading from 0.7").
+
+| Where | Change |
+|---|---|
+| `ci.yml` `go-generate-check` | delete the job: there is nothing left to generate. |
+| `release.yml` `tag-go-module` zip check | drop `roots.go` and the three `roots/certs/*.cer` entries from the list; keep `internal/wasm/aprv.wasm` and `internal/wasm/aprv.wasm.sha256`. The comment above it and the final echo lose "the anchors" / "all three roots". |
+| `one-implementation` | the Go allowlist is one entry: `crypto/x509` in `go/config.go` (the `Config`'s trust-anchor type; only `.Raw` crosses into the module). The `verifier.go`, `roots.go` and `internal/gencerts/main.go` entries are stale and must go. `apisurface_test.go` holds the same rule in Go. |
+| `.github/smoke/go-smoke/main.go` | changed on this lane: asserts `DefaultConfig().Roots() == nil` instead of three roots; the genuine receipt is what proves the module is in the zip. |

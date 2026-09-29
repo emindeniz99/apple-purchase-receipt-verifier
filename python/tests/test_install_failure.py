@@ -133,13 +133,29 @@ class SetupHookTest(unittest.TestCase):
         cls.source.mkdir()
         copy_source(cls.source)
 
+    #: Runs setup.py with ``sysconfig.get_platform`` answering ``HOST``: the
+    #: function setuptools asks for the build machine's platform, and so the
+    #: one place a simulated host is read on every operating system. The
+    #: variable ``_PYTHON_HOST_PLATFORM`` is not: on Windows ``sysconfig`` answers
+    #: ``win-*`` before it looks at it.
+    RUN_AS_HOST = (
+        "import runpy, sys, sysconfig\n"
+        "host = sys.argv[1]\n"
+        "sysconfig.get_platform = lambda: host\n"
+        "sys.argv = ['setup.py'] + sys.argv[2:]\n"
+        "runpy.run_path('setup.py', run_name='__main__')\n"
+    )
+
     def build(self, *args: str, host: "str | None" = None) -> "tuple[int, str, list[str]]":
         out = Path(tempfile.mkdtemp(dir=self.holder.name))
         environment = {k: v for k, v in os.environ.items() if k != "_PYTHON_HOST_PLATFORM"}
-        if host is not None:
-            environment["_PYTHON_HOST_PLATFORM"] = host
+        setup_args = ["-q", "bdist_wheel", *args, "-d", str(out)]
+        if host is None:
+            command = [sys.executable, "setup.py", *setup_args]
+        else:
+            command = [sys.executable, "-c", self.RUN_AS_HOST, host, *setup_args]
         done = subprocess.run(
-            [sys.executable, "setup.py", "-q", "bdist_wheel", *args, "-d", str(out)],
+            command,
             cwd=self.source,
             env=environment,
             capture_output=True,

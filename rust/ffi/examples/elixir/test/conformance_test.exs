@@ -255,7 +255,7 @@ defmodule ConformanceTest do
 
     case outcome do
       {:error, status, json} ->
-        body = Aprv.decode_json!(json)
+        body = if json == "", do: %{}, else: Aprv.decode_json!(json)
 
         cond do
           wanted == nil -> {:error, "unknown expected reason #{token}"}
@@ -275,7 +275,12 @@ defmodule ConformanceTest do
   end
 
   defp check_ok(kase, {:ok, json}) do
-    payload = Aprv.decode_json!(json)
+    # A verify call answers aprv.wasm's document, whose payload is what the
+    # case checks; the endpoint answers Apple's response body itself.
+    payload =
+      if get(kase, "op") == "verifyReceiptEndpoint",
+        do: Aprv.decode_json!(json),
+        else: Aprv.payload!(json)
 
     to_json =
       case get(kase, "toJson") do

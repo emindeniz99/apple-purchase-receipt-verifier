@@ -63,8 +63,9 @@ final class Verifier
      *         one through would mean `json_decode` silently degrading every
      *         date to a float rather than refusing to run at all; when the
      *         `aprv` binary or server cannot be used or speaks another ABI
-     * @throws InvalidArgumentException when a root is not a string or the
-     *         module refuses it (for example a value that is not a
+     * @throws InvalidArgumentException when the root set is an empty list
+     *         (leave the roots out for the built-in ones), when a root is
+     *         not a string or the module refuses it (for example a value that is not a
      *         certificate), or when the server refuses the token or trusts
      *         other roots than `$config` names
      */
@@ -76,7 +77,12 @@ final class Verifier
                 . 'timestamps do not fit a 32-bit int',
             );
         }
-        foreach ($config->roots as $root) {
+        if ($config->roots === []) {
+            throw new InvalidArgumentException(
+                'the root set is empty: leave the roots out (Config::defaults()) for the built-in Apple roots, or give at least one',
+            );
+        }
+        foreach ($config->roots ?? [] as $root) {
             self::requireDer($root);
         }
         $transport ??= new CliTransport();

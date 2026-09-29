@@ -13,9 +13,9 @@ namespace ApplePurchaseReceiptVerifier
     /// <remarks>
     /// <para><see cref="Roots"/> is either the caller's own trust anchors or,
     /// by default, empty, which means the three pinned Apple roots inside the
-    /// verification module. This library carries no copy of them for the
-    /// verifier to use. To trust Apple's roots and one of your own, pass all
-    /// four; <see cref="AppleRootCertificates.Bundled"/> lists Apple's.</para>
+    /// verification module. This library carries no copy of them. To trust
+    /// Apple's roots and one of your own, pass all four, loading Apple's from
+    /// its PKI page or the repository's <c>certs/</c>.</para>
     /// <para><see cref="Clock"/> answers "what time is it now?" and nothing
     /// else. The library reads it in two places: the chain check when the
     /// receipt or JWS carries no signing date, and <c>request_date</c> in the

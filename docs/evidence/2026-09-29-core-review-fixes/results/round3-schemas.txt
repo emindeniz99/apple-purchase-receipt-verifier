@@ -1,0 +1,8 @@
+validate-wire: 68 answers in init-config.jsonl validate against init-config.schema.json
+validate-wire: 68 answers in init.jsonl validate against init-result.schema.json
+validate-wire: 369 answers in verify-receipt.jsonl validate against verify-receipt-result.schema.json
+validate-wire: 289 answers in verify-signed-data.jsonl validate against verify-signed-data-result.schema.json
+corpora:
+validate-wire: 3922 answers in answers-verify-receipt.jsonl validate against verify-receipt-result.schema.json
+validate-wire: 2085 answers in answers-verify-signed-data.jsonl validate against verify-signed-data-result.schema.json
+validate-wire: 1 answers in answers-init.jsonl validate against init-result.schema.json

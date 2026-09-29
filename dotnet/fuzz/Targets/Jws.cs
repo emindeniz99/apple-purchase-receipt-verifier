@@ -14,8 +14,8 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
     /// <remarks>
     /// Nothing but a result carrying a <see cref="Failure"/> ever comes back,
     /// and a JWS that verifies under the generated fixture root must be
-    /// refused under Apple's real roots, <c>AppleRootCertificates.Bundled()</c>
-    /// — otherwise the anchors are not what decided it.
+    /// refused under Apple's real roots, <see cref="Config.Defaults"/> — otherwise
+    /// the anchors are not what decided it.
     /// </remarks>
     internal sealed class Jws : IDisposable
     {
@@ -27,7 +27,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
         {
             _root = Fixtures.JwsRoot();
             _fixture = Verifier.Create(Config.CreateBuilder().Roots(new[] { _root }).Build());
-            _unrelated = Verifier.Create(Config.CreateBuilder().Roots(AppleRootCertificates.Bundled()).Build());
+            _unrelated = Verifier.Create(Config.Defaults());
         }
 
         internal void Run(ReadOnlySpan<byte> data)
