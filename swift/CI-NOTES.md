@@ -108,3 +108,27 @@ plan's numbers, and the JWS is at the 10 per second per core floor on it.
 `APRV_BENCH_SECONDS`) prints start-up (hash and parse, instance, init, first
 and second g5) and g5 and JWS throughput through the public API on one and
 four threads. Not a CI job; the numbers are in the README and the hand-back.
+
+## macOS arm64: the interpreter loop
+
+The first `swift-macos` run (macos-26, Xcode 26.6, Swift 6.3.3, WasmKit
+0.4.1, release build) died in the first test: `Execution.swift:470`, WasmKit's
+`runRoot`, reported `-[_ContiguousArrayStorage<ValueType> domain]:
+unrecognized selector`, then signal 11. An `Error` value that was really an
+array of WasmKit's `ValueType` reached code that bridged it to `NSError`.
+The failing test's own steps are not involved: it was the first guest call
+of the process, and a refused configuration is a JSON answer, not a thrown
+error or a trap. A trapped instance is never called again (`Guest.dead`).
+
+The same release build passes on Linux x86-64, and so does a release build
+with AddressSanitizer (`--sanitize=address`, `AbiTests`: no memory error).
+WasmKit's own CI runs its macOS tests in debug only. The one place WasmKit
+turns a raw pointer into a Swift `Error` is its direct-threaded loop
+(`runDirectThreaded`: `unsafeBitCast(rawError, to: Error.self)` after the C
+handlers return), the default on x86-64 and arm64. The package now picks
+the token-threaded loop, which is plain Swift, everywhere except Linux
+x86-64 (`AprvModule.threadingModel`), and a test pins the choice per
+platform. `MeasurementTests.testSpeed` with `APRV_BENCH_THREADING` compares
+the two loops on one machine: on Linux x86-64 the token loop verified g5 at
+24 per CPU-second against 48 and the JWS at 6 against 10. Whether the token
+loop clears macOS is shown by the next `swift-macos` run, not here.
