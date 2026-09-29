@@ -9,18 +9,17 @@ using Xunit;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
-/// <summary>The bundled anchors: which ones, whose bytes, and how they are handed out.</summary>
+/// <summary>The anchors: the module's by default, the caller's when given, and how they are handed out.</summary>
 public class RootsTests
 {
-    private static readonly string[] Expected =
-    {
-        "AppleIncRootCertificate.cer", "AppleRootCA-G2.cer", "AppleRootCA-G3.cer",
-    };
-
+    /// <summary>
+    /// The three published Apple roots the tests pass explicitly, from the
+    /// repository's <c>certs/</c>: the same bytes the module compiles in.
+    /// </summary>
     [Fact]
-    public void TheBundledSetCarriesAllThreePublishedAppleRoots()
+    public void TheRepositoryCarriesAllThreePublishedAppleRoots()
     {
-        IReadOnlyList<X509Certificate2> roots = AppleRootCertificates.Bundled();
+        IReadOnlyList<X509Certificate2> roots = TestRoots.AppleRoots();
         Assert.Equal(3, roots.Count);
         string[] subjects = roots.Select(r => r.Subject).ToArray();
         Assert.Contains(subjects, s => s.Contains("Apple Root CA - G2", StringComparison.Ordinal));
@@ -30,21 +29,23 @@ public class RootsTests
 
     /// <summary>
     /// The defaults list no certificate: the three Apple roots are pinned
-    /// inside the module, and the verifier's wrapper carries no copy it could
-    /// disagree with the module about.
+    /// inside the module, and the library carries no copy it could disagree
+    /// with the module about, not even a public list of them.
     /// </summary>
     [Fact]
     public void TheDefaultsListNoRootBecauseTheModuleHoldsThem()
     {
         Assert.Empty(Config.Defaults().Roots);
         Assert.Empty(Config.CreateBuilder().Build().Roots);
+        Assert.Null(typeof(Config).Assembly.GetType("ApplePurchaseReceiptVerifier.AppleRootCertificates"));
+        Assert.Null(typeof(Config).Assembly.GetType("ApplePurchaseReceiptVerifier.Internal.AppleRootData"));
     }
 
     /// <summary>"Apple's roots plus mine" is all four passed in, and the roots that come back are the caller's own.</summary>
     [Fact]
     public void AppleRootsPlusMineAreAllFourPassedIn()
     {
-        List<X509Certificate2> roots = AppleRootCertificates.Bundled().ToList();
+        List<X509Certificate2> roots = TestRoots.AppleRoots().ToList();
         roots.Add(TestRoots.FixtureCertificate("receipt-root"));
         Config config = Config.CreateBuilder().Roots(roots).Build();
 
@@ -52,47 +53,6 @@ public class RootsTests
         Assert.Equal(
             roots.Select(r => Convert.ToHexString(SHA256.HashData(r.RawData))),
             config.Roots.Select(r => Convert.ToHexString(SHA256.HashData(r.RawData))));
-    }
-
-    /// <summary>
-    /// The compiled-in bytes are the repo's <c>certs/</c> bytes. This is what
-    /// makes the generated source file safe to trust rather than merely
-    /// convenient.
-    /// </summary>
-    [Fact]
-    public void TheCompiledInBytesAreTheRepositoryCertificateBytes()
-    {
-        string certs = CertsDirectory();
-        List<string> onDisk = new();
-        foreach (string file in Expected)
-        {
-            onDisk.Add(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(certs, file)))));
-        }
-
-        List<string> compiled = AppleRootCertificates.Bundled()
-            .Select(r => Convert.ToHexString(SHA256.HashData(r.RawData)))
-            .ToList();
-
-        Assert.Equal(onDisk.OrderBy(h => h, StringComparer.Ordinal), compiled.OrderBy(h => h, StringComparer.Ordinal));
-    }
-
-    /// <summary>
-    /// Each call returns independent instances, so a caller disposing one set
-    /// cannot break the next call.
-    /// </summary>
-    [Fact]
-    public void EachCallReturnsIndependentInstances()
-    {
-        IReadOnlyList<X509Certificate2> first = AppleRootCertificates.Bundled();
-        foreach (X509Certificate2 root in first)
-        {
-            root.Dispose();
-        }
-
-        IReadOnlyList<X509Certificate2> second = AppleRootCertificates.Bundled();
-        Assert.Equal(3, second.Count);
-        Assert.NotEmpty(second[0].Subject);
-        Assert.False(ReferenceEquals(first[0], second[0]));
     }
 
     /// <summary>
@@ -161,28 +121,11 @@ public class RootsTests
     [Fact]
     public void EveryPinnedRootIsStillWithinItsOwnValidityWindow()
     {
-        foreach (X509Certificate2 root in AppleRootCertificates.Bundled())
+        foreach (X509Certificate2 root in TestRoots.AppleRoots())
         {
             Assert.True(
                 root.NotAfter.ToUniversalTime() > DateTime.UtcNow,
                 $"{root.Subject} expired on {root.NotAfter:o} — cut a release with the new roots");
         }
-    }
-
-    private static string CertsDirectory()
-    {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            string candidate = Path.Combine(directory.FullName, "certs");
-            if (File.Exists(Path.Combine(candidate, "AppleRootCA-G3.cer")))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("could not locate the repository certs/ directory");
     }
 }
