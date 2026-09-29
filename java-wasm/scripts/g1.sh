@@ -16,7 +16,7 @@
 #                 (tag "server") and server steps are left out, and the
 #                 output says so
 #   JAVA8         a Java 8 java binary for the Java 8 leg (needs APRV_SERVER)
-#   BENCH_SECONDS seconds per benchmark point (default 20)
+#   BENCH_SECONDS seconds per benchmark point (default 20; 0 skips it)
 # Logs go to OUT_DIR; the summary lines go to stdout.
 set -eu
 g1=$1
@@ -75,6 +75,8 @@ if [ -n "${APRV_SERVER:-}" ] && [ -n "${JAVA8:-}" ]; then
   cat "$out/corpus-server-java8.txt"
 fi
 
-"$here/scripts/bench.sh" "${BENCH_SECONDS:-20}" 1 2 4 > "$out/bench.txt" 2>&1 || status=1
-cat "$out/bench.txt"
+if [ "${BENCH_SECONDS:-20}" != 0 ]; then
+  "$here/scripts/bench.sh" "${BENCH_SECONDS:-20}" 1 2 4 > "$out/bench.txt" 2>&1 || status=1
+  cat "$out/bench.txt"
+fi
 exit $status

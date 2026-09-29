@@ -116,11 +116,30 @@ from other builds, so timings are for the record, not for comparison.
 
 ### The module
 
-The pin in `src/main/wasm/aprv.wasm.sha256` names the 0.7 core's module
-(lane A2, G1): SHA-256
-`4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e`,
-3,005,922 bytes. Every case must pass on it; the stand-in list of the 0.6
-module is gone.
+The pin in `src/main/wasm/aprv.wasm.sha256` names the review-fixed 0.7
+module (G1b): SHA-256
+`9c0a581c5a0b6e4e7f7ba66675f07ec00096fa95772ae27ad86d6049a1a0f263`,
+3,009,278 bytes; `src/main/server/SHA256SUMS` pins lane B's server built
+on its component (`79f04743...0173d5c5c`, 12,006,320 bytes). Every case
+must pass on both; there is no stand-in list.
+
+G1b, 2026-09-29, `scripts/g1.sh` with `APRV_SERVER`, `JAVA8`, and
+`BENCH_SECONDS=0`: the 338 cases of `fixtures/cases.json` pass 338 of 338
+on Endive on JDK 21, Temurin 17 and Temurin 11, and through the server
+engine on JDK 21 and Temurin 8 (33 of them `decodeBase64`, through the
+public API). `verify` on JDK 21: 772 tests, 0 failures, 2 skipped; the
+Java 8 leg: 409 tests, 0 failures, 1 skipped. The corpus is 6,179 of
+6,179 identical to this module's reference rows on Endive (1 and 4
+threads) and through the server engine (1 and 4 threads on JDK 21, 1 on
+Temurin 8), of which 27 are the server's 413s answered as the core
+answers them and 1 is the roots refusal at start.
+
+The Endive engine copies at most 3,145,729 bytes of an input into the
+module (`WasmVerifier.MAX_INPUT_BYTES`, one over the core's largest cap),
+so a larger input still gets the core's own TOO_LARGE answer and never
+grows an instance's linear memory to its size;
+`WasmVerifierTest` checks a 4 MiB input and a 3,145,728-byte one, which
+is passed whole.
 
 Replacing the module is one committed file and one copy: write the new
 hash, in `sha256sum`'s format, to `java-wasm/src/main/wasm/aprv.wasm.sha256`,
