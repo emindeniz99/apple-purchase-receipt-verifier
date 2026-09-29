@@ -10,6 +10,10 @@ class ApiShapeTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
   FAKE = APRV::Runtime.new(FakeModule.wat)
 
+  def assert_maps(expected, actual)
+    expected.nil? ? assert_nil(actual) : assert_equal(expected, actual)
+  end
+
   def fake_verifier
     APRV::Verifier.send(:new, APRV::Config.defaults, runtime: FAKE)
   end
@@ -46,6 +50,27 @@ class ApiShapeTest < Minitest::Test
     assert_equal %w[PRODUCTION SANDBOX], APRV::Environment::ALL.sort
     assert_equal "PRODUCTION", APRV::Environment::PRODUCTION
     assert_equal "SANDBOX", APRV::Environment::SANDBOX
+  end
+
+  # docs/design/0.7-api.md, section 3: the status table the wrapper uses when
+  # a call fails before the module can answer (21002 for a non-String body,
+  # 21009 for a trap or a clock that failed).
+  def test_the_endpoint_status_for_each_reason_is_the_documented_table
+    {
+      MALFORMED: 21_002, TOO_LARGE: 21_002, INVALID_SIGNATURE: 21_003, UNTRUSTED_CHAIN: 21_003,
+      INVALID_CERTIFICATE: 21_003, INVALID_CERTIFICATE_PURPOSE: 21_003, UNREADABLE_PAYLOAD: 21_009,
+      INTERNAL_ERROR: 21_009
+    }.each { |reason, status| assert_equal status, APRV::AppleStatus.for_reason(reason), reason }
+  end
+
+  # The two helpers that state what Apple's strings mean and decide nothing.
+  def test_the_environment_helpers_map_apples_strings
+    {
+      "Production" => "PRODUCTION", "ProductionVPP" => "PRODUCTION", "ProductionSandbox" => "SANDBOX",
+      "ProductionVPPSandbox" => "SANDBOX", "Xcode" => nil, "" => nil, nil => nil
+    }.each { |type, environment| assert_maps(environment, APRV::Environment.from_receipt_type(type)) }
+    { "Production" => "PRODUCTION", "Sandbox" => "SANDBOX", "Xcode" => nil, "LocalTesting" => nil, nil => nil }
+      .each { |claim, environment| assert_maps(environment, APRV::Environment.from_jws_environment(claim)) }
   end
 
   # Misconfiguration is a programming error, not a verification verdict: a

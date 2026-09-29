@@ -63,6 +63,34 @@ class ThreadTest < Minitest::Test
     assert_operator idle, :<=, APRV::InstancePool::MAX_IDLE
   end
 
+  # Every export runs without the GVL (`to_func(gvl: false)`), which is what
+  # lets threads verify in parallel. The 1 MiB byte-floor receipt takes the
+  # module about 100 ms; a thread that sleeps a millisecond at a time keeps
+  # ticking through it. With the GVL held it would not tick until the call
+  # returned. (bench/threads.rb measures the rate this buys on real cores;
+  # this test does not depend on there being any.)
+  def test_a_long_call_does_not_hold_the_gvl
+    root = TestSupport.fixture_bytes("large-receipt-root")
+    receipt = [TestSupport.fixture_bytes("receipt-byte-floor")].pack("m0")
+    pool = APRV::Verifier.create(APRV::Config.new(roots: [root])).instance_variable_get(:@pool)
+    now = (Time.now.to_r * 1000).to_i
+    pool.with_guest { |guest| guest.call("verify-receipt", [now], receipt) } # first call warms the instance
+
+    ticks = 0
+    ticker = Thread.new { loop { sleep 0.001 and (ticks += 1) } }
+    sleep 0.01
+    before = ticks
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    answer = pool.with_guest { |guest| guest.call("verify-receipt", [now], receipt) }
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+    during = ticks - before
+    ticker.kill
+
+    assert_includes answer, '"verified":true'
+    assert_operator elapsed, :>, 0.02, "the call was too short to tell"
+    assert_operator during, :>=, 5, "the ticker made #{during} ticks in a #{(elapsed * 1000).round} ms call"
+  end
+
   def test_a_call_cut_short_discards_its_instance
     shared = verifier
     pool = shared.instance_variable_get(:@pool)
