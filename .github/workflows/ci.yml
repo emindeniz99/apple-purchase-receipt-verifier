@@ -675,10 +675,12 @@ jobs:
       # so that release builds crashed on a genuine receipt while every debug
       # test passed.
       - run: swift test -c release -Xswiftc -enable-testing --force-resolved-versions
+  # macos-26: the package needs Swift tools 6.3, and macos-15's Xcode
+  # carries Swift 6.1 (swift/CI-NOTES.md asks for 15+ with Swift 6.3+).
   swift-macos:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.swift == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -697,7 +699,7 @@ jobs:
   swift-ios:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.swift == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
