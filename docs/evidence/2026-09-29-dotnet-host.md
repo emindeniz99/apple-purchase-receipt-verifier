@@ -26,6 +26,14 @@ Labels: TESTED (ran here), EXPECTED (inferred, not run).
 
 ## Result
 
+G1b (the review-fixed module, lane/core c4410c7, 3,009,278 bytes, SHA-256
+`9c0a581c...a263`, 338 cases): 338 of 338 conformance cases and 551 of 551
+tests pass on .NET 8 and 10, the Floor project passes 9 of 9, and the five
+corpora give this module's own rows byte for byte, 6,179 of 6,179, 0 traps.
+The wrapper needed no change. The rest of this section, from the G1 run, was
+not repeated for G1b (.NET 9, the package and consumer, trim, fuzz, and the
+timings, the last because the machine's load average was 20 to 22).
+
 - **The host layer agrees with the module's own rows (TESTED).** All 6,179
   corpus calls, with every unpinned clock pinned to now-ms 1790640000000,
   through `CorpusRun` (the same `AprvInstance` the verifier uses), each
