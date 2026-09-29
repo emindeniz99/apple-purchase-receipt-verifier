@@ -29,11 +29,13 @@ src="$1"
 shift
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Hashes stdin rather than a named file: GNU sha256sum escapes a name that
+# holds a backslash (every Windows path) by prefixing the line with one.
 sha256() {
   if command -v sha256sum > /dev/null 2>&1; then
-    sha256sum "$1" | cut -c1-64
+    sha256sum < "$1" | cut -c1-64
   else
-    shasum -a 256 "$1" | cut -c1-64
+    shasum -a 256 < "$1" | cut -c1-64
   fi
 }
 
