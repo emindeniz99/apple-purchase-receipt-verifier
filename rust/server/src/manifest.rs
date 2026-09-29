@@ -35,6 +35,7 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    #[cfg_attr(not(any(test, feature = "compile")), allow(dead_code))] // aprv precompile
     pub fn to_json(&self) -> String {
         let v = json!({
             "format": FORMAT,

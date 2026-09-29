@@ -31,6 +31,7 @@ pub const OPENAPI_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/openapi.j
 
 /// Every route this server answers, as the OpenAPI document must list them
 /// (a test holds the router, this list and openapi.yaml together).
+#[cfg_attr(not(all(test, feature = "compile")), allow(dead_code))]
 pub const ROUTES: &[(&str, &str)] = &[
     ("post", "/v1/receipt/verify"),
     ("post", "/v1/signed-data/verify"),
