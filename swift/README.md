@@ -79,6 +79,10 @@ if let payload = jwsResult.payload {
 let responseJson = verifier.verifyReceiptEndpoint(environment: .production, requestJson: requestJson)
 ```
 
+**Inputs are cut at 3,145,729 bytes** (one over the largest cap) before they
+are copied into the module, which then answers `.tooLarge` (21002 at the
+endpoint) exactly as it would for any longer input.
+
 **No method throws for any input.** An empty `base64` / `jws` / `requestJson`
 is input and fails as `Reason.malformed`, the same as a garbled one. The
 verdict is the module's. When the machinery itself fails (the module traps,
