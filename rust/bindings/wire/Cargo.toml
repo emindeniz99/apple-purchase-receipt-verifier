@@ -20,6 +20,9 @@ base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 # Already in the core's graph (the core reads JSON with it); used here for
 # string escaping and for reading the configuration, never with serde_derive.
 serde_json = "1"
+# Its traits alone (no derive), to see every member of the configuration
+# object: serde_json's own map keeps only the last of a repeated name.
+serde = { version = "1", default-features = false, features = ["std"] }
 
 [features]
 default = ["vendored"]
