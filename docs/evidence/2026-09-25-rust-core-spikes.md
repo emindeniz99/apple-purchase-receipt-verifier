@@ -335,6 +335,13 @@ library inside.
 | Alpine (musl) chroot, apk `openjdk17-jre` | Works: JNA's bundled `libjnidispatch` loads on musl | Works | — |
 | GraalVM native-image (Oracle GraalVM for JDK 21) | Works with the tracing agent's config, no hand edits | Works, same | — |
 
+2026-09-29, after the fact: the two Spring Boot spike poms
+(`enterprise/spring-boot/boot-jni`, `boot-uniffi`) now set
+`<tomcat.version>10.1.58</tomcat.version>`, because the Boot 3.5.16 parent
+brings tomcat-embed-core 10.1.55, which has three critical advisories
+(GHSA-h3x4-894j-xpx5, GHSA-9xv2-5v5q-p794, GHSA-gcx9-497g-6cp6) fixed in
+10.1.58. The spike ran on 10.1.55 and was not rerun; nothing here ships.
+
 - Putting the jars in Tomcat's shared `lib/` instead of `WEB-INF/lib`
   makes both pass; UniFFI still pins the first webapp's classloader once,
   through the JNA Cleaner thread.
