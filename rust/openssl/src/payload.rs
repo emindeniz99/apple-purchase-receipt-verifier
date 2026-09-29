@@ -18,7 +18,7 @@
 //! business.
 
 use crate::cms::string_octets;
-use crate::item::{decode_exact, elements, typed};
+use crate::item::{decode_exact, decodes_as_any, elements, typed};
 use crate::walk::{self, Budget, ChunkError, Headers, WalkError};
 use crate::{drain_errors, sys};
 use libc::c_int;
@@ -102,7 +102,7 @@ fn values_are_octet_strings(set: &[u8]) -> bool {
 
 /// The attributes of a payload SET, in encoding order.
 fn attribute_set(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, PayloadError> {
-    walk::walk_exact(der, budget, Headers::Short).map_err(walk_error)?;
+    walk::walk_exact(der, budget, Headers::Short, Some(decodes_as_any)).map_err(walk_error)?;
     if !values_are_octet_strings(der) {
         return Err("an attribute value has a chunk that is not an OCTET STRING");
     }
@@ -139,7 +139,7 @@ pub fn receipt_attributes(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, 
     if !is_octet_string {
         return attribute_set(der, budget);
     }
-    walk::walk_exact(der, budget, Headers::Short).map_err(walk_error)?;
+    walk::walk_exact(der, budget, Headers::Short, Some(decodes_as_any)).map_err(walk_error)?;
     walk::octet_string_exact(der).map_err(|err| match err {
         ChunkError::Foreign => "double-wrapped payload has a chunk that is not an OCTET STRING",
         ChunkError::TooDeep | ChunkError::Malformed => "double-wrapped payload does not decode",

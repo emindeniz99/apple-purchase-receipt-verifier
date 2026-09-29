@@ -11,6 +11,7 @@
 
 use crate::certificate::Certificate;
 use crate::envelope::{Envelope, EnvelopeMembers, ShallowError};
+use crate::item::decodes_as_any;
 use crate::sys::{self, CMS_SignerInfo};
 use crate::walk::{self, Budget, ChunkError, Headers, WalkError};
 use crate::{d2i_whole, drain_errors, init, keys};
@@ -181,11 +182,13 @@ impl SignedData {
                 depth: limits.depth,
                 nodes: limits.nodes,
             };
-            walk::walk_exact(der, budget, Headers::Ber).map_err(|err| match err {
-                WalkError::Malformed => CmsError::Malformed,
-                WalkError::Trailing => CmsError::Trailing,
-                WalkError::TooDeep => CmsError::TooDeep,
-                WalkError::TooManyNodes => CmsError::TooManyNodes,
+            walk::walk_exact(der, budget, Headers::Ber, Some(decodes_as_any)).map_err(|err| {
+                match err {
+                    WalkError::Malformed => CmsError::Malformed,
+                    WalkError::Trailing => CmsError::Trailing,
+                    WalkError::TooDeep => CmsError::TooDeep,
+                    WalkError::TooManyNodes => CmsError::TooManyNodes,
+                }
             })
         };
         let envelope = match Envelope::decode(der) {

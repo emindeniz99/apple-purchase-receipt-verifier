@@ -101,6 +101,12 @@ std::thread_local! {
 /// for. An anchor is trusted by fiat: its own validity window, CA flag and
 /// path length constraint are not judged. An expiry reported at exactly the
 /// `notAfter` second is waived, since RFC 5280 includes that second.
+///
+/// Every problem is recorded and verification continues, so OpenSSL goes on
+/// to check each link of the path it built with the keys of `untrusted`:
+/// the caller passes only certificates a pinned anchor already vouched for
+/// (the core's `authenticated_top_down` and `validate_pair`), never raw
+/// bag or `x5c` entries, or an attacker's key would be used.
 #[must_use]
 pub fn verify_path(
     target: &Certificate,
@@ -276,7 +282,10 @@ unsafe extern "C" fn record_problem(ok: c_int, ctx: *mut ffi::X509_STORE_CTX) ->
 /// which OpenSSL does for a certificate in the store. An expiry reported at
 /// exactly the check second is waived for every certificate, because
 /// RFC 5280 section 4.1.2.5 includes the `notAfter` second, as OpenSSL 4.0
-/// does and OpenSSL 1.1.1 to 3.6 do not.
+/// does and OpenSSL 1.1.1 to 3.6 do not. On OpenSSL 4.0, which `build.rs`
+/// requires, that report never comes (it expires a certificate only after
+/// the second); the waiver stays as a guard should a later OpenSSL change
+/// back, and the millisecond tests pin the boundary either way.
 fn waived(ctx: &X509StoreContextRef, error: X509VerifyResult) -> bool {
     let raw = error.as_raw();
     let Some(current) = ctx.current_cert() else {

@@ -372,3 +372,28 @@ fn econtent_rechunked_into_six_constructed_levels_verifies() {
         "{failure}"
     );
 }
+
+#[test]
+fn values_kept_whole_in_the_envelope_are_valid_asn1() {
+    // OpenSSL keeps unsigned attribute values, algorithm parameters and
+    // the like whole, as raw ANY values, without looking inside; the
+    // header walk hands every primitive of a constrained type it passes to
+    // OpenSSL's own decoder, as the removed per-level re-decode did for
+    // SEQUENCEs and SETs. A padded INTEGER (X.690 section 8.3.2) or a
+    // BOOLEAN of two octets is not a value, whatever tag it sits under.
+    for value in [
+        der_seq(&[vec![0x02, 0x02, 0x00, 0x01]]),
+        der(0xa0, &[0x01, 0x02, 0x00, 0x00]),
+        vec![0x05, 0x01, 0x00],
+    ] {
+        let mut envelope = Envelope::shared();
+        envelope.unsigned_attributes = Some(unsigned_attribute(&value));
+        assert_refused_early(&envelope.build(), "not a CMS ContentInfo");
+    }
+    let mut envelope = Envelope::shared();
+    envelope.unsigned_attributes = Some(unsigned_attribute(&der(
+        0xa0,
+        &[der_int(1), der(0x01, &[0xff]), der(0x05, &[])].concat(),
+    )));
+    assert_verifies(&envelope.build());
+}

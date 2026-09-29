@@ -9,7 +9,10 @@
 //! template decode builds any of them (0.7's bounds), whether the chunks of
 //! a constructed `OCTET STRING` are all `OCTET STRING`s (X.690 section
 //! 8.7.3; OpenSSL joins chunks of any tag), and, for the receipt payload,
-//! which header forms 0.7's reader refused.
+//! which header forms 0.7's reader refused. It also hands each primitive
+//! value of a type whose content has rules to a check the caller supplies
+//! ([`Primitive`]), so values OpenSSL keeps whole inside an `ANY` are
+//! validated as OpenSSL validates the ones it decodes.
 
 use crate::{drain_errors, sys};
 use libc::{c_int, c_long};
@@ -38,11 +41,23 @@ pub(crate) enum Headers {
     Short,
 }
 
+/// A check of one primitive value, given its whole encoding: the caller
+/// decodes it with OpenSSL ([`crate::item::decodes_as_any`]).
+pub(crate) type Primitive = fn(&[u8]) -> bool;
+
+/// The universal types whose content X.690 constrains and OpenSSL's `ANY`
+/// decoder checks: BOOLEAN, INTEGER, BIT STRING, NULL, OBJECT IDENTIFIER,
+/// ENUMERATED, `UniversalString` and `BMPString`. Strings without such rules
+/// (an `OCTET STRING` above all, which may be the whole payload) are not
+/// handed over.
+const CHECKED_TAGS: [c_int; 8] = [1, 2, 3, 5, 6, 10, 28, 30];
+
 /// Why a walk stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WalkError {
     /// A header OpenSSL does not read, a length past the end of its
-    /// container, a form [`Headers`] refuses, or a missing end-of-contents.
+    /// container, a form [`Headers`] refuses, a missing end-of-contents, or
+    /// a primitive value the [`Primitive`] check refused.
     Malformed,
     /// Bytes follow the value.
     Trailing,
@@ -122,12 +137,19 @@ pub(crate) fn header(input: &[u8]) -> Option<Header> {
 }
 
 /// Walks the one value `input` must be, within `budget`, with nothing after
-/// it.
-pub(crate) fn walk_exact(input: &[u8], budget: Budget, headers: Headers) -> Result<(), WalkError> {
+/// it, handing every primitive value of a [`CHECKED_TAGS`] type to
+/// `primitive`.
+pub(crate) fn walk_exact(
+    input: &[u8],
+    budget: Budget,
+    headers: Headers,
+    primitive: Option<Primitive>,
+) -> Result<(), WalkError> {
     let mut walker = Walker {
         nodes_left: budget.nodes,
         max_depth: budget.depth,
         headers,
+        primitive,
     };
     let size = walker.value(input, 0)?;
     if size == input.len() {
@@ -141,6 +163,7 @@ struct Walker {
     nodes_left: usize,
     max_depth: usize,
     headers: Headers,
+    primitive: Option<Primitive>,
 }
 
 impl Walker {
@@ -157,7 +180,16 @@ impl Walker {
             return Err(WalkError::Malformed);
         }
         if !header.constructed {
-            return Ok(header.definite_size());
+            let size = header.definite_size();
+            if let Some(check) = self.primitive {
+                if header.class == sys::V_ASN1_UNIVERSAL
+                    && CHECKED_TAGS.contains(&header.tag)
+                    && !check(input.get(..size).ok_or(WalkError::Malformed)?)
+                {
+                    return Err(WalkError::Malformed);
+                }
+            }
+            return Ok(size);
         }
         // A constructed value here is number `depth + 1`.
         if depth >= self.max_depth {
@@ -190,6 +222,7 @@ fn size_of_value(input: &[u8]) -> Option<usize> {
         // accepted is measured; the recursion stays bounded.
         max_depth: 256,
         headers: Headers::Ber,
+        primitive: None,
     };
     walker.value(input, 0).ok()
 }

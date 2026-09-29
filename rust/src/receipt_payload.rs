@@ -849,26 +849,29 @@ mod tests {
     }
 
     #[test]
-    fn fields_after_the_value_are_decoded_by_their_tags() {
-        // C-F3: OpenSSL's ANY decodes a primitive field by its tag, so a
-        // BOOLEAN of two octets, a NULL with content or a padded INTEGER
-        // after the value makes the payload unreadable, where 0.7 kept the
-        // fourth field opaque. Accepting them would take hand-decoding
-        // (R21); the refusal is recorded in DECISIONS.md R20. A constructed
-        // field is kept whole, so a padded INTEGER inside a SEQUENCE is not
-        // looked at, as in 0.7.
+    fn fields_after_the_value_are_valid_asn1_at_every_depth() {
+        // C-F3: a BOOLEAN of two octets, a NULL with content or a padded
+        // INTEGER is not valid ASN.1 (X.690 sections 8.2, 8.8 and 8.3.2, BER
+        // and DER alike), so the payload is unreadable, whether the value is
+        // the fourth field itself, which OpenSSL's ANY decodes, or sits
+        // inside it, which the header walk hands to the same decoder. 0.7
+        // kept the fourth field opaque; Java refuses both.
+        let padded = [0x02, 0x02, 0x00, 0x01];
         for fourth in [
-            &[0x01, 0x02, 0x00, 0x00][..],
-            &[0x05, 0x01, 0x00],
-            &[0x02, 0x02, 0x00, 0x01],
+            vec![0x01, 0x02, 0x00, 0x00],
+            vec![0x05, 0x01, 0x00],
+            padded.to_vec(),
+            der(tag::SEQUENCE, &padded),
+            der(0xa0, &der(tag::SEQUENCE, &padded)),
         ] {
-            assert!(
-                parse_receipt_payload(&set(&[with_fourth_field(fourth)])).is_err(),
-                "{fourth:02x?}"
-            );
+            let payload = set(&[with_fourth_field(&fourth)]);
+            assert!(parse_receipt_payload(&payload).is_err(), "{fourth:02x?}");
         }
-        let inside = der(tag::SEQUENCE, &[0x02, 0x02, 0x00, 0x01]);
-        assert!(parse_receipt_payload(&set(&[with_fourth_field(&inside)])).is_ok());
+        let valid = der(
+            0xa0,
+            &der(tag::SEQUENCE, &[int(&[1]), der(0x05, &[])].concat()),
+        );
+        assert!(parse_receipt_payload(&set(&[with_fourth_field(&valid)])).is_ok());
     }
 
     #[test]
