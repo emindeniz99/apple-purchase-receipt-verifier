@@ -56,6 +56,7 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   moves bytes in and JSON out, and turns the answer into Go values. Its
   SHA-256 is checked against `internal/wasm/aprv.wasm.sha256` when the package
   loads, and CI checks that file against the release build.
+- **Inputs are cut at one byte over the cap.** No more than 3,145,729 bytes of any input are copied into the module, so the core itself answers `TOO_LARGE` (21002 at the endpoint) and a huge input costs no more memory than a barely oversized one.
 - **The module is sandboxed.** It has one import, `random-get`, answered from
   `crypto/rand`; it cannot read a file, the network or the clock. A hostile
   receipt that breaks the parser inside it stays in the module's 256 MiB of

@@ -500,3 +500,40 @@ func TestMemoryLimit(t *testing.T) {
 		t.Errorf("a 4 GiB grow answered %d, want -1", got)
 	}
 }
+
+func TestAnInputOverTheCapIsCutBeforeItIsCopied(t *testing.T) {
+	// The core answers TOO_LARGE to anything over 3,145,728 bytes. The host
+	// hands it at most one byte over, so a huge input costs the module no
+	// more memory than a barely oversized one, and the answer is the core's.
+	g := freshGuest(t, nil)
+	base := g.memorySize()
+	for _, size := range []int{4 << 20, 64 << 20} {
+		answer, err := g.Call("verify-receipt", now, strings.Repeat("A", size))
+		if err != nil || !strings.Contains(answer, `"TOO_LARGE"`) {
+			t.Fatalf("%d bytes: %q, %v; want the core's TOO_LARGE", size, answer, err)
+		}
+		if got := g.memorySize(); got > base+8<<20 {
+			t.Fatalf("%d bytes: linear memory grew from %d to %d", size, base, got)
+		}
+	}
+	answer, err := g.Call("verify-receipt-endpoint", uint32(0), now, strings.Repeat(" ", 64<<20))
+	if err != nil || !strings.Contains(answer, `"status":21002`) {
+		t.Fatalf("an oversized endpoint body: %q, %v; want status 21002", answer, err)
+	}
+	if got := g.memorySize(); got > base+8<<20 {
+		t.Fatalf("an oversized endpoint body grew linear memory from %d to %d", base, got)
+	}
+}
+
+func TestAnInputAtTheCapIsPassedWhole(t *testing.T) {
+	g := freshGuest(t, nil)
+	// Not a receipt, but at the cap the size rule does not fire.
+	answer, err := g.Call("verify-receipt", now, strings.Repeat("A", 3_145_728))
+	if err != nil || strings.Contains(answer, `"TOO_LARGE"`) || verified(answer) {
+		t.Fatalf("3,145,728 bytes: %q, %v; want a refusal that is not TOO_LARGE", answer, err)
+	}
+	answer, err = g.Call("verify-receipt", now, strings.Repeat("A", 3_145_729))
+	if err != nil || !strings.Contains(answer, `"TOO_LARGE"`) {
+		t.Fatalf("3,145,729 bytes: %q, %v; want TOO_LARGE", answer, err)
+	}
+}
