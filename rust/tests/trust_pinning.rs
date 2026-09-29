@@ -454,3 +454,24 @@ fn a_root_verifies_beside_another_root_with_the_same_subject_in_either_order() {
         assert!(common::verifier(roots).verify_signed_data(&jws).is_ok());
     }
 }
+
+/// Two same-named roots that each vouch for a certificate in the bag: the
+/// genuine receipt's root, and another receipt's root whose intermediate and
+/// signer (a key on an unimplemented curve) sit in the same unsigned bag.
+/// Before each same-named root got a store of its own, OpenSSL met the
+/// wrong root first when it was listed first, and the genuine receipt was
+/// refused as `UNTRUSTED_CHAIN` (the differential campaign of 2026-09-29;
+/// the Java implementation verifies it in both orders).
+#[test]
+fn a_root_verifies_when_a_same_named_root_vouches_for_a_stranger_in_the_bag() {
+    let receipt = common::read_fixture("generated-0.7/review-receipt-stranger-unreadable-key.der");
+    let (right, other) = (
+        common::anchor("generated-0.7/review-receipt-root.der"),
+        common::anchor("generated-0.7/receipt-signer-root.der"),
+    );
+    for roots in [[other.clone(), right.clone()], [right, other]] {
+        let verifier = common::verifier(roots);
+        let payload = common::verify_der(&verifier, &receipt).expect("verifies in either order");
+        assert_eq!(payload.bundle_id.as_deref(), Some("com.example.app"));
+    }
+}

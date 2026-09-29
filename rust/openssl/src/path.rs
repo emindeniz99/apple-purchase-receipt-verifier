@@ -116,8 +116,42 @@ pub fn verify_path(
     max_intermediates: u32,
 ) -> PathOutcome {
     init();
-    let outcome = run(target, untrusted, anchors, at_secs, max_intermediates)
+    let choices = store_choices(target, untrusted, anchors);
+    let several = choices.len() > 1;
+    let mut outcome: Option<PathOutcome> = None;
+    for store in choices {
+        // With one store per choice of same-named anchors, a choice sees
+        // only the certificates its own anchors vouch for, so a same-named
+        // certificate from another anchor's tree cannot be the issuer
+        // OpenSSL meets first.
+        let reachable = if several {
+            vouched_by(&store, untrusted)
+        } else {
+            untrusted.to_vec()
+        };
+        let this = run(
+            target,
+            &reachable,
+            &store,
+            anchors,
+            at_secs,
+            max_intermediates,
+        )
         .unwrap_or_else(|| PathOutcome::failed(PathProblemKind::Other(-1)));
+        if this.passed() {
+            outcome = Some(this);
+            break;
+        }
+        // Among failures, one that reached an anchor says more than one
+        // that did not; otherwise the first choice's stands.
+        if outcome
+            .as_ref()
+            .is_none_or(|kept| this.anchored && !kept.anchored)
+        {
+            outcome = Some(this);
+        }
+    }
+    let outcome = outcome.unwrap_or_else(|| PathOutcome::failed(PathProblemKind::Other(-1)));
     ANCHORS.with(|slot| slot.replace(Vec::new()));
     PROBLEMS.with(|slot| slot.replace(Vec::new()));
     drain_errors();
@@ -127,12 +161,13 @@ pub fn verify_path(
 fn run(
     target: &Certificate,
     untrusted: &[Certificate],
+    store_anchors: &[&Certificate],
     anchors: &[Certificate],
     at_secs: i64,
     max_intermediates: u32,
 ) -> Option<PathOutcome> {
     let mut builder = X509StoreBuilder::new().ok()?;
-    for anchor in store_anchors(target, untrusted, anchors) {
+    for anchor in store_anchors {
         builder.add_cert(anchor.x509().to_owned()).ok()?;
     }
     let mut param = X509VerifyParam::new().ok()?;
@@ -185,21 +220,26 @@ fn run(
     })
 }
 
-/// The anchors the store holds. OpenSSL's issuer lookup takes the first
-/// store certificate whose subject name matches (and whose key identifier
-/// and `keyUsage` allow it), and does not try another when the signature
-/// then fails; among anchors that share a subject name, the order of the
-/// caller's list would decide whether a path verifies. So of such anchors
-/// only the ones that issued the target or a certificate of `untrusted`
-/// (by name and signature, [`Certificate::issued_by`]) are kept, and a
-/// group none of whose members issued any is kept whole: the path fails
-/// there whichever comes first. Only anchor keys are used, at most once per
-/// anchor that shares a name and certificate given.
-fn store_anchors<'a>(
+/// The anchor sets to try, one store each. OpenSSL's issuer lookup takes
+/// the first store certificate whose subject name matches (and whose key
+/// identifier and `keyUsage` allow it), and does not try another when the
+/// signature then fails; among anchors that share a subject name, the order
+/// of the caller's list would decide whether a path verifies. So of such
+/// anchors only the ones that issued the target or a certificate of
+/// `untrusted` (by name and signature, [`Certificate::issued_by`]) are
+/// kept, and a group none of whose members issued any is kept whole: the
+/// path fails there whichever comes first. When more than one member of a
+/// group issued something (two same-named roots, each with a certificate in
+/// the bag), each goes into a store of its own, one per combination, so
+/// every anchor that could end the path is tried and the list's order
+/// decides nothing. Anchors with a subject of their own are in every store.
+/// Only anchor keys are used, at most once per anchor that shares a name and
+/// certificate given. Apple's three roots have three subjects: one store.
+fn store_choices<'a>(
     target: &Certificate,
     untrusted: &[Certificate],
     anchors: &'a [Certificate],
-) -> Vec<&'a Certificate> {
+) -> Vec<Vec<&'a Certificate>> {
     let shares_a_name = |anchor: &Certificate| {
         anchors
             .iter()
@@ -215,16 +255,80 @@ fn store_anchors<'a>(
             })
         })
         .collect();
-    anchors
+    let kept: Vec<(&Certificate, Option<bool>)> = anchors
         .iter()
-        .zip(&issued)
+        .zip(issued.iter().copied())
         .filter(|(anchor, flag)| match flag {
             None | Some(true) => true,
             Some(false) => !anchors.iter().zip(&issued).any(|(other, other_issued)| {
                 *other_issued == Some(true) && same_subject(other, anchor)
             }),
         })
-        .map(|(anchor, _)| anchor)
+        .collect();
+    // Groups of same-named anchors that each issued something, in the
+    // caller's order; every other kept anchor is common to all stores.
+    let mut groups: Vec<Vec<&Certificate>> = Vec::new();
+    let mut common: Vec<&Certificate> = Vec::new();
+    for (anchor, flag) in &kept {
+        if *flag != Some(true) {
+            common.push(anchor);
+        } else if let Some(group) = groups.iter_mut().find(|group| {
+            group
+                .first()
+                .is_some_and(|first| same_subject(first, anchor))
+        }) {
+            group.push(anchor);
+        } else {
+            groups.push(vec![anchor]);
+        }
+    }
+    let mut choices: Vec<Vec<&Certificate>> = vec![common];
+    for group in groups {
+        choices = choices
+            .iter()
+            .flat_map(|choice| {
+                group.iter().map(move |member| {
+                    let mut next = choice.clone();
+                    next.push(member);
+                    next
+                })
+            })
+            .take(MAX_STORES)
+            .collect();
+    }
+    choices
+}
+
+/// At most this many stores per path. Only a caller's own list of roots,
+/// several sharing each subject and each vouching for a certificate the
+/// input carries, comes near it; past it the first combinations are tried.
+const MAX_STORES: usize = 64;
+
+/// The certificates of `untrusted` that `store`'s anchors vouch for, top
+/// down: issued by one of them or by a certificate already vouched for, by
+/// name and signature. Only anchor keys and keys they vouched for are used.
+fn vouched_by(store: &[&Certificate], untrusted: &[Certificate]) -> Vec<Certificate> {
+    let mut vouched: Vec<Certificate> = Vec::new();
+    let mut pending: Vec<&Certificate> = untrusted.iter().collect();
+    let mut issuers: Vec<Certificate> = store.iter().map(|anchor| (*anchor).clone()).collect();
+    while !pending.is_empty() && !issuers.is_empty() {
+        let mut round: Vec<Certificate> = Vec::new();
+        pending.retain(|candidate| {
+            let found = store.iter().any(|anchor| anchor.same_as(candidate))
+                || issuers.iter().any(|issuer| candidate.issued_by(issuer));
+            if found {
+                round.push((*candidate).clone());
+            }
+            !found
+        });
+        vouched.extend(round.iter().cloned());
+        issuers = round;
+    }
+    // In the caller's order, which OpenSSL's lookup reads.
+    untrusted
+        .iter()
+        .filter(|certificate| vouched.iter().any(|v| v.same_as(certificate)))
+        .cloned()
         .collect()
 }
 
