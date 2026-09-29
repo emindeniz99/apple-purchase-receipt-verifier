@@ -10,7 +10,7 @@ folder holds only what measured it.
 | `results/classify.txt`, `results/corpus-runs.txt` | The parity result and the per-corpus row, trap and instance counts |
 | `results/standin-differences.txt` | The 221 failing case ids with their category |
 | `results/startup.txt` | `ruby/bench/startup.rb`, three fresh processes, with the load average |
-| `results/threads.txt` | `ruby/bench/threads.rb`, two runs, with the load average |
+| `results/threads.txt` | `ruby/bench/threads.rb`, three runs, with the load average |
 | `results/test-inventory.tsv` | Every test of 0.7's `ruby/test/` (184, not counting the conformance runner) with its fate |
 
 `ruby/bench/corpus.rb`, `bench/startup.rb`, `bench/threads.rb` and

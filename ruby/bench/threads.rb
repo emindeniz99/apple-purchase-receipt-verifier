@@ -11,6 +11,9 @@
 # rows scale with the cores. With the GVL held they would not: the spike
 # measured 0.9x at four threads.
 #
+# Next to each rate it prints the calls per CPU-second of the process, which
+# does not depend on how many cores other work leaves free.
+#
 # The rows are measured through the Verifier when the shipped module answers
 # in the 0.7 wire, and through the pool of instances (the same module calls,
 # without decoding the answer) when it does not, as the migration's stand-in
@@ -41,8 +44,12 @@ module ThreadBench
     entry["codec"] == "base64" ? raw.gsub(/\s+/, "").unpack1("m") : raw
   end
 
+  # Calls per second, and calls per CPU-second of the whole process. The
+  # second stays flat as threads are added when nothing serialises them, and
+  # does not depend on how many cores other work leaves free.
   def rate(threads)
     count = Thread::Queue.new
+    busy = Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + SECONDS
     Array.new(threads) do
       Thread.new do
@@ -54,7 +61,9 @@ module ThreadBench
         count << done
       end
     end.each(&:join)
-    (Array.new(threads) { count.pop }.sum / SECONDS).round(1)
+    total = Array.new(threads) { count.pop }.sum
+    cpu = Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID) - busy
+    [(total / SECONDS).round(1), (total / cpu).round(1)]
   end
 
   def main
@@ -76,8 +85,15 @@ module ThreadBench
     call_g5.call
     call_jws.call
 
-    table = [1, 2, 4].to_h { |n| [n, { g5: rate(n, &call_g5), jws: rate(n, &call_jws) }] }
-    table.each { |n, row| puts format("%<n>d thread(s): g5 %<g5>8.1f/s   jws %<jws>8.1f/s", n: n, **row) }
+    table = [1, 2, 4].to_h do |n|
+      g5, g5_cpu = rate(n, &call_g5)
+      jws_rate, jws_cpu = rate(n, &call_jws)
+      [n, { g5: g5, g5_cpu: g5_cpu, jws: jws_rate, jws_cpu: jws_cpu }]
+    end
+    table.each do |n, row|
+      puts format("%<n>d thread(s): g5 %<g5>8.1f/s (%<g5_cpu>7.1f per CPU-s)   " \
+                  "jws %<jws>8.1f/s (%<jws_cpu>7.1f per CPU-s)", n: n, **row)
+    end
     puts format("4 threads / 1 thread: g5 %<g5>.2fx   jws %<jws>.2fx",
                 g5: table[4][:g5] / table[1][:g5], jws: table[4][:jws] / table[1][:jws])
     assert!(table) if ARGV.include?("--assert")
