@@ -554,3 +554,91 @@ fn rechunked_value(levels: usize) -> Vec<u8> {
     }
     value
 }
+
+#[test]
+fn the_full_decode_counter_survives_a_panic_inside_it() {
+    // Round-2 review N3: a panic in the counted body left the thread's
+    // counter replaced, so an enclosing count lost what it had counted.
+    let verifier = common::receipt_verifier();
+    let receipt = common::receipt_der();
+    let ((), outer) = cms_full_decodes_during(|| {
+        assert!(common::verify_der(&verifier, &receipt).is_ok());
+        let inner = std::panic::catch_unwind(|| {
+            cms_full_decodes_during(|| panic!("a test body that panics"))
+        });
+        assert!(inner.is_err());
+        assert!(common::verify_der(&verifier, &receipt).is_ok());
+    });
+    assert_eq!(outer, 2);
+}
+
+/// `levels` nested indefinite-length values with identifier `identifier`,
+/// the innermost empty.
+fn nested_indefinite(identifier: u8, levels: usize) -> Vec<u8> {
+    let mut value = vec![identifier, 0x80, 0, 0];
+    for _ in 1..levels {
+        value = [&[identifier, 0x80][..], &value, &[0, 0]].concat();
+    }
+    value
+}
+
+#[test]
+fn indefinite_lengths_meet_the_same_bounds_and_must_end() {
+    // Round-2 review N4: the walk follows indefinite lengths to their
+    // end-of-contents under the same depth and node bounds; nothing pinned
+    // it. The unsigned value starts at depth 9 (see the depth test above).
+    for (levels, refused) in [(24, false), (25, true), (3_000, true)] {
+        let mut envelope = Envelope::shared();
+        envelope.unsigned_attributes = Some(unsigned_attribute(&nested_indefinite(
+            tag::SEQUENCE,
+            levels,
+        )));
+        check_depth(&envelope.build(), refused);
+    }
+    // Values of indefinite length count one each, their end-of-contents
+    // none: 100,000 verify, one more is refused.
+    let base_nodes = count_nodes(&parse_exact(&Envelope::shared().build()).unwrap());
+    let values = 100_000 - base_nodes - 4;
+    for (count, refused) in [(values, false), (values + 1, true)] {
+        let mut envelope = Envelope::shared();
+        envelope.unsigned_attributes = Some(der(
+            tag::CONTEXT_1,
+            &der_seq(&[
+                der_oid("1.2.3.4"),
+                der(tag::SET, &[0x30, 0x80, 0x00, 0x00].repeat(count)),
+            ]),
+        ));
+        if refused {
+            assert_refused_early(&envelope.build(), "more than 100000 ASN.1 values");
+        } else {
+            assert_verifies(&envelope.build());
+        }
+    }
+    // The unsigned attributes in indefinite form, with and without their
+    // end-of-contents: without it the value runs past its SignerInfo.
+    let attribute = der_seq(&[der_oid("1.2.3.4"), der_set(&[vec![0x05, 0x00]])]);
+    let mut envelope = Envelope::shared();
+    envelope.unsigned_attributes =
+        Some([&[tag::CONTEXT_1, 0x80][..], &attribute, &[0, 0]].concat());
+    assert_verifies(&envelope.build());
+    envelope.unsigned_attributes = Some([&[tag::CONTEXT_1, 0x80][..], &attribute].concat());
+    assert_refused_early(&envelope.build(), "not a CMS ContentInfo");
+    // An end-of-contents in a value of definite length is refused too, as
+    // OpenSSL refuses it wherever it decodes one.
+    let mut envelope = Envelope::shared();
+    envelope.unsigned_attributes = Some(unsigned_attribute(&der_seq(&[vec![0x00, 0x00]])));
+    assert_refused_early(&envelope.build(), "not a CMS ContentInfo");
+}
+
+#[test]
+fn a_length_one_octet_past_its_container_is_refused() {
+    // Round-2 review N4: a value whose length runs one octet past the value
+    // around it, here an OCTET STRING of two octets declared as three
+    // inside its SET, is refused before any decode.
+    let mut attribute = der_seq(&[der_oid("1.2.3.4"), der_set(&[vec![0x04, 0x02, 0xaa, 0xbb]])]);
+    let length = attribute.len() - 3;
+    attribute[length] = 0x03;
+    let mut envelope = Envelope::shared();
+    envelope.unsigned_attributes = Some(der(tag::CONTEXT_1, &attribute));
+    assert_refused_early(&envelope.build(), "not a CMS ContentInfo");
+}

@@ -113,9 +113,18 @@ std::thread_local! {
 /// embedded certificate's key) on this thread meanwhile: the tests' seam
 /// for "refused before the full decode".
 pub fn full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
-    let previous = FULL_DECODES.with(|count| count.replace(Some(0)));
+    /// Puts the previous count back when dropped, so a panic in `body`
+    /// that is caught does not leave this thread counting.
+    struct Restore(Option<usize>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            FULL_DECODES.with(|count| count.set(self.0));
+        }
+    }
+    let restore = Restore(FULL_DECODES.with(|count| count.replace(Some(0))));
     let result = body();
-    let counted = FULL_DECODES.with(|count| count.replace(previous));
+    let counted = FULL_DECODES.with(Cell::get);
+    drop(restore);
     (result, counted.unwrap_or(0))
 }
 
