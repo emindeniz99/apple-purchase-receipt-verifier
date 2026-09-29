@@ -66,7 +66,6 @@ second column is what it takes from other jobs.
 |---|---|---|
 | ci.yml `smoke-crates`, release.yml `publish-crates`, post-publish-smoke.yml `crates` | `vars.APRV_PUBLISH_CRATES == 'true'` | OD-03: crates.io stays at 0.7 until openssl-sys accepts openssl-src 400.x. A registry build of this tree would get OpenSSL 3, which `aprv-openssl` refuses, and `aprv-openssl` is not on crates.io yet. The owner sets the variable when both are resolved |
 | nightly.yml `corpus` | `vars.APRV_CORPUS_URL` set; the archive must match `vars.APRV_CORPUS_SHA256` | OD-05: the corpora (200 MB of generated rows) stay out of the repository. Without the URL the job prints a notice and does nothing. The archive is a `.tar.gz` with the G1 layout at its top level (`aprv.wasm`, `aprv.component.wasm`, `same.py`, `calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`). Each host leg runs its lane's one-command gate over it. The rows belong to the archive's module, so the archive is refreshed after a release changes the module (the job warns when it no longer matches the pins) |
-| nightly.yml `java-differential` | `tools/differential.sh` exists | lane A3 has not merged it yet; the job prints a notice until then |
 
 No other job is gated on a file existing: every lane has landed, and a
 gate that can only be true would turn a deleted directory into a green
@@ -125,9 +124,17 @@ and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   as ci.yml does, and PHP benchmarks both transports over the binary.
 - `codeql.yml`: Go, Swift and .NET compile against an empty stand-in
   `aprv.wasm`. CodeQL never runs what it builds, and without a file there
-  the library is left out of those three databases.
+  the library is left out of those three databases. The java-kotlin build
+  also compiles `java-wasm/src/main/java` through that pom's
+  `default-compile` execution alone, which needs no module;
+  `src/main/java11` compiles only against Endive's class generated from
+  the real module and is not scanned.
 - `nightly.yml`: `rust-fuzz-openssl` fuzzes every target over an ASan
-  OpenSSL. `java-differential` and `corpus` are described above.
+  OpenSSL; `java-differential` runs `tools/differential.sh` (lane A3)
+  over a module built from the commit; `java-wasm-s390x` runs the -wasm
+  artifact's Endive cases and ABI tests on a big-endian JVM (an s390x
+  Temurin under QEMU user emulation, forked by surefire through a
+  wrapper); `corpus` is described above.
 - `dependabot.yml` watches `java-wasm/`, `rust/server/`'s image bases,
   and `rust/server` with `rust/bindings/abi/tests` as one cargo entry
   (their exact wasmtime pins move together). It ignores `openssl-sys`
@@ -143,10 +150,10 @@ and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   public after its first push.
 - Go's and Swift's committed copies of the module (R14) are Phase 7
   work. Until they exist, `tag-go-module` refuses to tag.
-- Not wired: `java-wasm-s390x` (the Endive corpus under QEMU before each
-  release); CodeQL does not build `java-wasm/`; the -wasm jar does not
-  yet carry the licence texts of the code compiled into the module
-  (`java-wasm/CI-NOTES.md`), and `tools/check-licence-copies.mjs` has no
-  Java entry.
+- The -wasm jar does not yet carry the licence texts of the code
+  compiled into the module: a Java package change (`pom.xml` resource from
+  `../licenses/wasm` and a test), written up in `java-wasm/CI-NOTES.md`,
+  "Release". `tools/check-licence-copies.mjs` needs no Java entry, since
+  the pom reads the source in place.
 - The macOS x86_64 runner label is `macos-15-intel`; check that GitHub
   still offers it before the first 0.8.0 tag.
