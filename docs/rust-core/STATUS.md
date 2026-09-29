@@ -13,8 +13,8 @@ work.
 
 | Lane | Branch | Scope | State |
 |---|---|---|---|
-| A1 core | `lane/core` | steps 1.1, 1.2: the core on OpenSSL 4, native build | started 2026-09-29 |
-| A2 core | `lane/core` | steps 1.3, 1.4, 1.5 (build script), 1.14: workspace, surface, wire, canonical ABI, schemas | waits on A1 |
+| A1 core | `lane/core` | steps 1.1, 1.2: the core on OpenSSL 4, native build | handed back 2026-09-29 (head d5c2838): 548 tests, conformance 313/313, vendored and `OPENSSL_DIR` builds identical on 6,179 rows, no verdict change against the 0.7 core except 5 JWS rows the Java implementation already verifies, `rust/ffi` 22 tests plus C++ and ctypes 278/278, isolation test under strace; evidence note `2026-09-29-openssl-core-parity` |
+| A2 core | `lane/core` | steps 1.3, 1.4, 1.5 (build script), 1.14: workspace, surface, wire, canonical ABI, schemas | started 2026-09-29 |
 | A3 core | `lane/core` | steps 1.7, 1.8, 1.10, 1.12, 1.13 | waits on A2 |
 | B server | `lane/server` | Phase 2 against the stand-in component | handed back 2026-09-29 (head 38042f0); parked until the real component: 24 tests green, clippy clean in both feature sets, static musl binary runs in an empty chroot, corpus over HTTP (fresh and pool) and the CLI 6,149 identical + 27 over-cap + 3 intended, 311 cases 119 pass / 159 stand-in / 33 not expressible, managed smoke 10/10, hostile component 6/6, Schemathesis 394 passed, Spectral 0 beside stand-in schemas; Docker not built (no daemon) |
 | C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head 5fd91f7); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
@@ -100,6 +100,37 @@ work.
   orchestrator's; attribution is truthful, so the history stands. It
   wrote an evidence note (`2026-09-29-ruby-host`) that the integrator
   audits before the merge.
+- Lane A1 (core): **crates.io is deferred.** `openssl-sys` 0.9.117 does
+  not accept `openssl-src` 400.x, so a registry build would get OpenSSL 3
+  and the adapter's `build.rs` refuses anything but OpenSSL 4 (one
+  substrate everywhere, the safer choice; the plan's ARCHITECTURE §7.11
+  had allowed OpenSSL 3 for registry users). The workspace carries a
+  one-line `[patch.crates-io]` on a vendored `openssl-sys` manifest; the
+  crates publish waits for upstream to widen its requirement (owner
+  action: ask or send the change to rust-openssl), which R19 allows
+  since nothing needs the crate on crates.io for 0.8.0.
+- Lane A1 (core): **behaviours that changed with OpenSSL**, all recorded
+  in the evidence note and to be moved into R20 at integration; none
+  turns a refused Apple-signed input into a verified one, and the five
+  verdict changes (a P-521 chain signature and four canonical-name
+  variants, refused before, verified now) match what the Java
+  implementation already does: the RSA key cap is OpenSSL's 16,384 bits
+  (was 8,192); names chain by their RFC 5280 canonical form; signers
+  identified by SubjectKeyIdentifier are accepted; P-521 and SHA-3 are
+  accepted; garbage in `crls` is `MALFORMED`; a certificate OpenSSL
+  cannot decode makes the whole envelope `MALFORMED`; the critical-
+  extension list is OpenSSL's; an intermediate with keyCertSign and no
+  basicConstraints passes OpenSSL's CA check; any unusable key is
+  `INVALID_CERTIFICATE`. 138 corpus rows change their refusal reason in
+  six explained groups; 2,971 change only the message.
+- Lane A1 (core): three 0.7 refusals OpenSSL does not make were restored
+  in Rust on a shallow decode (`envelope.c`): the certificate and
+  SignerInfo counts before any key is decoded (a 1,057-certificate flood
+  now costs 1.3 ms instead of 48 ms), constructed `eContent` with
+  non-OCTET-STRING chunks, and a `signatureAlgorithm` naming a different
+  hash than the digest. If a host initialises OpenSSL with its own
+  config before the adapter's first call, that config applies
+  (documented).
 - Lane B (server): the managed roots line is mandatory (`{}` for the
   defaults); the port line is `APRV_LISTEN=127.0.0.1:<port>`; CLI exit
   code 2 means usage or configuration; the problem codes are lane B's
