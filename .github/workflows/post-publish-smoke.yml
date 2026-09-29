@@ -100,6 +100,8 @@ jobs:
           DISPATCH_VERSION: ${{ inputs.version }}
           DISPATCH_REGISTRIES: ${{ inputs.registries }}
           RELEASE_REF: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_EVENT: ${{ github.event.workflow_run.event }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ -n "${DISPATCH_VERSION:-}" ]; then
@@ -111,6 +113,22 @@ jobs:
             [0-9]*.[0-9]*.[0-9]*) ;;
             *) echo "::error::'$VERSION' is not a release version; nothing to smoke-test"; exit 1 ;;
           esac
+          case "$VERSION" in
+            *[!0-9A-Za-z.-]*) echo "::error::'$VERSION' is not a release version; nothing to smoke-test"; exit 1 ;;
+          esac
+          # Every job below checks out this ref, so it must be one of this
+          # repository's release tags: release.yml runs only on a pushed v*
+          # tag or a dispatch in this repository (never on a pull request),
+          # and the tag must exist here. That makes the ref
+          # repository-controlled, not a fork's head.
+          case "${RELEASE_EVENT:-workflow_dispatch}" in
+            push|workflow_dispatch) ;;
+            *) echo "::error::release ran on '$RELEASE_EVENT'; only a tag push or a dispatch publishes"; exit 1 ;;
+          esac
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --jq .ref > /dev/null; then
+            echo "::error::v$VERSION is not a tag of $GITHUB_REPOSITORY"
+            exit 1
+          fi
           # workflow_run carries no inputs, so a run triggered that way tests
           # everything and a registry that is genuinely missing fails its leg.
           REGISTRIES="${DISPATCH_REGISTRIES:-npm,pypi,maven,swiftpm,go,php,rubygems,crates,nuget}"
@@ -141,6 +159,7 @@ jobs:
       attestations: read    # gh attestation verify reads them
       packages: read        # and the image's from GHCR
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -207,6 +226,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -255,6 +275,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -300,6 +321,7 @@ jobs:
     # Central's sync lags the portal release by tens of minutes.
     timeout-minutes: 60
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -356,6 +378,7 @@ jobs:
     # job.
     container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -387,6 +410,7 @@ jobs:
     timeout-minutes: 20
     if: contains(needs.resolve.outputs.registries, ',go,')
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -440,6 +464,7 @@ jobs:
     timeout-minutes: 30
     if: contains(needs.resolve.outputs.registries, ',php,')
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -492,6 +517,7 @@ jobs:
     # Skipped, not failed, while RubyGems is unbootstrapped (BOOTSTRAP.md).
     if: contains(needs.resolve.outputs.registries, ',rubygems,')
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -550,6 +576,7 @@ jobs:
     # owner sets the repository variable APRV_PUBLISH_CRATES to true.
     if: contains(needs.resolve.outputs.registries, ',crates,') && vars.APRV_PUBLISH_CRATES == 'true'
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -597,6 +624,7 @@ jobs:
     # Skipped, not failed, while NuGet is unbootstrapped (BOOTSTRAP.md).
     if: contains(needs.resolve.outputs.registries, ',nuget,')
     steps:
+      # A release tag of this repository, which resolve checked exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}

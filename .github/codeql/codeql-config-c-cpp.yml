@@ -1,0 +1,17 @@
+name: apple-purchase-receipt-verifier (c-cpp)
+
+# The C and C++ analysis's own configuration. It cannot share
+# codeql-config.yml: that file excludes rust/ffi/examples/, and the C and C++
+# worth reading here is the C ABI's header and examples, the adapter's ASN.1
+# templates (rust/openssl/payload.c, envelope.c) and the module's WASI glue
+# (rust/bindings/abi/), all of which stay in scope.
+#
+# The one exclusion is docs/evidence/, for the reason codeql-config.yml gives
+# beside the same entry: spike and measurement code that never ships, kept in
+# the tree by the evidence rule, fed only repository-controlled input.
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - docs/evidence/**
