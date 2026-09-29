@@ -80,7 +80,9 @@ has no file, network or environment access at all: the module imports one
 function, a source of random bytes (§6). The Java implementation checks
 chains with its own pinned BouncyCastle instance and never with the JDK's
 PKIX or trust store. The order of the anchors does not matter, even
-between two that share a subject name.
+between two that share a subject name, and neither does the order of the
+unsigned certificates bag: a certificate that carries an intermediate's
+name but signed nothing on the path is never offered to the path builder.
 
 *Proof.* `transaction/reject-foreign-root`, `receipt/reject-foreign-root`
 (both `UNTRUSTED_CHAIN`), `endpoint/foreign-root-answers-21003`, and Apple's own
@@ -97,7 +99,10 @@ reaching the module's `init` are byte for byte the caller's. That no
 wrapper can build a trust decision of its own is the `one-implementation`
 gate (§6). Anchor order:
 `receipt/verify-under-the-second-of-two-roots-sharing-a-subject` and
-`transaction/verify-under-the-second-of-two-roots-sharing-a-subject`.
+`transaction/verify-under-the-second-of-two-roots-sharing-a-subject`. Bag
+order:
+`receipt/verify-with-another-roots-same-named-intermediate-before-the-real-one-own-root-{first,second}`
+and `receipt/verify-with-a-same-named-sibling-intermediate-before-the-real-one`.
 
 ### 3.2 Marker OIDs stop the wrong-purpose certificate
 
