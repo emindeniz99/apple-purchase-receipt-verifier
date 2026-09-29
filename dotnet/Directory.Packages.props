@@ -5,10 +5,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- CMS/PKCS#7 SignedData decoding + SignerInfo.CheckSignature. -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.12" />
-    <!-- AsnReader/AsnDecoder: in-box from net8.0, a package on netstandard2.0. -->
-    <PackageVersion Include="System.Formats.Asn1" Version="10.0.12" />
+    <!-- The Wasm host for aprv.wasm. 48.0.2 is the floor the evidence ran and
+         the newest release on nuget.org; netstandard2.0 is one of its targets. -->
+    <PackageVersion Include="Wasmtime" Version="48.0.2" />
     <!-- Build-time only: makes new X509Chain() and DateTime.UtcNow compile errors. -->
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />
   </ItemGroup>

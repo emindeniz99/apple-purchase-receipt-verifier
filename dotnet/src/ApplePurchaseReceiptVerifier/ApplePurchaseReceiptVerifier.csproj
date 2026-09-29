@@ -32,15 +32,32 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Security.Cryptography.Pkcs" />
-    <PackageReference Include="System.Formats.Asn1" />
+    <!-- The Wasm host. Everything that verifies runs inside aprv.wasm. -->
+    <PackageReference Include="Wasmtime" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The test project dogfoods the hand-rolled JSON reader and asserts on
-         the internal parsing helpers; nothing else sees them. -->
+    <!-- The one module, embedded in both targets. The SHA-256 beside it is
+         checked at first use; the release overwrites both files. -->
+    <EmbeddedResource Include="wasm/aprv.wasm" LogicalName="aprv.wasm" />
+    <EmbeddedResource Include="wasm/aprv.wasm.sha256" LogicalName="aprv.wasm.sha256" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Licence texts for what is compiled into the module (OpenSSL, wasi-libc, Rust std). -->
+    <None Include="../../licenses/*" Pack="true" PackagePath="licenses/" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project asserts on the host layer (the canonical-ABI call, the
+         pool, the module's answers) and dogfoods the JSON reader; the corpus
+         runner under tools/ drives the same layer over the shared corpora.
+         Nothing else sees them. -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>ApplePurchaseReceiptVerifier.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ApplePurchaseReceiptVerifier.CorpusRun</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 

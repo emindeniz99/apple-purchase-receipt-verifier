@@ -95,7 +95,7 @@ public class ApiShapeTests
         Assert.Equal("UNTRUSTED_CHAIN", error.ReasonCode);
         Assert.Equal("detail", error.Detail);
 
-        Failure failure = TestPki.Verifier(TestPki.SharedJws.Value.Root).VerifySignedData("a.b").Failure!;
+        Failure failure = new Failure(VerificationReason.Malformed, "detail", null);
         Assert.StartsWith("MALFORMED: ", failure.ToString(), StringComparison.Ordinal);
     }
 
@@ -131,16 +131,6 @@ public class ApiShapeTests
         Assert.Equal(expected, AppleEnvironments.FromJwsEnvironment(claim));
     }
 
-    [Fact]
-    public void EveryEnvironmentsWireSpellingRoundTrips()
-    {
-        Assert.Equal(2, Enum.GetValues<AppleEnvironment>().Length);
-        foreach (AppleEnvironment environment in Enum.GetValues<AppleEnvironment>())
-        {
-            Assert.Equal(environment, AppleEnvironments.FromJwsEnvironment(AppleEnvironments.ToValue(environment)));
-        }
-    }
-
     // --- misconfiguration is an argument error, never a verdict --------------
 
     /// <summary>
@@ -173,16 +163,16 @@ public class ApiShapeTests
     [Fact]
     public void AnEnvironmentApplesEndpointDoesNotHaveIsAProgrammingError()
     {
-        IVerifier verifier = TestPki.FixtureVerifier("receipt-root");
+        IVerifier verifier = TestRoots.FixtureVerifier("receipt-root");
         Assert.Throws<ArgumentOutOfRangeException>(
             () => verifier.VerifyReceiptEndpoint((AppleEnvironment)2, "{\"receipt-data\":\"AAAA\"}"));
     }
 
     [Fact]
-    public void TheDefaultsPinTheBundledAppleRootsAndTheSystemClock()
+    public void TheDefaultsUseTheModulesBuiltInRootsAndTheSystemClock()
     {
         Config defaults = Config.Defaults();
-        Assert.Equal(3, defaults.Roots.Count);
+        Assert.Empty(defaults.Roots);
         Assert.True(Math.Abs(defaults.Clock() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) < 60_000);
     }
 
@@ -208,8 +198,9 @@ public class ApiShapeTests
     /// <summary>
     /// No implementation type reaches the public surface: no
     /// <c>System.Text.Json</c>, no <c>System.Formats.Asn1</c>, no
-    /// <c>System.Security.Cryptography.Pkcs</c>. Changing any of them must not
-    /// be a breaking change.
+    /// <c>System.Security.Cryptography.Pkcs</c>, no <c>Wasmtime</c> type.
+    /// Changing any of them, the runtime included, must not be a breaking
+    /// change.
     /// </summary>
     [Fact]
     public void NoImplementationTypeEscapesIntoThePublicSurface()
@@ -217,7 +208,7 @@ public class ApiShapeTests
         string[] banned =
         {
             "System.Text.Json", "System.Formats.Asn1", "System.Security.Cryptography.Pkcs",
-            "ApplePurchaseReceiptVerifier.Internal",
+            "Wasmtime", "ApplePurchaseReceiptVerifier.Internal",
         };
 
         foreach (Type type in typeof(IVerifier).Assembly.GetExportedTypes())

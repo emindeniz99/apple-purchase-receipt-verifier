@@ -8,8 +8,10 @@ namespace ApplePurchaseReceiptVerifier
     /// <summary>
     /// The Apple root certificates bundled with this library — copies of the
     /// public roots from <see href="https://www.apple.com/certificateauthority/">Apple PKI</see>.
-    /// These are the production trust anchors <see cref="Config.Defaults"/>
-    /// uses; tests use a generated fake PKI.
+    /// The verifier's own copy of the same roots is pinned inside its
+    /// verification module and is what <see cref="Config.Defaults"/> trusts;
+    /// this list is for callers who want to trust Apple's roots and one of
+    /// their own (pass all of them to <see cref="Config.Builder.Roots"/>).
     /// </summary>
     /// <remarks>
     /// <para>Apple documents both the receipt and the JWS chain as ending in
