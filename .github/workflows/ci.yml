@@ -1705,10 +1705,8 @@ jobs:
         run: |
           set -euo pipefail
           export APRV_COMPONENT="$RUNNER_TEMP/aprv/aprv.component.wasm"
-          case "$TARGET" in
-            *-linux-musl) rust/server/scripts/build-static.sh "$APRV_COMPONENT" "$TARGET" "$RUNNER_TEMP/server" ;;
-            *) cargo build --locked --release --manifest-path rust/server/Cargo.toml --target "$TARGET" ;;
-          esac
+          # The release's two-stage build, on every target (.github/CI-NOTES.md).
+          rust/server/scripts/build-static.sh "$APRV_COMPONENT" "$TARGET" "$RUNNER_TEMP/server"
           cargo test --locked --manifest-path rust/server/Cargo.toml --target "$TARGET"
       - name: the static binary has no interpreter and no dynamic dependency
         if: steps.gate.outputs.present == 'true' && endsWith(matrix.target, '-linux-musl')
