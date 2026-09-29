@@ -31,12 +31,9 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
 - Keep `ruby script/gen_roots.rb && git diff --exit-code
   lib/apple_purchase_receipt_verifier/roots_data.rb` until Phase 7 deletes
   `roots_data.rb`, `ruby/certs` and the generator together.
-- **Until the real module lands (G1) the conformance test fails for 221 of the
-  311 cases**, because the module in the tree is the migration's stand-in
-  (0.6 core). After the integrator overwrites
-  `lib/apple_purchase_receipt_verifier/aprv.wasm` and
-  `aprv.wasm.sha256` with the release build, the expectation is 0 failures.
-  Every other test file passes with either module.
+- The conformance test expects 311 of 311 against the real module
+  (checked at G1: `aprv.wasm` sha256 `4cbe2b02...826e`). It needs the module
+  in place (see "The module").
 
 ### `ruby-gem` (Ruby 3.3 and 4.0)
 
@@ -48,8 +45,6 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
   network), asserts that RubyGems installed a platform gem
   (`wasmtime-<version>-x86_64-linux`) and not the source gem, and runs
   `script/consumer_smoke.rb` against the installed gem.
-- Set `APRV_SMOKE_STANDIN=1` in the job env until G1 (the stand-in's typed
-  payload is 0.6's); remove it afterwards.
 
 ### `ruby-macos` (macos-latest, Ruby 3.4)
 
@@ -108,5 +103,4 @@ elsewhere, and a test fails if anything under `lib/` mentions `ENV`.
 `aprv.wasm.sha256` (`sha256sum` format) is tracked and is the pin for the
 module in either place: the gem checks the module against it before it
 compiles it, so update it together with the module. The `wasm-copies` job
-compares the module's hash with the release build's. Until G1 the file to
-copy is the round-13 stand-in from the migration's scratch area.
+compares the module's hash with the release build's.

@@ -60,9 +60,10 @@ repository README).
 ## How it runs
 
 - **The module is compiled once per process.** The first `Verifier.create`
-  compiles `aprv.wasm` (about 1.2 to 1.4 s on 4 CPUs; measured on the
-  previous module in the spike). Every later `Verifier` in the process
-  takes well under a millisecond. Create your verifier once, at boot, not per
+  compiles `aprv.wasm`: about 6 seconds of CPU spread over the machine's cores,
+  which the spike measured as 1.2 to 1.4 s of wall time on 4 free CPUs. Every
+  later `Verifier` in the process takes a few milliseconds (a new instance
+  that loads the trust roots). Create your verifier once, at boot, not per
   request. A process that starts for one call (a Lambda cold start, a
   one-off script) pays the compile every time.
 - **Threads verify in parallel.** One `Verifier` is safe to share. Each call
@@ -638,15 +639,20 @@ certificate is the module's to say, at `Verifier.create`.
 `ruby -Ilib bench/startup.rb` prints these rows for a fresh process, and
 `ruby -Ilib bench/threads.rb` the rate at 1, 2 and 4 threads. Two sets of
 numbers, because the second was taken on a machine other work had saturated
-(a load average of about 9 on 4 cores) and is an upper bound:
+(a load average of 17 to 20 on 4 cores): its wall-clock times are upper
+bounds and its CPU times are the ones to read.
 
-| | spike, quiet 4-core machine (ABI v1 module) | this gem, loaded 4-core machine (round-13 module) |
+| | spike, quiet 4-core machine (ABI v1 module) | this gem, release module, loaded 4-core machine |
 |---|---:|---:|
-| `require` | 10 to 16 ms | 15 to 23 ms |
-| first `Verifier.create` (compiles the module) | 1.22 to 1.35 s | 5.6 to 6.5 s wall, 5.6 to 6.8 s of CPU |
-| a later `Verifier.create` | 0.1 ms | 0.2 to 0.4 ms |
-| one genuine G5 sandbox receipt | 1.33 ms | 2.5 to 3.6 ms wall, 2.4 to 2.6 ms of CPU |
-| one shared-sandbox JWS | 4.71 ms | 9.2 to 11.5 ms wall, 8.4 to 10.2 ms of CPU |
+| `require` | 10 to 16 ms | 12 to 53 ms |
+| first `Verifier.create` (compiles the module) | 1.22 to 1.35 s | 8.6 to 13.8 s wall, 5.7 to 6.2 s of CPU |
+| a later `Verifier.create` | 0.1 ms | 3.3 to 3.6 ms of CPU (4 to 11 ms wall) |
+| one genuine G5 sandbox receipt, module call | 1.33 ms | 2.0 to 2.2 ms of CPU (3.3 to 4.4 ms wall) |
+| the same through `verify_receipt`, typed result included | | 2.3 to 2.5 ms of CPU (4.0 to 4.8 ms wall) |
+| one shared-sandbox JWS, module call | 4.71 ms | 8.1 to 9.4 ms of CPU (13 to 18 ms wall) |
+| the same through `verify_signed_data` | | 8.9 to 9.5 ms of CPU (16 to 20 ms wall) |
+| resident set of the process | | 29 MB after `require`, 149 to 153 MB after the compile, 151 to 154 MB after about 2,000 calls |
+| linear memory one instance has used | | 2.0 MiB |
 | four threads, G5 receipts per second | 2,358 | not measurable while the cores are shared |
 
 The compile is once per process and dominates a process that starts for one
