@@ -4,7 +4,6 @@ require "minitest/autorun"
 require "json"
 require "time"
 require "digest"
-require "benchmark"
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "apple_purchase_receipt_verifier"

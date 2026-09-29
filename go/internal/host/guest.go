@@ -75,6 +75,14 @@ func (g *Guest) close() {
 // memorySize is the instance's linear memory in bytes.
 func (g *Guest) memorySize() uint32 { return g.m.Memory().Size() }
 
+// maxInput is the most bytes of any input that is copied into linear memory:
+// one more than the largest cap the core has (3,145,728 for a receipt or an
+// endpoint body). An input over a cap is over it however long it is, so the
+// core answers TOO_LARGE (21002 at the endpoint) to the cut input exactly as it
+// would to the whole one, and a hostile caller cannot make this package copy
+// hundreds of megabytes into the module first.
+const maxInput = 3_145_729
+
 // lower turns WIT values into core arguments for fn: a u32 (uint32) and a
 // u64 (uint64) pass as scalars; a list<u8> (string or []byte) is copied
 // into a guest buffer from cabi_realloc, which the guest then owns, and
@@ -112,12 +120,15 @@ func (g *Guest) lower(fn string, args []any) ([]uint64, error) {
 			out = append(out, v)
 			continue
 		case string:
+			if len(v) > maxInput {
+				v = v[:maxInput]
+			}
 			n, write = len(v), func(ptr uint32) bool { return mem.WriteString(ptr, v) }
 		case []byte:
+			if len(v) > maxInput {
+				v = v[:maxInput]
+			}
 			n, write = len(v), func(ptr uint32) bool { return mem.Write(ptr, v) }
-		}
-		if uint64(n) > math.MaxUint32 {
-			return nil, usagef("%s: argument %d is %d bytes, more than a list<u8> can hold", fn, i, n)
 		}
 		res, err := g.realloc.Call(ctx, 0, 0, 1, uint64(n))
 		if err != nil {

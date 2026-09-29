@@ -20,14 +20,25 @@ initial response within a week.
 ## Supported versions
 
 Only the latest release is supported. Every artifact in a release — npm,
-PyPI, Maven Central, SwiftPM, and the registries listed in `BOOTSTRAP.md` as
-they come online — is built from the same tag, so a fix ships to all of them
-at once.
+PyPI, Maven Central, SwiftPM, the Go module, the `aprv-server` binaries and
+image, and the registries listed in `BOOTSTRAP.md` as they come online — is
+built from the same tag, so a fix ships to all of them at once. Every
+package but the Java main artifact runs the same `aprv.wasm`, built once
+per release: a fix in the Rust core, or an OpenSSL advisory that reaches
+it, is one rebuilt module and one release. The Java implementation is
+fixed in its own code in the same release.
 
 ## Dependency policy
 
-The library ports have almost no runtime dependencies (see each port's
-README); the surface is the test and release toolchain. Four rules:
+Each package's one runtime dependency is, at most, the WebAssembly runtime
+that runs the module (wasmtime-py, the `wasmtime` gem, Wasmtime .NET,
+wazero, WasmKit; PORTS.md). The Java main artifact keeps BouncyCastle and
+`jackson-core`, the `-wasm` artifact Endive's runtime and `jackson-core`,
+and PHP `psr/clock`; npm has none. What goes into the module is pinned at
+build time: the Rust compiler by `rust/rust-toolchain.toml`, and wasi-sdk,
+wasm-tools, wit-bindgen and the OpenSSL tarball by version and SHA-256 in
+`tools/wasm-toolchain.sh`. The rest of the surface is the test and release
+toolchain. Four rules:
 
 - **Seven-day cooldown.** Every ecosystem in `.github/dependabot.yml` waits
   seven days after a release before proposing it. Manual bumps follow the
@@ -61,6 +72,16 @@ Especially interesting:
 - Signature or certificate-chain validation bypasses (forged receipt accepted)
 - Trust-anchor confusion (accepting chains not rooted in the pinned Apple roots
   in `certs/`)
-- Parser differentials between the nine language implementations — if two
-  disagree on the same receipt, one of them is wrong
-- ASN.1/JWS parsing crashes on malformed input (DoS in a server context)
+- Differentials between the Rust core and the Java implementation, or a
+  package answering differently from the module it runs — if two disagree
+  on the same receipt, one of them is wrong
+- ASN.1/JWS parsing crashes or unbounded work on malformed input (DoS in a
+  server context), including a trap or runaway memory inside `aprv.wasm`
+- Anything a hostile input reaches outside the module's sandbox, or a way
+  to make a package run a module or an `aprv-server` binary other than the
+  pinned one
+- An `aprv-server` that answers without its token, or binds beyond
+  loopback without being told to
+
+A crash a fuzzer finds is reported privately too: CI keeps the input and
+opens no public issue.

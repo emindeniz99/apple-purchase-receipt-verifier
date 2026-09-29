@@ -11,12 +11,12 @@ struct Smoke {
         let receiptB64 = try String(contentsOfFile: "receipt-sandbox-g5.b64", encoding: .ascii)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // `Config.defaults()` hands back an empty root set when the bundled
-        // roots do not load; `build()` throws instead, and the count catches a
-        // tag that lost one of them.
+        // Apple's three roots are compiled into aprv.wasm, so the defaults
+        // name none of their own (nil means the module's); a tag that lost
+        // the module resource fails below, on the genuine receipt.
         let config = try Config.builder().build()
-        guard config.roots.count == 3 else {
-            fatalError("expected three bundled Apple roots, got \(config.roots.count)")
+        guard config.roots == nil else {
+            fatalError("expected the module's built-in roots (nil), got \(config.roots?.count ?? 0)")
         }
         let verifier = Verifier(config: config)
 

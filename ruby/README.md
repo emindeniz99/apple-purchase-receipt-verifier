@@ -495,6 +495,9 @@ not `Config` options.
 | Chain length below the anchor | 6 certificates | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
+The gem never copies more than 3,145,729 bytes (one over the largest cap) of
+an input into the module's memory; the module answers `TOO_LARGE` itself.
+
 Measured against both of Apple's verifyReceipt endpoints, a request body of
 3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP
 413; Apple counts UTF-8 bytes, not characters. `verify_receipt_endpoint`

@@ -420,6 +420,77 @@ work.
   its rows. Expected: 338 of 338 (the server: every expressible case)
   and 6,179 of 6,179. Lanes are merged into `rust-core` as they come back
   green.
+- G1c started 2026-09-29 13:50Z on the final module (rust-core b863252,
+  with lanes A3 and A-fix2 merged; aprv.wasm 2,760,476 B sha256
+  `a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1`,
+  component 2,762,918 B sha256
+  `84fe428c9458c923407e5539234fe5ea4aa3212ce704249f323036059b836adf`,
+  WIT unchanged, `name` section stripped). Staging checks: the trap host
+  runs 377 of 377 cases with 0 traps, `tools/check-wasm.sh` passes, and
+  against G1b's rows 6,134 are identical and 45 differ in the message
+  only (the fuzz mutants the round-2 evidence note lists). `rust-core`
+  was merged back into every lane branch (a real merge each) so their
+  runners read the 377 cases. Each lane adds the ABI review's wrapper
+  input cap (at most 3,145,729 bytes copied into linear memory; Java
+  already had it), moves its pin, and re-runs its one-command check;
+  the server rebuilds on the new component first, then Java's server
+  engine and PHP run on that binary. Lanes are merged into `rust-core`
+  as they come back green. Merged by 14:10Z, each with 377 of 377
+  cases, 6,179 of 6,179 corpus rows and the input cap tested at 4 MiB
+  and at the 3,145,728-byte edge: python (head 85467ec), go (b81f29d,
+  `-race` clean, memory within 8 MiB on a 64 MiB input), ruby (cb708d7),
+  dotnet (b8f085a, 594 tests on .NET 8 and 10), node (3dc6822, 810
+  tests, smokes on Node, workerd, Bun, Deno, edge-runtime and Chromium,
+  the pin is the component's), swift (90b8160), java's Endive half
+  (10c9511, JDK 21, 17 and 11, 1 and 4 threads). The round-2 section of
+  REVIEW-LOG.md is merged (476b866). The server's rebuild on the final
+  component is merged (6318cfa: binary 11,535,280 B sha256 `f0d4784e…`,
+  every expressible case on HTTP and the CLI, 6,152 identical plus the
+  27 over-cap rows on three transports); Java's server engine on that
+  binary is merged (14da2c5: 377 of 377 and 6,179 of 6,179 on JDK 21
+  and Temurin 8, 850 tests on JDK 21, 448 on the Java 8 leg with the
+  server tests); PHP runs on it now.
+- Review round 3 (2026-09-29 14:58Z, one reviewer, c0a6e15..b863252:
+  lane A-fix2's and lane A3's own commits, which rounds 1 and 2 had not
+  read): 0 blocking, 2 fix before merge, 7 notes, plus the four round-2
+  notes re-checked. The two fixes: per-anchor path validation fixed the
+  choice among anchors but not among same-named bag certificates
+  without key identifiers, so a decoy placed first still refuses a
+  genuine receipt under custom anchors (Apple's roots carry key
+  identifiers and are unaffected; fails closed); and the walk checks
+  each chunk inside a constructed string on its own where OpenSSL joins
+  them unchecked, so a re-chunked signature BIT STRING is MALFORMED
+  instead of verified (fails closed). Lane A-fix3 (`lane/core-fix3`,
+  brief `core-fix3.md`) takes every finding and the four round-2 notes
+  (guest-side range guard, trap-host coverage, tighter wire schemas,
+  tests for the compiler pin and the failure cleanup), then rebuilds the
+  module; the pins move once more (G1d) before integration. The
+  findings file stays out of the repository; REVIEW-LOG.md gets its
+  round-3 section after the fixes.
+- Phase 7 steps 1, 2 and 5 (lane P7-code, `lane/phase7-code`, brief
+  `phase7-code.md`) started 2026-09-29 15:02Z: the seven cert copies
+  and generated root tables out, `Config.defaults()` keeps its meaning
+  through an empty `init` list, `check-cert-copies.mjs` down to
+  `rust/certs`, the one-implementation gate to `--enforce all`, the 78
+  inventory rows proposed or declared moot, the Elixir example moved
+  to the byte-range calls; PHP last, after its G1c merge.
+- Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
+  merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
+  SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
+  superseded for the eight packages), README.md, BENCHMARKS.md,
+  BOOTSTRAP.md, SECURITY.md, INTENT.md, ROADMAP.md, COMPARISON.md,
+  INTEGRATION.md, RECEIPT-FIELDS.md describe the one-core tree; three
+  plan sentences corrected (server time limit 10 s, Swift's software
+  bounds checks, the WasmKit 0.4.1 floor). They describe the end state:
+  the sentences about the cert copies, the `--enforce all` gate and the
+  committed Go and Swift module copies become true when lane P7-code and
+  the final integration land; the CI job names assume lane D2's wiring.
+  Two decisions taken from its hand-back: OD-15, `aprv-server` defaults
+  to `--lifecycle pool` (R23's rule was met by the init-cost note; lane
+  B flips it); OD-16, PHP refuses an explicitly empty root list at
+  `Verifier::create` like every other package (null means the built-in
+  roots). Owner items it recorded as the working rule: the Maven budget
+  of 5 releases a month (OD-07, to confirm).
 
 ## Merge policy on this branch
 
