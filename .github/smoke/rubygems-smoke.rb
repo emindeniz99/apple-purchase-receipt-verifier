@@ -22,10 +22,13 @@ receipt_b64 = File.read("receipt-sandbox-g5.b64", encoding: "ASCII-8BIT").strip
 
 APRV = ApplePurchaseReceiptVerifier
 
-# The Ruby shape of the empty-tarball incident is `certs/` falling out of
-# spec.files: the gem loads, and then has no trust anchors.
+# Apple's three roots are compiled into aprv.wasm, so the defaults name
+# none of their own. What the install can get wrong now is the runtime: the
+# wasmtime dependency must arrive as a prebuilt platform gem, never the
+# source gem, which would need a Rust toolchain on the consumer's machine.
 config = APRV::Config.defaults
-abort "expected three bundled Apple roots, got #{config.roots.size}" unless config.roots.size == 3
+wasmtime = Gem.loaded_specs.fetch("wasmtime")
+abort "wasmtime #{wasmtime.version} was installed as the source gem" if wasmtime.platform.to_s == "ruby"
 verifier = APRV::Verifier.create(config)
 
 # A real Apple-signed receipt against the real pinned root: exercises the
