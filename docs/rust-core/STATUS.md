@@ -435,7 +435,15 @@ work.
   already had it), moves its pin, and re-runs its one-command check;
   the server rebuilds on the new component first, then Java's server
   engine and PHP run on that binary. Lanes are merged into `rust-core`
-  as they come back green.
+  as they come back green. Merged by 14:10Z, each with 377 of 377
+  cases, 6,179 of 6,179 corpus rows and the input cap tested at 4 MiB
+  and at the 3,145,728-byte edge: python (head 85467ec), go (b81f29d,
+  `-race` clean, memory within 8 MiB on a 64 MiB input), ruby (cb708d7),
+  dotnet (b8f085a, 594 tests on .NET 8 and 10), node (3dc6822, 810
+  tests, smokes on Node, workerd, Bun, Deno, edge-runtime and Chromium,
+  the pin is the component's), swift (90b8160), java's Endive half
+  (10c9511, JDK 21, 17 and 11, 1 and 4 threads). The round-2 section of
+  REVIEW-LOG.md is merged (476b866).
 
 ## Merge policy on this branch
 
