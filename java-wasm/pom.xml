@@ -57,7 +57,7 @@
     <endive.version>1.1.0</endive.version>
     <!-- The same jackson-core floor as the main artifact: it reads the
          module's JSON answers and writes ReceiptPayload.toJson(). -->
-    <jackson.version>2.22.2</jackson.version>
+    <jackson.version>2.22.3</jackson.version>
     <jspecify.version>1.0.1</jspecify.version>
     <junit.version>5.14.4</junit.version>
     <!-- The JVM surefire forks; -Dtest.jvm=/path/to/java runs the tests on another. -->
