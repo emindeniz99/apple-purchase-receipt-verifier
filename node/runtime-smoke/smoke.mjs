@@ -8,6 +8,16 @@
 // endpoint, whose answer is Apple's own JSON, and the shared transaction
 // fixture through verifySignedData.
 
+/** A failed result in full: reason, message and the cause's name and message. */
+function failed(result) {
+  const f = result.failure;
+  if (f === undefined) {
+    return 'verified, with the wrong payload';
+  }
+  const cause = f.cause === undefined ? '' : `; cause ${f.cause?.name}: ${f.cause?.message}`;
+  return `${f.reason} (${f.message}${cause})`;
+}
+
 /**
  * @param {object} api the package entry point
  * @param {{ sandboxReceiptB64: string, jwsRootDer: Uint8Array,
@@ -35,14 +45,14 @@ export async function run(api, fx) {
 
   const receipt = await apple.verifyReceipt(g5);
   if (!receipt.verified || receipt.payload.bundleId !== 'dev.bonzer.weeka.app') {
-    throw new Error(`verifyReceipt: ${receipt.failure?.reason}`);
+    throw new Error(`verifyReceipt: ${failed(receipt)}`);
   }
   out.push('verifyReceipt returns the genuine receipt payload');
 
   const jws = api.createVerifier(await api.createConfig({ roots: [fx.jwsRootDer] }));
   const tx = await jws.verifySignedData(fx.transactionJws.trim());
   if (!tx.verified || JSON.parse(tx.payload.json).transactionId !== '2000000000000001') {
-    throw new Error(`verifySignedData: ${tx.failure?.reason}`);
+    throw new Error(`verifySignedData: ${failed(tx)}`);
   }
   out.push('verifySignedData returns the shared transaction fixture');
   return out;

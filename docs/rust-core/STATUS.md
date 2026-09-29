@@ -495,9 +495,56 @@ work.
   2,764,700 B sha256 `4e9d2d85…`, component 2,767,142 B sha256
   `ccccbfb5…`; 384 of 384 through the trap host, 6,173 of 6,179 rows
   identical to G1c and 6 fuzz rows changed in the message only. The
-  server rebuilds on it (lane B); the host pins move to it once lane
-  P7-code merges. REVIEW-LOG.md round 3 merged (77fa78b); root
-  THREAT-MODEL.md §11 updated to three rounds.
+  server rebuilds on it (lane B). REVIEW-LOG.md round 3 merged
+  (77fa78b); root THREAT-MODEL.md §11 updated to three rounds.
+- Lane J-align round 3 (`lane/java-align`, head 30a8aa3, merged
+  2026-09-29 16:05Z): Java was not aligned to the two-chunk BIT STRING
+  case on purpose. The fixture follows OpenSSL's reading (the chunks'
+  contents joined, then the first octet read as the unused-bits count);
+  X.690 8.6.4 gives every chunk its own count, so BouncyCastle answers
+  MALFORMED, and the X.690 spelling is the reverse (the core refuses a
+  correctly signed chain, Java verifies it). Apple's certificates are
+  DER and never chunk a signature, and the chain is judged either way.
+  Decision OD-17: the case is port-defined (`oneOf` ok/MALFORMED with
+  `maxMillis`, like the RSA-PSS case; commit f77a57a), the reverse
+  spelling is an R20 row, not a case; Java answers 386 of 386. Java's
+  answers to the seven differing Phase 7 proposals: five agree with the
+  core, two are R20 rows (a signingTime in month 13, which BouncyCastle
+  refuses while parsing; a signed-attribute SET out of DER order, which
+  BouncyCastle re-encodes before the digest); evidence note
+  `2026-09-29-java-align-round3`.
+- Lane P7-code merged 2026-09-29 16:12Z (head 8a444c2, merge ded1116)
+  with PHP: `php/certs`, `RootsData.php`, `gen-roots.php` and
+  `AppleRootCerts::pinnedRoots()` gone (breaking), 380 of 384 on both
+  transports on the G1c binary (the four failing are round-3 cases the
+  G1c binary predates), corpus identical; `check-cert-copies.mjs` finds
+  `rust/certs` alone; `--enforce all` at 0 hits in every language.
+- G1d pins: `tools/refresh-wasm-pins.sh` moved every tracked pin to
+  aprv.wasm `4e9d2d85…` and component `ccccbfb5…` in one commit
+  (783a3aa); rust-core back-merged into every host branch; the seven
+  in-process hosts re-run their one-command checks against
+  `$SCRATCH/g1d` (384 of 384 and 6,179 of 6,179 expected); the server
+  rebuilds on the component; PHP and Java's server engine follow on
+  that binary. Lane D2 takes the Phase 7 workflow changes (the gate to
+  `--enforce all`, the roots jobs and drift steps deleted, the Go zip
+  check entries).
+- G1d results (2026-09-29, by 16:45Z), all on aprv.wasm `4e9d2d85…`,
+  each 384 of 384 cases and 6,179 of 6,179 rows identical, no wrapper
+  change: python (516 tests), go (`-race` clean), ruby (470 runs), dotnet
+  (599 tests on .NET 8 and 10), node (824 tests, smokes on Node,
+  workerd, Bun, Deno, edge-runtime, Chromium; the WebKit trap of the
+  first browser run is not reproduced in 350 loads and the harness now
+  records what a recurrence needs), swift (60 tests), java Endive and
+  server engines on JDK 21 and Temurin 8 (864 and 455 tests). The server
+  on component `ccccbfb5…` with the pool default: binary 11,547,568 B
+  sha256 `e6292f78…`, every expressible case on HTTP and the CLI, 6,152
+  identical plus the 27 over-cap rows on three transports; Java's server
+  pin moved to it (942a425). The two committed module copies (R14) are
+  in: `go/internal/wasm/aprv.wasm` and the Swift resource (e9cff0e).
+  Pre-final scan of `origin/main..rust-core`: no blob over 100 KB
+  besides the two copies and text files (ci.yml, cases.json, lockfiles,
+  the inventory, two evidence results), no scratch path, no model name,
+  no credential pattern; `main` has not moved since the branch point.
 - Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
   merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
   SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16

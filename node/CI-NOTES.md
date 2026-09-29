@@ -176,6 +176,56 @@ affected this package, which does not use `node:wasi`: `aprv.wasm` imports
 only `random-get`, answered from `crypto.getRandomValues`. The package's
 runtime smoke passes on Bun 1.3.11 and 1.4.2.
 
+## WebKit trap in `createVerifier` (node-browsers, 2026-09-29)
+
+The first run of `node-browsers` on PR #185 (ci run 755, job
+109444354501) failed on WebKit 26.0 (Playwright build 2215) and passed on
+the re-run. Chromium 141 and Firefox 142 passed in the same job.
+
+- **Where.** The page's first `createVerifier`, inside the instance's
+  `init` (`engine.js` `freshInstance`). The module of that run matches
+  G1c: the named `aprv_abi.wasm` whose stripped form is G1c's `aprv.wasm`
+  byte for byte names the stack's frames, top first:
+  `asn1_d2i_ex_primitive` (486), then OpenSSL's template recursion
+  (`asn1_item_embed_d2i` 482, `asn1_template_noexp_d2i` 488,
+  `asn1_template_ex_d2i` 485), `ASN1_item_ex_d2i` (481),
+  `x509_name_ex_d2i` (4314), `ASN1_item_d2i` (484), `d2i_X509` (4354),
+  `Certificate::from_der` (95), `TrustAnchor::from_der` (26), the
+  `apple_roots` `OnceLock` initialiser (34, through the iterator at 97),
+  and `verify@1.0.0#init` (5). So it trapped while OpenSSL decoded a name
+  in one of the three Apple roots compiled into the module, the same bytes
+  every instance decodes.
+- **What it was not.** Not `random-get`: no import frame is on the stack,
+  and `init` with the default roots draws no random bytes (the harness now
+  logs every `getRandomValues` call to show it). Not a memory limit: an
+  instance's linear memory is about 2 MiB at that point. Not a harness
+  race: the page compiles each core module once, and every `Verifier` has
+  its own instance.
+- **What is not known.** The trap's message. The harness printed
+  `String(e.stack)`, and WebKit's `stack` carries neither the error's name
+  nor its message, so the log shows only frames. `asn1_d2i_ex_primitive`
+  has no `unreachable`; its trapping instructions are memory accesses and
+  one `call_indirect`, so the message would tell an out-of-bounds access
+  from a bad indirect call.
+- **Reproduction.** Not reproduced: 350 WebKit 26.0 page loads in this
+  container (fresh browser per load, a shared browser, and three CPU-bound
+  processes competing), 0 failures. A deterministic fault in the module
+  would fail on every load, and on the other engines; it looks like a
+  WebKit (JavaScriptCore) fault, timing-dependent, but that is unproven.
+- **What changed.** `runtime-smoke/browser.mjs` now prints, on a failure,
+  the error's name and message besides its stack, the size of every aprv
+  linear memory the page created, every `getRandomValues` length, whether
+  a second `createVerifier` in the same page works, and the page's crash,
+  console and page-error events. `--repeat N` reloads the page N times per
+  browser. The smoke's own failures now carry the result's message and
+  cause. No change to the package: a trap at `createVerifier` still throws
+  the engine's error, and the next `createVerifier` starts a new instance.
+- **For the job.** Running WebKit with `--repeat 5`
+  (`npm run runtime:browser -- --repeat 5 chromium firefox webkit`) makes
+  a recurrence five times as likely to show up with the diagnostics above,
+  at about 5 s per extra load. If it recurs, the message and memory sizes
+  decide between a JavaScriptCore report upstream and a module fault.
+
 ## Phase 7
 
 `node/certs`, `src/roots-data.ts` and `scripts/gen-roots.mjs` are gone:

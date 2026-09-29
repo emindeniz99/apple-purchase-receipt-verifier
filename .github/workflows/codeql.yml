@@ -214,6 +214,18 @@ jobs:
         if: matrix.language == 'java-kotlin'
         run: mvn -B -ntp -f java/pom.xml -Dmaven.test.skip=true install
 
+      # The -wasm artifact's src/main/java (the public API, the server
+      # engine, the module loader), compiled by that pom's own Java 8
+      # execution alone: invoking the goal skips the lifecycle, so neither
+      # the pin check nor Endive's compile of aprv.wasm runs, and no module
+      # is needed. src/main/java11 (EndiveGuest and its factory) compiles
+      # only against the class Endive generates from the real module, so
+      # it stays out of this database; building the module here would cost
+      # the pinned wasm toolchain on every scan.
+      - name: Build the -wasm artifact's Java 8 sources for CodeQL
+        if: matrix.language == 'java-kotlin'
+        run: mvn -B -ntp -f java-wasm/pom.xml compiler:compile@default-compile
+
       # jvm-interop is deliberately NOT built here, so the java-kotlin
       # database holds the Java library and nothing else. Two reasons, and
       # the second is a hard blocker: its only Kotlin is a consumer interop

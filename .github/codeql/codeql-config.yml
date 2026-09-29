@@ -14,8 +14,11 @@ name: apple-purchase-receipt-verifier
 #   rust/src/          php/src/
 #   rust/ffi/src/      dotnet/src/
 #   java/src/main/     swift/Sources/
+#   java-wasm/src/main/java/
 #
-# stays fully in scope.
+# stays fully in scope. (java-wasm/src/main/java11 is not built for the
+# scan: it compiles only against the class Endive generates from the real
+# aprv.wasm; codeql.yml says why.)
 #
 # Why the exclusions below are legitimate rather than convenient: every one
 # of these paths is a *repository-controlled* input. The conformance suites,

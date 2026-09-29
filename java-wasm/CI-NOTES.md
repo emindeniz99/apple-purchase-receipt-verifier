@@ -116,20 +116,19 @@ from other builds, so timings are for the record, not for comparison.
 
 ### The module
 
-The pin in `src/main/wasm/aprv.wasm.sha256` names the complete 0.7
-module (G1c, its `name` section stripped): SHA-256
-`a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1`,
-2,760,476 bytes. G1c on Endive: 377 of 377 cases on JDK 21, Temurin 17
-and Temurin 11; the corpus 6,179 of 6,179 on 1 and 4 threads; the Java 8
-leg without the server tests 40 tests, 0 failures, 1 skipped.
-`src/main/server/SHA256SUMS` pins lane B's server built on that component
-(`f0d4784e...ab44c5ec`, 11,535,280 bytes). G1c through the server engine:
-377 of 377 cases on JDK 21 and Temurin 8; `verify` on JDK 21 850 tests
-and the Java 8 leg with the server tests 448 tests, 0 failures, 2 and 1
-skipped (the other JVM's tests); the corpus 6,179 of 6,179 on JDK 21 (1
-and 4 threads) and Temurin 8 (1 thread), 27 of them 413s answered as the
-core answers them; the noexec test passes on the real binary. Jar
-1,797,046 bytes, `linux-x86_64` classifier jar 4,082,927 bytes. Every case
+The pin in `src/main/wasm/aprv.wasm.sha256` names the final 0.7 module
+(G1d, after review round 3): SHA-256
+`4e9d2d85c7c1f9b6dbcabbd49c51783e2efd4832ac17994be732b63a98cdc9dd`,
+2,764,700 bytes. `src/main/server/SHA256SUMS` pins lane B's server built on
+its component (`e6292f78...fb840766`, 11,547,568 bytes). G1d, the 384
+cases: 384 of 384 on Endive (JDK 21) and through the server engine (JDK 21
+and Temurin 8); `verify` on JDK 21 864 tests and the Java 8 leg with the
+server tests 455 tests, 0 failures, 2 and 1 skipped (the other JVM's
+tests); the corpus 6,179 of 6,179 on Endive (1 and 4 threads) and through
+the server engine on JDK 21 (1 and 4 threads) and Temurin 8 (1 thread), 27
+of them 413s answered as the core answers them; the noexec test passes on
+the real binary. Jar 1,798,755 bytes, `linux-x86_64` classifier jar
+4,086,600 bytes. Every case
 must pass on both; there is no stand-in list.
 
 G1b, 2026-09-29, `scripts/g1.sh` with `APRV_SERVER`, `JAVA8`, and
@@ -330,6 +329,12 @@ check. `ByteArrayMemory` names `ByteOrder.LITTLE_ENDIAN` in its code (the
 Endive round's facts addendum counts the references), but nothing has run
 it on a big-endian JVM yet.
 
+Wired (lane D2) as `nightly.yml` `java-wasm-s390x`: Maven runs natively on
+an x86_64 hosted runner and surefire's `-Dtest.jvm` names a wrapper that
+runs a digest-pinned s390x Temurin 21 under QEMU user emulation, for
+`ConformanceCasesTest` and `EndiveAbiTest`. The corpus stays with the
+nightly `corpus` job, which needs the OD-05 archive.
+
 ## Release
 
 - `release-please-config.json` `extra-files`, in the commit that wires the
@@ -365,5 +370,18 @@ it on a big-endian JVM yet.
   allowance; count it before cutting a release.
 - The jar embeds code compiled from OpenSSL, wasi-libc and the Rust
   standard library. Their licence texts must ship inside it (ARCHITECTURE
-  §9, "Licences ship with the code"); this lane found no licence bundle in
-  the repository to copy into `META-INF/`, so that is still open.
+  §9, "Licences ship with the code"). The one source is now
+  `licenses/wasm/` at the repository root (OD-11), and this is a change to
+  the Java package, not to `.github/`:
+  - `pom.xml` `<build><resources>`: one more `<resource>` with
+    `<directory>../licenses/wasm</directory>` and
+    `<targetPath>META-INF/licenses/aprv-wasm</targetPath>`, the same way
+    the existing entry takes `../java/LICENSE`. Maven reads it in place, so
+    there is no copy in `java-wasm/` and nothing for
+    `tools/check-licence-copies.mjs` to diff: it needs no Java entry.
+  - A test that proves the packaged file set, since nothing else would
+    notice a dropped file: for every file in `../licenses/wasm`, the
+    classpath resource `META-INF/licenses/aprv-wasm/<name>` exists and is
+    byte-identical (a JUnit test beside `ClassFileTest`, which runs in
+    `java-wasm-endive` on every JDK leg).
+  - The README's licence paragraph names the directory.
