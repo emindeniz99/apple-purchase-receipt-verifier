@@ -120,7 +120,16 @@ near 16 to 18 MiB: the signerless receipt grew linear memory from 1.9 to
 one with a signer certificate peaked near 18 MiB ([core review
 fixes][corefix]). The signed-payload path (R21) reaches the full payload
 decode after the walk and the signature, and was not re-measured, so no
-current figure exists for it.
+current figure exists for it. The node budget bounds the envelope's walk,
+not the cost of every shape under it: one unsigned attribute of about
+100,000 OBJECT IDENTIFIERs, which anyone can append to any genuine
+receipt outside its signature, is walked, decoded in full and verifies.
+With 20-octet identifiers (2.2 MB) it cost 126 to 149 ms natively and
+101 to 128 ms through `aprv.wasm` in V8, with 16.9 MiB of linear memory,
+against 0.45 ms and 7 to 10 ms for the receipt alone on the same loaded
+machine ([core review fixes][corefix], round 3). That is the costliest
+anonymous request found under the budget so far; interpreter hosts pay
+several times more.
 
 | Host | Memory | CPU and time | Concurrency |
 |---|---|---|---|

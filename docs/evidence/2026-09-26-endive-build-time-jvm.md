@@ -327,7 +327,13 @@ same row:
   (34 to 50 per second).
 - **Profiling works.** Stack traces and JFR show the wasm function names
   (Rust mangled or C names with the function index, via
-  `NameSectionMethodPrefixer`), without line numbers.
+  `NameSectionMethodPrefixer`), without line numbers. (Correction,
+  2026-09-29: this held for the module measured here. The shipped
+  `aprv.wasm` has its `name` section stripped since 2026-09-29
+  (`rust/bindings/abi/README.md`), so the prefixer has no names to use and
+  `java-wasm` no longer sets it; frames carry the function index only,
+  mapped to a function through the named module the reproducible build
+  leaves behind.)
 
 ## 10. Problems and blockers
 

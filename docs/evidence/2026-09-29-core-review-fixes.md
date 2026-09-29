@@ -292,3 +292,163 @@ look-alikes left G1b verifying. Java (`mvn -B -T 1 -f java
 - The Wasmtime ABI tests (`rust/bindings/abi/tests`) were not run.
 - Timings are one shared machine under load; they compare inputs and
   modules, not hosts.
+
+## Round 3: the third review
+
+A third review read the round-2 fix commits and lane A3's core-facing
+changes at b863252 and found two things to fix before merge and seven
+notes, and revisited four notes of round 2 on the ABI crate. Branch
+`lane/core-fix3`, from rust-core at 60b2091. Same versions as round 2,
+plus Rust 1.85.0 (the crates' floor) and nightly cargo 1.100.0
+(2026-09-25) for two CI findings, ShellCheck 0.11.0 and cbindgen 0.29.0.
+Three findings from the first run of the wired CI workflows joined this
+round's brief.
+
+### Dispositions
+
+F = fix before merge, N = note, ABI = round 2's notes on the ABI crate,
+CI = the first CI run.
+
+| Id | Finding | Disposition | Commit |
+|---|---|---|---|
+| F1 | OpenSSL's issuer lookup over the untrusted certificates takes the first name match and never backtracks, so with custom anchors that carry no key identifiers a same-named intermediate placed first in the unsigned bag (from a second pinned root, or a sibling under the same root) made a genuine receipt `UNTRUSTED_CHAIN` | Fixed: before the per-anchor runs, the bag is narrowed to the certificates that signed the target or a certificate already linked, by issuer name and signature, at most n × (n + 1) name comparisons for the n certificates the cap allows. The first version paired with `X509_check_issued`, which also judges the issuer's `keyUsage`; seven corpus rows then lost their "not a CA" message, so the link is the name and the signature alone, as OpenSSL's lookup pairs them. Apple's roots are unaffected: their certificates carry key identifiers, so `X509_check_issued` refuses a look-alike on its own | 1d44bc5, 9b42d0c |
+| F2 | The walk judged each primitive chunk inside a constructed string as a value of its own; OpenSSL joins chunks unchecked, so a certificate whose signature `BIT STRING` was split in two verified or was `MALFORMED` by the signature's first octet | Fixed: no chunk check inside a constructed string; the nesting cap and the check of the whole string at its outermost level stay. R20's row on the walk's rules says so, and a new R20 row records Java's answer | 6c81533 |
+| F3 | The tiny-attribute cost test judged against junk, which costs only its base64; it failed in release, and twice on the 1.85.0 CI leg | Fixed: judged against the flat value of the same size with the same signer; twice its cost without a signer, three times with one (below) | e67b3be |
+| F4 | The node budget admits an attribute of about 100,000 OBJECT IDENTIFIERs that verifies and costs over a hundred times a genuine call natively | Documented: the cost table below and THREAT-MODEL §5 (docs/rust-core). No tighter bound was tried | this note |
+| F5 | `build.sh` left an earlier run's module in place when a check before its cleanup failed | Fixed: the four outputs are removed right after the argument check | 0632948 |
+| F6 | `build.sh` checked the `rustc` on PATH while cargo honours `RUSTC`, `CARGO_BUILD_RUSTC` and wrappers | Fixed: the compiler cargo would pick is the one checked and is handed to cargo by path; every wrapper variable is refused and cleared. `tools/test/build-sh.test.mjs` holds the pin and the cleanup (ABI-F1, ABI-F6) in under a second, without a build, and fails on the previous script | 0632948, 1110fe9 |
+| F7 | Endive's name-section prefixer is a no-op on the stripped module; the 2026-09-26 note's "profiling works" was stale | The prefixer line is gone from `java-wasm/pom.xml`; `java-wasm/README.md` and the abi README say frames carry the function index; the Endive note has a dated correction | a1dd695, 33438da |
+| F8 | `anchors_of` in the C ABI built a slice from an unchecked caller length | Fixed: each anchor through `borrow_bytes` (`INVALID_ARGUMENT` over `PTRDIFF_MAX`), and the anchor count checked the same way; the header is unchanged (`check-header.sh`) | 5b1eabe |
+| F9 | `asan-openssl.sh` stopped at the first failing target; `differential.sh` took the first jar in `java/target` | Fixed: the five targets run one by one and the script names every failure; the jar is named by `version.txt` | 25ddc5f, 63e1432 |
+| ABI-F5 | The guest trusted every list range | Fixed: each export, and the `random-get` answer, traps on a range past the end of linear memory before a byte is read or the list freed; a Wasmtime test calls both verify exports with ranges at the end of memory and one that wraps | 077ec85 |
+| ABI-F8 | Two trap-host checks did not test what they named | Fixed as proposed: a three-segment JWS for the not-UTF-8 check, and the short `random-get` check now requires a call | d5bc38a |
+| ABI-F9 | The wire schemas admitted what the core cannot write | Tightened: attribute keys are decimal u32, receipt instants a multiple of 1,000 ms; every case answer and every corpus answer validates (below) | f80143e |
+| CI | `rust (beta)`: `exported_symbols.rs` looked for the cdylib beside the test binary, which cargo's build-dir layout moves | Fixed: the test searches the profile directory below cargo's `CACHEDIR.TAG` and takes the newest copy; passes on 1.98.1 (debug and release) and on nightly 1.100, where the old lookup fails | 79737ed |
+| CI | `rust (1.85.0)`: the tiny-attribute cost test failed twice | F3's fix; five of five on 1.85.0 in debug | e67b3be |
+| CI | `rust-wasm-checks`: ShellCheck SC2010 in `differential.sh` | F9's fix; ShellCheck clean on every script touched and on the CI job's set | 63e1432 |
+
+### Costs
+
+F3, the tiny-attribute cost test, fastest of seven interleaved calls,
+five runs each (the test's own inputs, printed by a scratch copy of the
+test):
+
+| Build | Genuine | Flat, no signer | Tiny, no signer | Flat, signer | Tiny, signer |
+|---|---|---|---|---|---|
+| 1.98.1 debug | 0.86 to 0.90 ms | 38.2 to 42.8 ms | 37.3 to 39.3 ms | 45.4 to 46.7 ms | 71.4 to 76.2 ms |
+| 1.98.1 release | 0.58 to 0.64 ms | 10.8 to 15.8 ms | 9.9 to 15.5 ms | 17.7 to 28.6 ms | 27.8 to 42.2 ms |
+| 1.85.0 debug | 0.90 to 0.99 ms | 35.8 to 49.4 ms | 36.1 to 55.0 ms | 43.2 to 61.2 ms | 74.4 to 103.7 ms |
+
+Without a signer the ratio is near 1 in every build, so that bound is
+twice the flat input. Under a signer the tiny input also walks the
+payload up to the node budget, which the flat value does not: 1.6 times
+the flat input on 1.98.1 and up to 2.0 on 1.85.0 in debug, so that bound
+is three times. Twice would have left 1.85.0 debug about 8% of margin.
+The regression both bounds guard, the payload read in full before a
+signer is found, cost about 30 times the flat input. The full `hostile`
+suite passed five of five in each of the three builds.
+
+F4, the node budget's ceiling (`node_budget_inputs.py`): the shared
+receipt with one unsigned attribute of OBJECT IDENTIFIERs up to 100,000
+values in the envelope, and one value over. Native is a release build
+through `verify_der`, best and worst of five, from a scratch probe; Wasm
+is `wasm_cost.mjs files` on this round's module, second call on a fresh
+instance, three runs (`results/round3-node-budget-wasm.txt`). The machine
+was shared and loaded: compare the rows, not the absolute figures.
+
+| Input | Size | Answer | Native | `aprv.wasm` in V8 | Linear memory |
+|---|---|---|---|---|---|
+| the shared receipt | 3,380 B | verifies | 0.45 ms | 7.3 to 9.9 ms | 1.9 MiB |
+| 99,830 OIDs `06 01 2a` | 303 KB | verifies | 60 to 67 ms | 62 to 87 ms | 4.8 MiB |
+| 99,830 OIDs of 20 octets | 2.2 MB | verifies | 126 to 149 ms | 101 to 128 ms | 16.9 MiB |
+| 99,831 OIDs `06 01 2a` | 303 KB | `MALFORMED`, over the budget | 20 to 26 ms | 30 to 48 ms | 2.6 MiB |
+
+The walk hands every OBJECT IDENTIFIER to OpenSSL (`d2i_ASN1_TYPE`), and
+the full CMS decode then builds each again, so an input at the budget
+costs about three times one just over it, which the walk refuses before
+the decode. This is the most one anonymous request costs under the
+budget, as far as this round measured: 130 to 330 times a genuine call
+natively and 10 to 17 times through `aprv.wasm` in V8 here
+(the reviewer measured 112 to 268 ms against 2.6 ms). Interpreter hosts
+pay several times more. The review's alternative, counting a checked
+primitive's content length against the budget, was not tried: the brief
+asked for a bound change only with evidence that it keeps every shared
+case, and none was gathered.
+
+### Shared cases added
+
+Seven cases in `fixtures/cases.json`, fixtures
+`fixtures/generated-0.7/core-review-r3-*.der`, from
+`gen_fixtures_round3.py`, which reuses the round-1 generator's writer and
+its minted P-256 PKI (no key identifiers). All seven verify. The G1c
+module answers four otherwise, which shows each group pins a fix; the
+other three are their order twins.
+
+| Case | Core | G1c | Java |
+|---|---|---|---|
+| `receipt/verify-with-another-roots-same-named-intermediate-before-the-real-one-own-root-{first,second}` | ok | `UNTRUSTED_CHAIN` | ok |
+| `receipt/verify-with-another-roots-same-named-intermediate-after-the-real-one-own-root-{first,second}` | ok | ok | ok |
+| `receipt/verify-with-a-same-named-sibling-intermediate-before-the-real-one` | ok | `UNTRUSTED_CHAIN` | ok |
+| `receipt/verify-with-a-same-named-sibling-intermediate-after-the-real-one` | ok | ok | ok |
+| `receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks` | ok | `MALFORMED` | `MALFORMED` |
+
+Java (`mvn -B -T 1 -f java -Dtest=ConformanceCasesTest test`,
+`results/round3-java.txt`) passes 385 of 386: it answers the two-chunk
+signature `MALFORMED` ("receipt has trailing or unparseable bytes").
+DECISIONS.md R20 records the row; aligning Java is left to a J-align
+lane, since this lane does not edit `java/`.
+
+### The rebuilt module
+
+`rust/bindings/abi/build.sh` with lane D's toolchain install:
+
+| File | Bytes | SHA-256 |
+|---|---|---|
+| `aprv.wasm` | 2,764,700 | `4e9d2d85c7c1f9b6dbcabbd49c51783e2efd4832ac17994be732b63a98cdc9dd` |
+| `aprv.component.wasm` | 2,767,142 | `ccccbfb53b2d4643a3da3a58c30d355d503edfd69850ada6ebb2a3c3fa001fd2` |
+| `aprv.wit` | 692 | `2ba9315ef2db5c3533efed5af67b9854b40009aa2d05e73f054d967e9ec810fa` (unchanged) |
+
+- `tools/check-wasm.sh`: ok, one import (`results/round3-check-wasm.txt`).
+- Trap host `cases`: 384 of 384, 0 traps
+  (`results/round3-cases-trap-host.txt`); `abi-tests`: 0 failed, linear
+  memory 2,097,152 bytes before and after 2,000 calls
+  (`results/round3-abi-tests-node.txt`).
+- Wasmtime ABI tests (`rust/bindings/abi/tests`): 14 passed, the new
+  range test among them; on the G1c module that test fails, the first
+  range answered with a value (`results/round3-abi-tests-wasmtime.txt`).
+- Every answer to the shared cases (68 init, 369 receipt, 289 JWS) and
+  every corpus answer (3,922 receipt, 2,085 JWS, 1 init) validates against
+  the tightened schemas (`results/round3-schemas.txt`).
+- Against G1c's rows on the five corpora, the same pinned calls
+  (`$SCRATCH/g1c/same.py`, `results/round3-against-g1c.txt`): 6,173
+  identical, 6 differ in the message only, none in the verdict, 0 traps.
+  All six are fuzz mutants of a chain whose intermediate is not a CA and
+  whose mutation also broke that intermediate's signature over the signer
+  (checked with `cryptography`: the signature fails). OpenSSL used to build
+  the path through it and report "an intermediate is not a CA" first; the
+  narrowed bag no longer offers a certificate that signed nothing on the
+  path, so they report "chain does not reach a pinned root". That is F1's
+  shape. With the first, `keyUsage`-judging pairing, the unmutated
+  `substrate/pkix/receipt/intermediate-keyusage-without-certsign` changed
+  the same way; with the signature-only link it answers as before.
+- `cargo test --locked --workspace`: 700 passed, 0 failed, in debug and
+  in release; clippy `-D warnings` clean for the workspace and for
+  `aprv-abi` on `wasm32-wasip1`; `cargo fmt --check` clean with 1.98.1's
+  rustfmt; `cargo deny check bans licenses sources` ok
+  (`results/round3-deny.txt`); `node tools/lint-cases.mjs` ok, 384 cases;
+  `node tools/check-layering.mjs` ok (6 rules, 26 core packages);
+  `npm --prefix tools test` 31 of 31 with `APRV_WASM` set (three
+  `private-receipt-check` tests need the module); `rust/ffi/check-header.sh` current.
+
+### Where this stops holding
+
+- The fuzz campaign (`asan-openssl.sh`) was not run: no ASan OpenSSL build
+  here. Its new loop was run with a stand-in `run.sh` that fails two
+  targets: all five ran and both failures were named.
+- `tools/differential.sh` was not run end to end.
+- The guard on the `random-get` answer's range has no test: the Wasmtime
+  host answers from `cabi_realloc`, and no host here places the answer
+  elsewhere.
+- F4's native figures come from a scratch probe that timed the committed
+  generator's inputs; the probe is not committed.
+- Timings are one shared machine under load.

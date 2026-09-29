@@ -37,10 +37,15 @@ trap_host="${TRAP_HOST:-$repo/tools/wasm-trap-host.mjs}"
 recorded=(--recorded "$here/differential/recorded.json")
 for extra in ${RECORDED:-}; do recorded+=(--recorded "$extra"); done
 
-# The Java implementation as it is in this checkout, and the runner.
+# The Java implementation as it is in this checkout, and the runner. The
+# jar is this checkout's version (version.txt, which release-please keeps
+# equal to java/pom.xml's), never another version's jar left in
+# java/target.
 mvn -B -q -f "$repo/java/pom.xml" -DskipTests package dependency:build-classpath \
   -Dmdep.outputFile="$out/java.classpath" -Dmdep.includeScope=runtime >&2
-jar="$(ls "$repo"/java/target/apple-purchase-receipt-verifier-*.jar | grep -v -e '-sources' -e '-javadoc' -e '-tests' | head -n 1)"
+version="$(tr -d '[:space:]' < "$repo/version.txt")"
+jar="$repo/java/target/apple-purchase-receipt-verifier-$version.jar"
+[[ -f "$jar" ]] || { echo "differential: the build left no $jar (java/pom.xml's version is not $version?)" >&2; exit 2; }
 classpath="$jar:$(cat "$out/java.classpath")"
 mkdir -p "$out/classes"
 javac -d "$out/classes" -cp "$classpath" "$here/differential/Differential.java"
