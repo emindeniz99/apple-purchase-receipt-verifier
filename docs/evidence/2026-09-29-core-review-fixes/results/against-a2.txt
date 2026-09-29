@@ -1,0 +1,288 @@
+== cases: 153 rows: 153 identical, 0 message, 0 verdict, 0 missing
+== hostile: 811 rows: 809 identical, 2 message, 0 verdict, 0 missing
+  message hostile/receipt-der/g5-m1-72825101
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS SignedData
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message hostile/receipt-der/indef-nest-10k
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+== algorithms: 22 rows: 22 identical, 0 message, 0 verdict, 0 missing
+== substrate: 193 rows: 188 identical, 5 message, 0 verdict, 0 missing
+  message substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+== fuzz: 5000 rows: 4913 identical, 86 message, 1 verdict, 0 missing
+  message fuzz/1053/substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1117/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1219/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/123/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1299/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1338/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1510/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1527/receipt/reject-empty-cms-signature
+          05b4ad9: MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+  message fuzz/1559/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/156/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1600/substrate/parse/high-tag-number
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+  message fuzz/1602/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1678/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1766/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1803/substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1804/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1850/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/1957/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2006/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2093/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2221/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2241/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2318/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2377/substrate/parse/high-tag-number
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+  message fuzz/2419/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/246/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2509/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2555/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2562/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2630/substrate/parse/generated/trailing-zero
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+  message fuzz/2685/substrate/cms/digestalgorithms-sha1-only
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+  message fuzz/27/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/277/substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2858/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2891/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2903/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/2993/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/301/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/302/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3098/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3146/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3268/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/336/substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/342/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3420/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3468/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3519/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3580/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3689/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3799/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/3918/substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4014/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4040/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4071/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4083/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4165/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4169/substrate/parse/generated/trailing-sequence
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+  message fuzz/4191/substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4198/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4208/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4229/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4243/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4253/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4266/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4336/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4401/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4415/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4455/substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4504/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4507/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4537/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/46/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4777/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4797/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4807/substrate/parse/nesting-100000-indefinite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4827/substrate/cms/unsigned-attribute-nesting-100000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4865/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4911/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/4924/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/548/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/605/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/71/substrate/cms/unsigned-attribute-nesting-2000
+          05b4ad9: MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/802/substrate/cms/attributes-unsorted-signed-as-sent
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: bytes follow the CMS ContentInfo
+  message fuzz/814/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/817/substrate/parse/nesting-100000-unterminated
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  message fuzz/935/substrate/parse/nesting-2000-definite
+          05b4ad9: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+          now:     MALFORMED: malformed CMS structure: nested deeper than 32 constructed values
+  verdict fuzz/4378/substrate/flood/unsigned-attribute-values-10000
+          05b4ad9: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+          now:     MALFORMED: malformed CMS structure: not a CMS ContentInfo
+== all: 6085 identical, 93 message, 1 verdict, 0 missing

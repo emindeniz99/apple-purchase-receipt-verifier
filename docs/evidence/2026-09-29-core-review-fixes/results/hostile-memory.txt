@@ -1,0 +1,8 @@
+05b4ad9 (A2):
+run 0: 3145704 B of base64, 396.6 ms, linear memory 1966080 -> 77398016 B: {"verified":false,"reason":"MALFORMED","message":"signer certificate not embedded"}
+run 1: 3145704 B of base64, 325.4 ms, linear memory 1966080 -> 77398016 B: {"verified":false,"reason":"MALFORMED","message":"signer certificate not embedded"}
+run 2: 3145704 B of base64, 402.1 ms, linear memory 1966080 -> 77398016 B: {"verified":false,"reason":"MALFORMED","message":"signer certificate not embedded"}
+this lane:
+run 0: 3145704 B of base64, 26.1 ms, linear memory 1966080 -> 16908288 B: {"verified":false,"reason":"MALFORMED","message":"signer certificate not embedded"}
+run 1: 3145704 B of base64, 16.5 ms, linear memory 1966080 -> 16908288 B: {"verified":false,"reason":"MALFORMED","message":"signer certificate not embedded"}
+run 2: 3145704 B of base64, 16.6 ms, linear memory 1966080 -> 16908288 B: {"verified":false,"reason":"MALFORMED","message":"signer certificate not embedded"}

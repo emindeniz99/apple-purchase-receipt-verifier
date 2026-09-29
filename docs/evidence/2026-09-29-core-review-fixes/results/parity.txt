@@ -1,0 +1,356 @@
+module: 3009278 bytes, sha256 9c0a581c5a0b6e4e7f7ba66675f07ec00096fa95772ae27ad86d6049a1a0f263
+== cases
+trap host: {"host":"node v22.22.2 (trap host)","rows":153,"traps":0,"unexpected_imports":[],"instances_left":27}
+aprv.wasm against its native twin:
+  153 rows: 153 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+    153 identical
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+     31 different verdict, pre-existing (old core agrees with new)
+    122 same verdict
+           13 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+           10 ref endpoint 0  ->  0.7 endpoint 21003
+            3 ref endpoint 21007  ->  0.7 endpoint 21003
+            2 ref endpoint 21008  ->  0.7 endpoint 21003
+            2 ref endpoint 21009  ->  0.7 endpoint 21003
+            1 ref refused INVALID_CHAIN  ->  0.7 verified
+== hostile
+trap host: {"host":"node v22.22.2 (trap host)","rows":811,"traps":0,"unexpected_imports":[],"instances_left":3}
+aprv.wasm against its native twin:
+  811 rows: 811 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+      2 DIFFERENT
+     88 NOT_UTF8 in the text API, a value through the bytes
+     19 endpoint body not UTF-8: read lossily there, 21002 through the bytes
+    702 identical
+           20 verify-receipt: MALFORMED
+           19 verify-receipt-endpoint: 0 -> 21002
+           68 verify-signed-data: MALFORMED
+  DIFFERENT hostile/receipt-der/indef-nest-10k
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT hostile/receipt-der/g5-m1-72825101
+    openssl core: {"message": "malformed CMS structure: not a CMS SignedData", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: not a CMS ContentInfo"}
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+      9 different verdict, pre-existing (old core agrees with new)
+      2 not comparable (no 0.7 call, or the reference ABI refused the input)
+    800 same verdict
+            7 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            2 ref endpoint 21002  ->  0.7 endpoint 0
+== algorithms
+trap host: {"host":"node v22.22.2 (trap host)","rows":22,"traps":0,"unexpected_imports":[],"instances_left":22}
+aprv.wasm against its native twin:
+  22 rows: 22 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+     22 identical
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+     16 different verdict, pre-existing (old core agrees with new)
+      6 same verdict
+           16 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+== substrate
+trap host: {"host":"node v22.22.2 (trap host)","rows":193,"traps":0,"unexpected_imports":[],"instances_left":74}
+aprv.wasm against its native twin:
+  193 rows: 193 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+      5 DIFFERENT
+    188 identical
+  DIFFERENT substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+     65 different verdict, pre-existing (old core agrees with new)
+    128 same verdict
+           55 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            7 ref verified  ->  0.7 refused INVALID_CERTIFICATE
+            3 ref verified  ->  0.7 refused MALFORMED
+== fuzz
+trap host: {"host":"node v22.22.2 (trap host)","rows":5000,"traps":0,"unexpected_imports":[],"instances_left":96}
+aprv.wasm against its native twin:
+  5000 rows: 5000 identical, 0 differ, 0 traps
+aprv.wasm against the OpenSSL core's 0.7 API rows:
+     87 DIFFERENT
+    175 NOT_UTF8 in the text API, a value through the bytes
+   4738 identical
+          175 verify-signed-data: MALFORMED
+  DIFFERENT fuzz/27/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/46/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/71/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: bytes follow the CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/123/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/156/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/246/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/277/substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/301/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/302/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/336/substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/342/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/548/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/605/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/802/substrate/cms/attributes-unsorted-signed-as-sent
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: bytes follow the CMS ContentInfo"}
+  DIFFERENT fuzz/814/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/817/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/935/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1053/substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1117/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1219/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1299/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1338/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1510/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1527/receipt/reject-empty-cms-signature
+    openssl core: {"message": "malformed CMS structure: bytes follow the CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: not a CMS ContentInfo"}
+  DIFFERENT fuzz/1559/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1600/substrate/parse/high-tag-number
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: bytes follow the CMS ContentInfo"}
+  DIFFERENT fuzz/1602/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: bytes follow the CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1678/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1766/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1803/substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1804/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1850/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/1957/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2006/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2093/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: a SignerInfo value is not ASN.1 nested at most 32 deep", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2221/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2241/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2318/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2377/substrate/parse/high-tag-number
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: bytes follow the CMS ContentInfo"}
+  DIFFERENT fuzz/2419/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2509/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2555/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2562/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2630/substrate/parse/generated/trailing-zero
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: bytes follow the CMS ContentInfo"}
+  DIFFERENT fuzz/2685/substrate/cms/digestalgorithms-sha1-only
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: bytes follow the CMS ContentInfo"}
+  DIFFERENT fuzz/2858/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2891/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2903/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/2993/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3098/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3146/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3268/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3420/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3468/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3519/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3580/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3689/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3799/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/3918/substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4014/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4040/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4071/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4083/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4165/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4169/substrate/parse/generated/trailing-sequence
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: bytes follow the CMS ContentInfo"}
+  DIFFERENT fuzz/4191/substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4198/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4208/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4229/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4243/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4253/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: bytes follow the CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4266/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4336/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4378/substrate/flood/unsigned-attribute-values-10000
+    openssl core: {"message": "receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1", "reason": "INVALID_CERTIFICATE_PURPOSE", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: not a CMS ContentInfo"}
+  DIFFERENT fuzz/4401/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4415/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4455/substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4504/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4507/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4537/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4777/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4797/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4807/substrate/parse/nesting-100000-indefinite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4827/substrate/cms/unsigned-attribute-nesting-100000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4865/substrate/parse/nesting-2000-definite
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4911/substrate/parse/nesting-100000-unterminated
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+  DIFFERENT fuzz/4924/substrate/cms/unsigned-attribute-nesting-2000
+    openssl core: {"message": "malformed CMS structure: not a CMS ContentInfo", "reason": "MALFORMED", "verified": false}
+    aprv.wasm:    {"verified": false, "reason": "MALFORMED", "message": "malformed CMS structure: nested deeper than 32 constructed values"}
+aprv.wasm against the ABI v1 Node rows, on the verdict (old = the pre-migration 0.7 core):
+     28 different verdict, pre-existing (old core agrees with new)
+   4972 same verdict
+           19 ref verified  ->  0.7 refused INVALID_CERTIFICATE_PURPOSE
+            9 ref verified  ->  0.7 refused MALFORMED
+validate-wire: 3922 answers in answers-verify-receipt.jsonl validate against verify-receipt-result.schema.json
+validate-wire: 2085 answers in answers-verify-signed-data.jsonl validate against verify-signed-data-result.schema.json
+validate-wire: 1 answers in answers-init.jsonl validate against init-result.schema.json
