@@ -218,6 +218,7 @@ too. `scripts/docker-smoke.sh IMAGE` checks all of this.
 | Unit and in-process tests | `APRV_TEST_COMPONENT=<component .wasm> cargo test --features compile` (the real component over the router; hostile components: an infinite loop, a 1 GiB grow, a non-UTF-8 result, a 1 GiB `random-get`). Two tests are `#[ignore]`d until lane A's files exist: the WIT against `rust/bindings/abi/wit/aprv.wit`, and the wire schemas bundled into `/openapi.json` |
 | The 311 cases | `scripts/cases.py --aprv <binary>`, over HTTP and the CLI |
 | The corpus | `scripts/corpus.py --aprv <binary> --calls ... --node ... --mode http\|cli` |
+| Limits in a real process | `scripts/hostile-smoke.sh <full build>` (the hostile component of `tests/hostile.wat`) |
 | Managed mode | `scripts/managed-smoke.py --aprv <binary>` |
 | Start-up, for the record | `scripts/startup.py --aprv <binary>` |
 | OpenAPI | `npx @stoplight/spectral-cli lint --fail-severity=hint openapi.yaml` (ruleset `.spectral.yaml`); Schemathesis against a running server |

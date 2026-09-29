@@ -43,6 +43,7 @@ mkdir -p /tmp/empty && cp $BIN /tmp/empty/aprv && sudo chroot /tmp/empty /aprv i
 
 python3 scripts/cases.py --aprv $BIN --mode both --list     # the 311 cases
 python3 scripts/managed-smoke.py --aprv $BIN
+sh scripts/hostile-smoke.sh target/<host triple>/release/aprv   # the full build step 1 left; needs wasm-tools
 python3 scripts/corpus.py --aprv $BIN --calls $CALLS --node $NODE_ROWS --mode http --lifecycle fresh
 python3 scripts/corpus.py --aprv $BIN --calls $CALLS --node $NODE_ROWS --mode http --lifecycle pool
 python3 scripts/corpus.py --aprv $BIN --calls $CALLS --node $NODE_ROWS --mode cli
