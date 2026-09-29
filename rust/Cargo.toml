@@ -31,8 +31,11 @@ path = "src/lib.rs"
 #
 # `deny.toml` bans, as a build-breaking rule, every crate that could bring a
 # system trust store or a network client into the tree.
+#
+# The adapter is published beside this crate at the same version, so its
+# requirement moves with every release (release-please-config.json).
 [dependencies]
-aprv-openssl = { path = "openssl", default-features = false }
+aprv-openssl = { version = "0.7.0", path = "openssl", default-features = false } # x-release-please-version
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 serde_json = "1"
 
