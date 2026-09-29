@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# The cross-port benchmark: the same six operations on the same two genuine
+# The cross-port benchmark: the same operations on the same two genuine
 # sandbox receipts in every port, named after the Java JMH benchmarks in
 # java-bench/ (BENCHMARKS.md at the repository root has the table).
 #
@@ -92,7 +92,6 @@ module CrossPortBench
 
     # Every call once, with the answer the conformance suite expects, so no
     # benchmark can time a fast failure by accident.
-    check(APRV::Receipt.decode_canonical_base64(base64) == der, "decodeBase64")
     result = verifier.verify_receipt(base64)
     check(result.verified?, "verifyReceipt")
     check(result.payload.bundle_id == bundle_id && result.payload.in_app.size == in_app_count, "receipt")
@@ -104,10 +103,10 @@ module CrossPortBench
     check(!rejected.verified? && rejected.failure.reason == :INVALID_SIGNATURE, "rejectTamperedSignature")
 
     [
-      measure("decodeBase64", name) { APRV::Receipt.decode_canonical_base64(base64) },
-      # 0.7 has no DER entry point: "core" and "verifierBase64" are both
-      # verify_receipt over the base64, so both include the decode that
-      # 0.6's "core" did not.
+      # There is no separate decode step to time: the module decodes inside
+      # verify_receipt, so "decodeBase64" has no row here. 0.7 has no DER
+      # entry point either: "core" and "verifierBase64" are both
+      # verify_receipt over the base64.
       measure("core", name) { verifier.verify_receipt(base64) },
       measure("verifierBase64", name) { verifier.verify_receipt(base64) },
       measure("endpointJson", name) do
@@ -123,14 +122,19 @@ module CrossPortBench
     ]
   end
 
+  def module_sha256
+    Digest::SHA256.file(APRV::Runtime::MODULE_PATH).hexdigest
+  end
+
   def main
-    # The roots are parsed once, here, and never per call.
+    # The module is compiled and the roots parsed once, here, and never per call.
     verifier = APRV::Verifier.create(APRV::Config.new(clock: -> { NOW_MILLIS }))
     results = FIXTURES.flat_map { |fixture| run_fixture(*fixture, verifier) }
     puts JSON.pretty_generate(
       port: "ruby",
       tool: "bench/bench.rb (Process.clock_gettime)",
-      runtime: "#{RUBY_ENGINE} #{RUBY_VERSION}, #{OpenSSL::OPENSSL_LIBRARY_VERSION}",
+      runtime: "#{RUBY_ENGINE} #{RUBY_VERSION}, wasmtime #{Wasmtime::VERSION}, " \
+               "aprv.wasm #{module_sha256[0, 12]}",
       settings: { warmup_s: WARMUP_S, samples: SAMPLES, min_sample_s: MIN_SAMPLE_S },
       results: results
     )
