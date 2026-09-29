@@ -1,7 +1,15 @@
 <!--
   A clean consumer of the packed library: the package comes from a local folder
   feed and Wasmtime from nuget.org (nuget.config written by
-  scripts/consumer.sh), into an empty NUGET_PACKAGES.
+  scripts/consumer.sh), into an empty NUGET_PACKAGES. The script builds it with
+  -p:AprvPackageVersion=<the packed version>.
+
+  The PackageReference is conditional because tools restore this project
+  without that property: GitHub's dependency submission restores every csproj
+  in the repository, and the package is not on nuget.org before it is
+  published, so an unconditional reference failed that restore (NU1101).
+  Without the property the project restores with no packages, and building it
+  then stops at CS0246 on the missing ApplePurchaseReceiptVerifier namespace.
 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
@@ -9,7 +17,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="ApplePurchaseReceiptVerifier" Version="0.7.0" />
+  <ItemGroup Condition="'$(AprvPackageVersion)' != ''">
+    <PackageReference Include="ApplePurchaseReceiptVerifier" Version="[$(AprvPackageVersion)]" />
   </ItemGroup>
 </Project>
