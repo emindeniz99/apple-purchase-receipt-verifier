@@ -1,16 +1,17 @@
 # frozen_string_literal: true
 
-require "openssl"
-
 module ApplePurchaseReceiptVerifier
   # Immutable {Verifier} configuration: the pinned trust anchors and the
   # clock.
   #
   # The clock answers "what time is it now?" and nothing else. The library
-  # reads it at most once per call, and only for one of two things: the
+  # reads it once per call, before it looks at the input, and passes the
+  # value to the module, which uses it for one of two things: the
   # certificate-validity instant when the receipt or JWS carries no usable
-  # signing date, and `request_date` in the endpoint response. A
-  # caller-supplied clock must be safe to call from several threads.
+  # signing date, and `request_date` in the endpoint response. A clock that
+  # raises, or answers anything but an Integer in 0..2**63-1, makes the call
+  # INTERNAL_ERROR. A caller-supplied clock must be safe to call from several
+  # threads.
   #
   #   Config.defaults                                   # Apple's pinned roots + the system clock
   #   Config.new(roots: my_roots, clock: -> { Time.now.to_i * 1000 })
@@ -20,8 +21,9 @@ module ApplePurchaseReceiptVerifier
     # {#clock} of {defaults} and of a {Builder} whose `clock` is never set.
     SYSTEM_CLOCK = -> { (Time.now.to_r * 1000).to_i }
 
-    # @return [Array<OpenSSL::X509::Certificate>] the pinned trust anchors,
-    #   frozen
+    # @return [Array<String>] the caller's pinned trust anchors as frozen DER
+    #   strings; empty for {defaults}, whose three Apple roots are compiled
+    #   into the module and pinned there
     attr_reader :roots
 
     # @return [#call] a proc (or any object responding to `#call`) returning
@@ -29,13 +31,9 @@ module ApplePurchaseReceiptVerifier
     attr_reader :clock
 
     class << self
-      # Apple's three pinned roots and the system clock.
-      #
-      # The bundled roots load all together or not at all, each checked
-      # against its published SHA-256 fingerprint (Roots). Should they not
-      # load, {#roots} is empty and every {Verifier} built from this answers
-      # INTERNAL_ERROR to every call, rather than the misleading
-      # UNTRUSTED_CHAIN an empty anchor set would otherwise produce.
+      # Apple's three pinned roots and the system clock. The roots are the
+      # ones compiled into `aprv.wasm`, each checked there against its
+      # published SHA-256 fingerprint.
       #
       # @return [Config]
       def defaults
@@ -48,34 +46,62 @@ module ApplePurchaseReceiptVerifier
       end
     end
 
-    # @param roots [Array<OpenSSL::X509::Certificate, String>, nil] pinned
-    #   anchors, as certificate objects or DER/PEM strings; Apple's bundled
-    #   roots when omitted
+    # @param roots [Array<#to_der, String>, nil] pinned anchors, as
+    #   certificate objects (anything answering `#to_der`, such as an
+    #   OpenSSL certificate object) or DER or PEM strings; Apple's bundled
+    #   roots when omitted. An empty Array is not "no roots": {Verifier.create}
+    #   refuses it. A string the module does not accept as a certificate is
+    #   refused there too.
     # @param clock [#call, nil] the system clock when omitted
-    # @raise [ArgumentError] a `roots` entry is neither a certificate nor a
-    #   String, or `clock` does not respond to `#call`
+    # @raise [ArgumentError] `roots` is not an Array, an entry is neither a
+    #   certificate object nor a String, or `clock` does not respond to `#call`
     def initialize(roots: nil, clock: nil)
-      @roots = roots.nil? ? Roots.apple_roots : normalize(roots)
+      @custom_roots = !roots.nil?
+      @roots = roots.nil? ? none : normalize(roots)
       raise ArgumentError, "clock must respond to #call" if !clock.nil? && !clock.respond_to?(:call)
 
       @clock = clock || SYSTEM_CLOCK
       freeze
     end
 
+    # Whether the caller chose the roots, as opposed to taking Apple's.
+    #
+    # @api private
+    def custom_roots?
+      @custom_roots
+    end
+
     private
+
+    PEM = /-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----/m
+    private_constant :PEM
+
+    def none
+      empty = [] #: Array[String]
+      empty.freeze
+    end
 
     def normalize(roots)
       raise ArgumentError, "roots must be an Array" unless roots.is_a?(Array)
 
-      roots.map do |root|
-        case root
-        when OpenSSL::X509::Certificate then root
-        when String then OpenSSL::X509::Certificate.new(root)
-        else
-          raise ArgumentError,
-                "roots entries must be OpenSSL::X509::Certificate or DER/PEM String, got #{root.class}"
-        end
-      end.freeze
+      roots.map { |root| der_of(root) }.freeze
+    end
+
+    # The bytes the module is given for one root. Only the container is
+    # unwrapped here (a certificate object to its DER, PEM to DER); whether
+    # the bytes are a certificate is the module's to say, at `init`.
+    def der_of(root)
+      return root.to_der.b.freeze if root.respond_to?(:to_der)
+      unless root.is_a?(String)
+        raise ArgumentError,
+              "roots entries must be certificate objects (#to_der) or DER/PEM Strings, got #{root.class}"
+      end
+
+      match = PEM.match(root)
+      return root.b.freeze if match.nil? && !root.include?("-----BEGIN")
+      raise ArgumentError, "a PEM roots entry is not a CERTIFICATE block" if match.nil?
+
+      match[1].to_s.gsub(/\s+/, "").unpack1("m").to_s.freeze
     end
 
     # Builds a {Config} from parts set one at a time. Every 0.7 port offers
@@ -87,7 +113,7 @@ module ApplePurchaseReceiptVerifier
         @clock = nil
       end
 
-      # @param roots [Array<OpenSSL::X509::Certificate, String>]
+      # @param roots [Array<#to_der, String>]
       # @return [self]
       def roots(roots)
         @roots = roots

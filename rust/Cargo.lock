@@ -143,6 +143,7 @@ dependencies = [
  "aprv-surface",
  "base64",
  "jsonschema",
+ "serde",
  "serde_json",
 ]
 

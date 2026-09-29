@@ -1,13 +1,5 @@
+import ApplePurchaseReceiptVerifier
 import Foundation
-
-// `@testable` rather than a plain import: `decodeReceiptBase64`,
-// `decodeBase64URLStrict` and the receipt payload parser are internal, and
-// they are the readers this port writes by hand. Reaching them only through
-// a verifier would mean fuzzing them behind a chain build, which is
-// thousands of times slower per execution and hides which layer rejected an
-// input. Everything internal is touched here and re-exported as the shims
-// below, so exactly one file in this package depends on `-enable-testing`.
-@testable import ApplePurchaseReceiptVerifier
 
 // MARK: - Fixtures
 
@@ -74,11 +66,10 @@ public enum Fixtures {
 // MARK: - Invariants
 
 /// 0.7's verify methods never throw; what a fuzzer can still catch is the
-/// wrong verdict class. `INTERNAL_ERROR` means the library itself broke, and
-/// the design allows input to reach it only through a missing trust anchor,
-/// which no target here configures — so any input that produces it is a
-/// finding: an attacker who can send bytes could raise the internal-error
-/// alarm at will.
+/// wrong verdict class. `INTERNAL_ERROR` means the library itself broke: the
+/// verification module trapped, answered outside its memory or outside the
+/// wire's shape — so any input that produces it is a finding: an attacker
+/// who can send bytes could raise the internal-error alarm at will.
 public func requireNoInternalError<T>(
     _ result: VerificationResult<T>, _ what: String
 ) {
@@ -96,38 +87,6 @@ public func fail(_ message: String) -> Never {
     // would be silently forgotten by the next execution.
     FileHandle.standardError.write(Data("fuzz invariant violated: \(message)\n".utf8))
     fatalError("fuzz invariant violated: \(message)")
-}
-
-// MARK: - The library's hand-written readers, re-exported
-
-/// The readers this port writes by hand, exposed so the `readers` and
-/// `receipt-payload` targets can drive them directly rather than through a
-/// verifier.
-public enum Readers {
-    /// The receipt base64 rule: canonical standard base64 and nothing else.
-    public static func decodeReceiptBase64(_ text: String) -> [UInt8]? {
-        ApplePurchaseReceiptVerifier.decodeReceiptBase64(text)
-    }
-
-    /// Strict unpadded canonical base64url — the compact-JWS segment rule.
-    public static func base64URLDecode(_ segment: String) -> [UInt8]? {
-        ApplePurchaseReceiptVerifier.decodeBase64URLStrict(segment)
-    }
-
-    /// The full payload parse, as it runs after a signature has verified:
-    /// the payload, or the error that becomes `UNREADABLE_PAYLOAD`'s cause.
-    public static func parseReceiptPayload(_ content: [UInt8]) -> Result<ReceiptPayload, any Error> {
-        Result { try ApplePurchaseReceiptVerifier.parseReceiptPayload(content) }
-    }
-
-    /// Whether `error` is the payload parser's own error type, the one the
-    /// verifier hands a caller as the cause.
-    public static func isPayloadError(_ error: any Error) -> Bool { error is PayloadError }
-
-    /// The unverified read of attribute 12 that picks the chain instant.
-    public static func readCreationDate(_ content: [UInt8]) -> Int64? {
-        ApplePurchaseReceiptVerifier.readCreationDate(content)
-    }
 }
 
 // MARK: - libFuzzer input

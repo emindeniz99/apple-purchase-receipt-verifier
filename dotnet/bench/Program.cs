@@ -22,7 +22,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -46,16 +45,6 @@ namespace ApplePurchaseReceiptVerifier.Bench
             ("receipt-sandbox-legacy", "com.nutcall.alert", 187,
                 "ec62c6bd4a34bd8e56b11e675bf5a28319ce69b71d050e73344bab22f46799a8"),
         };
-
-        // The library's own receipt-data decoder is internal. Reflection
-        // rather than an InternalsVisibleTo entry, as in fuzz/: the library
-        // is what ships and this project must not change it. The delegate is
-        // bound once, so each call costs a delegate invocation.
-        private static readonly Func<string, byte[]> DecodeBase64 =
-            (Func<string, byte[]>)typeof(IVerifier).Assembly
-                .GetType("ApplePurchaseReceiptVerifier.Internal.ReceiptVerifierCore", throwOnError: true)!
-                .GetMethod("DecodeBase64", BindingFlags.Static | BindingFlags.NonPublic, null, new[] { typeof(string) }, null)!
-                .CreateDelegate(typeof(Func<string, byte[]>));
 
         // Keeps each result reachable so no call can be optimized away.
         private static object? s_sink;
@@ -96,7 +85,6 @@ namespace ApplePurchaseReceiptVerifier.Bench
 
                 // Every call once, with the answer the conformance suite
                 // expects, so no benchmark can time a fast failure by accident.
-                Check(DecodeBase64(base64).AsSpan().SequenceEqual(der), "decodeBase64");
                 VerificationResult<ReceiptPayload> verified = verifier.VerifyReceipt(base64);
                 Check(
                     verified.Verified && verified.Payload!.BundleId == bundleId && verified.Payload!.InApp.Count == inAppCount,
@@ -112,7 +100,6 @@ namespace ApplePurchaseReceiptVerifier.Bench
                     RejectTampered() is Failure { Reason: VerificationReason.InvalidSignature },
                     "rejectTamperedSignature");
 
-                results.Add(Measure("decodeBase64", name, () => DecodeBase64(base64)));
                 results.Add(Measure("verifyReceipt", name, () => verifier.VerifyReceipt(base64)));
                 results.Add(Measure("endpointJson", name, () => verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, requestJson)));
                 results.Add(Measure("rejectTamperedSignature", name, RejectTampered));

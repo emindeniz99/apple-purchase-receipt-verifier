@@ -9,7 +9,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
 /// The single most likely .NET-only bug in this port: a hostile culture
-/// reaching a parse or a rendering. Turkish has a dotless <c>ı</c> that breaks
+/// reaching a parse or a rendering of what the module answers. Turkish has a dotless <c>ı</c> that breaks
 /// case-insensitive ASCII comparison, Thai defaults to the Buddhist calendar
 /// (year 2567 for 2024), German writes a comma for the decimal separator, and
 /// Arabic (Saudi Arabia) defaults to the Hijri calendar.
@@ -39,54 +39,51 @@ public class CultureTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Reading the module's answer: ids, dates and byte fields come out the
+    /// same whatever the culture, on this thread and on another.
+    /// </summary>
     [Theory]
     [MemberData(nameof(HostileCultures))]
-    public void ReceiptDatesAndToJsonAreIdenticalUnderAnyCulture(string culture)
+    public void ReadingAReceiptAnswerIsIdenticalUnderAnyCulture(string culture)
     {
-        string invariant = VerifyReceipt().ToJson();
+        ReceiptPayload expected = SyntheticAnswers.Receipt();
+        string answer = SyntheticAnswers.Verified(expected);
+        string invariant = expected.ToJson();
 
         Use(culture);
-        ReceiptPayload receipt = VerifyReceipt();
+        ReceiptPayload receipt = Read(answer);
 
         Assert.Equal(1722945600000L, receipt.ReceiptCreationDateMs);
+        Assert.Equal(1234567890123456789L, receipt.AppItemId);
         Assert.Contains(receipt.InApp, p => p.PurchaseDateMs == 1705320000000L);
         Assert.Equal(invariant, receipt.ToJson());
-        Assert.Equal(invariant, Task.Run(() => VerifyReceipt().ToJson()).GetAwaiter().GetResult());
+        Assert.Equal(invariant, Task.Run(() => Read(answer).ToJson()).GetAwaiter().GetResult());
     }
 
+    /// <summary>The endpoint's answer is the module's text, untouched, under any culture.</summary>
     [Theory]
     [MemberData(nameof(HostileCultures))]
-    public void TheEndpointRendersIdenticallyUnderAnyCulture(string culture)
+    public void TheEndpointAnswerIsPassedThroughIdenticallyUnderAnyCulture(string culture)
     {
+        string invariant = EndpointAnswer();
+
         Use(culture);
-        OrderedMap receipt = (OrderedMap)Json.ParseObject(EndpointAnswer())["receipt"]!;
-
-        // A Buddhist or Hijri calendar would render another year, and a
-        // comma-decimal culture would corrupt the millisecond strings.
-        Assert.Equal("2024-08-06 12:00:00 Etc/GMT", receipt["receipt_creation_date"]);
-        Assert.Equal("2024-08-06 05:00:00 America/Los_Angeles", receipt["receipt_creation_date_pst"]);
-        Assert.Equal("1722945600000", receipt["receipt_creation_date_ms"]);
-        Assert.Equal("2025-01-01 00:00:00 Etc/GMT", receipt["request_date"]);
-        Assert.Equal("1735689600000", receipt["request_date_ms"]);
-        OrderedMap first = (OrderedMap)((System.Collections.Generic.List<object?>)receipt["in_app"]!)[0]!;
-        Assert.Equal("1", first["quantity"]);
-
-        Assert.Equal(EndpointAnswer(), Task.Run(EndpointAnswer).GetAwaiter().GetResult());
+        Assert.Equal(invariant, EndpointAnswer());
+        Assert.Equal(invariant, Task.Run(EndpointAnswer).GetAwaiter().GetResult());
     }
 
+    /// <summary>A signed JWS payload is the module's string, untouched, under any culture.</summary>
     [Theory]
     [MemberData(nameof(HostileCultures))]
-    public void AJwsSignedDateIsReadIdenticallyUnderAnyCulture(string culture)
+    public void AJwsPayloadIsPassedThroughIdenticallyUnderAnyCulture(string culture)
     {
-        Use(culture);
+        string payload = "{\"signedDate\":1722945600000.5,\"price\":1.5,\"n\":\"\u0131\"}";
+        AprvRuntime runtime = new(new StubModule { SignedDataAnswer = SyntheticAnswers.VerifiedJws(payload) }.ToWasm(), null);
+        VerifierImpl verifier = new(Config.Defaults(), runtime);
 
-        // The decimal spelling is the one a comma-decimal culture would
-        // misread; misread, the signedDate would not parse, the clock (far
-        // past the chain) would stand in and the JWS would fail.
-        Assert.True(TestPki.FixtureVerifier("jws-root", 4070908800000L)
-            .VerifySignedData(Fixtures070.ForSignedData("transaction")).Verified);
-        Assert.True(TestPki.FixtureVerifier("hostile-jws-root", 4070908800000L)
-            .VerifySignedData(Fixtures070.ForSignedData("transaction-signed-date-decimal")).Verified);
+        Use(culture);
+        Assert.Equal(payload, verifier.VerifySignedData("x").Payload?.Json);
     }
 
     /// <summary>
@@ -109,19 +106,17 @@ public class CultureTests : IDisposable
 
         Assert.Equal(AppleEnvironment.Production, AppleEnvironments.FromReceiptType("ProductionVPP"));
         Assert.Equal(AppleEnvironment.Sandbox, AppleEnvironments.FromJwsEnvironment("Sandbox"));
-        Assert.Equal("Production", AppleEnvironments.ToValue(AppleEnvironment.Production));
     }
 
-    private static ReceiptPayload VerifyReceipt()
+    private static ReceiptPayload Read(string answer)
     {
-        VerificationResult<ReceiptPayload> result =
-            TestPki.FixtureVerifier("receipt-root").VerifyReceipt(Fixtures070.ForReceipt("receipt"));
+        VerificationResult<ReceiptPayload> result = ModuleAnswers.ReadReceipt(answer);
         Assert.True(result.Verified, result.Failure?.ToString());
         return result.Payload;
     }
 
     private static string EndpointAnswer() =>
-        TestPki.FixtureVerifier("receipt-root", 1735689600000L).VerifyReceiptEndpoint(
+        TestRoots.FixtureVerifier("receipt-root", 1735689600000L).VerifyReceiptEndpoint(
             AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt") + "\"}");
 
     private static void Use(string culture)

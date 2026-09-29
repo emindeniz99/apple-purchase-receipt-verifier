@@ -129,10 +129,13 @@ fn verify_signature(
     clock: &Clock<'_>,
 ) -> Result<Vec<u8>, Failure> {
     // The adapter bounds the envelope before its full decode, which builds
-    // each embedded certificate's public key: a header walk under the depth
-    // and node bounds, then a shallow decode that keeps every member raw
-    // and is counted against the SignerInfo, certificate and CRL bounds.
-    // An unverified receipt cannot make the caller pay for a thousand keys
+    // each embedded certificate's public key: first a header walk under the
+    // depth and node bounds, which allocates nothing, then a shallow decode
+    // that keeps every member raw and is counted against the SignerInfo,
+    // certificate and CRL bounds. The walk comes first because the shallow
+    // decode allocates per member, so a set of a million tiny entries is
+    // refused by the node budget before any of them is built. An
+    // unverified receipt cannot make the caller pay for a thousand keys
     // before a single one is judged or tried as an issuer, and an envelope
     // the walk or the shallow decode refuses never reaches the full decode.
     let mut cms = SignedData::parse(der, &ENVELOPE_LIMITS).map_err(envelope_failure)?;

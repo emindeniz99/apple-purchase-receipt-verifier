@@ -5,10 +5,11 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 // Runs fixtures/cases.json — the normative cross-language conformance
-// vectors for the 0.7 API — against BOTH builds (the default Node entry
-// point and the WebCrypto-only /web entry point), through the same
-// adapter, so a vector that disagrees with either build is a bug report
-// against one of the two, never something special-cased here.
+// vectors for the 0.7 API — against BOTH entry points (the synchronous
+// default one and the Promise-returning /web one), through the same
+// adapter. Both run aprv.wasm, so a vector that fails here is a bug report
+// against the module or this package's facade over it, never something
+// special-cased here.
 
 import * as nodeBuild from '../dist/index.js';
 import * as webBuild from '../dist/web/index.js';
@@ -209,6 +210,15 @@ function trustedRootsOption(build, spec) {
  * `node:test` subtests. `sync` is false for the web build, whose
  * `createConfig`/`createVerifier` calls all return Promises.
  */
+const b64url = (text) => Buffer.from(text, 'utf8').toString('base64url');
+const X5C_FILLER = 'MA=='; // an empty SEQUENCE: base64 that decodes, and no certificate
+
+/** A JWS whose header carries `x5c0` as its first x5c entry, and nothing else wrong before it. */
+function jwsCarrying(x5c0) {
+  const header = JSON.stringify({ alg: 'ES256', x5c: [x5c0, X5C_FILLER, X5C_FILLER] });
+  return `${b64url(header)}.${b64url('{}')}.${b64url('signature')}`;
+}
+
 function defineTargetTests(name, build, async_) {
   const ENV = { PRODUCTION: build.Environment.PRODUCTION, SANDBOX: build.Environment.SANDBOX };
 
@@ -343,44 +353,64 @@ function defineTargetTests(name, build, async_) {
   }
 
   // --- decodeBase64 -------------------------------------------------------
+  //
+  // The package has no base64 decoder of its own: the module decodes. So,
+  // as docs/rust-core/SURFACE.md §6 has it, a `receipt-data` text runs
+  // through verifyReceipt, and an `x5c` text runs through verifySignedData
+  // as the first x5c entry of a JWS that is otherwise well formed. A text
+  // the rule accepts decodes to bytes that are no receipt and no
+  // certificate, so both groups fail, and the two are told apart this way:
+  //
+  // - an accepted text must get exactly the answer the canonical base64 of
+  //   the case's bytesHex gets: the same bytes reached the parser;
+  // - a refused text must get the decoder's reason with a message about the
+  //   text itself (it names base64, or says the text is empty), never a
+  //   parser's.
 
   const DECODERS = {
-    'receipt-data': { decode: build.decodeReceiptBase64, refusal: 'MALFORMED' },
-    x5c: { decode: build.decodeX5cEntry, refusal: 'INVALID_CERTIFICATE' },
+    'receipt-data': {
+      run: (verifier, text) => verifier.verifyReceipt(text),
+      refusal: 'MALFORMED',
+    },
+    x5c: {
+      run: (verifier, text) => verifier.verifySignedData(jwsCarrying(text)),
+      refusal: 'INVALID_CERTIFICATE',
+    },
   };
 
-  function runDecodeBase64Case(kase) {
+  async function runDecodeBase64Case(kase) {
     const { texts } = kase.input;
-    const { status, bytesHex } = kase.expected;
+    const { status } = kase.expected;
+    const verifier = build.createVerifier(await build.createConfig());
     const failures = [];
-    for (const name2 of kase.decoders) {
-      const decoder = DECODERS[name2];
+    for (const decoderName of kase.decoders) {
+      const decoder = DECODERS[decoderName];
       if (decoder === undefined) {
-        throw new Error(`harness error: no decoder "${name2}"`);
+        throw new Error(`harness error: no decoder "${decoderName}"`);
       }
-      texts.forEach((text, index) => {
-        const where = `${kase.id}: ${name2} texts[${index}] ${JSON.stringify(text)}`;
-        let decoded;
-        try {
-          decoded = Buffer.from(decoder.decode(text)).toString('hex');
-        } catch (error) {
-          if (!(error instanceof build.VerificationError)) {
+      for (const [index, text] of texts.entries()) {
+        const where = `${kase.id}: ${decoderName} texts[${index}] ${JSON.stringify(text)}`;
+        // oxlint-disable-next-line no-await-in-loop -- one text at a time, so a failure names its text
+        const result = await decoder.run(verifier, text);
+        if (result.verified) {
+          failures.push(`${where} verified`);
+          continue;
+        }
+        const { reason, message } = result.failure;
+        if (status === 'ok') {
+          const canonical = Buffer.from(kase.expected.bytesHex, 'hex').toString('base64');
+          // oxlint-disable-next-line no-await-in-loop -- as above
+          const same = await decoder.run(verifier, canonical);
+          if (reason !== same.failure?.reason || message !== same.failure?.message) {
             failures.push(
-              `${where}: harness error: threw ${error?.constructor?.name} (${error?.message})`,
+              `${where} answered ${reason}: ${message}; the canonical ${JSON.stringify(canonical)} ` +
+                `answered ${same.failure?.reason}: ${same.failure?.message}`,
             );
-          } else if (status === 'ok') {
-            failures.push(`${where} was refused (${error.reason}), want ${bytesHex}`);
-          } else if (error.reason !== decoder.refusal) {
-            failures.push(`${where}: reason ${error.reason}, want ${decoder.refusal}`);
           }
-          return;
+        } else if (reason !== decoder.refusal || !/base64|empty/i.test(message)) {
+          failures.push(`${where} got past the base64 rule (${reason}: ${message})`);
         }
-        if (status === 'error') {
-          failures.push(`${where} was accepted (decoded to ${decoded})`);
-        } else if (decoded !== bytesHex) {
-          failures.push(`${where} decoded to ${decoded}, want ${bytesHex}`);
-        }
-      });
+      }
     }
     assert.deepEqual(failures, [], failures.join('\n'));
   }
@@ -393,7 +423,7 @@ function defineTargetTests(name, build, async_) {
     test(`${name} ${kase.id}`, async () => {
       RAN.add(kase.id);
       if (kase.operation === 'decodeBase64') {
-        runDecodeBase64Case(kase);
+        await runDecodeBase64Case(kase);
         return;
       }
       if (kase.maxMillis !== undefined) {

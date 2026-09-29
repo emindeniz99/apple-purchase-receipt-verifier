@@ -1,21 +1,21 @@
 # Static analysis for the PHP port.
 #
-# Level max is realistic on hand-written parser code because the types are
-# simple: strings, ints and lists of nodes.
+# Level max: the package is a façade whose types are simple (strings, ints,
+# the module's decoded JSON narrowed on the way in).
 #
-# The banned-function gate that the plan wanted here — no openssl_cms_verify,
-# no openssl_pkcs7_verify, no openssl_x509_checkpurpose, no network call —
-# is NOT configured in this file, because PHPStan has no built-in rule for it
-# and adding spaze/phpstan-disallowed-calls would be a second dev dependency
-# for something already enforced. It lives in
-# tests/PinnedAnchorsTest.php::testNoBannedFunctionAppearsInTheSourceTree,
-# which tokenises every file in src/ and fails on a call to any of them. That
-# runs on every matrix leg, not just the one static-analysis leg. If the
-# disallowed-calls package is added later, move the list there and keep the
-# test as the twin.
+# The gate that keeps verification logic out of src/ (no openssl_* call, no
+# parser under src/Internal) is not configured here, because PHPStan has no
+# built-in rule for it: it is tests/NoVerificationLogicTest.php, which runs on
+# every matrix leg, not just the one static-analysis leg.
 parameters:
     level: max
     paths:
         - src
         - tests
+        - bin
+        - tools/update-binaries.php
+    excludePaths:
+        # Subprocess scripts (a fake aprv, a fake server) that read JSON they wrote themselves.
+        - tests/Support/fake-aprv.php
+        - tests/Support/fake-server.php
     treatPhpDocTypesAsCertain: true

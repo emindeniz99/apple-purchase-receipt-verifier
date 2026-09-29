@@ -1,0 +1,393 @@
+reason       fuzz/12/substrate/pkix/jws/signer-aki-mismatch
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+reason       fuzz/23/substrate/cms/attributes-indefinite-length
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/78/transaction/verify-apple-official-transaction-info
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: leaf certificate is not signed by the intermediate
+    recorded: reason
+reason       fuzz/79/transaction/verify-shared-sandbox
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    recorded: reason
+reason       fuzz/140/receipt/reject-signer-on-an-unimplemented-curve
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/149/substrate/cms/digest-params-absent
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/346/receipt/unreadable-creation-date-is-judged-at-now
+    core: MALFORMED: malformed CMS structure: not a CMS SignedData
+    java: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    recorded: reason
+reason       fuzz/376/substrate/pkix/receipt/intermediates-5
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/414/substrate/time/jws/anchor-expired-at-signing
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: leaf certificate is not signed by the intermediate
+    recorded: reason
+reason       fuzz/459/substrate/time/jws/intermediate-na-exact
+    core: UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+    java: INVALID_CERTIFICATE: x5c[0] does not decode
+    recorded: reason
+reason       fuzz/461/receipt/reject-signer-carrying-one-extension-twice
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/464/receipt/reject-signer-on-an-unimplemented-curve
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    recorded: reason
+reason       fuzz/478/substrate/pkix/receipt/chain-through-impostor-root
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/512/substrate/time/jws/pre-1970-minus-1ms
+    core: UNTRUSTED_CHAIN: intermediate is not issued by a pinned root
+    java: INVALID_CERTIFICATE: x5c[1] does not decode
+    recorded: reason
+reason       fuzz/576/transaction/internal-error-on-product-id-number
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+reason       fuzz/600/substrate/cms/signer-identified-by-ski
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/698/transaction/reject-intermediate-without-wwdr-marker-oid
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: leaf certificate is not signed by the intermediate
+    recorded: reason
+reason       fuzz/718/transaction/accept-historical-payload-under-expired-chain
+    core: UNTRUSTED_CHAIN: intermediate is not issued by a pinned root
+    java: INVALID_CERTIFICATE: x5c[1] does not decode
+    recorded: reason
+reason       fuzz/848/substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    recorded: reason
+reason       fuzz/897/receipt/reject-signer-with-a-corrupt-extension
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/916/receipt/reject-signer-with-a-corrupt-extension
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/927/substrate/pkix/receipt/chain-through-impostor-root
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/952/receipt/reject-signer-on-an-unimplemented-curve
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    recorded: reason
+reason       fuzz/981/substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    recorded: reason
+reason       fuzz/985/substrate/flood/unsigned-attribute-values-10000
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/1113/transaction/verify-shared-sandbox
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: leaf certificate is not signed by the intermediate
+    recorded: reason
+reason       fuzz/1123/substrate/time/jws/intermediate-expired-at-signing
+    core: UNTRUSTED_CHAIN: intermediate is not issued by a pinned root
+    java: INVALID_CERTIFICATE: x5c[1] does not decode
+    recorded: reason
+reason       fuzz/1181/receipt/reject-signer-certificate-version-11
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/1250/substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/1317/transaction/reject-environment-outside-accept-set
+    core: INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    java: INVALID_CERTIFICATE: x5c[2] does not decode
+    recorded: reason
+reason       fuzz/1370/substrate/pkix/jws/name-extra-whitespace
+    core: UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+    java: INVALID_CERTIFICATE: x5c[0] does not decode
+    recorded: reason
+reason       fuzz/1374/receipt/reject-signer-certificate-version-11
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/1412/transaction/accept-payload-without-a-signed-date
+    core: UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+    java: INVALID_CERTIFICATE: x5c[0] does not decode
+    recorded: reason
+reason       fuzz/1429/substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE: receipt certificate is outside its validity window at 1790640000000
+    recorded: reason
+reason       fuzz/1460/substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/1494/transaction/reject-apple-official-wrong-bundle-id
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+reason       fuzz/1619/receipt/creation-date-twice-is-judged-at-now
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/1641/receipt/reject-unreadable-entry-under-a-trusted-chain
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    recorded: reason
+reason       fuzz/1833/substrate/cms/unsigned-attributes
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/1935/substrate/time/jws/nb-plus-1ms
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+reason       fuzz/2042/receipt/reject-signer-on-an-unimplemented-curve
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/2145/substrate/time/jws/nb-minus-1ms
+    core: UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+    java: INVALID_CERTIFICATE: x5c[0] does not decode
+    recorded: reason
+reason       fuzz/2259/substrate/pkix/jws/root-pathlen-0
+    core: UNTRUSTED_CHAIN: intermediate is not issued by a pinned root
+    java: INVALID_CERTIFICATE: x5c[1] does not decode
+    recorded: reason
+reason       fuzz/2262/substrate/pkix/receipt/name-extra-whitespace
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/2268/substrate/pkix/jws/intermediate-no-basic-constraints
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: certificate chain does not validate to a pinned Apple root
+    recorded: reason
+reason       fuzz/2303/substrate/pkix/receipt/chain-through-impostor-root
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/2457/substrate/pkix/receipt/issuer-loop
+    core: MALFORMED: malformed CMS structure: not a CMS SignedData
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/2463/transaction/verify-shared-sandbox
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+reason       fuzz/2477/substrate/pkix/jws/intermediate-no-basic-constraints
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+reason       fuzz/2577/substrate/pkix/receipt/signer-no-basic-constraints
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/2639/receipt/reject-signer-carrying-one-extension-twice
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/2765/substrate/pkix/receipt/name-case-differs
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/2775/substrate/time/jws/mid
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    recorded: reason
+reason       fuzz/2830/substrate/cms/digestalgorithms-sha1-only
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/2874/substrate/time/receipt/anchor-not-yet-valid-at-signing
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/3021/transaction/reject-x5c-leaf-with-junk-character
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: leaf certificate is not signed by the intermediate
+    recorded: reason
+reason       fuzz/3053/substrate/pkix/receipt/name-extra-whitespace
+    core: MALFORMED: malformed CMS structure: not a CMS SignedData
+    java: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    recorded: reason
+reason       fuzz/3187/substrate/pkix/jws/signer-aki-mismatch
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    recorded: reason
+reason       fuzz/3200/substrate/cms/content-constructed-octets
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/3248/receipt/reject-signer-on-an-unimplemented-curve
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    recorded: reason
+reason       fuzz/3298/substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE: receipt certificate is outside its validity window at 1790640000000
+    recorded: reason
+reason       fuzz/3357/substrate/pkix/receipt/signer-keyusage-certsign-only
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/3422/substrate/time/receipt/anchor-expired-at-signing
+    core: MALFORMED: malformed CMS structure: not a CMS SignedData
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/3450/substrate/time/jws/pre-1970-nb-plus-1ms
+    core: UNTRUSTED_CHAIN: intermediate is not issued by a pinned root
+    java: INVALID_CERTIFICATE: x5c[1] does not decode
+    recorded: reason
+reason       fuzz/3516/substrate/time/receipt/anchor-not-yet-valid-at-signing
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE: receipt certificate is outside its validity window at 1790640000000
+    recorded: reason
+reason       fuzz/3554/transaction/accept-payload-without-a-signed-date
+    core: UNTRUSTED_CHAIN: intermediate is not issued by a pinned root
+    java: INVALID_CERTIFICATE: x5c[1] does not decode
+    recorded: reason
+reason       fuzz/3584/transaction/reject-empty-payload-segment
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: leaf certificate is not signed by the intermediate
+    recorded: reason
+reason       fuzz/3597/receipt/reject-signer-on-an-unimplemented-curve
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    recorded: reason
+reason       fuzz/3631/receipt/reject-signer-with-a-corrupt-extension
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/3641/substrate/time/jws/mid
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: leaf certificate is not signed by the intermediate
+    recorded: reason
+reason       fuzz/3666/substrate/time/jws/na-plus-1s
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: leaf certificate is not signed by the intermediate
+    recorded: reason
+reason       fuzz/3724/substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE: receipt certificate is outside its validity window at 1790640000000
+    recorded: reason
+reason       fuzz/3818/receipt/reject-signer-certificate-version-11
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/3848/substrate/time/jws/na
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+reason       fuzz/3934/substrate/flood/digestalgorithms-1000
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    recorded: reason
+reason       fuzz/3948/substrate/cms/crls-garbage
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/3971/substrate/cms/content-constructed-octets-definite
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/3982/receipt/reject-signer-certificate-version-11
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/4009/substrate/time/jws/anchor-not-yet-valid-at-signing
+    core: UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+    java: INVALID_CERTIFICATE: x5c[0] does not decode
+    recorded: reason
+reason       fuzz/4031/substrate/pkix/receipt/signer-no-basic-constraints
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/4189/receipt/reject-signer-with-a-corrupt-extension
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/4277/substrate/time/receipt/na-plus-1s
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/4319/substrate/time/jws/na-plus-1s
+    core: UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+    java: INVALID_CERTIFICATE: x5c[0] does not decode
+    recorded: reason
+reason       fuzz/4426/substrate/pkix/receipt/intermediate-unknown-critical-extension
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/4466/substrate/cms/crls-empty
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/4497/receipt/reject-signer-carrying-one-extension-twice
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       fuzz/4607/substrate/time/receipt/na-plus-999ms
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/4672/substrate/pkix/jws/intermediate-pathlen-0
+    core: UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+    java: INVALID_CERTIFICATE: x5c[0] does not decode
+    recorded: reason
+reason       fuzz/4773/substrate/pkix/receipt/intermediate-version-1
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/4810/receipt/reject-unreadable-creation-date-under-a-foreign-chain
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       fuzz/4819/receipt/unreadable-creation-date-is-judged-at-now
+    core: INVALID_CERTIFICATE_PURPOSE: receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/4853/substrate/parse/generated/der-baseline
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/4899/substrate/time/jws/nb-minus-1ms
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+reason       fuzz/4910/transaction/accept-null-and-unmodelled-claims
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    recorded: reason
+reason       fuzz/4959/substrate/pkix/jws/signer-no-basic-constraints
+    core: INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    java: INVALID_CERTIFICATE: x5c[2] does not decode
+    recorded: reason
+reason       fuzz/4968/substrate/cms/digestalgorithms-sha256-sha512
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/4983/substrate/time/receipt/na
+    core: UNTRUSTED_CHAIN: chain does not reach a pinned root
+    java: MALFORMED: receipt has trailing or unparseable bytes
+    recorded: reason
+reason       fuzz/4987/substrate/time/jws/mid
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: INVALID_SIGNATURE: ES256 signature does not match the leaf key
+    recorded: reason
+summary: 5000 rows; 175 java-no-call, 4092 message-only, 98 reason, 635 same; 0 not recorded in R20; 0 recorded rows now agree

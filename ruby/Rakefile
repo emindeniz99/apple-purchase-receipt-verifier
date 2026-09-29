@@ -23,7 +23,7 @@ task :rbs do
     require "rbs"
     require "rbs/cli"
     status = RBS::CLI.new(stdout: $stdout, stderr: $stderr)
-                     .run(["-r", "openssl", "-r", "json", "-I", "sig", "validate"])
+                     .run(["-r", "json", "-I", "sig", "validate"])
     exit(status.nil? ? 0 : status)
   SCRIPT
 end

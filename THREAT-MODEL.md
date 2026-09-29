@@ -251,10 +251,12 @@ only a trusted signer could have put the bytes in front of it. Several
 ports also cap the decoded node count; the Rust core caps each value parsed
 on its own at 100,000 values. There, OpenSSL decodes, and a walk over the
 headers alone (`rust/openssl/src/walk.rs`) runs first: over the whole CMS
-envelope, after a shallow decode has counted the certificates, CRLs and
-SignerInfos and before `d2i_CMS_ContentInfo` builds any certificate's key,
-it applies the depth bound to constructed values of every class and the
-node budget, so no envelope reaches the full decode over a bound. Failures
+envelope, before anything is decoded, it applies the depth bound to
+constructed values of every class and the node budget. Only then does a
+shallow decode count the certificates, CRLs and SignerInfos, so the node
+budget also bounds how many set entries that decode builds, and only then
+does `d2i_CMS_ContentInfo` build any certificate's key; no envelope reaches
+either decode over a bound. Failures
 surface as the library's own result, never as a language-level crash.
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;

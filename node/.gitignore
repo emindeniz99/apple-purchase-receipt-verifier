@@ -1,2 +1,6 @@
 dist/
 node_modules/
+src/generated/
+# The component: copied into place, never committed (the rust-wasm CI job
+# builds it). APRV_COMPONENT overrides the path.
+wasm/aprv.component.wasm

@@ -11,23 +11,22 @@ use Psr\Clock\ClockInterface;
  * takes {@see Config::defaults()}'s value.
  *
  * ```php
- * $config = Config::builder()->roots($myRoots)->clock($myClock)->build();
+ * $config = Config::builder()->roots($myRootsAsDer)->clock($myClock)->build();
  * ```
  */
 final class ConfigBuilder
 {
     /** @var list<string> */
-    private array $roots;
+    private array $roots = [];
 
     private ClockInterface $clock;
 
     public function __construct()
     {
-        $this->roots = AppleRootCerts::pinnedRoots();
         $this->clock = new SystemClock();
     }
 
-    /** @param iterable<string> $roots DER bytes or PEM text of the pinned anchors */
+    /** @param iterable<string> $roots DER bytes of the trust anchors; an empty set means the module's built-in Apple roots */
     public function roots(iterable $roots): self
     {
         $this->roots = is_array($roots) ? array_values($roots) : iterator_to_array($roots, false);

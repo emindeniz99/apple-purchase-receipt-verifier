@@ -1,0 +1,6 @@
+# run 1, load average 18.52 13.93 7.69, 4 CPUs shared with other work
+4 CPUs, Ruby 3.3.6, wasmtime 48.0.1
+1 thread(s): g5    225.7/s (  412.3 per CPU-s)   jws     54.0/s (   95.2 per CPU-s)
+2 thread(s): g5    236.3/s (  450.3 per CPU-s)   jws     72.0/s (  112.3 per CPU-s)
+4 thread(s): g5    236.3/s (  373.9 per CPU-s)   jws     45.7/s (   97.1 per CPU-s)
+4 threads / 1 thread: g5 1.05x   jws 0.85x
