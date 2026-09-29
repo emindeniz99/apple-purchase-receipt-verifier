@@ -1,0 +1,15 @@
+dotnet cases: clock-moves-chain (endpoint, pinned clock) 2, identical 151
+dotnet hostile: identical 810, init-refusal 1
+dotnet algorithms: identical 22
+dotnet substrate: identical 193
+dotnet fuzz: identical 5000
+dotnet all: clock-moves-chain (endpoint, pinned clock) 2, identical 6176, init-refusal 1 (rows 6179) -> AS EXPECTED
+  [clock-moves-chain (endpoint, pinned clock)] endpoint/injected-clock-cannot-authenticate-an-expired-chain
+      ABI v1 : {"status":21003}
+      new    : {"environment":"Sandbox","receipt":{"application_version":"1.2.3","bundle_id":"com.example.app","in_app":[],"original_application_version":"1.0","orig
+  [clock-moves-chain (endpoint, pinned clock)] endpoint/injected-clock-cannot-expire-a-valid-chain
+      ABI v1 : {"environment":"Sandbox","receipt":{"application_version":"1.2.3","bundle_id":"com.example.app","in_app":[],"original_application_version":"1.0","orig
+      new    : {"status":21003}
+  [init-refusal] hostile/ctor/root-not-a-cert
+      ABI v1 : {"error":"INVALID_TEST_ENVELOPE"}
+      new    : {"message":"roots[0]: trust anchor is not a certificate","ok":false}

@@ -1,0 +1,26 @@
+packed: ApplePurchaseReceiptVerifier.0.7.0.nupkg 2107808 bytes
+         491 _rels/.rels
+        1306 ApplePurchaseReceiptVerifier.nuspec
+       32072 README.md
+     3036160 lib/net8.0/ApplePurchaseReceiptVerifier.dll
+       61121 lib/net8.0/ApplePurchaseReceiptVerifier.xml
+     3036672 lib/netstandard2.0/ApplePurchaseReceiptVerifier.dll
+       61508 lib/netstandard2.0/ApplePurchaseReceiptVerifier.xml
+        6196 licenses/musl-COPYRIGHT
+       10175 licenses/openssl-LICENSE.txt
+        1571 licenses/rust-COPYRIGHT
+        9723 licenses/rust-LICENSE-APACHE
+        1068 licenses/rust-LICENSE-MIT
+         910 licenses/wasi-libc-LICENSE
+       10847 licenses/wasi-libc-LICENSE-APACHE
+       12243 licenses/wasi-libc-LICENSE-APACHE-LLVM
+        1023 licenses/wasi-libc-LICENSE-MIT
+        1350 [Content_Types].xml
+         873 package/services/metadata/core-properties/nuget.psmdcp
+consumer: 7 s wall (restore from an empty package folder + build)
+consumer restored: applepurchasereceiptverifier wasmtime 
+consumer run:
+typed: not verified: INTERNAL_ERROR: the verification module's answer is unreadable
+endpoint: "status":0
+runtime: .NET 10.0.12
+library: 0.7.0.0

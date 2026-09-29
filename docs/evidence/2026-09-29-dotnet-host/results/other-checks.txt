@@ -1,0 +1,14 @@
+Trimmed publish (dotnet/samples/TrimAotSmoke, net9.0, self-contained, trimmed, linux-x64, -warnaserror):
+  build: 0 warnings, 0 errors; output 56 MB; run: "trimmed smoke ok"
+
+SharpFuzz harness (dotnet/fuzz/run.sh all 15), local, clang present, 0 crashes, 0 invariant failures:
+  json 266,371 runs; receipt 2,494; receipt-base64 4,421; jws 4,585; endpoint-json 50,281
+
+Memory (CorpusRun memory 32), Linux x86-64, .NET 10.0.12:
+  after compile: resident 168 MiB, virtual 54,711 MiB
+  1 instance: resident 171 MiB, virtual 58,943 MiB
+  32 instances: resident 176 MiB, virtual 187,903 MiB (about 4.2 GiB of address space per instance)
+  linear memory after init: 1,769,472 bytes
+
+Package (dotnet pack): ApplePurchaseReceiptVerifier.0.7.0.nupkg 2,106,917 bytes; see consumer.txt for the file list.
+Module: 2,967,116 bytes, SHA-256 da786ac853464e7b837c5483f9b04a27a3a5c2ff0340fa526f60482fd80fdb68 (round 13's aprv-cabi.core.wasm).
