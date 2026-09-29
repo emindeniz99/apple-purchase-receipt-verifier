@@ -1,3 +1,5 @@
+# The module is copied into place, never committed.
+python/apple_purchase_receipt_verifier/aprv.wasm
 __pycache__/
 *.py[cod]
 .venv/
@@ -16,3 +18,8 @@ dist/
 # would be a copy nothing installs from.
 /vendor/
 /composer.lock
+
+# Schemathesis (the aprv-server job, rust/server/CI-NOTES.md) writes its
+# state and Hypothesis's example database into the working directory.
+.schemathesis/
+.hypothesis/

@@ -14,10 +14,13 @@ ports use:
   out of this machine's own CA bundle;
 * **structurally** — no module of the package imports or names anything that
   could reach a trust store or the network, and its runtime dependency set is
-  exactly the two reviewed packages;
-* **positively** — the anchor list that reaches the chain builder is, object
-  for object, the list the caller handed in: nothing is appended, dropped or
-  substituted on the way.
+  exactly the one reviewed package (the Wasm runtime);
+* **positively** — the anchor list that reaches the module's ``init`` is,
+  byte for byte, the list the caller handed in: nothing is appended, dropped
+  or substituted on the way.
+
+Which anchors decide a chain is the module's business; what this package can
+and must guarantee is that nothing else reaches it.
 
 The scan covers ``apple_purchase_receipt_verifier/`` only. This test module
 itself imports ``ssl`` and ``os`` on purpose — that is how it plants the
@@ -27,29 +30,30 @@ trust store it then proves irrelevant.
 import ast
 import base64
 import io
+import json
 import os
 import ssl
 import tempfile
 import tokenize
 import unittest
-import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from apple_purchase_receipt_verifier import Config, Reason, Verifier, default_roots
+from apple_purchase_receipt_verifier import Config, Reason, Verifier, _host, default_roots
 
-# Imported from the module that defines them, and patched where the two
-# verifier modules bound them: that binding is the seam an ambient anchor
-# set would have to pass through.
-from apple_purchase_receipt_verifier._chain import authenticate_pair_top_down, build_path_top_down
-from cryptography import x509
-from cryptography.hazmat.primitives.serialization import Encoding
+import _support  # noqa: F401  (puts the module APRV_WASM names in place, for tooling)
 
 
-def verifier(roots: "Sequence[x509.Certificate]") -> Verifier:
+def verifier(roots: "Sequence[bytes]") -> Verifier:
     return Verifier(Config.create(roots=roots))
+
+
+def assert_refused(test: unittest.TestCase, result: Any, reason: Reason) -> None:
+    """The input did not verify, and it failed for ``reason``."""
+    test.assertFalse(result.verified)
+    test.assertEqual(reason, failure_reason(result))
 
 
 def receipt_base64(der: bytes) -> str:
@@ -61,15 +65,9 @@ def failure_reason(result: Any) -> Reason:
     return result.failure.reason  # type: ignore[no-any-return]
 
 
-def verified_payload(result: Any) -> Any:
-    assert result.payload is not None
-    return result.payload
-
-
 PORT = Path(__file__).resolve().parents[1]
 PACKAGE = PORT / "apple_purchase_receipt_verifier"
 FIXTURES = PORT.parent / "fixtures"
-BUNDLE = "com.example.app"
 
 #: The host CA bundles a Unix-ish machine keeps its public roots in. Same
 #: list as the Rust and PHP ports scan.
@@ -89,38 +87,36 @@ def fixture_text(*segments: str) -> str:
     return fixture(*segments).decode("ascii").strip()
 
 
-def cert(*segments: str) -> x509.Certificate:
-    return x509.load_der_x509_certificate(fixture(*segments))
+def cert(*segments: str) -> bytes:
+    return fixture(*segments)
 
 
-def pem_certificates(bundle: str) -> "list[x509.Certificate]":
-    """Every certificate in a PEM bundle, skipping anything unparseable.
+def pem_of(der: bytes) -> bytes:
+    body = base64.encodebytes(der).decode("ascii")
+    return f"-----BEGIN CERTIFICATE-----\n{body}-----END CERTIFICATE-----\n".encode("ascii")
 
-    Warnings are silenced for the parse only: a host trust store is whatever
-    the distribution shipped, and at least one root in a stock Debian bundle
-    carries a non-positive serial that ``cryptography`` deprecates. That is
-    the host's business, not this library's, and the noise would otherwise
-    land in every CI log.
-    """
-    out: list[x509.Certificate] = []
+
+def pem_certificates(bundle: str) -> "list[bytes]":
+    """The DER of every certificate in a PEM bundle, skipping anything that is
+    not base64. Whether a certificate parses is not this test's business: the
+    host's store is whatever the distribution shipped."""
+    out: list[bytes] = []
     marker = "-----BEGIN CERTIFICATE-----"
     end = "-----END CERTIFICATE-----"
     rest = bundle
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        while marker in rest:
-            rest = rest[rest.index(marker) :]
-            if end not in rest:
-                break
-            block, rest = rest[: rest.index(end) + len(end)], rest[rest.index(end) + len(end) :]
-            try:
-                out.append(x509.load_pem_x509_certificate(block.encode()))
-            except ValueError:
-                continue
+    while marker in rest:
+        rest = rest[rest.index(marker) + len(marker) :]
+        if end not in rest:
+            break
+        block, rest = rest[: rest.index(end)], rest[rest.index(end) + len(end) :]
+        try:
+            out.append(base64.b64decode("".join(block.split()), validate=True))
+        except ValueError:
+            continue
     return out
 
 
-def host_trust_store_roots() -> "list[x509.Certificate]":
+def host_trust_store_roots() -> "list[bytes]":
     """This machine's public roots, or an empty list where there is no bundle."""
     for path in HOST_CA_BUNDLES:
         try:
@@ -138,7 +134,7 @@ class ProcessTrustStoreTest(unittest.TestCase):
     trusted by this process, prove Python's own default TLS trust store
     accepts it, and show the library still refuses the chain under it."""
 
-    def plant(self, root: x509.Certificate) -> None:
+    def plant(self, root: bytes) -> None:
         """Installs ``root`` as the *only* certificate authority this process
         trusts, for the duration of the test, and asserts that it took.
 
@@ -152,7 +148,7 @@ class ProcessTrustStoreTest(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         bundle = Path(directory.name) / "planted-ca-bundle.pem"
-        bundle.write_bytes(root.public_bytes(Encoding.PEM))
+        bundle.write_bytes(pem_of(root))
 
         patcher = mock.patch.dict(
             os.environ,
@@ -179,7 +175,7 @@ class ProcessTrustStoreTest(unittest.TestCase):
             self.skipTest("this interpreter does not take its default CAs from SSL_CERT_FILE")
         trusted = ssl.create_default_context().get_ca_certs(binary_form=True)
         self.assertIn(
-            root.public_bytes(Encoding.DER),
+            root,
             trusted,
             "the premise failed: the planted root is not in this process's default trust store, "
             "so this test proves nothing",
@@ -193,25 +189,25 @@ class ProcessTrustStoreTest(unittest.TestCase):
         # Positive control first: the only thing separating this from the
         # refusals below is which anchors were passed.
         result = verifier([root]).verify_receipt(text)
-        self.assertTrue(result.verified)
-        self.assertEqual(BUNDLE, verified_payload(result).bundle_id)
+        self.assertTrue(result.verified, result.failure)
 
         with self.subTest(anchors="the bundled Apple roots"):
             result = verifier(default_roots()).verify_receipt(text)
-            self.assertFalse(result.verified)
-            self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
+            assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
 
     def test_a_jws_ca_the_process_trusts_is_still_not_an_anchor(self) -> None:
         root = cert("generated", "jws-root.der")
         jws = fixture_text("generated", "transaction.jws")
         self.plant(root)
 
-        result = verifier([root]).verify_signed_data(jws)
-        self.assertTrue(result.verified)
-
         result = verifier(default_roots()).verify_signed_data(jws)
-        self.assertFalse(result.verified)
-        self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
+        assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
+
+    def test_the_jws_root_the_process_trusts_verifies_when_the_caller_passes_it(self) -> None:
+        root = cert("generated", "jws-root.der")
+        self.plant(root)
+        result = verifier([root]).verify_signed_data(fixture_text("generated", "transaction.jws"))
+        self.assertTrue(result.verified, result.failure)
 
     def test_an_empty_anchor_list_is_a_configuration_error_not_a_fallback(self) -> None:
         # The failure mode this rules out: "no anchors given, so use the
@@ -239,96 +235,68 @@ class HostTrustStoreTest(unittest.TestCase):
         # accept — the fixture chain is still refused: the anchor did not
         # certify it.
         result = verifier([public_root]).verify_receipt(text)
-        self.assertFalse(result.verified)
-        self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
+        assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
 
         # And it gains nothing from sitting next to Apple's roots in the
         # caller's list.
         result = verifier([public_root, *default_roots()]).verify_receipt(text)
-        self.assertFalse(result.verified)
-        self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
+        assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
 
     def test_the_host_roots_do_not_verify_genuine_apple_material(self) -> None:
         # The complement of the pinning test: hand the library this machine's
         # entire trust store as its anchors and genuine Apple-signed material
         # is refused, because none of those roots issued it.
         genuine = fixture_text("public-receipts", "receipt-sandbox-g5.b64")
-        apple_bundle_id = "dev.bonzer.weeka.app"
 
         result = verifier(default_roots()).verify_receipt(genuine)
-        self.assertTrue(result.verified)
-        self.assertEqual(apple_bundle_id, verified_payload(result).bundle_id)
+        self.assertTrue(result.verified, result.failure)
 
         result = verifier(self.host_roots).verify_receipt(genuine)
-        self.assertFalse(result.verified)
-        self.assertEqual(Reason.UNTRUSTED_CHAIN, failure_reason(result))
+        assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
 
     def test_no_bundled_anchor_came_from_this_machines_trust_store(self) -> None:
         # If the package ever started folding the host's roots into its own
         # set, this is the first thing that would change.
-        host = {root.public_bytes(Encoding.DER) for root in self.host_roots}
-        for anchor in default_roots():
-            self.assertNotIn(
-                anchor.public_bytes(Encoding.DER),
-                host,
-                f"{anchor.subject.rfc4514_string()} came from the host trust store",
-            )
+        host = set(self.host_roots)
+        for index, anchor in enumerate(default_roots()):
+            self.assertNotIn(anchor, host, f"bundled root {index} came from the host trust store")
 
 
-class AnchorsReachTheChainBuilderUnchangedTest(unittest.TestCase):
-    """The positive half: exactly the caller's anchors, in order, by identity.
+class AnchorsReachTheModuleUnchangedTest(unittest.TestCase):
+    """The positive half: exactly the caller's anchors, in order, byte for
+    byte, reach the module's ``init``.
 
     A source scan proves nothing was *imported*; this proves nothing was
-    *added* — an anchor list is not augmented, reordered, deduplicated or
-    substituted between the constructor and the chain builder.
-    """
+    *added*: an anchor list is not augmented, reordered, or substituted
+    between the constructor and the module."""
 
-    def test_the_receipt_path_builder_sees_the_callers_list(self) -> None:
+    def sent_to_init(self, roots: "Sequence[bytes]") -> "list[bytes]":
+        seen: list[bytes] = []
+        real = _host.Pool
+
+        def spy(runtime: Any, config_json: bytes, *rest: Any) -> Any:
+            seen.append(config_json)
+            return real(runtime, config_json, *rest)
+
+        with mock.patch.object(_host, "Pool", spy):
+            verifier(roots)
+        self.assertEqual(1, len(seen))
+        document = json.loads(seen[0])
+        self.assertEqual(["roots"], list(document))
+        return [base64.b64decode(r, validate=True) for r in document["roots"]]
+
+    def test_the_callers_list_reaches_init_in_order(self) -> None:
         passed = [cert("generated", "jws-root.der"), cert("generated-0.7", "receipt-root.der")]
-        seen: list[Sequence[x509.Certificate]] = []
-        real = build_path_top_down
+        self.assertEqual(passed, self.sent_to_init(passed))
+        self.assertEqual(passed[::-1], self.sent_to_init(passed[::-1]))
 
-        def spy(
-            target: x509.Certificate,
-            embedded: "Sequence[x509.Certificate]",
-            anchors: "Sequence[x509.Certificate]",
-        ) -> "list[x509.Certificate]":
-            seen.append(anchors)
-            return real(target, embedded, anchors)
+    def test_the_default_list_is_the_three_bundled_roots_and_nothing_else(self) -> None:
+        self.assertEqual(list(default_roots()), self.sent_to_init(Config.defaults().roots))
+        self.assertEqual(3, len(default_roots()))
 
-        with mock.patch("apple_purchase_receipt_verifier.receipt.build_path_top_down", spy):
-            verifier(passed).verify_receipt(receipt_base64(fixture("generated-0.7", "receipt.der")))
-
-        self.assertEqual(1, len(seen))
-        self.assert_anchors_are(passed, seen[0])
-
-    def test_the_jws_path_builder_sees_the_callers_list(self) -> None:
-        passed = [cert("generated-0.7", "receipt-root.der"), cert("generated", "jws-root.der")]
-        seen: list[Sequence[x509.Certificate]] = []
-        real = authenticate_pair_top_down
-
-        def spy(
-            leaf: x509.Certificate,
-            intermediate: x509.Certificate,
-            anchors: "Sequence[x509.Certificate]",
-        ) -> None:
-            seen.append(anchors)
-            real(leaf, intermediate, anchors)
-
-        with mock.patch("apple_purchase_receipt_verifier.jws.authenticate_pair_top_down", spy):
-            verifier(passed).verify_signed_data(fixture_text("generated", "transaction.jws"))
-
-        self.assertEqual(1, len(seen))
-        self.assert_anchors_are(passed, seen[0])
-
-    def assert_anchors_are(
-        self,
-        expected: "Sequence[x509.Certificate]",
-        actual: "Sequence[x509.Certificate]",
-    ) -> None:
-        self.assertEqual(len(expected), len(actual), "the anchor set changed size in transit")
-        for index, (want, got) in enumerate(zip(expected, actual, strict=True)):
-            self.assertIs(want, got, f"anchor {index} is not the object the caller passed")
+    def test_a_duplicate_is_dropped_by_config_and_nothing_is_added(self) -> None:
+        one = cert("generated", "jws-root.der")
+        self.assertEqual([one], self.sent_to_init([one, one]))
 
 
 class SourceScanTest(unittest.TestCase):
@@ -359,6 +327,13 @@ class SourceScanTest(unittest.TestCase):
             # find-certificate`, `openssl verify`, `curl`.
             "subprocess",
             "ctypes",
+            # The package holds no verification logic: nothing that parses
+            # ASN.1 or X.509, checks a signature or builds a chain.
+            "asn1crypto",
+            "cryptography",
+            "OpenSSL",
+            "hmac",
+            "zoneinfo",
         }
     )
 
@@ -367,24 +342,26 @@ class SourceScanTest(unittest.TestCase):
     #: this catches the next `truststore` before it has a name.
     ALLOWED_IMPORTS = frozenset(
         {
-            "asn1crypto",
             "base64",
-            "binascii",
             "collections",
-            "cryptography",
+            "contextlib",
             "dataclasses",
-            "datetime",
             "enum",
             "hashlib",
-            "hmac",
+            "importlib",
             "json",
-            "math",
+            "os",
             "pathlib",
-            "re",
+            "secrets",
+            "stat",
+            "struct",
+            "sys",
+            "tempfile",
+            "threading",
             "time",
             "types",
             "typing",
-            "zoneinfo",
+            "wasmtime",
         }
     )
 
@@ -476,7 +453,13 @@ class SourceScanTest(unittest.TestCase):
         # not be possible to make one by accident: any HTTP client on this
         # list would drag `certifi` in with it.
         declared = declared_dependencies((PORT / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(["asn1crypto", "cryptography"], sorted(declared))
+        self.assertEqual(["wasmtime"], sorted(declared))
+
+    def test_no_module_is_named_for_verification_logic(self) -> None:
+        # Mirrors rust/tools' layering rule: the wrappers hold none of it.
+        for path in sorted(PACKAGE.rglob("*.py")):
+            for word in ("asn1", "x509", "cms", "chain", "crypto", "der"):
+                self.assertNotIn(word, path.stem.split("_"), f"{path.name} names {word}")
 
 
 def imported_modules(tree: ast.Module) -> "list[str]":

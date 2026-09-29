@@ -1,0 +1,84 @@
+# run 1, load average 17.56 11.07 5.88
+{
+  "ruby": "3.3.6",
+  "wasmtime": "48.0.1",
+  "cpus": 4,
+  "load_average": [
+    "20.31",
+    "12.51",
+    "6.56"
+  ],
+  "require_ms": 52.8,
+  "first_verifier_ms": 13794.9,
+  "first_verifier_cpu_ms": 5722.4,
+  "later_verifier_ms": 11.06,
+  "first_call_ms": 6.38,
+  "g5_receipt_us": 4440,
+  "g5_receipt_cpu_us": 2071,
+  "shared_sandbox_jws_us": 17994,
+  "shared_sandbox_jws_cpu_us": 8864,
+  "g5_verifier_us": 4636,
+  "g5_verifier_cpu_us": 2432,
+  "shared_sandbox_jws_verifier_us": 16035,
+  "shared_sandbox_jws_verifier_cpu_us": 9525,
+  "rss_after_require_mb": 29.4,
+  "rss_after_compile_mb": 149.1,
+  "rss_at_end_mb": 150.8,
+  "instance_linear_memory_mib": 2.0
+}
+# run 2, load average 20.31 12.51 6.56
+{
+  "ruby": "3.3.6",
+  "wasmtime": "48.0.1",
+  "cpus": 4,
+  "load_average": [
+    "18.06",
+    "12.71",
+    "6.81"
+  ],
+  "require_ms": 19.5,
+  "first_verifier_ms": 10806.3,
+  "first_verifier_cpu_ms": 6249.6,
+  "later_verifier_ms": 4.38,
+  "first_call_ms": 4.21,
+  "g5_receipt_us": 3343,
+  "g5_receipt_cpu_us": 2190,
+  "shared_sandbox_jws_us": 13388,
+  "shared_sandbox_jws_cpu_us": 8086,
+  "g5_verifier_us": 4774,
+  "g5_verifier_cpu_us": 2520,
+  "shared_sandbox_jws_verifier_us": 19621,
+  "shared_sandbox_jws_verifier_cpu_us": 8898,
+  "rss_after_require_mb": 29.4,
+  "rss_after_compile_mb": 152.8,
+  "rss_at_end_mb": 154.4,
+  "instance_linear_memory_mib": 2.0
+}
+# run 3, load average 18.06 12.71 6.81
+{
+  "ruby": "3.3.6",
+  "wasmtime": "48.0.1",
+  "cpus": 4,
+  "load_average": [
+    "16.85",
+    "12.91",
+    "7.07"
+  ],
+  "require_ms": 12.0,
+  "first_verifier_ms": 8619.2,
+  "first_verifier_cpu_ms": 5912.7,
+  "later_verifier_ms": 8.97,
+  "first_call_ms": 4.04,
+  "g5_receipt_us": 2905,
+  "g5_receipt_cpu_us": 1989,
+  "shared_sandbox_jws_us": 17399,
+  "shared_sandbox_jws_cpu_us": 9420,
+  "g5_verifier_us": 3991,
+  "g5_verifier_cpu_us": 2344,
+  "shared_sandbox_jws_verifier_us": 16075,
+  "shared_sandbox_jws_verifier_cpu_us": 9260,
+  "rss_after_require_mb": 29.3,
+  "rss_after_compile_mb": 152.4,
+  "rss_at_end_mb": 154.0,
+  "instance_linear_memory_mib": 2.0
+}

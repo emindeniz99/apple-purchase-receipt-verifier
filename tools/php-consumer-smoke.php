@@ -20,11 +20,14 @@ declare(strict_types=1);
  * php/tests/Support/Fixtures07.php checks them, because a smoke that
  * verifies fixture bytes nobody pinned proves nothing.
  *
- * Usage: php php-consumer-smoke.php <vendor/autoload.php> <fixtures dir>
+ * The binary under test comes from APRV_BIN: the package ships none.
+ *
+ * Usage: APRV_BIN=/path/to/aprv php php-consumer-smoke.php <vendor/autoload.php> <fixtures dir>
  */
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
 if ($argc !== 3) {
@@ -79,10 +82,21 @@ if (!str_contains((string) $reflected, '/vendor/')) {
     fwrite(STDERR, "php-consumer-smoke: AppleRootCerts loaded from {$reflected}, not from vendor/\n");
     exit(1);
 }
-$check('bundled Apple roots', count(Config::defaults()->roots), 3);
+// The wrappers carry no copy of the roots on the verification path: built-in means an empty list.
+$check('Config::defaults() roots', Config::defaults()->roots, []);
+
+// The package ships no binary. APRV_BIN names the aprv binary under test (CI
+// downloads the release asset, or builds it); `vendor/bin/aprv-install` is
+// what a consumer runs against a released version.
+$binary = getenv('APRV_BIN');
+if (!is_string($binary) || $binary === '') {
+    fwrite(STDERR, "php-consumer-smoke: set APRV_BIN to the aprv binary\n");
+    exit(2);
+}
+$transport = static fn (): CliTransport => new CliTransport($binary);
 
 // receipt/verify-genuine-sandbox-g5-against-apple-roots.
-$receiptResult = Verifier::create(Config::defaults())
+$receiptResult = Verifier::create(Config::defaults(), $transport())
     ->verifyReceipt(base64_encode($fixture('public-receipt-sandbox-g5')));
 $check('receipt verified', $receiptResult->verified(), true);
 $receipt = $receiptResult->payload;
@@ -91,7 +105,7 @@ $check('bundleId', $receipt->bundleId, 'dev.bonzer.weeka.app');
 $check('inApp count', count($receipt->inApp), 2);
 
 // The shared transaction, under its own generated root.
-$jwsResult = Verifier::create(Config::builder()->roots([$fixture('jws-root')])->build())
+$jwsResult = Verifier::create(Config::builder()->roots([$fixture('jws-root')])->build(), $transport())
     ->verifySignedData($fixture('transaction'));
 $check('transaction verified', $jwsResult->verified(), true);
 $transaction = json_decode($jwsResult->payload->json, true, 64, JSON_THROW_ON_ERROR);

@@ -144,6 +144,13 @@ impl CoreGuest {
         self.memory.data_size(&self.store)
     }
 
+    /// Calls the reactor's `_initialize` export, which a host need not call.
+    pub fn call_initialize(&mut self) -> Result<()> {
+        self.instance
+            .get_typed_func::<(), ()>(&mut self.store, "_initialize")?
+            .call(&mut self.store, ())
+    }
+
     /// `cabi_realloc(0, 0, 1, len)`, then the bytes copied in; the guest
     /// owns the buffer from here.
     fn lower(&mut self, bytes: &[u8]) -> Result<(i32, i32)> {

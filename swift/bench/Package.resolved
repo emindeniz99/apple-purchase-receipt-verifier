@@ -1,31 +1,31 @@
 {
-  "originHash" : "5f7d6d9940385d22702c801d1bdb73aa4490647a67de6f4908e67d966baa4c6d",
+  "originHash" : "23f5fc284ab14f8c8800527d9422a4e124d299155a3baf7a76149b277414c7a5",
   "pins" : [
     {
-      "identity" : "swift-asn1",
+      "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-asn1.git",
+      "location" : "https://github.com/apple/swift-argument-parser",
       "state" : {
-        "revision" : "d9a5b37470adc940d22c3bcd5ca6953a516b727f",
-        "version" : "1.7.2"
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
       }
     },
     {
-      "identity" : "swift-certificates",
+      "identity" : "swift-syntax",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-certificates.git",
+      "location" : "https://github.com/swiftlang/swift-syntax",
       "state" : {
-        "revision" : "c8aece90ea05f9866bd392a5bf13b5cae56c0e03",
-        "version" : "1.20.0"
+        "revision" : "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf",
+        "version" : "604.0.0"
       }
     },
     {
-      "identity" : "swift-crypto",
+      "identity" : "wasmkit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-crypto.git",
+      "location" : "https://github.com/swiftwasm/WasmKit.git",
       "state" : {
-        "revision" : "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
-        "version" : "4.5.2"
+        "revision" : "a0471eaee817c523b8023d8ebb1c70ff70b7950a",
+        "version" : "0.4.1"
       }
     }
   ],

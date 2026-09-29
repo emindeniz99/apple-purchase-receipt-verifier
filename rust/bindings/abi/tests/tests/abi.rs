@@ -228,7 +228,8 @@ fn a_refused_configuration_is_a_value_and_init_may_be_retried() {
 #[test]
 fn a_random_get_answer_of_the_wrong_length_traps() {
     for (host, make) in hosts() {
-        for trim in [1, -1] {
+        // One short, one long, none at all, and far too many.
+        for trim in [1, -1, i64::MAX, -4096] {
             let mut guest = make(Randomness { trim });
             assert_eq!(guest.init(&jws_config()).unwrap(), r#"{"ok":true}"#);
             let result = guest.verify_signed_data(now(), &transaction());
@@ -320,4 +321,58 @@ fn a_clock_beyond_i64_is_an_internal_error() {
         }
         assert!(verifies(guest.as_mut()), "{host}");
     }
+}
+
+/// `_initialize` need not be called; calling it first is harmless, a
+/// second time traps (crt1-reactor's guard), and after an export has run
+/// it only registers the constructors' one atexit handler again: the
+/// instance goes on verifying (README.md; review round 2, F8).
+#[test]
+fn initialize_is_optional_once_and_harmless_after_an_export() {
+    let mut first = CoreGuest::new(Randomness::default()).unwrap();
+    first.call_initialize().unwrap();
+    assert_eq!(first.init(DEFAULTS).unwrap(), r#"{"ok":true}"#);
+    assert!(verifies(&mut first));
+    let mut twice = CoreGuest::new(Randomness::default()).unwrap();
+    twice.call_initialize().unwrap();
+    let again = twice.call_initialize();
+    assert!(is_trap(&again), "{again:?}");
+    let mut after = CoreGuest::new(Randomness::default()).unwrap();
+    assert_eq!(after.init(DEFAULTS).unwrap(), r#"{"ok":true}"#);
+    assert!(verifies(&mut after));
+    after.call_initialize().unwrap();
+    assert!(verifies(&mut after));
+}
+
+/// Every cap is decided on the input's length before a byte of it is read,
+/// so a host that lowers at most 3,145,729 bytes (the largest cap plus one)
+/// gets the answer a longer input would get, TOO_LARGE or 21002, and the
+/// instance grows by no more than that copy (review round 2, F2).
+#[test]
+fn a_host_that_lowers_the_largest_cap_plus_one_gets_too_large() {
+    const LARGEST_CAP_PLUS_ONE: usize = 3_145_729;
+    let over = vec![b'A'; LARGEST_CAP_PLUS_ONE];
+    for (host, make) in hosts() {
+        let mut guest = ready(make, DEFAULTS);
+        let receipt = json(&guest.verify_receipt(now(), &over).unwrap());
+        assert_eq!(receipt["reason"], "TOO_LARGE", "{host}");
+        let jws = json(&guest.verify_signed_data(now(), &over).unwrap());
+        assert_eq!(jws["reason"], "TOO_LARGE", "{host}");
+        let body = guest.verify_receipt_endpoint(1, now(), &over).unwrap();
+        assert_eq!(body, r#"{"status":21002}"#, "{host}");
+        assert!(verifies(guest.as_mut()), "{host}");
+    }
+    let mut guest = CoreGuest::new(Randomness::default()).unwrap();
+    guest.init(DEFAULTS).unwrap();
+    assert!(verifies(&mut guest));
+    let before = guest.memory_size();
+    for _ in 0..3 {
+        guest.verify_receipt(now(), &over).unwrap();
+        guest.verify_signed_data(now(), &over).unwrap();
+    }
+    let grown = guest.memory_size() - before;
+    assert!(
+        grown <= LARGEST_CAP_PLUS_ONE + (1 << 20),
+        "memory grew by {grown} bytes for inputs of {LARGEST_CAP_PLUS_ONE}"
+    );
 }

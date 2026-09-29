@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=70.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,10 +9,10 @@ description = "Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PK
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-# asn1crypto is kept by owner decision (PLAN.md D16); 1.5 is the tested line.
+# The one runtime dependency runs aprv.wasm (docs/rust-core R27): at or above
+# the tested major, deliberately with no upper pin to one major.
 dependencies = [
-    "cryptography>=40",
-    "asn1crypto>=1.5,<2",
+    "wasmtime>=49",
 ]
 
 # PyPI renders these as sidebar links; Changelog is the one registries
@@ -27,12 +27,14 @@ packages = ["apple_purchase_receipt_verifier"]
 license-files = ["LICENSE"]
 
 [tool.setuptools.package-data]
-apple_purchase_receipt_verifier = ["certs/*.cer", "py.typed"]
+apple_purchase_receipt_verifier = ["certs/*.cer", "py.typed", "aprv.wasm", "aprv.wasm.sha256"]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.16",
     "mypy>=1.11",
+    # The install-failure test builds this source tree (setup.py).
+    "setuptools>=70.1",
 ]
 
 [tool.ruff]
@@ -66,13 +68,7 @@ strict = true
 # structures by hand and typing them is a separate piece of work. Every other
 # strict check (including check_untyped_defs) still applies to the tests.
 [[tool.mypy.overrides]]
-module = ["test_verifiers", "test_conformance"]
+module = ["test_conformance"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disallow_untyped_calls = false
-
-# asn1crypto ships no type stubs and no py.typed marker. Its values are Any
-# either way; this only stops mypy erroring on the import itself.
-[[tool.mypy.overrides]]
-module = ["asn1crypto.*"]
-ignore_missing_imports = true

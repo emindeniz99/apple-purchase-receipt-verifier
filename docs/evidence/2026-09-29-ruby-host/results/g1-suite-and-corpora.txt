@@ -1,0 +1,16 @@
+# module: aprv.wasm 3,005,922 B, sha256 4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e
+# g1.sh: rake test with APRV_PACKAGING=1 (Ruby 3.3.6, wasmtime 48.0.1), then the five pinned corpora through bench/corpus.rb, compared with same.py
+395 runs, 33381 assertions, 0 failures, 0 errors, 0 skips
+conformance_test.rb alone: 313 runs, 1430 assertions, 0 failures (311 case tests + 2 other tests of the file)
+packaging round trip (APRV_PACKAGING=1) ran, not skipped: RubyGems picked wasmtime-48.0.1-x86_64-linux; built gem 1,035,264 bytes
+cases: 153 rows: 153 identical, 0 differ, 0 traps
+{"host":"ruby 3.3.6, wasmtime 48.0.1","rows":153,"traps":0,"instances":27}
+hostile: 811 rows: 811 identical, 0 differ, 0 traps
+{"host":"ruby 3.3.6, wasmtime 48.0.1","rows":811,"traps":0,"instances":4}
+algorithms: 22 rows: 22 identical, 0 differ, 0 traps
+{"host":"ruby 3.3.6, wasmtime 48.0.1","rows":22,"traps":0,"instances":22}
+substrate: 193 rows: 193 identical, 0 differ, 0 traps
+{"host":"ruby 3.3.6, wasmtime 48.0.1","rows":193,"traps":0,"instances":74}
+fuzz: 5000 rows: 5000 identical, 0 differ, 0 traps
+{"host":"ruby 3.3.6, wasmtime 48.0.1","rows":5000,"traps":0,"instances":96}
+total: 6179 of 6179 identical, 0 traps

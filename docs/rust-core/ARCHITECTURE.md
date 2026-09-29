@@ -225,8 +225,8 @@ A failure is `{"verified":false,"reason":"<0.7 Reason>","message":"..."}`.
 - **Inputs are bytes, outputs are strings.** A WIT `string` must be UTF-8
   and the lift is unchecked in release builds of wit-bindgen, so the three
   payloads and the configuration cross as `list<u8>`: any bytes reach the
-  core, which answers a non-UTF-8 JWS with `INVALID_JWS_FORMAT` as a
-  value, the same 243 rows ABI v1 answered ([canonical ABI final][cabifinal]).
+  core, which answers a non-UTF-8 JWS with `MALFORMED` as a value (the
+  0.6 core's `INVALID_JWS_FORMAT`), the same 243 rows ABI v1 answered ([canonical ABI final][cabifinal]).
   Every output is JSON text the guest produced, so `string` is safe there.
 - **`env` is a `u32`, not a WIT enum.** An enum lifts with an unchecked
   `transmute` in release builds; the `u32` is matched in the guest, which
@@ -520,8 +520,11 @@ the hand-written ABI code of the final round
 - Speed through ABI v1 on Node 22: 1,343 µs per g5 and 4,819 µs per JWS
   ([ABI v1][abi]).
 - Memory: a hostile 3 MiB receipt of tiny attributes peaked at 145 MiB in
-  Node against 67 MiB for a tiny one ([ASN.1 payload §3][payload]).
-  Phase 4 measures it in workerd, whose isolate limit is 128 MB.
+  Node against 67 MiB for a tiny one ([ASN.1 payload §3][payload]) before
+  the core's header walk; after it the unsigned and signerless forms are
+  refused before the payload is read and linear memory peaks near 16 MiB
+  ([core review fixes][corefix]). Phase 4 measures it in workerd, whose
+  isolate limit is 128 MB.
 - Runtimes kept: Node 20/22/24/26, Bun, Deno, workerd, Vercel Edge through
   `@edge-runtime/vm`, Chromium, Firefox and WebKit. Fastly Compute JS and
   Akamai EdgeWorkers are dropped: neither runs WebAssembly (R5).
@@ -852,3 +855,4 @@ workspace ([CMS everywhere §1][cms]).
 [dotnet]: ../evidence/2026-09-26-dotnet-wasmtime.md
 [substrate]: ../evidence/2026-09-26-security-substrate-bakeoff.md
 [spikes]: ../evidence/2026-09-25-rust-core-spikes.md
+[corefix]: ../evidence/2026-09-29-core-review-fixes.md

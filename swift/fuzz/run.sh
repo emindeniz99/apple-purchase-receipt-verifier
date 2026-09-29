@@ -23,21 +23,21 @@ fixtures="$here/../../fixtures"
 target="${1:?usage: run.sh <target>|all [seconds]}"
 seconds="${2:-60}"
 sanitizers="${FUZZ_SANITIZERS:-fuzzer}"
-targets=(receipt-der receipt-base64 jws endpoint-json receipt-payload readers)
+targets=(receipt-der receipt-base64 jws endpoint-json)
 
 # -sanitize=fuzzer instruments every target in the graph, dependencies
-# included, so the fuzzer can steer into swift-asn1 and swift-certificates
-# rather than only into this repository's own code. -enable-testing is what
-# lets Sources/FuzzSupport reach the library's internal readers. There is no
-# -parse-as-library: SwiftPM aliases a Linux executable's `main` to the
-# module's entry point, so each target keeps a main.swift and starts
-# libFuzzer through LLVMFuzzerRunDriver (see FuzzSupport.runFuzzer).
+# included, so the fuzzer can steer into WasmKit (the interpreter aprv.wasm
+# runs on) and the host glue, not only into this directory's harness. The
+# verification itself runs inside aprv.wasm, which is not instrumented: the
+# core is fuzzed natively in rust/fuzz. There is no -parse-as-library:
+# SwiftPM aliases a Linux executable's `main` to the module's entry point, so
+# each target keeps a main.swift and starts libFuzzer through
+# LLVMFuzzerRunDriver (see FuzzSupport.runFuzzer).
 # --force-resolved-versions: build the revisions in this package's own
 # Package.resolved and fail rather than re-resolve, so a newer tag matching
 # the manifest's floors cannot arrive unreviewed.
 swift build --package-path "$here" -c release --force-resolved-versions \
-  -Xswiftc "-sanitize=$sanitizers" \
-  -Xswiftc -enable-testing
+  -Xswiftc "-sanitize=$sanitizers"
 
 bin="$(swift build --package-path "$here" -c release --force-resolved-versions --show-bin-path)"
 
@@ -54,10 +54,8 @@ run_one() {
   local name="$1"
   local seeds
   case "$name" in
-    receipt-der | receipt-payload)
+    receipt-der)
       seeds=("$fixtures/generated-0.7" "$fixtures/generated" "$fixtures/apple-official/certs") ;;
-    readers)
-      seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts") ;;
     receipt-base64)
       seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
     jws)
