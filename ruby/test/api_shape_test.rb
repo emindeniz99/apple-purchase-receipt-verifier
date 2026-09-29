@@ -203,7 +203,7 @@ class ApiShapeTest < Minitest::Test
   end
 
   def test_the_library_holds_no_verification_code
-    files = Dir[File.expand_path("../lib/**/*.rb", __dir__)].reject { |f| f.end_with?("roots_data.rb") }
+    files = Dir[File.expand_path("../lib/**/*.rb", __dir__)]
     refute_empty files
     files.each do |file|
       File.readlines(file, chomp: true, encoding: "UTF-8").each_with_index do |line, index|
