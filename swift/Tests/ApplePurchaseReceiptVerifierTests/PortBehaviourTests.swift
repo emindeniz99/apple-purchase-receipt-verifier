@@ -26,10 +26,14 @@ final class PortBehaviourTests: XCTestCase {
         XCTAssertEqual(result.failure?.reason, .invalidCertificate, result.failure?.message ?? "verified")
     }
 
-    /// One byte of the signer certificate's modulus, made even: a key the
-    /// crypto library refuses. A verdict, INVALID_CERTIFICATE, never a
-    /// crash (0.7 pinned a swift-crypto double free here; the module must
-    /// answer the same).
+    /// One byte of the signer certificate's modulus, made even. A verdict,
+    /// never a crash (0.7 pinned a swift-crypto double free here). The
+    /// verdict is UNTRUSTED_CHAIN, the shared case
+    /// `receipt/reject-signer-with-an-even-rsa-modulus`'s answer, which the
+    /// Java implementation gives too: the changed byte breaks the
+    /// intermediate's signature over the leaf, so the chain fails before the
+    /// key is used. 0.7 Swift answered INVALID_CERTIFICATE only because
+    /// swift-crypto refused the key while decoding it.
     func testASignerWhoseRsaKeyIsRefusedIsAVerdict() throws {
         var mutated = try TestFixtures.bytes(TestFixtures.receipt)
         XCTAssertEqual(mutated[1121], 0x89, "fixture layout changed; re-locate the signer's last modulus byte")
@@ -38,7 +42,7 @@ final class PortBehaviourTests: XCTestCase {
         let base64 = standardBase64Encode(mutated)
         let verifier = try TestFixtures.verifier(roots: [TestFixtures.receiptRoot])
         for _ in 0..<3 {
-            XCTAssertEqual(verifier.verifyReceipt(base64: base64).failure?.reason, .invalidCertificate)
+            XCTAssertEqual(verifier.verifyReceipt(base64: base64).failure?.reason, .untrustedChain)
         }
     }
 
