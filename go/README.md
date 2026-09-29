@@ -300,8 +300,9 @@ does.
 
 Measured with `go test -bench` on a shared 4-vCPU guest (Intel Xeon
 Processor @ 2.80GHz, Go 1.24.7, wazero v1.9.0's compiler), one goroutine, on
-the ABI stand-in module of 2026-09-29 while other jobs kept the machine
-busy, so treat the figures as a floor:
+the module of the 2026-09-29 canonical-ABI round while other jobs kept the
+machine busy, so treat the figures as a floor. Re-measure on the release
+module before quoting them:
 
 | Call | Per second | Time per call |
 |---|---:|---:|
