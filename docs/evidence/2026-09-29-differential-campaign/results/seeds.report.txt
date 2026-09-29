@@ -1,0 +1,113 @@
+reason       seeds/apple/fixtures/generated/receipt-signer-corrupt-extension.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/anchors/fixtures/generated/receipt-signer-corrupt-extension.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/apple/fixtures/generated/receipt-signer-duplicate-extension.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/anchors/fixtures/generated/receipt-signer-duplicate-extension.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/apple/fixtures/generated/receipt-signer-version-11.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/anchors/fixtures/generated/receipt-signer-version-11.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/apple/fixtures/generated-0.7/core-review-receipt-econtent-7-levels.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+verdict      seeds/anchors/fixtures/generated-0.7/core-review-receipt-econtent-7-levels.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: verified
+    recorded: verdict
+reason       seeds/apple/fixtures/generated-0.7/core-review-receipt-eleven-crls.der
+    core: MALFORMED: receipt embeds 11 CRLs, more than the maximum of 10
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+verdict      seeds/anchors/fixtures/generated-0.7/core-review-receipt-eleven-crls.der
+    core: MALFORMED: receipt embeds 11 CRLs, more than the maximum of 10
+    java: verified
+    recorded: verdict
+payload      seeds/anchors/fixtures/generated-0.7/core-review-receipt-five-octet-length.der
+    core: verified
+    java: verified
+    recorded: payload
+verdict      seeds/anchors/fixtures/generated-0.7/core-review-receipt-value-7-levels.der
+    core: UNREADABLE_PAYLOAD: signed receipt content could not be read
+    java: verified
+    recorded: verdict
+reason       seeds/apple/fixtures/generated-0.7/der-jws-intermediate-extensions-twice.jws
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root
+    recorded: reason
+verdict      seeds/anchors/fixtures/generated-0.7/der-jws-intermediate-extensions-twice.jws
+    core: INVALID_CERTIFICATE: x5c entry is not a valid certificate
+    java: verified
+    recorded: verdict
+reason       seeds/apple/fixtures/generated-0.7/der-receipt-certificates-field-twice.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+verdict      seeds/anchors/fixtures/generated-0.7/der-receipt-certificates-field-twice.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: verified
+    recorded: verdict
+reason       seeds/apple/fixtures/generated-0.7/der-receipt-intermediate-extensions-twice.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+verdict      seeds/anchors/fixtures/generated-0.7/der-receipt-intermediate-extensions-twice.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: verified
+    recorded: verdict
+verdict      seeds/anchors/fixtures/generated-0.7/lookup-receipt-twin-ahead-of-signer.der
+    core: verified
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: verdict
+reason       seeds/apple/fixtures/generated-0.7/receipt-signer-corrupt-extension.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/anchors/fixtures/generated-0.7/receipt-signer-corrupt-extension.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/apple/fixtures/generated-0.7/receipt-signer-duplicate-extension.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/anchors/fixtures/generated-0.7/receipt-signer-duplicate-extension.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/apple/fixtures/generated-0.7/receipt-signer-version-11.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/anchors/fixtures/generated-0.7/receipt-signer-version-11.der
+    core: INVALID_CERTIFICATE: receipt signer certificate does not decode
+    java: MALFORMED: an embedded certificate is not a valid certificate
+    recorded: reason
+reason       seeds/apple/fixtures/generated-0.7/review-receipt-malformed-signed-attrs-first.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+reason       seeds/apple/fixtures/generated-0.7/review-receipt-malformed-signed-attrs-second.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root
+    recorded: reason
+verdict      seeds/anchors/fixtures/generated-0.7/review-receipt-malformed-signed-attrs-second.der
+    core: MALFORMED: malformed CMS structure: not a CMS ContentInfo
+    java: verified
+    recorded: verdict
+summary: 808 rows; 558 message-only, 1 payload, 19 reason, 222 same, 8 verdict; 0 not recorded in R20; 0 recorded rows now agree

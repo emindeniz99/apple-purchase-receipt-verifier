@@ -6,9 +6,9 @@ namespace ApplePurchaseReceiptVerifier
     /// Why a <see cref="VerificationResult{T}"/> did not verify.
     /// </summary>
     /// <remarks>
-    /// <see cref="Message"/> never embeds raw input: every message this library
-    /// builds is fixed text, optionally with a bounded number or a fixed OID
-    /// constant, never a substring of the bytes being verified. That is a
+    /// <see cref="Message"/> never embeds raw input: every message is fixed text,
+    /// optionally with a bounded number or a fixed OID constant, never a
+    /// substring of the bytes being verified. That is a
     /// simpler and stronger guarantee than sanitising quoted input after the
     /// fact, and it is safe to put in a log line as is. Switch on
     /// <see cref="Reason"/>; the text may change between releases.
@@ -31,10 +31,11 @@ namespace ApplePurchaseReceiptVerifier
         public string Message { get; }
 
         /// <summary>
-        /// The inner exception behind <see cref="VerificationReason.UnreadablePayload"/>
-        /// and <see cref="VerificationReason.InternalError"/>, so an operator can see
-        /// why Apple-signed content did not parse. <see langword="null"/> for every
-        /// other reason.
+        /// The exception behind an <see cref="VerificationReason.InternalError"/>
+        /// that this library raised itself: the verification module trapped, its
+        /// answer could not be read, or the configured clock failed. A verdict of
+        /// the module, whichever reason it carries, has none, and neither does any
+        /// other reason: the module's messages are all a caller gets about the input.
         /// </summary>
         public Exception? Cause { get; }
 

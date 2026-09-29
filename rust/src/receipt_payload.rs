@@ -875,6 +875,89 @@ mod tests {
     }
 
     #[test]
+    fn what_openssl_refuses_on_its_own_is_refused_one_sequence_deeper_too() {
+        // Round-2 review F3: OpenSSL's ANY decoder refuses these as the
+        // fourth field, but the walk passed them one SEQUENCE deeper, where
+        // OpenSSL keeps the SEQUENCE whole, so the verdict depended on the
+        // depth. A short UTCTime or GeneralizedTime, a constructed BOOLEAN,
+        // INTEGER, NULL, OID or ENUMERATED, a primitive SEQUENCE, an
+        // end-of-contents inside a definite length, a constructed time
+        // whose joined octets are too short, and a string of seven
+        // constructed levels (ASN1_MAX_STRING_NEST).
+        let refused: [Vec<u8>; 12] = [
+            vec![0x17, 0x01, 0x30],
+            vec![0x18, 0x02, 0x32, 0x30],
+            vec![0x21, 0x03, 0x01, 0x01, 0xff],
+            vec![0x22, 0x03, 0x02, 0x01, 0x05],
+            vec![0x25, 0x02, 0x05, 0x00],
+            vec![0x26, 0x03, 0x06, 0x01, 0x2a],
+            vec![0x2a, 0x03, 0x0a, 0x01, 0x01],
+            vec![0x30, 0x02, 0x10, 0x00],
+            vec![0x24, 0x05, 0x04, 0x01, 0x41, 0x00, 0x00],
+            [&[0x37, 0x10][..], &der(4, b"240101"), &der(4, b"00000Z")].concat(),
+            chunked(7, tag::OCTET_STRING, b"x"),
+            chunked(7, 0x0c, b"x"),
+        ];
+        for value in &refused {
+            for fourth in [value.clone(), der_long(tag::SEQUENCE, value)] {
+                let payload = set(&[with_fourth_field(&fourth)]);
+                assert!(parse_receipt_payload(&payload).is_err(), "{fourth:02x?}");
+            }
+        }
+        // What OpenSSL decodes stays readable at both depths: a
+        // constructed time of 13 joined octets, a constructed BIT STRING,
+        // six constructed levels, a SEQUENCE-tagged chunk inside a string.
+        let accepted: [Vec<u8>; 4] = [
+            [&[0x37, 0x11][..], &der(4, b"240101"), &der(4, b"000000Z")].concat(),
+            vec![0x23, 0x04, 0x03, 0x02, 0x00, 0x01],
+            chunked(6, tag::OCTET_STRING, b"x"),
+            vec![0x24, 0x05, 0x30, 0x03, 0x04, 0x01, 0x41],
+        ];
+        for value in &accepted {
+            for fourth in [value.clone(), der_long(tag::SEQUENCE, value)] {
+                let payload = set(&[with_fourth_field(&fourth)]);
+                assert!(parse_receipt_payload(&payload).is_ok(), "{fourth:02x?}");
+            }
+        }
+    }
+
+    #[test]
+    fn seven_constructed_levels_are_refused_wherever_openssl_decodes_a_string() {
+        // N1, N2: OpenSSL joins six constructed levels of a string and no
+        // more, wherever it decodes one: the value, the version field, the
+        // Xcode wrap. Six read; seven are unreadable, and the detail names
+        // the nesting, not a chunk's type.
+        let bundle = der(0x0c, b"com.example.app");
+        let version = |levels| {
+            set(&[der(
+                tag::SEQUENCE,
+                &[
+                    int(&[2]),
+                    chunked(levels, tag::OCTET_STRING, &[1]),
+                    der(tag::OCTET_STRING, &bundle),
+                ]
+                .concat(),
+            )])
+        };
+        let value = |levels| {
+            set(&[raw_attribute(
+                &int(&[2]),
+                &chunked(levels, tag::OCTET_STRING, &bundle),
+            )])
+        };
+        let payload = set(&[date("2024-08-06T12:00:00Z")]);
+        let wrap = |levels| chunked(levels, tag::OCTET_STRING, &payload);
+        for build in [&version as &dyn Fn(usize) -> Vec<u8>, &value, &wrap] {
+            assert!(parse_receipt_payload(&build(6)).is_ok());
+            let refused = parse_receipt_payload(&build(7)).unwrap_err().to_string();
+            assert!(
+                refused.contains("nested deeper than OpenSSL decodes"),
+                "{refused}"
+            );
+        }
+    }
+
+    #[test]
     fn an_empty_date_means_not_set_and_is_not_kept() {
         let receipt = parse_receipt_payload(&set(&[date(""), attribute(&[21], &ia5(""))])).unwrap();
         assert_eq!(receipt.receipt_creation_date_ms, None);

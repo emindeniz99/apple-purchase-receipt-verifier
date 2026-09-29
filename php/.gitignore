@@ -1,3 +1,8 @@
 /vendor/
 /.phpunit.cache/
 /.php-cs-fixer.cache
+
+# The aprv binary that bin/aprv-install downloads (never committed; ~12 MB).
+/bin/aprv
+/bin/aprv.exe
+/bin/.aprv-download-*

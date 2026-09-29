@@ -1,1 +1,5 @@
 .build/
+# The stand-in aprv.wasm is copied into place, never committed on a lane
+# branch (owner rule, 2026-09-29): only the release module is committed, once,
+# at integration (docs/rust-core/DECISIONS.md R14).
+Sources/ApplePurchaseReceiptVerifier/Resources/aprv.wasm
