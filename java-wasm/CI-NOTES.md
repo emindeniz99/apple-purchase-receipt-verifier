@@ -116,11 +116,14 @@ from other builds, so timings are for the record, not for comparison.
 
 ### The module
 
-The pin in `src/main/wasm/aprv.wasm.sha256` names the review-fixed 0.7
-module (G1b): SHA-256
-`9c0a581c5a0b6e4e7f7ba66675f07ec00096fa95772ae27ad86d6049a1a0f263`,
-3,009,278 bytes; `src/main/server/SHA256SUMS` pins lane B's server built
-on its component (`79f04743...0173d5c5c`, 12,006,320 bytes). Every case
+The pin in `src/main/wasm/aprv.wasm.sha256` names the complete 0.7
+module (G1c, its `name` section stripped): SHA-256
+`a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1`,
+2,760,476 bytes. G1c on Endive: 377 of 377 cases on JDK 21, Temurin 17
+and Temurin 11; the corpus 6,179 of 6,179 on 1 and 4 threads; the Java 8
+leg without the server tests 40 tests, 0 failures, 1 skipped.
+`src/main/server/SHA256SUMS` pins lane B's server of G1b
+(`79f04743...0173d5c5c`, 12,006,320 bytes) until its G1c build lands. Every case
 must pass on both; there is no stand-in list.
 
 G1b, 2026-09-29, `scripts/g1.sh` with `APRV_SERVER`, `JAVA8`, and
