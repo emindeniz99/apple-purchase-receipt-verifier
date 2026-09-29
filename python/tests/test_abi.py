@@ -2,9 +2,8 @@
 exports (the round-13 ABI tests, docs/evidence/2026-09-29-canonical-abi-final):
 what ``init`` answers, what traps, that a trap in one instance leaves another
 verifying, that memory does not grow with the calls. These hold for any
-``aprv.wasm`` of ABI 1.0.0, so they run on the stand-in module as they will
-on the release build. The wrapper's own bounds checks are tested over the
-WAT double in test_facade.py.
+``aprv.wasm`` of ABI 1.0.0, so they run on whichever module is in place. The wrapper's own
+bounds checks are tested over the WAT double in test_facade.py.
 """
 
 import json

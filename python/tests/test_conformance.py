@@ -8,11 +8,7 @@ one of the two; it is never something to special-case here.
 
 The package holds no verification logic, so a case that fails here is a
 fault of ``aprv.wasm`` (or of the wrapper's mapping of its JSON), never of
-Python code. While the bundled module is the stand-in built on the 0.6 core
-(see ``_support``), the cases listed in ``standin_differences.txt`` are
-expected to fail, and each is asserted to: a listed case that passes is as
-much a fault as an unlisted one that fails. Any other module must pass all
-of them."""
+Python code. Every case must pass."""
 
 import base64
 import hashlib
@@ -25,8 +21,6 @@ from datetime import datetime
 from pathlib import Path
 
 from apple_purchase_receipt_verifier import Config, Environment, Reason, Verifier
-
-from _support import IS_STANDIN, STANDIN_DIFFERENCES
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 # Read as UTF-8 explicitly rather than in the locale encoding: the file
@@ -158,7 +152,12 @@ def _refused_as_base64(failure, reason):
 
 
 def _decode_receipt_data(verifier, text):
-    return _refused_as_base64(verifier.verify_receipt(text).failure, Reason.MALFORMED)
+    failure = verifier.verify_receipt(text).failure
+    if text == "":
+        # Nothing to decode: the module refuses the empty receipt by name,
+        # before it reaches the decoder ("each port refuses it before decoding").
+        return failure is not None and failure.reason == Reason.MALFORMED
+    return _refused_as_base64(failure, Reason.MALFORMED)
 
 
 def _decode_x5c(verifier, text):
@@ -416,8 +415,6 @@ def _make_test(case):
     def test(self):
         self.run_case(case)
 
-    if IS_STANDIN and case["id"] in STANDIN_DIFFERENCES:
-        return unittest.expectedFailure(test)
     return test
 
 
@@ -427,11 +424,9 @@ for _case in CASES["cases"]:
 
 def setUpModule():
     clocked = [c["id"] for c in CASES["cases"] if "clock" in c]
-    expected_to_differ = len(STANDIN_DIFFERENCES) if IS_STANDIN else 0
     print(
         f"conformance (0.7): {len(CASES['cases'])} cases, 0 skipped; "
-        f"{len(clocked)} run against an injected clock; "
-        f"{expected_to_differ} expected to differ on the stand-in module"
+        f"{len(clocked)} run against an injected clock"
     )
 
 

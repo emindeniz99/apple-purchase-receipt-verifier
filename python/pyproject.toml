@@ -68,7 +68,7 @@ strict = true
 # structures by hand and typing them is a separate piece of work. Every other
 # strict check (including check_untyped_defs) still applies to the tests.
 [[tool.mypy.overrides]]
-module = ["test_conformance", "record_standin_differences"]
+module = ["test_conformance"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disallow_untyped_calls = false

@@ -43,7 +43,7 @@ from unittest import mock
 
 from apple_purchase_receipt_verifier import Config, Reason, Verifier, _host, default_roots
 
-from _support import IS_STANDIN, standin_differs
+import _support  # noqa: F401  (puts the module APRV_WASM names in place, for tooling)
 
 
 def verifier(roots: "Sequence[bytes]") -> Verifier:
@@ -51,12 +51,9 @@ def verifier(roots: "Sequence[bytes]") -> Verifier:
 
 
 def assert_refused(test: unittest.TestCase, result: Any, reason: Reason) -> None:
-    """The input did not verify; and, from a module that speaks 0.7's reason
-    names, it failed for ``reason``. The stand-in module (0.6 core) names its
-    reasons differently, which the wrapper reports as INTERNAL_ERROR."""
+    """The input did not verify, and it failed for ``reason``."""
     test.assertFalse(result.verified)
-    if not IS_STANDIN:
-        test.assertEqual(reason, failure_reason(result))
+    test.assertEqual(reason, failure_reason(result))
 
 
 def receipt_base64(der: bytes) -> str:
@@ -206,7 +203,6 @@ class ProcessTrustStoreTest(unittest.TestCase):
         result = verifier(default_roots()).verify_signed_data(jws)
         assert_refused(self, result, Reason.UNTRUSTED_CHAIN)
 
-    @standin_differs  # the stand-in answers a signed payload as an object, 0.7 as a string
     def test_the_jws_root_the_process_trusts_verifies_when_the_caller_passes_it(self) -> None:
         root = cert("generated", "jws-root.der")
         self.plant(root)
