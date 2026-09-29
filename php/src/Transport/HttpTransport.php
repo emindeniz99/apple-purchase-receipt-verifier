@@ -98,14 +98,6 @@ final class HttpTransport implements Transport
         );
     }
 
-    public function __destruct()
-    {
-        if ($this->curl !== null) {
-            curl_close($this->curl);
-            $this->curl = null;
-        }
-    }
-
     /**
      * @param array<array-key, mixed> $info
      * @param list<string> $roots

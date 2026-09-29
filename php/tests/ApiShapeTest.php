@@ -191,9 +191,9 @@ final class ApiShapeTest extends TestCase
     public function testNoClassDefinesASerializationGadget(string $class): void
     {
         $reflection = new ReflectionClass($class);
-        // The two transports declare __destruct to delete a roots file and close a curl handle; nothing else may.
+        // The CLI transport declares __destruct to delete its roots file; nothing else may.
         $magics = ['__wakeup', '__unserialize', '__call', '__get', '__set', '__invoke'];
-        if (!in_array($class, [CliTransport::class, HttpTransport::class], true)) {
+        if ($class !== CliTransport::class) {
             $magics[] = '__destruct';
         }
         foreach ($magics as $magic) {

@@ -231,7 +231,6 @@ final class Installer
         $ok = curl_exec($curl);
         $error = curl_error($curl);
         $effective = (string) curl_getinfo($curl, CURLINFO_EFFECTIVE_URL);
-        curl_close($curl);
         if ($written > self::MAX_BYTES) {
             throw new InstallException('the download is larger than ' . self::MAX_BYTES . ' bytes: cut off');
         }
