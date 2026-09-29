@@ -214,6 +214,60 @@ public class AbiTests
         Assert.Equal(warm, instance.MemoryBytes);
     }
 
+    private static byte[] Filled(int length, char c)
+    {
+        byte[] bytes = new byte[length];
+        Array.Fill(bytes, (byte)c);
+        return bytes;
+    }
+
+    /// <summary>
+    /// An input longer than the largest cap never reaches linear memory past
+    /// one byte over it, and the core, which decides every cap on the length,
+    /// answers exactly what it answers for that length: TOO_LARGE for a
+    /// receipt and a JWS, 21002 for an endpoint body.
+    /// </summary>
+    [Theory]
+    [InlineData(4 * 1024 * 1024)]
+    [InlineData(64 * 1024 * 1024)]
+    public void AnInputOverTheCapIsCutAndTheCoreAnswersTooLarge(int length)
+    {
+        using AprvInstance instance = Fresh(None);
+        long before = instance.MemoryBytes;
+
+        string receipt = instance.VerifyReceipt(Now, Filled(length, 'A'));
+        Assert.Contains("\"reason\":\"TOO_LARGE\"", receipt, StringComparison.Ordinal);
+        Assert.Equal(instance.VerifyReceipt(Now, Filled(AprvInstance.MaxLoweredInputBytes, 'A')), receipt);
+
+        string jws = instance.VerifySignedData(Now, Filled(length, 'e'));
+        Assert.Contains("\"reason\":\"TOO_LARGE\"", jws, StringComparison.Ordinal);
+
+        Assert.Equal("{\"status\":21002}", instance.VerifyReceiptEndpoint(1, Now, Filled(length, '{')));
+
+        Assert.True(instance.MemoryBytes < before + AprvInstance.MaxLoweredInputBytes + (2L * 1024 * 1024), "linear memory grew to " + instance.MemoryBytes);
+    }
+
+    /// <summary>The cap itself, 3,145,728 bytes, is passed whole: the core reads it and does not say TOO_LARGE, and one byte more it does.</summary>
+    [Fact]
+    public void AnInputAtTheCapIsPassedWhole()
+    {
+        using AprvInstance instance = Fresh(None);
+        string atCap = instance.VerifyReceipt(Now, Filled(3_145_728, 'A'));
+        Assert.DoesNotContain("TOO_LARGE", atCap, StringComparison.Ordinal);
+        Assert.Contains("\"verified\":false", atCap, StringComparison.Ordinal);
+        Assert.Contains("TOO_LARGE", instance.VerifyReceipt(Now, Filled(3_145_729, 'A')), StringComparison.Ordinal);
+    }
+
+    /// <summary>Through the public API: a receipt of 4 MiB is a TooLarge failure the core made, not the wrapper (no cause).</summary>
+    [Fact]
+    public void ARealReceiptOverTheCapIsTooLargeThroughTheApi()
+    {
+        VerificationResult<ReceiptPayload> result = Verifier.Create(Config.Defaults()).VerifyReceipt(new string('A', 4 * 1024 * 1024));
+        Assert.False(result.Verified);
+        Assert.Equal(VerificationReason.TooLarge, result.Failure!.Reason);
+        Assert.Null(result.Failure.Cause);
+    }
+
     /// <summary>The instance's store carries the limits: one instance, and 256 MiB of memory.</summary>
     [Fact]
     public void AnInstanceHoldsAtMostTheMemoryLimit()

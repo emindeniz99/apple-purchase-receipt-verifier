@@ -32,7 +32,7 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
   lib/apple_purchase_receipt_verifier/roots_data.rb` until Phase 7 deletes
   `roots_data.rb`, `ruby/certs` and the generator together.
 - The conformance test expects every case of `fixtures/cases.json` to pass
-  (338 of 338, checked at G1b: `aprv.wasm` sha256 `9c0a581c...f263`). It needs the module
+  (377 of 377, checked at G1c: `aprv.wasm` sha256 `a35b9fce...40a1`). It needs the module
   in place (see "The module").
 
 ### `ruby-gem` (Ruby 3.3 and 4.0)

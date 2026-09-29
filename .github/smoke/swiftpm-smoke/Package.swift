@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.3
 //
 // Smoke-tests the Swift library as SwiftPM consumers get it: resolved from the
 // published git tag, not from this working tree. Run with the released version:
@@ -34,7 +34,8 @@ if let path = environment["SMOKE_PATH"] {
 let package = Package(
     name: "Smoke",
     platforms: [
-        .macOS(.v13),
+        .macOS(.v15),
+        .iOS(.v18),
     ],
     dependencies: [library],
     targets: [

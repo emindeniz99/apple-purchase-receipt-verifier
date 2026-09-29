@@ -1,61 +1,150 @@
-# CI for the rust-core migration: what is wired, and what waits
+# How CI is wired after the rust-core migration
 
-The integrator's checklist for the jobs the supply-chain lane added
-(MIGRATION.md steps 1.5, 1.13 to 1.15, 2.8 to 2.10, "CI matrix", "Release
-artifact matrix", "Release workflow changes"). Every job that needs another
-lane's files checks that they exist first, prints a `::notice::` naming
-what it waits for, and succeeds, so `rust-core` stays green while the lanes
-land. Each row says what flips the gate and what the job then asks of the
-file's owner.
+What each workflow builds, what every job consumes, which jobs are gated
+and on what, and which are held and why. The lanes' own `CI-NOTES.md`
+files say what their jobs run; this file says how the jobs connect. The
+decisions cited (OD-01 to OD-14) are in `docs/rust-core/STATUS.md`.
 
-## The contracts these jobs call
+## The module and the server binary
 
-| Caller | Expects | Owner |
+No host package commits `aprv.wasm` (Go and Swift will, once, at
+integration: DECISIONS.md R14), so every job that runs it gets it from
+the same run.
+
+- `rust-wasm` builds `aprv.wasm`, `aprv.component.wasm`, `aprv.wit` and
+  `SHA256SUMS` with `rust/bindings/abi/build.sh`, the toolchain
+  `tools/wasm-toolchain.sh` pins, and the rustc of
+  `rust/rust-toolchain.toml` (named in `RUSTUP_TOOLCHAIN`, because
+  `build.sh` runs from the repository root, where rustup does not read
+  that file). It uploads them as the `aprv-wasm` artifact and does
+  nothing else, so host jobs start as soon as it finishes.
+- It runs whenever any area is selected (`changes` output `module`).
+  Every host job receives the module this run built, never one from an
+  earlier run (OD-01).
+- `.github/scripts/place-module.sh <artifact-dir> <host>...` checks the
+  artifact against its `SHA256SUMS`, copies the module where the host
+  reads it (Node takes the component), and rewrites that host's tracked
+  pin in the checkout. A pin that differs from the build is a
+  `::warning::`, not an error: pins lag the core between releases, and
+  `release-please.yml` rewrites them on the release branch.
+- `aprv-server-linux` builds the static x86_64 musl `aprv` around the
+  run's component (`rust/server/scripts/build-static.sh`, which needs
+  `musl-tools` for the C that Wasmtime compiles) and uploads it as
+  `aprv-server-x86_64-unknown-linux-musl`. It runs when the server, PHP
+  or Java is selected (`changes` output `server-bin`). PHP jobs get it as
+  `APRV_BIN`; the java-wasm jobs as `-Daprv.server.linux-x86_64` with a
+  `SHA256SUMS` generated beside it.
+
+## ci.yml, by area
+
+`changes` (`.github/scripts/changed-areas.sh`) selects the areas `java`
+(including `java-wasm/`, `java-bench/`, `jvm-interop/`), `node`, `python`,
+`ruby`, `php`, `go`, `rust`, `swift`, `dotnet` and `server`
+(`rust/server/`). A change to the core, the bindings or the toolchain
+selects every area. Each job below runs when its area is selected; the
+second column is what it takes from other jobs.
+
+| Area | Jobs | Consumes |
 |---|---|---|
-| `rust-wasm`, `build-wasm`, `release-branch-wasm`, `tools/reproduce-*.sh` | `rust/bindings/abi/build.sh <out-dir>` writes `aprv.wasm`, `aprv.component.wasm`, `aprv.wit` and `SHA256SUMS` (the three files, `sha256sum` format), reading `WASI_SDK_DIR`, `OPENSSL_WASM_DIR` and `PATH` (wasm-tools, wit-bindgen) as `tools/wasm-toolchain.sh` sets them, and the rustc of `rust/rust-toolchain.toml`. It runs from the repository root in a fresh clone, so it must not depend on the clone's path: remap `CARGO_HOME` and the source tree with `--remap-path-prefix` (the round-13 stand-in module carries both paths) | lane A2 |
-| `tools/check-wasm.sh` | the committed WIT at `rust/bindings/abi/wit/aprv.wit`; module exports exactly the four operations, their `cabi_post_` functions, `cabi_realloc`, `memory`, `_initialize` and wit-bindgen's own `cabi_realloc_wit_bindgen_<version>`. The stand-in still exports `aprv_clock_now_ms` and `aprv_random_get` (finding 7 of the final round); the check fails on them | lane A2 |
-| `rust-wasm` schema step, `tools/validate-wire.mjs` | `rust/bindings/wire/schema/{init-config,init-result,verify-receipt-result,verify-signed-data-result}.schema.json`, JSON Schema 2020-12, `$ref`s by relative file name or `$id`. The trap host writes the matching answers as `init-config.jsonl`, `init.jsonl`, `verify-receipt.jsonl`, `verify-signed-data.jsonl` | lane A2 |
-| `aprv-server`, `aprv-server-contract`, `build-server`, `tools/reproduce-server.sh` | `rust/server/scripts/build-static.sh <component.wasm> <target-triple> <out-dir>` does the two-stage build (precompile for an explicit baseline with the serving features, then the embedding build) for every release target, not only musl, and leaves `<out-dir>/aprv` (`aprv.exe` on Windows); `aprv info` runs with no arguments; `aprv serve` binds `APRV_LISTEN`; `GET /healthz` and `GET /openapi.json` answer. `cargo test --manifest-path rust/server/Cargo.toml --target <t>` finds the component in `APRV_COMPONENT` | lane B |
-| `aprv-server-contract` | `rust/server/openapi.yaml`, `rust/server/.spectral.yaml` (Spectral 6.16.3, `--fail-severity=hint`: 0 findings), Schemathesis 4.28.0 `run --checks all` against the served document; `rust/server/scripts/image-smoke.sh <image>` for the image smoke (g5 with `APRV_LISTEN`, nothing answers without it). The job builds the image with `docker build -f rust/server/Dockerfile .` from the repository root | lane B |
-| `publish-image` | `rust/server/Dockerfile` has a stage named `prebuilt` that copies `aprv-${TARGETARCH}` (`aprv-amd64`, `aprv-arm64`) from the build context into the digest-pinned distroless base; the release builds the image from its own attested static binaries with `--target prebuilt`, and nothing compiles inside Docker there. The multi-stage build stays for local use | lane B |
-| `java-wasm-endive` | `java-wasm/pom.xml`; `mvn -B verify` runs the 311 cases with Endive; `-Daprv.wasm=<path>` points the Endive compile at the module rust-wasm built (without it, the pom's own default) | Java lane |
-| `java-classpath-guard` | `java-wasm/scripts/classpath-guard.sh`, exit 0 when both jars on one classpath fail fast and a Gradle build asking for both fails at resolution | Java lane |
-| `publish-maven` | `mvn -B -P central deploy` in `java-wasm/` with `-Daprv.wasm=`, `-Daprv.server.linux-x86_64=` and `-Daprv.server.linux-aarch64=` (paths to build-wasm's module and build-server's two static binaries), attaching the classifier jars `linux-x86_64` and `linux-aarch64`; jars land as `java-wasm/target/apple-purchase-receipt-verifier-wasm-*.jar` | Java lane |
-| `publish-npm`, `publish-pypi`, `publish-rubygems`, `publish-nuget` | each host's package build reads the module from `APRV_WASM` (core module) or `APRV_COMPONENT` (component, for jco), which the job sets after checking the file against build-wasm's SHA-256, and packs that file; no publish job compiles the module | host lanes |
-| `release-please.yml`, `wasm-copies`, `build-wasm` | committed copies are found with `git ls-files '*aprv.wasm'`: `go/internal/wasm/aprv.wasm` and `swift/Sources/ApplePurchaseReceiptVerifier/Resources/aprv.wasm` | Go and Swift lanes |
-| `java-differential` (nightly) | `tools/differential.sh <aprv.wasm> <out-dir>`: runs the Java implementation and the core over every input it collects, writes its report to `<out-dir>`, exits non-zero on a difference R20 does not record | lane A (step 1.8) |
-| `rust-fuzz-openssl` (nightly) | `rust/openssl/` (the adapter) and `rust/fuzz/run.sh all <seconds>` building against `OPENSSL_DIR` | lane A |
+| module | `rust-wasm`; `rust-wasm-checks` (tools' tests, `check-wasm.sh`, the ABI tests, the cases, the wire schemas, wasm32 clippy, a reproduction in a fresh clone); `rust-wasm-abi` (`rust/bindings/abi/tests` with `APRV_WASM` and `APRV_COMPONENT`); `wasm-copies` (every committed copy and every pin; strict on `release-please--*` branches, warnings elsewhere) | `aprv-wasm` |
+| rust | `rust` (`--workspace`, target/ cached, 40 minutes, strace required, the 1.85.0 floor without `aprv-abi`, and a leg on an OpenSSL 4 built by `tools/openssl-native.sh`: OD-09), `rust-lint` (with `tools/check-layering.mjs`), `rust-ffi`, `elixir-ffi`, `rust-fuzz`, `rust-supply-chain` | nothing |
+| server | `aprv-server` (x86_64 gnu, aarch64 musl with its own static build, macOS, Windows: fmt, both clippy feature sets, tests with `--include-ignored`), `aprv-server-contract` (Spectral, two Schemathesis runs), `aprv-server-image` (buildx from source per architecture, and the `prebuilt` stage on amd64, each through `docker-smoke.sh`) | `aprv-wasm`; `aprv-server-linux` for the contract and the prebuilt image |
+| node | `node`, `node-runtimes` (node, bun, deno, workerd, edge), `node-browsers` (Playwright 1.56.1), `node-lint`, `smoke-npm`, `node-roots-generated` | `aprv-wasm` (the component) |
+| python | `python` (Python 3.10 to 3.14 on the six runner images wasmtime-py ships wheels for, a second warm-cache run), `python-musl` (digest-pinned `ghcr.io/astral-sh/uv` Alpine images, with `libgcc`), `python-fuzz`, `python-tools`, `smoke-pypi` | `aprv-wasm` |
+| go | `go`, `go-platforms`, `go-cross`, `go-scratch` (a static corpus runner in an empty chroot), `go-race`, `go-fuzz`, `go-lint`, `smoke-go`, `go-generate-check` | `aprv-wasm` |
+| swift | `swift` (6.3 and 6.4 containers, debug build then release tests), `swift-macos` and `swift-ios` (`macos-26`: the package needs Swift tools 6.3), `swift-fuzz`, `swift-format`, `smoke-swiftpm` | `aprv-wasm` |
+| ruby | `ruby`, `ruby-gem`, `ruby-macos`, `ruby-tools`, `ruby-fuzz`, `smoke-rubygems` | `aprv-wasm` |
+| dotnet | `dotnet`, `dotnet-mono`, `dotnet-trim`, `dotnet-fuzz`, `dotnet-format`, `dotnet-roots`, `smoke-nuget` | `aprv-wasm` |
+| php | `php` (the suites, then the conformance cases, then HTTP on 8.4), `php-lowest`, `php-static`, `php-fuzz`, `php-format` | `aprv-server-x86_64-unknown-linux-musl` |
+| java | `java`, `java-runtime-8`, `java-hardened-policy`, `java-distroless`, `jvm-interop`, `java-spring-boot`, `java-fuzz`, `java-format`, `smoke-maven` (the pure-Java 0.7 artifact, which needs no module) | nothing |
+| java | `java-wasm-endive` (JDK 11 to 27), `java-wasm-runtime-8` (the server engine on a real Java 8, with a noexec check), `java-wasm-consumers` (jvm-interop and Spring Boot on the -wasm artifact), `java-classpath-guard` (`java-wasm/scripts/classpath-guard.sh`) | `aprv-wasm`; the server binary for the first two |
+| always | `one-implementation` (`--enforce node,python,go,swift,ruby,dotnet,php,java-wasm`, with the per-file allowlist OD-04 describes in `tools/check-one-implementation.mjs`), `conformance` (also `tools/check-licence-copies.mjs`), `zizmor` | nothing |
 
-## Gates to flip
+## Gated and held
 
-| Job | Gate today | Flip when |
+| Job | Gate | Why |
 |---|---|---|
-| `rust-wasm` (build, checks, cases, reproduce, artifact) | `rust/bindings/abi/build.sh` exists | A2 lands step 1.4 |
-| `rust-wasm` schema step | `rust/bindings/wire/schema/` exists | A2 lands step 1.14 |
-| `wasm-copies` | `rust-wasm` built; any committed `aprv.wasm` | Go or Swift lane commits its copy. Strict on `release-please--*` branches, a warning elsewhere (copies lag the core until the release branch refreshes them) |
-| `one-implementation` | `--enforce java-wasm` only; every other language reports | add each language to `--enforce` as its wrapper replaces the 0.7 verifier (node, python, go, swift, ruby, dotnet, php); `--enforce all` is Phase 7 step 5 |
-| `aprv-server`, `aprv-server-contract` | `rust/server/Cargo.toml` (and each file above per step) | lane B lands |
-| `java-wasm-endive` | `java-wasm/pom.xml` | Java lane lands |
-| `java-classpath-guard` | `java-wasm/scripts/classpath-guard.sh` | Java lane lands step 3.5 |
-| `rust-fuzz-openssl` | `rust/openssl/` | lane A1 lands step 1.1 |
-| `java-differential` | `tools/differential.sh` and `build.sh` | step 1.8 |
-| release.yml `build-wasm`, `build-server`, `sbom`, `release-assets`, `publish-image` | none: a release after the merge needs them all | they only run on a tag; main's release.yml is unchanged until `rust-core` merges |
-| release.yml `publish-maven` -wasm steps | `java-wasm/pom.xml` | Java lane lands |
+| ci.yml `smoke-crates`, release.yml `publish-crates`, post-publish-smoke.yml `crates` | `vars.APRV_PUBLISH_CRATES == 'true'` | OD-03: crates.io stays at 0.7 until openssl-sys accepts openssl-src 400.x. A registry build of this tree would get OpenSSL 3, which `aprv-openssl` refuses, and `aprv-openssl` is not on crates.io yet. The owner sets the variable when both are resolved |
+| nightly.yml `corpus` | `vars.APRV_CORPUS_URL` set; the archive must match `vars.APRV_CORPUS_SHA256` | OD-05: the corpora (200 MB of generated rows) stay out of the repository. Without the URL the job prints a notice and does nothing. The archive is a `.tar.gz` with the G1 layout at its top level (`aprv.wasm`, `aprv.component.wasm`, `same.py`, `calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`). Each host leg runs its lane's one-command gate over it. The rows belong to the archive's module, so the archive is refreshed after a release changes the module (the job warns when it no longer matches the pins) |
+| nightly.yml `java-differential` | `tools/differential.sh` exists | lane A3 has not merged it yet; the job prints a notice until then |
 
-## Not wired here
+No other job is gated on a file existing: every lane has landed, and a
+gate that can only be true would turn a deleted directory into a green
+run.
 
-- `java-wasm-s390x` (the Endive corpus under QEMU before each release): no
-  job yet; it needs the corpus runner from the Java lane.
-- The corpus (1,179 rows, 5,000 mutants) is scratch data from the evidence
-  rounds and is not in the repository, so CI's reference rows are the 311
-  cases. `node tools/wasm-trap-host.mjs calls <module> <calls.jsonl>` runs a
-  corpus wherever it lives; on the round-13 stand-in it gave the round's
-  result (6,176 identical, 2 `clock-moves-chain`, 1 `init-refusal`).
-- Dependabot entries for `rust/server/Dockerfile` (docker) and `java-wasm/`
-  (maven), once those files exist; a watched directory that does not exist
-  is an error in Dependabot.
-- The macOS x86_64 runner label is `macos-15-intel`; check it is still
-  offered before the first 0.8.0 tag.
-- BOOTSTRAP.md has the owner's side: the `docker-hub` environment
-  (`DOCKERHUB_TOKEN`, `DOCKERHUB_USERNAME`, `DOCKERHUB_NAMESPACE`) and
-  making the GHCR package public after its first push.
+## Retired
+
+| Job | Why |
+|---|---|
+| `node-runtimes-web` | `node/CI-NOTES.md`, its row: the `/web` entry point runs the same module as `.`, every `node-runtimes` leg smokes both entry points, and the `test:runtimes:web` script is gone |
+| `node-runtimes-fastly` | `node/CI-NOTES.md`, its row (R5): Fastly Compute runs no WebAssembly; the `test:runtimes:fastly` script and `@fastly/js-compute` are gone |
+| `node-fuzz` | `node/CI-NOTES.md`, its row, and the deleted `node/fuzz/`: it fuzzed the JavaScript DER, CMS and JWS readers, which are gone. The core's fuzz jobs cover the parser |
+| `php-mutation` | `php/CI-NOTES.md`, "Jobs to delete or change": `MutationTest` mutated receipts through the PHP verifier, which is gone, so the `mutation` group no longer exists. The module's mutation corpus is lane A's |
+
+## release.yml
+
+- `build-wasm` builds the module with the pinned toolchain and checks
+  every committed copy and every pin strictly.
+- `build-server` builds `aprv-<target>[.exe]` for the release targets
+  with `build-static.sh` (musl legs install `musl-tools`), refuses any
+  component but build-wasm's (`COMPONENT_SHA256`), and reproduces the
+  Linux builds in a fresh clone (`tools/reproduce-server.sh`).
+- The publish jobs never cache. `publish-pypi` builds with
+  `tools/build_dist.py`. `publish-npm` requires the transpiled module and
+  every licence file in the tarball. `publish-maven` hands both Linux
+  binaries and their `SHA256SUMS` to the -wasm build. `publish-rubygems`
+  copies the module into `lib/` and checks its pin.
+- `tag-go-module` refuses to tag a tree without
+  `go/internal/wasm/aprv.wasm` and its pin (the Go module is published by
+  the tag alone, so the module must be committed first).
+- `php-binaries` compares `php/binaries.json` with the binaries this
+  release built (OD-06). The `smoke` job then runs post-publish-smoke.yml
+  for every published registry, `php` included.
+
+## release-please.yml
+
+On every release-please PR: `release-branch-wasm` builds the module and
+component from the branch, `release-branch-server` builds the two Linux
+musl binaries (read-only), and `refresh-wasm-copies` runs
+`tools/refresh-wasm-pins.sh` (every tracked copy of `aprv.wasm` and every
+`aprv.wasm.sha256` and `aprv.component.wasm.sha256`, each copy checked
+against its pin) and writes `php/binaries.json` with `jq` (the release tag
+and the two Linux hashes; the macOS and Windows entries stay `null`:
+OD-06). It commits all of that once. The lock step updates the workspace
+and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
+
+## Other workflows
+
+- `post-publish-smoke.yml`: a `packagist` leg installs the published PHP
+  package, runs `vendor/bin/aprv-install`, and runs
+  `.github/smoke/packagist-smoke.php`.
+- `benchmark.yml` (manual): a `module` job builds the module and a
+  `server` job the static binary. Every host benchmark places the module
+  as ci.yml does, and PHP benchmarks both transports over the binary.
+- `codeql.yml`: Go, Swift and .NET compile against an empty stand-in
+  `aprv.wasm`. CodeQL never runs what it builds, and without a file there
+  the library is left out of those three databases.
+- `nightly.yml`: `rust-fuzz-openssl` fuzzes every target over an ASan
+  OpenSSL. `java-differential` and `corpus` are described above.
+- `dependabot.yml` watches `java-wasm/`, `rust/server/`'s image bases,
+  and `rust/server` with `rust/bindings/abi/tests` as one cargo entry
+  (their exact wasmtime pins move together). It ignores `openssl-sys`
+  (vendored and patched), `openssl-src` majors, `wit-bindgen` (moves with
+  the toolchain's CLI) and wazero `>= 1.10` (each raises Go's 1.22
+  floor).
+
+## Owner-side and open
+
+- Repository variables: `APRV_PUBLISH_CRATES` (OD-03),
+  `APRV_CORPUS_URL` and `APRV_CORPUS_SHA256` (OD-05). BOOTSTRAP.md has
+  the rest: the `docker-hub` environment, and making the GHCR package
+  public after its first push.
+- Go's and Swift's committed copies of the module (R14) are Phase 7
+  work. Until they exist, `tag-go-module` refuses to tag.
+- Not wired: `java-wasm-s390x` (the Endive corpus under QEMU before each
+  release); CodeQL does not build `java-wasm/`; the -wasm jar does not
+  yet carry the licence texts of the code compiled into the module
+  (`java-wasm/CI-NOTES.md`), and `tools/check-licence-copies.mjs` has no
+  Java entry.
+- The macOS x86_64 runner label is `macos-15-intel`; check that GitHub
+  still offers it before the first 0.8.0 tag.

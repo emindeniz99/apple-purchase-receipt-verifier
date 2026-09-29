@@ -1,3 +1,11 @@
+G1c (the final module, rust-core b863252, 2,760,476 bytes, SHA-256 a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1; 377 cases in fixtures/cases.json):
+Tests, .NET 8.0.31 (shared runtime): total 594, succeeded 594, failed 0, skipped 0 (377 conformance cases, 217 others)
+Tests, .NET 10.0.12 (shared runtime): total 594, succeeded 594, failed 0, skipped 0
+Floor (netstandard2.0 asset), .NET 8.0.31 and 10.0.12: 9 of 9 each
+Corpora: results/corpus.txt, 6,179 of 6,179 identical to this module's rows, 0 traps
+Input cap tests (4 of the 217): 4 MiB and 64 MiB inputs are cut to 3,145,729 bytes, TOO_LARGE / 21002 as the whole input would get, linear memory under 7 MiB; 3,145,728 bytes passed whole is not TOO_LARGE.
+.NET 9, the consumer, the trimmed publish and the fuzz smoke were not re-run for G1b or G1c.
+
 G1b (the review-fixed module, lane/core c4410c7, 3,009,278 bytes, SHA-256 9c0a581c5a0b6e4e7f7ba66675f07ec00096fa95772ae27ad86d6049a1a0f263; 338 cases in fixtures/cases.json):
 Tests, .NET 8.0.31 (shared runtime): total 551, succeeded 551, failed 0, skipped 0 (338 conformance cases, 213 others)
 Tests, .NET 10.0.12 (shared runtime): total 551, succeeded 551, failed 0, skipped 0

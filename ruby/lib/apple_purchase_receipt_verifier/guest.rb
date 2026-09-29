@@ -36,6 +36,11 @@ module ApplePurchaseReceiptVerifier
     # table per Store.
     LIMITS = { memory_size: 256 * 1024 * 1024, instances: 1, memories: 1, tables: 1 }.freeze
 
+    # The most an input contributes to linear memory: one byte over the
+    # largest cap the module knows (3,145,728), so the module itself answers
+    # TOO_LARGE for anything longer and no bigger copy is ever made.
+    MAX_INPUT_BYTES = 3_145_729
+
     # @param runtime [Runtime]
     # @param config_json [String, nil] `init`'s argument,
     #   `{"roots":["<base64 DER>", ...]}`; nil skips `init` (for tests of what
@@ -78,7 +83,8 @@ module ApplePurchaseReceiptVerifier
     # @param name [String] one of {Runtime::OPERATIONS}
     # @param scalars [Array<Integer>] the operation's `u32` and `u64`
     #   parameters, in declaration order
-    # @param input [String] the `list<u8>` parameter's bytes
+    # @param input [String] the `list<u8>` parameter's bytes; at most
+    #   {MAX_INPUT_BYTES} of them are passed on
     # @return [String] the operation's `string` result, UTF-8
     # @raise [TrapError] the call trapped or failed; the instance is broken
     def call(name, scalars, input)
@@ -86,6 +92,7 @@ module ApplePurchaseReceiptVerifier
 
       function, post_return = @operations.fetch(name)
       bytes = input.b
+      bytes = bytes.byteslice(0, MAX_INPUT_BYTES) || bytes if bytes.bytesize > MAX_INPUT_BYTES
       pointer = lower(bytes)
       retptr = function.call(*scalars, pointer, bytes.bytesize) & 0xFFFFFFFF
       out = lift(retptr)

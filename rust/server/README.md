@@ -213,19 +213,20 @@ too. `scripts/docker-smoke.sh IMAGE` checks all of this.
 
 ## Measured
 
-With the G1 component (the 0.7 core, component SHA-256 `8f758c0b…`),
-`x86_64-unknown-linux-musl`, on a shared 4-CPU machine at a load average
-of 2 to 4 (`scripts/startup.py`, medians of 7 runs and of 200 calls):
+With the G1c component (the final 0.7 core, component SHA-256
+`84fe428c…`), `x86_64-unknown-linux-musl`, on a shared 4-CPU machine at a
+load average of 1 to 3 (`scripts/startup.py`, medians of 7 runs and of
+200 calls):
 
 | What | Value |
 |---|---|
-| Shipped binary (runtime-only, static, stripped) | 11,989,936 B; 4,193,642 B gzip -9 |
-| Embedded `.ccwasm` | 9,653,248 B |
-| Full (Cranelift) glibc build | 12,478,096 B; 4,476,180 B gzip -9 |
-| Load: engine and embedded component (`aprv info`) | 13 to 16 ms |
-| `aprv serve` to its address line; to the first g5 result | 20.1 ms; 29.8 ms |
-| One-shot CLI process, g5 receipt; JWS | 25.1 ms; 31.3 ms |
-| HTTP keep-alive, fresh lifecycle, per call: g5; JWS | 7.3 ms; 16.5 ms |
+| Shipped binary (runtime-only, static, stripped) | 11,535,280 B; 4,062,512 B gzip -9 |
+| Embedded `.ccwasm` | 9,193,448 B |
+| Full (Cranelift) glibc build | 12,485,456 B; 4,477,704 B gzip -9 |
+| Load: engine and embedded component (`aprv info`) | 10 to 20 ms |
+| `aprv serve` to its address line; to the first g5 result | 16.4 ms; 24.7 ms |
+| One-shot CLI process, g5 receipt; JWS | 19.5 ms; 26.9 ms |
+| HTTP keep-alive, fresh lifecycle, per call: g5; JWS | 6.2 ms; 14.0 ms |
 
 ## Tests and checks
 
