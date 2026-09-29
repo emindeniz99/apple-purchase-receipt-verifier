@@ -83,8 +83,7 @@ class PackagingTest < Minitest::Test
                    "RubyGems installed the source gem: #{native.first}")
       warn "packaging: RubyGems picked #{native.first}"
       smoke = File.join(root, "script", "consumer_smoke.rb")
-      output = run!(RbConfig.ruby, smoke, TestSupport.fixtures_root,
-                    env: clean.merge("APRV_SMOKE_STANDIN" => ENV.fetch("APRV_SMOKE_STANDIN", nil)))
+      output = run!(RbConfig.ruby, smoke, TestSupport.fixtures_root, env: clean)
       assert_match(/^ok: apple-purchase-receipt-verifier /, output)
     end
   end

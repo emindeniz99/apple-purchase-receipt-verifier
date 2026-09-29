@@ -245,7 +245,9 @@ class ConformanceTest < Minitest::Test
     texts.each_with_index do |text, index|
       where = "#{kase["id"]}: receipt-data texts[#{index}] #{text.inspect}"
       answer = raw_receipt_answer(text)
-      refused = answer["verified"] == false && answer["message"].to_s.include?("base64")
+      # The module words the empty text's refusal "receipt is empty" (it is
+      # refused before any decoding); every other text carries "base64".
+      refused = answer["verified"] == false && answer["message"].to_s.match?(/base64|\Areceipt is empty\z/)
       if expected["status"] == "ok"
         refute refused, "#{where}: refused by the base64 rule, want #{expected["bytesHex"]}"
       else

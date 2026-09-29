@@ -14,11 +14,6 @@
 # Next to each rate it prints the calls per CPU-second of the process, which
 # does not depend on how many cores other work leaves free.
 #
-# The rows are measured through the Verifier when the shipped module answers
-# in the 0.7 wire, and through the pool of instances (the same module calls,
-# without decoding the answer) when it does not, as the migration's stand-in
-# module, which carries the 0.6 core, does not. The output says which.
-#
 # --assert needs the machine's cores: it checks 4-thread throughput only when
 # at least 4 CPUs are usable, and otherwise says so and passes nothing.
 
@@ -72,18 +67,11 @@ module ThreadBench
     g5_verifier = APRV::Verifier.create(APRV::Config.new(clock: -> { NOW }))
     jws_verifier = APRV::Verifier.create(APRV::Config.new(roots: [fixture("jws-root")], clock: -> { NOW }))
 
-    through = "the pool of instances (module answers are not decoded)"
-    through = "the Verifier" if g5_verifier.verify_receipt(receipt).verified?
-    puts "measured through #{through}; #{Etc.nprocessors} CPUs, Ruby #{RUBY_VERSION}, wasmtime #{Wasmtime::VERSION}"
-    call_g5, call_jws =
-      if through == "the Verifier"
-        [-> { g5_verifier.verify_receipt(receipt) }, -> { jws_verifier.verify_signed_data(jws) }]
-      else
-        [raw_call(g5_verifier, "verify-receipt", receipt),
-         raw_call(jws_verifier, "verify-signed-data", jws)]
-      end
-    call_g5.call
-    call_jws.call
+    puts "#{Etc.nprocessors} CPUs, Ruby #{RUBY_VERSION}, wasmtime #{Wasmtime::VERSION}"
+    call_g5 = -> { g5_verifier.verify_receipt(receipt) }
+    call_jws = -> { jws_verifier.verify_signed_data(jws) }
+    abort "the genuine receipt did not verify" unless call_g5.call.verified?
+    abort "the shared-sandbox JWS did not verify" unless call_jws.call.verified?
 
     table = [1, 2, 4].to_h do |n|
       g5, g5_cpu = rate(n, &call_g5)
@@ -97,11 +85,6 @@ module ThreadBench
     puts format("4 threads / 1 thread: g5 %<g5>.2fx   jws %<jws>.2fx",
                 g5: table[4][:g5] / table[1][:g5], jws: table[4][:jws] / table[1][:jws])
     assert!(table) if ARGV.include?("--assert")
-  end
-
-  def raw_call(verifier, operation, input)
-    pool = verifier.instance_variable_get(:@pool)
-    -> { pool.with_guest { |guest| guest.call(operation, [NOW], input) } }
   end
 
   def assert!(table)

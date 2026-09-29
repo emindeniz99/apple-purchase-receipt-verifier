@@ -10,10 +10,6 @@
 #   gem build apple-purchase-receipt-verifier.gemspec
 #   GEM_HOME=/tmp/consumer gem install --no-document apple-purchase-receipt-verifier-*.gem
 #   GEM_HOME=/tmp/consumer ruby ruby/script/consumer_smoke.rb path/to/fixtures
-#
-# APRV_SMOKE_STANDIN=1 skips the typed-payload check, for a module whose wire
-# is not 0.7's (the migration's stand-in module carries the 0.6 core). The
-# endpoint check, whose answer is Apple's own format in both, always runs.
 
 require "json"
 require "apple_purchase_receipt_verifier"
@@ -29,16 +25,12 @@ abort "fixture not found: #{receipt_path}" unless File.file?(receipt_path)
 verifier = APRV::Verifier.create(APRV::Config.defaults)
 base64 = File.read(receipt_path)
 
-if ENV["APRV_SMOKE_STANDIN"] == "1"
-  puts "skipped: the typed payload (APRV_SMOKE_STANDIN=1)"
-else
-  result = verifier.verify_receipt(base64)
-  unless result.verified?
-    abort "receipt did not verify: #{result.failure&.reason} (#{result.failure&.message})"
-  end
-  unless result.payload.in_app.size == 187
-    abort "expected 187 in-app purchases, got #{result.payload.in_app.size}"
-  end
+result = verifier.verify_receipt(base64)
+unless result.verified?
+  abort "receipt did not verify: #{result.failure&.reason} (#{result.failure&.message})"
+end
+unless result.payload.in_app.size == 187
+  abort "expected 187 in-app purchases, got #{result.payload.in_app.size}"
 end
 
 request = JSON.generate({ "receipt-data" => base64.gsub(/\s+/, "") })
