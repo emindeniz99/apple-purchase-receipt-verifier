@@ -134,9 +134,15 @@ jobs:
           tools/wasm-toolchain.sh "$dir" > /dev/null
           { echo "WASI_SDK_DIR=$dir/wasi-sdk"; echo "OPENSSL_WASM_DIR=$dir/openssl-wasm"; } >> "$GITHUB_ENV"
           echo "$dir/bin" >> "$GITHUB_PATH"
+      # The rustc rust/rust-toolchain.toml names, made the one every later
+      # step uses: build.sh runs from the repository root, where rustup does
+      # not read that file.
       - name: install the pinned Rust toolchain
-        working-directory: rust
-        run: rustup toolchain install
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-wasip1
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
       - name: build aprv.wasm and the component
         id: build
         run: |
@@ -155,17 +161,25 @@ jobs:
           set -euo pipefail
           node tools/wasm-trap-host.mjs abi-tests "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json
           node tools/wasm-trap-host.mjs cases "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json
-      - name: the committed Go and Swift copies are this build
+      # The committed Go and Swift copies and every tracked pin (each host's
+      # aprv.wasm.sha256, Node's component pin): the Go and Swift packages,
+      # the Java build and the gem check the module against its pin, so a
+      # stale one fails a consumer or a publish job. release-please.yml
+      # rewrites them all on the release branch.
+      - name: the committed copies and pins are this build
         env:
           BUILT: ${{ steps.build.outputs.wasm-sha256 }}
+          COMPONENT: ${{ steps.build.outputs.component-sha256 }}
         run: |
           set -euo pipefail
           bad=0
-          for f in $(git ls-files -- '*aprv.wasm'); do
-            got=$(sha256sum "$f" | cut -c1-64)
-            if [ "$got" = "$BUILT" ]; then echo "$f is this build ($BUILT)"
-            else echo "::error file=$f::$f is $got, the release builds $BUILT; release-please.yml refreshes it on the release branch"; bad=1; fi
-          done
+          check() { # file got want
+            if [ "$2" = "$3" ]; then echo "$1 is this build ($3)"
+            else echo "::error file=$1::$1 is $2, the release builds $3; release-please.yml refreshes it on the release branch"; bad=1; fi
+          }
+          for f in $(git ls-files -- '*aprv.wasm'); do check "$f" "$(sha256sum "$f" | cut -c1-64)" "$BUILT"; done
+          for f in $(git ls-files -- '*aprv.wasm.sha256'); do check "$f" "$(cut -c1-64 "$f")" "$BUILT"; done
+          for f in $(git ls-files -- '*aprv.component.wasm.sha256'); do check "$f" "$(cut -c1-64 "$f")" "$COMPONENT"; done
           exit "$bad"
       - name: the build reproduces in a fresh clone
         env:
@@ -233,25 +247,37 @@ jobs:
         run: echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
       - name: install the pinned Rust toolchain and the target
         shell: bash
-        working-directory: rust
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          rustup toolchain install
-          rustup target add "$TARGET"
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target "$TARGET"
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      # musl-gcc compiles Wasmtime's C helpers for the musl target
+      # (build-static.sh).
+      - name: install musl-gcc
+        if: endsWith(matrix.target, '-linux-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      # build-static.sh writes aprv-<target>[.exe] and the precompiled
+      # component's manifest (aprv.<target>.ccwasm.json), which goes into
+      # the artifact for the record; COMPONENT_SHA256 makes it refuse any
+      # component but build-wasm's.
       - name: build
         id: build
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
           EXE: ${{ matrix.exe }}
+          COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
         run: |
           set -euo pipefail
           rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" "$TARGET" "$RUNNER_TEMP/build"
           out="$RUNNER_TEMP/server"
           mkdir -p "$out/build-info"
-          cp "$RUNNER_TEMP/build/aprv$EXE" "$out/aprv-$TARGET$EXE"
-          (cd rust && rustc -vV) > "$out/build-info/rustc-vv-$TARGET.txt"
+          cp "$RUNNER_TEMP/build/aprv-$TARGET$EXE" "$out/aprv-$TARGET$EXE"
+          cp "$RUNNER_TEMP/build/aprv.$TARGET.ccwasm.json" "$out/build-info/"
+          rustc -vV > "$out/build-info/rustc-vv-$TARGET.txt"
           "$out/aprv-$TARGET$EXE" info
           echo "sha256=$(sha256sum "$out/aprv-$TARGET$EXE" | cut -c1-64)" >> "$GITHUB_OUTPUT"
       - name: the static binary has no interpreter and no dynamic dependency
@@ -621,12 +647,20 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build sdist + wheel
+      # The sdist and one wheel per platform wasmtime-py ships a wheel for,
+      # never a py3-none-any wheel: on a platform without a wasmtime wheel pip
+      # takes the sdist, which stops with the pointer to aprv-server (R28).
+      # build_dist.py copies APRV_WASM (build-wasm's module, checked above)
+      # into the package and writes its aprv.wasm.sha256; --check refuses a
+      # set of files that is not exactly that.
+      - name: Build the sdist and the platform wheels
         if: steps.gate.outputs.publish == 'true'
         working-directory: python
         run: |
+          set -euo pipefail
           python3 -m pip install --upgrade build
-          python3 -m build
+          python3 tools/build_dist.py --out dist
+          python3 tools/build_dist.py --check dist
 
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         if: steps.gate.outputs.publish == 'true'
@@ -684,18 +718,23 @@ jobs:
             # dist/, but nothing here built it, and a fresh checkout has no dist/.
             # npm packs what is on disk, so the tarball was LICENSE + certs +
             # README and every install failed on ERR_MODULE_NOT_FOUND. Prove the
-            # entry point is in the tarball before it reaches the registry.
+            # entry point, the module jco extracted, its glue and the licence
+            # texts of the code in that module are in the tarball before it
+            # reaches the registry.
+            # shellcheck disable=SC2016 # the ${...} are JavaScript's
             npm pack --dry-run --json | node -e '
               let raw = ""
               process.stdin.on("data", (d) => { raw += d }).on("end", () => {
                 const packed = JSON.parse(raw)[0].files.map((f) => f.path)
-                const missing = ["dist/index.js", "dist/index.d.ts"].filter((f) => !packed.includes(f))
+                const licences = require("node:fs").readdirSync("licenses").map((f) => `licenses/${f}`)
+                const want = ["dist/index.js", "dist/index.d.ts", "dist/generated/aprv.core.wasm", "dist/generated/aprv.js", ...licences]
+                const missing = want.filter((f) => !packed.includes(f))
                 if (missing.length > 0) {
                   console.error(`refusing to publish: tarball is missing ${missing.join(", ")}`)
                   console.error(`packed instead: ${packed.join(", ")}`)
                   process.exit(1)
                 }
-                console.log(`tarball carries ${packed.length} files, entry point included`)
+                console.log(`tarball carries ${packed.length} files, entry point, module and licences included`)
               })
             '
             npm publish
@@ -789,14 +828,30 @@ jobs:
           pattern: aprv-server-*-linux-musl
           path: ${{ runner.temp }}/server
 
-      - name: the module is build-wasm's
+      # The module against build-wasm's hash; the two binaries side by side
+      # with a SHA256SUMS naming exactly them, which the jar carries as the
+      # pins its maven() and github() sources check (the committed
+      # src/main/server/SHA256SUMS pins a development build only).
+      - name: the module is build-wasm's, the binaries are build-server's
         if: steps.gate-wasm.outputs.publish == 'true'
         env:
           WASM_SHA256: ${{ needs.build-wasm.outputs.wasm-sha256 }}
-        run: echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
+        run: |
+          set -euo pipefail
+          echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
+          d="$RUNNER_TEMP/dist"
+          mkdir -p "$d"
+          for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            install -m 0755 "$RUNNER_TEMP/server/aprv-server-$t/aprv-$t" "$d/aprv-$t"
+          done
+          (cd "$d" && sha256sum aprv-x86_64-unknown-linux-musl aprv-aarch64-unknown-linux-musl > SHA256SUMS)
+          cat "$d/SHA256SUMS"
 
-      # The property names are the -wasm build's (.github/CI-NOTES.md): the
-      # module Endive compiles, and the two binaries attached as classifiers.
+      # The property names are the -wasm build's (java-wasm/CI-NOTES.md): the
+      # module Endive compiles, the two binaries attached as classifiers, and
+      # the SHA256SUMS that pins them. The validate phase also refuses a
+      # module whose hash differs from java-wasm/src/main/wasm/aprv.wasm.sha256,
+      # which release-please.yml rewrote on the release branch.
       - name: Deploy the -wasm artifact and its classifier jars to Central
         if: steps.gate-wasm.outputs.publish == 'true'
         working-directory: java-wasm
@@ -807,8 +862,9 @@ jobs:
         run: |
           mvn -B -P central deploy \
             "-Daprv.wasm=$RUNNER_TEMP/aprv/aprv.wasm" \
-            "-Daprv.server.linux-x86_64=$RUNNER_TEMP/server/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl" \
-            "-Daprv.server.linux-aarch64=$RUNNER_TEMP/server/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl"
+            "-Daprv.server.linux-x86_64=$RUNNER_TEMP/dist/aprv-x86_64-unknown-linux-musl" \
+            "-Daprv.server.linux-aarch64=$RUNNER_TEMP/dist/aprv-aarch64-unknown-linux-musl" \
+            "-Daprv.server.sha256sums=$RUNNER_TEMP/dist/SHA256SUMS"
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         if: steps.gate-wasm.outputs.publish == 'true'
@@ -922,15 +978,27 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build the gem
+      # The gemspec and the library read no environment variable, so the
+      # release module is copied to where the gem packs it, with its pin
+      # (release-please.yml already rewrote the tracked one to this hash).
+      - name: Build the gem around build-wasm's module
         if: steps.gate.outputs.publish == 'true'
         working-directory: ruby
-        run: gem build apple-purchase-receipt-verifier.gemspec
+        env:
+          WASM_SHA256: ${{ needs.build-wasm.outputs.wasm-sha256 }}
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/aprv/aprv.wasm" lib/apple_purchase_receipt_verifier/aprv.wasm
+          (cd lib/apple_purchase_receipt_verifier && sha256sum -c aprv.wasm.sha256)
+          test "$(cut -c1-64 lib/apple_purchase_receipt_verifier/aprv.wasm.sha256)" = "$WASM_SHA256"
+          gem build apple-purchase-receipt-verifier.gemspec
 
       # The Ruby shape of the two empty npm releases is spec.files — a Dir[]
-      # glob — losing certs/: a gem that installs and requires cleanly, then
-      # raises the first time anyone asks for a trust anchor.
-      - name: Refuse to publish a gem missing its entry point or its roots
+      # glob — losing a file: a gem that installs and requires cleanly, then
+      # raises the first time anyone uses it. Apple's roots are inside the
+      # module now, so the module, its pin and the licence texts of the code
+      # in it are what the list checks beside the entry points.
+      - name: Refuse to publish a gem missing its entry point or its module
         if: steps.gate.outputs.publish == 'true'
         working-directory: ruby
         run: |
@@ -939,20 +1007,30 @@ jobs:
             files = Gem::Package.new(Dir["apple-purchase-receipt-verifier-*.gem"].first).spec.files
             want  = ["lib/apple_purchase_receipt_verifier.rb",
                      "lib/apple-purchase-receipt-verifier.rb",
-                     "certs/AppleIncRootCertificate.cer",
-                     "certs/AppleRootCA-G2.cer",
-                     "certs/AppleRootCA-G3.cer"]
+                     "lib/apple_purchase_receipt_verifier/aprv.wasm",
+                     "lib/apple_purchase_receipt_verifier/aprv.wasm.sha256",
+                     "licenses/NOTICE"]
             missing = want - files
             abort("refusing to publish: gem is missing #{missing.join(", ")}") unless missing.empty?
-            puts "gem carries #{files.size} files, entry points and roots included"'
+            puts "gem carries #{files.size} files, entry points and module included"'
 
       - name: gem push
         if: steps.gate.outputs.publish == 'true'
         working-directory: ruby
         run: gem push apple-purchase-receipt-verifier-*.gem
 
+  # Held (OD-03 in docs/rust-core/STATUS.md): the core stays at 0.7 on
+  # crates.io until openssl-sys accepts openssl-src 400.x. A registry build
+  # of this tree would pull openssl-src 300.x (OpenSSL 3), which
+  # aprv-openssl's build script refuses, and aprv-openssl itself is not on
+  # crates.io yet. The job runs again once the owner sets the repository
+  # variable APRV_PUBLISH_CRATES to true; before that, it must learn to
+  # publish rust/openssl first, at the same version, and aprv-openssl needs
+  # its one manual bootstrap publish (BOOTSTRAP.md, crates.io). The smoke
+  # job below treats the skip like an unbootstrapped registry.
   publish-crates:
     name: publish rust to crates.io
+    if: vars.APRV_PUBLISH_CRATES == 'true'
     runs-on: ubuntu-latest
     needs: ci-passed
     timeout-minutes: 20
@@ -1099,10 +1177,13 @@ jobs:
               exit 1 ;;
           esac
 
+      # 10.0.x, the SDK that wrote the packages.lock.json files: an older
+      # band asks for another implicit ILLink version and trips locked-mode
+      # restore with NU1004 (ci.yml's dotnet-mono explains it).
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         if: steps.bootstrap.outputs.exists == 'true'
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Skip if this version is already on nuget.org
         id: gate
@@ -1178,6 +1259,14 @@ jobs:
         run: |
           set -euo pipefail
           TAG="go/${REF}"
+          # //go:embed needs the module in the tree the tag names (R14:
+          # go/internal/wasm/aprv.wasm is committed, and build-wasm proved it
+          # is this release's). A tag without it would be a module nobody
+          # can build, forever, so this refuses before the tag exists.
+          for f in go/internal/wasm/aprv.wasm go/internal/wasm/aprv.wasm.sha256; do
+            gh api "repos/$GITHUB_REPOSITORY/contents/$f?ref=$GITHUB_SHA" --jq .path >/dev/null \
+              || { echo "::error::$f is not committed at $GITHUB_SHA; not tagging the Go module"; exit 1; }
+          done
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
             echo "$TAG already exists — skipping (re-runs are safe)."
           else
@@ -1200,16 +1289,60 @@ jobs:
             echo "::error::$MOD@${REF} never became resolvable from proxy.golang.org"
             exit 1
           fi
-          # The module zip is what consumers receive, and go/roots/certs is a
-          # copy an embed pattern cannot reach outside the module for. Prove
-          # the zip carries the library and its anchors.
+          # The module zip is what consumers receive, and go/roots/certs and
+          # the embedded aprv.wasm are files an embed pattern cannot reach
+          # outside the module for. Prove the zip carries the library, the
+          # module with its pin, and the anchors.
           curl -fsSL "https://proxy.golang.org/${MOD}/@v/${REF}.zip" -o "$RUNNER_TEMP/module.zip"
-          for entry in "roots.go" "roots/certs/AppleIncRootCertificate.cer" \
+          for entry in "roots.go" "internal/wasm/aprv.wasm" "internal/wasm/aprv.wasm.sha256" \
+                       "roots/certs/AppleIncRootCertificate.cer" \
                        "roots/certs/AppleRootCA-G2.cer" "roots/certs/AppleRootCA-G3.cer"; do
             unzip -l "$RUNNER_TEMP/module.zip" | grep -q "$entry" \
               || { echo "::error::the module zip is missing $entry"; exit 1; }
           done
-          echo "module zip carries the library and all three roots"
+          echo "module zip carries the library, aprv.wasm and all three roots"
+
+  # php/binaries.json, which bin/aprv-install checks a download against,
+  # is committed on the release branch before this tag exists, from the
+  # Linux binaries that branch's run built (they reproduce:
+  # tools/reproduce-server.sh). Every hash it pins must be the hash of the
+  # asset this run built and published, or a Composer user would be told
+  # the release's own binary is not the release's. It fails the release
+  # before Packagist imports the tag. Only jq and sha256sum: no repository
+  # code runs next to the downloaded files.
+  php-binaries:
+    name: the binaries php/binaries.json pins are the published ones
+    needs: [build-server, release-assets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: aprv-server-*
+          path: ${{ runner.temp }}/in
+      - env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          m=php/binaries.json
+          pinned_tag=$(jq -r '.tag // empty' "$m")
+          if [ "$pinned_tag" != "$TAG" ]; then
+            echo "::error file=$m::$m pins tag '${pinned_tag:-none}', this release is $TAG"
+            exit 1
+          fi
+          bad=0
+          while read -r name want; do
+            [ "$want" = null ] && { echo "$name: not pinned (the installer offers the server option)"; continue; }
+            target="${name#aprv-}"; target="${target%.exe}"
+            file="$RUNNER_TEMP/in/aprv-server-$target/$name"
+            got=$(sha256sum "$file" | cut -c1-64)
+            if [ "$got" = "$want" ]; then echo "$name: $got"
+            else echo "::error file=$m::$name is pinned as $want, this release built $got"; bad=1; fi
+          done < <(jq -r '.assets | to_entries[] | "\(.key) \(.value)"' "$m")
+          exit "$bad"
 
   # workflow_run does not fire for a run that was itself dispatched with the
   # workflow token (the same suppression that hid the tag push from this
@@ -1226,10 +1359,11 @@ jobs:
     name: dispatch the post-publish smoke test
     needs: [publish-pypi, publish-npm, publish-maven, publish-rubygems,
             publish-crates, publish-nuget, tag-go-module, release-assets,
-            publish-image]
+            publish-image, php-binaries]
     if: >-
       !cancelled()
       && needs.release-assets.result == 'success'
+      && needs.php-binaries.result == 'success'
       && needs.publish-image.result == 'success'
       && needs.publish-pypi.result == 'success'
       && needs.publish-npm.result == 'success'
@@ -1244,11 +1378,12 @@ jobs:
       contents: read
       actions: write
     steps:
-      # npm, PyPI, Maven Central, SwiftPM and the Go proxy are unconditional:
-      # their jobs must have succeeded for this one to run at all. The three
-      # bootstrap-gated registries are named only when they actually carry the
-      # version, so the smoke workflow skips their legs instead of failing on
-      # an install that cannot work.
+      # npm, PyPI, Maven Central, SwiftPM, the Go proxy and Packagist are
+      # unconditional: their jobs must have succeeded for this one to run at
+      # all (Packagist's is php-binaries; it imports the tag itself). The
+      # three bootstrap-gated registries are named only when they actually
+      # carry the version, so the smoke workflow skips their legs instead of
+      # failing on an install that cannot work.
       - name: dispatch post-publish-smoke for this version
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1258,7 +1393,9 @@ jobs:
           NUGET_AVAILABLE: ${{ needs.publish-nuget.outputs.available }}
         run: |
           set -euo pipefail
-          REGISTRIES="npm,pypi,maven,swiftpm,go"
+          # Packagist has no publish job: the tag is the release, and the
+          # php leg waits for Packagist to import it.
+          REGISTRIES="npm,pypi,maven,swiftpm,go,php"
           if [ "${RUBYGEMS_AVAILABLE:-}" = "true" ]; then
             REGISTRIES="$REGISTRIES,rubygems"
           fi
