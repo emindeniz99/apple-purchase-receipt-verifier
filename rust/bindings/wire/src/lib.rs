@@ -377,7 +377,10 @@ impl<'de> serde::Deserialize<'de> for Members {
             fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 formatter.write_str("a JSON object")
             }
-            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Members, A::Error> {
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Members, A::Error> {
                 let mut members = Vec::new();
                 while let Some(name) = map.next_key::<String>()? {
                     members.push((name, map.next_value()?));
