@@ -28,6 +28,14 @@ X-Aprv-Now-Ms header or `--now-ms`. Categories, first match wins:
 
 The expectation printed at the end: every row one of the first four, none
 DIFFERENT, 2 clock-moves-chain and 1 init-refusal as round 13 found.
+
+With --reference DIR instead of --node, the rows are compared exactly
+with DIR/module-<corpus>.jsonl: the release module's own answers to the
+same calls, every clock pinned (--suffix .pinned reads
+CALLS_DIR/<corpus>.pinned.jsonl). Then the only categories are identical,
+over-cap (413 / exit 3 where the module itself answered the cap refusal,
+TOO_LARGE or status 21002) and DIFFERENT, and the expectation is none
+DIFFERENT.
 """
 import argparse
 import base64
@@ -119,16 +127,31 @@ def classify(call, ref, got, body_len):
     return "DIFFERENT"
 
 
+def classify_exact(ref, got, body_len):
+    a = ref.get("out", ref.get("trap", ref.get("map")))
+    b = got.get("out", got.get("trap", got.get("map")))
+    if a == b and ("trap" in ref) == ("trap" in got):
+        return "identical"
+    refused = isinstance(a, str) and ('"reason":"TOO_LARGE"' in a or a == '{"status":21002}')
+    if "over_cap" in got and body_len > MAX_BODY and refused:
+        return "over-cap"
+    return "DIFFERENT"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--aprv", required=True)
     ap.add_argument("--calls", required=True)
-    ap.add_argument("--node", required=True)
+    ap.add_argument("--node", help="ABI v1 Node rows (node-<corpus>.jsonl): round 13's comparison")
+    ap.add_argument("--reference", help="the module's rows (module-<corpus>.jsonl): exact comparison")
+    ap.add_argument("--suffix", default="", help="calls file suffix, e.g. .pinned")
     ap.add_argument("--mode", choices=["http", "cli"], default="http")
     ap.add_argument("--lifecycle", choices=["fresh", "pool"], default="fresh")
     ap.add_argument("--out", help="write the host's rows here as <mode>-<corpus>.jsonl")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
+    if bool(a.node) == bool(a.reference):
+        ap.error("give exactly one of --node and --reference")
     tmp = tempfile.mkdtemp(prefix="aprv-corpus-")
     roots_files, servers = {}, {}
     total = collections.Counter()
@@ -136,8 +159,9 @@ def main():
     label = f"{a.mode}" + (f"-{a.lifecycle}" if a.mode == "http" else "")
     try:
         for c in CORPORA:
-            calls = [json.loads(l) for l in open(os.path.join(a.calls, f"{c}.jsonl"), encoding="utf-8")]
-            node = {r["id"]: r for r in map(json.loads, open(os.path.join(a.node, f"node-{c}.jsonl"), encoding="utf-8"))}
+            calls = [json.loads(l) for l in open(os.path.join(a.calls, f"{c}{a.suffix}.jsonl"), encoding="utf-8")]
+            refpath = os.path.join(a.node, f"node-{c}.jsonl") if a.node else os.path.join(a.reference, f"module-{c}.jsonl")
+            ref = {r["id"]: r for r in map(json.loads, open(refpath, encoding="utf-8"))}
             per = collections.Counter()
             rows_out = open(os.path.join(a.out, f"{label}-{c}.jsonl"), "w") if a.out else None
             for row in calls:
@@ -167,7 +191,10 @@ def main():
                 got["id"] = row["id"]
                 if rows_out:
                     rows_out.write(json.dumps(got) + "\n")
-                cat = classify(row, node[row["id"]], got, body_len)
+                if a.node:
+                    cat = classify(row, ref[row["id"]], got, body_len)
+                else:
+                    cat = classify_exact(ref[row["id"]], got, body_len)
                 per[cat] += 1
                 if cat != "identical" and (a.list or len(examples) < 12):
                     examples.append((c, cat, row["id"], str(got)[:160]))
@@ -176,7 +203,9 @@ def main():
     finally:
         for s in servers.values():
             s.close()
-    ok = total["DIFFERENT"] == 0 and total["clock-moves-chain"] == 2 and total["init-refusal"] == 1 and sum(total.values()) == 6179
+    ok = total["DIFFERENT"] == 0 and sum(total.values()) == 6179
+    if a.node:
+        ok = ok and total["clock-moves-chain"] == 2 and total["init-refusal"] == 1
     print(f"{label} all: " + ", ".join(f"{k} {v}" for k, v in sorted(total.items()))
           + f" (rows {sum(total.values())}, server processes {len(servers)}) -> {'AS EXPECTED' if ok else 'NOT AS EXPECTED'}")
     for c, cat, i, g in examples:
