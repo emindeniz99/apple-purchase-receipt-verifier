@@ -187,6 +187,27 @@ impl CoreGuest {
         Ok(String::from_utf8(out)?)
     }
 
+    /// Calls a verify export (`now-ms` and one list) with a range the host
+    /// names rather than one from `cabi_realloc`, and returns what the
+    /// export itself answered: its return area, or its trap. Nothing is
+    /// lifted and no post-return function runs.
+    pub fn call_with_range(
+        &mut self,
+        export: &str,
+        now_ms: u64,
+        ptr: u32,
+        len: u32,
+    ) -> Result<i32> {
+        let f = self.instance.get_typed_func::<(i64, i32, i32), i32>(
+            &mut self.store,
+            &format!("{IFACE}#{export}"),
+        )?;
+        f.call(
+            &mut self.store,
+            (now_ms.cast_signed(), ptr.cast_signed(), len.cast_signed()),
+        )
+    }
+
     fn verify(&mut self, export: &str, now_ms: u64, input: &[u8]) -> Result<String> {
         let (ptr, len) = self.lower(input)?;
         let f = self.instance.get_typed_func::<(i64, i32, i32), i32>(

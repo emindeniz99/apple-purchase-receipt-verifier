@@ -376,3 +376,30 @@ fn a_host_that_lowers_the_largest_cap_plus_one_gets_too_large() {
         "memory grew by {grown} bytes for inputs of {LARGEST_CAP_PLUS_ONE}"
     );
 }
+
+/// A list whose range runs past the end of linear memory, or wraps 32 bits,
+/// traps as the export starts (review round 3, ABI-F5). Without the check
+/// the length alone decided the answer (TOO_LARGE for the largest cap plus
+/// one), and the list was then freed with a pointer the allocator never
+/// returned. The trap is the guest's own `unreachable`, not an
+/// out-of-bounds access, and a fresh instance verifies afterwards.
+#[test]
+fn a_list_range_past_the_end_of_linear_memory_traps() {
+    const LARGEST_CAP_PLUS_ONE: u32 = 3_145_729;
+    for export in ["verify-receipt", "verify-signed-data"] {
+        for (at_end, len) in [(8, LARGEST_CAP_PLUS_ONE), (8, 16), (0, 1)] {
+            let mut guest = CoreGuest::new(Randomness::default()).unwrap();
+            assert_eq!(guest.init(DEFAULTS).unwrap(), r#"{"ok":true}"#);
+            let end = u32::try_from(guest.memory_size()).unwrap();
+            let result = guest.call_with_range(export, now(), end - at_end, len);
+            assert!(is_trap(&result), "{export} at end-{at_end}, {len}: {result:?}");
+        }
+        let mut guest = CoreGuest::new(Randomness::default()).unwrap();
+        guest.init(DEFAULTS).unwrap();
+        let wraps = guest.call_with_range(export, now(), 16, 0xFFFF_FFF8);
+        assert!(is_trap(&wraps), "{export} wrapping: {wraps:?}");
+    }
+    let mut fresh = CoreGuest::new(Randomness::default()).unwrap();
+    fresh.init(DEFAULTS).unwrap();
+    assert!(verifies(&mut fresh));
+}

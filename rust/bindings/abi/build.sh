@@ -26,12 +26,18 @@
 #
 # and CARGO_TARGET_DIR if set (default: rust/target). The compiler is the
 # channel rust/rust-toolchain.toml pins, whatever directory this runs from:
-# RUSTUP_TOOLCHAIN is set to it, and the build stops unless `rustc
-# --version` names it (which also holds the pin for a toolchain on PATH
-# without rustup). It fails, naming the check, when the module imports
-# anything but random-get, exports anything beyond the interface, or its
-# interface differs from the committed WIT; the output directory then holds
-# no module, no component and no SHA256SUMS.
+# RUSTUP_TOOLCHAIN is set to it, and the build stops unless the compiler
+# cargo will run names it in `--version` (which also holds the pin for a
+# toolchain on PATH without rustup). That compiler is RUSTC or
+# CARGO_BUILD_RUSTC when set, `rustc` on PATH otherwise, and cargo is handed
+# it explicitly, so no `build.rustc` in a cargo configuration swaps it. A
+# compiler wrapper (RUSTC_WRAPPER, RUSTC_WORKSPACE_WRAPPER or their
+# CARGO_BUILD_ forms) is refused, and cargo runs with none, since a wrapper
+# may run any compiler. The output directory is emptied of this script's
+# four files first, so a build that stops, at any check, leaves no module,
+# no component and no SHA256SUMS there. It fails, naming the check, when
+# the module imports anything but random-get, exports anything beyond the
+# interface, or its interface differs from the committed WIT.
 #
 # The build runs from any directory and must not depend on where the clone
 # or the cargo home is: every such path is remapped, so a second build in
@@ -42,6 +48,11 @@ if [[ $# -ne 1 || -z "$1" ]]; then
   echo "usage: $0 <out-dir>" >&2
   exit 2
 fi
+# Nothing from an earlier run stays behind to be mistaken for this one's,
+# whichever check below stops the build.
+mkdir -p "$1"
+OUT="$(cd "$1" && pwd)"
+rm -f "$OUT/aprv.wasm" "$OUT/aprv.component.wasm" "$OUT/aprv.wit" "$OUT/SHA256SUMS"
 : "${WASI_SDK_DIR:?set WASI_SDK_DIR to wasi-sdk 34.0 (tools/wasm-toolchain.sh)}"
 : "${OPENSSL_WASM_DIR:?set OPENSSL_WASM_DIR to OpenSSL 4.0.2 for wasm32-wasip1 (tools/wasm-toolchain.sh)}"
 for tool in cargo rustc wasm-tools wit-bindgen sha256sum; do
@@ -55,9 +66,17 @@ RUST="$(cd "$ABI/../.." && pwd)"
 CHANNEL="$(sed -n 's/^channel *= *"\([^"]*\)" *$/\1/p' "$RUST/rust-toolchain.toml")"
 [[ -n "$CHANNEL" ]] || { echo "build.sh: no channel in $RUST/rust-toolchain.toml" >&2; exit 1; }
 export RUSTUP_TOOLCHAIN="$CHANNEL"
-case "$(rustc --version)" in
+for wrapper in RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER; do
+  if [[ -n "${!wrapper:-}" ]]; then
+    echo "build.sh: $wrapper is set; a compiler wrapper may run any compiler, so the pin cannot be checked" >&2
+    exit 1
+  fi
+done
+COMPILER="$(command -v "${RUSTC:-${CARGO_BUILD_RUSTC:-rustc}}" || true)"
+[[ -n "$COMPILER" ]] || { echo "build.sh: the compiler ${RUSTC:-${CARGO_BUILD_RUSTC:-rustc}} is not found" >&2; exit 1; }
+case "$("$COMPILER" --version)" in
   "rustc $CHANNEL "*) ;;
-  *) echo "build.sh: rustc is $(rustc --version), not the pinned $CHANNEL (rust/rust-toolchain.toml)" >&2; exit 1 ;;
+  *) echo "build.sh: $COMPILER is $("$COMPILER" --version), not the pinned $CHANNEL (rust/rust-toolchain.toml)" >&2; exit 1 ;;
 esac
 REPO="$(cd "$RUST/.." && pwd)"
 WS="$(cd "$WASI_SDK_DIR" && pwd)"
@@ -67,15 +86,12 @@ LIBDIR="$SYSROOT/lib/wasm32-wasip1"
 CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
 TARGET_DIR="${CARGO_TARGET_DIR:-$RUST/target}"
 IFACE='aprv:verifier/verify@1.0.0#'
-mkdir -p "$1" "$TARGET_DIR"
-OUT="$(cd "$1" && pwd)"
+mkdir -p "$TARGET_DIR"
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
-# Nothing from an earlier run stays behind to be mistaken for this one's.
-rm -f "$OUT/aprv.wasm" "$OUT/aprv.component.wasm" "$OUT/aprv.wit" "$OUT/SHA256SUMS"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aprv-abi-build.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "build.sh: $(rustc --version); $(cargo --version); wasi-sdk $(head -1 "$WS/VERSION" 2>/dev/null || echo '?');" \
+echo "build.sh: $("$COMPILER" --version); $(cargo --version); wasi-sdk $(head -1 "$WS/VERSION" 2>/dev/null || echo '?');" \
   "$(wasm-tools --version); $(wit-bindgen --version)" >&2
 
 # Paths that must not reach the module, each mapped to a fixed name.
@@ -113,7 +129,8 @@ RUSTFLAGS_WASM="${RUSTFLAGS_WASM%$'\x1f'}"
 # built with.
 C_FLAGS="--target=wasm32-wasip1 --sysroot=$SYSROOT -ffile-prefix-map=$REPO=/aprv/src -ffile-prefix-map=$CARGO_HOME_DIR=/aprv/cargo -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_GETPID"
 
-env -u RUSTFLAGS -u CARGO_BUILD_RUSTFLAGS \
+env -u RUSTFLAGS -u CARGO_BUILD_RUSTFLAGS -u CARGO_BUILD_RUSTC \
+  RUSTC="$COMPILER" RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= \
   CARGO_ENCODED_RUSTFLAGS="$RUSTFLAGS_WASM" \
   CARGO_TARGET_DIR="$TARGET_DIR" \
   CC_wasm32_wasip1="$WS/bin/clang" \

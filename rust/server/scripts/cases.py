@@ -8,7 +8,7 @@ the file's comment defines it.
 Each case gets its roots and its clock through the server's own
 configuration: `--roots FILE` (one base64 DER per line) for fixture roots,
 nothing for the defaults, and `X-Aprv-Now-Ms` / `--now-ms` for clock.now.
-Over HTTP one server runs per distinct root set, fresh lifecycle.
+Over HTTP one server runs per distinct root set, default lifecycle (pool).
 
 A body over the cap never reaches the module: the server answers 413 and the
 CLI exits 3. The runner maps that as a client of the server must (TOO_LARGE

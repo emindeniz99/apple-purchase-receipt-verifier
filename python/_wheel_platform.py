@@ -16,8 +16,11 @@ R28 of docs/rust-core moves that failure to install time:
   that build stops with a message pointing to ``aprv-server`` and the C ABI.
 
 ``sysconfig.get_platform()`` is what pip itself derives its wheel tags from,
-so the check and pip's choice agree, and ``_PYTHON_HOST_PLATFORM`` overrides
-it for both, which is how the install-failure test simulates a platform.
+so the check and pip's choice agree. ``_PYTHON_HOST_PLATFORM`` overrides it
+for both on every system but Windows, where ``sysconfig`` answers ``win-*``
+before reading it; ``tools/check-install.sh`` uses it on Linux, and the
+build-hook test replaces ``sysconfig.get_platform`` itself, which works on
+every system.
 """
 
 import re
