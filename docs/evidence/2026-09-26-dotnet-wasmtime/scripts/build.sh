@@ -34,7 +34,7 @@ consumer)
 XML
   export NUGET_PACKAGES="$S/nuget-consumer"
   start=$(date +%s)
-  dotnet build -c Release "$S/consumer/Consumer.csproj" > "$S/build-consumer.log" 2>&1 || { grep -E 'error' "$S/build-consumer.log" | head -20; exit 1; }
+  dotnet build -c Release -p:AprvSpikePackageVersion=0.0.0-spike "$S/consumer/Consumer.csproj" > "$S/build-consumer.log" 2>&1 || { grep -E 'error' "$S/build-consumer.log" | head -20; exit 1; }
   echo "consumer: $(( $(date +%s) - start )) s wall (restore from an empty package folder + build)"
   echo "consumer restored: $(ls "$NUGET_PACKAGES" | tr '\n' ' ')"
   G5=$(python3 -c "import json,base64; [print(base64.b64decode(c['input']).decode()) for c in map(json.loads, open('$CALLS/cases.jsonl')) if c['id']=='receipt/verify-genuine-sandbox-g5-against-apple-roots']")
