@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ConfigBuilder;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
@@ -160,7 +159,7 @@ final class ApiShapeTest extends TestCase
             Verifier::class, Config::class, ConfigBuilder::class,
             ReceiptPayload::class, InAppPurchase::class, JsonPayload::class,
             VerificationResult::class, Failure::class, Reason::class, Environment::class,
-            AppleRootCerts::class, SystemClock::class,
+            SystemClock::class,
             CliTransport::class, HttpTransport::class, Installer::class, InstallException::class,
             InputTooLargeException::class, ModuleFaultException::class, ServerProcessException::class,
         ] as $class) {
@@ -284,38 +283,16 @@ final class ApiShapeTest extends TestCase
     }
 
     /**
-     * The compiled-in roots must be byte-identical to `php/certs/`, which CI
-     * separately diffs against the repository-root `certs/`. Otherwise the
-     * package could ship trust anchors nobody reviewed.
+     * The package carries no copy of Apple's roots: they are compiled into
+     * `aprv`, and the defaults name none. Nothing may bring a copy back, so
+     * the class that used to hand one out stays gone.
      */
-    public function testTheCompiledInRootsMatchTheCheckedCopy(): void
+    public function testThePackageCarriesNoCopyOfTheRoots(): void
     {
-        $dir = __DIR__ . '/../certs';
-        $files = ['AppleIncRootCertificate.cer', 'AppleRootCA-G2.cer', 'AppleRootCA-G3.cer'];
-        $onDisk = array_map(static fn (string $f): string => (string) file_get_contents($dir . '/' . $f), $files);
-
-        self::assertSame($onDisk, AppleRootCerts::pinnedRoots());
-    }
-
-    /**
-     * All three published Apple roots, one shared set for both verification
-     * paths in 0.7 (docs/design/0.7-api.md, "Setup"). Do not "optimise" the
-     * set down — Apple documents the JWS chain as ending in "an Apple root
-     * certificate" without naming one.
-     */
-    public function testThePinnedRootsCarryAllThreePublishedAppleRoots(): void
-    {
-        $roots = AppleRootCerts::pinnedRoots();
-
-        self::assertSame(
-            [
-                'b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024',
-                'c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050',
-                '63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179',
-            ],
-            array_map(static fn (string $der): string => hash('sha256', $der), $roots),
-            'Apple Inc. Root CA, Apple Root CA - G2 and G3, as published by Apple',
-        );
+        self::assertNull(Config::defaults()->roots);
+        self::assertNull(Config::builder()->build()->roots);
+        self::assertFalse(class_exists('EminDeniz99\\ApplePurchaseReceiptVerifier\\AppleRootCerts'));
+        self::assertDirectoryDoesNotExist(__DIR__ . '/../certs');
     }
 
     /** @return VerificationResult<ReceiptPayload> */

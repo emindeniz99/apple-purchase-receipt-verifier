@@ -129,7 +129,8 @@ const pinned = createConfig({
 ```
 
 `config.roots` is the DER of each root you passed, or `null` for Apple's
-roots. An empty `roots` array is a `TypeError`, from `createConfig` or
+roots, which are compiled into the module: the package ships no certificate
+files of its own. An empty `roots` array is a `TypeError`, from `createConfig` or
 `createVerifier`: a verifier with no roots would reject everything, and
 nobody would notice until production. A root the module cannot read as a
 certificate is a `TypeError` from `createVerifier`.

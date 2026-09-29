@@ -321,7 +321,7 @@ func TestTheDefaultRootsAreAnEmptyListAndCustomRootsAreTheirDER(t *testing.T) {
 	if _, err := applereceipt.NewVerifierOverModule(applereceipt.DefaultConfig(), mirrorModule(t)); err != nil {
 		t.Fatalf("the default Config was refused: %v", err)
 	}
-	explicit := applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: applereceipt.AppleRoots()})
+	explicit := applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: []*x509.Certificate{parseFixtureCertificate(t, "jws-root")}})
 	_, err := applereceipt.NewVerifierOverModule(explicit, mirrorModule(t))
 	if err == nil || !strings.Contains(err.Error(), "refused") || !strings.Contains(err.Error(), "the double refuses") {
 		t.Fatalf("a Config with explicit roots reached init as an empty list: %v", err)

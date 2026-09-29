@@ -135,6 +135,26 @@ defmodule AppleReceiptExample do
 
   defp last_member_wins(members, outer), do: {members |> Enum.reverse() |> Map.new(), outer}
 
-  defp decode({:ok, json}), do: {:ok, decode_json!(json)}
-  defp decode({:error, status, json}), do: {:error, reason(status), decode_json!(json)}
+  @doc """
+  The verified payload of a document a verify call answered,
+  `{"verified":true,"payload":...}`: a receipt's payload is an object, and
+  a JWS's is a JSON string holding the signed text, exactly, which is
+  decoded in turn.
+  """
+  @spec payload!(binary()) :: term()
+  def payload!(document) do
+    case decode_json!(document) do
+      %{"verified" => true, "payload" => signed} when is_binary(signed) -> decode_json!(signed)
+      %{"verified" => true, "payload" => payload} -> payload
+      other -> raise ArgumentError, "not a verified document: #{inspect(other)}"
+    end
+  end
+
+  defp decode({:ok, json}), do: {:ok, payload!(json)}
+
+  # A mistake in the call (status 100 and above) comes with no document.
+  defp decode({:error, status, ""}), do: {:error, reason(status), %{}}
+
+  defp decode({:error, status, json}),
+    do: {:error, reason(status), json |> decode_json!() |> Map.delete("verified")}
 end

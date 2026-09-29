@@ -185,3 +185,18 @@ the genuine sandbox receipt as `check-install.sh` does.
 - The one-implementation job (ARCHITECTURE.md §9) may grep `python/` for
   `cryptography`, `asn1crypto`, `hmac`, `OpenSSL` and `x509`: the package
   imports none of them, and `tests/test_trust_isolation.py` asserts it.
+
+## Phase 7
+
+`apple_purchase_receipt_verifier/certs` and `roots.py` are gone, and with
+them the public `default_roots()`: Apple's three roots are compiled into the
+module. `Config.defaults().roots` is `None`, which the `Verifier` sends
+`init` as an empty list; an explicitly empty collection is still refused.
+The wheel's package data is `py.typed`, `aprv.wasm` and its pin.
+
+| Where | Change |
+|---|---|
+| `ci.yml` | nothing: no job generated or diffed the Python copy (`check-cert-copies.mjs` covered it and no longer finds it). |
+| `.github/smoke/pypi-smoke.py` | changed on this lane: asserts `Config.defaults().roots is None` instead of three roots; the genuine receipt is what proves the wheel carries the module. |
+| `tools/g1.sh` | unchanged. Its corpus step runs `tests/corpus_rows.py` as a script, which imports the package: run it from an environment where the package is installed, or with `PYTHONPATH=python`. |
+

@@ -12,13 +12,13 @@ use Psr\Clock\ClockInterface;
  *
  * **Roots** are the caller's trust anchors as DER strings, or `null` for the
  * module's built-in ones: no roots given means the three pinned Apple roots
- * that `aprv` carries. This package holds no copy of them on the verification
- * path, so {@see defaults()} names none. An empty list is not "no roots": it
- * is a mistake, and {@see Verifier::create()} refuses it. "Apple's roots plus
- * mine" is written by passing all four DER strings
- * ({@see AppleRootCerts::pinnedRoots()} has Apple's three for now). A value
- * that is not a certificate is refused by {@see Verifier::create()}, which is
- * where `aprv` first reads the roots.
+ * that `aprv` carries. This package holds no copy of them, so
+ * {@see defaults()} names none. An empty list is not "no roots": it is a
+ * mistake, and {@see Verifier::create()} refuses it. "Apple's roots plus
+ * mine" is written by passing all four DER strings, Apple's three read from
+ * its PKI page or the repository's `certs/`. A value that is not a
+ * certificate is refused by {@see Verifier::create()}, which is where `aprv`
+ * first reads the roots.
  *
  * **The clock** answers "what time is it now?" and nothing else. The
  * library reads it once per call and sends the value to `aprv` as `now-ms`;

@@ -16,11 +16,12 @@ from apple_purchase_receipt_verifier import (
     VerificationResult,
     Verifier,
     apple_status,
-    default_roots,
     endpoint,
     jws,
     receipt,
 )
+
+import _support
 
 # SURFACE.md section 3: the eight reasons, and no others.
 REASONS = [
@@ -37,6 +38,8 @@ REASONS = [
 
 class NamesTest(unittest.TestCase):
     def test_the_package_exports_exactly_the_0_7_names(self) -> None:
+        # 0.7's names less default_roots(): the roots are compiled into the
+        # module and the package carries no copy to return.
         self.assertEqual(
             [
                 "Config",
@@ -50,7 +53,6 @@ class NamesTest(unittest.TestCase):
                 "VerificationResult",
                 "Verifier",
                 "apple_status",
-                "default_roots",
             ],
             sorted(package.__all__),
         )
@@ -104,21 +106,23 @@ class RootsAndConfigTest(unittest.TestCase):
         }
     )
 
-    def test_the_bundled_roots_are_the_three_published_apple_roots(self) -> None:
-        digests = {hashlib.sha256(der).hexdigest() for der in default_roots()}
+    def test_the_tests_apple_roots_are_the_three_published_apple_roots(self) -> None:
+        # The package ships no roots (they are compiled into the module);
+        # the tests that pass Apple's roots explicitly read certs/.
+        digests = {hashlib.sha256(der).hexdigest() for der in _support.apple_roots()}
         self.assertEqual(self.PINNED, digests)
-        self.assertEqual(3, len(default_roots()))
+        self.assertEqual(3, len(_support.apple_roots()))
 
-    def test_config_defaults_carries_them_and_the_system_clock(self) -> None:
+    def test_config_defaults_names_no_roots_and_the_system_clock(self) -> None:
         config = Config.defaults()
-        self.assertEqual(default_roots(), config.roots)
+        self.assertIsNone(config.roots, "None: the Apple roots compiled into the module")
         self.assertEqual(config, Config())
         self.assertIs(type(config.clock()), int)
 
     def test_create_replaces_only_what_it_is_given(self) -> None:
         clock = lambda: 5  # noqa: E731
         self.assertEqual((b"a",), Config.create(roots=[b"a"]).roots)
-        self.assertEqual(default_roots(), Config.create(clock=clock).roots)
+        self.assertIsNone(Config.create(clock=clock).roots)
         self.assertIs(clock, Config.create(clock=clock).clock)
         self.assertEqual(
             (), Config.create(roots=[]).roots, "empty is refused by Verifier, not Config"

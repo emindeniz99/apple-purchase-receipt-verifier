@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Fuzz;
 
-use EminDeniz99\ApplePurchaseReceiptVerifier\AppleRootCerts;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
@@ -26,7 +25,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 require __DIR__ . '/../bootstrap.php';
 
 $verifier = Verifier::create(Config::builder()->roots(FuzzFixtures::jwsRootOnly())->build(), FuzzFixtures::transport());
-$unrelated = Verifier::create(Config::builder()->roots(AppleRootCerts::pinnedRoots())->build(), FuzzFixtures::transport());
+$unrelated = Verifier::create(Config::defaults(), FuzzFixtures::transport());
 
 $config->setMaxLen(8192);
 

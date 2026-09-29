@@ -101,9 +101,9 @@ Config pinned = Config.CreateBuilder()
 
 `Roots` is either your own list of trust anchors or, by default, nothing:
 the three Apple roots are pinned inside the module, and `Config` lists none
-of them (`Config.Defaults().Roots` is empty). To trust Apple's roots and one
-of your own, pass all four; `AppleRootCertificates.Bundled()` returns
-Apple's three. An empty `Roots` set that you pass in is an
+of them (`Config.Defaults().Roots` is empty), and the package ships no copy.
+To trust Apple's roots and one of your own, pass all four, loading Apple's
+three from its PKI page or the repository's `certs/`. An empty `Roots` set that you pass in is an
 `ArgumentException` from `Build()`, never a verdict: a verifier with no
 roots would reject everything, and nobody would notice until production.
 `Verifier.Create` throws `ArgumentException` for a root the module cannot
@@ -522,12 +522,14 @@ for how it differs from Apple's official libraries.
 
 ## Upgrading from 0.7
 
-The API is unchanged; what runs under it is not.
+The API is unchanged but for `AppleRootCertificates`, which is gone; what
+runs under it is not.
 
 | 0.7 | 0.8 |
 |---|---|
 | verification in C#, on `System.Security.Cryptography.Pkcs` and `System.Formats.Asn1` | verification in `aprv.wasm`, hosted by the `Wasmtime` package; those two packages are no longer dependencies |
 | `Config.Defaults().Roots` lists Apple's three roots | it is empty: the roots are pinned inside the module. To trust Apple's roots and your own, pass all four |
+| `AppleRootCertificates.Bundled()` returns Apple's three roots | removed: the package ships no copy of them. Load them from Apple's PKI page or the repository's `certs/` |
 | `Config.Defaults()` throws if the bundled roots do not load | it cannot fail; `Verifier.Create` throws `ArgumentException` for a root the module refuses and `InvalidOperationException` for a module of another ABI version |
 | `Failure.Cause` set for `UnreadablePayload` and `InternalError` | set only for an `InternalError` raised by this library (a trap, an unreadable answer, the clock) |
 | `Verifier.Create` takes microseconds | the first one in a process compiles the module, about a second on an idle machine and several under load |
@@ -549,7 +551,7 @@ environments, no app Apple id, no device id. Methods return a
 | `Verify(base64, deviceGuid)` (device-hash checking on the verifier) | compute the hash yourself from `OpaqueValue` and `BundleIdBytes` (above) |
 | `new JwsVerifier(roots, bundleId, acceptedEnvironments).VerifyTransaction/VerifyAppTransaction/VerifyRaw(jws)` | `verifier.VerifySignedData(jws)`, then deserialize `payload.Json` yourself |
 | `new VerifyReceiptEndpoint(roots, environment).VerifyReceiptJson(body)` | `verifier.VerifyReceiptEndpoint(environment, body)` |
-| `AppleRootCertificates.JwsRoots()`, `AppleRootCertificates.ReceiptRoots()` | `AppleRootCertificates.Bundled()` (one set, shared by every method) |
+| `AppleRootCertificates.JwsRoots()`, `AppleRootCertificates.ReceiptRoots()` | `Config.Defaults()` (one set, shared by every method) |
 | a `DateTimeOffset` argument for `request_date` | `Config.CreateBuilder().Clock(() => epochMs)` |
 | `VerificationException` (thrown) | `result.Failure` (`{ Reason, Message, Cause }`, never thrown for input) |
 | `AppReceipt` (`DateTimeOffset` fields) | `ReceiptPayload` (`*Ms` epoch milliseconds) |
