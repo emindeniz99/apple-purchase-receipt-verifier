@@ -865,7 +865,7 @@ jobs:
           # signature bit flipped (a verdict each way).
           python3 - "$D/calls.jsonl" <<'PY'
           import base64, json, sys
-          text = open("fixtures/public-receipts/receipt-sandbox-g5.b64", "ascii").read().strip()
+          text = open("fixtures/public-receipts/receipt-sandbox-g5.b64", encoding="ascii").read().strip()
           der = bytearray(base64.b64decode(text))
           der[-128] ^= 1
           rows = [("g5", text.encode()), ("g5-flipped", base64.b64encode(bytes(der)))]
