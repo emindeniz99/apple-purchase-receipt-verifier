@@ -63,10 +63,11 @@ values: DER in, certificates, facts and booleans out.
   adapter that calls `ASN1_get_object` (`src/sys.rs` declares it), and the
   core calls it nowhere: `tools/check-layering.mjs` rule 6 holds both. It
   answers what OpenSSL's decoders do not:
-  - over the whole envelope, before the full decode and after the shallow
-    decode's member bounds: nesting of constructed values of every class
+  - over the whole envelope, before the shallow decode's member bounds
+    and the full decode: nesting of constructed values of every class
     (the core's depth bound, 32) and the number of values (its node
-    budget, 100,000);
+    budget, 100,000), so the budget also bounds the entries the shallow
+    decode builds;
   - the chunks of a constructed `OCTET STRING` (the `eContent`, a payload
     attribute value, the Xcode wrap) must be `OCTET STRING`s, as X.690
     section 8.7.3 says; OpenSSL joins any tag. Six constructed levels
