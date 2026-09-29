@@ -28,6 +28,9 @@
             "EminDeniz99\\ApplePurchaseReceiptVerifier\\Tests\\": "tests/"
         }
     },
+    "bin": [
+        "bin/aprv-install"
+    ],
     "config": {
         "sort-packages": true,
         "platform": {

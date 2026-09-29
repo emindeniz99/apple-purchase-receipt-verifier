@@ -10,6 +10,8 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\ConfigBuilder;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Failure;
 use EminDeniz99\ApplePurchaseReceiptVerifier\InAppPurchase;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Install\Installer;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Install\InstallException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
@@ -159,7 +161,7 @@ final class ApiShapeTest extends TestCase
             ReceiptPayload::class, InAppPurchase::class, JsonPayload::class,
             VerificationResult::class, Failure::class, Reason::class, Environment::class,
             AppleRootCerts::class, SystemClock::class,
-            CliTransport::class, HttpTransport::class,
+            CliTransport::class, HttpTransport::class, Installer::class, InstallException::class,
             InputTooLargeException::class, ModuleFaultException::class, ServerProcessException::class,
         ] as $class) {
             yield $class => [$class];

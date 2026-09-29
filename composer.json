@@ -17,5 +17,8 @@
         "psr-4": {
             "EminDeniz99\\ApplePurchaseReceiptVerifier\\": "php/src/"
         }
-    }
+    },
+    "bin": [
+        "php/bin/aprv-install"
+    ]
 }

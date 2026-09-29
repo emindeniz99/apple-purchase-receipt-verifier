@@ -12,6 +12,7 @@ parameters:
     paths:
         - src
         - tests
+        - bin
     excludePaths:
         # Subprocess scripts (a fake aprv, a fake server) that read JSON they wrote themselves.
         - tests/Support/fake-aprv.php
