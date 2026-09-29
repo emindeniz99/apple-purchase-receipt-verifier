@@ -55,10 +55,26 @@ class SourceRulesTest {
         return hits;
     }
 
+    /**
+     * The JDK's own facts about the machine, which the server engine needs to
+     * pick a binary and a cache directory. They configure nothing of ours.
+     */
+    private static final Pattern THE_JDKS_OWN = Pattern.compile(
+            "^[^:]*Platform\\.java:\\d+: .*System\\.getProperty\\(\"(os\\.name|os\\.arch|user\\.home)\"");
+
     @Test
     void noSourceReadsASystemPropertyOrAnEnvironmentVariable() throws Exception {
-        List<String> hits = matches(CONFIGURATION_FROM_OUTSIDE);
+        List<String> hits = new ArrayList<>();
+        int platform = 0;
+        for (String hit : matches(CONFIGURATION_FROM_OUTSIDE)) {
+            if (THE_JDKS_OWN.matcher(hit).find()) {
+                platform++;
+            } else {
+                hits.add(hit);
+            }
+        }
         assertTrue(hits.isEmpty(), String.join("\n", hits));
+        assertTrue(platform == 3, "Platform reads os.name, os.arch and user.home, and nothing else: " + platform);
     }
 
     @Test

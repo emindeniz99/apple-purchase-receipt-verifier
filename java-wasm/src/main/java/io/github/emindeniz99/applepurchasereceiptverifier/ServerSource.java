@@ -18,9 +18,9 @@ import org.jspecify.annotations.Nullable;
  * SHA-256 before it is made executable, and again before every start; a
  * binary whose hash differs is never executed, and that source fails.</p>
  *
- * <p><strong>Pending:</strong> the server engine itself has not landed, so
- * these values can be built and compared but no verifier runs on them
- * yet.</p>
+ * <p>Every source must lead to a server that trusts exactly the
+ * {@link Config}'s roots: this library asks the server ({@code GET /v1/info})
+ * and refuses one whose root fingerprints differ.</p>
  */
 public final class ServerSource {
 
@@ -32,22 +32,29 @@ public final class ServerSource {
         DOWNLOAD
     }
 
-    private static final ServerSource MAVEN = new ServerSource(Kind.MAVEN, null, null, null, null);
-    private static final ServerSource GITHUB = new ServerSource(Kind.GITHUB, null, null, null, null);
+    private static final ServerSource MAVEN = new ServerSource(Kind.MAVEN, null, null, null, null, false);
+    private static final ServerSource GITHUB = new ServerSource(Kind.GITHUB, null, null, null, null, false);
 
     private final Kind kind;
     private final @Nullable URI uri;
     private final @Nullable String token;
     private final @Nullable Path path;
     private final @Nullable String sha256;
+    private final boolean loopbackHttpForTests;
 
     private ServerSource(
-            Kind kind, @Nullable URI uri, @Nullable String token, @Nullable Path path, @Nullable String sha256) {
+            Kind kind,
+            @Nullable URI uri,
+            @Nullable String token,
+            @Nullable Path path,
+            @Nullable String sha256,
+            boolean loopbackHttpForTests) {
         this.kind = kind;
         this.uri = uri;
         this.token = token;
         this.path = path;
         this.sha256 = sha256;
+        this.loopbackHttpForTests = loopbackHttpForTests;
     }
 
     /**
@@ -67,10 +74,11 @@ public final class ServerSource {
         if (!("http".equals(scheme) || "https".equals(scheme)) || uri.getHost() == null) {
             throw new IllegalArgumentException("a server URL must be an absolute http or https URI with a host");
         }
-        if (token != null && token.isEmpty()) {
-            throw new IllegalArgumentException("the token must not be empty; pass null for none");
+        if (token != null && (token.isEmpty() || !token.matches("[\\x21-\\x7e]+"))) {
+            throw new IllegalArgumentException(
+                    "the token must be printable ASCII without spaces, and not empty; pass null for none");
         }
-        return new ServerSource(Kind.URL, uri, token, null, null);
+        return new ServerSource(Kind.URL, uri, token, null, null, false);
     }
 
     /**
@@ -81,7 +89,7 @@ public final class ServerSource {
      * @throws NullPointerException if {@code path} is null
      */
     public static ServerSource executable(Path path) {
-        return new ServerSource(Kind.EXECUTABLE, null, null, Objects.requireNonNull(path, "path"), null);
+        return new ServerSource(Kind.EXECUTABLE, null, null, Objects.requireNonNull(path, "path"), null, false);
     }
 
     /**
@@ -122,11 +130,37 @@ public final class ServerSource {
         if (!sha256.matches("[0-9a-fA-F]{64}")) {
             throw new IllegalArgumentException("sha256 must be 64 hexadecimal digits");
         }
-        return new ServerSource(Kind.DOWNLOAD, url, null, null, sha256.toLowerCase(Locale.ROOT));
+        return new ServerSource(Kind.DOWNLOAD, url, null, null, sha256.toLowerCase(Locale.ROOT), false);
+    }
+
+    /** {@link #download} from a loopback {@code http} server: for this library's own tests only. */
+    static ServerSource downloadFromLoopbackForTests(URI url, String sha256) {
+        return new ServerSource(Kind.DOWNLOAD, url, null, null, sha256.toLowerCase(Locale.ROOT), true);
     }
 
     Kind kind() {
         return kind;
+    }
+
+    URI uri() {
+        return Objects.requireNonNull(uri);
+    }
+
+    @Nullable
+    String token() {
+        return token;
+    }
+
+    Path path() {
+        return Objects.requireNonNull(path);
+    }
+
+    String sha256() {
+        return Objects.requireNonNull(sha256);
+    }
+
+    boolean loopbackHttpForTests() {
+        return loopbackHttpForTests;
     }
 
     @Override
@@ -139,12 +173,13 @@ public final class ServerSource {
                 && Objects.equals(uri, that.uri)
                 && Objects.equals(token, that.token)
                 && Objects.equals(path, that.path)
-                && Objects.equals(sha256, that.sha256);
+                && Objects.equals(sha256, that.sha256)
+                && loopbackHttpForTests == that.loopbackHttpForTests;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, uri, token, path, sha256);
+        return Objects.hash(kind, uri, token, path, sha256, loopbackHttpForTests);
     }
 
     /** Names the source; never shows the token. */

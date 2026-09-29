@@ -46,9 +46,9 @@ public interface Verifier {
      *                                       artifact are both on the classpath;
      *                                       or, unless the probe is off, if the
      *                                       engine cannot run the verifier
-     *                                       module here
-     * @throws UnsupportedOperationException on Java 8, until the server
-     *                                       engine lands
+     *                                       module here (for the server
+     *                                       engine: no source worked, with
+     *                                       each source's reason)
      */
     static Verifier create(Config config) {
         return create(config, Engine.forThisJvm());
@@ -65,8 +65,6 @@ public interface Verifier {
      *                                       when {@code engine} is
      *                                       {@link Engine#endive()} on a JVM
      *                                       older than Java 11
-     * @throws UnsupportedOperationException for the server engine, until it
-     *                                       lands
      */
     static Verifier create(Config config, Engine engine) {
         return Engine.createVerifier(config, engine);

@@ -44,10 +44,16 @@
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.build.outputTimestamp>2026-09-21T00:00:00Z</project.build.outputTimestamp>
-    <!-- The module Endive compiles, and the file holding its SHA-256. The
-         release build overwrites both; the validate phase refuses a module
-         whose hash differs from the file. -->
+    <!-- The module Endive compiles. It is not in git (R14): copy the
+         release's aprv.wasm to src/main/wasm/aprv.wasm, or pass
+         -Daprv.wasm=PATH. The validate phase refuses a module whose SHA-256
+         differs from the committed pin, aprv.wasm.sha256. -->
     <aprv.wasm>${project.basedir}/src/main/wasm/aprv.wasm</aprv.wasm>
+    <aprv.wasm.pin>${project.basedir}/src/main/wasm/aprv.wasm.sha256</aprv.wasm.pin>
+    <!-- The server binaries' SHA-256 pins, in sha256sum's format, copied
+         into the jar for ServerSource.maven() and github(). The release
+         passes its own SHA256SUMS. -->
+    <aprv.server.sha256sums>${project.basedir}/src/main/server/SHA256SUMS</aprv.server.sha256sums>
     <endive.version>1.1.0</endive.version>
     <!-- The same jackson-core floor as the main artifact: it reads the
          module's JSON answers and writes ReceiptPayload.toJson(). -->
@@ -133,15 +139,34 @@
             </goals>
             <configuration>
               <target>
-                <loadfile property="aprv.wasm.pinned" srcFile="${aprv.wasm}.sha256" failonerror="true"/>
+                <fail message="${aprv.wasm} is missing: copy the release's aprv.wasm there, or pass -Daprv.wasm=PATH (it is not in git)">
+                  <condition>
+                    <not>
+                      <available file="${aprv.wasm}"/>
+                    </not>
+                  </condition>
+                </fail>
+                <loadfile property="aprv.wasm.pinned" srcFile="${aprv.wasm.pin}" failonerror="true"/>
                 <checksum file="${aprv.wasm}" algorithm="SHA-256" property="aprv.wasm.actual"/>
-                <fail message="${aprv.wasm} hashes to ${aprv.wasm.actual}, which is not the SHA-256 pinned in ${aprv.wasm}.sha256">
+                <fail message="${aprv.wasm} hashes to ${aprv.wasm.actual}, which is not the SHA-256 pinned in ${aprv.wasm.pin}">
                   <condition>
                     <not>
                       <matches string="${aprv.wasm.pinned}" pattern="^${aprv.wasm.actual}\s"/>
                     </not>
                   </condition>
                 </fail>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <id>server-pins</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <copy file="${aprv.server.sha256sums}" tofile="${project.build.outputDirectory}/io/github/emindeniz99/applepurchasereceiptverifier/server/SHA256SUMS" overwrite="true"/>
               </target>
             </configuration>
           </execution>
@@ -384,6 +409,140 @@
                   <goal>integration-test</goal>
                   <goal>verify</goal>
                 </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- The classifier jars of MIGRATION 3.4 (R26): each holds one static
+         aprv-server binary at io/github/emindeniz99/applepurchasereceiptverifier/server/aprv-<target>
+         with its .sha256, for ServerSource.maven(). Built only when the
+         binary's path is given; the binary must hash to its pin in
+         aprv.server.sha256sums. The linux-x86_64 binary also runs this
+         module's server-engine tests (tagged "server").
+           -Daprv.server.linux-x86_64=PATH  -Daprv.server.linux-aarch64=PATH -->
+    <profile>
+      <id>server-linux-x86_64</id>
+      <activation>
+        <property>
+          <name>aprv.server.linux-x86_64</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>server-linux-x86_64</id>
+                <phase>generate-test-resources</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <property name="dir" value="${project.build.directory}/server-jars/linux-x86_64/io/github/emindeniz99/applepurchasereceiptverifier/server"/>
+                    <copy file="${aprv.server.linux-x86_64}" tofile="${dir}/aprv-x86_64-unknown-linux-musl" overwrite="true"/>
+                    <chmod file="${dir}/aprv-x86_64-unknown-linux-musl" perm="755"/>
+                    <checksum file="${dir}/aprv-x86_64-unknown-linux-musl" algorithm="SHA-256" property="sha" />
+                    <echo file="${dir}/aprv-x86_64-unknown-linux-musl.sha256" message="${sha}  aprv-x86_64-unknown-linux-musl${line.separator}"/>
+                    <loadfile property="pins" srcFile="${aprv.server.sha256sums}"/>
+                    <fail message="${aprv.server.linux-x86_64} hashes to ${sha}, which ${aprv.server.sha256sums} does not pin for aprv-x86_64-unknown-linux-musl">
+                      <condition>
+                        <not>
+                          <matches string="${pins}" pattern="(?m)^${sha}\s+\*?aprv-x86_64-unknown-linux-musl\s*$"/>
+                        </not>
+                      </condition>
+                    </fail>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>classifier-linux-x86_64</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <configuration>
+                  <classesDirectory>${project.build.directory}/server-jars/linux-x86_64</classesDirectory>
+                  <classifier>linux-x86_64</classifier>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <additionalClasspathElements>
+                <additionalClasspathElement>${project.build.directory}/server-jars/linux-x86_64</additionalClasspathElement>
+              </additionalClasspathElements>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>server-linux-aarch64</id>
+      <activation>
+        <property>
+          <name>aprv.server.linux-aarch64</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>server-linux-aarch64</id>
+                <phase>generate-test-resources</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <property name="dir" value="${project.build.directory}/server-jars/linux-aarch64/io/github/emindeniz99/applepurchasereceiptverifier/server"/>
+                    <copy file="${aprv.server.linux-aarch64}" tofile="${dir}/aprv-aarch64-unknown-linux-musl" overwrite="true"/>
+                    <chmod file="${dir}/aprv-aarch64-unknown-linux-musl" perm="755"/>
+                    <checksum file="${dir}/aprv-aarch64-unknown-linux-musl" algorithm="SHA-256" property="sha" />
+                    <echo file="${dir}/aprv-aarch64-unknown-linux-musl.sha256" message="${sha}  aprv-aarch64-unknown-linux-musl${line.separator}"/>
+                    <loadfile property="pins" srcFile="${aprv.server.sha256sums}"/>
+                    <fail message="${aprv.server.linux-aarch64} hashes to ${sha}, which ${aprv.server.sha256sums} does not pin for aprv-aarch64-unknown-linux-musl">
+                      <condition>
+                        <not>
+                          <matches string="${pins}" pattern="(?m)^${sha}\s+\*?aprv-aarch64-unknown-linux-musl\s*$"/>
+                        </not>
+                      </condition>
+                    </fail>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>classifier-linux-aarch64</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <configuration>
+                  <classesDirectory>${project.build.directory}/server-jars/linux-aarch64</classesDirectory>
+                  <classifier>linux-aarch64</classifier>
+                </configuration>
               </execution>
             </executions>
           </plugin>

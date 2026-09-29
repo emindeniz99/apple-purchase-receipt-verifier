@@ -74,11 +74,17 @@ class ClasspathGuardTest {
                         StandardCharsets.UTF_8));
     }
 
-    /** Verifier.create runs the guard: this classpath holds only this artifact, so create gets past it. */
+    /**
+     * Verifier.create runs the guard: this classpath holds only this
+     * artifact, so create gets past it to the engine, whose one source fails.
+     */
     @Test
     void createRunsTheGuardFirst() {
-        UnsupportedOperationException pending = assertThrows(
-                UnsupportedOperationException.class, () -> Verifier.create(Config.defaults(), Engine.server()));
-        assertEquals("server engine: pending", pending.getMessage());
+        IllegalStateException engine = assertThrows(
+                IllegalStateException.class,
+                () -> Verifier.create(
+                        Config.defaults(),
+                        Engine.server(ServerSource.executable(java.nio.file.Paths.get("/nonexistent/aprv")))));
+        assertTrue(engine.getMessage().startsWith("no aprv-server source worked"), engine.getMessage());
     }
 }

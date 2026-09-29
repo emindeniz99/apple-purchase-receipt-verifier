@@ -24,8 +24,8 @@ import org.jspecify.annotations.Nullable;
  *       Java 11 or later.</li>
  *   <li>{@link #server(ServerSource...)}: in a separate process, the
  *       {@code aprv-server} binary, which this library starts and supervises
- *       or reaches over HTTP. Runs on Java 8. <strong>Pending:</strong> a
- *       verifier on this engine cannot be created yet.</li>
+ *       or reaches over HTTP. Runs on Java 8. A verifier on this engine is
+ *       {@link java.io.Closeable}: close it to stop a child now.</li>
  * </ul>
  *
  * <p>{@link Verifier#create(Config)} picks by the JVM version alone: Endive
@@ -50,11 +50,11 @@ public abstract class Engine {
 
     /**
      * The server engine, trying {@code sources} in the order given until one
-     * works; with none, {@code [maven(), github()]}.
-     *
-     * <p><strong>Pending:</strong> {@link Verifier#create(Config, Engine)}
-     * throws {@link UnsupportedOperationException} for this engine until the
-     * server engine lands.</p>
+     * works; with none, {@code [maven(), github()]}. With the runtime probe
+     * on (the default), {@link Verifier#create(Config, Engine)} resolves the
+     * sources and throws {@link IllegalStateException} with each source's
+     * reason when none works; with it off, the first call does, and answers
+     * {@link Reason#INTERNAL_ERROR} instead.
      *
      * @throws NullPointerException if {@code sources} or one of them is null
      */
@@ -204,7 +204,20 @@ public abstract class Engine {
 
         @Override
         Verifier create(Config config) {
-            throw new UnsupportedOperationException("server engine: pending");
+            boolean probe = config.runtimeProbe();
+            return new ServerVerifier(
+                    config,
+                    () -> {
+                        try {
+                            return ServerSources.open(config, this);
+                        } catch (IllegalStateException e) {
+                            if (probe) {
+                                throw e;
+                            }
+                            throw new ServerProcessFailure(e.getMessage(), e);
+                        }
+                    },
+                    probe);
         }
 
         @Override

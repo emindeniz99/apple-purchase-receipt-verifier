@@ -11,18 +11,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.net.URI;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.junit.jupiter.api.condition.JRE;
 
 /**
  * The engine API on any JVM, Java 8 included: the choice by JVM version,
- * the sources in the caller's order, their validation, and the pending
- * server engine.
+ * the sources in the caller's order, their validation, and a server engine
+ * none of whose sources works.
  */
 class EngineApiTest {
-
-    private static final String PENDING = "server engine: pending";
 
     @Test
     void theServerEngineDefaultsToMavenThenGithub() {
@@ -88,11 +87,20 @@ class EngineApiTest {
                 .contains("s3cr3t"));
     }
 
+    /** No source works: create names every source and its reason, in order. */
     @Test
-    void theServerEngineIsPending() {
-        UnsupportedOperationException e = assertThrows(
-                UnsupportedOperationException.class, () -> Verifier.create(Config.defaults(), Engine.server()));
-        assertEquals(PENDING, e.getMessage());
+    void aServerEngineWhoseSourcesAllFailThrowsWithEveryReason() {
+        Engine.Server engine = Engine.server(
+                ServerSource.executable(Paths.get("/nonexistent/aprv-a")),
+                ServerSource.url(URI.create("http://127.0.0.1:1"), "token"));
+        IllegalStateException e =
+                assertThrows(IllegalStateException.class, () -> Verifier.create(Config.defaults(), engine));
+        String message = e.getMessage();
+        assertTrue(message.startsWith("no aprv-server source worked: "), message);
+        int executable = message.indexOf("ServerSource.executable(");
+        int url = message.indexOf("ServerSource.url(");
+        assertTrue(executable > 0 && url > executable, message);
+        assertTrue(message.contains("/nonexistent/aprv-a"), message);
     }
 
     /** The checks every engine shares come first, in 0.7's order. */
@@ -118,12 +126,24 @@ class EngineApiTest {
         }
     }
 
+    /**
+     * The whole default path on Java 8: maven() installs the classifier
+     * jar's binary into the user cache directory and starts it. Needs the
+     * linux-x86_64 classifier directory on the classpath (tag "server").
+     */
     @Test
+    @Tag("server")
     @EnabledForJreRange(max = JRE.JAVA_10)
     void onJava8TheDefaultIsTheServerEngine() {
-        UnsupportedOperationException e =
-                assertThrows(UnsupportedOperationException.class, () -> Verifier.create(Config.defaults()));
-        assertEquals(PENDING, e.getMessage());
+        Verifier verifier = Verifier.create(Config.defaults());
+        try {
+            assertTrue(verifier instanceof ServerVerifier, verifier.getClass().getName());
+            assertTrue(((ServerVerifier) verifier).connection().process() != null, "maven() started a child");
+        } finally {
+            if (verifier instanceof ServerVerifier) {
+                ((ServerVerifier) verifier).close();
+            }
+        }
     }
 
     @Test

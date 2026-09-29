@@ -51,6 +51,7 @@ class ClasspathGuardJarsIT {
                                 && !name.endsWith("-tests.jar")
                                 && !name.endsWith("-sources.jar")
                                 && !name.endsWith("-javadoc.jar")
+                                && !name.matches(".*-linux-(x86_64|aarch64)\\.jar")
                                 && name.substring(prefix.length()).matches("[0-9].*");
                     })
                     .collect(Collectors.toList());
@@ -122,12 +123,20 @@ class ClasspathGuardJarsIT {
             Class<?> config = loader.loadClass(PACKAGE + ".Config");
             Class<?> engine = loader.loadClass(PACKAGE + ".Engine");
             Method create = loader.loadClass(PACKAGE + ".Verifier").getMethod("create", config, engine);
-            Object noSources = java.lang.reflect.Array.newInstance(loader.loadClass(PACKAGE + ".ServerSource"), 0);
-            Object server = engine.getMethod("server", noSources.getClass()).invoke(null, noSources);
-            InvocationTargetException pending = assertThrows(
+            // The engine's one source fails, which only happens past the guard.
+            Class<?> sourceClass = loader.loadClass(PACKAGE + ".ServerSource");
+            Object source = sourceClass
+                    .getMethod("executable", java.nio.file.Path.class)
+                    .invoke(null, java.nio.file.Paths.get("/nonexistent/aprv"));
+            Object sources = java.lang.reflect.Array.newInstance(sourceClass, 1);
+            java.lang.reflect.Array.set(sources, 0, source);
+            Object server = engine.getMethod("server", sources.getClass()).invoke(null, sources);
+            InvocationTargetException failed = assertThrows(
                     InvocationTargetException.class,
                     () -> create.invoke(null, config.getMethod("defaults").invoke(null), server));
-            assertTrue(pending.getCause() instanceof UnsupportedOperationException, String.valueOf(pending.getCause()));
+            Throwable cause = failed.getCause();
+            assertTrue(cause instanceof IllegalStateException, String.valueOf(cause));
+            assertTrue(cause.getMessage().startsWith("no aprv-server source worked"), cause.getMessage());
         }
     }
 
