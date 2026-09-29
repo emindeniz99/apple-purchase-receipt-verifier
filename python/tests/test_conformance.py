@@ -78,7 +78,7 @@ def fixture_bytes(fixture_id):
 
 def trusted_roots(spec):
     if spec["source"] == "defaults":
-        return list(Config.defaults().roots)
+        return Config.defaults().roots  # None: the module's Apple roots
     return [fixture_bytes(i) for i in spec["fixtures"]]
 
 

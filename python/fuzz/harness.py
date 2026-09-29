@@ -33,6 +33,7 @@ from typing import Any
 import atheris
 
 _FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
+_CERTS = Path(__file__).resolve().parents[2] / "certs"
 
 
 def _fixture(*segments: str) -> bytes:
@@ -42,12 +43,16 @@ def _fixture(*segments: str) -> bytes:
 with atheris.instrument_imports():
     from apple_purchase_receipt_verifier import Config, Environment, Verifier
 
-#: The receipt anchor set: the pinned Apple roots plus the generated 0.7
-#: fixture root, so both the shared fixture receipt and the two public Apple
-#: receipts get past the chain check and the fuzzer can explore what lies
-#: beyond it. Read once: re-reading the DER on every execution would cost
-#: more than the code under test.
-RECEIPT_ANCHORS = [*Config.defaults().roots, _fixture("generated-0.7", "receipt-root.der")]
+#: The receipt anchor set: the pinned Apple roots (read from the
+#: repository's certs/, since the package carries no copy) plus the
+#: generated 0.7 fixture root, so both the shared fixture receipt and the two
+#: public Apple receipts get past the chain check and the fuzzer can explore
+#: what lies beyond it. Read once: re-reading the DER on every execution
+#: would cost more than the code under test.
+RECEIPT_ANCHORS = [
+    *(path.read_bytes() for path in sorted(_CERTS.glob("*.cer"))),
+    _fixture("generated-0.7", "receipt-root.der"),
+]
 
 #: The unrelated anchor set the accept-invariants re-run against: the
 #: fixture *JWS* root, which certified nothing in the receipt world.

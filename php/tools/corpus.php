@@ -55,7 +55,7 @@ final class Recorder implements Transport
     {
     }
 
-    public function open(array $roots): void
+    public function open(?array $roots): void
     {
         $this->inner->open($roots);
     }
@@ -91,11 +91,21 @@ final class MillisClock implements ClockInterface
     }
 }
 
+/** @param list<string>|null $roots null for the module's built-in roots */
+function facadeConfig(?array $roots, ClockInterface $clock): Config
+{
+    $builder = Config::builder()->clock($clock);
+
+    return ($roots === null ? $builder : $builder->roots($roots))->build();
+}
+
 /** @return array{Verifier, Recorder}|string a verifier, or the module's refusal text of the roots */
 function open(string $mode, string $aprv, string $config, int $now, array &$servers, string $tmp): array|string
 {
-    $roots = [];
+    // "" is the module's built-in roots; a listed set (even an empty one) is the caller's.
+    $roots = null;
     if ($config !== '') {
+        $roots = [];
         foreach (json_decode($config, true, 8, JSON_THROW_ON_ERROR)['roots'] as $b64) {
             $roots[] = (string) base64_decode($b64, true);
         }
@@ -104,14 +114,14 @@ function open(string $mode, string $aprv, string $config, int $now, array &$serv
     if ($mode === 'cli') {
         $recorder = new Recorder(new CliTransport($aprv));
         try {
-            return [Verifier::create(Config::builder()->roots($roots)->clock($clock)->build(), $recorder), $recorder];
+            return [Verifier::create(facadeConfig($roots, $clock), $recorder), $recorder];
         } catch (InvalidArgumentException $e) {
             return $e->getMessage();
         }
     }
     if (!isset($servers[$config])) {
         $arguments = [$aprv, 'serve', '--listen', '127.0.0.1:0'];
-        if ($roots !== []) {
+        if ($roots !== null) {
             $file = $tmp . '/roots-' . count($servers) . '.txt';
             file_put_contents($file, implode("\n", array_map('base64_encode', $roots)) . "\n");
             array_push($arguments, '--roots', $file);
@@ -129,7 +139,7 @@ function open(string $mode, string $aprv, string $config, int $now, array &$serv
     }
     $recorder = new Recorder(new HttpTransport($servers[$config]['url']));
 
-    return [Verifier::create(Config::builder()->roots($roots)->clock($clock)->build(), $recorder), $recorder];
+    return [Verifier::create(facadeConfig($roots, $clock), $recorder), $recorder];
 }
 
 $options = getopt('', ['aprv:', 'calls:', 'reference:', 'suffix:', 'mode:', 'corpus:', 'out:']);

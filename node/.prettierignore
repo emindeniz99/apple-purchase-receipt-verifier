@@ -1,6 +1,5 @@
 dist/
 node_modules/
-certs/
 src/generated/
 licenses/
 wasm/

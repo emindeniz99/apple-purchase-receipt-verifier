@@ -13,7 +13,7 @@ product id, device binding, refunds, idempotency) is yours; see
 ```swift
 // The manifest lives at the repository root (SwiftPM resolves a package's
 // manifest only there); the sources stay under swift/.
-.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")
+.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.8.0")
 ```
 
 Swift **6.3** or newer, on macOS 15+, iOS 18+ or Linux (`Package.swift`
@@ -288,7 +288,9 @@ CA, Apple Root CA - G2, Apple Root CA - G3), compiled into `aprv.wasm`. The
 module cannot read the operating system's trust store, a distribution CA
 bundle, or anything downloaded: it has no file or network access at all. The
 only anchors are the built-in ones, or the ones a caller supplies through
-`Config.builder().roots(...)`.
+`Config.builder().roots(...)`. The package carries no certificate file of its
+own; the repository's `certs/` is the reviewable source of the compiled-in
+roots.
 
 The chain is walked top-down: from a pinned root outward, a certificate's
 signature is checked only once the key that will verify it has already been
@@ -343,6 +345,13 @@ the module in 45 to 170 ms; the first call on an instance then takes 150 to
 receipt calls 25 to 45 ms (the higher figures on a fully busy machine). An
 instance's linear memory stays the same size over 500 calls, and the bench
 process, with five instances, peaked at about 90 MB resident.
+
+Those figures are WasmKit's direct-threaded interpreter loop, which the
+package uses only on Linux x86-64. Everywhere else, macOS and iOS included,
+it runs the token-threaded loop (see [Known issues](#known-issues)). On the
+same machine that loop verified the G5 receipt at half the rate (24 per
+CPU-second against 48) and the StoreKit 2 transaction at about 60 per cent
+(6 against 10).
 
 ## Thread safety
 
@@ -402,6 +411,19 @@ gone. The library returns the data, and you compare it yourself (see
 | `.invalidCertificate`, `.invalidCertificatePurpose`, `.invalidSignature` | same names |
 | `.internalError` for signed content that does not parse | `.unreadablePayload` |
 | `.wrongBundleId`, `.wrongEnvironment`, `.wrongAppAppleId`, `.deviceHashMismatch` | gone: the caller's own checks |
+
+## Known issues
+
+- **WasmKit's default interpreter loop crashed on macOS arm64 in a release
+  build.** With WasmKit 0.4.1, Swift 6.3.3 and Xcode 26.6, the first guest
+  call of a process failed inside WasmKit with an "error" that was really
+  an array of WasmKit's `ValueType`, and bridging it to `NSError` raised
+  `unrecognized selector` (`-domain`); the process then died. That loop,
+  direct threading, is the one part of WasmKit that hands Swift errors
+  through C as raw pointers. Linux x86-64 runs it cleanly, including under
+  AddressSanitizer. The package therefore picks WasmKit's token-threaded
+  loop, which is plain Swift, on every platform but Linux x86-64, at the
+  speed cost given under [Speed](#speed).
 
 ## Licence
 

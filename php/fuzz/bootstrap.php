@@ -80,6 +80,20 @@ final class FuzzFixtures
     }
 
     /**
+     * Apple's three published roots, from the repository's `certs/` beside
+     * `fixtures/`: the package carries no copy of them.
+     *
+     * @return list<string>
+     */
+    public static function appleRoots(): array
+    {
+        return array_map(
+            static fn (string $name): string => self::bytes('../certs/' . $name),
+            ['AppleIncRootCertificate.cer', 'AppleRootCA-G2.cer', 'AppleRootCA-G3.cer'],
+        );
+    }
+
+    /**
      * The unrelated anchor set: the generated fixture JWS root, which signs
      * nothing in the receipt corpus.
      *
