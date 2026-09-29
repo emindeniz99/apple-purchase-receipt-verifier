@@ -14,8 +14,9 @@ work.
 | Lane | Branch | Scope | State |
 |---|---|---|---|
 | A1 core | `lane/core` | steps 1.1, 1.2: the core on OpenSSL 4, native build | handed back 2026-09-29 (head d5c2838): 548 tests, conformance 313/313, vendored and `OPENSSL_DIR` builds identical on 6,179 rows, no verdict change against the 0.7 core except 5 JWS rows the Java implementation already verifies, `rust/ffi` 22 tests plus C++ and ctypes 278/278, isolation test under strace; evidence note `2026-09-29-openssl-core-parity` |
-| A2 core | `lane/core` | steps 1.3, 1.4, 1.5 (build script), 1.14: workspace, surface, wire, canonical ABI, schemas | started 2026-09-29 |
-| A3 core | `lane/core` | steps 1.7, 1.8, 1.10, 1.12, 1.13 | waits on A2 |
+| A2 core | `lane/core` | steps 1.3, 1.4, 1.5 (build script), 1.14: workspace, surface, wire, canonical ABI, schemas | handed back 2026-09-29 (head 05b4ad9): the real `aprv.wasm` (3,005,922 B) and component (3,008,364 B), reproducible from a fresh clone; 311 of 311 cases through the trap host with 0 traps, ABI tests 18 checks on Node and 11 on Wasmtime, module identical to its native twin on 6,179 of 6,179 corpus rows and to A1's 0.7 rows on the 5,897 the text API could take; every answer validates against the four JSON Schemas; workspace 589 tests, clippy clean, `check-layering` and `check-wasm.sh` pass; `wasi:random` measured and not adopted; evidence note `2026-09-29-aprv-wasm-parity` |
+| A-fix core | `lane/core` | step 1.10 close-out: the three reviews' blocking and fix-before-merge findings, then a rebuilt module | started 2026-09-29 (brief `core-fix.md`) |
+| A3 core | `lane/core` | steps 1.7, 1.8, 1.12, 1.13 | waits on A-fix |
 | B server | `lane/server` | Phase 2 against the stand-in component | handed back 2026-09-29 (head 38042f0); parked until the real component: 24 tests green, clippy clean in both feature sets, static musl binary runs in an empty chroot, corpus over HTTP (fresh and pool) and the CLI 6,149 identical + 27 over-cap + 3 intended, 311 cases 119 pass / 159 stand-in / 33 not expressible, managed smoke 10/10, hostile component 6/6, Schemathesis 394 passed, Spectral 0 beside stand-in schemas; Docker not built (no daemon) |
 | C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head e2d151c after the blob rewrite); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
 | C go | `lane/host-go` | steps 4.6, 4.7 | handed back 2026-09-29 (head 8764a29 after the blob rewrite); parked until the real module: 90 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 as expected, `-race` clean, staticcheck 0, static binary runs in an empty chroot |
@@ -248,14 +249,75 @@ work.
 ## Review (step 1.10) and integration prep
 
 - 2026-09-29: three adversarial reviewers (agents other than the
-  author) started on lane A1's commit d5c2838: the adapter's Rust and
-  `unsafe`, the C ASN.1 templates, and the core's policy against the 0.7
-  contract and the threat model. Findings land in the review log
-  (`docs/rust-core/REVIEW-LOG.md`, written at integration from their
-  files); blocking and fix-before-merge findings go back to the core
-  lane before G1 closes.
-- A consolidated integration checklist is being compiled from every
-  lane's `CI-NOTES.md` for the workflow edits after the merges.
+  author) reviewed lane A1's commit d5c2838: the adapter's Rust and
+  `unsafe` (0 blocking, 6 fix before merge, 10 notes), the C ASN.1
+  templates (1 blocking, 2 fix before merge, 5 notes) and the core's
+  policy against the 0.7 contract and the threat model (1 blocking, 6 fix
+  before merge, 3 notes). Every finding was reproduced with crafted input.
+  Nothing in memory safety, isolation or trust broke: no double free, no
+  per-call leak, no panic path, valgrind clean, no verified verdict
+  without a valid signature under a pinned root, no way to move the
+  chain instant. The three reviews converge on one gap: the cheap checks
+  before the full CMS decode cover less than 0.7's reader did. The
+  ten-certificate and four-SignerInfo bounds run only on a well-formed
+  `signedData` envelope (one trailing byte, a removed `signerInfos` or an
+  `envelopedData` content type skips them and the full decode builds
+  every certificate's key first: about 0.7 s natively and 1.1 s under
+  Wasmtime per unauthenticated 3 MiB receipt, against 8 ms when the bound
+  fires); the depth-32 bound counts only SEQUENCE and SET inside
+  SignerInfo values; the 100,000-node budget is gone (1.18 M empty
+  SEQUENCEs in an unsigned attribute cost 0.6 s and about 140 MB before
+  any signature check); the constructed-string nesting check is off by
+  one (6 legal BER levels refused, which 0.7 and Java verify); foreign
+  chunk types inside signed payload values are joined where 0.7 and Java
+  answer `UNREADABLE_PAYLOAD`; and a few payload encodings are accepted
+  or refused differently from 0.7 without a record. Docs findings: root
+  `THREAT-MODEL.md` §3 cites the deleted `asn1.rs`, says seven fuzz
+  targets (four) and "no port re-encodes" (OpenSSL re-encodes
+  signedAttrs). The policy reviewer's blocking finding (the branch did
+  not build from a clean checkout: the vendored openssl-sys `build/`
+  directory fell under the root `.gitignore`) was already fixed by A2 in
+  947a5bb. Decision: one `ASN1_get_object` header walk over the whole
+  envelope before `d2i_CMS_ContentInfo`, carrying 0.7's depth and node
+  budgets and the certificate, SignerInfo and `crls` bounds, refusing
+  where the shallow decode refuses; the payload rules 0.7 had are
+  restored where the walk can express them and recorded as R20
+  divergences with fixture cases where they cannot. ARCHITECTURE §9's row
+  forbidding `ASN1_get_object` in the adapter was wrong as worded
+  (A1's `envelope.c` already used it; every reviewer proposes it as the
+  fix) and becomes "not in `rust/src`; in the adapter only inside the
+  documented header walk", enforced by `check-layering`. Lane A-fix
+  applies all of this on `lane/core` and rebuilds the module; the
+  findings files become `docs/rust-core/REVIEW-LOG.md` with each
+  finding's disposition when A-fix hands back.
+- A2's open question (ARCHITECTURE §9 against `envelope.c`) is answered
+  by that decision.
+- A2 found the 0.6 stand-in fails 184 of the 311 cases
+  (`docs/evidence/2026-09-29-aprv-wasm-parity/results/standin-case-differences.txt`);
+  the host lanes' stand-in lists must empty on the real module.
+- The integration checklist is compiled
+  (`$SCRATCH/lanes/integration-checklist.md`, about 130 KB): 236 CI-NOTES
+  bullets mapped to rows per workflow file, 26 cross-lane contract rows,
+  9 Phase 7 deletion rows, 14 owner decisions, 20 lane conflicts. The
+  ones that change the plan: the module reaches no host CI job today
+  (`rust-wasm` skipped on host-only PRs, `aprv-server` uploads no
+  artifact, Go and Swift ignore the path the `wasm-copies` and
+  `tag-go-module` gates look at); lane B and lane D disagree on the
+  server build script's arguments, output names, the component env var,
+  the Dockerfile `prebuilt` stage and the smoke script name; no workflow
+  refreshes the tracked `.sha256` pins; Node's `Config.defaults().roots`
+  is `null` so the npm smoke throws; `java-wasm/scripts/classpath-guard.sh`,
+  `image-smoke.sh`, `tools/differential.sh` and a per-file allowlist in
+  `check-one-implementation.mjs` are named by notes but written by nobody.
+  All are integration work after the merges.
+- G1 started 2026-09-29 10:40Z: the real module, the component, the five
+  corpora as pinned call files and the module's own 6,179 reference rows
+  are in a shared scratch directory; node, go, python, ruby, swift, dotnet,
+  java (Endive) and the server re-run against them; php and the Java
+  server engine follow once the server hands back its rebuilt binary.
+  Expected everywhere: 311 of 311 and 6,179 of 6,179. A short second
+  re-run (G1b) follows the review-fixed module, whose verdicts differ only
+  on crafted inputs.
 
 ## Merge policy on this branch
 
