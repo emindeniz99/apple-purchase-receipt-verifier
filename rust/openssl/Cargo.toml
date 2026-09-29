@@ -21,7 +21,7 @@ license = "MIT"
 repository = "https://github.com/emindeniz99/apple-purchase-receipt-verifier"
 readme = "README.md"
 build = "build.rs"
-exclude = ["tests/**"]
+exclude = ["tests/**", "CI-NOTES.md"]
 
 [features]
 default = ["vendored"]

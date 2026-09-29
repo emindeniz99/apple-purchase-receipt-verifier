@@ -13,7 +13,7 @@ categories = ["cryptography", "authentication"]
 # and Cargo.lock (cargo always packs it; a consumer's build ignores it). The
 # tests read ../../fixtures, which a registry consumer does not have, and
 # RELEASE.md describes release wiring rather than the crate.
-exclude = ["tests/**", "examples/bench.rs", "fuzz/**", "ffi/**", "openssl/**", "vendor/**", "RELEASE.md", "rustfmt.toml", "rust-toolchain.toml", "deny.toml"]
+exclude = ["tests/**", "examples/bench.rs", "fuzz/**", "ffi/**", "openssl/**", "vendor/**", "RELEASE.md", "rustfmt.toml", "rust-toolchain.toml", "deny.toml", ".cargo/**"]
 
 [lib]
 name = "apple_purchase_receipt_verifier"
