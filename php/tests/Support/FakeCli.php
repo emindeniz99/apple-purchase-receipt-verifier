@@ -40,12 +40,12 @@ final class FakeCli
         file_put_contents($this->directory . '/mode.json', json_encode($mode, JSON_THROW_ON_ERROR));
     }
 
-    /** @return list<array<string, mixed>> */
+    /** @return list<array{argv: list<string>, stdin_length: int, stdin_sha256: string, roots_file: string|null, roots_file_mode: string|null, roots_file_content: string|null}> */
     public function log(): array
     {
         $entries = [];
         foreach (file($this->directory . '/log.jsonl', FILE_IGNORE_NEW_LINES) ?: [] as $line) {
-            /** @var array<string, mixed> $entry */
+            /** @var array{argv: list<string>, stdin_length: int, stdin_sha256: string, roots_file: string|null, roots_file_mode: string|null, roots_file_content: string|null} $entry */
             $entry = json_decode($line, true, 8, JSON_THROW_ON_ERROR);
             $entries[] = $entry;
         }

@@ -19,6 +19,8 @@ final class FakeServer
     /** @var resource */
     private $process;
 
+    private bool $stopped = false;
+
     /**
      * @param array<string, array<string, mixed>> $responses "METHOD /path" => {status, body, headers}
      * @param string|null $documentRoot serve this directory's files instead of the router
@@ -96,6 +98,10 @@ final class FakeServer
 
     public function stop(): void
     {
+        if ($this->stopped) {
+            return;
+        }
+        $this->stopped = true;
         proc_terminate($this->process);
         proc_close($this->process);
         foreach (glob($this->directory . '/*') ?: [] as $file) {
