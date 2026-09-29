@@ -115,9 +115,9 @@ Lane A3 (MIGRATION.md 1.13, review round 2 F3 and F4) adds:
      It replaces any step that regenerates the header and diffs by hand.
 13b. **The exported-symbol test** (`rust/ffi/tests/exported_symbols.rs`)
      runs inside `cargo test` on Linux and macOS and needs `nm` on PATH
-     (binutils; the Xcode command-line tools on macOS). It builds nothing
-     itself: it reads the cdylib `cargo test` already built, so the job
-     must not pass `--lib` alone. On Windows it compiles to nothing.
+     (binutils; the Xcode command-line tools on macOS). It reads the
+     cdylib `cargo test` builds into `target/<profile>/deps/`, so no
+     `cargo build` needs to come first. On Windows it compiles to nothing.
 13c. **The harnesses now call the ten-symbol ABI**: both drive the
      `_bytes` calls and run the `decodeBase64` groups. The C++ harness
      reads the manifest `tools/gen-cases-manifest.mjs` writes, which now

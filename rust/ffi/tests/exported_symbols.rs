@@ -5,32 +5,32 @@
 //!
 //! Reads the built library's dynamic symbol table with `nm`, which must be
 //! on PATH (binutils on Linux, the Xcode tools on macOS). Other platforms
-//! have no test here; `rust/ffi/CI-NOTES.md` says so.
+//! have no test here; `rust/bindings/CI-NOTES.md` says so.
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
 use std::path::PathBuf;
 use std::process::Command;
 
 fn library() -> PathBuf {
-    // The test binary is target/<profile>/deps/<name>; cargo puts the
-    // cdylib of this package in target/<profile>/.
+    // The test binary is target/<profile>/deps/<name>. `cargo test` builds
+    // this package's cdylib into deps/ and leaves it there; `cargo build`
+    // also copies it up to target/<profile>/.
     let exe = std::env::current_exe().expect("the test binary's path");
-    let profile = exe
-        .parent()
-        .and_then(|deps| deps.parent())
-        .expect("target/<profile>");
+    let deps = exe.parent().expect("target/<profile>/deps");
     let name = if cfg!(target_os = "macos") {
         "libapple_purchase_receipt_verifier_ffi.dylib"
     } else {
         "libapple_purchase_receipt_verifier_ffi.so"
     };
-    let path = profile.join(name);
-    assert!(
-        path.is_file(),
-        "{} is not built: run `cargo build -p apple-purchase-receipt-verifier-ffi` first",
-        path.display()
-    );
-    path
+    let candidates = [
+        deps.join(name),
+        deps.parent().expect("target/<profile>").join(name),
+    ];
+    candidates
+        .iter()
+        .find(|path| path.is_file())
+        .cloned()
+        .unwrap_or_else(|| panic!("the cdylib is not built: looked for {candidates:?}"))
 }
 
 #[test]
