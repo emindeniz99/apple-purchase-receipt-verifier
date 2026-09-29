@@ -443,7 +443,28 @@ work.
   tests, smokes on Node, workerd, Bun, Deno, edge-runtime and Chromium,
   the pin is the component's), swift (90b8160), java's Endive half
   (10c9511, JDK 21, 17 and 11, 1 and 4 threads). The round-2 section of
-  REVIEW-LOG.md is merged (476b866).
+  REVIEW-LOG.md is merged (476b866). The server's rebuild on the final
+  component is merged (6318cfa: binary 11,535,280 B sha256 `f0d4784e…`,
+  every expressible case on HTTP and the CLI, 6,152 identical plus the
+  27 over-cap rows on three transports); PHP and Java's server engine
+  run on that binary next.
+- Phase 7 steps 3 and 4 (lane P7-docs, `lane/phase7-docs`, head 6b01cf9,
+  merged 2026-09-29 14:50Z): root CLAUDE.md, CONTRIBUTING.md, PORTS.md,
+  SUPPORT-MATRIX.md, THREAT-MODEL.md, PLAN.md (D17 to D30, D8 and D16
+  superseded for the eight packages), README.md, BENCHMARKS.md,
+  BOOTSTRAP.md, SECURITY.md, INTENT.md, ROADMAP.md, COMPARISON.md,
+  INTEGRATION.md, RECEIPT-FIELDS.md describe the one-core tree; three
+  plan sentences corrected (server time limit 10 s, Swift's software
+  bounds checks, the WasmKit 0.4.1 floor). They describe the end state:
+  the sentences about the cert copies, the `--enforce all` gate and the
+  committed Go and Swift module copies become true when lane P7-code and
+  the final integration land; the CI job names assume lane D2's wiring.
+  Two decisions taken from its hand-back: OD-15, `aprv-server` defaults
+  to `--lifecycle pool` (R23's rule was met by the init-cost note; lane
+  B flips it); OD-16, PHP refuses an explicitly empty root list at
+  `Verifier::create` like every other package (null means the built-in
+  roots). Owner items it recorded as the working rule: the Maven budget
+  of 5 releases a month (OD-07, to confirm).
 
 ## Merge policy on this branch
 
