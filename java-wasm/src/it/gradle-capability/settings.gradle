@@ -1,0 +1,5 @@
+// Not part of the build: the java-classpath-guard CI job runs it (see
+// java-wasm/CI-NOTES.md). A consumer that asks for both Java artifacts must
+// fail at dependency resolution, because the -wasm artifact's Gradle module
+// metadata declares the main artifact's capability.
+rootProject.name = 'aprv-gradle-capability'

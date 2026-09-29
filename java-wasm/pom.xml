@@ -1,0 +1,468 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion> <!-- do_not_remove: published-with-gradle-metadata -->
+  <!-- The comment above tells Gradle to read the .module file published
+       beside this POM (the gradle-module-metadata plugin below writes it).
+       That file declares the capability conflict with the main artifact. -->
+
+  <groupId>io.github.emindeniz99</groupId>
+  <artifactId>apple-purchase-receipt-verifier-wasm</artifactId>
+  <version>0.7.0</version>
+  <packaging>jar</packaging>
+
+  <name>apple-purchase-receipt-verifier-wasm</name>
+  <description>Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7 receipts) with the shared Rust core, compiled from WebAssembly to JVM bytecode</description>
+  <url>https://github.com/emindeniz99/apple-purchase-receipt-verifier</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/license/mit/</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>emindeniz99</id>
+      <name>Emin Deniz</name>
+      <email>emindeniz99@gmail.com</email>
+      <url>https://github.com/emindeniz99</url>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/emindeniz99/apple-purchase-receipt-verifier.git</connection>
+    <developerConnection>scm:git:git@github.com:emindeniz99/apple-purchase-receipt-verifier.git</developerConnection>
+    <url>https://github.com/emindeniz99/apple-purchase-receipt-verifier</url>
+    <tag>HEAD</tag>
+  </scm>
+
+  <properties>
+    <!-- The facade, the Engine and ServerSource API and the server client
+         are Java 8 bytecode (major 52). The Endive engine (src/main/java11
+         and the classes Endive generates) is Java 11 bytecode (major 55),
+         loaded only when that engine is chosen. -->
+    <maven.compiler.release>8</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.build.outputTimestamp>2026-09-21T00:00:00Z</project.build.outputTimestamp>
+    <!-- The module Endive compiles, and the file holding its SHA-256. The
+         release build overwrites both; the validate phase refuses a module
+         whose hash differs from the file. -->
+    <aprv.wasm>${project.basedir}/src/main/wasm/aprv.wasm</aprv.wasm>
+    <endive.version>1.1.0</endive.version>
+    <!-- The same jackson-core floor as the main artifact: it reads the
+         module's JSON answers and writes ReceiptPayload.toJson(). -->
+    <jackson.version>2.22.2</jackson.version>
+    <jspecify.version>1.0.1</jspecify.version>
+    <junit.version>5.14.4</junit.version>
+    <!-- The JVM surefire forks; the jdk-runtime profile points it at another. -->
+    <test.jvm>${java.home}/bin/java</test.jvm>
+  </properties>
+
+  <dependencies>
+    <!-- Endive's runtime (and, through it, run.endive:wasm): pure Java 11
+         bytecode, no native code. On a Java 8 JVM it sits on the classpath
+         unloaded; only the Endive engine touches it. -->
+    <dependency>
+      <groupId>run.endive</groupId>
+      <artifactId>runtime</artifactId>
+      <version>${endive.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+      <version>${jspecify.version}</version>
+      <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!-- The module's pinned SHA-256, so an error message can say which
+           module this jar was compiled from. The module itself is not
+           shipped: Endive's compiled classes and stripped .meta replace it. -->
+      <resource>
+        <directory>src/main/wasm</directory>
+        <includes>
+          <include>aprv.wasm.sha256</include>
+        </includes>
+        <targetPath>io/github/emindeniz99/applepurchasereceiptverifier</targetPath>
+      </resource>
+      <resource>
+        <directory>../java</directory>
+        <includes>
+          <include>LICENSE</include>
+        </includes>
+        <targetPath>META-INF</targetPath>
+      </resource>
+    </resources>
+    <plugins>
+      <!-- The module's bytes must match the committed SHA-256 before Endive
+           compiles them, so a stray or half-copied module never becomes
+           bytecode. The .sha256 file is in sha256sum's format. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions>
+          <execution>
+            <id>check-aprv-wasm-sha256</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <loadfile property="aprv.wasm.pinned" srcFile="${aprv.wasm}.sha256" failonerror="true"/>
+                <checksum file="${aprv.wasm}" algorithm="SHA-256" property="aprv.wasm.actual"/>
+                <fail message="${aprv.wasm} hashes to ${aprv.wasm.actual}, which is not the SHA-256 pinned in ${aprv.wasm}.sha256">
+                  <condition>
+                    <not>
+                      <matches string="${aprv.wasm.pinned}" pattern="^${aprv.wasm.actual}\s"/>
+                    </not>
+                  </condition>
+                </fail>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Endive compiles every function of the module into JVM bytecode at
+           build time. interpreterFallback FAIL refuses to build when a
+           function would need the interpreter, so the jar holds no
+           interpreter path and the consumer needs no compiler. -->
+      <plugin>
+        <groupId>run.endive</groupId>
+        <artifactId>endive-compiler-maven-plugin</artifactId>
+        <version>${endive.version}</version>
+        <executions>
+          <execution>
+            <id>aprv</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <wasmFile>${aprv.wasm}</wasmFile>
+              <name>io.github.emindeniz99.applepurchasereceiptverifier.endive.AprvModule</name>
+              <interpreterFallback>FAIL</interpreterFallback>
+              <methodPrefixer>run.endive.compiler.NameSectionMethodPrefixer</methodPrefixer>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+        <configuration>
+          <parameters>true</parameters>
+        </configuration>
+        <executions>
+          <!-- Java 8: everything in src/main/java, and nothing else (Endive
+               adds its generated source root to the project, which this
+               execution must not compile at release 8). -->
+          <execution>
+            <id>default-compile</id>
+            <configuration>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.basedir}/src/main/java</compileSourceRoot>
+              </compileSourceRoots>
+            </configuration>
+          </execution>
+          <!-- Java 11: the Endive engine and Endive's generated module class. -->
+          <execution>
+            <id>compile-endive</id>
+            <phase>compile</phase>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <release>11</release>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.basedir}/src/main/java11</compileSourceRoot>
+                <compileSourceRoot>${project.build.directory}/generated-sources/endive-compiler</compileSourceRoot>
+              </compileSourceRoots>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <jvm>${test.jvm}</jvm>
+          <excludes>
+            <!-- ClasspathGuardJarsIT runs after package, in the classpath-guard profile. -->
+            <exclude>**/*IT.java</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.1</version>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <!-- The main artifact's module name: the two artifacts are
+                   alternatives with the same packages, never both. -->
+              <Automatic-Module-Name>io.github.emindeniz99.applepurchasereceiptverifier</Automatic-Module-Name>
+              <Implementation-Title>${project.artifactId}</Implementation-Title>
+              <Implementation-Version>${project.version}</Implementation-Version>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+      <!-- Gradle module metadata (a .module file published beside the POM,
+           which Maven Central accepts like any other attached file). It
+           declares that this artifact also provides the main artifact's
+           capability, so a Gradle build that resolves both fails with a
+           capability conflict instead of picking classes from either jar. -->
+      <plugin>
+        <groupId>org.gradlex</groupId>
+        <artifactId>gradle-module-metadata-maven-plugin</artifactId>
+        <version>1.2</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>gmm</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <capabilities>
+            <capability>
+              <groupId>io.github.emindeniz99</groupId>
+              <artifactId>apple-purchase-receipt-verifier</artifactId>
+            </capability>
+          </capabilities>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>3.10.2</version>
+        <configuration>
+          <java>
+            <includes>
+              <include>src/main/java/**/*.java</include>
+              <include>src/main/java11/**/*.java</include>
+              <include>src/test/java/**/*.java</include>
+            </includes>
+            <palantirJavaFormat>
+              <version>2.97.0</version>
+            </palantirJavaFormat>
+            <removeUnusedImports/>
+            <trimTrailingWhitespace/>
+            <endWithNewline/>
+          </java>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Runs the tests on another JVM while Maven and javac stay modern:
+         mvn verify -Pjdk-runtime -Dtest.jvm=/path/to/jdk/bin/java
+         On a Java 8 JVM add -Pjava8-tests, which leaves out the tests that
+         need the Endive engine (tagged "endive"). -->
+    <profile>
+      <id>java8-tests</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <excludedGroups>endive</excludedGroups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- The two real jars on one classpath (ClasspathGuardJarsIT, after
+         package), and the public API compared with the main artifact's.
+         Build the main artifact first:
+           mvn -f java package -DskipTests
+           mvn -f java-wasm verify -Pclasspath-guard -->
+    <profile>
+      <id>classpath-guard</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-dependency-plugin</artifactId>
+            <version>3.9.0</version>
+            <executions>
+              <execution>
+                <id>guard-lib</id>
+                <phase>pre-integration-test</phase>
+                <goals>
+                  <goal>copy</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/guard-lib</outputDirectory>
+                  <artifactItems>
+                    <artifactItem>
+                      <groupId>org.bouncycastle</groupId>
+                      <artifactId>bcprov-jdk18on</artifactId>
+                      <version>1.86</version>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>org.bouncycastle</groupId>
+                      <artifactId>bcpkix-jdk18on</artifactId>
+                      <version>1.86</version>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>org.bouncycastle</groupId>
+                      <artifactId>bcutil-jdk18on</artifactId>
+                      <version>1.86</version>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>com.fasterxml.jackson.core</groupId>
+                      <artifactId>jackson-core</artifactId>
+                      <version>${jackson.version}</version>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>run.endive</groupId>
+                      <artifactId>runtime</artifactId>
+                      <version>${endive.version}</version>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>run.endive</groupId>
+                      <artifactId>wasm</artifactId>
+                      <version>${endive.version}</version>
+                    </artifactItem>
+                  </artifactItems>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <version>3.6.0</version>
+            <configuration>
+              <jvm>${test.jvm}</jvm>
+              <includes>
+                <include>**/ClasspathGuardJarsIT.java</include>
+              </includes>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>central</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.4.0</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.12.0</version>
+            <configuration>
+              <doclint>none</doclint>
+              <!-- The public API is in src/main/java; the Endive engine and
+                   its generated classes are internal. -->
+              <sourcepath>${project.basedir}/src/main/java</sourcepath>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.cyclonedx</groupId>
+            <artifactId>cyclonedx-maven-plugin</artifactId>
+            <version>2.9.3</version>
+            <configuration>
+              <includeTestScope>false</includeTestScope>
+              <outputFormat>json</outputFormat>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-sbom</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>makeBom</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.8</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.11.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>
