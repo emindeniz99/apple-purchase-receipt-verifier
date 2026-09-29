@@ -233,4 +233,6 @@ classifier jars come from `-Daprv.server.linux-x86_64=PATH` and
 ## Licence
 
 MIT, like the rest of this project. The compiled module contains OpenSSL,
-wasi-libc and the Rust standard library, under their own licences.
+wasi-libc, musl and the Rust standard library, under their own licences;
+their texts are in the jar under `META-INF/licenses/aprv-wasm/`, and in
+each server classifier jar too, whose binary embeds the module.

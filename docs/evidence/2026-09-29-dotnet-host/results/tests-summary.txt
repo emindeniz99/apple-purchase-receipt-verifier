@@ -1,3 +1,11 @@
+G1d (the final module after review round 3, rust-core b0a7f3d, 2,764,700 bytes, SHA-256 4e9d2d85c7c1f9b6dbcabbd49c51783e2efd4832ac17994be732b63a98cdc9dd; 384 cases in fixtures/cases.json):
+Tests, .NET 8.0.31 (shared runtime): total 599, succeeded 599, failed 0, skipped 0 (384 conformance cases, 215 others)
+Tests, .NET 10.0.12 (shared runtime): total 599, succeeded 599, failed 0, skipped 0
+Floor (netstandard2.0 asset), .NET 8.0.31 and 10.0.12: 9 of 9 each
+Corpora: results/corpus.txt, 6,179 of 6,179 identical to this module's rows, 0 traps
+Not re-run for G1d: .NET 9, the consumer, the trimmed publish, the fuzz smoke.
+
+G1c, for the record:
 G1c (the final module, rust-core b863252, 2,760,476 bytes, SHA-256 a35b9fce333311f7da722f02e027f89880b9b581e59752163c4434ef137a40a1; 377 cases in fixtures/cases.json):
 Tests, .NET 8.0.31 (shared runtime): total 594, succeeded 594, failed 0, skipped 0 (377 conformance cases, 217 others)
 Tests, .NET 10.0.12 (shared runtime): total 594, succeeded 594, failed 0, skipped 0

@@ -117,7 +117,7 @@ public class PlatformTests
     /// What one verification may leave behind, in bytes. A single retained
     /// <c>X509Certificate2</c> is ~1.5 kB of <c>RawData</c> alone (a measured
     /// leak of one per call read 1,730 B/call), so this is well under one
-    /// leaked object per call. Linux measures 0 B/call, net of the control.
+    /// leaked object per call. Linux measures 0 B/call, net of the controls.
     /// </summary>
     private const int LiveSetBudgetPerVerification = 256;
 
@@ -137,26 +137,33 @@ public class PlatformTests
     /// not depend on the number of calls (jitting, a runtime's own caches, a
     /// heap that commits a region while it is measured) is in both and cancels;
     /// retention grows with the calls and does not.</para>
-    /// <para>The same loop is then run with a control that allocates as many
-    /// bytes per iteration as one verification does and keeps none of them.
-    /// A collector that reports some share of what a loop allocated as live
-    /// (a platform's accounting, not a leak) shows that share in the control
-    /// too, and it is taken out. Only what the wrapper keeps beyond the
-    /// control's figure counts against the budget.</para>
+    /// <para>A control is measured the same way and taken out: it allocates as
+    /// many bytes per iteration as a verification does and keeps none, so a
+    /// collector that reports some share of what a loop allocated as live (a
+    /// platform's accounting, not a leak) shows that share there too. Only what
+    /// the wrapper keeps beyond it counts against the budget. A second control,
+    /// which does nothing for as long as a verification takes, is measured only
+    /// when the test fails and is reported, not subtracted: growth there would
+    /// be something else in the process whose live set grows with time (a test
+    /// host's own reporting, a runtime thread), and would justify a change to
+    /// this verdict on the evidence of a run.</para>
     /// <para>The bound is a budget per verification rather than a flat ceiling,
     /// so it scales with the round and fails on retention that is real but
     /// small. It can be that tight only because this class runs in a collection
     /// of its own (<see cref="ProcessWideCollection"/>):
     /// <see cref="GC.GetTotalMemory"/> reports the whole process's live set, so
     /// a sibling collection allocating on another thread lands in the delta.
-    /// The failure message carries every figure and the platform.</para>
+    /// When it fails, the message carries every figure, the platform and a
+    /// breakdown of where the growth is: the native call alone, the reading of
+    /// the answer alone, the result objects, and the state of the pooled
+    /// instance.</para>
     /// </remarks>
     [Fact]
     public void RepeatedVerificationDoesNotGrowUnboundedly()
     {
         AprvRuntime runtime = new(
             new StubModule { ReceiptAnswer = SyntheticAnswers.Verified(SyntheticAnswers.Receipt()) }.ToWasm(), null);
-        IVerifier verifier = new VerifierImpl(Config.Defaults(), runtime);
+        VerifierImpl verifier = new(Config.Defaults(), runtime);
         string receipt = "x";
 
         // Warm up: first-call statics and JIT are a one-off cost, not
@@ -174,38 +181,67 @@ public class PlatformTests
 
         int allocatedPerCall = (int)((GC.GetAllocatedBytesForCurrentThread() - allocatedBefore) / 100);
 
-        double wrapper = MarginalGrowthPerCall(() => verifier.VerifyReceipt(receipt));
-        double control = MarginalGrowthPerCall(() => Churn(allocatedPerCall));
+        Measured wrapper = Marginal(() => verifier.VerifyReceipt(receipt));
+        Measured alloc = Marginal(() => Churn(allocatedPerCall));
 
         // A control that reads below zero is noise, not credit to the wrapper.
-        double wrapperShare = wrapper - Math.Max(control, 0);
-        Assert.True(
-            wrapperShare < LiveSetBudgetPerVerification,
-            $"each verification left {wrapper:F1} B on the live set against {control:F1} B for a control that allocates the same "
-            + $"{allocatedPerCall} B and keeps none, so {wrapperShare:F1} B are the wrapper's; the budget is {LiveSetBudgetPerVerification} B "
-            + $"({System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, "
-            + $"{System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier})");
+        double share = wrapper.BytesPerCall - Math.Max(alloc.BytesPerCall, 0);
+        if (share < LiveSetBudgetPerVerification)
+        {
+            return;
+        }
+
+        Measured idle = MarginalIdle(wrapper.MicrosPerCall);
+
+        Assert.Fail(
+            $"each verification left {wrapper.BytesPerCall:F1} B on the live set ({wrapper.MicrosPerCall:F0} us each) against "
+            + $"{alloc.BytesPerCall:F1} B for a control that allocates the same {allocatedPerCall} B and keeps none and "
+            + $"{idle.BytesPerCall:F1} B for one that idles as long (reported, not subtracted), so {share:F1} B are the wrapper's; the budget is "
+            + $"{LiveSetBudgetPerVerification} B ({System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, "
+            + $"{System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier}). Where it is: {Breakdown(verifier, receipt)}");
     }
+
+    /// <summary>A live-set growth per call and the wall time a call took.</summary>
+    private readonly record struct Measured(double BytesPerCall, double MicrosPerCall);
 
     /// <summary>Bytes of live set per call from round to round: (large round - small round) / (large - small calls).</summary>
-    private static double MarginalGrowthPerCall(Action call)
+    private static Measured Marginal(Action call)
     {
-        long small = SmallestGrowth(call, SmallRound);
-        long large = SmallestGrowth(call, LargeRound);
-        return (large - small) / (double)(LargeRound - SmallRound);
+        System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+        long small = SmallestGrowth(call, SmallRound, out int smallCalls);
+        long large = SmallestGrowth(call, LargeRound, out int largeCalls);
+        double micros = clock.Elapsed.TotalMilliseconds * 1000.0 / (smallCalls + largeCalls);
+        return new Measured((large - small) / (double)(LargeRound - SmallRound), micros);
     }
 
-    private static long SmallestGrowth(Action call, int calls)
+    /// <summary>The same rounds with no calls, each lasting as long as the calls would.</summary>
+    private static Measured MarginalIdle(double microsPerCall)
     {
-        long smallest = long.MaxValue;
-        long before = LiveSet();
-        for (int round = 0; round < LiveSetRounds; round++)
+        void Wait(int calls) => System.Threading.Thread.Sleep(TimeSpan.FromMilliseconds(microsPerCall * calls / 1000.0));
+        long small = SmallestIdleGrowth(Wait, SmallRound);
+        long large = SmallestIdleGrowth(Wait, LargeRound);
+        return new Measured((large - small) / (double)(LargeRound - SmallRound), 0);
+    }
+
+    private static long SmallestGrowth(Action call, int calls, out int total)
+    {
+        total = calls * LiveSetRounds;
+        return SmallestIdleGrowth(n =>
         {
-            for (int i = 0; i < calls; i++)
+            for (int i = 0; i < n; i++)
             {
                 call();
             }
+        }, calls);
+    }
 
+    private static long SmallestIdleGrowth(Action<int> round, int calls)
+    {
+        long smallest = long.MaxValue;
+        long before = LiveSet();
+        for (int r = 0; r < LiveSetRounds; r++)
+        {
+            round(calls);
             long after = LiveSet();
             smallest = Math.Min(smallest, after - before);
             before = after;
@@ -223,6 +259,66 @@ public class PlatformTests
         }
 
         _churned = null;
+    }
+
+    /// <summary>
+    /// Where a growth is, for the failure message: the native call alone, the
+    /// reading of a fixed answer alone, how many result objects outlive their
+    /// collection, whether the pool hands the same instance back and what its
+    /// store keeps.
+    /// </summary>
+    private static string Breakdown(VerifierImpl verifier, string receipt)
+    {
+        AprvInstance instance = verifier.Pool.Rent();
+        string answerText;
+        long linearMemory;
+        string caches;
+        byte[] input = System.Text.Encoding.UTF8.GetBytes(receipt);
+        string answer = instance.VerifyReceipt(1_700_000_000_000L, input);
+        Measured nativeOnly = Marginal(() => instance.VerifyReceipt(1_700_000_000_000L, input));
+        Measured readOnly = Marginal(() => ModuleAnswers.ReadReceipt(answer));
+
+        object? store = typeof(AprvInstance).GetField("_store", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(instance);
+        caches = string.Join(
+            ", ",
+            new[] { "_externFunctionCache", "_externMemoryCache", "_externGlobalCache" }.Select(name =>
+                name + "=" + ((store?.GetType().GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(store)
+                    as System.Collections.ICollection)?.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?")));
+
+        linearMemory = instance.MemoryBytes;
+        answerText = $"native call alone {nativeOnly.BytesPerCall:F1} B, reading the answer alone {readOnly.BytesPerCall:F1} B";
+
+        verifier.Pool.Return(instance);
+        (int results, int alive) = ResultsAfterCollection(verifier, receipt);
+        AprvInstance again = verifier.Pool.Rent();
+        bool same = ReferenceEquals(instance, again);
+        verifier.Pool.Return(again);
+
+        return $"{answerText}, {alive} of {results} dropped results still alive after two collections, "
+            + $"the pool hands back the same instance: {same}, linear memory {linearMemory} B, store caches {caches}, "
+            + $"process working set {Environment.WorkingSet} B";
+    }
+
+    /// <summary>Verifies <c>200</c> times, drops the results, and counts those a collection did not free.</summary>
+    private static (int Created, int Alive) ResultsAfterCollection(VerifierImpl verifier, string receipt)
+    {
+        WeakReference[] weak = MakeWeak(verifier, receipt, 200);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        return (weak.Length, weak.Count(w => w.IsAlive));
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference[] MakeWeak(VerifierImpl verifier, string receipt, int count)
+    {
+        WeakReference[] weak = new WeakReference[count];
+        for (int i = 0; i < count; i++)
+        {
+            weak[i] = new WeakReference(verifier.VerifyReceipt(receipt));
+        }
+
+        return weak;
     }
 
     /// <summary>The managed live set, with everything collectable collected.</summary>

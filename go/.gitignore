@@ -1,3 +1,2 @@
-# The module is not committed on a lane branch: copy it into place (see README).
-# The real one is added once, at integration.
-/internal/wasm/aprv.wasm
+# aprv.wasm is committed here (DECISIONS.md R14): the Go module is the git
+# tree at a tag. Only tools/refresh-wasm-pins.sh rewrites it.
