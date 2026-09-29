@@ -26,7 +26,7 @@ work.
 | C dotnet | `lane/host-dotnet` | step 5.6 | handed back 2026-09-29 (head 3966e00 after the blob rewrite); parked until the real module: 524 tests with 303 passing and the same 221 stand-in failures on net8 and net10 (net9 self-contained too), Floor project 9/9 on 8, 9, 10, corpus 6,176/2/1, `dotnet format` clean, nupkg 2,108,091 B with a clean consumer; evidence note `2026-09-29-dotnet-host` |
 | D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | **merged** 2026-09-29 (head cff064d); actionlint and zizmor at 0; jobs gated on the other lanes' files, see `.github/CI-NOTES.md` |
 | E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | handed back 2026-09-29 (head 87b0ab4 after the blob rewrite); parked until the real module: 380 tests green on JDK 21 and 379 on Temurin 8; the 311 cases through the server engine 93 pass / 218 stand-in on both; the spike's 31 checks pass; classifier jar built for x86_64 (4,179,407 B); `jvm-interop` and the Spring Boot smoke take the artifact as a property |
-| F php | `lane/php` | Phase 6 | started 2026-09-29 |
+| F php | `lane/php` | Phase 6 | handed back 2026-09-29 (head 37868a0); parked until the real module: 817 tests green with the stand-in's 214 differences asserted per transport (97 of 311 pass), phpstan max 0, php-cs-fixer clean, installer proven against a local server with the right and a wrong hash, `composer validate --strict` on both manifests; only PHP 8.4 here |
 
 ## Decisions taken by the orchestrator (owner to read at the end)
 
@@ -93,6 +93,26 @@ work.
   `APRV_WASM_CACHE_DIR` is the cache path variable (R27); an empty value
   turns the cache off. atheris has no CPython 3.11 wheel here, so the
   fuzz targets ran only with a stub.
+- Lane F (PHP): the transport is the second argument of
+  `Verifier::create`, not a `Config` field; an empty root list means the
+  built-in roots and PEM roots are refused (breaking, footered); `TOO_LARGE`
+  from exit 3 or 413 carries a wrapper message and no cause. `composer
+  install` could not complete here (GitHub dist downloads timed out and
+  Composer fell back to 3 GB of source clones); the suite ran on the
+  PHPUnit phar, so the locked PHPUnit range is exercised only by CI.
+  Docs still saying PHP needs `ext-openssl` (`PLAN.md`, `INVENTORY.md`)
+  are Phase 7's.
+- **Open for integration: how `binaries.json` gets its hashes.** The PHP
+  installer verifies the downloaded server binary against hashes shipped
+  in the tag's archive, but the binaries are built at the tag. Proposed
+  resolution: the Linux static binaries are reproducible (lane D's
+  `reproduce-server.sh`), so the release-branch run builds them and pins
+  their hashes into `binaries.json` on the release PR, and the tag build
+  fails if its hashes differ; for macOS and Windows, which are not
+  bit-reproducible, the tag publishes the release-branch run's own
+  artifacts, or their entries stay null and those platforms use the
+  server URL transport. Decided at integration, recorded here for the
+  owner.
 - Lane E (Java server engine): the cache directory defaults to
   `~/.cache/aprv`, `~/Library/Caches/aprv` or `%USERPROFILE%\AppData\Local\aprv\cache`,
   owner-only, symlinks and foreign or other-writable directories
