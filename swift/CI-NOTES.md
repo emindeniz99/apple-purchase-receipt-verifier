@@ -29,11 +29,10 @@ secret.
   match `aprv.wasm.sha256`. A job that tests the module `rust-wasm` built
   writes that build's hash into `aprv.wasm.sha256` in its own checkout (the
   sha256sum line, `<hex>  aprv.wasm`), as `refresh-wasm-copies` will.
-- `aprv.wasm.sha256` (committed) names the round-13 stand-in (0.6 core),
-  `f837e7a3...7e4a`: byte for byte the Go host's copy, the round-13 module
-  with its build directory scrubbed from eleven panic-location strings (the
-  Go lane's `a0e26d9`), so the two hosts test the same bytes. The release
-  build replaces the module and its hash file together.
+- `aprv.wasm.sha256` (committed) pins the G1 module: the 0.7 core on
+  OpenSSL 4 from lane A2 (`lane/core` 05b4ad9), 3,005,922 bytes,
+  `4cbe2b02...8826e`. The module itself stays uncommitted on the lane
+  branch; the integrator commits the release module and its pin together.
 - `Resources/licenses/` holds the licence texts of the code compiled into the
   module (OpenSSL, wasi-libc with musl, the Rust standard library), copied
   from the Node host's `node/licenses/`, and ships as a resource.
@@ -66,8 +65,8 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 | `swift-macos` | `runs-on: macos-15` (or `macos-latest` as long as it is 15+ with Xcode carrying Swift 6.3+), the same command. |
 | `swift-ios` (new) | the iOS compile the plan asks for, which cannot be done on Linux: on `macos-15`, `xcodebuild build -scheme ApplePurchaseReceiptVerifier -destination 'generic/platform=iOS' -skipPackagePluginValidation` (the library product's scheme; `xcodebuild -list` names it if SwiftPM spells it differently). It proves the package and WasmKit compile for iOS 18 with the software bounds checking the package selects (mprotect is compiled only for Linux and macOS). Nothing runs on a device. |
 | `swift-format` | unchanged command; `swift format lint --strict --recursive swift/Sources swift/Tests` (6.3.3) is clean on this branch. |
-| `swift-fuzz` | the targets are now `receipt-der`, `receipt-base64`, `jws` and `endpoint-json` (`receipt-payload` and `readers` went with the hand-written parsers); `run.sh` no longer passes `-enable-testing`. **With the stand-in module the `requireNoInternalError` invariant fires at once**: the 0.6 wire answers reasons outside the eight (`INVALID_JWS_FORMAT`, ...), which this package reads as an unusable answer, `INTERNAL_ERROR`. Keep the job off (or `continue-on-error`) until the release module is in. `swift/bench` still builds with `swift build --package-path swift/bench --force-resolved-versions`; its manifest is tools 6.3 now. |
-| `smoke-swiftpm` | image to `swift:6.3@sha256:56ef1be2...`. `.github/smoke/swiftpm-smoke/Package.swift`: `swift-tools-version:6.3`, `platforms: [.macOS(.v15), .iOS(.v18)]`. `Sources/Smoke/main.swift`: `config.roots.count == 3` no longer compiles; the defaults are `roots == nil` (the module's built-in roots), so replace the check with `guard config.roots == nil`. The rest (g5 verifies, one flipped signature bit is `INVALID_SIGNATURE`) stands, and passes only with the release module (the stand-in's 0.6 wire is not read). |
+| `swift-fuzz` | the targets are now `receipt-der`, `receipt-base64`, `jws` and `endpoint-json` (`receipt-payload` and `readers` went with the hand-written parsers); `run.sh` no longer passes `-enable-testing`. With the round-13 stand-in the `requireNoInternalError` invariant fired at once (its 0.6 wire); with the G1 module the wire is the one this package reads, so the job can run again once the module is copied into place first. `swift/bench` still builds with `swift build --package-path swift/bench --force-resolved-versions`; its manifest is tools 6.3 now. |
+| `smoke-swiftpm` | image to `swift:6.3@sha256:56ef1be2...`. `.github/smoke/swiftpm-smoke/Package.swift`: `swift-tools-version:6.3`, `platforms: [.macOS(.v15), .iOS(.v18)]`. `Sources/Smoke/main.swift`: `config.roots.count == 3` no longer compiles; the defaults are `roots == nil` (the module's built-in roots), so replace the check with `guard config.roots == nil`. The rest (g5 verifies, one flipped signature bit is `INVALID_SIGNATURE`) stands. |
 | post-publish `swiftpm` | same image and smoke changes. |
 | `wasm-copies` | for Swift: `cd swift/Sources/ApplePurchaseReceiptVerifier/Resources && sha256sum -c aprv.wasm.sha256`, and the hash in that file must equal the build's. The package checks the pair when it loads the module, so a copy swapped without its hash file answers `INTERNAL_ERROR` to every call (and `Config.builder().roots(...)` throws). |
 | `release-please.yml` `refresh-wasm-copies` | **must also rewrite each copy's `.sha256`**: today it copies `aprv.wasm` over every committed copy and leaves `aprv.wasm.sha256` stale, which breaks both the Go and the Swift package on the release branch. For each copy `f`: `printf '%s  aprv.wasm\n' "$WASM_SHA256" > "$f.sha256"`, and add those files to the commit. |
@@ -75,32 +74,31 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 | `dependabot.yml` | the three `swift` entries stay; the swift-crypto/-asn1/-certificates history goes with them. Add an ignore for WasmKit `>= 0.5.0` only if 0.5 raises a floor; 0.4.x patch releases should arrive (0.4.1 was a security fix). |
 | `certs` job (`check-cert-copies.mjs`) | unchanged: the copy is still in the tree. |
 
-## The corpus parity gate
+## The gate, in one command
 
-`MeasurementTests.testCorpus` runs round 13's calls files through the
-package's own host layer (the `Guest` the `Verifier` uses) and writes rows in
-the Node runner's format, so round 13's classifier reads them unchanged:
+`swift/scripts/gate.sh DIR [--pin] [--bench]` runs everything this lane
+checks against one module build, where `DIR` has the G1 layout (`aprv.wasm`,
+`calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`, `same.py`):
+it checks the module against the pin (`--pin` rewrites the pin), copies it
+into place, builds optimised, runs the whole suite with the 311 cases, runs
+the five corpora through the package's host layer
+(`MeasurementTests.testCorpus`, the `Guest` the `Verifier` uses) and
+compares each corpus's rows byte for byte with the module's reference rows,
+and with `--bench` times the public API. `SCRATCH_PATH` and `OUT` set the
+build and output directories. The corpus is scratch data, not in the
+repository, so the corpus step is a manual or nightly job, not a push gate.
 
-```sh
-swift build -c release -Xswiftc -enable-testing --build-tests
-APRV_CORPUS_CALLS="$CALLS" APRV_CORPUS_OUT="$OUT" \
-  swift test -c release -Xswiftc -enable-testing --skip-build --filter MeasurementTests/testCorpus
-python3 docs/evidence/2026-09-29-canonical-abi-final/py/classify.py swift "$CALLS" "$NODEROWS" "$OUT/swift"
-```
-
-`$CALLS` is the directory `py/calls_bytes.py` writes (one file per corpus),
-`$NODEROWS` the ABI v1 Node rows. `APRV_CORPUS_MODULE=<path>` runs a
-candidate build without copying it into the package. The corpus is scratch
-data and not in the repository, so this is a manual or nightly job, not a
-push gate. Result with the stand-in: see the lane's hand-back.
+G1 (2026-09-29): 311 of 311 cases; 6,179 of 6,179 corpus rows identical to
+the reference rows, 0 traps; two `PortBehaviourTests` differ from the
+module (see the lane's hand-back).
 
 ## Speed
 
 `swift run -c release --package-path swift/bench bench --threads` times the
 public API with a plain release build (no `-enable-testing`): g5 and the
 fixture JWS, one and four threads, per second and per CPU-second, and the
-start-up to the first answer. Results on 2026-09-29 are in the README and
-the hand-back. The round-7 spike's own harness, rebuilt and run on the same
+start-up to the first answer, and the peak resident set. Results on
+2026-09-29 (stand-in and G1 module) are in the README and the hand-back. The round-7 spike's own harness, rebuilt and run on the same
 machine within the same minutes, measured 28 to 33 ms per g5 and 126 ms per
 JWS, where it recorded 13.3 ms and 54.7 ms on 2026-09-26; this package
 measured 26 ms and 100 to 111 ms. The machine, not the package, halved the

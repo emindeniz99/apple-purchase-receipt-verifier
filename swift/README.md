@@ -320,24 +320,25 @@ receipts nest 9 levels deep in the envelope.
 WasmKit interprets, so this is the slowest host of the nine ports. Measured
 on 2026-09-29 with `swift run -c release --package-path swift/bench bench
 --threads` on a shared 4-vCPU x86-64 Linux guest (Swift 6.3.3, WasmKit
-0.4.1, software bounds checking), counted per CPU-second of the process
-because other work shared the machine:
+0.4.1, software bounds checking), with the 0.7 core's `aprv.wasm`, counted
+per CPU-second of the process because other work shared the machine:
 
 | Call | Per CPU-second | CPU per call |
 |---|---:|---:|
-| `verifyReceipt`, a genuine sandbox receipt (G5 chain) | 37 to 40 | 25 to 27 ms |
-| `verifySignedData`, the fixture StoreKit 2 transaction | 9 to 10 | 99 to 108 ms |
+| `verifyReceipt`, a genuine sandbox receipt (G5 chain) | 33 to 42 | 24 to 30 ms |
+| `verifySignedData`, the fixture StoreKit 2 transaction | 9 to 10 | 100 to 110 ms |
 
 A JWS costs about 100 ms of CPU here, which is the project's guideline of
 about 10 verifications per second per core, with no margin on this machine.
 If you verify StoreKit 2 transactions at volume, measure on your own
 hardware first. Four threads on one shared `Verifier` scale with the free
-cores (each call runs on its own instance, and nothing is locked while the
-module runs): 99 to 149 receipts and 26 to 34 JWS per second on four busy
-vCPUs. Start-up: the first `Verifier` of a process checks and parses the
-module in 45 to 65 ms; the first call on an instance then takes about
-150 ms, because WasmKit translates each function on first use, and later
-receipt calls about 25 ms.
+cores: each call runs on its own instance, and nothing is locked while the
+module runs. Start-up: the first `Verifier` of a process checks and parses
+the module in 45 to 170 ms; the first call on an instance then takes 150 to
+380 ms, because WasmKit translates each function on first use, and later
+receipt calls 25 to 45 ms (the higher figures on a fully busy machine). An
+instance's linear memory stays the same size over 500 calls, and the bench
+process, with five instances, peaked at about 90 MB resident.
 
 ## Thread safety
 
