@@ -1,0 +1,367 @@
+openapi: 3.1.0
+info:
+  title: aprv-server
+  summary: Verifies Apple purchase receipts and App Store JWS by running aprv.wasm.
+  description: |
+    The HTTP interface of `aprv serve`. Each verification route runs one
+    operation of the aprv.wasm component (the WIT interface
+    `aprv:verifier/verify@1.0.0`) on the request body, unchanged, and
+    answers HTTP 200 with the component's JSON, byte for byte, whether the
+    input verified or not. Every other answer is an RFC 9457 problem
+    (`application/problem+json`) with a `code` member.
+
+    The server binds 127.0.0.1 unless `APRV_LISTEN` says otherwise and
+    speaks plain HTTP. With a token configured, every `/v1/` route needs
+    the `X-Aprv-Token` header.
+  version: 1.0.0
+  contact:
+    name: apple-purchase-receipt-verifier
+    url: https://github.com/emindeniz99/apple-purchase-receipt-verifier/issues
+  license:
+    name: MIT
+    url: https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/LICENSE
+servers:
+  - url: http://127.0.0.1:8080
+    description: The default listen address.
+tags:
+  - name: service
+    description: Health, readiness, configuration and this document.
+  - name: verify
+    description: The three verification operations.
+paths:
+  /v1/receipt/verify:
+    post:
+      operationId: verifyReceipt
+      tags: [verify]
+      summary: Verify a legacy PKCS#7 app receipt.
+      description: |
+        The body is the receipt as its `receipt-data` string: standard
+        base64 of the DER. The component decodes it by its own strict rule.
+      parameters:
+        - $ref: '#/components/parameters/NowMs'
+        - $ref: '#/components/parameters/Token'
+      requestBody:
+        $ref: '#/components/requestBodies/Text'
+      responses:
+        '200':
+          description: The verification result, verified or not.
+          content:
+            application/json:
+              schema:
+                $ref: '../bindings/wire/schema/verify-receipt-result.schema.json'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/signed-data/verify:
+    post:
+      operationId: verifySignedData
+      tags: [verify]
+      summary: Verify an App Store JWS (compact serialization).
+      description: The body is the compact JWS, as the bytes Apple sent.
+      parameters:
+        - $ref: '#/components/parameters/NowMs'
+        - $ref: '#/components/parameters/Token'
+      requestBody:
+        $ref: '#/components/requestBodies/Text'
+      responses:
+        '200':
+          description: The verification result, verified or not.
+          content:
+            application/json:
+              schema:
+                $ref: '../bindings/wire/schema/verify-signed-data-result.schema.json'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/verify-receipt/production:
+    post:
+      operationId: verifyReceiptEndpointProduction
+      tags: [verify]
+      summary: Answer a verifyReceipt request as Apple's production URL would.
+      description: |
+        The body is a verifyReceipt request, `{"receipt-data":"..."}`, as a
+        client would send it to Apple. The answer is the response Apple's
+        endpoint would give, in Apple's format (a `status` member always).
+      parameters:
+        - $ref: '#/components/parameters/NowMs'
+        - $ref: '#/components/parameters/Token'
+      requestBody:
+        $ref: '#/components/requestBodies/EndpointRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/EndpointResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/verify-receipt/sandbox:
+    post:
+      operationId: verifyReceiptEndpointSandbox
+      tags: [verify]
+      summary: Answer a verifyReceipt request as Apple's sandbox URL would.
+      description: As the production route, imitating Apple's sandbox URL.
+      parameters:
+        - $ref: '#/components/parameters/NowMs'
+        - $ref: '#/components/parameters/Token'
+      requestBody:
+        $ref: '#/components/requestBodies/EndpointRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/EndpointResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/info:
+    get:
+      operationId: info
+      tags: [service]
+      summary: The component, engine and roots this server runs.
+      description: |
+        A client compares `component_sha256` and `roots.sha256` with what it
+        expects and refuses a server that differs.
+      parameters:
+        - $ref: '#/components/parameters/Token'
+      responses:
+        '200':
+          description: The server's configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Info'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /healthz:
+    get:
+      operationId: healthz
+      tags: [service]
+      summary: Liveness.
+      description: Answers `ok` while the process runs. Needs no token.
+      responses:
+        '200':
+          $ref: '#/components/responses/PlainOk'
+  /readyz:
+    get:
+      operationId: readyz
+      tags: [service]
+      summary: Readiness.
+      description: Answers `ready`. The server listens only after its first `init` succeeded, so a server that answers is ready. Needs no token.
+      responses:
+        '200':
+          $ref: '#/components/responses/PlainOk'
+  /openapi.json:
+    get:
+      operationId: openapi
+      tags: [service]
+      summary: This document, as JSON.
+      description: openapi.yaml converted at build time, with the wire schemas it references bundled under `components/schemas`. Needs no token.
+      responses:
+        '200':
+          description: The OpenAPI document.
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  parameters:
+    NowMs:
+      name: X-Aprv-Now-Ms
+      in: header
+      required: false
+      description: |
+        The verification clock, milliseconds since the Unix epoch, as an
+        unsigned 64-bit decimal integer. The component uses it for the
+        certificate-validity instant when the input states no usable date,
+        and for `request_date` at the endpoint. Absent: the server's clock.
+      schema:
+        type: string
+        pattern: '^[0-9]{1,20}$'
+    Token:
+      name: X-Aprv-Token
+      in: header
+      required: false
+      description: Required, and compared in constant time, when the server has a token.
+      schema:
+        type: string
+  requestBodies:
+    Text:
+      required: true
+      description: At most 3,145,728 bytes, passed to the component unchanged.
+      content:
+        text/plain:
+          schema:
+            type: string
+            maxLength: 3145728
+    EndpointRequest:
+      required: true
+      description: At most 3,145,728 bytes, passed to the component unchanged.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EndpointRequest'
+  responses:
+    EndpointResponse:
+      description: Apple's verifyReceipt response for this request, byte for byte as the component wrote it.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EndpointResponse'
+    PlainOk:
+      description: The server is up.
+      content:
+        text/plain:
+          schema:
+            type: string
+    BadRequest:
+      description: '`X-Aprv-Now-Ms` is not an unsigned 64-bit decimal integer, or the body could not be read (code BAD_REQUEST).'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: A token is configured and `X-Aprv-Token` is missing or wrong (code UNAUTHORIZED).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    TooLarge:
+      description: The body is larger than 3,145,728 bytes; the component never saw it (code PAYLOAD_TOO_LARGE).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ServerError:
+      description: |
+        Not a verification result. WASM_TRAP: the component trapped (the
+        guest time limit and the memory limit included); ABI_ERROR: the
+        component broke the interface; INTERNAL_ERROR: the server could not
+        run the call. The instance is discarded in every case.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 Problem Details with the error code in `code`.
+      required: [type, title, status, detail, code]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Where the code is documented.
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        code:
+          type: string
+          enum:
+            - BAD_REQUEST
+            - UNAUTHORIZED
+            - NOT_FOUND
+            - METHOD_NOT_ALLOWED
+            - PAYLOAD_TOO_LARGE
+            - WASM_TRAP
+            - ABI_ERROR
+            - INTERNAL_ERROR
+    EndpointRequest:
+      type: object
+      description: |
+        Apple's verifyReceipt request. Only `receipt-data` is read; the
+        component answers a body that is not such an object with Apple's
+        status for it, not with an HTTP error.
+      properties:
+        receipt-data:
+          type: string
+    EndpointResponse:
+      type: object
+      description: Apple's verifyReceipt response format. `status` is always present.
+      required: [status]
+      properties:
+        status:
+          type: integer
+        environment:
+          type: string
+        receipt:
+          type: object
+    Info:
+      type: object
+      required: [abi, component_sha256, wasmtime, engine_features, wasm_features, roots, lifecycle, workers, time_limit_ms, token_required, limits]
+      properties:
+        abi:
+          type: string
+          const: aprv:verifier@1.0.0
+        component_sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: SHA-256 of the aprv.wasm component the server runs.
+        component_source:
+          type: string
+        wasmtime:
+          type: string
+        engine_features:
+          type: string
+        wasm_features:
+          type: array
+          items:
+            type: string
+        epoch_interruption:
+          type: boolean
+        roots:
+          type: object
+          required: [source, sha256]
+          properties:
+            source:
+              type: string
+              enum: [defaults, configured]
+            sha256:
+              type: array
+              description: SHA-256 of each root's DER, in configuration order.
+              items:
+                type: string
+                pattern: '^[0-9a-f]{64}$'
+        lifecycle:
+          type: string
+          enum: [fresh, pool]
+        workers:
+          type: integer
+        time_limit_ms:
+          type: integer
+        token_required:
+          type: boolean
+        limits:
+          type: object
+          properties:
+            max_body_bytes:
+              type: integer
+            max_guest_memory_bytes:
+              type: integer
+            max_core_instances_per_store:
+              type: integer
+        arch:
+          type: string
+        os:
+          type: string
