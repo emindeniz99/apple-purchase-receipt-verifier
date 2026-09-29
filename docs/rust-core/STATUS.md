@@ -23,7 +23,7 @@ work.
 | C python | `lane/host-python` | steps 5.1 to 5.3 | handed back 2026-09-29 (head 64a6cfe after the blob rewrite); parked until the real module: 94 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 in 13 s, CPython 3.10 to 3.14 green (218 expected failures each), ruff and mypy clean, 8 platform-tagged wheels built and the install-failure path proven with a faked platform |
 | C ruby | `lane/host-ruby` | step 5.5 | handed back 2026-09-29 (head a8f54a9 after the blob rewrite); parked until the real module: 90 of 311 cases on the stand-in (221 differ), corpus 6,176/2/1, rubocop, steep and rbs clean, gem 1,025,024 B, clean install picks the prebuilt native gem; thread scaling and the first-create time to be re-measured on a quiet machine (5.6 s here against the spike's 1.3 s) |
 | C swift | `lane/host-swift` | step 5.4 | started 2026-09-29 |
-| C dotnet | `lane/host-dotnet` | step 5.6 | started 2026-09-29 |
+| C dotnet | `lane/host-dotnet` | step 5.6 | handed back 2026-09-29 (head 3966e00 after the blob rewrite); parked until the real module: 524 tests with 303 passing and the same 221 stand-in failures on net8 and net10 (net9 self-contained too), Floor project 9/9 on 8, 9, 10, corpus 6,176/2/1, `dotnet format` clean, nupkg 2,108,091 B with a clean consumer; evidence note `2026-09-29-dotnet-host` |
 | D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | **merged** 2026-09-29 (head cff064d); actionlint and zizmor at 0; jobs gated on the other lanes' files, see `.github/CI-NOTES.md` |
 | E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | started 2026-09-29 |
 | F php | `lane/php` | Phase 6 | started 2026-09-29 |
@@ -93,6 +93,15 @@ work.
   `APRV_WASM_CACHE_DIR` is the cache path variable (R27); an empty value
   turns the cache off. atheris has no CPython 3.11 wheel here, so the
   fuzz targets ran only with a stub.
+- Lane .NET: the public API keeps `X509Certificate2` for roots (the
+  unchanged 0.7 type, which carries DER); the one-implementation gate
+  will allowlist that type for `dotnet/` at integration rather than
+  break the API. An out-of-range `Environment` enum value throws (a
+  programmer error in C#), where Go answers 21009. Empty roots and a
+  certificate with no data are refused at `Config.Builder.Build()`.
+  Each Wasmtime instance reserves about 4.2 GiB of virtual address
+  space by default (0.25 MiB resident); a 256 MiB reservation cost 35%
+  of speed and is not shipped.
 - Lane Ruby: `VerificationError` (private) removed; new public
   `AbiMismatchError`, `ModuleIntegrityError`, `TrapError`. The gemspec
   floor is open-ended (`wasmtime >= 48.0.1`), as R27's rule for Python.
@@ -166,7 +175,7 @@ work.
   to drop only that file (every commit kept, same messages and authors,
   new hashes), force-pushed with a lease, and the package reads the
   module from an ignored path with `APRV_WASM`/`APRV_COMPONENT`
-  overriding it. Done: Node, Go, Python, Ruby. Pending: Swift, .NET,
+  overriding it. Done: Node, Go, Python, Ruby, .NET. Pending: Swift and
   Java (before their hand-backs). A shared `pre-push` hook now refuses
   any new blob over 100 KB outside the two R14 paths; the same check
   becomes a CI job at integration. The real module is added once, in Go
