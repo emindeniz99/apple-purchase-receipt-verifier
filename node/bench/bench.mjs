@@ -1,5 +1,6 @@
-// The cross-port benchmark: the same four operations on the same two genuine
-// sandbox receipts in every port, named after the Java JMH benchmarks in
+// The cross-port benchmark: the same operations on the same two genuine
+// sandbox receipts in every port (Node has no public base64 decoder since
+// the module took decoding over, so its decodeBase64 row is gone), named after the Java JMH benchmarks in
 // java-bench/ (BENCHMARKS.md at the repository root has the table).
 //
 //   npm ci --ignore-scripts && npm run build
@@ -22,13 +23,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import {
-  Environment,
-  Reason,
-  createConfig,
-  createVerifier,
-  decodeReceiptBase64,
-} from '../dist/index.js';
+import { Environment, Reason, createConfig, createVerifier } from '../dist/index.js';
 
 const WARMUP_MS = 1000;
 const SAMPLES = 10;
@@ -179,7 +174,6 @@ function crossPort() {
 
     // Every call once, with the answer the conformance suite expects, so no
     // benchmark can time a fast failure by accident.
-    assert.ok(Buffer.from(decodeReceiptBase64(base64)).equals(der), 'decodeBase64');
     const verified = verifier.verifyReceipt(base64);
     assert.ok(verified.verified, 'verifyReceipt');
     assert.equal(verified.payload.bundleId, bundleId);
@@ -192,7 +186,6 @@ function crossPort() {
     assert.equal(rejected.failure.reason, Reason.INVALID_SIGNATURE, 'rejectTamperedSignature');
 
     results.push(
-      measure('decodeBase64', name, () => decodeReceiptBase64(base64)),
       measure('verifyReceipt', name, () => verifier.verifyReceipt(base64)),
       measure('endpointJson', name, () =>
         verifier.verifyReceiptEndpoint(Environment.SANDBOX, requestJson),

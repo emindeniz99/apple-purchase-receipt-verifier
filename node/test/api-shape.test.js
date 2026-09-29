@@ -1,45 +1,81 @@
-// The two entry points are one product: the same pinned roots, the same
-// vocabulary, and results a caller can read the same way.
-// oxlint-disable no-await-in-loop -- two builds, one after the other, so a failure names its build
+// The public surface is the 0.7 API (docs/design/0.7-api.md), and the two
+// entry points are one product: the same names, the same vocabulary, the
+// same module underneath. A name added to or dropped from either entry
+// point fails here first.
+// oxlint-disable no-await-in-loop -- two entry points, one after the other, so a failure names its entry point
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { X509Certificate } from 'node:crypto';
 import * as node from '../dist/index.js';
 import * as web from '../dist/web/index.js';
+
+const EXPORTS = [
+  'AppleStatus',
+  'Environment',
+  'Reason',
+  'VerificationError',
+  'createConfig',
+  'createInAppPurchase',
+  'createJsonPayload',
+  'createReceiptPayload',
+  'createVerifier',
+  'defaultConfig',
+  'environmentFromJwsEnvironment',
+  'environmentFromReceiptType',
+];
 
 const gen = (name) =>
   readFileSync(fileURLToPath(new URL(`../../fixtures/generated-0.7/${name}`, import.meta.url)));
 
-test('both builds bundle the same three published Apple roots', async () => {
-  const fromNode = node.defaultConfig().roots.map((r) => Buffer.from(r.raw));
-  const fromWeb = (await web.defaultConfig()).roots.map((r) => Buffer.from(r.raw));
-  assert.deepEqual(fromWeb, fromNode);
-  const subjects = fromNode.map((der) => new X509Certificate(der).subject);
-  assert.equal(subjects.length, 3);
-  assert.ok(
-    subjects.some((s) => /CN=Apple Root CA - G2/.test(s)),
-    subjects,
-  );
-  assert.ok(
-    subjects.some((s) => /CN=Apple Root CA - G3/.test(s)),
-    subjects,
-  );
-  // The file Apple labels "Apple Inc. Root" has subject CN=Apple Root CA.
-  assert.ok(
-    subjects.some((s) => /CN=Apple Root CA$/m.test(s)),
-    subjects,
-  );
+test('both entry points export exactly the 0.7 names', () => {
+  assert.deepEqual(Object.keys(node).toSorted(), EXPORTS);
+  assert.deepEqual(Object.keys(web).toSorted(), EXPORTS);
 });
 
-test('both builds expose the same Reason vocabulary and Environment set', () => {
-  assert.deepEqual(web.Reason, node.Reason);
-  assert.deepEqual(web.Environment, node.Environment);
-  assert.deepEqual(web.AppleStatus, node.AppleStatus);
+test('Reason is the eight 0.7 reasons, named as the module names them', () => {
+  // docs/rust-core/SURFACE.md §3 and §7 ("Reason parity").
+  assert.deepEqual(Object.values(node.Reason), [
+    'MALFORMED',
+    'TOO_LARGE',
+    'INVALID_SIGNATURE',
+    'UNTRUSTED_CHAIN',
+    'INVALID_CERTIFICATE',
+    'INVALID_CERTIFICATE_PURPOSE',
+    'UNREADABLE_PAYLOAD',
+    'INTERNAL_ERROR',
+  ]);
+  for (const [key, value] of Object.entries(node.Reason)) {
+    assert.equal(key, value);
+  }
 });
 
-test('a result carries exactly one of payload and failure, in both builds', async () => {
+test('both entry points share the vocabulary objects', () => {
+  assert.equal(web.Reason, node.Reason);
+  assert.equal(web.Environment, node.Environment);
+  assert.equal(web.AppleStatus, node.AppleStatus);
+  assert.deepEqual(node.Environment, { PRODUCTION: 'Production', SANDBOX: 'Sandbox' });
+});
+
+test('/web returns Promises where the default entry point returns values', async () => {
+  const config = web.createConfig();
+  assert.ok(config instanceof Promise);
+  assert.ok(web.defaultConfig() instanceof Promise);
+  const verifier = web.createVerifier(await config);
+  const pending = [
+    verifier.verifyReceipt('AQIDBA=='),
+    verifier.verifySignedData('a.b'),
+    verifier.verifyReceiptEndpoint(web.Environment.SANDBOX, '{}'),
+  ];
+  for (const p of pending) {
+    assert.ok(p instanceof Promise);
+  }
+  await Promise.all(pending);
+  const sync = node.createVerifier(node.defaultConfig());
+  assert.equal(typeof sync.verifyReceiptEndpoint(node.Environment.SANDBOX, '{}'), 'string');
+});
+
+test('a result carries exactly one of payload and failure, in both entry points', async () => {
   for (const [name, build] of [
     ['node', node],
     ['web', web],
@@ -61,10 +97,40 @@ test('a result carries exactly one of payload and failure, in both builds', asyn
       assert.notEqual(result.payload === undefined, result.failure === undefined, at);
       assert.equal(result.verified, result.payload !== undefined, at);
     }
-    assert.equal(results.verified.verified, true, name);
-    assert.equal(results.malformed.failure.reason, 'MALFORMED', name);
-    assert.equal(results['not a string'].failure.reason, 'MALFORMED', name);
-    assert.equal(results['untrusted chain'].failure.reason, 'UNTRUSTED_CHAIN', name);
-    assert.equal(results['malformed jws'].failure.reason, 'MALFORMED', name);
   }
+});
+
+test('defaultConfig() names no roots: Apple roots are pinned inside the module', () => {
+  const config = node.defaultConfig();
+  assert.equal(config.roots, null);
+  assert.equal(typeof config.clock(), 'number');
+  assert.ok(Object.isFrozen(config));
+});
+
+test('createConfig copies DER roots and unwraps PEM ones', () => {
+  const der = new Uint8Array(gen('receipt-root.der'));
+  const pem = `-----BEGIN CERTIFICATE-----\n${Buffer.from(der)
+    .toString('base64')
+    .replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----\n`;
+  const config = node.createConfig({ roots: [der, pem] });
+  assert.deepEqual(config.roots, [der, der]);
+  assert.notEqual(config.roots[0], der, 'the caller keeps their buffer; the config holds a copy');
+  assert.throws(() => node.createConfig({ roots: ['not a certificate'] }), TypeError);
+  assert.throws(() => node.createConfig({ roots: [42] }), TypeError);
+});
+
+test('createReceiptPayload and friends build what a caller mocks with', () => {
+  const purchase = node.createInAppPurchase({ productId: 'p', webOrderLineItemId: '9' });
+  const payload = node.createReceiptPayload({
+    bundleId: 'b',
+    bundleIdBytes: new Uint8Array([1, 2]),
+    inApp: [purchase],
+    unknownAttributes: new Map([[13, [new Uint8Array([255])]]]),
+  });
+  assert.equal(payload.receiptType, null);
+  assert.equal(payload.inApp[0].quantity, null);
+  assert.deepEqual(JSON.parse(payload.toJson()).bundle_id_bytes, 'AQI=');
+  assert.deepEqual(JSON.parse(payload.toJson()).unknown_attributes, { 13: ['/w=='] });
+  assert.equal(JSON.parse(payload.toJson()).in_app[0].web_order_line_item_id, '9');
+  assert.deepEqual(node.createJsonPayload('{"a":1}'), { json: '{"a":1}' });
 });
