@@ -1,0 +1,172 @@
+"""The 0.7 public API, pinned: the names a caller imports, the eight reasons,
+the pinned Apple roots, the shapes of the results. 0.8 changes what sits
+under the API, not the API (docs/rust-core/SURFACE.md), so a change here is
+a change to the contract."""
+
+import hashlib
+import inspect
+import unittest
+
+import apple_purchase_receipt_verifier as package
+from apple_purchase_receipt_verifier import (
+    Config,
+    Environment,
+    Failure,
+    Reason,
+    VerificationResult,
+    Verifier,
+    apple_status,
+    default_roots,
+    endpoint,
+    jws,
+    receipt,
+)
+
+# SURFACE.md section 3: the eight reasons, and no others.
+REASONS = [
+    "MALFORMED",
+    "TOO_LARGE",
+    "INVALID_SIGNATURE",
+    "UNTRUSTED_CHAIN",
+    "INVALID_CERTIFICATE",
+    "INVALID_CERTIFICATE_PURPOSE",
+    "UNREADABLE_PAYLOAD",
+    "INTERNAL_ERROR",
+]
+
+
+class NamesTest(unittest.TestCase):
+    def test_the_package_exports_exactly_the_0_7_names(self) -> None:
+        self.assertEqual(
+            [
+                "Config",
+                "Environment",
+                "Failure",
+                "InAppPurchase",
+                "JsonPayload",
+                "Reason",
+                "ReceiptPayload",
+                "VERSION",
+                "VerificationResult",
+                "Verifier",
+                "apple_status",
+                "default_roots",
+            ],
+            sorted(package.__all__),
+        )
+        for name in package.__all__:
+            self.assertTrue(hasattr(package, name), name)
+
+    def test_the_reasons_are_the_eight_of_0_7(self) -> None:
+        self.assertEqual(REASONS, [reason.name for reason in Reason])
+        self.assertEqual(REASONS, [reason.value for reason in Reason])
+
+    def test_the_verifier_methods_keep_their_0_7_signatures(self) -> None:
+        self.assertEqual(["self", "config"], list(inspect.signature(Verifier.__init__).parameters))
+        self.assertEqual(
+            ["self", "base64"], list(inspect.signature(Verifier.verify_receipt).parameters)
+        )
+        self.assertEqual(
+            ["self", "jws"], list(inspect.signature(Verifier.verify_signed_data).parameters)
+        )
+        self.assertEqual(
+            ["self", "environment", "request_json"],
+            list(inspect.signature(Verifier.verify_receipt_endpoint).parameters),
+        )
+
+    def test_the_published_bounds_are_the_documented_ones(self) -> None:
+        self.assertEqual(3_145_728, receipt.MAX_RECEIPT_BYTES)
+        self.assertEqual(3_145_728, endpoint.MAX_REQUEST_BYTES)
+        self.assertEqual(262_144, jws.MAX_JWS_BYTES)
+        self.assertEqual(10, receipt.MAX_EMBEDDED_CERTIFICATES)
+        self.assertEqual(4, receipt.MAX_SIGNER_INFOS)
+
+    def test_the_status_codes_are_apples(self) -> None:
+        self.assertEqual(
+            (0, 21002, 21003, 21007, 21008, 21009),
+            (
+                apple_status.OK,
+                apple_status.MALFORMED_RECEIPT_DATA,
+                apple_status.RECEIPT_NOT_AUTHENTICATED,
+                apple_status.SANDBOX_RECEIPT_ON_PRODUCTION,
+                apple_status.PRODUCTION_RECEIPT_ON_SANDBOX,
+                apple_status.INTERNAL_DATA_ACCESS_ERROR,
+            ),
+        )
+
+
+class RootsAndConfigTest(unittest.TestCase):
+    PINNED = frozenset(
+        {
+            "b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024",  # Apple Root CA
+            "c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050",  # G2
+            "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179",  # G3
+        }
+    )
+
+    def test_the_bundled_roots_are_the_three_published_apple_roots(self) -> None:
+        digests = {hashlib.sha256(der).hexdigest() for der in default_roots()}
+        self.assertEqual(self.PINNED, digests)
+        self.assertEqual(3, len(default_roots()))
+
+    def test_config_defaults_carries_them_and_the_system_clock(self) -> None:
+        config = Config.defaults()
+        self.assertEqual(default_roots(), config.roots)
+        self.assertEqual(config, Config())
+        self.assertIs(type(config.clock()), int)
+
+    def test_create_replaces_only_what_it_is_given(self) -> None:
+        clock = lambda: 5  # noqa: E731
+        self.assertEqual((b"a",), Config.create(roots=[b"a"]).roots)
+        self.assertEqual(default_roots(), Config.create(clock=clock).roots)
+        self.assertIs(clock, Config.create(clock=clock).clock)
+        self.assertEqual(
+            (), Config.create(roots=[]).roots, "empty is refused by Verifier, not Config"
+        )
+
+    def test_a_config_is_immutable(self) -> None:
+        with self.assertRaises(AttributeError):
+            Config.defaults().roots = ()  # type: ignore[misc]
+
+
+class ResultsTest(unittest.TestCase):
+    def test_a_result_holds_exactly_one_of_payload_and_failure(self) -> None:
+        failure = Failure(Reason.MALFORMED, "m")
+        with self.assertRaises(ValueError):
+            VerificationResult()
+        with self.assertRaises(ValueError):
+            VerificationResult(payload=object(), failure=failure)
+        self.assertTrue(VerificationResult(payload=object()).verified)
+        self.assertFalse(VerificationResult(failure=failure).verified)
+
+    def test_a_failure_equals_another_with_the_same_reason_and_message_whatever_the_cause(
+        self,
+    ) -> None:
+        one = Failure(Reason.INTERNAL_ERROR, "m", RuntimeError("a"))
+        two = Failure(Reason.INTERNAL_ERROR, "m", ValueError("b"))
+        self.assertEqual(one, two)
+        self.assertEqual(hash(one), hash(two))
+        self.assertNotEqual(one, Failure(Reason.MALFORMED, "m"))
+        self.assertNotEqual(one, Failure(Reason.INTERNAL_ERROR, "other"))
+
+    def test_the_environment_helpers_keep_their_rules(self) -> None:
+        production = ("Production", "ProductionVPP")
+        sandbox = ("ProductionSandbox", "ProductionVPPSandbox")
+        for kind in production:
+            self.assertEqual(Environment.PRODUCTION, Environment.from_receipt_type(kind))
+        for kind in sandbox:
+            self.assertEqual(Environment.SANDBOX, Environment.from_receipt_type(kind))
+        for unknown in (None, "", "production", "Xcode"):
+            self.assertIsNone(Environment.from_receipt_type(unknown))
+        self.assertEqual(Environment.PRODUCTION, Environment.from_jws_environment("Production"))
+        self.assertEqual(Environment.SANDBOX, Environment.from_jws_environment("Sandbox"))
+        for other in (None, "Xcode", "LocalTesting"):
+            self.assertIsNone(Environment.from_jws_environment(other))
+
+    def test_the_device_hash_is_sha1_over_the_three_inputs(self) -> None:
+        expected = hashlib.sha1(b"dev" + b"opaque" + b"bundle").digest()
+        self.assertEqual(expected, receipt.device_hash(b"dev", b"opaque", b"bundle"))
+
+
+if __name__ == "__main__":
+    unittest.main()
