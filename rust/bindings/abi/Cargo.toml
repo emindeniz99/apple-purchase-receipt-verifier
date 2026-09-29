@@ -10,7 +10,9 @@ name = "aprv-abi"
 version = "0.0.0"
 publish = false
 edition = "2021"
-rust-version = "1.85.0"
+# wit-bindgen 0.62's generator (wit-parser, wasm-encoder 0.259) needs 1.88;
+# the module is built only with the pinned toolchain (rust-toolchain.toml).
+rust-version = "1.88.0"
 description = "The canonical-ABI exports of apple-purchase-receipt-verifier, built as aprv.wasm."
 license = "MIT"
 # tests/ is the ABI test host, a package of its own (it depends on Wasmtime,
