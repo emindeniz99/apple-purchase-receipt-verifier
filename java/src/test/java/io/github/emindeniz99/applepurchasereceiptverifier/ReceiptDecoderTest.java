@@ -12,7 +12,11 @@ import java.security.cert.TrustAnchor;
 import java.util.Collections;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1String;
+import org.bouncycastle.asn1.BERSequence;
+import org.bouncycastle.asn1.BERSet;
 import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSequence;
@@ -212,6 +216,110 @@ class ReceiptDecoderTest {
         assertArrayEquals(tooDeep, receipt.unknownAttributes().get(3).get(0));
         assertArrayEquals(tooDeep, receipt.unknownAttributes().get(1).get(0));
         assertNull(ReceiptDecoder.readCreationDate(set(attribute(12, tooDeep))));
+    }
+
+    /**
+     * A value's chunks nest at most {@link Asn1Depth#MAX_STRING_NEST}
+     * constructed levels, OpenSSL's bound, so every implementation reads
+     * six and refuses seven. The value is signed, so the payload is
+     * UNREADABLE_PAYLOAD, not the one attribute kept raw; the Xcode wrap is
+     * held to the same bound.
+     */
+    @Test
+    void aValueChunkedPastSixConstructedLevelsIsUnreadable() throws Exception {
+        byte[] bundle = new DERUTF8String("com.example.app").getEncoded();
+        assertEquals(
+                "com.example.app",
+                ReceiptDecoder.parse(chunkedValueSet(2, bundle, 6)).bundleId());
+        VerificationException value =
+                assertThrows(VerificationException.class, () -> ReceiptDecoder.parse(chunkedValueSet(2, bundle, 7)));
+        assertEquals(Reason.UNREADABLE_PAYLOAD, value.reason());
+        // Before any signature it is no creation date: the chain is judged at the clock.
+        byte[] date = new DERIA5String("2024-01-15T12:00:00Z").getEncoded();
+        assertNotNull(ReceiptDecoder.readCreationDate(chunkedValueSet(12, date, 6)));
+        assertNull(ReceiptDecoder.readCreationDate(chunkedValueSet(12, date, 7)));
+
+        byte[] payload = set(attribute(2, bundle));
+        assertEquals(
+                "com.example.app",
+                ReceiptDecoder.parse(TestPki.chunked(payload, 6).getEncoded()).bundleId());
+        VerificationException wrap = assertThrows(
+                VerificationException.class,
+                () -> ReceiptDecoder.parse(TestPki.chunked(payload, 7).getEncoded()));
+        assertEquals(Reason.UNREADABLE_PAYLOAD, wrap.reason());
+
+        // Why the bound is this library's: BouncyCastle joins seven levels.
+        assertArrayEquals(
+                bundle,
+                ((ASN1OctetString) ASN1Primitive.fromByteArray(
+                                TestPki.chunked(bundle, 7).getEncoded()))
+                        .getOctets());
+    }
+
+    /**
+     * The bound counts constructed levels in either length form, and only
+     * in a constructed OCTET STRING: other nesting is {@link
+     * Asn1Depth#MAX_DEPTH}'s.
+     */
+    @Test
+    void octetStringChunksNestAtMostSixConstructedLevels() throws Exception {
+        assertEquals(6, Asn1Depth.MAX_STRING_NEST);
+        assertFalse(Asn1Depth.octetStringNestExceeded(definiteChunks(6), 0));
+        assertTrue(Asn1Depth.octetStringNestExceeded(definiteChunks(7), 0));
+        assertFalse(Asn1Depth.octetStringNestExceeded(
+                TestPki.chunked(new byte[] {1}, 6).getEncoded(), 0));
+        assertTrue(Asn1Depth.octetStringNestExceeded(
+                TestPki.chunked(new byte[] {1}, 7).getEncoded(), 0));
+        assertFalse(Asn1Depth.octetStringNestExceeded(nestedSets(7), 0));
+        // An absent value (-1) or one past the end is not over the bound.
+        assertFalse(Asn1Depth.octetStringNestExceeded(definiteChunks(7), -1));
+        assertFalse(Asn1Depth.octetStringNestExceeded(definiteChunks(7), definiteChunks(7).length));
+    }
+
+    /**
+     * A value whose length takes more than four octets is kept raw, as 0.7
+     * kept it and the payload being DER requires; up to four octets, minimal
+     * or not, it is read, as OpenSSL reads it.
+     */
+    @Test
+    void aValueWhoseLengthTakesFiveOctetsIsKeptRaw() throws Exception {
+        byte[] fiveString = {0x0C, (byte) 0x85, 0, 0, 0, 0, 0x03, 'a', 'p', 'p'};
+        byte[] fiveInteger = {0x02, (byte) 0x85, 0, 0, 0, 0, 0x01, 0x05};
+        ReceiptPayload raw = ReceiptDecoder.parse(set(attribute(2, fiveString), attribute(1, fiveInteger)));
+        assertNull(raw.bundleId());
+        assertArrayEquals(fiveString, raw.bundleIdBytes());
+        assertNull(raw.appItemId());
+        assertArrayEquals(fiveInteger, raw.unknownAttributes().get(1).get(0));
+
+        byte[] fourString = {0x0C, (byte) 0x84, 0, 0, 0, 0x03, 'a', 'p', 'p'};
+        byte[] fourInteger = {0x02, (byte) 0x84, 0, 0, 0, 0x01, 0x05};
+        ReceiptPayload read = ReceiptDecoder.parse(set(attribute(2, fourString), attribute(1, fourInteger)));
+        assertEquals("app", read.bundleId());
+        assertEquals(5L, read.appItemId());
+
+        // Why the rule is this library's: BouncyCastle reads the five-octet form.
+        assertEquals("app", ((ASN1String) ASN1Primitive.fromByteArray(fiveString)).getString());
+    }
+
+    /** A payload SET of one attribute whose value is {@code value} in {@code levels} constructed levels. */
+    private static byte[] chunkedValueSet(int type, byte[] value, int levels) throws Exception {
+        return new BERSet(new BERSequence(
+                        new ASN1Encodable[] {new ASN1Integer(type), new ASN1Integer(1), TestPki.chunked(value, levels)
+                        }))
+                .getEncoded();
+    }
+
+    /** A one-octet OCTET STRING in {@code levels} constructed levels, every length definite. */
+    private static byte[] definiteChunks(int levels) {
+        byte[] encoding = {0x04, 0x01, 0x41};
+        for (int i = 0; i < levels; i++) {
+            byte[] outer = new byte[encoding.length + 2];
+            outer[0] = 0x24;
+            outer[1] = (byte) encoding.length;
+            System.arraycopy(encoding, 0, outer, 2, encoding.length);
+            encoding = outer;
+        }
+        return encoding;
     }
 
     /** {@code levels} SETs inside one another, the innermost empty. */

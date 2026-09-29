@@ -90,6 +90,9 @@ final class ReceiptDecoder {
             IAP_IS_TRIAL_PERIOD,
             IAP_IS_IN_INTRO_OFFER_PERIOD));
 
+    private static final String TOO_MANY_LEVELS =
+            " nests its chunks deeper than " + Asn1Depth.MAX_STRING_NEST + " constructed levels";
+
     private static final DateTimeFormatter RECEIPT_DATE =
             DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss'Z'").withResolverStyle(ResolverStyle.STRICT);
 
@@ -253,6 +256,10 @@ final class ReceiptDecoder {
 
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
         requireDepth(der, what);
+        if (Asn1Depth.octetStringNestExceeded(der, 0)) {
+            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " double-wrap" + TOO_MANY_LEVELS);
+        }
+        byte[] set = der;
         ASN1Primitive parsed;
         try {
             parsed = ASN1Primitive.fromByteArray(der);
@@ -264,6 +271,7 @@ final class ReceiptDecoder {
             // Xcode receipts wrap the payload in one more OCTET STRING.
             byte[] inner = ((ASN1OctetString) parsed).getOctets();
             requireDepth(inner, what);
+            set = inner;
             try {
                 parsed = ASN1Primitive.fromByteArray(inner);
             } catch (IOException | RuntimeException e) {
@@ -273,7 +281,27 @@ final class ReceiptDecoder {
         if (!(parsed instanceof ASN1Set)) {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " is not an ASN.1 SET");
         }
+        // BouncyCastle has joined every value's chunks by now, so the bound
+        // is checked on the encoding: the third field of each entry.
+        for (int entry : Asn1Depth.children(set, 0, Integer.MAX_VALUE)) {
+            int[] fields = Asn1Depth.children(set, entry, 3);
+            if (fields.length == 3 && Asn1Depth.octetStringNestExceeded(set, fields[2])) {
+                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " value" + TOO_MANY_LEVELS);
+            }
+        }
         return (ASN1Set) parsed;
+    }
+
+    /**
+     * A value whose length takes more than four octets is not read: DER
+     * needs one, 0.7 read at most four, and BouncyCastle reads more.
+     * With a multi-octet tag the value is no string or INTEGER anyway.
+     */
+    private static void requireShortLength(byte[] der) throws VerificationException {
+        if (der.length > 1 && (der[0] & 0x1F) != 0x1F && (der[1] & 0xFF) > 0x84) {
+            throw new VerificationException(
+                    Reason.UNREADABLE_PAYLOAD, "attribute value length takes more than four octets");
+        }
     }
 
     private static void requireDepth(byte[] der, String what) throws VerificationException {
@@ -290,6 +318,7 @@ final class ReceiptDecoder {
     private static String decodeString(byte[] der) throws VerificationException {
         // A nested encoding inside an OCTET STRING, which the payload's own depth walk did not enter.
         requireDepth(der, "attribute value");
+        requireShortLength(der);
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (parsed instanceof ASN1IA5String) {
@@ -316,6 +345,7 @@ final class ReceiptDecoder {
     /** An INTEGER that fits a long, negative values included. */
     private static Long decodeInteger(byte[] der) throws VerificationException {
         requireDepth(der, "attribute value");
+        requireShortLength(der);
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {
