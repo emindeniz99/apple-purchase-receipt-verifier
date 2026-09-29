@@ -5,7 +5,6 @@
 //! Nothing here reads a receipt, a JWS or a request body: the bytes go to
 //! the component unchanged and its JSON comes back unchanged.
 
-use crate::manifest::sha256_hex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -221,9 +220,9 @@ fn load_embedded(engine: &Engine) -> Result<(Component, Source), String> {
             "this build embeds no component: build it with APRV_CCWASM naming a file `aprv precompile` wrote".into()
         });
     };
-    if sha256_hex(e.bytes) != e.ccwasm_sha256 {
-        return Err("the embedded precompiled component does not hash to the SHA-256 recorded at build time".into());
-    }
+    // The bytes are not hashed again here: build.rs checked them against
+    // their manifest before embedding them, and hashing 9.5 MB at every
+    // start cost about 50 ms without SHA extensions, a third of a CLI call.
     if Engine::detect_precompiled(e.bytes) != Some(Precompiled::Component) {
         return Err("the embedded file is not a precompiled Wasmtime component".into());
     }
@@ -237,8 +236,8 @@ fn load_embedded(engine: &Engine) -> Result<(Component, Source), String> {
     }
     // SAFETY: `deserialize` runs the bytes as native code without validating
     // them. These bytes are part of this binary: build.rs embedded them only
-    // after checking them against the manifest `aprv precompile` wrote, and
-    // they still hash to the SHA-256 recorded then (checked above).
+    // after checking that they hash to what the manifest `aprv precompile`
+    // wrote records, and they are a precompiled component (checked above).
     let component = unsafe { Component::deserialize(engine, e.bytes) }.map_err(|err| {
         format!(
             "the embedded precompiled component does not load in this engine (it must be precompiled \
@@ -290,7 +289,7 @@ fn load_file(_: &Engine, _: &str) -> Result<(Component, Source), String> {
 /// write the `.ccwasm` and its manifest.
 #[cfg(feature = "compile")]
 pub fn precompile(component: &str, target: &str, out: &str) -> Result<String, String> {
-    use crate::manifest::Manifest;
+    use crate::manifest::{sha256_hex, Manifest};
     let bytes = std::fs::read(component).map_err(|e| format!("{component}: {e}"))?;
     if !bytes.starts_with(b"\0asm") {
         return Err(format!("{component}: not a .wasm"));
@@ -402,7 +401,7 @@ impl Instance {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "compile"))]
 impl Instance {
     /// A second component instance in this instance's store: the store
     /// limit must refuse it.

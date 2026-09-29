@@ -266,6 +266,8 @@ fn info(args: &[String]) -> i32 {
     let t = Instant::now();
     match load(&o) {
         Ok(runtime) => {
+            // As the CLI: exit without the runtime's slow teardown.
+            let runtime = std::mem::ManuallyDrop::new(runtime);
             let mut v = build_info(&runtime);
             v["load_ms"] = serde_json::json!((t.elapsed().as_secs_f64() * 1e4).round() / 10.0);
             println!("{}", serde_json::to_string_pretty(&v).unwrap());
