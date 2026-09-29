@@ -2,7 +2,6 @@
 
 require "minitest/autorun"
 require "json"
-require "openssl"
 require "time"
 require "digest"
 require "benchmark"
@@ -98,10 +97,6 @@ module TestSupport
       end
 
       @fixture_cache[id] = bytes
-    end
-
-    def fixture_certificate(id)
-      OpenSSL::X509::Certificate.new(fixture_bytes(id))
     end
   end
 end

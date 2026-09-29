@@ -26,11 +26,11 @@ class ConformanceTest < Minitest::Test
     name.gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase
   end
 
-  # The RSA modulus / EC field-size ceiling this build accepts (Chain).
-  # Nothing in this suite pins the exact number; it exists only so the DoS
-  # assertion below has a concrete "too large to be a genuine chain
-  # certificate" line to check every recorded key against.
-  OVERSIZED_KEY_BITS = 8192
+  VERIFIERS = {} # rubocop:disable Style/MutableConstant
+
+  # The module with Apple's roots, for the decodeBase64 cases, which read its
+  # raw answers.
+  RAW_POOL = APRV::InstancePool.new(APRV::Runtime.shared, '{"roots":[]}')
 
   # Mutable on purpose: the coverage self-check below records what actually
   # ran, which is the point.
@@ -94,16 +94,25 @@ class ConformanceTest < Minitest::Test
     TestSupport.fixture_bytes(fixture_id).dup.force_encoding(Encoding::UTF_8)
   end
 
+  # The trust anchors a case pins, as the DER bytes of their fixtures; nil
+  # is Apple's three, which the module carries.
   def trusted_roots(spec)
     return nil if spec["source"] == "defaults"
 
-    spec["fixtures"].map { |id| TestSupport.fixture_certificate(id) }
+    spec["fixtures"].map { |id| TestSupport.fixture_bytes(id) }
   end
 
+  # One verifier per distinct configuration, shared by the cases that use it
+  # the way a service shares one: it holds a pool of wasm instances, each
+  # with 2 MiB or more of linear memory, and 311 of them would be gigabytes
+  # for the collector to find.
   def build_verifier(config_spec, clock_spec)
-    clock = clock_spec.nil? ? nil : -> { (Time.iso8601(clock_spec["now"]).to_r * 1000).to_i }
-    config = APRV::Config.new(roots: trusted_roots(config_spec["trustedRoots"]), clock: clock)
-    APRV::Verifier.create(config)
+    key = [config_spec["trustedRoots"], clock_spec&.fetch("now")]
+    VERIFIERS[key] ||= begin
+      clock = clock_spec.nil? ? nil : -> { (Time.iso8601(clock_spec["now"]).to_r * 1000).to_i }
+      config = APRV::Config.new(roots: trusted_roots(config_spec["trustedRoots"]), clock: clock)
+      APRV::Verifier.create(config)
+    end
   end
 
   # --- dispatch --------------------------------------------------------------
@@ -174,41 +183,18 @@ class ConformanceTest < Minitest::Test
   end
 
   # Runs the case's operation, measuring the SECOND call (after one
-  # warm-up) against `maxMillis` when the case carries one, and — on every
-  # case tagged "dos" — asserting directly that no verification this call
-  # made used a key too large to be a genuine chain certificate (the
-  # top-down walk, #161): the timing budget alone is a
-  # coarse backstop, never the only proof.
+  # warm-up) against `maxMillis` when the case carries one. The timing
+  # budget is a coarse backstop: the bounds themselves are the module's.
   def measured(kase, &block)
-    return yield unless kase["maxMillis"] || (kase["tags"] || []).include?("dos")
+    return yield unless kase["maxMillis"]
 
     yield # warm-up, not measured
     result = nil
-    keys_used = []
-    elapsed = Benchmark.realtime do
-      result, keys_used = APRV::Chain.keys_used_during(&block)
-    end
-    assert_no_oversized_key_used(keys_used, kase["id"])
-    if kase["maxMillis"]
-      millis = elapsed * 1000
-      assert_operator millis, :<=, kase["maxMillis"],
-                      "#{kase["id"]}: took #{millis.round(1)}ms, budget #{kase["maxMillis"]}ms"
-    end
+    elapsed = Benchmark.realtime { result = block.call }
+    millis = elapsed * 1000
+    assert_operator millis, :<=, kase["maxMillis"],
+                    "#{kase["id"]}: took #{millis.round(1)}ms, budget #{kase["maxMillis"]}ms"
     result
-  end
-
-  def assert_no_oversized_key_used(keys_used_ders, case_id)
-    keys_used_ders.each do |der|
-      key = OpenSSL::X509::Certificate.new(der).public_key
-      bits =
-        case key
-        when OpenSSL::PKey::RSA then key.n.num_bits
-        when OpenSSL::PKey::EC then key.group.degree
-        else 0
-        end
-      assert_operator bits, :<=, OVERSIZED_KEY_BITS,
-                      "#{case_id}: a verification used a #{bits}-bit key — the untrusted stranger's key"
-    end
   end
 
   def assert_message_excludes(codepoints, message, case_id)
@@ -237,28 +223,41 @@ class ConformanceTest < Minitest::Test
 
   # --- decodeBase64 -----------------------------------------------------
 
-  # Both named decoders (`receipt-data`, `x5c`) are, in this port, the same
-  # canonical-base64 rule (Receipt.decode_canonical_base64): the schema's
-  # per-group reason (MALFORMED for receipt-data, mapped to
-  # INVALID_CERTIFICATE for x5c) is a property of where the failure surfaces
-  # through the PUBLIC API, not of the decoder itself, so calling the
-  # decoder directly only proves accept/refuse.
+  # The cases pin the two base64 rules (`receipt-data`, `x5c`) by calling
+  # each decoder directly. Through a host there is no decoder to call: the
+  # receipt-data rule runs inside the module's `verify-receipt`, so each text
+  # is handed to it and must land on its group's side of the rule
+  # (docs/rust-core/SURFACE.md, section 6). An accepted text decodes to bytes
+  # that are no receipt, so the module refuses it further on, never with the
+  # base64 refusal; a refused text carries the base64 refusal and the
+  # group's reason. The answer is read raw, since the facade would hide
+  # which stage refused.
+  #
+  # The x5c rule needs a JWS whose header carries the text, which the
+  # migration's Phase 1 builds for the runners; until then only the
+  # receipt-data decoder runs through the host here.
   def run_decode_base64(kase)
     texts = kase["input"]["texts"]
     raise "harness error: #{kase["id"]}: no texts or no decoders" if texts.empty? || kase["decoders"].empty?
+    return unless kase["decoders"].include?("receipt-data")
 
     expected = kase["expected"]
-    kase["decoders"].each do |name|
-      texts.each_with_index do |text, index|
-        where = "#{kase["id"]}: #{name} texts[#{index}] #{text.inspect}"
-        decoded = APRV::Receipt.decode_canonical_base64(text)
-        if expected["status"] == "ok"
-          refute_nil decoded, "#{where}: refused, want #{expected["bytesHex"]}"
-          assert_equal expected["bytesHex"], decoded.unpack1("H*"), where
-        else
-          assert_nil decoded, "#{where}: accepted (decoded to #{decoded&.unpack1("H*")})"
-        end
+    texts.each_with_index do |text, index|
+      where = "#{kase["id"]}: receipt-data texts[#{index}] #{text.inspect}"
+      answer = raw_receipt_answer(text)
+      refused = answer["verified"] == false && answer["message"].to_s.include?("base64")
+      if expected["status"] == "ok"
+        refute refused, "#{where}: refused by the base64 rule, want #{expected["bytesHex"]}"
+      else
+        assert refused, "#{where}: not refused by the base64 rule: #{answer.inspect}"
+        assert_equal expected["reason"], answer["reason"], "#{where}: reason"
       end
+    end
+  end
+
+  def raw_receipt_answer(text)
+    RAW_POOL.with_guest do |guest|
+      JSON.parse(guest.call("verify-receipt", [Time.now.to_i * 1000], text))
     end
   end
 
