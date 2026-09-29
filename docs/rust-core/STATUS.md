@@ -16,7 +16,7 @@ work.
 | A1 core | `lane/core` | steps 1.1, 1.2: the core on OpenSSL 4, native build | started 2026-09-29 |
 | A2 core | `lane/core` | steps 1.3, 1.4, 1.5 (build script), 1.14: workspace, surface, wire, canonical ABI, schemas | waits on A1 |
 | A3 core | `lane/core` | steps 1.7, 1.8, 1.10, 1.12, 1.13 | waits on A2 |
-| B server | `lane/server` | Phase 2 against the stand-in component | started 2026-09-29 |
+| B server | `lane/server` | Phase 2 against the stand-in component | handed back 2026-09-29 (head 5c7f7f7); parked until the real component: 24 tests green, clippy clean in both feature sets, static musl binary runs in an empty chroot, corpus over HTTP (fresh and pool) and the CLI 6,149 identical + 27 over-cap + 3 intended, 311 cases 119 pass / 159 stand-in / 33 not expressible, managed smoke 10/10, hostile component 6/6, Schemathesis 394 passed, Spectral 0 beside stand-in schemas; Docker not built (no daemon) |
 | C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head 5fd91f7); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
 | C go | `lane/host-go` | steps 4.6, 4.7 | handed back 2026-09-29 (head 6d1d069); parked until the real module: 90 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 as expected, `-race` clean, staticcheck 0, static binary runs in an empty chroot |
 | C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | handed back 2026-09-29 (head b4cfcb1); parked until the real module: 366 tests green on JDK 21, the 311 cases on 11, 17 and 21 with 90 passing and 221 listed stand-in differences, Java 8 leg 32 tests green, `java/` unchanged (516 tests), corpus 6,176/2/1 at 1 and 4 threads, class majors 52/55 proven, 0 native references across 475 classes, classpath guard proven with Maven and Gradle |
@@ -25,8 +25,8 @@ work.
 | C swift | `lane/host-swift` | step 5.4 | started 2026-09-29 |
 | C dotnet | `lane/host-dotnet` | step 5.6 | started 2026-09-29 |
 | D supply chain | `lane/supply-chain` | steps 1.5, 1.13 to 1.15, 2.8 to 2.10 jobs, CI matrix, release.yml | **merged** 2026-09-29 (head cff064d); actionlint and zizmor at 0; jobs gated on the other lanes' files, see `.github/CI-NOTES.md` |
-| E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | waits on B |
-| F php | `lane/php` | Phase 6 | waits on B |
+| E java server engine | `lane/host-java` (after C java) | step 3.3, 3.4, 3.9 | started 2026-09-29 |
+| F php | `lane/php` | Phase 6 | started 2026-09-29 |
 
 ## Decisions taken by the orchestrator (owner to read at the end)
 
@@ -100,6 +100,17 @@ work.
   orchestrator's; attribution is truthful, so the history stands. It
   wrote an evidence note (`2026-09-29-ruby-host`) that the integrator
   audits before the merge.
+- Lane B (server): the managed roots line is mandatory (`{}` for the
+  defaults); the port line is `APRV_LISTEN=127.0.0.1:<port>`; CLI exit
+  code 2 means usage or configuration; the problem codes are lane B's
+  names; the token is not required on `/healthz`, `/readyz`,
+  `/openapi.json`; the embedded file's SHA-256 is checked at build time
+  only (a start-time hash cost 50 ms, a third of a CLI call); the store
+  admits exactly 3 core instances (the component's shim, module and
+  fixup); the server decodes base64 only to fingerprint the configured
+  roots; the corpus over HTTP splits 6,149 + 27 over-cap + 3 (MIGRATION
+  2.7 said 6,153 + 25 + 1; the cap now also catches the DER-at-cap row's
+  base64); the crate is outside the workspace with its own lockfile.
 - Lane Java: the `-wasm` public API copies `java/`'s types rather than
   sharing them (R33); `release-please-config.json` entries for
   `java-wasm/pom.xml`, `Version.java` and `java-wasm/README.md` are the
