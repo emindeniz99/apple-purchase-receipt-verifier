@@ -226,6 +226,50 @@ public class ApiShapeTests
     }
 
     /// <summary>
+    /// No verification logic is left in the library: it references neither
+    /// the CMS nor the ASN.1 assembly, and no source line touches a chain, a
+    /// signature or an ASN.1 reader. Everything that verifies is in the module.
+    /// </summary>
+    [Fact]
+    public void TheLibraryHoldsNoVerificationLogic()
+    {
+        foreach (System.Reflection.AssemblyName reference in typeof(IVerifier).Assembly.GetReferencedAssemblies())
+        {
+            Assert.DoesNotContain("Pkcs", reference.Name, StringComparison.Ordinal);
+            Assert.DoesNotContain("Asn1", reference.Name, StringComparison.Ordinal);
+        }
+
+        string[] banned =
+        {
+            "X509Chain", "SignedCms", "SignerInfo", "AsnReader", "AsnWriter", "AsnDecoder", "VerifyData", "VerifyHash",
+            "ECDsa", "RSACryptoServiceProvider", "System.Security.Cryptography.Pkcs", "System.Formats.Asn1",
+        };
+        List<string> hits = new();
+        foreach (string file in SourceTree.LibraryFiles())
+        {
+            string[] lines = System.IO.File.ReadAllLines(file);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string code = lines[i].Trim();
+                if (code.StartsWith("//", StringComparison.Ordinal) || code.StartsWith("*", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                foreach (string word in banned)
+                {
+                    if (code.Contains(word, StringComparison.Ordinal))
+                    {
+                        hits.Add(System.IO.Path.GetFileName(file) + ":" + (i + 1) + " " + word);
+                    }
+                }
+            }
+        }
+
+        Assert.Empty(hits);
+    }
+
+    /// <summary>
     /// Receipt dates are epoch milliseconds, UTC, with an <c>Ms</c> suffix
     /// (design, decode rules), not the platform's date type: a date type
     /// carries an offset and a range the wire format does not.

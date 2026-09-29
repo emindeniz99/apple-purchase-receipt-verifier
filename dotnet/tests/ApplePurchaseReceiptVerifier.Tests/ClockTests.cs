@@ -141,7 +141,7 @@ public class ClockTests
     public void TheSystemClockIsReadAtExactlyOneSite()
     {
         List<string> hits = new();
-        foreach (string file in Directory.GetFiles(SourceRoot(), "*.cs", SearchOption.AllDirectories))
+        foreach (string file in SourceTree.LibraryFiles())
         {
             string[] lines = File.ReadAllLines(file);
             for (int i = 0; i < lines.Length; i++)
@@ -167,23 +167,6 @@ public class ClockTests
 
         string hit = Assert.Single(hits);
         Assert.StartsWith("Config.cs:", hit, StringComparison.Ordinal);
-    }
-
-    private static string SourceRoot()
-    {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            string candidate = Path.Combine(directory.FullName, "dotnet", "src", "ApplePurchaseReceiptVerifier");
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("could not locate the library sources");
     }
 
     /// <summary>A test-side clock that counts its reads; the library itself has no such hook.</summary>
