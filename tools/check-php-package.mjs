@@ -54,6 +54,17 @@ if (JSON.stringify(root.require ?? {}) !== JSON.stringify(dev.require ?? {})) {
   );
 }
 
+// The installer command travels with the package: composer exposes the same
+// script under vendor/bin, rebased onto php/ in the root manifest.
+if (JSON.stringify(root.bin ?? []) !== JSON.stringify((dev.bin ?? []).map((b) => `php/${b}`))) {
+  problems.push(
+    `composer.json bin is ${JSON.stringify(root.bin ?? [])}, expected php/-prefixed ${JSON.stringify(dev.bin ?? [])}`,
+  );
+}
+if (JSON.stringify(root.suggest ?? {}) !== JSON.stringify(dev.suggest ?? {})) {
+  problems.push('composer.json suggest does not match php/composer.json suggest');
+}
+
 // The root manifest is deliberately not the development one: require-dev
 // belongs to php/composer.json, where php/composer.lock can pin it.
 if (root['require-dev'] !== undefined) {
@@ -99,6 +110,10 @@ const required = [
   'php/src/Config.php',
   'php/src/Verifier.php',
   'php/src/Internal/RootsData.php',
+  // What `vendor/bin/aprv-install` runs and reads: the command, and the
+  // release the pinned SHA-256 of each binary belongs to.
+  'php/bin/aprv-install',
+  'php/binaries.json',
   ...roots.map((n) => `php/certs/${n}`),
 ];
 for (const path of required) {
@@ -127,6 +142,8 @@ const allowed = (path) =>
   || path === 'php/composer.json'
   || path === 'php/LICENSE'
   || path === 'php/README.md'
+  || path === 'php/bin/aprv-install'
+  || path === 'php/binaries.json'
   || path.startsWith('php/src/')
   || path.startsWith('php/certs/');
 const ports = new Set(['dotnet', 'go', 'java', 'jvm-interop', 'node', 'python', 'ruby', 'rust', 'swift']);

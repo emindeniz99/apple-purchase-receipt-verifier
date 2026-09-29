@@ -5,17 +5,13 @@ module ApplePurchaseReceiptVerifier
     def self.current: () -> String
   end
 
-  # Base64 DER of the three bundled Apple root certificates.
-  APPLE_ROOT_DER_BASE64: Array[String]
-
-  LEAF_MARKER_OID: String
-  INTERMEDIATE_MARKER_OID: String
-  RECEIPT_SIGNER_OID: String
-  WWDR_INTERMEDIATE_OID: String
-
-  type root = OpenSSL::X509::Certificate | String
+  type root = String | _ToDer
   type roots = Array[root]
   type clock = ^() -> Integer
+
+  interface _ToDer
+    def to_der: () -> String
+  end
 
   module Reason
     MALFORMED: Symbol
@@ -57,27 +53,26 @@ module ApplePurchaseReceiptVerifier
     def self.for_reason: (Symbol reason) -> Integer
   end
 
-  class VerificationError < StandardError
-    attr_reader reason: Symbol
-    attr_reader cause_error: Exception?
-    def initialize: (Symbol reason, String detail, ?cause_error: Exception?) -> void
+  class AbiMismatchError < StandardError
   end
 
-  module SafeText
-    MAX_LENGTH: Integer
-    def self.quote: (untyped value) -> String
+  class ModuleIntegrityError < StandardError
+  end
+
+  class TrapError < StandardError
   end
 
   class Config
     SYSTEM_CLOCK: clock
 
-    attr_reader roots: Array[OpenSSL::X509::Certificate]
+    attr_reader roots: Array[String]
     attr_reader clock: clock
 
     def self.defaults: () -> Config
     def self.builder: () -> Config::Builder
 
     def initialize: (?roots: roots?, ?clock: clock?) -> void
+    def custom_roots?: () -> bool
 
     class Builder
       def initialize: () -> void
@@ -163,90 +158,5 @@ module ApplePurchaseReceiptVerifier
                      original_purchase_date_ms: Integer?, original_application_version: String?,
                      expiration_date_ms: Integer?, unknown_attributes: Hash[Integer, Array[String]]) -> void
     def to_json: (*untyped) -> String
-  end
-
-  module Roots
-    APPLE_ROOT_SHA256: Array[String]
-    def self.apple_roots: () -> Array[OpenSSL::X509::Certificate]
-  end
-
-  module CertificateStructure
-    def self.sound?: (OpenSSL::X509::Certificate certificate) -> bool
-  end
-
-  module Asn1
-    MAX_DEPTH: Integer
-    MAX_NODES: Integer
-
-    TAG_INTEGER: Integer
-    TAG_OCTET_STRING: Integer
-    TAG_OID: Integer
-    TAG_UTF8_STRING: Integer
-    TAG_IA5_STRING: Integer
-    TAG_SEQUENCE: Integer
-    TAG_SET: Integer
-    TAG_CONTEXT_0: Integer
-    TAG_OCTET_STRING_BER: Integer
-
-    class Error < StandardError
-    end
-
-    def self.scan!: (String bytes) -> Integer
-    def self.parse: (String bytes, ?depth_limit: Integer) -> Node
-    def self.parse_scanned: (String bytes, ?depth_limit: Integer) -> Node
-    def self.read_single: (String bytes) -> [Integer, String]
-    def self.oid_string: (String contents) -> String
-
-    class Node
-      attr_accessor buffer: String
-      attr_accessor tag: Integer
-      attr_accessor constructed: bool
-      attr_accessor start: Integer
-      attr_accessor finish: Integer
-      attr_accessor content_start: Integer
-      attr_accessor content_end: Integer
-      attr_accessor children: Array[Node]?
-      def raw: () -> String
-      def content: () -> String
-      def content_length: () -> Integer
-      def kids: () -> Array[Node]
-      def octet_string?: () -> bool
-      def octet_value: () -> String
-    end
-  end
-
-  class ClockOnce
-    def initialize: (clock clock) -> void
-    def millis: () -> Integer
-  end
-
-  module Chain
-    MAX_PATH_LENGTH: Integer
-    KEY_CERT_SIGN_BIT: Integer
-    PROCESSED_EXTENSIONS: Array[String]
-    PROCESSED_LEAF_EXTENSIONS: Array[String]
-
-    def self.normalize_roots: (roots) -> Array[OpenSSL::X509::Certificate]
-    def self.valid_at?: (OpenSSL::X509::Certificate, Integer at_millis) -> bool
-    def self.issued_by?: (OpenSSL::X509::Certificate, OpenSSL::X509::Certificate) -> bool
-    def self.ca?: (OpenSSL::X509::Certificate) -> bool
-    def self.authenticated_top_down: (Array[OpenSSL::X509::Certificate] embedded,
-                                      Array[OpenSSL::X509::Certificate] anchors) -> Array[OpenSSL::X509::Certificate]
-    def self.build_and_validate_path: (OpenSSL::X509::Certificate target,
-                                       Array[OpenSSL::X509::Certificate] authenticated,
-                                       Array[OpenSSL::X509::Certificate] anchors,
-                                       Integer instant) -> Array[OpenSSL::X509::Certificate]
-    def self.validate_pair: (OpenSSL::X509::Certificate leaf, OpenSSL::X509::Certificate intermediate,
-                             Array[OpenSSL::X509::Certificate] anchors, Integer instant) -> void
-    def self.keys_used_during: [T] () { () -> T } -> Array[untyped]
-    def self.decode_public_key!: (OpenSSL::X509::Certificate cert) -> OpenSSL::PKey::PKey
-  end
-
-  module PacificTime
-    STANDARD_OFFSET: Integer
-    DAYLIGHT_OFFSET: Integer
-    ZONE_LABEL: String
-    def self.wall_clock: (Time) -> Time
-    def self.offset: (Time) -> Integer
   end
 end

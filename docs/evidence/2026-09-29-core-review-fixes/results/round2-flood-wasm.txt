@@ -1,0 +1,14 @@
+== $SCRATCH/g1b
+receipt.der: 2.3 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+r2-flood-1057-certificates.der: 2.3 ms, memory 6160384 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 1057 certificates, more than the maximum of 10"}
+r2-flood-certificates.der: 339.0 ms, memory 94240768 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 1175651 certificates, more than the maximum of 10"}
+r2-flood-crls.der: 304.6 ms, memory 94240768 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 1175648 CRLs, more than the maximum of 10"}
+r2-flood-junk.der: 6.0 ms, memory 7471104 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS ContentInfo"}
+r2-flood-signer-infos.der: 336.4 ms, memory 94240768 B: {"verified":false,"reason":"MALFORMED","message":"receipt carries 1175649 SignerInfos, more than the maximum of 4"}
+== $SCRATCH/core-fix2/out
+receipt.der: 3.9 ms, memory 2031616 B: {"verified":true,"payload":{"receipt_type":"ProductionSandbox","app_item_id":null,"bundle_id":"com.example.app","bundle_id_bytes":"DA9jb20uZ
+r2-flood-1057-certificates.der: 16.5 ms, memory 6160384 B: {"verified":false,"reason":"MALFORMED","message":"receipt embeds 1057 certificates, more than the maximum of 10"}
+r2-flood-certificates.der: 11.3 ms, memory 7471104 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+r2-flood-crls.der: 7.5 ms, memory 7471104 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}
+r2-flood-junk.der: 4.6 ms, memory 7471104 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: not a CMS ContentInfo"}
+r2-flood-signer-infos.der: 7.4 ms, memory 7471104 B: {"verified":false,"reason":"MALFORMED","message":"malformed CMS structure: more than 100000 ASN.1 values"}

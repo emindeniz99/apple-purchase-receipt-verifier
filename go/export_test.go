@@ -1,20 +1,21 @@
 package applereceipt
 
-// Test-only hooks for the external conformance_test package, which runs
-// the decodeBase64 groups of fixtures/cases.json against the two
-// base64 decoders directly rather than through a verifier: 0.7 exposes no
-// public decoder.
+import (
+	"fmt"
 
-// DecodeReceiptDataForTest is the receipt-data decoder every base64 entry
-// point uses, the size cap included.
-func DecodeReceiptDataForTest(text string) ([]byte, error) { return receiptDataFromBase64(text) }
+	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/host"
+)
 
-// DecodeX5CEntryForTest is the decoder parseX5CCertificate hands an x5c
-// entry to, with its refusal reported as parseX5CCertificate reports it.
-func DecodeX5CEntryForTest(text string) ([]byte, error) {
-	der := decodeBase64(text)
-	if der == nil {
-		return nil, newError(ReasonInvalidCertificate, "x5c entry is not canonical standard base64")
+// NewVerifierOverModule is NewVerifier over a module other than the
+// embedded aprv.wasm: the facade tests use a test double of the ABI to
+// choose the module's answers. It applies the same checks NewVerifier does.
+func NewVerifierOverModule(config *Config, module []byte) (*Verifier, error) {
+	if err := checkConfig(config); err != nil {
+		return nil, err
 	}
-	return der, nil
+	pool, err := host.NewPoolFromModule(module, initConfig(config.roots, config.builtin))
+	if err != nil {
+		return nil, fmt.Errorf("applereceipt: %w", err)
+	}
+	return &Verifier{pool: pool, clock: config.clock}, nil
 }

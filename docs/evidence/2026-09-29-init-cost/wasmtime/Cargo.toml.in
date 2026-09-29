@@ -1,0 +1,17 @@
+# Evidence only (2026-09-29): init cost on Wasmtime. Filled in by
+# ../run.sh, which replaces @REPO@ with the repository root, so the bench
+# drives aprv.wasm through the ABI tests' own hosts (hand-rolled core and
+# component runtime) and builds nothing of its own around Wasmtime.
+[package]
+name = "init-cost-wasmtime"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+aprv-abi-tests = { path = "@REPO@/rust/bindings/abi/tests" }
+
+[workspace]
+
+[profile.release]
+debug = false

@@ -30,10 +30,11 @@ class Reason(enum.Enum):
     #: Apple's WWDR marker OID.
     INVALID_CERTIFICATE_PURPOSE = "INVALID_CERTIFICATE_PURPOSE"
     #: The signature and chain verified, so the payload bytes are Apple's,
-    #: but they do not parse. ``Failure.cause`` carries the parser's
-    #: exception. Deterministic for the same input: alert, do not retry.
+    #: but they do not parse; the message says what. Deterministic for the
+    #: same input: alert, do not retry.
     UNREADABLE_PAYLOAD = "UNREADABLE_PAYLOAD"
-    #: The library itself failed before it could decide. ``Failure.cause``
-    #: carries the exception. Deterministic for the same input: alert, do
-    #: not retry.
+    #: The library itself failed before it could decide: the Wasm module
+    #: trapped, its answer could not be read, or the configured clock failed.
+    #: ``Failure.cause`` carries the exception. Deterministic for the same
+    #: input unless the clock was the cause: alert, do not blindly retry.
     INTERNAL_ERROR = "INTERNAL_ERROR"

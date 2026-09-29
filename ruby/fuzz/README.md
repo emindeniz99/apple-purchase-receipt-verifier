@@ -1,9 +1,12 @@
 # Fuzz targets
 
-Six coverage-guided [ruzzy][ruzzy] targets over the parsers this port
-hand-writes and the entry points a consumer calls. `run.sh` pairs each with
-the shared fixtures that seed it, so nothing under `fixtures/` is copied
-here.
+Four coverage-guided [ruzzy][ruzzy] targets over the entry points a consumer
+calls. Since 0.8 those are a thin host around `aprv.wasm`: the parsers, the
+chain walk and the signature checks run inside the module, which `rust/fuzz`
+fuzzes with its own targets. What ruzzy's Ruby branch coverage steers here is
+the wrapper: input handling, the instance pool, the canonical-ABI call and the
+decoding of the module's answers. `run.sh` pairs each target with the shared
+fixtures that seed it, so nothing under `fixtures/` is copied here.
 
 [ruzzy]: https://github.com/trailofbits/ruzzy
 
@@ -15,38 +18,38 @@ MAKE="make --environment-overrides V=1" \
   gem install ruzzy                                    # or: bundle install with gemfiles/fuzz.gemfile
 
 ./run.sh all              # every target, 60 s each
-./run.sh parse_cms 600    # one target, ten minutes
+./run.sh verify_receipt 600    # one target, ten minutes
 ./run.sh list             # the target names
 ```
 
 | target | what it reaches | invariant beyond "nothing escapes" |
 |---|---|---|
-| `parse_der` | `Asn1.scan!`, then `Asn1.parse` on bytes it passed | only `Asn1::Error` escapes |
-| `parse_cms` | `Cms.parse` and every accessor on what it returns | after a scan that passed, only `VerificationError` escapes |
-| `verify_receipt` | `Receipt.verify`: CMS, payload, chain, signature, on base64-encoded fuzz bytes | an accepted receipt fails against an unrelated anchor set |
+| `verify_receipt` | `Verifier#verify_receipt` on base64-encoded fuzz bytes | an accepted receipt fails against an unrelated anchor set |
 | `verify_receipt_base64` | `Verifier#verify_receipt`, the string a client sends | never raises; the verdict comes back as a `VerificationResult` |
 | `verify_transaction` | `Verifier#verify_signed_data`, the one JWS entry point | a JWS that verifies under the fixture root fails under Apple's roots |
 | `endpoint_json` | `Verifier#verify_receipt_endpoint` on a request body | never raises, the answer is always JSON with a numeric `status`, and it is never `21009`/`INTERNAL_ERROR` on unauthenticated fuzz input |
 
 The names are the Rust port's, in snake_case because they are Ruby file
-names; `rust/fuzz/` additionally carries `parse-certificate`, which here
-would only fuzz OpenSSL.
+names. The two targets of 0.7 that fuzzed this port's hand-written ASN.1 and
+CMS readers (`parse_der`, `parse_cms`) are gone with those readers.
 
 The anchor-set invariant is the one that lets a fuzzer find "accepts what it
 should not" rather than only crashes: without it an input that verifies tells
-you nothing about *why*. `verify_receipt` pins Apple's three bundled roots plus
-`fixtures/generated-0.7/receipt-root.der`, so both the generated fixtures and the
-two public Apple receipts get past the chain check and the fuzzer can explore
-what lies beyond it; the unrelated set it must then fail against is the
-fixture *JWS* root. `verify_transaction` is the mirror image: the fixture JWS
-root trusted, Apple's bundled roots unrelated.
+you nothing about *why*. `verify_receipt` pins Apple's three roots (the
+repository's `certs/`) plus `fixtures/generated-0.7/receipt-root.der`, so both
+the generated fixtures and the two public Apple receipts get past the chain
+check and the fuzzer can explore what lies beyond it; the unrelated set it must
+then fail against is the fixture *JWS* root. `verify_transaction` is the mirror
+image: the fixture JWS root trusted, Apple's roots unrelated.
 
 "Nothing escapes" is stricter than it sounds. Every entry point is called
 through `FuzzSupport.call`, which rescues `Exception`, not `StandardError`:
-a `NoMethodError` from a nil the parser did not expect, a `TypeError`, or a
-`SystemStackError` from a recursive path that grew back into the bounded
-scanner would each end the run with the input that caused it. That last one
-is why this port has a hand-written ASN.1 scanner at all.
+a `NoMethodError` from a nil the wrapper did not expect, a `TypeError`, or a
+`SystemStackError` would each end the run with the input that caused it. A
+trap in the module is not a finding here: it is answered as INTERNAL_ERROR,
+and the `endpoint_json` target treats that answer (21009) as an invariant
+violation, since a fuzzer cannot forge a signature and the module should never
+trap on unauthenticated input.
 
 ## How it works
 
@@ -70,8 +73,8 @@ Two consequences worth knowing before editing anything here:
 
 `ASAN_OPTIONS` carries `use_sigaltstack=0` on purpose: ASAN's alternate
 signal stack otherwise displaces the one Ruby installs to turn a stack
-overflow into `SystemStackError`, and the depth bound the scanner exists to
-enforce becomes unobservable — the process would just die.
+overflow into `SystemStackError`, so a deep recursion would kill the process
+instead of raising.
 
 There is no `-timeout`. libFuzzer's per-unit watchdog is a `SIGALRM` it
 declines to install over an existing handler; under Ruby it never takes
@@ -82,21 +85,9 @@ in CI, exactly as the Go and Rust targets rely on.
 
 ## Throughput
 
-Measured here on one core of a 4-core x86-64 box, three targets at a time,
-420 s each on a corpus already warmed by an earlier pass:
-
-| target | execs | branch coverage |
-|---|---|---|
-| `parse_der` | 651 k | 42 |
-| `verify_transaction` | 390 k | 81 |
-| `parse_cms` | 388 k | 67 |
-| `verify_receipt` | 145 k | 156 |
-| `endpoint_json` | 70 k | 188 |
-| `verify_receipt_base64` | 39 k | 165 |
-
-The two slow ones are slow for a good reason: their seeds are whole base64
-receipts, so libFuzzer raises `max_len` to ~100 KB and every unit is a full
-decode plus chain build. They buy depth rather than executions.
+Not measured for the wasm host. Every call runs the module, so a unit costs
+about a millisecond for a receipt (`bench/startup.rb`); seeds that are whole
+base64 receipts raise libFuzzer's `max_len` to about 100 KB and cost more.
 
 ## Corpus and findings
 
@@ -116,7 +107,7 @@ it could drift from the shared one.
 ruzzy is AGPL-3.0-only; this project is MIT. It is a development tool run out
 of process against the harness in this directory, and neither ruzzy nor
 anything under `ruby/fuzz/` is distributed with the gem — the gemspec ships
-`lib/`, `sig/`, `certs/`, `README.md` and `LICENSE` and nothing else. Its
+`lib/`, `sig/`, `licenses/`, `README.md` and `LICENSE` and nothing else. Its
 dependency lives in `../gemfiles/fuzz.gemfile`, out of both the gemspec and
 the test Gemfile, so a tool that needs clang can never fail the Ruby 3.3
 matrix leg.

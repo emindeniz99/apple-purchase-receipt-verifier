@@ -18,10 +18,13 @@
 // compare the status, and read a few top-level fields off the JSON the ABI
 // returned.
 //
-// Every case in the file runs except the decodeBase64 groups, which call a
-// port's base64 decoders directly: the ABI exposes none, so the manifest
-// marks them abiUnreachable and they are counted, never passed. After the
-// loop every id the manifest lists must have run or been counted.
+// It drives the `_bytes` calls, which take a pointer and a length and answer
+// the document aprv.wasm answers ({"verified":...}), so every case runs, the
+// decodeBase64 groups included: the manifest writes each text as the input
+// that reaches its decoder (a receipt-data text as it is, an x5c text as the
+// three x5c entries of a JWS header), and a text landed on the refusing side
+// of the base64 rule when the answer is its group's reason and the message
+// names base64. After the loop every id the manifest lists must have run.
 //
 // The JSON reader below is a top-level scalar extractor and nothing more:
 // no vendored parser, and no ambition to become one. Nested pointers
@@ -190,9 +193,9 @@ bool top_level_value(const std::string &json, const std::string &key, std::strin
 }
 
 // The unescaped contents of a JSON string token, or `false` if the token is
-// not a string. `\u` is refused rather than half-decoded: no expected value
-// in the vector file needs it, and a wrong answer here would look like a
-// library bug.
+// not a string. A `\u` escape is decoded to UTF-8, a surrogate pair joined:
+// a verified JWS payload arrives as a JSON string of the signed text, whose
+// control characters the wire writes as `\u00XX`.
 bool json_string(const std::string &token, std::string &out, std::string &error) {
   if (token.size() < 2 || token.front() != '"' || token.back() != '"') return false;
   out.clear();
@@ -213,9 +216,51 @@ bool json_string(const std::string &token, std::string &out, std::string &error)
       case 'n': out.push_back('\n'); break;
       case 'r': out.push_back('\r'); break;
       case 't': out.push_back('\t'); break;
-      case 'u':
-        error = "harness limit: this reader does not decode \\u escapes";
-        return false;
+      case 'u': {
+        // A code point, a surrogate pair joined, written as UTF-8.
+        const auto hex4 = [&token](size_t at, unsigned &value) {
+          if (at + 4 > token.size() - 1) return false;
+          value = 0;
+          for (size_t k = at; k < at + 4; k += 1) {
+            const char h = token[k];
+            value <<= 4;
+            if (h >= '0' && h <= '9') value |= static_cast<unsigned>(h - '0');
+            else if (h >= 'a' && h <= 'f') value |= static_cast<unsigned>(h - 'a' + 10);
+            else if (h >= 'A' && h <= 'F') value |= static_cast<unsigned>(h - 'A' + 10);
+            else return false;
+          }
+          return true;
+        };
+        unsigned code = 0;
+        if (!hex4(i + 1, code)) return false;
+        i += 4;
+        if (code >= 0xD800 && code <= 0xDBFF) {
+          unsigned low = 0;
+          if (i + 2 >= token.size() || token[i + 1] != '\\' || token[i + 2] != 'u' || !hex4(i + 3, low) ||
+              low < 0xDC00 || low > 0xDFFF) {
+            error = "a lone surrogate in a JSON string";
+            return false;
+          }
+          code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+          i += 6;
+        }
+        if (code < 0x80) {
+          out.push_back(static_cast<char>(code));
+        } else if (code < 0x800) {
+          out.push_back(static_cast<char>(0xC0 | (code >> 6)));
+          out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+        } else if (code < 0x10000) {
+          out.push_back(static_cast<char>(0xE0 | (code >> 12)));
+          out.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+          out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+        } else {
+          out.push_back(static_cast<char>(0xF0 | (code >> 18)));
+          out.push_back(static_cast<char>(0x80 | ((code >> 12) & 0x3F)));
+          out.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+          out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+        }
+        break;
+      }
       default: return false;
     }
   }
@@ -325,6 +370,55 @@ struct Outcome {
   std::string json;
 };
 
+// One `_bytes` verify call. `document` is the wire document the ABI answered;
+// `json` is what the checks read: the payload when verified (a JWS payload is
+// the signed text, which the wire carries as a string), the document
+// otherwise. False, with `error` set, when the document and the status
+// disagree or the call itself failed.
+bool verify_bytes(AprvVerifier *verifier, bool receipt, const std::vector<unsigned char> &input,
+                  Outcome &outcome, std::string &document, std::string &error) {
+  AprvResult result = {0, nullptr};
+  const uint8_t *data = input.empty() ? nullptr : input.data();
+  if (receipt) {
+    aprv_verify_receipt_bytes(verifier, data, input.size(), &result);
+  } else {
+    aprv_verify_signed_data_bytes(verifier, data, input.size(), &result);
+  }
+  outcome.status = result.status;
+  document = result.json == nullptr ? std::string() : std::string(result.json);
+  aprv_string_free(result.json);
+  if (result.status >= 100 || document.empty()) {
+    error = "the call itself failed with status " + std::to_string(result.status);
+    return false;
+  }
+  std::string verified;
+  const bool ok = result.status == APRV_REASON_OK;
+  if (!top_level_value(document, "verified", verified) || verified != (ok ? "true" : "false")) {
+    error = "status " + std::to_string(result.status) + " with the document " + document;
+    return false;
+  }
+  if (!ok) {
+    outcome.json = document;
+    return true;
+  }
+  std::string payload;
+  if (!top_level_value(document, "payload", payload)) {
+    error = "a verified document without a payload: " + document;
+    return false;
+  }
+  if (payload.front() == '"') {
+    std::string text;
+    if (!json_string(payload, text, error)) {
+      if (error.empty()) error = "the JWS payload is not a JSON string";
+      return false;
+    }
+    outcome.json = text;
+  } else {
+    outcome.json = payload;
+  }
+  return true;
+}
+
 bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
   const std::string op = kase.get("op");
 
@@ -344,7 +438,6 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
     return false;
   }
 
-  AprvResult result = {0, nullptr};
   if (op == "verifyReceipt" || op == "verifySignedData") {
     std::vector<unsigned char> input;
     if (!read_file(kase.get("input"), input)) {
@@ -352,14 +445,13 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
       error = "cannot read input " + kase.get("input");
       return false;
     }
-    // Every string the ABI takes is NUL-terminated; a fixture is a byte range.
-    std::string input_text(input.begin(), input.end());
-    if (op == "verifyReceipt") {
-      aprv_verify_receipt(verifier, input_text.c_str(), &result);
-    } else {
-      aprv_verify_signed_data(verifier, input_text.c_str(), &result);
-    }
-  } else if (op == "verifyReceiptEndpoint") {
+    // A byte range, as the fixture is: nothing ends at a NUL.
+    std::string document;
+    const bool done = verify_bytes(verifier, op == "verifyReceipt", input, outcome, document, error);
+    aprv_verifier_free(verifier);
+    return done;
+  }
+  if (op == "verifyReceiptEndpoint") {
     uint32_t environment = static_cast<uint32_t>(std::stoul(kase.get("endpointEnv")));
     std::vector<unsigned char> body;
     if (!read_file(kase.get("request"), body)) {
@@ -367,28 +459,89 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
       error = "cannot read request " + kase.get("request");
       return false;
     }
-    std::string body_text(body.begin(), body.end());
     char *response = nullptr;
-    int status = aprv_verify_receipt_endpoint(verifier, environment, body_text.c_str(), &response);
+    int status = aprv_verify_receipt_endpoint_bytes(verifier, environment, body.empty() ? nullptr : body.data(),
+                                                    body.size(), &response);
+    aprv_verifier_free(verifier);
     if (status != APRV_REASON_OK) {
-      aprv_verifier_free(verifier);
       error = "the endpoint call itself failed with status " + std::to_string(status);
       return false;
     }
     // The endpoint never reports a verdict through the return value: the
     // Apple status code is a field of the body it answers.
-    result.status = APRV_REASON_OK;
-    result.json = response;
-  } else {
-    aprv_verifier_free(verifier);
-    error = "no adapter for operation " + op;
-    return false;
+    outcome.status = APRV_REASON_OK;
+    outcome.json = response == nullptr ? std::string() : std::string(response);
+    aprv_string_free(response);
+    return true;
   }
   aprv_verifier_free(verifier);
+  error = "no adapter for operation " + op;
+  return false;
+}
 
-  outcome.status = result.status;
-  outcome.json = result.json == nullptr ? std::string() : std::string(result.json);
-  aprv_string_free(result.json);
+// Whether `text` holds "base64" in any case.
+bool names_base64(const std::string &text) {
+  std::string lower;
+  for (char c : text) lower.push_back(static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c));
+  return lower.find("base64") != std::string::npos;
+}
+
+// A decodeBase64 group: each `probe` entry is `<decoder>~><empty>~><path>`,
+// the input that reaches the decoder (a receipt-data text as it is, an x5c
+// text inside a JWS header) and whether the text itself is empty.
+bool run_decode(const Case &kase, std::string &error) {
+  AprvVerifier *verifier = aprv_verifier_new(nullptr, nullptr, 0, nullptr);
+  if (verifier == nullptr) {
+    error = "aprv_verifier_new refused the bundled roots";
+    return false;
+  }
+  const bool expect_refusal = kase.get("expect") == "error";
+  const std::vector<std::string> probes = kase.all("probe");
+  for (const std::string &probe : probes) {
+    const std::vector<std::string> parts = split(probe, '~');
+    // "<decoder>", ">0|1", ">path": split on '~' leaves the '>' in front.
+    if (parts.size() != 3 || parts[1].size() != 2 || parts[2].size() < 2) {
+      error = "unparseable probe " + probe;
+      aprv_verifier_free(verifier);
+      return false;
+    }
+    const std::string decoder = parts[0];
+    const bool empty_text = parts[1][1] == '1';
+    const std::string path = parts[2].substr(1);
+    std::vector<unsigned char> input;
+    if (!read_file(path, input)) {
+      error = "cannot read probe " + path;
+      aprv_verifier_free(verifier);
+      return false;
+    }
+    Outcome outcome;
+    std::string document;
+    if (!verify_bytes(verifier, decoder == "receipt-data", input, outcome, document, error)) {
+      aprv_verifier_free(verifier);
+      return false;
+    }
+    std::string reason_token;
+    std::string reason;
+    std::string message_token;
+    std::string message;
+    std::string ignored;
+    top_level_value(document, "reason", reason_token);
+    json_string(reason_token, reason, ignored);
+    top_level_value(document, "message", message_token);
+    json_string(message_token, message, ignored);
+    const std::string refusal = decoder == "receipt-data" ? "MALFORMED" : "INVALID_CERTIFICATE";
+    const bool refused = outcome.status != APRV_REASON_OK && reason == refusal && (empty_text || names_base64(message));
+    if (outcome.status == APRV_REASON_OK || refused != expect_refusal) {
+      error = decoder + " probe " + path + (expect_refusal ? " not refused by the decoder: " : " refused by the decoder: ") + document;
+      aprv_verifier_free(verifier);
+      return false;
+    }
+  }
+  aprv_verifier_free(verifier);
+  if (probes.empty()) {
+    error = "a decodeBase64 group with no probe";
+    return false;
+  }
   return true;
 }
 
@@ -550,12 +703,12 @@ int main(int argc, char **argv) {
   size_t skipped_fields = 0;
   size_t checked_fields = 0;
   size_t skipped_to_json = 0;
+  size_t decode_groups = 0;
   // Every id the manifest lists, which gen-cases-manifest.mjs writes one per
-  // case in cases.json, and the ids that reached a verdict or were counted
-  // as unreachable: the coverage self-check after the loop compares them.
+  // case in cases.json, and the ids that reached a verdict: the coverage
+  // self-check after the loop compares them.
   std::vector<std::string> listed;
   std::set<std::string> ran;
-  std::set<std::string> unreachable;
 
   std::string line;
   while (std::getline(stream, line)) {
@@ -573,10 +726,17 @@ int main(int argc, char **argv) {
     const std::string id = kase.get("id");
     listed.push_back(id);
 
-    // A decodeBase64 group calls a port's base64 decoders directly; the ABI
-    // exposes none, so it is counted as not reachable, never as passed.
-    if (kase.has("abiUnreachable")) {
-      unreachable.insert(id);
+    // A decodeBase64 group, through the verify calls from its probes.
+    if (kase.get("op") == "decodeBase64") {
+      ran.insert(id);
+      decode_groups += 1;
+      std::string error;
+      if (run_decode(kase, error)) {
+        passed += 1;
+      } else {
+        std::cerr << "FAIL  " << id << ": " << error << "\n";
+        failed += 1;
+      }
       continue;
     }
     skipped_fields += static_cast<size_t>(std::stoul(kase.get("skippedFields", "0")));
@@ -634,16 +794,16 @@ int main(int argc, char **argv) {
   std::cout << skipped_to_json
             << " toJson values not compared here (no JSON parser), left to "
                "rust/ffi/tests/conformance.py\n";
-  std::cout << unreachable.size() << " decodeBase64 groups not reachable: the ABI exposes no base64 decoder\n";
+  std::cout << decode_groups << " decodeBase64 groups through the verify calls\n";
   if (passed + failed + skipped == 0) {
     std::cerr << "the manifest held no cases\n";
     return 2;
   }
-  // Coverage self-check: every case id the manifest lists ran or was counted
-  // as unreachable, compared id by id rather than against a literal count.
+  // Coverage self-check: every case id the manifest lists ran, compared id
+  // by id rather than against a literal count.
   std::vector<std::string> missing;
   for (const std::string &id : listed) {
-    if (ran.count(id) == 0 && unreachable.count(id) == 0) missing.push_back(id);
+    if (ran.count(id) == 0) missing.push_back(id);
   }
   if (!missing.empty()) {
     std::cerr << missing.size() << " of " << listed.size() << " cases did not run:";

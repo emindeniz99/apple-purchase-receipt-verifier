@@ -12,3 +12,6 @@
 source "https://rubygems.org"
 
 gem "ruzzy", "~> 0.8"
+
+# The library the harness fuzzes needs wasmtime, its one runtime dependency.
+gem "wasmtime", ">= 48.0.1"

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Drives the host layer (the canonical-ABI call over aprv.wasm) with the
+       shared corpora and measures it. A plain console app, deliberately NOT a
+       member of ApplePurchaseReceiptVerifier.sln, like bench/ and fuzz/:
+       `dotnet build`, `dotnet test` and `dotnet format` resolve that solution,
+       so keeping this project out of it keeps it away from the formatting
+       gate. The library grants it InternalsVisibleTo. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ApplePurchaseReceiptVerifier.CorpusRun</RootNamespace>
+    <AssemblyName>ApplePurchaseReceiptVerifier.CorpusRun</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CA1031;CA1848</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/ApplePurchaseReceiptVerifier/ApplePurchaseReceiptVerifier.csproj"
+                      SetTargetFramework="TargetFramework=net8.0" />
+  </ItemGroup>
+
+</Project>

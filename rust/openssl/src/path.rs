@@ -73,6 +73,18 @@ impl PathOutcome {
         self.anchored && self.problems.is_empty()
     }
 
+    /// Whether every link of the path holds: no certificate lacks an
+    /// issuer and no signature fails. Other problems may remain.
+    fn links_hold(&self) -> bool {
+        self.anchored
+            && !self.problems.iter().any(|problem| {
+                matches!(
+                    problem.kind,
+                    PathProblemKind::NoIssuer | PathProblemKind::BadSignature
+                )
+            })
+    }
+
     fn failed(kind: PathProblemKind) -> PathOutcome {
         PathOutcome {
             chain: Vec::new(),
@@ -95,9 +107,9 @@ std::thread_local! {
 /// `anchors`, at `at_secs` (Unix seconds), with at most `max_intermediates`
 /// certificates between the target and the anchor.
 ///
-/// The store holds `anchors` and nothing else. `X509_V_FLAG_PARTIAL_CHAIN`
-/// makes each of them a trust anchor whether or not it is self-signed, as a
-/// pinned anchor is. No purpose, policy, revocation or host check is asked
+/// Each run's store holds one of `anchors` and nothing else (see [`run`]).
+/// `X509_V_FLAG_PARTIAL_CHAIN` makes it a trust anchor whether or not it is
+/// self-signed, as a pinned anchor is. No purpose, policy, revocation or host check is asked
 /// for. An anchor is trusted by fiat: its own validity window, CA flag and
 /// path length constraint are not judged. An expiry reported at exactly the
 /// `notAfter` second is waived, since RFC 5280 includes that second.
@@ -124,6 +136,26 @@ pub fn verify_path(
     outcome
 }
 
+/// Runs the validation once per anchor that may have issued the target or
+/// a certificate of `untrusted`, each time with a store holding that anchor
+/// alone, and keeps the first path that passes.
+///
+/// OpenSSL's issuer lookup takes the first store certificate whose subject
+/// name matches (and whose key identifier and `keyUsage` allow it), and
+/// does not try another when the signature then fails. With every anchor
+/// in one store, the order of the caller's list, or an anchor that merely
+/// carries an intermediate's name, would decide whether a path verifies. A
+/// store of one anchor leaves OpenSSL nothing to choose. The candidates are
+/// the anchors `X509_check_issued` pairs with the target or a certificate
+/// of `untrusted` (name, key identifiers, `keyUsage`; no key is used to
+/// pick them), plus an anchor that is one of those certificates: at most
+/// one run per anchor.
+///
+/// When no run passes, the problems reported are those of the first run
+/// whose links all hold (no missing issuer and no failed signature), since
+/// that anchor is the one the path really leads to; failing that, those of
+/// the first run. When no anchor is a candidate, one run over every anchor
+/// reports why nothing leads to one.
 fn run(
     target: &Certificate,
     untrusted: &[Certificate],
@@ -131,8 +163,70 @@ fn run(
     at_secs: i64,
     max_intermediates: u32,
 ) -> Option<PathOutcome> {
+    let candidates: Vec<&Certificate> = anchors
+        .iter()
+        .filter(|anchor| {
+            std::iter::once(target).chain(untrusted).any(|certificate| {
+                may_have_issued(anchor, certificate) || anchor.same_as(certificate)
+            })
+        })
+        .collect();
+    if candidates.is_empty() {
+        let every: Vec<&Certificate> = anchors.iter().collect();
+        return run_with(
+            target,
+            untrusted,
+            anchors,
+            &every,
+            at_secs,
+            max_intermediates,
+        );
+    }
+    let mut first_linked: Option<PathOutcome> = None;
+    let mut first: Option<PathOutcome> = None;
+    for anchor in candidates {
+        let outcome = run_with(
+            target,
+            untrusted,
+            anchors,
+            &[anchor],
+            at_secs,
+            max_intermediates,
+        )?;
+        if outcome.passed() {
+            return Some(outcome);
+        }
+        if first_linked.is_none() && outcome.links_hold() {
+            first_linked = Some(outcome);
+        } else if first.is_none() {
+            first = Some(outcome);
+        }
+    }
+    first_linked.or(first)
+}
+
+/// Whether OpenSSL's issuer lookup would pair `issuer` with `certificate`
+/// (`X509_check_issued`: names, key identifiers, `keyUsage`). No signature
+/// is checked.
+fn may_have_issued(issuer: &Certificate, certificate: &Certificate) -> bool {
+    let paired = issuer.x509().issued(certificate.x509()) == X509VerifyResult::OK;
+    drain_errors();
+    paired
+}
+
+/// One `X509_verify_cert` run over a store holding `store` and nothing
+/// else. `anchors` is the caller's whole list, for the anchor waivers and
+/// for [`PathOutcome::anchored`].
+fn run_with(
+    target: &Certificate,
+    untrusted: &[Certificate],
+    anchors: &[Certificate],
+    store: &[&Certificate],
+    at_secs: i64,
+    max_intermediates: u32,
+) -> Option<PathOutcome> {
     let mut builder = X509StoreBuilder::new().ok()?;
-    for anchor in store_anchors(target, untrusted, anchors) {
+    for anchor in store {
         builder.add_cert(anchor.x509().to_owned()).ok()?;
     }
     let mut param = X509VerifyParam::new().ok()?;
@@ -183,61 +277,6 @@ fn run(
         anchored,
         problems,
     })
-}
-
-/// The anchors the store holds. OpenSSL's issuer lookup takes the first
-/// store certificate whose subject name matches (and whose key identifier
-/// and `keyUsage` allow it), and does not try another when the signature
-/// then fails; among anchors that share a subject name, the order of the
-/// caller's list would decide whether a path verifies. So of such anchors
-/// only the ones that issued the target or a certificate of `untrusted`
-/// (by name and signature, [`Certificate::issued_by`]) are kept, and a
-/// group none of whose members issued any is kept whole: the path fails
-/// there whichever comes first. Only anchor keys are used, at most once per
-/// anchor that shares a name and certificate given.
-fn store_anchors<'a>(
-    target: &Certificate,
-    untrusted: &[Certificate],
-    anchors: &'a [Certificate],
-) -> Vec<&'a Certificate> {
-    let shares_a_name = |anchor: &Certificate| {
-        anchors
-            .iter()
-            .any(|other| !other.same_as(anchor) && same_subject(other, anchor))
-    };
-    let issued: Vec<Option<bool>> = anchors
-        .iter()
-        .map(|anchor| {
-            shares_a_name(anchor).then(|| {
-                std::iter::once(target)
-                    .chain(untrusted)
-                    .any(|certificate| certificate.issued_by(anchor))
-            })
-        })
-        .collect();
-    anchors
-        .iter()
-        .zip(&issued)
-        .filter(|(anchor, flag)| match flag {
-            None | Some(true) => true,
-            Some(false) => !anchors.iter().zip(&issued).any(|(other, other_issued)| {
-                *other_issued == Some(true) && same_subject(other, anchor)
-            }),
-        })
-        .map(|(anchor, _)| anchor)
-        .collect()
-}
-
-/// Whether two certificates' subject names are equal, as OpenSSL compares
-/// them when it looks an issuer up (`X509_NAME_cmp`).
-fn same_subject(a: &Certificate, b: &Certificate) -> bool {
-    let same = a
-        .x509()
-        .subject_name()
-        .try_cmp(b.x509().subject_name())
-        .is_ok_and(|order| order == core::cmp::Ordering::Equal);
-    drain_errors();
-    same
 }
 
 fn install_callback(ctx: &mut X509StoreContextRef) {

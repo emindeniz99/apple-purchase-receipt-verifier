@@ -1,3 +1,6 @@
 bin/
 obj/
 *.user
+
+# The Wasm module is not committed; copy it here or set APRV_WASM (see README).
+src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm
