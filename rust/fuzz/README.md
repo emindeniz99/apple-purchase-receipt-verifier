@@ -1,21 +1,20 @@
 # Fuzz targets
 
-Seven `cargo fuzz` targets over the parsers this crate hand-writes and the
-verifiers a consumer calls. `run.sh` pairs each with the shared fixtures
+Four `cargo fuzz` targets over the verifiers a consumer calls. The parsers
+underneath are OpenSSL's (`../openssl/`), which OSS-Fuzz fuzzes upstream;
+the targets that drove this crate's own DER, X.509 and CMS readers went
+with those readers. `run.sh` pairs each with the shared fixtures
 that seed it, so nothing under `fixtures/` is copied here.
 
 ```bash
 cargo install cargo-fuzz --locked
 rustup toolchain install nightly --profile minimal   # sanitizer flags
 ./run.sh all              # every target, 60 s each
-./run.sh parse-cms 600    # one target, ten minutes
+./run.sh verify-receipt 600    # one target, ten minutes
 ```
 
 | target | what it reaches | invariant beyond "no panic" |
 |---|---|---|
-| `parse-der` | `asn1::parse_exact` on raw bytes | none |
-| `parse-certificate` | `x509::Certificate::from_der`, then every accessor | none |
-| `parse-cms` | `cms::parse_cms` and the two signed-attribute readers, for every `SignerInfo` | none |
 | `verify-receipt` | `Verifier::verify_receipt` on the base64 of arbitrary DER: CMS, chain, signature, payload | never `INTERNAL_ERROR`; an accepted receipt fails against an unrelated anchor set |
 | `verify-receipt-base64` | `Verifier::verify_receipt`, the string a client sends | none |
 | `verify-transaction` | `Verifier::verify_signed_data` | a JWS accepted under the fixture root fails under Apple's roots |
