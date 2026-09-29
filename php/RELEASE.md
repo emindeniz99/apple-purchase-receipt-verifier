@@ -26,7 +26,7 @@ published artifact and the claim least exercised anywhere else.
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.2"
-          extensions: openssl, json
+          extensions: json, curl
           coverage: none
       - name: poll Packagist for the version, then install it outside any checkout
         env:
@@ -43,10 +43,31 @@ published artifact and the claim least exercised anywhere else.
           done
           composer require --no-interaction \
             "emindeniz99/apple-purchase-receipt-verifier:$VERSION"
+          # Downloads the release's aprv binary and checks it against the
+          # SHA-256 binaries.json pins in the package.
+          vendor/bin/aprv-install
           php verify-smoke.php
 ```
 
-The smoke script must, at minimum, load the bundled roots and verify a
-genuine Apple-signed receipt — that is what catches a package that installed
-but shipped no `php/certs/`, which is exactly the failure the `export-ignore`
-layout option in `BOOTSTRAP.md` can cause.
+The smoke script must, at minimum, `Verifier::create(Config::defaults())` over
+the default CLI transport and verify a genuine Apple-signed receipt: that is
+what catches a package that installed but shipped no `php/bin/aprv-install` or
+no `php/binaries.json`, an installer that cannot fetch the release's binary,
+or a pinned hash that no longer matches the published asset. It is the PHP leg
+of the plan's acceptance test 8.
+
+## Pinning the binaries' hashes at release
+
+`php/binaries.json` names the release tag and the SHA-256 of each `aprv`
+binary; `vendor/bin/aprv-install` refuses any download that does not match.
+Because Composer installs the tag's tree, the hashes are committed on the
+release branch before the tag, from the binaries the release will publish:
+
+```bash
+(cd dist && sha256sum aprv-* > SHA256SUMS)
+php php/tools/update-binaries.php --tag "v$VERSION" --sums dist/SHA256SUMS
+```
+
+An asset the sums file lacks is reset to `null`, so its platform is told to use
+the server option. `php/CI-NOTES.md` has the CI wiring and the open question
+about the macOS and Windows binaries.
