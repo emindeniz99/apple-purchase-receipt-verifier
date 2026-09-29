@@ -215,21 +215,24 @@ too. `scripts/docker-smoke.sh IMAGE` checks all of this.
 
 ## Measured
 
-With the G1c component (the final 0.7 core, component SHA-256
-`84fe428c…`), `x86_64-unknown-linux-musl`, on a shared 4-CPU machine at a
-load average of 1 to 3 (`scripts/startup.py`, medians of 7 runs and of
-200 calls):
+The sizes are of the build on the G1d component (the 0.7 core after
+review round 3, component SHA-256 `ccccbfb5…`), `x86_64-unknown-linux-musl`.
+The start-up and per-call times were measured on a shared 4-CPU machine
+with `scripts/startup.py` (medians of 7 runs and of 200 calls): the first
+five rows on the G1c component (`84fe428c…`) at a load average of 1 to 3,
+the last on G1d at a load average of 11 to 15. G1d changed six failure
+messages and no code path the timings exercise.
 
 | What | Value |
 |---|---|
-| Shipped binary (runtime-only, static, stripped) | 11,535,280 B; 4,062,512 B gzip -9 |
-| Embedded `.ccwasm` | 9,193,448 B |
-| Full (Cranelift) glibc build | 12,485,456 B; 4,477,704 B gzip -9 |
+| Shipped binary (runtime-only, static, stripped) | 11,547,568 B; 4,068,062 B gzip -9 |
+| Embedded `.ccwasm` | 9,205,832 B |
+| Full (Cranelift) glibc build | 12,485,792 B; 4,478,520 B gzip -9 |
 | Load: engine and embedded component (`aprv info`) | 10 to 20 ms |
 | `aprv serve` to its address line; to the first g5 result | 16.4 ms; 24.7 ms |
 | One-shot CLI process, g5 receipt; JWS | 19.5 ms; 26.9 ms |
 | HTTP keep-alive, fresh lifecycle, per call: g5; JWS | 6.2 ms; 14.0 ms |
-| HTTP keep-alive per call, pool (the default) vs fresh, one later run at a load average of 5 to 9: g5; JWS | pool 3.2 ms, 10.8 ms; fresh 7.9 ms, 15.4 ms |
+| HTTP keep-alive per call, pool (the default) vs fresh, G1d: g5; JWS | pool 3.4 ms, 12.9 ms; fresh 8.2 ms, 18.3 ms |
 
 ## Tests and checks
 
