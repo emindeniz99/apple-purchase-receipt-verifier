@@ -17,10 +17,10 @@ work.
 | A2 core | `lane/core` | steps 1.3, 1.4, 1.5 (build script), 1.14: workspace, surface, wire, canonical ABI, schemas | started 2026-09-29 |
 | A3 core | `lane/core` | steps 1.7, 1.8, 1.10, 1.12, 1.13 | waits on A2 |
 | B server | `lane/server` | Phase 2 against the stand-in component | handed back 2026-09-29 (head 38042f0); parked until the real component: 24 tests green, clippy clean in both feature sets, static musl binary runs in an empty chroot, corpus over HTTP (fresh and pool) and the CLI 6,149 identical + 27 over-cap + 3 intended, 311 cases 119 pass / 159 stand-in / 33 not expressible, managed smoke 10/10, hostile component 6/6, Schemathesis 394 passed, Spectral 0 beside stand-in schemas; Docker not built (no daemon) |
-| C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head 5fd91f7); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
-| C go | `lane/host-go` | steps 4.6, 4.7 | handed back 2026-09-29 (head 6d1d069); parked until the real module: 90 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 as expected, `-race` clean, staticcheck 0, static binary runs in an empty chroot |
+| C node | `lane/host-node` | steps 4.1 to 4.5 | handed back 2026-09-29 (head e2d151c after the blob rewrite); parked until the real module: 90 of 311 cases pass on the stand-in, every non-conformance test passes (50 of 50); smokes on Node 20 to 26, Bun, Deno, workerd, edge-runtime, Chromium |
+| C go | `lane/host-go` | steps 4.6, 4.7 | handed back 2026-09-29 (head 60ed382 after the blob rewrite, follow-up pending); parked until the real module: 90 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 as expected, `-race` clean, staticcheck 0, static binary runs in an empty chroot |
 | C java (Endive, API shell) | `lane/host-java` | steps 3.1, 3.2, 3.5 to 3.8 | handed back 2026-09-29 (head b4cfcb1); parked until the real module: 366 tests green on JDK 21, the 311 cases on 11, 17 and 21 with 90 passing and 221 listed stand-in differences, Java 8 leg 32 tests green, `java/` unchanged (516 tests), corpus 6,176/2/1 at 1 and 4 threads, class majors 52/55 proven, 0 native references across 475 classes, classpath guard proven with Maven and Gradle |
-| C python | `lane/host-python` | steps 5.1 to 5.3 | handed back 2026-09-29 (head 2c78909); parked until the real module: 94 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 in 13 s, CPython 3.10 to 3.14 green (218 expected failures each), ruff and mypy clean, 8 platform-tagged wheels built and the install-failure path proven with a faked platform |
+| C python | `lane/host-python` | steps 5.1 to 5.3 | handed back 2026-09-29 (head 64a6cfe after the blob rewrite); parked until the real module: 94 of 311 cases on the stand-in, host-layer corpus 6,176/2/1 in 13 s, CPython 3.10 to 3.14 green (218 expected failures each), ruff and mypy clean, 8 platform-tagged wheels built and the install-failure path proven with a faked platform |
 | C ruby | `lane/host-ruby` | step 5.5 | handed back 2026-09-29 (head 22c464b); parked until the real module: 90 of 311 cases on the stand-in (221 differ), corpus 6,176/2/1, rubocop, steep and rbs clean, gem 1,025,024 B, clean install picks the prebuilt native gem; thread scaling and the first-create time to be re-measured on a quiet machine (5.6 s here against the spike's 1.3 s) |
 | C swift | `lane/host-swift` | step 5.4 | started 2026-09-29 |
 | C dotnet | `lane/host-dotnet` | step 5.6 | started 2026-09-29 |
@@ -159,10 +159,16 @@ work.
   the core's message text ("receipt is not valid base64", "x5c entry is
   not valid base64"); lane A2 keeps those messages stable or gives the
   runners a hook.
-- Node's and Go's branches carry the stand-in binary with scratch build
-  paths inside it in one historical blob each (no secret; the real,
-  path-remapped module replaces the file). Left as is: no history
-  rewrite.
+- **Stand-in blobs removed from lane history** (owner, 2026-09-29: a
+  history rewrite on an unmerged lane branch is allowed to drop a large
+  blob). Every host lane had committed the 2.83 MB stand-in module
+  against R14; each lane branch is rewritten with `git filter-branch`
+  to drop only that file (every commit kept, same messages and authors,
+  new hashes), force-pushed with a lease, and the package reads the
+  module from an ignored path with `APRV_WASM`/`APRV_COMPONENT`
+  overriding it. Done: Node, Go, Python. Pending: Ruby, Swift, .NET,
+  Java (before their hand-backs). The real module is added once, in Go
+  and Swift only, at integration.
 
 ## Merge policy on this branch
 
