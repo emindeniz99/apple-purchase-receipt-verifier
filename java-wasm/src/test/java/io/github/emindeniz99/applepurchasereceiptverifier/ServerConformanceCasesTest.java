@@ -1,5 +1,10 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
@@ -10,6 +15,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
@@ -126,7 +132,27 @@ class ServerConformanceCasesTest extends ConformanceCases {
         HttpConn.Response info = child(AppleRootCerts.roots()).connection().send("GET", "/v1/info", new byte[0], null);
         Object component = ServerJson.member(ServerJson.parse(info.text()), "component_sha256");
         System.out.println("conformance (server): the child's component_sha256 is " + component);
-        return STAND_IN_COMPONENT.equals(component) ? StandIn.list(FILE) : Collections.<String>emptySet();
+        return STAND_IN_COMPONENT.equals(component) ? list(FILE) : Collections.<String>emptySet();
+    }
+
+    /** The ids a stand-in list names, one per line; {@code #} starts a comment. */
+    private static Set<String> list(String file) throws IOException {
+        Set<String> ids = new TreeSet<>();
+        try (InputStream in = ServerConformanceCasesTest.class.getResourceAsStream(file)) {
+            if (in == null) {
+                throw new IllegalStateException(file + " is not on the test classpath");
+            }
+            BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                int comment = line.indexOf('#');
+                line = (comment < 0 ? line : line.substring(0, comment)).trim();
+                if (!line.isEmpty()) {
+                    ids.add(line);
+                }
+            }
+        }
+        return ids;
     }
 
     @Override

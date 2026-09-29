@@ -29,12 +29,11 @@ import org.junit.jupiter.api.TestFactory;
  * Endive, {@link ServerConformanceCasesTest} on the server engine.
  *
  * <p>Each case is its own {@link DynamicTest} named by its case id, and a last
- * test asserts that every case id in the file ran. While the module is a
- * stand-in (the 0.6 core, {@link StandIn}), the cases it is known to answer
- * differently are listed per engine ({@link #standInFile()}): such a case
- * passes only if it still differs, and a listed case that starts passing
- * fails, so the list can only shrink. With any other module the list is
- * ignored and every case must pass.</p>
+ * test asserts that every case id in the file ran. Every case must pass,
+ * unless an engine runs a stand-in and lists the cases the stand-in answers
+ * differently ({@link #standInFile()}): such a case passes only if it still
+ * differs, and a listed case that starts passing fails, so the list can only
+ * shrink.</p>
  */
 abstract class ConformanceCases {
 
@@ -44,11 +43,15 @@ abstract class ConformanceCases {
     /** A verifier on this engine for {@code config}. */
     abstract Verifier verifier(Config config) throws Exception;
 
-    /** The listed stand-in differences, or none when the module is not the stand-in. */
-    abstract Set<String> standInDifferences() throws Exception;
+    /** The listed stand-in differences; none unless the engine runs a stand-in. */
+    Set<String> standInDifferences() throws Exception {
+        return Collections.emptySet();
+    }
 
     /** The file {@link #standInDifferences()} reads. */
-    abstract String standInFile();
+    String standInFile() {
+        return "(no stand-in list)";
+    }
 
     private static final ObjectMapper MAPPER = Cases.MAPPER;
 
@@ -239,7 +242,9 @@ abstract class ConformanceCases {
      * text must get any other answer, since the decoded bytes are neither a
      * receipt nor a certificate. Telling the two apart by the message is this
      * host's limit: the main artifact's messages say "is not canonically
-     * padded standard base64" for exactly these refusals.
+     * padded standard base64" for exactly these refusals. The one exception
+     * is the empty receipt-data text, which the core refuses before decoding
+     * as "receipt is empty", as the main artifact's verifyReceipt("") does.
      */
     private List<String> decodeBase64Failures(JsonNode kase) throws Exception {
         String id = kase.get("id").asText();
@@ -278,8 +283,11 @@ abstract class ConformanceCases {
                     failures.add(where + " verified, which no decoded text can");
                     continue;
                 }
-                boolean refused =
-                        failure.reason() == refusal && failure.message().contains("base64");
+                // The empty text is refused before decoding (the case says so), in
+                // the main artifact's own words for verifyReceipt("").
+                boolean refused = failure.reason() == refusal
+                        && (failure.message().contains("base64")
+                                || (text.isEmpty() && failure.message().equals("receipt is empty")));
                 if (ok && refused) {
                     failures.add(where + " was refused by the base64 rule: " + failure);
                 } else if (!ok && !refused) {
