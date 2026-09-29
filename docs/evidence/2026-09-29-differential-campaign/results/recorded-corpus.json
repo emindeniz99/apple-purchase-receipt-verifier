@@ -1,0 +1,553 @@
+{
+ "comment": "Corpus rows of the 2026-09-29 differential campaign, by R20 group (classify.py).",
+ "rows": {
+  "fuzz/1113/transaction/verify-shared-sandbox": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/1123/substrate/time/jws/intermediate-expired-at-signing": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/1181/receipt/reject-signer-certificate-version-11": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/12/substrate/pkix/jws/signer-aki-mismatch": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/1250/substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/1317/transaction/reject-environment-outside-accept-set": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/1370/substrate/pkix/jws/name-extra-whitespace": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/1374/receipt/reject-signer-certificate-version-11": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/140/receipt/reject-signer-on-an-unimplemented-curve": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/1412/transaction/accept-payload-without-a-signed-date": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/1429/substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/1460/substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/149/substrate/cms/digest-params-absent": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/1494/transaction/reject-apple-official-wrong-bundle-id": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/1619/receipt/creation-date-twice-is-judged-at-now": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/1641/receipt/reject-unreadable-entry-under-a-trusted-chain": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/1833/substrate/cms/unsigned-attributes": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/1935/substrate/time/jws/nb-plus-1ms": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/2042/receipt/reject-signer-on-an-unimplemented-curve": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/2145/substrate/time/jws/nb-minus-1ms": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/2259/substrate/pkix/jws/root-pathlen-0": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/2262/substrate/pkix/receipt/name-extra-whitespace": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/2268/substrate/pkix/jws/intermediate-no-basic-constraints": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/23/substrate/cms/attributes-indefinite-length": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/2303/substrate/pkix/receipt/chain-through-impostor-root": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/2457/substrate/pkix/receipt/issuer-loop": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/2463/transaction/verify-shared-sandbox": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/2477/substrate/pkix/jws/intermediate-no-basic-constraints": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/2577/substrate/pkix/receipt/signer-no-basic-constraints": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/2639/receipt/reject-signer-carrying-one-extension-twice": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/2765/substrate/pkix/receipt/name-case-differs": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/2775/substrate/time/jws/mid": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/2830/substrate/cms/digestalgorithms-sha1-only": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/2874/substrate/time/receipt/anchor-not-yet-valid-at-signing": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3021/transaction/reject-x5c-leaf-with-junk-character": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/3053/substrate/pkix/receipt/name-extra-whitespace": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3187/substrate/pkix/jws/signer-aki-mismatch": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/3200/substrate/cms/content-constructed-octets": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3248/receipt/reject-signer-on-an-unimplemented-curve": {
+   "class": "reason",
+   "group": "check-order-marker-before-key"
+  },
+  "fuzz/3298/substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3357/substrate/pkix/receipt/signer-keyusage-certsign-only": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/3422/substrate/time/receipt/anchor-expired-at-signing": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3450/substrate/time/jws/pre-1970-nb-plus-1ms": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/346/receipt/unreadable-creation-date-is-judged-at-now": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3516/substrate/time/receipt/anchor-not-yet-valid-at-signing": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3554/transaction/accept-payload-without-a-signed-date": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/3584/transaction/reject-empty-payload-segment": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/3597/receipt/reject-signer-on-an-unimplemented-curve": {
+   "class": "reason",
+   "group": "check-order-marker-before-key"
+  },
+  "fuzz/3631/receipt/reject-signer-with-a-corrupt-extension": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/3641/substrate/time/jws/mid": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/3666/substrate/time/jws/na-plus-1s": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/3724/substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/376/substrate/pkix/receipt/intermediates-5": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/3818/receipt/reject-signer-certificate-version-11": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/3848/substrate/time/jws/na": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/3934/substrate/flood/digestalgorithms-1000": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3948/substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/3971/substrate/cms/content-constructed-octets-definite": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/3982/receipt/reject-signer-certificate-version-11": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/4009/substrate/time/jws/anchor-not-yet-valid-at-signing": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/4031/substrate/pkix/receipt/signer-no-basic-constraints": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/414/substrate/time/jws/anchor-expired-at-signing": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/4189/receipt/reject-signer-with-a-corrupt-extension": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/4277/substrate/time/receipt/na-plus-1s": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/4319/substrate/time/jws/na-plus-1s": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/4426/substrate/pkix/receipt/intermediate-unknown-critical-extension": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/4466/substrate/cms/crls-empty": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/4497/receipt/reject-signer-carrying-one-extension-twice": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/459/substrate/time/jws/intermediate-na-exact": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/4607/substrate/time/receipt/na-plus-999ms": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/461/receipt/reject-signer-carrying-one-extension-twice": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/464/receipt/reject-signer-on-an-unimplemented-curve": {
+   "class": "reason",
+   "group": "check-order-marker-before-key"
+  },
+  "fuzz/4672/substrate/pkix/jws/intermediate-pathlen-0": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/4773/substrate/pkix/receipt/intermediate-version-1": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/478/substrate/pkix/receipt/chain-through-impostor-root": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/4810/receipt/reject-unreadable-creation-date-under-a-foreign-chain": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/4819/receipt/unreadable-creation-date-is-judged-at-now": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/4853/substrate/parse/generated/der-baseline": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/4899/substrate/time/jws/nb-minus-1ms": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/4910/transaction/accept-null-and-unmodelled-claims": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/4959/substrate/pkix/jws/signer-no-basic-constraints": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/4968/substrate/cms/digestalgorithms-sha256-sha512": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/4983/substrate/time/receipt/na": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/4987/substrate/time/jws/mid": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/512/substrate/time/jws/pre-1970-minus-1ms": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/576/transaction/internal-error-on-product-id-number": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/600/substrate/cms/signer-identified-by-ski": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/698/transaction/reject-intermediate-without-wwdr-marker-oid": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/718/transaction/accept-historical-payload-under-expired-chain": {
+   "class": "reason",
+   "group": "x5c-jdk-refuses-first"
+  },
+  "fuzz/78/transaction/verify-apple-official-transaction-info": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/79/transaction/verify-shared-sandbox": {
+   "class": "reason",
+   "group": "x5c-openssl-refuses-first"
+  },
+  "fuzz/848/substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/897/receipt/reject-signer-with-a-corrupt-extension": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/916/receipt/reject-signer-with-a-corrupt-extension": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "fuzz/927/substrate/pkix/receipt/chain-through-impostor-root": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "fuzz/952/receipt/reject-signer-on-an-unimplemented-curve": {
+   "class": "reason",
+   "group": "check-order-marker-before-key"
+  },
+  "fuzz/981/substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "fuzz/985/substrate/flood/unsigned-attribute-values-10000": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "hostile/receipt-der/g5-m0-701123523": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "hostile/receipt-der/g5-m1-127707244": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "hostile/receipt-der/g5-m1-236749769": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "hostile/receipt-der/g5-m1-324520034": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "hostile/receipt-der/g5-m1-853597831": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "hostile/receipt-der/g5-m1-893548114": {
+   "class": "reason",
+   "group": "java-catch-all"
+  },
+  "hostile/receipt-der/gen-m1-280546414": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "hostile/receipt-der/gen-m1-619385370": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "hostile/receipt-der/gen-m1-933684943": {
+   "class": "reason",
+   "group": "bouncycastle-refuses-first"
+  },
+  "receipt/reject-signer-on-an-unimplemented-curve": {
+   "class": "reason",
+   "group": "check-order-marker-before-key"
+  },
+  "seeds/anchors/fixtures/generated-0.7/core-review-receipt-econtent-7-levels.der": {
+   "class": "verdict",
+   "group": "java-aligns"
+  },
+  "seeds/anchors/fixtures/generated-0.7/core-review-receipt-eleven-crls.der": {
+   "class": "verdict",
+   "group": "java-aligns"
+  },
+  "seeds/anchors/fixtures/generated-0.7/core-review-receipt-five-octet-length.der": {
+   "class": "payload",
+   "group": "java-aligns"
+  },
+  "seeds/anchors/fixtures/generated-0.7/core-review-receipt-value-7-levels.der": {
+   "class": "verdict",
+   "group": "java-aligns"
+  },
+  "seeds/anchors/fixtures/generated-0.7/der-jws-intermediate-extensions-twice.jws": {
+   "class": "verdict",
+   "group": "tolerant-envelope-decoding"
+  },
+  "seeds/anchors/fixtures/generated-0.7/der-receipt-certificates-field-twice.der": {
+   "class": "verdict",
+   "group": "tolerant-envelope-decoding"
+  },
+  "seeds/anchors/fixtures/generated-0.7/der-receipt-intermediate-extensions-twice.der": {
+   "class": "verdict",
+   "group": "tolerant-envelope-decoding"
+  },
+  "seeds/anchors/fixtures/generated-0.7/lookup-receipt-twin-ahead-of-signer.der": {
+   "class": "verdict",
+   "group": "signer-identity-twin"
+  },
+  "seeds/anchors/fixtures/generated-0.7/receipt-signer-corrupt-extension.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/anchors/fixtures/generated-0.7/receipt-signer-duplicate-extension.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/anchors/fixtures/generated-0.7/receipt-signer-version-11.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/anchors/fixtures/generated-0.7/review-receipt-malformed-signed-attrs-second.der": {
+   "class": "verdict",
+   "group": "tolerant-envelope-decoding"
+  },
+  "seeds/anchors/fixtures/generated/receipt-signer-corrupt-extension.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/anchors/fixtures/generated/receipt-signer-duplicate-extension.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/anchors/fixtures/generated/receipt-signer-version-11.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/apple/fixtures/generated-0.7/core-review-receipt-econtent-7-levels.der": {
+   "class": "reason",
+   "group": "java-aligns"
+  },
+  "seeds/apple/fixtures/generated-0.7/core-review-receipt-eleven-crls.der": {
+   "class": "reason",
+   "group": "java-aligns"
+  },
+  "seeds/apple/fixtures/generated-0.7/der-jws-intermediate-extensions-twice.jws": {
+   "class": "reason",
+   "group": "tolerant-envelope-decoding"
+  },
+  "seeds/apple/fixtures/generated-0.7/der-receipt-certificates-field-twice.der": {
+   "class": "reason",
+   "group": "tolerant-envelope-decoding"
+  },
+  "seeds/apple/fixtures/generated-0.7/der-receipt-intermediate-extensions-twice.der": {
+   "class": "reason",
+   "group": "tolerant-envelope-decoding"
+  },
+  "seeds/apple/fixtures/generated-0.7/receipt-signer-corrupt-extension.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/apple/fixtures/generated-0.7/receipt-signer-duplicate-extension.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/apple/fixtures/generated-0.7/receipt-signer-version-11.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/apple/fixtures/generated-0.7/review-receipt-malformed-signed-attrs-first.der": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  },
+  "seeds/apple/fixtures/generated-0.7/review-receipt-malformed-signed-attrs-second.der": {
+   "class": "reason",
+   "group": "tolerant-envelope-decoding"
+  },
+  "seeds/apple/fixtures/generated/receipt-signer-corrupt-extension.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/apple/fixtures/generated/receipt-signer-duplicate-extension.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "seeds/apple/fixtures/generated/receipt-signer-version-11.der": {
+   "class": "reason",
+   "group": "signer-certificate-refusal-stage"
+  },
+  "substrate/cms/crls-garbage": {
+   "class": "reason",
+   "group": "envelope-decode-stage"
+  }
+ }
+}
