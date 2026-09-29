@@ -68,22 +68,37 @@ name = "bench"
 
 # One workspace and one lockfile (docs/rust-core/ARCHITECTURE.md §2): the
 # core, its OpenSSL adapter, the binding-neutral model (aprv-surface), its
-# JSON (aprv-wire) and the C ABI. `fuzz/` stays outside, because it builds
-# on nightly, with its own lockfile and the same patch below. `server/`
-# (aprv-server) runs aprv.wasm through Wasmtime and depends on no crate
-# here; it keeps its own lockfile, so Wasmtime's graph stays out of this
-# one. `vendor/` is the patched openssl-sys.
+# JSON (aprv-wire), the canonical-ABI guest built as aprv.wasm (aprv-abi)
+# and the C ABI. `fuzz/` stays outside, because it builds on nightly, with
+# its own lockfile and the same patch below. `server/` (aprv-server) runs
+# aprv.wasm through Wasmtime and depends on no crate here; it keeps its
+# own lockfile, so Wasmtime's graph stays out of this one. `vendor/` is
+# the patched openssl-sys. `bindings/abi/tests/` is the ABI test host, a
+# package of its own for the same reason as the server.
 [workspace]
 members = [
     ".",
     "openssl",
     "bindings/surface",
     "bindings/wire",
+    "bindings/abi",
     "ffi",
     # "server",
 ]
-exclude = ["fuzz", "vendor", "server"]
+exclude = ["fuzz", "vendor", "server", "bindings/abi/tests"]
 resolver = "2"
+
+# aprv.wasm (bindings/abi/build.sh builds it with `--profile wasm`): a
+# release build with one codegen unit and link-time optimisation, as every
+# measured module was, and `panic = "abort"`, since wasm32-wasip1 cannot
+# unwind. Its own profile so the native release builds keep unwinding:
+# the core and the C ABI contain a panic and report it as a verdict.
+[profile.wasm]
+inherits = "release"
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
 
 # openssl-sys 0.9.117 takes only openssl-src 300.x (OpenSSL 3.x). This copy
 # differs from the crates.io release in one manifest line, which lets its
