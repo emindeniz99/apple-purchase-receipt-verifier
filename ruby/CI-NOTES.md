@@ -26,8 +26,16 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
   2,000-call memory test.
 - Add a step on the 3.3 leg only: `bundle exec ruby -Ilib bench/threads.rb
   --assert`. It prints verifications per second at 1, 2 and 4 threads and
-  fails unless four threads reach twice one thread (checked only when 4 CPUs
-  are usable; ubuntu-latest has 4).
+  fails unless four threads reach 1.5x one thread on both rows, best of three
+  trials (the second and third run only when the first misses; checked only
+  when 4 CPUs are usable; ubuntu-latest has 4). The threshold was 2.0x with
+  one trial until PR #187's `ruby (3.3)` job failed it on noise: 4 threads
+  reached 1.94x on the JWS row and 2.19x on the G5 row, and 2 threads 2.03x
+  on the JWS row, on a hosted runner whose 4 vCPUs are shared. A free 4-core
+  machine gives 3.3x to 4.1x and a module run with the GVL held (`gvl: true`)
+  gives 0.94x to 1.06x, so 1.5x still fails a held GVL and no longer
+  depends on all four cores being free. With three of four cores kept busy
+  locally the ratios were 1.58x and 2.14x.
 - Delete the `ruby script/gen_roots.rb && git diff --exit-code
   lib/apple_purchase_receipt_verifier/roots_data.rb` step: Phase 7 removed
   `roots_data.rb`, `ruby/certs` and the generator together (below).
