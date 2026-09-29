@@ -14,9 +14,9 @@ values: DER in, certificates, facts and booleans out.
 |---|---|
 | `Certificate` | one X.509 certificate (`d2i_X509`, whole input): comparison, issuance (`X509_check_issued` then `X509_verify`), key usability, extensions, validity at a second, CA capability, the readability rules the 0.7 reader applied (version, octet-aligned signature, no duplicate extension, decodable basicConstraints and keyUsage) |
 | `verify_path` | builds and validates a path to the caller's anchors at a given second, and reports every problem with its depth |
-| `SignedData` | a CMS `SignedData` (`d2i_CMS_ContentInfo`): content, embedded certificates, per-`SignerInfo` signer matching, signed-attribute facts, nesting of the values OpenSSL keeps whole, and the signature check |
-| `envelope_members` | the certificate and `SignerInfo` counts of an envelope, from a shallow decode, before the full one |
-| `payload::*` | the receipt payload through the templates in `payload.c` |
+| `SignedData` | a CMS `SignedData`: `parse` bounds the envelope (`EnvelopeLimits`) before `d2i_CMS_ContentInfo`; then content, embedded certificates, per-`SignerInfo` signer matching, signed-attribute facts and the signature check |
+| `payload::*` | the receipt payload through the templates in `payload.c`, after the header walk, within a `Budget` |
+| `full_decodes_during` | how many full CMS decodes ran while a closure ran (the tests' seam for "refused before the full decode") |
 | `verify_es256`, `sha256` | the JWS signature and the digest |
 | `keys_used_during` | the SPKI of every key used while a closure runs (the tests' key-use seam) |
 
@@ -51,14 +51,29 @@ values: DER in, certificates, facts and booleans out.
   declares its own. `payload.c` is the receipt payload (a SET OF
   attributes, each a `SEQUENCE OF ANY` whose first three fields the adapter
   types; the contract accepts a fourth field). `envelope.c` is a shallow
-  `SignedData` whose members stay raw `ANY` values: it gives the member
+  `ContentInfo` and `SignedData` whose members stay raw `ANY` values: it
+  names the content type and gives the certificate, CRL and `SignerInfo`
   counts before `d2i_CMS_ContentInfo` builds every embedded certificate's
-  public key, and the raw `eContent` for the one check OpenSSL does not
-  make (the chunks of a constructed `OCTET STRING` must be `OCTET STRING`s;
-  OpenSSL joins any universal tag). That walk uses `ASN1_get_object`, the
-  TLV header decoder. `ASN1_SEQUENCE_ANY` and `ASN1_SET_ANY` measure the
-  nesting of values OpenSSL keeps whole (attribute values, algorithm
-  parameters) against the core's depth bound.
+  public key. Both declare their items' prototypes, and `envelope.c`
+  asserts the layout `src/sys.rs` mirrors (`_Static_assert` there, `const`
+  assertions here).
+- **The header walk** (`src/walk.rs`): `ASN1_get_object`, OpenSSL's TLV
+  header decoder, over raw BER. It reads tags and lengths and decodes no
+  value, allocates nothing and copies nothing. It is the only file of the
+  adapter that calls `ASN1_get_object` (`src/sys.rs` declares it), and the
+  core calls it nowhere: `tools/check-layering.mjs` rule 6 holds both. It
+  answers what OpenSSL's decoders do not:
+  - over the whole envelope, before the full decode and after the shallow
+    decode's member bounds: nesting of constructed values of every class
+    (the core's depth bound, 32) and the number of values (its node
+    budget, 100,000);
+  - the chunks of a constructed `OCTET STRING` (the `eContent`, a payload
+    attribute value, the Xcode wrap) must be `OCTET STRING`s, as X.690
+    section 8.7.3 says; OpenSSL joins any tag. Six constructed levels
+    pass, as OpenSSL decodes six (`ASN1_MAX_STRING_NEST`);
+  - over the receipt payload, the same budgets plus the header forms 0.7's
+    reader refused and OpenSSL reads: a tag in high-tag-number form, a
+    length of more than four octets, and a constructed string value.
 - **Signatures**: `EcdsaSig` and `EcKey` through rust-openssl for ES256
   (P-256 only, 64-byte `r || s`); everything else inside the CMS and path
   calls above.
@@ -91,6 +106,15 @@ the crate denies `unsafe_op_in_unsafe_fn` and Clippy's
   anchor the chain.
 - `../tests/trust_pinning.rs` scans this crate's source for trust-path,
   configuration, provider and socket APIs.
+
+**Two limits of the isolation test.** On a build configured
+`no-autoload-config` (the prebuilt native and wasm32-wasip1 installs of the
+evidence), rust-openssl's initialisation never asks for the configuration,
+so the test's "isolated" child proves the rule only on the vendored build,
+which CI runs. And OpenSSL still reads its CPU-capability variables
+(`OPENSSL_ia32cap`, `OPENSSL_armcap`, ...) on native builds with assembly;
+a planted value can make a process crash with an illegal instruction, but
+cannot change a verdict. Neither is tested.
 
 **One limit.** OpenSSL's configuration is process-wide. A host process
 that initialises OpenSSL with its configuration before this crate's first

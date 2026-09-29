@@ -267,11 +267,17 @@ since-expired chain verify at its own creation date.
 
 A certificate on the path (not the anchor) that marks critical an
 extension OpenSSL's path validation does not process makes the path
-`UNTRUSTED_CHAIN`, as it does for a PKIX validator. Processed are
-OpenSSL 4's: keyUsage, extKeyUsage, basicConstraints, subjectAltName,
-certificatePolicies, policyMappings, policyConstraints, inhibitAnyPolicy,
-nameConstraints, cRLDistributionPoints, nsCertType, proxyCertInfo, the
-OCSP noCheck extension and the two RFC 3779 extensions. Names chain by
+`UNTRUSTED_CHAIN`, as it does for a PKIX validator. Accepted when
+critical are the extensions OpenSSL 4 lists as supported: keyUsage,
+extKeyUsage, basicConstraints, subjectAltName, certificatePolicies,
+policyMappings, policyConstraints, inhibitAnyPolicy, nameConstraints,
+cRLDistributionPoints, nsCertType, proxyCertInfo, the OCSP noCheck
+extension and the two RFC 3779 extensions. Accepted is not evaluated: no
+policy check and no purpose is asked for, so certificate policies and
+extKeyUsage are not judged, on the leaf or on an intermediate, and
+cRLDistributionPoints, OCSP noCheck and nsCertType are not acted on.
+Nothing unsigned depends on them: only a certificate a pinned root vouched
+for is on the path. Names chain by
 their RFC 5280 canonical form (case, whitespace and string type do not
 matter), as in Java. A certificate decodes only as
 exactly three elements, and a BOOLEAN only with exactly one content octet.
@@ -304,12 +310,18 @@ directly through a seam that records every key used.
 
 Everything this crate parses is attacker-supplied, so the bounds are part of
 the design rather than a configuration. ASN.1 is decoded by OpenSSL's
-template decoder, with its own limits (30 levels of nested templates, 5 of
-constructed strings, indefinite (BER) lengths only on constructed values);
-the values it keeps whole (receipt attribute fields, SignerInfo attribute
-values and algorithm parameters) may nest at most 32 constructed values,
-counted as BouncyCastle counts them; trailing bytes are refused. At most 10
-embedded certificates and 4 SignerInfos, counted on a shallow decode before
+template decoder, with its own limits (30 levels of nested templates, six
+constructed levels of a string, indefinite (BER) lengths only on
+constructed values). Before it, a walk over the headers alone
+(`ASN1_get_object`) bounds each value parsed on its own, the CMS envelope
+and each attribute SET: at most 32 nested constructed values of any class,
+counted as BouncyCastle counts them, and at most 100,000 values; the
+primitive values OpenSSL would keep whole are handed to its own decoder,
+and the chunks of a constructed `OCTET STRING` must be `OCTET STRING`s. In
+the payload, a tag in high-tag-number form and a length of more than four
+octets are refused, as 0.7's reader refused them. Trailing bytes are
+refused. At most 10 embedded certificates, 10 CRLs and 4 SignerInfos,
+counted on a shallow decode before the envelope's header walk and before
 any certificate is decoded. JSON: nesting depth 64, numbers of at most
 1,000 characters, names of at most 50,000 UTF-16 code units, strict
 grammar. Chains: at most six certificates, built by OpenSSL from the
