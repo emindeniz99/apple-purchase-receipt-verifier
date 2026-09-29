@@ -121,6 +121,14 @@
         </includes>
         <targetPath>META-INF</targetPath>
       </resource>
+      <!-- The licence and NOTICE texts of the code compiled into aprv.wasm
+           (OpenSSL, wasi-libc, musl, the Rust standard library), read in
+           place from the repository's one source. LicensesTest checks the
+           packaged set against it. -->
+      <resource>
+        <directory>../licenses/wasm</directory>
+        <targetPath>META-INF/licenses/aprv-wasm</targetPath>
+      </resource>
     </resources>
     <plugins>
       <!-- The module's bytes must match the committed SHA-256 before Endive
@@ -444,6 +452,10 @@
                 <configuration>
                   <target>
                     <property name="dir" value="${project.build.directory}/server-jars/linux-x86_64/io/github/emindeniz99/applepurchasereceiptverifier/server"/>
+                    <!-- The binary embeds the compiled module: its licence texts ship with it. -->
+                    <copy todir="${project.build.directory}/server-jars/linux-x86_64/META-INF/licenses/aprv-wasm" overwrite="true">
+                      <fileset dir="${project.basedir}/../licenses/wasm"/>
+                    </copy>
                     <copy file="${aprv.server.linux-x86_64}" tofile="${dir}/aprv-x86_64-unknown-linux-musl" overwrite="true"/>
                     <chmod file="${dir}/aprv-x86_64-unknown-linux-musl" perm="755"/>
                     <checksum file="${dir}/aprv-x86_64-unknown-linux-musl" algorithm="SHA-256" property="sha" />
@@ -512,6 +524,10 @@
                 <configuration>
                   <target>
                     <property name="dir" value="${project.build.directory}/server-jars/linux-aarch64/io/github/emindeniz99/applepurchasereceiptverifier/server"/>
+                    <!-- The binary embeds the compiled module: its licence texts ship with it. -->
+                    <copy todir="${project.build.directory}/server-jars/linux-aarch64/META-INF/licenses/aprv-wasm" overwrite="true">
+                      <fileset dir="${project.basedir}/../licenses/wasm"/>
+                    </copy>
                     <copy file="${aprv.server.linux-aarch64}" tofile="${dir}/aprv-aarch64-unknown-linux-musl" overwrite="true"/>
                     <chmod file="${dir}/aprv-aarch64-unknown-linux-musl" perm="755"/>
                     <checksum file="${dir}/aprv-aarch64-unknown-linux-musl" algorithm="SHA-256" property="sha" />

@@ -368,20 +368,18 @@ nightly `corpus` job, which needs the OD-05 archive.
   about 10.5 MB with this jar and the main artifact's 85 KB jar. Seven
   releases in a month would use about 74 MB of the 80 MB monthly size
   allowance; count it before cutting a release.
-- The jar embeds code compiled from OpenSSL, wasi-libc and the Rust
-  standard library. Their licence texts must ship inside it (ARCHITECTURE
-  §9, "Licences ship with the code"). The one source is now
-  `licenses/wasm/` at the repository root (OD-11), and this is a change to
-  the Java package, not to `.github/`:
-  - `pom.xml` `<build><resources>`: one more `<resource>` with
-    `<directory>../licenses/wasm</directory>` and
-    `<targetPath>META-INF/licenses/aprv-wasm</targetPath>`, the same way
-    the existing entry takes `../java/LICENSE`. Maven reads it in place, so
-    there is no copy in `java-wasm/` and nothing for
-    `tools/check-licence-copies.mjs` to diff: it needs no Java entry.
-  - A test that proves the packaged file set, since nothing else would
-    notice a dropped file: for every file in `../licenses/wasm`, the
-    classpath resource `META-INF/licenses/aprv-wasm/<name>` exists and is
-    byte-identical (a JUnit test beside `ClassFileTest`, which runs in
-    `java-wasm-endive` on every JDK leg).
+- The jar embeds code compiled from OpenSSL, wasi-libc, musl and the Rust
+  standard library, and their licence texts ship inside it (ARCHITECTURE
+  §9, "Licences ship with the code") from the one source,
+  `licenses/wasm/` at the repository root (OD-11):
+  - `pom.xml` `<build><resources>` takes `../licenses/wasm` to
+    `META-INF/licenses/aprv-wasm`, read in place like `../java/LICENSE`, so
+    there is no copy in `java-wasm/` and `tools/check-licence-copies.mjs`
+    needs no Java entry. Each server classifier profile copies the same
+    set into its jar, since the binary embeds the module.
+  - `LicensesTest` (no tag, so it runs on every JDK leg, Java 8 included)
+    checks that `META-INF/licenses/aprv-wasm/` holds exactly the files of
+    `licenses/wasm/`, byte for byte, and the same for each server
+    classifier directory the build made (skipped, with the reason, when it
+    made none).
   - The README's licence paragraph names the directory.
