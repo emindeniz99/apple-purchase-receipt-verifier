@@ -46,8 +46,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends binutils && rm 
  && cp "/out/aprv-$(cat /target)" /aprv
 
 # gcr.io/distroless/static-debian13:nonroot: no shell, no package manager,
-# no libc (the binary needs none), uid 65532.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+# no libc (the binary needs none), uid 65532. Shared by the two final
+# stages below, which differ only in where the binary comes from.
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS runtime
 ARG VERSION=unknown
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="aprv-server" \
@@ -57,10 +58,24 @@ LABEL org.opencontainers.image.title="aprv-server" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
-COPY --from=build /aprv /usr/local/bin/aprv
 USER 65532:65532
 EXPOSE 8080
 # Liveness GET /healthz, readiness GET /readyz. The image has no shell or
 # curl, so the orchestrator probes them (the server must listen beyond
 # loopback, APRV_LISTEN, for a probe from outside the container).
 ENTRYPOINT ["/usr/local/bin/aprv", "serve"]
+
+# The release's image (release.yml publish-image, `--target prebuilt`): the
+# static binaries the release built, attested and published as assets,
+# copied in unchanged, so nothing compiles inside Docker there. The build
+# context is a directory holding aprv-amd64 and aprv-arm64:
+#
+#   docker buildx build --platform linux/amd64,linux/arm64 --target prebuilt \
+#     -f rust/server/Dockerfile DIR_WITH_aprv-amd64_AND_aprv-arm64
+FROM runtime AS prebuilt
+ARG TARGETARCH
+COPY --chmod=0755 aprv-${TARGETARCH} /usr/local/bin/aprv
+
+# The default: the two-stage build above, for a build from source.
+FROM runtime
+COPY --from=build /aprv /usr/local/bin/aprv
