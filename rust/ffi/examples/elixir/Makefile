@@ -20,7 +20,7 @@ ERTS_INCLUDE_DIR ?= $(ERL_ROOT)/usr/include
 
 APRV_CRATE_DIR ?= $(abspath ../..)
 APRV_INCLUDE_DIR ?= $(APRV_CRATE_DIR)/include
-APRV_LIB_DIR ?= $(APRV_CRATE_DIR)/target/release
+APRV_LIB_DIR ?= $(APRV_CRATE_DIR)/../target/release
 
 CFLAGS ?= -O2 -Wall -Wextra -Wpedantic
 CFLAGS += -std=c11 -fPIC -I$(ERTS_INCLUDE_DIR) -I$(APRV_INCLUDE_DIR)

@@ -119,6 +119,83 @@ jobs:
           echo "registries=,$REGISTRIES," >> "$GITHUB_OUTPUT"
           echo "smoke-testing $VERSION on: $REGISTRIES"
 
+  # What the GitHub Release and GHCR serve, checked the way a consumer would
+  # (R34, MIGRATION.md steps 1.15 and 2.10): every file against SHA256SUMS;
+  # every artifact's SLSA provenance and CycloneDX SBOM attestations with
+  # `gh attestation verify`, signed by this repository's release.yml at this
+  # tag; every SBOM checked to name the versions pinned at the tag; the image
+  # by digest the same way. Releases before aprv.wasm existed carry none of
+  # this, and the job says so and succeeds.
+  attestations:
+    name: attestations — verify the release's provenance and SBOMs
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read    # gh attestation verify reads them
+      packages: read        # and the image's from GHCR
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+      - name: download the release's artifacts
+        id: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$REF" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qx aprv.wasm; then
+            echo "::notice::$REF has no aprv.wasm asset (a release before 0.8.0); nothing to verify"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/assets"
+          gh release download "$REF" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/assets"
+          (cd "$RUNNER_TEMP/assets" && sha256sum --check --strict SHA256SUMS)
+          echo "present=true" >> "$GITHUB_OUTPUT"
+      - name: provenance and SBOM attestations of every artifact
+        if: steps.assets.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.resolve.outputs.ref }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/assets"
+          workflow="$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          for f in aprv.wasm aprv.component.wasm aprv-*-linux-musl aprv-*-apple-darwin aprv-*-windows-msvc.exe; do
+            [ -f "$f" ] || { echo "::error::the release has no $f"; exit 1; }
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "refs/tags/$REF"
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "refs/tags/$REF" \
+              --predicate-type https://cyclonedx.org/bom
+          done
+          gh attestation verify aprv.wit --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "refs/tags/$REF"
+      - name: every SBOM names the versions pinned at this tag
+        if: steps.assets.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          a="$RUNNER_TEMP/assets"
+          for f in aprv.wasm aprv.component.wasm; do
+            node tools/sbom-augment.mjs check --kind wasm "$a/$f.cdx.json"
+          done
+          for f in "$a"/aprv-*-linux-musl "$a"/aprv-*-apple-darwin "$a"/aprv-*-windows-msvc.exe; do
+            node tools/sbom-augment.mjs check --kind server --embedded "$a/aprv.component.wasm" "$f.cdx.json"
+          done
+      - name: the image's provenance, by digest
+        if: steps.assets.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.resolve.outputs.ref }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          owner=$(tr '[:upper:]' '[:lower:]' <<<"$GITHUB_REPOSITORY_OWNER")
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          gh attestation verify "oci://ghcr.io/$owner/aprv-server:$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$REF"
+
   npm:
     name: npm — install the published package and verify a receipt
     needs: resolve

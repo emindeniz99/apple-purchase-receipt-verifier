@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/rust/bindings/wire/schema/verify-signed-data-result.schema.json",
+  "title": "The answer of verify-signed-data",
+  "description": "What aprv.wasm's verify-signed-data export returns (aprv-wire): a verified JWS with its payload, or a failure. The payload is a JSON string holding the signed payload's JSON text exactly as signed, so no host re-serialises Apple's claims; its content is Apple's and not described here.",
+  "oneOf": [
+    {
+      "description": "The JWS verified.",
+      "type": "object",
+      "required": [
+        "verified",
+        "payload"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verified": {
+          "const": true
+        },
+        "payload": {
+          "description": "The signed payload's JSON text.",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "$ref": "#/$defs/failure"
+    }
+  ],
+  "$defs": {
+    "failure": {
+      "description": "A verification failure. Match on reason; message is safe to log, never embeds raw input, and is not meant to be parsed.",
+      "type": "object",
+      "required": [
+        "verified",
+        "reason",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verified": {
+          "const": false
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "reason": {
+      "description": "The eight 0.7 reasons (docs/design/0.7-api.md, Result).",
+      "type": "string",
+      "enum": [
+        "MALFORMED",
+        "TOO_LARGE",
+        "INVALID_SIGNATURE",
+        "UNTRUSTED_CHAIN",
+        "INVALID_CERTIFICATE",
+        "INVALID_CERTIFICATE_PURPOSE",
+        "UNREADABLE_PAYLOAD",
+        "INTERNAL_ERROR"
+      ]
+    }
+  }
+}
