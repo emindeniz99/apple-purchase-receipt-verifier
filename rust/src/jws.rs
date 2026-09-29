@@ -10,13 +10,12 @@
 //! reports that check's reason, and the shared cases pin it.
 
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
-use crate::chain::validate_pair;
-use crate::crypto::{has_unimplemented_curve, verify_es256_under};
 use crate::error::{malformed, Failure, Reason};
 use crate::json::{instant, whole_object_members, JsonError, Value};
+use crate::path::validate_pair;
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
-use crate::x509::{Certificate, OID_EC_PUBLIC_KEY};
+use aprv_openssl::{verify_es256, Certificate};
 use core::fmt;
 
 /// The longest compact JWS, in UTF-8 bytes, checked before the string is
@@ -169,9 +168,9 @@ pub(crate) fn verify(
             format!("intermediate certificate lacks Apple marker OID {WWDR_INTERMEDIATE_OID}"),
         ));
     }
-    if has_unimplemented_curve(&leaf) {
+    if !leaf.has_usable_key() {
         return Err(invalid_certificate(
-            "x5c entry uses an unimplemented elliptic curve",
+            "x5c entry has a public key this library cannot use",
         ));
     }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
@@ -243,9 +242,6 @@ fn verify_signature(
     payload_b64: &str,
     signature: &[u8],
 ) -> Result<(), Failure> {
-    if leaf.public_key_algorithm_oid() != OID_EC_PUBLIC_KEY {
-        return Err(Failure::new(Reason::InvalidSignature, "leaf key is not EC"));
-    }
     if signature.len() != 64 {
         return Err(Failure::new(
             Reason::InvalidSignature,
@@ -256,7 +252,9 @@ fn verify_signature(
     signing_input.extend_from_slice(header_b64.as_bytes());
     signing_input.push(b'.');
     signing_input.extend_from_slice(payload_b64.as_bytes());
-    if verify_es256_under(leaf, signature, &signing_input) {
+    // False for a key that is not EC on P-256 as well as for a signature
+    // that does not match.
+    if verify_es256(leaf, signature, &signing_input) {
         Ok(())
     } else {
         Err(Failure::new(
@@ -273,14 +271,15 @@ pub(crate) fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, Failure> {
     decode_receipt_base64(text).ok_or_else(|| invalid_certificate("x5c entry is not valid base64"))
 }
 
-/// Only whether the entry IS a certificate. Its key is judged when it is
-/// about to be used, once a pinned anchor has vouched for it: the curve of
-/// the intermediate in [`validate_pair`], the leaf's before ES256, and the
-/// third entry's never.
+/// Only whether the entry IS a certificate: one that OpenSSL parses whole
+/// and a strict reader decodes. Its key is judged when it is about to be
+/// used, once a pinned anchor has vouched for it: the intermediate's in
+/// [`validate_pair`], the leaf's before ES256, and the third entry's never.
 fn parse_x5c_certificate(entry: &str) -> Result<Certificate, Failure> {
     let der = decode_x5c_entry(entry)?;
     Certificate::from_der(&der)
-        .map_err(|_| invalid_certificate("x5c entry is not a valid certificate"))
+        .filter(Certificate::is_readable)
+        .ok_or_else(|| invalid_certificate("x5c entry is not a valid certificate"))
 }
 
 #[cfg(test)]

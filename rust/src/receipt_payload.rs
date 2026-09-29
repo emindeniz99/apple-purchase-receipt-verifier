@@ -26,9 +26,14 @@
 //! `unknown_attributes`, except an empty date string, which means "not set".
 //! Only an attribute SET, or an attribute, that does not parse makes the
 //! whole payload unreadable.
+//!
+//! OpenSSL reads the ASN.1 (`aprv_openssl::payload`, the grammar declared
+//! as OpenSSL templates): the SET, each attribute's three fields, each
+//! value's INTEGER or string. What the types mean, which values are dates,
+//! and what does or does not decode as text is decided here.
 
-use crate::asn1::{parse_exact, tag, Asn1Error, Tlv};
 use crate::datetime::parse_receipt_date;
+use aprv_openssl::payload::{attribute_integer, attribute_string, receipt_attributes, StringKind};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -328,84 +333,41 @@ pub(crate) fn read_creation_date(content: &[u8]) -> Option<i64> {
     date(&first.value).ok().flatten()
 }
 
+/// How deep constructed values may nest in a value parsed on its own: the
+/// CMS envelope from its `ContentInfo`, the signed content from its
+/// attribute SET (0.7 bounds table). 32 is accepted and 33 refused.
+pub(crate) const MAX_ASN1_DEPTH: usize = 32;
+
+/// The depth of an attribute's fields in the signed content: the SET is 1
+/// and the attribute SEQUENCE 2.
+const ATTRIBUTE_FIELD_BASE: usize = 2;
+
 fn parse_attribute_set(der: &[u8], what: &str) -> Result<Vec<Attribute>, PayloadError> {
-    let outer = parse_exact(der).map_err(|err| unreadable(what, err))?;
-    // Xcode receipts double-wrap the payload in an extra OCTET STRING.
-    let unwrapped;
-    let node = if outer.is_octet_string() {
-        unwrapped = outer
-            .octet_string_value()
-            .ok_or_else(|| unreadable(what, "double-wrap is not an OCTET STRING"))?
-            .into_owned();
-        parse_exact(&unwrapped).map_err(|err| unreadable(what, err))?
-    } else {
-        outer
-    };
-    if node.tag != tag::SET {
-        return Err(unreadable(what, "not an ASN.1 SET"));
-    }
-    let mut attributes = Vec::with_capacity(node.children().len());
-    for child in node.children() {
-        attributes.push(attribute(child).map_err(|err| unreadable(what, err))?);
-    }
-    Ok(attributes)
-}
-
-/// One attribute. Fields after the third are tolerated, so a field Apple
-/// appends later does not break parsing; the version is not read.
-fn attribute(node: &Tlv<'_>) -> Result<Attribute, &'static str> {
-    let fields = node.children();
-    let (Some(type_node), Some(version_node), Some(value_node)) =
-        (fields.first(), fields.get(1), fields.get(2))
-    else {
-        return Err("malformed receipt attribute");
-    };
-    if node.tag != tag::SEQUENCE || type_node.tag != tag::INTEGER || !value_node.is_octet_string() {
-        return Err("malformed receipt attribute");
-    }
-    // The version is not read, but an INTEGER there must still be one.
-    if version_node.tag == tag::INTEGER && integer_value(version_node).is_none() {
-        return Err("malformed receipt attribute");
-    }
-    // Refused rather than narrowed: narrowing would invent an attribute the
-    // receipt never carried.
-    let attribute_type = integer_value(type_node)
-        .and_then(|value| u32::try_from(value).ok())
-        .filter(|value| i32::try_from(*value).is_ok())
-        .ok_or("receipt attribute type out of range")?;
-    let value = value_node
-        .octet_string_value()
-        .ok_or("malformed receipt attribute")?
-        .into_owned();
-    Ok(Attribute {
-        attribute_type,
-        value,
-    })
-}
-
-/// A DER INTEGER's value, or `None` for one that is empty, not minimally
-/// encoded, or wider than 64 bits.
-fn integer_value(node: &Tlv<'_>) -> Option<i64> {
-    let contents = node.contents;
-    let first = *contents.first()?;
-    if node.constructed || contents.len() > 8 {
-        return None;
-    }
-    if let Some(second) = contents.get(1) {
-        // X.690 8.3.2: the first nine bits are never all zero or all one.
-        if (first == 0x00 && second & 0x80 == 0) || (first == 0xff && second & 0x80 != 0) {
-            return None;
-        }
-    }
-    let mut value: i64 = if first & 0x80 == 0 { 0 } else { -1 };
-    for byte in contents {
-        value = (value << 8) | i64::from(*byte);
-    }
-    Some(value)
-}
-
-fn decode_nested(der: &[u8]) -> Result<Tlv<'_>, Undecodable> {
-    parse_exact(der).map_err(|_: Asn1Error| Undecodable)
+    // The Xcode double wrap (one more OCTET STRING around the SET) is
+    // unwrapped by the adapter.
+    let attributes =
+        receipt_attributes(der, MAX_ASN1_DEPTH).map_err(|err| unreadable(what, err))?;
+    attributes
+        .into_iter()
+        .map(|attribute| {
+            if ATTRIBUTE_FIELD_BASE.saturating_add(attribute.nesting) > MAX_ASN1_DEPTH {
+                return Err(unreadable(
+                    what,
+                    format!("nested deeper than {MAX_ASN1_DEPTH} constructed values"),
+                ));
+            }
+            // Refused rather than narrowed: narrowing would invent an
+            // attribute the receipt never carried.
+            let attribute_type = u32::try_from(attribute.attribute_type)
+                .ok()
+                .filter(|value| i32::try_from(*value).is_ok())
+                .ok_or_else(|| unreadable(what, "receipt attribute type out of range"))?;
+            Ok(Attribute {
+                attribute_type,
+                value: attribute.value,
+            })
+        })
+        .collect()
 }
 
 /// A `UTF8String` or an `IA5String`, the two string types Apple's receipts
@@ -413,23 +375,20 @@ fn decode_nested(der: &[u8]) -> Result<Tlv<'_>, Undecodable> {
 /// as IA5 is: a byte from 0x80 up does not decode, rather than being read as
 /// Latin-1.
 fn decode_string(der: &[u8]) -> Result<String, Undecodable> {
-    let node = decode_nested(der)?;
-    match node.tag {
-        tag::UTF8_STRING => String::from_utf8(node.contents.to_vec()).map_err(|_| Undecodable),
-        tag::IA5_STRING if node.contents.is_ascii() => {
-            Ok(node.contents.iter().map(|byte| char::from(*byte)).collect())
+    match attribute_string(der) {
+        Ok((StringKind::Utf8, octets)) => String::from_utf8(octets).map_err(|_| Undecodable),
+        Ok((StringKind::Ia5, octets)) if octets.is_ascii() => {
+            Ok(octets.iter().map(|byte| char::from(*byte)).collect())
         }
         _ => Err(Undecodable),
     }
 }
 
-/// An INTEGER that fits a signed 64-bit value, negative ones included.
+/// An INTEGER that fits a signed 64-bit value, negative ones included. One
+/// that is empty or has a redundant leading octet is not DER, and OpenSSL
+/// refuses it.
 fn decode_integer(der: &[u8]) -> Result<i64, Undecodable> {
-    let node = decode_nested(der)?;
-    if node.tag != tag::INTEGER {
-        return Err(Undecodable);
-    }
-    integer_value(&node).ok_or(Undecodable)
+    attribute_integer(der).map_err(|_| Undecodable)
 }
 
 /// A date in an `IA5String` or `UTF8String`, as epoch milliseconds. An
@@ -536,7 +495,18 @@ mod tests {
     //! parse runs only after the chain and the signature have passed.
 
     use super::{parse_receipt_payload, read_creation_date, InAppPurchase};
-    use crate::asn1::tag;
+
+    /// The universal tags these tests write.
+    mod tag {
+        pub const INTEGER: u8 = 0x02;
+        pub const OCTET_STRING: u8 = 0x04;
+        pub const IA5_STRING: u8 = 0x16;
+        pub const SEQUENCE: u8 = 0x30;
+        pub const SET: u8 = 0x31;
+    }
+
+    /// The ASN.1 nesting bound of 0.7's bounds table.
+    const MAX_DEPTH: usize = 32;
 
     fn der(tag: u8, contents: &[u8]) -> Vec<u8> {
         assert!(contents.len() < 0x80, "short-form lengths only");
@@ -674,11 +644,12 @@ mod tests {
 
     #[test]
     fn signed_content_nested_past_the_asn1_bound_is_unreadable() {
-        // The bound is the reader's (32 constructed values); signed content
-        // that exceeds it cannot be read, which the verifier reports as
-        // UNREADABLE_PAYLOAD, never MALFORMED.
+        // Signed content nested past the bound (32 constructed values)
+        // cannot be read, which the verifier reports as UNREADABLE_PAYLOAD,
+        // never MALFORMED. OpenSSL's template decoder refuses it well before
+        // any depth counting: a SET inside the SET is not an attribute.
         let mut nested: Vec<u8> = Vec::new();
-        for _ in 0..=crate::asn1::MAX_DEPTH {
+        for _ in 0..=MAX_DEPTH {
             let length = u8::try_from(nested.len()).unwrap();
             nested = if length < 0x80 {
                 [&[tag::SET, length][..], &nested].concat()

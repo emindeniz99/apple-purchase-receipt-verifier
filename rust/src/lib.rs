@@ -66,23 +66,19 @@
 )]
 #![doc(html_root_url = "https://docs.rs/apple-purchase-receipt-verifier")]
 
-mod asn1;
 mod base64;
-mod chain;
-mod cms;
 mod config;
-mod crypto;
 mod datetime;
 mod endpoint;
 mod environment;
 mod error;
 mod json;
 mod jws;
+mod path;
 mod receipt;
 mod receipt_payload;
 mod roots;
 mod verifier;
-mod x509;
 
 pub use config::{Config, ConfigBuilder};
 pub use endpoint::AppleStatus;
@@ -99,36 +95,27 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Not part of the public API, and not covered by semver.
 ///
 /// The internals this crate's own tests, fuzz targets and benchmark reach
-/// directly: the ASN.1, CMS, X.509 and date readers, and the two base64
+/// directly: the date reader, the key-use seam, and the two base64
 /// decoders the shared decodeBase64 cases call. The shared cases name them
 /// as an internal hook; 0.7 exposes no decoder.
 #[doc(hidden)]
 pub mod __internal {
-    /// The bounded BER/DER reader.
-    pub mod asn1 {
-        pub use crate::asn1::*;
-    }
-    /// Certificate path validation.
-    pub mod chain {
-        pub use crate::chain::*;
-    }
-    /// The CMS `SignedData` walk.
-    pub mod cms {
-        pub use crate::cms::*;
-    }
     /// Calendar arithmetic and Apple's date renderings.
     pub mod datetime {
         pub use crate::datetime::*;
     }
-    /// The X.509 certificate reader.
-    pub mod x509 {
-        pub use crate::x509::*;
+
+    /// Runs `body` and returns, beside its result, the
+    /// `SubjectPublicKeyInfo` DER of every key the OpenSSL adapter used to
+    /// check a signature on this thread meanwhile.
+    pub fn keys_used_during<R>(body: impl FnOnce() -> R) -> (R, Vec<Vec<u8>>) {
+        aprv_openssl::keys_used_during(body)
     }
 
-    /// Runs `body` and returns, beside its result, the SPKI of every key used
-    /// to check a signature on this thread meanwhile.
-    pub fn keys_used_during<R>(body: impl FnOnce() -> R) -> (R, Vec<Vec<u8>>) {
-        crate::crypto::keys_used_during(body)
+    /// The linked OpenSSL, as it reports itself.
+    #[must_use]
+    pub fn openssl_version() -> &'static str {
+        aprv_openssl::library_version()
     }
 
     /// Standard base64 with padding.
