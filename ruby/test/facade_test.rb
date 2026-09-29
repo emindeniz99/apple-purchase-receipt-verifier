@@ -101,6 +101,31 @@ class FacadeTest < Minitest::Test
     assert_equal [], APRV::Config.defaults.roots
   end
 
+  def test_pem_unwrapping_takes_the_first_block_and_ignores_whitespace_and_other_blocks
+    der = "\x01\x02\x03 not really a certificate".b
+    body = [der].pack("m")
+    spaced = body.gsub("\n", " \t\r\n")
+    wrapped = "junk\n-----BEGIN CERTIFICATE-----\r\n #{spaced}-----END CERTIFICATE-----\n" \
+              "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"
+    assert_equal [der], APRV::Config.new(roots: [wrapped]).roots
+    assert_raises(ArgumentError) { APRV::Config.new(roots: ["-----BEGIN CERTIFICATE-----\n#{body}"]) }
+    end_first = "-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\n#{body}"
+    assert_raises(ArgumentError) { APRV::Config.new(roots: [end_first]) }
+  end
+
+  # A regular expression over the PEM markers went polynomial on this input
+  # (CodeQL); the scan is linear.
+  def test_a_megabyte_of_repeated_begin_markers_is_refused_quickly
+    hostile = "-----BEGIN CERTIFICATE-----a" * (1_048_576 / 28)
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    assert_raises(ArgumentError) { APRV::Config.new(roots: [hostile]) }
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.5
+    with_end = "#{hostile}-----END CERTIFICATE-----"
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    APRV::Config.new(roots: [with_end])
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.5
+  end
+
   def test_config_refuses_what_is_neither_a_certificate_nor_a_string
     assert_raises(ArgumentError) { APRV::Config.new(roots: [nil]) }
     assert_raises(ArgumentError) { APRV::Config.new(roots: [1.5]) }
