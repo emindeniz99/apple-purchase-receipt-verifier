@@ -22,8 +22,11 @@
 # below are gated on it, so an unbootstrapped registry means a skipped leg
 # rather than a job that fails on an install that cannot work.
 #
-# PHP is absent on purpose: Packagist has no publish job — the tag is the
-# release — and nothing here would be verifying a step this repository took.
+# Packagist has no publish job — the tag is the release, and Packagist imports
+# it on its own — but the PHP package is still a thing this repository ships:
+# its installer downloads the release's aprv binary and checks it against the
+# hashes the tag's php/binaries.json pins. The packagist leg waits for the
+# import and runs that path end to end (php/RELEASE.md, acceptance test 8).
 name: post-publish-smoke
 
 # zizmor flags workflow_run as fundamentally dangerous, and normally it is: it
@@ -47,7 +50,7 @@ on: # zizmor: ignore[dangerous-triggers]
       registries:
         description: 'Comma-separated registries to test; the default is all of them'
         required: false
-        default: npm,pypi,maven,swiftpm,go,rubygems,crates,nuget
+        default: npm,pypi,maven,swiftpm,go,php,rubygems,crates,nuget
         type: string
 
 permissions:
@@ -110,13 +113,15 @@ jobs:
           esac
           # workflow_run carries no inputs, so a run triggered that way tests
           # everything and a registry that is genuinely missing fails its leg.
-          REGISTRIES="${DISPATCH_REGISTRIES:-npm,pypi,maven,swiftpm,go,rubygems,crates,nuget}"
+          REGISTRIES="${DISPATCH_REGISTRIES:-npm,pypi,maven,swiftpm,go,php,rubygems,crates,nuget}"
           case "$REGISTRIES" in
             *[!a-z,]*) echo "::error::'$REGISTRIES' is not a comma-separated registry list"; exit 1 ;;
           esac
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "ref=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "registries=,$REGISTRIES," >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$VERSION"
+            echo "ref=v$VERSION"
+            echo "registries=,$REGISTRIES,"
+          } >> "$GITHUB_OUTPUT"
           echo "smoke-testing $VERSION on: $REGISTRIES"
 
   # What the GitHub Release and GHCR serve, checked the way a consumer would
@@ -346,9 +351,10 @@ jobs:
     name: swiftpm — resolve the published tag and verify a receipt
     needs: resolve
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Same digest-pinned image as the CI swift job.
-    container: swift:6.1@sha256:98ee3a8469ce2a9c2f543ef2577939ab44e2dfc9b5ed710732a59e5dd64f9c4a
+    timeout-minutes: 45
+    # The manifest's floor, in the same digest-pinned image as the CI swift
+    # job.
+    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -368,8 +374,11 @@ jobs:
           cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
           cd "$SMOKE"
           # The tag is pushed before this workflow can run, so there is nothing
-          # to wait for; a resolve failure here is a real broken tag.
-          swift run Smoke
+          # to wait for; a resolve failure here is a real broken tag (one
+          # without the committed aprv.wasm resource, for instance). Release:
+          # WasmKit interprets, and a debug build of it is too slow for an
+          # honest receipt.
+          swift run -c release Smoke
 
   go:
     name: go — resolve the published module and verify a receipt
@@ -423,6 +432,57 @@ jobs:
             exit 1
           fi
           go run .
+
+  packagist:
+    name: packagist — install the published package and its binary, verify a receipt
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: contains(needs.resolve.outputs.registries, ',php,')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          persist-credentials: false
+
+      # The composer.json floor, with the two extensions the package needs
+      # and nothing else. setup-php caches nothing unless asked.
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.2"
+          extensions: json, curl
+          coverage: none
+
+      # Installing outside a lockfile is the entire point, as in the npm leg.
+      # aprv-install downloads the release's aprv binary for this platform
+      # and refuses it unless it matches the hash the tag's
+      # php/binaries.json pins.
+      - name: install from Packagist, outside the checkout # zizmor: ignore[adhoc-packages]
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/packagist-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/packagist-smoke.php "$SMOKE/"
+          cd "$SMOKE"
+          echo '{}' > composer.json
+          installed=false
+          for attempt in $(seq 1 40); do
+            if composer require --no-interaction --no-progress "emindeniz99/apple-purchase-receipt-verifier:$VERSION"; then
+              installed=true
+              break
+            fi
+            echo "Packagist has not imported $VERSION yet (attempt $attempt of 40); waiting 30s"
+            sleep 30
+          done
+          if [ "$installed" != true ]; then
+            echo "::error::emindeniz99/apple-purchase-receipt-verifier $VERSION never became installable from Packagist"
+            exit 1
+          fi
+          vendor/bin/aprv-install
+          php packagist-smoke.php
 
   rubygems:
     name: rubygems — install the published gem and verify a receipt
@@ -529,7 +589,8 @@ jobs:
     name: nuget — restore the published package and verify a receipt
     needs: resolve
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The Wasmtime package it restores is about 200 MB unpacked.
+    timeout-minutes: 30
     # Skipped, not failed, while NuGet is unbootstrapped (BOOTSTRAP.md).
     if: contains(needs.resolve.outputs.registries, ',nuget,')
     steps:
