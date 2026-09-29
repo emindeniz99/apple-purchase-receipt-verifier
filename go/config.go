@@ -9,13 +9,19 @@ import (
 // the clock.
 //
 // The clock answers "what time is it now?" and nothing else. The library
-// reads it in two places, and at most once per call: the chain check when
-// the receipt or JWS carries no usable signing date, and request_date in
-// the endpoint response. A caller-supplied clock must be safe to call from
-// several goroutines.
+// reads it once per call, before it looks at the input, and hands the
+// value to the verification module, which uses it in two places: the
+// chain check when the receipt or JWS carries no usable signing date, and
+// request_date in the endpoint response. A caller-supplied clock must be
+// safe to call from several goroutines, and must not answer a time before
+// 1970: that is an INTERNAL_ERROR, as a clock that panics is.
 type Config struct {
 	roots []*x509.Certificate
 	clock func() int64
+	// builtin marks the default roots: the Verifier then sends init an
+	// empty list, which means the three Apple roots compiled into the
+	// module, rather than the copy of them in roots.
+	builtin bool
 }
 
 // DefaultConfig is Apple's pinned roots and the system clock.
@@ -26,7 +32,7 @@ type Config struct {
 // verification verdict, so it happens once, before any input is read,
 // rather than as an error a caller must remember to check on every call.
 func DefaultConfig() *Config {
-	return &Config{roots: mustAppleRoots(), clock: systemMillis}
+	return &Config{roots: mustAppleRoots(), clock: systemMillis, builtin: true}
 }
 
 // ConfigOptions configures a Config.
@@ -47,7 +53,8 @@ type ConfigOptions struct {
 // DefaultConfig's.
 func NewConfig(opts ConfigOptions) *Config {
 	roots := opts.Roots
-	if roots == nil {
+	builtin := roots == nil
+	if builtin {
 		roots = mustAppleRoots()
 	} else {
 		roots = append([]*x509.Certificate(nil), roots...)
@@ -56,7 +63,7 @@ func NewConfig(opts ConfigOptions) *Config {
 	if clock == nil {
 		clock = systemMillis
 	}
-	return &Config{roots: roots, clock: clock}
+	return &Config{roots: roots, clock: clock, builtin: builtin}
 }
 
 // Roots is the pinned anchors, an unmodifiable copy.
