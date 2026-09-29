@@ -21,7 +21,9 @@ final class MeasurementTests: XCTestCase {
     /// py/calls_bytes.py). APRV_CORPUS_OUT: where the rows go, as
     /// `<label>-<corpus>.jsonl` in the Node runner's format, which that
     /// round's py/classify.py reads. APRV_CORPUS_LABEL names them (default
-    /// `swift`). APRV_CORPUS_MODULE optionally runs another aprv.wasm than
+    /// `swift`); APRV_CORPUS_SUFFIX picks `<corpus><suffix>` as the input file
+    /// (default `.jsonl`; G1's pinned files are `.pinned.jsonl`).
+    /// APRV_CORPUS_MODULE optionally runs another aprv.wasm than
     /// the bundled one, such as a candidate release build.
     ///
     /// Each distinct configuration gets an instance, created and set up with
@@ -31,6 +33,7 @@ final class MeasurementTests: XCTestCase {
             throw XCTSkip("set APRV_CORPUS_CALLS and APRV_CORPUS_OUT to run the corpus")
         }
         let label = Self.env["APRV_CORPUS_LABEL"] ?? "swift"
+        let suffix = Self.env["APRV_CORPUS_SUFFIX"] ?? ".jsonl"
         let module: AprvModule
         if let path = Self.env["APRV_CORPUS_MODULE"] {
             module = try AprvModule.load([UInt8](try Data(contentsOf: URL(fileURLWithPath: path))))
@@ -39,7 +42,7 @@ final class MeasurementTests: XCTestCase {
         }
         var ranAny = false
         for corpus in ["cases", "hostile", "algorithms", "substrate", "fuzz"] {
-            let input = URL(fileURLWithPath: calls).appendingPathComponent("\(corpus).jsonl")
+            let input = URL(fileURLWithPath: calls).appendingPathComponent("\(corpus)\(suffix)")
             guard FileManager.default.fileExists(atPath: input.path) else { continue }
             ranAny = true
             let start = Date()
@@ -171,7 +174,8 @@ final class MeasurementTests: XCTestCase {
                     #"throughput: {"row":"\#(name)","threads":\#(threads),"calls":\#(counts.total),"#
                         + #""seconds":\#(String(format: "%.1f", elapsed)),"per_second":\#(String(format: "%.1f", perSecond)),"#
                         + #""ms_per_call_per_thread":\#(String(format: "%.2f", 1000 * Double(threads) / perSecond)),"#
-                        + #""cpu_seconds":\#(String(format: "%.1f", cpu)),"per_cpu_second":\#(String(format: "%.1f", Double(counts.total) / cpu))}"#)
+                        + #""cpu_seconds":\#(String(format: "%.1f", cpu)),"per_cpu_second":\#(String(format: "%.1f", Double(counts.total) / cpu))}"#
+                )
             }
         }
     }

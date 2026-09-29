@@ -133,6 +133,7 @@ final class AbiTests: XCTestCase {
         let before = guest.memoryBytes
         for _ in 0..<Self.rounds { try round() }
         XCTAssertEqual(guest.memoryBytes, before)
+        print("memory: linear memory \(before) bytes before and \(guest.memoryBytes) after \(4 * Self.rounds) calls")
     }
 
     /// 125 rounds of four calls: 500 calls, as round 13 ran on WasmKit (2,000

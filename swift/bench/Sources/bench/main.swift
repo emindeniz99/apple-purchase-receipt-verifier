@@ -325,10 +325,18 @@ func threads(repository: URL) throws {
     }
 }
 
+/// The process's peak resident set, from /proc on Linux; nil elsewhere.
+func peakRssKilobytes() -> Int? {
+    guard let status = try? String(contentsOfFile: "/proc/self/status", encoding: .utf8) else { return nil }
+    let line = status.split(separator: "\n").first { $0.hasPrefix("VmHWM:") }
+    return line?.split(separator: " ").dropFirst().first.flatMap { Int($0) }
+}
+
 var results: [Result] = []
 let mode: String
 if CommandLine.arguments.dropFirst().contains("--threads") {
     try threads(repository: repository)
+    print(#"memory: {"peak_rss_kb":\#(peakRssKilobytes().map(String.init) ?? "null")}"#)
     exit(0)
 } else if CommandLine.arguments.dropFirst().contains("--worst-case") {
     mode = "worst-case"
