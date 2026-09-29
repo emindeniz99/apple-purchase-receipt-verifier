@@ -13,7 +13,7 @@ categories = ["cryptography", "authentication"]
 # and Cargo.lock (cargo always packs it; a consumer's build ignores it). The
 # tests read ../../fixtures, which a registry consumer does not have, and
 # RELEASE.md describes release wiring rather than the crate.
-exclude = ["tests/**", "examples/bench.rs", "fuzz/**", "ffi/**", "openssl/**", "vendor/**", "RELEASE.md", "rustfmt.toml", "rust-toolchain.toml", "deny.toml", ".cargo/**"]
+exclude = ["tests/**", "examples/bench.rs", "fuzz/**", "ffi/**", "openssl/**", "bindings/**", "server/**", "vendor/**", "RELEASE.md", "rustfmt.toml", "rust-toolchain.toml", "deny.toml", ".cargo/**"]
 
 [lib]
 name = "apple_purchase_receipt_verifier"
@@ -66,12 +66,24 @@ harness = false
 [[example]]
 name = "bench"
 
-# One workspace: the core and its OpenSSL adapter (the bindings and the
-# server join it in later phases). `ffi/` and `fuzz/` keep their own
-# lockfiles for now and are excluded; each carries the same patch below.
+# One workspace and one lockfile (docs/rust-core/ARCHITECTURE.md §2): the
+# core, its OpenSSL adapter, the binding-neutral model (aprv-surface), its
+# JSON (aprv-wire) and the C ABI. `fuzz/` stays outside, because it builds
+# on nightly, with its own lockfile and the same patch below. `server/`
+# (aprv-server) runs aprv.wasm through Wasmtime and depends on no crate
+# here; it keeps its own lockfile, so Wasmtime's graph stays out of this
+# one. `vendor/` is the patched openssl-sys.
 [workspace]
-members = [".", "openssl"]
-exclude = ["ffi", "fuzz", "vendor"]
+members = [
+    ".",
+    "openssl",
+    "bindings/surface",
+    "bindings/wire",
+    "ffi",
+    # "server",
+]
+exclude = ["fuzz", "vendor", "server"]
+resolver = "2"
 
 # openssl-sys 0.9.117 takes only openssl-src 300.x (OpenSSL 3.x). This copy
 # differs from the crates.io release in one manifest line, which lets its

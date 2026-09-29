@@ -1,9 +1,9 @@
 # The C ABI over the Rust library: one `cdylib`/`staticlib` that C, C++ and
 # any FFI-capable runtime (Elixir NIFs, Lua, Python ctypes, .NET P/Invoke)
 # can load. Not published to crates.io — a C consumer wants a shared object
-# and a header, not a crate — and not a workspace member, for the same
-# reason `fuzz/` is not: `..`'s `exclude` keeps it out of the library
-# tarball, and it carries its own `Cargo.lock`.
+# and a header, not a crate. A member of `..`'s workspace, so it builds from
+# the one `rust/Cargo.lock`; `..`'s package `exclude` keeps it out of the
+# library tarball.
 #
 # The version is not declared here. `aprv_version()` reads the repository's
 # `version.txt`, the one file release-please bumps, so the ABI cannot report
@@ -22,21 +22,13 @@ name = "apple_purchase_receipt_verifier_ffi"
 path = "src/lib.rs"
 crate-type = ["cdylib", "staticlib"]
 
-# One dependency, and it is the library itself. The JSON the ABI hands out
-# is the library's own (`ReceiptPayload::to_json()` and the signed JWS text),
-# so nothing beyond the library's own graph enters and cargo-deny's
-# banned-crate list keeps meaning what it means.
-[dependencies.apple-purchase-receipt-verifier]
-path = ".."
+# The library through its binding boundary (docs/rust-core/SURFACE.md §9,
+# rule 3): aprv-surface for the calls and aprv-wire for the JSON, the same
+# bytes aprv.wasm returns. Nothing beyond the library's own graph enters,
+# so cargo-deny's banned-crate list keeps meaning what it means.
+[dependencies]
+aprv-surface = { path = "../bindings/surface" }
+aprv-wire = { path = "../bindings/wire" }
 
-# Its own workspace root. `..` declares a workspace whose members include
-# "." (the library), and Cargo counts every package below an explicit
-# member as a member, whatever `exclude` says; the empty table stops the
-# search here.
-[workspace]
-
-# The same one-line openssl-sys copy the library's workspace patches in
-# (../Cargo.toml says why): a patch applies only to the workspace that
-# declares it, and this crate is its own.
-[patch.crates-io]
-openssl-sys = { path = "../vendor/openssl-sys" }
+[dev-dependencies]
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }

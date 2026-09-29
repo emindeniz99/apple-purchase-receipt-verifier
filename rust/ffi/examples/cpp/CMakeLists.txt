@@ -9,8 +9,8 @@
 #   cmake --build rust/ffi/target/cppbuild --config Debug
 #   rust/ffi/target/cppbuild/bin/aprv_conformance <manifest dir>
 #
-# APRV_LIB_DIR defaults to rust/ffi/target/debug, cargo's own output
-# directory for this crate. Override it when CARGO_TARGET_DIR is set
+# APRV_LIB_DIR defaults to rust/target/debug, cargo's own output
+# directory for this crate (a member of the rust/ workspace). Override it when CARGO_TARGET_DIR is set
 # elsewhere.
 
 cmake_minimum_required(VERSION 3.16)
@@ -21,7 +21,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(NOT DEFINED APRV_LIB_DIR)
-  set(APRV_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../target/debug")
+  set(APRV_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../target/debug")
 endif()
 get_filename_component(APRV_LIB_DIR "${APRV_LIB_DIR}" ABSOLUTE)
 
