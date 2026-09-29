@@ -18,12 +18,9 @@ and in `benchmark.yml`.
   tests raises a signal with `posix_kill`), and `pcntl` for the fuzz job as
   before. **`openssl` is no longer needed** by the package or the suite; leave it
   out of one leg (8.2) to prove it.
-- **Until G1** the binary embeds the round-13 stand-in component (0.6 core).
-  `tests/standin-differences.txt` records the 214 cases it cannot pass, against
-  the stand-in's component hash; the suite asserts each fails. Once the real
-  component ships in the binary the list is not used (its hash no longer
-  matches) and all 311 cases must pass. Delete the file, its loader in
-  `tests/Support/Aprv.php` and `tests/record-standin-differences.php` after G1.
+- **The binary must carry the release component** (the 0.7 core). The suite
+  has no allowance for any other: every one of the 311 cases must pass through
+  both transports. A binary that embeds the old 0.6 stand-in fails 214 of them.
 - No secrets.
 
 ## Job `php` (matrix 8.2, 8.3, 8.4, 8.5)
@@ -53,6 +50,15 @@ platform install nothing. It needs no network and no GitHub.
 --prefer-lowest`. `php-format` is unchanged (`php-cs-fixer fix --dry-run
 --diff --allow-risky=yes`; the finder now includes `bin/aprv-install`).
 
+## Corpus through the façade (nightly or per release, with the corpus files)
+
+`tools/rerun.sh "$APRV_BIN" "$G1_DIR"` runs everything in this file's `php` job
+and then the corpus (`tools/corpus.php`, both transports, every clock pinned)
+against the module's reference rows. Expected: every row identical, except the
+rows whose input is over 3,145,728 bytes, which `aprv` refuses first and which
+count as answered when the reference is the size refusal; 0 different. The
+corpus is scratch data (COMMON.md), so the job waits for wherever lane D puts it.
+
 ## Job `php-static`
 
 Unchanged except:
@@ -66,9 +72,7 @@ Unchanged except:
   `php/binaries.json`.
 - `node tools/php-consumer-smoke.mjs` needs `APRV_BIN` in its environment. It
   installs the archive into a throwaway project and verifies through the
-  default CLI transport. With the stand-in it cannot pass (0.6 shapes); it
-  is meaningful from G1. Gate it on `APRV_BIN` and the component hash like
-  the conformance runs.
+  default CLI transport.
 - The `gen-roots.php` drift guard stays until Phase 7 deletes `RootsData.php`
   and `php/certs/`.
 

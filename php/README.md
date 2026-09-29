@@ -553,24 +553,27 @@ structure.
 
 Measured with `php bench/bench.php --aprv PATH`, which times the three
 operations on the two genuine sandbox receipts through each transport (PHP
-8.4.19 CLI, one thread, a shared 4-vCPU guest, against the round-13 stand-in
-component; other jobs ran on the machine, so read the numbers as an order of
-magnitude):
+8.4.19 CLI, one thread, a shared 4-vCPU guest, against the release binary
+that embeds the 0.7 component). Other jobs kept the machine at a load average
+near 10 while this ran, so read the numbers as an order of magnitude (the
+script's JSON also carries the best sample of each, `us_per_op_min`):
 
 | Call | Receipt | CLI, one process per call | HTTP, keep-alive |
 |---|---|---:|---:|
-| `verifyReceipt` | genuine g5 receipt (2 purchases) | 25.2 ms | 8.6 ms |
-| `verifyReceiptEndpoint` | genuine g5 receipt (2 purchases) | 26.9 ms | 9.5 ms |
-| `verifyReceipt`, tampered signature | genuine g5 receipt (2 purchases) | 25.8 ms | 12.3 ms |
-| `verifyReceipt` | genuine legacy receipt (187 purchases) | 42.0 ms | 32.5 ms |
-| `verifyReceiptEndpoint` | genuine legacy receipt (187 purchases) | 42.2 ms | 26.3 ms |
-| `verifyReceipt`, tampered signature | genuine legacy receipt (187 purchases) | 24.9 ms | 11.7 ms |
+| `verifyReceipt` | genuine g5 receipt (2 purchases) | 37.7 ms | 9.0 ms |
+| `verifyReceiptEndpoint` | genuine g5 receipt (2 purchases) | 30.5 ms | 7.3 ms |
+| `verifyReceipt`, tampered signature | genuine g5 receipt (2 purchases) | 34.5 ms | 6.6 ms |
+| `verifyReceipt` | genuine legacy receipt (187 purchases) | 56.3 ms | 23.8 ms |
+| `verifyReceiptEndpoint` | genuine legacy receipt (187 purchases) | 85.2 ms | 66.1 ms |
+| `verifyReceipt`, tampered signature | genuine legacy receipt (187 purchases) | 31.6 ms | 13.6 ms |
 
 The process start dominates the CLI figure: running `aprv verify-receipt`
-directly on the same receipt took 25.8 ms on this machine, so the façade adds
-nothing measurable. The spike measured 11.6 ms per call for the g5 receipt
-through the CLI and 3.56 ms over HTTP on a faster machine. A worker that
-verifies many receipts per second should use the server transport.
+directly on the same g5 receipt took 30.5 ms (best 18.9 ms) under the same
+load, against 37.7 ms (best 26.3 ms) through the façade, whose own share is
+a `proc_open` and the JSON decode. The spike measured
+11.6 ms per call for the g5 receipt through the CLI and 3.56 ms over HTTP on
+a faster, idle machine. A worker that verifies many receipts per second
+should use the server transport.
 
 ## Known platform caveats
 
@@ -617,12 +620,13 @@ and a fake server: argv, exit statuses, problem codes, the roots file, the
 fingerprint check), and `InstallerTest` serves the binary from a local HTTP
 server to check that a wrong hash installs nothing.
 
-**The stand-in component.** Until the release module exists, `aprv` may carry
-the round-13 stand-in (the 0.6 core behind the 0.7 ABI), whose JSON is not
-0.7's. `tests/standin-differences.txt` lists the cases it cannot pass, against
-that component's hash: while it runs, each listed case is asserted to fail, and
-a listed case that passes fails the suite. Any other component must pass all
-311 cases. `tests/record-standin-differences.php` regenerates the list.
+**The corpus.** `tools/corpus.php` runs the corpus call files (1,179 rows plus
+5,000 mutants, every clock pinned) through the façade over one transport and
+compares each row byte for byte with the module's own answers. A row whose
+input is over 3,145,728 bytes is refused by `aprv` first (exit 3, HTTP 413) and
+counts as answered when the module's answer is the size refusal.
+`tools/rerun.sh APRV_BINARY G1_DIR` runs the phpunit suites and the corpus over
+both transports as one command.
 
 **Releasing.** `binaries.json` ships with no tag and no hashes. The release
 pins them with `php php/tools/update-binaries.php --tag vX.Y.Z --sums
