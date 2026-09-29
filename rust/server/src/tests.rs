@@ -374,8 +374,13 @@ fn a_trapped_pool_instance_is_discarded_and_the_next_call_gets_a_fresh_one() {
 const HOSTILE: &str = include_str!("../tests/hostile.wat");
 
 fn hostile(pool: bool, time_limit_ms: u64) -> Arc<Verifier> {
+    // One file per call: the tests run in parallel, and a shared name let
+    // one test read the file while another was rewriting it (seen on
+    // Windows as an empty file, "not a .wasm component").
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let wasm = wat::parse_str(HOSTILE).expect("the hostile component parses");
-    let path = std::env::temp_dir().join(format!("aprv-hostile-{}.wasm", std::process::id()));
+    let path = std::env::temp_dir().join(format!("aprv-hostile-{}-{n}.wasm", std::process::id()));
     std::fs::write(&path, wasm).unwrap();
     let rt = Runtime::new(Load::File(path.to_str().unwrap()), time_limit_ms)
         .expect("the hostile component loads");

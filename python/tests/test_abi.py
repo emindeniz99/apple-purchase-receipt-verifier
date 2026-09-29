@@ -10,6 +10,7 @@ import json
 import secrets
 import time
 import unittest
+from typing import Any
 from unittest import mock
 
 from apple_purchase_receipt_verifier import Config, Environment, Verifier, _host, _wire
@@ -133,6 +134,70 @@ class MisuseTest(unittest.TestCase):
         self.assertEqual('{"status":21009}', answer)
         again = verifier.verify_receipt_endpoint(Environment.SANDBOX, request().decode())
         self.assertIn('"status":0', again)
+
+
+class InputCapTest(unittest.TestCase):
+    """Never more than 3,145,729 bytes of an input enter linear memory: one
+    over the core's cap, so the core itself answers TOO_LARGE (21002 at the
+    endpoint) and a huge input costs no memory."""
+
+    CAP = 3_145_728
+
+    @staticmethod
+    def recording(instance: _host.Instance) -> "list[int]":
+        """The sizes ``cabi_realloc`` was asked for, one per call."""
+        sizes: list[int] = []
+        real = instance._realloc
+
+        def spy(store: Any, old: int, old_size: int, align: int, size: int) -> Any:
+            sizes.append(size)
+            return real(store, old, old_size, align, size)
+
+        instance._realloc = spy  # type: ignore[assignment]
+        return sizes
+
+    def test_a_4_mib_input_is_answered_by_the_core_and_only_the_cap_plus_one_is_copied(
+        self,
+    ) -> None:
+        big = b"A" * (4 << 20)
+        instance = fresh()
+        sizes = self.recording(instance)
+        answer = instance.call("verify-receipt", (now(),), big)
+        self.assertEqual("TOO_LARGE", json.loads(answer)["reason"], answer)  # the core's own answer
+        self.assertEqual([self.CAP + 1], sizes)
+        # byte for byte what the core says when the whole input is copied
+        with mock.patch.object(_host, "MAX_INPUT_COPY", 1 << 40):
+            whole = fresh().call("verify-receipt", (now(),), big)
+        self.assertEqual(whole, answer)
+
+    def test_a_huge_input_does_not_grow_linear_memory(self) -> None:
+        instance = fresh()
+        instance.call("verify-receipt", (now(),), b"A" * (64 << 20))
+        self.assertLess(instance.memory_size(), 16 << 20)
+
+    def test_the_endpoint_answers_21002_for_a_4_mib_body(self) -> None:
+        body = b'{"receipt-data":"' + b"A" * (4 << 20) + b'"}'
+        answer = fresh().call("verify-receipt-endpoint", (0, now()), body)
+        self.assertEqual({"status": 21002}, json.loads(answer))
+
+    def test_an_input_of_exactly_the_cap_is_passed_whole(self) -> None:
+        instance = fresh()
+        sizes = self.recording(instance)
+        answer = instance.call("verify-receipt", (now(),), b"A" * self.CAP)
+        self.assertEqual([self.CAP], sizes)
+        self.assertNotEqual("TOO_LARGE", json.loads(answer)["reason"], answer)  # it was read
+
+    def test_the_public_api_reports_too_large_for_a_4_mib_receipt(self) -> None:
+        result = Verifier(Config.defaults()).verify_receipt("A" * (4 << 20))
+        self.assertFalse(result.verified)
+        self.assertEqual("TOO_LARGE", result.failure.reason.name)  # type: ignore[union-attr]
+
+    def test_init_is_never_truncated(self) -> None:
+        config = _wire.init_config([JWS_ROOT])
+        instance = fresh(init=False)
+        sizes = self.recording(instance)
+        instance.call("init", (), config + b" " * (4 << 20))
+        self.assertEqual([len(config) + (4 << 20)], sizes)
 
 
 class MemoryTest(unittest.TestCase):
