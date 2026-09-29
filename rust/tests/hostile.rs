@@ -296,12 +296,16 @@ fn unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost() {
         encode(&flat),
         encode(&signer_embedded),
     ];
-    let mut costs = [Duration::ZERO; 5];
-    for _ in 0..3 {
+    // Each input's cost is its fastest of seven interleaved calls: the
+    // bounds below are ratios between inputs, and on a loaded machine a
+    // sum or a mean carries whatever else ran during one call, while the
+    // fastest call is the closest to the work itself for every input alike.
+    let mut costs = [Duration::MAX; 5];
+    for _ in 0..7 {
         for (index, input) in inputs.iter().enumerate() {
             let started = Instant::now();
             let result = verifier.verify_receipt(input);
-            costs[index] += started.elapsed();
+            costs[index] = costs[index].min(started.elapsed());
             let expected = [
                 None,
                 Some(Reason::Malformed),
