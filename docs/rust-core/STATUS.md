@@ -42,6 +42,67 @@ work.
   module and component (0.6 core); each lane records the cases that
   differ because of it and changes nothing to make them pass. Parity
   gates run again with the real module after G1.
+- The integration checklist's fourteen owner decisions (OD-01 to OD-14
+  in `integration-checklist.md`), taken 2026-09-29 so integration can
+  proceed; the owner reads them at the end:
+  - OD-01: `rust-wasm` runs whenever any host area is selected, and
+    `aprv-server` builds and uploads the Linux x86_64 static binary as an
+    artifact whenever `java-wasm/` or `php/` is selected; every host job
+    downloads the module (or the binary) before its first build step. No
+    job downloads a previous run's artifact.
+  - OD-02: R14 stands. Exactly two committed copies of the real module
+    exist, `go/internal/wasm/aprv.wasm` (Go's module zip must carry it
+    for `//go:embed`) and the Swift resource (SwiftPM has no binary
+    target for a `.wasm`); both land once at integration with their
+    `.sha256`, and `refresh-wasm-copies` rewrites both files together on
+    the release branch. Cost the owner should know: about 1 MB of packed
+    history per copy per release (the module is 2.9 MB, 0.9 MB zlib).
+  - OD-03: the core crate is held on crates.io at 0.7 until openssl-sys
+    accepts openssl-src 400 (`publish-crates` and the crates smoke are
+    skipped with that reason in the workflow); the README documents the
+    `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL 4>` path for a source build.
+    The upstream request is the owner's item.
+  - OD-04: `check-one-implementation.mjs` gets a per-file allowlist;
+    .NET's `X509Certificate2?` on the public 0.7 API and Go's
+    `crypto/x509` in its three configuration files are listed with a
+    reason each. No API break.
+  - OD-05: the corpora (200 MB of generated rows) stay out of the
+    repository. CI's reference is the 311 cases plus the corpus of
+    generated receipts A3 builds; the nightly corpus jobs run only when
+    the repository variable `APRV_CORPUS_URL` names an owner-hosted
+    archive, and print a notice otherwise.
+  - OD-06: PHP pins the two Linux musl binaries only, from a
+    release-branch job that builds them (they are reproducible per
+    `tools/reproduce-server.sh`) and writes `php/binaries.json` with `jq`
+    and `sha256sum` alone, no repository code, in the same commit as the
+    module copies; the macOS and Windows entries stay `null` (those
+    platforms use the server URL option) until `release.yml` publishes
+    the branch run's exact files.
+  - OD-07: the classifier jars ship with every release; a release costs
+    about 10.5 MB of the 80 MB monthly Central allowance, so the release
+    budget in CLAUDE.md drops from 7 to 5 releases a month with 2 in
+    reserve. Owner call to confirm.
+  - OD-08: lane B's names win (`build-static.sh COMPONENT [TARGET]
+    [OUTDIR]` writing `aprv-<target>`, `APRV_TEST_COMPONENT`,
+    `docker-smoke.sh`); lane D's call sites are adapted at integration;
+    `.exe` handling and the `prebuilt` image stage are added on lane B's
+    files.
+  - OD-09: the `rust` test job caches `target/` (test jobs may), the
+    timeout rises to 40 minutes, the `--no-default-features` leg keeps
+    running against the OpenSSL 4 lane D's toolchain script builds, and
+    the job runs `--workspace` so the isolation test runs.
+  - OD-10: the server-engine tests run on Linux x86_64 legs only; other
+    legs run `-DexcludedGroups=server`; Temurin 8 stays as long as the
+    main artifact supports Java 8.
+  - OD-11: `node/licenses/` becomes the root `licenses/wasm/` (one
+    source); every package copies from it at build or packaging time and
+    `tools/check-licence-copies.mjs` diffs the copies in CI; the Java
+    jar and the Python wheels take theirs from there.
+  - OD-12: the Go-only RSA modulus cap and the other port-only rules in
+    `go-inventory.md` go to A3's test inventory as fixture candidates.
+  - OD-13: no 32-bit claim for Go.
+  - OD-14: the integrator pins the container digests and the Playwright
+    version per the CI rules.
 
 ## Hand-back findings the owner should know
 
