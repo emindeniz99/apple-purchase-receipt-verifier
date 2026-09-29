@@ -29,9 +29,10 @@ Labels: TESTED (ran here), EXPECTED (inferred, not run).
   rows through `CorpusRun`, the same `AprvInstance` the verifier uses:
   6,176 identical, 2 `clock-moves-chain`, 1 `init-refusal`, 0 traps: the
   expectation of round 13 (`results/corpus-classify.txt`).
-- **The wrapper's own tests pass (TESTED).** 523 tests on .NET 8, 9 and 10;
-  302 pass on each, and the only 221 failures on each are conformance cases
-  (`results/tests-summary.txt`). The netstandard2.0 Floor project passes 9 of
+- **The wrapper's own tests pass (TESTED).** 524 tests on .NET 8 and 10;
+  303 pass on each, and the only 221 failures on each are conformance cases
+  (`results/tests-summary.txt`); .NET 9 ran one test fewer (523, 302 pass, the
+  same 221 failures). The netstandard2.0 Floor project passes 9 of
   9 on all three runtimes.
 - **311 cases: 90 pass, 221 differ because of the stand-in (TESTED).** The
   same 221 ids on .NET 8, 9 and 10 (`results/standin-fail-ids.txt`), by group:

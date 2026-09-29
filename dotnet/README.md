@@ -552,6 +552,8 @@ environments, no app Apple id, no device id. Methods return a
 
 ## Testing
 
+`aprv.wasm` is not committed: copy the module to `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm` (listed in `.gitignore`; its SHA-256 is in `aprv.wasm.sha256` beside it), or set `APRV_WASM` to its path; a missing file stops the build with a message.
+
 ```bash
 dotnet test dotnet/tests/ApplePurchaseReceiptVerifier.Tests           # the whole suite
 dotnet test dotnet/tests/ApplePurchaseReceiptVerifier.Tests.Floor     # the netstandard2.0 asset, loaded into net8.0/9.0/10.0

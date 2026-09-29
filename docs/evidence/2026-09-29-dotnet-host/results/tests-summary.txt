@@ -1,6 +1,6 @@
-Tests, .NET 8.0.31 (shared runtime): total 523, succeeded 302, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
-Tests, .NET 9.0.20 (self-contained publish of the test project): total 523, succeeded 302, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
-Tests, .NET 10.0.12 (shared runtime): total 523, succeeded 302, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
+Tests, .NET 8.0.31 (shared runtime): total 524, succeeded 303, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
+Tests, .NET 9.0.20 (self-contained publish of the test project, run one test before the last): total 523, succeeded 302, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
+Tests, .NET 10.0.12 (shared runtime): total 524, succeeded 303, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
 
 Floor project (the netstandard2.0 asset):
   floor net8.0:   total: 9   failed: 0   succeeded: 9

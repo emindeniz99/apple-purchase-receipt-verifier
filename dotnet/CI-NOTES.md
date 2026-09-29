@@ -13,23 +13,27 @@ here were measured on Linux x86-64 with the round-13 stand-in module (the
   the slow step. `System.Security.Cryptography.Pkcs` and
   `System.Formats.Asn1` are no longer restored. Every `packages.lock.json`
   under `dotnet/` was regenerated, so locked-mode restore still holds.
-- **The module.** `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm`
-  and `aprv.wasm.sha256` (`sha256sum` format) are the round-13 core module
-  (2,967,116 bytes), committed so a fresh clone builds and tests. Two ways
-  to replace it with the release's build:
-  - overwrite both files, refreshing the hash with
+- **The module is not committed** (owner rule on large files). The build
+  embeds `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm`, which is
+  in `dotnet/.gitignore`, or the file `APRV_WASM` names instead; a missing
+  file is a build error that says so. `wasm/aprv.wasm.sha256` (`sha256sum`
+  format, the round-13 core module, 2,967,116 bytes) is committed and names
+  the file that belongs there. Two ways to put the release's build in place:
+  - copy it to that path and refresh the hash with
     `sha256sum aprv.wasm > aprv.wasm.sha256`; or
   - set `APRV_WASM=<path to aprv.wasm>` for the build. The project then
     embeds that file and writes its hash beside it, so nothing in the tree
     changes. `publish-nuget` already exports `APRV_WASM` after checking the
     file against build-wasm's SHA-256, so its existing Pack step needs no
-    change. The override was checked here by building with a different
-    module (the stand-in plus one custom section): the assembly embedded
-    that file and its hash check passed.
-  The assembly checks the hash again the first time a verifier is created.
-- **`wasm-copies`** finds committed copies with `git ls-files '*aprv.wasm'`,
-  so it now finds this one too. It must compare it with the release build
-  like the Go and Swift copies, on `release-please--*` branches.
+    change, and `dotnet pack` takes the file lane D's release job provides.
+    The override was checked here by building with a different module (the
+    stand-in plus one custom section): the assembly embedded that file and
+    its hash check passed.
+  The `dotnet` test job has to put the module in place (or set `APRV_WASM`)
+  before `dotnet test`. The assembly checks the hash again the first time a
+  verifier is created.
+- **`wasm-copies`** need not look at `dotnet/`: no copy of the module is
+  committed here.
 - **Licence texts.** `dotnet/licenses/` (OpenSSL, wasi-libc with its
   Apache-LLVM, Apache and MIT texts, Rust std, musl) is packed into the
   nupkg under `licenses/`. They are copies of `node/licenses/`; OpenSSL 4.0.2
@@ -39,7 +43,7 @@ here were measured on Linux x86-64 with the round-13 stand-in module (the
 
 | Job | Change |
 |---|---|
-| `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. Until the core's module replaces the stand-in, 221 of the 311 cases fail on every runtime (ids in `docs/evidence/2026-09-29-dotnet-host/results/standin-fail-ids.txt`), so this job is red by design; with the real module it must be 311 of 311 and every other test green (301 tests here). Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; identical failing set on all three. Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
+| `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. Until the core's module replaces the stand-in, 221 of the 311 cases fail on every runtime (ids in `docs/evidence/2026-09-29-dotnet-host/results/standin-fail-ids.txt`), so this job is red by design; with the real module it must be 311 of 311 and every other test green (213 tests here). Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; identical failing set on all three. Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
 | `dotnet-mono` | Unchanged and still meaningful only as far as it goes: `monop` reflects the netstandard2.0 assembly, which proves it loads and not that it runs. Running the wrapper on Mono needs Mono to find `libwasmtime` (it does not read NuGet's `runtimes/` folders), which was not tried; a job for it should copy `runtimes/linux-x64/native/libwasmtime.so` beside the test binary and set `LD_LIBRARY_PATH`. No Mono here |
 | `dotnet-roots` | Unchanged until Phase 7: `AppleRootData.cs` and `tools/GenerateRootData` stay for `AppleRootCertificates.Bundled()` and are untouched |
 | `dotnet-trim` | Unchanged command. The sample was rewritten to read verdicts from the endpoint's `status` and passes here: `dotnet publish samples/TrimAotSmoke -c Release -warnaserror` (net9.0, self-contained, trimmed, `linux-x64`) then running it prints `trimmed smoke ok`. Wasmtime is trim-clean under `-warnaserror` in that configuration |
