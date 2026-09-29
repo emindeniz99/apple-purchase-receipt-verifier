@@ -383,9 +383,9 @@ npm run test:runtimes  # Node, Bun, Deno, workerd, @edge-runtime/vm
 npm run runtime:browser -- chromium firefox webkit   # needs playwright
 ```
 
-`npm run build` transpiles `wasm/aprv.component.wasm`, checked against its
-`.sha256` file; set `APRV_COMPONENT` to build from another component, such as
-a release's.
+`npm run build` transpiles `wasm/aprv.component.wasm`, which is not in git:
+copy it into place (CI takes it from the rust-wasm job), or set
+`APRV_COMPONENT` to its path.
 
 `test/conformance.test.js` runs `fixtures/cases.json`, the cross-language
 vector file every package of this library answers, as one named test per

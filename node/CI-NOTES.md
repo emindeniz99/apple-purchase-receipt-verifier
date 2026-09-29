@@ -8,18 +8,22 @@ changes `node/` now needs there and in the root documents.
 - `npm ci --ignore-scripts` still works: jco 1.35.0 and its dependencies
   need no install script (checked from a clean copy of `node/`).
 - `npm run build` (and `npm test`, `npm pack`, `npm publish` through
-  `prepack`) now runs `jco transpile` before `tsc`. It reads
-  `node/wasm/aprv.component.wasm` and refuses it unless it matches
-  `node/wasm/aprv.component.wasm.sha256`. Set `APRV_COMPONENT` to a path to
-  build from another component; the build prints that file's SHA-256 and
-  writes it to `dist/generated/component.sha256`.
+  `prepack`) now runs `jco transpile` before `tsc`. It reads the component
+  from `node/wasm/aprv.component.wasm`, which is gitignored and never
+  committed (owner rule on large files). Every job that builds `node/`
+  must first provide the rust-wasm job's `aprv.component.wasm`: set
+  `APRV_COMPONENT` to its path (used as given), or copy it into place and
+  update `node/wasm/aprv.component.wasm.sha256`, which the build checks the
+  in-place copy against (it pins the round-13 stand-in today). A missing
+  file fails the build with a message saying so. The build prints the
+  file's SHA-256 and writes it to `dist/generated/component.sha256`.
 - `src/generated/` is build output and is gitignored.
 
 ## Jobs to change in `ci.yml`
 
 | Job | Change |
 |---|---|
-| `node` (Node 20, 22, 24, 26) | Unchanged command (`npm ci --ignore-scripts && npm test`). Until the core's module replaces the stand-in, 221 of the 311 cases fail on each entry point (list in the lane hand-back), so this job is red by design; once the real component is in `node/wasm/` (or passed as `APRV_COMPONENT`), it must be 311/311 on both entry points |
+| `node` (Node 20, 22, 24, 26) | Unchanged command (`npm ci --ignore-scripts && npm test`). Needs the component provided first (above). With the round-13 stand-in, 221 of the 311 cases fail on each entry point (list in the lane hand-back); with the core's component it must be 311/311 on both entry points |
 | `node-runtimes` | Matrix becomes `node, bun, deno, workerd, edge`, and each leg runs `npm ci --ignore-scripts && npm run build && npm run runtime:${{ matrix.runtime }}`. The three `workerd-*` legs collapse to one: the package needs no compatibility flag, so the floor date and `nodejs_compat_v2` legs no longer test anything of ours |
 | `node-runtimes-web` | Delete: the `/web` entry point runs the same module as `.`, and every runtime leg above smokes both entry points. The `test:runtimes:web` script is gone |
 | `node-runtimes-fastly` | Delete (R5): Fastly Compute runs no WebAssembly. The `test:runtimes:fastly` script and the `@fastly/js-compute` dev dependency are gone |

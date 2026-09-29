@@ -4,14 +4,16 @@
 //
 //   node scripts/build.mjs
 //
-// The component is wasm/aprv.component.wasm, checked against
-// wasm/aprv.component.wasm.sha256, unless APRV_COMPONENT names another
-// file (a release build, or the core's own CI build), which is used as
-// given and whose SHA-256 is printed. src/generated/ is build output: it is
-// not committed, because it must always match the component it came from.
+// The component is read from wasm/aprv.component.wasm, which is gitignored:
+// copy it into place (CI takes it from the rust-wasm job). That copy must
+// match wasm/aprv.component.wasm.sha256, the component this package was
+// last tested against. APRV_COMPONENT names another file instead, used as
+// given; the build prints its SHA-256. Either way the hash is recorded in
+// dist/generated/component.sha256. src/generated/ is build output: it is not
+// committed, because it must always match the component it came from.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const here = (rel) => fileURLToPath(new URL(`../${rel}`, import.meta.url));
@@ -29,6 +31,12 @@ const run = (command, args) => {
 // 1. The component.
 const override = process.env.APRV_COMPONENT;
 const component = override || here('wasm/aprv.component.wasm');
+if (!existsSync(component)) {
+  fail(
+    `no component at ${component}: copy aprv.component.wasm there (the rust-wasm job builds it) ` +
+      'or set APRV_COMPONENT to its path',
+  );
+}
 const sha256 = createHash('sha256').update(readFileSync(component)).digest('hex');
 if (override) {
   console.log(`build: component ${override} (APRV_COMPONENT), sha256 ${sha256}`);
