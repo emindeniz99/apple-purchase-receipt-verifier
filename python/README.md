@@ -22,19 +22,23 @@ committed: copy it into `apple_purchase_receipt_verifier/`. The package loads on
 `aprv.wasm.sha256`, and reads no variable to pick another.
 
 - **It compiles at start.** The first `Verifier` in a process compiles the
-  module: about 1 s on 4 CPUs, about 3 s on one. Later ones take under a
-  millisecond. Build the `Verifier` at start-up, never per request.
-- **A compile cache is on by default** and brings a start to about 0.1 s. It
+  module: 1 to 3 s on an idle machine, up to 8 s on a busy shared one (about
+  5 s of CPU). A later one in the same process takes about 3 ms. Build the
+  `Verifier` at start-up, never per request.
+- **A compile cache is on by default** and brings a start to about 0.1 s
+  (54 MB resident, against 150 MB for a compile). It
   lives in your own user cache directory; `APRV_WASM_CACHE_DIR` moves it, and
   an empty value turns it off ([the rules](#the-compile-cache)).
-- **AWS Lambda pays the compile in every new container**, about 3 s on one
-  vCPU: the package directory is read-only and nothing survives a cold start.
+- **AWS Lambda pays the compile in every new container**, about 3 s or more on
+  one vCPU: the package directory is read-only and nothing survives a cold start.
   Create the `Verifier` in the init phase, outside the handler, and count it in
   your cold-start budget.
 - **Use worker processes, not threads.** A `Verifier` is thread-safe, but
-  wasmtime-py scales threads badly: 583, 946 and 566 receipts per second at 1, 2
-  and 4 threads, against 595, 1,123 and 2,259 with processes. With gunicorn or
-  uvicorn, one `Verifier` per worker.
+  wasmtime-py scales threads badly: on an idle 4-CPU machine, 583, 946 and 566
+  receipts per second at 1, 2 and 4 threads, against 595, 1,123 and 2,259 with
+  processes (an idle machine and an earlier build of the module; the shape
+  comes from wasmtime-py, not from the module). With gunicorn or uvicorn, one
+  `Verifier` per worker.
 - **Platforms follow wasmtime-py's wheels:** Linux (glibc and musl), macOS and
   Windows, on x86_64 and arm64. Elsewhere (32-bit machines, ppc64le, s390x,
   riscv64) `pip install` stops with a pointer to `aprv-server`, a standalone
@@ -111,8 +115,8 @@ is discarded and the next call uses a fresh one.
 ### The compile cache
 
 Wasmtime writes the compiled module to disk, so the next process loads it
-(95 ms warm, against 934 ms and 2,923 ms to compile on 4 CPUs and on one;
-`docs/evidence/2026-09-27-python-runtime-options.md`). The cache holds native
+(about 0.1 s warm, against 1 to 3 s to compile on an idle machine and about 5 s
+of CPU on a busy one; `docs/evidence/2026-09-29-python-g1.md`). The cache holds native
 code that the next process runs, so anyone who can write its directory can plant
 code. The rules:
 
@@ -379,12 +383,15 @@ every failure is a `VerificationResult`/`Failure` instead of a raised
 
 ## Speed
 
-What wasmtime-py 49.0.0 measured on the plain module (2026-09-26, one thread,
-Linux x86_64, CPython 3.12; `docs/evidence/2026-09-26-python-wasmtime.md` and
-`2026-09-27-python-runtime-options.md` hold the sources): 1.78 ms for a genuine sandbox receipt and 5.20 ms
-for a StoreKit 2 JWS after the module is compiled (about 560 and 190 per second
-per thread), a new `Verifier` 0.4 to 0.6 ms once the module is compiled, and the
-start-up figures at the top of this file. The core does the same work for a
+What wasmtime-py 49.0.0 measured on the release module (2026-09-29, one thread,
+Linux x86_64, CPython 3.11, on a shared 4-CPU runner that was busy the whole
+time, so read them as upper bounds; `docs/evidence/2026-09-29-python-g1.md`
+holds the sources): 2.2 to 3.0 ms of CPU for a genuine sandbox receipt with two
+purchases, 18 ms for one with 187, and 8 ms for a StoreKit 2 JWS, after the
+module is compiled (at most about 450 receipts per second per thread), a new
+`Verifier` about 3 ms once it is, and the start-up figures at the top of this
+file. Peak memory is 150 MB after a compile and 54 MB after a cache hit, and
+does not grow over 300 calls. The core does the same work for a
 hostile input as for an ordinary one of its size, and its bounds are its own
 (see "Input limits"), so a large or malformed input costs no more than a large
 valid one.

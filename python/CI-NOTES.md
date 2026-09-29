@@ -9,8 +9,7 @@ the module into `apple_purchase_receipt_verifier/aprv.wasm` before the tests run
 sets `APRV_WASM` for them (only `tests/_support.py`, `tests/corpus_rows.py` and
 `tools/build_dist.py` read it; the package never does, and a test greps for that).
 A missing or mismatched file is an error at the first `Verifier`.
-While it is the stand-in, the file to copy is the round-13
-`aprv-cabi.core.wasm` (SHA-256 in `aprv.wasm.sha256`). The package has one runtime dependency,
+The file to copy is the release build's `aprv.wasm` (SHA-256 in `aprv.wasm.sha256`). The package has one runtime dependency,
 `wasmtime>=49`; the `dev` extra adds ruff, mypy and setuptools (the
 install-failure test builds this source tree with it).
 
@@ -44,42 +43,50 @@ uv run --locked --extra dev python -m unittest discover -s tests
 - `HOME` (and `LOCALAPPDATA` on Windows) must be writable: `test_cache.py`
   points the cache at temporary directories but starts fresh interpreters.
 - Leave `APRV_WASM_CACHE_DIR` unset; the tests set it where they need it.
-- The suite takes about 1 minute on 4 CPUs; the cold compile is 1 to 3 s and
+- The suite takes about 1 to 2 minutes on 4 CPUs (103 s on a busy shared
+  runner); the cold compile is 1 to 3 s idle and about 5 s of CPU busy, and
   `test_cache.py` compiles five times. Budget 10 minutes per leg.
 - `test_cache.py` covers the cache rules with a real read-only directory when
   the user is not root (every hosted runner) and a simulated one when it is
   (the Alpine containers). The foreign-owned and group-writable cases skip on
   Windows only, where the rule does not apply (`unittest` prints the reason).
-- While `aprv.wasm` is the stand-in module (the round-13 core on 0.6), 217 of
-  the 311 cases are expected to fail and the suite says so
-  (`tests/standin_differences.txt`, asserted case by case). The list is
-  ignored the moment the bundled module's SHA-256 is not the stand-in's, so
-  the release module must pass all of them: that is gate G5, and nothing has
-  to change in CI to get there.
+- All 311 cases must pass against the release module (checked: 311 of 311 on
+  the G1 module, sha256 `4cbe2b02...826e`); there is no list of expected
+  differences. `tools/g1.sh G1_DIR` runs the whole re-run for a new module in
+  one command (see "Re-running against a new module" below).
 - Each leg should also run once with the cache warm (the second run of the
   step above) and record the wall time of `tests/test_cache.py`'s printed
   cold and warm starts, which feed the README's numbers.
 
 ## 2. Corpus parity (after the release module lands)
 
-The 1,179 corpus rows plus the 5,000 mutants through the package's host layer,
-compared with the ABI v1 Node rows. The corpora and the Node rows are large
-and live in the parity job's workspace, not in the repository:
+The 1,179 corpus rows plus the 5,000 mutants (6,179 rows in five files) through
+the package's host layer, compared byte for byte with the module's own rows
+(`rows/module-<corpus>.jsonl`, from the core lane's trap host). The call files
+(`calls/<corpus>.pinned.jsonl`, every clock pinned) and the rows are large and
+live in the parity job's workspace, not in the repository:
 
 ```sh
-CAB=../docs/evidence/2026-09-29-canonical-abi-final
 for c in cases hostile algorithms substrate fuzz; do
-  python3 $CAB/py/calls_bytes.py $CALLS/$c.jsonl > $WORK/calls/$c.jsonl
-  uv run --locked python tests/corpus_rows.py $WORK/calls/$c.jsonl > $WORK/run/pkg-$c.jsonl
+  uv run --locked python tests/corpus_rows.py $G1/calls/$c.pinned.jsonl > $WORK/pkg-$c.jsonl
+  python3 $G1/same.py $WORK/pkg-$c.jsonl $G1/rows/module-$c.jsonl
 done
-python3 $CAB/py/classify.py pkg $WORK/calls $NODE_ROWS $WORK/run/pkg
 ```
 
-`classify.py` prints `AS EXPECTED` for 6,176 identical, 2
-`clock-moves-chain` and 1 `init-refusal` on the stand-in. Against the release
-module the expectation is the 0.7 one: every row identical to the native
-core's. The five files take about 25 s on 4 CPUs (the 5,000 mutants 17 s);
-a run near 226 s means something went back to the per-byte component API.
+Every row must be identical and no call may trap: 6,179 of 6,179 on the G1
+module. The five files take about 30 s on a busy 4-CPU runner (the 5,000
+mutants 21 s); a run near 226 s means something went back to the per-byte
+component API.
+
+## Re-running against a new module
+
+```sh
+PYTHON=/path/to/venv/bin/python tools/g1.sh $G1
+```
+
+copies `$G1/aprv.wasm` into the package (git-ignored), rewrites the tracked
+`aprv.wasm.sha256` from it (commit that file), runs the whole suite and then
+the section 2 comparison for every corpus, and exits non-zero on any failure.
 
 ## 3. Install failure (new job `python-install`, R28)
 
@@ -140,8 +147,7 @@ echo "$RELEASE_SHA256  aprv.wasm" | (cd "$ARTIFACTS" && sha256sum -c -)
 ```
 
 `build_dist.py` writes `aprv.wasm.sha256` from the module it copies, and the
-package refuses to start when the two disagree. `tests/_support.py` recognises
-the stand-in by its SHA-256, so the release module must not carry it. The
+package refuses to start when the two disagree. The
 module is not committed on this branch; only `go/` and the Swift package commit
 the real one, once, at integration (DECISIONS.md R14).
 
