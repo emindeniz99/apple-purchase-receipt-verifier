@@ -1,11 +1,11 @@
-packed: ApplePurchaseReceiptVerifier.0.7.0.nupkg 2107808 bytes
+packed: ApplePurchaseReceiptVerifier.0.7.0.nupkg 2124673 bytes
          491 _rels/.rels
         1306 ApplePurchaseReceiptVerifier.nuspec
-       32072 README.md
-     3036160 lib/net8.0/ApplePurchaseReceiptVerifier.dll
-       61121 lib/net8.0/ApplePurchaseReceiptVerifier.xml
-     3036672 lib/netstandard2.0/ApplePurchaseReceiptVerifier.dll
-       61508 lib/netstandard2.0/ApplePurchaseReceiptVerifier.xml
+       32552 README.md
+     3075072 lib/net8.0/ApplePurchaseReceiptVerifier.dll
+       61151 lib/net8.0/ApplePurchaseReceiptVerifier.xml
+     3075584 lib/netstandard2.0/ApplePurchaseReceiptVerifier.dll
+       61538 lib/netstandard2.0/ApplePurchaseReceiptVerifier.xml
         6196 licenses/musl-COPYRIGHT
        10175 licenses/openssl-LICENSE.txt
         1571 licenses/rust-COPYRIGHT
@@ -17,10 +17,10 @@ packed: ApplePurchaseReceiptVerifier.0.7.0.nupkg 2107808 bytes
         1023 licenses/wasi-libc-LICENSE-MIT
         1350 [Content_Types].xml
          873 package/services/metadata/core-properties/nuget.psmdcp
-consumer: 7 s wall (restore from an empty package folder + build)
+consumer: 8 s wall (restore from an empty package folder + build)
 consumer restored: applepurchasereceiptverifier wasmtime 
 consumer run:
-typed: not verified: INTERNAL_ERROR: the verification module's answer is unreadable
+typed: verified, bundle dev.bonzer.weeka.app
 endpoint: "status":0
 runtime: .NET 10.0.12
 library: 0.7.0.0

@@ -1,0 +1,7 @@
+load: 14.05 13.20 12.06; cpus: 4
+compile_ms=5977.4 first_instance_with_init_ms=39.5 later_instance_with_init_ms_median=3.06 later_min=2.35 later_max=7.79 linear_memory_after_init_bytes=1966080
+verify-receipt receipt/verify-genuine-sandbox-g5-against-apple-roots: 1 thread(s): 523.6 per second (4189 calls in 8.0 s)
+verify-receipt receipt/verify-genuine-sandbox-g5-against-apple-roots: 4 thread(s): 644.6 per second (5157 calls in 8.0 s)
+verify-signed-data transaction/verify-shared-sandbox: 1 thread(s): 106.1 per second (849 calls in 8.0 s)
+verify-signed-data transaction/verify-shared-sandbox: 4 thread(s): 99.6 per second (797 calls in 8.0 s)
+load: 11.38 12.61 11.93

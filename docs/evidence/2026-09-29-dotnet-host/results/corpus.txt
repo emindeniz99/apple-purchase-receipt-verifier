@@ -1,0 +1,5 @@
+cases: 153 rows: 153 identical, 0 differ, 0 traps; {"host":"Wasmtime .NET 48.0.2","dotnet":"10.0.12","rows":153,"traps":0,"instances":27}; 9 s wall
+hostile: 811 rows: 811 identical, 0 differ, 0 traps; {"host":"Wasmtime .NET 48.0.2","dotnet":"10.0.12","rows":811,"traps":0,"instances":4}; 7 s wall
+algorithms: 22 rows: 22 identical, 0 differ, 0 traps; {"host":"Wasmtime .NET 48.0.2","dotnet":"10.0.12","rows":22,"traps":0,"instances":22}; 7 s wall
+substrate: 193 rows: 193 identical, 0 differ, 0 traps; {"host":"Wasmtime .NET 48.0.2","dotnet":"10.0.12","rows":193,"traps":0,"instances":74}; 8 s wall
+fuzz: 5000 rows: 5000 identical, 0 differ, 0 traps; {"host":"Wasmtime .NET 48.0.2","dotnet":"10.0.12","rows":5000,"traps":0,"instances":96}; 16 s wall

@@ -1,8 +1,5 @@
-Tests, .NET 8.0.31 (shared runtime): total 524, succeeded 303, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
-Tests, .NET 9.0.20 (self-contained publish of the test project, run one test before the last): total 523, succeeded 302, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
-Tests, .NET 10.0.12 (shared runtime): total 524, succeeded 303, failed 221, skipped 0; failing tests outside Conformance070.Case: 0
-
-Floor project (the netstandard2.0 asset):
-  floor net8.0:   total: 9   failed: 0   succeeded: 9
-  floor net10.0:   total: 9   failed: 0   succeeded: 9
-  floor net9.0 (self-contained 9.0.20):   total: 9   failed: 0   succeeded: 9
+Module: aprv.wasm of the 0.7 core (lane/core 05b4ad9), 3,005,922 bytes, SHA-256 4cbe2b02056afc41c352fbbacdf6b3804f6f081beaaa8e8ff104340e9ed8826e
+Tests, .NET 8.0.31 (shared runtime): total 524, succeeded 524, failed 0, skipped 0 (311 conformance cases, 213 others)
+Tests, .NET 9.0.20 (self-contained publish of the test project): total 524, succeeded 524, failed 0, skipped 0
+Tests, .NET 10.0.12 (shared runtime): total 524, succeeded 524, failed 0, skipped 0
+Floor (netstandard2.0 asset), .NET 8.0.31 and 10.0.12: 9 of 9 each; .NET 9.0.20 (self-contained) 9 of 9 on the stand-in run

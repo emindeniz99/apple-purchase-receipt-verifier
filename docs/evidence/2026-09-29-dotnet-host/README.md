@@ -5,43 +5,43 @@ the product, `dotnet/`: the library over the `Wasmtime` package, and
 `dotnet/tools/CorpusRun`, which drives its host layer over the shared corpora.
 This folder holds the scripts that run them and the results.
 
-The module was the round-13 stand-in (`../2026-09-29-canonical-abi-final/`,
-core 0.6), not the release build.
+The module is the release build of the 0.7 core (G1, lane/core 05b4ad9). It is
+not committed: `scripts/g1.sh` copies it to the ignored path in the package.
+The first round of this evidence ran the round-13 stand-in (the 0.6 core); its
+numbers are in the git history.
 
 Placeholders:
 
 | Name | Meaning |
 |---|---|
 | `$REPO` | the repository root |
-| `$SCRATCH` | the wasm bake-off's scratch directory. It holds ABI v1's calls files (`wasm/abi/calls`) and Node rows (`wasm/abi/run`), and the .NET SDK. This round writes under `$S`, which defaults to `$SCRATCH/dotnet-host` |
-| `$CORPORA` | the substrate bake-off's request corpora (1,179 rows, plus 5,000 mutants in `fuzz.jsonl`) |
+| `$SCRATCH` | a scratch directory. It holds the .NET SDK (put `dotnet` on `PATH`); this round writes under `$S`, which defaults to `$SCRATCH/dotnet-host` |
+| `$G1` | a folder with `aprv.wasm`, `calls/<corpus>.pinned.jsonl` (the five corpora as call files, every unpinned clock pinned), `rows/module-<corpus>.jsonl` (the module's own answers, the reference rows) and `same.py` (byte-for-byte comparison of two row files) |
 
 ## Files
 
 | File | What it answers |
 |---|---|
+| `scripts/g1.sh` | The whole re-check for a module, as one command: put the module in place and refresh its pin, run the suite on .NET 10 and 8, the Floor project, the corpora, the speed run |
 | `scripts/env.sh` | Paths and package folders for the other scripts |
-| `scripts/corpus.sh` | Do the five corpora (6,179 rows) through the host layer give the ABI v1 Node rows? Uses round 13's `py/calls_bytes.py` and `py/classify.py` |
+| `scripts/corpus.sh` | Do the five corpora (6,179 rows) through the host layer give the reference rows, byte for byte? |
 | `scripts/speed.sh` | Compile, first and later instance, and calls per second at 1 and 4 threads |
 | `scripts/consumer.sh`, `Consumer/` | Does `dotnet pack` give a package a clean project restores from a local feed and verifies a receipt with? |
-| `results/corpus-classify.txt`, `results/corpus-rows.txt` | The corpus run: 6,176 identical, 2 `clock-moves-chain`, 1 `init-refusal`, 0 traps |
-| `results/tests-summary.txt`, `results/standin-fail-ids.txt` | Test counts on .NET 8, 9 and 10, and the 221 conformance cases that fail on the stand-in, by id and group |
-| `results/speed-run1.txt`, `results/speed-run2.txt` | Start-up and throughput in two runs, with the machine's load before and after each |
+| `results/corpus.txt` | The corpus run: 6,179 of 6,179 identical, 0 traps |
+| `results/tests-summary.txt` | Test counts on .NET 8, 9 and 10: 524 of 524 |
+| `results/speed-run1.txt`, `speed-run2.txt`, `speed-run3.txt` | Start-up and throughput in three runs, with the machine's load before and after each |
 | `results/consumer.txt` | The nupkg's size and files, and the clean consumer's run |
+| `results/other-checks.txt` | Trimmed publish, fuzz, memory, package size |
 | `results/format.txt` | `dotnet format --verify-no-changes --severity info` |
 
 ## Reproduce
 
 ```sh
-export REPO=... SCRATCH=... CORPORA=... S=$SCRATCH/dotnet-host
-DH=$REPO/docs/evidence/2026-09-29-dotnet-host
-sh $DH/scripts/corpus.sh > $DH/results/corpus.txt
-sh $DH/scripts/speed.sh > $DH/results/speed.txt          # on an idle machine
-sh $DH/scripts/consumer.sh > $DH/results/consumer.txt
-(cd $REPO/dotnet && dotnet test)                          # the suite; 221 conformance cases fail on the stand-in
+export REPO=... SCRATCH=... G1=... S=$SCRATCH/dotnet-host
+sh $REPO/docs/evidence/2026-09-29-dotnet-host/scripts/g1.sh
+sh $REPO/docs/evidence/2026-09-29-dotnet-host/scripts/consumer.sh
 ```
 
-The conformance cases that fail are the stand-in's, not the wrapper's: the
-0.6 core answers reasons and payloads the 0.7 wire does not have, which the
-wrapper reports as `INTERNAL_ERROR` instead of guessing. The list changes when
-the release module replaces the stand-in; every case must then pass.
+`g1.sh` refreshes `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm.sha256`;
+commit that pin when the module changes. The timings are meaningful only on an
+idle machine.

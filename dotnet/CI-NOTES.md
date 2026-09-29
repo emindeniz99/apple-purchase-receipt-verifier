@@ -2,8 +2,10 @@
 
 For the integrator. This lane does not edit `.github/`; these are the
 changes `dotnet/` needs there and in the root documents. Results quoted
-here were measured on Linux x86-64 with the round-13 stand-in module (the
-0.6 core), and are in `docs/evidence/2026-09-29-dotnet-host.md`.
+here were measured on Linux x86-64 with the release module (the 0.7 core,
+lane/core 05b4ad9, 3,005,922 bytes), and are in
+`docs/evidence/2026-09-29-dotnet-host.md`. `docs/evidence/2026-09-29-dotnet-host/scripts/g1.sh`
+runs the whole re-check for a new module as one command.
 
 ## What the build needs
 
@@ -17,7 +19,7 @@ here were measured on Linux x86-64 with the round-13 stand-in module (the
   embeds `dotnet/src/ApplePurchaseReceiptVerifier/wasm/aprv.wasm`, which is
   in `dotnet/.gitignore`, or the file `APRV_WASM` names instead; a missing
   file is a build error that says so. `wasm/aprv.wasm.sha256` (`sha256sum`
-  format, the round-13 core module, 2,967,116 bytes) is committed and names
+  format, the 0.7 core module, 3,005,922 bytes) is committed and names
   the file that belongs there. Two ways to put the release's build in place:
   - copy it to that path and refresh the hash with
     `sha256sum aprv.wasm > aprv.wasm.sha256`; or
@@ -43,14 +45,14 @@ here were measured on Linux x86-64 with the round-13 stand-in module (the
 
 | Job | Change |
 |---|---|
-| `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. Until the core's module replaces the stand-in, 221 of the 311 cases fail on every runtime (ids in `docs/evidence/2026-09-29-dotnet-host/results/standin-fail-ids.txt`), so this job is red by design; with the real module it must be 311 of 311 and every other test green (213 tests here). Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; identical failing set on all three. Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
+| `dotnet` (ubuntu, windows, macos; net8.0, net9.0, net10.0) | Command unchanged: `dotnet test -c Release` in `dotnet/`. With the release module all 311 conformance cases pass and so do the other 213 tests (524 in all), on every runtime. Run here on Linux with .NET 8.0.31 and 10.0.12, and on .NET 9.0.20 as a self-contained publish of the test project; 524 of 524 on all three. Windows and macOS were not run: the `win-x64` and `osx-arm64` Wasmtime libraries are untested here |
 | `dotnet-mono` | Unchanged and still meaningful only as far as it goes: `monop` reflects the netstandard2.0 assembly, which proves it loads and not that it runs. Running the wrapper on Mono needs Mono to find `libwasmtime` (it does not read NuGet's `runtimes/` folders), which was not tried; a job for it should copy `runtimes/linux-x64/native/libwasmtime.so` beside the test binary and set `LD_LIBRARY_PATH`. No Mono here |
 | `dotnet-roots` | Unchanged until Phase 7: `AppleRootData.cs` and `tools/GenerateRootData` stay for `AppleRootCertificates.Bundled()` and are untouched |
 | `dotnet-trim` | Unchanged command. The sample was rewritten to read verdicts from the endpoint's `status` and passes here: `dotnet publish samples/TrimAotSmoke -c Release -warnaserror` (net9.0, self-contained, trimmed, `linux-x64`) then running it prints `trimmed smoke ok`. Wasmtime is trim-clean under `-warnaserror` in that configuration |
-| `dotnet-fuzz` | Unchanged: `./run.sh all 60`. It builds and runs against the new library; 15 s per target here gave 0 crashes and 0 invariant failures (json 266,371 runs, receipt 2,494, receipt-base64 4,421, jws 4,585, endpoint-json 50,281). SharpFuzz instruments .NET IL only, so the module is a black box to it; the README says so. `dotnet/bench` builds (its `decodeBase64` row has no successor: the package has no public decoder) |
+| `dotnet-fuzz` | Unchanged: `./run.sh all 60`. It builds and runs against the new library; 15 s per target here gave 0 crashes and 0 invariant failures (json 173,909 runs, receipt 44,333, receipt-base64 51,220, jws 32,611, endpoint-json 75,738). SharpFuzz instruments .NET IL only, so the module is a black box to it; the README says so. `dotnet/bench` builds (its `decodeBase64` row has no successor: the package has no public decoder) |
 | `dotnet-format` | Unchanged: `dotnet format --verify-no-changes --severity info` is clean |
 | `one-implementation` | `--enforce dotnet` fails today with 14 hits, all of one kind: `X509Certificate2` in `Config.cs`, `AppleRootCertificates.cs` and `Internal/Certificates.cs`. That type is the public 0.7 API (`Config.Roots`, `Config.Builder.Roots`, `AppleRootCertificates.Bundled`), which the lane brief keeps, and here it only carries DER in and out. Either the checker's `.NET X.509/CMS/ASN.1` pattern drops `X509Certificate2?` (the rest of it, `Pkcs`, `Formats.Asn1`, `AsnReader`, `SignedCms` and the signature APIs, has 0 hits), or the API changes in a breaking release; an owner call. Everything else the gate looks for is gone from `dotnet/src` |
-| new, optional `dotnet-corpus` | `dotnet build -c Release dotnet/tools/CorpusRun`, then `CorpusRun calls <calls.jsonl>` per corpus and round 13's `classify.py`, wherever the corpora live (they are not in the repository). The result here was 6,176 identical, 2 `clock-moves-chain`, 1 `init-refusal` |
+| new, optional `dotnet-corpus` | `dotnet build -c Release dotnet/tools/CorpusRun`, then `CorpusRun calls <calls.jsonl>` per corpus and the reference rows' `same.py`, wherever the corpora live (they are not in the repository). The result here was 6,179 of 6,179 rows byte for byte identical to the module's own rows, 0 traps (`scripts/corpus.sh`) |
 
 The post-publish smoke for NuGet should restore from nuget.org into an
 empty package folder on `ubuntu-latest` and run a receipt through

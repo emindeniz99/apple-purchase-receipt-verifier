@@ -381,21 +381,22 @@ one signed payload has one accepted spelling.
 
 Measured on 2026-09-29 through the host layer (`dotnet/tools/CorpusRun`),
 .NET 10.0.12, Wasmtime 48.0.2, Linux x86-64 in a 4-vCPU guest shared with
-five other builds, so treat the numbers as an order of magnitude. The module
-was the round-13 stand-in (the 0.6 core), not the release build.
+five other builds (load average 8 to 18 during the runs), so treat the
+numbers as an order of magnitude. The module was the release build.
 
 - **Compile at start:** the first `Verifier.Create` in a process compiles
   the module with Cranelift: 0.9 to 1 s on an idle 4-CPU machine in the
-  earlier evidence, 2.1 to 6.4 s on the loaded one here. It happens once
+  earlier evidence, 7.7 to 12.3 s on the loaded one here. It happens once
   per process, not per verifier.
-- **Instances:** the first instance and its `init` took 28 to 51 ms here;
-  later instances 0.07 to 0.4 ms.
+- **Instances:** the first instance and its `init` took 56 to 81 ms here;
+  later instances 4 to 7 ms at the median (`init` reads the three built-in
+  roots).
 - **Throughput:** one genuine G5 receipt per call through the host layer took
-  343 to 354 per second on one thread and 573 to 1,059 per second on four
-  threads with one instance each; a JWS 89 to 110 and 183 to 257. The
-  earlier evidence, on an idle machine, measured 763 and 2,475 receipts per
-  second and 227 and 669 JWSs. Details are in
-  `docs/evidence/2026-09-29-dotnet-host.md`.
+  215 to 379 per second on one thread and 237 to 510 per second on four
+  threads with one instance each; a JWS 55 to 95 and 64 to 92. The earlier
+  evidence, on an idle machine, measured 763 and 2,475 receipts per second
+  and 227 and 669 JWSs, so the gap is mostly the other builds' load.
+  Details are in `docs/evidence/2026-09-29-dotnet-host.md`.
 
 Run `dotnet run -c Release --project dotnet/bench` for the genuine receipts
 and `-- --worst-case` for the hostile cases on your own hardware.
@@ -416,9 +417,9 @@ and `-- --worst-case` for the hostile cases on your own hardware.
   and the next call takes another. Nothing needs closing.
 - **Address space, not memory.** Wasmtime reserves about 4 GiB of *virtual*
   address space for each instance's linear memory, so 32 live instances show
-  about 188 GB of virtual size and 8 MiB more resident memory than none
+  about 188 GB of virtual size and about 32 MiB more resident memory than none
   (measured on Linux x86-64; `CorpusRun memory 32`). An instance holds about
-  1.8 MiB of linear memory after `init`. Nothing is committed beyond that,
+  1.9 MiB of linear memory after `init`. Nothing is committed beyond that,
   so container memory limits are unaffected, but an environment that caps
   virtual size (`ulimit -v`, strict overcommit) has to allow for it. The pool
   keeps at most as many idle instances as there are CPUs, and never fewer
@@ -518,7 +519,7 @@ The API is unchanged; what runs under it is not.
 | `Config.Defaults().Roots` lists Apple's three roots | it is empty: the roots are pinned inside the module. To trust Apple's roots and your own, pass all four |
 | `Config.Defaults()` throws if the bundled roots do not load | it cannot fail; `Verifier.Create` throws `ArgumentException` for a root the module refuses and `InvalidOperationException` for a module of another ABI version |
 | `Failure.Cause` set for `UnreadablePayload` and `InternalError` | set only for an `InternalError` raised by this library (a trap, an unreadable answer, the clock) |
-| `Verifier.Create` takes microseconds | the first one in a process compiles the module, about a second |
+| `Verifier.Create` takes microseconds | the first one in a process compiles the module, about a second on an idle machine and several under load |
 | any platform .NET runs on | the platforms Wasmtime ships a native library for; no Alpine, no 32-bit |
 | SHA-224 receipts could not be verified | the module decides which algorithms verify |
 
