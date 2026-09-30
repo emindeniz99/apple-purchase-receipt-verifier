@@ -255,7 +255,7 @@ final class ReceiptDecoder {
         requireDepth(der, what);
         ASN1Primitive parsed;
         try {
-            parsed = ASN1Primitive.fromByteArray(ConstructedStrings.joined(der));
+            parsed = ASN1Primitive.fromByteArray(der);
         } catch (IOException | RuntimeException e) {
             // BouncyCastle's indefinite-length path refuses some values unchecked.
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " is not valid ASN.1", e);
@@ -265,7 +265,7 @@ final class ReceiptDecoder {
             byte[] inner = ((ASN1OctetString) parsed).getOctets();
             requireDepth(inner, what);
             try {
-                parsed = ASN1Primitive.fromByteArray(ConstructedStrings.joined(inner));
+                parsed = ASN1Primitive.fromByteArray(inner);
             } catch (IOException | RuntimeException e) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, what + " double-wrap is not valid ASN.1", e);
             }
@@ -276,27 +276,10 @@ final class ReceiptDecoder {
         return (ASN1Set) parsed;
     }
 
-    /**
-     * A value whose length takes more than four octets is not read: DER
-     * needs one, 0.7 read at most four, and BouncyCastle reads more.
-     * With a multi-octet tag the value is no string or INTEGER anyway.
-     */
-    private static void requireShortLength(byte[] der) throws VerificationException {
-        if (der.length > 1 && (der[0] & 0x1F) != 0x1F && (der[1] & 0xFF) > 0x84) {
-            throw new VerificationException(
-                    Reason.UNREADABLE_PAYLOAD, "attribute value length takes more than four octets");
-        }
-    }
-
     private static void requireDepth(byte[] der, String what) throws VerificationException {
         if (Asn1Depth.exceeded(der)) {
             throw new VerificationException(
                     Reason.UNREADABLE_PAYLOAD, what + " nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
-        }
-        if (Asn1Depth.stringNestExceeded(der)) {
-            throw new VerificationException(
-                    Reason.UNREADABLE_PAYLOAD,
-                    what + " nests a constructed string deeper than " + Asn1Depth.MAX_STRING_NEST + " levels");
         }
     }
 
@@ -307,7 +290,6 @@ final class ReceiptDecoder {
     private static String decodeString(byte[] der) throws VerificationException {
         // A nested encoding inside an OCTET STRING, which the payload's own depth walk did not enter.
         requireDepth(der, "attribute value");
-        requireShortLength(der);
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (parsed instanceof ASN1IA5String) {
@@ -334,7 +316,6 @@ final class ReceiptDecoder {
     /** An INTEGER that fits a long, negative values included. */
     private static Long decodeInteger(byte[] der) throws VerificationException {
         requireDepth(der, "attribute value");
-        requireShortLength(der);
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {
