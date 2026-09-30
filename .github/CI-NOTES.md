@@ -65,7 +65,7 @@ second column is what it takes from other jobs.
 | Job | Gate | Why |
 |---|---|---|
 | ci.yml `smoke-crates`, release.yml `publish-crates`, post-publish-smoke.yml `crates` | `vars.APRV_PUBLISH_CRATES == 'true'` | OD-03: crates.io stays at 0.7 until openssl-sys accepts openssl-src 400.x. A registry build of this tree would get OpenSSL 3, which `aprv-openssl` refuses, and `aprv-openssl` is not on crates.io yet. The owner sets the variable when both are resolved |
-| nightly.yml `corpus` | `vars.APRV_CORPUS_URL` set; the archive must match `vars.APRV_CORPUS_SHA256` | OD-05: the corpora (200 MB of generated rows) stay out of the repository. Without the URL the job prints a notice and does nothing. The archive is a `.tar.gz` with the G1 layout at its top level (`aprv.wasm`, `aprv.component.wasm`, `same.py`, `calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`). Each host leg runs its lane's one-command gate over it. The rows belong to the archive's module, so the archive is refreshed after a release changes the module (the job warns when it no longer matches the pins) |
+| nightly.yml `corpus` | `fixtures/corpus.json` names the archive; the archive must match its `sha256` | OD-05: the corpora (200 MB of generated rows) stay out of the repository. A missing or malformed pin file fails the job. The archive is a `.tar.gz` with the G1 layout at its top level (`aprv.wasm`, `aprv.component.wasm`, `same.py`, `calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`). Each host leg runs its lane's one-command gate over it. The rows belong to the archive's module, so the archive is refreshed, in a PR that changes the pin, after a release changes the module (the job warns when it no longer matches the pins) |
 
 No other job is gated on a file existing: every lane has landed, and a
 gate that can only be true would turn a deleted directory into a green
@@ -183,10 +183,10 @@ still points at the commit `release-branch-wasm` built.
 
 ## Owner-side and open
 
-- Repository variables: `APRV_PUBLISH_CRATES` (OD-03),
-  `APRV_CORPUS_URL` and `APRV_CORPUS_SHA256` (OD-05). BOOTSTRAP.md has
-  the rest: the `docker-hub` environment, and making the GHCR package
-  public after its first push.
+- Repository variable: `APRV_PUBLISH_CRATES` (OD-03). The corpus
+  archive (OD-05) is pinned in `fixtures/corpus.json`, not in a
+  variable. BOOTSTRAP.md has the rest: the `docker-hub` environment, and
+  making the GHCR package public after its first push.
 - Go's and Swift's committed copies of the module (R14) are Phase 7
   work. Until they exist, `tag-go-module` refuses to tag.
 - The -wasm jar does not yet carry the licence texts of the code

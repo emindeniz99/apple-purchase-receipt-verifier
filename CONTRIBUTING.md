@@ -124,8 +124,8 @@ Temurin 8 server-engine leg). Each package also carries a one-command
 parity run over the corpora of generated receipts (1,179 rows and 5,000
 mutants), which compares every answer byte for byte with the module's own
 rows; PORTS.md names the script. The corpora are too large for the
-repository: the nightly `corpus` job fetches an archive the owner hosts,
-and prints a notice when none is configured.
+repository: the nightly `corpus` job fetches the archive that
+`fixtures/corpus.json` pins by URL and SHA-256.
 
 ### The three fixture tiers
 
