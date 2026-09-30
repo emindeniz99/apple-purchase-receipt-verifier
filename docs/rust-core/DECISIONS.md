@@ -378,9 +378,15 @@ amended 2026-09-30).
   port-defined (`oneOf` in `fixtures/cases.json`, listing both answers),
   and nobody writes code in either implementation to imitate the other.
   No prescan or other check is added only to match Java, and none is
-  added to Java only to match the core. An audit pull request, in flight
-  on 2026-09-30, removes the code already written only to imitate; the
-  alignments recorded below predate the amendment.
+  added to Java only to match the core. An audit on 2026-09-30 read the
+  J-align commits and every core commit since the move to OpenSSL, over
+  384 cases of which 23 were already port-defined, and found no code that
+  exists only to imitate the other implementation, so nothing changed.
+  Two answers it left for the owner are listed in ROADMAP.md: the
+  `INVALID_CERTIFICATE` for an unimplemented curve in
+  `keyless_target_path`, and the digest-mismatch refusal in
+  `signature_names_digest`, which stays unless the owner decides
+  otherwise.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one

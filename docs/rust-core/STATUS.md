@@ -16,6 +16,12 @@ request #182 (0.8.0) waits for the CI fix. The owner's decisions of
 the amendments of R5, R19, R20, R23 and R30. The rest of this file is the
 migration's record as it stood at the merge.
 
+Open on `main`:
+
+- The nightly `java-differential` job fails at b96f14e (run
+  36698598330): `tools/differential/recorded.json` is stale, with one row
+  missing and four out of date. A separate pull request fixes it.
+
 ## Lanes
 
 | Lane | Branch | Scope | State |
