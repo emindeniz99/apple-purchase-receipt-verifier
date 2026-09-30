@@ -34,9 +34,9 @@ Releases** carry `aprv.wasm`, the component, the server binaries and
 `SHA256SUMS` with the workflow's own token.
 
 Still open: RubyGems, NuGet, Packagist and Docker Hub (a first publish or
-a one-time setup each, below); crates.io, held at 0.7 on purpose; and three
-owner decisions that are not registries: the Maven Central release count,
-the Java 8 CI distribution and the corpus archive.
+a one-time setup each, below); crates.io, held at 0.7 on purpose; and two
+owner decisions that are not registries: the Maven Central release count
+and the Java 8 CI distribution.
 
 ## RubyGems
 
@@ -310,15 +310,17 @@ they do.
 2. Move both jobs to it before Temurin's last Java 8 build, and say so in
    SUPPORT-MATRIX.md.
 
-## The corpus archive — optional
+## The corpus archive
 
 The nightly `corpus` job runs every package's parity check over the
 generated corpora (1,179 receipts and 5,000 mutants, about 200 MB of rows).
-They stay out of the repository. Until an archive is configured the job
-prints a notice and does nothing.
+They stay out of the repository; `fixtures/corpus.json` pins the archive
+by URL and SHA-256, so nothing is set in the repository settings. To
+refresh it after a release changes the module, since its rows belong to
+one module:
 
-1. Host the archive (a `.tar.gz` with the layout `.github/CI-NOTES.md`
-   describes) where the runner can fetch it.
-2. Set the repository variables `APRV_CORPUS_URL` and `APRV_CORPUS_SHA256`.
-3. Refresh the archive after a release changes the module, since its rows
-   belong to one module.
+1. Build the archive (a `.tar.gz` with the layout `.github/CI-NOTES.md`
+   describes) and attach it to a GitHub release of this repository.
+2. Open a PR that changes `url`, `sha256` and `generated` in
+   `fixtures/corpus.json`. The job fails on a hash mismatch or a
+   missing or malformed file.

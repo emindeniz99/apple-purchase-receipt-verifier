@@ -1741,7 +1741,7 @@ jobs:
   # corpora (1,179 rows and 5,000 mutants) are scratch data of the evidence
   # rounds and not in the repository; tools/wasm-trap-host.mjs `calls` runs
   # them wherever they are (docs/evidence/2026-09-29-canonical-abi-final),
-  # and nightly.yml runs them when APRV_CORPUS_URL names an archive.
+  # and nightly.yml runs them from the archive fixtures/corpus.json pins.
   #
   # It caches the toolchain directory, keyed by the hash of the script that
   # makes it: this is a test job, and the cached tree is re-verified by
