@@ -219,6 +219,30 @@ function jwsCarrying(x5c0) {
   return `${b64url(header)}.${b64url('{}')}.${b64url('signature')}`;
 }
 
+function checkFields(actualDoc, fields) {
+  for (const [pointer, expected] of Object.entries(fields)) {
+    const value = resolvePointer(actualDoc, pointer);
+    if (expected === null) {
+      assert.ok(
+        value === null || value === undefined,
+        `${pointer}: expected absent, got ${String(value)}`,
+      );
+    } else if (typeof value === 'bigint' || typeof expected === 'bigint') {
+      assert.equal(String(value), String(expected), pointer);
+    } else {
+      assert.deepEqual(value, expected, pointer);
+    }
+  }
+}
+
+function checkLengths(actualDoc, lengths) {
+  for (const [pointer, expected] of Object.entries(lengths)) {
+    const value = resolvePointer(actualDoc, pointer);
+    assert.ok(Array.isArray(value), `${pointer}: expected an array to measure its length`);
+    assert.equal(value.length, expected, `${pointer} length`);
+  }
+}
+
 function defineTargetTests(name, build, async_) {
   const ENV = { PRODUCTION: build.Environment.PRODUCTION, SANDBOX: build.Environment.SANDBOX };
 
@@ -260,30 +284,6 @@ function defineTargetTests(name, build, async_) {
       }
       default:
         throw new Error(`harness error: no adapter for operation "${kase.operation}"`);
-    }
-  }
-
-  function checkFields(actualDoc, fields) {
-    for (const [pointer, expected] of Object.entries(fields)) {
-      const value = resolvePointer(actualDoc, pointer);
-      if (expected === null) {
-        assert.ok(
-          value === null || value === undefined,
-          `${pointer}: expected absent, got ${String(value)}`,
-        );
-      } else if (typeof value === 'bigint' || typeof expected === 'bigint') {
-        assert.equal(String(value), String(expected), pointer);
-      } else {
-        assert.deepEqual(value, expected, pointer);
-      }
-    }
-  }
-
-  function checkLengths(actualDoc, lengths) {
-    for (const [pointer, expected] of Object.entries(lengths)) {
-      const value = resolvePointer(actualDoc, pointer);
-      assert.ok(Array.isArray(value), `${pointer}: expected an array to measure its length`);
-      assert.equal(value.length, expected, `${pointer} length`);
     }
   }
 

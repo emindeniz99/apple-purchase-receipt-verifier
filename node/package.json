@@ -42,9 +42,9 @@
     "format": "prettier --write .",
     "test:runtimes": "npm run build && npm run runtime:node && npm run runtime:bun && npm run runtime:deno && npm run runtime:workerd && npm run runtime:edge",
     "runtime:node": "node runtime-smoke/node-like.mjs",
-    "runtime:bun": "npx --yes bun@1.3.11 runtime-smoke/node-like.mjs",
+    "runtime:bun": "npx --yes bun@1.4.2 runtime-smoke/node-like.mjs",
     "runtime:deno": "npx --yes deno@2.9.6 run --allow-read --allow-env=JCO_DEBUG runtime-smoke/node-like.mjs",
-    "runtime:workerd": "node runtime-smoke/run-workerd.mjs workerd@1.20260903.1",
+    "runtime:workerd": "node runtime-smoke/run-workerd.mjs workerd@1.20260922.1",
     "runtime:edge": "node --experimental-vm-modules runtime-smoke/edge.mjs",
     "runtime:browser": "node runtime-smoke/browser.mjs"
   },
@@ -56,9 +56,9 @@
   "devDependencies": {
     "@bytecodealliance/jco": "1.35.0",
     "@edge-runtime/vm": "^5.0.0",
-    "@types/node": "^20.19.0",
-    "oxlint": "^1.81.0",
-    "prettier": "^3.9.6",
+    "@types/node": "^20.19.43",
+    "oxlint": "^1.85.0",
+    "prettier": "^3.9.8",
     "typescript": "^7.0.2"
   },
   "types": "dist/index.d.ts",
