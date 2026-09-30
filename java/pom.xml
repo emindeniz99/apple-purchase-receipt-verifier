@@ -59,7 +59,7 @@
          maxNameLength in 2.16, so below 2.16 Verifier.create throws
          IllegalStateException (it initialises every class that builds a
          reader) instead of the first call failing. -->
-    <jackson.version>2.22.2</jackson.version>
+    <jackson.version>2.22.3</jackson.version>
     <!-- Annotations only, and only at compile time: see the <optional>
          dependency below. -->
     <jspecify.version>1.0.1</jspecify.version>
