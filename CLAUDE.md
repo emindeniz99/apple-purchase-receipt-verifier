@@ -208,14 +208,6 @@ the repo, its history, CI, an issue or a PR, and neither does any output
 carrying their values. A new attribute type becomes a test built from a
 generated receipt of the same shape.
 
-## Security reviews of runtimes
-
-About the Wasmi security review, the only sentence allowed anywhere in the
-repository is "one issue reported privately upstream on 2026-09-27; not
-reachable for aprv.wasm". Never describe its mechanism, the feature
-combination or the code sites, in a file, a commit message, an issue or a
-PR.
-
 ## Spikes and evidence
 
 Every experiment's code goes into the repo, even code that answered "no".
