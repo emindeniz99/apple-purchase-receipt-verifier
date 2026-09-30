@@ -378,15 +378,22 @@ amended 2026-09-30).
   port-defined (`oneOf` in `fixtures/cases.json`, listing both answers),
   and nobody writes code in either implementation to imitate the other.
   No prescan or other check is added only to match Java, and none is
-  added to Java only to match the core. An audit on 2026-09-30 read the
-  J-align commits and every core commit since the move to OpenSSL, over
-  384 cases of which 23 were already port-defined, and found no code that
-  exists only to imitate the other implementation, so nothing changed.
-  Two answers it left for the owner are listed in ROADMAP.md: the
-  `INVALID_CERTIFICATE` for an unimplemented curve in
-  `keyless_target_path`, and the digest-mismatch refusal in
-  `signature_names_digest`, which stays unless the owner decides
-  otherwise.
+  added to Java only to match the core.
+- **The 2026-09-30 audit** classified four Java rules that lane J-align
+  added on 2026-09-29 as imitation: the six-level cap on constructed
+  strings (`Asn1Depth`, `ReceiptCore`, `ReceiptDecoder`), the ten-CRL
+  cap, the rule that keeps a five-octet length raw, and the
+  `ConstructedStrings` rewriter. Each exists only because OpenSSL refuses
+  those BER encodings, on inputs Apple never emits: Apple's receipts and
+  certificates are DER, with primitive strings, minimal lengths and no
+  CRLs. That matches the OD-17 precedent (STATUS.md). Their removal, the
+  eight cases that become port-defined, and the rewritten rows below land
+  in their own pull request. The audit examined two core rules and kept
+  them on their own grounds: `keyless_target_path` reports path problems
+  at the depths `X509_verify_cert` would; `signature_names_digest` keeps
+  the 0.7 core's `INVALID_SIGNATURE` for a signatureAlgorithm whose hash
+  differs from the digestAlgorithm, which is continuity and not a
+  security boundary, and its case is already `oneOf`.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one

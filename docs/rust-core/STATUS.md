@@ -11,10 +11,10 @@ work.
 
 **State on 2026-09-30:** `main` is at b96f14e, the merge of pull request
 #187 (`rust-core` into `main`, 2026-09-29 18:52Z). The release pull
-request #182 (0.8.0) waits for the CI fix. The owner's decisions of
-2026-09-29 and 30 are in ROADMAP.md and in DECISIONS.md R35 to R37 and
-the amendments of R5, R19, R20, R23 and R30. The rest of this file is the
-migration's record as it stood at the merge.
+request #182 (0.8.0) waits for the CI fix in pull request #200. The
+owner's decisions of 2026-09-29 and 30 are in ROADMAP.md and in
+DECISIONS.md R35 to R37 and the amendments of R5, R19, R20, R23 and R30.
+The rest of this file is the migration's record as it stood at the merge.
 
 Open on `main`:
 
@@ -654,4 +654,4 @@ hand-back.
 | G4 | closed on the branch's CI (Node and Go); the npm and Go proxy smokes run on the 0.8.0 release |
 | G5 | closed on the branch's CI (Python, Swift, Ruby, .NET); the registry smokes run on the 0.8.0 release, NuGet once bootstrapped |
 | G6 | closed on the branch's CI (PHP through the server); the Packagist smoke runs once the owner submits the repository |
-| G7 | PR #187 merged with a real merge commit on 2026-09-29 (b96f14e); release-please's 0.8.0 pull request, #182, waits for the CI fix |
+| G7 | PR #187 merged with a real merge commit on 2026-09-29 (b96f14e); release-please's 0.8.0 pull request, #182, waits for the CI fix in PR #200 |

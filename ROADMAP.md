@@ -57,16 +57,6 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    - Whether the core reads PEM roots, so Ruby's own PEM unwrapping can
      go.
    - Node's `createConfig()` and `createVerifier()` names.
-   - From the divergence audit (6): `keyless_target_path` in
-     `rust/src/path.rs` answers `INVALID_CERTIFICATE` for a curve the
-     core does not implement. The reason was chosen on 2026-09-27 to
-     match most of the ports, not copied from Java. Keep it or change it.
-   - From the divergence audit (6): `signature_names_digest` in
-     `rust/openssl/src/cms.rs` refuses a `signatureAlgorithm` whose hash
-     differs from the `digestAlgorithm` (122dd89, which restored 0.7's
-     refusals). Removing it would turn a relabelled but genuinely signed
-     receipt from `INVALID_SIGNATURE` into ok. It stays unless the owner
-     decides otherwise; the affected case already allows both answers.
 
    Later, not in 0.8.0: an optional `expect {bundleId, environment}`
    argument on the verify calls, checked in the core and answered as a
@@ -74,11 +64,17 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
 6. **Divergences.** A core-versus-Java difference is fixed only when it
    changes an Apple-signed input's verdict or accepts something unsigned.
    Otherwise its case becomes `oneOf` and nobody writes code to imitate
-   the other implementation (R20). The audit of 2026-09-30 read the
-   J-align commits and every core commit since the move to OpenSSL, over
-   384 cases of which 23 were already port-defined, and found no code that
-   exists only to imitate the other implementation, so no code changes.
-   It left two items for the owner, in the open list under 5.
+   the other implementation (R20). The 2026-09-30 audit classified four
+   Java rules from lane J-align as imitation: the six-level cap on
+   constructed strings, the ten-CRL cap, the five-octet length kept raw,
+   and the `ConstructedStrings` rewriter. OpenSSL refuses those BER
+   encodings, and Apple never sends them. Their removal and the eight
+   cases that become port-defined land in their own pull request.
+   Examined and kept: `keyless_target_path` in `rust/src/path.rs` (it
+   reports path problems at the depths `X509_verify_cert` would), and
+   `signature_names_digest` in `rust/openssl/src/cms.rs` (continuity
+   with the 0.7 core's `INVALID_SIGNATURE`, not a security boundary; its
+   case is already `oneOf`).
 7. **Fuzz findings and supply chain.** Apply to OSS-Fuzz with the six
    existing targets; the nightly job encrypts any finding to the owner's
    public key and sends a notice through a Telegram bot, with only the
@@ -108,10 +104,10 @@ runs it for Java 8, PHP and any other language, and the Java
 implementation stays beside it (PLAN.md D17 to D30,
 [docs/rust-core/](./docs/rust-core/README.md)). #187 merged it into `main`
 on 2026-09-29 (b96f14e). The release pull request, #182, waits for the
-CI fix. From the decisions above, two pull requests are in flight (the
-corpus pin and the dependency sweep), two changes are decided (the WIT
-version rename, R36, and Go's floor, R30), and the divergence audit
-finished with no code to remove. What is still open from the migration:
+CI fix in #200. From the decisions above, three pull requests are in
+flight (the corpus pin, the dependency sweep and the removal of Java's
+imitation rules), and two changes are decided (the WIT version rename,
+R36, and Go's floor, R30). What is still open from the migration:
 
 - **The nightly `java-differential` job fails on `main`** at b96f14e
   (run 36698598330): `tools/differential/recorded.json` is stale, with
