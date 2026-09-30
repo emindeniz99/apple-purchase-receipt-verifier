@@ -171,12 +171,15 @@ tag.
 
 ## release-please.yml's literal branch
 
-The release branch jobs check out `release-please--branches--main` by
-its literal name rather than by the branch the release-please action
-reports. The release-please job fails if the action opened any other
-branch, and `release-branch-server` and `refresh-wasm-copies` fail
-unless the branch still points at the commit `release-branch-wasm`
-built.
+The release branch jobs check out
+`release-please--branches--main--components--apple-purchase-receipt-verifier`
+by its literal name rather than by the branch the release-please action
+reports. The name is the manifest-mode form: the base branch plus the
+`package-name` from `release-please-config.json`, which the action adds
+even though `include-component-in-tag` is false. The release-please
+job fails if the action opened any other branch, and
+`release-branch-server` and `refresh-wasm-copies` fail unless the branch
+still points at the commit `release-branch-wasm` built.
 
 ## Owner-side and open
 
