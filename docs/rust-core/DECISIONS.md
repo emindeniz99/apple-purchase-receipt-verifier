@@ -379,19 +379,26 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 
   | Input | 0.7 | Java | Core | Why the core answers so | Case |
   |---|---|---|---|---|---|
-  | eContent as an `OCTET STRING` of 7 or more constructed levels | ok | `MALFORMED` (aligned 2026-09-29) | `MALFORMED` | OpenSSL decodes six (`ASN1_MAX_STRING_NEST`); changing it means patching OpenSSL. Substrate divergence, fails closed | `receipt/reject-econtent-rechunked-into-7-constructed-levels` |
-  | A payload attribute value of 7 or more constructed levels | ok | `UNREADABLE_PAYLOAD` (aligned 2026-09-29) | `UNREADABLE_PAYLOAD` | The same bound, under a verified signature. It holds wherever OpenSSL decodes a string: the value, the version field, a later field, the Xcode wrap (`UNREADABLE_PAYLOAD`), and an unsigned attribute value in the envelope (`MALFORMED`), all read by 0.7 | `receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`, `receipt/unreadable-double-wrap-rechunked-into-7-constructed-levels` |
+  | eContent as an `OCTET STRING` of 7 or more constructed levels | ok | ok (port-defined 2026-09-30; BouncyCastle joins the chunks within Java's nesting bound of 32) | `MALFORMED` | OpenSSL decodes six (`ASN1_MAX_STRING_NEST`); changing it means patching OpenSSL. Substrate divergence, fails closed. Apple's receipts are DER and never chunk a string, and the chain is judged either way, so the case allows both (the rule OD-17 applied) | `receipt/reject-econtent-rechunked-into-7-constructed-levels` |
+  | A payload attribute value of 7 or more constructed levels | ok | ok (port-defined 2026-09-30) | `UNREADABLE_PAYLOAD` | The same bound, under a verified signature. It holds wherever OpenSSL decodes a string: the value, the version field, a later field, the Xcode wrap (`UNREADABLE_PAYLOAD`), and an unsigned attribute value in the envelope (`MALFORMED`), all read by 0.7. Both cases allow ok | `receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`, `receipt/unreadable-double-wrap-rechunked-into-7-constructed-levels` |
   | More than 100,000 values in the envelope, or in one attribute SET | `MALFORMED` / `UNREADABLE_PAYLOAD` | ok | as 0.7 | 0.7's node budget, restored: without it a 3 MiB receipt cost 0.3 to 0.7 s before any signature. Inputs are 200 KB or more, so Rust tests pin it, not a shared case | `rust/tests/envelope_bounds.rs`, `receipt_payload.rs` unit tests |
-  | More than 10 CRLs | ok | `MALFORMED` (aligned 2026-09-29) | `MALFORMED` | Each CRL is decoded in full before anything is verified; bounded like the certificates. The 0.7 contract is silent; this fails closed. Apple sends none | `receipt/reject-eleven-embedded-crls` |
-  | A payload string whose length takes more than four octets | kept raw | kept raw (aligned 2026-09-29) | kept raw | The payload is DER; 0.7's header rules restored | `receipt/bundle-id-with-a-five-octet-length-is-kept-raw` |
+  | More than 10 CRLs | ok | ok (port-defined 2026-09-30; BouncyCastle never decodes a CRL, so Java has no cost to bound) | `MALFORMED` | Each CRL is decoded in full before anything is verified; bounded like the certificates. The 0.7 contract is silent; this fails closed. Apple sends none, and the case allows both | `receipt/reject-eleven-embedded-crls` |
+  | A payload string whose length takes more than four octets | kept raw | read (port-defined 2026-09-30; BouncyCastle reads the length) | kept raw | The payload is DER; 0.7's header rules restored. Both verify, and the case pins only the raw octets, which both keep | `receipt/bundle-id-with-a-five-octet-length-is-kept-raw` |
   | A fourth attribute field that is, or holds, an invalid primitive (BOOLEAN of two octets, padded INTEGER, UTCTime under 13 or GeneralizedTime under 15 octets, a constructed INTEGER, a primitive SEQUENCE, an end-of-contents in a definite length) | ok | `UNREADABLE_PAYLOAD` | as Java | Not valid ASN.1 in BER either (X.690 8.1.5, 8.2, 8.3, 8.9.1; a time that short names no time). OpenSSL's `ANY` decoder refuses each as the field itself and keeps a SEQUENCE around it whole, so the header walk applies the same rules at every depth (round-2 review F3): the primitives OpenSSL checks, constructed BOOLEAN, INTEGER, NULL, OID and ENUMERATED, strings of seven levels, and each outermost constructed string handed to OpenSSL whole. The chunks inside a constructed string are joined unchecked, as `asn1_collect` joins them, and not judged one by one (round-3 review F2) | `receipt/unreadable-fourth-field-boolean-of-two-octets`, `receipt/unreadable-fourth-field-sequence-holding-a-padded-integer`, `receipt/unreadable-fourth-field-sequence-holding-{a-short-utctime,a-short-generalizedtime,a-constructed-integer,a-primitive-sequence,an-end-of-contents}` |
   | An invalid primitive inside an unsigned envelope value | ok | `MALFORMED` for a short UTCTime one SEQUENCE deep; others not measured | `MALFORMED` | As above, over the envelope | `receipt/reject-an-unsigned-value-sequence-holding-a-short-utctime`, `rust/tests/envelope_bounds.rs` |
-  | A string of 7 or more constructed levels one SEQUENCE deep, in a fourth field or an unsigned envelope value | `UNREADABLE_PAYLOAD` / `MALFORMED` (aligned 2026-09-29) | ok | `UNREADABLE_PAYLOAD` / `MALFORMED` | OpenSSL refuses the string as a value and keeps the SEQUENCE around it whole; the walk refuses it at every depth, so the verdict does not follow the depth. Fails closed, not Apple-signed | `receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string`, `receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string` |
+  | A string of 7 or more constructed levels one SEQUENCE deep, in a fourth field or an unsigned envelope value | ok | ok (port-defined 2026-09-30) | `UNREADABLE_PAYLOAD` / `MALFORMED` | OpenSSL refuses the string as a value and keeps the SEQUENCE around it whole; the walk refuses it at every depth, so the verdict does not follow the depth. Fails closed, not Apple-signed; both cases allow both | `receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string`, `receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string` |
   | An embedded certificate's outer signature `BIT STRING` in constructed form, two primitive chunks joined to the same signature (BER, outside the signed TBS) | not measured | `MALFORMED` (kept, lane J-align round 3) | ok | OpenSSL joins the chunks and verifies the same signature; the walk used to judge each chunk alone and answered by the signature's first octet (round-3 review F2). The chain is still signed under a pinned root. Java keeps `MALFORMED` on purpose: the second chunk has no initial octet of its own, so under X.690 8.6.4 the value is not a valid BER BIT STRING (it claims 150 unused bits). OpenSSL's `asn1_collect` joins the chunks' raw contents instead. The X.690 spelling of the same signature, each segment with its own initial octet, verifies in Java and is `UNTRUSTED_CHAIN` in the core ([Java round 3][javar3]) | `receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks` |
-  | A constructed UTCTime of 13 joined octets one SEQUENCE deep in a fourth field (BER) | ok | ok (aligned 2026-09-29: Java joins the strings BouncyCastle cannot build before it parses the payload) | ok | BER allows a constructed string; OpenSSL joins it and the walk agrees | `receipt/accept-fourth-field-sequence-holding-a-constructed-utctime` |
+  | A constructed UTCTime of 13 joined octets one SEQUENCE deep in a fourth field (BER) | ok | `UNREADABLE_PAYLOAD` (port-defined 2026-09-30; BouncyCastle builds no constructed string other than a BIT STRING or an OCTET STRING) | ok | BER allows a constructed string; OpenSSL joins it and the walk agrees. Apple's receipts are DER, so the case allows both | `receipt/accept-fourth-field-sequence-holding-a-constructed-utctime` |
 
-  Java was aligned on the four rows marked above in its own code (lane
-  J-align, 2026-09-29). Divergences that lane found and left for the
+  Lane J-align (2026-09-29) had aligned Java on the four rows marked
+  port-defined above, and its round 2 on two more, in Java's own code.
+  On 2026-09-30 the owner applied the rule above to that code: each
+  rule fired only on a BER form Apple never emits, and each commit
+  named OpenSSL's behaviour as its reason, so it imitated the core.
+  The code was removed (Java is back to its 0.7 reading, whose nesting
+  bound of 32 counts chunk levels too), the eight cases list both
+  answers, and `tools/differential/recorded.json` names them under one
+  group. Divergences that lane found and left for the
   differential campaign (MIGRATION step 1.13) to measure and case: a
   five-octet length on a SET, SEQUENCE or field header inside the payload
   (the core answers `UNREADABLE_PAYLOAD`, Java reads it); a `crls` entry
@@ -401,13 +408,14 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   an extension value); and a receipt whose path to the eContent uses a
   length of more than four octets, where Java's byte walk gives up and
   its 6-level and 32-depth checks are skipped.
-  Round 2 (2026-09-29) aligned Java on the two rows above; one more
-  divergence stays open for the differential campaign: a constructed
+  Round 2 (2026-09-29) aligned Java on two rows above, undone on
+  2026-09-30 as said; one more divergence stays open for the
+  differential campaign: a constructed
   string of a type other than OCTET or BIT STRING inside the envelope
   (an unsigned attribute value holding a constructed UTCTime), which
   Java answers `MALFORMED` because BouncyCastle cannot build it and the
   core accepts; proposed case: an unsigned attribute value SEQUENCE
-  holding a constructed UTCTime, expected ok.
+  holding a constructed UTCTime, port-defined (ok or `MALFORMED`).
   Round 3 (2026-09-29) ran lane P7-code's 76 proposed cases through Java
   and the G1d module ([Java round 3][javar3]). Two answers are not
   recorded yet: a `signingTime` in month 13 verifies in the core, and
