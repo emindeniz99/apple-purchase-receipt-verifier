@@ -18,13 +18,87 @@ Delete a line in the commit that ships it.
    Central release count and the Java 8 CI distribution (BOOTSTRAP.md has
    each). crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4.
 
-## 0.8.0: one core — landed, open items (2026-09-29)
+## Decisions of 2026-09-29 and 30 (owner)
+
+Taken after #187 merged the Rust core into `main` (b96f14e). The records
+are in docs/rust-core/DECISIONS.md where they are architectural.
+
+1. **crates.io.** The core crate stays at 0.7 on crates.io until an
+   `openssl-sys` release can vendor OpenSSL 4. The owner opened
+   [rust-openssl#2692](https://github.com/rust-openssl/rust-openssl/pull/2692),
+   an opt-in `vendored-4` feature; its CI results are in
+   docs/evidence/2026-09-30-rust-openssl-vendored-4-upstream.md (R19).
+2. **Parity corpus.** A release asset of this repository, tag
+   `corpus-2026-09-29`, pinned in git by `fixtures/corpus.json`, which the
+   CI pull request in flight introduces; the repository variables go
+   (R35).
+3. **Floors.** A floor moves only when a dependency, a security fix or CI
+   forces it. Go moves to 1.25 for wazero 1.12; the other floors stay
+   (R30, SUPPORT-MATRIX.md).
+4. **Dependencies.** One sweep pull request to the newest versions the
+   floors allow, then Dependabot weekly. The sweep is in flight.
+5. **API.** The 0.7 shape stays in all nine packages; Java keeps
+   `runtimeProbe`; roots keep the native certificate type in Java, .NET
+   and Go and are bytes elsewhere; Java's `Environment.value()` becomes
+   public; the WIT package version moves to `aprv:verifier@0.1.0` in one
+   pull request across every binding (R36). **Open, the owner decides on
+   2026-10-01:**
+   - Public symbols that duplicate another or that only the library
+     calls: the constructors and factories of the result and payload
+     types in every package; Python's `Config.create`, Ruby's
+     `Config.builder` and PHP's `ConfigBuilder` as third ways to build a
+     `Config`; Rust's `Config::defaults()` beside `Default`, and the
+     top-level `decode_receipt_data`; Go's `String()` methods that repeat
+     `ToJSON()`/`JSON()`, and its exported limit constants; Swift's
+     public `Limits` and `Environment.appleValue`; Node's
+     `VerificationError` export; .NET's `JsonPayload.Create`; PHP's
+     `ReceiptPayload::idJson` and `attributesJson`; Ruby's internal
+     classes `Guest`, `InstancePool`, `Runtime` and `Wire`.
+   - Whether the core reads PEM roots, so Ruby's own PEM unwrapping can
+     go.
+   - Node's `createConfig()` and `createVerifier()` names.
+
+   Later, not in 0.8.0: an optional `expect {bundleId, environment}`
+   argument on the verify calls, checked in the core and answered as a
+   verdict. Every README leaves that check to the caller today.
+6. **Divergences.** A core-versus-Java difference is fixed only when it
+   changes an Apple-signed input's verdict or accepts something unsigned.
+   Otherwise its case becomes `oneOf` and nobody writes code to imitate
+   the other implementation (R20). An audit pull request that removes
+   such code is in flight.
+7. **Fuzz findings and supply chain.** Apply to OSS-Fuzz with the six
+   existing targets; the nightly job encrypts any finding to the owner's
+   public key and sends a notice through a Telegram bot, with only the
+   target name and a hash in the log; add OpenSSF Scorecard (R37). None of
+   it is wired yet; BOOTSTRAP.md has the owner's actions.
+8. **Attestation.** Unchanged: provenance and CycloneDX SBOM attestations
+   (R34).
+9. **Unsupported runtimes.** SUPPORT-MATRIX.md lists LLRT, CloudFront
+   Functions, Hermes, GraalJS and Nashorn beside Fastly Compute and Akamai
+   EdgeWorkers, each with its reason (R5).
+10. **PHP's refusal of an empty root list** stays (OD-16).
+11. **Java artifact naming. Open.** Either keep the `-wasm` artifactId
+    with the same version numbers, or publish one artifactId with a
+    `-wasm` version suffix. The suffix doubles the Maven Central
+    deployments per release, so the working budget of 5 releases a month
+    falls to 2. Dependabot and Renovate also read the suffix as a
+    pre-release and would propose "upgrading" Wasm consumers to the
+    BouncyCastle build.
+12. **This record**, in one docs pull request.
+13. **CLAUDE.md** drops its section on security reviews of runtimes. The
+    2026-09-27 evidence note stays as it is.
+
+## 0.8.0: one core, merged; open items (2026-09-30)
 
 The eight non-Java packages run one Rust core as `aprv.wasm`, `aprv-server`
 runs it for Java 8, PHP and any other language, and the Java
 implementation stays beside it (PLAN.md D17 to D30,
-[docs/rust-core/](./docs/rust-core/README.md)). What is still open from
-the migration:
+[docs/rust-core/](./docs/rust-core/README.md)). #187 merged it into `main`
+on 2026-09-29 (b96f14e). The release pull request, #182, waits for the
+CI fix. From the decisions above, three pull requests are in flight (the
+corpus pin, the dependency sweep and the audit of imitation code), and
+two changes are decided (the WIT version rename, R36, and Go's floor,
+R30). What is still open from the migration:
 
 - **Re-measure on an idle runner.** Every 0.8 timing in BENCHMARKS.md was
   taken on a heavily loaded shared machine. Swift's JWS came out at about
@@ -125,7 +199,10 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   Node 20 (next candidate, see below), Go 1.22 (wazero stays on v1.9.0,
   the newest release that builds on it). Moved in 0.8.0 because a runtime
   required it: Swift 6.1 to 6.3 with macOS 15 and iOS 18, WasmKit's floors
-  (PLAN.md D25).
+  (PLAN.md D25). **Restated 2026-09-30:** a floor moves only when a
+  dependency, a security fix or CI forces it. Go moves from 1.22 to 1.25
+  because wazero 1.12 needs it; Node 20, Python 3.10, PHP 8.2, Ruby 3.3,
+  .NET 8, Swift 6.3 and Java 8 stay (docs/rust-core/DECISIONS.md R30).
 - **Model the receipt attributes Apple's verifyReceipt echoes and we held
   as raw bytes** — done ✅ (2026-09-21, measured against Apple's own answer
   for a genuine production receipt, which stays out of the repository):
@@ -213,7 +290,8 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
 - **Node 20 floor**: Node 20 reached end of life on 2026-04-30; raising the
   engines floor to 22 is a semver-major decision, nothing in the code needs
   it yet. Revisit when @types/node's pin (see .github/dependabot.yml) starts
-  blocking a needed update.
+  blocking a needed update. The owner confirmed on 2026-09-30 that it
+  stays.
 - **Post-publish smoke gaps that remain.** The Go, RubyGems, crates.io and
   NuGet legs are wired; only the Go one has ever run against a real registry,
   because the other three are unbootstrapped and their legs skip until they

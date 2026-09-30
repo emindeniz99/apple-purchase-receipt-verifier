@@ -12,12 +12,15 @@ Every record is settled as of 2026-09-29. The owner's brief of
 last open questions (R23 to R33); on 2026-09-29 the owner reopened the
 export ABI and chose the canonical ABI after two spike rounds (R23), and
 adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
-D17 onward and marks D16 superseded for the eight non-Java ports.
+D17 onward and marks D16 superseded for the eight non-Java ports. After
+0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
+2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
-[../evidence/](../evidence/). Links use the short names defined at the end
-of this file. Rejected alternatives are in one table at the end, each with
-its measured reason and its note.
+[../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
+`vendored-4` feature ([vendored-4][vendored4]). Links use the short
+names defined at the end of this file. Rejected alternatives are in one
+table at the end, each with its measured reason and its note.
 
 ---
 
@@ -100,7 +103,8 @@ owner. Every measured host clears it (README.md).
 ## R5. JS runtimes that cannot run WebAssembly
 
 **Status: accepted** (owner, 2026-09-25): drop Fastly Compute JS and
-Akamai EdgeWorkers.
+Akamai EdgeWorkers. Amended 2026-09-30: the list of unsupported runtimes
+grows, below.
 
 Fastly's JavaScript runtime builds SpiderMonkey without a JIT and
 documents no `WebAssembly` object; Akamai lists WebAssembly as removed
@@ -109,6 +113,13 @@ Keeping them would mean a second implementation (R1). The npm README and
 SUPPORT-MATRIX drop both, the `node-runtimes-fastly` job goes, and the
 CHANGELOG marks it breaking. A Fastly user who writes Rust can depend on
 the core crate.
+
+**2026-09-30 (owner).** SUPPORT-MATRIX.md also lists LLRT, CloudFront
+Functions, Hermes, GraalJS and Nashorn as unsupported, each with its
+reason: no WebAssembly, or an embedded engine without the APIs the npm
+package loads the module with. Nobody measured them; the reasons come
+from each runtime's documented feature set. The rule stays the same: no
+second implementation for a runtime that cannot run the module.
 
 ---
 
@@ -333,6 +344,14 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   `rust-core` merges into `main` once, when every gate has passed.
 - Everything stays 0.x; 1.0 is a separate decision.
 - The first crates.io publish waits until something needs it.
+- **crates.io after 0.8 (owner, 2026-09-30).** The core crate stays at
+  0.7 on crates.io until an `openssl-sys` release can vendor OpenSSL 4.
+  The owner opened
+  [rust-openssl#2692](https://github.com/rust-openssl/rust-openssl/pull/2692),
+  an opt-in `vendored-4` feature that builds `openssl-src` 400.x and
+  leaves `vendored` as it is. On the fork's CI the same seven jobs fail
+  with and without the change, for reasons outside it, and all six new
+  `vendored-4` legs pass ([vendored-4][vendored4]).
 - **Open item:** 0.8.0 deploys two artifactIds and two classifier jars to
   Maven Central. Whether Central's Usage Center counts that as one
   release event is unconfirmed; the owner checks (MIGRATION.md, owner
@@ -342,7 +361,8 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 
 ## R20. Apple compatibility, the algorithm policy, and recorded divergences
 
-**Status: accepted** (owner, 2026-09-26; restated 2026-09-28).
+**Status: accepted** (owner, 2026-09-26; restated 2026-09-28; the rule
+amended 2026-09-30).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
   schema v2, 311 cases, is the contract. The Java implementation is a
@@ -351,10 +371,16 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   the pinned Apple chain vouches for. With OpenSSL's CMS API the core
   answers as Java does on 22 of 22 algorithm rows
   ([follow-up §3.2][followup]).
-- **The rule:** divergences between the core and the Java implementation
-  are recorded. A divergence that changes an Apple-signed input's verdict,
-  or accepts something unsigned, is a bug. No prescan or other check is
-  added only to match Java.
+- **The rule** (amended by the owner on 2026-09-30): divergences between
+  the core and the Java implementation are recorded. A divergence is fixed
+  only when it changes an Apple-signed input's verdict or accepts
+  something unsigned; that is a bug. Any other divergence makes its case
+  port-defined (`oneOf` in `fixtures/cases.json`, listing both answers),
+  and nobody writes code in either implementation to imitate the other.
+  No prescan or other check is added only to match Java, and none is
+  added to Java only to match the core. An audit pull request, in flight
+  on 2026-09-30, removes the code already written only to imitate; the
+  alignments recorded below predate the amendment.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one
@@ -541,7 +567,8 @@ The measured cost is speed, above the floor on every host (R4).
 
 **Status: accepted** (owner, 2026-09-29 for the ABI; 2026-09-28 for the
 instance model, Q49 option d). Supersedes the ABI v1 export list of the
-2026-09-28 record.
+2026-09-28 record. Amended 2026-09-30: the WIT package version moves from
+`1.0.0` to `0.1.0` (R36); the export names below change with it.
 
 **The ABI.** `aprv.wasm` exports its four operations through the
 canonical ABI, the Component Model's calling convention, from one WIT
@@ -772,7 +799,8 @@ owner chose neither.
 
 ## R30. Floors
 
-**Status: accepted** (owner, 2026-09-28; Q54).
+**Status: accepted** (owner, 2026-09-28; Q54). Amended 2026-09-30: the
+policy and Go's floor, below.
 
 Java 8 (both artifacts); Python 3.10; Swift 6.3 with macOS 15 and iOS 18;
 Ruby 3.3; .NET netstandard2.0, tested on net8+; Node 20; Go as today; PHP
@@ -780,6 +808,14 @@ Ruby 3.3; .NET netstandard2.0, tested on net8+; Node 20; Go as today; PHP
 0.7.0: Swift from 6.1 and macOS 13 to 6.3 and macOS 15, because WasmKit
 0.4.0 declares them ([Swift WasmKit][swift]); and the Java 8 CI leg moves
 from Temurin to Zulu or Corretto before Temurin 8 builds end.
+
+**2026-09-30 (owner).** A floor moves only when a dependency, a security
+fix or CI forces it; a new language line or a vendor's end of support
+does not move it. Go moves from 1.22 to 1.25, because wazero 1.12 needs
+1.25 and the 1.22 floor held wazero at 1.9.0. Node 20, Python 3.10, PHP
+8.2, Ruby 3.3, .NET 8 (netstandard2.0), Swift 6.3 and Java 8 stay. The
+Go change (the `go` directive, wazero and the CI legs) lands in its own
+pull request; until then the tree still declares 1.22.
 
 ---
 
@@ -872,6 +908,81 @@ canonical form buys nothing here; recorded so it is not proposed again.
 
 ---
 
+## R35. The parity corpus: a release asset, pinned in git
+
+**Status: accepted** (owner, 2026-09-29). Replaces the repository
+variables of OD-05 (STATUS.md).
+
+- **Where it lives:** a GitHub Release of this repository, tag
+  `corpus-2026-09-29` (a pre-release), file `corpus-2026-09-29.tar.gz`,
+  28,591,520 B, SHA-256
+  `89b599c52f0448dae22298972db5841a795991edf52df520bea7c545774b956d`.
+  Its layout is the one `.github/CI-NOTES.md` describes for the nightly
+  `corpus` job.
+- **What is in it:** rows generated from `fixtures/` and the test keys
+  only. It holds no production receipt.
+- **The pin:** `fixtures/corpus.json` names the asset's URL and SHA-256,
+  and `nightly.yml` reads it and checks the hash before it unpacks
+  anything. The repository variables `APRV_CORPUS_URL` and
+  `APRV_CORPUS_SHA256` go. A CI pull request, in flight on 2026-09-30,
+  introduces the file and the workflow change.
+- **What follows:** the pin changes through a reviewed commit, like any
+  other file, and `git log` shows which archive each nightly used. The
+  rows belong to one module, so a release that changes the module needs
+  a new archive under a new tag and a new pin.
+- **Later, perhaps:** a separate corpus repository. Nothing is decided.
+
+---
+
+## R36. The public API in 0.8, and the WIT package version
+
+**Status: accepted** (owner, 2026-09-30). The items still open are in
+ROADMAP.md, "Decisions of 2026-09-29 and 30".
+
+- **The shape stays as 0.7 defined it** in all nine packages
+  ([0.7 API][api07]): `Verifier.create(Config)`, `verifyReceipt(base64)`,
+  `verifySignedData(jws)`, `verifyReceiptEndpoint(env, json)`, and a
+  result with `verified`, `payload` and `failure`.
+- **Settled:** Java keeps `runtimeProbe`. Roots keep the language's own
+  certificate type where it has one (Java, .NET and Go) and are bytes
+  elsewhere; the one-implementation allowlist already names the .NET and
+  Go types (OD-04, STATUS.md).
+  Java's `Environment.value()` becomes public.
+- **The WIT package version moves from `aprv:verifier@1.0.0` to
+  `aprv:verifier@0.1.0`,** because the product is pre-1.0. The export
+  names carry the version (R23), so this renames the ABI: the WIT file,
+  the guest, every binding and wrapper, and the `abi` string
+  `aprv-server` reports move in one pull request. The Go and Swift CI
+  jobs test the module the same run builds, so the committed copies in
+  `go/` and `swift/` can keep the old names until the release refreshes
+  them (R14).
+- **Later, not in 0.8.0:** an optional `expect {bundleId, environment}`
+  argument on the verify calls. The core would check it and answer a
+  mismatch as a verdict. Today every README leaves that check to the
+  caller.
+
+---
+
+## R37. Fuzz findings and supply-chain scoring
+
+**Status: accepted** (owner, 2026-09-30). Nothing is wired yet.
+
+- **OSS-Fuzz:** apply with the six existing targets (`rust/fuzz`: five
+  targets over the core and the C ABI, and `abi-call` over the module's
+  exports).
+- **Nightly findings:** the job encrypts any finding to the owner's age
+  or PGP public key and sends a notice through a Telegram bot. The public
+  log shows only the target name and a hash. This answers lane D's
+  hand-back (STATUS.md): the repository is public, so an auto-opened
+  issue would disclose a memory-safety crash.
+- **OpenSSF Scorecard** joins the checks.
+- **Attestation is unchanged:** SLSA provenance and a CycloneDX SBOM per
+  artifact (R34).
+- BOOTSTRAP.md lists the owner's one-time actions: the public key, the
+  bot and its secret, and the OSS-Fuzz project submission.
+
+---
+
 ## Rejected alternatives
 
 One table for everything the plan measured or considered and rejected.
@@ -947,3 +1058,4 @@ One table for everything the plan measured or considered and rejected.
 [wasmi]: ../evidence/2026-09-27-wasmi-security-review.md
 [corefix]: ../evidence/2026-09-29-core-review-fixes.md
 [javar3]: ../evidence/2026-09-29-java-align-round3.md
+[vendored4]: ../evidence/2026-09-30-rust-openssl-vendored-4-upstream.md
