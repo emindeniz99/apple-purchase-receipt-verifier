@@ -34,13 +34,13 @@ module ApplePurchaseReceiptVerifier
 
     class << self
       # @api private
-      def ok(payload) # steep:ignore UndeclaredMethodDefinition
+      def ok(payload)
         # @type self: singleton(VerificationResult)
         new(verified: true, payload: payload, failure: nil)
       end
 
       # @api private
-      def error(failure) # steep:ignore UndeclaredMethodDefinition
+      def error(failure)
         # @type self: singleton(VerificationResult)
         new(verified: false, payload: nil, failure: failure)
       end
