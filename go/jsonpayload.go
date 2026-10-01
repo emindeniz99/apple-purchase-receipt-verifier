@@ -19,6 +19,3 @@ func NewJSONPayload(json string) *JSONPayload { return &JSONPayload{json: json} 
 
 // JSON is the verified payload, exactly as signed.
 func (p *JSONPayload) JSON() string { return p.json }
-
-// String is JSON.
-func (p *JSONPayload) String() string { return p.json }
