@@ -369,7 +369,7 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
 2026-10-01).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
-  schema v2, 311 cases, is the contract. The Java implementation is a
+  schema v2, 384 cases, is the contract. The Java implementation is a
   reference that is itself held to that contract (R33).
 - **Algorithm policy:** accept any signer and chain signature algorithm
   the pinned Apple chain vouches for. With OpenSSL's CMS API the core
@@ -759,7 +759,7 @@ FlatBuffers as the encoding.
   ([aprv-server §6][server]).
 - **Why two artifactIds:** a classifier jar cannot replace the main jar,
   since it shares the artifact's POM and dependencies.
-- **CI:** the 311 cases against the main artifact and against both engines
+- **CI:** the 384 cases against the main artifact and against both engines
   of `-wasm`; the `java-runtime-8` leg runs the server engine on real
   Temurin 8. Temurin 8 builds end in late 2026; the leg moves to Zulu or
   Corretto 8 by then.
@@ -928,13 +928,13 @@ classes and classifies every host.
 **Status: accepted** (owner, 2026-09-28). Supersedes R8.
 
 - **Decision:** the 0.7 Java implementation stays in the repository,
-  maintained. CI runs it and the Rust core over the 311 cases on every
+  maintained. CI runs it and the Rust core over the 384 cases on every
   change, and the differential job runs the full corpus through both
   nightly. Its differences go to R20.
 - **The one-product rule, restated for the plan** (CLAUDE.md's "Behavior
   changes" section changes to this text in Phase 7): a verification
   behaviour change touches the Rust core, the Java implementation and
-  `fixtures/` in the same PR. The 311 cases keep them in step, and every
+  `fixtures/` in the same PR. The 384 cases keep them in step, and every
   host runs all of them as one test each.
 - **Why not the frozen jar of R8:** a frozen jar answers differently
   wherever the core changes on purpose, so every intended change becomes
@@ -1168,7 +1168,7 @@ left open in ROADMAP.md.
 - Reason: the owner's rule that a well-maintained library replaces
   hand-written code. `rust/src/json.rs` was 370 lines of grammar
   (566 with its tests), the one parser the core kept beside OpenSSL and
-  `serde_json`; it is 90 lines of glue now (216 with tests).
+  `serde_json`; it is about 95 lines of glue now (230 with tests).
 - What was deleted: the reader, and its three bounds, `MAX_NESTING_DEPTH`
   64, `MAX_NAME_LENGTH` 50,000 UTF-16 units and `MAX_NUMBER_LENGTH` 1,000
   characters; `rust/tests/input_size_caps.rs` lost the two tests of those

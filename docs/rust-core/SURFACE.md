@@ -131,7 +131,7 @@ Apple's endpoint refuses it ([aprv-server §1][server]).
   of the ABI ([ABI v1][abi], open questions; [canonical ABI][cabi]).
 - A `oneOf` case lists the outcomes a port may give, at the endpoint the
   `/status` values; `INTERNAL_ERROR` is never among them, and no exception
-  or panic may escape. 23 cases carry
+  or panic may escape. 42 cases carry
   `maxMillis` 2,000, measured after one warm-up call of the same case.
 - `decodeBase64` cases call the `receipt-data` and `x5c` decoders
   directly. In the core they run as today. Through a host, a
