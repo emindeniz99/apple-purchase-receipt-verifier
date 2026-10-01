@@ -8,6 +8,10 @@ the Java implementation. The core is compiled once to WebAssembly
 package of this project runs the same module, so a fix in the core
 reaches this one with the next release.
 
+This artifact is the newer engine, offered as a preview: its public API may
+still change before 1.0. The BouncyCastle artifact,
+`apple-purchase-receipt-verifier`, is the long-standing one.
+
 Use one artifact or the other, never both. They have the same class names;
 `Verifier.create` throws `IllegalStateException` when it finds both on the
 classpath, and a Gradle build that asks for both fails at resolution.
