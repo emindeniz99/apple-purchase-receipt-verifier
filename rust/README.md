@@ -109,6 +109,10 @@ let pinned = Config::builder()
 An empty root set is a `ConfigError` from `build()`, never a verdict: a
 verifier with no roots would reject everything, and nobody would notice
 until production. So is a `TrustAnchor` whose bytes are not a certificate.
+`TrustAnchor::from_der_or_pem(&bytes)` reads bytes in either encoding,
+told apart by the bytes, and returns every certificate a PEM bundle holds;
+it is how the module's `init` reads each root. PEM goes through OpenSSL's
+reader, as does `TrustAnchor::from_pem`.
 
 At startup, prefer `Config::builder().build()?` to `Config::defaults()`,
 even with nothing to set: it reports bundled roots that did not load as a
@@ -407,7 +411,7 @@ can call it without a reimplementation. It is a `cdylib`/`staticlib` plus a
 cbindgen-generated header, and a thin wrapper: every verification decision,
 parser and trust rule is this crate's, unchanged.
 
-The shape mirrors this API: one opaque `AprvVerifier` built from DER roots
+The shape mirrors this API: one opaque `AprvVerifier` built from roots (DER, or PEM read as `init` reads it)
 and an optional fixed clock, `aprv_verify_receipt`, `aprv_verify_signed_data`
 and `aprv_verify_receipt_endpoint`, and one
 `AprvResult { int32_t status; char *json; }` whose `json` is exactly
