@@ -1826,11 +1826,14 @@ jobs:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       # Some tools run the module (the production-receipt checker's tests
-      # among them); they take this run's build from APRV_WASM.
+      # among them); they take this run's build from APRV_WASM. The fuzz
+      # findings script's test seals and opens with the age release the
+      # nightly job installs (AGE_DIR).
       - name: the CI tools' own tests
         run: |
           npm ci --prefix tools --ignore-scripts --no-audit --no-fund
-          APRV_WASM="$RUNNER_TEMP/aprv/aprv.wasm" npm --prefix tools test
+          .github/scripts/install-age.sh "$RUNNER_TEMP/age"
+          APRV_WASM="$RUNNER_TEMP/aprv/aprv.wasm" AGE_DIR="$RUNNER_TEMP/age" npm --prefix tools test
           shellcheck tools/*.sh tools/reproduce/entrypoint.sh .github/scripts/*.sh
       - name: imports, exports, WIT read-back and SHA256SUMS
         run: |

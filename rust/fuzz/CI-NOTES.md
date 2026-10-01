@@ -42,10 +42,14 @@ here.
    a `slow-unit-*` artifact (here the 19 bytes `{"receipt-data":""}`);
    it is the compile, not a finding, and the job should not fail on a
    slow unit alone.
-5. **Artifacts.** On failure, upload `rust/fuzz/artifacts/` and
-   `rust/fuzz/abi/artifacts/` (gitignored). A crasher becomes a test
-   under `rust/tests/` built from test keys only; no issue carries it
-   until it is triaged.
+5. **Artifacts.** Never upload `rust/fuzz/artifacts/` or
+   `rust/fuzz/abi/artifacts/` (gitignored) as they are: the repository
+   is public. The nightly job keeps each target's output on the runner
+   and hands a failed target to `.github/scripts/fuzz-finding.sh`, which
+   prints only the target and the input's SHA-256 and seals the input
+   and report with age to the owner's key (DECISIONS.md R37). A crasher
+   becomes a test under `rust/tests/` built from test keys only; no
+   issue carries it until it is triaged.
 6. **Corpora.** `rust/fuzz/corpus/` and `rust/fuzz/abi/corpus/` are
    gitignored; caching them between nightly runs is optional (a cache
    restore is safe here: nothing is published from this job).

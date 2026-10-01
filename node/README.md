@@ -123,10 +123,20 @@ import { createConfig, defaultConfig } from 'apple-purchase-receipt-verifier';
 const config = defaultConfig(); // Apple's three roots, the system clock
 
 const pinned = createConfig({
-  roots: [rootDer],              // Uint8Array or PEM string; replaces the defaults
+  roots: [rootDer],              // DER as a Uint8Array; replaces the defaults
   clock: () => 1_735_689_600_000, // epoch milliseconds; replaces Date.now
 });
 ```
+
+A root is the certificate's DER, as a `Uint8Array` (a `Buffer` is one).
+Apple's PKI page publishes its roots as `.cer` files, which are DER, so
+`readFileSync('AppleRootCA-G3.cer')` is a root as it stands. A PEM string is
+a `TypeError` that points here. Convert it first: in Node,
+`new X509Certificate(pem).raw` from `node:crypto` is the DER. Browsers and
+workerd have no `X509Certificate`: base64-decode the text between the PEM's
+`BEGIN` and `END` lines yourself
+(`Uint8Array.from(atob(body), (c) => c.charCodeAt(0))` once its line breaks
+are removed). Both entry points take the same roots.
 
 `config.roots` is the DER of each root you passed, or `null` for Apple's
 roots, which are compiled into the module: the package ships no certificate
@@ -372,6 +382,7 @@ The API is 0.7's, with these differences:
 |---|---|
 | `defaultConfig().roots`: three parsed certificates | `null`: Apple's roots live in the module |
 | `config.roots`: parsed certificates | the DER bytes of each root |
+| a root as DER or a PEM string | DER only: a PEM string is a `TypeError`; pass `new X509Certificate(pem).raw` |
 | an unreadable root throws from `createConfig` | it throws a `TypeError` from `createVerifier` |
 | the clock read only when a verdict needs it | the clock read once on every call |
 | `cause` on `UNREADABLE_PAYLOAD`: the parser's error | no `cause`: the module reports its reason and message |

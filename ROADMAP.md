@@ -54,8 +54,9 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
      `VerificationError` export; .NET's `JsonPayload.Create`; PHP's
      `ReceiptPayload::idJson` and `attributesJson`; Ruby's internal
      classes `Guest`, `InstancePool`, `Runtime` and `Wire`.
-   - Whether the core reads PEM roots, so Ruby's own PEM unwrapping can
-     go.
+   - Decided 2026-10-01 (DECISIONS.md R39): roots are DER in every
+     package and the core reads no PEM; Node and Ruby dropped their PEM
+     unwrapping.
    - Node's `createConfig()` and `createVerifier()` names.
 
    Later, not in 0.8.0: an optional `expect {bundleId, environment}`
@@ -78,8 +79,12 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
 7. **Fuzz findings and supply chain.** Apply to OSS-Fuzz with the six
    existing targets; the nightly job encrypts any finding to the owner's
    public key and sends a notice through a Telegram bot, with only the
-   target name and a hash in the log; add OpenSSF Scorecard (R37). None of
-   it is wired yet; BOOTSTRAP.md has the owner's actions.
+   target name and a hash in the log; add OpenSSF Scorecard (R37). Wired
+   2026-10-01 (Scorecard, the sealed nightly findings with the Telegram
+   notice, the OSS-Fuzz draft in `docs/oss-fuzz/`); waiting on the owner's
+   age key, the two Telegram secrets and the OSS-Fuzz submission
+   (BOOTSTRAP.md). The draft leaves `abi-call` out until its harness can
+   run under OSS-Fuzz.
 8. **Attestation.** Unchanged: provenance and CycloneDX SBOM attestations
    (R34).
 9. **Unsupported runtimes.** SUPPORT-MATRIX.md lists LLRT, CloudFront

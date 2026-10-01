@@ -130,11 +130,16 @@ and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   `src/main/java11` compiles only against Endive's class generated from
   the real module and is not scanned.
 - `nightly.yml`: `rust-fuzz-openssl` fuzzes every target over an ASan
-  OpenSSL; `java-differential` runs `tools/differential.sh` (lane A3)
+  OpenSSL, with each target's output kept on the runner; a finding prints
+  the target and the input's SHA-256, and `.github/scripts/fuzz-finding.sh`
+  seals the input and report with age (R37); `java-differential` runs `tools/differential.sh` (lane A3)
   over a module built from the commit; `java-wasm-s390x` runs the -wasm
   artifact's Endive cases and ABI tests on a big-endian JVM (an s390x
   Temurin under QEMU user emulation, forked by surefire through a
   wrapper); `corpus` is described above.
+- `scorecard.yml`: OpenSSF Scorecard, weekly and on pushes to `main`,
+  with `publish_results` (so the workflow keeps to Scorecard's
+  restrictions) and its SARIF uploaded to code scanning.
 - `dependabot.yml` watches `java-wasm/`, `rust/server/`'s image bases,
   and `rust/server` with `rust/bindings/abi/tests` as one cargo entry
   (their exact wasmtime pins move together). It ignores `openssl-sys`

@@ -15,7 +15,7 @@ adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
 D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, and
-the owner's decisions of 2026-10-01 added R38 and R40 and rows to R20.
+the owner's decisions of 2026-10-01 added R38, R39 and R40 and rows to R20.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1028,7 +1028,10 @@ of 2026-09-29 and 30".
 
 ## R37. Fuzz findings and supply-chain scoring
 
-**Status: accepted** (owner, 2026-09-30). Nothing is wired yet.
+**Status: accepted** (owner, 2026-09-30). Wired 2026-10-01, waiting on
+the owner's key and secrets: the nightly sealing and notice, the
+Scorecard workflow and the OSS-Fuzz draft are in the repository, and
+BOOTSTRAP.md lists the three owner actions.
 
 - **OSS-Fuzz:** apply with the six existing targets (`rust/fuzz`: five
   targets over the core and the C ABI, and `abi-call` over the module's
@@ -1043,6 +1046,28 @@ of 2026-09-29 and 30".
   artifact (R34).
 - BOOTSTRAP.md lists the owner's one-time actions: the public key, the
   bot and its secret, and the OSS-Fuzz project submission.
+- **As wired (2026-10-01):**
+  - The nightly `rust-fuzz-openssl` job runs each target with its output
+    in a file on the runner. A finding prints the target and the
+    input's SHA-256; `.github/scripts/fuzz-finding.sh` seals the input
+    and the fuzzer's report with age (v1.3.2, pinned by SHA-256) to
+    `.github/fuzz/findings-recipient.txt` and the job uploads the sealed
+    file for 30 days. Without that file nothing is uploaded. Telegram
+    gets the repository, target, hash and run URL when
+    `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set. The run fails
+    in every case.
+  - age only, no PGP path: one pinned binary, and age also takes an SSH
+    public key.
+  - Scorecard runs weekly and on pushes to `main` with
+    `publish_results`, and uploads its SARIF to code scanning.
+  - The OSS-Fuzz draft in `docs/oss-fuzz/` builds five targets.
+    `abi-call` reads the module from `APRV_WASM` and compiles it on its
+    first input (86 s instrumented), which OSS-Fuzz's runner cannot
+    supply or wait for; it joins after a harness change. OSS-Fuzz's Rust
+    support is AddressSanitizer only.
+  - Open: the per-push fuzz jobs in ci.yml (`rust-fuzz` and the
+    wrappers' fuzz jobs) still print a crash to the public log. R37
+    covers the nightly job.
 
 ---
 
@@ -1091,6 +1116,38 @@ of 2026-09-29 and 30".
   other constructors ([Pacific time-zone crates][pactz]). tz-rs with
   tzdb_data is smaller; jiff was chosen for one crate covering the calendar
   and the zone with no build-time environment or file.
+
+---
+
+## R39. Roots are DER in every package
+
+**Status: accepted** (owner, 2026-10-01). Settles the PEM item that R36
+left open in ROADMAP.md.
+
+- **Decision:** a caller's root reaches every package as DER: a native
+  certificate object in Java, .NET and Go (R36), DER bytes everywhere
+  else. Node's `RootInput` is `Uint8Array` only, and Ruby's
+  `Config.new(roots:)` takes `#to_der` objects or DER Strings. Both
+  deleted their hand-written PEM unwrapping. A PEM string is refused at
+  config time with an error that points at the README, which gives the
+  conversion: `new X509Certificate(pem).raw` from `node:crypto`, or
+  `OpenSSL::X509::Certificate.new(pem).to_der`.
+- **Why:** the module's `init` takes base64 DER only
+  (`Verifier::new(roots: &[Vec<u8>])`), Apple's PKI page ships `.cer`
+  files that are already DER, and every fixture root is DER. Python,
+  Swift and PHP already took DER bytes, and PHP already refused PEM.
+  Two wrappers decoding a text format by hand was code the
+  one-implementation rule asks wrappers not to hold, for an input no
+  one has to start from.
+- **The core's ABI takes DER only**, and the WIT does not change.
+- **Exceptions, both outside the wrappers:** the Rust crate's
+  `TrustAnchor::from_pem` stays, for Rust callers holding PEM, until the
+  owner decides otherwise; `aprv-server`'s `--roots` file keeps reading
+  PEM blocks beside base64 DER lines, because an operator writes that
+  file by hand and PEM is what certificate tools print.
+- **The gate is unchanged:** the error messages name no crypto API, so
+  neither the one-implementation allowlist nor either package's own scan
+  needs an exception for them.
 
 ---
 

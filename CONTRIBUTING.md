@@ -169,9 +169,11 @@ module, which exercises each wrapper's own boundary: lowering, lifting,
 trap recovery. Every target is seeded from `fixtures/`, and the core's
 targets carry the anchor-set invariant: an input one anchor set accepts
 must fail against an unrelated one, which lets a fuzzer find a wrong
-acceptance, not only a crash. A fuzz finding fails the job and keeps the
-input; it opens no public issue, since a crash in a parser can be a
-vulnerability ([SECURITY.md](./SECURITY.md)).
+acceptance, not only a crash. A fuzz finding fails the job and opens no
+public issue, since a crash in a parser can be a vulnerability
+([SECURITY.md](./SECURITY.md)). The nightly job prints only the target
+and the input's hash and seals the rest to the maintainer's key
+(`.github/scripts/fuzz-finding.sh`).
 
 CI runs the suites on every supported runtime line
 ([SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md)). The floors are claims we
