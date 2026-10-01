@@ -31,10 +31,19 @@ The fork `emindeniz99/rust-openssl` ran upstream's CI workflow twice:
 
 ## Result
 
-Both runs fail the same seven jobs and no others. All six new `vendored-4`
-legs pass, and the existing `vendored` legs still resolve `openssl-src`
-300.x. The seven failures happen on unchanged master too, so the change
-does not cause them.
+On the first attempt both runs fail the same seven jobs. The baseline
+also has `windows-vcpkg-x64` cancelled by fail-fast; the branch fails no
+other job. All six new `vendored-4` legs pass, and the existing
+`vendored` legs still resolve `openssl-src` 300.x. The seven failures
+happen on unchanged master too, so the change does not cause them. On
+the 2026-09-30 re-run (attempt 2) one arm BoringSSL leg passed on retry,
+leaving six failures, which fits the intermittent 503 below.
+
+The BoringSSL fix (fix 1 below) landed on the fork as PR #3, merged on
+2026-09-30; on its run 36791471567 all six BoringSSL legs pass, and
+`windows-vcpkg-arm64` still fails (with `windows-vcpkg-x64` cancelled by
+fail-fast). Fork PR #4 runs `vendored-4` on that fixed master as the
+confirmation run.
 
 ### The six BoringSSL legs: googlesource answers HTTP 503
 

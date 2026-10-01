@@ -9,18 +9,23 @@ lanes are `lane/*` branches merged back with real merge commits; no
 owner review until the final pull request; agents review each other's
 work.
 
-**State on 2026-09-30:** `main` is at b96f14e, the merge of pull request
-#187 (`rust-core` into `main`, 2026-09-29 18:52Z). The release pull
-request #182 (0.8.0) waits for the CI fix in pull request #200. The
+**State on 2026-10-01:** pull request #187 (`rust-core` into `main`)
+merged on 2026-09-29 18:52Z as b96f14e. The release pull request #182
+(0.8.0) waited for the CI fix in pull request #200, which merged on
+2026-09-30 (86ff162) and refreshed #182; #202 followed (107b7f6). The
 owner's decisions of 2026-09-29 and 30 are in ROADMAP.md and in
 DECISIONS.md R35 to R37 and the amendments of R5, R19, R20, R23 and R30.
 The rest of this file is the migration's record as it stood at the merge.
 
-Open on `main`:
+On `main`:
 
-- The nightly `java-differential` job fails at b96f14e (run
-  36698598330): `tools/differential/recorded.json` is stale, with one row
-  missing and four out of date. A separate pull request fixes it.
+- The nightly `java-differential` job failed at b96f14e (run
+  36698598330): `tools/differential/recorded.json` was stale, with one
+  row missing and four out of date. Fixed by #202 on 2026-10-01
+  (107b7f6); the next nightly run confirms it.
+- The same run failed `java-wasm-s390x` (surefire: "Given path does not
+  end with java executor"). Still open; ROADMAP.md lists the job under
+  "CI still missing".
 
 ## Lanes
 
@@ -653,4 +658,4 @@ hand-back.
 | G4 | closed on the branch's CI (Node and Go); the npm and Go proxy smokes run on the 0.8.0 release |
 | G5 | closed on the branch's CI (Python, Swift, Ruby, .NET); the registry smokes run on the 0.8.0 release, NuGet once bootstrapped |
 | G6 | closed on the branch's CI (PHP through the server); the Packagist smoke runs once the owner submits the repository |
-| G7 | PR #187 merged with a real merge commit on 2026-09-29 (b96f14e); release-please's 0.8.0 pull request, #182, waits for the CI fix in PR #200 |
+| G7 | PR #187 merged with a real merge commit on 2026-09-29 (b96f14e); release-please's 0.8.0 pull request, #182, waited for the CI fix in PR #200, merged 2026-09-30 (86ff162), which refreshed #182 |

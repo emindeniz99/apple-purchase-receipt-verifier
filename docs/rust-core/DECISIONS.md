@@ -937,8 +937,8 @@ variables of OD-05 (STATUS.md).
 - **The pin:** `fixtures/corpus.json` names the asset's URL and SHA-256,
   and `nightly.yml` reads it and checks the hash before it unpacks
   anything. The repository variables `APRV_CORPUS_URL` and
-  `APRV_CORPUS_SHA256` go. A CI pull request, in flight on 2026-09-30,
-  introduces the file and the workflow change.
+  `APRV_CORPUS_SHA256` go. #200, merged on 2026-09-30 (86ff162),
+  introduced the file and the workflow change.
 - **What follows:** the pin changes through a reviewed commit, like any
   other file, and `git log` shows which archive each nightly used. The
   rows belong to one module, so a release that changes the module needs

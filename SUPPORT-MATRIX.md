@@ -259,10 +259,10 @@ Notes on the rows:
 | .NET on Alpine | `aprv-server` |
 | Any language, or any runtime we do not package | `aprv-server` over HTTP or its CLI, or the C ABI built from source |
 | Fastly Compute JS, Akamai EdgeWorkers | not supported: neither runs WebAssembly |
-| LLRT (AWS Low Latency Runtime) | not supported: it runs on QuickJS, which has no WebAssembly |
-| CloudFront Functions | not supported: a restricted JavaScript runtime with no WebAssembly, and a 10 KB limit on a function's code |
-| Hermes (React Native) | not supported: no `WebAssembly` object |
-| GraalJS, Nashorn | not supported: embedded JVM engines without the APIs the npm package loads the module with (`node:fs`, or `fetch` with `import.meta.url`); Nashorn has no WebAssembly at all. On a JVM, use the Java artifacts |
+| LLRT (AWS Low Latency Runtime) | not supported: not tested here, and it runs on QuickJS, which has no WebAssembly, per the vendor's documentation |
+| CloudFront Functions | not supported: not tested here, and the runtime has no WebAssembly and limits a function to 10 KB of code, per the vendor's documentation |
+| Hermes (React Native) | not supported: not tested here, and it has no `WebAssembly` object, per the vendor's documentation |
+| GraalJS, Nashorn | not supported: not tested here. Per the vendors' documentation, neither offers the APIs the npm package loads the module with (`node:fs`, or `fetch` with `import.meta.url`), and Nashorn has no WebAssembly. On a JVM, use the Java artifacts |
 
 **The Python platforms without a wheel.** wasmtime-py 49.0.0 has no wheel
 for manylinux armv7l, i686, ppc64le, s390x and riscv64; `linux_armv6l`;

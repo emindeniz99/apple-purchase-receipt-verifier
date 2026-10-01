@@ -29,9 +29,9 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    an opt-in `vendored-4` feature; its CI results are in
    docs/evidence/2026-09-30-rust-openssl-vendored-4-upstream.md (R19).
 2. **Parity corpus.** A release asset of this repository, tag
-   `corpus-2026-09-29`, pinned in git by `fixtures/corpus.json`, which the
-   CI pull request in flight introduces; the repository variables go
-   (R35).
+   `corpus-2026-09-29`, pinned in git by `fixtures/corpus.json`, which
+   #200 introduced (merged 2026-09-30); the repository variables are no
+   longer read (R35).
 3. **Floors.** A floor moves only when a dependency, a security fix or CI
    forces it. Go moves to 1.25 for wazero 1.12; the other floors stay
    (R30, SUPPORT-MATRIX.md).
@@ -103,15 +103,19 @@ The eight non-Java packages run one Rust core as `aprv.wasm`, `aprv-server`
 runs it for Java 8, PHP and any other language, and the Java
 implementation stays beside it (PLAN.md D17 to D30,
 [docs/rust-core/](./docs/rust-core/README.md)). #187 merged it into `main`
-on 2026-09-29 (b96f14e). The release pull request, #182, waits for the
-CI fix in #200. From the decisions above, three pull requests are in
-flight (the corpus pin, the dependency sweep and the removal of Java's
-imitation rules), and two changes are decided (the WIT version rename,
-R36, and Go's floor, R30). What is still open from the migration:
+on 2026-09-29 (b96f14e). #200, the CI fix the release pull request #182
+waited for, merged on 2026-09-30 (86ff162) and refreshed #182. From the
+decisions above, two pull requests are in flight (the dependency sweep
+and the removal of Java's imitation rules), and two changes are decided
+(the WIT version rename, R36, and Go's floor, R30). What is still open
+from the migration:
 
-- **The nightly `java-differential` job fails on `main`** at b96f14e
-  (run 36698598330): `tools/differential/recorded.json` is stale, with
-  one row missing and four out of date. A separate pull request fixes it.
+- **The nightly `java-differential` job failed on `main`** at b96f14e
+  (run 36698598330): `tools/differential/recorded.json` was stale, with
+  one row missing and four out of date. Fixed by #202 on 2026-10-01
+  (107b7f6); the next nightly run confirms it. The same run also failed
+  `java-wasm-s390x` (surefire: "Given path does not end with java
+  executor"), which stays open under "CI still missing" below.
 
 - **Re-measure on an idle runner.** Every 0.8 timing in BENCHMARKS.md was
   taken on a heavily loaded shared machine. Swift's JWS came out at about

@@ -330,7 +330,9 @@ current archive is a release asset of this repository
 | `corpus-2026-09-29` | `corpus-2026-09-29.tar.gz` | 28,591,520 B | `89b599c52f0448dae22298972db5841a795991edf52df520bea7c545774b956d` |
 
 It was generated from `fixtures/` and the test keys only, and holds no
-production receipt. To refresh it after a release changes the module,
+production receipt. The repository variables `APRV_CORPUS_URL` and
+`APRV_CORPUS_SHA256` can be deleted now; nothing reads them. To refresh
+it after a release changes the module,
 since its rows belong to one module:
 
 1. Build the archive (a `.tar.gz` with the layout `.github/CI-NOTES.md`
