@@ -54,7 +54,7 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
      `VerificationError` export; .NET's `JsonPayload.Create`; PHP's
      `ReceiptPayload::idJson` and `attributesJson`; Ruby's internal
      classes `Guest`, `InstancePool`, `Runtime` and `Wire`.
-   - Decided 2026-10-01 (DECISIONS.md R38): roots are DER in every
+   - Decided 2026-10-01 (DECISIONS.md R39): roots are DER in every
      package and the core reads no PEM; Node and Ruby dropped their PEM
      unwrapping.
    - Node's `createConfig()` and `createVerifier()` names.
