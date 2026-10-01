@@ -48,13 +48,15 @@ module ApplePurchaseReceiptVerifier
 
     # @param roots [Array<#to_der, String>, nil] pinned anchors, as
     #   certificate objects (anything answering `#to_der`, such as an
-    #   OpenSSL certificate object) or DER or PEM strings; Apple's bundled
-    #   roots when omitted. An empty Array is not "no roots": {Verifier.create}
-    #   refuses it. A string the module does not accept as a certificate is
-    #   refused there too.
+    #   OpenSSL certificate object) or DER strings; Apple's bundled roots
+    #   when omitted. A PEM string is refused: parse it into a certificate
+    #   object and pass that. An empty Array is not "no roots":
+    #   {Verifier.create} refuses it. A string the module does not accept as
+    #   a certificate is refused there too.
     # @param clock [#call, nil] the system clock when omitted
     # @raise [ArgumentError] `roots` is not an Array, an entry is neither a
-    #   certificate object nor a String, or `clock` does not respond to `#call`
+    #   certificate object nor a String, an entry is a PEM String, or `clock`
+    #   does not respond to `#call`
     def initialize(roots: nil, clock: nil)
       @custom_roots = !roots.nil?
       @roots = roots.nil? ? none : normalize(roots)
@@ -73,9 +75,11 @@ module ApplePurchaseReceiptVerifier
 
     private
 
-    PEM_BEGIN = "-----BEGIN CERTIFICATE-----"
-    PEM_END = "-----END CERTIFICATE-----"
-    private_constant :PEM_BEGIN, :PEM_END
+    # The ArgumentError for a PEM String root. It names the fix, which is
+    # why the one-implementation gate and api_shape_test.rb let this one
+    # literal name the openssl gem.
+    PEM_ROOT_MESSAGE = "a PEM String is not a root: pass OpenSSL::X509::Certificate.new(pem) instead"
+    private_constant :PEM_ROOT_MESSAGE
 
     def none
       empty = [] #: Array[String]
@@ -88,31 +92,20 @@ module ApplePurchaseReceiptVerifier
       roots.map { |root| der_of(root) }.freeze
     end
 
-    # The bytes the module is given for one root. Only the container is
-    # unwrapped here (a certificate object to its DER, PEM to DER); whether
-    # the bytes are a certificate is the module's to say, at `init`.
+    # The bytes the module is given for one root: a certificate object's
+    # DER, or a DER String as given. Roots are DER in every package
+    # (docs/rust-core/DECISIONS.md R38); a PEM String is recognised only to
+    # refuse it with the fix. Whether the bytes are a certificate is the
+    # module's to say, at `init`.
     def der_of(root)
       return root.to_der.b.freeze if root.respond_to?(:to_der)
       unless root.is_a?(String)
         raise ArgumentError,
-              "roots entries must be certificate objects (#to_der) or DER/PEM Strings, got #{root.class}"
+              "roots entries must be certificate objects (#to_der) or DER Strings, got #{root.class}"
       end
+      raise ArgumentError, PEM_ROOT_MESSAGE if root.b.include?("-----BEGIN")
 
-      return root.b.freeze unless root.include?("-----BEGIN")
-
-      pem_body(root).delete(" \t\r\n\f\v").unpack1("m").to_s.freeze
-    end
-
-    # The text between the first BEGIN CERTIFICATE marker and the first END
-    # marker after it (at least one character between them). Two index
-    # scans, so the cost is linear in the string however the markers repeat.
-    def pem_body(root)
-      start = root.byteindex(PEM_BEGIN)
-      stop = start && root.byteindex(PEM_END, start + PEM_BEGIN.bytesize + 1)
-      raise ArgumentError, "a PEM roots entry is not a CERTIFICATE block" if start.nil? || stop.nil?
-
-      first = start + PEM_BEGIN.bytesize
-      root.byteslice(first, stop - first).to_s.b
+      root.b.freeze
     end
 
     # Builds a {Config} from parts set one at a time. Every 0.7 port offers

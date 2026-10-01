@@ -202,11 +202,22 @@ class ApiShapeTest < Minitest::Test
     end
   end
 
+  # The one exemption: Config's error for a PEM String root names the openssl
+  # gem call that turns PEM into a certificate object. Only this exact line
+  # of config.rb is skipped; the gate in tools/check-one-implementation.mjs
+  # allowlists the same literal.
+  PEM_ROOT_MESSAGE_LINE = '    PEM_ROOT_MESSAGE = "a PEM String is not a root: ' \
+                          'pass OpenSSL::X509::Certificate.new(pem) instead"'
+
   def test_the_library_holds_no_verification_code
     files = Dir[File.expand_path("../lib/**/*.rb", __dir__)]
     refute_empty files
+    config = File.expand_path("../lib/apple_purchase_receipt_verifier/config.rb", __dir__)
+    assert_includes File.readlines(config, chomp: true), PEM_ROOT_MESSAGE_LINE
     files.each do |file|
       File.readlines(file, chomp: true, encoding: "UTF-8").each_with_index do |line, index|
+        next if file == config && line == PEM_ROOT_MESSAGE_LINE
+
         code = line.sub(/#.*\z/, "")
         FORBIDDEN.each do |pattern|
           refute_match pattern, code, "#{File.basename(file)}:#{index + 1} looks like verification code"

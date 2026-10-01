@@ -3,6 +3,7 @@
 require_relative "helper"
 require_relative "fake_module"
 require "tmpdir"
+require "openssl"
 
 # The facade's own behaviour, against a module that answers from a table
 # (fake_module.rb), so none of it depends on which core version the shipped
@@ -93,37 +94,26 @@ class FacadeTest < Minitest::Test
 
   def test_the_roots_reach_init_as_base64_der
     der = "not really a certificate".b
-    pem = "-----BEGIN CERTIFICATE-----\n#{[der].pack("m")}-----END CERTIFICATE-----\n"
     certificate = Struct.new(:to_der).new(der)
-    config = APRV::Config.new(roots: [der, pem, certificate])
-    assert_equal [der, der, der], config.roots
+    config = APRV::Config.new(roots: [der, certificate])
+    assert_equal [der, der], config.roots
     assert_predicate verifier(config).verify_receipt("v"), :verified?
     assert_equal [], APRV::Config.defaults.roots
   end
 
-  def test_pem_unwrapping_takes_the_first_block_and_ignores_whitespace_and_other_blocks
-    der = "\x01\x02\x03 not really a certificate".b
-    body = [der].pack("m")
-    spaced = body.gsub("\n", " \t\r\n")
-    wrapped = "junk\n-----BEGIN CERTIFICATE-----\r\n #{spaced}-----END CERTIFICATE-----\n" \
-              "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"
-    assert_equal [der], APRV::Config.new(roots: [wrapped]).roots
-    assert_raises(ArgumentError) { APRV::Config.new(roots: ["-----BEGIN CERTIFICATE-----\n#{body}"]) }
-    end_first = "-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\n#{body}"
-    assert_raises(ArgumentError) { APRV::Config.new(roots: [end_first]) }
-  end
-
-  # A regular expression over the PEM markers went polynomial on this input
-  # (CodeQL); the scan is linear.
-  def test_a_megabyte_of_repeated_begin_markers_is_refused_quickly
-    hostile = "-----BEGIN CERTIFICATE-----a" * (1_048_576 / 28)
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    assert_raises(ArgumentError) { APRV::Config.new(roots: [hostile]) }
-    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.5
-    with_end = "#{hostile}-----END CERTIFICATE-----"
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    APRV::Config.new(roots: [with_end])
-    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.5
+  # Roots are DER in every package (docs/rust-core/DECISIONS.md R38). A PEM
+  # String is refused at Config.new with the fix in the message, not
+  # unwrapped here and not passed on for the module to refuse at create.
+  def test_a_pem_string_root_is_refused_and_the_message_names_the_fix
+    der = File.binread(File.join(TestSupport.repo_root, "certs", "AppleRootCA-G3.cer"))
+    pem = "-----BEGIN CERTIFICATE-----\n#{[der].pack("m")}-----END CERTIFICATE-----\n"
+    [pem, "junk before it\n#{pem}"].each do |root|
+      error = assert_raises(ArgumentError) { APRV::Config.new(roots: [der, root]) }
+      assert_match(/not a root: pass OpenSSL::X509::Certificate\.new\(pem\) instead/, error.message)
+    end
+    assert_raises(ArgumentError) { APRV::Config.builder.roots([pem]).build }
+    # The fix the message names works: the certificate object's DER is the root.
+    assert_equal [der], APRV::Config.new(roots: [OpenSSL::X509::Certificate.new(pem)]).roots
   end
 
   def test_config_refuses_what_is_neither_a_certificate_nor_a_string
