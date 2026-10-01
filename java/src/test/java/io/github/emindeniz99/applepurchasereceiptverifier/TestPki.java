@@ -27,10 +27,8 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.BEROctetString;
 import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
@@ -884,19 +882,6 @@ public final class TestPki {
     /** One receipt attribute, for a generator assembling its own set. */
     static ASN1Encodable attribute(int type, byte[] valueOctets) {
         return attr(type, valueOctets);
-    }
-
-    /**
-     * {@code contents} as a BER OCTET STRING of {@code levels} constructed
-     * levels, each holding the next as its one chunk, the innermost chunk
-     * primitive. The joined octets are {@code contents} at any depth.
-     */
-    static ASN1OctetString chunked(byte[] contents, int levels) {
-        ASN1OctetString string = new DEROctetString(contents);
-        for (int i = 0; i < levels; i++) {
-            string = new BEROctetString(new ASN1OctetString[] {string});
-        }
-        return string;
     }
 
     /**

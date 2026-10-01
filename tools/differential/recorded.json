@@ -4,7 +4,8 @@
     "signer-certificate-refusal-stage": "The SignerInfo's own certificate is one a strict X.509 reader refuses (version 11, an extension twice, a corrupt extension). The core reads it as the signer's defect (INVALID_CERTIFICATE); Java refuses every undecodable embedded certificate as a defect of the envelope (MALFORMED). The case allows both.",
     "tolerant-envelope-decoding": "A genuinely signed envelope that is not valid DER elsewhere (the certificates field twice, an extensions field twice, malformed signed attributes in a second SignerInfo). OpenSSL decodes the whole ContentInfo (and each x5c certificate) with its templates and refuses; BouncyCastle reads only what it needs and verifies. The case allows both; the core fails closed.",
     "signer-identity-twin": "The unsigned bag carries a self-signed twin of the signer's identity ahead of the genuine leaf. The core tries every certificate the SignerInfo names and verifies; Java takes the first match and refuses. The case allows both; neither uses the twin's key.",
-    "certificate-signature-in-chunks": "An embedded certificate's outer signature BIT STRING, outside the signed TBS, in two chunks whose second has no initial octet of its own. OpenSSL joins the chunks' contents and verifies the same signature; BouncyCastle reads it as X.690 8.6.4 does, as a BIT STRING claiming 150 unused bits, and answers MALFORMED. The case allows both; the chain is judged either way."
+    "certificate-signature-in-chunks": "An embedded certificate's outer signature BIT STRING, outside the signed TBS, in two chunks whose second has no initial octet of its own. OpenSSL joins the chunks' contents and verifies the same signature; BouncyCastle reads it as X.690 8.6.4 does, as a BIT STRING claiming 150 unused bits, and answers MALFORMED. The case allows both; the chain is judged either way.",
+    "ber-forms-apple-never-emits": "A BER form Apple's DER receipts never take: a string re-chunked into seven constructed levels, in the eContent, the Xcode wrap, an attribute value, or one SEQUENCE deep in a fourth field or an unsigned attribute value; a constructed UTCTime; a value whose length takes five octets; eleven CRLs. OpenSSL joins at most six chunk levels (ASN1_MAX_STRING_NEST), joins a constructed string of any type and reads the long length, and the core decodes every CRL before it verifies and bounds them at ten. BouncyCastle joins OCTET STRING chunks at any depth within Java's nesting bound of 32, builds no constructed UTCTime, reads the long length and never decodes a CRL. The cases allow both, and the five-octet case pins only the raw octets both read; the signature and the chain are judged either way (R20, 2026-09-30, by the rule OD-17 applied to the two-chunk signature)."
   },
   "rows": {
     "receipt/reject-signer-certificate-version-11": { "class": "reason", "group": "signer-certificate-refusal-stage" },
@@ -15,6 +16,14 @@
     "receipt/intermediate-with-the-extensions-field-twice-does-not-crash": { "class": "verdict", "group": "tolerant-envelope-decoding" },
     "signed-data/intermediate-with-the-extensions-field-twice-does-not-crash": { "class": "verdict", "group": "tolerant-envelope-decoding" },
     "receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash": { "class": "verdict", "group": "signer-identity-twin" },
-    "receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks": { "class": "verdict", "group": "certificate-signature-in-chunks" }
+    "receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks": { "class": "verdict", "group": "certificate-signature-in-chunks" },
+    "receipt/reject-econtent-rechunked-into-7-constructed-levels": { "class": "verdict", "group": "ber-forms-apple-never-emits" },
+    "receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels": { "class": "verdict", "group": "ber-forms-apple-never-emits" },
+    "receipt/unreadable-double-wrap-rechunked-into-7-constructed-levels": { "class": "verdict", "group": "ber-forms-apple-never-emits" },
+    "receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string": { "class": "verdict", "group": "ber-forms-apple-never-emits" },
+    "receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string": { "class": "verdict", "group": "ber-forms-apple-never-emits" },
+    "receipt/accept-fourth-field-sequence-holding-a-constructed-utctime": { "class": "verdict", "group": "ber-forms-apple-never-emits" },
+    "receipt/reject-eleven-embedded-crls": { "class": "verdict", "group": "ber-forms-apple-never-emits" },
+    "receipt/bundle-id-with-a-five-octet-length-is-kept-raw": { "class": "payload", "group": "ber-forms-apple-never-emits" }
   }
 }
