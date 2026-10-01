@@ -351,11 +351,13 @@ fn the_direct_dependency_set_is_exactly_the_reviewed_one() {
     // A new direct dependency is a supply-chain decision, and it should not
     // be possible to make one by accident. serde_json writes
     // ReceiptPayload::to_json() (owner, 2026-09-27: the same JSON value
-    // across ports, each through its standard encoder); aprv-openssl is the
-    // OpenSSL adapter, and its own set is pinned beside it.
+    // across ports, each through its standard encoder); jiff is the calendar
+    // and the one embedded time zone behind the `_pst` dates (owner,
+    // 2026-10-01; DECISIONS.md R38); aprv-openssl is the OpenSSL adapter,
+    // and its own set is pinned beside it.
     assert_eq!(
         direct_dependencies("Cargo.toml"),
-        ["aprv-openssl", "base64", "serde_json"],
+        ["aprv-openssl", "base64", "jiff", "serde_json"],
         "the core's direct dependency set changed"
     );
     assert_eq!(

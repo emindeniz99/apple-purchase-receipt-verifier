@@ -37,6 +37,11 @@ path = "src/lib.rs"
 [dependencies]
 aprv-openssl = { version = "0.7.0", path = "openssl", default-features = false } # x-release-please-version
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+# The calendar and the US Pacific offset behind Apple's `_pst` dates
+# (src/datetime.rs). `static` embeds America/Los_Angeles, and only it, at
+# compile time through `tz::get!`; the build reads no time-zone file and
+# the module carries no database (docs/rust-core/DECISIONS.md R38).
+jiff = { version = "0.2.37", default-features = false, features = ["static"] }
 serde_json = "1"
 
 [features]

@@ -1,0 +1,23 @@
+[package]
+name = "tzspike-diff"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+# Native differential: every candidate's America/Los_Angeles offset against
+# the repo's hand-written pacific_offset_seconds. Run through run-diff.sh,
+# which sets CHRONO_TZ_TIMEZONE_FILTER so the filtered build is the one
+# being checked.
+[dependencies]
+chrono = { version = "=0.4.45", default-features = false }
+chrono-tz = { version = "=0.10.4", default-features = false, features = ["filter-by-regex"] }
+jiff = { version = "=0.2.37", default-features = false, features = ["alloc", "static"] }
+tz-rs = { version = "=0.7.3" }
+tzdb_data = { version = "=0.2.5" }
+time = { version = "0.3", default-features = false }
+time-tz = { version = "=2.0.0" }
+
+[profile.release]
+opt-level = 3

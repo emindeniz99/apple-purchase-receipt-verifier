@@ -39,11 +39,14 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
 - **Rust 1.85.0**, declared as `rust-version` and proven by CI: the whole
   suite, conformance included, runs on a real 1.85.0 toolchain against
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
-- **Three direct dependencies**: `aprv-openssl` (`openssl/`, published
-  beside this crate), `base64` for `receipt-data` and `x5c` entries, and
-  `serde_json`, which only writes `to_json()` and the endpoint response and
-  never reads input. Every byte of attacker-supplied ASN.1 (certificates,
-  CMS, receipt payloads, keys, signatures) is parsed by OpenSSL 4 through
+- **Four direct dependencies**: `aprv-openssl` (`openssl/`, published
+  beside this crate), `base64` for `receipt-data` and `x5c` entries,
+  `jiff` for the calendar and the US Pacific time of the `_pst` dates
+  (one zone, `America/Los_Angeles`, compiled in; no time-zone file is
+  read at run time), and `serde_json`, which only writes `to_json()` and
+  the endpoint response and never reads input. Every byte of
+  attacker-supplied ASN.1 (certificates, CMS, receipt payloads, keys,
+  signatures) is parsed by OpenSSL 4 through
   that adapter, which also does the path building and the signature
   arithmetic; this crate keeps the policy (roots, markers, the chain
   instant, the bounds, the reasons and their order) and holds
@@ -523,6 +526,13 @@ beyond "no panic".
 `tests/data/pacific-transitions.txt` carries every `America/Los_Angeles`
 offset transition from 1900 to 2100, taken from the IANA database via
 Python's `zoneinfo`, and the suite checks the rendering rules at the second
-before and the second of each of the 308 of them. The other ports get this
-from a full time-zone database; this crate has no such dependency, so the
-whole rule set is written out and checked against theirs.
+before and the second of each of the 308 of them. The offsets come from
+`jiff`, which compiles that one zone in from its own copy of the database,
+local mean time before 1883-11-18 included. `tests/datetime.rs` also holds
+them, and the renderings, to the hand-written rules this crate carried
+until 2026-10-01: every minute from 1883-11-18 to 2100 and every hour to
+the end of 9999 in an ignored test (`cargo test --release --test datetime
+-- --ignored`), and a sample on every run. Dates render from the year
+-9999 to 9999-12-31T23:59:59Z, the receipt grammar's last second; the
+endpoint answers a clock outside that range as a broken clock, with
+status 21009.
