@@ -271,10 +271,10 @@ final class FacadeTest extends TestCase
     public function testTheBuiltInRootsAreNullAndCustomRootsGoThroughAsGiven(): void
     {
         self::assertNull(Config::defaults()->roots);
-        self::assertNull(Config::builder()->build()->roots, 'a builder that is never given roots keeps the built-in ones');
+        self::assertNull((new Config())->roots, 'a Config that is never given roots keeps the built-in ones');
 
         $transport = FakeTransport::answering('{}');
-        Verifier::create(Config::builder()->roots(new \ArrayIterator(["\x30\x00", "\x01\xff"]))->build(), $transport);
+        Verifier::create(new Config(roots: new \ArrayIterator(["\x30\x00", "\x01\xff"])), $transport);
         self::assertSame([["\x30\x00", "\x01\xff"]], $transport->opened);
 
         $builtIn = FakeTransport::answering('{}');
@@ -291,9 +291,9 @@ final class FacadeTest extends TestCase
     public function testAnEmptyRootListIsRefusedAtCreateNotReadAsTheBuiltInRoots(): void
     {
         foreach ([
-            'the builder given an empty array' => Config::builder()->roots([])->build(),
-            'the builder given an empty iterator' => Config::builder()->roots(new \ArrayIterator([]))->build(),
-            'a Config constructed with an empty list' => new Config([], new FrozenClock(new DateTimeImmutable())),
+            'a Config given an empty array' => new Config(roots: []),
+            'a Config given an empty iterator' => new Config(roots: new \ArrayIterator([])),
+            'a Config given an empty list and a clock' => new Config([], new FrozenClock(new DateTimeImmutable())),
         ] as $what => $config) {
             $transport = FakeTransport::answering('{}');
             try {
@@ -310,7 +310,7 @@ final class FacadeTest extends TestCase
     {
         $transport = FakeTransport::answering('{"status":21002}');
         $clock = new CountingClock();
-        $verifier = self::verifier($transport, Config::builder()->clock($clock)->build());
+        $verifier = self::verifier($transport, new Config(clock: $clock));
 
         $verifier->verifyReceipt('a');
         self::assertSame(1, $clock->reads);
@@ -327,7 +327,7 @@ final class FacadeTest extends TestCase
     {
         $transport = FakeTransport::answering('{"status":0}');
         $instant = new DateTimeImmutable('2040-01-02T03:04:05.678912Z');
-        self::verifier($transport, Config::builder()->clock(new FrozenClock($instant))->build())
+        self::verifier($transport, new Config(clock: new FrozenClock($instant)))
             ->verifyReceiptEndpoint(Environment::Sandbox, '{}');
 
         self::assertSame(2209086245678, $transport->calls[0][2]);
@@ -337,7 +337,7 @@ final class FacadeTest extends TestCase
     {
         $clock = new ThrowingClock();
         $transport = FakeTransport::answering('{}');
-        $verifier = self::verifier($transport, Config::builder()->clock($clock)->build());
+        $verifier = self::verifier($transport, new Config(clock: $clock));
 
         $receipt = $verifier->verifyReceipt('x');
         $jws = $verifier->verifySignedData('x');
@@ -351,7 +351,7 @@ final class FacadeTest extends TestCase
     public function testAClockBefore1970IsAnInternalErrorBecauseNowMsIsUnsigned(): void
     {
         $transport = FakeTransport::answering('{}');
-        $verifier = self::verifier($transport, Config::builder()->clock(new FrozenClock(new DateTimeImmutable('1969-12-31T23:59:59Z')))->build());
+        $verifier = self::verifier($transport, new Config(clock: new FrozenClock(new DateTimeImmutable('1969-12-31T23:59:59Z'))));
 
         $result = $verifier->verifyReceipt('x');
         self::assertSame(Reason::InternalError, Outcome::failure($result)->reason);

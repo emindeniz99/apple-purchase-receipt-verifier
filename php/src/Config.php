@@ -28,21 +28,33 @@ use Psr\Clock\ClockInterface;
  */
 final readonly class Config
 {
-    /** @param list<string>|null $roots DER bytes of the trust anchors; null means the module's built-in Apple roots */
+    /** @var list<string>|null DER bytes of the trust anchors; null means the module's built-in Apple roots */
+    public ?array $roots;
+
+    public ClockInterface $clock;
+
+    /**
+     * Pass only what differs from the defaults, by name:
+     * `new Config(roots: $myRootsAsDer, clock: $myClock)`.
+     *
+     * @param iterable<string>|null $roots DER bytes of the trust anchors;
+     *        null, the default, means the module's built-in Apple roots
+     * @param ClockInterface $clock the system clock by default
+     */
     public function __construct(
-        public ?array $roots,
-        public ClockInterface $clock,
+        ?iterable $roots = null,
+        ClockInterface $clock = new SystemClock(),
     ) {
+        if ($roots !== null) {
+            $roots = is_array($roots) ? array_values($roots) : iterator_to_array($roots, false);
+        }
+        $this->roots = $roots;
+        $this->clock = $clock;
     }
 
-    /** The module's built-in Apple roots and the system clock. */
+    /** The module's built-in Apple roots and the system clock: the same as `new Config()`. */
     public static function defaults(): self
     {
-        return new self(null, new SystemClock());
-    }
-
-    public static function builder(): ConfigBuilder
-    {
-        return new ConfigBuilder();
+        return new self();
     }
 }

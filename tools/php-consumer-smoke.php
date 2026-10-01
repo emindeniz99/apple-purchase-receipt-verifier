@@ -104,7 +104,7 @@ $check('bundleId', $receipt->bundleId, 'dev.bonzer.weeka.app');
 $check('inApp count', count($receipt->inApp), 2);
 
 // The shared transaction, under its own generated root.
-$jwsResult = Verifier::create(Config::builder()->roots([$fixture('jws-root')])->build(), $transport())
+$jwsResult = Verifier::create(new Config(roots: [$fixture('jws-root')]), $transport())
     ->verifySignedData($fixture('transaction'));
 $check('transaction verified', $jwsResult->verified(), true);
 $transaction = json_decode($jwsResult->payload->json, true, 64, JSON_THROW_ON_ERROR);

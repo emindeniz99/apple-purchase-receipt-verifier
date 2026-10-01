@@ -26,8 +26,8 @@ final class NoVerificationLogicTest extends TestCase
      */
     private const BANNED_PREFIXES = ['openssl_', 'sodium_crypto', 'gmp_', 'bcpowmod', 'hash_hmac', 'mcrypt_'];
 
-    /** What `src/Internal` may hold: data and mapping, never a parser. */
-    private const INTERNAL_FILES = ['Info.php', 'Text.php', 'Wire.php'];
+    /** What `src/Internal` may hold: data and mapping (PayloadJson writes the payload's JSON values), never a parser. */
+    private const INTERNAL_FILES = ['Info.php', 'PayloadJson.php', 'Text.php', 'Wire.php'];
 
     public function testNoCryptoFunctionIsCalledAnywhereInTheSourceTree(): void
     {

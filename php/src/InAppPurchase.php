@@ -46,27 +46,4 @@ final readonly class InAppPurchase
         public array $unknownAttributes = [],
     ) {
     }
-
-    /**
-     * @internal this purchase as the value {@see ReceiptPayload::toJson()} encodes
-     *
-     * @return array<string, mixed>
-     */
-    public function jsonValue(): array
-    {
-        return [
-            'quantity' => $this->quantity,
-            'product_id' => $this->productId,
-            'transaction_id' => $this->transactionId,
-            'purchase_date_ms' => $this->purchaseDateMs,
-            'original_transaction_id' => $this->originalTransactionId,
-            'original_purchase_date_ms' => $this->originalPurchaseDateMs,
-            'expires_date_ms' => $this->expiresDateMs,
-            'web_order_line_item_id' => ReceiptPayload::idJson($this->webOrderLineItemId),
-            'cancellation_date_ms' => $this->cancellationDateMs,
-            'is_trial_period' => $this->isTrialPeriod,
-            'is_in_intro_offer_period' => $this->isInIntroOfferPeriod,
-            'unknown_attributes' => ReceiptPayload::attributesJson($this->unknownAttributes),
-        ];
-    }
 }

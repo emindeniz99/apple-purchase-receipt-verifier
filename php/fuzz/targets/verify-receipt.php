@@ -31,8 +31,8 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 /** @var \PhpFuzzer\Config $config */
 require __DIR__ . '/../bootstrap.php';
 
-$trusted = Verifier::create(Config::builder()->roots(FuzzFixtures::withReceiptRoot(FuzzFixtures::appleRoots()))->build(), FuzzFixtures::transport());
-$unrelated = Verifier::create(Config::builder()->roots(FuzzFixtures::jwsRootOnly())->build(), FuzzFixtures::transport());
+$trusted = Verifier::create(new Config(roots: FuzzFixtures::withReceiptRoot(FuzzFixtures::appleRoots())), FuzzFixtures::transport());
+$unrelated = Verifier::create(new Config(roots: FuzzFixtures::jwsRootOnly()), FuzzFixtures::transport());
 
 $config->setMaxLen(16384);
 
