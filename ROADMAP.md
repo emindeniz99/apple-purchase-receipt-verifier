@@ -105,9 +105,10 @@ implementation stays beside it (PLAN.md D17 to D30,
 [docs/rust-core/](./docs/rust-core/README.md)). #187 merged it into `main`
 on 2026-09-29 (b96f14e). #200, the CI fix the release pull request #182
 waited for, merged on 2026-09-30 (86ff162) and refreshed #182. From the
-decisions above, two pull requests are in flight (the dependency sweep
-and the removal of Java's imitation rules), and two changes are decided
-(the WIT version rename, R36, and Go's floor, R30). What is still open
+decisions above, the removal of Java's imitation rules merged on
+2026-10-01 (#203, 4bb529e) and the dependency sweep is #204, which also
+moves Go's floor (R30); the WIT version rename (R36) is decided and not
+yet made. What is still open
 from the migration:
 
 - **The nightly `java-differential` job failed on `main`** at b96f14e
