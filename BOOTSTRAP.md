@@ -37,7 +37,7 @@ Still open: RubyGems, NuGet, Packagist and Docker Hub (a first publish or
 a one-time setup each, below); crates.io, held at 0.7 on purpose; two
 owner decisions that are not registries, the Maven Central release count
 and the Java 8 CI distribution; and the one-time setup for fuzz findings
-and OSS-Fuzz. The corpus archive is hosted (2026-09-29).
+and OSS-Fuzz.
 
 ## RubyGems
 
@@ -316,32 +316,29 @@ they do.
 2. Move both jobs to it before Temurin's last Java 8 build, and say so in
    SUPPORT-MATRIX.md.
 
-## The corpus archive: hosted, pinned in git
+## The corpus archive
 
 The nightly `corpus` job runs every package's parity check over the
 generated corpora (1,179 receipts and 5,000 mutants, about 200 MB of rows).
-They stay out of the repository. Since 2026-09-29 the archive is a release
-asset of this repository (docs/rust-core/DECISIONS.md R35):
+They stay out of the repository; `fixtures/corpus.json` pins the archive
+by URL and SHA-256, so nothing is set in the repository settings. The
+current archive is a release asset of this repository
+(docs/rust-core/DECISIONS.md R35):
 
 | Tag | File | Size | SHA-256 |
 |---|---|---:|---|
 | `corpus-2026-09-29` | `corpus-2026-09-29.tar.gz` | 28,591,520 B | `89b599c52f0448dae22298972db5841a795991edf52df520bea7c545774b956d` |
 
 It was generated from `fixtures/` and the test keys only, and holds no
-production receipt. `fixtures/corpus.json` pins its URL and SHA-256, and
-`nightly.yml` reads that file; the CI pull request in flight on
-2026-09-30 introduces it and drops the repository variables
-`APRV_CORPUS_URL` and `APRV_CORPUS_SHA256`. Delete both variables once
-that pull request merges.
+production receipt. To refresh it after a release changes the module,
+since its rows belong to one module:
 
-After a release changes the module, the rows no longer match it:
-
-1. Generate the archive again, from fixtures and test keys only, with the
-   layout `.github/CI-NOTES.md` describes.
-2. Upload it to a new pre-release tag `corpus-<date>`, with its `.sha256`
-   beside it.
-3. Change the URL and SHA-256 in `fixtures/corpus.json` in a pull
-   request.
+1. Build the archive (a `.tar.gz` with the layout `.github/CI-NOTES.md`
+   describes) from fixtures and test keys only, and attach it to a
+   GitHub release of this repository.
+2. Open a PR that changes `url`, `sha256` and `generated` in
+   `fixtures/corpus.json`. The job fails on a hash mismatch or a
+   missing or malformed file.
 
 ## Fuzz findings, OSS-Fuzz and Scorecard: three owner actions
 
