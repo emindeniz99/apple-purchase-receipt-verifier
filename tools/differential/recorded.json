@@ -1,10 +1,10 @@
 {
-  "comment": "Rows of fixtures/cases.json on which the core (aprv.wasm) and the 0.7 Java implementation answer differently, as DECISIONS.md R20 records them. A row is {class, group}: class is what tools/differential/compare.mjs finds (reason, payload, verdict), group names the R20 row that explains it (groups below). The Java lane aligns the four java-aligns rows; once it lands they answer alike and compare.mjs reports them stale, which is the signal to remove them here.",
+  "comment": "Rows of fixtures/cases.json on which the core (aprv.wasm) and the 0.7 Java implementation answer differently, as DECISIONS.md R20 records them. A row is {class, group}: class is what tools/differential/compare.mjs finds (reason, payload, verdict), group names the R20 row that explains it (groups below). A row that compare.mjs reports stale answers alike again; remove it here.",
   "groups": {
     "signer-certificate-refusal-stage": "The SignerInfo's own certificate is one a strict X.509 reader refuses (version 11, an extension twice, a corrupt extension). The core reads it as the signer's defect (INVALID_CERTIFICATE); Java refuses every undecodable embedded certificate as a defect of the envelope (MALFORMED). The case allows both.",
     "tolerant-envelope-decoding": "A genuinely signed envelope that is not valid DER elsewhere (the certificates field twice, an extensions field twice, malformed signed attributes in a second SignerInfo). OpenSSL decodes the whole ContentInfo (and each x5c certificate) with its templates and refuses; BouncyCastle reads only what it needs and verifies. The case allows both; the core fails closed.",
     "signer-identity-twin": "The unsigned bag carries a self-signed twin of the signer's identity ahead of the genuine leaf. The core tries every certificate the SignerInfo names and verifies; Java takes the first match and refuses. The case allows both; neither uses the twin's key.",
-    "java-aligns": "The four review cases the Java lane aligns (R20's rows of the core review: six-level string nesting, the ten-CRL bound, the five-octet length kept raw)."
+    "certificate-signature-in-chunks": "An embedded certificate's outer signature BIT STRING, outside the signed TBS, in two chunks whose second has no initial octet of its own. OpenSSL joins the chunks' contents and verifies the same signature; BouncyCastle reads it as X.690 8.6.4 does, as a BIT STRING claiming 150 unused bits, and answers MALFORMED. The case allows both; the chain is judged either way."
   },
   "rows": {
     "receipt/reject-signer-certificate-version-11": { "class": "reason", "group": "signer-certificate-refusal-stage" },
@@ -15,9 +15,6 @@
     "receipt/intermediate-with-the-extensions-field-twice-does-not-crash": { "class": "verdict", "group": "tolerant-envelope-decoding" },
     "signed-data/intermediate-with-the-extensions-field-twice-does-not-crash": { "class": "verdict", "group": "tolerant-envelope-decoding" },
     "receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash": { "class": "verdict", "group": "signer-identity-twin" },
-    "receipt/reject-econtent-rechunked-into-7-constructed-levels": { "class": "verdict", "group": "java-aligns" },
-    "receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels": { "class": "verdict", "group": "java-aligns" },
-    "receipt/reject-eleven-embedded-crls": { "class": "verdict", "group": "java-aligns" },
-    "receipt/bundle-id-with-a-five-octet-length-is-kept-raw": { "class": "payload", "group": "java-aligns" }
+    "receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks": { "class": "verdict", "group": "certificate-signature-in-chunks" }
   }
 }
