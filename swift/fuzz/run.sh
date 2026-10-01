@@ -3,6 +3,9 @@
 #
 #   ./run.sh <target> [seconds]      default 60
 #   ./run.sh all [seconds]
+#   ./run.sh list                    the targets `all` runs
+#   ./run.sh build                   the targets and the generated seed;
+#                                    no run
 #
 # The binaries are libFuzzer executables, so the shared fixtures are passed
 # as extra corpus directories: libFuzzer reads all of them and writes new
@@ -20,10 +23,15 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fixtures="$here/../../fixtures"
-target="${1:?usage: run.sh <target>|all [seconds]}"
+target="${1:?usage: run.sh <target>|all|list|build [seconds]}"
 seconds="${2:-60}"
 sanitizers="${FUZZ_SANITIZERS:-fuzzer}"
 targets=(receipt-der receipt-base64 jws endpoint-json)
+
+if [ "$target" = list ]; then
+  printf '%s\n' "${targets[@]}"
+  exit 0
+fi
 
 # -sanitize=fuzzer instruments every target in the graph, dependencies
 # included, so the fuzzer can steer into WasmKit (the interpreter aprv.wasm
@@ -49,6 +57,10 @@ mkdir -p "$generated"
 printf '{"receipt-data":"%s"}' \
   "$(tr -d '\r\n' < "$fixtures/public-receipts/receipt-sandbox-g5.b64")" \
   > "$generated/sandbox-g5.json"
+
+if [ "$target" = build ]; then
+  exit 0
+fi
 
 run_one() {
   local name="$1"

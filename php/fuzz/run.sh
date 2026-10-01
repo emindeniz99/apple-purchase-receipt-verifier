@@ -4,6 +4,8 @@
 #
 #   ./run.sh <target> [seconds]      default 60
 #   ./run.sh all [seconds]
+#   ./run.sh list                    the targets `all` runs
+#   ./run.sh build                   fetch the pinned php-fuzzer phar; no run
 #
 # The fuzzer is nikic/php-fuzzer, downloaded as a pinned phar on first use
 # (see README.md for why it is not a Composer dependency of the library).
@@ -97,7 +99,9 @@ run_one() {
     done < <(find "$dir" -maxdepth 1 -type f)
   done
 
-  local log="$crashes/run.log"
+  # Beside the crash directory, not in it: that directory holds crashing
+  # inputs only, which is what CI seals and hashes as the finding.
+  local log="$here/crashes/$name.log"
   echo "=== $name: ${seconds}s, corpus $(find "$corpus" -type f | wc -l) entries"
   local status=0
   # cwd is the crash directory: php-fuzzer writes crash-<hash>.txt to it.
@@ -121,9 +125,17 @@ run_one() {
   fi
 }
 
-target="${1:?usage: run.sh <target>|all [seconds]}"
+target="${1:?usage: run.sh <target>|all|list|build [seconds]}"
 seconds="${2:-60}"
+if [ "$target" = list ]; then
+  printf '%s\n' "${TARGETS[@]}"
+  exit 0
+fi
 fetch_phar
+
+if [ "$target" = build ]; then
+  exit 0
+fi
 
 if [ "$target" = all ]; then
   failed=0
