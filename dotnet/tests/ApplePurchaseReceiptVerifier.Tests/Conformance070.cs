@@ -217,9 +217,26 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
 
     private static void AssertListedOutcome(string id, string operation, object? outcome, List<object?> allowed)
     {
-        (bool verified, _, VerificationReason? reason, _) = ReadOutcome(operation, outcome!);
+        (bool verified, VerificationReason? reason) = ReadVerdict(operation, outcome!);
         string got = verified ? "ok" : reason is VerificationReason r ? VerificationReasonCodes.ToCode(r) : "?";
         Assert.True(allowed.Contains(got), $"{id}: answered {got}, want one of {string.Join(", ", allowed)}");
+    }
+
+    /// <summary>
+    /// The verdict alone, without reading the payload back. A listed outcome checks no field, and the
+    /// wrapper's own reader (depth 64) would refuse a verified payload that is nested deeper than that.
+    /// </summary>
+    private static (bool Verified, VerificationReason? Reason) ReadVerdict(string operation, object outcome)
+    {
+        switch (outcome)
+        {
+            case VerificationResult<ReceiptPayload> receiptResult:
+                return (receiptResult.Verified, receiptResult.Verified ? null : receiptResult.Failure!.Reason);
+            case VerificationResult<JsonPayload> jwsResult:
+                return (jwsResult.Verified, jwsResult.Verified ? null : jwsResult.Failure!.Reason);
+            default:
+                throw new InvalidOperationException($"harness error: unexpected result type for \"{operation}\"");
+        }
     }
 
     /// <summary>The failure's message, and the wrapper's own cause when it has one, for a failing case's report.</summary>
