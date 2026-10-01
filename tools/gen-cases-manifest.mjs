@@ -47,6 +47,9 @@
  *   reason              the canonical token, error cases only
  *   oneOf               the outcomes a oneof case allows, "ok" or reason
  *                       tokens joined by "|"
+ *   statusOneOf         body cases only: the /status values the body may
+ *                       carry, joined by "|", when the case lists them
+ *                       instead of pinning fields
  *   field               one expected top-level field (repeated)
  *   length              one expected top-level array length (repeated)
  *   toJson              path to JSON whose value toJson() must equal (the
@@ -297,10 +300,11 @@ function main() {
     }
 
     const expected = kase.expected;
-    if (expected.oneOf) {
-      parts.push('expect=oneof', `oneOf=${expected.oneOf.join('|')}`);
-    } else if (kase.operation === 'verifyReceiptEndpoint') {
+    if (kase.operation === 'verifyReceiptEndpoint') {
       parts.push('expect=body');
+      if (expected.oneOf) parts.push(`statusOneOf=${expected.oneOf.join('|')}`);
+    } else if (expected.oneOf) {
+      parts.push('expect=oneof', `oneOf=${expected.oneOf.join('|')}`);
     } else {
       parts.push(`expect=${expected.status}`);
       if (expected.status === 'error') {

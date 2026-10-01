@@ -108,8 +108,22 @@ abstract class ConformanceCases {
                     ? Cases.text(Cases.fixtureBytes(input.get("requestBody").asText()))
                     : MAPPER.writeValueAsString(Collections.singletonMap("receipt-data", Cases.receiptString(input)));
             String response = verifier.verifyReceiptEndpoint(environment, body);
+            JsonNode parsed = parse(id, response);
+            if (expected.has("oneOf")) {
+                // Port-defined within a list: the response's /status must be
+                // listed, and nothing else is pinned.
+                JsonNode status = parsed.get("status");
+                List<Integer> allowed = new ArrayList<>();
+                for (JsonNode listed : expected.get("oneOf")) {
+                    allowed.add(listed.asInt());
+                }
+                assertTrue(
+                        status != null && status.isIntegralNumber() && allowed.contains(status.asInt()),
+                        id + ": answered status " + status + ", want one of " + allowed);
+                return;
+            }
             assertTrue(expected.get("fields").has("/status"), id + ": harness error: /status not pinned");
-            check(id, expected, parse(id, response));
+            check(id, expected, parsed);
             return;
         }
         final String argument;

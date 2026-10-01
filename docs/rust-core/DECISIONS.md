@@ -15,12 +15,13 @@ adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
 D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, and
-the owner's decisions of 2026-10-01 added R38, R39 and a row to R20.
+the owner's decisions of 2026-10-01 added R38, R39 and R40 and rows to R20.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
 `vendored-4` feature ([vendored-4][vendored4]) and the 2026-10-01
-note on time-zone crates ([Pacific time-zone crates][pactz]). Links use
+notes on time-zone crates ([Pacific time-zone crates][pactz]) and on
+the JSON reader ([serde_json][jsonserde]). Links use
 the short names defined at the end of this file. Rejected alternatives
 are in one table at the end, each with its measured reason and its note.
 
@@ -364,10 +365,11 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 ## R20. Apple compatibility, the algorithm policy, and recorded divergences
 
 **Status: accepted** (owner, 2026-09-26; restated 2026-09-28; the rule
-amended 2026-09-30; Java's nesting bound, 2026-10-01).
+amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
+2026-10-01).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
-  schema v2, 311 cases, is the contract. The Java implementation is a
+  schema v2, 384 cases, is the contract. The Java implementation is a
   reference that is itself held to that contract (R33).
 - **Algorithm policy:** accept any signer and chain signature algorithm
   the pinned Apple chain vouches for. With OpenSSL's CMS API the core
@@ -433,6 +435,10 @@ amended 2026-09-30; Java's nesting bound, 2026-10-01).
   | Signed content nested 33 deep, with SEQUENCEs or `[0]` context tags | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01; BouncyCastle's bound, 64 by default) | `UNREADABLE_PAYLOAD` | The core's depth bound is 32 (owner, 2026-09-27), counting constructed values of every class. Apple's receipts nest 9 deep, so the case allows both | `receipt/unreadable-signed-content-nested-33-deep`, `receipt/unreadable-signed-content-nested-33-deep-in-context-tags` |
   | An envelope nested 33 deep: in an unsigned attribute value (SEQUENCEs or `[0]` context tags), the digestAlgorithms parameters, a `crls` entry, an embedded certificate's parameters | `MALFORMED` | ok (port-defined 2026-10-01; BouncyCastle's bound, 64 by default) | `MALFORMED` | The same bound over the whole envelope, before any decode. None of these values is signed or Apple's, so the cases allow both | `receipt/reject-an-envelope-nested-33-deep`, `receipt/reject-an-envelope-nested-33-deep-in-context-tags`, `receipt/reject-digest-algorithm-parameters-nested-33-deep`, `receipt/reject-a-crls-entry-nested-33-deep`, `receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep` |
   | A clock past 9999-12-31T23:59:59.999Z, or before -9999-01-02T01:59:59Z, at the endpoint | rendered, a five-digit year with no sign (`10000-01-01 00:00:00 Etc/GMT`) | rendered, with a `+` sign past 9999 (`uuuu`) | `{"status":21009}` (port-defined 2026-10-01) | Such a clock is broken, answered like one that panics; jiff's calendar ends at 9999 and every receipt date the grammar accepts renders (R38) | none: no case pins a clock out there; `rust/tests/endpoint.rs` |
+  | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` (`BoundedJson`: nesting 64, names 50,000, numbers 1,000) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
+  | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
+  | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":21002}` | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
+  | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -491,6 +497,14 @@ amended 2026-09-30; Java's nesting bound, 2026-10-01).
   in the two rows above list both answers, and
   `tools/differential/recorded.json` names them under the group
   `nesting-between-33-and-bouncycastle`.
+
+  The same day the core's JSON reader became `serde_json` (R40) and the
+  core lost its three JSON bounds, which Java's `BoundedJson` keeps. The
+  rule above applies in the other direction: none of the five inputs is
+  Apple's, each is genuinely signed, and the core accepts nothing
+  unsigned, so the cases list both answers and
+  `tools/differential/recorded.json` names them under the group
+  `json-bounds-java-only`.
 
 ---
 
@@ -745,7 +759,7 @@ FlatBuffers as the encoding.
   ([aprv-server §6][server]).
 - **Why two artifactIds:** a classifier jar cannot replace the main jar,
   since it shares the artifact's POM and dependencies.
-- **CI:** the 311 cases against the main artifact and against both engines
+- **CI:** the 384 cases against the main artifact and against both engines
   of `-wasm`; the `java-runtime-8` leg runs the server engine on real
   Temurin 8. Temurin 8 builds end in late 2026; the leg moves to Zulu or
   Corretto 8 by then.
@@ -914,13 +928,13 @@ classes and classifies every host.
 **Status: accepted** (owner, 2026-09-28). Supersedes R8.
 
 - **Decision:** the 0.7 Java implementation stays in the repository,
-  maintained. CI runs it and the Rust core over the 311 cases on every
+  maintained. CI runs it and the Rust core over the 384 cases on every
   change, and the differential job runs the full corpus through both
   nightly. Its differences go to R20.
 - **The one-product rule, restated for the plan** (CLAUDE.md's "Behavior
   changes" section changes to this text in Phase 7): a verification
   behaviour change touches the Rust core, the Java implementation and
-  `fixtures/` in the same PR. The 311 cases keep them in step, and every
+  `fixtures/` in the same PR. The 384 cases keep them in step, and every
   host runs all of them as one test each.
 - **Why not the frozen jar of R8:** a frozen jar answers differently
   wherever the core changes on purpose, so every intended change becomes
@@ -1144,6 +1158,71 @@ left open in ROADMAP.md.
 
 ---
 
+## R40. JSON from `serde_json`, each document as a map of raw values
+
+**Status: accepted** (owner, 2026-10-01; variant B the same day).
+
+- The core reads its three JSON documents, a JWS header, a JWS payload and
+  the `verifyReceipt` request body, with `serde_json` (its `raw_value`
+  feature on the dependency the core already had; no new crate), each into
+  a `BTreeMap<String, &RawValue>`. A member nobody reads is checked against
+  the grammar and skipped without being built, iteratively, on a heap
+  stack of one byte per nesting level. `alg`, `x5c`, `signedDate` and
+  `receipt-data` are then parsed from their raw text. The endpoint reads
+  the first value and nothing after it (`StreamDeserializer::next`); a JWS
+  header or payload allows only whitespace after its object (`from_str`).
+- Reason: the owner's rule that a well-maintained library replaces
+  hand-written code. `rust/src/json.rs` was 370 lines of grammar
+  (566 with its tests), the one parser the core kept beside OpenSSL and
+  `serde_json`; it is about 95 lines of glue now (230 with tests).
+- What was deleted: the reader, and its three bounds, `MAX_NESTING_DEPTH`
+  64, `MAX_NAME_LENGTH` 50,000 UTF-16 units and `MAX_NUMBER_LENGTH` 1,000
+  characters; `rust/tests/input_size_caps.rs` lost the two tests of those
+  bounds (`a_body_nested_past_the_limit_answers_21002`,
+  `jws_json_nested_past_the_limit_is_refused`), and its two at-the-limit
+  tests became `a_deeply_nested_body_verifies` and
+  `deeply_nested_jws_json_reaches_the_signature_check`, which pin that
+  nesting within the size caps changes no verdict.
+- What the core still refuses, in skipped values too: comments, trailing
+  commas, leading zeros, `+`, `NaN`, unescaped control characters, escapes
+  RFC 8259 does not define, a byte order mark, bytes that are not UTF-8,
+  and anything but whitespace after a JWS object. A duplicate name keeps
+  its last value. `signedDate` keeps the reference conversion from its
+  raw text: an integer must fit an `i64`, a number with a fraction or an
+  exponent is truncated within that range, and anything else, an integer
+  past `i64` included, is no instant, so the clock stands in. One reading
+  changed beside the bounds: a lone surrogate escape is refused in a name
+  or in a value the core reads, where the old reader made it U+FFFD and
+  Jackson keeps it (R20 row). No shared case reaches it.
+- The bounds the core no longer has, and why that is acceptable: the
+  input caps (3,145,728 bytes for a body, 262,144 for a JWS) already bound
+  the work, and the three bounds prevented no blow-up. Measured natively
+  on the worst 3 MiB body each reader admits, best of five
+  ([serde_json][jsonserde]): 321,563 distinct members cost the old reader
+  26 ms and 46 MB and this one 83 ms and 26 MB; an array of 63-deep
+  objects 11 ms and 240 B against 6 ms and 521 B; 1.5 million levels of
+  nesting, which the old reader refused, 5 ms and 3.1 MB. A 3 MiB name,
+  number or string is read in linear time by both and copied at most
+  once. `serde_json`'s own recursion limit (128) applies to the values the
+  core builds, the one-level map and the `x5c` array, and not to the
+  values it skips.
+- Five shared cases crossed the deleted bounds with genuinely signed
+  inputs and are port-defined now, each listing Java's answer and the
+  core's (R20 rows of 2026-10-01). An endpoint case lists `/status` values
+  with `oneOf`, a schema form added for it; every runner that evaluates
+  endpoint cases reads it.
+- Java keeps `BoundedJson` and its three bounds. The R20 rule forbids
+  code in either implementation written to imitate the other, and Java's
+  bounds guard Jackson's defaults, which a host BOM can change
+  (docs/design/java-notes.md).
+- Rejected: variant A, `Map<String, Value>`, which builds a tree of
+  unsigned input at up to 126 times its size (396 MB for one 3 MiB
+  request; a pooled Wasm instance keeps the memory it grows).
+- Cost: `aprv.wasm` −6,285 bytes (2,813,436 to 2,807,151; gzip −631),
+  no new lockfile package, `cargo deny check` passes.
+
+---
+
 ## Rejected alternatives
 
 One table for everything the plan measured or considered and rejected.
@@ -1198,6 +1277,8 @@ One table for everything the plan measured or considered and rejected.
 | chrono-tz for `_pst` | Its zone filter reaches the build script only from the shell environment, never from `.cargo/config.toml` under `--manifest-path`, nor for a crates.io consumer: 935 KB unfiltered with an opaque `Tz` | [Pacific time-zone crates][pactz] | — |
 | A POSIX TZ rule (`PST8PDT,M3.2.0,M11.1.0`) | Wrong for every daylight-saving season 1900-2006 (19.8 million minutes) | [Pacific time-zone crates][pactz] | — |
 | A TZif file through `include_bytes!` (jiff or tz-rs) | A 2.8 KB binary in git, refreshed by hand from each tzdata release, and a TZif parser in the module: +31 KB with tz-rs, +303 KB with jiff's `TimeZone::tzif` | [Pacific time-zone crates][pactz] | — |
+| Keeping the hand-written JSON reader | 370 lines of grammar and three bounds the project maintains, for documents `serde_json`, already in the build, reads; the bounds prevented no blow-up, since both readers take a long name, number or string in linear time (R40) | [serde_json][jsonserde] | — |
+| `serde_json` variant A, `Map<String, Value>` | Builds a tree of unsigned input at up to 126 times its size: 396 MB for one 3 MiB request and 25 MB for one JWS segment, against 521 bytes for the map of raw values (R40) | [serde_json][jsonserde] | — |
 
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
 [cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
@@ -1225,3 +1306,4 @@ One table for everything the plan measured or considered and rejected.
 [javar3]: ../evidence/2026-09-29-java-align-round3.md
 [vendored4]: ../evidence/2026-09-30-rust-openssl-vendored-4-upstream.md
 [pactz]: ../evidence/2026-10-01-pacific-tz-crates.md
+[jsonserde]: ../evidence/2026-10-01-json-serde.md

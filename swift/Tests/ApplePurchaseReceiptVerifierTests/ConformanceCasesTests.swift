@@ -477,6 +477,15 @@ final class ConformanceCasesTests: XCTestCase {
             XCTFail("\(id): endpoint response is not a JSON object: \(response)")
             return
         }
+        if let allowed = expected["oneOf"] as? [Int] {
+            // Port-defined within a list: the response's /status must be
+            // listed, and nothing else is pinned.
+            let status = (parsed["status"] as? NSNumber)?.intValue
+            XCTAssertTrue(
+                status.map(allowed.contains) ?? false,
+                "\(id): answered status \(status.map(String.init) ?? "none"), want one of \(allowed)")
+            return
+        }
         try assertFieldsAndLengths(parsed, expected: expected, id: id)
     }
 

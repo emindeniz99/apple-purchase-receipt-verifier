@@ -273,11 +273,12 @@ chain verify at its own creation date.
 
 Everything the module parses is attacker-supplied, so its bounds are part of
 the design rather than a configuration, and the core owns every one: this
-package adds none. JSON nesting depth 64, numbers of at most 1,000 digits and
-member names of at most 50,000 characters apply to the JWS header, the JWS
-payload and the endpoint request body alike; ASN.1 nesting depth 32; at most
-ten embedded certificates, four `SignerInfo`s, and six certificates below the
-anchor.
+package adds none. ASN.1 nesting depth 32; at most ten embedded
+certificates, four `SignerInfo`s, and six certificates below the anchor.
+JSON (the JWS header, the JWS payload and the endpoint request body) has no
+nesting or length bound of its own: the module skips a value nobody reads
+without building it, so only the size caps bound it
+(docs/rust-core/DECISIONS.md R40).
 
 Input size is capped before anything is decoded, and the caps are Apple's
 own (measured on 2026-09-23 against both `verifyReceipt` endpoints):

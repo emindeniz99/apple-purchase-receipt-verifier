@@ -1,14 +1,17 @@
-//! Input size caps: the receipt string, the endpoint's request body and its
-//! nesting depth, the compact JWS and the depth of its JSON.
+//! Input size caps: the receipt string, the endpoint's request body and the
+//! compact JWS, and the JSON nesting the core no longer bounds.
 //!
 //! Every one of these inputs is decoded or parsed before any signature is
 //! checked, so without a cap an attacker gets that work, and the memory it
 //! allocates, for free. The receipt and request caps are Apple's own limit,
 //! 3 MiB (measured 2026-09-23), fixed and the same in every port; the JWS
-//! and depth caps are the shared cross-port numbers (`docs/design/0.7-api.md`,
-//! Bounds). Each cap is pinned three ways: one unit over is refused WITHOUT
-//! the expensive step running, exactly at the cap is not refused by the cap,
-//! and the exact answer a caller sees.
+//! cap is the shared cross-port number (`docs/design/0.7-api.md`, Bounds).
+//! Each cap is pinned three ways: one unit over is refused WITHOUT the
+//! expensive step running, exactly at the cap is not refused by the cap,
+//! and the exact answer a caller sees. JSON nesting has no cap of its own:
+//! the reader skips a value nobody reads on a heap stack of one byte per
+//! level (docs/rust-core/DECISIONS.md R40), so deep nesting within the size
+//! caps is pinned to cost nothing and change no verdict.
 //!
 //! "Without the expensive step running" is measured, not assumed: this
 //! binary installs an allocator that counts per thread, and each refusal
@@ -29,8 +32,6 @@ const MAX_RECEIPT_BYTES: usize = 3_145_728;
 const MAX_REQUEST_BYTES: usize = 3_145_728;
 /// The compact JWS cap, in UTF-8 bytes.
 const MAX_JWS_BYTES: usize = 262_144;
-/// How deep any JSON document may nest.
-const MAX_JSON_NESTING_DEPTH: usize = 64;
 
 // --- a per-thread allocation counter ------------------------------------
 
@@ -255,27 +256,16 @@ fn an_oversized_body_is_too_large_before_it_is_malformed() {
     }
 }
 
-// --- request body nesting: 64 ---------------------------------------------
+// --- request body nesting: unbounded within the size cap ------------------
 
 #[test]
-fn a_body_nested_to_the_limit_verifies() {
-    // The body object is level 1, so 63 more arrays make 64.
+fn a_deeply_nested_body_verifies() {
+    // The genuine receipt verifies whatever nests beside it: 100,000 arrays
+    // are skipped, not built, and no depth bound turns them into 21002.
     let verifier = verifier(common::receipt_root());
-    let body = body_with(&format!(
-        r#","deep":{}"#,
-        nested(MAX_JSON_NESTING_DEPTH - 1)
-    ));
-    assert_eq!(status(&endpoint(&verifier, &body)), 0);
-}
-
-#[test]
-fn a_body_nested_past_the_limit_answers_21002() {
-    // The genuine receipt would verify: a 21002 here can only come from the
-    // depth bound.
-    let verifier = verifier(common::receipt_root());
-    for depth in [MAX_JSON_NESTING_DEPTH, 100_000] {
+    for depth in [64, 65, 100_000] {
         let body = body_with(&format!(r#","deep":{}"#, nested(depth)));
-        assert_eq!(endpoint(&verifier, &body), FAILED_BODY, "{depth}");
+        assert_eq!(status(&endpoint(&verifier, &body)), 0, "{depth}");
     }
 }
 
@@ -365,46 +355,39 @@ fn a_jws_exactly_at_the_cap_reaches_the_signature_check() {
     assert_eq!(error.reason(), Reason::InvalidSignature, "{error}");
 }
 
-// --- JWS header and payload nesting: 64 -----------------------------------
+// --- JWS header and payload nesting: unbounded within the size cap --------
 
 #[test]
-fn jws_json_nested_to_the_limit_reaches_the_signature_check() {
-    let deep = serde_json::from_str::<Value>(&nested(MAX_JSON_NESTING_DEPTH - 1)).unwrap();
-    for jws in [
-        transaction_with(Some(("deep", deep.clone())), None),
-        transaction_with(None, Some(("deep", deep.clone()))),
-    ] {
-        let error = common::jws_verifier().verify_signed_data(&jws).unwrap_err();
-        assert_eq!(error.reason(), Reason::InvalidSignature, "{error}");
-    }
-}
-
-#[test]
-fn jws_json_nested_past_the_limit_is_refused() {
-    // A header nested past 64 is a broken outer structure: MALFORMED. A
-    // payload nested past 64 does not parse, and a payload that does not
-    // parse is carried to the signature check, which this unsigned one
-    // fails: INVALID_SIGNATURE, never a verdict before the signature.
+fn deeply_nested_jws_json_reaches_the_signature_check() {
+    // A header or payload nested 65 deep, or as deep as the JWS cap allows
+    // (50,000 levels are 133 KB of base64url), is read, not refused: the
+    // nesting is skipped, and the JWS goes on to the signature check, which
+    // this unsigned one fails. INVALID_SIGNATURE, never a verdict before the
+    // signature and never MALFORMED for the depth.
     let (header, payload, signature) = common::split_jws(&common::transaction_jws());
-    let deepen = |segment: &str| {
-        let text = String::from_utf8(base64_decode_lenient(segment)).unwrap();
-        let text = format!(
-            r#"{{"deep":{},{}"#,
-            nested(MAX_JSON_NESTING_DEPTH),
-            &text[1..]
+    for depth in [65, 50_000] {
+        let deepen = |segment: &str| {
+            let text = String::from_utf8(base64_decode_lenient(segment)).unwrap();
+            let text = format!(r#"{{"deep":{},{}"#, nested(depth), &text[1..]);
+            common::base64url(text.as_bytes())
+        };
+        let deep_header = common::join_jws(&deepen(&header), &payload, &signature);
+        assert!(deep_header.len() < MAX_JWS_BYTES);
+        let header_error = common::jws_verifier()
+            .verify_signed_data(&deep_header)
+            .unwrap_err();
+        assert_eq!(
+            header_error.reason(),
+            Reason::InvalidSignature,
+            "{depth}: {header_error}"
         );
-        common::base64url(text.as_bytes())
-    };
-    let header_error = common::jws_verifier()
-        .verify_signed_data(&common::join_jws(&deepen(&header), &payload, &signature))
-        .unwrap_err();
-    assert_eq!(header_error.reason(), Reason::Malformed, "{header_error}");
-    let payload_error = common::jws_verifier()
-        .verify_signed_data(&common::join_jws(&header, &deepen(&payload), &signature))
-        .unwrap_err();
-    assert_eq!(
-        payload_error.reason(),
-        Reason::InvalidSignature,
-        "{payload_error}"
-    );
+        let payload_error = common::jws_verifier()
+            .verify_signed_data(&common::join_jws(&header, &deepen(&payload), &signature))
+            .unwrap_err();
+        assert_eq!(
+            payload_error.reason(),
+            Reason::InvalidSignature,
+            "{depth}: {payload_error}"
+        );
+    }
 }

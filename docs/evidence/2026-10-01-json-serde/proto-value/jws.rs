@@ -11,12 +11,13 @@
 
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
 use crate::error::{malformed, Failure, Reason};
-use crate::json::{instant, string, strings, whole_object_members, JsonError};
+use crate::json::{instant, whole_object_members, JsonError};
 use crate::path::validate_pair;
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
 use aprv_openssl::{verify_es256, Certificate};
 use core::fmt;
+use serde_json::Value;
 
 /// The longest compact JWS, in UTF-8 bytes, checked before the string is
 /// split or any segment decoded, because everything below allocates in
@@ -196,7 +197,20 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
     let text = core::str::from_utf8(bytes).map_err(|_| malformed("header is not UTF-8"))?;
     let members =
         whole_object_members(text).map_err(|_| malformed("header is not a JSON object"))?;
-    Ok((string(&members, "alg"), strings(&members, "x5c")))
+    let alg = members
+        .get("alg")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let x5c = members
+        .get("x5c")
+        .and_then(Value::as_array)
+        .and_then(|entries| {
+            entries
+                .iter()
+                .map(|entry| entry.as_str().map(str::to_owned))
+                .collect::<Option<Vec<String>>>()
+        });
+    Ok((alg, x5c))
 }
 
 /// The payload text and its last top-level `signedDate`, or why it is not a
@@ -207,7 +221,11 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
 fn read_payload(bytes: &[u8]) -> Result<(String, Option<i64>), Unreadable> {
     let text = core::str::from_utf8(bytes).map_err(Unreadable::NotUtf8)?;
     let members = whole_object_members(text).map_err(Unreadable::NotAnObject)?;
-    Ok((text.to_owned(), instant(&members, "signedDate")))
+    let signed_date = members
+        .get("signedDate")
+        .and_then(Value::as_number)
+        .and_then(instant);
+    Ok((text.to_owned(), signed_date))
 }
 
 fn verify_signature(

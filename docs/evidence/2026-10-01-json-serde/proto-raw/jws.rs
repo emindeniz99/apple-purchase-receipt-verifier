@@ -196,7 +196,9 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
     let text = core::str::from_utf8(bytes).map_err(|_| malformed("header is not UTF-8"))?;
     let members =
         whole_object_members(text).map_err(|_| malformed("header is not a JSON object"))?;
-    Ok((string(&members, "alg"), strings(&members, "x5c")))
+    let alg = string(&members, "alg");
+    let x5c = strings(&members, "x5c");
+    Ok((alg, x5c))
 }
 
 /// The payload text and its last top-level `signedDate`, or why it is not a
@@ -207,7 +209,8 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
 fn read_payload(bytes: &[u8]) -> Result<(String, Option<i64>), Unreadable> {
     let text = core::str::from_utf8(bytes).map_err(Unreadable::NotUtf8)?;
     let members = whole_object_members(text).map_err(Unreadable::NotAnObject)?;
-    Ok((text.to_owned(), instant(&members, "signedDate")))
+    let signed_date = instant(&members, "signedDate");
+    Ok((text.to_owned(), signed_date))
 }
 
 fn verify_signature(
