@@ -252,7 +252,6 @@ final class ReceiptDecoder {
     }
 
     private static ASN1Set parseAttributeSet(byte[] der, String what) throws VerificationException {
-        requireDepth(der, what);
         ASN1Primitive parsed;
         try {
             parsed = ASN1Primitive.fromByteArray(der);
@@ -263,7 +262,6 @@ final class ReceiptDecoder {
         if (parsed instanceof ASN1OctetString) {
             // Xcode receipts wrap the payload in one more OCTET STRING.
             byte[] inner = ((ASN1OctetString) parsed).getOctets();
-            requireDepth(inner, what);
             try {
                 parsed = ASN1Primitive.fromByteArray(inner);
             } catch (IOException | RuntimeException e) {
@@ -276,20 +274,11 @@ final class ReceiptDecoder {
         return (ASN1Set) parsed;
     }
 
-    private static void requireDepth(byte[] der, String what) throws VerificationException {
-        if (Asn1Depth.exceeded(der)) {
-            throw new VerificationException(
-                    Reason.UNREADABLE_PAYLOAD, what + " nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
-        }
-    }
-
     /**
      * A UTF8String or a seven-bit IA5String, the two types Apple uses; any
      * other {@link ASN1String} is refused rather than rendered.
      */
     private static String decodeString(byte[] der) throws VerificationException {
-        // A nested encoding inside an OCTET STRING, which the payload's own depth walk did not enter.
-        requireDepth(der, "attribute value");
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (parsed instanceof ASN1IA5String) {
@@ -315,7 +304,6 @@ final class ReceiptDecoder {
 
     /** An INTEGER that fits a long, negative values included. */
     private static Long decodeInteger(byte[] der) throws VerificationException {
-        requireDepth(der, "attribute value");
         try {
             ASN1Primitive parsed = ASN1Primitive.fromByteArray(der);
             if (!(parsed instanceof ASN1Integer)) {

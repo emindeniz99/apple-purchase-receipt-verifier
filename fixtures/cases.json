@@ -10729,7 +10729,7 @@
     },
     {
       "id": "receipt/unreadable-signed-content-nested-33-deep",
-      "description": "The same signed content nested 33 deep: over the ASN.1 depth bound. Content inside a well-formed envelope that does not parse is carried past the chain (judged at the config clock) and the signature, which verifies: UNREADABLE_PAYLOAD (owner, 2026-09-27).",
+      "description": "The same signed content nested 33 deep. Port-defined (owner, 2026-10-01; Apple's receipts nest 9 deep): the core's ASN.1 depth bound is 32, so its content does not decode; it is carried past the chain (judged at the config clock) and the signature, which verifies: UNREADABLE_PAYLOAD. Java's nesting bound is BouncyCastle's, 64 by default, so Java reads the content and verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "depth-receipt-content-33"
@@ -10746,14 +10746,18 @@
         "now": "2025-01-01T00:00:00Z"
       },
       "expected": {
-        "status": "error",
-        "reason": "UNREADABLE_PAYLOAD"
+        "oneOf": [
+          "ok",
+          "UNREADABLE_PAYLOAD"
+        ]
       },
       "fault": "signed-content-nested-33-deep",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
-        "negative",
         "limits",
         "verification-order",
         "owner-decision",
@@ -10792,7 +10796,7 @@
     },
     {
       "id": "receipt/reject-an-envelope-nested-33-deep",
-      "description": "The same envelope nested 33 deep: over the ASN.1 depth bound, MALFORMED before any cryptography (owner, 2026-09-27).",
+      "description": "The same envelope nested 33 deep. Port-defined (owner, 2026-10-01; Apple's receipts nest 9 deep): the core's ASN.1 depth bound is 32, so it answers MALFORMED before any cryptography. Java's nesting bound is BouncyCastle's, 64 by default, so Java verifies. Nothing returned or trusted comes from an unsigned attribute. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "depth-receipt-envelope-33"
@@ -10806,14 +10810,18 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "envelope-nested-33-deep",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
-        "negative",
         "limits",
         "owner-decision",
         "new-in-0-7"
@@ -11790,7 +11798,7 @@
     },
     {
       "id": "receipt/reject-econtent-rechunked-into-7-constructed-levels",
-      "description": "The same eContent re-encoded as seven constructed levels, a BER form Apple's DER receipts never take. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL, the core's decoder, joins at most six levels (ASN1_MAX_STRING_NEST), so the core answers MALFORMED; BouncyCastle joins the chunks at any depth within Java's own nesting bound of 32, so Java verifies. The signature and the chain are judged either way. DECISIONS.md R20.",
+      "description": "The same eContent re-encoded as seven constructed levels, a BER form Apple's DER receipts never take. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL, the core's decoder, joins at most six levels (ASN1_MAX_STRING_NEST), so the core answers MALFORMED; BouncyCastle joins the chunks at any depth within its own nesting bound, so Java verifies. The signature and the chain are judged either way. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-econtent-7-levels"
@@ -11854,7 +11862,7 @@
     },
     {
       "id": "receipt/reject-digest-algorithm-parameters-nested-33-deep",
-      "description": "The same parameters one level deeper: the envelope nests 33 deep, over the ASN.1 depth bound, which counts every constructed value of the envelope wherever it sits: MALFORMED before any cryptography. The core used to measure the depth only inside SignerInfo values, and verified this.",
+      "description": "The same parameters one level deeper: the envelope nests 33 deep. Port-defined (owner, 2026-10-01; Apple's receipts nest 9 deep): the core's depth bound of 32 counts every constructed value of the envelope wherever it sits, so it answers MALFORMED before any cryptography (it used to measure the depth only inside SignerInfo values, and verified this). Java's nesting bound is BouncyCastle's, 64 by default, so Java verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-digest-algorithms-33"
@@ -11868,22 +11876,26 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "digest-algorithm-parameters-nested-33-deep",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
-        "negative",
         "limits"
       ]
     },
     {
       "id": "receipt/reject-an-envelope-nested-33-deep-in-context-tags",
-      "description": "The shared receipt whose SignerInfo gains an unsigned attribute value of 25 nested [0] context-tagged constructed values: 33 deep counting the ContentInfo as 1. The depth bound counts constructed values of every class, not only SEQUENCEs and SETs: MALFORMED.",
+      "description": "The shared receipt whose SignerInfo gains an unsigned attribute value of 25 nested [0] context-tagged constructed values: 33 deep counting the ContentInfo as 1. Port-defined (owner, 2026-10-01; Apple's receipts nest 9 deep): the core's depth bound of 32 counts constructed values of every class, not only SEQUENCEs and SETs, so it answers MALFORMED. Java's nesting bound is BouncyCastle's, 64 by default, so Java verifies. Nothing returned or trusted comes from an unsigned attribute. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-unsigned-context-tags-33"
@@ -11897,22 +11909,26 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "envelope-nested-33-deep-in-context-tags",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
-        "negative",
         "limits"
       ]
     },
     {
       "id": "receipt/reject-a-crls-entry-nested-33-deep",
-      "description": "The shared receipt with a crls field holding one CertificateList whose signature algorithm parameters nest 26 SEQUENCEs deep: 33 deep in the envelope (ContentInfo, [0], SignedData, [1], the CertificateList, its TBSCertList, the AlgorithmIdentifier, then 26 levels). MALFORMED.",
+      "description": "The shared receipt with a crls field holding one CertificateList whose signature algorithm parameters nest 26 SEQUENCEs deep: 33 deep in the envelope (ContentInfo, [0], SignedData, [1], the CertificateList, its TBSCertList, the AlgorithmIdentifier, then 26 levels). Port-defined (owner, 2026-10-01; Apple's receipts nest 9 deep): the core's depth bound of 32 answers MALFORMED. Java's nesting bound is BouncyCastle's, 64 by default, so Java parses the field and, as it never decodes a CRL, verifies. Apple's receipts carry no CRL. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-crl-33"
@@ -11926,22 +11942,26 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "crls-entry-nested-33-deep",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
-        "negative",
         "limits"
       ]
     },
     {
       "id": "receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep",
-      "description": "The shared receipt with one more embedded certificate: a copy of its intermediate whose outer signatureAlgorithm parameters nest 27 SEQUENCEs deep, 33 deep in the envelope. MALFORMED before any certificate is decoded.",
+      "description": "The shared receipt with one more embedded certificate: a copy of its intermediate whose outer signatureAlgorithm parameters nest 27 SEQUENCEs deep, 33 deep in the envelope. Port-defined (owner, 2026-10-01; Apple's receipts nest 9 deep): the core's depth bound of 32 answers MALFORMED before any certificate is decoded. Java's nesting bound is BouncyCastle's, 64 by default, so Java decodes the copy and verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-certificate-parameters-33"
@@ -11955,16 +11975,20 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "embedded-certificate-nested-33-deep",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
-        "negative",
         "limits"
       ]
     },
@@ -12065,7 +12089,7 @@
     },
     {
       "id": "receipt/unreadable-signed-content-nested-33-deep-in-context-tags",
-      "description": "The same fourth field one level deeper: 33 deep. The depth bound counts constructed values of every class; the signature verifies, so the content is UNREADABLE_PAYLOAD. The core used to count only SEQUENCEs and SETs, and read it.",
+      "description": "The same fourth field one level deeper: 33 deep. Port-defined (owner, 2026-10-01; Apple's receipts nest 9 deep): the core's depth bound of 32 counts constructed values of every class, so under a verified signature its content is UNREADABLE_PAYLOAD (it used to count only SEQUENCEs and SETs, and read it). Java's nesting bound is BouncyCastle's, 64 by default, so Java reads the content and verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-content-context-tags-33"
@@ -12082,16 +12106,20 @@
         "now": "2025-01-01T00:00:00Z"
       },
       "expected": {
-        "status": "error",
-        "reason": "UNREADABLE_PAYLOAD"
+        "oneOf": [
+          "ok",
+          "UNREADABLE_PAYLOAD"
+        ]
       },
       "fault": "signed-content-nested-33-deep-in-context-tags",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
-        "negative",
         "limits",
         "payload",
         "verification-order"
@@ -12431,7 +12459,7 @@
     },
     {
       "id": "receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels",
-      "description": "The same value in seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL joins at most six (ASN1_MAX_STRING_NEST), so the core's content does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks at any depth within Java's nesting bound of 32, so Java verifies. DECISIONS.md R20.",
+      "description": "The same value in seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL joins at most six (ASN1_MAX_STRING_NEST), so the core's content does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks at any depth within its own nesting bound, so Java verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-value-7-levels"
@@ -13575,7 +13603,7 @@
     },
     {
       "id": "receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string",
-      "description": "Signed content whose unknown attribute 9000 carries a fourth field that is a SEQUENCE holding an OCTET STRING of seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): the core's header walk refuses a seventh level at every depth, as OpenSSL refuses the string as a value, so its content does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks within Java's nesting bound of 32, so Java verifies. DECISIONS.md R20.",
+      "description": "Signed content whose unknown attribute 9000 carries a fourth field that is a SEQUENCE holding an OCTET STRING of seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): the core's header walk refuses a seventh level at every depth, as OpenSSL refuses the string as a value, so its content does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks within its own nesting bound, so Java verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-r2-fourth-sequence-7-level-octet-string"
@@ -13679,7 +13707,7 @@
     },
     {
       "id": "receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string",
-      "description": "The shared receipt whose SignerInfo gains an unsigned attribute value that is a SEQUENCE holding an OCTET STRING of seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): the core's walk refuses a seventh level at every depth before any decode, MALFORMED; BouncyCastle joins the chunks within Java's nesting bound of 32, so Java verifies. Nothing returned or trusted comes from an unsigned attribute. DECISIONS.md R20.",
+      "description": "The shared receipt whose SignerInfo gains an unsigned attribute value that is a SEQUENCE holding an OCTET STRING of seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): the core's walk refuses a seventh level at every depth before any decode, MALFORMED; BouncyCastle joins the chunks within its own nesting bound, so Java verifies. Nothing returned or trusted comes from an unsigned attribute. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-r2-unsigned-sequence-7-level-octet-string"
@@ -13745,7 +13773,7 @@
     },
     {
       "id": "receipt/unreadable-double-wrap-rechunked-into-7-constructed-levels",
-      "description": "The same wrap in seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL joins at most six (ASN1_MAX_STRING_NEST), so the core's wrap does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks within Java's nesting bound of 32, so Java verifies. DECISIONS.md R20.",
+      "description": "The same wrap in seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL joins at most six (ASN1_MAX_STRING_NEST), so the core's wrap does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks within its own nesting bound, so Java verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-r2-wrap-7-levels"

@@ -2,11 +2,9 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.security.cert.TrustAnchor;
 import java.util.Collections;
@@ -165,31 +163,15 @@ class ReceiptDecoderTest {
     }
 
     /**
-     * ASN.1 nests at most {@link Asn1Depth#MAX_DEPTH} constructed values
-     * (owner, 2026-09-27, Q24). Beyond it the envelope is MALFORMED and
-     * signed content UNREADABLE_PAYLOAD, as for any other defect there.
+     * The nesting bound is BouncyCastle's (64 by default; owner,
+     * 2026-10-01). Past it the parser throws an IOException, which the
+     * envelope maps to MALFORMED and signed content to UNREADABLE_PAYLOAD,
+     * as for any other defect there, never an uncaught error.
      */
     @Test
-    void asn1NestsAtMost32ConstructedValues() throws Exception {
-        assertEquals(32, Asn1Depth.MAX_DEPTH);
-        assertFalse(Asn1Depth.exceeded(nestedSets(32)));
-        assertTrue(Asn1Depth.exceeded(nestedSets(33)));
-        // A primitive inside the innermost constructed value is not one more.
-        assertFalse(Asn1Depth.exceeded(nested(32, new ASN1Integer(1)).getEncoded()));
-        assertTrue(Asn1Depth.exceeded(nested(33, new ASN1Integer(1)).getEncoded()));
-        // Indefinite lengths are counted the same way.
-        byte[] indefinite = new byte[33 * 2 + 33 * 2];
-        for (int i = 0; i < 33; i++) {
-            indefinite[2 * i] = 0x30;
-            indefinite[2 * i + 1] = (byte) 0x80;
-        }
-        assertTrue(Asn1Depth.exceeded(indefinite));
-        assertFalse(Asn1Depth.exceeded(java.util.Arrays.copyOfRange(indefinite, 2, indefinite.length - 2)));
-        // Why the bound is this library's: BouncyCastle's own is looser (64
-        // by default, counted one level fewer), so 33 SETs parse there.
-        ASN1Primitive.fromByteArray(nestedSets(33));
-
-        byte[] tooDeep = nestedSets(33);
+    void asn1NestedPastBouncyCastlesBoundIsRefusedAsADefect() throws Exception {
+        byte[] tooDeep = nestedSets(100);
+        assertThrows(java.io.IOException.class, () -> ASN1Primitive.fromByteArray(tooDeep));
         VerificationException envelope = assertThrows(
                 VerificationException.class,
                 () -> ReceiptCore.verifyDer(tooDeep, Collections.<TrustAnchor>emptySet(), System.currentTimeMillis()));
@@ -200,12 +182,12 @@ class ReceiptDecoderTest {
 
     /**
      * An attribute value is parsed on its own, and the creation date before
-     * any signature, so a value is held to the same depth bound: one nested
-     * past it is kept raw, and as a creation date it is no date.
+     * any signature, so a value is held to the same bound: one nested past
+     * it is kept raw, and as a creation date it is no date.
      */
     @Test
     void anAttributeValueNestedPastTheBoundIsKeptRawAndIsNoCreationDate() throws Exception {
-        byte[] tooDeep = nestedSets(33);
+        byte[] tooDeep = nestedSets(100);
         ReceiptPayload receipt = ReceiptDecoder.parse(set(attribute(3, tooDeep), attribute(1, tooDeep)));
         assertNull(receipt.applicationVersion());
         assertNull(receipt.appItemId());
@@ -216,16 +198,11 @@ class ReceiptDecoderTest {
 
     /** {@code levels} SETs inside one another, the innermost empty. */
     private static byte[] nestedSets(int levels) throws Exception {
-        return nested(levels, null).getEncoded();
-    }
-
-    /** {@code levels} SETs inside one another, the innermost holding {@code leaf} when there is one. */
-    private static DERSet nested(int levels, ASN1Encodable leaf) {
-        DERSet inner = leaf == null ? new DERSet() : new DERSet(leaf);
+        DERSet inner = new DERSet();
         for (int i = 1; i < levels; i++) {
             inner = new DERSet(inner);
         }
-        return inner;
+        return inner.getEncoded();
     }
 
     private static byte[] attribute(int type, byte[] value) throws Exception {
