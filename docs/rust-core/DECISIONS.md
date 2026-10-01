@@ -15,7 +15,7 @@ adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
 D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, and
-the owner's decisions of 2026-10-01 added R38 and a row to R20.
+the owner's decisions of 2026-10-01 added R38, R39 and a row to R20.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1103,6 +1103,38 @@ BOOTSTRAP.md lists the three owner actions.
   other constructors ([Pacific time-zone crates][pactz]). tz-rs with
   tzdb_data is smaller; jiff was chosen for one crate covering the calendar
   and the zone with no build-time environment or file.
+
+---
+
+## R39. Roots are DER in every package
+
+**Status: accepted** (owner, 2026-10-01). Settles the PEM item that R36
+left open in ROADMAP.md.
+
+- **Decision:** a caller's root reaches every package as DER: a native
+  certificate object in Java, .NET and Go (R36), DER bytes everywhere
+  else. Node's `RootInput` is `Uint8Array` only, and Ruby's
+  `Config.new(roots:)` takes `#to_der` objects or DER Strings. Both
+  deleted their hand-written PEM unwrapping. A PEM string is refused at
+  config time with an error that points at the README, which gives the
+  conversion: `new X509Certificate(pem).raw` from `node:crypto`, or
+  `OpenSSL::X509::Certificate.new(pem).to_der`.
+- **Why:** the module's `init` takes base64 DER only
+  (`Verifier::new(roots: &[Vec<u8>])`), Apple's PKI page ships `.cer`
+  files that are already DER, and every fixture root is DER. Python,
+  Swift and PHP already took DER bytes, and PHP already refused PEM.
+  Two wrappers decoding a text format by hand was code the
+  one-implementation rule asks wrappers not to hold, for an input no
+  one has to start from.
+- **The core's ABI takes DER only**, and the WIT does not change.
+- **Exceptions, both outside the wrappers:** the Rust crate's
+  `TrustAnchor::from_pem` stays, for Rust callers holding PEM, until the
+  owner decides otherwise; `aprv-server`'s `--roots` file keeps reading
+  PEM blocks beside base64 DER lines, because an operator writes that
+  file by hand and PEM is what certificate tools print.
+- **The gate is unchanged:** the error messages name no crypto API, so
+  neither the one-implementation allowlist nor either package's own scan
+  needs an exception for them.
 
 ---
 

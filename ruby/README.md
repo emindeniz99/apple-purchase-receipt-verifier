@@ -134,7 +134,7 @@ Custom roots or a custom clock:
 
 ```ruby
 config = APRV::Config.new(
-  roots: [my_pem_or_der_string],           # certificate objects (#to_der) work too; defaults to Apple's three pinned roots
+  roots: [my_der_string],                  # certificate objects (#to_der) work too; defaults to Apple's three pinned roots
   clock: -> { (Time.now.to_r * 1000).to_i } # defaults to the system clock, epoch milliseconds
 )
 verifier = APRV::Verifier.create(config)
@@ -554,8 +554,8 @@ parse was signed by a trusted signer, so it is `UNREADABLE_PAYLOAD`, not
 **Misconfiguration is not a verification verdict.** `Verifier.create` raises
 `ArgumentError` for an empty root set, and for a root the module does not
 accept as a certificate; `Config.new` raises it for a `clock:` that does not
-respond to `#call` or a `roots:` entry that is neither a certificate object
-nor a DER/PEM String; `verify_receipt_endpoint` raises it for an `environment`
+respond to `#call`, a `roots:` entry that is neither a certificate object
+nor a String, or a PEM String; `verify_receipt_endpoint` raises it for an `environment`
 that is not `Environment::PRODUCTION` or `Environment::SANDBOX`. You cannot
 catch a typo as though a receipt were forged.
 
@@ -634,8 +634,13 @@ is not the same thing and is refused by `Verifier.create`.
 
 To pin your own anchors, pass them: `Config.new(roots:)` accepts certificate
 objects (anything answering `#to_der`, such as an OpenSSL certificate) or
-DER/PEM strings, and `Config#roots` returns them as DER. Whether a root is a
-certificate is the module's to say, at `Verifier.create`.
+DER strings, and `Config#roots` returns them as DER. Apple's PKI page
+publishes its roots as `.cer` files, which are DER, so
+`File.binread("AppleRootCA-G3.cer")` is a root as it stands. A PEM string is
+refused with an `ArgumentError` that points here. Convert it first:
+`OpenSSL::X509::Certificate.new(pem).to_der` is the DER, and the certificate
+object itself works too. Whether a root is a certificate is the module's to
+say, at `Verifier.create`.
 
 ## Performance
 
