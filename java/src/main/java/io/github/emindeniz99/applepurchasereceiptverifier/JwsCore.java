@@ -238,11 +238,6 @@ final class JwsCore {
         try {
             for (String entry : x5c) {
                 byte[] der = StrictBase64.decode(entry, Reason.INVALID_CERTIFICATE, "x5c entry");
-                if (Asn1Depth.exceeded(der)) {
-                    throw new VerificationException(
-                            Reason.INVALID_CERTIFICATE,
-                            "x5c[" + chain.size() + "] nests ASN.1 deeper than " + Asn1Depth.MAX_DEPTH + " values");
-                }
                 X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
                 // Forces BouncyCastle's lazy signature decode here, not inside
                 // the validator. The key is not read: see authenticateTopDown.
