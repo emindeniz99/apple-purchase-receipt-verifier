@@ -176,7 +176,10 @@ prints only the target and the input's hash and seals the rest to the
 maintainer's key (`.github/scripts/fuzz-finding.sh`). If a fuzz job fails
 on your pull request, the log names the target and nothing else: run that
 target's `run.sh` locally (the `go-fuzz` targets with `go test -fuzz`) to
-reproduce it, or ask the maintainer, who can open the sealed artifact.
+reproduce it, or ask the maintainer, who can open the sealed artifact. A
+target that "failed without a crashing input" usually broke before it
+fuzzed (a classpath, toolchain or build error), and that output is sealed
+too, so run it locally first.
 
 CI runs the suites on every supported runtime line
 ([SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md)). The floors are claims we

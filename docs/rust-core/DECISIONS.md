@@ -1055,8 +1055,9 @@ BOOTSTRAP.md lists the three owner actions.
   - Closed 2026-10-01: the eight per-push fuzz jobs in ci.yml
     (`go-fuzz`, `rust-fuzz`, `dotnet-fuzz`, `php-fuzz`, `ruby-fuzz`,
     `python-fuzz`, `swift-fuzz`, `java-fuzz`) handle a finding as the
-    nightly job does. `.github/scripts/fuzz-quiet.sh` runs each target
-    with its output in a file, and a separate failure step holding the
+    nightly job does. `.github/scripts/fuzz-quiet.sh` (an inline loop in
+    `go-fuzz`) runs each target with its output in a file, and a
+    separate failure step holding the
     Telegram secrets runs `fuzz-report.sh`, which hands each failed
     target to `fuzz-finding.sh`; only the sealed files are uploaded, as
     `fuzz-findings-sealed-<job>`.
