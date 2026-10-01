@@ -19,7 +19,7 @@
 //! for a request body, as Apple's endpoint does not read it either.
 
 use serde_json::value::RawValue;
-use serde_json::{Deserializer, Number};
+use serde_json::Deserializer;
 use std::collections::BTreeMap;
 
 /// Why a document did not parse. Detail only.
@@ -63,16 +63,23 @@ pub(crate) fn strings(members: &Members<'_>, name: &str) -> Option<Vec<String>> 
     serde_json::from_str(members.get(name)?.get()).ok()
 }
 
-/// The member's value as epoch milliseconds: an integer must fit an `i64`;
-/// a number with a fraction or an exponent is read as a double and
-/// truncated when it lies within the `i64` range. Anything else, a string
-/// or `1e300` say, is no instant and is `None`.
+/// The member's value as epoch milliseconds, by the reference conversion:
+/// an integer must fit an `i64`; a number with a fraction or an exponent
+/// is read as a double and truncated when it lies within the `i64` range.
+/// Anything else, a string, an integer past `i64` or `1e300` say, is no
+/// instant and is `None`, and the clock stands in for it.
 pub(crate) fn instant(members: &Members<'_>, name: &str) -> Option<i64> {
-    let number: Number = serde_json::from_str(members.get(name)?.get()).ok()?;
-    if number.is_i64() || number.is_u64() {
-        return number.as_i64();
+    // The raw text of a JSON number, which serde_json has checked against
+    // the grammar: digits with an optional leading minus is an integer,
+    // and only a fraction or an exponent can add anything else.
+    let text = members.get(name)?.get().trim();
+    if !text.starts_with(|c: char| c == '-' || c.is_ascii_digit()) {
+        return None;
     }
-    let value = number.as_f64()?;
+    if text.bytes().all(|b| b == b'-' || b.is_ascii_digit()) {
+        return text.parse::<i64>().ok();
+    }
+    let value: f64 = text.parse().ok()?;
     // i64::MIN is exactly -2^63 as a double; i64::MAX rounds up to 2^63,
     // which the range check admits and the cast then clamps.
     #[allow(clippy::cast_precision_loss)]
@@ -194,6 +201,8 @@ mod tests {
 
     #[test]
     fn instants_follow_the_reference_conversion() {
+        // Java's JsonFields.instant: an integer must fit a long, a double
+        // is truncated within the long range, anything else is no instant.
         let at = |number: &str| {
             instant(
                 &top_level_members(&format!("{{\"t\":{number}}}")).unwrap(),
@@ -201,16 +210,21 @@ mod tests {
             )
         };
         assert_eq!(at("1722945600000"), Some(1_722_945_600_000));
-        assert_eq!(at("9223372036854775808"), None);
+        assert_eq!(at("-1"), Some(-1));
+        assert_eq!(at("9223372036854775807"), Some(i64::MAX));
         assert_eq!(at("1.7229456e12"), Some(1_722_945_600_000));
         assert_eq!(at("1722945600000.9"), Some(1_722_945_600_000));
+        assert_eq!(at("1e3"), Some(1000));
+        assert_eq!(at("1.5"), Some(1));
+        // An integer past i64, either way, is no instant, not a clamped
+        // one: the clock stands in for it, as in Java and the old reader.
+        assert_eq!(at("9223372036854775808"), None);
+        assert_eq!(at("-9223372036854775809"), None);
         assert_eq!(at("1e300"), None);
         assert_eq!(at("-1e300"), None);
         assert_eq!(at("1e400"), None);
         assert_eq!(at("\"1\""), None);
-        // An integer past u64 is a double to serde_json, so the double rule
-        // applies and the value is clamped; the old reader said None for
-        // every integer past i64.
-        assert_eq!(at("-9223372036854775809"), Some(i64::MIN));
+        assert_eq!(at("true"), None);
+        assert_eq!(at("[1]"), None);
     }
 }
