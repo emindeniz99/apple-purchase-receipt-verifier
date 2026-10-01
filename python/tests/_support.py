@@ -62,6 +62,6 @@ def double_verifier(
 ) -> Verifier:
     """A ``Verifier`` over the test double. Its roots only need to be bytes."""
     verifier = Verifier.__new__(Verifier)
-    config = Config.create(roots=roots, clock=clock)
+    config = Config(roots=roots, clock=clock)
     verifier._setup(config, double_runtime)  # the seam the tests use
     return verifier

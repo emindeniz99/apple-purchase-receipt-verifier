@@ -29,7 +29,7 @@ started = time.perf_counter()
 from apple_purchase_receipt_verifier import Config, Verifier
 import pathlib
 receipt = "".join(pathlib.Path({receipt!r}).read_text().split())
-verifier = Verifier(Config.defaults())
+verifier = Verifier(Config())
 created = time.perf_counter() - started
 verified = verifier.verify_receipt(receipt).verified
 print(json.dumps({{"verified": verified, "seconds": created}}))

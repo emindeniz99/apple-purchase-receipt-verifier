@@ -128,7 +128,7 @@ class MisuseTest(unittest.TestCase):
         # Environment 2 is unreachable through the public type, so it is forced.
         from apple_purchase_receipt_verifier import verifier as module
 
-        verifier = Verifier(Config.defaults())
+        verifier = Verifier(Config())
         with mock.patch.dict(module._ENVIRONMENT_CODE, {Environment.SANDBOX: 2}):
             answer = verifier.verify_receipt_endpoint(Environment.SANDBOX, request().decode())
         self.assertEqual('{"status":21009}', answer)
@@ -188,7 +188,7 @@ class InputCapTest(unittest.TestCase):
         self.assertNotEqual("TOO_LARGE", json.loads(answer)["reason"], answer)  # it was read
 
     def test_the_public_api_reports_too_large_for_a_4_mib_receipt(self) -> None:
-        result = Verifier(Config.defaults()).verify_receipt("A" * (4 << 20))
+        result = Verifier(Config()).verify_receipt("A" * (4 << 20))
         self.assertFalse(result.verified)
         self.assertEqual("TOO_LARGE", result.failure.reason.name)  # type: ignore[union-attr]
 

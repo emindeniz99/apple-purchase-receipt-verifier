@@ -19,7 +19,7 @@ with open("receipt-sandbox-g5.b64", encoding="ascii") as handle:
 # Apple's three roots are compiled into aprv.wasm, so the defaults name none
 # of their own (None means the module's); a wheel that lost the module fails
 # below, on the genuine receipt.
-config = Config.defaults()
+config = Config()
 if config.roots is not None:
     raise SystemExit(f"expected the module's built-in roots (None), got {len(config.roots)}")
 verifier = Verifier(config)

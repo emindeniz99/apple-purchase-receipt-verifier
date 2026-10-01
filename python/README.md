@@ -55,7 +55,7 @@ JSON string) that reports failure instead of throwing.
 ```python
 from apple_purchase_receipt_verifier import Config, Environment, Verifier
 
-verifier = Verifier(Config.defaults())  # Apple's three pinned roots, system clock
+verifier = Verifier(Config())  # Apple's three pinned roots, system clock
 ```
 
 **StoreKit 2 signed transaction or renewal info (compact JWS):**
@@ -91,13 +91,13 @@ status table.
 
 ### Your own roots
 
-`Config.create(roots=[...])` takes DER-encoded certificates as `bytes` (the
+`Config(roots=[...])` takes DER-encoded certificates as `bytes` (the
 bytes of a `.cer` file), for tests and for anyone who pins something other than
 Apple's roots. The module parses them when the `Verifier` is built, so a value
 that is not a certificate is a `ValueError` there, never a later verdict.
 
 Apple's three roots are compiled into the module, and the package carries no
-copy of them: `Config.defaults().roots` is `None`, which the `Verifier` hands
+copy of them: `Config().roots` is `None`, which the `Verifier` hands
 the module as an empty list meaning those three. To trust Apple's roots and one
 of your own, pass all of them, reading Apple's from its PKI page or the
 repository's `certs/`:
@@ -108,7 +108,7 @@ from pathlib import Path
 from apple_purchase_receipt_verifier import Config, Verifier
 
 apple = [path.read_bytes() for path in sorted(Path("certs").glob("*.cer"))]
-verifier = Verifier(Config.create(roots=[*apple, Path("my-test-root.cer").read_bytes()]))
+verifier = Verifier(Config(roots=[*apple, Path("my-test-root.cer").read_bytes()]))
 ```
 
 `Verifier` fails at construction, never later, for an empty root set (an
@@ -347,12 +347,17 @@ every port:
 
 ## Upgrading from 0.7
 
-The API is the 0.7 API. What changed is what sits under it.
+The API is the 0.7 API, with one way to build a `Config`. What changed
+otherwise is what sits under it.
 
+- **`Config(...)` is the one way to build a `Config`.** `Config.create(roots=...,
+  clock=...)` becomes `Config(roots=..., clock=...)`, and `Config.defaults()`
+  becomes `Config()`. The constructor takes any iterable of roots, and `None`
+  for either argument means its default, as `create` did.
 - **Roots are DER `bytes`, not `cryptography` certificates.**
-  `Config.create(roots=[cert.public_bytes(Encoding.DER)])` for a
+  `Config(roots=[cert.public_bytes(Encoding.DER)])` for a
   `cryptography.x509.Certificate`. Anything else is a `TypeError`.
-- **`default_roots()` is gone, and `Config.defaults().roots` is `None`.**
+- **`default_roots()` is gone, and `Config().roots` is `None`.**
   Apple's three roots are compiled into the module, which trusts them when no
   roots are given; the package no longer ships a copy to return.
 - **The dependencies are `wasmtime` alone.** `cryptography` and `asn1crypto`
@@ -377,9 +382,9 @@ every failure is a `VerificationResult`/`Failure` instead of a raised
 
 | 0.6 | 0.7 |
 |---|---|
-| `ReceiptVerifier(roots, bundle_id).verify(b64)` | `Verifier(Config.create(roots=roots)).verify_receipt(b64)`, then compare `result.payload.bundle_id` yourself |
-| `JwsVerifier(roots, bundle_id, environments).verify_transaction(jws)` | `Verifier(Config.create(roots=roots)).verify_signed_data(jws)`, then compare `payload["bundleId"]` / `payload["environment"]` yourself |
-| `apple_receipt_roots()` / `apple_jws_roots()` | `Config.defaults()` (one pinned set, for both paths) |
+| `ReceiptVerifier(roots, bundle_id).verify(b64)` | `Verifier(Config(roots=roots)).verify_receipt(b64)`, then compare `result.payload.bundle_id` yourself |
+| `JwsVerifier(roots, bundle_id, environments).verify_transaction(jws)` | `Verifier(Config(roots=roots)).verify_signed_data(jws)`, then compare `payload["bundleId"]` / `payload["environment"]` yourself |
+| `apple_receipt_roots()` / `apple_jws_roots()` | `Config()` (one pinned set, for both paths) |
 | raised `VerificationError` with `.reason` | `VerificationResult.failure` (`Failure.reason`, `.message`, `.cause`); nothing raises |
 | `Reason.INVALID_RECEIPT_FORMAT`, `.INVALID_JWS_FORMAT` | `Reason.MALFORMED` |
 | `Reason.REQUEST_TOO_LARGE` | `Reason.TOO_LARGE` |

@@ -129,7 +129,7 @@ def worst_case() -> list[dict[str, Any]]:
         roots = None
         if trusted["source"] == "fixtures":
             roots = [fixture_bytes(fixtures_dir, registry[i]) for i in trusted["fixtures"]]
-        verifier = Verifier(Config.create(roots=roots, clock=lambda: NOW_MS))
+        verifier = Verifier(Config(roots=roots, clock=lambda: NOW_MS))
         entry = registry[case["input"]["fixture"]]
         data = fixture_bytes(fixtures_dir, entry)
         operation = case["operation"]
@@ -160,7 +160,7 @@ def worst_case() -> list[dict[str, Any]]:
 
 def cross_port() -> list[dict[str, Any]]:
     fixtures_dir = Path(__file__).resolve().parents[2] / "fixtures" / "public-receipts"
-    roots = list(Config.defaults().roots)
+    roots = list(Config().roots)
     results = []
     for name, bundle_id, in_app_count, sha256 in FIXTURES:
         der = base64.b64decode((fixtures_dir / f"{name}.b64").read_text(encoding="ascii"))
@@ -169,7 +169,7 @@ def cross_port() -> list[dict[str, Any]]:
         request_json = json.dumps({"receipt-data": text})
         tampered = base64.b64encode(tamper(der)).decode("ascii")
         clock = lambda: NOW_MS  # noqa: E731
-        verifier = Verifier(Config.create(roots=roots, clock=clock))
+        verifier = Verifier(Config(roots=roots, clock=clock))
         sandbox_endpoint = partial(verifier.verify_receipt_endpoint, Environment.SANDBOX)
         production_endpoint = partial(verifier.verify_receipt_endpoint, Environment.PRODUCTION)
 

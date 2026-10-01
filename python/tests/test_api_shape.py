@@ -113,24 +113,32 @@ class RootsAndConfigTest(unittest.TestCase):
         self.assertEqual(self.PINNED, digests)
         self.assertEqual(3, len(_support.apple_roots()))
 
-    def test_config_defaults_names_no_roots_and_the_system_clock(self) -> None:
-        config = Config.defaults()
+    def test_config_with_no_arguments_names_no_roots_and_the_system_clock(self) -> None:
+        config = Config()
         self.assertIsNone(config.roots, "None: the Apple roots compiled into the module")
         self.assertEqual(config, Config())
+        self.assertEqual(config, Config(roots=None, clock=None))
         self.assertIs(type(config.clock()), int)
 
-    def test_create_replaces_only_what_it_is_given(self) -> None:
+    def test_the_constructor_replaces_only_what_it_is_given(self) -> None:
         clock = lambda: 5  # noqa: E731
-        self.assertEqual((b"a",), Config.create(roots=[b"a"]).roots)
-        self.assertIsNone(Config.create(clock=clock).roots)
-        self.assertIs(clock, Config.create(clock=clock).clock)
-        self.assertEqual(
-            (), Config.create(roots=[]).roots, "empty is refused by Verifier, not Config"
-        )
+        self.assertEqual((b"a",), Config(roots=[b"a"]).roots)
+        self.assertEqual((b"a",), Config(roots=iter([bytearray(b"a")])).roots)
+        self.assertIsNone(Config(clock=clock).roots)
+        self.assertIs(clock, Config(clock=clock).clock)
+        self.assertEqual((), Config(roots=[]).roots, "empty is refused by Verifier, not Config")
+
+    def test_config_is_built_one_way(self) -> None:
+        # 0.8 drops 0.7's Config.create and Config.defaults: the
+        # constructor with keyword arguments is the one spelling.
+        self.assertFalse(hasattr(Config, "create"))
+        self.assertFalse(hasattr(Config, "defaults"))
+        parameters = list(inspect.signature(Config.__init__).parameters)
+        self.assertEqual(["self", "roots", "clock"], parameters)
 
     def test_a_config_is_immutable(self) -> None:
         with self.assertRaises(AttributeError):
-            Config.defaults().roots = ()  # type: ignore[misc]
+            Config().roots = ()  # type: ignore[misc]
 
 
 class ResultsTest(unittest.TestCase):
