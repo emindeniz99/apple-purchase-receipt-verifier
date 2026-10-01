@@ -11790,7 +11790,7 @@
     },
     {
       "id": "receipt/reject-econtent-rechunked-into-7-constructed-levels",
-      "description": "The same eContent re-encoded as seven constructed levels. OpenSSL, the core's decoder, reads at most six (ASN1_MAX_STRING_NEST), so the envelope does not decode: MALFORMED, failing closed. 0.7 read it within its depth bound of 32; recorded as a substrate divergence in docs/rust-core/DECISIONS.md R20.",
+      "description": "The same eContent re-encoded as seven constructed levels, a BER form Apple's DER receipts never take. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL, the core's decoder, joins at most six levels (ASN1_MAX_STRING_NEST), so the core answers MALFORMED; BouncyCastle joins the chunks at any depth within Java's own nesting bound of 32, so Java verifies. The signature and the chain are judged either way. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-econtent-7-levels"
@@ -11804,16 +11804,20 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "econtent-chunks-nested-7-levels",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
-        "negative",
         "der",
         "limits"
       ]
@@ -11996,7 +12000,7 @@
     },
     {
       "id": "receipt/reject-eleven-embedded-crls",
-      "description": "The same receipt with eleven CRLs: one over the bound. Each CRL is decoded in full before anything is verified, so the count is bounded before a single one is decoded, as the certificates are: MALFORMED. The 0.7 contract is silent on CRLs; this is the fail-closed answer.",
+      "description": "The same receipt with eleven CRLs. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): the core decodes each CRL in full before anything is verified and bounds the count at ten, like the certificates, so it answers MALFORMED; Java never decodes a CRL, its receipt size cap and nesting bound already limit the field, so it verifies. Apple's receipts carry no CRL. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-eleven-crls"
@@ -12010,16 +12014,20 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "eleven-embedded-crls",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
-        "negative",
         "limits"
       ]
     },
@@ -12291,7 +12299,7 @@
     },
     {
       "id": "receipt/bundle-id-with-a-five-octet-length-is-kept-raw",
-      "description": "Signed content whose bundle id UTF8String states its length in five octets. 0.7 read lengths of at most four octets and DER needs one; OpenSSL reads it. The value does not decode: bundle_id is null.",
+      "description": "Signed content whose bundle id UTF8String states its length in five octets, which DER forbids. Both implementations verify; what they read of the value is port-defined (owner, 2026-09-30): the core keeps 0.7's header rules and reads a length of at most four octets, so its bundle_id is null; BouncyCastle reads the length, so Java's bundle_id is com.example.app. Only the raw octets, which every port keeps, are pinned. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-five-octet-length"
@@ -12307,11 +12315,11 @@
       "expected": {
         "status": "ok",
         "fields": {
-          "/bundle_id": null,
           "/bundle_id_bytes": "DIUAAAAAD2NvbS5leGFtcGxlLmFwcA=="
         }
       },
       "tags": [
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
@@ -12423,7 +12431,7 @@
     },
     {
       "id": "receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels",
-      "description": "The same value in seven constructed levels. OpenSSL reads at most six (ASN1_MAX_STRING_NEST), so the content does not decode; the signature verifies: UNREADABLE_PAYLOAD. 0.7 read it within its depth bound; recorded in docs/rust-core/DECISIONS.md R20.",
+      "description": "The same value in seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL joins at most six (ASN1_MAX_STRING_NEST), so the core's content does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks at any depth within Java's nesting bound of 32, so Java verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-value-7-levels"
@@ -12440,16 +12448,20 @@
         "now": "2025-01-01T00:00:00Z"
       },
       "expected": {
-        "status": "error",
-        "reason": "UNREADABLE_PAYLOAD"
+        "oneOf": [
+          "ok",
+          "UNREADABLE_PAYLOAD"
+        ]
       },
       "fault": "attribute-value-chunks-nested-7-levels",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
-        "negative",
         "payload",
         "der",
         "verification-order"
@@ -13563,7 +13575,7 @@
     },
     {
       "id": "receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string",
-      "description": "Signed content whose unknown attribute 9000 carries a fourth field that is a SEQUENCE holding an OCTET STRING of seven constructed levels (OpenSSL joins six, ASN1_MAX_STRING_NEST). OpenSSL's ANY decoder refuses that value as the fourth field itself but keeps a SEQUENCE whole without looking inside, so the core read it one level down. The header walk now applies the same rule at every depth; the signature verifies: UNREADABLE_PAYLOAD.",
+      "description": "Signed content whose unknown attribute 9000 carries a fourth field that is a SEQUENCE holding an OCTET STRING of seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): the core's header walk refuses a seventh level at every depth, as OpenSSL refuses the string as a value, so its content does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks within Java's nesting bound of 32, so Java verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-r2-fourth-sequence-7-level-octet-string"
@@ -13580,17 +13592,21 @@
         "now": "2025-01-01T00:00:00Z"
       },
       "expected": {
-        "status": "error",
-        "reason": "UNREADABLE_PAYLOAD"
+        "oneOf": [
+          "ok",
+          "UNREADABLE_PAYLOAD"
+        ]
       },
       "fault": "fourth-field-sequence-holding-7-level-octet-string",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
         "core-review-2",
-        "negative",
         "payload",
         "der",
         "verification-order"
@@ -13598,7 +13614,7 @@
     },
     {
       "id": "receipt/accept-fourth-field-sequence-holding-a-constructed-utctime",
-      "description": "Signed content whose fourth field is a SEQUENCE holding a constructed UTCTime of two OCTET STRING chunks whose joined octets are 13, as BER allows. OpenSSL decodes it, and so does the walk: the content reads.",
+      "description": "Signed content whose fourth field is a SEQUENCE holding a constructed UTCTime of two OCTET STRING chunks whose joined octets are 13, as BER allows and DER forbids. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL joins the chunks, so the core reads the content; BouncyCastle builds no constructed string other than a BIT STRING or an OCTET STRING, so Java answers UNREADABLE_PAYLOAD. The signature verifies either way. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-r2-fourth-sequence-constructed-utctime"
@@ -13612,19 +13628,21 @@
         }
       },
       "expected": {
-        "status": "ok",
-        "fields": {
-          "/bundle_id": "com.example.app",
-          "/unknown_attributes/9000/0": "AgEB"
-        }
+        "oneOf": [
+          "ok",
+          "UNREADABLE_PAYLOAD"
+        ]
       },
+      "fault": "fourth-field-sequence-holding-constructed-utctime",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
         "core-review-2",
-        "positive",
         "payload",
         "der"
       ]
@@ -13661,7 +13679,7 @@
     },
     {
       "id": "receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string",
-      "description": "The shared receipt whose SignerInfo gains an unsigned attribute value that is a SEQUENCE holding an OCTET STRING of seven constructed levels (OpenSSL joins six, ASN1_MAX_STRING_NEST). OpenSSL keeps the SEQUENCE whole and refuses the same value one level up; the walk refuses it at every depth, before any decode: MALFORMED.",
+      "description": "The shared receipt whose SignerInfo gains an unsigned attribute value that is a SEQUENCE holding an OCTET STRING of seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): the core's walk refuses a seventh level at every depth before any decode, MALFORMED; BouncyCastle joins the chunks within Java's nesting bound of 32, so Java verifies. Nothing returned or trusted comes from an unsigned attribute. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-r2-unsigned-sequence-7-level-octet-string"
@@ -13675,17 +13693,21 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "unsigned-value-sequence-holding-7-level-octet-string",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
         "core-review-2",
-        "negative",
         "der"
       ]
     },
@@ -13723,7 +13745,7 @@
     },
     {
       "id": "receipt/unreadable-double-wrap-rechunked-into-7-constructed-levels",
-      "description": "The same wrap in seven constructed levels. OpenSSL joins at most six (ASN1_MAX_STRING_NEST), so the wrap does not decode; 0.7 read it within its depth bound. The signature verifies: UNREADABLE_PAYLOAD, recorded in docs/rust-core/DECISIONS.md R20.",
+      "description": "The same wrap in seven constructed levels, a BER form Apple never emits. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): OpenSSL joins at most six (ASN1_MAX_STRING_NEST), so the core's wrap does not decode under a verified signature, UNREADABLE_PAYLOAD; BouncyCastle joins the chunks within Java's nesting bound of 32, so Java verifies. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-r2-wrap-7-levels"
@@ -13740,17 +13762,21 @@
         "now": "2025-01-01T00:00:00Z"
       },
       "expected": {
-        "status": "error",
-        "reason": "UNREADABLE_PAYLOAD"
+        "oneOf": [
+          "ok",
+          "UNREADABLE_PAYLOAD"
+        ]
       },
       "fault": "double-wrap-nested-7-levels",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
         "core-review",
         "new-in-0-7",
         "core-review-2",
-        "negative",
         "payload",
         "der",
         "limits",

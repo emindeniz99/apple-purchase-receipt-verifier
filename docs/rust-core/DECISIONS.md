@@ -12,12 +12,15 @@ Every record is settled as of 2026-09-29. The owner's brief of
 last open questions (R23 to R33); on 2026-09-29 the owner reopened the
 export ABI and chose the canonical ABI after two spike rounds (R23), and
 adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
-D17 onward and marks D16 superseded for the eight non-Java ports.
+D17 onward and marks D16 superseded for the eight non-Java ports. After
+0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
+2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
-[../evidence/](../evidence/). Links use the short names defined at the end
-of this file. Rejected alternatives are in one table at the end, each with
-its measured reason and its note.
+[../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
+`vendored-4` feature ([vendored-4][vendored4]). Links use the short
+names defined at the end of this file. Rejected alternatives are in one
+table at the end, each with its measured reason and its note.
 
 ---
 
@@ -100,7 +103,8 @@ owner. Every measured host clears it (README.md).
 ## R5. JS runtimes that cannot run WebAssembly
 
 **Status: accepted** (owner, 2026-09-25): drop Fastly Compute JS and
-Akamai EdgeWorkers.
+Akamai EdgeWorkers. Amended 2026-09-30: the list of unsupported runtimes
+grows, below.
 
 Fastly's JavaScript runtime builds SpiderMonkey without a JIT and
 documents no `WebAssembly` object; Akamai lists WebAssembly as removed
@@ -109,6 +113,13 @@ Keeping them would mean a second implementation (R1). The npm README and
 SUPPORT-MATRIX drop both, the `node-runtimes-fastly` job goes, and the
 CHANGELOG marks it breaking. A Fastly user who writes Rust can depend on
 the core crate.
+
+**2026-09-30 (owner).** SUPPORT-MATRIX.md also lists LLRT, CloudFront
+Functions, Hermes, GraalJS and Nashorn as unsupported, each with its
+reason: no WebAssembly, or an embedded engine without the APIs the npm
+package loads the module with. Nobody measured them; the reasons come
+from each runtime's documented feature set. The rule stays the same: no
+second implementation for a runtime that cannot run the module.
 
 ---
 
@@ -333,6 +344,14 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   `rust-core` merges into `main` once, when every gate has passed.
 - Everything stays 0.x; 1.0 is a separate decision.
 - The first crates.io publish waits until something needs it.
+- **crates.io after 0.8 (owner, 2026-09-30).** The core crate stays at
+  0.7 on crates.io until an `openssl-sys` release can vendor OpenSSL 4.
+  The owner opened
+  [rust-openssl#2692](https://github.com/rust-openssl/rust-openssl/pull/2692),
+  an opt-in `vendored-4` feature that builds `openssl-src` 400.x and
+  leaves `vendored` as it is. On the fork's CI the same seven jobs fail
+  with and without the change, for reasons outside it, and all six new
+  `vendored-4` legs pass ([vendored-4][vendored4]).
 - **Open item:** 0.8.0 deploys two artifactIds and two classifier jars to
   Maven Central. Whether Central's Usage Center counts that as one
   release event is unconfirmed; the owner checks (MIGRATION.md, owner
@@ -342,7 +361,8 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 
 ## R20. Apple compatibility, the algorithm policy, and recorded divergences
 
-**Status: accepted** (owner, 2026-09-26; restated 2026-09-28).
+**Status: accepted** (owner, 2026-09-26; restated 2026-09-28; the rule
+amended 2026-09-30).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
   schema v2, 311 cases, is the contract. The Java implementation is a
@@ -351,10 +371,29 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   the pinned Apple chain vouches for. With OpenSSL's CMS API the core
   answers as Java does on 22 of 22 algorithm rows
   ([follow-up §3.2][followup]).
-- **The rule:** divergences between the core and the Java implementation
-  are recorded. A divergence that changes an Apple-signed input's verdict,
-  or accepts something unsigned, is a bug. No prescan or other check is
-  added only to match Java.
+- **The rule** (amended by the owner on 2026-09-30): divergences between
+  the core and the Java implementation are recorded. A divergence is fixed
+  only when it changes an Apple-signed input's verdict or accepts
+  something unsigned; that is a bug. Any other divergence makes its case
+  port-defined (`oneOf` in `fixtures/cases.json`, listing both answers),
+  and nobody writes code in either implementation to imitate the other.
+  No prescan or other check is added only to match Java, and none is
+  added to Java only to match the core.
+- **The 2026-09-30 audit** classified four Java rules that lane J-align
+  added on 2026-09-29 as imitation: the six-level cap on constructed
+  strings (`Asn1Depth`, `ReceiptCore`, `ReceiptDecoder`), the ten-CRL
+  cap, the rule that keeps a five-octet length raw, and the
+  `ConstructedStrings` rewriter. Each exists only because OpenSSL refuses
+  those BER encodings, on inputs Apple never emits: Apple's receipts and
+  certificates are DER, with primitive strings, minimal lengths and no
+  CRLs. That matches the OD-17 precedent (STATUS.md). Their removal, the
+  eight cases that become port-defined, and the rewritten rows below land
+  in their own pull request. The audit examined two core rules and kept
+  them on their own grounds: `keyless_target_path` reports path problems
+  at the depths `X509_verify_cert` would; `signature_names_digest` keeps
+  the 0.7 core's `INVALID_SIGNATURE` for a signatureAlgorithm whose hash
+  differs from the digestAlgorithm, which is continuity and not a
+  security boundary, and its case is already `oneOf`.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one
@@ -379,19 +418,26 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 
   | Input | 0.7 | Java | Core | Why the core answers so | Case |
   |---|---|---|---|---|---|
-  | eContent as an `OCTET STRING` of 7 or more constructed levels | ok | `MALFORMED` (aligned 2026-09-29) | `MALFORMED` | OpenSSL decodes six (`ASN1_MAX_STRING_NEST`); changing it means patching OpenSSL. Substrate divergence, fails closed | `receipt/reject-econtent-rechunked-into-7-constructed-levels` |
-  | A payload attribute value of 7 or more constructed levels | ok | `UNREADABLE_PAYLOAD` (aligned 2026-09-29) | `UNREADABLE_PAYLOAD` | The same bound, under a verified signature. It holds wherever OpenSSL decodes a string: the value, the version field, a later field, the Xcode wrap (`UNREADABLE_PAYLOAD`), and an unsigned attribute value in the envelope (`MALFORMED`), all read by 0.7 | `receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`, `receipt/unreadable-double-wrap-rechunked-into-7-constructed-levels` |
+  | eContent as an `OCTET STRING` of 7 or more constructed levels | ok | ok (port-defined 2026-09-30; BouncyCastle joins the chunks within Java's nesting bound of 32) | `MALFORMED` | OpenSSL decodes six (`ASN1_MAX_STRING_NEST`); changing it means patching OpenSSL. Substrate divergence, fails closed. Apple's receipts are DER and never chunk a string, and the chain is judged either way, so the case allows both (the rule OD-17 applied) | `receipt/reject-econtent-rechunked-into-7-constructed-levels` |
+  | A payload attribute value of 7 or more constructed levels | ok | ok (port-defined 2026-09-30) | `UNREADABLE_PAYLOAD` | The same bound, under a verified signature. It holds wherever OpenSSL decodes a string: the value, the version field, a later field, the Xcode wrap (`UNREADABLE_PAYLOAD`), and an unsigned attribute value in the envelope (`MALFORMED`), all read by 0.7. Both cases allow ok | `receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`, `receipt/unreadable-double-wrap-rechunked-into-7-constructed-levels` |
   | More than 100,000 values in the envelope, or in one attribute SET | `MALFORMED` / `UNREADABLE_PAYLOAD` | ok | as 0.7 | 0.7's node budget, restored: without it a 3 MiB receipt cost 0.3 to 0.7 s before any signature. Inputs are 200 KB or more, so Rust tests pin it, not a shared case | `rust/tests/envelope_bounds.rs`, `receipt_payload.rs` unit tests |
-  | More than 10 CRLs | ok | `MALFORMED` (aligned 2026-09-29) | `MALFORMED` | Each CRL is decoded in full before anything is verified; bounded like the certificates. The 0.7 contract is silent; this fails closed. Apple sends none | `receipt/reject-eleven-embedded-crls` |
-  | A payload string whose length takes more than four octets | kept raw | kept raw (aligned 2026-09-29) | kept raw | The payload is DER; 0.7's header rules restored | `receipt/bundle-id-with-a-five-octet-length-is-kept-raw` |
+  | More than 10 CRLs | ok | ok (port-defined 2026-09-30; BouncyCastle never decodes a CRL, so Java has no cost to bound) | `MALFORMED` | Each CRL is decoded in full before anything is verified; bounded like the certificates. The 0.7 contract is silent; this fails closed. Apple sends none, and the case allows both | `receipt/reject-eleven-embedded-crls` |
+  | A payload string whose length takes more than four octets | kept raw | read (port-defined 2026-09-30; BouncyCastle reads the length) | kept raw | The payload is DER; 0.7's header rules restored. Both verify, and the case pins only the raw octets, which both keep | `receipt/bundle-id-with-a-five-octet-length-is-kept-raw` |
   | A fourth attribute field that is, or holds, an invalid primitive (BOOLEAN of two octets, padded INTEGER, UTCTime under 13 or GeneralizedTime under 15 octets, a constructed INTEGER, a primitive SEQUENCE, an end-of-contents in a definite length) | ok | `UNREADABLE_PAYLOAD` | as Java | Not valid ASN.1 in BER either (X.690 8.1.5, 8.2, 8.3, 8.9.1; a time that short names no time). OpenSSL's `ANY` decoder refuses each as the field itself and keeps a SEQUENCE around it whole, so the header walk applies the same rules at every depth (round-2 review F3): the primitives OpenSSL checks, constructed BOOLEAN, INTEGER, NULL, OID and ENUMERATED, strings of seven levels, and each outermost constructed string handed to OpenSSL whole. The chunks inside a constructed string are joined unchecked, as `asn1_collect` joins them, and not judged one by one (round-3 review F2) | `receipt/unreadable-fourth-field-boolean-of-two-octets`, `receipt/unreadable-fourth-field-sequence-holding-a-padded-integer`, `receipt/unreadable-fourth-field-sequence-holding-{a-short-utctime,a-short-generalizedtime,a-constructed-integer,a-primitive-sequence,an-end-of-contents}` |
   | An invalid primitive inside an unsigned envelope value | ok | `MALFORMED` for a short UTCTime one SEQUENCE deep; others not measured | `MALFORMED` | As above, over the envelope | `receipt/reject-an-unsigned-value-sequence-holding-a-short-utctime`, `rust/tests/envelope_bounds.rs` |
-  | A string of 7 or more constructed levels one SEQUENCE deep, in a fourth field or an unsigned envelope value | `UNREADABLE_PAYLOAD` / `MALFORMED` (aligned 2026-09-29) | ok | `UNREADABLE_PAYLOAD` / `MALFORMED` | OpenSSL refuses the string as a value and keeps the SEQUENCE around it whole; the walk refuses it at every depth, so the verdict does not follow the depth. Fails closed, not Apple-signed | `receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string`, `receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string` |
+  | A string of 7 or more constructed levels one SEQUENCE deep, in a fourth field or an unsigned envelope value | ok | ok (port-defined 2026-09-30) | `UNREADABLE_PAYLOAD` / `MALFORMED` | OpenSSL refuses the string as a value and keeps the SEQUENCE around it whole; the walk refuses it at every depth, so the verdict does not follow the depth. Fails closed, not Apple-signed; both cases allow both | `receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string`, `receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string` |
   | An embedded certificate's outer signature `BIT STRING` in constructed form, two primitive chunks joined to the same signature (BER, outside the signed TBS) | not measured | `MALFORMED` (kept, lane J-align round 3) | ok | OpenSSL joins the chunks and verifies the same signature; the walk used to judge each chunk alone and answered by the signature's first octet (round-3 review F2). The chain is still signed under a pinned root. Java keeps `MALFORMED` on purpose: the second chunk has no initial octet of its own, so under X.690 8.6.4 the value is not a valid BER BIT STRING (it claims 150 unused bits). OpenSSL's `asn1_collect` joins the chunks' raw contents instead. The X.690 spelling of the same signature, each segment with its own initial octet, verifies in Java and is `UNTRUSTED_CHAIN` in the core ([Java round 3][javar3]) | `receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks` |
-  | A constructed UTCTime of 13 joined octets one SEQUENCE deep in a fourth field (BER) | ok | ok (aligned 2026-09-29: Java joins the strings BouncyCastle cannot build before it parses the payload) | ok | BER allows a constructed string; OpenSSL joins it and the walk agrees | `receipt/accept-fourth-field-sequence-holding-a-constructed-utctime` |
+  | A constructed UTCTime of 13 joined octets one SEQUENCE deep in a fourth field (BER) | ok | `UNREADABLE_PAYLOAD` (port-defined 2026-09-30; BouncyCastle builds no constructed string other than a BIT STRING or an OCTET STRING) | ok | BER allows a constructed string; OpenSSL joins it and the walk agrees. Apple's receipts are DER, so the case allows both | `receipt/accept-fourth-field-sequence-holding-a-constructed-utctime` |
 
-  Java was aligned on the four rows marked above in its own code (lane
-  J-align, 2026-09-29). Divergences that lane found and left for the
+  Lane J-align (2026-09-29) had aligned Java on the four rows marked
+  port-defined above, and its round 2 on two more, in Java's own code.
+  On 2026-09-30 the owner applied the rule above to that code: each
+  rule fired only on a BER form Apple never emits, and each commit
+  named OpenSSL's behaviour as its reason, so it imitated the core.
+  The code was removed (Java is back to its 0.7 reading, whose nesting
+  bound of 32 counts chunk levels too), the eight cases list both
+  answers, and `tools/differential/recorded.json` names them under one
+  group. Divergences that lane found and left for the
   differential campaign (MIGRATION step 1.13) to measure and case: a
   five-octet length on a SET, SEQUENCE or field header inside the payload
   (the core answers `UNREADABLE_PAYLOAD`, Java reads it); a `crls` entry
@@ -401,13 +447,14 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   an extension value); and a receipt whose path to the eContent uses a
   length of more than four octets, where Java's byte walk gives up and
   its 6-level and 32-depth checks are skipped.
-  Round 2 (2026-09-29) aligned Java on the two rows above; one more
-  divergence stays open for the differential campaign: a constructed
+  Round 2 (2026-09-29) aligned Java on two rows above, undone on
+  2026-09-30 as said; one more divergence stays open for the
+  differential campaign: a constructed
   string of a type other than OCTET or BIT STRING inside the envelope
   (an unsigned attribute value holding a constructed UTCTime), which
   Java answers `MALFORMED` because BouncyCastle cannot build it and the
   core accepts; proposed case: an unsigned attribute value SEQUENCE
-  holding a constructed UTCTime, expected ok.
+  holding a constructed UTCTime, port-defined (ok or `MALFORMED`).
   Round 3 (2026-09-29) ran lane P7-code's 76 proposed cases through Java
   and the G1d module ([Java round 3][javar3]). Two answers are not
   recorded yet: a `signingTime` in month 13 verifies in the core, and
@@ -541,7 +588,8 @@ The measured cost is speed, above the floor on every host (R4).
 
 **Status: accepted** (owner, 2026-09-29 for the ABI; 2026-09-28 for the
 instance model, Q49 option d). Supersedes the ABI v1 export list of the
-2026-09-28 record.
+2026-09-28 record. Amended 2026-09-30: the WIT package version moves from
+`1.0.0` to `0.1.0` (R36); the export names below change with it.
 
 **The ABI.** `aprv.wasm` exports its four operations through the
 canonical ABI, the Component Model's calling convention, from one WIT
@@ -772,7 +820,8 @@ owner chose neither.
 
 ## R30. Floors
 
-**Status: accepted** (owner, 2026-09-28; Q54).
+**Status: accepted** (owner, 2026-09-28; Q54). Amended 2026-09-30: the
+policy and Go's floor, below.
 
 Java 8 (both artifacts); Python 3.10; Swift 6.3 with macOS 15 and iOS 18;
 Ruby 3.3; .NET netstandard2.0, tested on net8+; Node 20; Go as today; PHP
@@ -781,6 +830,14 @@ Ruby 3.3; .NET netstandard2.0, tested on net8+; Node 20; Go as today; PHP
 0.4.0 declares them ([Swift WasmKit][swift]); and the Java 8 CI leg moves
 from Temurin to Zulu or Corretto before Temurin 8 builds end. Go moved
 from 1.22 to 1.25 on 2026-09-30 (owner), because wazero 1.12 needs it.
+
+**2026-09-30 (owner).** A floor moves only when a dependency, a security
+fix or CI forces it; a new language line or a vendor's end of support
+does not move it. Go moves from 1.22 to 1.25, because wazero 1.12 needs
+1.25 and the 1.22 floor held wazero at 1.9.0. Node 20, Python 3.10, PHP
+8.2, Ruby 3.3, .NET 8 (netstandard2.0), Swift 6.3 and Java 8 stay. The
+Go change (the `go` directive, wazero and the CI legs) lands in its own
+pull request; until then the tree still declares 1.22.
 
 ---
 
@@ -873,6 +930,81 @@ canonical form buys nothing here; recorded so it is not proposed again.
 
 ---
 
+## R35. The parity corpus: a release asset, pinned in git
+
+**Status: accepted** (owner, 2026-09-29). Replaces the repository
+variables of OD-05 (STATUS.md).
+
+- **Where it lives:** a GitHub Release of this repository, tag
+  `corpus-2026-09-29` (a pre-release), file `corpus-2026-09-29.tar.gz`,
+  28,591,520 B, SHA-256
+  `89b599c52f0448dae22298972db5841a795991edf52df520bea7c545774b956d`.
+  Its layout is the one `.github/CI-NOTES.md` describes for the nightly
+  `corpus` job.
+- **What is in it:** rows generated from `fixtures/` and the test keys
+  only. It holds no production receipt.
+- **The pin:** `fixtures/corpus.json` names the asset's URL and SHA-256,
+  and `nightly.yml` reads it and checks the hash before it unpacks
+  anything. The repository variables `APRV_CORPUS_URL` and
+  `APRV_CORPUS_SHA256` go. #200, merged on 2026-09-30 (86ff162),
+  introduced the file and the workflow change.
+- **What follows:** the pin changes through a reviewed commit, like any
+  other file, and `git log` shows which archive each nightly used. The
+  rows belong to one module, so a release that changes the module needs
+  a new archive under a new tag and a new pin.
+- **Later, perhaps:** a separate corpus repository. Nothing is decided.
+
+---
+
+## R36. The public API in 0.8, and the WIT package version
+
+**Status: accepted** (owner, 2026-09-30). The items still open are in
+ROADMAP.md, "Decisions of 2026-09-29 and 30".
+
+- **The shape stays as 0.7 defined it** in all nine packages
+  ([0.7 API][api07]): `Verifier.create(Config)`, `verifyReceipt(base64)`,
+  `verifySignedData(jws)`, `verifyReceiptEndpoint(env, json)`, and a
+  result with `verified`, `payload` and `failure`.
+- **Settled:** Java keeps `runtimeProbe`. Roots keep the language's own
+  certificate type where it has one (Java, .NET and Go) and are bytes
+  elsewhere; the one-implementation allowlist already names the .NET and
+  Go types (OD-04, STATUS.md).
+  Java's `Environment.value()` becomes public.
+- **The WIT package version moves from `aprv:verifier@1.0.0` to
+  `aprv:verifier@0.1.0`,** because the product is pre-1.0. The export
+  names carry the version (R23), so this renames the ABI: the WIT file,
+  the guest, every binding and wrapper, and the `abi` string
+  `aprv-server` reports move in one pull request. The Go and Swift CI
+  jobs test the module the same run builds, so the committed copies in
+  `go/` and `swift/` can keep the old names until the release refreshes
+  them (R14).
+- **Later, not in 0.8.0:** an optional `expect {bundleId, environment}`
+  argument on the verify calls. The core would check it and answer a
+  mismatch as a verdict. Today every README leaves that check to the
+  caller.
+
+---
+
+## R37. Fuzz findings and supply-chain scoring
+
+**Status: accepted** (owner, 2026-09-30). Nothing is wired yet.
+
+- **OSS-Fuzz:** apply with the six existing targets (`rust/fuzz`: five
+  targets over the core and the C ABI, and `abi-call` over the module's
+  exports).
+- **Nightly findings:** the job encrypts any finding to the owner's age
+  or PGP public key and sends a notice through a Telegram bot. The public
+  log shows only the target name and a hash. This answers lane D's
+  hand-back (STATUS.md): the repository is public, so an auto-opened
+  issue would disclose a memory-safety crash.
+- **OpenSSF Scorecard** joins the checks.
+- **Attestation is unchanged:** SLSA provenance and a CycloneDX SBOM per
+  artifact (R34).
+- BOOTSTRAP.md lists the owner's one-time actions: the public key, the
+  bot and its secret, and the OSS-Fuzz project submission.
+
+---
+
 ## Rejected alternatives
 
 One table for everything the plan measured or considered and rejected.
@@ -948,3 +1080,4 @@ One table for everything the plan measured or considered and rejected.
 [wasmi]: ../evidence/2026-09-27-wasmi-security-review.md
 [corefix]: ../evidence/2026-09-29-core-review-fixes.md
 [javar3]: ../evidence/2026-09-29-java-align-round3.md
+[vendored4]: ../evidence/2026-09-30-rust-openssl-vendored-4-upstream.md

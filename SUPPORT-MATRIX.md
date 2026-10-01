@@ -17,11 +17,13 @@ is in [PORTS.md](./PORTS.md).
    in node, `Requires-Python`, `rust-version`, `TargetFramework`,
    `required_ruby_version`, the composer `php` constraint, the `go`
    directive, the Java release level, the Swift tools version and
-   `platforms`. A floor stays until it costs something: a dependency that
-   needs a newer line, a runner image that disappears, or a language feature
-   the package needs. Raising a floor is a breaking change for that package:
-   a major bump after 1.0.0, a minor bump before it, as 0.7 did for Ruby and
-   PHP and 0.8 does for Swift.
+   `platforms`. A floor moves only when a dependency, a security fix or CI
+   forces it: a dependency that needs a newer line, a security fix that
+   needs one, or a runner image or toolchain that CI can no longer get
+   (owner, 2026-09-21, restated 2026-09-30). A newer line, or a vendor's
+   end of support, moves nothing. Raising a floor is a breaking change for
+   that package: a major bump after 1.0.0, a minor bump before it, as 0.7
+   did for Ruby and PHP and 0.8 does for Swift.
 3. **A new major joins the matrix in the first pull request after its GA.**
    Early-access and release-candidate builds are not tested.
 4. **Dependabot bumps the tool pins, not the matrices.** Adding or dropping a
@@ -46,6 +48,11 @@ is in [PORTS.md](./PORTS.md).
 | PHP | 8.2, 64-bit | 8.2 | unchanged |
 | Rust crate and C ABI | Rust 1.85.0 | 1.85.0 | the workspace's `rust-version`; `aprv.wasm` itself is built with the pinned 1.98.1 |
 | `aprv-server` | none for its users | new | a binary; its build pins `wasmtime` 49.0.1 |
+
+Go's floor moves from 1.22 to 1.25, because wazero 1.12 needs it (owner,
+2026-09-30; docs/rust-core/DECISIONS.md R30). The row above changes with
+the pull request that moves the `go` directive, wazero and the CI legs.
+Every other floor in the table stays.
 
 ## Snapshot, 2026-09-29
 
@@ -136,9 +143,9 @@ Go supports the two newest minors only.
 | 1.26 | active | when 1.28 ships | `go` |
 | 1.27 | active | when 1.29 ships | `go`, `go-platforms` (macOS, Windows), `go-cross`, `go-scratch`, `go-race`, `go-lint`, `go-fuzz` |
 
-Go 1.28 ships in February 2027. The floor moved from 1.22 to 1.25 because
-wazero 1.12 requires it (rule 5); its dependency `golang.org/x/sys` stays at
-v0.47.0, the newest release that builds on 1.25.
+Go 1.28 ships in February 2027. The floor moved from 1.22 to 1.25 on
+2026-09-30 because wazero 1.12 requires it (rule 5); its dependency
+`golang.org/x/sys` stays at v0.47.0, the newest release that builds on 1.25.
 
 ### Ruby
 
@@ -251,6 +258,10 @@ Notes on the rows:
 | .NET on Alpine | `aprv-server` |
 | Any language, or any runtime we do not package | `aprv-server` over HTTP or its CLI, or the C ABI built from source |
 | Fastly Compute JS, Akamai EdgeWorkers | not supported: neither runs WebAssembly |
+| LLRT (AWS Low Latency Runtime) | not supported: not tested here, and it runs on QuickJS, which has no WebAssembly, per the vendor's documentation |
+| CloudFront Functions | not supported: not tested here, and the runtime has no WebAssembly and limits a function to 10 KB of code, per the vendor's documentation |
+| Hermes (React Native) | not supported: not tested here, and it has no `WebAssembly` object, per the vendor's documentation |
+| GraalJS, Nashorn | not supported: not tested here. Per the vendors' documentation, neither offers the APIs the npm package loads the module with (`node:fs`, or `fetch` with `import.meta.url`), and Nashorn has no WebAssembly. On a JVM, use the Java artifacts |
 
 **The Python platforms without a wheel.** wasmtime-py 49.0.0 has no wheel
 for manylinux armv7l, i686, ppc64le, s390x and riscv64; `linux_armv6l`;
@@ -290,6 +301,7 @@ against a SHA-256 pinned in the jar.
 
 | When | Change | Where |
 |---|---|---|
+| With its pull request | Go's floor from 1.22 to 1.25 and wazero to 1.12 (decided 2026-09-30) | `go/go.mod`, ci.yml `go` jobs and `smoke-go`, `.github/dependabot.yml` |
 | October 2026 | Python 3.15 joins `python:` and `python-musl` | ci.yml `python` jobs |
 | November 2026 | .NET 11 joins `dotnet-version:` and the test projects' `TargetFrameworks` | ci.yml `dotnet` jobs, `dotnet/tests/*/*.csproj` |
 | November 2026 | PHP 8.6 joins `php:` | ci.yml `php` job |

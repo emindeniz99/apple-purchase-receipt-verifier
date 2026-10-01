@@ -34,9 +34,10 @@ Releases** carry `aprv.wasm`, the component, the server binaries and
 `SHA256SUMS` with the workflow's own token.
 
 Still open: RubyGems, NuGet, Packagist and Docker Hub (a first publish or
-a one-time setup each, below); crates.io, held at 0.7 on purpose; and three
-owner decisions that are not registries: the Maven Central release count,
-the Java 8 CI distribution and the corpus archive.
+a one-time setup each, below); crates.io, held at 0.7 on purpose; two
+owner decisions that are not registries, the Maven Central release count
+and the Java 8 CI distribution; and the one-time setup for fuzz findings
+and OSS-Fuzz.
 
 ## RubyGems
 
@@ -93,11 +94,16 @@ at 0.7 on crates.io, and `publish-crates`, the crates smoke in `ci.yml` and
 the `crates` leg of `post-publish-smoke.yml` are skipped unless the
 repository variable `APRV_PUBLISH_CRATES` is `true`.
 
-1. Ask upstream, or send the change to `rust-openssl`, for `openssl-sys` to
-   accept `openssl-src` 400.x.
-2. Once a release of `openssl-sys` does, drop the workspace patch, publish
-   `aprv-openssl` first and the core after it, and set
-   `APRV_PUBLISH_CRATES` to `true` in the repository's variables.
+1. Done 2026-09-30: the owner opened
+   [rust-openssl#2692](https://github.com/rust-openssl/rust-openssl/pull/2692),
+   which adds an opt-in `vendored-4` feature to `openssl-sys` (OpenSSL 4
+   from `openssl-src` 400.x; `vendored` unchanged). On the fork's CI all
+   six new legs pass, and the seven red jobs fail on unchanged master too
+   (docs/evidence/2026-09-30-rust-openssl-vendored-4-upstream.md).
+   Upstream reviews, merges and releases it.
+2. Once a release of `openssl-sys` carries the feature, drop the
+   workspace patch, publish `aprv-openssl` first and the core after it,
+   and set `APRV_PUBLISH_CRATES` to `true` in the repository's variables.
 
 Until then a Rust user builds from source with a prebuilt OpenSSL 4
 (`OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL 4>`, `rust/openssl/README.md`).
@@ -310,15 +316,43 @@ they do.
 2. Move both jobs to it before Temurin's last Java 8 build, and say so in
    SUPPORT-MATRIX.md.
 
-## The corpus archive — optional
+## The corpus archive
 
 The nightly `corpus` job runs every package's parity check over the
 generated corpora (1,179 receipts and 5,000 mutants, about 200 MB of rows).
-They stay out of the repository. Until an archive is configured the job
-prints a notice and does nothing.
+They stay out of the repository; `fixtures/corpus.json` pins the archive
+by URL and SHA-256, so nothing is set in the repository settings. The
+current archive is a release asset of this repository
+(docs/rust-core/DECISIONS.md R35):
 
-1. Host the archive (a `.tar.gz` with the layout `.github/CI-NOTES.md`
-   describes) where the runner can fetch it.
-2. Set the repository variables `APRV_CORPUS_URL` and `APRV_CORPUS_SHA256`.
-3. Refresh the archive after a release changes the module, since its rows
-   belong to one module.
+| Tag | File | Size | SHA-256 |
+|---|---|---:|---|
+| `corpus-2026-09-29` | `corpus-2026-09-29.tar.gz` | 28,591,520 B | `89b599c52f0448dae22298972db5841a795991edf52df520bea7c545774b956d` |
+
+It was generated from `fixtures/` and the test keys only, and holds no
+production receipt. The repository variables `APRV_CORPUS_URL` and
+`APRV_CORPUS_SHA256` can be deleted now; nothing reads them. To refresh
+it after a release changes the module,
+since its rows belong to one module:
+
+1. Build the archive (a `.tar.gz` with the layout `.github/CI-NOTES.md`
+   describes) from fixtures and test keys only, and attach it to a
+   GitHub release of this repository.
+2. Open a PR that changes `url`, `sha256` and `generated` in
+   `fixtures/corpus.json`. The job fails on a hash mismatch or a
+   missing or malformed file.
+
+## Fuzz findings, OSS-Fuzz and Scorecard: three owner actions
+
+Decided 2026-09-30 (docs/rust-core/DECISIONS.md R37); nothing is wired
+yet. The nightly fuzz jobs will encrypt any finding to the owner's key and
+send a notice through a Telegram bot, with only the target name and a hash
+in the public log. OpenSSF Scorecard needs no owner action.
+
+1. Provide an age or PGP public key for the findings. Only the public
+   half goes into the repository; the private key stays with the owner.
+2. Create the Telegram bot with @BotFather and store its token, and the
+   chat to notify, as repository secrets. The workflow change names them.
+3. Submit the project to OSS-Fuzz with the six existing targets in
+   `rust/fuzz` (a pull request to google/oss-fuzz under the owner's
+   account; OSS-Fuzz asks for a maintainer's email for its reports).

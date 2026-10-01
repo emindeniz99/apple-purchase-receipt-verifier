@@ -322,7 +322,10 @@ behind a trailing byte or a broken envelope too, never reaches
 `receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep`,
 `receipt/unreadable-signed-content-nested-33-deep-in-context-tags` and
 `signed-data/unreadable-payload-nested-65-deep`; constructed strings and
-CRLs: `receipt/reject-econtent-rechunked-into-7-constructed-levels`,
+CRLs, bounds of the core's decoder that the shared vectors leave
+port-defined (Java, whose nesting bound of 32 counts chunk levels and
+which never decodes a CRL, verifies them; DECISIONS.md R20):
+`receipt/reject-econtent-rechunked-into-7-constructed-levels`,
 `receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`
 and `receipt/reject-eleven-embedded-crls`. Malformed structure, as shared
 vectors: `receipt/reject-attribute-type-above-int32-max`,
