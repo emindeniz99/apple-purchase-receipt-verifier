@@ -227,7 +227,7 @@ jobs:
           got="$(sha256sum < "$RUNNER_TEMP/g1/aprv.wasm" | cut -c1-64)"
           pinned="$(cut -c1-64 go/internal/wasm/aprv.wasm.sha256)"
           if [ "$got" != "$pinned" ]; then
-            echo "::warning::the archive's aprv.wasm is $got and this tree pins $pinned; its rows describe another module, so a leg that checks the committed pin (java-wasm) fails until the archive is refreshed"
+            echo "::warning::the archive's aprv.wasm is $got and this tree pins $pinned; its rows describe another module, so every leg fails with an ABI mismatch when the WIT version moved, and java-wasm on the pin either way, until the archive is refreshed"
           fi
           echo "G1=$RUNNER_TEMP/g1" >> "$GITHUB_ENV"
 
