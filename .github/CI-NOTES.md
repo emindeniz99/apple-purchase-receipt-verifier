@@ -135,6 +135,9 @@ and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   artifact's Endive cases and ABI tests on a big-endian JVM (an s390x
   Temurin under QEMU user emulation, forked by surefire through a
   wrapper); `corpus` is described above.
+- `scorecard.yml`: OpenSSF Scorecard, weekly and on pushes to `main`,
+  with `publish_results` (so the workflow keeps to Scorecard's
+  restrictions) and its SARIF uploaded to code scanning.
 - `dependabot.yml` watches `java-wasm/`, `rust/server/`'s image bases,
   and `rust/server` with `rust/bindings/abi/tests` as one cargo entry
   (their exact wasmtime pins move together). It ignores `openssl-sys`

@@ -1,0 +1,47 @@
+# OpenSSF Scorecard (docs/rust-core/DECISIONS.md R37): scores this
+# repository's supply-chain practices (pinned actions, token permissions,
+# branch protection, signed releases, fuzzing and the rest), publishes the
+# result for the README badge and api.scorecard.dev, and uploads it to code
+# scanning as SARIF.
+#
+# publish_results makes Scorecard's API check the workflow that produced
+# the result, so this file follows its rules
+# (https://github.com/ossf/scorecard-action#workflow-restrictions): no
+# top-level env or defaults, no workflow-level write permission, id-token
+# only on the job that runs the action, no job-level env, defaults,
+# container or services, an Ubuntu hosted runner, and only checkout,
+# upload-artifact, codeql-action/upload-sarif, scorecard-action and
+# harden-runner as steps. Scorecard supports the default branch only.
+name: scorecard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 4 * * 1" # weekly, Monday 04:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read # read the tree; nothing here writes
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # the checkout and Scorecard's reads of the repository
+      security-events: write # the SARIF upload to code scanning
+      id-token: write # the OIDC token publish_results presents to api.scorecard.dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: results.sarif
+          category: scorecard
