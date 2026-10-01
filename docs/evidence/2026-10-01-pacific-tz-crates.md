@@ -88,16 +88,22 @@ build-time environment and no file, and it builds without `std` or
 
 ## Costs, measured on the real module
 
-`rust/src/datetime.rs` on jiff (commit "refactor(rust): take the calendar
-and Pacific time from jiff"), built with `tools/wasm-toolchain.sh` and
-`rust/bindings/abi/build.sh`:
+`rust/src/datetime.rs` on jiff (option B of R38: jiff's answers taken
+as they are, no cycle arithmetic), built with
+`tools/wasm-toolchain.sh` and `rust/bindings/abi/build.sh`:
 
 | | aprv.wasm bytes | gzip -9 |
 |---|---|---|
 | main at 7f2ea42 (rebuilt here: the committed module's SHA-256, 4e9d2d85...) | 2,764,700 | 920,521 |
-| with jiff | 2,811,557 | 929,710 |
-| delta | +46,857 (+1.7%) | +9,189 |
+| with jiff | 2,813,436 | 930,273 |
+| delta | +48,736 (+1.8%) | +9,752 |
+| the same, printing with jiff's `strftime` instead of `format!` | 3,050,396 | 993,296 |
+| the same, civil time from `DateTime::checked_add(SignedDuration)` and `strftime` | 3,053,495 | 994,808 |
 
+- `strftime` alone costs 236,960 bytes, so `format_civil` prints jiff's
+  civil fields with `format!`; a test holds that to `strftime`'s bytes
+  over the whole year range. `DateTime` arithmetic costs about as much
+  again, so the civil time comes from `Offset::to_datetime` instead.
 - `rust/Cargo.lock` gains 12 packages. Two link into the module: `jiff`
   and `jiff-core`. `jiff-static`, `jiff-tzdb` (the database the macro
   reads), and the already-present `proc-macro2`, `quote` and `syn` run
@@ -106,26 +112,35 @@ and Pacific time from jiff"), built with `tools/wasm-toolchain.sh` and
   project ships; `defmt`, `thiserror` and a second `bitflags` are
   optional dependencies the lockfile lists and no build enables. All
   are MIT or dual MIT; `cargo deny check` passes.
-- `datetime.rs` goes from 486 to 180 lines. The receipt-date grammar stays
+- `datetime.rs` goes from 486 to 179 lines. The receipt-date grammar stays
   hand-checked, because it is the contract with Java and jiff's parsers
-  accept more. Two small pieces keep the old output byte for byte: PST
-  before 1900 (the database gives local mean time before 1883-11-18), and
-  a fold by whole 400-year Gregorian cycles, because jiff's calendar ends
-  at 9999 and a caller's clock reaches 292 million years.
+  accept more.
+- jiff's last timestamp, 9999-12-30T22:00:00Z, is 26 hours before the
+  grammar's last second. Those seconds are carried in the offset jiff
+  renders with (it allows ±25:59:59 for this), and their Pacific offset is
+  the one at jiff's last second, exact because 9999-12-30 and -31 are PST.
+- jiff looks a timestamp up by its second truncated toward zero, so
+  before 1970 the last millisecond ahead of a transition took the new
+  offset. The core looks up the floored second. The spike's differential
+  probed whole seconds only and could not see this.
+- What changes: before 1883-11-18T20:00:00Z the Pacific rendering is local
+  mean time (−07:52:58), as Java's `ZoneId` gives, where the hand-written
+  code answered PST; and the endpoint answers a clock outside -9999 to
+  9999-12-31T23:59:59Z with `{"status":21009}` instead of a date with a
+  five-digit year.
 - The core's own differential (`rust/tests/datetime.rs`, ignored test)
-  holds the jiff code to the hand-written code at 116,758,736 points:
-  every minute 1900-2100, every transition, hourly 2100-2900, a full
-  400-year cycle hourly, and 2^20 instants across the `i64` range. 0
-  disagreements.
+  holds the jiff code to the hand-written code at 182,918,657 instants:
+  every minute from 1883-11-18T20:00Z to 2100, every transition, and
+  every hour to 9999-12-31T23:59:59Z. 0 disagreements.
 
 ## Limits
 
 - The spike's sizes are deltas in a small binary; inside `aprv.wasm` the
-  same jiff call costs +46,857 bytes, not +37,415, because the core now
-  also takes its civil-date conversion from jiff.
-- Agreement is checked from 1900 to 2100 minute by minute and to 2900
-  hourly. Past that the offset is today's rule by construction (the
-  fold), not by a database.
+  jiff code costs +48,736 bytes, not +37,415, because the core also takes
+  its civil-date conversion from jiff.
+- Agreement is checked from 1883 to 2100 minute by minute and to the end
+  of 9999 hourly. For future years both codes apply today's rule, as the
+  database itself does.
 - tzdata changes reach the module only when `jiff-tzdb` publishes and the
   lockfile takes it. A future change to US daylight-saving law is a
   dependency bump and a module rebuild.

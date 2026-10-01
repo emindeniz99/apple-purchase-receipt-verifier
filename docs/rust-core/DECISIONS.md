@@ -15,7 +15,7 @@ adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
 D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, and
-the owner's decision of 2026-10-01 added R38.
+the owner's decisions of 2026-10-01 added R38 and a row to R20.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -430,6 +430,7 @@ amended 2026-09-30).
   | A string of 7 or more constructed levels one SEQUENCE deep, in a fourth field or an unsigned envelope value | ok | ok (port-defined 2026-09-30) | `UNREADABLE_PAYLOAD` / `MALFORMED` | OpenSSL refuses the string as a value and keeps the SEQUENCE around it whole; the walk refuses it at every depth, so the verdict does not follow the depth. Fails closed, not Apple-signed; both cases allow both | `receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string`, `receipt/reject-an-unsigned-value-sequence-holding-a-7-level-octet-string` |
   | An embedded certificate's outer signature `BIT STRING` in constructed form, two primitive chunks joined to the same signature (BER, outside the signed TBS) | not measured | `MALFORMED` (kept, lane J-align round 3) | ok | OpenSSL joins the chunks and verifies the same signature; the walk used to judge each chunk alone and answered by the signature's first octet (round-3 review F2). The chain is still signed under a pinned root. Java keeps `MALFORMED` on purpose: the second chunk has no initial octet of its own, so under X.690 8.6.4 the value is not a valid BER BIT STRING (it claims 150 unused bits). OpenSSL's `asn1_collect` joins the chunks' raw contents instead. The X.690 spelling of the same signature, each segment with its own initial octet, verifies in Java and is `UNTRUSTED_CHAIN` in the core ([Java round 3][javar3]) | `receipt/accept-a-certificate-whose-signature-bit-string-is-in-two-chunks` |
   | A constructed UTCTime of 13 joined octets one SEQUENCE deep in a fourth field (BER) | ok | `UNREADABLE_PAYLOAD` (port-defined 2026-09-30; BouncyCastle builds no constructed string other than a BIT STRING or an OCTET STRING) | ok | BER allows a constructed string; OpenSSL joins it and the walk agrees. Apple's receipts are DER, so the case allows both | `receipt/accept-fourth-field-sequence-holding-a-constructed-utctime` |
+  | A clock past 9999-12-31T23:59:59.999Z, or before -9999-01-02T01:59:59Z, at the endpoint | rendered, a five-digit year with no sign (`10000-01-01 00:00:00 Etc/GMT`) | rendered, with a `+` sign past 9999 (`uuuu`) | `{"status":21009}` (port-defined 2026-10-01) | Such a clock is broken, answered like one that panics; jiff's calendar ends at 9999 and every receipt date the grammar accepts renders (R38) | none: no case pins a clock out there; `rust/tests/endpoint.rs` |
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -1009,7 +1010,7 @@ ROADMAP.md, "Decisions of 2026-09-29 and 30".
 
 ## R38. Calendar and US Pacific time from `jiff`
 
-**Status: accepted** (owner, 2026-10-01).
+**Status: accepted** (owner, 2026-10-01; option B the same day).
 
 - The core takes its calendar and the `America/Los_Angeles` offset behind
   every `_pst` date from `jiff` 0.2 (`default-features = false`, feature
@@ -1021,13 +1022,31 @@ ROADMAP.md, "Decisions of 2026-09-29 and 30".
   arithmetic) were the one part of the core that encoded law rather than
   Apple's policy; a change in US daylight-saving law is now a dependency
   bump and a module rebuild.
+- jiff's answers are taken as they are. Before 1883-11-18T20:00:00Z the
+  database gives local mean time, −07:52:58, where the hand-written code
+  answered PST; Java's `ZoneId` gives the same local mean time, so the
+  core now agrees with Java there and R20 gains nothing for it.
+- The renderings cover jiff's first instant (-9999-01-02T01:59:59Z) to the
+  receipt grammar's last second, 9999-12-31T23:59:59Z. jiff's last
+  timestamp is 26 hours earlier, 9999-12-30T22:00:00Z; the seconds past it
+  are carried in the UTC offset jiff renders with (jiff allows offsets to
+  ±25:59:59 for this), and their Pacific offset is the one at jiff's last
+  second, which is exact because the zone's rule puts all of 9999-12-30 and
+  -31 in PST. No 400-year cycle arithmetic.
+- A clock outside that range is broken: the endpoint answers it with its
+  INTERNAL_ERROR body, `{"status":21009}`, as it answers a clock that
+  panics (R20 row). Every receipt date `parse_receipt_date` accepts
+  renders, so only `request_date` can reach that answer.
 - What stays in `rust/src/datetime.rs`: the receipt-date grammar, checked
   byte by byte, since it is the contract with Java and `jiff`'s parsers
-  accept more; PST before 1900, as before; and a fold by whole 400-year
-  cycles, so every `i64` instant renders as it did (jiff's calendar ends
-  at 9999). The renderings are byte-identical to the hand-written code:
-  0 disagreements at 116,758,736 instants (`rust/tests/datetime.rs`).
-- Cost: `aprv.wasm` +46,857 bytes (2,764,700 to 2,811,557; gzip +9,189).
+  accept more. Within the range above the renderings are byte-identical to
+  the hand-written code from 1883-11-18 on: 0 disagreements at 182,918,657
+  instants (`rust/tests/datetime.rs`).
+- The civil fields are printed with `format!`, as jiff's own
+  `%Y-%m-%d %H:%M:%S` prints them (a test holds the two equal over the
+  whole year range); `strftime` itself would add 236,960 bytes to the
+  module.
+- Cost: `aprv.wasm` +48,736 bytes (2,764,700 to 2,813,436; gzip +9,752).
   `jiff` and `jiff-core` link; `jiff-static` and `jiff-tzdb` run at build
   time only. 12 new lockfile packages; `cargo deny check` passes.
 - Measured against chrono-tz, tz-rs with tzdb_data, time-tz and jiff's
