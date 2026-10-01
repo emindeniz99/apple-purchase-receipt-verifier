@@ -14,13 +14,15 @@ export ABI and chose the canonical ABI after two spike rounds (R23), and
 adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
 D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
-2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30.
+2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, and
+the owner's decisions of 2026-10-01 added R38, R39 and a row to R20.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
-`vendored-4` feature ([vendored-4][vendored4]). Links use the short
-names defined at the end of this file. Rejected alternatives are in one
-table at the end, each with its measured reason and its note.
+`vendored-4` feature ([vendored-4][vendored4]) and the 2026-10-01
+note on time-zone crates ([Pacific time-zone crates][pactz]). Links use
+the short names defined at the end of this file. Rejected alternatives
+are in one table at the end, each with its measured reason and its note.
 
 ---
 
@@ -430,6 +432,7 @@ amended 2026-09-30; Java's nesting bound, 2026-10-01).
   | A constructed UTCTime of 13 joined octets one SEQUENCE deep in a fourth field (BER) | ok | `UNREADABLE_PAYLOAD` (port-defined 2026-09-30; BouncyCastle builds no constructed string other than a BIT STRING or an OCTET STRING) | ok | BER allows a constructed string; OpenSSL joins it and the walk agrees. Apple's receipts are DER, so the case allows both | `receipt/accept-fourth-field-sequence-holding-a-constructed-utctime` |
   | Signed content nested 33 deep, with SEQUENCEs or `[0]` context tags | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01; BouncyCastle's bound, 64 by default) | `UNREADABLE_PAYLOAD` | The core's depth bound is 32 (owner, 2026-09-27), counting constructed values of every class. Apple's receipts nest 9 deep, so the case allows both | `receipt/unreadable-signed-content-nested-33-deep`, `receipt/unreadable-signed-content-nested-33-deep-in-context-tags` |
   | An envelope nested 33 deep: in an unsigned attribute value (SEQUENCEs or `[0]` context tags), the digestAlgorithms parameters, a `crls` entry, an embedded certificate's parameters | `MALFORMED` | ok (port-defined 2026-10-01; BouncyCastle's bound, 64 by default) | `MALFORMED` | The same bound over the whole envelope, before any decode. None of these values is signed or Apple's, so the cases allow both | `receipt/reject-an-envelope-nested-33-deep`, `receipt/reject-an-envelope-nested-33-deep-in-context-tags`, `receipt/reject-digest-algorithm-parameters-nested-33-deep`, `receipt/reject-a-crls-entry-nested-33-deep`, `receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep` |
+  | A clock past 9999-12-31T23:59:59.999Z, or before -9999-01-02T01:59:59Z, at the endpoint | rendered, a five-digit year with no sign (`10000-01-01 00:00:00 Etc/GMT`) | rendered, with a `+` sign past 9999 (`uuuu`) | `{"status":21009}` (port-defined 2026-10-01) | Such a clock is broken, answered like one that panics; jiff's calendar ends at 9999 and every receipt date the grammar accepts renders (R38) | none: no case pins a clock out there; `rust/tests/endpoint.rs` |
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -1028,6 +1031,54 @@ ROADMAP.md, "Decisions of 2026-09-29 and 30".
 
 ---
 
+## R38. Calendar and US Pacific time from `jiff`
+
+**Status: accepted** (owner, 2026-10-01; option B the same day).
+
+- The core takes its calendar and the `America/Los_Angeles` offset behind
+  every `_pst` date from `jiff` 0.2 (`default-features = false`, feature
+  `static`). `jiff::tz::get!` compiles that one zone into the binary from
+  `jiff-tzdb`'s copy of the IANA database; nothing reads
+  `/usr/share/zoneinfo` at run time, and the module carries no database.
+- Reason: the project does not maintain calendar code. The hand-written
+  rules (a 1918-1966 table, closed-form rules from 1967 and the civil-date
+  arithmetic) were the one part of the core that encoded law rather than
+  Apple's policy; a change in US daylight-saving law is now a dependency
+  bump and a module rebuild.
+- jiff's answers are taken as they are. Before 1883-11-18T20:00:00Z the
+  database gives local mean time, −07:52:58, where the hand-written code
+  answered PST; Java's `ZoneId` gives the same local mean time, so the
+  core now agrees with Java there and R20 gains nothing for it.
+- The renderings cover jiff's first instant (-9999-01-02T01:59:59Z) to the
+  receipt grammar's last second, 9999-12-31T23:59:59Z. jiff's last
+  timestamp is 26 hours earlier, 9999-12-30T22:00:00Z; the seconds past it
+  are carried in the UTC offset jiff renders with (jiff allows offsets to
+  ±25:59:59 for this), and their Pacific offset is the one at jiff's last
+  second, which is exact because the zone's rule puts all of 9999-12-30 and
+  -31 in PST. No 400-year cycle arithmetic.
+- A clock outside that range is broken: the endpoint answers it with its
+  INTERNAL_ERROR body, `{"status":21009}`, as it answers a clock that
+  panics (R20 row). Every receipt date `parse_receipt_date` accepts
+  renders, so only `request_date` can reach that answer.
+- What stays in `rust/src/datetime.rs`: the receipt-date grammar, checked
+  byte by byte, since it is the contract with Java and `jiff`'s parsers
+  accept more. Within the range above the renderings are byte-identical to
+  the hand-written code from 1883-11-18 on: 0 disagreements at 182,918,657
+  instants (`rust/tests/datetime.rs`).
+- The civil fields are printed with `format!`, as jiff's own
+  `%Y-%m-%d %H:%M:%S` prints them (a test holds the two equal over the
+  whole year range); `strftime` itself would add 236,960 bytes to the
+  module.
+- Cost: `aprv.wasm` +48,736 bytes (2,764,700 to 2,813,436; gzip +9,752).
+  `jiff` and `jiff-core` link; `jiff-static` and `jiff-tzdb` run at build
+  time only. 12 new lockfile packages; `cargo deny check` passes.
+- Measured against chrono-tz, tz-rs with tzdb_data, time-tz and jiff's
+  other constructors ([Pacific time-zone crates][pactz]). tz-rs with
+  tzdb_data is smaller; jiff was chosen for one crate covering the calendar
+  and the zone with no build-time environment or file.
+
+---
+
 ## R39. Roots are DER in every package
 
 **Status: accepted** (owner, 2026-10-01). Settles the PEM item that R36
@@ -1110,6 +1161,10 @@ One table for everything the plan measured or considered and rejected.
 | `wasm-opt` in the release | 25% smaller raw, no speed change beyond noise, a second optimiser to re-prove every release | [wasm speed §4][speed] | module size matters |
 | OpenSSL `enable-ec_nistp_64_gcc_128` | JWS 35% faster on Node, 2.4 to 3.4 times slower on Endive; one module serves every host | [wasm speed §2][speed] | — |
 | AWS-LC, LibreSSL, pure Rust as the substrate | See R21's options table | [substrate bake-off][substrate]; [follow-up][followup] | — |
+| Keeping the hand-written US Pacific rules and calendar | Correct (0 disagreements with five IANA-derived sources, 1900-2100), but it is calendar code the project maintains, and a change in US daylight-saving law would be a code change (R38) | [Pacific time-zone crates][pactz] | — |
+| chrono-tz for `_pst` | Its zone filter reaches the build script only from the shell environment, never from `.cargo/config.toml` under `--manifest-path`, nor for a crates.io consumer: 935 KB unfiltered with an opaque `Tz` | [Pacific time-zone crates][pactz] | — |
+| A POSIX TZ rule (`PST8PDT,M3.2.0,M11.1.0`) | Wrong for every daylight-saving season 1900-2006 (19.8 million minutes) | [Pacific time-zone crates][pactz] | — |
+| A TZif file through `include_bytes!` (jiff or tz-rs) | A 2.8 KB binary in git, refreshed by hand from each tzdata release, and a TZif parser in the module: +31 KB with tz-rs, +303 KB with jiff's `TimeZone::tzif` | [Pacific time-zone crates][pactz] | — |
 
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
 [cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
@@ -1136,3 +1191,4 @@ One table for everything the plan measured or considered and rejected.
 [corefix]: ../evidence/2026-09-29-core-review-fixes.md
 [javar3]: ../evidence/2026-09-29-java-align-round3.md
 [vendored4]: ../evidence/2026-09-30-rust-openssl-vendored-4-upstream.md
+[pactz]: ../evidence/2026-10-01-pacific-tz-crates.md

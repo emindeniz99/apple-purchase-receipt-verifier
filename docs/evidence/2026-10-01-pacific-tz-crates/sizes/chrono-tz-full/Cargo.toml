@@ -1,0 +1,20 @@
+[package]
+name = "tzspike-chrono-tz-full"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+chrono = { version = "=0.4.45", default-features = false }
+chrono-tz = { version = "=0.10.4", default-features = false }
+
+# Same as rust/Cargo.toml [profile.wasm] (opt-level 3, lto, 1 CGU, abort),
+# plus strip, since build.sh strips the name section from aprv.wasm.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
