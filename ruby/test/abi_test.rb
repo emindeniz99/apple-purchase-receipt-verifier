@@ -22,7 +22,7 @@ class AbiTest < Minitest::Test
   NOW = 1_767_225_600_000
 
   def runtime
-    APRV::Runtime.shared
+    Internals::Runtime.shared
   end
 
   def receipt_base64
@@ -38,7 +38,7 @@ class AbiTest < Minitest::Test
   end
 
   def guest(config = NONE)
-    APRV::Guest.new(runtime, config)
+    Internals::Guest.new(runtime, config)
   end
 
   def trapped?(guest = nil, &block)
@@ -51,13 +51,13 @@ class AbiTest < Minitest::Test
   # --- the interface's contract --------------------------------------------------
 
   def test_init_with_no_roots_answers_ok
-    assert_equal '{"ok":true}', APRV::Guest.new(runtime, nil).call("init", [], NONE)
-    assert_equal '{"ok":true}', APRV::Guest.new(runtime, nil).call("init", [], "")
-    assert_equal '{"ok":true}', APRV::Guest.new(runtime, nil).call("init", [], "{}")
+    assert_equal '{"ok":true}', Internals::Guest.new(runtime, nil).call("init", [], NONE)
+    assert_equal '{"ok":true}', Internals::Guest.new(runtime, nil).call("init", [], "")
+    assert_equal '{"ok":true}', Internals::Guest.new(runtime, nil).call("init", [], "{}")
   end
 
   def test_a_verify_before_init_traps
-    fresh = APRV::Guest.new(runtime, nil)
+    fresh = Internals::Guest.new(runtime, nil)
     assert trapped?(fresh) { fresh.call("verify-receipt", [NOW], receipt_base64) }
   end
 
@@ -67,7 +67,7 @@ class AbiTest < Minitest::Test
   end
 
   def test_a_configuration_that_is_not_json_is_refused_as_a_value_and_init_can_be_retried
-    fresh = APRV::Guest.new(runtime, nil)
+    fresh = Internals::Guest.new(runtime, nil)
     answer = JSON.parse(fresh.call("init", [], "{not json"))
     assert_same false, answer["ok"]
     refute_empty answer["message"]
@@ -77,7 +77,7 @@ class AbiTest < Minitest::Test
   end
 
   def test_a_root_that_is_not_a_certificate_is_refused_at_init
-    error = assert_raises(APRV::RootsRejected) { guest(JSON.generate("roots" => [["not a cert"].pack("m0")])) }
+    error = assert_raises(Internals::RootsRejected) { guest(JSON.generate("roots" => [["not a cert"].pack("m0")])) }
     refute_empty error.message
   end
 
@@ -132,8 +132,9 @@ class AbiTest < Minitest::Test
   # --- the import ---------------------------------------------------------------------------
 
   def test_random_get_answering_the_wrong_length_traps
-    short = APRV::Runtime.new(TestSupport.read_module, random: ->(n) { SecureRandom.random_bytes(n - 1) })
-    instance = APRV::Guest.new(short, jws_config)
+    short = Internals::Runtime.new(TestSupport.read_module,
+                                   random: ->(n) { SecureRandom.random_bytes(n - 1) })
+    instance = Internals::Guest.new(short, jws_config)
     assert trapped?(instance) { instance.call("verify-signed-data", [NOW], jws) }
   end
 
@@ -144,7 +145,7 @@ class AbiTest < Minitest::Test
 
   def test_the_module_exports_the_interface_at_the_version_the_wrapper_binds
     names = guest.instance_variable_get(:@operations).keys
-    assert_equal APRV::Runtime::OPERATIONS.sort, names.sort
+    assert_equal Internals::Runtime::OPERATIONS.sort, names.sort
   end
 
   # --- isolation ------------------------------------------------------------------------------

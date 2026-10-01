@@ -15,7 +15,7 @@ require "openssl"
 #   trap or internal failure, server process failure (not applicable here).
 class FacadeTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
-  FAKE = APRV::Runtime.new(FakeModule.wat)
+  FAKE = Internals::Runtime.new(FakeModule.wat)
 
   def verifier(config = APRV::Config.defaults, runtime: FAKE)
     APRV::Verifier.send(:new, config, runtime: runtime)
@@ -111,7 +111,7 @@ class FacadeTest < Minitest::Test
       error = assert_raises(ArgumentError) { APRV::Config.new(roots: [der, root]) }
       assert_match(/DER Strings; convert a PEM certificate first \(see README\)/, error.message)
     end
-    assert_raises(ArgumentError) { APRV::Config.builder.roots([pem]).build }
+    assert_raises(ArgumentError) { APRV::Config.new(roots: [pem]) }
     # The README's conversion works: the certificate object's DER is the root.
     assert_equal [der], APRV::Config.new(roots: [OpenSSL::X509::Certificate.new(pem)]).roots
   end
@@ -123,18 +123,22 @@ class FacadeTest < Minitest::Test
     assert_raises(ArgumentError) { APRV::Config.new(clock: 42) }
   end
 
-  def test_the_builder_builds_the_same_config
+  # One way to build a Config, Ruby's own: keyword arguments, each one left
+  # out taking its default. 0.7's Config.builder is gone (DECISIONS.md R41).
+  def test_config_new_is_the_one_way_to_build_a_config
     clock = -> { 1 }
-    built = APRV::Config.builder.roots(["x".b]).clock(clock).build
-    assert_equal ["x".b], built.roots
-    assert_same clock, built.clock
-    assert_equal APRV::Config.defaults.roots, APRV::Config.builder.build.roots
+    config = APRV::Config.new(roots: ["x".b], clock: clock)
+    assert_equal ["x".b], config.roots
+    assert_same clock, config.clock
+    assert_equal APRV::Config.defaults.roots, APRV::Config.new.roots
+    refute_respond_to APRV::Config, :builder
+    refute APRV::Config.const_defined?(:Builder, false)
   end
 
   # --- outcome 4: ABI mismatch -----------------------------------------------
 
   def test_a_module_of_another_abi_version_fails_at_create_naming_both_versions
-    other = APRV::Runtime.new(FakeModule.wat(abi: "2.0.0"))
+    other = Internals::Runtime.new(FakeModule.wat(abi: "2.0.0"))
     error = assert_raises(APRV::AbiMismatchError) { verifier(runtime: other) }
     assert_includes error.message, "aprv:verifier/verify@0.1.0"
     assert_includes error.message, "aprv:verifier/verify@2.0.0#init"
@@ -143,12 +147,12 @@ class FacadeTest < Minitest::Test
   def test_a_module_that_imports_anything_but_random_get_is_refused
     import = '(import "wasi_snapshot_preview1" "fd_write" (func (param i32 i32 i32 i32) (result i32)))'
     wat = FakeModule.wat(import: import)
-    error = assert_raises(APRV::AbiMismatchError) { APRV::Runtime.new(wat) }
+    error = assert_raises(APRV::AbiMismatchError) { Internals::Runtime.new(wat) }
     assert_includes error.message, "wasi_snapshot_preview1#fd_write"
   end
 
   def test_a_module_that_is_not_a_module_is_an_abi_mismatch
-    assert_raises(APRV::AbiMismatchError) { APRV::Runtime.new("this is not wasm".b) }
+    assert_raises(APRV::AbiMismatchError) { Internals::Runtime.new("this is not wasm".b) }
   end
 
   def test_the_module_is_checked_against_its_recorded_hash
@@ -157,12 +161,12 @@ class FacadeTest < Minitest::Test
       File.binwrite(wasm, "\0asm\1\0\0\0".b)
       hash = File.join(dir, "aprv.wasm.sha256")
       File.write(hash, "#{Digest::SHA256.hexdigest("\0asm\1\0\0\0".b)}  aprv.wasm\n")
-      assert_equal "\0asm\1\0\0\0".b, APRV::Runtime.read_module(wasm, hash)
+      assert_equal "\0asm\1\0\0\0".b, Internals::Runtime.read_module(wasm, hash)
 
       File.binwrite(wasm, "\0asm\1\0\0\1".b)
-      assert_raises(APRV::ModuleIntegrityError) { APRV::Runtime.read_module(wasm, hash) }
+      assert_raises(APRV::ModuleIntegrityError) { Internals::Runtime.read_module(wasm, hash) }
       File.write(hash, "not a hash\n")
-      assert_raises(APRV::ModuleIntegrityError) { APRV::Runtime.read_module(wasm, hash) }
+      assert_raises(APRV::ModuleIntegrityError) { Internals::Runtime.read_module(wasm, hash) }
     end
   end
 
@@ -177,7 +181,7 @@ class FacadeTest < Minitest::Test
   def test_a_missing_module_is_a_clear_error_naming_where_it_belongs
     Dir.mktmpdir do |dir|
       error = assert_raises(APRV::ModuleIntegrityError) do
-        APRV::Runtime.read_module(File.join(dir, "aprv.wasm"), File.join(dir, "aprv.wasm.sha256"))
+        Internals::Runtime.read_module(File.join(dir, "aprv.wasm"), File.join(dir, "aprv.wasm.sha256"))
       end
       assert_includes error.message, "lib/apple_purchase_receipt_verifier/aprv.wasm"
     end
@@ -229,7 +233,8 @@ class FacadeTest < Minitest::Test
   def test_random_get_is_answered_from_the_host_and_a_wrong_length_answer_traps
     assert_predicate verifier.verify_receipt("d"), :verified?
 
-    short = APRV::Runtime.new(FakeModule.wat, random: ->(length) { SecureRandom.random_bytes(length - 1) })
+    short = Internals::Runtime.new(FakeModule.wat,
+                                   random: ->(length) { SecureRandom.random_bytes(length - 1) })
     result = verifier(runtime: short).verify_receipt("d")
     assert_equal APRV::Reason::INTERNAL_ERROR, result.failure.reason
     assert_match(/unreachable/, result.failure.cause.message)
@@ -244,7 +249,7 @@ class FacadeTest < Minitest::Test
   end
 
   def test_a_guest_that_trapped_refuses_further_calls
-    guest = APRV::Guest.new(FAKE, "{}")
+    guest = Internals::Guest.new(FAKE, "{}")
     assert_raises(APRV::TrapError) { guest.call("verify-receipt", [0], "t") }
     assert_predicate guest, :broken?
     error = assert_raises(APRV::TrapError) { guest.call("verify-receipt", [0], "v") }

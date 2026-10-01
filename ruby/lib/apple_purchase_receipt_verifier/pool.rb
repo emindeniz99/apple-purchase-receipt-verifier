@@ -67,4 +67,5 @@ module ApplePurchaseReceiptVerifier
       Guest.new(@runtime, @config_json)
     end
   end
+  private_constant :InstancePool
 end

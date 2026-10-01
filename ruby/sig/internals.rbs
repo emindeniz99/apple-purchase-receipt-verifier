@@ -1,6 +1,7 @@
 # Signatures for everything `sig/apple_purchase_receipt_verifier.rbs` leaves
-# out: private methods, module-internal constants, and the modules that are
-# implementation detail (Runtime, Guest, InstancePool, Wire, PayloadJson),
+# out: private methods, module-internal constants, and the classes and
+# modules that are implementation detail (Runtime, Guest, InstancePool, Wire,
+# PayloadJson, RootsRejected: private constants of the gem's module),
 # plus the slice of the `wasmtime` gem they call, which ships no signatures.
 #
 # A consumer type-checks against the public file; this one exists so

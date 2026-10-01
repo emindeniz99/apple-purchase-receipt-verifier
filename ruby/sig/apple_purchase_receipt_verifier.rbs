@@ -69,17 +69,9 @@ module ApplePurchaseReceiptVerifier
     attr_reader clock: clock
 
     def self.defaults: () -> Config
-    def self.builder: () -> Config::Builder
 
     def initialize: (?roots: roots?, ?clock: clock?) -> void
     def custom_roots?: () -> bool
-
-    class Builder
-      def initialize: () -> void
-      def roots: (roots) -> self
-      def clock: (clock) -> self
-      def build: () -> Config
-    end
   end
 
   class Failure

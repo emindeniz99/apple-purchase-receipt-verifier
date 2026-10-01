@@ -146,4 +146,5 @@ module ApplePurchaseReceiptVerifier
       memory.write_u32(retptr + 4, bytes.bytesize)
     end
   end
+  private_constant :Runtime
 end
