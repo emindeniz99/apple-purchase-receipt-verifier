@@ -9,6 +9,24 @@ lanes are `lane/*` branches merged back with real merge commits; no
 owner review until the final pull request; agents review each other's
 work.
 
+**State on 2026-10-01:** pull request #187 (`rust-core` into `main`)
+merged on 2026-09-29 18:52Z as b96f14e. The release pull request #182
+(0.8.0) waited for the CI fix in pull request #200, which merged on
+2026-09-30 (86ff162) and refreshed #182; #202 followed (107b7f6). The
+owner's decisions of 2026-09-29 and 30 are in ROADMAP.md and in
+DECISIONS.md R35 to R37 and the amendments of R5, R19, R20, R23 and R30.
+The rest of this file is the migration's record as it stood at the merge.
+
+On `main`:
+
+- The nightly `java-differential` job failed at b96f14e (run
+  36698598330): `tools/differential/recorded.json` was stale, with one
+  row missing and four out of date. Fixed by #202 on 2026-10-01
+  (107b7f6); the next nightly run confirms it.
+- The same run failed `java-wasm-s390x` (surefire: "Given path does not
+  end with java executor"). Still open; ROADMAP.md lists the job under
+  "CI still missing".
+
 ## Lanes
 
 | Lane | Branch | Scope | State |
@@ -64,7 +82,8 @@ work.
     accepts openssl-src 400 (`publish-crates` and the crates smoke are
     skipped with that reason in the workflow); the README documents the
     `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL 4>` path for a source build.
-    The upstream request is the owner's item.
+    The upstream request is the owner's item. Confirmed 2026-09-30; the
+    owner opened rust-openssl#2692 (R19).
   - OD-04: `check-one-implementation.mjs` gets a per-file allowlist;
     .NET's `X509Certificate2?` on the public 0.7 API and Go's
     `crypto/x509` in its three configuration files are listed with a
@@ -72,7 +91,8 @@ work.
   - OD-05: the corpora (200 MB of generated rows) stay out of the
     repository. CI's reference is the 311 cases plus the corpus of
     generated receipts A3 builds; the nightly corpus jobs fetch the
-    release asset that `fixtures/corpus.json` pins by URL and SHA-256.
+    release asset that `fixtures/corpus.json` pins by URL and SHA-256
+    (R35).
   - OD-06: PHP pins the two Linux musl binaries only, from a
     release-branch job that builds them (they are reproducible per
     `tools/reproduce-server.sh`) and writes `php/binaries.json` with `jq`
@@ -111,7 +131,9 @@ work.
 - Lane D: fuzz findings in CI do **not** open an issue (the repository is
   public; an auto-opened issue would disclose a memory-safety crash). The
   job fails and keeps the input for 7 days. Owner decision if a private
-  channel is wanted instead.
+  channel is wanted instead. Decided 2026-09-30: findings go encrypted to
+  the owner's key with a Telegram notice, and the project applies to
+  OSS-Fuzz (R37).
 - Lane D: `actions/attest-sbom` is deprecated; SBOMs are attested with
   `actions/attest` and `sbom-path`.
 - Lane D: `wasm-copies` is strict only on `release-please--*` branches
@@ -636,4 +658,4 @@ hand-back.
 | G4 | closed on the branch's CI (Node and Go); the npm and Go proxy smokes run on the 0.8.0 release |
 | G5 | closed on the branch's CI (Python, Swift, Ruby, .NET); the registry smokes run on the 0.8.0 release, NuGet once bootstrapped |
 | G6 | closed on the branch's CI (PHP through the server); the Packagist smoke runs once the owner submits the repository |
-| G7 | open: the owner merges PR #187 with a real merge commit and release-please opens 0.8.0 |
+| G7 | PR #187 merged with a real merge commit on 2026-09-29 (b96f14e); release-please's 0.8.0 pull request, #182, waited for the CI fix in PR #200, merged 2026-09-30 (86ff162), which refreshed #182 |
