@@ -1,0 +1,17 @@
+# Draft of projects/apple-purchase-receipt-verifier/project.yaml for
+# google/oss-fuzz (docs/rust-core/DECISIONS.md R37). README.md beside this
+# file has the submission steps.
+homepage: "https://github.com/emindeniz99/apple-purchase-receipt-verifier"
+main_repo: "https://github.com/emindeniz99/apple-purchase-receipt-verifier"
+language: rust
+# The owner fills this in before submitting: the address OSS-Fuzz sends
+# crash reports to, tied to a Google account for the ClusterFuzz
+# dashboard. It is never committed here.
+primary_contact: "OWNER_EMAIL_PLACEHOLDER"
+# OSS-Fuzz's Rust guide supports AddressSanitizer only; UndefinedBehavior
+# and Memory sanitizer builds are C/C++ options. The vendored OpenSSL is
+# C, but it is linked into the Rust targets, so it is built with ASan too.
+sanitizers:
+  - address
+fuzzing_engines:
+  - libfuzzer

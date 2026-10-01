@@ -83,5 +83,9 @@ Especially interesting:
 - An `aprv-server` that answers without its token, or binds beyond
   loopback without being told to
 
-A crash a fuzzer finds is reported privately too: CI keeps the input and
-opens no public issue.
+A crash a fuzzer finds is reported privately too, and CI opens no public
+issue. The nightly fuzz job prints only the target and the SHA-256 of the
+crashing input; it seals the input and the fuzzer's report with age to the
+maintainer's key, keeps the sealed file as a run artifact for 30 days, and
+notifies the maintainer through Telegram. Without the key it uploads
+nothing.

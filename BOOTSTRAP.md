@@ -344,15 +344,53 @@ since its rows belong to one module:
 
 ## Fuzz findings, OSS-Fuzz and Scorecard: three owner actions
 
-Decided 2026-09-30 (docs/rust-core/DECISIONS.md R37); nothing is wired
-yet. The nightly fuzz jobs will encrypt any finding to the owner's key and
-send a notice through a Telegram bot, with only the target name and a hash
-in the public log. OpenSSF Scorecard needs no owner action.
+Decided 2026-09-30 (docs/rust-core/DECISIONS.md R37), wired 2026-10-01.
+The nightly `rust-fuzz-openssl` job keeps each target's output on the
+runner and prints only the target name and the SHA-256 of a crashing
+input. `.github/scripts/fuzz-finding.sh` seals the input and the fuzzer's
+report with age to the key below, the job uploads that one file as the
+`fuzz-findings-sealed` artifact for 30 days, and a Telegram bot sends the
+repository, target, input hash and run URL. OpenSSF Scorecard
+(`.github/workflows/scorecard.yml`) needs no owner action.
 
-1. Provide an age or PGP public key for the findings. Only the public
-   half goes into the repository; the private key stays with the owner.
-2. Create the Telegram bot with @BotFather and store its token, and the
-   chat to notify, as repository secrets. The workflow change names them.
-3. Submit the project to OSS-Fuzz with the six existing targets in
-   `rust/fuzz` (a pull request to google/oss-fuzz under the owner's
-   account; OSS-Fuzz asks for a maintainer's email for its reports).
+Until the owner does steps 1 and 2, a finding still fails the run:
+
+- with no key file, the job uploads nothing and prints
+  `finding withheld: no recipient key; target <name>, input sha256 <hash>`;
+  the input and report stay on the runner and disappear with it;
+- with no secrets, it prints
+  `telegram notice skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set`.
+
+1. **The age public key.** The wiring takes age keys only. R37 allowed age
+   or PGP; one tool, installed from a pinned release checked by SHA-256,
+   keeps the job small, and age also accepts an `ssh-ed25519` or
+   `ssh-rsa` public key if the owner prefers to reuse one. On the owner's
+   machine:
+
+   ```sh
+   age-keygen -o ~/aprv-findings.key
+   ```
+
+   It prints `Public key: age1...`, the same line the file holds as
+   `# public key: age1...`. Commit that public line alone as
+   `.github/fuzz/findings-recipient.txt`: one line, `age1` followed by the
+   key, a trailing newline, and optionally `#` comment lines. The file
+   holding `AGE-SECRET-KEY-1...` stays with the owner and never enters the
+   repository. To read a finding, download `fuzz-findings-sealed` from the
+   failed run and run
+   `age -d -i ~/aprv-findings.key <target>.tar.age | tar -x`; the tar holds
+   the crashing input and `fuzzer.log`.
+2. **The Telegram bot.** Create it with @BotFather (`/newbot`), send the
+   bot one message from the chat that should be notified, and read that
+   chat's id from `https://api.telegram.org/bot<token>/getUpdates`
+   (`message.chat.id`). Store both as repository secrets (Settings,
+   Secrets and variables, Actions): `TELEGRAM_BOT_TOKEN` (the
+   `123456:ABC...` token) and `TELEGRAM_CHAT_ID`.
+3. **OSS-Fuzz.** `docs/oss-fuzz/` holds the draft `project.yaml`,
+   `Dockerfile` and `build.sh`, and its README the submission steps.
+   Replace `OWNER_EMAIL_PLACEHOLDER` in `project.yaml` with the address
+   OSS-Fuzz reports to (a committer address in this repository's history,
+   on a Google account), then open the pull request to google/oss-fuzz
+   from the owner's fork. The draft builds five of the six targets:
+   `abi-call` cannot run under OSS-Fuzz until its harness finds the
+   module without an environment variable (the README says why).
