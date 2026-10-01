@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs age from its GitHub release, pinned by version and SHA-256, for
-# the nightly job that seals fuzz findings (fuzz-finding.sh) and for that
-# script's test. No package manager: Ubuntu's archive carries an older age
+# the fuzz jobs that seal findings (fuzz-finding.sh, fuzz-report.sh) and
+# for those scripts' tests. No package manager: Ubuntu's archive carries an older age
 # at whatever version the runner image last pulled.
 #
 #   install-age.sh <dir>     puts age and age-keygen in <dir>
