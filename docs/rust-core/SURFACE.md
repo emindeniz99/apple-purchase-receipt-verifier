@@ -109,10 +109,11 @@ the verified payload exactly as signed. What the Wasm hosts depend on:
 
 Every bound in [0.7-api.md][api07], "Bounds", is owned by the core and
 none is configurable: the receipt's base64 and the endpoint body at
-3,145,728 UTF-8 bytes, the JWS at 262,144, JSON nesting 64, JSON member
-names 50,000 characters, JSON numbers 1,000 digits, ASN.1 nesting 32, 10
+3,145,728 UTF-8 bytes, the JWS at 262,144, ASN.1 nesting 32, 10
 embedded certificates, six certificates below the anchor, 4 SignerInfos.
-Wrappers add none. `aprv-server` adds one transport rule: an HTTP body
+JSON has no bound of its own in the core since 2026-10-01: a value nobody
+reads is skipped, not built, within the size caps (DECISIONS.md R40);
+Java keeps its three JSON bounds. Wrappers add none. `aprv-server` adds one transport rule: an HTTP body
 over 3,145,728 bytes is refused with 413 before it reaches the module, as
 Apple's endpoint refuses it ([aprv-server §1][server]).
 
@@ -128,8 +129,9 @@ Apple's endpoint refuses it ([aprv-server §1][server]).
   clock becomes `now-ms`. The ABI v1 spike's test-only operations (op +
   256, anchors and a pinned clock in the envelope) are therefore not part
   of the ABI ([ABI v1][abi], open questions; [canonical ABI][cabi]).
-- A `oneOf` case lists the outcomes a port may give; `INTERNAL_ERROR` is
-  never among them, and no exception or panic may escape. 23 cases carry
+- A `oneOf` case lists the outcomes a port may give, at the endpoint the
+  `/status` values; `INTERNAL_ERROR` is never among them, and no exception
+  or panic may escape. 23 cases carry
   `maxMillis` 2,000, measured after one warm-up call of the same case.
 - `decodeBase64` cases call the `receipt-data` and `x5c` decoders
   directly. In the core they run as today. Through a host, a
@@ -214,7 +216,7 @@ unsafe_op_in_unsafe_fn, ffi_unwind_calls)`, Clippy's
 Certificate-chain verification, root selection and pinning, Apple's
 marker OIDs, signature algorithms, receipt parsing, strict base64, JWS
 parsing and validation, signed-date and validity-window policy, input
-caps, JSON depth, unknown-attribute handling, the verifyReceipt status
+caps, JSON reading rules, unknown-attribute handling, the verifyReceipt status
 mapping (21007, 21008), and the reason vocabulary. A wrapper that
 implements any of these has failed the architecture, even when its output
 agrees. The one exception by design is the Java implementation, which is

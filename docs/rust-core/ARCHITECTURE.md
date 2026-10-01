@@ -13,7 +13,7 @@ the Wasm-first basis** (R22). The decisions it rests on are in
 ┌─────────────────────────────────────────────────────────────────────┐
 │ rust/          aprv-core: Apple's policy. Pinned roots, chain       │
 │                policy, historical time, JWS, receipt attributes,    │
-│                caps, base64 rules, JSON depth, Reason, endpoint.    │
+│                caps, base64 rules, JSON rules, Reason, endpoint.    │
 │                #![forbid(unsafe_code)]. No ASN.1, CMS, X.509 code.  │
 │   │ safe calls                                                      │
 │ rust/openssl/  aprv-openssl: FFI to OpenSSL's CMS, X.509, EVP and   │

@@ -341,7 +341,7 @@ behind the expectations. Read it before adding a case.
    (never `INTERNAL_ERROR`), and a `fault` naming its single intentional
    defect. Where the outcome is implementation-defined,
    `expected: {"oneOf": [...]}` lists every outcome an implementation may
-   give. Add a `clock` if — and only if — the answer depends on the
+   give (at the endpoint, every `/status` the body may carry). Add a `clock` if — and only if — the answer depends on the
    current time; see below.
 3. Run `node tools/lint-cases.mjs`. It validates the file against
    `fixtures/cases.schema.json`, re-hashes every registered fixture, and
