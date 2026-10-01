@@ -329,15 +329,16 @@ final class CliTransportTest extends TestCase
     }
 
     /** A root is DER: Apple's own root opens, the same certificate as PEM text is refused (0.7 accepted PEM). */
-    public function testARealRootIsAcceptedAsDerAndAsPemItIsRefused(): void
+    public function testARealRootIsAcceptedAsDerAndAsPem(): void
     {
         $der = (string) file_get_contents(__DIR__ . '/../../certs/AppleRootCA-G3.cer');
         Verifier::create(Config::builder()->roots([$der])->build(), new CliTransport(Aprv::binary()));
         $this->addToAssertionCount(1);
 
+        // The module reads a PEM root itself (DECISIONS.md R39, amended); the façade passes the bytes on.
         $pem = "-----BEGIN CERTIFICATE-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END CERTIFICATE-----\n";
-        $this->expectException(InvalidArgumentException::class);
         Verifier::create(Config::builder()->roots([$pem])->build(), new CliTransport(Aprv::binary()));
+        $this->addToAssertionCount(1);
     }
 
     public function testTheRealBinaryOpensWithTheBuiltInRoots(): void
