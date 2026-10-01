@@ -116,24 +116,38 @@ test('createConfig copies DER roots', () => {
   assert.throws(() => node.createConfig({ roots: [42] }), TypeError);
 });
 
-// Roots are DER in every package (DECISIONS.md R39). A PEM string is refused
-// with a message that points at the README's conversion, rather than unwrapped here.
-test('createConfig refuses a PEM string root and points at the conversion', async () => {
-  const der = new Uint8Array(
-    readFileSync(fileURLToPath(new URL('../../certs/AppleRootCA-G3.cer', import.meta.url))),
-  );
-  const pem = `-----BEGIN CERTIFICATE-----\n${Buffer.from(der)
-    .toString('base64')
-    .replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----\n`;
-  const fix = /Uint8Array of DER; convert a PEM certificate .* first \(see README, custom roots\)/;
+// A root is the bytes a caller holds, DER or PEM (DECISIONS.md R39, amended):
+// the module tells them apart, so a PEM certificate passed as its bytes
+// verifies exactly as its DER does, and nothing here reads either format. A
+// string is still not a root: text reaches the module only as bytes.
+test('a PEM root passed as bytes verifies the same as its DER', async () => {
+  const der = new Uint8Array(gen('receipt-root.der'));
+  const pem = new X509Certificate(der).toString();
+  assert.match(pem, /^-----BEGIN CERTIFICATE-----\n/);
+  const receipt = gen('receipt.der').toString('base64');
+  for (const [name, build, pemBytes] of [
+    ['node', node, Buffer.from(pem)],
+    ['web', web, new TextEncoder().encode(pem)],
+  ]) {
+    const config = await build.createConfig({ roots: [pemBytes] });
+    assert.deepEqual(config.roots, [new Uint8Array(pemBytes)], `${name}: passed on as given`);
+    const underPem = await build.createVerifier(config).verifyReceipt(receipt);
+    const underDer = await build
+      .createVerifier(await build.createConfig({ roots: [der] }))
+      .verifyReceipt(receipt);
+    assert.equal(underDer.verified, true, name);
+    assert.equal(underPem.verified, true, name);
+    // toJson is a closure per payload, so the payloads compare by their JSON.
+    assert.equal(underPem.payload.toJson(), underDer.payload.toJson(), name);
+  }
+  const fix =
+    /Uint8Array of DER or PEM bytes; pass a PEM string as new TextEncoder\(\)\.encode\(pem\) \(see README, custom roots\)/;
   assert.throws(() => node.createConfig({ roots: [pem] }), { name: 'TypeError', message: fix });
   assert.throws(() => node.createConfig({ roots: [der, 'not a certificate'] }), {
     name: 'TypeError',
     message: fix,
   });
   await assert.rejects(web.createConfig({ roots: [pem] }), { name: 'TypeError', message: fix });
-  // The README's conversion works: X509Certificate's raw bytes are the same DER.
-  assert.deepEqual(node.createConfig({ roots: [new X509Certificate(pem).raw] }).roots, [der]);
 });
 
 test('createReceiptPayload and friends build what a caller mocks with', () => {
