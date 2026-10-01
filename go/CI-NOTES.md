@@ -74,9 +74,11 @@ for byte; the typed reading in `receiptFromJSON` and `readResult` is what the
 
 ## The floor
 
-`go 1.22.0` in `go.mod`, wazero v1.9.0. Raising wazero raises the floor
-(v1.10: 1.23, v1.11: 1.24, v1.12: 1.25), and the `go` matrix would then start
-at the new floor. The Go module is published from a `go/v*` tag: never move
+`go 1.25.0` in `go.mod`, wazero v1.12.0, which set it: the floor was Go
+1.22 with wazero v1.9.0 until wazero 1.12 was taken (v1.10 needs 1.23, v1.11
+1.24, v1.12 1.25). The `go` matrix starts at the floor. wazero 1.11 and later
+require `golang.org/x/sys`, held at the newest release whose own `go`
+directive the floor still meets (v0.47.0; v0.48.0 needs Go 1.26). The Go module is published from a `go/v*` tag: never move
 or delete one; a bad release is fixed forward with `retract`.
 
 ## Phase 7

@@ -462,7 +462,7 @@ jobs:
       # a newer toolchain and test something other than the floor.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           # setup-go caches by default; off here, see the note above the jobs.
           cache: false
 

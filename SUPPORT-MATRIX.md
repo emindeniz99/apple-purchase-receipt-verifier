@@ -39,7 +39,7 @@ is in [PORTS.md](./PORTS.md).
 | Java, `-wasm` artifact | Java 8; the Endive engine needs Java 11 | new | Endive 1.1.0 needs Java 11; on Java 8 the default engine is `aprv-server` |
 | Node | 20 | 20 | unchanged |
 | Python | 3.10 | 3.10 | unchanged; wasmtime-py `>=49` |
-| Go | 1.22 | 1.22 | wazero v1.9.0, the newest release that builds on Go 1.22 |
+| Go | 1.25 | 1.22 | wazero v1.12.0 needs Go 1.25 |
 | Ruby | 3.3 (3.4 on Windows arm64) | 3.3 | the `wasmtime` gem's prebuilt native gems |
 | Swift | Swift 6.3, macOS 15, iOS 18 | Swift 6.1, macOS 13 | WasmKit 0.4.1 declares tools 6.3 and those platforms |
 | .NET | netstandard2.0, tested on .NET 8 and later | netstandard2.0, net8.0 | the `Wasmtime` package |
@@ -132,12 +132,13 @@ Go supports the two newest minors only.
 
 | Line | Status | Ends | CI |
 |---|---|---|---|
-| 1.22 to 1.25 | floor and EOL lines | kept | `go`, `smoke-go` (1.22) |
+| 1.25 | floor, EOL line | kept | `go`, `smoke-go` |
 | 1.26 | active | when 1.28 ships | `go` |
 | 1.27 | active | when 1.29 ships | `go`, `go-platforms` (macOS, Windows), `go-cross`, `go-scratch`, `go-race`, `go-lint`, `go-fuzz` |
 
-Go 1.28 ships in February 2027. wazero 1.10 and later need a Go newer than
-1.22, so wazero stays on v1.9.0 until the floor moves (rule 5).
+Go 1.28 ships in February 2027. The floor moved from 1.22 to 1.25 because
+wazero 1.12 requires it (rule 5); its dependency `golang.org/x/sys` stays at
+v0.47.0, the newest release that builds on 1.25.
 
 ### Ruby
 

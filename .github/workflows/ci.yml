@@ -701,7 +701,7 @@ jobs:
   # Every Go line the module claims, down to the go.mod floor: a floor
   # nothing executes is a claim, not a fact — the analogue of the
   # java-runtime-8 job above. The floor is wazero's as much as the
-  # module's (wazero v1.9.0 builds on Go 1.22; later wazero lines raise it).
+  # module's (wazero v1.12.0 needs Go 1.25).
   # Every Go job copies rust-wasm's module into go/internal/wasm first:
   # //go:embed needs the file, and it is not committed until integration
   # (DECISIONS.md R14).
@@ -713,7 +713,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ["1.22", "1.23", "1.24", "1.25", "1.26", "1.27"]
+        go: ["1.25", "1.26", "1.27"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -730,7 +730,7 @@ jobs:
           cache-dependency-path: go/go.sum
       # GOTOOLCHAIN=local is the whole point of the matrix. Without it Go
       # downloads a newer toolchain whenever go.mod asks for one, and the
-      # "go 1.22" floor would be compiled by 1.27 on every leg.
+      # "go 1.25" floor would be compiled by 1.27 on every leg.
       - run: go version && go test ./...
         working-directory: go
         env:
@@ -3113,7 +3113,7 @@ jobs:
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" go
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: false
       # A replace directive points the module path at go/; the path is read
       # from go/go.mod, since a fork's GITHUB_REPOSITORY would not match it.

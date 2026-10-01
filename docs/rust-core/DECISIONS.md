@@ -779,7 +779,8 @@ Ruby 3.3; .NET netstandard2.0, tested on net8+; Node 20; Go as today; PHP
 8.2. SUPPORT-MATRIX.md lists what each floor rests on. Two moves against
 0.7.0: Swift from 6.1 and macOS 13 to 6.3 and macOS 15, because WasmKit
 0.4.0 declares them ([Swift WasmKit][swift]); and the Java 8 CI leg moves
-from Temurin to Zulu or Corretto before Temurin 8 builds end.
+from Temurin to Zulu or Corretto before Temurin 8 builds end. Go moved
+from 1.22 to 1.25 on 2026-09-30 (owner), because wazero 1.12 needs it.
 
 ---
 

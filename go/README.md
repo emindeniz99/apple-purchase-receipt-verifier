@@ -27,7 +27,8 @@ payload, err := verifier.VerifySignedData(jws)
 fmt.Println(payload.JSON())
 ```
 
-Go 1.22 or newer, one dependency (wazero, which has none), no cgo.
+Go 1.25 or newer, one dependency (wazero, whose only dependency is
+`golang.org/x/sys`), no cgo.
 
 `internal/wasm/aprv.wasm` is git-ignored until the real module is committed at integration: copy the file into place (it must match `aprv.wasm.sha256`), because `//go:embed` needs it present to build.
 
@@ -39,15 +40,14 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
 
 ## Runtime and version floor
 
-- **Go 1.22**, declared as `go 1.22.0` in `go.mod` (wazero v1.9.0's own
-  floor, the newest release that builds on 1.22) and proven by CI: the whole
-  suite, conformance included, runs on `go1.22` through `go1.27` with
-  `GOTOOLCHAIN=local`, so the floor is what actually compiles rather than
+- **Go 1.25**, declared as `go 1.25.0` in `go.mod` (wazero v1.12.0's own
+  floor) and proven by CI: the whole suite, conformance included, runs on
+  `go1.25` through `go1.27` with `GOTOOLCHAIN=local`, so the floor is what actually compiles rather than
   what a newer toolchain silently upgrades to.
 - **No cgo.** `CGO_ENABLED=0` builds, cross-compiles (Linux, macOS, Windows;
   amd64 and arm64) and runs from a `FROM scratch` image. The one dependency,
-  [wazero](https://wazero.io), is a WebAssembly runtime written in Go and
-  has no dependencies of its own.
+  [wazero](https://wazero.io), is a WebAssembly runtime written in Go;
+  its one requirement is the Go project's `golang.org/x/sys`.
 - **The verification is one WebAssembly module.** `aprv.wasm`, the same file
   every port of this library runs (Node, Python, Java, Swift, Ruby, .NET),
   is embedded with `go:embed` and run by wazero, so a fix in the core reaches

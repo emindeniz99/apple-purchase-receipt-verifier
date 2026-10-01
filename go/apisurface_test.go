@@ -207,8 +207,10 @@ func stripComments(t *testing.T, path string, source []byte) string {
 }
 
 // The published module has one dependency, wazero, pinned to an exact
-// release, and wazero itself has none: "audit the supply chain" is still a
-// short answer, and a second requirement fails here.
+// release. wazero's own one requirement, golang.org/x/sys (from wazero
+// v1.11), is the only other module in the graph, and only as indirect:
+// "audit the supply chain" is still a short answer, and any other
+// requirement, or x/sys required directly, fails here.
 func TestModuleDependsOnlyOnWazero(t *testing.T) {
 	source, err := os.ReadFile("go.mod")
 	if err != nil {
@@ -221,16 +223,21 @@ func TestModuleDependsOnlyOnWazero(t *testing.T) {
 			requires = append(requires, rest)
 		}
 	}
-	if len(requires) != 1 || !strings.HasPrefix(requires[0], "github.com/tetratelabs/wazero v1.") ||
-		strings.Contains(requires[0], "//") || strings.Contains(string(source), "require (") {
-		t.Errorf("go.mod requires %q; want exactly github.com/tetratelabs/wazero at one release:\n%s", requires, source)
+	direct := len(requires) >= 1 && strings.HasPrefix(requires[0], "github.com/tetratelabs/wazero v1.") &&
+		!strings.Contains(requires[0], "//")
+	indirect := len(requires) == 1 ||
+		(len(requires) == 2 && strings.HasPrefix(requires[1], "golang.org/x/sys v0.") &&
+			strings.HasSuffix(requires[1], " // indirect"))
+	if !direct || !indirect || strings.Contains(string(source), "require (") {
+		t.Errorf("go.mod requires %q; want exactly github.com/tetratelabs/wazero at one release,"+
+			" and at most golang.org/x/sys as indirect:\n%s", requires, source)
 	}
 	sums, err := os.ReadFile("go.sum")
 	if err != nil {
 		t.Fatalf("go.sum is missing: %v", err)
 	}
 	for _, line := range strings.Split(strings.TrimSpace(string(sums)), "\n") {
-		if !strings.HasPrefix(line, "github.com/tetratelabs/wazero ") {
+		if !strings.HasPrefix(line, "github.com/tetratelabs/wazero ") && !strings.HasPrefix(line, "golang.org/x/sys ") {
 			t.Errorf("go.sum names another module: %s", line)
 		}
 	}

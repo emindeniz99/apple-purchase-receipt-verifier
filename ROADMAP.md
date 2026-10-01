@@ -122,10 +122,10 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   split) and Rust 1.74 to 1.85 (#91, a plain `cargo update` locked
   edition-2024 crates the floor could not parse). Held on purpose: Java 8
   (enterprise consumers, PLAN D2; JUnit 6 is test-only and stays ignored),
-  Node 20 (next candidate, see below), Go 1.22 (wazero stays on v1.9.0,
-  the newest release that builds on it). Moved in 0.8.0 because a runtime
+  Node 20 (next candidate, see below). Moved in 0.8.0 because a runtime
   required it: Swift 6.1 to 6.3 with macOS 15 and iOS 18, WasmKit's floors
-  (PLAN.md D25).
+  (PLAN.md D25); Go 1.22 to 1.25 for wazero 1.12 (owner decision,
+  2026-09-30; the `go` matrix drops its 1.22 to 1.24 legs).
 - **Model the receipt attributes Apple's verifyReceipt echoes and we held
   as raw bytes** — done ✅ (2026-09-21, measured against Apple's own answer
   for a genuine production receipt, which stays out of the repository):
