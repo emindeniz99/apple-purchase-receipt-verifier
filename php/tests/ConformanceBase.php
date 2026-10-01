@@ -137,7 +137,7 @@ abstract class ConformanceBase extends TestCase
             if (isset($expected['oneOf'])) {
                 // Port-defined within a list: the response's /status must be
                 // listed, and nothing else is pinned.
-                $status = $actual['status'] ?? null;
+                $status = is_array($actual) ? ($actual['status'] ?? null) : null;
                 self::assertContains(
                     $status,
                     Shape::asArray($expected['oneOf'], 'oneOf'),
