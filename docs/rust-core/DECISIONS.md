@@ -1010,7 +1010,10 @@ ROADMAP.md, "Decisions of 2026-09-29 and 30".
 
 ## R37. Fuzz findings and supply-chain scoring
 
-**Status: accepted** (owner, 2026-09-30). Nothing is wired yet.
+**Status: accepted** (owner, 2026-09-30). Wired 2026-10-01, waiting on
+the owner's key and secrets: the nightly sealing and notice, the
+Scorecard workflow and the OSS-Fuzz draft are in the repository, and
+BOOTSTRAP.md lists the three owner actions.
 
 - **OSS-Fuzz:** apply with the six existing targets (`rust/fuzz`: five
   targets over the core and the C ABI, and `abi-call` over the module's
@@ -1025,6 +1028,28 @@ ROADMAP.md, "Decisions of 2026-09-29 and 30".
   artifact (R34).
 - BOOTSTRAP.md lists the owner's one-time actions: the public key, the
   bot and its secret, and the OSS-Fuzz project submission.
+- **As wired (2026-10-01):**
+  - The nightly `rust-fuzz-openssl` job runs each target with its output
+    in a file on the runner. A finding prints the target and the
+    input's SHA-256; `.github/scripts/fuzz-finding.sh` seals the input
+    and the fuzzer's report with age (v1.3.2, pinned by SHA-256) to
+    `.github/fuzz/findings-recipient.txt` and the job uploads the sealed
+    file for 30 days. Without that file nothing is uploaded. Telegram
+    gets the repository, target, hash and run URL when
+    `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set. The run fails
+    in every case.
+  - age only, no PGP path: one pinned binary, and age also takes an SSH
+    public key.
+  - Scorecard runs weekly and on pushes to `main` with
+    `publish_results`, and uploads its SARIF to code scanning.
+  - The OSS-Fuzz draft in `docs/oss-fuzz/` builds five targets.
+    `abi-call` reads the module from `APRV_WASM` and compiles it on its
+    first input (86 s instrumented), which OSS-Fuzz's runner cannot
+    supply or wait for; it joins after a harness change. OSS-Fuzz's Rust
+    support is AddressSanitizer only.
+  - Open: the per-push fuzz jobs in ci.yml (`rust-fuzz` and the
+    wrappers' fuzz jobs) still print a crash to the public log. R37
+    covers the nightly job.
 
 ---
 
