@@ -44,8 +44,9 @@ here.
    slow unit alone.
 5. **Artifacts.** Never upload `rust/fuzz/artifacts/` or
    `rust/fuzz/abi/artifacts/` (gitignored) as they are: the repository
-   is public. The nightly job keeps each target's output on the runner
-   and hands a failed target to `.github/scripts/fuzz-finding.sh`, which
+   is public. The nightly job and the per-push `rust-fuzz` job keep each
+   target's output on the runner and hand a failed target to
+   `.github/scripts/fuzz-finding.sh`, which
    prints only the target and the input's SHA-256 and seals the input
    and report with age to the owner's key (DECISIONS.md R37). A crasher
    becomes a test under `rust/tests/` built from test keys only; no
