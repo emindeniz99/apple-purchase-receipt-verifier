@@ -836,8 +836,8 @@ fix or CI forces it; a new language line or a vendor's end of support
 does not move it. Go moves from 1.22 to 1.25, because wazero 1.12 needs
 1.25 and the 1.22 floor held wazero at 1.9.0. Node 20, Python 3.10, PHP
 8.2, Ruby 3.3, .NET 8 (netstandard2.0), Swift 6.3 and Java 8 stay. The
-Go change (the `go` directive, wazero and the CI legs) lands in its own
-pull request; until then the tree still declares 1.22.
+Go change (the `go` directive, wazero and the CI legs) landed with the
+dependency sweep (#204).
 
 ---
 

@@ -36,7 +36,7 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    forces it. Go moves to 1.25 for wazero 1.12; the other floors stay
    (R30, SUPPORT-MATRIX.md).
 4. **Dependencies.** One sweep pull request to the newest versions the
-   floors allow, then Dependabot weekly. The sweep is in flight.
+   floors allow, then Dependabot weekly. The sweep is #204.
 5. **API.** The 0.7 shape stays in all nine packages; Java keeps
    `runtimeProbe`; roots keep the native certificate type in Java, .NET
    and Go and are bytes elsewhere; Java's `Environment.value()` becomes

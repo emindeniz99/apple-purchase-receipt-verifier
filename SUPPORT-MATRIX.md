@@ -49,10 +49,9 @@ is in [PORTS.md](./PORTS.md).
 | Rust crate and C ABI | Rust 1.85.0 | 1.85.0 | the workspace's `rust-version`; `aprv.wasm` itself is built with the pinned 1.98.1 |
 | `aprv-server` | none for its users | new | a binary; its build pins `wasmtime` 49.0.1 |
 
-Go's floor moves from 1.22 to 1.25, because wazero 1.12 needs it (owner,
-2026-09-30; docs/rust-core/DECISIONS.md R30). The row above changes with
-the pull request that moves the `go` directive, wazero and the CI legs.
-Every other floor in the table stays.
+Go's floor moved from 1.22 to 1.25, because wazero 1.12 needs it (owner,
+2026-09-30; docs/rust-core/DECISIONS.md R30). Every other floor in the
+table stays.
 
 ## Snapshot, 2026-09-29
 
@@ -301,7 +300,6 @@ against a SHA-256 pinned in the jar.
 
 | When | Change | Where |
 |---|---|---|
-| With its pull request | Go's floor from 1.22 to 1.25 and wazero to 1.12 (decided 2026-09-30) | `go/go.mod`, ci.yml `go` jobs and `smoke-go`, `.github/dependabot.yml` |
 | October 2026 | Python 3.15 joins `python:` and `python-musl` | ci.yml `python` jobs |
 | November 2026 | .NET 11 joins `dotnet-version:` and the test projects' `TargetFrameworks` | ci.yml `dotnet` jobs, `dotnet/tests/*/*.csproj` |
 | November 2026 | PHP 8.6 joins `php:` | ci.yml `php` job |

@@ -85,8 +85,8 @@ human-facing version; where they overlap, they agree.
   rebuild the module or the server: they take the files `build-wasm` and
   `build-server` produced and check their hashes.
 - **Floors are tested claims.** `@types/node` pins to the Node 20 engines
-  floor, JUnit stays 5.x (JUnit 6 needs Java >8), wazero stays below 1.10
-  (1.10 and later need a Go newer than the 1.22 floor), and the
+  floor, JUnit stays 5.x (JUnit 6 needs Java >8), `golang.org/x/sys` stays
+  below 0.48 (0.48 and later need a Go newer than the 1.25 floor), and the
   `java-runtime-8` and `java-wasm-runtime-8` CI jobs run the main artifact
   and the `-wasm` server engine on a real Java 8 JVM. Dependabot ignore
   rules encode this — don't "fix" them by upgrading.
