@@ -434,7 +434,7 @@ gone. What changes is what runs underneath, and what you can see of it:
 |---|---|
 | PHP parsed and verified, on `ext-openssl` | `aprv` verifies; `ext-openssl` is no longer required, and `vendor/bin/aprv-install` (or a server URL) is |
 | `Verifier::create(Config)` | `Verifier::create(Config, ?Transport)`: the second argument picks the CLI (default) or a server |
-| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER strings, and "Apple's plus mine" is all four |
+| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER or PEM strings, and "Apple's plus mine" is all four |
 | `AppleRootCerts::pinnedRoots()` returned Apple's three roots | removed: the package carries no copy of them. Read them from Apple's PKI page or the repository's `certs/` |
 | `Failure::$cause` carried the parser's exception | it is set only when the wrapper produced `INTERNAL_ERROR` (the module trapped, `aprv` did not answer, the clock threw) |
 | a hostile input could exhaust `memory_limit` | it cannot: the parsing is out of PHP |
@@ -497,10 +497,14 @@ thrown `VerificationException`.
 - **Only a `VerificationResult` failure escapes** a public entry point.
   Containment is categorical, not a list of expected types.
 
-You can pass your own anchors instead of the built-in ones, as DER strings:
-`Config::builder()->roots([$myRootDer])->build()`. "Apple's roots plus mine"
-is all four DER strings, Apple's three read from Apple's PKI page or the
-repository's `certs/`: the package carries no copy. Leaving the roots out (`Config::defaults()`,
+You can pass your own anchors instead of the built-in ones, as DER or PEM
+strings, which the module tells apart (a PEM string holding several
+certificates is one entry): `Config::builder()->roots([$myRoot])->build()`.
+"Apple's roots plus mine" is all four, Apple's three read from Apple's PKI
+page or the repository's `certs/`: the package carries no copy. With a
+server URL, the server reports the SHA-256 of each root as its `--roots`
+file decodes it, and a PEM block there decodes to its DER, so give the
+`Config` DER for a server whose file holds PEM. Leaving the roots out (`Config::defaults()`,
 or a builder that never calls `roots()`) means the built-in Apple roots. An
 empty list is not "no roots": `Verifier::create` refuses it with an
 `InvalidArgumentException`, so a list that came up empty by mistake never
