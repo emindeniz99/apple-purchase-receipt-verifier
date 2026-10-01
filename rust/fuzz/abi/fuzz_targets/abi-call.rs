@@ -24,7 +24,7 @@ use libfuzzer_sys::fuzz_target;
 use std::sync::{Mutex, OnceLock};
 use wasmtime::{Caller, Config, Engine, Instance, Linker, Memory, Module, Store, Trap, TypedFunc};
 
-const IFACE: &str = "aprv:verifier/verify@1.0.0";
+const IFACE: &str = "aprv:verifier/verify@0.1.0";
 
 struct Compiled {
     engine: Engine,
@@ -55,7 +55,7 @@ impl Guest {
         let mut linker = Linker::new(&c.engine);
         linker
             .func_wrap(
-                "aprv:verifier/host@1.0.0",
+                "aprv:verifier/host@0.1.0",
                 "random-get",
                 |mut caller: Caller<'_, ()>, len: i32, retptr: i32| -> wasmtime::Result<()> {
                     // Deterministic bytes: the fuzzer must replay an input.

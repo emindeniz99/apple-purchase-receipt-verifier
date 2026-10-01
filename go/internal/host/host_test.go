@@ -439,7 +439,7 @@ func TestABIMismatchIsRefusedAtCreate(t *testing.T) {
 	if !errors.As(err, &abi) {
 		t.Fatalf("a module of another ABI version: %v, want *ABIError", err)
 	}
-	for _, want := range []string{"aprv:verifier@1.0.0", "aprv:verifier/verify@0.9.0#init", "cabi_realloc"} {
+	for _, want := range []string{"aprv:verifier@0.1.0", "aprv:verifier/verify@0.9.0#init", "cabi_realloc"} {
 		if !strings.Contains(abi.Detail, want) {
 			t.Errorf("the refusal does not name %q: %s", want, abi.Detail)
 		}

@@ -9,7 +9,7 @@
  *   `crypto.getRandomValues` in 65,536-byte chunks (the most one call of
  *   that function may fill); any other import the bindings ask for is
  *   refused;
- * - the ABI check: the module must export the `@1.0.0` operations this
+ * - the ABI check: the module must export the `@0.1.0` operations this
  *   package calls and import exactly `random-get`, or `createVerifier`
  *   fails naming what the module has;
  * - `init` once per instance, with the roots of the caller's `Config`;
@@ -21,8 +21,8 @@ import { getCoreModule } from '#aprv-load';
 import { instantiate } from './generated/aprv.js';
 
 /** The WIT interface this package binds; its version is the ABI version. */
-export const ABI_INTERFACE = 'aprv:verifier/verify@1.0.0';
-const HOST_INTERFACE = 'aprv:verifier/host@1.0.0';
+export const ABI_INTERFACE = 'aprv:verifier/verify@0.1.0';
+const HOST_INTERFACE = 'aprv:verifier/host@0.1.0';
 const OPERATIONS = ['init', 'verify-receipt', 'verify-signed-data', 'verify-receipt-endpoint'];
 const RANDOM_CHUNK = 65536;
 
@@ -76,7 +76,7 @@ const IMPORTS = new Proxy(Object.freeze({}), {
 
 /**
  * Why `core` is not the module this package binds, or `null` when it is:
- * it must export the four `@1.0.0` operations and import exactly
+ * it must export the four `@0.1.0` operations and import exactly
  * `random-get`.
  */
 export function abiProblem(core: WebAssembly.Module): string | null {

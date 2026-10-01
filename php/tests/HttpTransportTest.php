@@ -54,7 +54,7 @@ final class HttpTransportTest extends TestCase
      *
      * @return array<string, mixed>
      */
-    private static function info(string $source = 'defaults', array $fingerprints = [], string $abi = 'aprv:verifier@1.0.0'): array
+    private static function info(string $source = 'defaults', array $fingerprints = [], string $abi = 'aprv:verifier@0.1.0'): array
     {
         return [
             'status' => 200,
@@ -249,7 +249,7 @@ final class HttpTransportTest extends TestCase
             self::fail('an ABI mismatch is a hard failure');
         } catch (RuntimeException $e) {
             self::assertStringContainsString('aprv:verifier@2.0.0', $e->getMessage());
-            self::assertStringContainsString('aprv:verifier@1.0.0', $e->getMessage());
+            self::assertStringContainsString('aprv:verifier@0.1.0', $e->getMessage());
         }
     }
 
@@ -270,7 +270,7 @@ final class HttpTransportTest extends TestCase
         yield 'one root fewer on the server' => [[$a, $b], self::info('configured', [$fa]), false];
         yield 'one root more on the server' => [[$a], self::info('configured', [$fa, $fb]), false];
         yield 'another root' => [[$a], self::info('configured', [$fb]), false];
-        yield 'a server that reports no roots' => [[$a], ['status' => 200, 'body' => '{"abi":"aprv:verifier@1.0.0"}'], false];
+        yield 'a server that reports no roots' => [[$a], ['status' => 200, 'body' => '{"abi":"aprv:verifier@0.1.0"}'], false];
     }
 
     /**

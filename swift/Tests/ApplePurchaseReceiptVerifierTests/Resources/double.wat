@@ -1,4 +1,4 @@
-;; A test double for aprv.wasm's ABI, aprv:verifier@1.0.0, used by the
+;; A test double for aprv.wasm's ABI, aprv:verifier@0.1.0, used by the
 ;; facade tests to choose the module's answer. It holds no verification
 ;; logic and is never shipped in the package. After the Go host's
 ;; go/testdata/mirror/mirror.wat, with the out-of-range cases added.
@@ -109,7 +109,7 @@
     i32.store
     i32.const 2048)
 
-  (func (export "aprv:verifier/verify@1.0.0#init") (param $ptr i32) (param $len i32) (result i32)
+  (func (export "aprv:verifier/verify@0.1.0#init") (param $ptr i32) (param $len i32) (result i32)
     i32.const 2048
     local.get $len
     i32.const 100
@@ -124,15 +124,15 @@
     i32.store
     i32.const 2048)
 
-  (func (export "aprv:verifier/verify@1.0.0#verify-receipt") (param i64 i32 i32) (result i32)
+  (func (export "aprv:verifier/verify@0.1.0#verify-receipt") (param i64 i32 i32) (result i32)
     local.get 1
     local.get 2
     call $answer)
-  (func (export "aprv:verifier/verify@1.0.0#verify-signed-data") (param i64 i32 i32) (result i32)
+  (func (export "aprv:verifier/verify@0.1.0#verify-signed-data") (param i64 i32 i32) (result i32)
     local.get 1
     local.get 2
     call $answer)
-  (func (export "aprv:verifier/verify@1.0.0#verify-receipt-endpoint") (param i32 i64 i32 i32) (result i32)
+  (func (export "aprv:verifier/verify@0.1.0#verify-receipt-endpoint") (param i32 i64 i32 i32) (result i32)
     local.get 0
     i32.const 1
     i32.gt_u
@@ -141,8 +141,8 @@
     local.get 3
     call $answer)
 
-  (func (export "cabi_post_aprv:verifier/verify@1.0.0#init") (param i32) i32.const 4096 global.set $heap)
-  (func (export "cabi_post_aprv:verifier/verify@1.0.0#verify-receipt") (param i32) i32.const 4096 global.set $heap)
-  (func (export "cabi_post_aprv:verifier/verify@1.0.0#verify-signed-data") (param i32) i32.const 4096 global.set $heap)
-  (func (export "cabi_post_aprv:verifier/verify@1.0.0#verify-receipt-endpoint") (param i32) i32.const 4096 global.set $heap)
+  (func (export "cabi_post_aprv:verifier/verify@0.1.0#init") (param i32) i32.const 4096 global.set $heap)
+  (func (export "cabi_post_aprv:verifier/verify@0.1.0#verify-receipt") (param i32) i32.const 4096 global.set $heap)
+  (func (export "cabi_post_aprv:verifier/verify@0.1.0#verify-signed-data") (param i32) i32.const 4096 global.set $heap)
+  (func (export "cabi_post_aprv:verifier/verify@0.1.0#verify-receipt-endpoint") (param i32) i32.const 4096 global.set $heap)
 )

@@ -73,20 +73,20 @@ function module({ imports = [], exports = [] }) {
   return new WebAssembly.Module(new Uint8Array(bytes));
 }
 
-test('a module without the @1.0.0 exports is an ABI mismatch naming what it has', () => {
+test('a module without the @0.1.0 exports is an ABI mismatch naming what it has', () => {
   const problem = abiProblem(module({ exports: ['aprv:verifier/verify@2.0.0#init'] }));
-  assert.match(problem, /does not implement aprv:verifier\/verify@1\.0\.0/);
-  assert.match(problem, /missing aprv:verifier\/verify@1\.0\.0#init/);
+  assert.match(problem, /does not implement aprv:verifier\/verify@0\.1\.0/);
+  assert.match(problem, /missing aprv:verifier\/verify@0\.1\.0#init/);
   assert.match(problem, /exports aprv:verifier\/verify@2\.0\.0#init/);
 });
 
 test('a module that imports anything but random-get is an ABI mismatch', () => {
   const ops = ['init', 'verify-receipt', 'verify-signed-data', 'verify-receipt-endpoint'].map(
-    (op) => `aprv:verifier/verify@1.0.0#${op}`,
+    (op) => `aprv:verifier/verify@0.1.0#${op}`,
   );
   const extra = module({
     imports: [
-      ['aprv:verifier/host@1.0.0', 'random-get'],
+      ['aprv:verifier/host@0.1.0', 'random-get'],
       ['wasi_snapshot_preview1', 'fd_write'],
     ],
     exports: ops,
@@ -94,7 +94,7 @@ test('a module that imports anything but random-get is an ABI mismatch', () => {
   assert.match(abiProblem(extra), /must import exactly .*random-get; it imports .*fd_write/);
   const none = module({ exports: ops });
   assert.match(abiProblem(none), /it imports nothing/);
-  const exact = module({ imports: [['aprv:verifier/host@1.0.0', 'random-get']], exports: ops });
+  const exact = module({ imports: [['aprv:verifier/host@0.1.0', 'random-get']], exports: ops });
   assert.equal(abiProblem(exact), null);
 });
 

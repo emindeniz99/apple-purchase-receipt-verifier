@@ -7,7 +7,7 @@ one-shot CLI (`aprv verify-receipt` and friends).
 
 It adds no verification logic. It has no base64 rule, no CMS, JWS or
 certificate code and no trust decision: a route or a command picks one of
-the component's four operations (`aprv:verifier/verify@1.0.0`,
+the component's four operations (`aprv:verifier/verify@0.1.0`,
 [`wit/aprv.wit`](wit/aprv.wit)) and passes the bytes through. The server
 therefore cannot disagree with the other packages about a verdict. The
 design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and

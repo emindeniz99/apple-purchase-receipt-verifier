@@ -37,7 +37,7 @@ import run.endive.wasm.types.ValType;
 final class EndiveGuest implements Guest {
 
     /** The interface the four exports belong to; its version is the ABI version. */
-    static final String IFACE = "aprv:verifier/verify@1.0.0";
+    static final String IFACE = "aprv:verifier/verify@0.1.0";
 
     /** Each export's WIT parameters, in order: 'w' u32, 'd' u64, 'b' list&lt;u8&gt;. */
     static final Map<String, String> SIGNATURES =
@@ -60,7 +60,7 @@ final class EndiveGuest implements Guest {
         // goes into a guest buffer from cabi_realloc, and (ptr, len) into the
         // return area. Endive checks every guest address it writes.
         HostFunction randomGet = new HostFunction(
-                "aprv:verifier/host@1.0.0",
+                "aprv:verifier/host@0.1.0",
                 "random-get",
                 FunctionType.of(List.of(ValType.I32, ValType.I32), List.of()),
                 (inst, args) -> {

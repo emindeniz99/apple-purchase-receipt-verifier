@@ -18,8 +18,8 @@ module ApplePurchaseReceiptVerifier
   class Runtime
     # The interface package the wrapper is built for. The version is the
     # ABI version: a module of another version has no such exports.
-    ABI = "aprv:verifier/verify@1.0.0"
-    HOST = "aprv:verifier/host@1.0.0"
+    ABI = "aprv:verifier/verify@0.1.0"
+    HOST = "aprv:verifier/host@0.1.0"
     RANDOM_GET = "random-get"
 
     # The four operations of the WIT interface.

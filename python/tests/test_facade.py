@@ -1,6 +1,6 @@
 """The wrapper's own behaviour, over the WAT test double (``double.wat``): the
 six outcomes kept apart, trap recovery, the clock and the environment, the
-pool. The double speaks ABI 1.0.0 and verifies nothing, so these tests hold
+pool. The double speaks ABI 0.1.0 and verifies nothing, so these tests hold
 whatever module the package carries: they exercise the host code, and the
 verdicts are the module's own business (test_conformance.py, test_abi.py)."""
 
@@ -185,12 +185,12 @@ class AbiMismatchTest(unittest.TestCase):
         Verifier.__new__(Verifier)._setup(Config.create(roots=[ROOT]), lambda: runtime)
 
     def test_a_module_of_another_abi_version_is_refused(self) -> None:
-        wasm = double_wat({"verify@1.0.0#init": "verify@2.0.0#init"})
+        wasm = double_wat({"verify@0.1.0#init": "verify@2.0.0#init"})
         with self.assertRaises(RuntimeError) as caught:
             self.create(wasm)
         self.assertIsInstance(caught.exception, _host.AbiMismatchError)
         message = str(caught.exception)
-        self.assertIn("ABI 1.0.0", message)
+        self.assertIn("ABI 0.1.0", message)
         self.assertIn("aprv:verifier/verify@2.0.0#init", message, "names the exports it has")
 
     def test_a_module_that_imports_anything_else_is_refused(self) -> None:

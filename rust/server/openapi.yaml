@@ -5,7 +5,7 @@ info:
   description: |
     The HTTP interface of `aprv serve`. Each verification route runs one
     operation of the aprv.wasm component (the WIT interface
-    `aprv:verifier/verify@1.0.0`) on the request body, unchanged, and
+    `aprv:verifier/verify@0.1.0`) on the request body, unchanged, and
     answers HTTP 200 with the component's JSON, byte for byte, whether the
     input verified or not. Every other answer is an RFC 9457 problem
     (`application/problem+json`) with a `code` member.
@@ -323,7 +323,7 @@ components:
       properties:
         abi:
           type: string
-          const: aprv:verifier@1.0.0
+          const: aprv:verifier@0.1.0
         component_sha256:
           type: string
           pattern: '^[0-9a-f]{64}$'

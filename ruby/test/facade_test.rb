@@ -146,7 +146,7 @@ class FacadeTest < Minitest::Test
   def test_a_module_of_another_abi_version_fails_at_create_naming_both_versions
     other = APRV::Runtime.new(FakeModule.wat(abi: "2.0.0"))
     error = assert_raises(APRV::AbiMismatchError) { verifier(runtime: other) }
-    assert_includes error.message, "aprv:verifier/verify@1.0.0"
+    assert_includes error.message, "aprv:verifier/verify@0.1.0"
     assert_includes error.message, "aprv:verifier/verify@2.0.0#init"
   end
 

@@ -15,9 +15,9 @@ use wasmtime::component::{Component, HasSelf};
 use wasmtime::{Caller, Config, Engine, Instance, Linker, Memory, Module, Result, Store, Trap};
 
 /// The interface's export names carry the ABI version.
-pub const IFACE: &str = "aprv:verifier/verify@1.0.0";
+pub const IFACE: &str = "aprv:verifier/verify@0.1.0";
 /// The module's one import.
-pub const HOST: &str = "aprv:verifier/host@1.0.0";
+pub const HOST: &str = "aprv:verifier/host@0.1.0";
 
 fn path_of(var: &str) -> String {
     std::env::var(var).unwrap_or_else(|_| {

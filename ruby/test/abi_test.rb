@@ -139,7 +139,7 @@ class AbiTest < Minitest::Test
 
   def test_the_module_imports_only_random_get
     imports = runtime.wasm_module.imports.map { |i| [i["module"], i["name"]] }
-    assert_equal [["aprv:verifier/host@1.0.0", "random-get"]], imports
+    assert_equal [["aprv:verifier/host@0.1.0", "random-get"]], imports
   end
 
   def test_the_module_exports_the_interface_at_the_version_the_wrapper_binds

@@ -59,7 +59,7 @@ struct AprvModule: Sendable {
     }
 
     /// Parses `bytes` and refuses a module this package would misread: it
-    /// may import only random-get, and must export the four @1.0.0
+    /// may import only random-get, and must export the four @0.1.0
     /// operations, their post-return functions, cabi_realloc and its memory,
     /// with the core signatures the canonical ABI gives them.
     static func load(_ bytes: [UInt8], engine: EngineConfiguration = configuration) throws(HostError) -> AprvModule {
@@ -75,7 +75,7 @@ struct AprvModule: Sendable {
                 Int(index) < module.types.count, module.types[Int(index)] == randomGet
             else {
                 throw .abiMismatch(
-                    "aprv.wasm imports \(entry.module) \(entry.name); this package binds aprv:verifier@1.0.0, "
+                    "aprv.wasm imports \(entry.module) \(entry.name); this package binds aprv:verifier@0.1.0, "
                         + "whose module imports only \(Abi.host) random-get")
             }
         }
@@ -103,7 +103,7 @@ struct AprvModule: Sendable {
             else {
                 throw .abiMismatch(
                     "aprv.wasm does not export \(name) with the signature this package binds "
-                        + "(aprv:verifier@1.0.0); the module exports [\(have)]")
+                        + "(aprv:verifier@0.1.0); the module exports [\(have)]")
             }
         }
         try want("cabi_realloc", [.i32, .i32, .i32, .i32], [.i32])

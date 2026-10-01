@@ -6,7 +6,7 @@
 ;; Used by src/tests.rs (in process) and scripts/hostile-smoke.sh (a real
 ;; server process). Component text format; wasm-tools parse builds it.
 (component
-  (import "aprv:verifier/host@1.0.0" (instance $host
+  (import "aprv:verifier/host@0.1.0" (instance $host
     (export "random-get" (func (param "len" u32) (result (list u8))))))
   (core module $libc
     (memory (export "memory") 1)
@@ -58,4 +58,4 @@
     (export "verify-receipt" (func $verify-receipt))
     (export "verify-signed-data" (func $verify-signed-data))
     (export "verify-receipt-endpoint" (func $verify-receipt-endpoint)))
-  (export "aprv:verifier/verify@1.0.0" (instance $verify)))
+  (export "aprv:verifier/verify@0.1.0" (instance $verify)))

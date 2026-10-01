@@ -111,7 +111,7 @@ module ApplePurchaseReceiptVerifier
   end
 
   # The wasm module this gem carries does not speak the ABI this wrapper was
-  # built for: it lacks the `aprv:verifier/verify@1.0.0` exports, imports
+  # built for: it lacks the `aprv:verifier/verify@0.1.0` exports, imports
   # something other than `random-get`, or is not a valid module. Raised by
   # {Verifier.create}, never answered as a verdict; the message names the
   # version the wrapper expects and the exports the module has.
