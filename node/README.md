@@ -131,11 +131,12 @@ const pinned = createConfig({
 A root is the certificate's DER, as a `Uint8Array` (a `Buffer` is one).
 Apple's PKI page publishes its roots as `.cer` files, which are DER, so
 `readFileSync('AppleRootCA-G3.cer')` is a root as it stands. A PEM string is
-a `TypeError` that names the fix: in Node, `new X509Certificate(pem).raw`
-from `node:crypto` is the DER. Browsers and workerd have no
-`X509Certificate`: base64-decode the text between the PEM's `BEGIN` and
-`END` lines yourself (`Uint8Array.from(atob(body), (c) => c.charCodeAt(0))`
-once its line breaks are removed). Both entry points take the same roots.
+a `TypeError` that points here. Convert it first: in Node,
+`new X509Certificate(pem).raw` from `node:crypto` is the DER. Browsers and
+workerd have no `X509Certificate`: base64-decode the text between the PEM's
+`BEGIN` and `END` lines yourself
+(`Uint8Array.from(atob(body), (c) => c.charCodeAt(0))` once its line breaks
+are removed). Both entry points take the same roots.
 
 `config.roots` is the DER of each root you passed, or `null` for Apple's
 roots, which are compiled into the module: the package ships no certificate

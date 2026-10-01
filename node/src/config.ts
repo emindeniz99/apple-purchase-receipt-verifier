@@ -12,10 +12,7 @@
  * DER bytes, and a root the module cannot read fails `createVerifier`.
  */
 
-/**
- * A trust root: the certificate's DER bytes. A PEM string is not accepted;
- * in Node, `new X509Certificate(pem).raw` from `node:crypto` is its DER.
- */
+/** A trust root: the certificate's DER bytes. A PEM string is refused. */
 export type RootInput = Uint8Array;
 
 export interface Config {
@@ -34,22 +31,14 @@ export interface CreateConfigOptions {
   readonly clock?: () => number;
 }
 
-/**
- * The `TypeError` for a string root. It names the fix, which is why
- * test/no-logic.test.js lets this one literal name `node:crypto`.
- */
-const PEM_ROOT_MESSAGE =
-  'a trust root must be the DER bytes of a certificate, not a string: for a PEM certificate, pass new X509Certificate(pem).raw (X509Certificate is in node:crypto), or base64-decode the text between its BEGIN and END lines';
-
 function toDer(root: RootInput): Uint8Array {
-  if (typeof root === 'string') {
-    throw new TypeError(PEM_ROOT_MESSAGE);
+  if (!(root instanceof Uint8Array)) {
+    throw new TypeError(
+      "a trust root must be a Uint8Array of DER; convert a PEM certificate with your platform's X.509 library first (see README, custom roots)",
+    );
   }
-  if (root instanceof Uint8Array) {
-    // A copy, so a caller's later write to their buffer changes nothing here.
-    return new Uint8Array(root);
-  }
-  throw new TypeError('a trust root must be a Uint8Array of DER');
+  // A copy, so a caller's later write to their buffer changes nothing here.
+  return new Uint8Array(root);
 }
 
 function normalizeRoots(roots: readonly RootInput[]): readonly Uint8Array[] {

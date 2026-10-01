@@ -116,23 +116,23 @@ test('createConfig copies DER roots', () => {
   assert.throws(() => node.createConfig({ roots: [42] }), TypeError);
 });
 
-// Roots are DER in every package (DECISIONS.md R38). A PEM string is refused
-// with a message that names the one-line fix, rather than unwrapped here.
-test('createConfig refuses a PEM string root and names the DER it wants', async () => {
+// Roots are DER in every package (DECISIONS.md R39). A PEM string is refused
+// with a message that points at the README's conversion, rather than unwrapped here.
+test('createConfig refuses a PEM string root and points at the conversion', async () => {
   const der = new Uint8Array(
     readFileSync(fileURLToPath(new URL('../../certs/AppleRootCA-G3.cer', import.meta.url))),
   );
   const pem = `-----BEGIN CERTIFICATE-----\n${Buffer.from(der)
     .toString('base64')
     .replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----\n`;
-  const fix = /new X509Certificate\(pem\)\.raw \(X509Certificate is in node:crypto\)/;
+  const fix = /Uint8Array of DER; convert a PEM certificate .* first \(see README, custom roots\)/;
   assert.throws(() => node.createConfig({ roots: [pem] }), { name: 'TypeError', message: fix });
   assert.throws(() => node.createConfig({ roots: [der, 'not a certificate'] }), {
     name: 'TypeError',
     message: fix,
   });
   await assert.rejects(web.createConfig({ roots: [pem] }), { name: 'TypeError', message: fix });
-  // The fix it names works: X509Certificate's raw bytes are the same DER.
+  // The README's conversion works: X509Certificate's raw bytes are the same DER.
   assert.deepEqual(node.createConfig({ roots: [new X509Certificate(pem).raw] }).roots, [der]);
 });
 

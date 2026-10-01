@@ -65,17 +65,10 @@ test('no facade source parses, hashes, verifies or trusts anything itself', () =
     /\bprocess\.env\b/,
     /asn1|\bDER\b reader|\bparseCertificate\b|\bcms\b/i,
   ];
-  // The one exemption: config.ts's error for a PEM string root names the
-  // node:crypto call that turns PEM into DER. It is the literal on the
-  // line after `const PEM_ROOT_MESSAGE =`, and only that line is dropped.
-  const pemMessage = /^(const PEM_ROOT_MESSAGE =\n)\s*'[^'\n]*';$/m;
   for (const file of SOURCES) {
-    let text = readFileSync(here(file), 'utf8');
-    if (file === 'src/config.ts') {
-      assert.match(text, pemMessage, 'the PEM root message the exemption names');
-      text = text.replace(pemMessage, '$1');
-    }
-    text = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    const text = readFileSync(here(file), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
     for (const re of forbidden) {
       // The fetch loader is the one place fetch belongs: it loads the
       // package's own .wasm files.
