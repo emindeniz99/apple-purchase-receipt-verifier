@@ -96,7 +96,7 @@ mvn -B -f java-wasm/pom.xml verify -Daprv.server.linux-x86_64="$APRV_BIN"
 # Node (Node 20+): builds with jco and tsc, then the node:test suite
 npm ci --ignore-scripts --prefix node && npm test --prefix node
 
-# Go (1.22+)
+# Go (1.25+)
 go -C go test ./...
 
 # Python (3.10+)
@@ -176,8 +176,8 @@ vulnerability ([SECURITY.md](./SECURITY.md)).
 CI runs the suites on every supported runtime line
 ([SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md)). The floors are claims we
 test, not decoration: `@types/node` stays on 20, JUnit stays on 5.x and
-wazero stays below 1.10 on purpose — see the rationale comments in
-`.github/dependabot.yml` before "upgrading" them.
+`golang.org/x/sys` stays below v0.48 (Go 1.26) on purpose — see the
+rationale comments in `.github/dependabot.yml` before "upgrading" them.
 
 ## Making a behaviour change
 

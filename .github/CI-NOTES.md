@@ -139,8 +139,8 @@ and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   and `rust/server` with `rust/bindings/abi/tests` as one cargo entry
   (their exact wasmtime pins move together). It ignores `openssl-sys`
   (vendored and patched), `openssl-src` majors, `wit-bindgen` (moves with
-  the toolchain's CLI) and wazero `>= 1.10` (each raises Go's 1.22
-  floor).
+  the toolchain's CLI) and `golang.org/x/sys` `>= 0.48.0` (each raises
+  Go's 1.25 floor).
 
 ## Why the smoke jobs fetch the tag themselves
 

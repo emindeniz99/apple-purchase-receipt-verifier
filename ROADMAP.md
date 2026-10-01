@@ -36,7 +36,7 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    forces it. Go moves to 1.25 for wazero 1.12; the other floors stay
    (R30, SUPPORT-MATRIX.md).
 4. **Dependencies.** One sweep pull request to the newest versions the
-   floors allow, then Dependabot weekly. The sweep is in flight.
+   floors allow, then Dependabot weekly. The sweep is #204.
 5. **API.** The 0.7 shape stays in all nine packages; Java keeps
    `runtimeProbe`; roots keep the native certificate type in Java, .NET
    and Go and are bytes elsewhere; Java's `Environment.value()` becomes
@@ -105,9 +105,10 @@ implementation stays beside it (PLAN.md D17 to D30,
 [docs/rust-core/](./docs/rust-core/README.md)). #187 merged it into `main`
 on 2026-09-29 (b96f14e). #200, the CI fix the release pull request #182
 waited for, merged on 2026-09-30 (86ff162) and refreshed #182. From the
-decisions above, two pull requests are in flight (the dependency sweep
-and the removal of Java's imitation rules), and two changes are decided
-(the WIT version rename, R36, and Go's floor, R30). What is still open
+decisions above, the removal of Java's imitation rules merged on
+2026-10-01 (#203, 4bb529e) and the dependency sweep is #204, which also
+moves Go's floor (R30); the WIT version rename (R36) is decided and not
+yet made. What is still open
 from the migration:
 
 - **The nightly `java-differential` job failed on `main`** at b96f14e
@@ -213,13 +214,13 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   split) and Rust 1.74 to 1.85 (#91, a plain `cargo update` locked
   edition-2024 crates the floor could not parse). Held on purpose: Java 8
   (enterprise consumers, PLAN D2; JUnit 6 is test-only and stays ignored),
-  Node 20 (next candidate, see below), Go 1.22 (wazero stays on v1.9.0,
-  the newest release that builds on it). Moved in 0.8.0 because a runtime
+  Node 20 (next candidate, see below). Moved in 0.8.0 because a runtime
   required it: Swift 6.1 to 6.3 with macOS 15 and iOS 18, WasmKit's floors
-  (PLAN.md D25). **Restated 2026-09-30:** a floor moves only when a
-  dependency, a security fix or CI forces it. Go moves from 1.22 to 1.25
-  because wazero 1.12 needs it; Node 20, Python 3.10, PHP 8.2, Ruby 3.3,
-  .NET 8, Swift 6.3 and Java 8 stay (docs/rust-core/DECISIONS.md R30).
+  (PLAN.md D25); Go 1.22 to 1.25 for wazero 1.12 (owner decision,
+  2026-09-30; the `go` matrix drops its 1.22 to 1.24 legs). **Restated
+  2026-09-30:** a floor moves only when a dependency, a security fix or CI
+  forces it. Node 20, Python 3.10, PHP 8.2, Ruby 3.3, .NET 8, Swift 6.3 and
+  Java 8 stay (docs/rust-core/DECISIONS.md R30).
 - **Model the receipt attributes Apple's verifyReceipt echoes and we held
   as raw bytes** — done ✅ (2026-09-21, measured against Apple's own answer
   for a genuine production receipt, which stays out of the repository):

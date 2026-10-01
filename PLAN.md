@@ -350,6 +350,7 @@ rejected alternatives with their measured reasons.
   iOS 18 (raised from 6.1 and macOS 13, because WasmKit declares them),
   Ruby 3.3, .NET netstandard2.0 tested on .NET 8 and later, Node 20, Go
   1.22 (wazero v1.9.0 is the newest release that builds on it), PHP 8.2.
+  Go moved to 1.25 on 2026-09-30 (owner), because wazero 1.12 needs it.
   The Java 8 CI legs move from Temurin to Zulu or Corretto before Temurin
   8 builds end. SUPPORT-MATRIX.md lists what each floor rests on.
 - **D26 — The isolation invariant** (owner, 2026-09-28; R32). Every

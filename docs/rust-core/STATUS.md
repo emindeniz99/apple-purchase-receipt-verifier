@@ -158,10 +158,11 @@ On `main`:
 - Lane Node: the Bun WASI `random_get` bug is fixed in Bun 1.4.0; nothing
   to file. It never affected the package (no WASI import).
 - Lane Go: wazero v1.9.0, not 1.12, because 1.12 needs Go 1.25 and R30
-  keeps the floor at Go 1.22 unless wazero forces it; an A/B showed equal
-  speed. Dependabot must ignore wazero at or above 1.10.0 (the "floors
-  are tested claims" pattern). Owner may prefer the newer runtime for its
-  fixes at the cost of the floor.
+  kept the floor at Go 1.22 unless wazero forces it; an A/B showed equal
+  speed. Dependabot ignored wazero at or above 1.10.0 (the "floors are
+  tested claims" pattern). The owner took the newer runtime on
+  2026-09-30: #204 moves the floor to 1.25 and wazero to 1.12, and the
+  rule now ignores `golang.org/x/sys` 0.48 and later (Go 1.26).
 - Cross-host decision (orchestrator, from Go's report): a `Failure`'s
   cause is set only when `INTERNAL_ERROR` comes from the wrapper (a trap,
   an unreadable answer, the clock), never for the module's verdicts

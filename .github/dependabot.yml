@@ -66,6 +66,21 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # The Spring Boot smoke is a standalone pom too. Its spring-boot.version
+  # is the oldest supported Boot line and ci.yml's matrix names every line,
+  # so only patch releases of the BOM are proposed here; a new Boot line is
+  # a matrix change (SUPPORT-MATRIX.md rule 4).
+  - package-ecosystem: maven
+    directory: /java/samples/spring-boot-smoke
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "org.springframework.boot:spring-boot-dependencies"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # The library under test: CI sets its version from java/pom.xml.
+      - dependency-name: "io.github.emindeniz99:*"
   # java-wasm (the -wasm artifact: Endive and the aprv-server engine) is a
   # fourth standalone pom. The JUnit floor above applies here too: its
   # java-wasm-runtime-8 job runs the suite on a real Java 8 JVM.
@@ -137,11 +152,14 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # The go.mod floor (Go 1.22) is a tested claim: wazero 1.10 needs Go
-      # 1.23, 1.11 needs 1.24 and 1.12 needs 1.25. Raise the floor first,
-      # deliberately, then drop this rule (go/CI-NOTES.md).
-      - dependency-name: github.com/tetratelabs/wazero
-        versions: [">=1.10.0"]
+      # The go.mod floor (Go 1.25, set by wazero 1.12) is a tested claim.
+      # wazero's one requirement, golang.org/x/sys, raised its own go
+      # directive to 1.26 in v0.48.0, so taking it would move the floor
+      # again. Raise the floor first, deliberately, then drop this rule
+      # (go/CI-NOTES.md). A wazero release that needs a newer Go fails the
+      # go job's 1.25 leg rather than slipping through.
+      - dependency-name: golang.org/x/sys
+        versions: [">=0.48.0"]
   - package-ecosystem: gomod
     directory: /go/tools
     schedule:
@@ -184,14 +202,16 @@ updates:
       # so its exact pin moves only together with the wit-bindgen CLI in
       # tools/wasm-toolchain.sh (rust/bindings/CI-NOTES.md).
       - dependency-name: wit-bindgen
-  # The server and the ABI tests pin the same Wasmtime exactly: the ABI is
-  # tested on the runtime the server ships, so the group moves both in one
-  # pull request. rust/server is outside the rust/ workspace, with its own
-  # lockfile, and so is rust/bindings/abi/tests.
+  # The server, the ABI tests and the abi-call fuzz target pin the same
+  # Wasmtime exactly: the ABI is tested on the runtime the server ships, so
+  # the group moves all three in one pull request. rust/server is outside
+  # the rust/ workspace, with its own lockfile, and so are
+  # rust/bindings/abi/tests and rust/fuzz/abi.
   - package-ecosystem: cargo
     directories:
       - /rust/server
       - /rust/bindings/abi/tests
+      - /rust/fuzz/abi
     schedule:
       interval: weekly
     cooldown:
@@ -214,6 +234,15 @@ updates:
   # analogue here.
   - package-ecosystem: composer
     directory: /php
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  # The root composer.json is the manifest Packagist reads (BOOTSTRAP.md,
+  # layout A). It has no lockfile and one runtime requirement, psr/clock;
+  # this entry keeps that constraint watched like php/'s.
+  - package-ecosystem: composer
+    directory: /
     schedule:
       interval: weekly
     cooldown:

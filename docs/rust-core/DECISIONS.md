@@ -828,15 +828,16 @@ Ruby 3.3; .NET netstandard2.0, tested on net8+; Node 20; Go as today; PHP
 8.2. SUPPORT-MATRIX.md lists what each floor rests on. Two moves against
 0.7.0: Swift from 6.1 and macOS 13 to 6.3 and macOS 15, because WasmKit
 0.4.0 declares them ([Swift WasmKit][swift]); and the Java 8 CI leg moves
-from Temurin to Zulu or Corretto before Temurin 8 builds end.
+from Temurin to Zulu or Corretto before Temurin 8 builds end. Go moved
+from 1.22 to 1.25 on 2026-09-30 (owner), because wazero 1.12 needs it.
 
 **2026-09-30 (owner).** A floor moves only when a dependency, a security
 fix or CI forces it; a new language line or a vendor's end of support
 does not move it. Go moves from 1.22 to 1.25, because wazero 1.12 needs
 1.25 and the 1.22 floor held wazero at 1.9.0. Node 20, Python 3.10, PHP
 8.2, Ruby 3.3, .NET 8 (netstandard2.0), Swift 6.3 and Java 8 stay. The
-Go change (the `go` directive, wazero and the CI legs) lands in its own
-pull request; until then the tree still declares 1.22.
+Go change (the `go` directive, wazero and the CI legs) landed with the
+dependency sweep (#204).
 
 ---
 

@@ -9,6 +9,8 @@ secret.
 - `go/go.mod` now has one requirement, `github.com/tetratelabs/wazero
   v1.9.0`, and a `go.sum`. The directive reads `go 1.22.0`, not `go 1.22`,
   because wazero v1.9.0's own `go.mod` does; the floor is still Go 1.22.
+  (Written for 0.8.0; #204 moved to wazero v1.12.0 and `go 1.25.0`, with
+  `golang.org/x/sys` as the one indirect requirement. See "The floor".)
   `GOFLAGS=-mod=readonly` in the `go` job works, since `go.sum` is committed.
 - `go/internal/wasm/aprv.wasm` is git-ignored until integration: CI copies the module into place before building, since `//go:embed` needs it present. `aprv.wasm.sha256` is committed.
 - `go/internal/wasm/aprv.wasm` and `aprv.wasm.sha256` are the embedded
@@ -28,7 +30,7 @@ secret.
 
 | Job | Change |
 |---|---|
-| `go` (matrix `1.22` to `1.27`, `GOTOOLCHAIN=local`) | none to the command (`go test ./...`). Each leg downloads wazero once; give the job a module cache. Expect about 30 s per leg on 4 cores. The `1.22` leg is the floor claim: it builds wazero v1.9.0 on the oldest toolchain. |
+| `go` (matrix `1.25` to `1.27` since #204, `GOTOOLCHAIN=local`) | none to the command (`go test ./...`). Each leg downloads wazero once; give the job a module cache. Expect about 30 s per leg on 4 cores. The first leg is the floor claim: it builds wazero v1.12.0 on the oldest toolchain. |
 | `go-race` | `go test -race -count=2 ./...` as today. Slow: the host tests alone take about 80 s under `-race` on 4 shared cores, the root package several times that. Raise `timeout-minutes` to 40. |
 | `go-platforms` | keep macOS and Windows on Go 1.27 with `go test ./...`. Add `CGO_ENABLED=0` to both. wazero's compiler runs on both; no leg-specific code. |
 | `go-cross` (new) | `CGO_ENABLED=0 GOOS=<os> GOARCH=<arch> go build ./... && go vet ./...` for `darwin/amd64`, `darwin/arm64`, `windows/amd64`, `linux/arm64`. All four pass on this lane (Go 1.24.7). Add `linux/386` if 32-bit is claimed: it builds too, but wazero runs it on its interpreter, and the 256 MiB memory limit is a 32-bit hazard nobody has measured. |
@@ -39,7 +41,7 @@ secret.
 | `wasm-copies` | for Go: `cd go/internal/wasm && sha256sum -c aprv.wasm.sha256`, and the hash in that file must equal the release build's `aprv.wasm` SHA-256 (`test "$(cut -d' ' -f1 aprv.wasm.sha256)" = "$BUILD_SHA256"`). The package also checks the pair when it loads, so a copy swapped without its hash file fails every test on import. `release-please.yml` must refresh **both files together** on the release branch. |
 | `one-implementation` | the grep gate must allow, in `go/`: `crypto/x509` in `config.go`, `roots.go`, `verifier.go` (the Config's trust-anchor type and `.Raw`; nothing is parsed or checked there); `crypto/sha256` and `encoding/hex` in `roots.go` and `internal/wasm/wasm.go` (pinning the roots and the module); `encoding/base64` in `verifier.go` and `receiptpayload.go` (init's roots, the wire's bytes fields). `x509.ParseCertificate` appears only in `roots.go`, which Phase 7 deletes with `go/roots/`. `apisurface_test.go` (`TestLibraryHoldsNoVerificationLogic`, `TestOnlyTheRootsAreEverParsedAsCertificates`) holds the same lines in Go and fails on a new import, so keep the two in step. |
 | post-publish `smoke-go` | the smoke module resolves `go/vX.Y.Z` from the proxy on the floor toolchain with `GOTOOLCHAIN=local`. It now downloads wazero too, so it needs `go mod tidy` (or `go get`) in the scratch module and a `go.sum`, and `GOFLAGS=-mod=mod` or an explicit `go mod download`. Keep the assertion that `DefaultConfig().Roots()` returns three certificates, and add one genuine receipt verifying through the embedded module. |
-| `dependabot.yml` `/go` | wazero v1.10 needs Go 1.23, v1.11 needs 1.24 and v1.12 needs 1.25. To keep the floor at 1.22, ignore wazero versions `>= 1.10.0` (the floors-are-claims rule in CLAUDE.md); raising the floor is a deliberate `feat`, not a bump. wazero v1.9.0 and v1.12.0 measured the same speed here (5.0 and 5.6 ms per receipt, within noise on a loaded machine). |
+| `dependabot.yml` `/go` | wazero v1.10 needs Go 1.23, v1.11 needs 1.24 and v1.12 needs 1.25. Until #204 the floor stayed at 1.22 and wazero `>= 1.10.0` was ignored (the floors-are-claims rule in CLAUDE.md); raising the floor is a deliberate `feat`, not a bump, and #204 was that `feat`. The rule now ignores `golang.org/x/sys >= 0.48.0`, which needs Go 1.26. wazero v1.9.0 and v1.12.0 measured the same speed here (5.0 and 5.6 ms per receipt, within noise on a loaded machine). |
 
 ## The corpus parity gate
 
@@ -74,9 +76,11 @@ for byte; the typed reading in `receiptFromJSON` and `readResult` is what the
 
 ## The floor
 
-`go 1.22.0` in `go.mod`, wazero v1.9.0. Raising wazero raises the floor
-(v1.10: 1.23, v1.11: 1.24, v1.12: 1.25), and the `go` matrix would then start
-at the new floor. The Go module is published from a `go/v*` tag: never move
+`go 1.25.0` in `go.mod`, wazero v1.12.0, which set it: the floor was Go
+1.22 with wazero v1.9.0 until wazero 1.12 was taken (v1.10 needs 1.23, v1.11
+1.24, v1.12 1.25). The `go` matrix starts at the floor. wazero 1.11 and later
+require `golang.org/x/sys`, held at the newest release whose own `go`
+directive the floor still meets (v0.47.0; v0.48.0 needs Go 1.26). The Go module is published from a `go/v*` tag: never move
 or delete one; a bad release is fixed forward with `retract`.
 
 ## Phase 7

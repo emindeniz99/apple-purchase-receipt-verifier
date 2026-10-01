@@ -20,7 +20,7 @@ validating the certificate chain against pinned Apple root CAs.
 One Rust core does the verification. It is compiled to one WebAssembly
 module, `aprv.wasm`, and packages for nine languages run it: **Java**
 (8+), **Node** (20+, zero runtime deps), **Python** (3.10+), **Swift**
-(6.3+), **Go** (1.22+), **Ruby** (3.3+), **Rust** (1.85+), **PHP** (8.2+)
+(6.3+), **Go** (1.25+), **Ruby** (3.3+), **Rust** (1.85+), **PHP** (8.2+)
 and **.NET** (netstandard2.0, tested on .NET 8 and later). Java also keeps
 its own, independent implementation over BouncyCastle, maintained beside
 the core as a second opinion on every verdict. **`aprv-server`** runs the
