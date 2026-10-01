@@ -5,6 +5,7 @@
 // oxlint-disable no-await-in-loop -- two entry points, one after the other, so a failure names its entry point
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { X509Certificate } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as node from '../dist/index.js';
@@ -107,16 +108,32 @@ test('defaultConfig() names no roots: Apple roots are pinned inside the module',
   assert.ok(Object.isFrozen(config));
 });
 
-test('createConfig copies DER roots and unwraps PEM ones', () => {
+test('createConfig copies DER roots', () => {
   const der = new Uint8Array(gen('receipt-root.der'));
+  const config = node.createConfig({ roots: [der, Buffer.from(der)] });
+  assert.deepEqual(config.roots, [der, der]);
+  assert.notEqual(config.roots[0], der, 'the caller keeps their buffer; the config holds a copy');
+  assert.throws(() => node.createConfig({ roots: [42] }), TypeError);
+});
+
+// Roots are DER in every package (DECISIONS.md R38). A PEM string is refused
+// with a message that names the one-line fix, rather than unwrapped here.
+test('createConfig refuses a PEM string root and names the DER it wants', async () => {
+  const der = new Uint8Array(
+    readFileSync(fileURLToPath(new URL('../../certs/AppleRootCA-G3.cer', import.meta.url))),
+  );
   const pem = `-----BEGIN CERTIFICATE-----\n${Buffer.from(der)
     .toString('base64')
     .replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----\n`;
-  const config = node.createConfig({ roots: [der, pem] });
-  assert.deepEqual(config.roots, [der, der]);
-  assert.notEqual(config.roots[0], der, 'the caller keeps their buffer; the config holds a copy');
-  assert.throws(() => node.createConfig({ roots: ['not a certificate'] }), TypeError);
-  assert.throws(() => node.createConfig({ roots: [42] }), TypeError);
+  const fix = /new X509Certificate\(pem\)\.raw \(X509Certificate is in node:crypto\)/;
+  assert.throws(() => node.createConfig({ roots: [pem] }), { name: 'TypeError', message: fix });
+  assert.throws(() => node.createConfig({ roots: [der, 'not a certificate'] }), {
+    name: 'TypeError',
+    message: fix,
+  });
+  await assert.rejects(web.createConfig({ roots: [pem] }), { name: 'TypeError', message: fix });
+  // The fix it names works: X509Certificate's raw bytes are the same DER.
+  assert.deepEqual(node.createConfig({ roots: [new X509Certificate(pem).raw] }).roots, [der]);
 });
 
 test('createReceiptPayload and friends build what a caller mocks with', () => {
