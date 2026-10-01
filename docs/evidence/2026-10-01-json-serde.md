@@ -110,3 +110,7 @@ has no `oneOf` form, so its case needs a schema addition. Java keeps
 Built on main after the jiff change (R38), the module went from 2,813,436
 to 2,807,151 bytes (gzip -9: 930,272 to 929,641), with no new lockfile
 package.
+The merged code parses `signedDate` from its raw text with the reference
+conversion (an integer must fit an `i64`; a fraction or an exponent is
+truncated within that range; anything else is no instant), so the
+"integer outside `i64`" row above describes the prototype, not the core.

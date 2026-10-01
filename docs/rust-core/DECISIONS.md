@@ -438,6 +438,7 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` (`BoundedJson`: nesting 64, names 50,000, numbers 1,000) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
   | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":21002}` | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
+  | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -1180,11 +1181,13 @@ left open in ROADMAP.md.
   commas, leading zeros, `+`, `NaN`, unescaped control characters, escapes
   RFC 8259 does not define, a byte order mark, bytes that are not UTF-8,
   and anything but whitespace after a JWS object. A duplicate name keeps
-  its last value. Two readings changed beside the bounds: a lone surrogate
-  escape is refused in a name or in a value the core reads (the old reader
-  made it U+FFFD), and an integer past `u64` as `signedDate` is read as a
-  double and clamped (the old reader said "no instant"). No shared case
-  reaches either.
+  its last value. `signedDate` keeps the reference conversion from its
+  raw text: an integer must fit an `i64`, a number with a fraction or an
+  exponent is truncated within that range, and anything else, an integer
+  past `i64` included, is no instant, so the clock stands in. One reading
+  changed beside the bounds: a lone surrogate escape is refused in a name
+  or in a value the core reads, where the old reader made it U+FFFD and
+  Jackson keeps it (R20 row). No shared case reaches it.
 - The bounds the core no longer has, and why that is acceptable: the
   input caps (3,145,728 bytes for a body, 262,144 for a JWS) already bound
   the work, and the three bounds prevented no blow-up. Measured natively
