@@ -637,9 +637,10 @@ objects (anything answering `#to_der`, such as an OpenSSL certificate) or
 DER strings, and `Config#roots` returns them as DER. Apple's PKI page
 publishes its roots as `.cer` files, which are DER, so
 `File.binread("AppleRootCA-G3.cer")` is a root as it stands. A PEM string is
-refused with an `ArgumentError` that names the fix: pass
-`OpenSSL::X509::Certificate.new(pem)` instead. Whether a root is a
-certificate is the module's to say, at `Verifier.create`.
+refused with an `ArgumentError` that points here. Convert it first:
+`OpenSSL::X509::Certificate.new(pem).to_der` is the DER, and the certificate
+object itself works too. Whether a root is a certificate is the module's to
+say, at `Verifier.create`.
 
 ## Performance
 

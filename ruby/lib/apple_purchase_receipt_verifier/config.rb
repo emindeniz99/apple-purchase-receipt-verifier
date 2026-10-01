@@ -75,12 +75,6 @@ module ApplePurchaseReceiptVerifier
 
     private
 
-    # The ArgumentError for a PEM String root. It names the fix, which is
-    # why the one-implementation gate and api_shape_test.rb let this one
-    # literal name the openssl gem.
-    PEM_ROOT_MESSAGE = "a PEM String is not a root: pass OpenSSL::X509::Certificate.new(pem) instead"
-    private_constant :PEM_ROOT_MESSAGE
-
     def none
       empty = [] #: Array[String]
       empty.freeze
@@ -94,8 +88,8 @@ module ApplePurchaseReceiptVerifier
 
     # The bytes the module is given for one root: a certificate object's
     # DER, or a DER String as given. Roots are DER in every package
-    # (docs/rust-core/DECISIONS.md R38); a PEM String is recognised only to
-    # refuse it with the fix. Whether the bytes are a certificate is the
+    # (docs/rust-core/DECISIONS.md R39); a PEM String is recognised only to
+    # refuse it. Whether the bytes are a certificate is the
     # module's to say, at `init`.
     def der_of(root)
       return root.to_der.b.freeze if root.respond_to?(:to_der)
@@ -103,7 +97,11 @@ module ApplePurchaseReceiptVerifier
         raise ArgumentError,
               "roots entries must be certificate objects (#to_der) or DER Strings, got #{root.class}"
       end
-      raise ArgumentError, PEM_ROOT_MESSAGE if root.b.include?("-----BEGIN")
+      if root.b.include?("-----BEGIN")
+        raise ArgumentError,
+              "roots entries must be certificate objects (#to_der) or DER Strings; " \
+              "convert a PEM certificate first (see README)"
+      end
 
       root.b.freeze
     end

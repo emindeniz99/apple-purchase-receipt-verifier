@@ -101,18 +101,18 @@ class FacadeTest < Minitest::Test
     assert_equal [], APRV::Config.defaults.roots
   end
 
-  # Roots are DER in every package (docs/rust-core/DECISIONS.md R38). A PEM
-  # String is refused at Config.new with the fix in the message, not
+  # Roots are DER in every package (docs/rust-core/DECISIONS.md R39). A PEM
+  # String is refused at Config.new with a pointer to the README, not
   # unwrapped here and not passed on for the module to refuse at create.
-  def test_a_pem_string_root_is_refused_and_the_message_names_the_fix
+  def test_a_pem_string_root_is_refused_with_a_pointer_to_the_readme
     der = File.binread(File.join(TestSupport.repo_root, "certs", "AppleRootCA-G3.cer"))
     pem = "-----BEGIN CERTIFICATE-----\n#{[der].pack("m")}-----END CERTIFICATE-----\n"
     [pem, "junk before it\n#{pem}"].each do |root|
       error = assert_raises(ArgumentError) { APRV::Config.new(roots: [der, root]) }
-      assert_match(/not a root: pass OpenSSL::X509::Certificate\.new\(pem\) instead/, error.message)
+      assert_match(/DER Strings; convert a PEM certificate first \(see README\)/, error.message)
     end
     assert_raises(ArgumentError) { APRV::Config.builder.roots([pem]).build }
-    # The fix the message names works: the certificate object's DER is the root.
+    # The README's conversion works: the certificate object's DER is the root.
     assert_equal [der], APRV::Config.new(roots: [OpenSSL::X509::Certificate.new(pem)]).roots
   end
 

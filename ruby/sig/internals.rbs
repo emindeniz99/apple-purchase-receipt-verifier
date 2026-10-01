@@ -87,8 +87,6 @@ module ApplePurchaseReceiptVerifier
   end
 
   class Config
-    PEM_ROOT_MESSAGE: String
-
     private
 
     def none: () -> Array[String]

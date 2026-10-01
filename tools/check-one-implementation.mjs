@@ -20,8 +20,7 @@
 //
 // A language's `allow` list names, per file, the API tokens that file may
 // use and why (OD-04 in docs/rust-core/STATUS.md): a public type the 0.7
-// API carries DER in and out with, or an error message that names the
-// call a caller should make (R38), never a parse or a trust decision. An
+// API carries DER in and out with, never a parse or a trust decision. An
 // allowed token is removed from the line before the banned patterns are
 // applied, so anything else on that line, or the same token in any other
 // file, is still a hit. An entry whose file no longer uses its token is
@@ -76,9 +75,6 @@ const LANGS = {
     banned: [
       [/\bOpenSSL::|require\s*\(?\s*['"]openssl['"]/, 'OpenSSL'],
       [/require\s*\(?\s*['"](jwt|jose|json\/jwt)['"]/, 'a Ruby JWT library'],
-    ],
-    allow: [
-      { file: 'ruby/lib/apple_purchase_receipt_verifier/config.rb', token: /"a PEM String is not a root: pass OpenSSL::X509::Certificate\.new\(pem\) instead"/, why: 'the ArgumentError text for a PEM String root names the call that makes a certificate object of it; the library calls nothing in OpenSSL (R38)' },
     ],
   },
   dotnet: {
