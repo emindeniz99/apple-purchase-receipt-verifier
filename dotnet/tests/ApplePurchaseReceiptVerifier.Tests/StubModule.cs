@@ -28,7 +28,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// </remarks>
 internal sealed class StubModule
 {
-    private const string Iface = "aprv:verifier/verify@1.0.0#";
+    private const string Iface = "aprv:verifier/verify@0.1.0#";
     private const int AnswerBase = 1024;
     private const int AnswerStride = 4096;
     private const int NotUtf8 = AnswerBase + (4 * AnswerStride);
@@ -44,8 +44,8 @@ internal sealed class StubModule
     /// <summary>Extra WAT items placed in the module, such as another import (which must come first).</summary>
     internal string ExtraImports { get; set; } = string.Empty;
 
-    /// <summary>The version in the export names; the wrapper binds 1.0.0.</summary>
-    internal string Version { get; set; } = "1.0.0";
+    /// <summary>The version in the export names; the wrapper binds 0.1.0.</summary>
+    internal string Version { get; set; } = "0.1.0";
 
     /// <summary>An export to leave out, by its full name.</summary>
     internal string? DropExport { get; set; }
@@ -87,10 +87,10 @@ internal sealed class StubModule
 
     internal string ToWat()
     {
-        string iface = Iface.Replace("1.0.0", Version, StringComparison.Ordinal);
+        string iface = Iface.Replace("0.1.0", Version, StringComparison.Ordinal);
         StringBuilder wat = new StringBuilder();
         wat.AppendLine("(module");
-        wat.AppendLine("  (import \"aprv:verifier/host@1.0.0\" \"random-get\" (func $random (param i32 i32)))");
+        wat.AppendLine("  (import \"aprv:verifier/host@0.1.0\" \"random-get\" (func $random (param i32 i32)))");
         wat.AppendLine(ExtraImports);
         wat.AppendLine("  (memory (export \"memory\") 4 65536)");
         wat.AppendLine("  (global $heap (mut i32) (i32.const 65536))");

@@ -2,7 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 /**
  * One instance of the verifier module, {@code aprv.wasm}, and its four
- * operations as the WIT file declares them ({@code aprv:verifier/verify@1.0.0}).
+ * operations as the WIT file declares them ({@code aprv:verifier/verify@0.1.0}).
  * Each returns the module's answer, the JSON text the core wrote. Not
  * thread-safe: one call at a time, which {@link GuestPool} guarantees.
  *

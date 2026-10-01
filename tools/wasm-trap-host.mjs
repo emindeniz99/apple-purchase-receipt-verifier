@@ -4,7 +4,7 @@
 // canonical-ABI final round's hand-rolled hosts do
 // (docs/evidence/2026-09-29-canonical-abi-final/hosts/wazero/main.go).
 //
-// The import object supplies `random-get` from aprv:verifier/host@1.0.0 and,
+// The import object supplies `random-get` from aprv:verifier/host@0.1.0 and,
 // for every other import the module declares, a function that throws. So
 // the module can take no path nobody measured: a call to any other import
 // traps the call, and the run fails. A module that declares any import but
@@ -37,8 +37,8 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash, getRandomValues } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
-const IFACE = 'aprv:verifier/verify@1.0.0#';
-const HOST_MODULE = 'aprv:verifier/host@1.0.0';
+const IFACE = 'aprv:verifier/verify@0.1.0#';
+const HOST_MODULE = 'aprv:verifier/host@0.1.0';
 const RANDOM_GET = 'random-get';
 
 class HostError extends Error {}

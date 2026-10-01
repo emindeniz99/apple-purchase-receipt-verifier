@@ -3,7 +3,7 @@
 // instance its trust anchors through init, moves bytes in and JSON out
 // through the canonical ABI, and throws an instance away when it traps.
 //
-// The ABI is aprv:verifier@1.0.0 (docs/rust-core/ARCHITECTURE.md §4). wazero
+// The ABI is aprv:verifier@0.1.0 (docs/rust-core/ARCHITECTURE.md §4). wazero
 // has no Component Model, so the four exports are called by hand: the
 // package name in the export names is the ABI version, and a module of
 // another version finds no export here and is refused at create.
@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	verifyIface = "aprv:verifier/verify@1.0.0#"
-	hostIface   = "aprv:verifier/host@1.0.0"
+	verifyIface = "aprv:verifier/verify@0.1.0#"
+	hostIface   = "aprv:verifier/host@0.1.0"
 
 	// memoryLimitPages is 256 MiB of linear memory per instance, the limit
 	// aprv-server sets. A guest that tries to grow past it gets -1 from
@@ -152,7 +152,7 @@ func sameTypes(a, b []api.ValueType) bool {
 }
 
 // checkABI refuses a module this package would misread: it must import only
-// random-get, and export the four @1.0.0 operations with their
+// random-get, and export the four @0.1.0 operations with their
 // post-return functions, cabi_realloc and its memory, all with the
 // core signatures the canonical ABI gives them. The refusal names the
 // version this package binds and the exports the module has.
@@ -162,12 +162,12 @@ func checkABI(c wazero.CompiledModule) error {
 		if mod != hostIface || name != "random-get" ||
 			!sameTypes(def.ParamTypes(), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}) || len(def.ResultTypes()) != 0 {
 			return &ABIError{Detail: fmt.Sprintf(
-				"aprv.wasm imports %s %s; this package binds aprv:verifier@1.0.0, whose module imports only %s random-get",
+				"aprv.wasm imports %s %s; this package binds aprv:verifier@0.1.0, whose module imports only %s random-get",
 				mod, name, hostIface)}
 		}
 	}
 	if len(c.ImportedMemories()) != 0 {
-		return &ABIError{Detail: "aprv.wasm imports a memory; this package binds aprv:verifier@1.0.0, whose module defines its own"}
+		return &ABIError{Detail: "aprv.wasm imports a memory; this package binds aprv:verifier@0.1.0, whose module defines its own"}
 	}
 
 	have := c.ExportedFunctions()
@@ -178,7 +178,7 @@ func checkABI(c wazero.CompiledModule) error {
 	sort.Strings(names)
 	missing := func(name string) error {
 		return &ABIError{Detail: fmt.Sprintf(
-			"aprv.wasm does not export %q, or exports it with another signature: this package binds aprv:verifier@1.0.0; the module exports [%s]",
+			"aprv.wasm does not export %q, or exports it with another signature: this package binds aprv:verifier@0.1.0; the module exports [%s]",
 			name, strings.Join(names, ", "))}
 	}
 	want := func(name string, params []api.ValueType, results []api.ValueType) error {
@@ -202,7 +202,7 @@ func checkABI(c wazero.CompiledModule) error {
 	}
 	if _, ok := c.ExportedMemories()["memory"]; !ok {
 		return &ABIError{Detail: fmt.Sprintf(
-			"aprv.wasm does not export its memory: this package binds aprv:verifier@1.0.0; the module exports [%s]",
+			"aprv.wasm does not export its memory: this package binds aprv:verifier@0.1.0; the module exports [%s]",
 			strings.Join(names, ", "))}
 	}
 	return nil

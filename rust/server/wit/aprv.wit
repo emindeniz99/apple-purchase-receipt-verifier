@@ -1,4 +1,4 @@
-package aprv:verifier@1.0.0;
+package aprv:verifier@0.1.0;
 
 interface verify {
   /// Once per instance. `{"roots":["<base64 DER>", ...]}`; empty or {} = the built-in Apple roots.

@@ -40,9 +40,9 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
 5. **API.** The 0.7 shape stays in all nine packages; Java keeps
    `runtimeProbe`; roots keep the native certificate type in Java, .NET
    and Go and are bytes elsewhere; Java's `Environment.value()` becomes
-   public; the WIT package version moves to `aprv:verifier@0.1.0` in one
-   pull request across every binding (R36). **Open for the owner** (the
-   API items on 2026-10-01):
+   public; the WIT package version moved to `aprv:verifier@0.1.0` in one
+   pull request across every binding on 2026-10-01 (R36). **Open for the
+   owner** (the API items on 2026-10-01):
    - Public symbols that duplicate another or that only the library
      calls: the constructors and factories of the result and payload
      types in every package; Python's `Config.create`, Ruby's

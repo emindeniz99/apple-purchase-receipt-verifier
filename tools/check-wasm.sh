@@ -10,7 +10,7 @@
 #
 #   1. SHA256SUMS lists the module, the component and the WIT, and matches.
 #   2. The core module imports exactly one function, random-get from
-#      aprv:verifier/host@1.0.0.
+#      aprv:verifier/host@0.1.0.
 #   3. It exports the four operations, their four cabi_post_ functions,
 #      cabi_realloc, memory and _initialize, and nothing else but
 #      wit-bindgen's own versioned cabi_realloc alias; the internal symbols
@@ -28,7 +28,7 @@ if [[ $# -ne 2 ]]; then
 fi
 DIR=$1
 WIT=$2
-IFACE='aprv:verifier/verify@1.0.0#'
+IFACE='aprv:verifier/verify@0.1.0#'
 failed=0
 fail() { echo "check-wasm: FAIL $*" >&2; failed=1; }
 pass() { echo "check-wasm: ok   $*"; }
@@ -48,9 +48,9 @@ fi
 # 2 and 3. The core module's imports and exports.
 printed="$(wasm-tools print "$DIR/aprv.wasm")"
 imports="$(grep -oE '^ *\(import "[^"]*" "[^"]*"' <<<"$printed" | sed -E 's/^ *\(import "([^"]*)" "([^"]*)"/\1 \2/')" || true
-if [[ "$imports" == "aprv:verifier/host@1.0.0 random-get" ]] \
-   && grep -qE '^ *\(import "aprv:verifier/host@1.0.0" "random-get" \(func' <<<"$printed"; then
-  pass "imports exactly aprv:verifier/host@1.0.0 random-get"
+if [[ "$imports" == "aprv:verifier/host@0.1.0 random-get" ]] \
+   && grep -qE '^ *\(import "aprv:verifier/host@0.1.0" "random-get" \(func' <<<"$printed"; then
+  pass "imports exactly aprv:verifier/host@0.1.0 random-get"
 else
   fail "imports are not exactly random-get: $(tr '\n' ';' <<<"$imports")"
 fi

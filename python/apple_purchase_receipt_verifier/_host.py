@@ -30,7 +30,7 @@ from . import _cache
 
 #: The ABI version this host binds. Export names carry it, so a module built
 #: for another version has no export this host finds.
-ABI_VERSION = "1.0.0"
+ABI_VERSION = "0.1.0"
 _VERIFY = f"aprv:verifier/verify@{ABI_VERSION}#"
 _HOST_MODULE = f"aprv:verifier/host@{ABI_VERSION}"
 
@@ -68,7 +68,7 @@ MAX_INPUT_COPY = 3_145_729
 
 class AbiMismatchError(RuntimeError):
     """The module is not one this package can run: it lacks an export of ABI
-    version 1.0.0, or imports anything but ``random-get``."""
+    version 0.1.0, or imports anything but ``random-get``."""
 
 
 class Fault(Exception):
@@ -112,7 +112,7 @@ def _describe(
 
 
 def _check_abi(module: "wasmtime.Module") -> None:
-    """Refuses a module that is not ABI 1.0.0: any import but ``random-get``,
+    """Refuses a module that is not ABI 0.1.0: any import but ``random-get``,
     or a missing export or one of the wrong shape."""
     imports = [(i.module, i.name) for i in module.imports]
     if imports != [(_HOST_MODULE, "random-get")]:

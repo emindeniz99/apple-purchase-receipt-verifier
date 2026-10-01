@@ -615,7 +615,8 @@ The measured cost is speed, above the floor on every host (R4).
 **Status: accepted** (owner, 2026-09-29 for the ABI; 2026-09-28 for the
 instance model, Q49 option d). Supersedes the ABI v1 export list of the
 2026-09-28 record. Amended 2026-09-30: the WIT package version moves from
-`1.0.0` to `0.1.0` (R36); the export names below change with it.
+`1.0.0` to `0.1.0` (R36); done on 2026-10-01, and the export names below
+carry it.
 
 **The ABI.** `aprv.wasm` exports its four operations through the
 canonical ABI, the Component Model's calling convention, from one WIT
@@ -634,7 +635,7 @@ a value; outputs are the guest's own JSON. `env` is a `u32` the guest
 matches, trapping on anything but 0 and 1. `now-ms` is a `u64` argument
 on every verify call. A verify before `init`, and a second `init` after a
 successful one, trap. The export names carry the package version
-(`aprv:verifier/verify@1.0.0#init`), so a wrapper of another version
+(`aprv:verifier/verify@0.1.0#init`), so a wrapper of another version
 finds no export and fails at `create`. The WIT file is the contract and
 CI diffs it against the built module. Output is aprv-wire JSON. Six
 outcomes stay distinct: verified, verification failure, caller misuse,
@@ -984,8 +985,9 @@ variables of OD-05 (STATUS.md).
 
 ## R36. The public API in 0.8, and the WIT package version
 
-**Status: accepted** (owner, 2026-09-30). The items still open are in
-ROADMAP.md, "Decisions of 2026-09-29 and 30".
+**Status: accepted** (owner, 2026-09-30). The WIT package version item
+is done (2026-10-01). The items still open are in ROADMAP.md, "Decisions
+of 2026-09-29 and 30".
 
 - **The shape stays as 0.7 defined it** in all nine packages
   ([0.7 API][api07]): `Verifier.create(Config)`, `verifyReceipt(base64)`,
@@ -1003,7 +1005,7 @@ ROADMAP.md, "Decisions of 2026-09-29 and 30".
   `aprv-server` reports move in one pull request. The Go and Swift CI
   jobs test the module the same run builds, so the committed copies in
   `go/` and `swift/` can keep the old names until the release refreshes
-  them (R14).
+  them (R14). **Done 2026-10-01.**
 - **Later, not in 0.8.0:** an optional `expect {bundleId, environment}`
   argument on the verify calls. The core would check it and answer a
   mismatch as a verdict. Today every README leaves that check to the

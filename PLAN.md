@@ -283,7 +283,7 @@ rejected alternatives with their measured reasons.
   `tools/check-layering.mjs` keeps them gone.
 - **D19 — The module's ABI is the canonical ABI over one WIT file**
   (owner, 2026-09-29; R23). `rust/bindings/abi/wit/aprv.wit`
-  (`aprv:verifier@1.0.0`) declares four operations (`init`,
+  (`aprv:verifier@0.1.0`) declares four operations (`init`,
   `verify-receipt`, `verify-signed-data`, `verify-receipt-endpoint`),
   inputs as `list<u8>`, the environment as a `u32` the guest checks,
   `now-ms` as a `u64`, outputs as JSON strings, and one import,

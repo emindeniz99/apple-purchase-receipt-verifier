@@ -351,7 +351,7 @@ func TestMisuseIsAPlainErrorAtCreate(t *testing.T) {
 	}
 }
 
-// a module that is not aprv:verifier@1.0.0: it exports the init of 0.9.0
+// a module that is not aprv:verifier@0.1.0: it exports the init of 0.9.0
 // and a cabi_realloc, nothing else.
 var wrongVersionModule = mustHex("0061736d01000000010f0260027f7f017f60047f7f7f7f017f03030200010503010001073b03066d656d6f727902001f617072763a76657269666965722f76657269667940302e392e3023696e697400000c636162695f7265616c6c6f6300010a0b02040041000b040041000b")
 
@@ -368,7 +368,7 @@ func TestAModuleOfAnotherABIVersionFailsCreateNamingTheVersion(t *testing.T) {
 	if err == nil || verifier != nil {
 		t.Fatal("created a Verifier over a module of another ABI version")
 	}
-	for _, want := range []string{"aprv:verifier@1.0.0", "aprv:verifier/verify@0.9.0#init"} {
+	for _, want := range []string{"aprv:verifier@0.1.0", "aprv:verifier/verify@0.9.0#init"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error does not name %q: %v", want, err)
 		}

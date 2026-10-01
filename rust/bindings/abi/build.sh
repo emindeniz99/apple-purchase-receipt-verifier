@@ -85,7 +85,7 @@ SYSROOT="$WS/share/wasi-sysroot"
 LIBDIR="$SYSROOT/lib/wasm32-wasip1"
 CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
 TARGET_DIR="${CARGO_TARGET_DIR:-$RUST/target}"
-IFACE='aprv:verifier/verify@1.0.0#'
+IFACE='aprv:verifier/verify@0.1.0#'
 mkdir -p "$TARGET_DIR"
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aprv-abi-build.XXXXXX")"
@@ -162,8 +162,8 @@ fail() { echo "build.sh: FAIL $*" >&2; failed=1; }
 # The import list: exactly random-get.
 printed="$(wasm-tools print "$MOD")"
 imports="$(grep -oE '^ *\(import "[^"]*" "[^"]*"' <<< "$printed" | sed -E 's/^ *\(import "([^"]*)" "([^"]*)"/\1 \2/' || true)"
-if [[ "$imports" != "aprv:verifier/host@1.0.0 random-get" ]]; then
-  fail "the module must import exactly aprv:verifier/host@1.0.0 random-get; it imports: $(tr '\n' ';' <<< "$imports")"
+if [[ "$imports" != "aprv:verifier/host@0.1.0 random-get" ]]; then
+  fail "the module must import exactly aprv:verifier/host@0.1.0 random-get; it imports: $(tr '\n' ';' <<< "$imports")"
 fi
 
 # The export list: the interface and nothing else (wit-bindgen's own

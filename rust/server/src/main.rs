@@ -242,7 +242,7 @@ fn one_shot(cmd: Command, args: &[String]) -> i32 {
 
 fn build_info(runtime: &Runtime) -> serde_json::Value {
     serde_json::json!({
-        "abi": "aprv:verifier@1.0.0",
+        "abi": "aprv:verifier@0.1.0",
         "component_sha256": runtime.source.component_sha256,
         "component_source": runtime.source.description,
         "wasmtime": runtime::WASMTIME_VERSION,

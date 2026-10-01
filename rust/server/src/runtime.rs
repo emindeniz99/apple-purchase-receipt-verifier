@@ -141,7 +141,7 @@ impl Runtime {
             .and_then(AprvPre::new)
             .map_err(|e| {
                 format!(
-                    "the component does not match the aprv:verifier@1.0.0 interface this server \
+                    "the component does not match the aprv:verifier@0.1.0 interface this server \
                      binds (wit/aprv.wit): {e:#}"
                 )
             })?;

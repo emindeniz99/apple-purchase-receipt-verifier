@@ -274,7 +274,7 @@ final class CliTransportTest extends TestCase
             self::fail('an ABI mismatch is a hard failure');
         } catch (RuntimeException $e) {
             self::assertStringContainsString('aprv:verifier@2.0.0', $e->getMessage());
-            self::assertStringContainsString('aprv:verifier@1.0.0', $e->getMessage());
+            self::assertStringContainsString('aprv:verifier@0.1.0', $e->getMessage());
         }
     }
 

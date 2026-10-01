@@ -114,13 +114,13 @@ public class FacadeTests
     public void AModuleOfAnotherAbiVersionFailsCreateNamingWhatItExports()
     {
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => Over(new StubModule { Version = "2.0.0" }));
-        Assert.Contains("aprv:verifier@1.0.0", error.Message, StringComparison.Ordinal);
+        Assert.Contains("aprv:verifier@0.1.0", error.Message, StringComparison.Ordinal);
         Assert.Contains("aprv:verifier/verify@2.0.0#init", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("aprv:verifier/verify@1.0.0#verify-signed-data")]
-    [InlineData("cabi_post_aprv:verifier/verify@1.0.0#init")]
+    [InlineData("aprv:verifier/verify@0.1.0#verify-signed-data")]
+    [InlineData("cabi_post_aprv:verifier/verify@0.1.0#init")]
     [InlineData("cabi_realloc")]
     public void AModuleLackingAnExportFailsCreate(string missing)
     {

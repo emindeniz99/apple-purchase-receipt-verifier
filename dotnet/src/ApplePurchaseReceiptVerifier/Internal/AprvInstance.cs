@@ -15,7 +15,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// <remarks>
     /// <para>A call is: <c>cabi_realloc</c> for the input and a copy in (the
     /// guest owns that buffer and frees it), the export by its
-    /// <c>@1.0.0</c> name with the scalars first and then <c>(ptr, len)</c>,
+    /// <c>@0.1.0</c> name with the scalars first and then <c>(ptr, len)</c>,
     /// the return area at the returned address read as <c>ptr</c> then
     /// <c>len</c> and bounds-checked against the memory, a copy out, and
     /// <c>cabi_post</c> to free the result. No guest pointer outlives a

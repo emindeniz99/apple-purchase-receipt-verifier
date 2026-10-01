@@ -12,7 +12,7 @@ enum HostError: Error, Sendable, CustomStringConvertible {
     case unusableAnswer(export: String, detail: String)
     /// init answered {"ok":false}: the module refused the configuration.
     case initRefused(message: String)
-    /// The module is not the aprv:verifier@1.0.0 module this package binds.
+    /// The module is not the aprv:verifier@0.1.0 module this package binds.
     case abiMismatch(String)
     /// The bundled module could not be read, did not match its hash, or did
     /// not parse.
@@ -33,8 +33,8 @@ enum HostError: Error, Sendable, CustomStringConvertible {
 /// version in the names is the ABI version: a module of another version has
 /// none of these exports and is refused when it loads.
 enum Abi {
-    static let verify = "aprv:verifier/verify@1.0.0#"
-    static let host = "aprv:verifier/host@1.0.0"
+    static let verify = "aprv:verifier/verify@0.1.0#"
+    static let host = "aprv:verifier/host@0.1.0"
     /// Each export's core parameters before the (ptr, len) of its list<u8>:
     /// `env: u32` and `now-ms: u64` flatten to i32 and i64.
     static let exports: [String: [ValueType]] = [

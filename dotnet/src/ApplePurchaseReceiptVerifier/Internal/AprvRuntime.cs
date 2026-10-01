@@ -21,7 +21,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// the first time the runtime is built; the release overwrites both files
     /// with the build it publishes.</para>
     /// <para>The module must import exactly one function, <c>random-get</c>,
-    /// and export the <c>aprv:verifier@1.0.0</c> canonical-ABI operations.
+    /// and export the <c>aprv:verifier@0.1.0</c> canonical-ABI operations.
     /// Anything else is refused here, once, as an
     /// <see cref="InvalidOperationException"/> naming what was found: it is
     /// a mismatch between this library and its module, never a verdict.</para>
@@ -29,10 +29,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
     internal sealed class AprvRuntime
     {
         /// <summary>The ABI's interface prefix; export names carry the ABI version.</summary>
-        internal const string Iface = "aprv:verifier/verify@1.0.0#";
+        internal const string Iface = "aprv:verifier/verify@0.1.0#";
 
         /// <summary>The module name of the one import.</summary>
-        internal const string HostModule = "aprv:verifier/host@1.0.0";
+        internal const string HostModule = "aprv:verifier/host@0.1.0";
 
         /// <summary>The name of the one import.</summary>
         internal const string RandomGetName = "random-get";
@@ -230,7 +230,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 List<string> names = new List<string>(exported);
                 names.Sort(StringComparer.Ordinal);
                 throw new InvalidOperationException(
-                    "aprv.wasm does not export the aprv:verifier@1.0.0 ABI this library binds (missing: "
+                    "aprv.wasm does not export the aprv:verifier@0.1.0 ABI this library binds (missing: "
                     + string.Join(", ", missing) + "); it exports: " + string.Join(", ", names));
             }
         }

@@ -348,8 +348,8 @@ class WasmVerifierTest {
         GuestFactory mismatched = new GuestFactory() {
             @Override
             public Guest newGuest() {
-                throw new GuestFailure("ABI mismatch: this library binds aprv:verifier/verify@1.0.0 and the module"
-                        + " lacks [aprv:verifier/verify@1.0.0#init]; it exports [memory]");
+                throw new GuestFailure("ABI mismatch: this library binds aprv:verifier/verify@0.1.0 and the module"
+                        + " lacks [aprv:verifier/verify@0.1.0#init]; it exports [memory]");
             }
 
             @Override
@@ -359,7 +359,7 @@ class WasmVerifierTest {
         };
         IllegalStateException e =
                 assertThrows(IllegalStateException.class, () -> new WasmVerifier(DEFAULTS, mismatched));
-        assertTrue(e.getMessage().contains("aprv:verifier/verify@1.0.0"), e.getMessage());
+        assertTrue(e.getMessage().contains("aprv:verifier/verify@0.1.0"), e.getMessage());
     }
 
     /** The committed module exports exactly what the guest binds. */

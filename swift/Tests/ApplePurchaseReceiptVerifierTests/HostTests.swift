@@ -253,14 +253,14 @@ final class FacadeTests: XCTestCase {
         XCTAssertNoThrow(try Config.builder().roots([try TestFixtures.bytes(TestFixtures.receiptRoot)]).build())
     }
 
-    /// A module without the @1.0.0 exports, or with an import beyond
+    /// A module without the @0.1.0 exports, or with an import beyond
     /// random-get, is refused when it loads, naming the version this package
     /// binds; a Verifier over it answers INTERNAL_ERROR, never a verdict.
     func testAnAbiMismatchIsRefusedAtLoad() throws {
         let other = TinyModules.otherVersion
         XCTAssertThrowsError(try AprvModule.load(other)) { error in
             guard case HostError.abiMismatch(let detail) = error else { return XCTFail("\(error)") }
-            XCTAssertTrue(detail.contains("aprv:verifier@1.0.0") && detail.contains("verify@2.0.0#init"), detail)
+            XCTAssertTrue(detail.contains("aprv:verifier@0.1.0") && detail.contains("verify@2.0.0#init"), detail)
         }
         let imports = TinyModules.wasiImport
         XCTAssertThrowsError(try AprvModule.load(imports)) { error in

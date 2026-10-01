@@ -31,8 +31,8 @@ it. A compiler wrapper (`RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER` or their
 runs with none. `tools/test/build-sh.test.mjs` holds the pin and the
 cleanup without building anything. It fails when:
 
-- the module imports anything but `aprv:verifier/host@1.0.0` `random-get`;
-- it exports anything but the four `@1.0.0` operations, their
+- the module imports anything but `aprv:verifier/host@0.1.0` `random-get`;
+- it exports anything but the four `@0.1.0` operations, their
   `cabi_post_` functions, `cabi_realloc` (and wit-bindgen's versioned
   alias of it), `memory` and `_initialize`;
 - the interface read back from the component with `wasm-tools component
@@ -54,7 +54,7 @@ of 990 KB gzipped); the stripped module passed `tools/check-wasm.sh`, all
 answered 811 hostile-corpus calls byte for byte as the named one. What the
 section bought was trap stack frames with Rust names: without it a frame
 reads `wasm-function[33]:0xa956` instead of
-`aprv_abi.wasm.aprv:verifier/verify@1.0.0#verify-receipt`, and the Java
+`aprv_abi.wasm.aprv:verifier/verify@0.1.0#verify-receipt`, and the Java
 engine's stack traces and JFR recordings carry the index too (Endive can
 name its compiled methods only from this section). Stripping moves no
 code, so the index and offset are the same in the named module cargo

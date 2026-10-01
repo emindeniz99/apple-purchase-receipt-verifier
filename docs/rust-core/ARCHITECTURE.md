@@ -168,7 +168,7 @@ rounds on the same `wasm32-wasip1` core module as ABI v1
 ([canonical ABI][cabi], [canonical ABI final][cabifinal]).
 
 ```wit
-package aprv:verifier@1.0.0;
+package aprv:verifier@0.1.0;
 
 interface verify {
   /// Once per instance. `{"roots":["<base64 DER>", ...]}`; empty or {} = the built-in Apple roots.
@@ -193,7 +193,7 @@ world aprv {
 The WIT file is the contract. It lives in `rust/bindings/abi/wit/`, and
 CI diffs it against what `wasm-tools component wit` reads back from the
 built module (§9). The version in the package name is the ABI version:
-export names carry it (`aprv:verifier/verify@1.0.0#init`), so a wrapper
+export names carry it (`aprv:verifier/verify@0.1.0#init`), so a wrapper
 built for one version finds no export on a module of another and fails at
 `create` instead of misreading arguments.
 
@@ -203,12 +203,12 @@ WIT; `list<u8>` and `string` become `(ptr, len)`, `u64` becomes `i64`,
 area):
 
 ```text
-import  "aprv:verifier/host@1.0.0" "random-get"                     (len i32, retptr i32) -> ()
-export  "aprv:verifier/verify@1.0.0#init"                            (ptr, len) -> retptr
-export  "aprv:verifier/verify@1.0.0#verify-receipt"                  (now i64, ptr, len) -> retptr
-export  "aprv:verifier/verify@1.0.0#verify-signed-data"              (now i64, ptr, len) -> retptr
-export  "aprv:verifier/verify@1.0.0#verify-receipt-endpoint"         (env i32, now i64, ptr, len) -> retptr
-export  "cabi_post_aprv:verifier/verify@1.0.0#<each of the four>"   (retptr) -> ()
+import  "aprv:verifier/host@0.1.0" "random-get"                     (len i32, retptr i32) -> ()
+export  "aprv:verifier/verify@0.1.0#init"                            (ptr, len) -> retptr
+export  "aprv:verifier/verify@0.1.0#verify-receipt"                  (now i64, ptr, len) -> retptr
+export  "aprv:verifier/verify@0.1.0#verify-signed-data"              (now i64, ptr, len) -> retptr
+export  "aprv:verifier/verify@0.1.0#verify-receipt-endpoint"         (env i32, now i64, ptr, len) -> retptr
+export  "cabi_post_aprv:verifier/verify@0.1.0#<each of the four>"   (retptr) -> ()
 export  "cabi_realloc"                                                (old, old_size, align, new_size) -> ptr
 export  memory, _initialize
 ```
@@ -293,7 +293,7 @@ memory the same size.
 | Verified | the module's result | the payload (0.7) |
 | Verification failure | the module's result | a result with the 0.7 `Reason` |
 | Caller misuse | the wrapper's own checks (a null `Config` or `Environment`, an empty root set, a root `init` refuses) | the language's programmer error at `create` or at the call, as in 0.7 |
-| ABI mismatch | the module lacks the `@1.0.0` exports the wrapper binds, or the runtime rejects the imports | a hard failure at `create` naming the version the wrapper expects and the export names the module has; never a verdict |
+| ABI mismatch | the module lacks the `@0.1.0` exports the wrapper binds, or the runtime rejects the imports | a hard failure at `create` naming the version the wrapper expects and the export names the module has; never a verdict |
 | Trap or internal failure | a guest trap, a runtime error, an out-of-range result pointer, malformed result JSON | `INTERNAL_ERROR` (21009 at the endpoint); the instance is discarded; the cause names the trap |
 | Server process failure | `aprv-server` did not answer: start failed, the child died, the connection broke, HTTP 5xx | `INTERNAL_ERROR` (21009 at the endpoint) with a cause of its own type, so it is never mistaken for a trap |
 
@@ -390,7 +390,7 @@ the hand-written ABI code of the final round
   byte-identical output ([wasm speed][speed]).
 - **Hand-rolled canonical ABI, 35 lines**: a four-entry signature table
   (`u32`, `u64`, `list<u8>`), `cabi_realloc` for the input, the export by
-  its `@1.0.0` name, the return area read, `cabi_post_*`. A wrong Java
+  its `@0.1.0` name, the return area read, `cabi_post_*`. A wrong Java
   type or argument count is a host error before any call. `random-get`
   from `SecureRandom`, written through `cabi_realloc` into guest memory.
 - A trap reaches Java as `WasmRuntimeException`, `TrapException` or
