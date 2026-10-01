@@ -366,10 +366,12 @@ sides.
   HTTP 413 there — check the body's length before the call to do the
   same).
 - **the compact JWS**: 262,144 UTF-8 bytes, `TooLarge`.
-- **JSON nesting depth 64, ASN.1 nesting depth 32.** A deeper request
-  body, JWS header or CMS envelope is `Malformed`. A deeper JWS payload or
+- **ASN.1 nesting depth 32.** A deeper CMS envelope is `Malformed`; deeper
   signed receipt content is judged after the signature: `UnreadablePayload`
-  if it verifies, `InvalidSignature` if not.
+  if it verifies, `InvalidSignature` if not. JSON has no nesting bound of
+  its own: the module skips a value nobody reads without building it, so
+  only the size caps bound a request body or a JWS
+  (docs/rust-core/DECISIONS.md R40).
 
 `receipt-data` is decoded exactly as Apple's `verifyReceipt` accepts it:
 standard base64 with canonical `=` padding and nothing else — whitespace,
