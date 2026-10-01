@@ -588,9 +588,26 @@ bool check_expectations(const Case &kase, const Outcome &outcome, std::string &e
   }
 
   // "ok" is a verified payload; "body" is an endpoint answer, which is a
-  // body for every input and pins its fields, the Apple status among them.
+  // body for every input and pins its fields, the Apple status among them,
+  // or lists the Apple statuses it may carry.
   if (outcome.status != APRV_REASON_OK) {
     error = "expected success, got status " + std::to_string(outcome.status) + " " + outcome.json;
+    return false;
+  }
+
+  if (kase.has("statusOneOf")) {
+    std::string token;
+    if (!top_level_value(outcome.json, "status", token)) {
+      error = "/status: got nothing in " + outcome.json;
+      return false;
+    }
+    const std::string listed = kase.get("statusOneOf") + "|";
+    for (size_t start = 0, bar; (bar = listed.find('|', start)) != std::string::npos; start = bar + 1) {
+      if (token == listed.substr(start, bar - start)) {
+        return true;
+      }
+    }
+    error = "/status: expected one of " + kase.get("statusOneOf") + ", got " + token;
     return false;
   }
 

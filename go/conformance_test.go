@@ -79,9 +79,10 @@ type caseExpectedSpec struct {
 	ToJSON                *string        `json:"toJson"`
 	BytesHex              string         `json:"bytesHex"`
 	// OneOf marks a port-defined case (owner, 2026-09-27): the outcome,
-	// "ok" or the reason, must be one of these, and the call must not
-	// crash. No field is pinned.
-	OneOf []string `json:"oneOf"`
+	// "ok" or the reason, or at the endpoint the response's /status (a
+	// json.Number), must be one of these, and the call must not crash. No
+	// field is pinned.
+	OneOf []any `json:"oneOf"`
 }
 
 type conformanceCase struct {
@@ -626,11 +627,21 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 		default:
 			t.Fatalf("%s: harness error: no input", c.ID)
 		}
+		response := verifier.VerifyReceiptEndpoint(environment, body)
+		actual = parseJSONAny(t, c.ID, response)
+		if expected.OneOf != nil {
+			// Port-defined within a list: the response's /status must be
+			// listed, and nothing else is pinned.
+			doc, _ := actual.(map[string]any)
+			status := doc["status"]
+			if !slices.Contains(expected.OneOf, status) {
+				t.Fatalf("%s: answered status %v, want one of %v", c.ID, status, expected.OneOf)
+			}
+			return
+		}
 		if _, pinned := expected.Fields["/status"]; !pinned {
 			t.Fatalf("%s: harness error: /status not pinned", c.ID)
 		}
-		response := verifier.VerifyReceiptEndpoint(environment, body)
-		actual = parseJSONAny(t, c.ID, response)
 
 	case "verifyReceipt", "verifySignedData":
 		if c.Input.Fixture == "" {
@@ -679,7 +690,7 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 				}
 				outcome = string(failure.Reason)
 			}
-			if !slices.Contains(expected.OneOf, outcome) {
+			if !slices.Contains(expected.OneOf, any(outcome)) {
 				t.Fatalf("%s: answered %s, want one of %v: %v", c.ID, outcome, expected.OneOf, callErr)
 			}
 			return

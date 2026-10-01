@@ -364,7 +364,10 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
     const expected = testCase.expected;
     const outcomes = [];
     if (typeOf(expected) === 'object' && expected.status === 'error') outcomes.push(expected.reason);
-    if (typeOf(expected) === 'object' && Array.isArray(expected.oneOf)) {
+    // An endpoint case's oneOf lists /status values, which the schema's
+    // enum checks; every other oneOf lists "ok" or a reason.
+    if (typeOf(expected) === 'object' && Array.isArray(expected.oneOf)
+      && testCase.operation !== 'verifyReceiptEndpoint') {
       outcomes.push(...expected.oneOf.filter((outcome) => outcome !== 'ok'));
     }
     for (const reason of outcomes) {

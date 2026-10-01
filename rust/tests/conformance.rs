@@ -133,9 +133,10 @@ struct Expected {
     /// a log line as is.
     #[serde(default)]
     message_must_not_contain: Option<Vec<u32>>,
-    /// The outcomes a port may give, `"ok"` or a reason; no panic.
+    /// The outcomes a port may give: `"ok"` or a reason, or at the endpoint
+    /// the `/status` values a response may carry; no panic.
     #[serde(default)]
-    one_of: Option<Vec<String>>,
+    one_of: Option<Vec<Value>>,
     #[serde(default)]
     fields: Option<Map<String, Value>>,
     #[serde(default)]
@@ -564,6 +565,18 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 .map_err(|err| Failed::from(format!("{id}: harness error: {err}")))?,
                 (None, None) => return Err(Failed::from(format!("{id}: harness error: no input"))),
             };
+            let response = parse_json(id, &verifier.verify_receipt_endpoint(environment, &body))?;
+            // Port-defined within a list: the response's /status must be
+            // listed, and nothing else is pinned.
+            if let Some(allowed) = &expected.one_of {
+                let status = &response["status"];
+                if !allowed.contains(status) {
+                    return Err(Failed::from(format!(
+                        "{id}: answered status {status}, want one of {allowed:?}"
+                    )));
+                }
+                return Ok(());
+            }
             if !expected
                 .fields
                 .as_ref()
@@ -573,7 +586,7 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                     "{id}: harness error: /status not pinned"
                 )));
             }
-            parse_json(id, &verifier.verify_receipt_endpoint(environment, &body))?
+            response
         }
         operation @ ("verifyReceipt" | "verifySignedData") => {
             let fixture =

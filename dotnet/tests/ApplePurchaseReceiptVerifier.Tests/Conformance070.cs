@@ -108,17 +108,28 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         string id = Str(kase, "id");
         object? outcome = RunCase(operation, kase);
 
-        if (expected.TryGetValue("oneOf", out object? listed) && listed is List<object?> allowed)
-        {
-            AssertListedOutcome(id, operation, outcome, allowed);
-            return;
-        }
-
         if (operation == "verifyReceiptEndpoint")
         {
             string responseJson = (string)outcome!;
             object? response = Json.Parse(responseJson);
+            if (expected.TryGetValue("oneOf", out object? listedStatuses) && listedStatuses is List<object?> allowedStatuses)
+            {
+                // Port-defined within a list: the response's /status must be
+                // listed, and nothing else is pinned.
+                object? status = response is OrderedMap body && body.TryGetValue("status", out object? value) ? value : null;
+                Assert.True(
+                    allowedStatuses.Exists(allowed => SameJsonValue(allowed, status)),
+                    $"{id}: answered status {Render(status)}, want one of {string.Join(", ", allowedStatuses)}");
+                return;
+            }
+
             EvaluateFields(id, response, expected);
+            return;
+        }
+
+        if (expected.TryGetValue("oneOf", out object? listed) && listed is List<object?> allowed)
+        {
+            AssertListedOutcome(id, operation, outcome, allowed);
             return;
         }
 
