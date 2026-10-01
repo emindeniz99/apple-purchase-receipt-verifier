@@ -558,10 +558,9 @@ the others as the structure they bound is read:
 
 The ASN.1 nesting bound is BouncyCastle's
 `org.bouncycastle.asn1.max_cons_depth`, 64 unless the host sets it. It is
-read each time BouncyCastle opens an ASN.1 stream: from `java.security`
-first, then from a thread-local override
-(`org.bouncycastle.util.Properties`), then from the system property of
-that name. Its count depends on the shape by one: 65 nested SETs parse
+read each time BouncyCastle opens an ASN.1 stream, from `java.security`
+first and then from the system property of that name. Its count depends
+on the shape by one: 65 nested SETs parse
 when the innermost is empty and are refused when it holds a value. The
 Rust core, which every other package runs, keeps its own bound of 32, so
 the shared cases nested 33 deep allow both answers (DECISIONS.md R20). A
