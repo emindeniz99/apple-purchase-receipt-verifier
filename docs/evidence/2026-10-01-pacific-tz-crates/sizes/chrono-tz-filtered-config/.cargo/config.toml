@@ -1,0 +1,3 @@
+# Filter set through cargo config [env] instead of the shell.
+[env]
+CHRONO_TZ_TIMEZONE_FILTER = "^America/Los_Angeles$"

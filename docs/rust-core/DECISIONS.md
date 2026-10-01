@@ -14,13 +14,15 @@ export ABI and chose the canonical ABI after two spike rounds (R23), and
 adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
 D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
-2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30.
+2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, and
+the owner's decision of 2026-10-01 added R38.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
-`vendored-4` feature ([vendored-4][vendored4]). Links use the short
-names defined at the end of this file. Rejected alternatives are in one
-table at the end, each with its measured reason and its note.
+`vendored-4` feature ([vendored-4][vendored4]) and the 2026-10-01
+note on time-zone crates ([Pacific time-zone crates][pactz]). Links use
+the short names defined at the end of this file. Rejected alternatives
+are in one table at the end, each with its measured reason and its note.
 
 ---
 
@@ -1005,6 +1007,36 @@ ROADMAP.md, "Decisions of 2026-09-29 and 30".
 
 ---
 
+## R38. Calendar and US Pacific time from `jiff`
+
+**Status: accepted** (owner, 2026-10-01).
+
+- The core takes its calendar and the `America/Los_Angeles` offset behind
+  every `_pst` date from `jiff` 0.2 (`default-features = false`, feature
+  `static`). `jiff::tz::get!` compiles that one zone into the binary from
+  `jiff-tzdb`'s copy of the IANA database; nothing reads
+  `/usr/share/zoneinfo` at run time, and the module carries no database.
+- Reason: the project does not maintain calendar code. The hand-written
+  rules (a 1918-1966 table, closed-form rules from 1967 and the civil-date
+  arithmetic) were the one part of the core that encoded law rather than
+  Apple's policy; a change in US daylight-saving law is now a dependency
+  bump and a module rebuild.
+- What stays in `rust/src/datetime.rs`: the receipt-date grammar, checked
+  byte by byte, since it is the contract with Java and `jiff`'s parsers
+  accept more; PST before 1900, as before; and a fold by whole 400-year
+  cycles, so every `i64` instant renders as it did (jiff's calendar ends
+  at 9999). The renderings are byte-identical to the hand-written code:
+  0 disagreements at 116,758,736 instants (`rust/tests/datetime.rs`).
+- Cost: `aprv.wasm` +46,857 bytes (2,764,700 to 2,811,557; gzip +9,189).
+  `jiff` and `jiff-core` link; `jiff-static` and `jiff-tzdb` run at build
+  time only. 12 new lockfile packages; `cargo deny check` passes.
+- Measured against chrono-tz, tz-rs with tzdb_data, time-tz and jiff's
+  other constructors ([Pacific time-zone crates][pactz]). tz-rs with
+  tzdb_data is smaller; jiff was chosen for one crate covering the calendar
+  and the zone with no build-time environment or file.
+
+---
+
 ## Rejected alternatives
 
 One table for everything the plan measured or considered and rejected.
@@ -1055,6 +1087,10 @@ One table for everything the plan measured or considered and rejected.
 | `wasm-opt` in the release | 25% smaller raw, no speed change beyond noise, a second optimiser to re-prove every release | [wasm speed §4][speed] | module size matters |
 | OpenSSL `enable-ec_nistp_64_gcc_128` | JWS 35% faster on Node, 2.4 to 3.4 times slower on Endive; one module serves every host | [wasm speed §2][speed] | — |
 | AWS-LC, LibreSSL, pure Rust as the substrate | See R21's options table | [substrate bake-off][substrate]; [follow-up][followup] | — |
+| Keeping the hand-written US Pacific rules and calendar | Correct (0 disagreements with five IANA-derived sources, 1900-2100), but it is calendar code the project maintains, and a change in US daylight-saving law would be a code change (R38) | [Pacific time-zone crates][pactz] | — |
+| chrono-tz for `_pst` | Its zone filter reaches the build script only from the shell environment, never from `.cargo/config.toml` under `--manifest-path`, nor for a crates.io consumer: 935 KB unfiltered with an opaque `Tz` | [Pacific time-zone crates][pactz] | — |
+| A POSIX TZ rule (`PST8PDT,M3.2.0,M11.1.0`) | Wrong for every daylight-saving season 1900-2006 (19.8 million minutes) | [Pacific time-zone crates][pactz] | — |
+| A TZif file through `include_bytes!` (jiff or tz-rs) | A 2.8 KB binary in git, refreshed by hand from each tzdata release, and a TZif parser in the module: +31 KB with tz-rs, +303 KB with jiff's `TimeZone::tzif` | [Pacific time-zone crates][pactz] | — |
 
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
 [cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
@@ -1081,3 +1117,4 @@ One table for everything the plan measured or considered and rejected.
 [corefix]: ../evidence/2026-09-29-core-review-fixes.md
 [javar3]: ../evidence/2026-09-29-java-align-round3.md
 [vendored4]: ../evidence/2026-09-30-rust-openssl-vendored-4-upstream.md
+[pactz]: ../evidence/2026-10-01-pacific-tz-crates.md
