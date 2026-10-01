@@ -465,7 +465,7 @@ never by `ordinal()`.
 
 | `Reason` | Meaning |
 |---|---|
-| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check |
+| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, ASN.1 nesting past BouncyCastle's bound, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check |
 | `TOO_LARGE` | Over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt or an endpoint request body, 262,144 for a JWS. Decided before anything is decoded |
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
 | `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or has more than six certificates below the anchor |
@@ -532,12 +532,16 @@ jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024
 
 The trade-off is deliberate: an administrator cannot restrict what this
 library accepts through `java.security` either. What it accepts is fixed by
-the library and the roots the caller passes, the same on every JVM.
+the library and the roots the caller passes, the same on every JVM, with
+one exception: the ASN.1 nesting bound is BouncyCastle's own, which
+`java.security` or a system property can move (see [Resource
+bounds](#resource-bounds)).
 
 ## Resource bounds
 
-Fixed constants, not configurable. The three size caps are checked before
-anything is decoded; the others as the structure they bound is read:
+Fixed constants, not configurable, except the ASN.1 nesting bound (below
+the table). The three size caps are checked before anything is decoded;
+the others as the structure they bound is read:
 
 | Bound | Value | `Reason` |
 |---|---|---|
@@ -547,10 +551,22 @@ anything is decoded; the others as the structure they bound is read:
 | JSON nesting depth, the outer object included | 64 | `MALFORMED` (JWS header, request body); a JWS payload is carried to the signature: `UNREADABLE_PAYLOAD` if it verifies |
 | JSON member name, characters | 50,000 | as nesting depth |
 | JSON number, characters | 1,000 | as nesting depth |
-| ASN.1 nesting, constructed values, the outermost included | 32 | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
+| ASN.1 nesting, constructed values | BouncyCastle's, 64 by default | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
+
+The ASN.1 nesting bound is BouncyCastle's
+`org.bouncycastle.asn1.max_cons_depth`, 64 unless the host sets it. It is
+read each time BouncyCastle opens an ASN.1 stream: from `java.security`
+first, then from a thread-local override
+(`org.bouncycastle.util.Properties`), then from the system property of
+that name. Its count depends on the shape by one: 65 nested SETs parse
+when the innermost is empty and are refused when it holds a value. The
+Rust core, which every other package runs, keeps its own bound of 32, so
+the shared cases nested 33 deep allow both answers (DECISIONS.md R20). A
+genuine Apple receipt nests 9 deep: a host that sets the property below
+9 refuses every genuine receipt as `MALFORMED`.
 
 Apple's own endpoint answers a request body of exactly 3,145,728 bytes and
 sends HTTP 413 for 3,145,729 (measured 2026-09-23 against both of Apple's
@@ -836,12 +852,12 @@ path builder (it keeps per-build counters), the `CertificateFactory` (it
 keeps stream state between calls) and every `Signature`.
 
 - BouncyCastle bounds the nesting of every constructed value, definite or
-  indefinite length, at 64 by default (`org.bouncycastle.asn1.max_cons_depth`).
-  `Asn1Depth` is stricter (32) and is applied to the envelope, the payload
-  and each x5c entry before BouncyCastle parses them. Nesting inside a
-  primitive value that BouncyCastle decodes eagerly (an extension value
-  inside a certificate, for example) is guarded by BouncyCastle's bound
-  alone, which is why that bound must still exist after an upgrade.
+  indefinite length, at 64 by default (`org.bouncycastle.asn1.max_cons_depth`),
+  and throws an `IOException` past it. That bound is the library's only
+  ASN.1 nesting bound, for the envelope, the payload, each x5c entry and
+  every value BouncyCastle decodes inside them (an extension value inside
+  a certificate, for example), so it must still exist, and still throw an
+  `IOException`, after an upgrade.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
   `ReceiptCertificates.decode`).
