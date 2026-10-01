@@ -80,31 +80,52 @@ jobs:
           echo "$RUNNER_TEMP/age" >> "$GITHUB_PATH"
       # One target at a time, each one's output into a file on the runner:
       # libFuzzer prints the crashing input, the stack and the panic
-      # message, so none of it goes to this log. A finding prints the
-      # target and the input's SHA-256, and fuzz-finding.sh seals the rest.
+      # message, so none of it goes to this log. No secret is in this
+      # step's environment, so no fuzzed process inherits one. A failed
+      # target is listed in $RUNNER_TEMP/fuzz-failed.tsv (target, its
+      # artifacts directory, its log) for the next step.
       - name: fuzz every target for ten minutes, findings kept out of this log
         working-directory: rust/fuzz
         env:
           FUZZ_TOOLCHAIN: nightly
           ASAN_OPTIONS: detect_leaks=1:allocator_may_return_null=0
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
           logs="$RUNNER_TEMP/fuzz-logs"
-          sealed="$RUNNER_TEMP/fuzz-sealed"
+          list="$RUNNER_TEMP/fuzz-failed.tsv"
           mkdir -p "$logs"
+          : > "$list"
           failed=0
           for t in verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi; do
             if ./run.sh "$t" 600 > "$logs/$t.log" 2>&1; then
               echo "fuzz: $t ran 600 s without a finding"
             else
               failed=1
-              ../../.github/scripts/fuzz-finding.sh "$t" "artifacts/$t" "$logs/$t.log" "$sealed"
+              printf '%s\t%s\t%s\n' "$t" "$PWD/artifacts/$t" "$logs/$t.log" >> "$list"
             fi
           done
           exit "$failed"
+      # The only step that holds the Telegram secrets. It runs no fuzzer:
+      # fuzz-finding.sh prints each target and input hash, seals the input
+      # and report with age, and sends the notice. It fails whenever it
+      # runs, so the job stays red.
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          list="$RUNNER_TEMP/fuzz-failed.tsv"
+          if [ ! -s "$list" ]; then
+            echo "fuzz: no target finding to report; an earlier step failed"
+            exit 1
+          fi
+          while IFS="$(printf '\t')" read -r t artifacts log; do
+            .github/scripts/fuzz-finding.sh "$t" "$artifacts" "$log" "$RUNNER_TEMP/fuzz-sealed"
+          done < "$list"
+          exit 1
       # Only age-sealed files: rust/fuzz/artifacts/ itself is never
       # uploaded. The name says nothing about the finding.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
