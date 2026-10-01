@@ -15,7 +15,6 @@ const EXPORTS = [
   'AppleStatus',
   'Environment',
   'Reason',
-  'VerificationError',
   'createConfig',
   'createInAppPurchase',
   'createJsonPayload',

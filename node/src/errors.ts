@@ -1,8 +1,7 @@
 /**
  * The 0.7 result vocabulary, shared by both entry points. The reasons are
  * the names aprv.wasm answers with; this file only spells them for
- * JavaScript. `VerificationError` stays exported for 0.7 compatibility and
- * is never thrown across a public method.
+ * JavaScript. A failure is a value inside the result, never a thrown error.
  */
 
 export const Reason = {
@@ -49,18 +48,3 @@ export interface FailedResult {
 
 /** The result of `verifyReceipt` or `verifySignedData`: never throws. */
 export type VerificationResult<T> = VerifiedResult<T> | FailedResult;
-
-/**
- * An error carrying a {@link Reason}. Kept for 0.7 compatibility: no
- * public method throws it, and every verify method reports a failure as a
- * {@link Failure} inside its result instead.
- */
-export class VerificationError extends Error {
-  readonly reason: Reason;
-
-  constructor(reason: Reason, message: string, cause?: unknown) {
-    super(message, cause !== undefined ? { cause } : undefined);
-    this.name = 'VerificationError';
-    this.reason = reason;
-  }
-}
