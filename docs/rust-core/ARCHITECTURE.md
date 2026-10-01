@@ -82,7 +82,7 @@ Package.swift, swift/         the Swift wrapper over WasmKit
   API is the Rust rendering of the 0.7 API that 0.7.0 already ships.
 - **aprv-surface** is the semantic model every boundary shares: the
   three operations, the eight reasons, the payload records, the failure,
-  the configuration (a list of DER roots). It depends on the core only,
+  the configuration (a list of roots, each DER or PEM bytes). It depends on the core only,
   and never on a binding generator, a runtime or a wire format
   (SURFACE.md §4).
 - **aprv-wire** turns surface values into the 0.7 canonical JSON bytes
@@ -215,7 +215,7 @@ export  memory, _initialize
 
 | Operation | Input | Output (UTF-8 JSON, aprv-wire) |
 |---|---|---|
-| `init` | the configuration JSON, roots as base64 DER | `{"ok":true}` or `{"ok":false,"message":"..."}` |
+| `init` | the configuration JSON, roots as base64 of DER or PEM bytes | `{"ok":true}` or `{"ok":false,"message":"..."}` |
 | `verify-receipt` | `now-ms`, the `receipt-data` string's bytes (standard base64) | `{"verified":true,"payload":<ReceiptPayload JSON>}` or a failure |
 | `verify-signed-data` | `now-ms`, the compact JWS's bytes | `{"verified":true,"payload":"<the signed payload JSON, exactly>"}` or a failure |
 | `verify-receipt-endpoint` | `env`, `now-ms`, the verifyReceipt request body | Apple's response JSON, byte for byte |

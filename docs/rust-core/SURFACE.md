@@ -163,7 +163,7 @@ Apple's endpoint refuses it ([aprv-server §1][server]).
 
 | 0.7 concept (Java spelling) | `aprv-surface` | `aprv-wire` / the WIT |
 |---|---|---|
-| `Config.roots()` | `Vec<Vec<u8>>` of DER roots, empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER>", ...]}` |
+| `Config.roots()` | `Vec<Vec<u8>>` of roots, each DER or PEM (the core tells them apart), empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER or PEM>", ...]}` |
 | `Config.clock()` | not modelled: the wrapper reads it | `now-ms: u64`, the first argument of each verify export |
 | `verifyReceipt(base64)` | `verify_receipt(&[u8], now_ms)` | `verify-receipt(now-ms, receipt-base64: list<u8>)` |
 | `verifySignedData(jws)` | `verify_signed_data(&[u8], now_ms)` | `verify-signed-data(now-ms, jws: list<u8>)` |

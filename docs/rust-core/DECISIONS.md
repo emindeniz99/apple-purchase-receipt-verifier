@@ -1136,6 +1136,36 @@ left open in ROADMAP.md.
   neither the one-implementation allowlist nor either package's own scan
   needs an exception for them.
 
+**Amended 2026-10-01** (owner, the same day; Q6). Wrappers pass a
+caller's root bytes as they are, and the core reads DER or PEM.
+
+- **Decision:** after base64 decoding `init`'s configuration, the core
+  reads each root entry by its bytes (`TrustAnchor::from_der_or_pem`). A
+  first byte of `0x30`, an ASN.1 SEQUENCE, is one DER certificate, read as
+  before. Bytes that start with `-----BEGIN`, after any ASCII whitespace,
+  go to OpenSSL's PEM reader (`X509::stack_from_pem`), and every
+  certificate in them becomes an anchor, so a PEM bundle is one entry.
+  Each one is held to the DER reader's bar. No certificate, a block
+  OpenSSL refuses, or anything else is the existing refusal, with the
+  existing message. No format parameter, no new error kind, no WIT
+  change: the ABI version stays.
+- **Why:** the format is decided in one place, by OpenSSL, and no
+  wrapper or caller has to convert anything. A PEM file read from disk
+  is a root as it stands in every package that takes bytes.
+- **Wrappers:** Node's `RootInput` stays `Uint8Array`, and a string is
+  still a `TypeError`: PEM text goes in as its bytes. Ruby's `Config`
+  drops its check for `-----BEGIN` and passes every String on. Python,
+  Swift and PHP already passed bytes on. Java, .NET and Go take
+  certificate objects and pass their DER, unchanged. No wrapper reads
+  either format, and the one-implementation allowlist is unchanged.
+- **`TrustAnchor::from_pem`** is no longer an exception: it goes through
+  the same OpenSSL reader and returns the first certificate.
+- **`aprv-server`'s `--roots` file stays an exception.** Its line reader
+  still unwraps PEM `CERTIFICATE` blocks to DER itself, because
+  `GET /v1/info` reports each root's SHA-256 and the Java and PHP clients
+  compare those with the DER they hold. A base64 line in that file may
+  now carry PEM bytes, which reach `init` unchanged.
+
 ---
 
 ## Rejected alternatives
