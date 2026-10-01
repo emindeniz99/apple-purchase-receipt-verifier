@@ -1,8 +1,10 @@
 //! The hand-written calendar and US Pacific rules `src/datetime.rs` carried
-//! before it moved to jiff (2026-10-01), copied verbatim from that file as
-//! the reference the differential tests in `tests/datetime.rs` hold the new
-//! code to. Nothing in the crate calls this; it is test data in the form of
-//! code, and it does not change.
+//! before it moved to jiff (2026-10-01), copied from that file at 7f2ea42
+//! with the module header replaced and the five `SystemTime` and RFC 3339
+//! functions the move deleted left out; every retained line is identical.
+//! It is the reference the differential tests in `tests/datetime.rs` hold
+//! the new code to. Nothing in the crate calls this; it is test data in the
+//! form of code, and it does not change.
 #![allow(dead_code, clippy::pedantic)]
 
 const MILLIS_PER_DAY: i64 = 86_400_000;

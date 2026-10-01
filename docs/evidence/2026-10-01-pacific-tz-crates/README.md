@@ -34,6 +34,6 @@ rm -rf "$SPIKE/data"
 ```
 
 The core's own differential, against the code that replaced this one, is
-`the_pacific_offset_matches_the_hand_written_rules_at_every_minute_1900_to_2100`
+`the_pacific_offset_matches_the_hand_written_rules_from_1883_to_9999`
 in `$REPO/rust/tests/datetime.rs`
 (`cargo test --release --test datetime -- --ignored`).

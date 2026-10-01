@@ -44,8 +44,9 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   `jiff` for the calendar and the US Pacific time of the `_pst` dates
   (one zone, `America/Los_Angeles`, compiled in; no time-zone file is
   read at run time), and `serde_json`, which only writes `to_json()` and
-  the endpoint response and never reads input. Every byte of attacker-supplied ASN.1 (certificates,
-  CMS, receipt payloads, keys, signatures) is parsed by OpenSSL 4 through
+  the endpoint response and never reads input. Every byte of
+  attacker-supplied ASN.1 (certificates, CMS, receipt payloads, keys,
+  signatures) is parsed by OpenSSL 4 through
   that adapter, which also does the path building and the signature
   arithmetic; this crate keeps the policy (roots, markers, the chain
   instant, the bounds, the reasons and their order) and holds
