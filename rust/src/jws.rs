@@ -11,7 +11,7 @@
 
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
 use crate::error::{malformed, Failure, Reason};
-use crate::json::{instant, whole_object_members, JsonError, Value};
+use crate::json::{instant, string, strings, whole_object_members, JsonError};
 use crate::path::validate_pair;
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
@@ -196,26 +196,7 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
     let text = core::str::from_utf8(bytes).map_err(|_| malformed("header is not UTF-8"))?;
     let members =
         whole_object_members(text).map_err(|_| malformed("header is not a JSON object"))?;
-    let mut alg = None;
-    let mut x5c = None;
-    for (name, value) in members {
-        match name.as_str() {
-            "alg" => {
-                alg = match value {
-                    Value::String(text) => Some(text),
-                    _ => None,
-                };
-            }
-            "x5c" => {
-                x5c = match value {
-                    Value::Strings(entries) => Some(entries),
-                    _ => None,
-                };
-            }
-            _ => {}
-        }
-    }
-    Ok((alg, x5c))
+    Ok((string(&members, "alg"), strings(&members, "x5c")))
 }
 
 /// The payload text and its last top-level `signedDate`, or why it is not a
@@ -226,16 +207,7 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
 fn read_payload(bytes: &[u8]) -> Result<(String, Option<i64>), Unreadable> {
     let text = core::str::from_utf8(bytes).map_err(Unreadable::NotUtf8)?;
     let members = whole_object_members(text).map_err(Unreadable::NotAnObject)?;
-    let mut signed_date = None;
-    for (name, value) in members {
-        if name == "signedDate" {
-            signed_date = match value {
-                Value::Number { text, integer } => instant(text, integer),
-                _ => None,
-            };
-        }
-    }
-    Ok((text.to_owned(), signed_date))
+    Ok((text.to_owned(), instant(&members, "signedDate")))
 }
 
 fn verify_signature(
