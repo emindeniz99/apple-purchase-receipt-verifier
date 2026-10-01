@@ -39,6 +39,16 @@ const ENVELOPE_LIMITS: EnvelopeLimits = EnvelopeLimits {
 /// be larger than the request that carries it.
 pub(crate) const MAX_RECEIPT_BYTES: usize = 3_145_728;
 
+/// Decodes a `receipt-data` text by the rule [`verify`] applies before
+/// anything else: non-empty standard base64 carrying exactly its canonical
+/// `=` padding, with no whitespace and nothing after the padding (the rule
+/// Apple's `verifyReceipt` applies, measured 2026-09-23). Bytes that are not
+/// UTF-8 are refused like any other character outside the alphabet.
+pub(crate) fn decode_receipt_data(text: &[u8]) -> Result<Vec<u8>, Failure> {
+    crate::base64::decode_receipt_base64(text)
+        .ok_or_else(|| Failure::new(Reason::Malformed, "receipt is not valid base64"))
+}
+
 /// Verifies a receipt in its base64 form, the shape a client sends, and
 /// decodes its payload.
 ///
@@ -61,7 +71,7 @@ pub(crate) fn verify(
             format!("receipt exceeds the maximum accepted size of {MAX_RECEIPT_BYTES} bytes"),
         ));
     }
-    let der = crate::decode_receipt_data(base64)?;
+    let der = decode_receipt_data(base64)?;
     let content = verify_signature(&der, anchors, clock)?;
     verifier::enter(Stage::PayloadParse);
     // A trusted signer signed these bytes, so a payload this crate cannot

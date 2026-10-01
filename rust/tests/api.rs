@@ -7,10 +7,12 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::{base64_decode_lenient, base64_encode};
+use apple_purchase_receipt_verifier::__internal::{
+    base64_decode_lenient, base64_encode, decode_receipt_data,
+};
 use apple_purchase_receipt_verifier::{
-    decode_receipt_data, AppleStatus, Config, ConfigError, Environment, Failure, InAppPurchase,
-    JsonPayload, Reason, ReceiptPayload, TrustAnchor, Verifier, VERSION,
+    AppleStatus, Config, ConfigError, Environment, Failure, InAppPurchase, JsonPayload, Reason,
+    ReceiptPayload, TrustAnchor, Verifier, VERSION,
 };
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -160,7 +162,7 @@ fn an_empty_root_set_is_a_config_error_not_a_verdict() {
     assert!(err.to_string().contains("roots"), "{err}");
     // Unset roots are Apple's bundled three, not an empty set.
     assert_eq!(Config::builder().build().unwrap().roots().len(), 3);
-    assert_eq!(Config::defaults().roots().len(), 3);
+    assert_eq!(Config::default().roots().len(), 3);
 }
 
 #[test]
@@ -237,12 +239,12 @@ fn one_verifier_answers_identically_from_sixteen_threads() {
 
 #[test]
 fn bundled_roots_are_parsed_once_and_shared() {
-    let first = Config::defaults();
-    let second = Config::defaults();
+    let first = Config::default();
+    let second = Config::default();
     for (a, b) in first.roots().iter().zip(second.roots()) {
         assert!(
             std::ptr::eq(a.der(), b.der()),
-            "every Config::defaults() shares one parse of the bundled roots"
+            "every Config::default() shares one parse of the bundled roots"
         );
     }
 }
@@ -516,8 +518,9 @@ fn the_byte_entry_points_answer_as_the_text_ones() {
     );
 }
 
-/// The one decoder the crate makes public applies verify_receipt's rule
-/// and gives its refusal.
+/// The internal `receipt-data` decoder (not public since 0.8) applies
+/// verify_receipt's rule and gives its refusal; the bindings read the
+/// configuration's roots with it.
 #[test]
 fn decode_receipt_data_is_the_receipt_rule() {
     assert_eq!(decode_receipt_data(b"AQID"), Ok(vec![1, 2, 3]));

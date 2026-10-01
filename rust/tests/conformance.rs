@@ -490,7 +490,10 @@ fn run_decode_base64(case: &Case) -> Result<(), Failed> {
     let mut failures = Vec::new();
     for decoder in decoders {
         let (decode, refusal): (fn(&str) -> _, Reason) = match decoder.as_str() {
-            "receipt-data" => (decode_receipt_data, Reason::Malformed),
+            "receipt-data" => (
+                |text| decode_receipt_data(text.as_bytes()),
+                Reason::Malformed,
+            ),
             "x5c" => (decode_x5c_entry, Reason::InvalidCertificate),
             other => {
                 return Err(Failed::from(format!(

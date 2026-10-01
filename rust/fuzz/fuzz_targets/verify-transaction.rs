@@ -19,7 +19,7 @@ fn verifiers() -> &'static (Verifier, Verifier) {
             .roots([TrustAnchor::from_der(JWS_ROOT).expect("fixture root")])
             .build()
             .expect("a non-empty anchor set");
-        (Verifier::new(fixture), Verifier::new(Config::defaults()))
+        (Verifier::new(fixture), Verifier::new(Config::default()))
     })
 }
 

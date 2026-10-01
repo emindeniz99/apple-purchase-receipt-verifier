@@ -12,7 +12,7 @@ use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, 
 use serde_json::Value;
 
 fn verifier() -> Verifier {
-    Verifier::new(Config::defaults())
+    Verifier::new(Config::default())
 }
 
 fn genuine(name: &str) -> String {
@@ -266,7 +266,7 @@ fn apples_real_production_chain_passes_at_its_effective_date() {
     // checks no longer accept what Apple actually ships.
     let root = base64_decode(REAL_APPLE_ROOT);
     assert!(
-        Config::defaults()
+        Config::default()
             .roots()
             .iter()
             .any(|anchor| anchor.der() == root.as_slice()),

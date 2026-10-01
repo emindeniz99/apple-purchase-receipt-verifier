@@ -319,7 +319,7 @@ pub fn init_result(result: &Result<(), String>) -> String {
 ///
 /// Accepted: no bytes at all (or only JSON whitespace), `{}`, and
 /// `{"roots":["<base64 DER>", ...]}`, each root in padded standard base64
-/// by the one rule the core makes public ([`aprv_surface::decode_base64`]).
+/// by the core's `receipt-data` rule ([`aprv_surface::decode_base64`]).
 /// Anything else is refused with a message, so a wrapper that misspells a
 /// member finds out at `create` instead of getting the Apple roots it did
 /// not ask for; so is `roots` named twice, which a JSON reader that keeps

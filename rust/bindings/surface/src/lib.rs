@@ -340,13 +340,14 @@ pub struct ConfigError {
     pub message: String,
 }
 
-/// Decodes base64 text by the one rule the core makes public: the
-/// `receipt-data` rule (non-empty standard base64 with exactly its
-/// canonical padding, nothing else). The bindings read the roots of a
-/// configuration with it.
+/// Decodes base64 text by the core's `receipt-data` rule (non-empty
+/// standard base64 with exactly its canonical padding, nothing else). The
+/// bindings read the roots of a configuration with it. The core keeps the
+/// decoder out of its public API; this crate is built with it in lockstep
+/// and reaches it through the core's internal hook.
 #[must_use]
 pub fn decode_base64(text: &[u8]) -> Option<Vec<u8>> {
-    core_api::decode_receipt_data(text).ok()
+    core_api::__internal::decode_receipt_data(text).ok()
 }
 
 // -------------------------------------------------------------- verifier

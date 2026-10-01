@@ -30,7 +30,7 @@ const NOW: i64 = 1_735_689_600_000;
 fn verifiers() -> &'static (Verifier, Verifier) {
     static VERIFIERS: OnceLock<(Verifier, Verifier)> = OnceLock::new();
     VERIFIERS.get_or_init(|| {
-        let mut trusted = Config::defaults().roots().to_vec();
+        let mut trusted = Config::default().roots().to_vec();
         trusted.push(TrustAnchor::from_der(RECEIPT_ROOT).expect("fixture root"));
         let build = |roots: Vec<TrustAnchor>| {
             Verifier::new(

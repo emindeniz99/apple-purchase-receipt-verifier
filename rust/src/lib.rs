@@ -18,7 +18,7 @@
 //! ```no_run
 //! use apple_purchase_receipt_verifier::{Config, Environment, Reason, Verifier};
 //!
-//! let verifier = Verifier::new(Config::defaults());
+//! let verifier = Verifier::new(Config::default());
 //! match verifier.verify_receipt("MIIT...") {
 //!     Ok(receipt) => {
 //!         // The caller's checks: bundle id, environment, product id.
@@ -89,26 +89,6 @@ pub use receipt_payload::{InAppPurchase, ReceiptPayload, UnknownAttributes};
 pub use roots::TrustAnchor;
 pub use verifier::Verifier;
 
-/// Decodes a `receipt-data` text by the rule
-/// [`Verifier::verify_receipt`] applies before anything else: non-empty
-/// standard base64 carrying exactly its canonical `=` padding, with no
-/// whitespace and nothing after the padding (the rule Apple's
-/// `verifyReceipt` applies, measured 2026-09-23). Bytes that are not UTF-8
-/// are refused like any other character outside the alphabet.
-///
-/// The one decoder this crate makes public, for the bindings that read
-/// base64 text of their own with the same rule (the roots of the Wasm
-/// module's configuration). It decides nothing about a receipt: decoding
-/// is not verifying.
-///
-/// # Errors
-/// [`Failure`] with [`Reason::Malformed`] and the message `receipt is not
-/// valid base64`, the refusal `verify_receipt` gives for the same text.
-pub fn decode_receipt_data(text: &[u8]) -> Result<Vec<u8>, Failure> {
-    base64::decode_receipt_base64(text)
-        .ok_or_else(|| Failure::new(Reason::Malformed, "receipt is not valid base64"))
-}
-
 /// This library's version, for startup logs.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -118,7 +98,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// directly: the date reader, the path policy, the key-use and full-decode
 /// seams, and the two base64
 /// decoders the shared decodeBase64 cases call. The shared cases name them
-/// as an internal hook; 0.7 exposes no decoder.
+/// as an internal hook; 0.7 exposes no decoder. The workspace's
+/// `aprv-surface` reads the configuration's base64 roots with the
+/// `receipt-data` decoder, so it moves with this crate in lockstep.
 #[doc(hidden)]
 pub mod __internal {
     /// Calendar arithmetic and Apple's date renderings.
@@ -167,12 +149,19 @@ pub mod __internal {
         crate::base64::decode_lenient(text)
     }
 
-    /// The `receipt-data` decoder. A refusal is `MALFORMED`.
+    /// The `receipt-data` decoder: non-empty standard base64 carrying
+    /// exactly its canonical `=` padding, with no whitespace and nothing
+    /// after the padding (the rule Apple's `verifyReceipt` applies, measured
+    /// 2026-09-23). Bytes that are not UTF-8 are refused like any other
+    /// character outside the alphabet. A refusal is `MALFORMED`. The
+    /// bindings read the base64 roots of the Wasm module's configuration
+    /// with it too; it decides nothing about a receipt.
     ///
     /// # Errors
-    /// [`Failure`](crate::Failure) with [`Reason::Malformed`](crate::Reason::Malformed).
-    pub fn decode_receipt_data(text: &str) -> Result<Vec<u8>, crate::Failure> {
-        crate::decode_receipt_data(text.as_bytes())
+    /// [`Failure`](crate::Failure) with [`Reason::Malformed`](crate::Reason::Malformed)
+    /// and the message `receipt is not valid base64`.
+    pub fn decode_receipt_data(text: &[u8]) -> Result<Vec<u8>, crate::Failure> {
+        crate::receipt::decode_receipt_data(text)
     }
 
     /// The `x5c` entry decoder. A refusal is `INVALID_CERTIFICATE`.
