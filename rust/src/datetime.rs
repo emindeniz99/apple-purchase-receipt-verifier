@@ -12,13 +12,19 @@
 //! and no other zone, into the binary from the IANA database that `jiff`
 //! ships, so nothing reads `/usr/share/zoneinfo` at run time (a `FROM
 //! scratch` image and the Wasm module have none) and the module carries one
-//! zone rather than the database. The measurements behind the choice are in
+//! zone rather than the database. The Pacific offset is the database's at
+//! every instant, local mean time (−07:52:58) before 1883-11-18 included.
+//! The measurements behind the choice are in
 //! `docs/evidence/2026-10-01-pacific-tz-crates.md`.
 //!
 //! What stays written out here is the receipt-date grammar. It is the
 //! contract with the Java implementation, pinned by the shared cases, so it
 //! is checked byte by byte before `jiff` sees the fields, and `jiff`'s own
 //! parsers, which accept more, are not used.
+//!
+//! An instant renders from `jiff`'s first (-9999-01-02T01:59:59Z) to the
+//! grammar's last second, 9999-12-31T23:59:59Z; outside that the renderings
+//! are `None`, and the endpoint answers a clock there as broken.
 
 use jiff::civil::{Date, DateTime, Time};
 use jiff::tz::{Offset, TimeZone};
@@ -28,22 +34,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// `America/Los_Angeles`, embedded at compile time.
 static PACIFIC: TimeZone = jiff::tz::get!("America/Los_Angeles");
 
-/// UTC−8, US Pacific standard time.
-const PST_OFFSET_SECONDS: i64 = -8 * 3600;
-
-/// `1900-01-01T00:00:00Z`. Before it [`pacific_offset_seconds`] answers PST.
-const PACIFIC_FROM: i64 = -2_208_988_800;
-
-/// `2100-01-01T00:00:00Z`. Today's daylight-saving rule (since 2007) holds
-/// from long before it.
-const YEAR_2100: i64 = 4_102_444_800;
-
-/// 400 Gregorian years: 146,097 days, a whole number of weeks. The calendar,
-/// the weekdays and so the current US daylight-saving rule repeat after it.
-const CYCLE_SECONDS: i64 = 146_097 * 86_400;
-
 /// The civil epoch, `1970-01-01T00:00:00`.
 const EPOCH: DateTime = DateTime::constant(1970, 1, 1, 0, 0, 0, 0);
+
+/// 9999-12-31T23:59:59.999Z, the last millisecond of the receipt grammar's
+/// last second.
+const LAST_MILLIS: i64 = 253_402_300_799_999;
+
+/// Whether the renderings cover an instant: from `jiff`'s first instant to
+/// [`LAST_MILLIS`]. Every receipt date [`parse_receipt_date`] accepts is
+/// inside; only a caller's clock can be outside.
+#[must_use]
+pub fn renders(millis: i64) -> bool {
+    (Timestamp::MIN.as_millisecond()..=LAST_MILLIS).contains(&millis)
+}
 
 /// Milliseconds since the Unix epoch, saturating at the `i64` bounds.
 #[must_use]
@@ -57,80 +61,75 @@ pub fn unix_millis_of(at: SystemTime) -> i64 {
 }
 
 /// The UTC offset of `America/Los_Angeles`, in seconds, at an
-/// epoch-millisecond instant.
+/// epoch-millisecond instant: the IANA database's answer, or `None` outside
+/// the instants this crate renders.
 ///
-/// The IANA database's answer from 1900 onward. It has to be right for
-/// every instant, not just recent ones: the endpoint's `request_date_pst`
-/// is rendered at a caller-supplied clock, which can name any instant at
-/// all.
-///
-/// Before 1900 the answer is PST, which is what the database gives from
-/// 1883-11-18 to 1918; the local mean time it gives before 1883 is not
-/// used, so every instant before 1900 renders as it did when this crate
-/// wrote the rules out by hand. From 2500 on (and `jiff` represents no
-/// instant past 9999-12-30), the instant is moved back by whole 400-year
-/// cycles into 2100-2500, where the same rule gives the same offset.
+/// `jiff`'s last instant is 9999-12-30T22:00:00.999999999Z (room for any
+/// offset to stay inside the year 9999), 26 hours before the receipt
+/// grammar's last second. Later instants up to that second take the offset
+/// at `jiff`'s last second, which is exact: the zone's rule puts the whole
+/// of 9999-12-30 and 9999-12-31 in PST.
 #[must_use]
-pub fn pacific_offset_seconds(millis: i64) -> i64 {
-    let seconds = millis.div_euclid(1000);
-    if seconds < PACIFIC_FROM {
-        return PST_OFFSET_SECONDS;
+pub fn pacific_offset_seconds(millis: i64) -> Option<i64> {
+    if !renders(millis) {
+        return None;
     }
-    let seconds = if seconds >= YEAR_2100 + CYCLE_SECONDS {
-        YEAR_2100 + (seconds - YEAR_2100).rem_euclid(CYCLE_SECONDS)
-    } else {
-        seconds
-    };
-    // 1900 to 2500 is inside jiff's range, so the fallback is not taken.
-    Timestamp::from_second(seconds).map_or(PST_OFFSET_SECONDS, |at| {
-        i64::from(PACIFIC.to_offset(at).seconds())
-    })
+    // The whole second, floored: jiff looks a timestamp up by its second
+    // truncated toward zero, so before 1970 the last millisecond ahead of a
+    // transition would take the new offset.
+    let second = millis.div_euclid(1000).min(Timestamp::MAX.as_second());
+    let at = Timestamp::from_second(second).ok()?;
+    Some(i64::from(PACIFIC.to_offset(at).seconds()))
 }
 
 /// Apple's `x` / `x_pst` rendering: `YYYY-MM-DD HH:MM:SS <label>`, with the
-/// civil time taken in `offset_seconds`.
+/// civil time taken in `offset_seconds`, or `None` when that civil time is
+/// outside `jiff`'s calendar (the years -9999 to 9999).
 ///
-/// Every `i64` instant renders, as it did before `jiff`: `jiff` covers the
-/// years -9999 to 9999 and the endpoint's clock reaches far past them. The
-/// civil time is read within one 400-year cycle of 1970 and the cycles are
-/// added back to the year, which the proleptic Gregorian calendar makes
-/// exact. The year is printed with at least four characters, sign
-/// included (`-001` for 2 BC).
+/// The year is printed as `jiff`'s `%Y` prints it, zero-padded to four
+/// characters with the sign counted: `0000` to `9999`, and `-001` for 2 BC,
+/// which the year 0000 of a receipt date reaches in Pacific time. That is
+/// what the hand-written code printed too.
 #[must_use]
-pub fn format_civil(millis: i64, offset_seconds: i64, label: &str) -> String {
-    let local = millis
-        .saturating_add(offset_seconds.saturating_mul(1000))
-        .div_euclid(1000);
-    let cycles = local.div_euclid(CYCLE_SECONDS);
-    // 0 <= within < CYCLE_SECONDS: 1970 to 2370, inside jiff's range, so
-    // the conversion cannot fail.
-    let within = local.rem_euclid(CYCLE_SECONDS);
-    let civil = Timestamp::from_second(within).map_or(EPOCH, |at| Offset::UTC.to_datetime(at));
-    let year = i64::from(civil.year()) + 400 * cycles;
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} {}",
-        year,
+pub fn format_civil(millis: i64, offset_seconds: i64, label: &str) -> Option<String> {
+    let second = millis.div_euclid(1000);
+    // jiff's last timestamp is 9999-12-30T22:00:00Z, 25:59:59 before the
+    // receipt grammar's last second. The seconds past it are carried in the
+    // offset instead, which jiff allows up to ±25:59:59 for exactly this:
+    // every timestamp, in every offset, is a civil time in the year range.
+    let at = second.min(Timestamp::MAX.as_second());
+    let shift = i32::try_from(offset_seconds.checked_add(second - at)?).ok()?;
+    let civil = Offset::from_seconds(shift)
+        .ok()?
+        .to_datetime(Timestamp::from_second(at).ok()?);
+    // jiff's fields, printed as its `%Y-%m-%d %H:%M:%S` prints them (the
+    // tests hold the two equal); `strftime` itself adds 237 KB to the module.
+    Some(format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} {label}",
+        civil.year(),
         civil.month(),
         civil.day(),
         civil.hour(),
         civil.minute(),
-        civil.second(),
-        label
-    )
+        civil.second()
+    ))
 }
 
 /// Apple's GMT rendering of an instant.
 #[must_use]
-pub fn format_etc_gmt(millis: i64) -> String {
+pub fn format_etc_gmt(millis: i64) -> Option<String> {
+    if !renders(millis) {
+        return None;
+    }
     format_civil(millis, 0, "Etc/GMT")
 }
 
 /// Apple's US-Pacific rendering of an instant.
 #[must_use]
-pub fn format_pacific(millis: i64) -> String {
+pub fn format_pacific(millis: i64) -> Option<String> {
     format_civil(
         millis,
-        pacific_offset_seconds(millis),
+        pacific_offset_seconds(millis)?,
         "America/Los_Angeles",
     )
 }

@@ -526,8 +526,12 @@ beyond "no panic".
 offset transition from 1900 to 2100, taken from the IANA database via
 Python's `zoneinfo`, and the suite checks the rendering rules at the second
 before and the second of each of the 308 of them. The offsets come from
-`jiff`, which compiles that one zone in from its own copy of the database;
-`tests/datetime.rs` also holds them, and the renderings, to the
-hand-written rules this crate carried until 2026-10-01, at every minute
-from 1900 to 2100 in an ignored test (`cargo test --release --test
-datetime -- --ignored`) and at a sample on every run.
+`jiff`, which compiles that one zone in from its own copy of the database,
+local mean time before 1883-11-18 included. `tests/datetime.rs` also holds
+them, and the renderings, to the hand-written rules this crate carried
+until 2026-10-01: every minute from 1883-11-18 to 2100 and every hour to
+the end of 9999 in an ignored test (`cargo test --release --test datetime
+-- --ignored`), and a sample on every run. Dates render from the year
+-9999 to 9999-12-31T23:59:59Z, the receipt grammar's last second; the
+endpoint answers a clock outside that range as a broken clock, with
+status 21009.

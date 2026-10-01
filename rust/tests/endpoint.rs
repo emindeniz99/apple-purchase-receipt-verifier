@@ -322,3 +322,66 @@ fn the_clock_stands_in_for_a_missing_creation_date() {
     assert_eq!(now["status"], 0);
     assert_eq!(now["receipt"]["request_date_ms"], "1735689600000");
 }
+
+/// A clock outside the instants the dates render (jiff's first instant to
+/// 9999-12-31T23:59:59.999Z) is a broken clock, answered like one that
+/// panics: the status-only INTERNAL_ERROR body, never a date string.
+#[test]
+fn a_clock_past_the_renderable_range_answers_21009() {
+    for now in [
+        253_402_300_800_000_i64,
+        i64::MAX,
+        -377_705_023_201_001,
+        i64::MIN,
+    ] {
+        let (text, _) = respond_with(
+            common::receipt_root(),
+            Environment::Sandbox,
+            now,
+            "generated-0.7/receipt.der",
+        );
+        assert_eq!(text, "{\"status\":21009}", "at {now}");
+    }
+    let receipt = shared_receipt(Environment::Sandbox, 253_402_300_799_999);
+    assert_eq!(receipt["request_date"], "9999-12-31 23:59:59 Etc/GMT");
+    assert_eq!(
+        receipt["request_date_pst"],
+        "9999-12-31 15:59:59 America/Los_Angeles"
+    );
+}
+
+/// Every receipt date the grammar accepts renders, its two ends included:
+/// 9999-12-31T23:59:59Z lies 26 hours past jiff's last instant, and
+/// 0000-01-01T00:00:00Z is local mean time (−07:52:58) in Los Angeles.
+#[test]
+fn the_receipt_date_grammar_s_two_ends_render() {
+    let (_, response) = respond_with(
+        common::anchor("generated-0.7/owner-receipt-root.der"),
+        Environment::Sandbox,
+        NOW,
+        "generated-0.7/owner-receipt-date-grammar.der",
+    );
+    assert_eq!(response["status"], 0, "{response}");
+    let purchase = |id: &str| {
+        response["receipt"]["in_app"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["transaction_id"] == id)
+            .unwrap()
+            .clone()
+    };
+    let last = purchase("70000000000202");
+    assert_eq!(last["purchase_date"], "9999-12-31 23:59:59 Etc/GMT");
+    assert_eq!(last["purchase_date_ms"], "253402300799000");
+    assert_eq!(
+        last["purchase_date_pst"],
+        "9999-12-31 15:59:59 America/Los_Angeles"
+    );
+    let first = purchase("70000000000201");
+    assert_eq!(first["purchase_date"], "0000-01-01 00:00:00 Etc/GMT");
+    assert_eq!(
+        first["purchase_date_pst"],
+        "-001-12-31 16:07:02 America/Los_Angeles"
+    );
+}

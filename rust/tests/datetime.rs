@@ -14,10 +14,24 @@ mod hand_written_datetime;
 
 use apple_purchase_receipt_verifier::__internal::datetime::{
     format_civil, format_etc_gmt, format_pacific, pacific_offset_seconds, parse_receipt_date,
-    unix_millis_of,
+    renders, unix_millis_of,
 };
 use hand_written_datetime as old;
 use std::time::{Duration, UNIX_EPOCH};
+
+/// The renderings and the offset of an instant every test below expects to
+/// render.
+fn pacific(millis: i64) -> String {
+    format_pacific(millis).unwrap_or_else(|| panic!("{millis} renders"))
+}
+
+fn gmt(millis: i64) -> String {
+    format_etc_gmt(millis).unwrap_or_else(|| panic!("{millis} renders"))
+}
+
+fn offset(millis: i64) -> i64 {
+    pacific_offset_seconds(millis).unwrap_or_else(|| panic!("{millis} renders"))
+}
 
 /// `(epoch millis, expected US-Pacific rendering)`, from IANA via
 /// `zoneinfo`.
@@ -59,14 +73,14 @@ const PACIFIC_VECTORS: [(i64, &str); 21] = [
 #[test]
 fn the_pacific_rendering_matches_the_iana_database() {
     for (millis, expected) in PACIFIC_VECTORS {
-        assert_eq!(format_pacific(millis), expected, "at {millis}");
+        assert_eq!(pacific(millis), expected, "at {millis}");
     }
 }
 
 #[test]
 fn the_pacific_offset_is_minus_seven_or_minus_eight() {
     for (millis, expected) in PACIFIC_VECTORS {
-        let offset = pacific_offset_seconds(millis);
+        let offset = offset(millis);
         assert!(
             offset == -7 * 3600 || offset == -8 * 3600,
             "offset {offset} at {millis}"
@@ -79,11 +93,11 @@ fn the_pacific_offset_is_minus_seven_or_minus_eight() {
 #[test]
 fn the_transition_is_exact_to_the_second() {
     // One second either side of the 2024 spring-forward instant.
-    assert_eq!(pacific_offset_seconds(1_710_064_799_999), -8 * 3600);
-    assert_eq!(pacific_offset_seconds(1_710_064_800_000), -7 * 3600);
+    assert_eq!(offset(1_710_064_799_999), -8 * 3600);
+    assert_eq!(offset(1_710_064_800_000), -7 * 3600);
     // And of the autumn fall-back instant.
-    assert_eq!(pacific_offset_seconds(1_730_624_399_999), -7 * 3600);
-    assert_eq!(pacific_offset_seconds(1_730_624_400_000), -8 * 3600);
+    assert_eq!(offset(1_730_624_399_999), -7 * 3600);
+    assert_eq!(offset(1_730_624_400_000), -8 * 3600);
 }
 
 /// This used to assert PST for the same instant, on the grounds that the
@@ -95,20 +109,14 @@ fn the_transition_is_exact_to_the_second() {
 fn summer_1980_is_daylight_time_not_standard_time() {
     // 1980-07-01T12:00:00Z, inside the 1980 DST window (27 April to
     // 26 October).
-    assert_eq!(pacific_offset_seconds(331_214_400_000), -7 * 3600);
+    assert_eq!(offset(331_214_400_000), -7 * 3600);
 }
 
 #[test]
 fn the_gmt_rendering_is_apples_etc_gmt_form() {
-    assert_eq!(
-        format_etc_gmt(1_722_945_600_000),
-        "2024-08-06 12:00:00 Etc/GMT"
-    );
-    assert_eq!(format_etc_gmt(0), "1970-01-01 00:00:00 Etc/GMT");
-    assert_eq!(
-        format_etc_gmt(1_735_689_600_000),
-        "2025-01-01 00:00:00 Etc/GMT"
-    );
+    assert_eq!(gmt(1_722_945_600_000), "2024-08-06 12:00:00 Etc/GMT");
+    assert_eq!(gmt(0), "1970-01-01 00:00:00 Etc/GMT");
+    assert_eq!(gmt(1_735_689_600_000), "2025-01-01 00:00:00 Etc/GMT");
 }
 
 #[test]
@@ -196,7 +204,7 @@ fn parse_and_render_round_trip_across_a_century() {
             let text = format!("{year:04}-{month:02}-01T00:00:00Z");
             let millis = parse_receipt_date(&text).unwrap_or_else(|| panic!("{text}"));
             assert_eq!(
-                format_etc_gmt(millis),
+                gmt(millis),
                 format!("{year:04}-{month:02}-01 00:00:00 Etc/GMT")
             );
         }
@@ -209,11 +217,11 @@ fn every_day_of_2024_round_trips() {
     let end = parse_receipt_date("2025-01-01T00:00:00Z").unwrap();
     let mut days = 0;
     while millis < end {
-        let gmt = format_etc_gmt(millis);
+        let gmt = gmt(millis);
         let text = format!("{}Z", gmt.trim_end_matches(" Etc/GMT").replace(' ', "T"));
         assert_eq!(parse_receipt_date(&text), Some(millis), "{text}");
         // And the Pacific rendering never produces an impossible clock face.
-        let pacific = format_pacific(millis);
+        let pacific = pacific(millis);
         assert!(pacific.ends_with(" America/Los_Angeles"), "{pacific}");
         millis += 86_400_000;
         days += 1;
@@ -256,15 +264,11 @@ fn the_us_pacific_rules_match_the_iana_database_at_every_transition() {
         let before: i64 = fields.next().unwrap().parse().unwrap();
         let after: i64 = fields.next().unwrap().parse().unwrap();
         assert_eq!(
-            pacific_offset_seconds((at - 1) * 1000),
+            offset((at - 1) * 1000),
             before,
             "one second before the transition at {at}"
         );
-        assert_eq!(
-            pacific_offset_seconds(at * 1000),
-            after,
-            "at the transition at {at}"
-        );
+        assert_eq!(offset(at * 1000), after, "at the transition at {at}");
         checked += 1;
     }
     assert!(
@@ -281,35 +285,43 @@ fn the_us_pacific_rules_match_the_iana_database_at_every_transition() {
 fn pre_1987_daylight_time_is_observed() {
     // 1970-04-26T10:00:00Z is the first instant of PDT in 1970.
     let at = parse_receipt_date("1970-04-26T10:00:00Z").unwrap();
+    assert_eq!(pacific(at), "1970-04-26 03:00:00 America/Los_Angeles");
     assert_eq!(
-        format_pacific(at),
-        "1970-04-26 03:00:00 America/Los_Angeles"
-    );
-    assert_eq!(
-        format_pacific(at - 1000),
+        pacific(at - 1000),
         "1970-04-26 01:59:59 America/Los_Angeles"
     );
     // The Emergency Daylight Saving Time Act years are not the usual rule.
     let jan_1974 = parse_receipt_date("1974-01-06T10:00:00Z").unwrap();
-    assert_eq!(pacific_offset_seconds(jan_1974), -7 * 3600);
-    assert_eq!(pacific_offset_seconds(jan_1974 - 1000), -8 * 3600);
+    assert_eq!(offset(jan_1974), -7 * 3600);
+    assert_eq!(offset(jan_1974 - 1000), -8 * 3600);
     let feb_1975 = parse_receipt_date("1975-02-23T10:00:00Z").unwrap();
-    assert_eq!(pacific_offset_seconds(feb_1975), -7 * 3600);
-    assert_eq!(pacific_offset_seconds(feb_1975 - 1000), -8 * 3600);
+    assert_eq!(offset(feb_1975), -7 * 3600);
+    assert_eq!(offset(feb_1975 - 1000), -8 * 3600);
     // Wartime daylight time ran continuously for three and a half years.
     let wartime = parse_receipt_date("1943-07-01T12:00:00Z").unwrap();
-    assert_eq!(pacific_offset_seconds(wartime), -7 * 3600);
+    assert_eq!(offset(wartime), -7 * 3600);
     // 1950-1966 switched at 01:00 local, not 02:00.
     let y1950 = parse_receipt_date("1950-04-30T09:00:00Z").unwrap();
-    assert_eq!(pacific_offset_seconds(y1950), -7 * 3600);
-    assert_eq!(pacific_offset_seconds(y1950 - 1000), -8 * 3600);
+    assert_eq!(offset(y1950), -7 * 3600);
+    assert_eq!(offset(y1950 - 1000), -8 * 3600);
 }
 
 // --- the jiff-based code against the hand-written code it replaced ------
+//
+// The two agree from 1883-11-18T20:00:00Z, where the IANA database starts
+// Pacific standard time, to the receipt grammar's last second. Before it
+// the database (and so jiff, and Java's ZoneId) gives local mean time,
+// −07:52:58, where the hand-written code answered PST.
 
-/// 1900-01-01T00:00:00Z and 2100-01-01T00:00:00Z.
-const FROM_1900: i64 = -2_208_988_800;
+/// 1883-11-18T20:00:00Z, 2100-01-01T00:00:00Z, and the receipt grammar's
+/// last second, 9999-12-31T23:59:59Z.
+const FROM_1883: i64 = -2_717_640_000;
 const TO_2100: i64 = 4_102_444_800;
+const LAST_SECOND: i64 = 253_402_300_799;
+/// jiff's last instant, 9999-12-30T22:00:00.999999999Z, in milliseconds.
+const JIFF_LAST_MILLIS: i64 = 253_402_207_200_999;
+/// −07:52:58, Los Angeles local mean time.
+const LMT: i64 = -(7 * 3600 + 52 * 60 + 58);
 
 /// Every offset change in `tests/data/pacific-transitions.txt`, in seconds.
 fn transitions() -> Vec<i64> {
@@ -323,11 +335,30 @@ fn transitions() -> Vec<i64> {
         .collect()
 }
 
+/// The new renderings and offset at `millis` against the hand-written ones.
+fn assert_same(millis: i64) {
+    assert_eq!(
+        format_etc_gmt(millis),
+        Some(old::format_etc_gmt(millis)),
+        "GMT at {millis}"
+    );
+    assert_eq!(
+        format_pacific(millis),
+        Some(old::format_pacific(millis)),
+        "Pacific at {millis}"
+    );
+    assert_eq!(
+        pacific_offset_seconds(millis),
+        Some(old::pacific_offset_seconds(millis)),
+        "offset at {millis}"
+    );
+}
+
 /// Instants whose renderings must not change by a byte: both transitions of
-/// 1950, 1998, 2007 and 2026 (the second before, the second of, and the
-/// last millisecond before each), the epoch, the receipt grammar's two
-/// ends, the 1900 edge of the Pacific rules, and the `i64` extremes a
-/// caller's clock can reach.
+/// 1950, 1998, 2007 and 2026 (the second before, the last millisecond
+/// before, the second of and the one after each), the epoch, the 1883 and
+/// 1900 edges, and the last 26 hours of the year 9999, which lie past
+/// jiff's last instant.
 #[test]
 fn the_renderings_are_byte_identical_to_the_hand_written_code() {
     let mut instants: Vec<i64> = Vec::new();
@@ -352,60 +383,137 @@ fn the_renderings_are_byte_identical_to_the_hand_written_code() {
         0,
         -1,
         1,
-        FROM_1900 * 1000 - 1,
-        FROM_1900 * 1000,
-        -2_717_640_000_000,  // 1883-11-18T20:00:00Z, the database's LMT to PST
-        -62_167_219_200_000, // 0000-01-01T00:00:00Z, renders in 2 BC as -001
-        -62_167_219_200_001,
-        253_402_300_799_000, // 9999-12-31T23:59:59Z
-        253_402_300_799_999,
-        253_402_300_800_000, // 10000-01-01T00:00:00Z, past jiff's calendar
-        16_725_225_600_000,  // 2500-01-01T00:00:00Z, the 400-year fold
-        16_725_225_599_999,
-        16_741_036_800_000, // 2500-07-03, PDT after the fold
-        16_756_329_600_000, // 2500-12-27, PST after the fold
-        1_000_000_000_000_000,
-        -1_000_000_000_000_000,
-        i64::MAX,
-        i64::MAX - 1,
-        i64::MIN,
-        i64::MIN + 1,
+        FROM_1883 * 1000,
+        FROM_1883 * 1000 + 1,
+        -2_208_988_800_000, // 1900-01-01T00:00:00Z
+        -2_208_988_800_001,
+        253_402_207_200_000, // 9999-12-30T22:00:00Z
+        253_402_207_200_001, // 9999-12-30T22:00:00.001Z
+        JIFF_LAST_MILLIS,
+        JIFF_LAST_MILLIS + 1, // the first millisecond past jiff
+        253_402_214_400_000,  // 9999-12-31T00:00:00Z
+        LAST_SECOND * 1000,   // 9999-12-31T23:59:59Z
+        LAST_SECOND * 1000 + 999,
     ]);
     for millis in instants {
-        assert_eq!(
-            format_etc_gmt(millis),
-            old::format_etc_gmt(millis),
-            "GMT at {millis}"
-        );
-        assert_eq!(
-            format_pacific(millis),
-            old::format_pacific(millis),
-            "Pacific at {millis}"
-        );
-        assert_eq!(
-            pacific_offset_seconds(millis),
-            old::pacific_offset_seconds(millis),
-            "offset at {millis}"
-        );
-        for offset in [-12 * 3600, 14 * 3600, i64::MIN, i64::MAX] {
+        assert_same(millis);
+        for offset in [-12 * 3600, 0] {
             assert_eq!(
                 format_civil(millis, offset, "X"),
-                old::format_civil(millis, offset, "X"),
+                Some(old::format_civil(millis, offset, "X")),
                 "civil at {millis} offset {offset}"
             );
         }
     }
-    assert_eq!(
-        format_pacific(-62_167_219_200_000),
-        "-001-12-31 16:00:00 America/Los_Angeles"
-    );
-    assert_eq!(format_etc_gmt(i64::MAX), "292278994-08-17 07:12:55 Etc/GMT");
 }
 
-/// The Pacific rendering at a sample of 1900-2100 (one instant every 7,919
+/// The year 9999 past jiff's last instant, both renderings, written out.
+#[test]
+fn the_last_26_hours_of_9999_render() {
+    for (millis, utc, pacific_time) in [
+        (
+            253_402_207_200_001,
+            "9999-12-30 22:00:00 Etc/GMT",
+            "9999-12-30 14:00:00 America/Los_Angeles",
+        ),
+        (
+            253_402_214_400_000,
+            "9999-12-31 00:00:00 Etc/GMT",
+            "9999-12-30 16:00:00 America/Los_Angeles",
+        ),
+        (
+            LAST_SECOND * 1000,
+            "9999-12-31 23:59:59 Etc/GMT",
+            "9999-12-31 15:59:59 America/Los_Angeles",
+        ),
+    ] {
+        assert_eq!(format_etc_gmt(millis).as_deref(), Some(utc), "at {millis}");
+        assert_eq!(
+            format_pacific(millis).as_deref(),
+            Some(pacific_time),
+            "at {millis}"
+        );
+    }
+    assert_eq!(
+        parse_receipt_date("9999-12-31T23:59:59Z"),
+        Some(LAST_SECOND * 1000)
+    );
+}
+
+/// Past jiff's last instant the offset is the one at that instant. That is
+/// exact only because the zone's rule puts all of 9999-12-30 and -31 in
+/// standard time: nothing changes from the first Sunday in November 9999
+/// until March 10000.
+#[test]
+fn the_end_of_9999_is_standard_time() {
+    let mut s = 253_399_708_800; // 9999-12-01T00:00:00Z
+    while s * 1000 <= JIFF_LAST_MILLIS {
+        assert_eq!(pacific_offset_seconds(s * 1000), Some(-8 * 3600), "at {s}");
+        s += 3_600;
+    }
+    for millis in [JIFF_LAST_MILLIS + 1, LAST_SECOND * 1000 + 999] {
+        assert_eq!(
+            pacific_offset_seconds(millis),
+            Some(-8 * 3600),
+            "at {millis}"
+        );
+    }
+}
+
+/// Before 1883-11-18T20:00:00Z the database's answer is local mean time,
+/// −07:52:58, and it is taken as it is: the year 0000 of a receipt date
+/// renders in Pacific time as 2 BC, which jiff prints `-001`.
+#[test]
+fn before_1883_the_offset_is_local_mean_time() {
+    assert_eq!(pacific_offset_seconds(FROM_1883 * 1000 - 1), Some(LMT));
+    assert_eq!(pacific_offset_seconds(FROM_1883 * 1000), Some(-8 * 3600));
+    assert_eq!(
+        format_pacific(FROM_1883 * 1000 - 1000).as_deref(),
+        Some("1883-11-18 12:07:01 America/Los_Angeles")
+    );
+    let year_0 = parse_receipt_date("0000-01-01T00:00:00Z").unwrap();
+    assert_eq!(pacific_offset_seconds(year_0), Some(LMT));
+    assert_eq!(
+        format_etc_gmt(year_0).as_deref(),
+        Some("0000-01-01 00:00:00 Etc/GMT")
+    );
+    assert_eq!(
+        format_pacific(year_0).as_deref(),
+        Some("-001-12-31 16:07:02 America/Los_Angeles")
+    );
+    // Years 0 to 999 keep four digits, as before.
+    let year_999 = parse_receipt_date("0999-06-15T12:00:00Z").unwrap();
+    assert_eq!(
+        format_etc_gmt(year_999).as_deref(),
+        Some("0999-06-15 12:00:00 Etc/GMT")
+    );
+    assert_eq!(
+        format_etc_gmt(year_999),
+        Some(old::format_etc_gmt(year_999))
+    );
+}
+
+/// Outside jiff's first instant and the grammar's last second nothing
+/// renders; the endpoint answers such a clock as broken (tests/endpoint.rs).
+#[test]
+fn instants_outside_the_range_do_not_render() {
+    let first = -377_705_023_201_000; // -9999-01-02T01:59:59Z, jiff's first
+    assert!(renders(first));
+    assert!(format_pacific(first).is_some() && format_etc_gmt(first).is_some());
+    assert!(renders(LAST_SECOND * 1000 + 999));
+    for millis in [first - 1, LAST_SECOND * 1000 + 1000, i64::MAX, i64::MIN] {
+        assert!(!renders(millis), "{millis}");
+        assert_eq!(format_etc_gmt(millis), None, "{millis}");
+        assert_eq!(format_pacific(millis), None, "{millis}");
+        assert_eq!(pacific_offset_seconds(millis), None, "{millis}");
+    }
+    assert_eq!(format_civil(i64::MAX, 1, "X"), None);
+}
+
+/// The Pacific rendering at a sample of 1883-2100 (one instant every 7,919
 /// seconds, so every hour and minute of the day comes round), at every
-/// transition and the second before it, and at a sparser sample out to the
-/// year 10000. The full minute-by-minute run is the ignored test below.
+/// transition and the second before it, and at a sparser sample to the end
+/// of 9999. The full run is the ignored test below.
 #[test]
 fn the_pacific_rendering_matches_the_hand_written_rules_at_a_sample() {
     let mut checked = 0u64;
@@ -413,12 +521,12 @@ fn the_pacific_rendering_matches_the_hand_written_rules_at_a_sample() {
         let millis = seconds * 1000;
         assert_eq!(
             format_pacific(millis),
-            old::format_pacific(millis),
+            Some(old::format_pacific(millis)),
             "at {millis}"
         );
         checked += 1;
     };
-    let mut s = FROM_1900;
+    let mut s = FROM_1883;
     while s < TO_2100 {
         check(s);
         s += 7_919;
@@ -428,10 +536,11 @@ fn the_pacific_rendering_matches_the_hand_written_rules_at_a_sample() {
         check(at);
     }
     let mut s = TO_2100;
-    while s < 253_402_300_800 {
+    while s <= LAST_SECOND {
         check(s);
         s += 1_000_003;
     }
+    check(LAST_SECOND);
     assert!(checked > 1_000_000, "{checked}");
 }
 
@@ -480,67 +589,70 @@ fn the_receipt_date_grammar_is_unchanged() {
 }
 
 /// The spike's differential (docs/evidence/2026-10-01-pacific-tz-crates),
-/// ported: the US-Pacific offset at every minute from 1900-01-01 to
-/// 2100-01-01 and at every transition and the second before it, every
-/// hour from 2100 to 2900 (across the 400-year fold at 2500), the GMT
-/// rendering at every hour of one whole 400-year cycle (1970-2370), and
-/// both renderings at 2^20 instants strided across the whole `i64` range.
-/// About 117 million comparisons; run with
+/// ported and widened to every instant both codes render alike: the
+/// US-Pacific offset at every minute from 1883-11-18T20:00:00Z to
+/// 2100-01-01 and at every transition and the second before it, and both
+/// renderings at every hour from 2100 to the grammar's last second. Run with
 /// `cargo test --release --test datetime -- --ignored`.
 #[test]
-#[ignore = "about 117 million comparisons: seconds in a release build, minutes in a debug one"]
-fn the_pacific_offset_matches_the_hand_written_rules_at_every_minute_1900_to_2100() {
+#[ignore = "about 183 million instants: under two minutes in a release build, far longer in a debug one"]
+fn the_pacific_offset_matches_the_hand_written_rules_from_1883_to_9999() {
     let mut checked = 0u64;
-    let mut offset = |seconds: i64| {
-        let millis = seconds * 1000;
+    let mut s = FROM_1883;
+    while s < TO_2100 {
+        let millis = s * 1000;
         assert_eq!(
             pacific_offset_seconds(millis),
-            old::pacific_offset_seconds(millis),
+            Some(old::pacific_offset_seconds(millis)),
             "at {millis}"
         );
         checked += 1;
-    };
-    let mut s = FROM_1900;
-    while s < TO_2100 {
-        offset(s);
         s += 60;
     }
     for at in transitions() {
-        offset(at - 1);
-        offset(at);
+        assert_same((at - 1) * 1000);
+        assert_same(at * 1000);
+        checked += 2;
     }
     let mut s = TO_2100;
-    while s < 29_348_006_400 {
-        // 2900-01-01T00:00:00Z
-        offset(s);
-        s += 3_600;
-    }
-    let mut s = 0;
-    while s < 146_097 * 86_400 {
+    while s <= LAST_SECOND {
         let millis = s * 1000;
         assert_eq!(
             format_etc_gmt(millis),
-            old::format_etc_gmt(millis),
-            "at {millis}"
-        );
-        checked += 1;
-        s += 3_600;
-    }
-    let stride = (u64::MAX >> 20) as i64;
-    let mut millis = i64::MIN;
-    for _ in 0..(1u32 << 20) {
-        assert_eq!(
-            format_etc_gmt(millis),
-            old::format_etc_gmt(millis),
+            Some(old::format_etc_gmt(millis)),
             "at {millis}"
         );
         assert_eq!(
             format_pacific(millis),
-            old::format_pacific(millis),
+            Some(old::format_pacific(millis)),
             "at {millis}"
         );
         checked += 1;
-        millis = millis.wrapping_add(stride);
+        s += 3_600;
     }
-    println!("{checked} comparisons, 0 disagreements");
+    assert_same(LAST_SECOND * 1000);
+    checked += 1;
+    println!("{checked} instants compared, 0 disagreements");
+}
+
+/// `format_civil` prints jiff's civil fields itself, since `strftime` adds
+/// 237 KB to the module; this holds the two to the same bytes over the whole
+/// year range, negative years included.
+#[test]
+fn the_rendering_is_jiffs_own_strftime() {
+    let mut s = -377_705_023_201; // jiff's first second
+    while s <= LAST_SECOND {
+        let millis = s * 1000;
+        let at = jiff::Timestamp::from_second(s.min(jiff::Timestamp::MAX.as_second())).unwrap();
+        let extra = i32::try_from(s - at.as_second()).unwrap();
+        let civil = jiff::tz::Offset::from_seconds(extra)
+            .unwrap()
+            .to_datetime(at);
+        assert_eq!(
+            format_civil(millis, 0, "X"),
+            Some(format!("{} X", civil.strftime("%Y-%m-%d %H:%M:%S"))),
+            "at {s}"
+        );
+        s += 86_400 * 37 + 3_607;
+    }
 }
