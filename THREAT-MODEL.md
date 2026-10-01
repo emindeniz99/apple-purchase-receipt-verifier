@@ -280,11 +280,13 @@ strings the hash is computed from.
 ### 3.7 Hostile bytes: bounds, no unbounded recursion, no trailing garbage
 
 Both implementations apply the same bounds (docs/design/0.7-api.md,
-Bounds): ASN.1 nesting depth 32; JSON depth 64; at most 10 certificates
-embedded in a receipt, 10 CRLs and 4 SignerInfos; at most 100,000 values in
-the envelope or in one attribute SET; constructed strings at most six
-levels deep; and fixed input caps of 3,145,728 UTF-8 bytes for receipt
-base64 and request bodies and 262,144 for a JWS. Readers refuse bytes after
+Bounds): JSON depth 64; at most 10 certificates embedded in a receipt and
+4 SignerInfos; and fixed input caps of 3,145,728 UTF-8 bytes for receipt
+base64 and request bodies and 262,144 for a JWS. The core also bounds
+ASN.1 nesting at 32, CRLs at 10, the envelope and each attribute SET at
+100,000 values, and constructed strings at six levels. Java's ASN.1
+nesting bound is BouncyCastle's, 64 by default, which counts chunk
+levels too; it never decodes a CRL (DECISIONS.md R20). Readers refuse bytes after
 the outermost value. Before the signer is trusted the payload is read only
 as far as attribute 12 (§3.3), so the attacker's bytes reach the full
 payload grammar only under a trusted signature; a bound hit there is
@@ -313,18 +315,23 @@ behind a trailing byte or a broken envelope too, never reaches
 `d2i_CMS_ContentInfo`), `rust/tests/hostile.rs`,
 `rust/tests/input_size_caps.rs`,
 `rust/tests/unauthenticated_key_cost.rs`, and in Java
-`java/src/test/.../HostileReceiptInputTest.java`. Depth, as shared vectors:
+`java/src/test/.../HostileReceiptInputTest.java`. JSON depth, as a shared
+vector: `signed-data/unreadable-payload-nested-65-deep`. ASN.1 depth,
+the core's bound of 32, which the shared vectors leave port-defined
+(Java, whose nesting bound is BouncyCastle's, 64 by default, verifies
+them; DECISIONS.md R20):
 `receipt/unreadable-signed-content-nested-33-deep`,
 `receipt/reject-an-envelope-nested-33-deep`,
 `receipt/reject-an-envelope-nested-33-deep-in-context-tags`,
 `receipt/reject-digest-algorithm-parameters-nested-33-deep`,
 `receipt/reject-a-crls-entry-nested-33-deep`,
-`receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep`,
-`receipt/unreadable-signed-content-nested-33-deep-in-context-tags` and
-`signed-data/unreadable-payload-nested-65-deep`; constructed strings and
+`receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep`
+and `receipt/unreadable-signed-content-nested-33-deep-in-context-tags`;
+in Java, BouncyCastle's bound is reached and mapped, not thrown, by
+`ReceiptDecoderTest` (100 deep). Constructed strings and
 CRLs, bounds of the core's decoder that the shared vectors leave
-port-defined (Java, whose nesting bound of 32 counts chunk levels and
-which never decodes a CRL, verifies them; DECISIONS.md R20):
+port-defined (Java, whose nesting bound counts chunk levels and which
+never decodes a CRL, verifies them; DECISIONS.md R20):
 `receipt/reject-econtent-rechunked-into-7-constructed-levels`,
 `receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`
 and `receipt/reject-eleven-embedded-crls`. Malformed structure, as shared
