@@ -55,7 +55,12 @@ Verifier.create(config)                 // throws at startup, never later
 
 Each language spells these in its own idiom; the 0.7 table of ports
 ("The other ports") gives the result form, clock type, data types and id
-type of each, and 0.8.0 keeps every row.
+type of each, and 0.8.0 keeps every row. Each package builds a `Config`
+one way, in its language's idiom: Java's `defaults()` and `builder()`,
+Rust's `Config::default()` and `Config::builder()`, Python's
+`Config(roots=..., clock=...)`, Ruby's `Config.new(roots:, clock:)`, PHP's
+`new Config(roots: ..., clock: ...)`; the Java-shaped duplicates went in
+0.8 (DECISIONS.md R41).
 
 - **No policy parameter.** No bundle id, environment filter, app Apple id
   or device id. The environment of `verifyReceiptEndpoint` is which of
