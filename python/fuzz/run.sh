@@ -3,6 +3,9 @@
 #
 #   ./run.sh <target> [seconds]      default 60
 #   ./run.sh all [seconds]
+#   ./run.sh list                    the targets `all` runs
+#   ./run.sh build                   the fuzzer's environment and the
+#                                    generated seed; no run
 #
 # libFuzzer takes several corpus directories and writes new units only to the
 # first, so the shared fixtures seed every run without being copied into this
@@ -18,8 +21,14 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fixtures="$here/../../fixtures"
-target="${1:?usage: run.sh <target>|all [seconds]}"
+target="${1:?usage: run.sh <target>|all|list|build [seconds]}"
 seconds="${2:-60}"
+targets=(receipt-base64 jws endpoint-json)
+
+if [ "$target" = list ]; then
+  printf '%s\n' "${targets[@]}"
+  exit 0
+fi
 
 # --no-project so the SOURCE TREE is what gets fuzzed, resolved off PYTHONPATH
 # exactly as the `python` CI job resolves it -- not an installed wheel.
@@ -46,6 +55,10 @@ b64 = fixtures.joinpath("public-receipts", "receipt-sandbox-g5.b64").read_text()
 )
 PY
 
+if [ "$target" = build ]; then
+  exit 0
+fi
+
 run_one() {
   local name="$1"
   local seeds
@@ -65,7 +78,7 @@ run_one() {
 }
 
 if [ "$target" = all ]; then
-  for name in receipt-base64 jws endpoint-json; do
+  for name in "${targets[@]}"; do
     run_one "$name"
   done
 else

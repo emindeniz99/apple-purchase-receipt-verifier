@@ -345,12 +345,14 @@ since its rows belong to one module:
 ## Fuzz findings, OSS-Fuzz and Scorecard: three owner actions
 
 Decided 2026-09-30 (docs/rust-core/DECISIONS.md R37), wired 2026-10-01.
-The nightly `rust-fuzz-openssl` job keeps each target's output on the
-runner and prints only the target name and the SHA-256 of a crashing
-input. `.github/scripts/fuzz-finding.sh` seals the input and the fuzzer's
-report with age to the key below, the job uploads that one file as the
-`fuzz-findings-sealed` artifact for 30 days, and a Telegram bot sends the
-repository, target, input hash and run URL. OpenSSF Scorecard
+The nightly `rust-fuzz-openssl` job and the eight per-push fuzz jobs in
+ci.yml keep each target's output on the runner and print only the target
+name and the SHA-256 of a crashing input. `.github/scripts/fuzz-finding.sh`
+seals the input and the fuzzer's report with age to the key below, the
+job uploads the sealed files for 30 days (as `fuzz-findings-sealed` from
+nightly.yml, as `fuzz-findings-sealed-<job>` from ci.yml, for example
+`fuzz-findings-sealed-go`), and a Telegram bot sends the repository,
+target, input hash and run URL. OpenSSF Scorecard
 (`.github/workflows/scorecard.yml`) needs no owner action.
 
 Until the owner does steps 1 and 2, a finding still fails the run:
@@ -376,8 +378,9 @@ Until the owner does steps 1 and 2, a finding still fails the run:
    `.github/fuzz/findings-recipient.txt`: one line, `age1` followed by the
    key, a trailing newline, and optionally `#` comment lines. The file
    holding `AGE-SECRET-KEY-1...` stays with the owner and never enters the
-   repository. To read a finding, download `fuzz-findings-sealed` from the
-   failed run and run
+   repository. To read a finding, download the `fuzz-findings-sealed`
+   artifact (`fuzz-findings-sealed-<job>` from ci.yml) from the failed
+   run and run
    `age -d -i ~/aprv-findings.key <target>.tar.age | tar -x`; the tar holds
    the crashing input and `fuzzer.log`.
 2. **The Telegram bot.** Create it with @BotFather (`/newbot`), send the
