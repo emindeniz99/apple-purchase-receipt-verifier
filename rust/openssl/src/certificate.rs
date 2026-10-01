@@ -38,6 +38,20 @@ impl Certificate {
         whole.then_some(certificate)
     }
 
+    /// Reads every certificate in PEM text, in order, with OpenSSL's PEM
+    /// reader (`PEM_read_bio_X509` until the input ends, as rust-openssl's
+    /// `X509::stack_from_pem`). Text outside the blocks, and blocks of
+    /// other types, are skipped as OpenSSL skips them. An empty list when
+    /// the text holds no certificate block; `None` when OpenSSL refuses a
+    /// block.
+    #[must_use]
+    pub fn all_from_pem(pem: &[u8]) -> Option<Vec<Certificate>> {
+        init();
+        let read = X509::stack_from_pem(pem);
+        drain_errors();
+        Some(read.ok()?.into_iter().map(Certificate).collect())
+    }
+
     pub(crate) fn from_x509(x509: X509) -> Certificate {
         Certificate(x509)
     }

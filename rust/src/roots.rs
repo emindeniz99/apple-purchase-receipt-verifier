@@ -80,28 +80,59 @@ impl TrustAnchor {
                 der: der.to_vec(),
                 certificate,
             }))),
-            _ => Err(ConfigError::new(
-                "trust anchor is not a certificate: OpenSSL does not read it as one X.509 certificate",
-            )),
+            _ => Err(not_a_certificate()),
         }
     }
 
-    /// Parses a PEM certificate as an anchor: the first `CERTIFICATE` block.
+    /// Parses a PEM certificate as an anchor: the first certificate OpenSSL's
+    /// PEM reader finds. Every block is read, so one that OpenSSL refuses
+    /// refuses the input even after a good one.
     ///
     /// # Errors
     /// [`ConfigError`] when the input holds no usable `CERTIFICATE` block.
     pub fn from_pem(pem: &str) -> Result<TrustAnchor, ConfigError> {
-        const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
-        const END: &str = "-----END CERTIFICATE-----";
-        let (_, rest) = pem.split_once(BEGIN).ok_or_else(|| {
-            ConfigError::new("trust anchor is not a certificate: no PEM CERTIFICATE block")
-        })?;
-        let (body, _) = rest.split_once(END).ok_or_else(|| {
-            ConfigError::new(
-                "trust anchor is not a certificate: unterminated PEM CERTIFICATE block",
-            )
-        })?;
-        TrustAnchor::from_der(&crate::base64::decode_lenient(body))
+        TrustAnchor::all_from_pem(pem.as_bytes())?
+            .into_iter()
+            .next()
+            .ok_or_else(not_a_certificate)
+    }
+
+    /// Reads one root as a caller gives it, DER or PEM, told apart by the
+    /// bytes: a first byte of `0x30` (an ASN.1 SEQUENCE) is one DER
+    /// certificate, read by [`TrustAnchor::from_der`]; bytes that start
+    /// with `-----BEGIN` after any ASCII whitespace are PEM, read by
+    /// OpenSSL's PEM reader, and every certificate in them is an anchor, so
+    /// a bundle of several is one entry. The format is never a parameter:
+    /// what the bytes are decides it.
+    ///
+    /// This is how the module's `init` reads each root, after the base64
+    /// of its configuration is decoded.
+    ///
+    /// # Errors
+    /// [`ConfigError`] when the bytes are neither, when PEM holds no
+    /// certificate, or when any certificate in them is not one the strict
+    /// reader of [`TrustAnchor::from_der`] accepts.
+    pub fn from_der_or_pem(bytes: &[u8]) -> Result<Vec<TrustAnchor>, ConfigError> {
+        if bytes.first() == Some(&0x30) {
+            return TrustAnchor::from_der(bytes).map(|anchor| vec![anchor]);
+        }
+        if bytes.trim_ascii_start().starts_with(b"-----BEGIN") {
+            let anchors = TrustAnchor::all_from_pem(bytes)?;
+            if !anchors.is_empty() {
+                return Ok(anchors);
+            }
+        }
+        Err(not_a_certificate())
+    }
+
+    /// Every certificate OpenSSL's PEM reader finds, each held to the bar
+    /// of [`TrustAnchor::from_der`] through its DER.
+    fn all_from_pem(pem: &[u8]) -> Result<Vec<TrustAnchor>, ConfigError> {
+        Certificate::all_from_pem(pem)
+            .ok_or_else(not_a_certificate)?
+            .iter()
+            .map(|certificate| TrustAnchor::from_der(&certificate.to_der()))
+            .collect()
     }
 
     /// The anchor's DER encoding, as given.
@@ -120,6 +151,12 @@ impl TrustAnchor {
 /// [`ConfigBuilder::build`](crate::ConfigBuilder::build), and a
 /// [`Verifier`](crate::Verifier) built from [`Config::defaults`](crate::Config::defaults)
 /// with it answers `INTERNAL_ERROR` to every call.
+fn not_a_certificate() -> ConfigError {
+    ConfigError::new(
+        "trust anchor is not a certificate: OpenSSL does not read it as one X.509 certificate",
+    )
+}
+
 pub(crate) fn apple_roots() -> &'static [TrustAnchor] {
     static ROOTS: OnceLock<Vec<TrustAnchor>> = OnceLock::new();
     ROOTS.get_or_init(|| load_roots(&APPLE_ROOT_DER, &APPLE_ROOT_SHA256))

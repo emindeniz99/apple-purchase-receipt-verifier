@@ -365,8 +365,10 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    /// A verifier that trusts `roots`, each one DER certificate. An empty
-    /// list means the three Apple roots compiled into the library.
+    /// A verifier that trusts `roots`, each one DER certificate or PEM text
+    /// holding one or more certificates; the core tells them apart by the
+    /// bytes ([`core_api::TrustAnchor::from_der_or_pem`]). An empty list
+    /// means the three Apple roots compiled into the library.
     ///
     /// A wrapper never passes an empty list for a caller's own empty root
     /// set: 0.7's `Verifier.create` refuses that before a boundary is
@@ -380,11 +382,12 @@ impl Verifier {
         let mut builder = core_api::Config::builder().clock(|| NOW_MS.with(Cell::get));
         if !roots.is_empty() {
             let mut anchors = Vec::with_capacity(roots.len());
-            for (index, der) in roots.iter().enumerate() {
-                let anchor = core_api::TrustAnchor::from_der(der).map_err(|err| ConfigError {
-                    message: format!("roots[{index}]: {}", err.detail()),
-                })?;
-                anchors.push(anchor);
+            for (index, root) in roots.iter().enumerate() {
+                let read =
+                    core_api::TrustAnchor::from_der_or_pem(root).map_err(|err| ConfigError {
+                        message: format!("roots[{index}]: {}", err.detail()),
+                    })?;
+                anchors.extend(read);
             }
             builder = builder.roots(anchors);
         }
@@ -533,6 +536,46 @@ mod tests {
     fn a_root_that_is_not_a_certificate_is_named_by_its_index() {
         let root = fixture("../certs/AppleIncRootCertificate.cer");
         let error = Verifier::new(&[root, b"not a certificate".to_vec()]).unwrap_err();
+        assert!(error.message.starts_with("roots[1]: "), "{}", error.message);
+    }
+
+    /// PEM as certificate tools print it: base64 in 64-column lines between
+    /// `CERTIFICATE` lines.
+    fn pem(der: &[u8]) -> Vec<u8> {
+        let body = core_api::__internal::base64_encode(der);
+        let mut out = String::from("-----BEGIN CERTIFICATE-----\n");
+        for line in body.as_bytes().chunks(64) {
+            out.push_str(core::str::from_utf8(line).unwrap());
+            out.push('\n');
+        }
+        out.push_str("-----END CERTIFICATE-----\n");
+        out.into_bytes()
+    }
+
+    #[test]
+    fn a_root_reaches_the_core_as_der_or_pem_bytes_and_verifies_the_same() {
+        // `init` hands each decoded root to the core as it came; the core
+        // reads DER or PEM. A PEM bundle is one entry holding every root.
+        let ders: Vec<Vec<u8>> = [
+            "AppleIncRootCertificate.cer",
+            "AppleRootCA-G2.cer",
+            "AppleRootCA-G3.cer",
+        ]
+        .iter()
+        .map(|name| fixture(&format!("../certs/{name}")))
+        .collect();
+        let pems: Vec<Vec<u8>> = ders.iter().map(|der| pem(der)).collect();
+        let bundle = vec![pems.concat()];
+        let expected = Verifier::new(&ders)
+            .unwrap()
+            .verify_receipt(&g5(), 0)
+            .unwrap();
+        for roots in [&pems, &bundle] {
+            let verifier = Verifier::new(roots).unwrap();
+            assert_eq!(verifier.verify_receipt(&g5(), 0).unwrap(), expected);
+        }
+        let empty = b"-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----".to_vec();
+        let error = Verifier::new(&[pems[0].clone(), empty]).unwrap_err();
         assert!(error.message.starts_with("roots[1]: "), "{}", error.message);
     }
 
