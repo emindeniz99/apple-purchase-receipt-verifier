@@ -1052,9 +1052,14 @@ BOOTSTRAP.md lists the three owner actions.
     first input (86 s instrumented), which OSS-Fuzz's runner cannot
     supply or wait for; it joins after a harness change. OSS-Fuzz's Rust
     support is AddressSanitizer only.
-  - Open: the per-push fuzz jobs in ci.yml (`rust-fuzz` and the
-    wrappers' fuzz jobs) still print a crash to the public log. R37
-    covers the nightly job.
+  - Closed 2026-10-01: the eight per-push fuzz jobs in ci.yml
+    (`go-fuzz`, `rust-fuzz`, `dotnet-fuzz`, `php-fuzz`, `ruby-fuzz`,
+    `python-fuzz`, `swift-fuzz`, `java-fuzz`) handle a finding as the
+    nightly job does. `.github/scripts/fuzz-quiet.sh` runs each target
+    with its output in a file, and a separate failure step holding the
+    Telegram secrets runs `fuzz-report.sh`, which hands each failed
+    target to `fuzz-finding.sh`; only the sealed files are uploaded, as
+    `fuzz-findings-sealed-<job>`.
 
 ---
 
