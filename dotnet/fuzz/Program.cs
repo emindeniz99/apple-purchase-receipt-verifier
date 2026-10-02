@@ -6,7 +6,7 @@ using SharpFuzz;
 namespace ApplePurchaseReceiptVerifier.Fuzz
 {
     /// <summary>
-    /// One executable, five targets, selected by <c>APRV_FUZZ_TARGET</c>.
+    /// One executable, four targets, selected by <c>APRV_FUZZ_TARGET</c>.
     /// </summary>
     /// <remarks>
     /// <para>The target is an environment variable and not libfuzzer-dotnet's
@@ -42,7 +42,6 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
             Dictionary<string, ReadOnlySpanAction> targets = new Dictionary<string, ReadOnlySpanAction>(
                 StringComparer.Ordinal)
             {
-                ["json"] = JsonRoundTrip.Run,
                 ["receipt"] = data => (_receipt ??= new ReceiptDer()).Run(data),
                 ["receipt-base64"] = data => (_receiptBase64 ??= new ReceiptBase64()).Run(data),
                 ["jws"] = data => (_jws ??= new Targets.Jws()).Run(data),

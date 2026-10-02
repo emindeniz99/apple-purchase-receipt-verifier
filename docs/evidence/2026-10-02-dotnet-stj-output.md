@@ -120,4 +120,5 @@ strings. .NET 8.0.31 and 10.0.12 printed the same.
   which SharpFuzz does not instrument here. The run above reports 12
   features and a corpus of one unit, where the subclass gave 413 features
   over 104 units, so libFuzzer has no coverage to steer by and the target
-  only checks its invariant on mutated inputs.
+  only checks its invariant on mutated inputs. The target was removed on
+  the owner's Q23 (2026-10-02).

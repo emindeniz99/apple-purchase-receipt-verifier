@@ -1508,10 +1508,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # SharpFuzz under libFuzzer, over the four public entry points and the
-  # wrapper's own JSON handling around aprv.wasm. SharpFuzz instruments .NET
-  # IL only, so the module is a black box here; its parser has its own fuzz
-  # jobs (rust-fuzz, nightly.yml). The invariants are the go-fuzz and
+  # SharpFuzz under libFuzzer, over the four public entry points around
+  # aprv.wasm (`./run.sh list` names the targets). SharpFuzz instruments
+  # .NET IL only, so the module is a black box here; its parser has its own
+  # fuzz jobs (rust-fuzz, nightly.yml). The invariants are the go-fuzz and
   # rust-fuzz jobs': nothing but a VerificationException escapes, an
   # accepted receipt or JWS fails against an unrelated anchor set, and the
   # verifyReceipt endpoint always answers JSON with a numeric status.
