@@ -55,8 +55,9 @@ platform install nothing. It needs no network and no GitHub.
 `tools/rerun.sh "$APRV_BIN" "$G1_DIR"` runs everything in this file's `php` job
 and then the corpus (`tools/corpus.php`, both transports, every clock pinned)
 against the module's reference rows. Expected: every row identical, except the
-rows whose input is over 3,145,728 bytes, which `aprv` refuses first and which
-count as answered when the reference is the size refusal; 0 different. The
+rows whose input is over 3,145,728 bytes, which reach the module cut to
+3,145,729 bytes and count as answered when its answer (exit 3 or HTTP 413)
+equals the reference's size refusal; 0 different. The
 corpus is scratch data (COMMON.md), so the job waits for wherever lane D puts it.
 
 ## Job `php-static`
