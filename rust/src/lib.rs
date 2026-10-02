@@ -143,12 +143,6 @@ pub mod __internal {
         crate::base64::encode(bytes)
     }
 
-    /// Base64 or base64url, skipping every character outside both alphabets.
-    #[must_use]
-    pub fn base64_decode_lenient(text: &str) -> Vec<u8> {
-        crate::base64::decode_lenient(text)
-    }
-
     /// The `receipt-data` decoder: non-empty standard base64 carrying
     /// exactly its canonical `=` padding, with no whitespace and nothing
     /// after the padding (the rule Apple's `verifyReceipt` applies, measured

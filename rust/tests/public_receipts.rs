@@ -264,7 +264,7 @@ fn apples_real_production_chain_passes_at_its_effective_date() {
     // UNTRUSTED_CHAIN, is the proof that both passed on the real code path
     // against the bundled roots. If this fails, the bundled roots or the OID
     // checks no longer accept what Apple actually ships.
-    let root = base64_decode(REAL_APPLE_ROOT);
+    let root = common::decode_base64(REAL_APPLE_ROOT);
     assert!(
         Config::default()
             .roots()
@@ -292,8 +292,4 @@ fn apples_real_production_chain_fails_outside_its_validity() {
             "signedDate {signed_at}: {failure}"
         );
     }
-}
-
-fn base64_decode(text: &str) -> Vec<u8> {
-    apple_purchase_receipt_verifier::__internal::base64_decode_lenient(text)
 }

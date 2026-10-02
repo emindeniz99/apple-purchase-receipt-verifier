@@ -7,7 +7,7 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::{base64_decode_lenient, base64_encode};
+use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{Config, Failure, Reason, TrustAnchor, Verifier};
 use serde_json::{json, Value};
 
@@ -189,7 +189,7 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
     let leaf = header.get("x5c").unwrap().as_array().unwrap()[0]
         .as_str()
         .unwrap();
-    let der = base64_decode_lenient(leaf);
+    let der = common::decode_base64(leaf);
     // TrustAnchor::from_der is the library's certificate reader, public.
     assert!(TrustAnchor::from_der(&der).is_err());
 
@@ -265,7 +265,7 @@ fn a_signed_payload_that_is_not_a_json_object_is_unreadable() {
 #[test]
 fn a_signature_of_the_wrong_length_is_rejected() {
     let (header, payload, signature) = common::split_jws(&common::transaction_jws());
-    let raw = base64_decode_lenient(&signature);
+    let raw = common::decode_base64url(&signature);
     assert_eq!(raw.len(), 64);
     for length in [0usize, 1, 63, 65, 128] {
         let mut truncated = raw.clone();
@@ -283,7 +283,7 @@ fn a_signature_of_the_wrong_length_is_rejected() {
 #[test]
 fn a_single_flipped_signature_byte_is_rejected() {
     let (header, payload, signature) = common::split_jws(&common::transaction_jws());
-    let raw = base64_decode_lenient(&signature);
+    let raw = common::decode_base64url(&signature);
     for index in [0usize, 31, 32, 63] {
         let mut flipped = raw.clone();
         flipped[index] ^= 0x01;
@@ -300,7 +300,7 @@ fn a_single_flipped_signature_byte_is_rejected() {
 fn a_flipped_payload_byte_is_rejected() {
     let jws = common::transaction_jws();
     let (header, payload, signature) = common::split_jws(&jws);
-    let decoded = base64_decode_lenient(&payload);
+    let decoded = common::decode_base64url(&payload);
     let text = String::from_utf8(decoded).unwrap();
     let tampered = text.replace("com.example.app.pro", "com.example.app.PRO");
     assert_ne!(text, tampered);
@@ -360,7 +360,7 @@ fn an_expired_chain_outranks_a_broken_signature() {
     let verifier = common::verifier([common::anchor("generated/jws-expired-root.der")]);
     let fresh = common::read_text_fixture("generated/expired-cert-fresh.jws");
     let (header, payload, signature) = common::split_jws(&fresh);
-    let mut flipped = base64_decode_lenient(&signature);
+    let mut flipped = common::decode_base64url(&signature);
     flipped[0] ^= 0x01;
     let broken = common::join_jws(&header, &payload, &common::base64url(&flipped));
     assert_eq!(
@@ -422,7 +422,7 @@ fn claims_are_returned_for_the_caller_to_judge() {
 #[test]
 fn a_broken_signature_is_refused_whatever_the_claims() {
     let (header, payload, signature) = common::split_jws(&common::transaction_jws());
-    let mut broken = base64_decode_lenient(&signature);
+    let mut broken = common::decode_base64url(&signature);
     broken[0] ^= 0xff;
     let error = expect_err(&common::join_jws(
         &header,
@@ -590,7 +590,7 @@ fn an_unrepresentable_signed_date_is_replaced_by_the_clock() {
 fn with_signed_date(raw_value: &str) -> String {
     let jws = common::transaction_jws();
     let (header, payload_b64, signature) = common::split_jws(&jws);
-    let decoded = base64_decode_lenient(&payload_b64);
+    let decoded = common::decode_base64url(&payload_b64);
     let mut claims: serde_json::Map<String, Value> =
         serde_json::from_slice(&decoded).expect("payload is JSON");
     claims.remove("signedDate");
