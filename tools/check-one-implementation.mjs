@@ -98,7 +98,10 @@ const LANGS = {
     ],
   },
   'java-wasm': {
-    dirs: ['java-wasm/src/main'],
+    // java/src/shared holds the classes the -wasm jar compiles together
+    // with the main artifact; they ship in this jar too, so they are held
+    // to its rule (the rest of java/ is out of scope, above).
+    dirs: ['java-wasm/src/main', 'java/src/shared'],
     files: /\.java$/,
     banned: [
       [/\borg\.bouncycastle\b|\bjava\.security\.cert\b|\bjava\.security\.Signature\b|\bjavax\.crypto\b|\bjava\.security\.KeyFactory\b|\bsun\.security\b/, 'a Java crypto/X.509 API'],

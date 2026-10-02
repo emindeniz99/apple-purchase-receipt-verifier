@@ -74,7 +74,7 @@ import org.junit.jupiter.api.io.TempDir;
  *       machine's real {@code cacerts}, handed to the library as its whole
  *       anchor set, refuses a genuine Apple receipt that the bundled roots
  *       accept.</li>
- *   <li><b>structurally</b> — no file under {@code src/main/java} names a
+ *   <li><b>structurally</b> — no file this artifact compiles names a
  *       trust store, a trust manager, a key store, a socket, an HTTP client or
  *       a subprocess, both PKIX parameter objects are built from the
  *       caller's {@code Set<TrustAnchor>} and never from a {@code KeyStore},
@@ -89,12 +89,16 @@ import org.junit.jupiter.api.io.TempDir;
  *
  * <p>This test class names {@code javax.net.ssl}, {@code TrustManagerFactory}
  * and {@code ProcessBuilder} on purpose — that is how it plants the trust store
- * it then proves irrelevant. The scan below covers {@code src/main/java} only.</p>
+ * it then proves irrelevant. The scan below covers {@code src/main/java} and
+ * the shared sources in {@code src/shared/java} only.</p>
  */
 class TrustStoreIsolationTest {
 
     private static final Path FIXTURES = TestFixtures.root();
-    private static final Path MAIN_SOURCES = Paths.get("src", "main", "java");
+    /** Every source root the jar compiles: its own and the one it shares with the -wasm artifact. */
+    private static final List<Path> MAIN_SOURCES =
+            Arrays.asList(Paths.get("src", "main", "java"), Paths.get("src", "shared", "java"));
+
     private static final String BUNDLE = "com.example.app";
     private static final String GENUINE_BUNDLE = "dev.bonzer.weeka.app";
     private static final String STORE_PASSWORD = "changeit";
@@ -775,11 +779,13 @@ class TrustStoreIsolationTest {
     }
 
     private static List<Path> mainSources() throws IOException {
-        List<Path> sources;
-        try (Stream<Path> walk = Files.walk(MAIN_SOURCES)) {
-            sources = walk.filter(path -> path.getFileName().toString().endsWith(".java"))
-                    .sorted()
-                    .collect(Collectors.toList());
+        List<Path> sources = new ArrayList<>();
+        for (Path root : MAIN_SOURCES) {
+            try (Stream<Path> walk = Files.walk(root)) {
+                sources.addAll(walk.filter(path -> path.getFileName().toString().endsWith(".java"))
+                        .sorted()
+                        .collect(Collectors.toList()));
+            }
         }
         // Fails loudly if the scan is ever pointed at the wrong tree, which is
         // the way a scan like this rots into always passing.

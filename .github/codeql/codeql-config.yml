@@ -14,6 +14,7 @@ name: apple-purchase-receipt-verifier
 #   rust/src/          php/src/
 #   rust/ffi/src/      dotnet/src/
 #   java/src/main/     swift/Sources/
+#   java/src/shared/
 #   java-wasm/src/main/java/
 #
 # stays fully in scope. (java-wasm/src/main/java11 is not built for the

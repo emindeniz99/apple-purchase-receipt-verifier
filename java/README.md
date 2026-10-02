@@ -834,8 +834,10 @@ from the verified payload and decide yourself (see
 ## Vendoring
 
 The library is one package with no generated code, so copying
-`src/main/java` into another build works. What a
-vendored copy has to carry with it:
+`src/main/java` and `src/shared/java` into another build works. The second
+directory holds the result and payload classes the `-wasm` artifact
+compiles too; both are the same package. What a vendored copy has to carry
+with it:
 
 **Dependency floors.** `jackson-core` 2.16 or later: the JSON readers set
 `StreamReadConstraints` (`maxDocumentLength` and `maxNameLength` are 2.16
@@ -876,7 +878,7 @@ use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 `public-receipts/` and `apple-official/`; `cases.schema.json` is not
 read. Two tests also read the build itself: `VerifierApiTest` compares
 `Version.CURRENT` with `pom.xml`, and `TrustStoreIsolationTest` scans
-`src/main/java`.
+`src/main/java` and `src/shared/java`.
 
 **Generators are tests that write nothing by default.**
 `FixtureGeneratorTest` and the classes named `*Fixture` or `*Fixtures`
