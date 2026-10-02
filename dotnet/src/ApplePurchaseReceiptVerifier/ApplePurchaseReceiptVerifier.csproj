@@ -19,10 +19,6 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <!-- For Internal/Json.cs alone: JavaScriptEncoder's abstract members take
-         char pointers, and the encoder there is what keeps ToJson's escaping
-         the same on every runtime. -->
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0'">
