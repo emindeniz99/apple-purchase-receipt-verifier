@@ -181,10 +181,12 @@ const char *aprv_version(void);
 
 // A verifier: the pinned roots and the clock.
 //
-// * `ders[i]` / `lens[i]` describe one DER trust anchor; the bytes are
-//   parsed during the call and never retained. `NULL`, `NULL`, `0` selects
-//   the three bundled Apple roots. A `count` of zero with either array
-//   non-null is refused.
+// * `ders[i]` / `lens[i]` describe one trust anchor entry: DER or PEM
+//   bytes. DER is one certificate; PEM text may hold several, and each
+//   becomes an anchor. The library tells the two apart by the bytes. They
+//   are parsed during the call and never retained. `NULL`, `NULL`, `0`
+//   selects the three bundled Apple roots. A `count` of zero with either
+//   array non-null is refused.
 // * `fixed_clock_unix_millis`, when non-null, pins the clock at that
 //   instant in milliseconds since the Unix epoch; `NULL` reads the system
 //   clock on every call. A pointer rather than a sentinel value, because
@@ -198,8 +200,8 @@ const char *aprv_version(void);
 // caller and must be released with [`aprv_verifier_free`].
 //
 // # Safety
-// The three anchor arguments must describe `count` readable DER
-// certificates, and `fixed_clock_unix_millis` must be `NULL` or point at
+// The three anchor arguments must describe `count` readable byte ranges
+// (DER or PEM), and `fixed_clock_unix_millis` must be `NULL` or point at
 // one readable, aligned `int64_t`.
 AprvVerifier *aprv_verifier_new(const uint8_t *const *ders,
                                 const size_t *lens,
