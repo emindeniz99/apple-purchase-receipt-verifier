@@ -1,0 +1,47 @@
+# The vendor support status of every language line CI tests
+# (SUPPORT-MATRIX.md): tools/support-matrix.mjs reads endoflife.date and
+# the line tables of SUPPORT-MATRIX.md, writes what it found to the job
+# summary, and fails when a tested line that is not a floor or marked kept
+# is past its end of life, so the owner hears about it from a red run
+# rather than from a stale table. It reads public data only and needs no
+# secret.
+#
+# Scheduled runs happen on the default branch only.
+name: support-matrix
+
+on:
+  schedule:
+    - cron: "37 5 * * 1" # weekly, Monday 05:37 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: every tested line against its vendor's end of life
+        run: |
+          set +e
+          node tools/support-matrix.mjs --check > "$RUNNER_TEMP/support-matrix.txt"
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/support-matrix.txt"
+          {
+            echo '## Support matrix'
+            echo
+            echo '```text'
+            grep -v '^::error::' "$RUNNER_TEMP/support-matrix.txt"
+            echo '```'
+            grep '^::error::' "$RUNNER_TEMP/support-matrix.txt" | sed 's/^::error::/- **Past EOL:** /' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

@@ -10,8 +10,9 @@ import java.util.List;
 import org.bouncycastle.asn1.ASN1Encodable;
 
 /**
- * Writes the receipts that pin the contract's normative resource floor and
- * its DER cap into {@code fixtures/generated/} (ROADMAP "Before 1.0" item 1). The floor
+ * Writes the receipts that pin the contract's normative resource floor into
+ * {@code fixtures/generated-0.7/}, where the cases read them (ROADMAP "Before
+ * 1.0" item 1). The floor
  * has two numbers — 1,048,576 bytes of DER and 20,000 nodes in any single
  * ASN.1 parse — and one receipt cannot pin both: sitting under both at once
  * leaves a port free to lower either cap to just above whatever that one
@@ -39,10 +40,10 @@ import org.bouncycastle.asn1.ASN1Encodable;
  * accepted. {@link #main} checks each lands inside its band before writing,
  * so a regeneration cannot quietly drift off the boundary it exists to hold.
  *
- * <p><b>receipt-at-der-cap</b> and <b>receipt-over-der-cap</b> hold the DER
- * cap from both sides: the byte-floor shape with longer product ids, landed
- * on exactly 3,145,728 and 3,145,729 bytes. Both are genuine; the first MUST
- * be accepted and the second can only be refused for its size.
+ * <p>{@link #exactSize} grows the byte-floor shape to an exact length, for
+ * the receipt-string cap: {@link InputSizeBoundsTest} builds its receipt in
+ * memory, and {@link VerifierApiFixtures} and {@link ReceiptBase64CapFixture}
+ * write theirs. This class writes no receipt at a cap.
  *
  * <p>Same technique as {@link PortDivergenceFixtures} and a {@code main} for
  * the same reason. Regenerate with:</p>
@@ -52,7 +53,7 @@ import org.bouncycastle.asn1.ASN1Encodable;
  * mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.LargeReceiptFixture \
- *      fixtures/generated
+ *      fixtures/generated-0.7
  * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  */
@@ -68,9 +69,6 @@ public final class LargeReceiptFixture {
     private static final int BYTE_FLOOR = 1024 * 1024;
 
     private static final int NODE_FLOOR = 20000;
-
-    /** The receipt cap every port enforces on DER: Apple's 3 MiB request limit. */
-    private static final int DER_CAP = 3 * 1024 * 1024;
 
     /** Each receipt must land within 2% below the number it pins. */
     private static final double BAND = 0.02;
@@ -115,7 +113,7 @@ public final class LargeReceiptFixture {
     private LargeReceiptFixture() {}
 
     public static void main(String[] args) throws Exception {
-        Path out = args.length > 0 ? Paths.get(args[0]) : TestFixtures.generated();
+        Path out = args.length > 0 ? Paths.get(args[0]) : TestFixtures.root().resolve("generated-0.7");
         Files.createDirectories(out);
 
         TestPki pki = TestPki.receipt(new Date(CHAIN_NOT_BEFORE), new Date(CHAIN_NOT_AFTER));
@@ -123,8 +121,6 @@ public final class LargeReceiptFixture {
 
         writeByteFloor(out, pki);
         writeNodeFloor(out, pki);
-        writeExactSize(out, pki, "receipt-at-der-cap.der", DER_CAP);
-        writeExactSize(out, pki, "receipt-over-der-cap.der", DER_CAP + 1);
     }
 
     /** Near 1 MiB of DER, at well under half the node budget. */
@@ -144,15 +140,8 @@ public final class LargeReceiptFixture {
      * extended by whatever is still missing. Past the first pass every length
      * in the structure already takes the octets it will keep, so the total
      * moves one byte per character and the loop settles within a few passes.
-     */
-    private static void writeExactSize(Path out, TestPki pki, String name, int bytes) throws Exception {
-        write(out, name, exactSize(pki, name, bytes));
-    }
-
-    /**
-     * The receipt {@link #writeExactSize} writes, returned instead. Package
-     * private for {@link ReceiptBase64CapFixture}, which needs the same shape
-     * at another size under a root of its own.
+     * Package private for the tests and generators that need this shape at
+     * an exact size.
      */
     static byte[] exactSize(TestPki pki, String name, int bytes) throws Exception {
         int perPurchase = BYTE_FLOOR_PURCHASES - 2;

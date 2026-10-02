@@ -1,6 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -9,6 +9,7 @@ import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -63,15 +64,20 @@ class ClasspathGuardTest {
         }
     }
 
-    /** The main artifact carries the same class; the two copies must not drift. */
+    /**
+     * The main artifact carries the same class. Both compile it from the one
+     * copy in ../java/src/shared/java, so it cannot drift: neither artifact may grow a
+     * copy of its own again.
+     */
     @Test
-    void theMainArtifactsCopyIsTheSame() throws Exception {
-        String path = "src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ClasspathGuard.java";
-        assertEquals(
-                new String(Files.readAllBytes(java.nio.file.Paths.get(path)), StandardCharsets.UTF_8),
-                new String(
-                        Files.readAllBytes(java.nio.file.Paths.get("..", "java").resolve(path)),
-                        StandardCharsets.UTF_8));
+    void bothArtifactsCompileTheOneSharedCopy() {
+        Path file = Paths.get("io", "github", "emindeniz99", "applepurchasereceiptverifier", "ClasspathGuard.java");
+        Path shared = Paths.get("..", "java", "src", "shared", "java").resolve(file);
+        assertTrue(Files.isRegularFile(shared), shared.toString());
+        for (String artifact : new String[] {"java", "java-wasm"}) {
+            Path own = Paths.get("..", artifact, "src", "main", "java").resolve(file);
+            assertFalse(Files.exists(own), own + " duplicates " + shared);
+        }
     }
 
     /**

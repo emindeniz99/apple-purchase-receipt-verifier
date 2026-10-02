@@ -43,7 +43,7 @@ csharp_prefer_braces = true:silent
 # is a formatting drift this gate should police, so the two categories
 # that produce it are pinned to :silent — `--severity info` still fixes
 # real whitespace/using-order drift (that isn't analyzer-gated), just not
-# these. See dotnet/ci-job.md for how this was derived.
+# these.
 dotnet_analyzer_diagnostic.category-Style.severity = silent
 dotnet_analyzer_diagnostic.category-Performance.severity = silent
 # `IndexOf(x) >= 0` -> `Contains(x)` (CA1847) and `Enum.GetValues(typeof(T))`

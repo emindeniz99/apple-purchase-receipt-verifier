@@ -130,6 +130,31 @@
       </resource>
     </resources>
     <plugins>
+      <!-- The public classes this artifact and the -wasm artifact share
+           byte for byte (results, payloads, Reason, Environment, the
+           classpath guard) live once, in src/shared/java, and compile into
+           both jars: a source directory, not a module, so it publishes
+           nothing of its own. The sources and javadoc jars read the
+           project's source roots, so they carry these classes too. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.2</version>
+        <executions>
+          <execution>
+            <id>add-shared-sources</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${project.basedir}/src/shared/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -208,11 +233,15 @@
             <!-- The default is the two source roots; naming them explicitly
                  is what lets fuzz/src join, and the fuzz harness is held to
                  the same format as the library even though Maven never
-                 compiles it (fuzz/run.sh does, with a modern javac). -->
+                 compiles it (fuzz/run.sh does, with a modern javac).
+                 src/shared/java is the sources the -wasm artifact compiles
+                 too: spotless reads only below the project directory, so
+                 they are checked here, the one spotless run CI makes. -->
             <includes>
               <include>src/main/java/**/*.java</include>
               <include>src/test/java/**/*.java</include>
               <include>fuzz/src/**/*.java</include>
+              <include>src/shared/java/**/*.java</include>
             </includes>
             <palantirJavaFormat>
               <version>2.97.0</version>

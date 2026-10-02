@@ -346,7 +346,7 @@ nightly `corpus` job, which needs the OD-05 archive.
   artifact's, with the same GPG and Central credentials, and no cache.
   Files per release: the jar (1.9 MB with the G1 module), sources,
   javadoc (the public API only: the `central` profile points javadoc at
-  `src/main/java`), the `.module` file, the CycloneDX SBOM, their
+  `src/main/java` and `../java/src/shared/java`), the `.module` file, the CycloneDX SBOM, their
   signatures, and the two server classifier jars (MIGRATION 3.4):
   ```sh
   mvn -B -f java-wasm -P central deploy \

@@ -32,7 +32,7 @@ class SourceRulesTest {
 
     private static List<Path> sources() throws Exception {
         List<Path> files = new ArrayList<>();
-        for (String root : new String[] {"src/main/java", "src/main/java11"}) {
+        for (String root : new String[] {"src/main/java", "src/main/java11", "../java/src/shared/java"}) {
             try (Stream<Path> walk = Files.walk(Paths.get(root))) {
                 files.addAll(walk.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList()));
             }

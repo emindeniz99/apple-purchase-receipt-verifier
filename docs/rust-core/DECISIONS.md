@@ -16,7 +16,7 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
-those of 2026-10-02 amended R41.
+those of 2026-10-02 amended R25 and R41.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -773,6 +773,20 @@ FlatBuffers as the encoding.
 The spike's client resolved its server through system properties and
 environment variables (`-Daprv.server.url`, `APRV_SERVER_URL`,
 [aprv-server §6][server]); the `Engine` API replaces them.
+
+**Amended 2026-10-02 (owner, Q11): one source for the shared classes.**
+Nine public classes were byte-identical in the two artifacts:
+`ReceiptPayload`, `InAppPurchase`, `VerificationResult`, `ClasspathGuard`,
+`Environment`, `AppleStatus`, `Reason`, `JsonPayload` and `RawAttributes`.
+They live once, in `java/src/shared/java`, and both poms add that
+directory as a source root (`build-helper-maven-plugin`). It is a source
+directory and not a Maven module, so it publishes no artifact and spends
+nothing of the Central budget. It sits under `java/` because spotless
+reads only below a pom's own directory, and `java/pom.xml`'s spotless is
+the one CI runs. Both jars hold the same class files, byte for byte, as
+before the move. A class that differs between the artifacts in any way
+(`Config`, `Failure`, `Version`, `AppleRootCerts`, `Verifier`,
+`package-info`) keeps one copy in each.
 
 ---
 

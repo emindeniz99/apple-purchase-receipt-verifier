@@ -1,8 +1,10 @@
 // The package is a facade: no verification logic, no crypto, no trust
 // store, no network, no runtime dependency (docs/rust-core/ARCHITECTURE.md
-// §9, "One Rust implementation under eight languages"). These scans are the
-// package's local copy of the one-implementation gate, so a change that
-// brings any of it back fails here before it reaches CI.
+// §9, "One Rust implementation under eight languages"). The crypto, X.509,
+// ASN.1, CMS and JWS APIs are banned in one place for every wrapper,
+// tools/check-one-implementation.mjs; these tests hold what that line scan
+// does not: the manifest, the import allowlist, the network and the
+// environment, randomness, and the built graphs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -51,19 +53,11 @@ test('the facade imports only itself, the bindings, and node:fs in the Node load
   }
 });
 
-test('no facade source parses, hashes, verifies or trusts anything itself', () => {
-  // The APIs a verifier would reach for, in any JS runtime.
+test('no facade source reaches the network, a subprocess or the environment', () => {
   const forbidden = [
-    /\bcrypto\.subtle\b/,
-    /\bsubtle\./,
-    /node:crypto/,
-    /\bX509Certificate\b/,
-    /\bcreate(Verify|PublicKey|Hash|Hmac)\b/,
-    /\bverify(Es256|Signature)\b/,
     /\bnode:(tls|https?|net|dns|child_process)\b/,
     /\bfetch\(/,
     /\bprocess\.env\b/,
-    /asn1|\bDER\b reader|\bparseCertificate\b|\bcms\b/i,
   ];
   for (const file of SOURCES) {
     const text = readFileSync(here(file), 'utf8')

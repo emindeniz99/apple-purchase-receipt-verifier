@@ -7,6 +7,15 @@ with `node tools/support-matrix.mjs` and compare the output with the
 matrices in `.github/workflows/ci.yml`. What each package runs the core on
 is in [PORTS.md](./PORTS.md).
 
+The `support-matrix` workflow runs `node tools/support-matrix.mjs --check`
+every Monday (and on demand), writes its output to the job summary, and
+fails when a line in the tables below is past its vendor's end of life.
+It reads the tables themselves: a row whose text says `floor` or `kept`
+stays a leg past EOL on purpose (rules 1 and 2) and is not checked, so a
+failed run means a row to drop, or to mark kept with its reason. Rust and
+Swift are not checked: CI tests Rust's current stable, and endoflife.date
+does not track Swift.
+
 ## The rule
 
 1. **Every line the vendor still supports is a CI leg.** Active and
@@ -104,7 +113,7 @@ support for longer; the floor stays regardless.
 |---|---|---|---|---|
 | 8 | floor | EOL at Oracle | kept | `java-runtime-8` (the main artifact on a JDK 8 JVM), `java-wasm-runtime-8` (the `-wasm` server engine on a JDK 8 JVM) |
 | 11 | LTS | EOL at Oracle 2023-09-30 | kept | `java`, `java-wasm-endive` (the Endive floor) |
-| 17 | LTS | active | 2026-09-30 | `java`, `java-wasm-endive` |
+| 17 | LTS | EOL at Oracle 2026-09-30 | kept | `java`, `java-wasm-endive` |
 | 21 | LTS | active | 2028-09-30 | `java`, `java-wasm-endive`, `java-fuzz`, `jvm-interop`, `smoke-maven` |
 | 25 | LTS | active | 2030-09-30 | `java`, `java-wasm-endive` |
 | 27 | feature | active | 2027-03-31 | `java`, `java-wasm-endive` |

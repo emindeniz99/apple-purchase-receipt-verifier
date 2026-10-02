@@ -180,6 +180,30 @@
           </execution>
         </executions>
       </plugin>
+      <!-- The classes this artifact shares byte for byte with the main
+           one live once, in ../java/src/shared/java (see java/pom.xml,
+           whose spotless formats them). Added as a project source root so
+           the sources jar carries them; the Java 8 compile below names the
+           directory itself, because it lists its roots explicitly. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.2</version>
+        <executions>
+          <execution>
+            <id>add-shared-sources</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${project.basedir}/../java/src/shared/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <!-- Endive compiles every function of the module into JVM bytecode at
            build time. interpreterFallback FAIL refuses to build when a
            function would need the interpreter, so the jar holds no
@@ -210,14 +234,15 @@
           <parameters>true</parameters>
         </configuration>
         <executions>
-          <!-- Java 8: everything in src/main/java, and nothing else (Endive
-               adds its generated source root to the project, which this
-               execution must not compile at release 8). -->
+          <!-- Java 8: everything in src/main/java and the shared sources,
+               and nothing else (Endive adds its generated source root to the
+               project, which this execution must not compile at release 8). -->
           <execution>
             <id>default-compile</id>
             <configuration>
               <compileSourceRoots>
                 <compileSourceRoot>${project.basedir}/src/main/java</compileSourceRoot>
+                <compileSourceRoot>${project.basedir}/../java/src/shared/java</compileSourceRoot>
               </compileSourceRoots>
             </configuration>
           </execution>
@@ -588,9 +613,9 @@
             <version>3.12.0</version>
             <configuration>
               <doclint>none</doclint>
-              <!-- The public API is in src/main/java; the Endive engine and
-                   its generated classes are internal. -->
-              <sourcepath>${project.basedir}/src/main/java</sourcepath>
+              <!-- The public API is in src/main/java and the shared sources;
+                   the Endive engine and its generated classes are internal. -->
+              <sourcepath>${project.basedir}/src/main/java:${project.basedir}/../java/src/shared/java</sourcepath>
             </configuration>
             <executions>
               <execution>
