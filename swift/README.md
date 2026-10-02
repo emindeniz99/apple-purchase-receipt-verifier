@@ -18,8 +18,11 @@ product id, device binding, refunds, idempotency) is yours; see
 
 Swift **6.3** or newer, on macOS 15+, iOS 18+ or Linux (`Package.swift`
 declares `.macOS(.v15), .iOS(.v18)`). Those are the floors of
-[WasmKit](https://github.com/swiftwasm/WasmKit), the one dependency (see
-[How it works](#how-it-works)). Coming from 0.7? Read
+[WasmKit](https://github.com/swiftwasm/WasmKit), which runs the module (see
+[How it works](#how-it-works)). The other dependency,
+[swift-crypto](https://github.com/apple/swift-crypto) from 5.0.0 (Swift
+6.2), computes the SHA-256 that checks the bundled module against its pin.
+Coming from 0.7? Read
 [Upgrading from 0.7](#upgrading-from-07): the API is the same except
 `Config.roots`, and the floors rose.
 
@@ -28,9 +31,11 @@ declares `.macOS(.v15), .iOS(.v18)`). Those are the floors of
 Every verification runs inside `aprv.wasm`, the one verification module
 every port of this repository shares: a Rust core on OpenSSL, compiled to
 WebAssembly. The package carries the module as a resource, checks it
-against the SHA-256 in `aprv.wasm.sha256` before it is parsed, and runs it
-on WasmKit, a WebAssembly interpreter written in Swift. Nothing is compiled
-to machine code at run time, so no JIT entitlement is needed on iOS.
+against the SHA-256 in `aprv.wasm.sha256` before it is parsed
+(swift-crypto's `SHA256`, which is CryptoKit's on Apple platforms), and
+runs it on WasmKit, a WebAssembly interpreter written in Swift. Nothing is
+compiled to machine code at run time, so no JIT entitlement is needed on
+iOS.
 
 **Building from a checkout of this branch:** `aprv.wasm` is not committed
 until the release module lands; copy the module whose SHA-256
@@ -147,8 +152,9 @@ check, in your own code:
 A legacy receipt's attribute 5 (`sha1Hash`) is Apple's device-binding hash:
 `SHA1(deviceId ‖ opaqueValue ‖ bundleIdBytes)`. The library takes no device
 id parameter; the check is yours to run, in constant time, on the fields it
-returns. The example uses swift-crypto, a dependency of your own, not of
-this package:
+returns. The example uses swift-crypto's `Crypto`. This package depends on
+swift-crypto only to hash its module, so your target lists the `Crypto`
+product itself before it imports it:
 
 ```swift
 import Crypto
@@ -374,8 +380,9 @@ against the same `fixtures/cases.json`. What changed:
   `[Certificate]` from swift-certificates: `nil` means Apple's roots built
   into the module. `ConfigBuilder.roots(_:)` takes DER as before, and PEM
   bytes too.
-- **Dependencies**: swift-certificates, swift-asn1 and swift-crypto are gone;
-  WasmKit is the one dependency.
+- **Dependencies**: swift-certificates and swift-asn1 are gone. WasmKit
+  runs the module, and swift-crypto stays, from 5.0.0 (0.7 asked for
+  4.5.1), for one SHA-256: the bundled module against its pin.
 - **The clock is read once per call, always**, before the input is looked
   at; 0.7 read it only when it was needed. The verdicts do not change.
 - **`Failure.cause`** is the host's error (a trap, an unusable answer) for

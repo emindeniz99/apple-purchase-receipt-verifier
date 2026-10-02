@@ -7,21 +7,25 @@ secret.
 ## What changed under CI
 
 - `Package.swift` (repository root) is `swift-tools-version:6.3` with
-  `platforms: [.macOS(.v15), .iOS(.v18)]` and one dependency, WasmKit
-  `from: "0.4.1"` with only its `MultiThread` trait. swift-certificates,
-  swift-asn1 and swift-crypto are gone from the manifest and from
-  `Package.resolved`.
+  `platforms: [.macOS(.v15), .iOS(.v18)]` and two dependencies: WasmKit
+  `from: "0.4.1"` with only its `MultiThread` trait, and swift-crypto
+  `from: "5.0.0"` for its `Crypto` product, which hashes the module
+  against its pin. swift-certificates and swift-asn1 are gone from the
+  manifest.
 - **The floor is WasmKit 0.4.1, not the plan's 0.4.0.** 0.4.1 (tagged
   2026-09-29) fixes a use-after-free under software bounds checking: the
   interpreter kept its cached memory base across a host call, and a host
   function that re-enters the guest and grows its memory (random-get does
   exactly that, through `cabi_realloc`) left the next load reading freed
   memory. 0.4.0 must not be resolvable.
-- `Package.resolved` pins WasmKit 0.4.1 and, because WasmKit's manifest
-  declares them, swift-argument-parser 1.8.2 and swift-syntax 604.0.0. Neither
-  is compiled for this package's product (only WasmKit's CLI and WIT tools
-  use them), but SwiftPM resolves them, so a clean build fetches swift-syntax
-  (about 40 MB of git history into the SwiftPM cache).
+- `Package.resolved` pins WasmKit 0.4.1 and swift-crypto 5.0.0 and, because
+  their manifests declare them, swift-argument-parser 1.8.2, swift-syntax
+  604.0.0 and swift-asn1 1.7.3. None of those three is compiled for this
+  package's product (only WasmKit's CLI and WIT tools use the first two,
+  only swift-crypto's `CryptoExtras` the third), but SwiftPM resolves them,
+  so a clean build fetches swift-syntax (about 40 MB of git history into the
+  SwiftPM cache). On Linux, `Crypto` compiles swift-crypto's vendored
+  BoringSSL; on Apple platforms it is CryptoKit.
 - **Every Swift job copies the module into
   `swift/Sources/ApplePurchaseReceiptVerifier/Resources/aprv.wasm` before
   building** (gitignored on the lane branch per the owner's 100 KB rule;
@@ -70,8 +74,8 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 | post-publish `swiftpm` | same image and smoke changes. |
 | `wasm-copies` | for Swift: `cd swift/Sources/ApplePurchaseReceiptVerifier/Resources && sha256sum -c aprv.wasm.sha256`, and the hash in that file must equal the build's. The package checks the pair when it loads the module, so a copy swapped without its hash file answers `INTERNAL_ERROR` to every call (and `Config.builder().roots(...)` throws). |
 | `release-please.yml` `refresh-wasm-copies` | **must also rewrite each copy's `.sha256`**: today it copies `aprv.wasm` over every committed copy and leaves `aprv.wasm.sha256` stale, which breaks both the Go and the Swift package on the release branch. For each copy `f`: `printf '%s  aprv.wasm\n' "$WASM_SHA256" > "$f.sha256"`, and add those files to the commit. |
-| `one-implementation` | add `swift` to `--enforce`. `swift/Sources` imports only Foundation and WasmKit now; the SHA-256 that checks the module is 60 lines of Swift in `Host/SHA256.swift` (no crypto module), which the gate allows by design. `SourceIsolationTests` holds the same rule inside the test suite. |
-| `dependabot.yml` | the three `swift` entries stay; the swift-crypto/-asn1/-certificates history goes with them. Add an ignore for WasmKit `>= 0.5.0` only if 0.5 raises a floor; 0.4.x patch releases should arrive (0.4.1 was a security fix). |
+| `one-implementation` | add `swift` to `--enforce`. `swift/Sources` imports Foundation, WasmKit and, in `Host/AprvModule.swift` only, `import struct Crypto.SHA256` for the SHA-256 that checks the module, the one entry in the gate's Swift allowlist. `SourceIsolationTests` holds the same rule inside the test suite. |
+| `dependabot.yml` | the three `swift` entries stay, and now watch swift-crypto and the swift-asn1 it brings into `Package.resolved` as well as WasmKit; the swift-certificates history goes. Add an ignore for WasmKit `>= 0.5.0` only if 0.5 raises a floor; 0.4.x patch releases should arrive (0.4.1 was a security fix). |
 | `certs` job (`check-cert-copies.mjs`) | the Swift copy is gone in Phase 7 (below); the job needs no change. |
 
 ## The gate, in one command
