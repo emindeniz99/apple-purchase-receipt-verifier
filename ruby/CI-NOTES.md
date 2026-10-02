@@ -80,9 +80,10 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
 - `gem install --local` cannot resolve the `wasmtime` dependency: drop
   `--local` (or install `wasmtime` first). The smoke still installs into a
   scratch `GEM_HOME` outside the checkout.
-- `.github/smoke/rubygems-smoke.rb` asserts
-  `APRV::Config.defaults.roots.size == 3`. That no longer holds:
-  `Config.defaults.roots` is empty, because Apple's three roots are compiled
+- `.github/smoke/rubygems-smoke.rb` asserted
+  `APRV::Config.defaults.roots.size == 3` when this was written. That no
+  longer holds: `Config.new.roots` is empty (`Config.defaults` went in
+  0.8), because Apple's three roots are compiled
   into the module. Replace the assertion with a check that `wasmtime` is a
   platform gem, for example
   `abort unless Gem.loaded_specs.fetch("wasmtime").platform != "ruby"`.
@@ -118,7 +119,7 @@ compares the module's hash with the release build's.
 `ruby/certs`, `lib/apple_purchase_receipt_verifier/roots_data.rb` and
 `script/gen_roots.rb` are gone, with the `rake roots` task and their
 RuboCop and Steep exclusions. Nothing loaded them since the wasm host
-landed: `Config.defaults.roots` is empty and the module's compiled-in
+landed: `Config.new.roots` is empty and the module's compiled-in
 roots apply. `packaging_test.rb` still refuses any `certs/` or
 `roots_data` path in the gem.
 
