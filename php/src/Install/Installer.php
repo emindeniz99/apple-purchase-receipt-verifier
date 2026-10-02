@@ -184,103 +184,54 @@ final class Installer
         return $scheme === 'https' || ($scheme === 'http' && in_array($host, ['127.0.0.1', 'localhost', '[::1]'], true));
     }
 
-    /** @throws InstallException */
+    /**
+     * Fetches `$url` into `$destination` with ext-curl, following at most
+     * five redirects; a download that ends anywhere but HTTPS (or HTTP to
+     * loopback) is refused.
+     *
+     * @throws InstallException
+     */
     private static function download(string $url, string $destination): void
     {
+        if (!extension_loaded('curl')) {
+            throw new InstallException('aprv-install needs ext-curl to download the binary', InstallException::UNAVAILABLE);
+        }
         $file = fopen($destination, 'wb');
         if ($file === false) {
             throw new InstallException("cannot write {$destination}");
         }
         try {
-            if (extension_loaded('curl')) {
-                self::downloadWithCurl($url, $file);
-            } elseif (str_starts_with($url, 'https://') && !extension_loaded('openssl')) {
-                throw new InstallException('downloading over HTTPS needs ext-curl or ext-openssl', InstallException::UNAVAILABLE);
-            } else {
-                self::downloadWithStreams($url, $file);
+            $written = 0;
+            $curl = curl_init($url);
+            curl_setopt_array($curl, [
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_TIMEOUT => 300,
+                CURLOPT_FAILONERROR => true,
+                CURLOPT_WRITEFUNCTION => static function ($handle, string $data) use ($file, &$written): int {
+                    $written += strlen($data);
+                    if ($written > self::MAX_BYTES) {
+                        return 0;
+                    }
+
+                    return (int) fwrite($file, $data);
+                },
+            ]);
+            $ok = curl_exec($curl);
+            $error = curl_error($curl);
+            $effective = (string) curl_getinfo($curl, CURLINFO_EFFECTIVE_URL);
+            if ($written > self::MAX_BYTES) {
+                throw new InstallException('the download is larger than ' . self::MAX_BYTES . ' bytes: cut off');
+            }
+            if ($ok !== true) {
+                throw new InstallException("cannot download {$url}: {$error}");
+            }
+            if (!self::urlAllowed($effective)) {
+                throw new InstallException("the download was redirected to a URL that is not https: {$effective}");
             }
         } finally {
             fclose($file);
         }
-    }
-
-    /**
-     * @param resource $file
-     *
-     * @throws InstallException
-     */
-    private static function downloadWithCurl(string $url, $file): void
-    {
-        $written = 0;
-        $curl = curl_init($url);
-        curl_setopt_array($curl, [
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 5,
-            CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_TIMEOUT => 300,
-            CURLOPT_FAILONERROR => true,
-            CURLOPT_WRITEFUNCTION => static function ($handle, string $data) use ($file, &$written): int {
-                $written += strlen($data);
-                if ($written > self::MAX_BYTES) {
-                    return 0;
-                }
-
-                return (int) fwrite($file, $data);
-            },
-        ]);
-        $ok = curl_exec($curl);
-        $error = curl_error($curl);
-        $effective = (string) curl_getinfo($curl, CURLINFO_EFFECTIVE_URL);
-        if ($written > self::MAX_BYTES) {
-            throw new InstallException('the download is larger than ' . self::MAX_BYTES . ' bytes: cut off');
-        }
-        if ($ok !== true) {
-            throw new InstallException("cannot download {$url}: {$error}");
-        }
-        if (!self::urlAllowed($effective)) {
-            throw new InstallException("the download was redirected to a URL that is not https: {$effective}");
-        }
-    }
-
-    /**
-     * @param resource $file
-     *
-     * @throws InstallException
-     */
-    private static function downloadWithStreams(string $url, $file): void
-    {
-        $context = stream_context_create(['http' => ['timeout' => 300, 'follow_location' => 1, 'max_redirects' => 5]]);
-        $source = @fopen($url, 'rb', false, $context);
-        if ($source === false) {
-            throw new InstallException("cannot download {$url}");
-        }
-        $status = 0;
-        // The http wrapper's response headers, every hop's, from the stream
-        // itself: PHP 8.5 deprecates the magic local variable at compile
-        // time, even behind a function_exists() check.
-        $headers = stream_get_meta_data($source)['wrapper_data'] ?? [];
-        foreach ((array) $headers as $line) {
-            if (is_string($line) && preg_match('#^HTTP/\S+\s+(\d{3})#', $line, $match) === 1) {
-                $status = (int) $match[1];
-            }
-        }
-        if ($status !== 200) {
-            fclose($source);
-            throw new InstallException("cannot download {$url}: HTTP {$status}");
-        }
-        $written = 0;
-        while (!feof($source)) {
-            $chunk = fread($source, 65536);
-            if ($chunk === false) {
-                break;
-            }
-            $written += strlen($chunk);
-            if ($written > self::MAX_BYTES) {
-                fclose($source);
-                throw new InstallException('the download is larger than ' . self::MAX_BYTES . ' bytes: cut off');
-            }
-            fwrite($file, $chunk);
-        }
-        fclose($source);
     }
 }
