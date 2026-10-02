@@ -218,13 +218,27 @@ namespace ApplePurchaseReceiptVerifier.Internal
             return document;
         }
 
-        /// <summary>An object's members by name; a name that appears twice keeps its last value.</summary>
+        /// <summary>
+        /// An object's members by name; a name that appears twice keeps its
+        /// last value. A name holding a <c>\u</c> escape of a lone surrogate
+        /// parses but has no value, as in <see cref="Text"/>.
+        /// </summary>
         private static Dictionary<string, JsonElement> Members(JsonElement json)
         {
             Dictionary<string, JsonElement> members = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (JsonProperty member in json.EnumerateObject())
             {
-                members[member.Name] = member.Value;
+                string name;
+                try
+                {
+                    name = member.Name;
+                }
+                catch (InvalidOperationException)
+                {
+                    throw new AnswerException("a member name in the module's answer is not valid UTF-16");
+                }
+
+                members[name] = member.Value;
             }
 
             return members;

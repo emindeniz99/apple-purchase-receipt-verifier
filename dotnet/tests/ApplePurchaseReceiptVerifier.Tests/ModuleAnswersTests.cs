@@ -155,6 +155,40 @@ public class ModuleAnswersTests
     }
 
     /// <summary>
+    /// A member name is read the way a string value is: a lone-surrogate
+    /// escape in it makes the answer unreadable rather than escaping as an
+    /// <see cref="InvalidOperationException"/>, which from <c>init</c> would
+    /// reach the caller of <see cref="Verifier.Create"/> as something other
+    /// than the module's answer being wrong.
+    /// </summary>
+    [Theory]
+    [InlineData("{\"ok\":true,\"\\ud800\":1}")]
+    [InlineData("{\"\\udc00x\":1,\"ok\":true}")]
+    public void AnInitMemberNameHoldingALoneSurrogateEscapeMakesTheAnswerUnreadable(string answer)
+    {
+        Assert.Throws<ModuleAnswers.AnswerException>(() => ModuleAnswers.CheckInit(answer));
+    }
+
+    [Theory]
+    [InlineData("{\"verified\":true,\"\\ud800\":1}")]
+    [InlineData("{\"verified\":false,\"\\ud800\":\"MALFORMED\",\"message\":\"m\"}")]
+    public void AVerifyMemberNameHoldingALoneSurrogateEscapeMakesTheAnswerUnreadable(string answer)
+    {
+        Assert.Throws<ModuleAnswers.AnswerException>(() => ModuleAnswers.ReadReceipt(answer));
+        Assert.Throws<ModuleAnswers.AnswerException>(() => ModuleAnswers.ReadSignedData(answer));
+    }
+
+    [Fact]
+    public void AReceiptPayloadMemberNameHoldingALoneSurrogateEscapeMakesTheAnswerUnreadable()
+    {
+        string json = SyntheticAnswers.Receipt().ToJson();
+        string patched = json.Replace("\"receipt_creation_date_ms\":", "\"\\ud800\":");
+        Assert.NotEqual(json, patched);
+        Assert.Throws<ModuleAnswers.AnswerException>(
+            () => ModuleAnswers.ReadReceipt("{\"verified\":true,\"payload\":" + patched + "}"));
+    }
+
+    /// <summary>
     /// A verified JWS payload is the module's to judge, at any depth
     /// (DECISIONS.md R40), and it reaches this reader as a string, so its
     /// nesting never meets <see cref="Json.MaxDepth"/>. The conformance runner
