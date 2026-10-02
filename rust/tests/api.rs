@@ -191,6 +191,158 @@ fn der_and_pem_anchors_are_interchangeable() {
     );
 }
 
+/// The PEM OpenSSL writes for a DER certificate: 64-column base64 between
+/// `CERTIFICATE` lines, as certificate tools print it.
+fn pem_of(der: &[u8]) -> Vec<u8> {
+    openssl::x509::X509::from_der(der)
+        .unwrap()
+        .to_pem()
+        .unwrap()
+}
+
+/// The three Apple roots compiled into the crate, as their files hold them.
+fn apple_root_files() -> Vec<Vec<u8>> {
+    [
+        "AppleIncRootCertificate.cer",
+        "AppleRootCA-G2.cer",
+        "AppleRootCA-G3.cer",
+    ]
+    .iter()
+    .map(|name| std::fs::read(format!("{}/certs/{name}", env!("CARGO_MANIFEST_DIR"))).unwrap())
+    .collect()
+}
+
+#[test]
+fn a_root_is_read_as_der_or_pem_by_its_own_bytes() {
+    // A caller holds a root in whichever encoding its tools printed, and
+    // the module is given bytes with no format parameter: the bytes say
+    // which. Either way the anchor is the same DER.
+    let der = common::read_fixture("generated-0.7/receipt-root.der");
+    let pem = pem_of(&der);
+    assert!(pem.starts_with(b"-----BEGIN CERTIFICATE-----\n"));
+    let mut indented = b" \t\r\n\n".to_vec();
+    indented.extend_from_slice(&pem);
+    for bytes in [&der, &pem, &indented] {
+        let anchors = TrustAnchor::from_der_or_pem(bytes).unwrap();
+        let read: Vec<&[u8]> = anchors.iter().map(TrustAnchor::der).collect();
+        assert_eq!(read, [der.as_slice()]);
+    }
+}
+
+#[test]
+fn a_pem_bundle_is_one_root_entry_and_each_certificate_in_it_an_anchor() {
+    // A bundle file is what certificate tools and Apple's own docs hand
+    // around; splitting it is OpenSSL's job, not the caller's.
+    let files = apple_root_files();
+    let bundle: Vec<u8> = files.iter().flat_map(|der| pem_of(der)).collect();
+    let anchors = TrustAnchor::from_der_or_pem(&bundle).unwrap();
+    let read: Vec<&[u8]> = anchors.iter().map(TrustAnchor::der).collect();
+    assert_eq!(read, files);
+    // The same three the crate pins by fingerprint for Config::default.
+    let defaults = Config::default();
+    let pinned: Vec<&[u8]> = defaults.roots().iter().map(TrustAnchor::der).collect();
+    assert_eq!(read, pinned);
+}
+
+#[test]
+fn a_root_that_is_neither_der_nor_pem_holding_a_certificate_is_refused() {
+    let der = common::read_fixture("generated-0.7/receipt-root.der");
+    let pem = pem_of(&der);
+    let with = |before: &[u8], after: &[u8]| [before, &pem, after].concat();
+    // A second block OpenSSL cannot read: the whole entry is refused, not
+    // trimmed to the part that read.
+    let broken_second = with(
+        b"",
+        b"-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
+    );
+    let refused: [&[u8]; 11] = [
+        b"-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----",
+        b"-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n",
+        b"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n",
+        b"-----BEGIN CERTIFICATE-----\nAAAA\n",
+        b"not a certificate",
+        b"",
+        b" \n",
+        &[0x30, 0x00],
+        // Text before the first block is not whitespace: not PEM by the rule.
+        &with(b"junk\n", b""),
+        // DER is never indented: whitespace before it is not DER.
+        &[b" ".as_slice(), &der].concat(),
+        &broken_second,
+    ];
+    for bytes in refused {
+        let error = TrustAnchor::from_der_or_pem(bytes).unwrap_err();
+        assert_eq!(
+            error.detail(),
+            "trust anchor is not a certificate: OpenSSL does not read it as one X.509 certificate",
+            "{:?}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
+}
+
+#[test]
+fn an_encrypted_pem_block_is_refused_without_asking_for_a_password() {
+    // OpenSSL's default password callback prompts on the terminal or reads
+    // stdin for an encrypted block, which blocks the caller and could open
+    // the block with a typed passphrase; the core's reader passes one that
+    // refuses.
+    let der = common::read_fixture("generated-0.7/receipt-root.der");
+    let body: String = String::from_utf8(pem_of(&der))
+        .unwrap()
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let encrypted = format!(
+        "-----BEGIN CERTIFICATE-----\nProc-Type: 4,ENCRYPTED\n\
+         DEK-Info: AES-128-CBC,00112233445566778899AABBCCDDEEFF\n\n\
+         {body}-----END CERTIFICATE-----\n"
+    );
+    let error = TrustAnchor::from_der_or_pem(encrypted.as_bytes()).unwrap_err();
+    assert_eq!(
+        error.detail(),
+        "trust anchor is not a certificate: OpenSSL does not read it as one X.509 certificate"
+    );
+}
+
+#[test]
+fn blocks_of_other_types_in_a_pem_bundle_are_skipped_as_openssl_skips_them() {
+    // OpenSSL's PEM_read_bio_X509 passes over a block whose label is not a
+    // certificate's, so a bundle with a key or a TRUSTED CERTIFICATE in it
+    // yields its CERTIFICATE blocks; on its own such a block is no
+    // certificate and is refused.
+    let files = apple_root_files();
+    let other = |label: &str| format!("-----BEGIN {label}-----\nAAAA\n-----END {label}-----\n");
+    for label in ["PRIVATE KEY", "TRUSTED CERTIFICATE"] {
+        let bundle = [
+            pem_of(&files[0]),
+            other(label).into_bytes(),
+            pem_of(&files[1]),
+        ]
+        .concat();
+        let anchors = TrustAnchor::from_der_or_pem(&bundle).unwrap();
+        let read: Vec<&[u8]> = anchors.iter().map(TrustAnchor::der).collect();
+        assert_eq!(read, [files[0].as_slice(), files[1].as_slice()], "{label}");
+        assert!(TrustAnchor::from_der_or_pem(other(label).as_bytes()).is_err());
+    }
+}
+
+#[test]
+fn a_receipt_verifies_under_a_pem_root_exactly_as_under_its_der() {
+    let der = common::read_fixture("generated-0.7/receipt-root.der");
+    let from_der = TrustAnchor::from_der_or_pem(&der).unwrap();
+    let from_pem = TrustAnchor::from_der_or_pem(&pem_of(&der)).unwrap();
+    let receipt = common::receipt_der();
+    let under_der = common::verify_der(&common::verifier(from_der), &receipt);
+    assert!(under_der.is_ok(), "{under_der:?}");
+    assert_eq!(
+        under_der,
+        common::verify_der(&common::verifier(from_pem), &receipt),
+        "the same root in two encodings must reach the same verdict"
+    );
+}
+
 #[test]
 fn the_api_types_are_send_sync_and_static() {
     fn assert_shareable<T: Send + Sync + 'static>() {}

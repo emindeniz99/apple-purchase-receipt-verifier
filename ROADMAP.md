@@ -54,9 +54,9 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
      `Config::defaults()` removed; Go's and Swift's size-cap constants
      removed). Kept: the result and payload types' constructors, and
      .NET's `JsonPayload.Create`, its payload's one public constructor.
-   - Decided 2026-10-01 (DECISIONS.md R39): roots are DER in every
-     package and the core reads no PEM; Node and Ruby dropped their PEM
-     unwrapping.
+   - Decided 2026-10-01 (DECISIONS.md R39, amended the same day): the
+     core reads a root as DER or PEM, told apart by the bytes, through
+     OpenSSL's PEM reader; wrappers pass bytes and read neither format.
    - **Open for the owner:** Node's `createConfig()` and
      `createVerifier()` names.
 

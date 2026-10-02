@@ -23,7 +23,7 @@ interface Transport
      * Checks that `aprv` is reachable and speaks this package's ABI, and
      * that it will run with `$roots`. Called once, by `Verifier::create()`.
      *
-     * @param list<string>|null $roots DER bytes; null means the module's built-in Apple roots
+     * @param list<string>|null $roots DER or PEM bytes; null means the module's built-in Apple roots
      *
      * @throws InvalidArgumentException when the module refuses the roots, or the server refuses the token
      * @throws RuntimeException when the binary or the server cannot be used, or speaks another ABI

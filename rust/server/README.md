@@ -29,7 +29,7 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 
 | Flag | Commands | Meaning |
 |---|---|---|
-| `--roots FILE` | serve, CLI | The trusted roots: one base64 DER per line, or PEM `CERTIFICATE` blocks; `#` comments and blank lines are skipped. Without it, the three Apple roots built into the module |
+| `--roots FILE` | serve, CLI | The trusted roots: one base64 root per line (DER, or PEM bytes, which the module reads as is), or PEM `CERTIFICATE` blocks, which the `pem` crate unwraps to DER so `/v1/info` reports DER fingerprints; `#` comments and blank lines are skipped. Without it, the three Apple roots built into the module |
 | `--now-ms N` | CLI | The verification clock, ms since the Unix epoch (u64). Default: the system clock |
 | `--listen ADDR` | serve | The bind address; overrides `APRV_LISTEN`. Default `127.0.0.1:8080` |
 | `--token-file FILE` | serve | The token `/v1/` routes require (trimmed). Overrides `APRV_TOKEN` |
@@ -143,7 +143,8 @@ A client maps both 500 codes and a failed connection to `INTERNAL_ERROR`
    `/proc`) or the environment.
 3. It writes the roots as the second line, in `init`'s own shape
    (`rust/bindings/wire/schema/init-config.schema.json`):
-   `{"roots":["<base64 DER>", ...]}`, or `{}` for the Apple roots. An
+   `{"roots":["<base64>", ...]}`, each root DER or PEM bytes, or `{}`
+   for the Apple roots. An
    empty list is refused.
 4. The child binds `127.0.0.1:0` whatever `APRV_LISTEN` says and prints
    one line, `APRV_LISTEN=127.0.0.1:<port>`, on stdout.

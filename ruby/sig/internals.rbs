@@ -92,7 +92,7 @@ module ApplePurchaseReceiptVerifier
 
     def none: () -> Array[String]
     def normalize: (untyped roots) -> Array[String]
-    def der_of: (untyped root) -> String
+    def bytes_of: (untyped root) -> String
   end
 
   class RootsRejected < StandardError

@@ -91,10 +91,13 @@ status table.
 
 ### Your own roots
 
-`Config(roots=[...])` takes DER-encoded certificates as `bytes` (the
-bytes of a `.cer` file), for tests and for anyone who pins something other than
-Apple's roots. The module parses them when the `Verifier` is built, so a value
-that is not a certificate is a `ValueError` there, never a later verdict.
+`Config(roots=[...])` takes certificates as `bytes`, DER or PEM (the
+bytes of a `.cer` or a `.pem` file), for tests and for anyone who pins
+something other than Apple's roots. The module tells the two apart by the
+bytes; a PEM file holding several certificates is one entry, and every
+certificate in it is trusted. The module parses them when the `Verifier` is
+built, so a value that is not a certificate is a `ValueError` there, never a
+later verdict.
 
 Apple's three roots are compiled into the module, and the package carries no
 copy of them: `Config().roots` is `None`, which the `Verifier` hands
@@ -354,7 +357,7 @@ otherwise is what sits under it.
   clock=...)` becomes `Config(roots=..., clock=...)`, and `Config.defaults()`
   becomes `Config()`. The constructor takes any iterable of roots, and `None`
   for either argument means its default, as `create` did.
-- **Roots are DER `bytes`, not `cryptography` certificates.**
+- **Roots are DER or PEM `bytes`, not `cryptography` certificates.**
   `Config(roots=[cert.public_bytes(Encoding.DER)])` for a
   `cryptography.x509.Certificate`. Anything else is a `TypeError`.
 - **`default_roots()` is gone, and `Config().roots` is `None`.**

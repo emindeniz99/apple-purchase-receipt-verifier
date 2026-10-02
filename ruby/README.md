@@ -554,8 +554,8 @@ parse was signed by a trusted signer, so it is `UNREADABLE_PAYLOAD`, not
 **Misconfiguration is not a verification verdict.** `Verifier.create` raises
 `ArgumentError` for an empty root set, and for a root the module does not
 accept as a certificate; `Config.new` raises it for a `clock:` that does not
-respond to `#call`, a `roots:` entry that is neither a certificate object
-nor a String, or a PEM String; `verify_receipt_endpoint` raises it for an `environment`
+respond to `#call`, or a `roots:` entry that is neither a certificate object
+nor a String; `verify_receipt_endpoint` raises it for an `environment`
 that is not `Environment::PRODUCTION` or `Environment::SANDBOX`. You cannot
 catch a typo as though a receipt were forged.
 
@@ -634,13 +634,13 @@ is not the same thing and is refused by `Verifier.create`.
 
 To pin your own anchors, pass them: `Config.new(roots:)` accepts certificate
 objects (anything answering `#to_der`, such as an OpenSSL certificate) or
-DER strings, and `Config#roots` returns them as DER. Apple's PKI page
-publishes its roots as `.cer` files, which are DER, so
-`File.binread("AppleRootCA-G3.cer")` is a root as it stands. A PEM string is
-refused with an `ArgumentError` that points here. Convert it first:
-`OpenSSL::X509::Certificate.new(pem).to_der` is the DER, and the certificate
-object itself works too. Whether a root is a certificate is the module's to
-say, at `Verifier.create`.
+Strings holding DER or PEM bytes, and `Config#roots` returns the bytes the
+module is given. The module reads both and tells them apart by the bytes, so
+a file is a root as it stands: `File.binread("AppleRootCA-G3.cer")` (Apple's
+PKI page publishes DER `.cer` files) or `File.binread("roots.pem")`. A PEM
+String holding several certificates is one entry, and every certificate in
+it is trusted. Whether a root is a certificate is the module's to say, at
+`Verifier.create`.
 
 ## Performance
 

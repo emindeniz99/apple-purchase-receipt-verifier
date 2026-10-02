@@ -44,7 +44,7 @@ module ApplePurchaseReceiptVerifier
 
     # @param runtime [Runtime]
     # @param config_json [String, nil] `init`'s argument,
-    #   `{"roots":["<base64 DER>", ...]}`; nil skips `init` (for tests of what
+    #   `{"roots":["<base64>", ...]}`; nil skips `init` (for tests of what
     #   the module does before it)
     # @raise [AbiMismatchError] the module lacks the exports this wrapper binds
     # @raise [RootsRejected] `init` refused the configuration

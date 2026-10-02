@@ -313,12 +313,13 @@ pub fn init_result(result: &Result<(), String>) -> String {
     out
 }
 
-/// Reads `init`'s configuration (`init-config.schema.json`) into the DER
-/// roots it names, in order. An empty list means the three Apple roots
+/// Reads `init`'s configuration (`init-config.schema.json`) into the
+/// decoded bytes of the roots it names, in order: DER or PEM, which the
+/// core tells apart. An empty list means the three Apple roots
 /// compiled into the library.
 ///
 /// Accepted: no bytes at all (or only JSON whitespace), `{}`, and
-/// `{"roots":["<base64 DER>", ...]}`, each root in padded standard base64
+/// `{"roots":["<base64>", ...]}`, each root in padded standard base64
 /// by the core's `receipt-data` rule ([`aprv_surface::decode_base64`]).
 /// Anything else is refused with a message, so a wrapper that misspells a
 /// member finds out at `create` instead of getting the Apple roots it did

@@ -119,7 +119,7 @@ function checkAbi(): void {
 
 const utf8 = new TextEncoder();
 
-/** `init`'s configuration: the roots as base64 DER, an empty list for Apple's roots. */
+/** `init`'s configuration: the roots' bytes (DER or PEM) as base64, an empty list for Apple's roots. */
 export function initConfig(rootsBase64: readonly string[]): Uint8Array {
   return utf8.encode(JSON.stringify({ roots: rootsBase64 }));
 }

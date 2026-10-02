@@ -14,7 +14,7 @@ def _der(root: object) -> bytes:
     if isinstance(root, (bytes, bytearray, memoryview)):
         return bytes(root)
     raise TypeError(
-        "roots must be DER-encoded certificates as bytes; for a cryptography "
+        "roots must be certificates as DER or PEM bytes; for a cryptography "
         "Certificate pass cert.public_bytes(serialization.Encoding.DER)"
     )
 

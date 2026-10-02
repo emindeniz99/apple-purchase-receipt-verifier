@@ -314,16 +314,16 @@ unsafe fn borrow_bytes<'a>(input: *const u8, len: usize) -> Result<&'a [u8], i32
     Ok(unsafe { std::slice::from_raw_parts(input, len) })
 }
 
-/// Copies the caller's DER anchors. `NULL`, `NULL`, `0` means "not given",
-/// an empty list, which the surface reads as the bundled Apple roots. A
-/// `count` or an anchor length over `PTRDIFF_MAX` is `InvalidArgument`, as
-/// [`borrow_bytes`] answers for the `_bytes` calls, before any slice is
-/// built.
+/// Copies the caller's anchors, each DER or PEM bytes. `NULL`, `NULL`, `0`
+/// means "not given", an empty list, which the surface reads as the bundled
+/// Apple roots. A `count` or an anchor length over `PTRDIFF_MAX` is
+/// `InvalidArgument`, as [`borrow_bytes`] answers for the `_bytes` calls,
+/// before any slice is built.
 ///
 /// # Safety
 /// When `count` is non-zero, `ders` must point at `count` readable pointers
-/// and `lens` at `count` readable lengths, each pair describing a readable
-/// DER certificate.
+/// and `lens` at `count` readable lengths, each pair describing readable
+/// anchor bytes.
 unsafe fn anchors_of(
     ders: *const *const u8,
     lens: *const usize,
@@ -451,10 +451,12 @@ pub extern "C" fn aprv_version() -> *const c_char {
 
 /// A verifier: the pinned roots and the clock.
 ///
-/// * `ders[i]` / `lens[i]` describe one DER trust anchor; the bytes are
-///   parsed during the call and never retained. `NULL`, `NULL`, `0` selects
-///   the three bundled Apple roots. A `count` of zero with either array
-///   non-null is refused.
+/// * `ders[i]` / `lens[i]` describe one trust anchor entry: DER or PEM
+///   bytes. DER is one certificate; PEM text may hold several, and each
+///   becomes an anchor. The library tells the two apart by the bytes. They
+///   are parsed during the call and never retained. `NULL`, `NULL`, `0`
+///   selects the three bundled Apple roots. A `count` of zero with either
+///   array non-null is refused.
 /// * `fixed_clock_unix_millis`, when non-null, pins the clock at that
 ///   instant in milliseconds since the Unix epoch; `NULL` reads the system
 ///   clock on every call. A pointer rather than a sentinel value, because
@@ -468,8 +470,8 @@ pub extern "C" fn aprv_version() -> *const c_char {
 /// caller and must be released with [`aprv_verifier_free`].
 ///
 /// # Safety
-/// The three anchor arguments must describe `count` readable DER
-/// certificates, and `fixed_clock_unix_millis` must be `NULL` or point at
+/// The three anchor arguments must describe `count` readable byte ranges
+/// (DER or PEM), and `fixed_clock_unix_millis` must be `NULL` or point at
 /// one readable, aligned `int64_t`.
 #[no_mangle]
 pub unsafe extern "C" fn aprv_verifier_new(

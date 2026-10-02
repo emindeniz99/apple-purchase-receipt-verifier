@@ -101,8 +101,10 @@ let verifier = Verifier(config: config)
 `Config.defaults()` uses Apple's three published roots and the system clock.
 The roots are compiled into `aprv.wasm` and pinned there, so
 `Config.defaults().roots` is `nil`: "the module's built-in roots".
-`Config.builder().roots(...)` replaces them with your own DER certificates,
-which tests use; it hands them to a fresh module instance at once, so a
+`Config.builder().roots(...)` replaces them with your own certificates, as
+DER or PEM bytes (the module tells them apart; a PEM bundle of several
+certificates is one entry), which tests use; it hands them to a fresh module
+instance at once, so a
 certificate the module refuses throws `ConfigError` there, at startup, and
 never on a call. `build()` throws `ConfigError` for an empty root set, since
 a verifier with no roots would answer `.untrustedChain` to everything and
@@ -368,9 +370,10 @@ The API is 0.7's, and so are the answers: every port runs the same module
 against the same `fixtures/cases.json`. What changed:
 
 - **Floors**: Swift 6.3, macOS 15, iOS 18 (were 6.1 and macOS 13).
-- **`Config.roots`** is `[[UInt8]]?`, DER bytes, where it was
+- **`Config.roots`** is `[[UInt8]]?`, DER or PEM bytes, where it was
   `[Certificate]` from swift-certificates: `nil` means Apple's roots built
-  into the module. `ConfigBuilder.roots(_:)` takes DER as before.
+  into the module. `ConfigBuilder.roots(_:)` takes DER as before, and PEM
+  bytes too.
 - **Dependencies**: swift-certificates, swift-asn1 and swift-crypto are gone;
   WasmKit is the one dependency.
 - **The clock is read once per call, always**, before the input is looked

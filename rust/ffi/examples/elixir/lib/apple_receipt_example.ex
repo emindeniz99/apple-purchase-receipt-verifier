@@ -51,9 +51,10 @@ defmodule AppleReceiptExample do
   defdelegate version(), to: Native
 
   @doc """
-  A verifier. Options are `:roots`, a list of DER certificates that replaces
-  the three bundled Apple roots, and `:clock_unix_millis`, which pins the
-  clock (for tests and conformance vectors; the system clock otherwise).
+  A verifier. Options are `:roots`, a list of certificates as DER or PEM
+  binaries (a PEM bundle is one entry) that replaces the three bundled Apple
+  roots, and `:clock_unix_millis`, which pins the clock (for tests and
+  conformance vectors; the system clock otherwise).
 
   The clock is read in two places: the certificate-validity instant when the
   input states no usable signing date, and the endpoint's `request_date`. No

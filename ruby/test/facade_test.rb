@@ -101,25 +101,21 @@ class FacadeTest < Minitest::Test
     assert_equal [], APRV::Config.defaults.roots
   end
 
-  # Roots are DER in every package (docs/rust-core/DECISIONS.md R39). A PEM
-  # String is refused at Config.new with a pointer to the README, not
-  # unwrapped here and not passed on for the module to refuse at create.
-  def test_a_pem_string_root_is_refused_with_a_pointer_to_the_readme
+  # A root is the bytes a caller holds, DER or PEM: the module tells them
+  # apart (docs/rust-core/DECISIONS.md R39, amended), so a PEM String reaches
+  # `init` as given, never unwrapped here. roots_test.rb shows the shipped
+  # module verifying under it.
+  def test_a_pem_string_root_reaches_init_as_given
     der = File.binread(File.join(TestSupport.repo_root, "certs", "AppleRootCA-G3.cer"))
-    pem = "-----BEGIN CERTIFICATE-----\n#{[der].pack("m")}-----END CERTIFICATE-----\n"
-    [pem, "junk before it\n#{pem}"].each do |root|
-      error = assert_raises(ArgumentError) { APRV::Config.new(roots: [der, root]) }
-      assert_match(/DER Strings; convert a PEM certificate first \(see README\)/, error.message)
-    end
-    assert_raises(ArgumentError) { APRV::Config.new(roots: [pem]) }
-    # The README's conversion works: the certificate object's DER is the root.
-    assert_equal [der], APRV::Config.new(roots: [OpenSSL::X509::Certificate.new(pem)]).roots
+    pem = OpenSSL::X509::Certificate.new(der).to_pem
+    config = APRV::Config.new(roots: [der, pem])
+    assert_equal [der, pem.b], config.roots
+    assert_predicate verifier(config).verify_receipt("v"), :verified?
   end
 
   def test_config_refuses_what_is_neither_a_certificate_nor_a_string
     assert_raises(ArgumentError) { APRV::Config.new(roots: [nil]) }
     assert_raises(ArgumentError) { APRV::Config.new(roots: [1.5]) }
-    assert_raises(ArgumentError) { APRV::Config.new(roots: ["-----BEGIN PRIVATE KEY-----\nAA==\n-----END PRIVATE KEY-----\n"]) }
     assert_raises(ArgumentError) { APRV::Config.new(clock: 42) }
   end
 

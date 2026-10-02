@@ -66,7 +66,7 @@ module ApplePurchaseReceiptVerifier
     #   supplies its own
     def initialize(config, runtime: Runtime.shared)
       @clock_proc = config.clock
-      roots = config.roots.map { |der| [der].pack("m0") }
+      roots = config.roots.map { |root| [root].pack("m0") }
       @pool = InstancePool.new(runtime, JSON.generate("roots" => roots))
       freeze
     rescue RootsRejected => e

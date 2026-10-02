@@ -94,9 +94,11 @@ by a NUL and anything verifies through `aprv_verify_receipt` and is
 `APRV_REASON_INVALID_UTF8` rather than a verdict.
 
 `NULL`, `NULL`, `0` for the anchors selects the three Apple roots the Rust
-library embeds. Otherwise `ders` and `lens` describe DER certificates the
-caller owns, for tests and for a deployment that pins its own; the bytes are
-parsed during the call and never retained. Passing no anchors is not a way to
+library embeds. Otherwise `ders` and `lens` describe roots the caller owns,
+for tests and for a deployment that pins its own: each entry is DER or PEM
+bytes, which the library tells apart by the bytes, and a PEM entry may hold
+several certificates. The bytes are parsed during the call and never
+retained. Passing no anchors is not a way to
 disable pinning: there is no code path to an operating-system trust store to
 disable.
 

@@ -8,17 +8,22 @@
  * value only for the chain-validity instant when a receipt or JWS states
  * no usable signing date, and for `request_date` in the endpoint response.
  *
- * Nothing here parses a certificate: a root is handed to the module as its
- * DER bytes, and a root the module cannot read fails `createVerifier`.
+ * Nothing here parses a certificate: a root is handed to the module as the
+ * bytes the caller gave, DER or PEM, which the module tells apart, and a
+ * root the module cannot read fails `createVerifier`.
  */
 
-/** A trust root: the certificate's DER bytes. A PEM string is refused. */
+/**
+ * A trust root: the certificate's bytes, DER or PEM (a PEM bundle of several
+ * certificates is one root entry). A string is refused: pass PEM text as its
+ * bytes.
+ */
 export type RootInput = Uint8Array;
 
 export interface Config {
   /**
-   * The DER of each trusted root, in the caller's order, or `null` for
-   * Apple's three roots pinned inside aprv.wasm.
+   * The bytes of each trusted root as given (DER or PEM), in the caller's
+   * order, or `null` for Apple's three roots pinned inside aprv.wasm.
    */
   readonly roots: readonly Uint8Array[] | null;
   readonly clock: () => number;
@@ -31,10 +36,10 @@ export interface CreateConfigOptions {
   readonly clock?: () => number;
 }
 
-function toDer(root: RootInput): Uint8Array {
+function toBytes(root: RootInput): Uint8Array {
   if (!(root instanceof Uint8Array)) {
     throw new TypeError(
-      "a trust root must be a Uint8Array of DER; convert a PEM certificate with your platform's X.509 library first (see README, custom roots)",
+      'a trust root must be a Uint8Array of DER or PEM bytes; pass a PEM string as new TextEncoder().encode(pem) (see README, custom roots)',
     );
   }
   // A copy, so a caller's later write to their buffer changes nothing here.
@@ -45,7 +50,7 @@ function normalizeRoots(roots: readonly RootInput[]): readonly Uint8Array[] {
   if (!Array.isArray(roots) || roots.length === 0) {
     throw new TypeError('trustedRoots must be a non-empty array');
   }
-  return Object.freeze(roots.map(toDer));
+  return Object.freeze(roots.map(toBytes));
 }
 
 const systemClock = (): number => Date.now();
