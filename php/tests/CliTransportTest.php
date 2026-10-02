@@ -328,7 +328,7 @@ final class CliTransportTest extends TestCase
         Verifier::create(Config::builder()->roots(['not a certificate'])->build(), new CliTransport(Aprv::binary()));
     }
 
-    /** A root is DER: Apple's own root opens, the same certificate as PEM text is refused (0.7 accepted PEM). */
+    /** A root is DER or PEM bytes: Apple's own root opens both ways. */
     public function testARealRootIsAcceptedAsDerAndAsPem(): void
     {
         $der = (string) file_get_contents(__DIR__ . '/../../certs/AppleRootCA-G3.cer');

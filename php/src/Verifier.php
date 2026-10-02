@@ -95,7 +95,7 @@ final class Verifier
     private static function requireDer(mixed $root): void
     {
         if (!is_string($root) || $root === '') {
-            throw new InvalidArgumentException('every root must be a non-empty string of DER bytes');
+            throw new InvalidArgumentException('every root must be a non-empty string of DER or PEM bytes');
         }
     }
 
