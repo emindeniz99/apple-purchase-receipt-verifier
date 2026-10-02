@@ -13,7 +13,7 @@ mod tests;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use roots::Roots;
 use runtime::{Load, Op, Runtime, Verifier};
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
 use std::time::Instant;
@@ -173,6 +173,15 @@ fn usage(msg: &str) -> i32 {
     EXIT_USAGE
 }
 
+/// The system clock in milliseconds since the Unix epoch (0 before it):
+/// the call's clock when the caller gives none.
+fn clock_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 fn die(msg: impl std::fmt::Display) -> i32 {
     eprintln!("aprv: {msg}");
     EXIT_SOFTWARE
@@ -236,12 +245,7 @@ fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
     // LLVM libunwind a static musl binary links; the kernel frees it all at
     // exit anyway (docs/evidence/2026-09-27-static-musl-server.md §3).
     let runtime = std::mem::ManuallyDrop::new(runtime);
-    let now_ms = o.now_ms.unwrap_or_else(|| {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
-    });
+    let now_ms = o.now_ms.unwrap_or_else(clock_ms);
     let op = match cmd {
         Command::Receipt => Op::VerifyReceipt { now_ms },
         Command::SignedData => Op::VerifySignedData { now_ms },
@@ -498,19 +502,19 @@ fn managed_handshake() -> Result<(Vec<u8>, Roots), String> {
 }
 
 /// One line without its `\n` (and a `\r` before it), at most `max` bytes.
-fn read_line(r: &mut impl Read, max: usize) -> Result<Vec<u8>, String> {
+/// stdin's own buffer is read, so what follows the line stays for the
+/// watcher thread.
+fn read_line(r: &mut impl BufRead, max: usize) -> Result<Vec<u8>, String> {
     let mut line = Vec::new();
-    let mut b = [0u8; 1];
-    loop {
-        match r.read(&mut b) {
-            Ok(0) => return Err("stdin closed during the handshake".into()),
-            Ok(_) if b[0] == b'\n' => break,
-            Ok(_) if line.len() >= max => {
-                return Err(format!("a handshake line is longer than {max} bytes"))
-            }
-            Ok(_) => line.push(b[0]),
-            Err(e) => return Err(format!("reading stdin: {e}")),
-        }
+    r.take(max as u64 + 1)
+        .read_until(b'\n', &mut line)
+        .map_err(|e| format!("reading stdin: {e}"))?;
+    if line.last() == Some(&b'\n') {
+        line.pop();
+    } else if line.len() > max {
+        return Err(format!("a handshake line is longer than {max} bytes"));
+    } else {
+        return Err("stdin closed during the handshake".into());
     }
     if line.last() == Some(&b'\r') {
         line.pop();
@@ -543,6 +547,36 @@ mod cli_tests {
 
     fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(std::iter::once("aprv").chain(args.iter().copied()))
+    }
+
+    /// The handshake lines: CRLF or LF, at most `max` bytes before the `\n`
+    /// (a `\r` counts), what follows left unread; a longer line or EOF
+    /// before the newline is refused.
+    #[test]
+    fn read_line_takes_one_line_of_at_most_max_bytes() {
+        use super::read_line;
+        let mut r = &b"abc\r\nde\nrest"[..];
+        assert_eq!(read_line(&mut r, 4).unwrap(), b"abc");
+        assert_eq!(read_line(&mut r, 4).unwrap(), b"de");
+        assert_eq!(r, b"rest", "nothing past the line is consumed");
+        assert_eq!(read_line(&mut &b"\n"[..], 3).unwrap(), b"");
+        assert_eq!(
+            read_line(&mut &b"abc\r\n"[..], 3).unwrap_err(),
+            "a handshake line is longer than 3 bytes"
+        );
+        assert_eq!(read_line(&mut &b"abc\n"[..], 3).unwrap(), b"abc");
+        assert_eq!(
+            read_line(&mut &b"abcd\n"[..], 3).unwrap_err(),
+            "a handshake line is longer than 3 bytes"
+        );
+        assert_eq!(
+            read_line(&mut &b"abc"[..], 3).unwrap_err(),
+            "stdin closed during the handshake"
+        );
+        assert_eq!(
+            read_line(&mut &b""[..], 3).unwrap_err(),
+            "stdin closed during the handshake"
+        );
     }
 
     #[test]

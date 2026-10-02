@@ -61,6 +61,9 @@ http-body-util = "0.1"
 # detection), no `suggestions` (strsim), no `env`: APRV_LISTEN and
 # APRV_TOKEN are read by hand, an empty value meaning unset, as before.
 clap = { version = "4.6", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+# The X-Aprv-Token comparison (src/http.rs, require_token), in constant
+# time. no_std: only the slice comparison is used.
+subtle = { version = "2.6", default-features = false }
 
 [build-dependencies]
 sha2 = { version = "0.11", default-features = false }

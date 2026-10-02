@@ -19,7 +19,7 @@ use axum::Router;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use subtle::ConstantTimeEq;
 
 /// The problem types, documented in README.md ("Problems").
 const PROBLEM_BASE: &str =
@@ -131,12 +131,9 @@ async fn require_token(
             .get(TOKEN_HEADER)
             .map(|v| v.as_bytes())
             .unwrap_or(b"");
-        // Constant time over the expected token's length.
-        let mut diff = (got.len() != want.len()) as u8;
-        for (i, w) in want.iter().enumerate() {
-            diff |= w ^ got.get(i).copied().unwrap_or(0);
-        }
-        if diff != 0 {
+        // Constant time over the bytes; a length that differs is refused
+        // at once (the length is not the secret).
+        if !bool::from(got.ct_eq(want)) {
             return problem(
                 StatusCode::UNAUTHORIZED,
                 "UNAUTHORIZED",
@@ -151,10 +148,7 @@ async fn require_token(
 /// `X-Aprv-Now-Ms` (a u64 in decimal) or the server's clock.
 fn now_ms(headers: &HeaderMap) -> Result<u64, Box<Response>> {
     let Some(v) = headers.get(NOW_HEADER) else {
-        return Ok(SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0));
+        return Ok(crate::clock_ms());
     };
     let s = v.to_str().unwrap_or("");
     let ok = !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit());
