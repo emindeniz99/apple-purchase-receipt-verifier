@@ -150,7 +150,7 @@ the default transport.
 `php/certs/`, `src/Internal/RootsData.php`, `tools/gen-roots.php` and the
 public `AppleRootCerts` class (its `pinnedRoots()` read `RootsData`) are
 gone: Apple's three roots live only in the module `aprv` runs.
-`Config::defaults()->roots` stays `null`, and an empty list is still refused
+`(new Config())->roots` stays `null`, and an empty list is still refused
 at `Verifier::create`. The root `.gitattributes` allowlist no longer names
 `php/certs`, and `tools/check-php-package.mjs` no longer requires it,
 `AppleRootCerts.php` or `RootsData.php` in the archive.
@@ -159,5 +159,5 @@ at `Verifier::create`. The root `.gitattributes` allowlist no longer names
 |---|---|
 | `ci.yml` `php-static` | delete the drift step (`php php/tools/gen-roots.php && git diff --exit-code php/src/Internal/RootsData.php`) and its comment. |
 | `ci.yml` `one-implementation` | nothing for PHP: `php/src` has no allowlist entry and no hit. |
-| `.github/smoke/packagist-smoke.php` | nothing: it already verifies through `Config::defaults()`. |
+| `.github/smoke/packagist-smoke.php` | nothing: it already verifies through the default `Config` (`new Config()` since `Config::defaults()` went in 0.8). |
 
