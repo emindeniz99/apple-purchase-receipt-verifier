@@ -5,6 +5,9 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.Authenticator;
 import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
@@ -28,8 +31,14 @@ import org.jspecify.annotations.Nullable;
  * that died is started again first. Inside each attempt HttpURLConnection
  * may send the request up to twice more ({@link #exchange}), so one call
  * can put it on up to nine connections, and a server that reads each
- * request and closes before the status line receives it six times.
- * Verification has no side effects, so a retry cannot change an answer.
+ * request and closes before the status line receives it six times. On
+ * Java 8 only, a server that answers 401 with a challenge the JVM's
+ * default {@link java.net.Authenticator} has credentials for receives the
+ * request up to {@code http.maxRedirects} (20) times an attempt, each
+ * after the first with those credentials, and 60 times in a call when it
+ * answers only that way ({@link #exchange}); any of those sends can also
+ * take the resends above. Verification has no side effects, so a retry
+ * cannot change an answer.
  * When every attempt fails the call throws {@link ServerProcessFailure}.</p>
  */
 final class ServerConnection {
@@ -42,6 +51,12 @@ final class ServerConnection {
     static final int MAX_RESPONSE = 64 << 20;
 
     private static final int ATTEMPTS = 3;
+
+    /** {@code HttpURLConnection.setAuthenticator}, from Java 9; null on Java 8. */
+    private static final @Nullable Method SET_AUTHENTICATOR = setAuthenticatorMethod();
+
+    /** Has no credentials for any request: {@link Authenticator}'s own answer is null. */
+    private static final Authenticator NO_CREDENTIALS = new Authenticator() {};
 
     /** The default {@link SSLContext} {@link #tlsFactory} was taken from. */
     private static @Nullable SSLContext tlsContext;
@@ -166,6 +181,18 @@ final class ServerConnection {
      * the verifier only on a mismatch, before any request byte or the token
      * is written.</p>
      *
+     * <p>A 401 is returned as it is. On Java 9 and later the connection gets
+     * its own {@link java.net.Authenticator} that has no credentials, so a
+     * {@code WWW-Authenticate} challenge is never answered with those of the
+     * JVM's default Authenticator, which the hand-written client never
+     * consulted either. Java 8 has no per-connection Authenticator: there,
+     * while the default Authenticator answers a challenge, the JDK sends
+     * the request again with its credentials (and the body and token) on a
+     * new connection, up to {@code http.maxRedirects} (20 by default) sends
+     * in all, and then drops the last 401's body. Setting an
+     * {@code Authorization} header does not stop that on any JDK
+     * (docs/evidence/2026-10-02-java-httpurlconnection.md).</p>
+     *
      * <p>A POST body is buffered, not streamed. HttpURLConnection then writes
      * the headers and a body of up to about 8 KiB (a g5 receipt) in one
      * write, and reads the body of a 401. Streamed with
@@ -211,6 +238,7 @@ final class ServerConnection {
                 https.setSSLSocketFactory(tlsFactory());
                 https.setHostnameVerifier((host, session) -> false);
             }
+            withoutCredentials(http);
             http.setRequestMethod(method);
             http.setConnectTimeout(connectTimeoutMillis);
             http.setReadTimeout(readTimeoutMillis);
@@ -277,6 +305,36 @@ final class ServerConnection {
             tlsFactory = factory;
         }
         return factory;
+    }
+
+    private static @Nullable Method setAuthenticatorMethod() {
+        try {
+            return HttpURLConnection.class.getMethod("setAuthenticator", Authenticator.class);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Gives the connection {@link #NO_CREDENTIALS}, so that a 401 with a
+     * {@code WWW-Authenticate} challenge comes back as it is, never resent
+     * with credentials from {@link Authenticator#setDefault}. Java 9 and
+     * later; Java 8 has no per-connection Authenticator ({@link #exchange}).
+     */
+    private static void withoutCredentials(HttpURLConnection http) throws IOException {
+        Method method = SET_AUTHENTICATOR;
+        if (method == null) {
+            return;
+        }
+        try {
+            method.invoke(http, NO_CREDENTIALS);
+        } catch (InvocationTargetException e) {
+            // java.net.HttpURLConnection's own method throws: a
+            // URLStreamHandlerFactory replaced the JDK's handler.
+            throw new IOException("the JVM's http handler takes no per-connection Authenticator", e.getCause());
+        } catch (IllegalAccessException e) {
+            throw new IOException("HttpURLConnection.setAuthenticator is not accessible", e);
+        }
     }
 
     /**

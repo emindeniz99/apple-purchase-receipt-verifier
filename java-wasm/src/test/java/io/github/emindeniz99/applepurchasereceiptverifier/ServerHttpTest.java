@@ -10,8 +10,10 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Authenticator;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
+import java.net.PasswordAuthentication;
 import java.net.Proxy;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -134,6 +136,48 @@ class ServerHttpTest {
             int before = server.requests.get();
             assertThrows(ServerProcessFailure.class, () -> connection.send("POST", "/v1/x", new byte[] {1}, 0L));
             assertEquals(3, server.requests.get() - before, "attempts");
+        }
+    }
+
+    /**
+     * A server that answers 401 with a Basic challenge never gets the
+     * JVM's default {@link Authenticator}'s credentials on Java 9 and
+     * later: the 401 comes back after one request, as the hand-written
+     * client returned it. Java 8 has no per-connection Authenticator, so
+     * there the JDK resends the request with the credentials up to
+     * {@code http.maxRedirects} (20) times an attempt; this pins that
+     * bound, the residual DECISIONS.md R17 records.
+     */
+    @Test
+    void aBasicChallengeIsNotAnsweredWithTheJvmsCredentials() throws Exception {
+        String problem = "{\"code\":\"UNAUTHORIZED\"}";
+        String response = "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"aprv\"\r\n"
+                + "Content-Type: application/problem+json\r\nContent-Length: " + problem.length() + "\r\n\r\n"
+                + problem;
+        AtomicInteger asked = new AtomicInteger();
+        try (RawServer server = new RawServer(response)) {
+            Authenticator.setDefault(new Authenticator() {
+                @Override
+                protected PasswordAuthentication getPasswordAuthentication() {
+                    asked.incrementAndGet();
+                    return new PasswordAuthentication("app-user", "app-password".toCharArray());
+                }
+            });
+            ServerConnection connection = ServerConnection.fixed(target(server.port(), false), "test");
+            if (System.getProperty("java.specification.version").equals("1.8")) {
+                assertThrows(ServerProcessFailure.class, () -> connection.send("POST", "/v1/x", new byte[] {1}, 0L));
+                assertEquals(3 * 20, server.requests.get(), "requests on Java 8: 20 an attempt");
+                assertTrue(server.received().contains("Authorization: Basic"), server.received());
+            } else {
+                ServerConnection.Response answer = connection.send("POST", "/v1/x", new byte[] {1}, 0L);
+                assertEquals(401, answer.status);
+                assertEquals(problem, answer.text());
+                assertEquals(1, server.requests.get(), "requests");
+                assertEquals(0, asked.get(), "the default Authenticator was asked");
+                assertFalse(server.received().contains("Authorization"), server.received());
+            }
+        } finally {
+            Authenticator.setDefault(null);
         }
     }
 
@@ -324,6 +368,7 @@ class ServerHttpTest {
         final ServerSocket socket;
         final AtomicInteger requests = new AtomicInteger();
         private final List<Socket> open = new ArrayList<>();
+        private final StringBuffer received = new StringBuffer();
 
         RawServer(String response) throws IOException {
             this(response, true);
@@ -343,7 +388,9 @@ class ServerHttpTest {
                         open.add(client);
                     }
                     try {
-                        if (readRequest(client.getInputStream()) != null) {
+                        String request = readRequest(client.getInputStream());
+                        if (request != null) {
+                            received.append(request);
                             requests.incrementAndGet();
                             OutputStream out = client.getOutputStream();
                             out.write(response.getBytes(StandardCharsets.ISO_8859_1));
@@ -363,6 +410,11 @@ class ServerHttpTest {
 
         int port() {
             return socket.getLocalPort();
+        }
+
+        /** The heads of the requests read so far. */
+        String received() {
+            return received.toString();
         }
 
         @Override
