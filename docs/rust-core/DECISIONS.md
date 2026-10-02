@@ -336,14 +336,41 @@ property says. With the engine's three attempts, one call can put a
 request on up to nine connections; a server that reads it and closes
 before the status line gets it six times. That cannot change a verdict:
 verification has no side effects and the request carries its own
-`X-Aprv-Now-Ms`. The response must be framed as the old client required:
-chunked, or a `Content-Length` of at most 64 MiB whose bytes all arrive;
-a short body is a failed attempt, not an answer. Over HTTPS the request
-uses the default `SSLContext`'s socket factory, never
-`HttpsURLConnection`'s replaceable JVM-wide defaults, and a hostname
-verifier that refuses every name, so the JDK's own RFC 2818 check decides
-the name before the token is sent. The JDK's keep-alive cache replaces
-the engine's own pool, so the JVM's `http.keepAlive` and
+`X-Aprv-Now-Ms`. A 401 comes back as it is: on Java 9 and later each
+connection gets its own `Authenticator` with no credentials
+(`setAuthenticator`, called reflectively), so a `WWW-Authenticate`
+challenge is never answered with the credentials of the JVM's default
+`Authenticator`, which the old client never consulted. Java 8 has no
+per-connection switch, and that is a residual: there, a server that
+answers 401 with a challenge the default `Authenticator` has credentials
+for gets the request up to `http.maxRedirects` (20) times an attempt,
+each after the first with those credentials, and then the JDK drops the
+last 401's body, so the attempt fails and the call sends it 60 times
+before it throws. Setting an `Authorization` header does not stop this
+on any JDK: `isUserServerAuth` only keeps the header after a success,
+and the challenge path replaces it ([HttpURLConnection][huc],
+Authentication). The response must be framed as the old client
+required: a `Transfer-Encoding` of exactly `chunked` (the one value the
+JDK de-chunks; any other coding is refused), or a `Content-Length` of at
+most 64 MiB whose bytes all arrive; a short body is a failed attempt,
+not an answer, whether the JDK ends the stream early (8, 21) or throws
+(25, 27). Over HTTPS the request uses the default `SSLContext`'s
+socket factory, never `HttpsURLConnection`'s replaceable JVM-wide
+defaults, and a hostname verifier that refuses every name, so the JDK's
+own RFC 2818 check decides the name before the token is sent. The old
+client took `SSLSocketFactory.getDefault()`, which follows the
+`ssl.SocketFactory.provider` security property; the new one does not,
+and like any `HttpsURLConnection` it applies the `https.protocols` and
+`https.cipherSuites` system properties. A known limit, left open on
+purpose: code in the same JVM that replaces the `https` handler
+(`URL.setURLStreamHandlerFactory`) with one whose `HttpsURLConnection`
+ignores `setSSLSocketFactory` or `setHostnameVerifier` takes TLS out of
+the engine's hands. Checking the connection's class against the JDK's
+would tie the engine to internal class names and still not close the
+door, since the same code can replace the default `SSLContext` the
+engine trusts; on Java 9 and later a replaced handler whose connections
+take no per-connection `Authenticator` is refused. The JDK's keep-alive
+cache replaces the engine's own pool, so the JVM's `http.keepAlive` and
 `http.maxConnections` now apply.
 
 ---

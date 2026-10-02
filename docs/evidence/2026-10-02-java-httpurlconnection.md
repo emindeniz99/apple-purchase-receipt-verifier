@@ -19,7 +19,10 @@ from base commit `fce1407`, embedding a component with SHA-256
 commands are in `2026-10-02-java-httpurlconnection/`. The resend and
 SOCKS probes ran later the same day on the client as amended after
 review (a pinned TLS factory and hostname verifier, and framed bodies
-only), on the same two JVMs; they need no server.
+only), on the same two JVMs; they need no server. The authentication
+probe and the framing tests ran after a second review on those two and
+on Temurin 25.0.4.1+1 and 27+35, the newest JDKs CI's `java-wasm-endive`
+job runs.
 
 ## What the JDK does with each mode
 
@@ -97,6 +100,48 @@ server that reads every request and closes before the status line
 receives it 6 times, twice per attempt; `ServerHttpTest` pins that
 count.
 
+### Authentication
+
+`AuthenticatorProbe.java`: a server that answers every request with 401
+and `WWW-Authenticate: Basic`, a default `Authenticator` that hands out
+credentials, and one buffered POST per mode. The same on all four JDKs
+where the mode exists:
+
+| Mode | Java 8 | JDK 21, 25, 27 |
+|---|---|---|
+| as the engine sent it before the fix | 401, body lost; 20 connections, 19 with `Authorization: Basic` | the same |
+| with an `Authorization: Bearer` header set by the caller | the same as above | the same as above |
+| `setAuthenticator` with an `Authenticator` that has no credentials | no such method | 401 with its body; 1 connection, no `Authorization` |
+
+Read from `sun/net/www/protocol/http/HttpURLConnection.java` in JDK 8
+and JDK 21: `getInputStream0` sets `isUserServerAuth` when the caller set
+`Authorization`, but reads it only to keep that header after a
+successful response. On a 401 it calls `getServerAuthentication`, which
+asks the Authenticator (the default one, or the connection's own on 9
+and later) and on an answer sets `Authorization` over the caller's and
+loops, while `redirects < http.maxRedirects`. Each turn is a new
+connection carrying the body and `X-Aprv-Token`. After the last it
+throws `ProtocolException` ("Server redirected too many times"):
+`getResponseCode` still reads 401 from the headers, but
+`getErrorStream` is null, so the engine sees a 401 whose body falls
+short of its `Content-Length` and tries again: 60 sends in a call on
+Java 8.
+`aprv-server`'s own 401 carries no challenge, so it never takes that
+path. The engine now sets the per-connection `Authenticator` on 9 and
+later; Java 8 keeps the 60. `ServerHttpTest` pins both counts.
+
+### Framing
+
+The JDK de-chunks a body only when the one `Transfer-Encoding` value it
+looks up is exactly `chunked` (`HttpClient.parseHTTP`, same lookup as
+`getHeaderField`), case aside. `gzip, chunked` reaches the caller still
+chunked and read to the close; `xchunked` with a `Content-Length` is read
+by the length. The engine refuses any other value. A body that ends
+before its `Content-Length` reads short on JDK 8 and 21, and on 25 and 27
+`MeteredStream` throws `IOException: Premature EOF`; the engine treats
+both as a connection that closed inside the response (`EOFException`),
+so the attempt is retried the same way on every JDK.
+
 ### HTTPS
 
 Read from `sun/net/www/protocol/https/HttpsClient.java` in JDK 8 and
@@ -111,7 +156,11 @@ verifier only on a mismatch and closing the socket when it says no.
 way no request byte is written to a server that fails. The engine's
 verifier always says no, and its socket factory is the default
 `SSLContext`'s, so neither of `HttpsURLConnection`'s replaceable JVM-wide
-defaults takes part. `ServerHttpTest` observes it on both JVMs: a
+defaults takes part. The hand-written client took
+`SSLSocketFactory.getDefault()`, which a class named by the
+`ssl.SocketFactory.provider` security property replaces; this one does
+not follow it, and `HttpsClient` applies the `https.protocols` and
+`https.cipherSuites` system properties to its sockets. `ServerHttpTest` observes it on both JVMs: a
 self-signed server under a trust-all default factory and an allow-all
 default verifier, and a trusted certificate for another name, are each
 refused without the server reading a byte of the request.
@@ -149,7 +198,10 @@ threads) and 2.5 to 3.3 ms on the 105 KB receipt, the stall the
 
 The cost of buffered is the JDK's resends: up to two more sends inside
 each of the engine's three attempts, nine connections in all
-(Resends, above). They cannot change a verdict: verification has no side
+(Resends, above). On Java 8 a 401 challenge that the JVM's default
+`Authenticator` answers adds up to 19 sends an attempt, with its
+credentials (Authentication, above); that is HttpURLConnection's, not
+buffering's, and Java 9 and later are closed to it. They cannot change a verdict: verification has no side
 effects, and the request carries its own `X-Aprv-Now-Ms`, so a resend
 asks the same question at the same instant. They cannot double a wait
 either, because a read timeout is not resent.
@@ -165,7 +217,13 @@ resends do not replace: those restart a child that died.
   verification, but bodies between 8 KiB and about 64 KiB were not
   measured.
 - The JDK behaviour is read from the JDK 8 and JDK 21 sources and
-  observed on JDK 8 and 21; JDKs 9 to 20 and after 21 were not run. The
+  observed on JDK 8 and 21; the authentication probe and
+  `ServerHttpTest` also ran on 25 and 27. JDKs 9 to 20 and 22 to 24
+  were not run.
+- Only `Basic`, which goes through the `Authenticator`, was probed. Not
+  probed: `Negotiate` and NTLM, which can use the platform's own
+  credentials (a Kerberos ticket cache, Windows logon) where the JDK is
+  set up for them. The
   `-wasm` artifact runs the server engine on Java 8 and Endive on Java 11
   and later, so other JDKs reach this code only when a caller picks
   `Engine.server(...)`.
