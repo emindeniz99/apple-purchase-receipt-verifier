@@ -4,7 +4,6 @@ import java.io.Closeable;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.Collections;
 import java.util.Locale;
@@ -17,9 +16,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * The {@link Verifier} over {@code aprv-server} (the server engine). It reads
  * the clock once per call before the input is touched and sends it as
- * {@code X-Aprv-Now-Ms}, posts the input bytes as they are, and maps the
- * answer: a 200 through the same {@link Wire} decoder as the Endive engine,
- * and a 413 the same way, since its body is the module's own answer to an
+ * {@code X-Aprv-Now-Ms}, posts the input bytes cut as the Endive engine cuts
+ * them ({@link WasmVerifier#bytes}), and maps the answer: a 200 through the
+ * same {@link Wire} decoder as the Endive engine, and a 413 the same way, since its body is the module's own answer to an
  * input over the cap ({@code TOO_LARGE}, 21002 from the endpoint); every
  * problem as {@link Reason#INTERNAL_ERROR} with a {@link ServerProblem} cause,
  * and a server that does not answer as {@link Reason#INTERNAL_ERROR} with a
@@ -110,8 +109,14 @@ final class ServerVerifier implements Verifier, Closeable {
         }
     }
 
+    /**
+     * The input cut as the Endive engine cuts it ({@link WasmVerifier#bytes}):
+     * the server reads only that many bytes of a larger body before it
+     * answers and closes, so sending the rest would meet a reset instead of
+     * the module's TOO_LARGE answer.
+     */
     private static byte[] bytes(@Nullable String text) {
-        return text == null ? new byte[0] : text.getBytes(StandardCharsets.UTF_8);
+        return WasmVerifier.bytes(text);
     }
 
     /** Stops a managed child now; later calls answer {@link Reason#INTERNAL_ERROR}. Idempotent. */
