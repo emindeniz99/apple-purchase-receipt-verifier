@@ -199,10 +199,10 @@ final class PortBehaviourTests: XCTestCase {
     }
 }
 
-/// The package's own source holds no verification logic: the Swift form of
-/// the one-implementation gate (tools/check-one-implementation.mjs), and of
-/// the rule that anchors come from the caller's Config and bytes from the
-/// caller, never from the platform.
+/// Anchors come from the caller's Config and bytes from the caller, never
+/// from the platform. The crypto, X.509 and ASN.1 modules and the Security
+/// framework's trust and certificate API are banned for every wrapper in one
+/// place, the one-implementation gate (tools/check-one-implementation.mjs).
 final class SourceIsolationTests: XCTestCase {
     static var sources: URL {
         URL(fileURLWithPath: #filePath)
@@ -211,12 +211,10 @@ final class SourceIsolationTests: XCTestCase {
     }
 
     static let forbidden = [
-        "import Crypto", "import _CryptoExtras", "import CryptoKit", "import X509", "import SwiftASN1",
-        "import Security", "import CommonCrypto", "SecTrust", "SecCertificate", "URLSession", "URLRequest",
-        "NWConnection", "SSL_CERT_FILE", "SSL_CERT_DIR", "/etc/ssl",
+        "URLSession", "URLRequest", "NWConnection", "SSL_CERT_FILE", "SSL_CERT_DIR", "/etc/ssl",
     ]
 
-    func testNoSourceFileReachesCryptoATrustStoreOrTheNetwork() throws {
+    func testNoSourceFileReachesATrustStoreOrTheNetwork() throws {
         let files = try XCTUnwrap(FileManager.default.enumerator(at: Self.sources, includingPropertiesForKeys: nil))
             .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
         XCTAssertGreaterThanOrEqual(files.count, 10, "the scan found \(files.count) files, so it found the wrong tree")
