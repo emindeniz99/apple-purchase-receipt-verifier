@@ -25,7 +25,7 @@ defmodule AppleReceiptExample.Native do
   def version, do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
-  `aprv_verifier_new`. `roots` is a list of DER certificates, or `[]` for the
+  `aprv_verifier_new`. `roots` is a list of DER or PEM certificates, or `[]` for the
   three bundled Apple roots; `clock_unix_millis` pins the clock, and `nil`
   reads the system clock.
   """
