@@ -302,7 +302,7 @@ format.
 the Java implementation, and every package answers it: one
 language-neutral case per semantic fact, each naming a registered fixture,
 the `Config` to build the verifier from, and either the payload fields the
-call must return or the reason it must fail with. 377 cases today. Each
+call must return or the reason it must fail with. 384 cases today. Each
 package reads the file through a thin adapter that knows nothing about
 any individual case — `rust/tests/conformance.rs`,
 `java/src/test/.../ConformanceCasesTest.java`,
@@ -513,8 +513,12 @@ Conventional Commits with a **mandatory scope**:
   already shows. Wrap at 72 chars.
 - `feat`/`fix` drive release-please's version bump — use them only for
   user-visible changes.
-- No binary over 100 KB. The two committed copies of `aprv.wasm` (Go and
-  Swift) are written by the release tooling, never by a contributor.
+- No binary over 100 KB. The exceptions are the two committed copies of
+  `aprv.wasm` (Go and Swift), written by the release tooling and never by
+  a contributor, and the size-limit fixtures under `fixtures/limits/` and
+  `fixtures/generated-0.7/`, written by `tools/generate-limit-fixtures.mjs`
+  and the Java generators `ReceiptBase64CapFixture`,
+  `LargeReceiptFixture` and `VerifierApiFixtures`.
 
 ## Merging
 

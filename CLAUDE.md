@@ -73,7 +73,13 @@ human-facing version; where they overlap, they agree.
   module into `go/` or `swift/` by hand and never edit a `.sha256` by
   hand; a pin that lags the core between releases is expected.
 - **No binary over 100 KB enters git** except those two committed module
-  copies. Every such blob stays in history forever.
+  copies and the generator-built size-limit fixtures under `fixtures/`,
+  which pin a cap or a floor: `fixtures/limits/`, written by
+  `tools/generate-limit-fixtures.mjs` (deterministic) and
+  `ReceiptBase64CapFixture`, and the receipts at a cap or floor in
+  `fixtures/generated-0.7/`, written by `LargeReceiptFixture` and
+  `VerifierApiFixtures` (the Java generators sign with fresh keys). Every
+  such blob stays in history forever.
 
 ## The invariants that are easy to break
 
@@ -177,7 +183,7 @@ human-facing version; where they overlap, they agree.
 ## Behavior changes
 
 The Rust core and the Java implementation are the two implementations of
-one product, and `fixtures/cases.json` (377 cases) is the contract between
+one product, and `fixtures/cases.json` (384 cases) is the contract between
 them. A verification behavior change touches the Rust core, the Java
 implementation and `fixtures/` in the same PR, with the shared cases
 proving the two still agree. Every package runs all the cases, one test
