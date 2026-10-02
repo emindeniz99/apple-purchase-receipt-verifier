@@ -1,0 +1,96 @@
+diff --git a/java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/HttpConn.java b/java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/HttpConn.java
+index 0f8ffdf..3acb11e 100644
+--- a/java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/HttpConn.java
++++ b/java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/HttpConn.java
+@@ -8,9 +8,12 @@ import java.io.IOException;
+ import java.io.InputStream;
+ import java.io.OutputStream;
+ import java.net.InetSocketAddress;
++import java.net.Proxy;
+ import java.net.Socket;
+ import java.nio.charset.StandardCharsets;
++import java.security.GeneralSecurityException;
+ import java.util.Locale;
++import javax.net.ssl.SSLContext;
+ import javax.net.ssl.SSLParameters;
+ import javax.net.ssl.SSLSocket;
+ import javax.net.ssl.SSLSocketFactory;
+@@ -33,6 +36,22 @@ final class HttpConn implements Closeable {
+     private static final int MAX_LINE = 16 << 10;
+     private static final int MAX_HEADERS = 100;
+ 
++    /**
++     * TLS from a context of this connection's own: the JVM's trust store
++     * (javax.net.ssl.trustStore, else cacerts), but not a default SSLContext
++     * or socket factory that other code in the JVM replaced
++     * (SSLContext.setDefault, the ssl.SocketFactory.provider property).
++     */
++    private static SSLSocketFactory tls() throws IOException {
++        try {
++            SSLContext context = SSLContext.getInstance("TLS");
++            context.init(null, null, null);
++            return context.getSocketFactory();
++        } catch (GeneralSecurityException e) {
++            throw new IOException("no TLS context: " + e, e);
++        }
++    }
++
+     /** Where the server is: host, port, TLS or not, a base path, the token, and which child it is. */
+     static final class Target {
+         final String host;
+@@ -77,14 +96,13 @@ final class HttpConn implements Closeable {
+ 
+     HttpConn(Target target, int connectTimeoutMillis, int readTimeoutMillis) throws IOException {
+         this.target = target;
+-        Socket plain = new Socket();
++        Socket plain = new Socket(Proxy.NO_PROXY); // no SOCKS from a ProxySelector or socksProxyHost
+         try {
+             plain.setTcpNoDelay(true);
+             plain.connect(new InetSocketAddress(target.host, target.port), connectTimeoutMillis);
+             plain.setSoTimeout(readTimeoutMillis);
+             if (target.tls) {
+-                SSLSocket tls = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault())
+-                        .createSocket(plain, target.host, target.port, true);
++                SSLSocket tls = (SSLSocket) tls().createSocket(plain, target.host, target.port, true);
+                 SSLParameters parameters = tls.getSSLParameters();
+                 parameters.setEndpointIdentificationAlgorithm("HTTPS");
+                 tls.setSSLParameters(parameters);
+@@ -164,25 +182,31 @@ final class HttpConn implements Closeable {
+                 throw new IOException("too many response headers");
+             }
+             int colon = header.indexOf(':');
+-            if (colon <= 0) {
++            if (colon <= 0 || header.charAt(colon - 1) == ' ' || header.charAt(colon - 1) == '\t'
++                    || header.charAt(0) == ' ' || header.charAt(0) == '\t') {
+                 throw new IOException("a malformed response header");
+             }
+-            String name = header.substring(0, colon).trim().toLowerCase(Locale.ROOT);
++            String name = header.substring(0, colon).toLowerCase(Locale.ROOT);
+             String value = header.substring(colon + 1).trim();
+             if (name.equals("content-length")) {
+-                try {
+-                    length = Long.parseLong(value);
+-                } catch (NumberFormatException e) {
+-                    throw new IOException("a malformed Content-Length", e);
++                if (length >= 0 || !value.matches("[0-9]{1,18}")) {
++                    throw new IOException("a malformed or repeated Content-Length");
+                 }
++                length = Long.parseLong(value);
+             } else if (name.equals("transfer-encoding")) {
+-                chunked = value.toLowerCase(Locale.ROOT).contains("chunked");
++                if (chunked || !value.equalsIgnoreCase("chunked")) {
++                    throw new IOException("a Transfer-Encoding other than chunked alone: " + value);
++                }
++                chunked = true;
+             } else if (name.equals("connection")) {
+                 close = value.toLowerCase(Locale.ROOT).contains("close");
+             } else if (name.equals("content-type")) {
+                 contentType = value;
+             }
+         }
++        if (chunked && length >= 0) {
++            throw new IOException("a response with both Content-Length and chunked encoding");
++        }
+         byte[] responseBody;
+         if (chunked) {
+             responseBody = chunked();
