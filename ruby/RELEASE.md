@@ -29,7 +29,7 @@ genuine Apple-signed receipt (which fails if `aprv.wasm` or its hash fell out
 of `spec.files`, the Ruby shape of the empty-tarball incident), and expects
 `INVALID_SIGNATURE` for the same receipt with one DER byte flipped in its
 signature. Since 0.8 it must also see that RubyGems installed a platform
-`wasmtime` gem, and it can no longer assert three roots on `Config.defaults`,
+`wasmtime` gem, and it can no longer assert three roots on `Config.new`,
 whose `roots` is empty: Apple's roots are inside the module. `CI-NOTES.md`
 lists that change for `.github/smoke/rubygems-smoke.rb`. The install must not
 use `--local`, since `wasmtime` comes from RubyGems too.

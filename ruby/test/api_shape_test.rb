@@ -15,7 +15,7 @@ class ApiShapeTest < Minitest::Test
   end
 
   def fake_verifier
-    APRV::Verifier.send(:new, APRV::Config.defaults, runtime: FAKE)
+    APRV::Verifier.send(:new, APRV::Config.new, runtime: FAKE)
   end
 
   def test_the_public_classes_exist
@@ -37,6 +37,14 @@ class ApiShapeTest < Minitest::Test
                     ModuleIntegrityError Reason ReceiptPayload TrapError VERSION VerificationResult Verifier
                     Version],
                  APRV.constants.sort
+  end
+
+  # Config.new is the one way to get a Config. Config.defaults only called
+  # it, and went on 2026-10-02 (DECISIONS.md R41), as Python's had.
+  def test_config_defaults_is_gone
+    refute_respond_to APRV::Config, :defaults
+    assert_empty APRV::Config.new.roots
+    refute_predicate APRV::Config.new, :custom_roots?
   end
 
   # docs/design/0.7-api.md: one verifier, three methods.

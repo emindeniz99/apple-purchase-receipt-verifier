@@ -17,7 +17,7 @@ class FacadeTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
   FAKE = Internals::Runtime.new(FakeModule.wat)
 
-  def verifier(config = APRV::Config.defaults, runtime: FAKE)
+  def verifier(config = APRV::Config.new, runtime: FAKE)
     APRV::Verifier.send(:new, config, runtime: runtime)
   end
 
@@ -81,7 +81,7 @@ class FacadeTest < Minitest::Test
 
   def test_an_empty_root_list_is_refused_at_create_and_not_taken_for_the_defaults
     assert_raises(ArgumentError) { APRV::Verifier.create(APRV::Config.new(roots: [])) }
-    assert_raises(ArgumentError) { APRV::Verifier.create(APRV::Config.new(roots: APRV::Config.defaults.roots)) }
+    assert_raises(ArgumentError) { APRV::Verifier.create(APRV::Config.new(roots: APRV::Config.new.roots)) }
   end
 
   def test_a_root_the_module_refuses_is_an_argument_error_at_create
@@ -98,7 +98,7 @@ class FacadeTest < Minitest::Test
     config = APRV::Config.new(roots: [der, certificate])
     assert_equal [der, der], config.roots
     assert_predicate verifier(config).verify_receipt("v"), :verified?
-    assert_equal [], APRV::Config.defaults.roots
+    assert_equal [], APRV::Config.new.roots
   end
 
   # A root is the bytes a caller holds, DER or PEM: the module tells them
@@ -126,7 +126,6 @@ class FacadeTest < Minitest::Test
     config = APRV::Config.new(roots: ["x".b], clock: clock)
     assert_equal ["x".b], config.roots
     assert_same clock, config.clock
-    assert_equal APRV::Config.defaults.roots, APRV::Config.new.roots
     refute_respond_to APRV::Config, :builder
     refute APRV::Config.const_defined?(:Builder, false)
   end
@@ -305,7 +304,7 @@ class FacadeTest < Minitest::Test
 
   def test_the_default_clock_is_the_system_clock_in_epoch_milliseconds
     before = (Time.now.to_r * 1000).to_i
-    now = APRV::Config.defaults.clock.call
+    now = APRV::Config.new.clock.call
     after = (Time.now.to_r * 1000).to_i
     assert_operator now, :>=, before
     assert_operator now, :<=, after

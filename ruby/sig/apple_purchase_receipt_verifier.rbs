@@ -68,8 +68,6 @@ module ApplePurchaseReceiptVerifier
     attr_reader roots: Array[String]
     attr_reader clock: clock
 
-    def self.defaults: () -> Config
-
     def initialize: (?roots: roots?, ?clock: clock?) -> void
     def custom_roots?: () -> bool
   end

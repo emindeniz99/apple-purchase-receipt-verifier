@@ -98,7 +98,7 @@ Three methods on one `Verifier`, immutable and thread-safe once created:
 ```ruby
 APRV = ApplePurchaseReceiptVerifier
 
-verifier = APRV::Verifier.create(APRV::Config.defaults)
+verifier = APRV::Verifier.create(APRV::Config.new)
 
 # 1. A legacy PKCS#7 app receipt, the base64 string a client sends.
 result = verifier.verify_receipt(receipt_data)
@@ -141,8 +141,10 @@ verifier = APRV::Verifier.create(config)
 ```
 
 Leave out either keyword to keep its default. `Config.new` is the one way to
-build a `Config`: 0.7's `Config.builder.roots(...).clock(...).build` is gone
-in 0.8, and `Config.new(roots: ..., clock: ...)` replaces it.
+build a `Config`. Two 0.7 spellings are gone in 0.8:
+`Config.builder.roots(...).clock(...).build`, which
+`Config.new(roots: ..., clock: ...)` replaces, and `Config.defaults`, which
+only called `Config.new` and is replaced by it.
 
 ## Post-verification checklist
 
@@ -180,7 +182,7 @@ A StoreKit 2 signed transaction:
 
 ```ruby
 APRV = ApplePurchaseReceiptVerifier
-VERIFIER = APRV::Verifier.create(APRV::Config.defaults)
+VERIFIER = APRV::Verifier.create(APRV::Config.new)
 
 def redeem_transaction(user_id, jws)
   result = VERIFIER.verify_signed_data(jws) # step 2
@@ -212,7 +214,7 @@ end
 The legacy PKCS#7 app receipt is the same policy on the other input:
 
 ```ruby
-RECEIPTS = APRV::Verifier.create(APRV::Config.defaults)
+RECEIPTS = APRV::Verifier.create(APRV::Config.new)
 
 def redeem_receipt(user_id, receipt_data, product_id)
   result = RECEIPTS.verify_receipt(receipt_data) # step 2
@@ -387,7 +389,7 @@ Same request body, same response body, same status codes as Apple's deprecated
 endpoint, answered locally.
 
 ```ruby
-VERIFIER = APRV::Verifier.create(APRV::Config.defaults)
+VERIFIER = APRV::Verifier.create(APRV::Config.new)
 
 # Rails
 def create
@@ -619,7 +621,7 @@ does not reach it.
 
 ## Trust anchors
 
-`APRV::Config.defaults` pins all three published Apple roots — Apple Inc.
+`APRV::Config.new`, given no `roots:`, pins all three published Apple roots — Apple Inc.
 Root, Apple Root CA - G2 and Apple Root CA - G3 — used for both the legacy
 receipt path and the JWS path; Apple deliberately documents the JWS chain as
 ending in "an Apple root certificate" rather than a specific one, so
@@ -628,7 +630,7 @@ path.
 
 The bytes are compiled into `aprv.wasm`, each checked there against its
 published SHA-256 fingerprint, so the gem works from a read-only or bundled
-deployment, reads no certificate file and ships none. `Config.defaults.roots` is
+deployment, reads no certificate file and ships none. `Config.new.roots` is
 therefore empty: it means "the module's roots", and `Config.new(roots: [])`
 is not the same thing and is refused by `Verifier.create`.
 
@@ -681,7 +683,7 @@ anywhere in this library. Read every reason through
 
 | 0.6 | 0.7 |
 |---|---|
-| `ApplePurchaseReceiptVerifier.apple_jws_roots` / `.apple_receipt_roots` | `Config.defaults` (one shared set for both paths; the roots live inside the module) |
+| `ApplePurchaseReceiptVerifier.apple_jws_roots` / `.apple_receipt_roots` | `Config.new` (one shared set for both paths; the roots live inside the module) |
 | `ReceiptVerifier.new(trusted_roots:, bundle_id:)` | `Verifier.create(Config.new(roots:))`; compare `result.payload.bundle_id` yourself |
 | `verifier.verify_der(bytes)` / `#verify_base64(text)` / `#verify(either)` | `verifier.verify_receipt(base64)`; DER callers encode first: `[der].pack("m0")` |
 | `verifier.verify_base64(text, device_guid:)` | `verifier.verify_receipt(base64)`, then compare the device hash yourself — see [Device hash](#device-hash) |
