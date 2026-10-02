@@ -37,9 +37,15 @@ let package = Package(
         // One job: the SHA-256 that checks the bundled aprv.wasm against
         // aprv.wasm.sha256 before the module is parsed. Only the Crypto
         // product, which is CryptoKit on Apple platforms and swift-crypto's
-        // own implementation on Linux. 5.0.0 is the current release, and its
-        // Swift 6.2 floor sits under this package's 6.3.
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0"),
+        // own implementation on Linux. A range, not `from: "5.0.0"`: Apple's
+        // app-store-server-library-swift caps swift-crypto below 4.0.0, and
+        // swift-nio-ssh and swift-container-plugin below 5.0.0, so a 5.0.0
+        // floor made this package unresolvable next to any of them.
+        // `SHA256.hash(data:)` is the same call from 3.0.0 on, and CI's
+        // swift-crypto-floor job builds and tests against 3.0.0. The cap is
+        // the next major, the first that may change that call.
+        // Package.resolved still pins the newest release.
+        .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0" ..< "6.0.0"),
     ],
     targets: [
         .target(
