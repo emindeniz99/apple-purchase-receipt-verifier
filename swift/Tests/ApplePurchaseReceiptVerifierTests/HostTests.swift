@@ -34,16 +34,14 @@ final class AbiTests: XCTestCase {
     }
 
     func testTheBundledModuleIsTheOneItsHashNames() throws {
-        XCTAssertEqual(SHA256.hex([]), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-        XCTAssertEqual(SHA256.hex(Array("abc".utf8)), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
-        XCTAssertEqual(
-            SHA256.hex(Array(repeating: 0x61, count: 1_000_000)),
-            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")
+        // The digest is swift-crypto's; this pins the spelling the pin file
+        // uses, lowercase and zero-padded ("...8f01cf...").
+        XCTAssertEqual(AprvModule.sha256Hex(Array("abc".utf8)), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
         let url = try XCTUnwrap(AprvModule.resource("aprv.wasm"))
         let sum = try XCTUnwrap(AprvModule.resource("aprv.wasm.sha256"))
         let bytes = [UInt8](try Data(contentsOf: url))
         let file = try String(contentsOf: sum, encoding: .utf8)
-        XCTAssertEqual(file, SHA256.hex(bytes) + "  aprv.wasm\n", "aprv.wasm.sha256 is sha256sum's line for aprv.wasm")
+        XCTAssertEqual(file, AprvModule.sha256Hex(bytes) + "  aprv.wasm\n", "aprv.wasm.sha256 is sha256sum's line for aprv.wasm")
         XCTAssertNoThrow(try AprvModule.bundled.get())
     }
 
@@ -286,10 +284,10 @@ final class FacadeTests: XCTestCase {
     /// before it is parsed.
     func testAModuleThatDoesNotMatchItsHashIsRefused() throws {
         let double = try doubleBytes()
-        XCTAssertNoThrow(try AprvModule.load(double, sumFile: SHA256.hex(double) + "  aprv.wasm\n"))
+        XCTAssertNoThrow(try AprvModule.load(double, sumFile: AprvModule.sha256Hex(double) + "  aprv.wasm\n"))
         var changed = double
         changed[changed.count - 1] ^= 1
-        XCTAssertThrowsError(try AprvModule.load(changed, sumFile: SHA256.hex(double) + "  aprv.wasm\n")) { error in
+        XCTAssertThrowsError(try AprvModule.load(changed, sumFile: AprvModule.sha256Hex(double) + "  aprv.wasm\n")) { error in
             guard case HostError.moduleUnavailable = error else { return XCTFail("\(error)") }
         }
         XCTAssertThrowsError(try AprvModule.load(double, sumFile: "")) { error in

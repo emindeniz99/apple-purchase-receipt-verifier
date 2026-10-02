@@ -115,7 +115,7 @@ final class MeasurementTests: XCTestCase {
         let sum = try String(contentsOf: try XCTUnwrap(AprvModule.resource("aprv.wasm.sha256")), encoding: .utf8)
 
         let t0 = Date()
-        _ = SHA256.hex(wasm)
+        _ = AprvModule.sha256Hex(wasm)
         let t1 = Date()
         _ = try AprvModule.load(wasm, sumFile: sum)
         let bounds: EngineConfiguration.MemoryBoundsChecking =

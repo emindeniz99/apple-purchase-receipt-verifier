@@ -648,7 +648,7 @@ jobs:
       # Manifest lives at the repo root (SwiftPM requirement); no
       # working-directory needed. --force-resolved-versions builds the exact
       # revisions in Package.resolved and fails instead of re-resolving, so a
-      # newer tag matching the manifest's `from:` floors cannot arrive
+      # newer tag matching the manifest's requirements cannot arrive
       # unreviewed.
       - run: swift build --build-tests --force-resolved-versions
       # Consumers ship release builds, and the optimizer is where a compiler
@@ -697,6 +697,45 @@ jobs:
           xcodebuild -list
           xcodebuild build -scheme apple-purchase-receipt-verifier \
             -destination 'generic/platform=iOS' -skipPackagePluginValidation
+
+  # The swift-crypto floor. The manifest admits "3.0.0" ..< "6.0.0" so the
+  # package resolves next to app-store-server-library-swift (swift-crypto
+  # below 4.0.0) and swift-nio-ssh (below 5.0.0), while Package.resolved
+  # pins the newest release; a floor nothing builds is a claim. This leg
+  # moves that one pin to 3.0.0 and leaves every other pin as committed,
+  # then runs the `swift` job's two commands on the 6.3 floor toolchain.
+  # It resolves one exact tag on purpose, like php-lowest resolves ranges:
+  # resolving is what it tests. The revision check stops a re-pointed tag.
+  swift-crypto-floor:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.swift == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
+        shell: bash
+      # `resolve <package> --version` moves a dependency the workspace
+      # already holds, so the committed pins are checked out first.
+      - name: pin swift-crypto 3.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift package resolve --force-resolved-versions
+          swift package resolve swift-crypto --version 3.0.0
+          pin="$(grep -A5 '"identity" : "swift-crypto"' Package.resolved)"
+          echo "$pin"
+          grep -q '"revision" : "629f0b679d0fd0a6ae823d7f750b9ab032c00b80"' <<< "$pin"
+          grep -q '"version" : "3.0.0"' <<< "$pin"
+      - run: swift build --build-tests --force-resolved-versions
+      - run: swift test -c release -Xswiftc -enable-testing --force-resolved-versions
 
   # Every Go line the module claims, down to the go.mod floor: a floor
   # nothing executes is a claim, not a fact — the analogue of the

@@ -1,6 +1,8 @@
 import Foundation
 import WasmKit
 
+import struct Crypto.SHA256
+
 /// aprv.wasm parsed once, with the engine that runs it. Both are `Sendable`
 /// and shared by every ``Verifier`` of the process; stores and instances are
 /// not, and belong to one ``Guest`` each.
@@ -51,11 +53,21 @@ struct AprvModule: Sendable {
     /// so `sha256sum -c aprv.wasm.sha256` checks the same claim from a shell).
     static func load(_ bytes: [UInt8], sumFile: String) throws(HostError) -> AprvModule {
         let want = String(sumFile.prefix { !$0.isWhitespace }).lowercased()
-        let got = SHA256.hex(bytes)
+        let got = sha256Hex(bytes)
         guard want.count == 64, got == want else {
             throw .moduleUnavailable("aprv.wasm has SHA-256 \(got), but aprv.wasm.sha256 records \(want)")
         }
         return try load(bytes)
+    }
+
+    /// The SHA-256 of `bytes` in sha256sum's spelling: 64 lowercase hex
+    /// digits. swift-crypto computes it (CryptoKit on Apple platforms); the
+    /// module is the only thing this package hashes.
+    static func sha256Hex(_ bytes: [UInt8]) -> String {
+        SHA256.hash(data: bytes).map { byte -> String in
+            let digits = String(byte, radix: 16)
+            return byte < 0x10 ? "0" + digits : digits
+        }.joined()
     }
 
     /// Parses `bytes` and refuses a module this package would misread: it

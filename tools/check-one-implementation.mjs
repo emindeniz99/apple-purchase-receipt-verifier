@@ -88,7 +88,18 @@ const LANGS = {
       // Any attribute or access level before `import`, and a scoped import
       // (`import struct CryptoKit.SHA256`).
       [/\bimport\s+(?:(?:struct|class|enum|protocol|func|var|let|typealias)\s+)?(Crypto\w*|_CryptoExtras|X509|SwiftASN1|Security\w*|CommonCrypto)\b/, 'a Swift crypto/X.509/ASN.1 module'],
+      // A name qualified by one of those modules (`Crypto.P256`): a scoped
+      // import loads the whole module, so any of its types is reachable
+      // that way from the file that imports it.
+      [/\b(?:Crypto\w*|_CryptoExtras|X509|SwiftASN1|Security\w*|CommonCrypto)\s*\.\s*[A-Z_a-z]/, 'a name qualified by a Swift crypto/X.509/ASN.1 module'],
       [/\bSec(Trust|Certificate)/, 'the Security framework\'s trust or certificate API'],
+    ],
+    // Only the SHA-256 type, by a scoped import that is the whole line: a
+    // plain `import Crypto`, an attribute or a wider access level on it,
+    // anything after it on the line, or any other name from the module is
+    // still a hit in this file too.
+    allow: [
+      { file: 'swift/Sources/ApplePurchaseReceiptVerifier/Host/AprvModule.swift', token: /^\s*(?:internal\s+)?import\s+struct\s+Crypto\.SHA256\s*$/, why: 'checks the bundled aprv.wasm against its pinned SHA-256 (swift-crypto; CryptoKit on Apple platforms)' },
     ],
     comments: 'swift',
   },
