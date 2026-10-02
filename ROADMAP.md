@@ -78,11 +78,12 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    with the 0.7 core's `INVALID_SIGNATURE`, not a security boundary; its
    case is already `oneOf`).
 7. **Fuzz findings and supply chain.** Apply to OSS-Fuzz with the six
-   existing targets; the nightly job encrypts any finding to the owner's
+   existing targets; every fuzz job encrypts any finding to the owner's
    public key and sends a notice through a Telegram bot, with only the
    target name and a hash in the log; add OpenSSF Scorecard (R37). Wired
    2026-10-01 (Scorecard, the sealed nightly findings with the Telegram
-   notice, the OSS-Fuzz draft in `docs/oss-fuzz/`); waiting on the owner's
+   notice, the same for the eight per-push fuzz jobs in ci.yml, the
+   OSS-Fuzz draft in `docs/oss-fuzz/`); waiting on the owner's
    age key, the two Telegram secrets and the OSS-Fuzz submission
    (BOOTSTRAP.md). The draft leaves `abi-call` out until its harness can
    run under OSS-Fuzz.

@@ -282,6 +282,23 @@ defmodule ConformanceTest do
         do: Aprv.decode_json!(json),
         else: Aprv.payload!(json)
 
+    case get(kase, "statusOneOf") do
+      # An endpoint case that lists the statuses its body may carry instead
+      # of pinning fields.
+      nil -> check_fields(kase, payload, json)
+      listed -> check_status_listed(payload, listed)
+    end
+  end
+
+  defp check_status_listed(payload, listed) do
+    allowed = listed |> String.split("|") |> Enum.map(&String.to_integer/1)
+
+    if payload["status"] in allowed,
+      do: :ok,
+      else: {:error, "/status: expected one of #{listed}, got #{inspect(payload["status"])}"}
+  end
+
+  defp check_fields(kase, payload, json) do
     to_json =
       case get(kase, "toJson") do
         nil ->

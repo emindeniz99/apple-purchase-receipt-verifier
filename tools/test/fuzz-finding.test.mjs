@@ -1,4 +1,4 @@
-// Tests for .github/scripts/fuzz-finding.sh, the nightly job's handling of
+// Tests for .github/scripts/fuzz-finding.sh, every fuzz job's handling of
 // a fuzz finding (docs/rust-core/DECISIONS.md R37). The repository is
 // public, so what matters is what the script lets out: the public log must
 // carry the target and the input's SHA-256 and nothing of the input, the

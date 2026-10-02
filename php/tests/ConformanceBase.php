@@ -134,6 +134,18 @@ abstract class ConformanceBase extends TestCase
             /** @var string $responseJson */
             $responseJson = $result;
             $actual = json_decode($responseJson, true, 65, JSON_THROW_ON_ERROR);
+            if (isset($expected['oneOf'])) {
+                // Port-defined within a list: the response's /status must be
+                // listed, and nothing else is pinned.
+                $status = is_array($actual) ? ($actual['status'] ?? null) : null;
+                self::assertContains(
+                    $status,
+                    Shape::asArray($expected['oneOf'], 'oneOf'),
+                    "{$id}: answered status " . json_encode($status),
+                );
+
+                return;
+            }
             self::assertFields($id, $actual, $expected);
 
             return;

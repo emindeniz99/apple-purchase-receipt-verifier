@@ -490,7 +490,6 @@ not `Config` options.
 | Receipt base64, UTF-8 bytes | 3,145,728 | `TOO_LARGE` |
 | Endpoint request body, UTF-8 bytes | 3,145,728 | `TOO_LARGE` (status 21002) |
 | JWS, UTF-8 bytes | 262,144 | `TOO_LARGE` |
-| JSON nesting depth | 64 | `MALFORMED` |
 | ASN.1 nesting depth | 32 | `MALFORMED` in the envelope, `UNREADABLE_PAYLOAD` in signed content |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | Chain length below the anchor | 6 certificates | `UNTRUSTED_CHAIN` |

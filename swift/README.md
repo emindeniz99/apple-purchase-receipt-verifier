@@ -307,9 +307,6 @@ path, the same pair on the JWS `x5c` chain).
 | Receipt base64, UTF-8 bytes | 3,145,728 |
 | Endpoint request body, UTF-8 bytes | 3,145,728 |
 | JWS, UTF-8 bytes | 262,144 |
-| JSON nesting depth | 64 |
-| JSON member name, characters | 50,000 |
-| JSON number, digits | 1,000 |
 | Certificates embedded in a receipt | 10 |
 | Chain length (below the anchor) | 6 |
 | SignerInfos in a receipt | 4 |
@@ -317,9 +314,11 @@ path, the same pair on the JWS `x5c` chain).
 
 The module owns every bound; this package adds none and exports none of
 the numbers: an input over a size cap is `.tooLarge` (21002 at the
-endpoint). Past the ASN.1 depth, the envelope is
-`MALFORMED` and the signed content `UNREADABLE_PAYLOAD`. Genuine Apple
-receipts nest 9 levels deep in the envelope.
+endpoint). JSON has no nesting or length bound of its own: the module
+skips a value nobody reads without building it, so only the size caps
+bound it (docs/rust-core/DECISIONS.md R40). Past the ASN.1 depth, the
+envelope is `MALFORMED` and the signed content `UNREADABLE_PAYLOAD`.
+Genuine Apple receipts nest 9 levels deep in the envelope.
 
 ## Speed
 

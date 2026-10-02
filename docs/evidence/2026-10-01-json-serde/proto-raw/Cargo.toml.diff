@@ -1,0 +1,13 @@
+diff --git a/rust/Cargo.toml b/rust/Cargo.toml
+index e58a163..b0aa792 100644
+--- a/rust/Cargo.toml
++++ b/rust/Cargo.toml
+@@ -37,7 +37,7 @@ path = "src/lib.rs"
+ [dependencies]
+ aprv-openssl = { version = "0.7.0", path = "openssl", default-features = false } # x-release-please-version
+ base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+-serde_json = "1"
++serde_json = { version = "1", features = ["raw_value"] }
+ 
+ [features]
+ default = ["vendored"]

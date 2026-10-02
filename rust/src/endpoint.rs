@@ -11,7 +11,7 @@
 use crate::datetime::{format_etc_gmt, format_pacific};
 use crate::environment::Environment;
 use crate::error::{Failure, Reason};
-use crate::json::{top_level_members, Value};
+use crate::json::{string, top_level_members};
 use crate::receipt;
 use crate::receipt_payload::{InAppPurchase, ReceiptPayload};
 use crate::roots::TrustAnchor;
@@ -127,8 +127,8 @@ pub(crate) fn status_only(status: i32) -> String {
 
 /// The `receipt-data` string of a request body. A body over
 /// [`MAX_REQUEST_BYTES`] is `TOO_LARGE`; a body that is not a JSON object
-/// (unparseable, empty, an array, a scalar) or nests deeper than 64, and a
-/// `receipt-data` that is missing or not a string, are `MALFORMED`.
+/// (unparseable, empty, an array, a scalar), and a `receipt-data` that is
+/// missing or not a string, are `MALFORMED`.
 ///
 /// The whole object is read, so a body that breaks after `receipt-data` is
 /// still refused, and the last `receipt-data` wins, as it would in a map.
@@ -149,16 +149,7 @@ fn receipt_data(request_json: &[u8]) -> Result<String, Failure> {
     let members = top_level_members(request_json).map_err(|err| {
         Failure::new(Reason::Malformed, "request body is not valid JSON").with_source(err)
     })?;
-    let mut receipt_data = None;
-    for (name, value) in members {
-        if name == "receipt-data" {
-            receipt_data = match value {
-                Value::String(text) => Some(text),
-                _ => None,
-            };
-        }
-    }
-    receipt_data
+    string(&members, "receipt-data")
         .ok_or_else(|| Failure::new(Reason::Malformed, "receipt-data is missing or not a string"))
 }
 

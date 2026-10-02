@@ -60,6 +60,18 @@ second column is what it takes from other jobs.
 | java | `java-wasm-endive` (JDK 11 to 27), `java-wasm-runtime-8` (the server engine on a real Java 8, with a noexec check), `java-wasm-consumers` (jvm-interop and Spring Boot on the -wasm artifact), `java-classpath-guard` (`java-wasm/scripts/classpath-guard.sh`) | `aprv-wasm`; the server binary for the first two |
 | always | `one-implementation` (`--enforce all`, with the per-file allowlist OD-04 describes in `tools/check-one-implementation.mjs`), `conformance` (`tools/check-cert-copies.mjs`, which finds `rust/certs` alone since Phase 7, and `tools/check-licence-copies.mjs`), `zizmor` | nothing |
 
+The eight fuzz jobs (`go-fuzz`, `rust-fuzz`, `dotnet-fuzz`, `php-fuzz`,
+`ruby-fuzz`, `python-fuzz`, `swift-fuzz`, `java-fuzz`) build in a step of
+their own, so a compile error stays readable, then fuzz with each
+target's output in a file on the runner (`.github/scripts/fuzz-quiet.sh`
+over the targets the harness's `run.sh list` names; `go-fuzz` writes the
+same list inline). On a failure, `.github/scripts/fuzz-report.sh`, the
+only step that holds the Telegram secrets, hands each failed target to
+`fuzz-finding.sh`, which prints the target and the input's SHA-256 and
+seals the input and the log; the job uploads only
+`fuzz-findings-sealed-<job>` and fails (R37). `swift-fuzz` installs curl
+first, since the swift image ships without it.
+
 ## Gated and held
 
 | Job | Gate | Why |

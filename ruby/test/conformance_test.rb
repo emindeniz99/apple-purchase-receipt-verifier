@@ -144,6 +144,13 @@ class ConformanceTest < Minitest::Test
     body = endpoint_request_body(kase)
     response = measured(kase) { verifier.verify_receipt_endpoint(kase["config"]["environment"], body) }
     actual = JSON.parse(response, allow_duplicate_key: true)
+    if kase["expected"]["oneOf"]
+      # Port-defined within a list: the response's /status must be listed,
+      # and nothing else is pinned.
+      assert_includes kase["expected"]["oneOf"], actual["status"],
+                      "#{kase["id"]}: answered status #{actual["status"].inspect}"
+      return
+    end
     assert_fields(kase["expected"], actual, kase["id"])
   end
 

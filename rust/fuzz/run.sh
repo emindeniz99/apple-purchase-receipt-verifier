@@ -3,6 +3,7 @@
 #
 #   ./run.sh <target> [seconds]      default 60
 #   ./run.sh all [seconds]           every target but abi-call
+#   ./run.sh list                    the targets `all` runs
 #
 # abi-call (a package of its own under abi/, with Wasmtime) needs the built
 # module: APRV_WASM=<out>/aprv.wasm ./run.sh abi-call [seconds].
@@ -18,8 +19,14 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fixtures="$here/../../fixtures"
-target="${1:?usage: run.sh <target>|all [seconds]}"
+target="${1:?usage: run.sh <target>|all|list [seconds]}"
 seconds="${2:-60}"
+targets=(verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi)
+
+if [ "$target" = list ]; then
+  printf '%s\n' "${targets[@]}"
+  exit 0
+fi
 
 run_one() {
   local name="$1"
@@ -48,7 +55,7 @@ run_one() {
 }
 
 if [ "$target" = all ]; then
-  for name in verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi; do
+  for name in "${targets[@]}"; do
     run_one "$name"
   done
 else

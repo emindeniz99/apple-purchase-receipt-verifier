@@ -256,7 +256,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["fields"],
-      "description": "verifyReceiptEndpoint never fails: it returns Apple's response body, evaluated as JSON. /status is always pinned.",
+      "description": "verifyReceiptEndpoint never fails: it returns Apple's response body, evaluated as JSON. /status is always pinned; a case whose /status is port-defined lists the allowed values with expectedEndpointOneOf instead.",
       "properties": {
         "fields": {
           "allOf": [
@@ -271,6 +271,20 @@
           ]
         },
         "lengths": { "$ref": "#/$defs/lengths" }
+      }
+    },
+    "expectedEndpointOneOf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["oneOf"],
+      "description": "An endpoint case whose outcome is port-defined within a list: the response's /status must be one of these. No other field is pinned, and the response must still be Apple's JSON body.",
+      "properties": {
+        "oneOf": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": [0, 21002, 21003, 21007, 21008, 21009] }
+        }
       }
     },
     "faultRequiredOnError": {
@@ -355,6 +369,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["id", "description", "operation", "input", "config", "expected", "tags"],
+          "allOf": [{ "$ref": "#/$defs/faultRequiredOnError" }],
           "properties": {
             "id": { "$ref": "#/$defs/caseId" },
             "legacyId": { "$ref": "#/$defs/legacyId" },
@@ -363,7 +378,12 @@
             "input": { "$ref": "#/$defs/endpointInput" },
             "config": { "$ref": "#/$defs/endpointConfig" },
             "clock": { "$ref": "#/$defs/clock" },
-            "expected": { "$ref": "#/$defs/expectedEndpoint" },
+            "expected": {
+              "oneOf": [
+                { "$ref": "#/$defs/expectedEndpoint" },
+                { "$ref": "#/$defs/expectedEndpointOneOf" }
+              ]
+            },
             "fault": { "$ref": "#/$defs/fault" },
             "tags": { "$ref": "#/$defs/tags" }
           }

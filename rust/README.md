@@ -51,7 +51,9 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   arithmetic; this crate keeps the policy (roots, markers, the chain
   instant, the bounds, the reasons and their order) and holds
   `#![forbid(unsafe_code)]`. Every byte of JSON (a JWS header and payload,
-  the endpoint request body) is read by this crate's own bounded reader.
+  the endpoint request body) is read by `serde_json`, each document as a
+  map of raw member values so that nothing the core does not read is
+  built (docs/rust-core/DECISIONS.md R40).
 - **OpenSSL 4.0 or later.** By default the adapter builds OpenSSL 4.0.2
   from source (openssl-src). That needs this repository's workspace patch
   of openssl-sys; a crates.io build of this crate links a prebuilt
@@ -328,9 +330,10 @@ the payload, a tag in high-tag-number form and a length of more than four
 octets are refused, as 0.7's reader refused them. Trailing bytes are
 refused. At most 10 embedded certificates, 10 CRLs and 4 SignerInfos,
 counted on a shallow decode after the envelope's header walk and before
-any certificate is decoded. JSON: nesting depth 64, numbers of at most
-1,000 characters, names of at most 50,000 UTF-16 code units, strict
-grammar. Chains: at most six certificates, built by OpenSSL from the
+any certificate is decoded. JSON: strict RFC 8259 grammar, read by
+`serde_json` with no nesting or length bound of its own; a value nobody
+reads is skipped, not built, so the size caps bound the work (R40).
+Chains: at most six certificates, built by OpenSSL from the
 certificates a pinned root vouched for. RSA keys: OpenSSL's cap of 16,384
 bits, on keys a pinned root vouched for.
 

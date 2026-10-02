@@ -4,6 +4,8 @@
 #   ./run.sh <target> [seconds]      default 60
 #   ./run.sh all [seconds]
 #   ./run.sh list
+#   ./run.sh build                   Jazzer, the library jar, the harness
+#                                    classes and the seeds; no run
 #
 # Jazzer is libFuzzer with a JVM on top, so it takes several corpus directories
 # and writes new units only to the first: the shared fixtures seed every run
@@ -12,12 +14,16 @@
 # JDK in the matrix rather than only where a fuzzer is installed.
 #
 # Environment:
-#   MVN         maven binary                          (default mvn)
-#   MVN_ARGS    extra maven flags, e.g. -o            (default empty)
-#   JOBS        parallel targets for `all`            (default 1)
-#   MAX_LEN     libFuzzer -max_len                    (default 65536)
-#   HEAP        JVM max heap for the fuzzed process   (default 2g)
-#   COVERAGE    non-empty: write artifacts/<t>.coverage.txt at the end
+#   MVN            maven binary                          (default mvn)
+#   MVN_ARGS       extra maven flags, e.g. -o            (default empty)
+#   JOBS           parallel targets for `all`            (default 1)
+#   MAX_LEN        libFuzzer -max_len                    (default 65536)
+#   HEAP           JVM max heap for the fuzzed process   (default 2g)
+#   COVERAGE       non-empty: write artifacts/<t>.coverage.txt at the end
+#   FUZZ_PREBUILT  non-empty: run on what `./run.sh build` left, without
+#                  building again. CI builds in a step of its own so a
+#                  compile error stays in a readable log while the targets'
+#                  output does not (.github/scripts/fuzz-quiet.sh).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -115,7 +121,8 @@ build() {
   mkdir -p "$here/.build/classes"
   find "$here/src" -name '*.java' -print0 | xargs -0 \
     javac -encoding UTF-8 -nowarn -d "$here/.build/classes" -cp "$classpath"
-  classpath="$here/.build/classes:$classpath"
+  # Kept in a file so a later run (FUZZ_PREBUILT) starts from it.
+  echo "$here/.build/classes:$classpath" > "$here/.build/classpath.txt"
 }
 
 # No fixture is a verifyReceipt request body, so the endpoint target's seeds
@@ -168,7 +175,7 @@ run_one() {
     -artifact_prefix="$here/artifacts/$name/"
 }
 
-target="${1:?usage: run.sh <target>|all|list [seconds]}"
+target="${1:?usage: run.sh <target>|all|list|build [seconds]}"
 seconds="${2:-60}"
 
 if [ "$target" = list ]; then
@@ -176,9 +183,21 @@ if [ "$target" = list ]; then
   exit 0
 fi
 
-fetch_jazzer
-build
-generate_seeds
+if [ "$target" = build ]; then
+  fetch_jazzer
+  build
+  generate_seeds
+  exit 0
+fi
+if [ -z "${FUZZ_PREBUILT:-}" ]; then
+  fetch_jazzer
+  build
+  generate_seeds
+elif [ ! -f "$here/.build/classpath.txt" ]; then
+  echo "FUZZ_PREBUILT is set and there is no build: run ./run.sh build first" >&2
+  exit 2
+fi
+classpath="$(cat "$here/.build/classpath.txt")"
 
 if [ "$target" != all ]; then
   run_one "$target"

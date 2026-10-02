@@ -543,12 +543,13 @@ The limits are the module's, fixed in every language of this library, and not
 - **Anything over 3 MiB** never reaches the module: `aprv` refuses it (exit
   status 3, HTTP 413) and the façade answers as the module answers an
   over-cap input.
-- **JSON nesting depth 64**, member names to 50,000 characters and numbers to
-  1,000 characters, **ASN.1 nesting depth 32**, **10 embedded certificates**,
-  **4 SignerInfos** and **six certificates below the anchor**: the module
-  checks them before any certificate is decoded or any signature is checked,
-  and answers `Reason::Malformed` (or `UnreadablePayload` for a signed
-  payload) with no PHP memory cost.
+- **ASN.1 nesting depth 32**, **10 embedded certificates**, **4 SignerInfos**
+  and **six certificates below the anchor**: the module checks them before
+  any certificate is decoded or any signature is checked, and answers
+  `Reason::Malformed` (or `UnreadablePayload` for a signed payload) with no
+  PHP memory cost. JSON has no nesting or length bound of its own: the
+  module skips a value nobody reads without building it, so only the size
+  caps bound it (docs/rust-core/DECISIONS.md R40).
 
 `fixtures/cases.json` holds every port to these numbers, from both sides of
 each boundary. Because the parsing is out of PHP, a hostile input can no

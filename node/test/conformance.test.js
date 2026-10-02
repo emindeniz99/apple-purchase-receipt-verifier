@@ -297,6 +297,15 @@ function defineTargetTests(name, build, async_) {
         'harness error: endpoint cases have no status field',
       );
       const doc = parseWithBigInts(text);
+      if (kase.expected.oneOf) {
+        // Port-defined within a list: the response's /status must be
+        // listed, and nothing else is pinned.
+        assert.ok(
+          kase.expected.oneOf.includes(doc.status),
+          `answered status ${doc.status}, want one of ${kase.expected.oneOf}`,
+        );
+        return;
+      }
       if (kase.expected.fields) {
         checkFields(doc, kase.expected.fields);
       }

@@ -363,6 +363,13 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
 def check(case: dict, status: int, text: str) -> str:
     """An empty string when the case passes, else what went wrong."""
     expected = case["expected"]
+    if case["operation"] == "verifyReceiptEndpoint" and "oneOf" in expected:
+        # Port-defined within a list: the body's status must be listed, and
+        # nothing else is pinned.
+        if status != OK:
+            return f"the endpoint call itself failed with {status}: {text}"
+        got = json.loads(text).get("status")
+        return "" if got in expected["oneOf"] else f'expected status one of {expected["oneOf"]}, got {got}: {text}'
     if "oneOf" in expected:
         # A panic answers INTERNAL_ERROR, which no list holds.
         allowed = [OK if o == "ok" else REASON_CODES[o] for o in expected["oneOf"]]

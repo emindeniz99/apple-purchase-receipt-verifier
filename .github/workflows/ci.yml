@@ -888,6 +888,21 @@ jobs:
       - run: go test -race -count=2 ./...
         working-directory: go
 
+  # The eight per-push fuzz jobs below (go-fuzz through java-fuzz) keep a
+  # finding out of this public log, as nightly.yml's rust-fuzz-openssl does
+  # (docs/rust-core/DECISIONS.md R37): the build stays its own step, so a
+  # compile error is readable; the fuzz step writes each target's output to
+  # a file under $RUNNER_TEMP, prints one line per target and lists the
+  # failed ones in $RUNNER_TEMP/fuzz-failed.tsv
+  # (.github/scripts/fuzz-quiet.sh); and a failure step, the only one that
+  # holds the Telegram secrets, prints the target and the input's SHA-256,
+  # seals the input and the log with age to
+  # .github/fuzz/findings-recipient.txt, sends a notice and fails the job.
+  # Only the sealed files are uploaded, as fuzz-findings-sealed-<job>. To
+  # reduce a finding, download that artifact and open it with the owner's
+  # key (BOOTSTRAP.md); nothing about it reaches the log, an annotation or
+  # the step summary.
+  #
   # The seed corpora already run on every `go test`; this is the exploratory
   # pass over the two public entry points (the package parses nothing of
   # its own any more; the module's parser has its own fuzz jobs). A crasher
@@ -912,13 +927,51 @@ jobs:
           go-version: "1.27"
           cache: true
           cache-dependency-path: go/go.sum
-      - name: fuzz the verifiers
-        run: |
-          set -euo pipefail
-          for target in FuzzVerifyReceipt FuzzVerifySignedData; do
-            go test . -run "^${target}\$" -fuzz "^${target}\$" -fuzztime=60s
-          done
+      - name: build the fuzz targets
+        run: go test -c -o /dev/null .
         working-directory: go
+      # fuzz-quiet.sh's loop, written out: there is no run.sh here. The
+      # inputs listed are only the ones this run wrote, since a committed
+      # regression input in the same testdata directory is not a finding.
+      - name: fuzz the verifiers, findings kept out of this log
+        run: |
+          set -u +e
+          logs="$RUNNER_TEMP/fuzz-logs"
+          list="$RUNNER_TEMP/fuzz-failed.tsv"
+          mkdir -p "$logs"
+          : > "$list"
+          failed=0
+          for t in FuzzVerifyReceipt FuzzVerifySignedData; do
+            if go test . -run "^${t}\$" -fuzz "^${t}\$" -fuzztime=60s > "$logs/$t.log" 2>&1; then
+              echo "fuzz: $t ran 60 s without a finding"
+            else
+              failed=1
+              echo "fuzz: $t failed; its output stays on the runner"
+              inputs="$RUNNER_TEMP/go-fuzz-inputs/$t"
+              mkdir -p "$inputs"
+              printf '%s\t%s\t%s\n' "$t" "$inputs" "$logs/$t.log" >> "$list"
+              git ls-files -z --others -- "testdata/fuzz/$t" | xargs -0 -r cp -t "$inputs" --
+            fi
+          done
+          exit "$failed"
+        working-directory: go
+      # Holds the Telegram secrets and runs no fuzzer: prints each listed
+      # target and input hash, seals the input and the log, sends the
+      # notice and fails (.github/scripts/fuzz-report.sh).
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/fuzz-report.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-findings-sealed-go
+          path: ${{ runner.temp }}/fuzz-sealed/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # gofmt, vet, staticcheck and govulncheck. The linters are pinned in
   # go/tools/go.mod, a module of its own so their Go floor (1.26, staticcheck
@@ -1429,9 +1482,31 @@ jobs:
       # rust/fuzz/Cargo.lock is committed and cargo builds from it. cargo-fuzz
       # takes no --locked of its own, so this is a pin rather than a gate: a
       # manifest change makes cargo rewrite the lockfile here instead of
-      # failing. The gate that matters is on the library, above.
-      - run: ./run.sh all 60
+      # failing. The gate that matters is on the library, above. cargo fuzz
+      # run reuses this build (same profile and sanitizer).
+      - name: build every target
+        run: cargo +nightly fuzz build
         working-directory: rust/fuzz
+      - name: fuzz every target, findings kept out of this log
+        working-directory: rust/fuzz
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+      # Holds the Telegram secrets and runs no fuzzer: prints each listed
+      # target and input hash, seals the input and the log, sends the
+      # notice and fails (.github/scripts/fuzz-report.sh).
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/fuzz-report.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-findings-sealed-rust
+          path: ${{ runner.temp }}/fuzz-sealed/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # SharpFuzz under libFuzzer, over the four public entry points and the
   # wrapper's own JSON handling around aprv.wasm. SharpFuzz instruments .NET
@@ -1467,8 +1542,31 @@ jobs:
       # nothing else on push builds it; benchmark.yml runs it only by hand.
       # A build, as benchmark.yml does it, and no run.
       - run: dotnet build -c Release dotnet/bench
-      - run: ./run.sh all 60
+      - name: build the driver and the instrumented library
+        run: ./run.sh build
         working-directory: dotnet/fuzz
+      - name: fuzz every target, findings kept out of this log
+        working-directory: dotnet/fuzz
+        env:
+          FUZZ_PREBUILT: "1"
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+      # Holds the Telegram secrets and runs no fuzzer: prints each listed
+      # target and input hash, seals the input and the log, sends the
+      # notice and fails (.github/scripts/fuzz-report.sh).
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/fuzz-report.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-findings-sealed-dotnet
+          path: ${{ runner.temp }}/fuzz-sealed/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # The exploratory pass over the façade's four entry points, through the
   # aprv binary (the CLI transport); php/fuzz/README.md lists the four
@@ -1513,12 +1611,33 @@ jobs:
       # dependency is needed for them, but the install is what writes it.
       - run: composer install --no-scripts --no-progress --no-interaction
         working-directory: php
+      - name: fetch the pinned php-fuzzer
+        run: ./run.sh build
+        working-directory: php/fuzz
       # 60 s per target, four targets. A crasher leaves
       # php/fuzz/crashes/<target>/crash-<hash>.txt and fails the job; reduce it
       # and pin it as a test under php/tests/, where it then runs on all five
       # PHP matrix legs rather than only here.
-      - run: ./run.sh all 60
+      - name: fuzz every target, findings kept out of this log
         working-directory: php/fuzz
+        run: ../../.github/scripts/fuzz-quiet.sh crashes 60
+      # Holds the Telegram secrets and runs no fuzzer: prints each listed
+      # target and input hash, seals the input and the log, sends the
+      # notice and fails (.github/scripts/fuzz-report.sh).
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/fuzz-report.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-findings-sealed-php
+          path: ${{ runner.temp }}/fuzz-sealed/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # The exploratory pass over the verifiers a consumer calls, through the
   # wrapper into aprv.wasm; ruby/fuzz/README.md lists the four targets and
@@ -1576,14 +1695,31 @@ jobs:
           LDSHAREDXX: /usr/bin/clang++-18 -shared
         run: bundle install --jobs 4
       # A crasher is written under ruby/fuzz/artifacts/<target>/, which is
-      # gitignored on purpose, and the run fails with the offending unit
-      # printed as hex and base64 in the log — the same handling go-fuzz and
-      # rust-fuzz get. Reduce it from the log and pin it as a test under
-      # ruby/test/, where it runs on every Ruby in the matrix rather than only
-      # where a libFuzzer-capable clang is around.
-      - name: fuzz every target
-        run: ./run.sh all 60
+      # gitignored on purpose, and libFuzzer prints the offending unit as hex
+      # and base64 into the target's log, which stays on the runner. Reduce
+      # it from the sealed copy and pin it as a test under ruby/test/, where
+      # it runs on every Ruby in the matrix rather than only where a
+      # libFuzzer-capable clang is around.
+      - name: fuzz every target, findings kept out of this log
         working-directory: ruby/fuzz
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+      # Holds the Telegram secrets and runs no fuzzer: prints each listed
+      # target and input hash, seals the input and the log, sends the
+      # notice and fails (.github/scripts/fuzz-report.sh).
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/fuzz-report.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-findings-sealed-ruby
+          path: ${{ runner.temp }}/fuzz-sealed/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # Three coverage-guided atheris targets over the verifiers (the receipt's
   # base64 form, the JWS, the endpoint JSON), 60 s each -- the same budget and the same shape as
@@ -1611,8 +1747,29 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.13"
-      - run: ./run.sh all 60
+      - name: the fuzzer's environment and the generated seed
+        run: ./run.sh build
         working-directory: python/fuzz
+      - name: fuzz every target, findings kept out of this log
+        working-directory: python/fuzz
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+      # Holds the Telegram secrets and runs no fuzzer: prints each listed
+      # target and input hash, seals the input and the log, sends the
+      # notice and fails (.github/scripts/fuzz-report.sh).
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/fuzz-report.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-findings-sealed-python
+          path: ${{ runner.temp }}/fuzz-sealed/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # Coverage-guided fuzzing over the Swift port: SwiftPM's own libFuzzer
   # support (`-Xswiftc -sanitize=fuzzer`), so nothing is installed here --
@@ -1654,8 +1811,34 @@ jobs:
       # benchmark.yml builds it only by hand. A debug build: the point is that
       # it still compiles against the library, not how fast it runs.
       - run: swift build --package-path swift/bench --force-resolved-versions
-      - run: ./run.sh all 60
+      - name: build every target
+        run: ./run.sh build
         working-directory: swift/fuzz
+      - name: fuzz every target, findings kept out of this log
+        working-directory: swift/fuzz
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+      # The swift image purges curl after installing the toolchain, and the
+      # report step needs it for age and the notice. No secret here.
+      - name: curl for the report step
+        if: failure()
+        run: command -v curl > /dev/null || { apt-get -q update && apt-get -q install -y --no-install-recommends curl ca-certificates; }
+      # Holds the Telegram secrets and runs no fuzzer: prints each listed
+      # target and input hash, seals the input and the log, sends the
+      # notice and fails (.github/scripts/fuzz-report.sh).
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/fuzz-report.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-findings-sealed-swift
+          path: ${{ runner.temp }}/fuzz-sealed/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # Jazzer (Code Intelligence) under libFuzzer, over the readers this port
   # writes by hand -- the receipt attribute walk, the base64 dialect decoder
@@ -1695,8 +1878,31 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-      - run: ./run.sh all 60
+      - name: fetch Jazzer, build the library and the harness
+        run: ./run.sh build
         working-directory: java/fuzz
+      - name: fuzz every target, findings kept out of this log
+        working-directory: java/fuzz
+        env:
+          FUZZ_PREBUILT: "1"
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+      # Holds the Telegram secrets and runs no fuzzer: prints each listed
+      # target and input hash, seals the input and the log, sends the
+      # notice and fails (.github/scripts/fuzz-report.sh).
+      - name: seal and report each finding
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/fuzz-report.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-findings-sealed-java
+          path: ${{ runner.temp }}/fuzz-sealed/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # Advisories, license policy, and the banned-crate list that is the
   # mechanised form of "pinned anchors only, no network ever": a dependency
@@ -1827,8 +2033,8 @@ jobs:
           path: ${{ runner.temp }}/aprv
       # Some tools run the module (the production-receipt checker's tests
       # among them); they take this run's build from APRV_WASM. The fuzz
-      # findings script's test seals and opens with the age release the
-      # nightly job installs (AGE_DIR).
+      # findings scripts' tests seal and open with the age release the
+      # fuzz jobs install (AGE_DIR).
       - name: the CI tools' own tests
         run: |
           npm ci --prefix tools --ignore-scripts --no-audit --no-fund

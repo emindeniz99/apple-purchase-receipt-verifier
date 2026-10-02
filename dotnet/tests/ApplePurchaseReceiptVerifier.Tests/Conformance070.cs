@@ -108,17 +108,28 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         string id = Str(kase, "id");
         object? outcome = RunCase(operation, kase);
 
-        if (expected.TryGetValue("oneOf", out object? listed) && listed is List<object?> allowed)
-        {
-            AssertListedOutcome(id, operation, outcome, allowed);
-            return;
-        }
-
         if (operation == "verifyReceiptEndpoint")
         {
             string responseJson = (string)outcome!;
             object? response = Json.Parse(responseJson);
+            if (expected.TryGetValue("oneOf", out object? listedStatuses) && listedStatuses is List<object?> allowedStatuses)
+            {
+                // Port-defined within a list: the response's /status must be
+                // listed, and nothing else is pinned.
+                object? status = response is OrderedMap body && body.TryGetValue("status", out object? value) ? value : null;
+                Assert.True(
+                    allowedStatuses.Exists(allowed => SameJsonValue(allowed, status)),
+                    $"{id}: answered status {Render(status)}, want one of {string.Join(", ", allowedStatuses)}");
+                return;
+            }
+
             EvaluateFields(id, response, expected);
+            return;
+        }
+
+        if (expected.TryGetValue("oneOf", out object? listed) && listed is List<object?> allowed)
+        {
+            AssertListedOutcome(id, operation, outcome, allowed);
             return;
         }
 
@@ -206,9 +217,26 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
 
     private static void AssertListedOutcome(string id, string operation, object? outcome, List<object?> allowed)
     {
-        (bool verified, _, VerificationReason? reason, _) = ReadOutcome(operation, outcome!);
+        (bool verified, VerificationReason? reason) = ReadVerdict(operation, outcome!);
         string got = verified ? "ok" : reason is VerificationReason r ? VerificationReasonCodes.ToCode(r) : "?";
         Assert.True(allowed.Contains(got), $"{id}: answered {got}, want one of {string.Join(", ", allowed)}");
+    }
+
+    /// <summary>
+    /// The verdict alone, without reading the payload back. A listed outcome checks no field, and the
+    /// wrapper's own reader (depth 64) would refuse a verified payload that is nested deeper than that.
+    /// </summary>
+    private static (bool Verified, VerificationReason? Reason) ReadVerdict(string operation, object outcome)
+    {
+        switch (outcome)
+        {
+            case VerificationResult<ReceiptPayload> receiptResult:
+                return (receiptResult.Verified, receiptResult.Verified ? null : receiptResult.Failure!.Reason);
+            case VerificationResult<JsonPayload> jwsResult:
+                return (jwsResult.Verified, jwsResult.Verified ? null : jwsResult.Failure!.Reason);
+            default:
+                throw new InvalidOperationException($"harness error: unexpected result type for \"{operation}\"");
+        }
     }
 
     /// <summary>The failure's message, and the wrapper's own cause when it has one, for a failing case's report.</summary>
