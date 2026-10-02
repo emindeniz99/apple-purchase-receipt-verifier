@@ -349,7 +349,7 @@ jobs:
           d=dotnet/src/ApplePurchaseReceiptVerifier/wasm
           cp "$G1/aprv.wasm" "$d/aprv.wasm"
           printf '%s  aprv.wasm\n' "$(sha256sum < "$d/aprv.wasm" | cut -c1-64)" > "$d/aprv.wasm.sha256"
-          REPO="$GITHUB_WORKSPACE" SCRATCH="$RUNNER_TEMP/out" sh docs/evidence/2026-09-29-dotnet-host/scripts/corpus.sh
+          sh dotnet/tools/corpus.sh "$G1" "$RUNNER_TEMP/out"
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         if: matrix.host == 'java-wasm'
