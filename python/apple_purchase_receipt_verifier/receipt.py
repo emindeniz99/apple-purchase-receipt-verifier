@@ -4,9 +4,6 @@ bound, and the constants here only state them (docs/design/0.7-api.md §1)."""
 
 import hashlib
 
-#: Ceiling on the base64 receipt string, in UTF-8 bytes. Enforced by the
-#: module: a larger receipt is ``Reason.TOO_LARGE``.
-MAX_RECEIPT_BYTES = 3145728
 #: Ceiling on the certificates a receipt may embed.
 MAX_EMBEDDED_CERTIFICATES = 10
 #: Ceiling on the SignerInfos a receipt may carry.

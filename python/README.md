@@ -370,9 +370,15 @@ otherwise is what sits under it.
   (a trap, a failing clock). It is `None` for `UNREADABLE_PAYLOAD`: the message
   says what did not parse.
 - **The module-private helpers are gone** (`_receipt_base64`,
-  `verify_receipt_der`, and the rest of the hand-written verifier). The
-  public names, `receipt.MAX_RECEIPT_BYTES`, `endpoint.MAX_REQUEST_BYTES`,
-  `jws.MAX_JWS_BYTES` and `receipt.device_hash`, stay.
+  `verify_receipt_der`, and the rest of the hand-written verifier).
+  `receipt.device_hash`, `receipt.MAX_EMBEDDED_CERTIFICATES` and
+  `receipt.MAX_SIGNER_INFOS` stay.
+- **`receipt.MAX_RECEIPT_BYTES`, `endpoint.MAX_REQUEST_BYTES` and
+  `jws.MAX_JWS_BYTES` are gone**, and with them the `endpoint` and `jws`
+  modules, which held nothing else. Nothing in the package read them: the
+  module enforces the caps and answers `Reason.TOO_LARGE` (21002 at the
+  endpoint). The numbers are under "Input limits" below. Go and Swift
+  dropped their copies the same way.
 - **Platforms follow wasmtime-py's wheels** (top of this file), where 0.7
   followed `cryptography`'s.
 
@@ -393,9 +399,9 @@ every failure is a `VerificationResult`/`Failure` instead of a raised
 | `Reason.REQUEST_TOO_LARGE` | `Reason.TOO_LARGE` |
 | `Reason.INVALID_CHAIN` | `Reason.UNTRUSTED_CHAIN` |
 | `endpoint.verify_receipt_result(body).to_response()` | `Verifier(...).verify_receipt_endpoint(environment, body)` (returns the JSON string directly; no `VerifyReceiptResult`, no environment re-render without re-verifying) |
-| `VerifyReceiptEndpoint.MAX_REQUEST_BYTES` | `apple_purchase_receipt_verifier.endpoint.MAX_REQUEST_BYTES` |
-| `ReceiptVerifier.MAX_RECEIPT_BYTES` | `apple_purchase_receipt_verifier.receipt.MAX_RECEIPT_BYTES` |
-| `JwsVerifier.MAX_JWS_BYTES` | `apple_purchase_receipt_verifier.jws.MAX_JWS_BYTES` |
+| `VerifyReceiptEndpoint.MAX_REQUEST_BYTES` | `apple_purchase_receipt_verifier.endpoint.MAX_REQUEST_BYTES` (removed in 0.8; see "Input limits") |
+| `ReceiptVerifier.MAX_RECEIPT_BYTES` | `apple_purchase_receipt_verifier.receipt.MAX_RECEIPT_BYTES` (removed in 0.8; see "Input limits") |
+| `JwsVerifier.MAX_JWS_BYTES` | `apple_purchase_receipt_verifier.jws.MAX_JWS_BYTES` (removed in 0.8; see "Input limits") |
 | transaction's `expires_date` / `.revocation_date` attributes | read the same keys straight off `json.loads(payload.json)` (there is no longer a typed JWS model, only the verified JSON text) |
 | device-hash check built into `ReceiptVerifier` | `apple_purchase_receipt_verifier.receipt.device_hash(...)`, called by you (see "Device hash" above) |
 
@@ -429,18 +435,21 @@ it (useful when a verification fails and you want to see what arrived).
 
 Base64 decoding and JSON parsing both allocate a multiple of their input
 before any signature is checked, so the input is measured first. The byte
-limits are Apple's, fixed constants in every port of this library, not
-`Config` options.
+limits are Apple's, fixed in the module for every package of this
+library, not `Config` options. The package exports none of them: the
+module enforces each one, and its `TOO_LARGE` answer says an input
+exceeded one. They are the core's bounds, listed in
+[docs/rust-core/SURFACE.md](../docs/rust-core/SURFACE.md) §5.
 
-- **`receipt.MAX_RECEIPT_BYTES`** (3 MiB, 3,145,728 bytes): the base64 text
-  given to `verify_receipt`, in UTF-8 bytes, before decoding. A larger
-  receipt is `Reason.TOO_LARGE`.
-- **`endpoint.MAX_REQUEST_BYTES`** (3 MiB, 3,145,728 bytes): the request
-  body given to `verify_receipt_endpoint`, before it is parsed. A larger
-  body is `Reason.TOO_LARGE` (status 21002).
-- **`jws.MAX_JWS_BYTES`** (256 KiB, 262,144 bytes): the compact JWS text
-  given to `verify_signed_data`, before it is split into segments. A larger
-  JWS is `Reason.TOO_LARGE`.
+- **Receipt** (3 MiB, 3,145,728 bytes): the base64 text given to
+  `verify_receipt`, in UTF-8 bytes, before decoding. A larger receipt is
+  `Reason.TOO_LARGE`.
+- **Endpoint request body** (3 MiB, 3,145,728 bytes): the body given to
+  `verify_receipt_endpoint`, before it is parsed. A larger body is
+  `Reason.TOO_LARGE` (status 21002).
+- **JWS** (256 KiB, 262,144 bytes): the compact JWS text given to
+  `verify_signed_data`, before it is split into segments. A larger JWS is
+  `Reason.TOO_LARGE`.
 - **JSON nesting**: no bound of its own. The module skips a value nobody
   reads in the request body, the JWS header or the JWS payload without
   building it, so only the size caps bound it

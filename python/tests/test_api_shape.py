@@ -4,6 +4,7 @@ under the API, not the API (docs/rust-core/SURFACE.md), so a change here is
 a change to the contract."""
 
 import hashlib
+import importlib.util
 import inspect
 import unittest
 
@@ -16,8 +17,6 @@ from apple_purchase_receipt_verifier import (
     VerificationResult,
     Verifier,
     apple_status,
-    endpoint,
-    jws,
     receipt,
 )
 
@@ -77,11 +76,18 @@ class NamesTest(unittest.TestCase):
         )
 
     def test_the_published_bounds_are_the_documented_ones(self) -> None:
-        self.assertEqual(3_145_728, receipt.MAX_RECEIPT_BYTES)
-        self.assertEqual(3_145_728, endpoint.MAX_REQUEST_BYTES)
-        self.assertEqual(262_144, jws.MAX_JWS_BYTES)
         self.assertEqual(10, receipt.MAX_EMBEDDED_CERTIFICATES)
         self.assertEqual(4, receipt.MAX_SIGNER_INFOS)
+
+    def test_the_byte_caps_are_the_modules_and_not_restated(self) -> None:
+        # 0.8 drops 0.7's MAX_RECEIPT_BYTES, MAX_REQUEST_BYTES and
+        # MAX_JWS_BYTES, as Go and Swift dropped theirs: nothing here read
+        # them, and the module enforces the caps (TOO_LARGE). The endpoint
+        # and jws modules held nothing else, so they go too.
+        self.assertFalse(hasattr(receipt, "MAX_RECEIPT_BYTES"))
+        for gone in ("endpoint", "jws"):
+            self.assertFalse(hasattr(package, gone))
+            self.assertIsNone(importlib.util.find_spec(f"{package.__name__}.{gone}"))
 
     def test_the_status_codes_are_apples(self) -> None:
         self.assertEqual(
