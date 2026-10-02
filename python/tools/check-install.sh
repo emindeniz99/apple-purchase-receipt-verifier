@@ -59,7 +59,7 @@ import sys
 from apple_purchase_receipt_verifier import Config, Verifier
 
 receipt = "".join(pathlib.Path(sys.argv[1]).read_text().split())
-result = Verifier(Config.defaults()).verify_receipt(receipt)
+result = Verifier(Config()).verify_receipt(receipt)
 assert result.verified, result.failure
 print("ok: the genuine sandbox receipt verifies")
 PY
