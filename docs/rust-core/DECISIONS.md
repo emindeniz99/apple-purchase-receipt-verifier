@@ -974,9 +974,11 @@ module; HTTP 413 stays.
   the body's first 3,145,729 bytes, as every Wasm host cuts an input, and
   sends the module's answer (`TOO_LARGE`, or `{"status":21002}` at the
   endpoint) as the 413's `application/json` body, with the 200's schema.
-  A body announced over 16 MiB is read that far, answered, and the
-  connection closed; one between the cap and 16 MiB is still drained, so
-  the client sees the answer rather than a reset. The CLI feeds the
+  A body announced over 16 MiB (`Content-Length`) is read only to
+  3,145,729 bytes, answered, and the connection closed, and so is one that
+  streams past 16 MiB; one between the cap and 16 MiB is read and
+  discarded to its end, so the client sees the answer rather than a reset
+  and keeps its connection. The CLI feeds the
   module the same bytes, prints its answer, and keeps exit status 3 so a
   script can still tell the input was over the cap.
 - **Why:** with the refusal made by the server, the Java `-wasm` server
