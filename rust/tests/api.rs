@@ -238,8 +238,8 @@ fn a_pem_bundle_is_one_root_entry_and_each_certificate_in_it_an_anchor() {
     let anchors = TrustAnchor::from_der_or_pem(&bundle).unwrap();
     let read: Vec<&[u8]> = anchors.iter().map(TrustAnchor::der).collect();
     assert_eq!(read, files);
-    // The same three the crate pins by fingerprint for Config::defaults.
-    let defaults = Config::defaults();
+    // The same three the crate pins by fingerprint for Config::default.
+    let defaults = Config::default();
     let pinned: Vec<&[u8]> = defaults.roots().iter().map(TrustAnchor::der).collect();
     assert_eq!(read, pinned);
 }
