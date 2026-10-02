@@ -2,9 +2,9 @@
 // this repository, one file per wrapper language, holding every way past
 // the gate a review has found: a comment marker inside a string, a block
 // comment opened by a glob in prose, an import spelled with an attribute,
-// an access level or a declaration kind, an interpolation inside a
-// multi-line string, a `*` line that is code, a name inside a longer
-// one. Each such line must be a hit. The whole-line comments beside them,
+// an access level or a declaration kind, a name qualified by a banned
+// module, an interpolation inside a multi-line string, a `*` line that
+// is code, a name inside a longer one. Each such line must be a hit. The whole-line comments beside them,
 // which name the same APIs as prose, must not be.
 //
 //   node --test tools/test/check-one-implementation.test.mjs
@@ -135,6 +135,7 @@ const FILES = {
     ['import SecurityFoundation', HIT],
     ['@_implementationOnly import _CryptoExtras', HIT],
     ['import CommonCrypto', HIT],
+    ['let k = CryptoKit . P256.Signing.PublicKey.self', HIT],
     ['let m = """', NO],
     ['// \\(SecCertificateCreateWithData(nil, d))', HIT],
     ['"""', NO],
@@ -142,13 +143,22 @@ const FILES = {
     ['// \\#(SecTrustEvaluateWithError(t, nil))', HIT],
     ['"""#', NO],
   ],
-  // The allowlisted file: its one scoped import passes, nothing wider does.
+  // The allowlisted file: its one scoped import passes as a whole line,
+  // nothing wider does, and no other name from the module is reachable by
+  // qualifying it.
   'swift/Sources/ApplePurchaseReceiptVerifier/Host/AprvModule.swift': [
     ['import struct Crypto.SHA256', NO],
+    ['internal import struct Crypto.SHA256', NO],
     ['import Crypto', HIT],
     ['import struct Crypto.SHA256Digest', HIT],
     ['import struct Crypto.P256', HIT],
     ['import struct Crypto.SHA256; import CryptoKit', HIT],
+    ['import struct Crypto.SHA256; import Crypto', HIT],
+    ['@_exported import struct Crypto.SHA256', HIT],
+    ['public import struct Crypto.SHA256', HIT],
+    ['typealias K = Crypto.P256', HIT],
+    ['let h = Crypto.Insecure.SHA1.self', HIT],
+    ['let d = SHA256.hash(data: bytes)', NO],
   ],
   'swift/Sources/X/Comments.swift': [
     ['// import Security', NO],
