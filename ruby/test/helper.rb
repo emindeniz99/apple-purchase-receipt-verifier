@@ -7,6 +7,7 @@ require "digest"
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "apple_purchase_receipt_verifier"
+require_relative "internals"
 
 module TestSupport
   APRV = ApplePurchaseReceiptVerifier
@@ -16,12 +17,12 @@ module TestSupport
     # names. Only this harness reads that variable; the library never does.
     def module_path
       override = ENV.fetch("APRV_WASM", "")
-      override.empty? ? APRV::Runtime::MODULE_PATH : override
+      override.empty? ? Internals::Runtime::MODULE_PATH : override
     end
 
     # The module's bytes, hash-checked like the library's own read.
     def read_module
-      APRV::Runtime.read_module(module_path)
+      Internals::Runtime.read_module(module_path)
     end
 
     # Walks up from this file rather than counting "../.." levels, so the
@@ -114,8 +115,8 @@ end
 
 # Every Verifier of the suite runs the module TestSupport names: hand it to
 # the process-wide runtime before the first test asks for one.
-unless TestSupport.module_path == ApplePurchaseReceiptVerifier::Runtime::MODULE_PATH
-  ApplePurchaseReceiptVerifier::Runtime.instance_variable_set(
-    :@shared, ApplePurchaseReceiptVerifier::Runtime.new(TestSupport.read_module)
+unless TestSupport.module_path == Internals::Runtime::MODULE_PATH
+  Internals::Runtime.instance_variable_set(
+    :@shared, Internals::Runtime.new(TestSupport.read_module)
   )
 end

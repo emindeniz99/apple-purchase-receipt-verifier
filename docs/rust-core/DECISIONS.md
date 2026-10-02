@@ -15,7 +15,7 @@ adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
 D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, and
-the owner's decisions of 2026-10-01 added R38, R39 and R40 and rows to R20.
+the owner's decisions of 2026-10-01 added R38 to R41 and rows to R20.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1001,7 +1001,8 @@ variables of OD-05 (STATUS.md).
 
 **Status: accepted** (owner, 2026-09-30). The WIT package version item
 is done (2026-10-01). The items still open are in ROADMAP.md, "Decisions
-of 2026-09-29 and 30".
+of 2026-09-29 and 30"; R39 and R41 settled the API items listed there
+(2026-10-01), all but Node's two factory names.
 
 - **The shape stays as 0.7 defined it** in all nine packages
   ([0.7 API][api07]): `Verifier.create(Config)`, `verifyReceipt(base64)`,
@@ -1220,6 +1221,80 @@ left open in ROADMAP.md.
   request; a pooled Wasm instance keeps the memory it grows).
 - Cost: `aprv.wasm` −6,285 bytes (2,813,436 to 2,807,151; gzip −631),
   no new lockfile package, `cargo deny check` passes.
+
+---
+
+## R41. The public API in 0.8: internals hidden, one way to build a Config, two Java artifactIds
+
+**Status: accepted** (owner, 2026-10-01). Settles the API items R36 left
+open in ROADMAP.md (item 5) and the Java artifact naming (item 11).
+
+0.8.0 is the first release of the Wasm-backed packages. A public name
+removed now breaks no one who has built on those packages; removed after
+the release, it is a breaking change for every caller. So the audit of
+2026-10-01 trimmed each package to what a caller needs, in two buckets.
+
+- **Bucket A: internals that leaked into the public surface are hidden.**
+  - Rust: the top-level `decode_receipt_data` becomes `pub(crate)` in
+    `receipt.rs`. `aprv-surface`, built in lockstep with the core, reads
+    the configuration's base64 roots through the `doc(hidden)`
+    `__internal` hook the tests already use.
+  - Go: `(*ReceiptPayload).String` and `(*JSONPayload).String` repeated
+    `ToJSON()` and `JSON()`, and go. `Environment.String` and
+    `Reason.String` stay: each is the `fmt.Stringer` of a string type,
+    not a second rendering.
+  - Swift: `Environment.appleValue` returned `rawValue`, and goes.
+  - Node: `VerificationError` was exported from both entry points but
+    never thrown, and goes. The failure is the result's `failure`.
+  - PHP: `ReceiptPayload::idJson`, `ReceiptPayload::attributesJson` and
+    `InAppPurchase::jsonValue` move to `Internal\PayloadJson`.
+  - Ruby: `Guest`, `InstancePool`, `Runtime`, `Wire` and `PayloadJson`
+    become private constants of the gem's module, and so does
+    `RootsRejected`, which `Verifier.create` turns into an
+    `ArgumentError` before a caller can see it.
+- **Bucket B, option (a): one way to build a `Config` per language, in
+  that language's idiom.** The Java-shaped duplicates go.
+  - Python: `Config(roots=..., clock=...)`. `Config.create` and
+    `Config.defaults` go; the constructor takes any iterable of roots,
+    and `None` for either argument means its default, as `create` did.
+  - Ruby: `Config.new(roots:, clock:)`. `Config.builder` and
+    `Config::Builder` go.
+  - PHP: `new Config(roots: ..., clock: ...)`, both arguments defaulted
+    and `roots` any iterable. `ConfigBuilder` and `Config::builder()` go.
+  - Rust: `Config::default()`. `Config::defaults()` goes.
+    `Config::builder()` stays: it is the fallible build, and the one
+    place a bundled root that did not load is a `ConfigError`.
+  - Go and Swift: the byte caps (`MaxReceiptBytes`, `MaxRequestBytes`,
+    `MaxJWSBytes`; `maxReceiptBytes`, `maxEndpointRequestBytes`,
+    `maxJwsBytes`) only restated the core's numbers, and Go's three JSON
+    bounds named limits the core no longer has (R40). Nothing in either
+    package read them, so made private they would be dead code; they are
+    deleted, and each README states the caps. The module's `TOO_LARGE`
+    tells a caller a cap was exceeded.
+  - .NET: `JsonPayload.Create` stays. The constructor is private, so
+    `Create` is the payload's one public way to be built, not a
+    duplicate.
+  - Kept as they are: the result and payload types' public constructors,
+    which callers use to build values in their own tests;
+    `Config.defaults` in Ruby and PHP, which name the defaults beside the
+    constructor; Java's `Config`, which is the shape the others came
+    from.
+- **Java: two artifactIds at one version, unchanged.**
+  `apple-purchase-receipt-verifier` (BouncyCastle) and
+  `apple-purchase-receipt-verifier-wasm` stay, with no qualifier. The
+  `-wasm` POM description and README say that it is the newer engine,
+  offered as a preview whose public API may still change before 1.0, and
+  that the BouncyCastle artifact is the long-standing one. A `-wasm`
+  version qualifier on one artifactId would sort below the plain release,
+  so Dependabot and Renovate would propose the BouncyCastle build to every
+  Wasm user as an upgrade. Two artifactIds keep the engines apart, and a
+  release stays one of the month's Maven Central releases, where a
+  second version per release would spend two.
+- **The shared cases do not change.** The Python and PHP conformance
+  runners build their `Config` with the constructor now; no case and no
+  fixture moved.
+- **Still open:** Node's `createConfig()` and `createVerifier()` names
+  (ROADMAP.md, item 5).
 
 ---
 

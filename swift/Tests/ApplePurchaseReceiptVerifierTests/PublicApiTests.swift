@@ -99,8 +99,8 @@ final class PublicApiTests: XCTestCase {
             XCTAssertNil(Environment.fromJwsEnvironment(other), other)
         }
         XCTAssertNil(Environment.fromJwsEnvironment(nil))
-        XCTAssertEqual(Environment.production.appleValue, "Production")
-        XCTAssertEqual(Environment.sandbox.appleValue, "Sandbox")
+        XCTAssertEqual(Environment.production.rawValue, "Production")
+        XCTAssertEqual(Environment.sandbox.rawValue, "Sandbox")
     }
 
     /// Named constants for every status Apple documents, so a caller never
@@ -175,12 +175,5 @@ final class PublicApiTests: XCTestCase {
                 try JSONSerialization.jsonObject(with: Data(want.utf8))),
             receipt.toJson())
         XCTAssertEqual(JsonPayload(json: "{}").json, "{}")
-    }
-
-    /// The caps a caller sizes an HTTP body limit from are public.
-    func testTheSizeCapsArePublic() {
-        XCTAssertEqual(maxReceiptBytes, 3_145_728)
-        XCTAssertEqual(maxEndpointRequestBytes, 3_145_728)
-        XCTAssertEqual(maxJwsBytes, 262_144)
     }
 }

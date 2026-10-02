@@ -126,7 +126,7 @@ func TestSignedDataIsReturnedExactlyAsTheModuleWroteIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.JSON() != signed || got.String() != signed {
+	if got.JSON() != signed {
 		t.Fatalf("payload %q, want %q", got.JSON(), signed)
 	}
 }

@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 
 fn verifier() -> &'static Verifier {
     static VERIFIER: OnceLock<Verifier> = OnceLock::new();
-    VERIFIER.get_or_init(|| Verifier::new(Config::defaults()))
+    VERIFIER.get_or_init(|| Verifier::new(Config::default()))
 }
 
 fuzz_target!(|data: &[u8]| {

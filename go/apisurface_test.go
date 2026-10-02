@@ -246,29 +246,6 @@ func TestModuleDependsOnlyOnWazero(t *testing.T) {
 	}
 }
 
-// The bounds are the core's, and this package only states them. The
-// numbers are Apple's own for the two 3 MiB caps (measured 2026-09-23: a
-// 3,145,728-byte request body is answered and one byte more gets HTTP 413)
-// and the same in every port (fixtures/cases.schema.json, 0.7-api.md,
-// Bounds).
-func TestCapNumbersMatchTheOtherPorts(t *testing.T) {
-	for _, entry := range []struct {
-		name      string
-		got, want int
-	}{
-		{"MaxReceiptBytes", applereceipt.MaxReceiptBytes, 3145728},
-		{"MaxRequestBytes", applereceipt.MaxRequestBytes, 3145728},
-		{"MaxJWSBytes", applereceipt.MaxJWSBytes, 262144},
-		{"MaxJSONNestingDepth", applereceipt.MaxJSONNestingDepth, 64},
-		{"MaxJSONMemberNameLength", applereceipt.MaxJSONMemberNameLength, 50000},
-		{"MaxJSONNumberDigits", applereceipt.MaxJSONNumberDigits, 1000},
-	} {
-		if entry.got != entry.want {
-			t.Errorf("%s = %d, want %d (the number every port uses)", entry.name, entry.got, entry.want)
-		}
-	}
-}
-
 // The public API shape, asserted by compiling against it. Any signature
 // change breaks this file, which is the point: the surface is a contract
 // shared with the other ports at the 0.7 API (docs/design/0.7-api.md).
@@ -296,10 +273,7 @@ func TestPublicAPIShape(t *testing.T) {
 	)
 
 	payload := &applereceipt.JSONPayload{}
-	var (
-		_ func() string = payload.JSON
-		_ func() string = payload.String
-	)
+	var _ func() string = payload.JSON
 	_ = applereceipt.NewJSONPayload("{}")
 
 	failure := &applereceipt.Failure{}

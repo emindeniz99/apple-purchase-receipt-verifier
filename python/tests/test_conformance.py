@@ -32,7 +32,7 @@ CASES = json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))
 def case_clock(case):
     """The ``clock.now`` of a case as a zero-argument callable returning
     epoch milliseconds. ``None`` for a case that pins no time, in which case
-    ``Config.defaults()``'s system clock runs."""
+    ``Config()``'s system clock runs."""
     clock = case.get("clock")
     if clock is None:
         return None
@@ -78,7 +78,7 @@ def fixture_bytes(fixture_id):
 
 def trusted_roots(spec):
     if spec["source"] == "defaults":
-        return Config.defaults().roots  # None: the module's Apple roots
+        return Config().roots  # None: the module's Apple roots
     return [fixture_bytes(i) for i in spec["fixtures"]]
 
 
@@ -87,7 +87,7 @@ def _config(case):
     kwargs = {"roots": trusted_roots(case["config"]["trustedRoots"])}
     if clock is not None:
         kwargs["clock"] = clock
-    return Config.create(**kwargs)
+    return Config(**kwargs)
 
 
 def _receipt_string(data, codec):
@@ -176,7 +176,7 @@ def decode_base64_failures(case):
     texts = case["input"]["texts"]
     if not texts or not case["decoders"]:
         raise AssertionError(f"harness error: {case['id']}: no texts or no decoders")
-    verifier = Verifier(Config.defaults())
+    verifier = Verifier(Config())
     failures = []
     for name in case["decoders"]:
         refused_as_base64 = BASE64_DECODERS[name]

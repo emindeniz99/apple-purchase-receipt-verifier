@@ -48,7 +48,7 @@ fn verification_allocates_a_bounded_multiple_of_the_input() {
     // once behind a OnceLock, and that cost belongs to neither verification.
     let legacy = common::read_base64_fixture("public-receipts/receipt-sandbox-legacy.b64");
     let base64 = base64_encode(&legacy);
-    let verifier = Verifier::new(Config::defaults());
+    let verifier = Verifier::new(Config::default());
     verifier.verify_receipt(&base64).unwrap();
 
     // The largest genuine receipt in the corpus: 79 KB, 187 in-app

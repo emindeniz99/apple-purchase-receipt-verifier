@@ -49,7 +49,7 @@ import _support  # also puts the module APRV_WASM names in place, for tooling
 def verifier(roots: "Sequence[bytes] | None") -> Verifier:
     """Anchored on ``roots``; ``None`` is the defaults, the Apple roots
     compiled into the module."""
-    return Verifier(Config.create(roots=roots))
+    return Verifier(Config(roots=roots))
 
 
 def assert_refused(test: unittest.TestCase, result: Any, reason: Reason) -> None:
@@ -217,7 +217,7 @@ class ProcessTrustStoreTest(unittest.TestCase):
         # for one is refused at construction rather than silently widened.
         self.plant(cert("generated-0.7", "receipt-root.der"))
         with self.assertRaises(ValueError):
-            Verifier(Config.create(roots=[]))
+            Verifier(Config(roots=[]))
 
 
 class HostTrustStoreTest(unittest.TestCase):
@@ -289,8 +289,8 @@ class AnchorsReachTheModuleUnchangedTest(unittest.TestCase):
         # Empty means the three Apple roots compiled into the module. The
         # package carries no copy of them, so nothing from this machine, or
         # anywhere else, can be folded into the default set on the way.
-        self.assertIsNone(Config.defaults().roots)
-        self.assertEqual([], self.sent_to_init(Config.defaults().roots))
+        self.assertIsNone(Config().roots)
+        self.assertEqual([], self.sent_to_init(Config().roots))
 
     def test_a_duplicate_is_dropped_by_config_and_nothing_is_added(self) -> None:
         one = cert("generated", "jws-root.der")

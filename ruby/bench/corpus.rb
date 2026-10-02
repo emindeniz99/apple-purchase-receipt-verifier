@@ -21,6 +21,10 @@ require "apple_purchase_receipt_verifier"
 
 module CorpusRun
   APRV = ApplePurchaseReceiptVerifier
+  # The runtime and the guest are private constants of the gem; this script
+  # drives the module's exports directly, so it names them here.
+  RUNTIME = APRV.const_get(:Runtime)
+  GUEST = APRV.const_get(:Guest)
   OK = '{"ok":true}'
 
   module_function
@@ -34,7 +38,7 @@ module CorpusRun
     # environment variable): it names the module to measure, checked
     # against the same recorded hash.
     override = ENV.fetch("APRV_WASM", "")
-    runtime = override.empty? ? APRV::Runtime.shared : APRV::Runtime.new(APRV::Runtime.read_module(override))
+    runtime = override.empty? ? RUNTIME.shared : RUNTIME.new(RUNTIME.read_module(override))
     guests = {}
     rows = traps = created = 0
     output = $stdout
@@ -54,7 +58,7 @@ module CorpusRun
       guest = guests[config]
       answer = nil
       if guest.nil?
-        guest = APRV::Guest.new(runtime, nil)
+        guest = GUEST.new(runtime, nil)
         created += 1
         init = guest.call("init", [], config)
         if init == OK

@@ -21,7 +21,7 @@ const LEAF_OID: &str = "1.2.840.113635.100.6.11.1";
 const INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
 
 fn apple_roots() -> Vec<TrustAnchor> {
-    Config::defaults().roots().to_vec()
+    Config::default().roots().to_vec()
 }
 
 fn now_millis() -> i64 {

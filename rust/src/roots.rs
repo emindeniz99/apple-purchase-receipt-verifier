@@ -2,7 +2,7 @@
 //!
 //! Anchors come from exactly two places: the caller's
 //! [`Config`](crate::Config), or the three Apple roots bundled here, which
-//! [`Config::defaults`](crate::Config::defaults) uses. **No code path in
+//! [`Config::default`](crate::Config::default) uses. **No code path in
 //! this crate reads an
 //! operating system trust store, a distribution CA bundle, or anything
 //! downloaded.** There is no function to disable that with, because there is
@@ -118,7 +118,7 @@ impl TrustAnchor {
 /// The bundled Apple roots, parsed once per process and shared: all three,
 /// or none. An empty set is refused by
 /// [`ConfigBuilder::build`](crate::ConfigBuilder::build), and a
-/// [`Verifier`](crate::Verifier) built from [`Config::defaults`](crate::Config::defaults)
+/// [`Verifier`](crate::Verifier) built from [`Config::default`](crate::Config::default)
 /// with it answers `INTERNAL_ERROR` to every call.
 pub(crate) fn apple_roots() -> &'static [TrustAnchor] {
     static ROOTS: OnceLock<Vec<TrustAnchor>> = OnceLock::new();
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn every_bundled_root_parses() {
-        // Config::defaults cannot report a failure, so a bundled root that
+        // Config::default cannot report a failure, so a bundled root that
         // stopped parsing or matching its fingerprint would empty the anchor
         // set. This is the check that it has not.
         assert_eq!(apple_roots().len(), APPLE_ROOT_DER.len());

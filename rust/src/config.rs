@@ -24,22 +24,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// Apple's three pinned roots and the system clock.
-    ///
-    /// The bundled roots load all together or not at all, each checked
-    /// against its published SHA-256. Should they not load, this cannot say
-    /// so: a [`Verifier`](crate::Verifier) built from it then answers
-    /// `INTERNAL_ERROR` to every call, where
-    /// [`ConfigBuilder::build`] returns a [`ConfigError`].
-    #[must_use]
-    pub fn defaults() -> Config {
-        Config {
-            roots: apple_roots().into(),
-            clock: Arc::new(system_millis),
-        }
-    }
-
-    /// A builder whose unset parts are the [`defaults`](Config::defaults).
+    /// A builder whose unset parts are the [`Default`] ones.
     #[must_use]
     pub fn builder() -> ConfigBuilder {
         ConfigBuilder::default()
@@ -69,9 +54,19 @@ impl fmt::Debug for Config {
     }
 }
 
+/// Apple's three pinned roots and the system clock.
+///
+/// The bundled roots load all together or not at all, each checked
+/// against its published SHA-256. Should they not load, this cannot say
+/// so: a [`Verifier`](crate::Verifier) built from it then answers
+/// `INTERNAL_ERROR` to every call, where [`ConfigBuilder::build`] returns
+/// a [`ConfigError`].
 impl Default for Config {
     fn default() -> Self {
-        Config::defaults()
+        Config {
+            roots: apple_roots().into(),
+            clock: Arc::new(system_millis),
+        }
     }
 }
 

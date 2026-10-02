@@ -130,7 +130,7 @@ class VerificationFailureTest(unittest.TestCase):
 class CallerMisuseTest(unittest.TestCase):
     def test_no_roots_is_a_value_error_before_any_instance_exists(self) -> None:
         with mock.patch.object(_host, "Instance") as instance, self.assertRaises(ValueError):
-            Verifier(Config.create(roots=[]))
+            Verifier(Config(roots=[]))
         instance.assert_not_called()
 
     def test_a_config_that_is_not_a_config_is_a_type_error(self) -> None:
@@ -147,10 +147,10 @@ class CallerMisuseTest(unittest.TestCase):
     def test_a_root_that_is_not_bytes_is_a_type_error_at_config(self) -> None:
         for bad in ("MIIB", None, 5, object()):
             with self.subTest(bad=bad), self.assertRaises(TypeError):
-                Config.create(roots=[bad])  # type: ignore[list-item]
+                Config(roots=[bad])  # type: ignore[list-item]
 
     def test_bytes_like_roots_are_accepted_and_deduplicated_in_first_seen_order(self) -> None:
-        config = Config.create(roots=[b"b", bytearray(b"a"), memoryview(b"b"), b"a"])
+        config = Config(roots=[b"b", bytearray(b"a"), memoryview(b"b"), b"a"])
         self.assertEqual((b"b", b"a"), config.roots)
 
     def test_an_environment_that_is_not_an_environment_is_a_type_error(self) -> None:
@@ -182,7 +182,7 @@ class AbiMismatchTest(unittest.TestCase):
 
     def create(self, wasm: bytes) -> None:
         runtime = _host.Runtime(wasm)
-        Verifier.__new__(Verifier)._setup(Config.create(roots=[ROOT]), lambda: runtime)
+        Verifier.__new__(Verifier)._setup(Config(roots=[ROOT]), lambda: runtime)
 
     def test_a_module_of_another_abi_version_is_refused(self) -> None:
         wasm = double_wat({"verify@0.1.0#init": "verify@2.0.0#init"})
@@ -274,9 +274,7 @@ class ModuleFileTest(unittest.TestCase):
             )
 
     LOAD = "from apple_purchase_receipt_verifier import _host; _host.read_pinned_module()"
-    START = (
-        "from apple_purchase_receipt_verifier import Config, Verifier;Verifier(Config.defaults())"
-    )
+    START = "from apple_purchase_receipt_verifier import Config, Verifier;Verifier(Config())"
 
     def test_a_missing_module_is_a_clear_error(self) -> None:
         done = self.run_in_copy(self.LOAD, None)
@@ -508,7 +506,7 @@ class ClockTest(unittest.TestCase):
         import time
 
         before = int(time.time() * 1000)
-        now = Config.defaults().clock()
+        now = Config().clock()
         self.assertIsInstance(now, int)
         self.assertLessEqual(before, now)
         self.assertLess(now - before, 5_000)

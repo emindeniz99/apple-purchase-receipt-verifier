@@ -8,7 +8,7 @@ require_relative "fake_module"
 # verification code of its own.
 class ApiShapeTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
-  FAKE = APRV::Runtime.new(FakeModule.wat)
+  FAKE = Internals::Runtime.new(FakeModule.wat)
 
   def assert_maps(expected, actual)
     expected.nil? ? assert_nil(actual) : assert_equal(expected, actual)
@@ -19,11 +19,24 @@ class ApiShapeTest < Minitest::Test
   end
 
   def test_the_public_classes_exist
-    [APRV::Config, APRV::Config::Builder, APRV::Verifier, APRV::VerificationResult, APRV::Failure,
+    [APRV::Config, APRV::Verifier, APRV::VerificationResult, APRV::Failure,
      APRV::ReceiptPayload, APRV::InAppPurchase, APRV::JsonPayload,
      APRV::AbiMismatchError, APRV::ModuleIntegrityError, APRV::TrapError].each do |klass|
       assert_kind_of Class, klass
     end
+  end
+
+  # The gem's machinery is not API. Each internal class or module is a
+  # private constant: defined, but missing from APRV.constants, and naming
+  # it from outside the gem (APRV::Runtime) raises NameError.
+  def test_the_internals_are_private_constants
+    internals = %i[Guest InstancePool PayloadJson Runtime RootsRejected Wire]
+    internals.each { |name| assert(APRV.const_defined?(name, false), "#{name} is not defined") }
+    assert_empty internals & APRV.constants
+    assert_equal %i[AbiMismatchError AppleStatus Config Environment Failure InAppPurchase JsonPayload
+                    ModuleIntegrityError Reason ReceiptPayload TrapError VERSION VerificationResult Verifier
+                    Version],
+                 APRV.constants.sort
   end
 
   # docs/design/0.7-api.md: one verifier, three methods.

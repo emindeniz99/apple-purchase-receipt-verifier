@@ -38,7 +38,7 @@ def rows(verifier: Verifier) -> "list[str]":
 
 
 def new_verifier() -> Verifier:
-    return Verifier(Config.create(clock=lambda: NOW))
+    return Verifier(Config(clock=lambda: NOW))
 
 
 def in_a_worker(queue: "multiprocessing.Queue[list[str]]") -> None:

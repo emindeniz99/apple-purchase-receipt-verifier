@@ -212,7 +212,7 @@ final class CliTransportTest extends TestCase
     public function testADestroyedVerifierLeavesNoRootsFile(): void
     {
         $verifier = Verifier::create(
-            Config::builder()->roots(["\x30\x00"])->build(),
+            new Config(roots: ["\x30\x00"]),
             $this->transport(),
         );
         $file = (string) $this->cli->log()[1]['roots_file'];
@@ -241,7 +241,7 @@ final class CliTransportTest extends TestCase
         $this->cli->behave(['exit' => 2, 'stderr' => "aprv: the component refused the roots configuration: roots[0]: trust anchor is not a certificate\n"]);
 
         try {
-            Verifier::create(Config::builder()->roots(['not a certificate'])->build(), $this->transport());
+            Verifier::create(new Config(roots: ['not a certificate']), $this->transport());
             self::fail('create must refuse it');
         } catch (InvalidArgumentException $e) {
             self::assertStringContainsString('refused the roots', $e->getMessage());
@@ -325,25 +325,25 @@ final class CliTransportTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/refused the roots/');
-        Verifier::create(Config::builder()->roots(['not a certificate'])->build(), new CliTransport(Aprv::binary()));
+        Verifier::create(new Config(roots: ['not a certificate']), new CliTransport(Aprv::binary()));
     }
 
     /** A root is DER: Apple's own root opens, the same certificate as PEM text is refused (0.7 accepted PEM). */
     public function testARealRootIsAcceptedAsDerAndAsPemItIsRefused(): void
     {
         $der = (string) file_get_contents(__DIR__ . '/../../certs/AppleRootCA-G3.cer');
-        Verifier::create(Config::builder()->roots([$der])->build(), new CliTransport(Aprv::binary()));
+        Verifier::create(new Config(roots: [$der]), new CliTransport(Aprv::binary()));
         $this->addToAssertionCount(1);
 
         $pem = "-----BEGIN CERTIFICATE-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END CERTIFICATE-----\n";
         $this->expectException(InvalidArgumentException::class);
-        Verifier::create(Config::builder()->roots([$pem])->build(), new CliTransport(Aprv::binary()));
+        Verifier::create(new Config(roots: [$pem]), new CliTransport(Aprv::binary()));
     }
 
     public function testTheRealBinaryOpensWithTheBuiltInRoots(): void
     {
         $verifier = Verifier::create(
-            Config::builder()->clock(new FrozenClock(new DateTimeImmutable('2026-01-01T00:00:00Z')))->build(),
+            new Config(clock: new FrozenClock(new DateTimeImmutable('2026-01-01T00:00:00Z'))),
             new CliTransport(Aprv::binary()),
         );
         // Not a receipt, so a verdict of the module's, and a JSON object with an integer status at the endpoint.

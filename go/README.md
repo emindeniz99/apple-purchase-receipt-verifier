@@ -283,11 +283,13 @@ without building it, so only the size caps bound it
 Input size is capped before anything is decoded, and the caps are Apple's
 own (measured on 2026-09-23 against both `verifyReceipt` endpoints):
 
-- the endpoint request body and the receipt base64 string:
-  `applereceipt.MaxReceiptBytes` / `MaxRequestBytes`, 3,145,728 UTF-8 bytes.
-  Over it is `TOO_LARGE`, 21002 at the endpoint. Apple answers HTTP 413
-  there, so check the body's length before the call to do the same.
-- the compact JWS: `applereceipt.MaxJWSBytes`, 262,144 bytes, `TOO_LARGE`.
+- the endpoint request body and the receipt base64 string: 3,145,728 UTF-8
+  bytes. Over it is `TOO_LARGE`, 21002 at the endpoint. Apple answers HTTP
+  413 there, so check the body's length before the call to do the same.
+- the compact JWS: 262,144 bytes, `TOO_LARGE`.
+
+The package exports none of these numbers: the module enforces them, and
+its answer says which one an input exceeded.
 
 `receipt-data` is decoded exactly as Apple's `verifyReceipt` accepts it:
 standard base64 with canonical `=` padding and nothing else. `x5c` entries
@@ -390,6 +392,18 @@ the package no longer carries its own copy of them:
 - A caller who passed `AppleRoots()` into `ConfigOptions.Roots` next to a
   root of their own now loads Apple's certificates themselves, from
   Apple's PKI page or the repository's `certs/` directory.
+
+0.8 also trims names that duplicated another or only stated the core's
+numbers:
+
+| 0.7 | 0.8 |
+|---|---|
+| `(*ReceiptPayload).String()` | `ToJSON()`, which it returned |
+| `(*JSONPayload).String()` | `JSON()`, which it returned |
+
+The two `String()` removals do not break compilation: `fmt.Println(receipt)`, `%v` and slog's text handler keep compiling but print the struct instead of the JSON. Call `ToJSON()` or `JSON()` where the JSON was printed.
+| `MaxReceiptBytes`, `MaxRequestBytes`, `MaxJWSBytes` | removed: the caps are 3,145,728, 3,145,728 and 262,144 UTF-8 bytes, and an input over one is `TOO_LARGE` (21002 at the endpoint) |
+| `MaxJSONNestingDepth`, `MaxJSONMemberNameLength`, `MaxJSONNumberDigits` | removed: the core has no JSON nesting or length bound since 0.8 (DECISIONS.md R40); only the size caps apply |
 
 ## Vendoring
 

@@ -92,4 +92,5 @@ module ApplePurchaseReceiptVerifier
       end
     end
   end
+  private_constant :PayloadJson
 end

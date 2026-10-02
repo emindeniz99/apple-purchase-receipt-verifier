@@ -7,7 +7,7 @@ require_relative "helper"
 # not shaped as the contract says. Nothing here calls the module.
 class WireTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
-  WIRE = APRV::Wire
+  WIRE = Internals::Wire
 
   def receipt_json(**overrides)
     payload = {

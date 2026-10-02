@@ -11,7 +11,7 @@
   <packaging>jar</packaging>
 
   <name>apple-purchase-receipt-verifier-wasm</name>
-  <description>Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7 receipts) with the shared Rust core, compiled from WebAssembly to JVM bytecode</description>
+  <description>Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7 receipts) with the shared Rust core, compiled from WebAssembly to JVM bytecode. This artifact is the newer engine, offered as a preview: its public API may still change before 1.0. The BouncyCastle artifact, apple-purchase-receipt-verifier, is the long-standing one.</description>
   <url>https://github.com/emindeniz99/apple-purchase-receipt-verifier</url>
 
   <licenses>

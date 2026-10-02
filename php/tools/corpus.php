@@ -94,9 +94,7 @@ final class MillisClock implements ClockInterface
 /** @param list<string>|null $roots null for the module's built-in roots */
 function facadeConfig(?array $roots, ClockInterface $clock): Config
 {
-    $builder = Config::builder()->clock($clock);
-
-    return ($roots === null ? $builder : $builder->roots($roots))->build();
+    return new Config(roots: $roots, clock: $clock);
 }
 
 /** @return array{Verifier, Recorder}|string a verifier, or the module's refusal text of the roots */
