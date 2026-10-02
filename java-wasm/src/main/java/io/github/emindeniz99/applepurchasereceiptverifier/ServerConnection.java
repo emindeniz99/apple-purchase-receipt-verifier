@@ -155,11 +155,16 @@ final class ServerConnection {
      * {@link HttpsURLConnection}'s JVM-wide defaults, which any code in the
      * JVM can replace (a trust-all socket factory with an allow-all hostname
      * verifier is a common pair). Its socket factory is the default
-     * {@link SSLContext}'s, as the hand-written client's was, and its
-     * hostname verifier refuses every name: with a verifier that is not the
-     * JDK's default, the JDK checks the certificate against the host by
-     * RFC 2818 after the handshake and asks the verifier only on a mismatch,
-     * before any request byte or the token is written.</p>
+     * {@link SSLContext}'s. The hand-written client took
+     * {@code SSLSocketFactory.getDefault()}, which a class named by the
+     * {@code ssl.SocketFactory.provider} security property replaces; this
+     * one does not follow that property, and like any HttpsURLConnection it
+     * applies the {@code https.protocols} and {@code https.cipherSuites}
+     * system properties. Its hostname verifier refuses every name: with a
+     * verifier that is not the JDK's default, the JDK checks the
+     * certificate against the host by RFC 2818 after the handshake and asks
+     * the verifier only on a mismatch, before any request byte or the token
+     * is written.</p>
      *
      * <p>A POST body is buffered, not streamed. HttpURLConnection then writes
      * the headers and a body of up to about 8 KiB (a g5 receipt) in one
