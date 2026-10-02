@@ -160,7 +160,7 @@ def worst_case() -> list[dict[str, Any]]:
 
 def cross_port() -> list[dict[str, Any]]:
     fixtures_dir = Path(__file__).resolve().parents[2] / "fixtures" / "public-receipts"
-    roots = list(Config().roots)
+    roots = None  # the built-in Apple roots
     results = []
     for name, bundle_id, in_app_count, sha256 in FIXTURES:
         der = base64.b64decode((fixtures_dir / f"{name}.b64").read_text(encoding="ascii"))
