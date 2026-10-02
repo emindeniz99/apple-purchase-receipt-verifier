@@ -400,8 +400,10 @@ numbers:
 |---|---|
 | `(*ReceiptPayload).String()` | `ToJSON()`, which it returned |
 | `(*JSONPayload).String()` | `JSON()`, which it returned |
+
+The two `String()` removals do not break compilation: `fmt.Println(receipt)`, `%v` and slog's text handler keep compiling but print the struct instead of the JSON. Call `ToJSON()` or `JSON()` where the JSON was printed.
 | `MaxReceiptBytes`, `MaxRequestBytes`, `MaxJWSBytes` | removed: the caps are 3,145,728, 3,145,728 and 262,144 UTF-8 bytes, and an input over one is `TOO_LARGE` (21002 at the endpoint) |
-| `MaxJSONNestingDepth`, `MaxJSONMemberNameLength`, `MaxJSONNumberDigits` | removed: the core's JSON bounds (64, 50,000 and 1,000), stated under "Defensive parsing" |
+| `MaxJSONNestingDepth`, `MaxJSONMemberNameLength`, `MaxJSONNumberDigits` | removed: the core has no JSON nesting or length bound since 0.8 (DECISIONS.md R40); only the size caps apply |
 
 ## Vendoring
 

@@ -1266,10 +1266,11 @@ the release, it is a breaking change for every caller. So the audit of
     place a bundled root that did not load is a `ConfigError`.
   - Go and Swift: the byte caps (`MaxReceiptBytes`, `MaxRequestBytes`,
     `MaxJWSBytes`; `maxReceiptBytes`, `maxEndpointRequestBytes`,
-    `maxJwsBytes`) and Go's three JSON bounds only restated the core's
-    numbers. Nothing in either package read them, so made private they
-    would be dead code; they are deleted, and each README states the
-    numbers. The module's `TOO_LARGE` tells a caller a cap was exceeded.
+    `maxJwsBytes`) only restated the core's numbers, and Go's three JSON
+    bounds named limits the core no longer has (R40). Nothing in either
+    package read them, so made private they would be dead code; they are
+    deleted, and each README states the caps. The module's `TOO_LARGE`
+    tells a caller a cap was exceeded.
   - .NET: `JsonPayload.Create` stays. The constructor is private, so
     `Create` is the payload's one public way to be built, not a
     duplicate.
