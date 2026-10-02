@@ -236,9 +236,10 @@ public class ApiShapeTests
     }
 
     /// <summary>
-    /// No verification logic is left in the library: it references neither
-    /// the CMS nor the ASN.1 assembly, and no source line touches a chain, a
-    /// signature or an ASN.1 reader. Everything that verifies is in the module.
+    /// No verification logic is left in the library: the compiled assembly
+    /// references neither the CMS nor the ASN.1 assembly. The source-level
+    /// ban on chain, signature and ASN.1 APIs is
+    /// tools/check-one-implementation.mjs, the one list for every wrapper.
     /// </summary>
     [Fact]
     public void TheLibraryHoldsNoVerificationLogic()
@@ -248,35 +249,6 @@ public class ApiShapeTests
             Assert.DoesNotContain("Pkcs", reference.Name, StringComparison.Ordinal);
             Assert.DoesNotContain("Asn1", reference.Name, StringComparison.Ordinal);
         }
-
-        string[] banned =
-        {
-            "X509Chain", "SignedCms", "SignerInfo", "AsnReader", "AsnWriter", "AsnDecoder", "VerifyData", "VerifyHash",
-            "ECDsa", "RSACryptoServiceProvider", "System.Security.Cryptography.Pkcs", "System.Formats.Asn1",
-        };
-        List<string> hits = new();
-        foreach (string file in SourceTree.LibraryFiles())
-        {
-            string[] lines = System.IO.File.ReadAllLines(file);
-            for (int i = 0; i < lines.Length; i++)
-            {
-                string code = lines[i].Trim();
-                if (code.StartsWith("//", StringComparison.Ordinal) || code.StartsWith("*", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                foreach (string word in banned)
-                {
-                    if (code.Contains(word, StringComparison.Ordinal))
-                    {
-                        hits.Add(System.IO.Path.GetFileName(file) + ":" + (i + 1) + " " + word);
-                    }
-                }
-            }
-        }
-
-        Assert.Empty(hits);
     }
 
     /// <summary>
