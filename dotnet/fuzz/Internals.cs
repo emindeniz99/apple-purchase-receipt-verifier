@@ -1,11 +1,12 @@
 using System;
 using System.Reflection;
+using System.Text.Json;
 
 namespace ApplePurchaseReceiptVerifier.Fuzz
 {
     /// <summary>
-    /// Reflected access to the two internal parsers a fuzz target reaches
-    /// directly: the hand-written JSON reader and the CMS pre-scan.
+    /// Reflected access to the internal JSON writer and reader a fuzz target
+    /// reaches directly (<c>Internal.Json</c>).
     /// </summary>
     /// <remarks>
     /// <para>Reflection rather than an <c>InternalsVisibleTo</c> entry: the
@@ -14,37 +15,25 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
     /// costs nothing per execution and — because it is the library's own IL
     /// that runs — SharpFuzz's instrumentation of that assembly still reports
     /// the coverage.</para>
-    /// <para>The internal exception types are compared by full name for the
-    /// same reason: their identity is the invariant, and naming them in source
-    /// would require making them public.</para>
     /// </remarks>
     internal static class Internals
     {
-        private const string JsonExceptionName = "ApplePurchaseReceiptVerifier.Internal.JsonException";
-
         private static readonly Assembly Library = typeof(IVerifier).Assembly;
 
-        private static readonly Func<string, int, object?> JsonParseCore =
-            Bind<Func<string, int, object?>>("Internal.Json", "Parse");
+        private static readonly Func<string, JsonDocument> JsonParseCore =
+            Bind<Func<string, JsonDocument>>("Internal.Json", "Parse");
 
-        private static readonly Func<object?, string> JsonWriteCore =
-            Bind<Func<object?, string>>("Internal.Json", "Write");
-
-        /// <summary>The default maximum JSON length the library compiles in.</summary>
-        internal const int JsonMaxLength = 16 * 1024 * 1024;
+        private static readonly Func<Action<Utf8JsonWriter>, string> JsonWriteCore =
+            Bind<Func<Action<Utf8JsonWriter>, string>>("Internal.Json", "Write");
 
         /// <summary>The certificate bound the receipt path enforces (<c>Internal.Cms.MaxEmbeddedCertificates</c>).</summary>
         internal const int MaxEmbeddedCertificates = 10;
 
-        /// <summary><c>Json.Parse</c>.</summary>
-        internal static object? JsonParse(string text) => JsonParseCore(text, JsonMaxLength);
+        /// <summary><c>Json.Parse</c>: the options the module's answers are read with.</summary>
+        internal static JsonDocument JsonParse(string text) => JsonParseCore(text);
 
-        /// <summary><c>Json.Write</c>.</summary>
-        internal static string JsonWrite(object? value) => JsonWriteCore(value);
-
-        /// <summary>True when the exception is the reader's own typed failure.</summary>
-        internal static bool IsJsonException(Exception e) =>
-            string.Equals(e.GetType().FullName, JsonExceptionName, StringComparison.Ordinal);
+        /// <summary><c>Json.Write</c>: the options <c>ReceiptPayload.ToJson</c> is written with.</summary>
+        internal static string JsonWrite(Action<Utf8JsonWriter> write) => JsonWriteCore(write);
 
         private static TDelegate Bind<TDelegate>(string type, string method)
             where TDelegate : Delegate

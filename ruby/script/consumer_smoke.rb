@@ -22,7 +22,7 @@ fixtures = ARGV[0] || File.expand_path("../../fixtures", __dir__)
 receipt_path = File.join(fixtures, "public-receipts", "receipt-sandbox-legacy.b64")
 abort "fixture not found: #{receipt_path}" unless File.file?(receipt_path)
 
-verifier = APRV::Verifier.create(APRV::Config.defaults)
+verifier = APRV::Verifier.create(APRV::Config.new)
 base64 = File.read(receipt_path)
 
 result = verifier.verify_receipt(base64)

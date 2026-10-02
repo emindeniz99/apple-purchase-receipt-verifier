@@ -54,6 +54,19 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
      `Config::defaults()` removed; Go's and Swift's size-cap constants
      removed). Kept: the result and payload types' constructors, and
      .NET's `JsonPayload.Create`, its payload's one public constructor.
+   - Decided 2026-10-02 (DECISIONS.md R41, amended): Ruby's
+     `Config.defaults` and PHP's `Config::defaults()` are removed, since
+     each only called the no-argument constructor (Java's
+     `Config.defaults()` stays); Python's `MAX_RECEIPT_BYTES`,
+     `MAX_REQUEST_BYTES` and `MAX_JWS_BYTES` are removed, with the
+     `endpoint` and `jws` modules that held only them, as Go's and Swift's
+     were; and .NET reads and writes JSON with `System.Text.Json` (a
+     package on netstandard2.0) instead of its hand-written reader and
+     writer. `ToJson` escapes with the library's relaxed encoder (the
+     owner's Q20), so its text can differ from 0.7's in escaping, and in
+     value only for a lone surrogate (now U+FFFD; the module never writes
+     one); checked on the `verifyReceipt` and `verifySignedData` cases and
+     hand-built payloads.
    - Decided 2026-10-01 (DECISIONS.md R39, amended the same day): the
      core reads a root as DER or PEM, told apart by the bytes, through
      OpenSSL's PEM reader; wrappers pass bytes and read neither format.

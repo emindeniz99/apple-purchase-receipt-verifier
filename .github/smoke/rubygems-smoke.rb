@@ -26,7 +26,7 @@ APRV = ApplePurchaseReceiptVerifier
 # none of their own. What the install can get wrong now is the runtime: the
 # wasmtime dependency must arrive as a prebuilt platform gem, never the
 # source gem, which would need a Rust toolchain on the consumer's machine.
-config = APRV::Config.defaults
+config = APRV::Config.new
 wasmtime = Gem.loaded_specs.fetch("wasmtime")
 abort "wasmtime #{wasmtime.version} was installed as the source gem" if wasmtime.platform.to_s == "ruby"
 verifier = APRV::Verifier.create(config)

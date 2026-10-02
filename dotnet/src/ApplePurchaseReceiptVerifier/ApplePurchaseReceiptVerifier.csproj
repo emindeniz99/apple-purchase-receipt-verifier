@@ -36,6 +36,12 @@
     <PackageReference Include="Wasmtime" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <!-- Reads the module's answers and writes ToJson. In the box from net8.0;
+         netstandard2.0 takes the package. -->
+    <PackageReference Include="System.Text.Json" />
+  </ItemGroup>
+
   <!-- The one module, embedded in both targets. Its SHA-256 sits beside it and
        is checked at first use. The default is wasm/aprv.wasm, which is not in git
        (it is listed in .gitignore; wasm/aprv.wasm.sha256 is committed and
@@ -73,7 +79,7 @@
 
   <ItemGroup>
     <!-- The test project asserts on the host layer (the canonical-ABI call, the
-         pool, the module's answers) and dogfoods the JSON reader; the corpus
+         pool, the module's answers); the corpus
          runner under tools/ drives the same layer over the shared corpora.
          Nothing else sees them. -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">

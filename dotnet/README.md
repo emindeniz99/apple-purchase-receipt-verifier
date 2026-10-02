@@ -45,7 +45,8 @@ input the caller does not control: every verify call returns a
 
 Everything that verifies runs inside one WebAssembly module, `aprv.wasm`,
 embedded in the assembly and run by [Wasmtime](https://github.com/bytecodealliance/wasmtime-dotnet)
-(the `Wasmtime` NuGet package, the package's only dependency). This library
+(the `Wasmtime` NuGet package; on netstandard2.0 the package also takes
+`System.Text.Json`, see [How it runs](#how-it-runs)). This library
 parses no receipt, checks no signature and decides no trust: it moves bytes
 in, reads a JSON answer back, and maps it to the types below. Read
 [How it runs](#how-it-runs) before deploying it on Alpine or in a
@@ -446,6 +447,21 @@ and `-- --worst-case` for the hostile cases on your own hardware.
   misused ABI and none of the shared corpora causes one; an application that
   wants the wrapper to survive one sets `<CETCompat>false</CETCompat>`. Not
   run here: there is no Windows machine.
+- **Dependencies.** `Wasmtime` on both assets. The module's answers are
+  read, and `ReceiptPayload.ToJson` written, with `System.Text.Json`
+  (`JsonDocument` and `Utf8JsonWriter`, no reflection serializer): in the
+  box on net8.0, a package on netstandard2.0. That package (10.0.12) brings
+  `Microsoft.Bcl.AsyncInterfaces`, `System.IO.Pipelines` and
+  `System.Text.Encodings.Web` (10.0.12) and
+  `System.Threading.Tasks.Extensions` (4.6.3), and raises `System.Buffers`
+  to 4.6.1, `System.Memory` to 4.6.3, `System.Numerics.Vectors` to 4.6.1
+  and `System.Runtime.CompilerServices.Unsafe` to 6.1.2. A Unity or .NET
+  Framework project that already ships `System.Memory`,
+  `System.Runtime.CompilerServices.Unsafe` or any other of these through
+  other packages can get duplicate-assembly errors or binding-redirect
+  conflicts. On .NET Framework, binding redirects to the higher version fix
+  it (SDK-style projects generate them); in Unity, keep one copy of each
+  assembly, the higher version.
 - **.NET Framework, Mono and Unity.** The netstandard2.0 asset compiles and
   is exercised on modern .NET; whether .NET Framework or Mono find the native
   library under `runtimes/` depends on the consuming project, and was not run.
@@ -529,10 +545,11 @@ runs under it is not.
 
 | 0.7 | 0.8 |
 |---|---|
-| verification in C#, on `System.Security.Cryptography.Pkcs` and `System.Formats.Asn1` | verification in `aprv.wasm`, hosted by the `Wasmtime` package; those two packages are no longer dependencies |
+| verification in C#, on `System.Security.Cryptography.Pkcs` and `System.Formats.Asn1` | verification in `aprv.wasm`, hosted by the `Wasmtime` package; those two packages are no longer dependencies, and the netstandard2.0 asset takes `System.Text.Json` (see [How it runs](#how-it-runs)) |
 | `Config.Defaults().Roots` lists Apple's three roots | it is empty: the roots are pinned inside the module. To trust Apple's roots and your own, pass all four |
 | `AppleRootCertificates.Bundled()` returns Apple's three roots | removed: the package ships no copy of them. Load them from Apple's PKI page or the repository's `certs/` |
 | `Config.Defaults()` throws if the bundled roots do not load | it cannot fail; `Verifier.Create` throws `ArgumentException` for a root the module refuses and `InvalidOperationException` for a module of another ABI version |
+| `ReceiptPayload.ToJson()` escapes only the quotation mark, the reverse solidus and the controls, in lower-case hex | it escapes the way `System.Text.Json`'s `UnsafeRelaxedJsonEscaping` does: upper-case hex, and `\u` escapes for U+007F to U+009F, U+2028, U+2029, private-use, noncharacter and unassigned code points, U+FEFF and every character outside the BMP (as a surrogate pair). The text can differ from 0.7's in escaping only; the JSON value is the same, except that a lone surrogate in a payload you build yourself is written as `\uFFFD` (the module's strings never hold one) |
 | `Failure.Cause` set for `UnreadablePayload` and `InternalError` | set only for an `InternalError` raised by this library (a trap, an unreadable answer, the clock) |
 | `Verifier.Create` takes microseconds | the first one in a process compiles the module, about a second on an idle machine and several under load |
 | any platform .NET runs on | the platforms Wasmtime ships a native library for; no Alpine, no 32-bit |

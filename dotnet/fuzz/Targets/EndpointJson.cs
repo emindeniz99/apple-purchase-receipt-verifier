@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 using ApplePurchaseReceiptVerifier;
 
 namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
@@ -50,10 +50,16 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
                     + $"{e.GetType().FullName}: {e.Message}");
             }
 
-            object? parsed;
+            bool numericStatus;
             try
             {
-                parsed = Internals.JsonParse(response);
+                using (JsonDocument parsed = JsonDocument.Parse(response))
+                {
+                    numericStatus = parsed.RootElement.ValueKind == JsonValueKind.Object
+                        && parsed.RootElement.TryGetProperty("status", out JsonElement status)
+                        && status.ValueKind == JsonValueKind.Number
+                        && status.TryGetInt64(out _);
+                }
             }
             catch (Exception e)
             {
@@ -61,11 +67,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
                     $"the endpoint answered something that is not JSON ({e.GetType().FullName}): {response}");
             }
 
-            Invariant.Require(
-                parsed is IReadOnlyDictionary<string, object?> map
-                    && map.TryGetValue("status", out object? status)
-                    && status is long,
-                $"the endpoint answers with a numeric status: {response}");
+            Invariant.Require(numericStatus, $"the endpoint answers with a numeric status: {response}");
         }
 
         public void Dispose()

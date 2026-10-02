@@ -12,7 +12,7 @@ class ThreadTest < Minitest::Test
   FAKE = Internals::Runtime.new(FakeModule.wat)
 
   def verifier
-    APRV::Verifier.send(:new, APRV::Config.defaults, runtime: FAKE)
+    APRV::Verifier.send(:new, APRV::Config.new, runtime: FAKE)
   end
 
   # Four threads, a trap on every 7th call: 180 verified and exactly 30

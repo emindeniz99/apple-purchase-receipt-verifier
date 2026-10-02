@@ -13,7 +13,7 @@ use Psr\Clock\ClockInterface;
  * **Roots** are the caller's trust anchors as DER or PEM strings, which
  * `aprv` tells apart, or `null` for the module's built-in ones: no roots
  * given means the three pinned Apple roots that `aprv` carries. This
- * package holds no copy of them, so {@see defaults()} names none. An empty
+ * package holds no copy of them, so `new Config()` names none. An empty
  * list is not "no roots": it is a mistake, and {@see Verifier::create()}
  * refuses it. "Apple's roots plus mine" is written by passing all four,
  * Apple's three read from its PKI page or the repository's `certs/`. A
@@ -50,11 +50,5 @@ final readonly class Config
         }
         $this->roots = $roots;
         $this->clock = $clock;
-    }
-
-    /** The module's built-in Apple roots and the system clock: the same as `new Config()`. */
-    public static function defaults(): self
-    {
-        return new self();
     }
 }

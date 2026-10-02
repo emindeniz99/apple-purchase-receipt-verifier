@@ -19,6 +19,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using ApplePurchaseReceiptVerifier.Internal;
 using Wasmtime;
@@ -58,7 +59,23 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
         private static AprvRuntime Runtime(string? modulePath) =>
             modulePath is null ? AprvRuntime.Shared : new AprvRuntime(File.ReadAllBytes(modulePath), null);
 
-        private static string Quote(string text) => Json.Write(text);
+        private static string Quote(string text) => Json.Write(json => json.WriteStringValue(text));
+
+        /// <summary>One row of a calls file, read with System.Text.Json.</summary>
+        private static JsonElement Row(string line)
+        {
+            using (JsonDocument document = JsonDocument.Parse(line))
+            {
+                return document.RootElement.Clone();
+            }
+        }
+
+        private static string Text(JsonElement row, string key) => row.GetProperty(key).GetString()!;
+
+        private static long Now(JsonElement row) =>
+            row.GetProperty("now").ValueKind == JsonValueKind.Null
+                ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                : row.GetProperty("now").GetInt64();
 
         private static int Calls(string calls, string? modulePath)
         {
@@ -75,16 +92,16 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
                         continue;
                     }
 
-                    OrderedMap row = Json.ParseObject(line);
-                    string id = Quote((string)row["id"]!);
+                    JsonElement row = Row(line);
+                    string id = Quote(Text(row, "id"));
                     rows++;
-                    if (row.ContainsKey("map"))
+                    if (row.TryGetProperty("map", out JsonElement map))
                     {
-                        output.WriteLine("{\"id\":" + id + ",\"map\":" + Quote((string)row["map"]!) + "}");
+                        output.WriteLine("{\"id\":" + id + ",\"map\":" + Quote(map.GetString()!) + "}");
                         continue;
                     }
 
-                    string config = (string)row["config"]!;
+                    string config = Text(row, "config");
                     string? answer = null;
                     if (!instances.TryGetValue(config, out AprvInstance? instance))
                     {
@@ -102,13 +119,13 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
                         }
                     }
 
-                    long now = row["now"] is null ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : (long)row["now"]!;
-                    byte[] input = Convert.FromBase64String((string)row["b64"]!);
+                    long now = Now(row);
+                    byte[] input = Convert.FromBase64String(Text(row, "b64"));
                     try
                     {
                         if (answer is null)
                         {
-                            switch ((string)row["fn"]!)
+                            switch (Text(row, "fn"))
                             {
                                 case "verify-receipt":
                                     answer = instance.VerifyReceipt(now, input);
@@ -117,7 +134,7 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
                                     answer = instance.VerifySignedData(now, input);
                                     break;
                                 default:
-                                    answer = instance.VerifyReceiptEndpoint((int)(long)row["env"]!, now, input);
+                                    answer = instance.VerifyReceiptEndpoint(row.GetProperty("env").GetInt32(), now, input);
                                     break;
                             }
                         }
@@ -169,12 +186,12 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
             {
                 if (line.Contains("\"" + id + "\"", StringComparison.Ordinal))
                 {
-                    OrderedMap row = Json.ParseObject(line);
+                    JsonElement row = Row(line);
                     return (
-                        Convert.FromBase64String((string)row["b64"]!),
-                        Utf8.GetBytes((string)row["config"]!),
-                        (string)row["fn"]!,
-                        row["now"] is null ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : (long)row["now"]!);
+                        Convert.FromBase64String(Text(row, "b64")),
+                        Utf8.GetBytes(Text(row, "config")),
+                        Text(row, "fn"),
+                        Now(row));
                 }
             }
 

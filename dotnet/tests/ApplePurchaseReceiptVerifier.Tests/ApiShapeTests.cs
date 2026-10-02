@@ -339,10 +339,10 @@ public class ApiShapeTests
 
     private static IEnumerable<string> ReasonCodesFromSchema()
     {
-        OrderedMap schema = Json.ParseObject(
+        JsonMap schema = TestJson.ParseObject(
             System.IO.File.ReadAllText(System.IO.Path.Combine(Fixtures070.Root, "cases.schema.json")));
-        OrderedMap defs = (OrderedMap)schema["$defs"]!;
-        OrderedMap reason = (OrderedMap)defs["reason"]!;
+        JsonMap defs = (JsonMap)schema["$defs"]!;
+        JsonMap reason = (JsonMap)defs["reason"]!;
         foreach (object? code in (List<object?>)reason["enum"]!)
         {
             yield return (string)code!;

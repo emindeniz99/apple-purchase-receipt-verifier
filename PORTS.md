@@ -89,14 +89,15 @@ the contract.
 - Both caps are Apple's: 3,145,728 bytes answered, 3,145,729 refused with
   HTTP 413, counted in UTF-8 bytes (measured 2026-09-23, COMPARISON.md).
   `fixtures/cases.json` pins them as a MUST, and no caller can change
-  either cap. Go and Swift no longer export them as constants; an input
-  over a cap is `TOO_LARGE` (DECISIONS.md R41).
+  either cap. Go, Swift and Python no longer export them as constants; an
+  input over a cap is `TOO_LARGE` (DECISIONS.md R41).
 - A `Config` is built one way per package, in the language's idiom
   (DECISIONS.md R41): `Config(roots=..., clock=...)` in Python,
   `Config.new(roots:, clock:)` in Ruby, `new Config(roots: ..., clock: ...)`
   in PHP, `Config::default()` or `Config::builder()` in Rust. Python's
-  `Config.create`/`Config.defaults`, Ruby's `Config.builder`, PHP's
-  `ConfigBuilder` and Rust's `Config::defaults()` are gone.
+  `Config.create`/`Config.defaults`, Ruby's `Config.builder` and
+  `Config.defaults`, PHP's `ConfigBuilder` and `Config::defaults()`, and
+  Rust's `Config::defaults()` are gone.
 - `receipt-data` and `x5c` entries are canonical standard base64 only, as
   Apple's `verifyReceipt` was measured to accept it (THREAT-MODEL.md
   §3.8). The module decodes them; no wrapper has a base64 decoder of its

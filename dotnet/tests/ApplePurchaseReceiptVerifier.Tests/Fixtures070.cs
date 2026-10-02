@@ -14,7 +14,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// </summary>
 internal static class Fixtures070
 {
-    internal static readonly OrderedMap Cases = LoadCases();
+    internal static readonly JsonMap Cases = LoadCases();
 
     internal static readonly string Root = FindFixturesDirectory();
 
@@ -31,8 +31,8 @@ internal static class Fixtures070
         }
     }
 
-    private static OrderedMap Registry =>
-        Cases["fixtures"] as OrderedMap ?? throw new InvalidOperationException("cases.json has no fixtures map");
+    private static JsonMap Registry =>
+        Cases["fixtures"] as JsonMap ?? throw new InvalidOperationException("cases.json has no fixtures map");
 
     /// <summary>The fixture's logical bytes, per its codec, digest-checked.</summary>
     internal static byte[] Bytes(string id)
@@ -45,7 +45,7 @@ internal static class Fixtures070
             }
         }
 
-        if (Registry[id] is not OrderedMap entry)
+        if (Registry[id] is not JsonMap entry)
         {
             throw new InvalidOperationException($"harness error: cases.json registers no fixture \"{id}\"");
         }
@@ -90,7 +90,7 @@ internal static class Fixtures070
 
     internal static string Codec(string id)
     {
-        if (Registry[id] is not OrderedMap entry)
+        if (Registry[id] is not JsonMap entry)
         {
             throw new InvalidOperationException($"harness error: cases.json registers no fixture \"{id}\"");
         }
@@ -112,7 +112,7 @@ internal static class Fixtures070
         return builder.ToString();
     }
 
-    private static string Str(OrderedMap map, string key) =>
+    private static string Str(JsonMap map, string key) =>
         map[key] as string ?? throw new InvalidOperationException($"harness error: missing \"{key}\"");
 
     private static string Hex(byte[] value)
@@ -126,9 +126,9 @@ internal static class Fixtures070
         return builder.ToString();
     }
 
-    private static OrderedMap LoadCases()
+    private static JsonMap LoadCases()
     {
-        return Json.ParseObject(File.ReadAllText(Path.Combine(FindFixturesDirectory(), "cases.json")));
+        return TestJson.ParseObject(File.ReadAllText(Path.Combine(FindFixturesDirectory(), "cases.json")));
     }
 
     private static string FindFixturesDirectory()

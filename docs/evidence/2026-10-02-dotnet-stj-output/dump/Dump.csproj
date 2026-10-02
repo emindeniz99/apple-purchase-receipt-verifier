@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ApplePurchaseReceiptVerifier.CorpusRun</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);SYSLIB0057;CS8600;CS8602;CS8604</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(AprvLib)" SetTargetFramework="TargetFramework=$(LibTfm)" />
+  </ItemGroup>
+</Project>

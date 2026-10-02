@@ -7,7 +7,7 @@ module ApplePurchaseReceiptVerifier
   # {Config}. Immutable, thread-safe once created, and cheap to share across
   # threads.
   #
-  #   verifier = ApplePurchaseReceiptVerifier::Verifier.create(Config.defaults)
+  #   verifier = ApplePurchaseReceiptVerifier::Verifier.create(Config.new)
   #   result = verifier.verify_receipt(base64)
   #   if result.verified?
   #     puts result.payload.to_json

@@ -73,7 +73,8 @@ recorded here.
   on the strongest maintained options for their ecosystems.
   **Superseded in 0.8.0 for the eight non-Java packages** by D17 and D18:
   no package keeps a parser of its own; the Rust core parses through
-  OpenSSL. Java keeps BouncyCastle.
+  OpenSSL. Java keeps BouncyCastle. DECISIONS.md R41 (2026-10-02) also
+  moved .NET's JSON reader and writer onto `System.Text.Json`.
 - **D11 — Observability is the caller's job** (owner decision,
   2026-08-05): this is a library; it exposes machine-readable reason codes
   and nothing else — no logging, no metrics, no callbacks. Integrators wire

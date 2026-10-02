@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.Json;
 using ApplePurchaseReceiptVerifier.Internal;
 
 namespace ApplePurchaseReceiptVerifier
@@ -122,32 +123,33 @@ namespace ApplePurchaseReceiptVerifier
         /// <c>null</c> for a missing field. Every port writes the same value;
         /// the bytes may differ (docs/design/0.7-api.md, "Our JSON").
         /// </summary>
-        public string ToJson()
-        {
-            OrderedMap json = new OrderedMap();
-            json.Set("receipt_type", ReceiptType);
-            json.Set("app_item_id", IdString(AppItemId));
-            json.Set("bundle_id", BundleId);
-            json.Set("bundle_id_bytes", Base64OrNull(_bundleIdBytes));
-            json.Set("application_version", ApplicationVersion);
-            json.Set("opaque_value", Base64OrNull(_opaqueValue));
-            json.Set("sha1_hash", Base64OrNull(_sha1Hash));
-            json.Set("receipt_creation_date_ms", ReceiptCreationDateMs);
-            json.Set("download_id", IdString(DownloadId));
-            json.Set("version_external_identifier", IdString(VersionExternalIdentifier));
+        public string ToJson() => Json.Write(WriteTo);
 
-            List<object?> inApp = new List<object?>(InApp.Count);
+        private void WriteTo(Utf8JsonWriter json)
+        {
+            json.WriteStartObject();
+            json.WriteString("receipt_type", ReceiptType);
+            json.WriteString("app_item_id", IdString(AppItemId));
+            json.WriteString("bundle_id", BundleId);
+            json.WriteString("bundle_id_bytes", Base64OrNull(_bundleIdBytes));
+            json.WriteString("application_version", ApplicationVersion);
+            json.WriteString("opaque_value", Base64OrNull(_opaqueValue));
+            json.WriteString("sha1_hash", Base64OrNull(_sha1Hash));
+            Json.WriteNumberOrNull(json, "receipt_creation_date_ms", ReceiptCreationDateMs);
+            json.WriteString("download_id", IdString(DownloadId));
+            json.WriteString("version_external_identifier", IdString(VersionExternalIdentifier));
+            json.WriteStartArray("in_app");
             foreach (InAppPurchase purchase in InApp)
             {
-                inApp.Add(purchase.ToJsonValue());
+                purchase.WriteTo(json);
             }
 
-            json.Set("in_app", inApp);
-            json.Set("original_purchase_date_ms", OriginalPurchaseDateMs);
-            json.Set("original_application_version", OriginalApplicationVersion);
-            json.Set("expiration_date_ms", ExpirationDateMs);
-            json.Set("unknown_attributes", UnknownAttributesJson(_unknownAttributes));
-            return Json.Write(json);
+            json.WriteEndArray();
+            Json.WriteNumberOrNull(json, "original_purchase_date_ms", OriginalPurchaseDateMs);
+            json.WriteString("original_application_version", OriginalApplicationVersion);
+            Json.WriteNumberOrNull(json, "expiration_date_ms", ExpirationDateMs);
+            WriteUnknownAttributes(json, _unknownAttributes);
+            json.WriteEndObject();
         }
 
         private static IReadOnlyList<InAppPurchase> CopyInApp(IReadOnlyList<InAppPurchase> inApp)
@@ -167,23 +169,24 @@ namespace ApplePurchaseReceiptVerifier
 
         internal static string? Base64OrNull(byte[]? value) => value is null ? null : Convert.ToBase64String(value);
 
-        internal static OrderedMap UnknownAttributesJson(IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknown)
+        /// <summary>The <c>unknown_attributes</c> member: types in ascending order, each value as base64.</summary>
+        internal static void WriteUnknownAttributes(Utf8JsonWriter json, IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknown)
         {
-            OrderedMap map = new OrderedMap();
+            json.WriteStartObject("unknown_attributes");
             List<int> keys = new List<int>(unknown.Keys);
             keys.Sort();
             foreach (int key in keys)
             {
-                List<object?> values = new List<object?>();
+                json.WriteStartArray(key.ToString(CultureInfo.InvariantCulture));
                 foreach (byte[] value in unknown[key])
                 {
-                    values.Add(Convert.ToBase64String(value));
+                    json.WriteStringValue(Convert.ToBase64String(value));
                 }
 
-                map.Set(key.ToString(CultureInfo.InvariantCulture), values);
+                json.WriteEndArray();
             }
 
-            return map;
+            json.WriteEndObject();
         }
     }
 }

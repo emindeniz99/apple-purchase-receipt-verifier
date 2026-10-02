@@ -308,7 +308,7 @@ abstract class ConformanceBase extends TestCase
         /** @var array{source: string, fixtures?: list<string>} $spec */
         $spec = Shape::asArray($config['trustedRoots'], 'config.trustedRoots');
         if ($spec['source'] === 'defaults') {
-            return Config::defaults()->roots;
+            return (new Config())->roots;
         }
         if ($spec['source'] !== 'fixtures') {
             throw new RuntimeException('harness error: unknown trustedRoots source "' . $spec['source'] . '"');
@@ -360,7 +360,7 @@ abstract class ConformanceBase extends TestCase
         $decoders = Shape::asArray($case['decoders'] ?? null, 'decoders');
         self::assertNotEmpty($texts, "harness error: {$id}: input.texts is empty");
         self::assertNotEmpty($decoders, "harness error: {$id}: decoders is empty");
-        $verifier = $factory(Config::defaults());
+        $verifier = $factory(new Config());
         $failures = [];
         foreach ($decoders as $decoder) {
             $decoder = Shape::asString($decoder, 'decoder');

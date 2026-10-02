@@ -74,7 +74,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     public void Case(string id)
     {
         Ran[id] = true;
-        OrderedMap kase = Find(id);
+        JsonMap kase = Find(id);
         string operation = Str(kase, "operation");
 
         if (operation == "decodeBase64")
@@ -85,7 +85,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         }
 
         long? maxMillis = kase.TryGetValue("maxMillis", out object? mm) ? (long?)mm : null;
-        OrderedMap expected = AsMap(kase["expected"]);
+        JsonMap expected = AsMap(kase["expected"]);
 
         if (maxMillis is long budget)
         {
@@ -103,7 +103,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         EvaluateCase(operation, kase, expected);
     }
 
-    private static void EvaluateCase(string operation, OrderedMap kase, OrderedMap expected)
+    private static void EvaluateCase(string operation, JsonMap kase, JsonMap expected)
     {
         string id = Str(kase, "id");
         object? outcome = RunCase(operation, kase);
@@ -111,12 +111,12 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         if (operation == "verifyReceiptEndpoint")
         {
             string responseJson = (string)outcome!;
-            object? response = Json.Parse(responseJson);
+            object? response = TestJson.Parse(responseJson);
             if (expected.TryGetValue("oneOf", out object? listedStatuses) && listedStatuses is List<object?> allowedStatuses)
             {
                 // Port-defined within a list: the response's /status must be
                 // listed, and nothing else is pinned.
-                object? status = response is OrderedMap body && body.TryGetValue("status", out object? value) ? value : null;
+                object? status = response is JsonMap body && body.TryGetValue("status", out object? value) ? value : null;
                 Assert.True(
                     allowedStatuses.Exists(allowed => SameJsonValue(allowed, status)),
                     $"{id}: answered status {Render(status)}, want one of {string.Join(", ", allowedStatuses)}");
@@ -148,7 +148,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
                 // Same value, not same bytes: whitespace, key order and
                 // escaping are free (docs/design/0.7-api.md "Our JSON").
                 Assert.True(
-                    SameJsonValue(Json.Parse(expectedJson), Json.Parse(actualJson)),
+                    SameJsonValue(TestJson.Parse(expectedJson), TestJson.Parse(actualJson)),
                     $"{id}: toJson value mismatch\n  want: {expectedJson}\n  got:  {actualJson}");
             }
         }
@@ -171,7 +171,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     }
 
     /// <summary>
-    /// Deep equality over the values <see cref="Json.Parse"/> produces:
+    /// Deep equality over the values <see cref="TestJson.Parse"/> produces:
     /// objects compare by key regardless of order, arrays element by
     /// element, and scalars by type and value, so <c>1</c> never equals
     /// <c>"1"</c> or <c>true</c>.
@@ -180,8 +180,8 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     {
         switch (a)
         {
-            case OrderedMap mapA:
-                if (b is not OrderedMap mapB || mapA.Count != mapB.Count)
+            case JsonMap mapA:
+                if (b is not JsonMap mapB || mapA.Count != mapB.Count)
                 {
                     return false;
                 }
@@ -224,7 +224,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
 
     /// <summary>
     /// The verdict alone, without reading the payload back. A listed outcome checks no field, and the
-    /// wrapper's own reader (depth 64) would refuse a verified payload that is nested deeper than that.
+    /// harness's reader (<see cref="Json.MaxDepth"/>) would refuse a verified payload nested deeper than that.
     /// </summary>
     private static (bool Verified, VerificationReason? Reason) ReadVerdict(string operation, object outcome)
     {
@@ -250,20 +250,20 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         {
             case VerificationResult<ReceiptPayload> receiptResult:
                 return receiptResult.Verified
-                    ? (true, Json.Parse(receiptResult.Payload!.ToJson()), null, null)
+                    ? (true, TestJson.Parse(receiptResult.Payload!.ToJson()), null, null)
                     : (false, null, receiptResult.Failure!.Reason, Describe(receiptResult.Failure!));
             case VerificationResult<JsonPayload> jwsResult:
                 return jwsResult.Verified
-                    ? (true, Json.Parse(jwsResult.Payload!.Json), null, null)
+                    ? (true, TestJson.Parse(jwsResult.Payload!.Json), null, null)
                     : (false, null, jwsResult.Failure!.Reason, Describe(jwsResult.Failure!));
             default:
                 throw new InvalidOperationException($"harness error: unexpected result type for \"{operation}\"");
         }
     }
 
-    private static void EvaluateFields(string id, object? root, OrderedMap expected)
+    private static void EvaluateFields(string id, object? root, JsonMap expected)
     {
-        if (expected.TryGetValue("fields", out object? fieldsValue) && fieldsValue is OrderedMap fields)
+        if (expected.TryGetValue("fields", out object? fieldsValue) && fieldsValue is JsonMap fields)
         {
             foreach (KeyValuePair<string, object?> field in fields)
             {
@@ -278,7 +278,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
             }
         }
 
-        if (expected.TryGetValue("lengths", out object? lengthsValue) && lengthsValue is OrderedMap lengths)
+        if (expected.TryGetValue("lengths", out object? lengthsValue) && lengthsValue is JsonMap lengths)
         {
             foreach (KeyValuePair<string, object?> length in lengths)
             {
@@ -339,9 +339,9 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         return false;
     }
 
-    private static object RunCase(string operation, OrderedMap kase)
+    private static object RunCase(string operation, JsonMap kase)
     {
-        OrderedMap configSpec = AsMap(kase["config"]);
+        JsonMap configSpec = AsMap(kase["config"]);
         Config.Builder builder = Config.CreateBuilder().Clock(Clock(kase));
         IReadOnlyList<X509Certificate2>? roots = Roots(configSpec);
         if (roots is not null)
@@ -355,21 +355,21 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         {
             case "verifyReceipt":
                 {
-                    OrderedMap input = AsMap(kase["input"]);
+                    JsonMap input = AsMap(kase["input"]);
                     string fixtureId = Str(input, "fixture");
                     return verifier.VerifyReceipt(Fixtures070.ForReceipt(fixtureId));
                 }
 
             case "verifySignedData":
                 {
-                    OrderedMap input = AsMap(kase["input"]);
+                    JsonMap input = AsMap(kase["input"]);
                     string fixtureId = Str(input, "fixture");
                     return verifier.VerifySignedData(Fixtures070.ForSignedData(fixtureId));
                 }
 
             case "verifyReceiptEndpoint":
                 {
-                    OrderedMap input = AsMap(kase["input"]);
+                    JsonMap input = AsMap(kase["input"]);
                     string environmentToken = Str(configSpec, "environment");
                     AppleEnvironment environment = environmentToken switch
                     {
@@ -386,9 +386,9 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
                     else
                     {
                         string fixtureId = Str(input, "fixture");
-                        OrderedMap body = new();
+                        JsonMap body = new();
                         body.Set("receipt-data", Fixtures070.ForReceipt(fixtureId));
-                        requestJson = Json.Write(body);
+                        requestJson = TestJson.Write(body);
                     }
 
                     return verifier.VerifyReceiptEndpoint(environment, requestJson);
@@ -400,9 +400,9 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     }
 
     /// <summary>The registered trust anchors, or <see langword="null"/> for the defaults (the module's built-in Apple roots).</summary>
-    private static IReadOnlyList<X509Certificate2>? Roots(OrderedMap config)
+    private static IReadOnlyList<X509Certificate2>? Roots(JsonMap config)
     {
-        OrderedMap spec = AsMap(config["trustedRoots"]);
+        JsonMap spec = AsMap(config["trustedRoots"]);
         if (Str(spec, "source") == "defaults")
         {
             return null;
@@ -419,9 +419,9 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         return roots;
     }
 
-    private static Func<long> Clock(OrderedMap kase)
+    private static Func<long> Clock(JsonMap kase)
     {
-        if (!kase.TryGetValue("clock", out object? clock) || clock is not OrderedMap map)
+        if (!kase.TryGetValue("clock", out object? clock) || clock is not JsonMap map)
         {
             return () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }
@@ -444,10 +444,10 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     /// base64 (or, for the empty text, says it is empty: the core refuses it
     /// before decoding). The decoded bytes are checked by the core's own tests.
     /// </summary>
-    private static List<string> DecodeBase64Failures(OrderedMap kase)
+    private static List<string> DecodeBase64Failures(JsonMap kase)
     {
         string id = Str(kase, "id");
-        OrderedMap expected = AsMap(kase["expected"]);
+        JsonMap expected = AsMap(kase["expected"]);
         bool ok = Str(expected, "status") == "ok";
         List<object?> texts = AsMap(kase["input"])["texts"] as List<object?>
             ?? throw new InvalidOperationException("harness error: input.texts is not a list");
@@ -490,12 +490,12 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     /// <summary>A JWS whose header carries <paramref name="entry"/> as its first <c>x5c</c> element, then two more.</summary>
     private static string JwsCarryingX5c(string entry)
     {
-        OrderedMap header = new();
+        JsonMap header = new();
         header.Set("alg", "ES256");
         header.Set("x5c", new List<object?> { entry, "AAAA", "AAAA" });
         string Segment(string json) =>
             Convert.ToBase64String(Encoding.UTF8.GetBytes(json)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        return Segment(Json.Write(header)) + "." + Segment("{}") + ".AAAA";
+        return Segment(TestJson.Write(header)) + "." + Segment("{}") + ".AAAA";
     }
 
     private static string Escape(string text)
@@ -555,11 +555,11 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         }
     }
 
-    private static OrderedMap Find(string id)
+    private static JsonMap Find(string id)
     {
         foreach (object? entry in CaseList)
         {
-            OrderedMap map = AsMap(entry);
+            JsonMap map = AsMap(entry);
             if (Str(map, "id") == id)
             {
                 return map;
@@ -569,9 +569,9 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         throw new InvalidOperationException($"harness error: no case with id \"{id}\"");
     }
 
-    private static OrderedMap AsMap(object? value) =>
-        value as OrderedMap ?? throw new InvalidOperationException("harness error: expected a JSON object");
+    private static JsonMap AsMap(object? value) =>
+        value as JsonMap ?? throw new InvalidOperationException("harness error: expected a JSON object");
 
-    private static string Str(OrderedMap map, string key) =>
+    private static string Str(JsonMap map, string key) =>
         map[key] as string ?? throw new InvalidOperationException($"harness error: missing \"{key}\"");
 }

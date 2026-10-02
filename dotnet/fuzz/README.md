@@ -1,15 +1,15 @@
 # Fuzz targets
 
-Five [SharpFuzz] targets under [libFuzzer], over the JSON reader this package
-still carries and the verifiers a consumer calls. `run.sh` pairs each with the
+Five [SharpFuzz] targets under [libFuzzer], over the options this package
+writes and reads JSON with and the verifiers a consumer calls. `run.sh` pairs each with the
 shared fixtures that seed it, so nothing under `fixtures/` is copied here.
 
 Since 0.8 the parsers behind the verifiers are inside `aprv.wasm`, and
 SharpFuzz instruments only .NET IL: coverage guidance reaches the wrapper
-(the host layer and the JSON reader), and the module is exercised as a
-black box. The targets keep asserting what a caller relies on: nothing
-escapes, and an accepted input fails against an unrelated anchor set. The
-core's own fuzz jobs cover its parsers.
+(the host layer and its JSON code over `System.Text.Json`), and the module
+is exercised as a black box. The targets keep asserting what a caller
+relies on: nothing escapes, and an accepted input fails against an unrelated
+anchor set. The core's own fuzz jobs cover its parsers.
 
 ```bash
 sudo apt-get install -y clang          # the driver needs -fsanitize=fuzzer
@@ -21,7 +21,7 @@ JOBS=4 ./run.sh all 300                # four at a time
 
 | target | what it reaches | invariant beyond "no exception leaks" |
 |---|---|---|
-| `json` | `Internal.Json.Parse` on raw bytes, then `Json.Write` | what the reader accepts, the writer emits and the reader reads back to an equal value |
+| `json` | `Internal.Json.Write` on a string (the bytes as UTF-8, or as UTF-16 code units when they are not UTF-8), then `Json.Parse` | the writer never throws, and the reader reads back the same string, each lone surrogate as U+FFFD |
 | `receipt` | `IVerifier.VerifyReceipt` on the DER re-encoded as canonical base64: CMS (BER), payload, chain, signature | an accepted receipt fails against an unrelated anchor set |
 | `receipt-base64` | `IVerifier.VerifyReceipt(string)` on the fuzzer's bytes as text — the string a client sends | — |
 | `jws` | `IVerifier.VerifySignedData` | a JWS accepted under the fixture root is refused under Apple's bundled roots |
@@ -92,7 +92,7 @@ harness's formatting out of the shipped package and the drift gate. For the
 same reason it opts out of central package management and pins SharpFuzz
 inline, leaving `Directory.Packages.props` a description of what ships.
 
-The one internal parser a target reaches directly, `Internal.Json`, is
+The one internal class a target reaches directly, `Internal.Json`, is
 reached by reflection (`Internals.cs`), bound once at startup. The alternative is an `InternalsVisibleTo` entry, which would mean
 changing the assembly that ships in order to test it. The reflection costs
 nothing per execution, and because it is the library's own IL that runs,

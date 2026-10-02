@@ -1,152 +1,115 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.Json;
 using ApplePurchaseReceiptVerifier.Internal;
 using Xunit;
-using JsonException = ApplePurchaseReceiptVerifier.Internal.JsonException;
 
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// The hand-rolled JSON reader and writer. It exists because
-/// <c>System.Text.Json</c> is a package below net8.0 and an assembly compiled
-/// against a newer one than the host ships cannot be loaded, so this code path
-/// is the same on every target framework — which means its semantics have to be
-/// pinned rather than inherited.
+/// The options <c>Internal.Json</c> puts on <c>System.Text.Json</c>. Before
+/// 0.8 this package carried a hand-written reader and writer. Since then
+/// <see cref="ReceiptPayload.ToJson"/> escapes the way the library's
+/// <c>UnsafeRelaxedJsonEscaping</c> does, so its text can differ from 0.7's in
+/// escaping while the value it carries stays the same (the owner's decision
+/// of 2026-10-02, Q20).
 /// </summary>
 public class JsonTests
 {
-    [Fact]
-    public void ObjectsArraysScalarsAndNullsRoundTrip()
-    {
-        object? parsed = Json.Parse(
-            "{\"a\":1,\"b\":\"two\",\"c\":[1,2,3],\"d\":null,\"e\":true,\"f\":{\"g\":false}}");
-        OrderedMap map = Assert.IsType<OrderedMap>(parsed);
-
-        Assert.Equal(1L, map["a"]);
-        Assert.Equal("two", map["b"]);
-        Assert.Equal(3, ((List<object?>)map["c"]!).Count);
-        Assert.Null(map["d"]);
-        Assert.Equal(true, map["e"]);
-        Assert.Equal(false, ((OrderedMap)map["f"]!)["g"]);
-    }
-
-    [Fact]
-    public void IntegralNumbersBecomeLongAndOthersBecomeDouble()
-    {
-        OrderedMap map = Json.ParseObject(
-            "{\"i\":1722945600000,\"n\":-7,\"f\":1697679936056.485,\"e\":1e3}");
-        Assert.Equal(1722945600000L, map["i"]);
-        Assert.Equal(-7L, map["n"]);
-        Assert.IsType<double>(map["f"]);
-        Assert.IsType<double>(map["e"]);
-    }
-
-    [Fact]
-    public void TheLastDuplicateKeyWins()
-    {
-        // JSON.parse, json.loads and Jackson all do this; so must we, or the
-        // ports would disagree about what a payload claims.
-        OrderedMap map = Json.ParseObject("{\"a\":1,\"a\":2}");
-        Assert.Equal(2L, map["a"]);
-        Assert.Single(map);
-    }
-
-    [Fact]
-    public void KeyOrderIsPreserved()
-    {
-        OrderedMap map = Json.ParseObject("{\"z\":1,\"a\":2,\"m\":3}");
-        Assert.Equal(new[] { "z", "a", "m" }, map.Keys);
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData("{")]
-    [InlineData("}")]
-    [InlineData("{\"a\"}")]
-    [InlineData("{\"a\":}")]
-    [InlineData("{\"a\":1,}")]
-    [InlineData("[1,]")]
-    [InlineData("{'a':1}")]
-    [InlineData("nul")]
-    [InlineData("truex")]
-    [InlineData("01")]
-    [InlineData("--1")]
-    [InlineData("{\"a\":1} trailing")]
-    [InlineData("\"unterminated")]
-    [InlineData("\"\\q\"")]
-    [InlineData("\"\\u00\"")]
-    public void MalformedDocumentsAreRejected(string json)
-    {
-        Assert.Throws<JsonException>(() => Json.Parse(json));
-    }
-
-    [Fact]
-    public void RawControlCharactersInStringsAreRejected()
-    {
-        Assert.Throws<JsonException>(() => Json.Parse("{\"a\":\"line\nbreak\"}"));
-    }
-
-    [Fact]
-    public void EscapesAreDecoded()
-    {
-        OrderedMap map = Json.ParseObject(
-            "{\"a\":\"q\\\"\\\\\\/\\b\\f\\n\\r\\t\\u00e9\\u0041\"}");
-        Assert.Equal("q\"\\/\b\f\n\r\té A".Replace(" ", string.Empty, StringComparison.Ordinal), map["a"]);
-    }
-
-    [Fact]
-    public void NestingDeeperThanTheBoundIsRejected()
-    {
-        // 64 is the other ports' number, and the boundary is exact: 64 open
-        // containers parse, the 65th is refused.
-        Assert.Equal(64, Json.MaxDepth);
-        string atBound = new string('[', Json.MaxDepth) + new string(']', Json.MaxDepth);
-        Assert.NotNull(Json.Parse(atBound));
-
-        string overBound = new string('[', Json.MaxDepth + 1) + new string(']', Json.MaxDepth + 1);
-        Assert.Throws<JsonException>(() => Json.Parse(overBound));
-    }
-
-    [Fact]
-    public void InputLongerThanTheBoundIsRejected()
-    {
-        Assert.Throws<JsonException>(() => Json.Parse("{\"a\":1}", maxLength: 3));
-    }
-
-    [Fact]
-    public void ParseObjectRejectsAValueThatIsNotAnObject()
-    {
-        foreach (string json in new[] { "[]", "1", "\"x\"", "null", "true" })
-        {
-            Assert.Throws<JsonException>(() => Json.ParseObject(json));
-        }
-    }
+    private static string Write(string value) => Json.Write(json => json.WriteStringValue(value));
 
     [Fact]
     public void TheWriterEscapesWhatItMustAndNothingElse()
     {
-        OrderedMap map = new();
-        map.Set("quote\"", "back\\slash");
-        map.Set("control", "\u0001");
-        map.Set("unicode", "héllo");
+        string written = Json.Write(json =>
+        {
+            json.WriteStartObject();
+            json.WriteString("quote\"", "back\\slash");
+            json.WriteString("control", "\u0001");
+            json.WriteString("unicode", "héllo");
+            json.WriteEndObject();
+        });
         Assert.Equal(
             "{\"quote\\\"\":\"back\\\\slash\",\"control\":\"\\u0001\",\"unicode\":\"héllo\"}",
-            Json.Write(map));
+            written);
+    }
+
+    /// <summary>
+    /// The escapes <c>UnsafeRelaxedJsonEscaping</c> writes: the five short
+    /// forms, <c>\u</c> with upper-case hex for the other controls, and the
+    /// characters it still escapes (U+007F to U+009F, U+2028 and U+2029,
+    /// private use, U+FEFF, the noncharacters, unassigned code points, and
+    /// every character outside the BMP as a surrogate pair). Up to 0.7 the
+    /// package wrote all of these but the controls as themselves and its hex
+    /// in lower case; the text changed, so each row also reads back to the
+    /// string it was written from (measured on .NET 8.0.31 and 10.0.12).
+    /// </summary>
+    [Fact]
+    public void TheWriterEscapesTheWayTheRelaxedEncoderDoesAndKeepsTheValue()
+    {
+        (string Value, string Expected)[] cases =
+        {
+            ("\b\f\n\r\t", "\"\\b\\f\\n\\r\\t\""),
+            ("\u0000\u001f", "\"\\u0000\\u001F\""),
+            ("\u000b\u001b", "\"\\u000B\\u001B\""),
+            ("/", "\"/\""),
+            ("<script>&'+`", "\"<script>&'+`\""),
+            ("\u007f\u0080\u00ad", "\"\\u007F\\u0080\u00ad\""),
+            ("\u2028\u2029", "\"\\u2028\\u2029\""),
+            ("\ue000\ufeff\ufffe\uffff", "\"\\uE000\\uFEFF\\uFFFE\\uFFFF\""),
+            ("\u0378", "\"\\u0378\""),
+            ("caf\u00e9 \U0001F600 \U0010FFFF", "\"caf\u00e9 \\uD83D\\uDE00 \\uDBFF\\uDFFF\""),
+        };
+        foreach ((string value, string expected) in cases)
+        {
+            string written = Write(value);
+            Assert.Equal(expected, written);
+            using (JsonDocument read = Json.Parse(written))
+            {
+                Assert.Equal(value, read.RootElement.GetString());
+            }
+        }
+    }
+
+    /// <summary>
+    /// A lone surrogate has no UTF-8 form. Only a payload built by hand can
+    /// hold one (the module's strings are Rust strings); it is written as
+    /// U+FFFD, escaped as <c>\uFFFD</c>, rather than making
+    /// <see cref="ReceiptPayload.ToJson"/> throw.
+    /// </summary>
+    [Fact]
+    public void ALoneSurrogateIsWrittenAsTheReplacementCharacter()
+    {
+        (string Value, string Expected)[] cases =
+        {
+            ("\ud800", "\"\\uFFFD\""),
+            ("a\udc00b", "\"a\\uFFFDb\""),
+            ("x\ud83d", "\"x\\uFFFD\""),
+            ("\udc00\ud800", "\"\\uFFFD\\uFFFD\""),
+        };
+        foreach ((string value, string expected) in cases)
+        {
+            Assert.Equal(expected, Write(value));
+        }
     }
 
     [Fact]
     public void TheWriterIsCultureIndependent()
     {
-        System.Globalization.CultureInfo original = System.Threading.Thread.CurrentThread.CurrentCulture;
+        CultureInfo original = System.Threading.Thread.CurrentThread.CurrentCulture;
         try
         {
             System.Threading.Thread.CurrentThread.CurrentCulture = new CultureInfo("de-DE");
-            OrderedMap map = new();
-            map.Set("i", 1722945600000L);
-            map.Set("d", 1.5d);
-            Assert.Equal("{\"i\":1722945600000,\"d\":1.5}", Json.Write(map));
+            string written = Json.Write(json =>
+            {
+                json.WriteStartObject();
+                json.WriteNumber("i", 1722945600000L);
+                json.WriteNumber("n", -42L);
+                json.WriteNumber("max", long.MaxValue);
+                json.WriteEndObject();
+            });
+            Assert.Equal("{\"i\":1722945600000,\"n\":-42,\"max\":9223372036854775807}", written);
         }
         finally
         {
@@ -154,107 +117,75 @@ public class JsonTests
         }
     }
 
-    /// <summary>
-    /// What the reader accepts, the writer emits and the reader reads back to
-    /// the same <em>value</em> — but not always to the same CLR type.
-    /// </summary>
-    /// <remarks>
-    /// <c>fuzz/</c>'s <c>json</c> target asserts this on every input, so the
-    /// rule it asserts belongs here rather than only there. The type is not
-    /// preserved because the writer renders an integral double without a
-    /// decimal point: <c>-2.5e10</c> reads as a <see cref="double"/>, writes as
-    /// <c>-25000000000</c> and reads back as a <see cref="long"/>. That is
-    /// lossless — every such rendering is exact — and it is why the endpoint,
-    /// whose reply goes through <c>Json.Write</c>, can answer a number a client
-    /// re-reads as an integer.
-    /// </remarks>
     [Fact]
-    public void TheWriterEmitsWhatTheReaderReadsBackToTheSameValue()
+    public void AMissingValueIsWrittenAsNull()
     {
-        OrderedMap map = Json.ParseObject(
-            "{\"big\":-2.5e10,\"small\":1.5,\"int\":1722945600000,\"exp\":1e20}");
-
-        Assert.Equal(-2.5e10d, map["big"]);
-        Assert.Equal(1722945600000L, map["int"]);
-
-        OrderedMap again = Json.ParseObject(Json.Write(map));
-
-        // Same value, and for the integral double a narrower type.
-        Assert.Equal(-25000000000L, again["big"]);
-        Assert.Equal(1.5d, again["small"]);
-        Assert.Equal(1722945600000L, again["int"]);
-        Assert.Equal(1e20d, again["exp"]);
-    }
-
-    /// <summary>
-    /// A number inside the 1,000-digit bound whose double is infinite is still
-    /// valid JSON, and Jackson accepts it, so the reader must too. The writer
-    /// refuses an infinite double, so reading it as one made the endpoint's and
-    /// <c>ToJson</c>'s writer unable to emit what the reader had accepted; the
-    /// <c>json</c> fuzz target found that. The reader keeps the text instead.
-    /// </summary>
-    [Fact]
-    public void ANumberTooLargeForADoubleIsReadAcceptedAndWrittenUnchanged()
-    {
-        string digits = "9" + new string('0', Json.MaxNumberDigits - 1);
-        foreach (string literal in new[] { "1e999", "-1e999", "1E+400", digits, "-" + digits })
+        string written = Json.Write(json =>
         {
-            string json = "{\"n\":" + literal + "}";
-            OrderedMap map = Json.ParseObject(json);
-
-            Assert.Equal(literal, Assert.IsType<JsonNumberLiteral>(map["n"]).Text);
-            Assert.Equal(json, Json.Write(map));
-            Assert.Equal(map["n"], Json.ParseObject(Json.Write(map))["n"]);
-        }
-
-        // The digit bound still refuses one digit more.
-        Assert.Throws<JsonException>(() => Json.Parse(digits + "0"));
+            json.WriteStartObject();
+            json.WriteString("s", (string?)null);
+            Json.WriteNumberOrNull(json, "n", null);
+            Json.WriteBooleanOrNull(json, "b", null);
+            Json.WriteNumberOrNull(json, "n2", 0L);
+            Json.WriteBooleanOrNull(json, "b2", false);
+            json.WriteEndObject();
+        });
+        Assert.Equal("{\"s\":null,\"n\":null,\"b\":null,\"n2\":0,\"b2\":false}", written);
     }
 
+    /// <summary>
+    /// <see cref="ReceiptPayload.ToJson"/> byte for byte: member order, ids as
+    /// strings, dates as integers, bytes as base64, unknown attributes by
+    /// ascending type. Up to 0.7 the emoji was written as itself; the relaxed
+    /// encoder writes it as an escaped surrogate pair.
+    /// </summary>
     [Fact]
-    public void TheWriterRefusesValuesJsonCannotCarry()
+    public void ToJsonWritesTheWiresShapeByteForByte()
     {
-        OrderedMap map = new();
-        map.Set("nan", double.NaN);
-        Assert.Throws<JsonException>(() => Json.Write(map));
+        Assert.Equal(
+            "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":\"1234567890123456789\",\"bundle_id\":\"com.example.app\","
+            + "\"bundle_id_bytes\":\"DA9j\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBA==\",\"sha1_hash\":\"/wCA\","
+            + "\"receipt_creation_date_ms\":1722945600000,\"download_id\":\"-42\",\"version_external_identifier\":\"9007199254740993\","
+            + "\"in_app\":[{\"quantity\":2,\"product_id\":\"com.example.coins\",\"transaction_id\":\"1000000123456789\","
+            + "\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"1000000123456789\",\"original_purchase_date_ms\":1705320000000,"
+            + "\"expires_date_ms\":1705323600000,\"web_order_line_item_id\":\"9223372036854775807\",\"cancellation_date_ms\":1705330000000,"
+            + "\"is_trial_period\":true,\"is_in_intro_offer_period\":false,\"unknown_attributes\":{\"1799\":[\"Bwc=\"]}},"
+            + "{\"quantity\":null,\"product_id\":\"caf\u00e9 \\uD83D\\uDE00 \\\"quoted\\\" \\\\ back\",\"transaction_id\":null,\"purchase_date_ms\":null,"
+            + "\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,"
+            + "\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],"
+            + "\"original_purchase_date_ms\":1705320000000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":1893456000000,"
+            + "\"unknown_attributes\":{\"9999\":[\"AQID\",\"BAU=\"],\"31337\":[\"CQ==\"]}}",
+            SyntheticAnswers.Receipt().ToJson());
     }
 
-    /// <summary>The reader is the one that reads every conformance vector.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("{")]
+    [InlineData("{\"a\":1,}")]
+    [InlineData("[1,]")]
+    [InlineData("{'a':1}")]
+    [InlineData("01")]
+    [InlineData("+1")]
+    [InlineData("NaN")]
+    [InlineData("{\"a\":1} trailing")]
+    [InlineData("{\"a\":1} // comment")]
+    [InlineData("\"\\q\"")]
+    [InlineData("\"\\u00\"")]
+    [InlineData("\"\\u 041\"")]
+    [InlineData("{\"a\":\"line\nbreak\"}")]
+    public void TheReaderRefusesWhatRfc8259Does(string json)
+    {
+        Assert.ThrowsAny<JsonException>(() => Json.Parse(json).Dispose());
+    }
+
+    /// <summary>The harness's reader is the one that reads every conformance vector.</summary>
     [Fact]
     public void TheCasesFileItselfParses()
     {
         Assert.True(Fixtures070.Cases.ContainsKey("cases"));
         Assert.True(Fixtures070.Cases.ContainsKey("fixtures"));
         Assert.Equal(2L, Fixtures070.Cases["schemaVersion"]);
+        Assert.IsType<List<object?>>(Fixtures070.Cases["cases"]);
     }
-
-    /// <summary>
-    /// RFC 8259 requires exactly four hex digits after <c>\u</c>. .NET's
-    /// <c>NumberStyles.HexNumber</c> is <c>AllowLeadingWhite |
-    /// AllowTrailingWhite | AllowHexSpecifier</c>, so parsing the four-character
-    /// window with it accepts a space, tab, CR or LF among the digits and reads
-    /// a one-to-three-digit value — a grammar wider than every other port's
-    /// (JSON.parse, json.loads, Jackson all reject these).
-    /// </summary>
-    [Theory]
-    [InlineData("{\"k\":\"\\u 041\"}")]
-    [InlineData("{\"k\":\"\\u041 \"}")]
-    [InlineData("{\"k\":\"\\u\t041\"}")]
-    [InlineData("{\"k\":\"\\u\r\n41\"}")]
-    [InlineData("{\"k\":\"\\u  41\"}")]
-    [InlineData("{\"k\":\"\\u41  \"}")]
-    public void WhitespaceIsNotAHexDigitInAUnicodeEscape(string json)
-    {
-        Assert.Throws<JsonException>(() => Json.Parse(json));
-    }
-
-    [Theory]
-    [InlineData("{\"k\":\"\\u0041\"}", "A")]
-    [InlineData("{\"k\":\"\\u00e9\"}", "\u00e9")]
-    [InlineData("{\"k\":\"\\uD83D\\uDE00\"}", "\U0001F600")]
-    public void AWellFormedUnicodeEscapeStillDecodes(string json, string expected)
-    {
-        Assert.Equal(expected, Json.ParseObject(json)["k"]);
-    }
-
 }

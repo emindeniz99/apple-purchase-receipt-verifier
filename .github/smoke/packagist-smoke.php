@@ -23,7 +23,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 require 'vendor/autoload.php';
 
 $receiptB64 = trim((string) file_get_contents('receipt-sandbox-g5.b64'));
-$verifier = Verifier::create(Config::defaults());
+$verifier = Verifier::create(new Config());
 
 // A real Apple-signed receipt against the real pinned root, which lives inside
 // aprv.wasm inside the binary the installer fetched.

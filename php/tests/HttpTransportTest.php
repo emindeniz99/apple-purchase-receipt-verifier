@@ -170,7 +170,7 @@ final class HttpTransportTest extends TestCase
     public function testTheFaçadeAnswersEachProblemAsItsOutcome(): void
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => self::problem(413, ['code' => 'PAYLOAD_TOO_LARGE'])]);
-        $verifier = Verifier::create(Config::defaults(), new HttpTransport($server->url));
+        $verifier = Verifier::create(new Config(), new HttpTransport($server->url));
         self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifyReceipt('x'))->reason);
         self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Production, '{}'));
 
@@ -190,7 +190,7 @@ final class HttpTransportTest extends TestCase
     public function testAServerThatIsGoneIsAProcessFailureNotAVerdict(): void
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{"status":0}']]);
-        $verifier = Verifier::create(Config::defaults(), new HttpTransport($server->url, timeoutSeconds: 3));
+        $verifier = Verifier::create(new Config(), new HttpTransport($server->url, timeoutSeconds: 3));
         $server->stop();
 
         $result = $verifier->verifyReceipt('x');
@@ -357,12 +357,12 @@ final class HttpTransportTest extends TestCase
         $server = Aprv::startServer(null, $token);
         try {
             // The right token: create and a call both work.
-            $verifier = Verifier::create(Config::defaults(), new HttpTransport($server->url, $token));
+            $verifier = Verifier::create(new Config(), new HttpTransport($server->url, $token));
             self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Sandbox, 'not json'));
 
             foreach ([null, 'wrong'] as $bad) {
                 try {
-                    Verifier::create(Config::defaults(), new HttpTransport($server->url, $bad));
+                    Verifier::create(new Config(), new HttpTransport($server->url, $bad));
                     self::fail('a server with a token must refuse a client without it');
                 } catch (InvalidArgumentException $e) {
                     self::assertStringContainsString('token', $e->getMessage());
@@ -377,7 +377,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = Aprv::startServer();
         try {
-            $verifier = Verifier::create(Config::defaults(), new HttpTransport($server->url));
+            $verifier = Verifier::create(new Config(), new HttpTransport($server->url));
             $over = str_repeat('A', 3145728 + 1);
 
             self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifyReceipt($over))->reason);
@@ -398,7 +398,7 @@ final class HttpTransportTest extends TestCase
         $server = Aprv::startServer($file);
         try {
             try {
-                Verifier::create(Config::defaults(), new HttpTransport($server->url));
+                Verifier::create(new Config(), new HttpTransport($server->url));
                 self::fail('the server runs one custom root, the Config asks for the built-in ones');
             } catch (InvalidArgumentException) {
                 $this->addToAssertionCount(1);

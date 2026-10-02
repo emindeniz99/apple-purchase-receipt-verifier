@@ -17,7 +17,7 @@
 #   require "apple_purchase_receipt_verifier"
 #
 #   verifier = ApplePurchaseReceiptVerifier::Verifier.create(
-#     ApplePurchaseReceiptVerifier::Config.defaults
+#     ApplePurchaseReceiptVerifier::Config.new
 #   )
 #   result = verifier.verify_receipt(receipt_data)
 module ApplePurchaseReceiptVerifier

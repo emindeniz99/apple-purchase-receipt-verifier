@@ -14,8 +14,9 @@ export ABI and chose the canonical ABI after two spike rounds (R23), and
 adopted the standards of R34. Phase 7 moves the outcomes into PLAN.md as
 D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
-2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, and
-the owner's decisions of 2026-10-01 added R38 to R41 and rows to R20.
+2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
+owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
+those of 2026-10-02 amended R41.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1280,8 +1281,9 @@ caller's root bytes as they are, and the core reads DER or PEM.
 
 ## R41. The public API in 0.8: internals hidden, one way to build a Config, two Java artifactIds
 
-**Status: accepted** (owner, 2026-10-01). Settles the API items R36 left
-open in ROADMAP.md (item 5) and the Java artifact naming (item 11).
+**Status: accepted** (owner, 2026-10-01; amended 2026-10-02). Settles the
+API items R36 left open in ROADMAP.md (item 5) and the Java artifact
+naming (item 11).
 
 0.8.0 is the first release of the Wasm-backed packages. A public name
 removed now breaks no one who has built on those packages; removed after
@@ -1312,9 +1314,12 @@ the release, it is a breaking change for every caller. So the audit of
     `Config.defaults` go; the constructor takes any iterable of roots,
     and `None` for either argument means its default, as `create` did.
   - Ruby: `Config.new(roots:, clock:)`. `Config.builder` and
-    `Config::Builder` go.
+    `Config::Builder` go, and on 2026-10-02 so does `Config.defaults`,
+    which only called `Config.new`.
   - PHP: `new Config(roots: ..., clock: ...)`, both arguments defaulted
-    and `roots` any iterable. `ConfigBuilder` and `Config::builder()` go.
+    and `roots` any iterable. `ConfigBuilder` and `Config::builder()` go,
+    and on 2026-10-02 so does `Config::defaults()`, which only returned
+    `new Config()`.
   - Rust: `Config::default()`. `Config::defaults()` goes.
     `Config::builder()` stays: it is the fallible build, and the one
     place a bundled root that did not load is a `ConfigError`.
@@ -1325,14 +1330,53 @@ the release, it is a breaking change for every caller. So the audit of
     package read them, so made private they would be dead code; they are
     deleted, and each README states the caps. The module's `TOO_LARGE`
     tells a caller a cap was exceeded.
+  - Python, on 2026-10-02, for the same reason: `receipt.MAX_RECEIPT_BYTES`,
+    `endpoint.MAX_REQUEST_BYTES` and `jws.MAX_JWS_BYTES` go, and with them
+    the `endpoint` and `jws` modules, which held nothing else.
+    `receipt.MAX_EMBEDDED_CERTIFICATES` and `receipt.MAX_SIGNER_INFOS`
+    stay.
   - .NET: `JsonPayload.Create` stays. The constructor is private, so
     `Create` is the payload's one public way to be built, not a
     duplicate.
   - Kept as they are: the result and payload types' public constructors,
-    which callers use to build values in their own tests;
-    `Config.defaults` in Ruby and PHP, which name the defaults beside the
-    constructor; Java's `Config`, which is the shape the others came
-    from.
+    which callers use to build values in their own tests; Java's
+    `Config`, `Config.defaults()` included: it is the shape the others
+    came from, and Java has no default arguments. (On 2026-10-01 Ruby's
+    and PHP's `defaults` were kept here too; the next day's decision
+    above removed them.)
+- **.NET reads and writes JSON with `System.Text.Json` (2026-10-02).**
+  The package's hand-written reader and writer (`Internal/Json.cs`, 610
+  lines, and `OrderedMap`) existed because `System.Text.Json` is a
+  package, not part of the framework, on netstandard2.0, and an assembly
+  built against a newer copy than a .NET Framework or Unity host carries
+  needs binding redirects. The owner chose the package over maintaining a
+  parser. The module's answers are read with `JsonDocument` (`MaxDepth`
+  128; the deepest answer is six levels, and a verified JWS payload is a
+  string inside it), `ToJson` is written with `Utf8JsonWriter`, and no
+  reflection serializer is used, so the trimmed build stays clean.
+  `ToJson` escapes with the library's `UnsafeRelaxedJsonEscaping`: less
+  hand-written code beats byte-identical output (the owner's decision
+  Q20, 2026-10-02), so a custom `JavaScriptEncoder` that kept 0.7's
+  escaping was dropped the same day. The text can differ from 0.7's in
+  escaping only: upper-case hex in `\u` escapes, and `\u` escapes for
+  U+007F to U+009F, U+2028 and U+2029, private-use, U+FEFF, noncharacter
+  and unassigned code points, and every character outside the BMP (as a
+  surrogate pair), which 0.7 wrote as themselves. Old and new were
+  compared on the 187 `verifyReceipt` and 114 `verifySignedData` cases
+  of `fixtures/cases.json` and 14 hand-built payloads, on both assets:
+  every verdict and every `verifySignedData` payload text is the same,
+  and of the 81 verified receipts' and 14 payloads' `ToJson` texts, 10
+  differ, each with the same JSON value. The 50 `verifyReceiptEndpoint` cases were
+  not compared (their answers carry the wall clock), nor the 33
+  `decodeBase64` cases (no JSON output). A lone surrogate in a hand-built
+  payload, which has no UTF-8 form, is now written as `\uFFFD`
+  ([.NET JSON][stjout]). net8.0 gains no dependency; netstandard2.0 takes
+  `System.Text.Json` 10.0.12, which brings `Microsoft.Bcl.AsyncInterfaces`,
+  `System.IO.Pipelines`, `System.Text.Encodings.Web` and
+  `System.Threading.Tasks.Extensions` and raises `System.Buffers`,
+  `System.Memory`, `System.Numerics.Vectors` and
+  `System.Runtime.CompilerServices.Unsafe` (dotnet/README.md, "How it
+  runs").
 - **Java: two artifactIds at one version, unchanged.**
   `apple-purchase-receipt-verifier` (BouncyCastle) and
   `apple-purchase-receipt-verifier-wasm` stay, with no qualifier. The
@@ -1407,6 +1451,7 @@ One table for everything the plan measured or considered and rejected.
 | A POSIX TZ rule (`PST8PDT,M3.2.0,M11.1.0`) | Wrong for every daylight-saving season 1900-2006 (19.8 million minutes) | [Pacific time-zone crates][pactz] | — |
 | A TZif file through `include_bytes!` (jiff or tz-rs) | A 2.8 KB binary in git, refreshed by hand from each tzdata release, and a TZif parser in the module: +31 KB with tz-rs, +303 KB with jiff's `TimeZone::tzif` | [Pacific time-zone crates][pactz] | — |
 | Keeping the hand-written JSON reader | 370 lines of grammar and three bounds the project maintains, for documents `serde_json`, already in the build, reads; the bounds prevented no blow-up, since both readers take a long name, number or string in linear time (R40) | [serde_json][jsonserde] | — |
+| Keeping .NET's hand-written JSON reader and writer | 610 lines of grammar and escaping the package maintains, for answers `System.Text.Json` reads; it existed only to keep netstandard2.0 free of a package dependency (R41) | [.NET JSON][stjout] | — |
 | `serde_json` variant A, `Map<String, Value>` | Builds a tree of unsigned input at up to 126 times its size: 396 MB for one 3 MiB request and 25 MB for one JWS segment, against 521 bytes for the map of raw values (R40) | [serde_json][jsonserde] | — |
 
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
@@ -1436,3 +1481,4 @@ One table for everything the plan measured or considered and rejected.
 [vendored4]: ../evidence/2026-09-30-rust-openssl-vendored-4-upstream.md
 [pactz]: ../evidence/2026-10-01-pacific-tz-crates.md
 [jsonserde]: ../evidence/2026-10-01-json-serde.md
+[stjout]: ../evidence/2026-10-02-dotnet-stj-output.md

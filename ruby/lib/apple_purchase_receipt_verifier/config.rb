@@ -21,30 +21,21 @@ module ApplePurchaseReceiptVerifier
     SYSTEM_CLOCK = -> { (Time.now.to_r * 1000).to_i }
 
     # @return [Array<String>] the caller's pinned trust anchors as frozen
-    #   binary Strings, DER or PEM as given; empty for {defaults}, whose three
-    #   Apple roots are compiled into the module and pinned there
+    #   binary Strings, DER or PEM as given; empty for `Config.new`, whose
+    #   three Apple roots are compiled into the module and pinned there
     attr_reader :roots
 
     # @return [#call] a proc (or any object responding to `#call`) returning
     #   the current instant as epoch milliseconds
     attr_reader :clock
 
-    class << self
-      # Apple's three pinned roots and the system clock. The roots are the
-      # ones compiled into `aprv.wasm`, each checked there against its
-      # published SHA-256 fingerprint.
-      #
-      # @return [Config]
-      def defaults
-        new
-      end
-    end
-
     # @param roots [Array<#to_der, String>, nil] pinned anchors, as
     #   certificate objects (anything answering `#to_der`, such as an
     #   OpenSSL certificate object) or Strings of DER or PEM bytes, which the
     #   module tells apart (a PEM bundle of several certificates is one
-    #   entry); Apple's bundled roots when omitted. An empty Array is not "no roots":
+    #   entry); Apple's bundled roots when omitted, the ones compiled into
+    #   `aprv.wasm` and checked there against their published SHA-256
+    #   fingerprints. An empty Array is not "no roots":
     #   {Verifier.create} refuses it. A string the module does not accept as
     #   a certificate is refused there too.
     # @param clock [#call, nil] the system clock when omitted
