@@ -13,7 +13,6 @@ import java.net.Proxy;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
-import java.util.Locale;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
@@ -207,13 +206,16 @@ final class ServerConnection {
      * change a verdict: verification has no side effects and the request
      * carries its own {@code X-Aprv-Now-Ms}.</p>
      *
-     * <p>The body must be framed, as the hand-written client required: by
-     * chunked encoding, or by a {@code Content-Length} of at most
-     * {@link #MAX_RESPONSE} whose bytes all arrive. Only a 204, a 304 or the
-     * answer to a HEAD may carry neither.</p>
+     * <p>The body must be framed, as the hand-written client required: by a
+     * {@code Transfer-Encoding} of exactly {@code chunked} (the one value
+     * the JDK de-chunks; any other is refused), or by a
+     * {@code Content-Length} of at most {@link #MAX_RESPONSE} whose bytes
+     * all arrive. Only a 204, a 304 or the answer to a HEAD may carry
+     * neither.</p>
      *
      * @throws IOException when the server cannot be reached or fails TLS, the
-     *     answer is not HTTP, its body is unframed or over
+     *     answer is not HTTP, its body is unframed, framed by another
+     *     transfer coding, or over
      *     {@link #MAX_RESPONSE} bytes, or the connection closes inside it
      *     ({@link EOFException})
      */
@@ -261,9 +263,13 @@ final class ServerConnection {
             if (status < 0) {
                 throw new IOException("not an HTTP response");
             }
+            // The JDK de-chunks a body only when this one value is exactly
+            // "chunked"; any other coding leaves its framing unknown here.
             String encoding = http.getHeaderField("Transfer-Encoding");
-            boolean chunked =
-                    encoding != null && encoding.toLowerCase(Locale.ROOT).contains("chunked");
+            boolean chunked = encoding != null && encoding.equalsIgnoreCase("chunked");
+            if (encoding != null && !chunked) {
+                throw new IOException("a response with Transfer-Encoding " + encoding);
+            }
             long length = chunked ? -1 : http.getContentLengthLong();
             if (length > MAX_RESPONSE) {
                 throw new IOException("a response over " + MAX_RESPONSE + " bytes");

@@ -140,6 +140,35 @@ class ServerHttpTest {
     }
 
     /**
+     * A body is framed by chunks only when Transfer-Encoding is exactly
+     * {@code chunked}, the one value the JDK de-chunks. Here the JDK
+     * hands over the chunked bytes as they are and stops at the close, so
+     * reading them as a chunked answer would take a cut-short body whole.
+     */
+    @Test
+    void aTransferCodingOtherThanChunkedAloneIsRefused() throws Exception {
+        try (RawServer server =
+                new RawServer("HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n20\r\n{\"status\":0,")) {
+            IOException e = assertThrows(IOException.class, () -> get(server.port(), false, 5_000));
+            assertTrue(e.getMessage().contains("Transfer-Encoding gzip, chunked"), String.valueOf(e));
+        }
+    }
+
+    /**
+     * A coding whose name only contains {@code chunked} does not stand in
+     * for a body's framing: here the JDK reads by the Content-Length, and
+     * the body ends before it.
+     */
+    @Test
+    void aTransferCodingNamedLikeChunkedIsRefused() throws Exception {
+        try (RawServer server = new RawServer(
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: xchunked\r\nContent-Length: 100\r\n\r\n{\"status\":0,")) {
+            IOException e = assertThrows(IOException.class, () -> get(server.port(), false, 5_000));
+            assertTrue(e.getMessage().contains("Transfer-Encoding xchunked"), String.valueOf(e));
+        }
+    }
+
+    /**
      * A server that answers 401 with a Basic challenge never gets the
      * JVM's default {@link Authenticator}'s credentials on Java 9 and
      * later: the 401 comes back after one request, as the hand-written
