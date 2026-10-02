@@ -5,7 +5,7 @@
 | `src/old.rs` | `Roots::from_file_text` from `rust/server/src/roots.rs` at the base commit, with its hand-written PEM block reader. |
 | `src/new.rs` | The same function with the `pem` crate reading each block, as committed. |
 | `src/main.rs` | Reads each file named on the command line with both and reports whether they agree: the same DER list, or both refusing. Exits 1 on a disagreement. |
-| `make-inputs.sh` | Writes the 29 roots files the harness reads, from `certs/` and `fixtures/apple-official/certs/`. |
+| `make-inputs.sh` | Writes the 31 roots files the harness reads, from `certs/` and `fixtures/apple-official/certs/`. |
 
 Both readers return the DER list instead of `Roots::Configured`; nothing
 else differs from the server's source.
@@ -21,4 +21,4 @@ cargo run --manifest-path "$REPO/docs/evidence/2026-10-02-server-roots-pem/Cargo
   --target-dir "$SCRATCH/target" -- "$SCRATCH"/in/*
 ```
 
-The last line printed is `same 29, diff 0`.
+The last line printed is `same 31, diff 0`.

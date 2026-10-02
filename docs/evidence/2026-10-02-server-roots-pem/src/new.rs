@@ -18,10 +18,10 @@ pub fn from_file_text(text: &str) -> Result<Vec<Vec<u8>>, String> {
     let mut block: Option<String> = None;
     for (n, raw) in text.lines().enumerate() {
         let line = raw.trim();
-        // A delimiter line opens and closes with its own five dashes
-        // (so it is at least ten characters long), and no text follows
-        // the closing ones, which `pem::parse` would otherwise skip.
-        if line.starts_with("-----") && (line.len() < 10 || !line.ends_with("-----")) {
+        // A delimiter line is five dashes, a label with no dash in it,
+        // and five dashes: `pem::parse` would skip text after the first
+        // closing dashes, which the old reader refused.
+        if line.starts_with("-----") && !is_delimiter(line) {
             return Err(format!("line {}: malformed PEM line {line}", n + 1));
         }
         if let Some(b) = block.as_mut() {
@@ -77,6 +77,15 @@ fn certificate(block: &str) -> Result<Vec<u8>, String> {
         return Err("empty".into());
     }
     Ok(p.into_contents())
+}
+
+/// `-----BEGIN CERTIFICATE-----` or `-----END CERTIFICATE-----` and the
+/// like: five dashes, a non-empty label with no dash in it (RFC 7468's
+/// labels have none), five dashes.
+fn is_delimiter(line: &str) -> bool {
+    line.strip_prefix("-----")
+        .and_then(|rest| rest.strip_suffix("-----"))
+        .is_some_and(|label| !label.is_empty() && !label.contains('-'))
 }
 
 fn decode(s: &str) -> Result<Vec<u8>, String> {

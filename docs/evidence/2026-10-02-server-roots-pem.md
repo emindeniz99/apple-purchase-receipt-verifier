@@ -33,21 +33,24 @@ old refusals where `pem` is more lenient:
   before a blank line as RFC 1421 headers; the old reader joined the lines.
 - Whitespace inside a body line is refused. `pem` strips all whitespace
   from the body; the old reader's strict base64 refused it.
-- A delimiter line must end in `-----`. `pem::parse` ignores what follows
-  the END line's dashes; the old reader refused the line.
+- A delimiter line is five dashes, a label with no dash in it, and five
+  dashes. `pem::parse` ignores what follows the END line's first closing
+  dashes (`-----END CERTIFICATE-----x-----`); the old reader refused the
+  line. A first version checked only the line's last five characters, and
+  a review found the two inputs that passed it.
 
 A `CERTIFICATE` label and a non-empty body are checked after parsing, as
 before.
 
 ## Results
 
-`make-inputs.sh` writes 29 files: the three `certs/` roots as PEM (LF and
+`make-inputs.sh` writes 31 files: the three `certs/` roots as PEM (LF and
 CRLF) and as base64 lines, an indented block, a block with a blank line, a
-mixed file, Apple's six test PKI files from `fixtures/`, and 17 malformed
+mixed file, Apple's six test PKI files from `fixtures/`, and 19 malformed
 files (no END, a private key, mismatched labels, an empty body, bad base64,
-whitespace in the body, text after the dashes, a stray delimiter, a nested
+whitespace in the body, text after the dashes, a dash-ended tail, a stray delimiter, a nested
 BEGIN, RFC 1421 headers). Both readers give the same DER list for every
-file that reads and refuse every file that does not: `same 29, diff 0`.
+file that reads and refuse every file that does not: `same 31, diff 0`.
 Refusal messages differ in wording (`pem`'s own error text, and a private
 key block is refused at its END line instead of its BEGIN line).
 

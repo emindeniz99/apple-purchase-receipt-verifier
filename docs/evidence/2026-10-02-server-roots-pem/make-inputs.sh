@@ -31,6 +31,8 @@ printf -- '-----BEGIN CERTIFICATE-----\nAQ!D\n-----END CERTIFICATE-----\n' > "$o
 printf -- '-----BEGIN CERTIFICATE-----\nAQ ID\n-----END CERTIFICATE-----\n' > "$out/bad-space-in-body.pem"
 printf -- '-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----AQID\n' > "$out/bad-trail.pem"
 printf -- '-----BEGIN CERTIFICATE-----AQID\nAQID\n-----END CERTIFICATE-----\n' > "$out/bad-trail-begin.pem"
+printf -- '-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----x-----\n' > "$out/bad-trail-dashes.pem"
+printf -- '-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE----------\n' > "$out/bad-ten-dashes.pem"
 printf -- '-----END CERTIFICATE-----\n' > "$out/bad-stray.pem"
 printf -- '-----\n' > "$out/bad-dashes.pem"
 printf -- '-----BEGIN CERTIFICATE-----\nAQID\n-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\n' > "$out/bad-nested.pem"
