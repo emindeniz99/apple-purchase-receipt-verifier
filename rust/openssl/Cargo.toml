@@ -32,7 +32,7 @@ vendored = ["openssl/vendored"]
 [dependencies]
 openssl = "0.10.81"
 openssl-sys = "0.9.117"
-foreign-types = "0.3.2"
+foreign-types = "0.5.0"
 libc = "0.2"
 
 [build-dependencies]
