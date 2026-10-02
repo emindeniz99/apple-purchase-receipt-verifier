@@ -17,9 +17,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 /// The request body cap: Apple's verifyReceipt answers 3,145,728 bytes and
-/// refuses one more (fixtures/cases.json, "Resource bounds"). The HTTP
-/// server answers a larger body 413 and the CLI exits 3, before the module
-/// sees a byte.
+/// refuses one more (fixtures/cases.json, "Resource bounds"). A larger body
+/// or stdin reaches the module cut to MAX_BODY + 1 bytes, so the module
+/// answers its own size refusal; the HTTP server sends that answer with
+/// status 413 and the CLI prints it and exits 3.
 pub const MAX_BODY: usize = 3_145_728;
 
 const USAGE: &str = "\
@@ -33,7 +34,7 @@ usage:
   aprv precompile COMPONENT.wasm --target TRIPLE -o OUT.ccwasm                (full build only)
 Every command but precompile also takes --component FILE.wasm (full build only).
 Environment: APRV_LISTEN (serve's address; default 127.0.0.1:8080), APRV_TOKEN (serve's token).
-CLI exit codes: 0 a result, 2 usage or configuration, 3 input over 3145728 bytes, 70 trap, ABI or load failure.";
+CLI exit codes: 0 a result, 2 usage or configuration, 3 input over 3145728 bytes (the module's answer is on stdout), 70 trap, ABI or load failure.";
 
 /// CLI exit codes.
 const EXIT_OK: i32 = 0;
@@ -167,8 +168,11 @@ enum Command {
     Endpoint(u32),
 }
 
-/// Reads stdin (at most MAX_BODY bytes), runs one operation in one fresh
-/// instance and writes the module's JSON to stdout, byte for byte.
+/// Reads stdin, runs one operation in one fresh instance and writes the
+/// module's JSON to stdout, byte for byte. Input over MAX_BODY bytes is cut
+/// to MAX_BODY + 1, as the server cuts a body, so the module answers its
+/// own size refusal; that answer is printed like any other and the exit
+/// status is 3.
 fn one_shot(cmd: Command, args: &[String]) -> i32 {
     let o = match parse(
         args,
@@ -181,18 +185,10 @@ fn one_shot(cmd: Command, args: &[String]) -> i32 {
         Ok(r) => r,
         Err(e) => return usage(&e),
     };
-    let mut input = Vec::new();
-    if let Err(e) = std::io::stdin()
-        .lock()
-        .take(MAX_BODY as u64 + 1)
-        .read_to_end(&mut input)
-    {
-        return die(format!("reading stdin: {e}"));
-    }
-    if input.len() > MAX_BODY {
-        eprintln!("aprv: input larger than {MAX_BODY} bytes");
-        return EXIT_TOO_LARGE;
-    }
+    let (input, over) = match read_input(std::io::stdin().lock()) {
+        Ok(read) => read,
+        Err(e) => return die(format!("reading stdin: {e}")),
+    };
     let runtime = match load(&o) {
         Ok(r) => r,
         Err(e) => return die(e),
@@ -214,7 +210,36 @@ fn one_shot(cmd: Command, args: &[String]) -> i32 {
         Command::SignedData => Op::VerifySignedData { now_ms },
         Command::Endpoint(env) => Op::Endpoint { env, now_ms },
     };
-    let mut instance = match runtime.ready_instance(&roots.config_json()) {
+    answer(
+        &runtime,
+        &roots.config_json(),
+        op,
+        &input,
+        over,
+        &mut std::io::stdout().lock(),
+    )
+}
+
+/// The module's input: at most MAX_BODY + 1 bytes of `r`, and whether `r`
+/// held more than MAX_BODY.
+fn read_input(r: impl Read) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut input = Vec::new();
+    r.take(MAX_BODY as u64 + 1).read_to_end(&mut input)?;
+    let over = input.len() > MAX_BODY;
+    Ok((input, over))
+}
+
+/// Runs `op` on `input` in a fresh instance, writes the module's answer to
+/// `out` and returns the exit status: 0, or 3 for an input over the cap.
+fn answer(
+    runtime: &Runtime,
+    config_json: &[u8],
+    op: Op,
+    input: &[u8],
+    over: bool,
+    out: &mut impl Write,
+) -> i32 {
+    let mut instance = match runtime.ready_instance(config_json) {
         Ok(Ok(i)) => i,
         Ok(Err(answer)) => {
             eprintln!("aprv: the component refused the roots configuration: {answer}");
@@ -222,18 +247,24 @@ fn one_shot(cmd: Command, args: &[String]) -> i32 {
         }
         Err(e) => return die(e),
     };
-    let out = match instance.call(op, &input) {
-        Ok(out) => out,
+    let json = match instance.call(op, input) {
+        Ok(json) => json,
         Err(e) => return die(e),
     };
     std::mem::forget(instance);
-    let mut stdout = std::io::stdout().lock();
-    if stdout
-        .write_all(out.as_bytes())
-        .and_then(|_| stdout.flush())
+    if out
+        .write_all(json.as_bytes())
+        .and_then(|_| out.flush())
         .is_err()
     {
         return die("writing stdout");
+    }
+    if over {
+        eprintln!(
+            "aprv: input larger than {MAX_BODY} bytes; the module answered its first {} bytes",
+            MAX_BODY + 1
+        );
+        return EXIT_TOO_LARGE;
     }
     EXIT_OK
 }

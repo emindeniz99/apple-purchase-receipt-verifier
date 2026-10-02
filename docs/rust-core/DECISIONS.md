@@ -16,7 +16,7 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
-those of 2026-10-02 amended R41.
+those of 2026-10-02 amended R31, R34 and R41.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -902,7 +902,8 @@ dependency sweep (#204).
   verify-signed-data | verify-receipt-endpoint <env>`, stdin to stdout,
   exit codes 0, 3 and 70, about 12 ms per process), HTTP; binds `127.0.0.1`
   unless `APRV_LISTEN` says otherwise; a token; a 3 MiB body cap answered
-  with 413; `StoreLimits` of 256 MiB.
+  with 413 (since 2026-10-02 the 413 carries the module's own answer and
+  exit 3 prints it; R34); `StoreLimits` of 256 MiB.
 - **Docker:** a multi-stage, distroless, non-root image on GHCR, and on
   Docker Hub after the owner creates the namespace and token.
 - **Open: exotic CPUs** where Wasmtime has no compiler (ppc64le,
@@ -957,13 +958,39 @@ ours. None changes a verdict. Where each lands is in MIGRATION.md.
 | The canonical ABI over WIT (Component Model) | `aprv.wasm`'s exports (R23) | ABI v1's own export list | `wasm-tools component wit` diffed against the file |
 | JSON Schema 2020-12 | the three wire shapes of `aprv-wire`: the verify-receipt result, the verify-signed-data result, `init`'s configuration and answer; the endpoint response is Apple's format and keeps 0.7's description | prose in `0.7-api.md` alone | every corpus answer from the core, the C ABI and `aprv.wasm` validated in CI |
 | OpenAPI 3.1 | `aprv-server`'s HTTP API, referencing the schemas above; 3.1 because it takes JSON Schema 2020-12 unchanged, and every generator and linter in use supports it, PHP's included | the route list in the evidence note | Spectral (lint) and Schemathesis (property tests against the running server) in the `aprv-server` job |
-| RFC 9457 Problem Details | `aprv-server`'s non-result errors: 401, 413, 500 `WASM_TRAP`, `ABI_ERROR`, `INTERNAL_ERROR`, as `application/problem+json` with the code in a `code` member; verification results stay HTTP 200 with the module's JSON | ad hoc error bodies | the OpenAPI document and Schemathesis |
+| RFC 9457 Problem Details | `aprv-server`'s non-result errors: 400, 401, 404, 405, 500 `WASM_TRAP`, `ABI_ERROR`, `INTERNAL_ERROR`, as `application/problem+json` with the code in a `code` member; verification results stay HTTP 200 with the module's JSON, and a body over the cap is HTTP 413 with the module's JSON (amended 2026-10-02, below) | ad hoc error bodies | the OpenAPI document and Schemathesis |
 | SLSA build provenance | every release artifact: `aprv.wasm`, the component, the server binaries, the classifier jars, the image | the "build-provenance attestation" already planned, now named by its level and format | `gh attestation verify` in the post-publish smoke |
 | CycloneDX SBOM | one per artifact, from `cargo cyclonedx` plus the components Cargo cannot see, named by version and hash: OpenSSL, wasi-sdk and wasi-libc, rustc, Wasmtime (server), Endive (Java) | the licence texts alone | the SBOM attested with the artifact; a script checks it names the pinned versions |
 | Reproducible build | `tools/reproduce-wasm.sh`: rebuild `aprv.wasm` from a tag in the pinned toolchain and compare the hash; the same for the server binaries where the platform allows | THREAT-MODEL.md §4's "paths remapped so a second build can reproduce the hash" as a claim | run once in the release job against its own artifact; documented for anyone to rerun |
 | OCI image annotations | `org.opencontainers.image.source`, `.revision`, `.version`, `.licenses`, `.description` on the Docker image | none | inspected in the image smoke |
 | cbindgen | the C ABI's header, generated from the source | a hand-maintained header | regenerated and diffed in `rust-ffi`, as today |
 | `wasi:random/random@0.2` | the module's one import, if Phase 1 confirms `get-random-bytes` can replace our `host.random-get` without a size or speed cost; a WASI 0.2 host then supplies it with no code of ours | our own `host` interface | the import list check either way |
+
+**Amended 2026-10-02** (owner; Q12). The size refusal comes from the
+module; HTTP 413 stays.
+
+- **Decision:** `aprv-server` no longer answers a body over 3,145,728
+  bytes with a `PAYLOAD_TOO_LARGE` problem of its own. It hands the module
+  the body's first 3,145,729 bytes, as every Wasm host cuts an input, and
+  sends the module's answer (`TOO_LARGE`, or `{"status":21002}` at the
+  endpoint) as the 413's `application/json` body, with the 200's schema.
+  A body announced over 16 MiB is read that far, answered, and the
+  connection closed; one between the cap and 16 MiB is still drained, so
+  the client sees the answer rather than a reset. The CLI feeds the
+  module the same bytes, prints its answer, and keeps exit status 3 so a
+  script can still tell the input was over the cap.
+- **Why:** with the refusal made by the server, the Java `-wasm` server
+  engine and PHP had to forge the core's answer to a 413 or an exit 3,
+  copying its messages and caps into wrapper code, which the
+  one-implementation rule forbids. Now both read a 413 or an exit 3 as
+  they read a 200 or an exit 0, and the cap's wording lives in the module
+  alone.
+- **Compatibility:** a client of an older server gets a problem document
+  with its 413, which these clients now report as a server problem
+  (`INTERNAL_ERROR`, 21009 at the endpoint) instead of `TOO_LARGE`. The
+  Java and PHP packages pin the server binary they start, so only a
+  caller who points them at a server of their own, older than this
+  change, sees that.
 
 **Considered and not adopted.** JCS (RFC 8785, JSON canonicalisation):
 the 0.7 contract compares JSON by value (`cases.json`), the endpoint

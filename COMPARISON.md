@@ -39,7 +39,8 @@ Apple counts UTF-8 bytes, not characters. A body of 3,145,729 bytes of `é`
 
 Every package refuses a raw body over 3,145,728 UTF-8 bytes before parsing
 it: the Rust core checks the length before it reads a byte, the Java
-implementation does the same, and `aprv-server` answers HTTP 413 itself.
+implementation does the same, and `aprv-server` sends the module's answer
+with HTTP 413.
 The answer is status 21002, so your HTTP layer can send 413 as Apple does
 when it sees the body is over the cap. A `receipt-data` string over
 3,145,728 bytes is `TOO_LARGE` (21002).

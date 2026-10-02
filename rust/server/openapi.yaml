@@ -7,8 +7,10 @@ info:
     operation of the aprv.wasm component (the WIT interface
     `aprv:verifier/verify@0.1.0`) on the request body, unchanged, and
     answers HTTP 200 with the component's JSON, byte for byte, whether the
-    input verified or not. Every other answer is an RFC 9457 problem
-    (`application/problem+json`) with a `code` member.
+    input verified or not. A body over 3,145,728 bytes reaches the
+    component cut to 3,145,729 bytes, and its answer to that, its own size
+    refusal, is HTTP 413 with the same JSON. Every other answer is an RFC
+    9457 problem (`application/problem+json`) with a `code` member.
 
     The server binds 127.0.0.1 unless `APRV_LISTEN` says otherwise and
     speaks plain HTTP. With a token configured, every `/v1/` route needs
@@ -54,7 +56,11 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '413':
-          $ref: '#/components/responses/TooLarge'
+          description: The body is over 3,145,728 bytes. The component answered its first 3,145,729 bytes with its own size refusal (`TOO_LARGE`), sent byte for byte as for a 200.
+          content:
+            application/json:
+              schema:
+                $ref: '../bindings/wire/schema/verify-receipt-result.schema.json'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/signed-data/verify:
@@ -80,7 +86,11 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '413':
-          $ref: '#/components/responses/TooLarge'
+          description: The body is over 3,145,728 bytes. The component answered its first 3,145,729 bytes with its own size refusal (`TOO_LARGE`), sent byte for byte as for a 200.
+          content:
+            application/json:
+              schema:
+                $ref: '../bindings/wire/schema/verify-signed-data-result.schema.json'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/verify-receipt/production:
@@ -105,7 +115,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '413':
-          $ref: '#/components/responses/TooLarge'
+          $ref: '#/components/responses/EndpointTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/verify-receipt/sandbox:
@@ -127,7 +137,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '413':
-          $ref: '#/components/responses/TooLarge'
+          $ref: '#/components/responses/EndpointTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/info:
@@ -207,7 +217,8 @@ components:
     Text:
       required: false
       description: |
-        At most 3,145,728 bytes, passed to the component unchanged. Any
+        Up to 3,145,728 bytes, passed to the component unchanged; a longer
+        body is cut to 3,145,729 bytes and answered with HTTP 413. Any
         bytes are an input: an absent or empty body is the empty string,
         which the component answers as a verification failure (HTTP 200).
       content:
@@ -218,7 +229,8 @@ components:
     EndpointRequest:
       required: false
       description: |
-        At most 3,145,728 bytes, passed to the component unchanged. Any
+        Up to 3,145,728 bytes, passed to the component unchanged; a longer
+        body is cut to 3,145,729 bytes and answered with HTTP 413. Any
         bytes are a request: a body that is absent, not JSON or not the
         object below is answered with Apple's status for it (HTTP 200).
       content:
@@ -250,12 +262,12 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
-    TooLarge:
-      description: The body is larger than 3,145,728 bytes; the component never saw it (code PAYLOAD_TOO_LARGE).
+    EndpointTooLarge:
+      description: The body is over 3,145,728 bytes. The component answered its first 3,145,729 bytes as Apple's endpoint answers an oversized body, `{"status":21002}`, sent byte for byte as for a 200.
       content:
-        application/problem+json:
+        application/json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/EndpointResponse'
     ServerError:
       description: |
         Not a verification result. WASM_TRAP: the component trapped (the
@@ -291,7 +303,6 @@ components:
             - UNAUTHORIZED
             - NOT_FOUND
             - METHOD_NOT_ALLOWED
-            - PAYLOAD_TOO_LARGE
             - WASM_TRAP
             - ABI_ERROR
             - INTERNAL_ERROR

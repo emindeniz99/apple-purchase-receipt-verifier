@@ -7,6 +7,7 @@ import java.lang.ref.ReferenceQueue;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.Collections;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,7 +19,8 @@ import org.jspecify.annotations.Nullable;
  * the clock once per call before the input is touched and sends it as
  * {@code X-Aprv-Now-Ms}, posts the input bytes as they are, and maps the
  * answer: a 200 through the same {@link Wire} decoder as the Endive engine,
- * 413 as {@link Reason#TOO_LARGE} (21002 from the endpoint), every other
+ * and a 413 the same way, since its body is the module's own answer to an
+ * input over the cap ({@code TOO_LARGE}, 21002 from the endpoint); every
  * problem as {@link Reason#INTERNAL_ERROR} with a {@link ServerProblem} cause,
  * and a server that does not answer as {@link Reason#INTERNAL_ERROR} with a
  * {@link ServerProcessFailure} cause (ARCHITECTURE.md §4, the six outcomes).
@@ -31,18 +33,14 @@ import org.jspecify.annotations.Nullable;
 final class ServerVerifier implements Verifier, Closeable {
 
     /**
-     * What the core answers for an input over its cap. The server refuses a
-     * body over 3,145,728 bytes with 413 before the module sees it; the
-     * engine answers as the module would have, so both engines agree.
+     * Whether the server answered with the module's JSON: a 200, or a 413
+     * whose body is the module's own answer to an input over the cap. A 413
+     * that is a problem document (a server older than that rule) is not.
      */
-    static String tooLargeAnswer(String path) {
-        if (path.startsWith("/v1/verify-receipt/")) {
-            return "{\"status\":" + AppleStatus.MALFORMED_RECEIPT_DATA + "}";
-        }
-        String message = path.equals("/v1/signed-data/verify")
-                ? "jws exceeds the maximum accepted size of 262144 bytes"
-                : "receipt exceeds the maximum accepted size of 3145728 bytes";
-        return "{\"verified\":false,\"reason\":\"TOO_LARGE\",\"message\":\"" + message + "\"}";
+    static boolean moduleAnswered(HttpConn.Response response) {
+        return response.status == 200
+                || (response.status == 413
+                        && response.contentType.toLowerCase(Locale.ROOT).startsWith("application/json"));
     }
 
     private final Clock clock;
@@ -84,11 +82,8 @@ final class ServerVerifier implements Verifier, Closeable {
         try {
             long now = clock.millis();
             HttpConn.Response response = holder.get().send("POST", path, bytes(requestJson), now);
-            if (response.status == 200) {
+            if (moduleAnswered(response)) {
                 return Wire.endpointAnswer(response.text());
-            }
-            if (response.status == 413) {
-                return Wire.endpointAnswer(tooLargeAnswer(path));
             }
             return "{\"status\":" + AppleStatus.INTERNAL_DATA_ACCESS_ERROR + "}";
         } catch (RuntimeException e) {
@@ -101,11 +96,8 @@ final class ServerVerifier implements Verifier, Closeable {
         try {
             long now = clock.millis();
             HttpConn.Response response = holder.get().send("POST", path, bytes(input), now);
-            if (response.status == 200) {
+            if (moduleAnswered(response)) {
                 return decode.apply(response.text());
-            }
-            if (response.status == 413) {
-                return decode.apply(tooLargeAnswer(path));
             }
             ServerProblem problem = ServerJson.problem(response);
             return VerificationResult.failed(new Failure(Reason.INTERNAL_ERROR, problem.getMessage(), problem));

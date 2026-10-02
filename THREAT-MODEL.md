@@ -658,10 +658,11 @@ the core's bounds are what keep every call short (§3.7). Only
   its bases are pinned by digest.
 - **The one-shot CLI** has no socket: stdin in, stdout out, exit codes 0,
   2, 3 and 70. PHP runs it with an argv array and no shell.
-- **Errors that are not results** (401, 413, a trap, an ABI fault) are RFC
-  9457 problem documents; a verification result is always HTTP 200 with
-  the module's JSON, so a client cannot mistake a server failure for a
-  verdict.
+- **Errors that are not results** (401, a trap, an ABI fault) are RFC
+  9457 problem documents; a verification result is always the module's
+  JSON, with HTTP 200, or 413 when the body was over the cap and the
+  module refused it for its size, so a client cannot mistake a server
+  failure for a verdict.
 
 ## 10. Java artifacts and Python's cache
 

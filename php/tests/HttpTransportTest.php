@@ -12,7 +12,6 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\CountingClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeServer;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Outcome;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\InputTooLargeException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
@@ -138,8 +137,9 @@ final class HttpTransportTest extends TestCase
     /** @return iterable<string, array{array<string, mixed>, class-string<\Throwable>}> */
     public static function problemProvider(): iterable
     {
-        yield '413 PAYLOAD_TOO_LARGE' => [self::problem(413, ['code' => 'PAYLOAD_TOO_LARGE', 'status' => 413]), InputTooLargeException::class];
-        yield '413 with no body at all' => [['status' => 413, 'body' => ''], InputTooLargeException::class];
+        // A 413 problem is an older server's, not the module's answer.
+        yield '413 PAYLOAD_TOO_LARGE problem' => [self::problem(413, ['code' => 'PAYLOAD_TOO_LARGE', 'status' => 413]), ServerProcessException::class];
+        yield '413 with no body at all' => [['status' => 413, 'body' => ''], ServerProcessException::class];
         yield '500 WASM_TRAP' => [self::problem(500, ['code' => 'WASM_TRAP', 'detail' => 'trap: unreachable']), ModuleFaultException::class];
         yield '500 ABI_ERROR' => [self::problem(500, ['code' => 'ABI_ERROR', 'detail' => 'not utf-8']), ModuleFaultException::class];
         yield '500 INTERNAL_ERROR' => [self::problem(500, ['code' => 'INTERNAL_ERROR']), ServerProcessException::class];
@@ -169,9 +169,14 @@ final class HttpTransportTest extends TestCase
 
     public function testTheFaçadeAnswersEachProblemAsItsOutcome(): void
     {
-        $server = $this->server([self::INFO_PATH => self::info(), 'default' => self::problem(413, ['code' => 'PAYLOAD_TOO_LARGE'])]);
+        // A 413 carries the module's own answer to an input over the cap, read as a 200 is.
+        $tooLarge = '{"verified":false,"reason":"TOO_LARGE","message":"said by the module"}';
+        $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 413, 'headers' => ['Content-Type' => 'application/json'], 'body' => $tooLarge]]);
         $verifier = Verifier::create(new Config(), new HttpTransport($server->url));
-        self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifyReceipt('x'))->reason);
+        $receipt = Outcome::failure($verifier->verifyReceipt('x'));
+        self::assertSame(Reason::TooLarge, $receipt->reason);
+        self::assertSame('said by the module', $receipt->message);
+        $server->respond([self::INFO_PATH => self::info(), 'default' => ['status' => 413, 'headers' => ['Content-Type' => 'application/json'], 'body' => '{"status":21002}']]);
         self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Production, '{}'));
 
         $server->respond([self::INFO_PATH => self::info(), 'default' => self::problem(500, ['code' => 'WASM_TRAP', 'detail' => 'unreachable'])]);

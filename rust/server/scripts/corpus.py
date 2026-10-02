@@ -18,8 +18,9 @@ X-Aprv-Now-Ms header or `--now-ms`. Categories, first match wins:
 
   identical          byte-identical to Node (request_date* masked on endpoint rows
                      without a pinned clock, as abi_compare.py does)
-  over-cap           the input is over 3,145,728 bytes and the server answered 413
-                     (the CLI exit 3) before the module saw it; Node's module answered it
+  over-cap           the input is over 3,145,728 bytes, the server answered 413 (the
+                     CLI exit 3), and its body (stdout) is the module's own size
+                     refusal; Node's module refused it too
   init-refusal       the roots are not certificates: ABI v1 answered INVALID_TEST_ENVELOPE,
                      the server refuses to start with init's {"ok":false}
   clock-moves-chain  an endpoint row with a pinned clock: now-ms is also the chain
@@ -33,9 +34,11 @@ With --reference DIR instead of --node, the rows are compared exactly
 with DIR/module-<corpus>.jsonl: the release module's own answers to the
 same calls, every clock pinned (--suffix .pinned reads
 CALLS_DIR/<corpus>.pinned.jsonl). Then the only categories are identical,
-over-cap (413 / exit 3 where the module itself answered the cap refusal,
-TOO_LARGE or status 21002) and DIFFERENT, and the expectation is none
-DIFFERENT.
+over-cap (413 / exit 3 with a body byte-identical to the module's row) and
+DIFFERENT, and the expectation is none DIFFERENT.
+
+In both, a 413 or exit 3 for a body at or under the cap, or a 200 or exit
+0 for one over it, is DIFFERENT.
 """
 import argparse
 import base64
@@ -85,7 +88,7 @@ class Server:
         if r.status == 200:
             return {"out": data.decode("utf-8")}
         if r.status == 413:
-            return {"over_cap": 413}
+            return {"out": data.decode("utf-8"), "over_cap": 413}
         return {"trap": f"HTTP {r.status} {data.decode(errors='replace')}"}
 
     def close(self):
@@ -104,22 +107,29 @@ def cli_call(aprv, row, body, roots_file):
     if p.returncode == 0:
         return {"out": p.stdout.decode("utf-8")}
     if p.returncode == 3:
-        return {"over_cap": 3}
+        return {"out": p.stdout.decode("utf-8"), "over_cap": 3}
     err = p.stderr.decode(errors="replace").strip()
     if p.returncode == 2 and "refused the roots configuration" in err:
         return {"out": err.split("configuration: ", 1)[1]}
     return {"trap": f"exit {p.returncode}: {err}"}
 
 
+def size_refusal(answer):
+    return isinstance(answer, str) and ('"reason":"TOO_LARGE"' in answer or answer == '{"status":21002}')
+
+
 def classify(call, ref, got, body_len):
     a = ref.get("out", ref.get("trap", ref.get("map")))
     b = got.get("out", got.get("trap", got.get("map")))
+    if ("over_cap" in got) != (body_len > MAX_BODY):
+        return "DIFFERENT"
     if isinstance(a, str) and isinstance(b, str) and call.get("fn") == "verify-receipt-endpoint" and call.get("now") is None:
         a, b = MASK.sub(r'"\1":"*"', a), MASK.sub(r'"\1":"*"', b)
+    if "over_cap" in got:
+        # ABI v1's Node rows may word the refusal otherwise.
+        return "over-cap" if size_refusal(a) and size_refusal(b) else "DIFFERENT"
     if a == b:
         return "identical"
-    if "over_cap" in got and body_len > MAX_BODY:
-        return "over-cap"
     if isinstance(a, str) and "INVALID_TEST_ENVELOPE" in a and isinstance(b, str) and '"ok":false' in b:
         return "init-refusal"
     if call.get("fn") == "verify-receipt-endpoint" and call.get("now") is not None:
@@ -130,11 +140,10 @@ def classify(call, ref, got, body_len):
 def classify_exact(ref, got, body_len):
     a = ref.get("out", ref.get("trap", ref.get("map")))
     b = got.get("out", got.get("trap", got.get("map")))
+    if ("over_cap" in got) != (body_len > MAX_BODY):
+        return "DIFFERENT"
     if a == b and ("trap" in ref) == ("trap" in got):
-        return "identical"
-    refused = isinstance(a, str) and ('"reason":"TOO_LARGE"' in a or a == '{"status":21002}')
-    if "over_cap" in got and body_len > MAX_BODY and refused:
-        return "over-cap"
+        return "over-cap" if "over_cap" in got else "identical"
     return "DIFFERENT"
 
 
@@ -196,7 +205,7 @@ def main():
                 else:
                     cat = classify_exact(ref[row["id"]], got, body_len)
                 per[cat] += 1
-                if cat != "identical" and (a.list or len(examples) < 12):
+                if cat not in ("identical", "over-cap") and (a.list or len(examples) < 12):
                     examples.append((c, cat, row["id"], str(got)[:160]))
             total.update(per)
             print(f"{label} {c}: " + ", ".join(f"{k} {v}" for k, v in sorted(per.items())), flush=True)

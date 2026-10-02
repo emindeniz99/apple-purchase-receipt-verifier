@@ -167,27 +167,216 @@ async fn a_verification_result_is_200_with_the_module_json_byte_for_byte() {
     }
 }
 
+/// The module's answer to `input` as every Wasm host feeds it: cut to
+/// MAX_BODY + 1 bytes.
+fn module_answer(v: &Verifier, op: Op, input: &[u8]) -> String {
+    v.invoke(op, &input[..input.len().min(MAX_BODY + 1)])
+        .unwrap()
+}
+
+const NOW: u64 = 1_700_000_000_000;
+
+/// Each route with the size fixtures it takes (fixtures/limits, at and over
+/// the caps) and bodies far over MAX_BODY and past MAX_DRAIN.
+fn size_inputs() -> Vec<(&'static str, Op, String, Vec<u8>)> {
+    let receipt = Op::VerifyReceipt { now_ms: NOW };
+    let jws = Op::VerifySignedData { now_ms: NOW };
+    let production = Op::Endpoint {
+        env: 0,
+        now_ms: NOW,
+    };
+    let sandbox = Op::Endpoint {
+        env: 1,
+        now_ms: NOW,
+    };
+    let routes = [
+        (
+            "/v1/receipt/verify",
+            receipt,
+            &[
+                "receipt-b64-at-cap.txt",
+                "receipt-b64-over-cap.txt",
+                "receipt-der-over-cap.der",
+            ][..],
+        ),
+        (
+            "/v1/signed-data/verify",
+            jws,
+            &["jws-at-cap.jws", "jws-over-cap.jws"][..],
+        ),
+        (
+            "/v1/verify-receipt/production",
+            production,
+            &[
+                "body-ascii-at-cap.json",
+                "body-ascii-over-cap.json",
+                "body-2byte-at-cap.json",
+                "body-2byte-over-cap.json",
+            ][..],
+        ),
+        (
+            "/v1/verify-receipt/sandbox",
+            sandbox,
+            &["body-ascii-at-cap.json", "body-ascii-over-cap.json"][..],
+        ),
+    ];
+    let mut out = Vec::new();
+    for (path, op, files) in routes {
+        for f in files {
+            let bytes = std::fs::read(repo(&format!("fixtures/limits/{f}"))).unwrap();
+            out.push((path, op, f.to_string(), bytes));
+        }
+        out.push((path, op, "2 x MAX_BODY".into(), vec![b'A'; 2 * MAX_BODY]));
+        out.push((
+            path,
+            op,
+            "MAX_DRAIN + 1".into(),
+            vec![b'A'; http::MAX_DRAIN + 1],
+        ));
+    }
+    out
+}
+
+/// Over the cap the server answers 413 with the module's own JSON for the
+/// first MAX_BODY + 1 bytes, byte for byte; at or under it, 200.
 #[tokio::test]
-async fn the_body_cap_is_413_before_the_module_sees_it() {
-    let r = app(real(), None);
-    let (s, ct, body) = send(
-        &r,
-        "POST",
-        "/v1/receipt/verify",
-        &[],
-        vec![b'A'; MAX_BODY + 1],
-    )
-    .await;
-    assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
-    assert_eq!(problem(&ct, &body)["code"], "PAYLOAD_TOO_LARGE");
-    // Far over the cap (past what the server drains) is 413 as well.
-    let big = vec![b'A'; http::MAX_DRAIN + 1];
-    let (s, ct, body) = send(&r, "POST", "/v1/verify-receipt/sandbox", &[], big).await;
-    assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
-    assert_eq!(problem(&ct, &body)["code"], "PAYLOAD_TOO_LARGE");
-    // Exactly at the cap the module answers (a result, not a 413).
-    let (s, _, _) = send(&r, "POST", "/v1/receipt/verify", &[], vec![b'A'; MAX_BODY]).await;
-    assert_eq!(s, StatusCode::OK);
+async fn a_body_over_the_cap_is_413_with_the_module_answer_byte_for_byte() {
+    let v = real();
+    let r = app(v.clone(), None);
+    let mut over = 0;
+    for (path, op, name, body) in size_inputs() {
+        let want = module_answer(&v, op, &body);
+        let len = body.len();
+        let (s, ct, got) = send(
+            &r,
+            "POST",
+            path,
+            &[("x-aprv-now-ms", "1700000000000")],
+            body,
+        )
+        .await;
+        let status = if len > MAX_BODY {
+            over += 1;
+            assert!(
+                want.contains(r#""reason":"TOO_LARGE""#) || want == r#"{"status":21002}"#,
+                "{path} {name}: the module did not refuse it for its size: {want}"
+            );
+            StatusCode::PAYLOAD_TOO_LARGE
+        } else {
+            StatusCode::OK
+        };
+        assert_eq!(
+            (s, ct.as_str()),
+            (status, "application/json"),
+            "{path} {name}"
+        );
+        assert_eq!(String::from_utf8(got).unwrap(), want, "{path} {name}");
+    }
+    assert_eq!(over, 13, "the over-cap inputs");
+}
+
+/// The CLI feeds the module the same bytes and prints its answer, exiting
+/// 3 over the cap.
+#[test]
+fn the_cli_prints_the_module_answer_and_exits_3_over_the_cap() {
+    let v = real();
+    for (path, op, name, body) in size_inputs() {
+        let (input, over) = crate::read_input(&body[..]).unwrap();
+        let mut out = Vec::new();
+        let code = crate::answer(&v.runtime, b"{}", op, &input, over, &mut out);
+        let want = if body.len() > MAX_BODY { 3 } else { 0 };
+        assert_eq!(code, want, "{path} {name}");
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            module_answer(&v, op, &body),
+            "{path} {name}"
+        );
+    }
+}
+
+/// One HTTP/1.1 response read off a socket: the status line, the headers
+/// (names lowercased) and the body, by its Content-Length.
+fn read_response(s: &mut impl std::io::BufRead) -> (String, Vec<(String, String)>, Vec<u8>) {
+    let mut status = String::new();
+    s.read_line(&mut status).unwrap();
+    let mut headers = Vec::new();
+    loop {
+        let mut line = String::new();
+        s.read_line(&mut line).unwrap();
+        let line = line.trim_end();
+        if line.is_empty() {
+            break;
+        }
+        let (k, v) = line.split_once(':').unwrap();
+        headers.push((k.to_ascii_lowercase(), v.trim().to_owned()));
+    }
+    let len: usize = headers
+        .iter()
+        .find(|(k, _)| k == "content-length")
+        .map(|(_, v)| v.parse().unwrap())
+        .unwrap();
+    let mut body = vec![0; len];
+    s.read_exact(&mut body).unwrap();
+    (status.trim_end().to_owned(), headers, body)
+}
+
+/// Over a real connection: a body between the cap and MAX_DRAIN is drained,
+/// answered 413 and the connection kept; a body announced past MAX_DRAIN is
+/// read only to MAX_BODY + 1 bytes, answered 413 and the connection closed.
+#[tokio::test(flavor = "multi_thread")]
+async fn over_a_connection_the_drain_keeps_it_and_past_the_drain_it_closes() {
+    use std::io::{BufReader, Read, Write};
+    let v = real();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let r = app(v.clone(), None);
+    tokio::spawn(async move { axum::serve(listener, r).await.unwrap() });
+    let want = module_answer(
+        &v,
+        Op::Endpoint {
+            env: 1,
+            now_ms: NOW,
+        },
+        &vec![b'A'; MAX_BODY + 1],
+    );
+    assert_eq!(want, r#"{"status":21002}"#);
+    tokio::task::spawn_blocking(move || {
+        let head = |len: usize| {
+            format!(
+                "POST /v1/verify-receipt/sandbox HTTP/1.1\r\nHost: aprv\r\nX-Aprv-Now-Ms: {NOW}\r\nContent-Length: {len}\r\n\r\n"
+            )
+        };
+        // Twice the cap, sent whole: drained, answered, the connection kept.
+        let mut s = std::net::TcpStream::connect(addr).unwrap();
+        s.set_read_timeout(Some(std::time::Duration::from_secs(60))).unwrap();
+        s.write_all(head(2 * MAX_BODY).as_bytes()).unwrap();
+        s.write_all(&vec![b'A'; 2 * MAX_BODY]).unwrap();
+        let mut rd = BufReader::new(s.try_clone().unwrap());
+        let (status, headers, body) = read_response(&mut rd);
+        assert!(status.starts_with("HTTP/1.1 413"), "{status}");
+        assert!(headers.contains(&("content-type".into(), "application/json".into())));
+        assert!(!headers.iter().any(|(k, _)| k == "connection"), "{headers:?}");
+        assert_eq!(String::from_utf8(body).unwrap(), want);
+        s.write_all(b"GET /healthz HTTP/1.1\r\nHost: aprv\r\n\r\n").unwrap();
+        let (status, _, body) = read_response(&mut rd);
+        assert!(status.starts_with("HTTP/1.1 200"), "{status}");
+        assert_eq!(body, b"ok");
+
+        // Announced past MAX_DRAIN, MAX_BODY + 1 bytes sent: answered, closed.
+        let mut s = std::net::TcpStream::connect(addr).unwrap();
+        s.set_read_timeout(Some(std::time::Duration::from_secs(60))).unwrap();
+        s.write_all(head(http::MAX_DRAIN + 1).as_bytes()).unwrap();
+        s.write_all(&vec![b'A'; MAX_BODY + 1]).unwrap();
+        let mut rd = BufReader::new(s);
+        let (status, headers, body) = read_response(&mut rd);
+        assert!(status.starts_with("HTTP/1.1 413"), "{status}");
+        assert!(headers.contains(&("connection".into(), "close".into())), "{headers:?}");
+        assert_eq!(String::from_utf8(body).unwrap(), want);
+        let mut rest = Vec::new();
+        assert_eq!(rd.read_to_end(&mut rest).unwrap(), 0, "the server closed the connection");
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

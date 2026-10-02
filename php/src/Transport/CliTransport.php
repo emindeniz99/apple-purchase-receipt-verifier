@@ -17,8 +17,9 @@ use RuntimeException;
  * The process is started with an argv array and no shell, so nothing the
  * caller or a receipt contains is ever parsed by one. It lives for one call
  * (about 12 ms) and ends with it: a hostile input reaches nothing that
- * outlives the call. Exit status 0 is a result (verified or not), 3 an
- * input over the size cap, 70 a trap, an ABI fault or a load failure.
+ * outlives the call. Exit status 0 is a result (verified or not), 3 the
+ * module's answer to an input over the size cap (on stdout, like any
+ * result), 70 a trap, an ABI fault or a load failure.
  *
  * Custom roots go to `aprv` as one owner-only temporary file per transport
  * (`--roots FILE`), written by {@see open()} and deleted with the object.
@@ -92,11 +93,9 @@ final class CliTransport implements Transport
     {
         $arguments = array_merge($operation->cliArguments(), ['--now-ms', (string) $nowMs], $this->rootsArguments());
         [$code, $out, $err] = $this->execute($arguments, $input);
-        if ($code === 0) {
+        // 3: the input was over the cap; stdout is still the module's answer.
+        if ($code === 0 || $code === 3) {
             return $out;
-        }
-        if ($code === 3) {
-            throw new InputTooLargeException('aprv refused the input for its size');
         }
         if ($code === 70) {
             throw new ModuleFaultException('EXIT_70', 'aprv trapped, broke the interface or could not load: ' . Text::printable($err));

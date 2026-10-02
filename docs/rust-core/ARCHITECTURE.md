@@ -627,18 +627,20 @@ calls the binding.
     `/v1/verify-receipt/production`, `/v1/verify-receipt/sandbox`,
     `GET /healthz`, `GET /readyz`. Every verification result is HTTP 200
     with the module's JSON. A trap is 500 `WASM_TRAP`, an ABI fault 500
-    `ABI_ERROR`, a lost worker 500 `INTERNAL_ERROR`, a body over
-    3,145,728 bytes 413, a missing or wrong `X-Aprv-Token` 401 when a token
-    is configured.
+    `ABI_ERROR`, a lost worker 500 `INTERNAL_ERROR`, a missing or wrong
+    `X-Aprv-Token` 401 when a token is configured. A body over 3,145,728
+    bytes reaches the module cut to 3,145,729 bytes, and the module's
+    answer, its own size refusal, is HTTP 413 with that JSON.
   - `aprv serve --managed`: the child of a JVM (§7.8). It binds
     `127.0.0.1:0` whatever `APRV_LISTEN` says, reports its port as one
     stdout line, reads a 256-bit token as its first stdin line, and exits
     on stdin EOF ([aprv-server §6][server]).
   - The one-shot CLI: `aprv verify-receipt`, `aprv verify-signed-data`,
     `aprv verify-receipt-endpoint <production|sandbox>`. It reads stdin
-    (up to 3 MiB), runs one operation in one fresh instance, writes the
-    JSON and exits: 0 for any result, 3 for input too large, 70 for a
-    trap, ABI fault or load failure. About 12 ms per process
+    (up to 3 MiB, cut to one byte more as the server cuts a body), runs
+    one operation in one fresh instance, writes the JSON and exits: 0 for
+    any result, 3 when the input was over the cap (the module's answer is
+    still on stdout), 70 for a trap, ABI fault or load failure. About 12 ms per process
     ([aprv-server §5][server]).
 - **Binding.** `127.0.0.1` unless `APRV_LISTEN` says otherwise, in and out
   of Docker.
@@ -653,10 +655,12 @@ calls the binding.
 - **The HTTP contract is an OpenAPI 3.1 document** (`rust/server/openapi.yaml`),
   the wire shapes referenced from the JSON Schema 2020-12 files of
   `aprv-wire`; Spectral lints it and Schemathesis runs it against the
-  server in CI. Errors that are not verification results (401, 413, 500
-  `WASM_TRAP`, `ABI_ERROR`, `INTERNAL_ERROR`) are RFC 9457 Problem Details
-  (`application/problem+json`) with the existing code in a `code` member;
-  a verification result stays HTTP 200 with the module's JSON (R34).
+  server in CI. Errors that are not verification results (400, 401, 404,
+  405, 500 `WASM_TRAP`, `ABI_ERROR`, `INTERNAL_ERROR`) are RFC 9457 Problem
+  Details (`application/problem+json`) with the existing code in a `code`
+  member; a verification result stays HTTP 200 with the module's JSON, and
+  the module's answer to a body over the cap is HTTP 413 with its JSON
+  (R34).
 - **The configuration a host passes.** The `Config` of a Java or PHP
   caller travels with the call: the per-call `now_ms` in a request header
   or CLI argument, and the roots once, at start (the managed child reads

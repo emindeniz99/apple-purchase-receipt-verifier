@@ -10,9 +10,10 @@ configuration: `--roots FILE` (one base64 DER per line) for fixture roots,
 nothing for the defaults, and `X-Aprv-Now-Ms` / `--now-ms` for clock.now.
 Over HTTP one server runs per distinct root set, default lifecycle (pool).
 
-A body over the cap never reaches the module: the server answers 413 and the
-CLI exits 3. The runner maps that as a client of the server must (TOO_LARGE
-for the verify operations, Apple's {"status":21002} at the endpoint) and
+A body over the cap reaches the module cut to 3,145,729 bytes: the server
+answers 413 and the CLI exits 3, each with the module's own answer (its size
+refusal) as the body or stdout. The runner evaluates that answer as any
+other, fails a case whose 413 / exit 3 does not match the body's length, and
 counts those cases separately. decodeBase64 cases test a port's decoders
 directly; the server exposes none, so they are reported as not expressible.
 
@@ -153,13 +154,13 @@ def outcome_of(result):
 
 
 def evaluate(case, answer):
-    """answer: ('json', bytes) | ('too-large', None) | ('failure', text). Raises on a failed case."""
+    """answer: ('json' | 'too-large', bytes) | ('failure', text). Raises on a failed case."""
     exp, op = case["expected"], case["operation"]
     kind, body = answer
     if kind == "failure":
         raise AssertionError(f"no result: {body}")
     if op == "verifyReceiptEndpoint":
-        doc = {"status": 21002} if kind == "too-large" else json.loads(body)
+        doc = json.loads(body)
         if "oneOf" in exp:
             # Port-defined within a list: the response's /status must be
             # listed, and nothing else is pinned.
@@ -168,10 +169,7 @@ def evaluate(case, answer):
             return
         check_fields(doc, exp)
         return
-    if kind == "too-large":
-        outcome, detail = "TOO_LARGE", ""
-    else:
-        outcome, detail = outcome_of(json.loads(body))
+    outcome, detail = outcome_of(json.loads(body))
     if "oneOf" in exp:
         if outcome not in exp["oneOf"]:
             raise AssertionError(f"outcome {outcome} not in {exp['oneOf']}")
@@ -212,7 +210,7 @@ class Server:
         if r.status == 200:
             return "json", data
         if r.status == 413:
-            return "too-large", None
+            return "too-large", data
         return "failure", f"HTTP {r.status} {data[:200].decode(errors='replace')}"
 
     def close(self):
@@ -240,7 +238,7 @@ def cli_call(aprv, case, body, now, roots_file):
     if p.returncode == 0:
         return "json", p.stdout
     if p.returncode == 3:
-        return "too-large", None
+        return "too-large", p.stdout
     return "failure", f"exit {p.returncode}: {p.stderr[:200].decode(errors='replace').strip()}"
 
 
@@ -300,6 +298,8 @@ def main():
                 if answer[0] == "too-large":
                     transport_413.append(cid)
                 try:
+                    if (answer[0] == "too-large") != (len(body) > MAX_BODY):
+                        raise AssertionError(f"{answer[0]} for a body of {len(body)} bytes")
                     evaluate(case, answer)
                     if "maxMillis" in case and ms > case["maxMillis"]:
                         raise AssertionError(f"took {ms:.0f} ms, over maxMillis {case['maxMillis']}")
@@ -313,7 +313,7 @@ def main():
                 s.close()
         counts = collections.Counter(v[0] for v in results.values())
         print(f"# {mode}: {len(cases)} cases: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
-        print(f"# {mode}: answered by the transport's size cap (413 / exit 3): {len(transport_413)}: {', '.join(transport_413)}")
+        print(f"# {mode}: over the size cap, answered by the module with 413 / exit 3: {len(transport_413)}: {', '.join(transport_413)}")
         print(f"# {mode}: maxMillis cases, slowest: {sorted(slow, key=lambda x: -x[1])[:3]}")
         if servers:
             print(f"# {mode}: {len(servers)} server processes (one per root set)")

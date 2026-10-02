@@ -12,8 +12,8 @@
 # and test classes built with that aprv.wasm (mvn -f java-wasm verify) and
 # python3; JAVA picks the java binary (default: java on PATH). With
 # APRV_SERVER set to an aprv-server binary, the calls go through the server
-# engine's managed child instead (ServerCorpusMain), and a body the server
-# refuses with 413 is answered as the facade answers it. Writes
+# engine's managed child instead (ServerCorpusMain), and a body over the
+# server's cap is the module's own answer, sent with 413. Writes
 # OUT_DIR/<endive|server>-t<THREADS>-<corpus>.jsonl and .err, prints one line
 # per corpus, and exits non-zero if any row differs or traps.
 set -eu
