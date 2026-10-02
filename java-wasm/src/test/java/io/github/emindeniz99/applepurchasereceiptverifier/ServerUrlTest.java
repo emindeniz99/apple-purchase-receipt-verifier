@@ -84,12 +84,15 @@ class ServerUrlTest {
     }
 
     /**
-     * A JVM-wide proxy never carries a request to the server: a verdict
+     * A JVM-wide HTTP proxy never carries a request to the server: a verdict
      * travels only to the server the source names. The default
      * {@link ProxySelector} here sends every HTTP request to a closed port,
      * so a request that consulted it would fail, and none may consult it.
-     * (Java 8's sockets ask it about {@code socket://} for a SOCKS proxy; that
-     * answer is a direct connection and is not counted.)
+     * Blind spot: it answers {@code socket://} with a direct connection and
+     * does not count those questions, so it does not see a SOCKS proxy. Java
+     * 8 asks it that for every new connection, as JDK 21 does for an https
+     * one, and a SOCKS answer would carry the connection
+     * (ServerConnection#exchange).
      */
     @Test
     void aJvmWideProxyIsNeverUsed() throws Exception {
@@ -112,13 +115,16 @@ class ServerUrlTest {
                 public void connectFailed(URI uri, SocketAddress address, IOException e) {}
             });
             try {
-                Verifier verifier =
+                ServerVerifier verifier = (ServerVerifier)
                         Verifier.create(Config.defaults(), Engine.server(ServerSource.url(server.uri(), server.token)));
-                String answer =
-                        verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + g5 + "\"}");
-                assertTrue(answer.contains("\"status\":0"), answer);
-                assertEquals(0, asked.get(), "requests that consulted the JVM's ProxySelector");
-                ((ServerVerifier) verifier).close();
+                try {
+                    String answer =
+                            verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + g5 + "\"}");
+                    assertTrue(answer.contains("\"status\":0"), answer);
+                    assertEquals(0, asked.get(), "requests that consulted the JVM's ProxySelector");
+                } finally {
+                    verifier.close();
+                }
             } finally {
                 ProxySelector.setDefault(before);
             }
