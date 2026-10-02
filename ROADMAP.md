@@ -61,8 +61,11 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
      `MAX_REQUEST_BYTES` and `MAX_JWS_BYTES` are removed, with the
      `endpoint` and `jws` modules that held only them, as Go's and Swift's
      were; and .NET reads and writes JSON with `System.Text.Json` (a
-     package on netstandard2.0) instead of its hand-written reader, with
-     `ToJson`'s bytes unchanged.
+     package on netstandard2.0) instead of its hand-written reader and
+     writer. `ToJson` escapes with the library's relaxed encoder (the
+     owner's Q20), so its text can differ from 0.7's in escaping, never
+     in value; checked on the `verifyReceipt` and `verifySignedData`
+     cases and hand-built payloads.
    - Decided 2026-10-01 (DECISIONS.md R39, amended the same day): the
      core reads a root as DER or PEM, told apart by the bytes, through
      OpenSSL's PEM reader; wrappers pass bytes and read neither format.

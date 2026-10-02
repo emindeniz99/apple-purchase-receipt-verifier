@@ -1353,12 +1353,23 @@ the release, it is a breaking change for every caller. So the audit of
   parser. The module's answers are read with `JsonDocument` (`MaxDepth`
   128; the deepest answer is six levels, and a verified JWS payload is a
   string inside it), `ToJson` is written with `Utf8JsonWriter`, and no
-  reflection serializer is used, so the trimmed build stays clean. A
-  `JavaScriptEncoder` subclass escapes only what RFC 8259 requires, so
-  `ToJson` writes the same bytes as before: over every case of
-  `fixtures/cases.json` and 14 hand-built payloads the old and new output
-  are identical on both assets, and a lone surrogate in a hand-built
-  payload, which has no UTF-8 form, is now written as U+FFFD
+  reflection serializer is used, so the trimmed build stays clean.
+  `ToJson` escapes with the library's `UnsafeRelaxedJsonEscaping`: less
+  hand-written code beats byte-identical output (the owner's decision
+  Q20, 2026-10-02), so a custom `JavaScriptEncoder` that kept 0.7's
+  escaping was dropped the same day. The text can differ from 0.7's in
+  escaping only: upper-case hex in `\u` escapes, and `\u` escapes for
+  U+007F to U+009F, U+2028 and U+2029, private-use, U+FEFF, noncharacter
+  and unassigned code points, and every character outside the BMP (as a
+  surrogate pair), which 0.7 wrote as themselves. Old and new were
+  compared on the 187 `verifyReceipt` and 114 `verifySignedData` cases
+  of `fixtures/cases.json` and 14 hand-built payloads, on both assets:
+  every verdict and every `verifySignedData` payload text is the same,
+  and of the 81 verified receipts' and 14 payloads' `ToJson` texts, 10
+  differ, each with the same JSON value. The 50 `verifyReceiptEndpoint` cases were
+  not compared (their answers carry the wall clock), nor the 33
+  `decodeBase64` cases (no JSON output). A lone surrogate in a hand-built
+  payload, which has no UTF-8 form, is now written as `\uFFFD`
   ([.NET JSON][stjout]). net8.0 gains no dependency; netstandard2.0 takes
   `System.Text.Json` 10.0.12, which brings `Microsoft.Bcl.AsyncInterfaces`,
   `System.IO.Pipelines`, `System.Text.Encodings.Web` and

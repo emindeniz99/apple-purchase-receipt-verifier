@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-string[] inputs = { "<script>&'+`", "\u007f\u0080\u00ad", "\u2028\u2029", "\ue000\ufeff\ufffe\uffff", "\u0378\u0870", "caf\u00e9 \U0001F600 \U0010FFFF", "\u0000\u001f" };
+string[] inputs = { "<script>&'+`", "\u007f\u0080\u00ad", "\u2028\u2029", "\ue000\ufeff\ufffe\uffff", "\u0378\u0870", "caf\u00e9 \U0001F600 \U0010FFFF", "\u0000\u001f", "\ud800 a\udc00b" };
 foreach (var enc in new[] { ("default", JavaScriptEncoder.Default), ("relaxed", JavaScriptEncoder.UnsafeRelaxedJsonEscaping) })
 foreach (string s in inputs)
 {
