@@ -2,7 +2,6 @@ package applereceipt_test
 
 import (
 	"crypto/x509"
-	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -18,29 +17,18 @@ import (
 // Structural gates. A code review habit is not a control; these are.
 
 // forbiddenImports are the packages that would let this library reach the
-// network or the operating system trust store. None of them may appear in
-// any file the library compiles.
+// network, a subprocess or the file system. None of them may appear in any
+// file the library compiles. The crypto, X.509 and ASN.1 packages (crypto/tls
+// and golang.org/x/crypto among them) are banned for every wrapper in one
+// place, tools/check-one-implementation.mjs.
 var forbiddenImports = map[string]string{
-	"net":                      "no network, ever (PLAN.md D12)",
-	"net/http":                 "no network, ever (PLAN.md D12)",
-	"net/url":                  "nothing here has a URL",
-	"golang.org/x/crypto/ocsp": "revocation checking is disabled by design",
-	"os/exec":                  "a verification library runs no subprocesses",
-	"crypto/tls":               "no network, ever",
-	"os":                       "trust anchors are embedded, never read at call time",
-	"io/ioutil":                "trust anchors are embedded, never read at call time",
-	"path/filepath":            "trust anchors are embedded, never read at call time",
-}
-
-// forbiddenIdentifiers would reintroduce the platform trust evaluation
-// the hand-written path builder exists to avoid.
-var forbiddenIdentifiers = []string{
-	"x509.SystemCertPool",
-	"x509.NewCertPool",
-	"x509.CertPool",
-	"x509.VerifyOptions",
-	"CheckSignatureFrom",
-	"SetDefaultPaths",
+	"net":           "no network, ever (PLAN.md D12)",
+	"net/http":      "no network, ever (PLAN.md D12)",
+	"net/url":       "nothing here has a URL",
+	"os/exec":       "a verification library runs no subprocesses",
+	"os":            "trust anchors are embedded, never read at call time",
+	"io/ioutil":     "trust anchors are embedded, never read at call time",
+	"path/filepath": "trust anchors are embedded, never read at call time",
 }
 
 // libraryFiles are the non-test Go files a consumer compiles. One command
@@ -97,49 +85,16 @@ func TestLibraryImportsNothingForbidden(t *testing.T) {
 	}
 }
 
-func TestLibraryMentionsNoForbiddenIdentifier(t *testing.T) {
-	for _, path := range libraryFiles(t) {
-		source, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Identifiers only, so the comment that explains WHY the platform
-		// verifier is never called does not trip the gate enforcing it.
-		text := stripComments(t, path, source)
-		for _, identifier := range forbiddenIdentifiers {
-			if strings.Contains(text, identifier) {
-				t.Errorf("%s uses %s outside a comment; the path builder is hand-written "+
-					"precisely so the platform verifier is never reached",
-					filepath.Base(path), identifier)
-			}
-		}
-	}
-}
-
 // This package is a wrapper: aprv.wasm decides, and no file here parses
 // ASN.1, reads a certificate, checks a signature, validates base64 or walks
-// a chain. The imports a verifier would need are refused outright, and the
-// few that only carry data are allowed in the one file that carries it.
-// This is the Go half of the one-implementation gate of
-// docs/rust-core/ARCHITECTURE.md section 9; CI runs a cruder grep beside it.
+// a chain. The crypto, X.509 and ASN.1 packages are refused for every
+// wrapper by tools/check-one-implementation.mjs (docs/rust-core/
+// ARCHITECTURE.md section 9). The encodings below are not crypto, so that
+// gate allows them; here each is held to the files that only carry data
+// with it.
 var verificationImports = map[string][]string{
-	"encoding/asn1":    nil,
-	"encoding/pem":     nil,
-	"crypto/ecdsa":     nil,
-	"crypto/ed25519":   nil,
-	"crypto/elliptic":  nil,
-	"crypto/rsa":       nil,
-	"crypto/dsa":       nil,
-	"crypto/sha1":      nil,
-	"crypto/sha512":    nil,
-	"crypto/hmac":      nil,
-	"crypto/subtle":    nil,
-	"math/big":         nil,
-	"crypto/x509/pkix": nil,
-	"crypto/x509":      {"config.go"}, // the Config's trust-anchor type, and .Raw
-	"crypto/sha256":    {"wasm.go"},   // pins the embedded module
-	"encoding/hex":     {"wasm.go"},
-	"encoding/base64":  {"receiptpayload.go", "config.go"}, // the wire's bytes fields, and init's roots
+	"encoding/hex":    {"wasm.go"},
+	"encoding/base64": {"receiptpayload.go", "config.go"}, // the wire's bytes fields, and init's roots
 }
 
 func TestLibraryHoldsNoVerificationLogic(t *testing.T) {
@@ -161,49 +116,6 @@ func TestLibraryHoldsNoVerificationLogic(t *testing.T) {
 			}
 		}
 	}
-}
-
-// Of what crypto/x509 offers, the library uses the certificate type and its
-// .Raw DER, nothing else: the Apple roots are compiled into the module, so
-// no file here reads a certificate. Nothing checks a signature, builds a
-// path or reads a name.
-func TestNoCertificateIsEverParsed(t *testing.T) {
-	for _, path := range libraryFiles(t) {
-		source, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		text := stripComments(t, path, source)
-		for _, identifier := range []string{"x509.ParseCertificate", "x509.ParseCertificates", "x509.ParseCertificateRequest"} {
-			if strings.Contains(text, identifier) {
-				t.Errorf("%s uses %s: the wrapper reads no certificate; the module holds the roots", filepath.Base(path), identifier)
-			}
-		}
-	}
-}
-
-func stripComments(t *testing.T, path string, source []byte) string {
-	t.Helper()
-	fileSet := token.NewFileSet()
-	file, err := parser.ParseFile(fileSet, path, source, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("%s: %v", path, err)
-	}
-	var out strings.Builder
-	ast.Inspect(file, func(node ast.Node) bool {
-		if identifier, ok := node.(*ast.Ident); ok {
-			out.WriteString(identifier.Name)
-			out.WriteByte(' ')
-		}
-		if selector, ok := node.(*ast.SelectorExpr); ok {
-			if pkg, ok := selector.X.(*ast.Ident); ok {
-				out.WriteString(pkg.Name + "." + selector.Sel.Name)
-				out.WriteByte(' ')
-			}
-		}
-		return true
-	})
-	return out.String()
 }
 
 // The published module has one dependency, wazero, pinned to an exact
