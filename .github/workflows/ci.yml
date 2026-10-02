@@ -2209,6 +2209,9 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
+      # The gate's own test first: every known bypass, planted in a
+      # scratch tree, must be a hit, so a weakened gate cannot pass green.
+      - run: node --test tools/test/check-one-implementation.test.mjs
       - run: node tools/check-one-implementation.mjs --enforce all
 
   # The Linux x86_64 static aprv binary, built as the release builds it
