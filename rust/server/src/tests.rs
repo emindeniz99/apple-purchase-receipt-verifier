@@ -193,11 +193,7 @@ fn size_inputs() -> Vec<(&'static str, Op, String, Vec<u8>)> {
         (
             "/v1/receipt/verify",
             receipt,
-            &[
-                "receipt-b64-at-cap.txt",
-                "receipt-b64-over-cap.txt",
-                "receipt-der-over-cap.der",
-            ][..],
+            &["receipt-b64-at-cap.txt", "receipt-b64-over-cap.txt"][..],
         ),
         (
             "/v1/signed-data/verify",
@@ -225,6 +221,13 @@ fn size_inputs() -> Vec<(&'static str, Op, String, Vec<u8>)> {
         for f in files {
             let bytes = std::fs::read(repo(&format!("fixtures/limits/{f}"))).unwrap();
             out.push((path, op, f.to_string(), bytes));
+        }
+        if path == "/v1/receipt/verify" {
+            // A raw DER receipt one byte over the cap: only its length and
+            // its leading SEQUENCE tag matter, so it is built here.
+            let mut der = vec![0; MAX_BODY + 1];
+            der[0] = 0x30;
+            out.push((path, op, "DER of MAX_BODY + 1".into(), der));
         }
         out.push((path, op, "2 x MAX_BODY".into(), vec![b'A'; 2 * MAX_BODY]));
         out.push((
