@@ -18,6 +18,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
 
@@ -131,9 +132,12 @@ async fn require_token(
             .get(TOKEN_HEADER)
             .map(|v| v.as_bytes())
             .unwrap_or(b"");
-        // Constant time over the bytes; a length that differs is refused
-        // at once (the length is not the secret).
-        if !bool::from(got.ct_eq(want)) {
+        // Compared as SHA-256 digests, in constant time: `ct_eq` on the
+        // tokens themselves returns at once on a length mismatch, which
+        // would let timing tell the token's length. Digests are always 32
+        // bytes, so every presented token costs the same comparison.
+        let (got, want) = (Sha256::digest(got), Sha256::digest(want));
+        if !bool::from(got.as_slice().ct_eq(want.as_slice())) {
             return problem(
                 StatusCode::UNAUTHORIZED,
                 "UNAUTHORIZED",

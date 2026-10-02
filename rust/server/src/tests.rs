@@ -396,6 +396,21 @@ async fn the_token_guards_every_v1_route_and_nothing_else() {
         )
         .await;
         assert_eq!(s, StatusCode::UNAUTHORIZED, "{path}: a wrong token");
+        // Shorter, a prefix, and longer: the digests differ, so each is
+        // refused through the same 32-byte comparison as a wrong token.
+        for wrong_length in [
+            "x",
+            "0123456789abcdef0123456789abcde",
+            "0123456789abcdef0123456789abcdef0",
+        ] {
+            let (s, _, _) = send(&r, &m, path, &[("x-aprv-token", wrong_length)], g5()).await;
+            assert_eq!(
+                s,
+                StatusCode::UNAUTHORIZED,
+                "{path}: a token of {} bytes",
+                wrong_length.len()
+            );
+        }
         let (s, _, _) = send(
             &r,
             &m,
