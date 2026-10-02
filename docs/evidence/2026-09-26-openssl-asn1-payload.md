@@ -264,6 +264,12 @@ changes.
 
   The Xcode receipts are BER in their CMS wrapping only; their payloads
   are DER.
+
+  Three of the 43 files, `fixtures/generated/receipt-at-der-cap.der`,
+  `receipt-over-der-cap.der` and `receipt-byte-floor.der`, were deleted
+  on 2026-10-02. `scripts/replay.sh` and `scripts/fuzz.sh seeds` glob
+  `fixtures/generated/receipt*.der`, so a rerun replays 40 files and
+  seeds the fuzzer without those three payloads.
 - **BER spellings** (`results/ber-variants.txt`, `py/ber_variants.py`).
   The eight fixture payloads are re-spelled five ways:
   - indefinite lengths everywhere;

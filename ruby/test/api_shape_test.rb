@@ -200,14 +200,8 @@ class ApiShapeTest < Minitest::Test
     assert_match(/\A\d+\.\d+\.\d+\z/, APRV::VERSION)
   end
 
-  # No wrapper holds verification logic (docs/rust-core/ARCHITECTURE.md, the
-  # invariants): nothing under lib/ may reach for a crypto, X.509, ASN.1,
-  # CMS or JWS API. The CI job `one-implementation` greps for the same names
-  # across every wrapper.
-  FORBIDDEN = [
-    /require\s+["']openssl["']/, /OpenSSL/, /\bOpenSSL::/, /\bX509\b/i, /\bPKCS7\b/i, /\bASN1\b/i,
-    /\bCMS\b/, /\bx5c\b/i, /base64url/i, /\bECDSA\b/i, /Signature/
-  ].freeze
+  # The crypto, X.509, ASN.1, CMS and JWS names lib/ must not use are banned
+  # for every wrapper in one place, tools/check-one-implementation.mjs.
 
   # An environment variable that swaps the module would let whoever controls
   # a process's environment replace the verifier inside it. The library reads
@@ -219,19 +213,6 @@ class ApiShapeTest < Minitest::Test
     files.each do |file|
       File.readlines(file, chomp: true, encoding: "UTF-8").each_with_index do |line, index|
         refute_match(/\bENV\b/, line, "#{File.basename(file)}:#{index + 1} mentions ENV")
-      end
-    end
-  end
-
-  def test_the_library_holds_no_verification_code
-    files = Dir[File.expand_path("../lib/**/*.rb", __dir__)]
-    refute_empty files
-    files.each do |file|
-      File.readlines(file, chomp: true, encoding: "UTF-8").each_with_index do |line, index|
-        code = line.sub(/#.*\z/, "")
-        FORBIDDEN.each do |pattern|
-          refute_match pattern, code, "#{File.basename(file)}:#{index + 1} looks like verification code"
-        end
       end
     end
   end

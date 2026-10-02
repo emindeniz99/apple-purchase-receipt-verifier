@@ -29,7 +29,7 @@ fixtures="$here/../../fixtures"
 target="${1:?usage: run.sh <target>|all|list|build [seconds]}"
 seconds="${2:-60}"
 
-all_targets=(json receipt receipt-base64 jws endpoint-json)
+all_targets=(receipt receipt-base64 jws endpoint-json)
 
 if [ "$target" = list ]; then
   printf '%s\n' "${all_targets[@]}"
@@ -75,8 +75,6 @@ build() {
 
 seeds_for() {
   case "$1" in
-    json)
-      echo "$here/seeds/json" "$here/seeds/generated/json" ;;
     receipt)
       echo "$fixtures/generated" "$fixtures/apple-official/certs" ;;
     receipt-base64)
@@ -90,13 +88,13 @@ seeds_for() {
   esac
 }
 
-# The two JSON targets want request bodies, not receipts. Rather than commit a
+# The endpoint target wants request bodies, not receipts. Rather than commit a
 # second copy of a 7 KB receipt, wrap the shared base64 fixtures into bodies at
 # run time, into a gitignored directory.
 generate_seeds() {
   local out="$here/seeds/generated"
   rm -rf "$out"
-  mkdir -p "$out/endpoint-json" "$out/json"
+  mkdir -p "$out/endpoint-json"
   local n=0
   local file
   for file in "$fixtures"/public-receipts/*.b64 "$fixtures"/generated/receipt-b64/*.txt; do
@@ -105,9 +103,6 @@ generate_seeds() {
     printf '{"receipt-data":"%s","password":"secret"}' \
       "$(tr -d '\n\r' < "$file")" > "$out/endpoint-json/receipt-$n.json"
   done
-  cp "$out"/endpoint-json/*.json "$out/json/" 2>/dev/null || true
-  cp "$fixtures/cases.json" "$out/json/cases.json"
-  cp "$fixtures/generated/manifest.json" "$out/json/manifest.json"
 }
 
 run_one() {

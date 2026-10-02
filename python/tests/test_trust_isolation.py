@@ -325,12 +325,9 @@ class SourceScanTest(unittest.TestCase):
             # find-certificate`, `openssl verify`, `curl`.
             "subprocess",
             "ctypes",
-            # The package holds no verification logic: nothing that parses
-            # ASN.1 or X.509, checks a signature or builds a chain.
-            "asn1crypto",
-            "cryptography",
-            "OpenSSL",
-            "hmac",
+            # Dates and their US Pacific renderings are the module's (R38).
+            # The crypto, X.509 and ASN.1 libraries are banned for every
+            # wrapper in one place, tools/check-one-implementation.mjs.
             "zoneinfo",
         }
     )

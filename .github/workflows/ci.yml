@@ -1508,10 +1508,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # SharpFuzz under libFuzzer, over the four public entry points and the
-  # wrapper's own JSON handling around aprv.wasm. SharpFuzz instruments .NET
-  # IL only, so the module is a black box here; its parser has its own fuzz
-  # jobs (rust-fuzz, nightly.yml). The invariants are the go-fuzz and
+  # SharpFuzz under libFuzzer, over the four public entry points around
+  # aprv.wasm (`./run.sh list` names the targets). SharpFuzz instruments
+  # .NET IL only, so the module is a black box here; its parser has its own
+  # fuzz jobs (rust-fuzz, nightly.yml). The invariants are the go-fuzz and
   # rust-fuzz jobs': nothing but a VerificationException escapes, an
   # accepted receipt or JWS fails against an unrelated anchor set, and the
   # verifyReceipt endpoint always answers JSON with a numeric status.
@@ -2045,11 +2045,7 @@ jobs:
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/wasm-tools"
-          pin() { sed -n "s/^$1=\(.*\)$/\1/p" tools/wasm-toolchain.sh; }
-          curl -fsSL --retry 4 --retry-delay 2 -o "$RUNNER_TEMP/wasm-tools.tar.gz" "$(pin WASM_TOOLS_URL)"
-          echo "$(pin WASM_TOOLS_SHA256)  $RUNNER_TEMP/wasm-tools.tar.gz" | sha256sum -c -
-          mkdir -p "$dir"
-          tar -C "$dir" --strip-components=1 -xzf "$RUNNER_TEMP/wasm-tools.tar.gz"
+          .github/scripts/install-wasm-tools.sh "$dir"
           echo "$dir" >> "$GITHUB_PATH"
           PATH="$dir:$PATH" tools/check-wasm.sh "$RUNNER_TEMP/aprv" rust/bindings/abi/wit/aprv.wit
       - name: the ABI tests on a hand-rolled host
@@ -2213,6 +2209,9 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
+      # The gate's own test first: every known bypass, planted in a
+      # scratch tree, must be a hit, so a weakened gate cannot pass green.
+      - run: node --test tools/test/check-one-implementation.test.mjs
       - run: node tools/check-one-implementation.mjs --enforce all
 
   # The Linux x86_64 static aprv binary, built as the release builds it
@@ -2273,16 +2272,12 @@ jobs:
       - name: the managed mode
         run: python3 rust/server/scripts/managed-smoke.py --aprv "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl"
       # wasm-tools from its pinned release archive (tools/wasm-toolchain.sh
-      # holds the one pin), to assemble the hostile component the full
-      # build step 1 left serves.
+      # holds the one pin; .github/scripts/install-wasm-tools.sh fetches it),
+      # to assemble the hostile component the full build step 1 left serves.
       - name: the hostile component through a real server
         run: |
           set -euo pipefail
-          pin() { sed -n "s/^$1=\(.*\)$/\1/p" tools/wasm-toolchain.sh; }
-          curl -fsSL --retry 4 --retry-delay 2 -o "$RUNNER_TEMP/wasm-tools.tar.gz" "$(pin WASM_TOOLS_URL)"
-          echo "$(pin WASM_TOOLS_SHA256)  $RUNNER_TEMP/wasm-tools.tar.gz" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/wasm-tools"
-          tar -C "$RUNNER_TEMP/wasm-tools" --strip-components=1 -xzf "$RUNNER_TEMP/wasm-tools.tar.gz"
+          .github/scripts/install-wasm-tools.sh "$RUNNER_TEMP/wasm-tools"
           PATH="$RUNNER_TEMP/wasm-tools:$PATH" rust/server/scripts/hostile-smoke.sh rust/server/target/x86_64-unknown-linux-gnu/release/aprv
 
   # aprv-server (MIGRATION.md Phase 2): lint and tests with the component
