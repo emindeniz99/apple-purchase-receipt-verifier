@@ -20,8 +20,12 @@ Swift **6.3** or newer, on macOS 15+, iOS 18+ or Linux (`Package.swift`
 declares `.macOS(.v15), .iOS(.v18)`). Those are the floors of
 [WasmKit](https://github.com/swiftwasm/WasmKit), which runs the module (see
 [How it works](#how-it-works)). The other dependency,
-[swift-crypto](https://github.com/apple/swift-crypto) from 5.0.0 (Swift
-6.2), computes the SHA-256 that checks the bundled module against its pin.
+[swift-crypto](https://github.com/apple/swift-crypto), computes the SHA-256
+that checks the bundled module against its pin. Any release from 3.0.0 up
+to, not including, 6.0.0 will do, so the package resolves next to Apple's
+[app-store-server-library-swift](https://github.com/apple/app-store-server-library-swift)
+(swift-crypto below 4.0.0) and swift-nio-ssh (below 5.0.0). CI builds and
+tests both ends: 5.0.0, which `Package.resolved` pins, and 3.0.0.
 Coming from 0.7? Read
 [Upgrading from 0.7](#upgrading-from-07): the API is the same except
 `Config.roots`, and the floors rose.
@@ -381,8 +385,10 @@ against the same `fixtures/cases.json`. What changed:
   into the module. `ConfigBuilder.roots(_:)` takes DER as before, and PEM
   bytes too.
 - **Dependencies**: swift-certificates and swift-asn1 are gone. WasmKit
-  runs the module, and swift-crypto stays, from 5.0.0 (0.7 asked for
-  4.5.1), for one SHA-256: the bundled module against its pin.
+  runs the module, and swift-crypto stays, for one SHA-256: the bundled
+  module against its pin. 0.7 asked for swift-crypto 4.5.1 or newer, which
+  could not resolve next to app-store-server-library-swift; 0.8 takes
+  anything from 3.0.0 up to, not including, 6.0.0.
 - **The clock is read once per call, always**, before the input is looked
   at; 0.7 read it only when it was needed. The verdicts do not change.
 - **`Failure.cause`** is the host's error (a trap, an unusable answer) for

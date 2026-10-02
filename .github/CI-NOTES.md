@@ -52,7 +52,7 @@ second column is what it takes from other jobs.
 | node | `node`, `node-runtimes` (node, bun, deno, workerd, edge), `node-browsers` (Playwright 1.56.1), `node-lint`, `smoke-npm` | `aprv-wasm` (the component) |
 | python | `python` (Python 3.10 to 3.14 on the six runner images wasmtime-py ships wheels for, a second warm-cache run), `python-musl` (digest-pinned `ghcr.io/astral-sh/uv` Alpine images, with `libgcc`), `python-fuzz`, `python-tools`, `smoke-pypi` | `aprv-wasm` |
 | go | `go`, `go-platforms`, `go-cross`, `go-scratch` (a static corpus runner in an empty chroot), `go-race`, `go-fuzz`, `go-lint`, `smoke-go` | `aprv-wasm` |
-| swift | `swift` (6.3 and 6.4 containers, debug build then release tests), `swift-macos` and `swift-ios` (`macos-26`: the package needs Swift tools 6.3), `swift-fuzz`, `swift-format`, `smoke-swiftpm` | `aprv-wasm` |
+| swift | `swift` (6.3 and 6.4 containers, debug build then release tests), `swift-crypto-floor` (the same on 6.3 with swift-crypto moved to the manifest's 3.0.0 floor), `swift-macos` and `swift-ios` (`macos-26`: the package needs Swift tools 6.3), `swift-fuzz`, `swift-format`, `smoke-swiftpm` | `aprv-wasm` |
 | ruby | `ruby`, `ruby-gem`, `ruby-macos`, `ruby-tools`, `ruby-fuzz`, `smoke-rubygems` | `aprv-wasm` |
 | dotnet | `dotnet`, `dotnet-mono`, `dotnet-trim`, `dotnet-fuzz`, `dotnet-format`, `smoke-nuget` | `aprv-wasm` |
 | php | `php` (the suites, then the conformance cases, then HTTP on 8.4), `php-lowest`, `php-static`, `php-fuzz`, `php-format` | `aprv-server-x86_64-unknown-linux-musl` |

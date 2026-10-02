@@ -56,6 +56,9 @@ toolchain. Four rules:
   `go.sum`. Two legs resolve from ranges on purpose, because resolving is
   what they test: `php-lowest` (`composer update --prefer-lowest`) and
   Java, which pins exact versions and has no lockfile format.
+  `swift-crypto-floor` moves one Swift pin, swift-crypto, to the
+  manifest's 3.0.0 floor, and fails unless the pin records the commit
+  that tag named when the leg was written.
 - **No long-lived registry tokens.** npm, PyPI, RubyGems, crates.io and NuGet
   publish through OIDC trusted publishing from `release.yml`; there is no
   token to steal from a laptop or a workflow. Maven Central has no OIDC

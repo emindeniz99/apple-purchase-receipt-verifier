@@ -9,9 +9,16 @@ secret.
 - `Package.swift` (repository root) is `swift-tools-version:6.3` with
   `platforms: [.macOS(.v15), .iOS(.v18)]` and two dependencies: WasmKit
   `from: "0.4.1"` with only its `MultiThread` trait, and swift-crypto
-  `from: "5.0.0"` for its `Crypto` product, which hashes the module
+  `"3.0.0" ..< "6.0.0"` for its `Crypto` product, which hashes the module
   against its pin. swift-certificates and swift-asn1 are gone from the
   manifest.
+- **swift-crypto is a range, not `from: "5.0.0"`.** Apple's
+  app-store-server-library-swift requires swift-crypto `"1.0.0" ..<
+  "4.0.0"`, and swift-nio-ssh and swift-container-plugin `..< "5.0.0"`, so
+  a 5.0.0 floor left this package unresolvable next to them. The one call,
+  `SHA256.hash(data:)`, is the same from 3.0.0 on, and 3.0.0 has no
+  dependencies of its own. `swift-crypto-floor` (below) is what makes the
+  3.0.0 floor a tested claim.
 - **The floor is WasmKit 0.4.1, not the plan's 0.4.0.** 0.4.1 (tagged
   2026-09-29) fixes a use-after-free under software bounds checking: the
   interpreter kept its cached memory base across a host call, and a host
@@ -66,6 +73,7 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 | Job | Change |
 |---|---|
 | `swift` (Linux matrix) | drop the `6.1` and `6.2` legs: the manifest's tools version is 6.3, which they cannot read. Keep `swift:6.3@sha256:56ef1be2...` (the floor) and add the newest line (6.4) when its digest is pinned. Replace both steps with the one command above; the old debug step goes (see above), the release one stays. A cold release build of WasmKit took 4 min 43 s here on 2 of 4 shared cores; the whole suite then ran in 2 min 27 s. Raise `timeout-minutes` to 45. |
+| `swift-crypto-floor` (new) | the manifest's swift-crypto floor, on Linux in the 6.3 container: `swift package resolve --force-resolved-versions` checks out the committed pins, `swift package resolve swift-crypto --version 3.0.0` moves that one pin (the subcommand only moves a dependency the workspace already holds, hence the first resolve; swift-asn1 drops out, since 3.0.0 does not depend on it), a grep checks that the pin records 3.0.0's commit `629f0b679d0fd0a6ae823d7f750b9ab032c00b80`, then the `swift` job's debug build and release tests run with `--force-resolved-versions`. The committed `Package.resolved` stays at the newest release. |
 | `swift-macos` | `runs-on: macos-15` (or `macos-latest` as long as it is 15+ with Xcode carrying Swift 6.3+), the same command. |
 | `swift-ios` (new) | the iOS compile the plan asks for, which cannot be done on Linux: on `macos-15`, `xcodebuild build -scheme ApplePurchaseReceiptVerifier -destination 'generic/platform=iOS' -skipPackagePluginValidation` (the library product's scheme; `xcodebuild -list` names it if SwiftPM spells it differently). It proves the package and WasmKit compile for iOS 18 with the software bounds checking the package selects (mprotect is compiled only for Linux and macOS). Nothing runs on a device. |
 | `swift-format` | unchanged command; `swift format lint --strict --recursive swift/Sources swift/Tests` (6.3.3) is clean on this branch. |

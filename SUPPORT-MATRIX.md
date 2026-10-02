@@ -214,7 +214,7 @@ WasmKit sets.
 
 | Line | Status | CI |
 |---|---|---|
-| 6.3 | floor | `swift` (Linux container), `swift-macos`, `swift-ios`, `swift-format`, `swift-fuzz`, `smoke-swiftpm` |
+| 6.3 | floor | `swift` (Linux container), `swift-crypto-floor`, `swift-macos`, `swift-ios`, `swift-format`, `swift-fuzz`, `smoke-swiftpm` |
 | 6.4 | current | `swift` (Linux container) |
 
 ## Platforms per package
