@@ -7,8 +7,8 @@ import XCTest
 /// the 0.7 Swift suite where it can still be reached through the public
 /// API. Since 0.8 the verification module decides all of it, so these are
 /// tests of the module through this host; MIGRATION.md Phase 7 step 1 moves
-/// them into fixtures/cases.json, and the tests that needed swift-crypto to
-/// forge receipts went with that dependency.
+/// them into fixtures/cases.json. The 0.7 tests that forged receipts with
+/// swift-crypto are gone.
 final class PortBehaviourTests: XCTestCase {
     /// An x5c entry starting with U+FEFF is outside the base64 alphabet and
     /// must be INVALID_CERTIFICATE, like any other character there. A header
@@ -227,14 +227,15 @@ final class SourceIsolationTests: XCTestCase {
         }
     }
 
-    /// WasmKit is the one direct dependency: a new one is a supply-chain
+    /// WasmKit runs the module and swift-crypto hashes it against its pin;
+    /// they are the only direct dependencies. A new one is a supply-chain
     /// decision, not a side effect.
-    func testWasmKitIsTheOnlyDependency() throws {
+    func testWasmKitAndSwiftCryptoAreTheOnlyDependencies() throws {
         let manifest = try String(
             contentsOf: Self.sources.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
                 .appendingPathComponent("Package.swift"), encoding: .utf8)
         let urls = manifest.split(separator: "\n").filter { $0.contains(".package(url:") }
             .compactMap { $0.split(separator: "\"").dropFirst().first.map(String.init) }
-        XCTAssertEqual(urls, ["https://github.com/swiftwasm/WasmKit.git"])
+        XCTAssertEqual(urls, ["https://github.com/swiftwasm/WasmKit.git", "https://github.com/apple/swift-crypto.git"])
     }
 }

@@ -34,12 +34,19 @@ let package = Package(
         // default traits) add code this package never calls: the module is
         // parsed from bytes, and nothing is disassembled.
         .package(url: "https://github.com/swiftwasm/WasmKit.git", from: "0.4.1", traits: ["MultiThread"]),
+        // One job: the SHA-256 that checks the bundled aprv.wasm against
+        // aprv.wasm.sha256 before the module is parsed. Only the Crypto
+        // product, which is CryptoKit on Apple platforms and swift-crypto's
+        // own implementation on Linux. 5.0.0 is the current release, and its
+        // Swift 6.2 floor sits under this package's 6.3.
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0"),
     ],
     targets: [
         .target(
             name: "ApplePurchaseReceiptVerifier",
             dependencies: [
                 .product(name: "WasmKit", package: "WasmKit"),
+                .product(name: "Crypto", package: "swift-crypto"),
             ],
             path: "swift/Sources/ApplePurchaseReceiptVerifier",
             resources: [
