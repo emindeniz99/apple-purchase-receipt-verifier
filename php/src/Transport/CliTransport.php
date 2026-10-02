@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Info;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Input;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Text;
 use InvalidArgumentException;
 use LogicException;
@@ -92,7 +93,7 @@ final class CliTransport implements Transport
     public function call(Operation $operation, string $input, int $nowMs): string
     {
         $arguments = array_merge($operation->cliArguments(), ['--now-ms', (string) $nowMs], $this->rootsArguments());
-        [$code, $out, $err] = $this->execute($arguments, $input);
+        [$code, $out, $err] = $this->execute($arguments, substr($input, 0, Input::MAX_BYTES));
         // 3: the input was over the cap; stdout is still the module's answer.
         if ($code === 0 || $code === 3) {
             return $out;

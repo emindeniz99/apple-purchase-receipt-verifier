@@ -6,6 +6,7 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
 use CurlHandle;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Info;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Input;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Text;
 use InvalidArgumentException;
 use LogicException;
@@ -79,7 +80,7 @@ final class HttpTransport implements Transport
 
     public function call(Operation $operation, string $input, int $nowMs): string
     {
-        [$status, $body, $type] = $this->request('POST', $operation->httpPath(), $input, $nowMs);
+        [$status, $body, $type] = $this->request('POST', $operation->httpPath(), substr($input, 0, Input::MAX_BYTES), $nowMs);
         // A 413 carries the module's own answer to an input over the cap, as
         // JSON; a 413 problem document (an older server) falls through.
         if ($status === 200 || ($status === 413 && str_starts_with(strtolower($type), 'application/json'))) {

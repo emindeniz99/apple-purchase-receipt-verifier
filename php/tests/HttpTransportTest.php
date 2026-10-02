@@ -105,6 +105,30 @@ final class HttpTransportTest extends TestCase
         self::assertSame('sekret', $infoHeaders['x-aprv-token'], 'the info request carries the token too');
     }
 
+    /**
+     * An input over the cap is sent cut to one byte over it, the cut every
+     * Wasm wrapper makes: the server reads no more of a body announced past
+     * its drain limit and closes after its answer. An input at the cap is
+     * sent whole.
+     */
+    public function testAnInputOverTheCapIsSentCutToOneByteOverIt(): void
+    {
+        $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
+        $transport = new HttpTransport($server->url);
+        $transport->open(null);
+        $twentyMib = str_repeat("A\xffB\0", 5 * 1024 * 1024);
+
+        $transport->call(Operation::Receipt, $twentyMib, 1);
+        $request = $server->requests()[count($server->requests()) - 1];
+        self::assertSame(3145729, $request['body_length']);
+        self::assertSame(hash('sha256', substr($twentyMib, 0, 3145729)), $request['body_sha256'], 'the first bytes, unchanged');
+
+        $atCap = str_repeat('A', 3145728);
+        $transport->call(Operation::Receipt, $atCap, 1);
+        $request = $server->requests()[count($server->requests()) - 1];
+        self::assertSame(hash('sha256', $atCap), $request['body_sha256'], 'an input at the cap is sent whole');
+    }
+
     public function testNoTokenHeaderIsSentWithoutAToken(): void
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
@@ -383,12 +407,16 @@ final class HttpTransportTest extends TestCase
         $server = Aprv::startServer();
         try {
             $verifier = Verifier::create(new Config(), new HttpTransport($server->url));
-            $over = str_repeat('A', 3145728 + 1);
-
-            self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifyReceipt($over))->reason);
-            self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifySignedData($over))->reason);
-            self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Production, $over));
-            self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Sandbox, $over));
+            // One byte over, and past the server's 16 MiB drain limit, where
+            // the server reads only what the module needs and then closes.
+            foreach ([str_repeat('A', 3145728 + 1), str_repeat('A', 20 * 1024 * 1024)] as $over) {
+                $receipt = Outcome::failure($verifier->verifyReceipt($over));
+                self::assertSame(Reason::TooLarge, $receipt->reason, $receipt->message);
+                self::assertNull($receipt->cause, 'the module\'s verdict, not a transport failure');
+                self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifySignedData($over))->reason);
+                self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Production, $over));
+                self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Sandbox, $over));
+            }
         } finally {
             $server->stop();
         }

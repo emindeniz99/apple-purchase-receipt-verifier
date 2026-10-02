@@ -85,6 +85,21 @@ final class CliTransportTest extends TestCase
         self::assertFileDoesNotExist('pwned', 'no shell parsed anything');
     }
 
+    /** An input over the cap goes to stdin cut to one byte over it, the cut every Wasm wrapper makes; one at the cap whole. */
+    public function testAnInputOverTheCapIsSentCutToOneByteOverIt(): void
+    {
+        $transport = $this->opened();
+        $twentyMib = str_repeat("A\xffB\0", 5 * 1024 * 1024);
+        $atCap = str_repeat('A', 3145728);
+
+        $transport->call(Operation::Receipt, $twentyMib, 1);
+        $transport->call(Operation::Receipt, $atCap, 1);
+
+        $log = $this->cli->log();
+        self::assertSame([3145729, 3145728], array_column($log, 'stdin_length'));
+        self::assertSame(hash('sha256', substr($twentyMib, 0, 3145729)), $log[0]['stdin_sha256'], 'the first bytes, unchanged');
+    }
+
     public function testTheCallReturnsTheJsonOnStdoutUnchanged(): void
     {
         $answer = "{\"verified\":false, \"x\":\"\u{e9}\"}\n  ";
@@ -309,7 +324,7 @@ final class CliTransportTest extends TestCase
     {
         $verifier = Verifier::create(new Config(), new CliTransport(Aprv::binary()));
         $over = str_repeat('A', 3145728 + 1);
-        $receipt = Outcome::failure($verifier->verifyReceipt(str_repeat('A', 2 * 3145728)));
+        $receipt = Outcome::failure($verifier->verifyReceipt(str_repeat('A', 20 * 1024 * 1024)));
         self::assertSame(Reason::TooLarge, $receipt->reason);
         self::assertNull($receipt->cause, 'the module\'s verdict, not a transport failure');
         self::assertStringContainsString('3145728', $receipt->message, 'the module\'s own message');
