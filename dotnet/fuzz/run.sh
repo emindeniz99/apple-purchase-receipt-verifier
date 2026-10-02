@@ -3,6 +3,9 @@
 #
 #   ./run.sh <target> [seconds]      default 60
 #   ./run.sh all [seconds]
+#   ./run.sh list                    the targets `all` runs
+#   ./run.sh build                   the driver, the publish, the
+#                                    instrumentation and the seeds; no run
 #
 # libFuzzer takes several corpus directories and writes new units only to the
 # first, so the shared fixtures seed every run without being copied into
@@ -11,18 +14,27 @@
 # rather than only where a fuzzer is installed.
 #
 # Environment:
-#   CC          compiler for the driver              (default clang)
-#   JOBS        parallel targets for `all`           (default 1)
-#   MAX_LEN     libFuzzer -max_len                   (default 65536)
-#   RSS_LIMIT   libFuzzer -rss_limit_mb              (default 4096)
+#   CC             compiler for the driver              (default clang)
+#   JOBS           parallel targets for `all`           (default 1)
+#   MAX_LEN        libFuzzer -max_len                   (default 65536)
+#   RSS_LIMIT      libFuzzer -rss_limit_mb              (default 4096)
+#   FUZZ_PREBUILT  non-empty: run on what `./run.sh build` left, without
+#                  building again. CI builds in a step of its own so a
+#                  compile error stays in a readable log while the targets'
+#                  output does not (.github/scripts/fuzz-quiet.sh).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fixtures="$here/../../fixtures"
-target="${1:?usage: run.sh <target>|all [seconds]}"
+target="${1:?usage: run.sh <target>|all|list|build [seconds]}"
 seconds="${2:-60}"
 
 all_targets=(json receipt receipt-base64 jws endpoint-json)
+
+if [ "$target" = list ]; then
+  printf '%s\n' "${all_targets[@]}"
+  exit 0
+fi
 
 # The published binary is an apphost, and an apphost resolves the runtime
 # through DOTNET_ROOT or /usr/share/dotnet — never through PATH. On any host
@@ -114,8 +126,18 @@ run_one() {
     -artifact_prefix="$here/artifacts/$name/"
 }
 
-build
-generate_seeds
+if [ "$target" = build ]; then
+  build
+  generate_seeds
+  exit 0
+fi
+if [ -z "${FUZZ_PREBUILT:-}" ]; then
+  build
+  generate_seeds
+elif [ ! -x "$binary" ]; then
+  echo "FUZZ_PREBUILT is set and there is no build: run ./run.sh build first" >&2
+  exit 2
+fi
 
 if [ "$target" = all ]; then
   jobs="${JOBS:-1}"

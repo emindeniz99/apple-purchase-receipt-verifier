@@ -1,0 +1,11 @@
+[package]
+name = "json-cost"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = { version = "=1.0.151", features = ["raw_value"] }
+
+[profile.release]
+debug = false

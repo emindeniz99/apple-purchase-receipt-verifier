@@ -323,14 +323,20 @@ class ConformanceCasesTest(unittest.TestCase):
             )
 
         expected = case["expected"]
+        if case["operation"] == "verifyReceiptEndpoint":
+            actual = normalize_endpoint(result)
+            if "oneOf" in expected:
+                # Port-defined within a list: the response's /status must be
+                # listed, and nothing else is pinned.
+                status = actual.get("status")
+                self.assertIn(status, expected["oneOf"], f"{case['id']}: answered status {status}")
+                return
+            self._assert_fields(case, actual, expected)
+            return
         if "oneOf" in expected:
             # Port-defined within a list; reaching this line proves no crash.
             outcome = "ok" if result.verified else result.failure.reason.name
             self.assertIn(outcome, expected["oneOf"], f"{case['id']}: answered {outcome}")
-            return
-        if case["operation"] == "verifyReceiptEndpoint":
-            actual = normalize_endpoint(result)
-            self._assert_fields(case, actual, expected)
             return
 
         if not result.verified:

@@ -160,6 +160,12 @@ def evaluate(case, answer):
         raise AssertionError(f"no result: {body}")
     if op == "verifyReceiptEndpoint":
         doc = {"status": 21002} if kind == "too-large" else json.loads(body)
+        if "oneOf" in exp:
+            # Port-defined within a list: the response's /status must be
+            # listed, and nothing else is pinned.
+            if doc.get("status") not in exp["oneOf"]:
+                raise AssertionError(f"status {doc.get('status')} not in {exp['oneOf']}")
+            return
         check_fields(doc, exp)
         return
     if kind == "too-large":

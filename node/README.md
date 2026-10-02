@@ -308,7 +308,9 @@ fixed, the same in every package of this library, and not options:
   UTF-8 bytes. Over it is `TOO_LARGE`, 21002 at the endpoint (Apple answers
   HTTP 413 there; check the body's length before the call to do the same).
 - **the compact JWS**: 262,144 UTF-8 bytes, `TOO_LARGE`.
-- **JSON nesting depth 64** in a request body or JWS header.
+- **JSON nesting**: no bound of its own. The module skips a value nobody
+  reads without building it, so only the size caps bound a request body or
+  a JWS header (docs/rust-core/DECISIONS.md R40).
 
 The package copies at most 3,145,729 bytes of an input into the module
 (one over the largest cap), so an oversized input costs no more module

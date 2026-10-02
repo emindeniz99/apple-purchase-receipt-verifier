@@ -342,7 +342,15 @@ function modeCases(modulePath, casesPath, answersDir) {
             ? fixture(kase.input.requestBody).bytes
             : bytesOf(JSON.stringify({ 'receipt-data': receiptText(fixture(kase.input.fixture)) }));
         out = invoke(config, 'verify-receipt-endpoint', env, now, body);
-        checkFields(parseBig(out), kase.expected, problems);
+        const doc = parseBig(out);
+        if (kase.expected.oneOf) {
+          // Port-defined within a list: the response's /status must be listed.
+          if (!kase.expected.oneOf.includes(doc.status)) {
+            problems.push(`answered status ${doc.status}, want one of ${kase.expected.oneOf.join(', ')}`);
+          }
+          return problems;
+        }
+        checkFields(doc, kase.expected, problems);
         return problems;
       }
       default:

@@ -26,8 +26,10 @@ path = "src/lib.rs"
 # R21). This crate keeps Apple's policy: the pinned roots, the marker OIDs,
 # the chain instant, the caps, the base64 and JSON rules, the reasons and
 # the endpoint. The JSON it reads (a JWS header and payload, the endpoint
-# request body) goes through its own bounded reader; `base64` decodes
-# `receipt-data` and `x5c` entries (`src/base64.rs`).
+# request body) goes through `serde_json`, each document as a map of raw
+# member values so that nothing it does not read is built (`src/json.rs`,
+# docs/rust-core/DECISIONS.md R40); `base64` decodes `receipt-data` and
+# `x5c` entries (`src/base64.rs`).
 #
 # `deny.toml` bans, as a build-breaking rule, every crate that could bring a
 # system trust store or a network client into the tree.
@@ -42,7 +44,7 @@ base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 # compile time through `tz::get!`; the build reads no time-zone file and
 # the module carries no database (docs/rust-core/DECISIONS.md R38).
 jiff = { version = "0.2.37", default-features = false, features = ["static"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 
 [features]
 default = ["vendored"]

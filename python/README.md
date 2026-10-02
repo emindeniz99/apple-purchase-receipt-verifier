@@ -436,11 +436,10 @@ limits are Apple's, fixed constants in every port of this library, not
 - **`jws.MAX_JWS_BYTES`** (256 KiB, 262,144 bytes): the compact JWS text
   given to `verify_signed_data`, before it is split into segments. A larger
   JWS is `Reason.TOO_LARGE`.
-- **JSON nesting depth 64**: checked before any JSON is parsed, in the
-  request body, the JWS header and the JWS payload alike. A deeper request
-  body or JWS header is `Reason.MALFORMED`. A deeper JWS payload is carried
-  to the signature check: `Reason.UNREADABLE_PAYLOAD` if the signature
-  verifies, `Reason.INVALID_SIGNATURE` if not.
+- **JSON nesting**: no bound of its own. The module skips a value nobody
+  reads in the request body, the JWS header or the JWS payload without
+  building it, so only the size caps bound it
+  (docs/rust-core/DECISIONS.md R40).
 - **ASN.1 nesting depth 32**: checked before any certificate is decoded.
   Deeper input is `Reason.MALFORMED` in the CMS envelope and
   `Reason.UNREADABLE_PAYLOAD` in the signed receipt content.

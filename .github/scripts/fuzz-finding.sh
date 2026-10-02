@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Handles one fuzz target that failed in the nightly job without letting
-# the finding into the public log (docs/rust-core/DECISIONS.md R37). The
+# Handles one fuzz target that failed in a fuzz job (nightly.yml, and
+# ci.yml's per-push jobs through fuzz-report.sh) without letting the
+# finding into the public log (docs/rust-core/DECISIONS.md R37). The
 # repository is public, and a memory-safety crash is reported privately
 # before anything about it is published (SECURITY.md).
 #
 #   fuzz-finding.sh <target> <artifacts-dir> <log> <sealed-dir>
 #
-# <artifacts-dir> is where libFuzzer wrote the reproducer
-# (rust/fuzz/artifacts/<target>/); slow-unit-* files there are not
-# findings and are left out. <log> is the target's whole output, which
-# holds the input, the stack and the panic message, so it stays on the
-# runner.
+# <artifacts-dir> is where the harness wrote the reproducer (libFuzzer's
+# artifact_prefix, such as rust/fuzz/artifacts/<target>/); slow-unit-*
+# files there are not findings and are left out. It may be empty or
+# missing, when the harness only printed the finding. <log> is the
+# target's whole output, which holds the input, the stack and the panic
+# message, so it stays on the runner.
 #
 # Standard output gets the target name and the SHA-256 of each crashing
 # input, nothing else: no input, no stack, no panic message, nothing for
