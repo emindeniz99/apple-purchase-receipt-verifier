@@ -116,7 +116,14 @@ dotnet test -c Release dotnet/tests/ApplePurchaseReceiptVerifier.Tests
 
 # The shared cases file itself
 node tools/lint-cases.mjs
+
+# No wrapper reaches a crypto, X.509, ASN.1, CMS or JWS API
+node tools/check-one-implementation.mjs --enforce all
 ```
+
+The last command is the one list of the APIs a wrapper must not touch
+(CI's `one-implementation` job runs it); the packages' own suites do not
+repeat it. Run it after any change under a wrapper's sources.
 
 Each wrapper's README has its own section on the suite and its extra
 legs (Node's runtimes and browsers, .NET's netstandard2.0 floor, Java's

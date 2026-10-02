@@ -49,12 +49,14 @@ human-facing version; where they overlap, they agree.
   certificate or decides trust (docs/rust-core/ARCHITECTURE.md §9,
   SURFACE.md §10). The `one-implementation` CI job
   (`tools/check-one-implementation.mjs --enforce all`) fails on a crypto,
-  X.509, ASN.1 or CMS API in any non-Java wrapper outside its tests. It
-  allows a CSPRNG for `random-get` and a SHA-256 over a module or server
-  binary against its pin; a per-file allowlist names every other
-  exception with its reason (the 0.7 public types .NET and Go keep for a
-  caller's roots, which only carry DER to the module). Do not grow the
-  allowlist to make a wrapper "help" the core.
+  X.509, ASN.1, CMS or JWS API in any non-Java wrapper outside its tests.
+  It is the one list of those APIs: a package's own tests do not repeat
+  it, so a new banned API goes into the tool. It allows a CSPRNG for
+  `random-get` and a SHA-256 over a module or server binary against its
+  pin; a per-file allowlist names every other exception with its reason
+  (the 0.7 public types .NET and Go keep for a caller's roots, which only
+  carry DER to the module). Do not grow the allowlist to make a wrapper
+  "help" the core.
 - **`aprv.wasm` imports exactly `random-get`, and its WIT is the
   contract.** `rust/bindings/abi/wit/aprv.wit` (`aprv:verifier@0.1.0`) is
   what every host binds. `rust/bindings/abi/build.sh` and

@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 // The one-implementation gate (ARCHITECTURE.md §9): no wrapper around
 // aprv.wasm may parse, verify or decide anything itself, so no non-Java
-// wrapper may call a crypto, X.509, ASN.1 or CMS API outside its tests.
+// wrapper may call a crypto, X.509, ASN.1, CMS or JWS API outside its tests.
+//
+// This is the one list of those APIs. The packages' own tests keep only
+// what a line scan cannot see (a manifest's dependencies, an import
+// allowlist, the compiled assembly's references, the class files'
+// bytecode level) and the rules outside this gate's subject (network,
+// environment, randomness). Run it before pushing a wrapper change.
 //
 //   node tools/check-one-implementation.mjs [--enforce <all|lang,lang,...>]
 //
@@ -15,12 +21,14 @@
 // copy of aprv.wasm or a downloaded aprv binary against its pin.
 //
 // Out of scope by design: the Java main artifact (java/, the independent
-// implementation, DECISIONS.md R33), the Rust core, every test, fuzz,
+// implementation, DECISIONS.md R33, except java/src/shared, which the
+// -wasm jar compiles too), the Rust core, every test, fuzz,
 // bench and sample directory, and generated bindings.
 //
 // A language's `allow` list names, per file, the API tokens that file may
 // use and why (OD-04 in docs/rust-core/STATUS.md): a public type the 0.7
-// API carries DER in and out with, never a parse or a trust decision. An
+// API carries DER in and out with, or the file that hashes a module
+// against its pin, never a parse or a trust decision. An
 // allowed token is removed from the line before the banned patterns are
 // applied, so anything else on that line, or the same token in any other
 // file, is still a hit. An entry whose file no longer uses its token is
@@ -31,16 +39,20 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
-// Where each wrapper's shipped source lives, the files that count, and the
-// APIs it must not reach.
+// Where each wrapper's shipped source lives, the files that count, the
+// comment syntax stripped before matching (so prose may name what the code
+// avoids), and the APIs it must not reach.
 const LANGS = {
   node: {
     dirs: ['node/src'],
     files: /\.(m?[jt]s|cjs|cts|mts)$/,
+    comments: 'c',
     banned: [
-      [/\bfrom\s+['"](node:)?crypto['"]|require\(\s*['"](node:)?crypto['"]\s*\)|import\(\s*['"](node:)?crypto['"]\s*\)/, 'node:crypto'],
-      [/\bcrypto\.subtle\b|\bSubtleCrypto\b/, 'WebCrypto subtle'],
+      [/\bfrom\s+['"](node:)?crypto['"]|require\(\s*['"](node:)?crypto['"]\s*\)|import\(\s*['"](node:)?crypto['"]\s*\)|\bnode:crypto\b/, 'node:crypto'],
+      [/\bcrypto\.subtle\b|\bSubtleCrypto\b|\bsubtle\./, 'WebCrypto subtle'],
       [/['"](asn1js|pkijs|jose|node-forge|@peculiar\/[^'"]+|jsrsasign)['"]/, 'a JS crypto/ASN.1 library'],
+      [/\bX509Certificate\b|\bcreate(Verify|PublicKey|Hash|Hmac)\b|\bverify(Es256|Signature)\b/, 'a certificate, key, hash or signature API'],
+      [/asn1|\bDER\b reader|\bparseCertificate\b|\bcms\b/i, 'an ASN.1, DER or CMS reader'],
     ],
   },
   python: {
@@ -55,11 +67,14 @@ const LANGS = {
     dirs: ['go'],
     files: /(?<!_test)\.go$/,
     skipDirs: ['go/tools', 'go/fuzz', 'go/bench', 'go/examples', 'go/cmd'],
+    comments: 'c',
     banned: [
-      [/"(crypto\/(x509|ecdsa|rsa|elliptic|ecdh|ed25519|tls|dsa)|encoding\/asn1|golang\.org\/x\/crypto\/[^"]*|github\.com\/[^"]*\/(jwt|jose|pkcs7)[^"]*)"/, 'a Go crypto/X.509/ASN.1 package'],
+      [/"(crypto\/(x509(\/pkix)?|ecdsa|rsa|elliptic|ecdh|ed25519|tls|dsa|sha1|sha256|sha512|hmac|subtle)|encoding\/(asn1|pem)|math\/big|golang\.org\/x\/crypto\/[^"]*|github\.com\/[^"]*\/(jwt|jose|pkcs7)[^"]*)"/, 'a Go crypto/X.509/ASN.1 package'],
+      [/\bx509\.(SystemCertPool|NewCertPool|CertPool|VerifyOptions|ParseCertificates?|ParseCertificateRequest)\b|\bCheckSignatureFrom\b|\bSetDefaultPaths\b/, 'a certificate parse or platform trust evaluation'],
     ],
     allow: [
       { file: 'go/config.go', token: /"crypto\/x509"/, why: "Config's roots are *x509.Certificate (the 0.7 API); only .Raw, the DER, crosses into the module" },
+      { file: 'go/internal/wasm/wasm.go', token: /"crypto\/sha256"/, why: 'checks the embedded aprv.wasm against its pinned SHA-256' },
     ],
   },
   swift: {
@@ -67,22 +82,28 @@ const LANGS = {
     files: /\.swift$/,
     banned: [
       [/^\s*(@_implementationOnly\s+)?import\s+(Crypto|_CryptoExtras|CryptoKit|X509|SwiftASN1|Security|CommonCrypto)\b/m, 'a Swift crypto/X.509/ASN.1 module'],
+      [/\bSec(Trust|Certificate)/, 'the Security framework\'s trust or certificate API'],
     ],
+    comments: 'c',
   },
   ruby: {
     dirs: ['ruby/lib'],
     files: /\.rb$/,
+    comments: 'hash',
     banned: [
-      [/\bOpenSSL::|require\s*\(?\s*['"]openssl['"]/, 'OpenSSL'],
+      [/\bOpenSSL\b|require\s*\(?\s*['"]openssl['"]/, 'OpenSSL'],
       [/require\s*\(?\s*['"](jwt|jose|json\/jwt)['"]/, 'a Ruby JWT library'],
+      [/\bX509\b|\bPKCS7\b|\bASN1\b|\bECDSA\b|\bx5c\b|base64url/i, 'an X.509, PKCS #7, ASN.1, ECDSA or JWS name'],
+      [/\bCMS\b|Signature/, 'a CMS or signature name'],
     ],
   },
   dotnet: {
     dirs: ['dotnet/src'],
     files: /\.cs$/,
+    comments: 'c',
     banned: [
-      [/System\.Security\.Cryptography\.(Pkcs|X509Certificates)|System\.Formats\.Asn1|\bAsnReader\b|\bX509Certificate2?\b|\bSignedCms\b/, '.NET X.509/CMS/ASN.1'],
-      [/\b(ECDsa|RSA|DSA)\s*\.\s*Create\b|\bECDsa(Cng|OpenSsl)?\b|\bRSA(Cng|OpenSsl|CryptoServiceProvider)\b|Org\.BouncyCastle/, '.NET signature verification'],
+      [/System\.Security\.Cryptography\.(Pkcs|X509Certificates)|System\.Formats\.Asn1|Asn(Reader|Writer|Decoder)|\bX509Certificate2?\b|X509Chain|SignedCms|SignerInfo/, '.NET X.509/CMS/ASN.1'],
+      [/\b(ECDsa|RSA|DSA)\s*\.\s*Create\b|ECDsa|\bRSA(Cng|OpenSsl)?\b|RSACryptoServiceProvider|Verify(Data|Hash)|Org\.BouncyCastle/, '.NET signature verification'],
     ],
     allow: [
       { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Config.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'Config.Roots and Config.Builder.Roots take X509Certificate2 (the 0.7 API); only its RawData, the DER, reaches the module' },
@@ -92,12 +113,16 @@ const LANGS = {
   php: {
     dirs: ['php/src'],
     files: /\.php$/,
+    comments: 'c',
     banned: [
-      [/\bopenssl_[a-z0-9_]+\s*\(/, 'openssl_*'],
-      [/\bsodium_crypto_sign|phpseclib|\\?FG\\ASN1|Firebase\\JWT|\bJose\\/, 'a PHP crypto/ASN.1/JWT library'],
+      [/\bopenssl_[a-z0-9_]+\s*\(/i, 'openssl_*'],
+      [/\bsodium_crypto|phpseclib|\\?FG\\ASN1|Firebase\\JWT|\bJose\\/i, 'a PHP crypto/ASN.1/JWT library'],
+      // Functions, not methods: `->name(` and `::name(` are a class's own.
+      [/(?<![>:$\w])(gmp_\w+|bcpowmod|hash_hmac\w*|mcrypt_\w+)\s*\(/i, 'a big-number, HMAC or mcrypt function'],
     ],
   },
   'java-wasm': {
+    comments: 'c',
     // java/src/shared holds the classes the -wasm jar compiles together
     // with the main artifact; they ship in this jar too, so they are held
     // to its rule (the rest of java/ is out of scope, above).
@@ -117,6 +142,14 @@ const LANGS = {
       { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ServerSources.java', token: /import java\.security\.cert\.(CertificateEncodingException|X509Certificate);/, why: "takes each root's getEncoded() DER for the server engine's roots file; nothing is parsed or checked" },
     ],
   },
+};
+
+// Comments become spaces, newlines kept, so line numbers still match. A
+// comment marker inside a string literal is taken for a comment too; that
+// can only hide a hit on the rest of that line, never invent one.
+const STRIP = {
+  c: (text) => text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')).replace(/\/\/.*$/gm, ''),
+  hash: (text) => text.replace(/#.*$/gm, ''),
 };
 
 const SKIP = /(^|\/)(tests?|__tests__|spec|fuzz|bench|benches|samples?|examples?|generated|node_modules|dist|build|target|vendor|\.build)(\/|$)/;
@@ -161,7 +194,8 @@ for (const [lang, spec] of Object.entries(LANGS)) {
       if (!spec.files.test(rel) || SKIP.test(relative(abs, path)) || spec.skipDirs?.some((d) => rel.startsWith(`${d}/`))) continue;
       files++;
       const allowed = (spec.allow ?? []).filter((a) => a.file === rel);
-      const lines = readFileSync(path, 'utf8').split('\n');
+      const source = readFileSync(path, 'utf8');
+      const lines = (spec.comments ? STRIP[spec.comments](source) : source).split('\n');
       lines.forEach((line, i) => {
         let rest = line;
         for (const a of allowed) {
@@ -184,7 +218,7 @@ for (const [lang, spec] of Object.entries(LANGS)) {
   for (const a of spec.allow ?? []) console.log(`  allowed in ${a.file}: ${a.why}`);
   if (hits.length && enforce.has(lang)) {
     failing++;
-    console.log(`::error::the ${lang} wrapper reaches a crypto, X.509 or ASN.1 API; it must leave every such decision to aprv.wasm`);
+    console.log(`::error::the ${lang} wrapper reaches a crypto, X.509, ASN.1, CMS or JWS API; it must leave every such decision to aprv.wasm`);
   }
 }
 process.exit(failing ? 1 : 0);
