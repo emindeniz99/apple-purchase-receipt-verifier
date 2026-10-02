@@ -370,6 +370,112 @@ mod tests {
         );
     }
 
+    /// Every field `Some`, two purchases, and the strings, keys and numbers
+    /// a writer can get wrong.
+    fn full_receipt() -> ReceiptPayload {
+        ReceiptPayload {
+            receipt_type: Some("Production\u{0}\u{1}\u{1f}\u{7f}".to_owned()),
+            app_item_id: Some(i64::MIN),
+            bundle_id: Some("com.example.\u{e9}\u{2028}\u{2029}\u{1f600}/\"\\".to_owned()),
+            bundle_id_bytes: Some(vec![]),
+            application_version: Some("1.0\t\r\n\u{8}\u{c}\u{b}".to_owned()),
+            opaque_value: Some(vec![0xfb, 0xff, 0xbf]),
+            sha1_hash: Some(vec![0, 1, 2, 3, 4]),
+            receipt_creation_date_ms: Some(i64::MIN),
+            download_id: Some(i64::MAX),
+            version_external_identifier: Some(0),
+            in_app: vec![
+                InAppPurchase {
+                    quantity: Some(i64::MAX),
+                    product_id: Some("p\u{0}\u{a0}\u{feff}".to_owned()),
+                    transaction_id: Some("-1".to_owned()),
+                    purchase_date_ms: Some(-1),
+                    original_transaction_id: Some(String::new()),
+                    original_purchase_date_ms: Some(0),
+                    expires_date_ms: Some(i64::MAX),
+                    web_order_line_item_id: Some(i64::MIN),
+                    cancellation_date_ms: Some(i64::MIN),
+                    is_trial_period: Some(true),
+                    is_in_intro_offer_period: Some(false),
+                    unknown_attributes: vec![
+                        (-1, vec![vec![]]),
+                        (1714, vec![vec![1, 2, 3], vec![]]),
+                        (1714, vec![vec![0xff]]),
+                    ],
+                },
+                InAppPurchase {
+                    quantity: Some(1),
+                    product_id: Some("\u{80}\u{9f}\u{fffd}\u{10ffff}".to_owned()),
+                    transaction_id: Some("1000000000000000".to_owned()),
+                    purchase_date_ms: Some(1_375_340_400_000),
+                    original_transaction_id: Some("1000000000000000".to_owned()),
+                    original_purchase_date_ms: Some(1_375_340_400_000),
+                    expires_date_ms: Some(1_375_344_000_000),
+                    web_order_line_item_id: Some(0),
+                    cancellation_date_ms: Some(1_375_341_000_000),
+                    is_trial_period: Some(false),
+                    is_in_intro_offer_period: Some(true),
+                    unknown_attributes: vec![],
+                },
+            ],
+            original_purchase_date_ms: Some(1_375_340_400_000),
+            original_application_version: Some("\u{1e}\u{1b}\u{e000}".to_owned()),
+            expiration_date_ms: Some(-62_135_596_800_000),
+            unknown_attributes: vec![
+                (i64::MIN, vec![vec![]]),
+                (-5, vec![vec![0]]),
+                (13, vec![vec![0xfb, 0xff], vec![]]),
+                (13, vec![vec![1]]),
+                (i64::MAX, vec![]),
+            ],
+        }
+    }
+
+    /// The whole verified `verify-receipt` answer for [`full_receipt`], byte
+    /// for byte: C0 controls and U+007F, raw non-ASCII (U+2028, U+FEFF,
+    /// private use, outside the BMP), negative and repeated attribute keys,
+    /// `i64` extremes and empty byte strings. The expected text was produced
+    /// by the hand-written writer that the `serde_json` one replaced, run on
+    /// this same receipt, so a failure here is a change of 0.7's bytes.
+    #[test]
+    fn a_full_receipt_answer_keeps_the_bytes_of_the_hand_written_writer() {
+        assert_eq!(
+            verify_receipt_result(&Ok(full_receipt())),
+            concat!(
+                r#"{"verified":true,"payload":{"receipt_type":"Production\u0000\u0001\u001f"#,
+                "\u{7f}",
+                r#"","app_item_id":"-9223372036854775808","bundle_id":"com.example."#,
+                "\u{e9}\u{2028}\u{2029}\u{1f600}",
+                r#"/\"\\","bundle_id_bytes":"","application_version":"1.0\t\r\n\b\f\u000b""#,
+                r#","opaque_value":"+/+/","sha1_hash":"AAECAwQ=""#,
+                r#","receipt_creation_date_ms":-9223372036854775808"#,
+                r#","download_id":"9223372036854775807","version_external_identifier":"0""#,
+                r#","in_app":[{"quantity":9223372036854775807,"product_id":"p\u0000"#,
+                "\u{a0}\u{feff}",
+                r#"","transaction_id":"-1","purchase_date_ms":-1,"original_transaction_id":"""#,
+                r#","original_purchase_date_ms":0,"expires_date_ms":9223372036854775807"#,
+                r#","web_order_line_item_id":"-9223372036854775808""#,
+                r#","cancellation_date_ms":-9223372036854775808"#,
+                r#","is_trial_period":true,"is_in_intro_offer_period":false"#,
+                r#","unknown_attributes":{"-1":[""],"1714":["AQID",""],"1714":["/w=="]}}"#,
+                r#",{"quantity":1,"product_id":""#,
+                "\u{80}\u{9f}\u{fffd}\u{10ffff}",
+                r#"","transaction_id":"1000000000000000","purchase_date_ms":1375340400000"#,
+                r#","original_transaction_id":"1000000000000000""#,
+                r#","original_purchase_date_ms":1375340400000,"expires_date_ms":1375344000000"#,
+                r#","web_order_line_item_id":"0","cancellation_date_ms":1375341000000"#,
+                r#","is_trial_period":false,"is_in_intro_offer_period":true"#,
+                r#","unknown_attributes":{}}]"#,
+                r#","original_purchase_date_ms":1375340400000"#,
+                r#","original_application_version":"\u001e\u001b"#,
+                "\u{e000}",
+                r#"","expiration_date_ms":-62135596800000"#,
+                r#","unknown_attributes":{"-9223372036854775808":[""],"-5":["AA=="]"#,
+                r#","13":["+/8=",""],"13":["AQ=="],"9223372036854775807":[]}}}"#
+            )
+        );
+    }
+
     #[test]
     fn ids_are_decimal_strings_dates_numbers_bytes_padded_base64() {
         let receipt = ReceiptPayload {
