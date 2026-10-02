@@ -58,9 +58,10 @@ const LANGS = {
   python: {
     dirs: ['python/apple_purchase_receipt_verifier', 'python/src'],
     files: /\.py$/,
+    // At a line's start or after a `;` or `:`, and anywhere in a comma list.
     banned: [
-      [/^\s*(from|import)\s+(cryptography|OpenSSL|asn1crypto|pyasn1|ecdsa|Crypto|Cryptodome|jwt|jose)\b/m, 'a Python crypto/ASN.1 library'],
-      [/^\s*(from|import)\s+(ssl|hmac)\b/m, 'ssl or hmac'],
+      [/(^|[;:])\s*(from|import)\s+([\w.]+(\s+as\s+\w+)?\s*,\s*)*(cryptography|OpenSSL|asn1crypto|pyasn1|ecdsa|Crypto|Cryptodome|jwt|jose)\b/, 'a Python crypto/ASN.1 library'],
+      [/(^|[;:])\s*(from|import)\s+([\w.]+(\s+as\s+\w+)?\s*,\s*)*(ssl|hmac)\b/, 'ssl or hmac'],
     ],
   },
   go: {
@@ -81,7 +82,9 @@ const LANGS = {
     dirs: ['swift/Sources'],
     files: /\.swift$/,
     banned: [
-      [/^\s*(@_implementationOnly\s+)?import\s+(Crypto|_CryptoExtras|CryptoKit|X509|SwiftASN1|Security|CommonCrypto)\b/m, 'a Swift crypto/X.509/ASN.1 module'],
+      // Any attribute or access level before `import`, and a scoped import
+      // (`import struct CryptoKit.SHA256`).
+      [/\bimport\s+(?:(?:struct|class|enum|protocol|func|var|let|typealias)\s+)?(Crypto\w*|_CryptoExtras|X509|SwiftASN1|Security\w*|CommonCrypto)\b/, 'a Swift crypto/X.509/ASN.1 module'],
       [/\bSec(Trust|Certificate)/, 'the Security framework\'s trust or certificate API'],
     ],
     comments: 'c',
@@ -91,7 +94,7 @@ const LANGS = {
     files: /\.rb$/,
     comments: 'hash',
     banned: [
-      [/\bOpenSSL\b|require\s*\(?\s*['"]openssl['"]/, 'OpenSSL'],
+      [/OpenSSL|require\s*\(?\s*['"]openssl['"]/, 'OpenSSL'],
       [/require\s*\(?\s*['"](jwt|jose|json\/jwt)['"]/, 'a Ruby JWT library'],
       [/\bX509\b|\bPKCS7\b|\bASN1\b|\bECDSA\b|\bx5c\b|base64url/i, 'an X.509, PKCS #7, ASN.1, ECDSA or JWS name'],
       [/\bCMS\b|Signature/, 'a CMS or signature name'],
