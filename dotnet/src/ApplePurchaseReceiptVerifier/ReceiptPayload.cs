@@ -188,6 +188,5 @@ namespace ApplePurchaseReceiptVerifier
 
             json.WriteEndObject();
         }
-
     }
 }
