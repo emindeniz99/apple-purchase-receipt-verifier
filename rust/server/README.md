@@ -38,6 +38,9 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `--time-limit-ms N` | serve, CLI | The guest time limit per call. Default 10,000 |
 | `--component FILE.wasm` | all | The full build only: compile this component at start instead of the embedded one (development and tests) |
 
+`aprv --help` and `aprv <command> --help` print the same, generated from
+the parser (`clap`); a bad flag or value exits 2.
+
 | Variable | Meaning |
 |---|---|
 | `APRV_LISTEN` | `serve`'s bind address. `--managed` ignores it |

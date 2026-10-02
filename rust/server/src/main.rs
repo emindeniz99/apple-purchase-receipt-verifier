@@ -10,9 +10,11 @@ mod runtime;
 #[cfg(all(test, feature = "compile"))]
 mod tests;
 
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use roots::Roots;
 use runtime::{Load, Op, Runtime, Verifier};
 use std::io::{Read, Write};
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -23,16 +25,9 @@ use std::time::Instant;
 /// status 413 and the CLI prints it and exits 3.
 pub const MAX_BODY: usize = 3_145_728;
 
-const USAGE: &str = "\
-usage:
-  aprv serve [--listen ADDR] [--managed] [--roots FILE] [--token-file FILE]
-             [--lifecycle pool|fresh] [--workers N] [--time-limit-ms N]
-  aprv verify-receipt [--now-ms N] [--roots FILE] [--time-limit-ms N]         stdin -> stdout
-  aprv verify-signed-data [--now-ms N] [--roots FILE] [--time-limit-ms N]     stdin -> stdout
-  aprv verify-receipt-endpoint <production|sandbox> [--now-ms N] [--roots FILE] [--time-limit-ms N]
-  aprv info
-  aprv precompile COMPONENT.wasm --target TRIPLE -o OUT.ccwasm                (full build only)
-Every command but precompile also takes --component FILE.wasm (full build only).
+/// After `--help`: what clap's generated text does not say.
+const AFTER_HELP: &str = "\
+Every command but precompile takes --component FILE.wasm in the full build.
 Environment: APRV_LISTEN (serve's address; default 127.0.0.1:8080), APRV_TOKEN (serve's token).
 CLI exit codes: 0 a result, 2 usage or configuration, 3 input over 3145728 bytes (the module's answer is on stdout), 70 trap, ABI or load failure.";
 
@@ -42,30 +37,137 @@ const EXIT_USAGE: i32 = 2;
 const EXIT_TOO_LARGE: i32 = 3;
 const EXIT_SOFTWARE: i32 = 70;
 
+/// Runs aprv.wasm, the receipt and App Store JWS verifier, through Wasmtime.
+#[derive(Parser)]
+#[command(name = "aprv", after_help = AFTER_HELP, args_override_self = true)]
+struct Cli {
+    #[command(subcommand)]
+    command: Cmd,
+}
+
+#[derive(Subcommand)]
+enum Cmd {
+    /// Serve the HTTP routes (README.md, "The wire contract")
+    Serve(ServeArgs),
+    /// stdin: a receipt's receipt-data string; stdout: the module's answer
+    VerifyReceipt(OneShotArgs),
+    /// stdin: a compact JWS; stdout: the module's answer
+    VerifySignedData(OneShotArgs),
+    /// stdin: a verifyReceipt request body; stdout: Apple's response
+    VerifyReceiptEndpoint {
+        #[arg(value_enum)]
+        environment: Environment,
+        #[command(flatten)]
+        args: OneShotArgs,
+    },
+    /// The component's SHA-256, the Wasmtime version and features, the limits
+    Info(ComponentArg),
+    /// Precompile a component for TARGET's baseline ISA (full build only)
+    Precompile {
+        #[arg(value_name = "COMPONENT.wasm")]
+        component: String,
+        #[arg(long, value_name = "TRIPLE")]
+        target: String,
+        #[arg(short = 'o', value_name = "OUT.ccwasm")]
+        out: String,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Environment {
+    Production,
+    Sandbox,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
+enum Lifecycle {
+    /// Keep instances, one request at a time each (DECISIONS.md R23)
+    Pool,
+    /// A new store, instance and init per request
+    Fresh,
+}
+
+#[derive(Args)]
+struct ComponentArg {
+    /// Compile this component at start instead of the embedded one (full build only)
+    #[arg(long, value_name = "FILE.wasm")]
+    component: Option<String>,
+}
+
+#[derive(Args)]
+struct OneShotArgs {
+    /// The verification clock, ms since the Unix epoch [default: the system clock]
+    #[arg(long, value_name = "N")]
+    now_ms: Option<u64>,
+    /// The trusted roots (README.md, "Flags and environment") [default: the module's Apple roots]
+    #[arg(long, value_name = "FILE")]
+    roots: Option<String>,
+    /// The guest time limit per call [default: 10000]
+    #[arg(long, value_name = "N")]
+    time_limit_ms: Option<NonZeroU64>,
+    #[command(flatten)]
+    component: ComponentArg,
+}
+
+#[derive(Args)]
+struct ServeArgs {
+    /// The bind address; overrides APRV_LISTEN [default: 127.0.0.1:8080]
+    #[arg(long, value_name = "ADDR")]
+    listen: Option<String>,
+    /// The child of a parent process: token and roots on stdin, 127.0.0.1:0
+    #[arg(long, conflicts_with_all = ["listen", "roots", "token_file"])]
+    managed: bool,
+    /// The trusted roots (README.md, "Flags and environment") [default: the module's Apple roots]
+    #[arg(long, value_name = "FILE")]
+    roots: Option<String>,
+    /// The token /v1/ routes require; overrides APRV_TOKEN
+    #[arg(long, value_name = "FILE")]
+    token_file: Option<String>,
+    /// How instances serve requests
+    #[arg(long, value_enum, default_value_t = Lifecycle::Pool)]
+    lifecycle: Lifecycle,
+    /// Concurrent verifications [default: the CPU count]
+    #[arg(long, value_name = "N")]
+    workers: Option<NonZeroUsize>,
+    /// The guest time limit per call [default: 10000]
+    #[arg(long, value_name = "N")]
+    time_limit_ms: Option<NonZeroU64>,
+    #[command(flatten)]
+    component: ComponentArg,
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let code = match args.first().map(String::as_str) {
-        Some("serve") => serve(&args[1..]),
-        Some("verify-receipt") => one_shot(Command::Receipt, &args[1..]),
-        Some("verify-signed-data") => one_shot(Command::SignedData, &args[1..]),
-        Some("verify-receipt-endpoint") => match args.get(1).map(String::as_str) {
-            Some("production") => one_shot(Command::Endpoint(0), &args[2..]),
-            Some("sandbox") => one_shot(Command::Endpoint(1), &args[2..]),
-            _ => usage("verify-receipt-endpoint needs production or sandbox"),
-        },
-        Some("info") => info(&args[1..]),
-        Some("precompile") => precompile(&args[1..]),
-        Some("help" | "--help" | "-h") => {
-            println!("{USAGE}");
-            EXIT_OK
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            // --help prints to stdout and is not an error.
+            let _ = e.print();
+            std::process::exit(if e.use_stderr() { EXIT_USAGE } else { EXIT_OK });
         }
-        _ => usage("no command"),
+    };
+    let code = match cli.command {
+        Cmd::Serve(a) => serve(a),
+        Cmd::VerifyReceipt(a) => one_shot(Command::Receipt, a),
+        Cmd::VerifySignedData(a) => one_shot(Command::SignedData, a),
+        Cmd::VerifyReceiptEndpoint { environment, args } => one_shot(
+            Command::Endpoint(match environment {
+                Environment::Production => 0,
+                Environment::Sandbox => 1,
+            }),
+            args,
+        ),
+        Cmd::Info(a) => info(a),
+        Cmd::Precompile {
+            component,
+            target,
+            out,
+        } => precompile(&component, &target, &out),
     };
     std::process::exit(code);
 }
 
 fn usage(msg: &str) -> i32 {
-    eprintln!("aprv: {msg}\n{USAGE}");
+    eprintln!("aprv: {msg}");
     EXIT_USAGE
 }
 
@@ -74,83 +176,19 @@ fn die(msg: impl std::fmt::Display) -> i32 {
     EXIT_SOFTWARE
 }
 
-/// Options shared by every command.
-#[derive(Default)]
-struct Opts {
-    listen: Option<String>,
-    managed: bool,
-    roots: Option<String>,
-    token_file: Option<String>,
-    /// `--lifecycle fresh`; the default is the pool (DECISIONS.md R23).
-    fresh: bool,
-    workers: Option<usize>,
-    time_limit_ms: Option<u64>,
-    now_ms: Option<u64>,
-    component: Option<String>,
-}
-
-fn parse(args: &[String], allowed: &[&str]) -> Result<Opts, String> {
-    let mut o = Opts::default();
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        if !allowed.contains(&a.as_str()) {
-            return Err(format!("unknown option {a}"));
-        }
-        let mut val = || it.next().cloned().ok_or(format!("{a} needs a value"));
-        match a.as_str() {
-            "--listen" => o.listen = Some(val()?),
-            "--managed" => o.managed = true,
-            "--roots" => o.roots = Some(val()?),
-            "--token-file" => o.token_file = Some(val()?),
-            "--component" => o.component = Some(val()?),
-            "--lifecycle" => {
-                o.fresh = match val()?.as_str() {
-                    "pool" => false,
-                    "fresh" => true,
-                    other => return Err(format!("--lifecycle takes pool or fresh, not {other}")),
-                }
-            }
-            "--workers" => {
-                o.workers = Some(
-                    val()?
-                        .parse()
-                        .ok()
-                        .filter(|n| *n > 0)
-                        .ok_or("--workers needs a positive integer")?,
-                )
-            }
-            "--time-limit-ms" => {
-                o.time_limit_ms = Some(
-                    val()?
-                        .parse()
-                        .ok()
-                        .filter(|n| *n > 0)
-                        .ok_or("--time-limit-ms needs a positive integer")?,
-                )
-            }
-            "--now-ms" => {
-                o.now_ms = Some(
-                    val()?
-                        .parse()
-                        .map_err(|_| "--now-ms needs an unsigned 64-bit integer")?,
-                )
-            }
-            _ => unreachable!("every allowed option is matched"),
-        }
-    }
-    Ok(o)
-}
-
-fn load(o: &Opts) -> Result<Runtime, String> {
-    let l = match &o.component {
+fn load(component: &ComponentArg, time_limit_ms: Option<NonZeroU64>) -> Result<Runtime, String> {
+    let l = match &component.component {
         Some(p) => Load::File(p),
         None => Load::Embedded,
     };
-    Runtime::new(l, o.time_limit_ms.unwrap_or(runtime::DEFAULT_TIME_LIMIT_MS))
+    Runtime::new(
+        l,
+        time_limit_ms.map_or(runtime::DEFAULT_TIME_LIMIT_MS, NonZeroU64::get),
+    )
 }
 
-fn roots_from(o: &Opts) -> Result<Roots, String> {
-    match &o.roots {
+fn roots_from(roots: &Option<String>) -> Result<Roots, String> {
+    match roots {
         None => Ok(Roots::Defaults),
         Some(p) => {
             let text = std::fs::read_to_string(p).map_err(|e| format!("--roots {p}: {e}"))?;
@@ -173,15 +211,8 @@ enum Command {
 /// to MAX_BODY + 1, as the server cuts a body, so the module answers its
 /// own size refusal; that answer is printed like any other and the exit
 /// status is 3.
-fn one_shot(cmd: Command, args: &[String]) -> i32 {
-    let o = match parse(
-        args,
-        &["--now-ms", "--roots", "--time-limit-ms", "--component"],
-    ) {
-        Ok(o) => o,
-        Err(e) => return usage(&e),
-    };
-    let roots = match roots_from(&o) {
+fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
+    let roots = match roots_from(&o.roots) {
         Ok(r) => r,
         Err(e) => return usage(&e),
     };
@@ -189,7 +220,7 @@ fn one_shot(cmd: Command, args: &[String]) -> i32 {
         Ok(read) => read,
         Err(e) => return die(format!("reading stdin: {e}")),
     };
-    let runtime = match load(&o) {
+    let runtime = match load(&o.component, o.time_limit_ms) {
         Ok(r) => r,
         Err(e) => return die(e),
     };
@@ -290,13 +321,9 @@ fn build_info(runtime: &Runtime) -> serde_json::Value {
     })
 }
 
-fn info(args: &[String]) -> i32 {
-    let o = match parse(args, &["--component"]) {
-        Ok(o) => o,
-        Err(e) => return usage(&e),
-    };
+fn info(component: ComponentArg) -> i32 {
     let t = Instant::now();
-    match load(&o) {
+    match load(&component, None) {
         Ok(runtime) => {
             // As the CLI: exit without the runtime's slow teardown.
             let runtime = std::mem::ManuallyDrop::new(runtime);
@@ -321,21 +348,8 @@ fn info(args: &[String]) -> i32 {
 }
 
 #[cfg(feature = "compile")]
-fn precompile(args: &[String]) -> i32 {
-    let (mut component, mut target, mut out) = (None, None, None);
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--target" => target = it.next(),
-            "-o" => out = it.next(),
-            s if !s.starts_with('-') && component.is_none() => component = Some(a),
-            _ => return usage(&format!("unknown precompile argument {a}")),
-        }
-    }
-    let (Some(c), Some(t), Some(o)) = (component, target, out) else {
-        return usage("precompile needs COMPONENT.wasm, --target TRIPLE and -o OUT.ccwasm");
-    };
-    match runtime::precompile(c, t, o) {
+fn precompile(component: &str, target: &str, out: &str) -> i32 {
+    match runtime::precompile(component, target, out) {
         Ok(msg) => {
             println!("{msg}");
             EXIT_OK
@@ -345,34 +359,15 @@ fn precompile(args: &[String]) -> i32 {
 }
 
 #[cfg(not(feature = "compile"))]
-fn precompile(_: &[String]) -> i32 {
+fn precompile(_: &str, _: &str, _: &str) -> i32 {
     die("precompile needs the full build (feature `compile`)")
 }
 
 // ------------------------------------------------------------ serve
 
-fn serve(args: &[String]) -> i32 {
-    let o = match parse(
-        args,
-        &[
-            "--listen",
-            "--managed",
-            "--roots",
-            "--token-file",
-            "--lifecycle",
-            "--workers",
-            "--time-limit-ms",
-            "--component",
-        ],
-    ) {
-        Ok(o) => o,
-        Err(e) => return usage(&e),
-    };
+fn serve(o: ServeArgs) -> i32 {
     let t0 = Instant::now();
     let (listen, token, roots) = if o.managed {
-        if o.roots.is_some() || o.token_file.is_some() || o.listen.is_some() {
-            return usage("--managed reads its token and roots from stdin and binds 127.0.0.1:0");
-        }
         match managed_handshake() {
             Ok((token, roots)) => ("127.0.0.1:0".to_owned(), Some(token), roots),
             Err(e) => {
@@ -396,36 +391,40 @@ fn serve(args: &[String]) -> i32 {
                 .filter(|t| !t.is_empty())
                 .map(String::into_bytes),
         };
-        let roots = match roots_from(&o) {
+        let roots = match roots_from(&o.roots) {
             Ok(r) => r,
             Err(e) => return usage(&e),
         };
         (listen, token, roots)
     };
-    let runtime = match load(&o) {
+    let runtime = match load(&o.component, o.time_limit_ms) {
         Ok(r) => r,
         Err(e) => return die(e),
     };
     let load_ms = t0.elapsed().as_secs_f64() * 1e3;
     let mut info = build_info(&runtime);
-    let verifier = match Verifier::new(runtime, roots.config_json(), !o.fresh) {
+    let verifier = match Verifier::new(runtime, roots.config_json(), o.lifecycle == Lifecycle::Pool)
+    {
         Ok(v) => v,
         Err(e) => {
             eprintln!("aprv: {e}");
             return EXIT_USAGE;
         }
     };
-    let workers = o.workers.unwrap_or_else(|| {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1)
-    });
+    let workers = o.workers.map_or_else(
+        || {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        },
+        NonZeroUsize::get,
+    );
     info["roots"] = roots.info();
     info["lifecycle"] = verifier.lifecycle_name().into();
     info["workers"] = workers.into();
     info["time_limit_ms"] = o
         .time_limit_ms
-        .unwrap_or(runtime::DEFAULT_TIME_LIMIT_MS)
+        .map_or(runtime::DEFAULT_TIME_LIMIT_MS, NonZeroU64::get)
         .into();
     info["token_required"] = token.is_some().into();
     let lifecycle = verifier.lifecycle_name();
@@ -533,23 +532,135 @@ async fn shutdown() {
 
 #[cfg(test)]
 mod cli_tests {
-    use super::parse;
+    use super::{Cli, Cmd, Lifecycle, EXIT_USAGE};
+    use clap::{CommandFactory, Parser};
 
-    const SERVE: &[&str] = &["--lifecycle", "--workers"];
+    fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
+        Cli::try_parse_from(std::iter::once("aprv").chain(args.iter().copied()))
+    }
+
+    #[test]
+    fn the_command_definition_is_consistent() {
+        Cli::command().debug_assert();
+    }
 
     #[test]
     fn serve_defaults_to_the_pool_and_fresh_stays_selectable() {
-        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(
-            !parse(&args(&[]), SERVE).unwrap().fresh,
+        let lifecycle = |a: &[&str]| match parse(a).unwrap().command {
+            Cmd::Serve(s) => s.lifecycle,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            lifecycle(&["serve"]),
+            Lifecycle::Pool,
             "the default lifecycle is pool"
         );
-        assert!(!parse(&args(&["--lifecycle", "pool"]), SERVE).unwrap().fresh);
-        assert!(
-            parse(&args(&["--lifecycle", "fresh"]), SERVE)
-                .unwrap()
-                .fresh
+        assert_eq!(
+            lifecycle(&["serve", "--lifecycle", "pool"]),
+            Lifecycle::Pool
         );
-        assert!(parse(&args(&["--lifecycle", "other"]), SERVE).is_err());
+        assert_eq!(
+            lifecycle(&["serve", "--lifecycle", "fresh"]),
+            Lifecycle::Fresh
+        );
+        assert!(parse(&["serve", "--lifecycle", "other"]).is_err());
+    }
+
+    /// Every command and flag the hand-written parser took is taken where it
+    /// was; a bad value, a flag on the wrong command, or `--managed` with a
+    /// flag it replaces is a usage error, exit 2, as before.
+    #[test]
+    fn the_commands_and_flags_of_the_hand_written_parser() {
+        for ok in [
+            &[
+                "serve",
+                "--listen",
+                "127.0.0.1:0",
+                "--roots",
+                "r",
+                "--token-file",
+                "t",
+                "--lifecycle",
+                "fresh",
+                "--workers",
+                "2",
+                "--time-limit-ms",
+                "5",
+                "--component",
+                "c.wasm",
+            ][..],
+            &[
+                "serve",
+                "--managed",
+                "--workers",
+                "1",
+                "--lifecycle",
+                "pool",
+            ],
+            &[
+                "verify-receipt",
+                "--now-ms",
+                "18446744073709551615",
+                "--roots",
+                "r",
+                "--time-limit-ms",
+                "1",
+                "--component",
+                "c.wasm",
+            ],
+            &["verify-signed-data", "--now-ms", "0"],
+            &["verify-receipt-endpoint", "production", "--now-ms", "1"],
+            &["verify-receipt-endpoint", "sandbox"],
+            &["info", "--component", "c.wasm"],
+            &["info"],
+            &[
+                "precompile",
+                "c.wasm",
+                "--target",
+                "x86_64-unknown-linux-musl",
+                "-o",
+                "out.ccwasm",
+            ],
+            // A repeated flag: the last one wins, as before.
+            &["serve", "--workers", "1", "--workers", "2"],
+        ] {
+            assert!(parse(ok).is_ok(), "{ok:?}: {:?}", parse(ok).err());
+        }
+        for bad in [
+            &[][..],
+            &["nothing"],
+            &["serve", "--managed", "--roots", "r"],
+            &["serve", "--managed", "--listen", "127.0.0.1:1"],
+            &["serve", "--managed", "--token-file", "t"],
+            &["serve", "--workers", "0"],
+            &["serve", "--time-limit-ms", "0"],
+            &["serve", "--now-ms", "1"],
+            &["verify-receipt", "--now-ms", "-1"],
+            &["verify-receipt", "--now-ms", "18446744073709551616"],
+            &["verify-receipt", "--listen", "127.0.0.1:1"],
+            &["verify-receipt", "--roots"],
+            &["verify-receipt-endpoint"],
+            &["verify-receipt-endpoint", "staging"],
+            &["info", "--roots", "r"],
+            &["precompile", "c.wasm"],
+        ] {
+            let e = parse(bad).err().unwrap_or_else(|| panic!("{bad:?} parsed"));
+            assert!(e.use_stderr(), "{bad:?}");
+            assert_eq!(e.exit_code(), EXIT_USAGE, "{bad:?}");
+        }
+        // Help goes to stdout and is not an error.
+        for help in [&["--help"][..], &["-h"], &["help"], &["serve", "--help"]] {
+            let e = parse(help).err().unwrap();
+            assert!(!e.use_stderr(), "{help:?}");
+            assert_eq!(e.exit_code(), 0, "{help:?}");
+        }
+        let workers = match parse(&["serve", "--workers", "1", "--workers", "2"])
+            .unwrap()
+            .command
+        {
+            Cmd::Serve(s) => s.workers.map(|n| n.get()),
+            _ => unreachable!(),
+        };
+        assert_eq!(workers, Some(2));
     }
 }
