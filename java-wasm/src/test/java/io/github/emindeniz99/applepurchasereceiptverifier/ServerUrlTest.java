@@ -4,8 +4,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -71,6 +80,48 @@ class ServerUrlTest {
             assertEquals(Reason.INTERNAL_ERROR, failure.reason());
             assertTrue(failure.cause() instanceof ServerProcessFailure, String.valueOf(failure.cause()));
             assertEquals("{\"status\":21009}", lazy.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
+        }
+    }
+
+    /**
+     * A JVM-wide proxy never carries a request to the server: a verdict
+     * travels only to the server the source names. The default
+     * {@link ProxySelector} here sends every HTTP request to a closed port,
+     * so a request that consulted it would fail, and none may consult it.
+     * (Java 8's sockets ask it about {@code socket://} for a SOCKS proxy; that
+     * answer is a direct connection and is not counted.)
+     */
+    @Test
+    void aJvmWideProxyIsNeverUsed() throws Exception {
+        try (ServerTests.Standalone server = new ServerTests.Standalone(temp)) {
+            String g5 = Cases.receiptString(Cases.MAPPER.readTree("{\"fixture\":\"public-receipt-sandbox-g5\"}"));
+            InetSocketAddress closed = new InetSocketAddress("127.0.0.1", ServerTests.freePort());
+            AtomicInteger asked = new AtomicInteger();
+            ProxySelector before = ProxySelector.getDefault();
+            ProxySelector.setDefault(new ProxySelector() {
+                @Override
+                public List<Proxy> select(URI uri) {
+                    if (uri.getScheme().equals("socket")) {
+                        return Collections.singletonList(Proxy.NO_PROXY);
+                    }
+                    asked.incrementAndGet();
+                    return Collections.singletonList(new Proxy(Proxy.Type.HTTP, closed));
+                }
+
+                @Override
+                public void connectFailed(URI uri, SocketAddress address, IOException e) {}
+            });
+            try {
+                Verifier verifier =
+                        Verifier.create(Config.defaults(), Engine.server(ServerSource.url(server.uri(), server.token)));
+                String answer =
+                        verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + g5 + "\"}");
+                assertTrue(answer.contains("\"status\":0"), answer);
+                assertEquals(0, asked.get(), "requests that consulted the JVM's ProxySelector");
+                ((ServerVerifier) verifier).close();
+            } finally {
+                ProxySelector.setDefault(before);
+            }
         }
     }
 

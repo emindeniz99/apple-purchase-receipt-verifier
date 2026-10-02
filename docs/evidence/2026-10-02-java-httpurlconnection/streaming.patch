@@ -1,0 +1,10 @@
+--- a/java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ServerConnection.java
++++ b/java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ServerConnection.java
+@@ -175,6 +175,7 @@
+             if (method.equals("POST")) {
+                 http.setRequestProperty("Content-Type", "application/octet-stream");
+                 http.setDoOutput(true);
++                http.setFixedLengthStreamingMode(body.length);
+                 try (OutputStream out = http.getOutputStream()) {
+                     out.write(body);
+                 }

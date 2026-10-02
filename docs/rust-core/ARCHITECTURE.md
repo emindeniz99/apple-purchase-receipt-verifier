@@ -748,11 +748,12 @@ Verifier v3 = Verifier.create(config,
   `close()`, `System.exit` and `kill -9` of the JVM all end the child
   ([aprv-server §6][server]). A host whose cache directory is mounted
   `noexec` uses `url` or `executable`.
-- **The client** sends each request in one write with `TCP_NODELAY`;
-  `HttpURLConnection` costs about 1.5 ms extra per POST
-  ([rust-core spikes, Sidecar][spikes]). A g5 call from Java 8 took
-  3.87 ms mean and 3.71 ms p50; 258 per second on one thread, 719 on four
-  ([aprv-server §6][server]).
+- **The client** is the JDK's `HttpURLConnection` (DECISIONS.md R17,
+  amended 2026-10-02), with `Proxy.NO_PROXY` and a buffered POST body,
+  which leaves with its headers in one write when they fit 8 KiB; a
+  streamed body would cost 1 to 2 ms a call ([HttpURLConnection][huc]).
+  A g5 call from Java 8 took 2.02 ms mean and 1.94 ms p50; 496 per second
+  on one thread, 1,198 on four ([HttpURLConnection][huc]).
 - **Classpath guard.** Both artifacts ship a marker resource; each façade
   fails fast at startup when it finds both. The Gradle module metadata
   declares a capability conflict between them, and the READMEs say to
@@ -860,4 +861,5 @@ workspace ([CMS everywhere §1][cms]).
 [dotnet]: ../evidence/2026-09-26-dotnet-wasmtime.md
 [substrate]: ../evidence/2026-09-26-security-substrate-bakeoff.md
 [spikes]: ../evidence/2026-09-25-rust-core-spikes.md
+[huc]: ../evidence/2026-10-02-java-httpurlconnection.md
 [corefix]: ../evidence/2026-09-29-core-review-fixes.md

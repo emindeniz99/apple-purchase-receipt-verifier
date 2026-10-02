@@ -16,7 +16,7 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
-those of 2026-10-02 amended R25, R31, R34, R39 and R41.
+those of 2026-10-02 amended R17, R25, R31, R34, R39 and R41.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -309,13 +309,30 @@ Docker Hub once the owner creates its namespace and access token
 (BOOTSTRAP.md). GHCR publishes from `release.yml` with the workflow
 token.
 
-**Constraints kept from the 2026-09-25 spike:** the Java client sends each
-request in one write with `TCP_NODELAY`, because `HttpURLConnection` costs
-about 1.5 ms extra per POST; a `noexec` directory blocks an extracted
-binary, so `url` and `executable` sources exist; the server binds
-`127.0.0.1` and exits when its parent's stdin closes
-([rust-core spikes][spikes], "Sidecar"). Executing from memory is in the
-rejected table.
+**Constraints kept from the 2026-09-25 spike:** the Java client sent each
+request in one write with `TCP_NODELAY`, because `HttpURLConnection` cost
+about 1.5 ms extra per POST (until 2026-10-02, below); a `noexec`
+directory blocks an extracted binary, so `url` and `executable` sources
+exist; the server binds `127.0.0.1` and exits when its parent's stdin
+closes ([rust-core spikes][spikes], "Sidecar"). Executing from memory is
+in the rejected table.
+
+**Amended 2026-10-02 (owner, Q17): the JDK's HTTP client.** The server
+engine's hand-written HTTP/1.1 client is gone. `ServerConnection` sends
+each request through `java.net.HttpURLConnection`, the Java 8 standard,
+with `Proxy.NO_PROXY` (no JVM proxy setting can route a verdict request),
+no response cache and no redirects. A POST body is buffered, not
+streamed: buffered, the headers and a g5 body leave in one write, and the
+engine runs within 0.6 ms of the old client on Java 8 and 21; streamed,
+Nagle's algorithm adds 1 to 2 ms a call and a 401 loses its problem
+document ([HttpURLConnection][huc]). Buffering costs the JDK's one resend
+of a POST whose connection fails before the status line
+(`sun.net.http.retryPost`, not on a read timeout), which cannot change a
+verdict: verification has no side effects and the request carries its
+own `X-Aprv-Now-Ms`. The JDK's keep-alive cache replaces the engine's own
+pool, so the JVM's `http.keepAlive` and `http.maxConnections` now apply,
+and a `url` source over HTTPS uses `HttpsURLConnection`'s default socket
+factory and hostname verifier.
 
 ---
 
@@ -1534,3 +1551,4 @@ One table for everything the plan measured or considered and rejected.
 [pactz]: ../evidence/2026-10-01-pacific-tz-crates.md
 [jsonserde]: ../evidence/2026-10-01-json-serde.md
 [stjout]: ../evidence/2026-10-02-dotnet-stj-output.md
+[huc]: ../evidence/2026-10-02-java-httpurlconnection.md

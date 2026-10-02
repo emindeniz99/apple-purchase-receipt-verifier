@@ -36,7 +36,7 @@ final class ServerVerifier implements Verifier, Closeable {
      * whose body is the module's own answer to an input over the cap. A 413
      * that is a problem document (a server older than that rule) is not.
      */
-    static boolean moduleAnswered(HttpConn.Response response) {
+    static boolean moduleAnswered(ServerConnection.Response response) {
         return response.status == 200
                 || (response.status == 413
                         && response.contentType.toLowerCase(Locale.ROOT).startsWith("application/json"));
@@ -80,7 +80,7 @@ final class ServerVerifier implements Verifier, Closeable {
                 environment == Environment.PRODUCTION ? "/v1/verify-receipt/production" : "/v1/verify-receipt/sandbox";
         try {
             long now = clock.millis();
-            HttpConn.Response response = holder.get().send("POST", path, bytes(requestJson), now);
+            ServerConnection.Response response = holder.get().send("POST", path, bytes(requestJson), now);
             if (moduleAnswered(response)) {
                 return Wire.endpointAnswer(response.text());
             }
@@ -94,7 +94,7 @@ final class ServerVerifier implements Verifier, Closeable {
             String path, @Nullable String input, Function<String, VerificationResult<T>> decode) {
         try {
             long now = clock.millis();
-            HttpConn.Response response = holder.get().send("POST", path, bytes(input), now);
+            ServerConnection.Response response = holder.get().send("POST", path, bytes(input), now);
             if (moduleAnswered(response)) {
                 return decode.apply(response.text());
             }

@@ -1,13 +1,20 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.Proxy;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Requests to one {@code aprv-server}: either one the caller runs
  * ({@link ServerSource#url}, a fixed address) or a supervised child
- * ({@link ServerProcess}). Keeps a pool of keep-alive connections, one
+ * ({@link ServerProcess}). Each request goes through the JDK's
+ * {@link HttpURLConnection}, whose keep-alive cache reuses connections, one
  * request at a time on each, so calls on several threads run in parallel.
  *
  * <p>A request whose connection fails is sent again, up to three times in
@@ -22,21 +29,59 @@ final class ServerConnection {
     /** Above the server's default guest time limit of 10 s per call. */
     static final int READ_TIMEOUT_MILLIS = 60_000;
 
+    /** Larger than any answer the module writes (the payload of a 3 MiB receipt, as JSON). */
+    static final int MAX_RESPONSE = 64 << 20;
+
     private static final int ATTEMPTS = 3;
 
-    private final HttpConn.@Nullable Target fixed;
+    /** Where the server is: host, port, TLS or not, a base path, the token, and which child it is. */
+    static final class Target {
+        final String host;
+        final int port;
+        final boolean tls;
+        final String basePath;
+        final @Nullable String token;
+        final int generation;
+
+        Target(String host, int port, boolean tls, String basePath, @Nullable String token, int generation) {
+            this.host = host;
+            this.port = port;
+            this.tls = tls;
+            this.basePath = basePath;
+            this.token = token;
+            this.generation = generation;
+        }
+    }
+
+    /** A complete response. */
+    static final class Response {
+        final int status;
+        final String contentType;
+        final byte[] body;
+
+        Response(int status, String contentType, byte[] body) {
+            this.status = status;
+            this.contentType = contentType;
+            this.body = body;
+        }
+
+        String text() {
+            return new String(body, StandardCharsets.UTF_8);
+        }
+    }
+
+    private final @Nullable Target fixed;
     private final @Nullable ServerProcess process;
     private final String description;
-    private final ConcurrentLinkedQueue<HttpConn> idle = new ConcurrentLinkedQueue<>();
     private volatile boolean closed;
 
-    private ServerConnection(HttpConn.@Nullable Target fixed, @Nullable ServerProcess process, String description) {
+    private ServerConnection(@Nullable Target fixed, @Nullable ServerProcess process, String description) {
         this.fixed = fixed;
         this.process = process;
         this.description = description;
     }
 
-    static ServerConnection fixed(HttpConn.Target target, String description) {
+    static ServerConnection fixed(Target target, String description) {
         return new ServerConnection(target, null, description);
     }
 
@@ -61,34 +106,17 @@ final class ServerConnection {
      * @throws ServerProcessFailure when the server cannot be reached after
      *     every attempt
      */
-    HttpConn.Response send(String method, String path, byte[] body, @Nullable Long nowMs) {
+    Response send(String method, String path, byte[] body, @Nullable Long nowMs) {
         IOException last = null;
         for (int attempt = 0; attempt < ATTEMPTS; attempt++) {
             if (closed) {
                 throw new ServerProcessFailure("the server engine was closed");
             }
-            HttpConn.Target target = process != null ? process.target() : fixed;
-            HttpConn conn = idle.poll();
-            while (conn != null && conn.target != target) {
-                conn.close(); // a connection to a child that has since been replaced
-                conn = idle.poll();
-            }
+            Target target = process != null ? process.target() : fixed;
             try {
-                if (conn == null) {
-                    conn = new HttpConn(target, CONNECT_TIMEOUT_MILLIS, READ_TIMEOUT_MILLIS);
-                }
-                HttpConn.Response response = conn.exchange(method, path, body, nowMs);
-                if (conn.reusable() && !closed) {
-                    idle.add(conn);
-                } else {
-                    conn.close();
-                }
-                return response;
+                return exchange(target, method, path, body, nowMs, CONNECT_TIMEOUT_MILLIS, READ_TIMEOUT_MILLIS);
             } catch (IOException e) {
                 last = e;
-                if (conn != null) {
-                    conn.close();
-                }
                 if (process != null) {
                     process.recover(target.generation);
                 }
@@ -98,13 +126,95 @@ final class ServerConnection {
                 "aprv-server (" + description + ") did not answer " + method + " " + path + ": " + last, last);
     }
 
-    /** Closes the pooled connections and stops the child, if this connection owns one. */
+    /**
+     * One request on {@link HttpURLConnection}. {@code nowMs}, when given,
+     * goes out as {@code X-Aprv-Now-Ms}. The connection ignores the JVM's
+     * proxy settings ({@link Proxy#NO_PROXY}), so no {@code http.proxyHost}
+     * or default {@code ProxySelector} sends a request elsewhere; it follows
+     * no redirect and uses no response cache.
+     *
+     * <p>A POST body is buffered, not streamed. HttpURLConnection then writes
+     * the headers and a body of up to about 8 KiB (a g5 receipt) in one
+     * write, and reads the body of a 401. Streamed with
+     * {@code setFixedLengthStreamingMode}, the headers go out first, Nagle's
+     * algorithm holds the body back 1 to 2 ms a call, and a 401's body is
+     * dropped (docs/evidence/2026-10-02-java-httpurlconnection.md). The
+     * price is HttpURLConnection's own resend: when a buffered request's
+     * connection fails before the status line, and not on a timeout, it
+     * sends the request once more on a new connection
+     * ({@code sun.net.http.retryPost}, a JVM-wide property this library does
+     * not set). That resend cannot change a verdict: verification has no
+     * side effects and the request carries its own {@code X-Aprv-Now-Ms}.</p>
+     *
+     * @throws IOException when the server cannot be reached, the answer is
+     *     not HTTP, or its body is over {@link #MAX_RESPONSE} bytes
+     */
+    static Response exchange(
+            Target target,
+            String method,
+            String path,
+            byte[] body,
+            @Nullable Long nowMs,
+            int connectTimeoutMillis,
+            int readTimeoutMillis)
+            throws IOException {
+        URL url = new URL(target.tls ? "https" : "http", target.host, target.port, target.basePath + path);
+        HttpURLConnection http = (HttpURLConnection) url.openConnection(Proxy.NO_PROXY);
+        try {
+            http.setRequestMethod(method);
+            http.setConnectTimeout(connectTimeoutMillis);
+            http.setReadTimeout(readTimeoutMillis);
+            http.setUseCaches(false);
+            http.setInstanceFollowRedirects(false);
+            if (target.token != null) {
+                http.setRequestProperty("X-Aprv-Token", target.token);
+            }
+            if (nowMs != null) {
+                http.setRequestProperty("X-Aprv-Now-Ms", Long.toUnsignedString(nowMs));
+            }
+            if (method.equals("POST")) {
+                http.setRequestProperty("Content-Type", "application/octet-stream");
+                http.setDoOutput(true);
+                try (OutputStream out = http.getOutputStream()) {
+                    out.write(body);
+                }
+            }
+            int status = http.getResponseCode();
+            if (status < 0) {
+                throw new IOException("not an HTTP response");
+            }
+            // HttpURLConnection reads a status of 400 or more from the error stream.
+            InputStream in = status >= 400 ? http.getErrorStream() : http.getInputStream();
+            String contentType = http.getContentType();
+            return new Response(status, contentType == null ? "" : contentType, in == null ? new byte[0] : read(in));
+        } catch (IOException | RuntimeException e) {
+            http.disconnect();
+            throw e;
+        }
+    }
+
+    /**
+     * The whole body, then closed: a body read to its end hands the
+     * connection back to the keep-alive cache.
+     */
+    private static byte[] read(InputStream in) throws IOException {
+        try (InputStream body = in) {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            byte[] buffer = new byte[16 << 10];
+            int n;
+            while ((n = body.read(buffer)) >= 0) {
+                if (bytes.size() + n > MAX_RESPONSE) {
+                    throw new IOException("a response over " + MAX_RESPONSE + " bytes");
+                }
+                bytes.write(buffer, 0, n);
+            }
+            return bytes.toByteArray();
+        }
+    }
+
+    /** Refuses later calls and stops the child, if this connection owns one. */
     void close() {
         closed = true;
-        HttpConn conn;
-        while ((conn = idle.poll()) != null) {
-            conn.close();
-        }
         if (process != null) {
             process.stop();
         }
