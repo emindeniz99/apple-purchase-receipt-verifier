@@ -320,7 +320,7 @@ jobs:
           bundler-cache: true
       - name: ruby
         if: matrix.host == 'ruby'
-        run: sh docs/evidence/2026-09-29-ruby-host/scripts/g1.sh "$G1" "$RUNNER_TEMP/out"
+        run: sh ruby/tools/g1.sh "$G1" "$RUNNER_TEMP/out"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: matrix.host == 'node'
