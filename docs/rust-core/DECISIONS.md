@@ -320,19 +320,31 @@ in the rejected table.
 **Amended 2026-10-02 (owner, Q17): the JDK's HTTP client.** The server
 engine's hand-written HTTP/1.1 client is gone. `ServerConnection` sends
 each request through `java.net.HttpURLConnection`, the Java 8 standard,
-with `Proxy.NO_PROXY` (no JVM proxy setting can route a verdict request),
-no response cache and no redirects. A POST body is buffered, not
-streamed: buffered, the headers and a g5 body leave in one write, and the
-engine runs within 0.6 ms of the old client on Java 8 and 21; streamed,
-Nagle's algorithm adds 1 to 2 ms a call and a 401 loses its problem
-document ([HttpURLConnection][huc]). Buffering costs the JDK's one resend
-of a POST whose connection fails before the status line
-(`sun.net.http.retryPost`, not on a read timeout), which cannot change a
-verdict: verification has no side effects and the request carries its
-own `X-Aprv-Now-Ms`. The JDK's keep-alive cache replaces the engine's own
-pool, so the JVM's `http.keepAlive` and `http.maxConnections` now apply,
-and a `url` source over HTTPS uses `HttpsURLConnection`'s default socket
-factory and hostname verifier.
+with `Proxy.NO_PROXY`, no response cache and no redirects. `NO_PROXY`
+keeps every HTTP proxy setting and `ProxySelector` HTTP answer away from a
+verdict request; a SOCKS proxy (`socksProxyHost`, or a `ProxySelector`
+answer for `socket://`) still carries the connection on Java 8, and on
+JDK 21 for `https` only, as it did the old client's on every JDK. A POST
+body is buffered, not streamed: buffered, the headers and a g5 body leave
+in one write, and the engine runs within 0.6 ms of the old client on
+Java 8 and 21; streamed, Nagle's algorithm adds 1 to 2 ms a call and a
+401 loses its problem document ([HttpURLConnection][huc]). Buffering
+costs the JDK's own resends, each on a new connection: one when the
+connection fails before the status line (`sun.net.http.retryPost`, not on
+a read timeout) and one when writing the request fails, whatever that
+property says. With the engine's three attempts, one call can put a
+request on up to nine connections; a server that reads it and closes
+before the status line gets it six times. That cannot change a verdict:
+verification has no side effects and the request carries its own
+`X-Aprv-Now-Ms`. The response must be framed as the old client required:
+chunked, or a `Content-Length` of at most 64 MiB whose bytes all arrive;
+a short body is a failed attempt, not an answer. Over HTTPS the request
+uses the default `SSLContext`'s socket factory, never
+`HttpsURLConnection`'s replaceable JVM-wide defaults, and a hostname
+verifier that refuses every name, so the JDK's own RFC 2818 check decides
+the name before the token is sent. The JDK's keep-alive cache replaces
+the engine's own pool, so the JVM's `http.keepAlive` and
+`http.maxConnections` now apply.
 
 ---
 

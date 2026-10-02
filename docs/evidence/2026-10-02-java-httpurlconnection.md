@@ -16,12 +16,17 @@ differences under about 0.5 ms are noise). `aprv-server` built with
 `rust/server/scripts/build-static.sh` for `x86_64-unknown-linux-musl`
 from base commit `fce1407`, embedding a component with SHA-256
 `6db3b911…d850a8`; the binary's SHA-256 is `bee51a30…430abd`. Code and
-commands are in `2026-10-02-java-httpurlconnection/`.
+commands are in `2026-10-02-java-httpurlconnection/`. The resend and
+SOCKS probes ran later the same day on the client as amended after
+review (a pinned TLS factory and hostname verifier, and framed bodies
+only), on the same two JVMs; they need no server.
 
 ## What the JDK does with each mode
 
 Read from the JDK 8 sources (`sun/net/www/protocol/http/HttpURLConnection.java`,
-`sun/net/www/http/HttpClient.java`) and confirmed by the runs below:
+`sun/net/www/http/HttpClient.java`, `sun/net/NetworkClient.java`), checked
+against the same files in `openjdk/jdk21u`, and confirmed by the runs
+below:
 
 - **Buffered.** The body is held in memory, and the request line, the
   headers and the body go to the socket through one 8 KiB
@@ -30,7 +35,10 @@ Read from the JDK 8 sources (`sun/net/www/protocol/http/HttpURLConnection.java`,
   headers) leaves in one write. When the connection fails before the
   status line arrives, other than by a read timeout,
   `HttpClient.parseHTTP` sends the request once more on a new
-  connection: `sun.net.http.retryPost`, true by default.
+  connection: `sun.net.http.retryPost`, true by default. Separately,
+  when writing the request fails, `HttpURLConnection.writeRequests`
+  sends it once more on a new connection whatever that property says,
+  and that new connection may still take the `parseHTTP` resend.
 - **Streamed.** `getOutputStream()` writes and flushes the headers before
   the body exists, so every POST is two writes, and Nagle's algorithm
   holds the second back until the server's delayed ACK. `parseHTTP` never
@@ -68,28 +76,85 @@ warm-up calls, mean / p50 in µs:
 | `HttpURLConnection`, streamed | 21 | 3,949 / 3,748 | 15,467 / 13,689 |
 | `HttpURLConnection`, streamed | 8 | 3,769 / 3,443 | 15,203 / 13,767 |
 
-The answers: every buffered run passes all of `ServerEngineTest`,
-`ServerUrlTest` and `ServerConformanceCasesTest`. Every streamed run fails
+The answers: every buffered run passes `ServerEngineTest` and
+`ServerUrlTest`, and the full `mvn verify` on each JVM (the README's
+`run ... verify` line) passes `ServerConformanceCasesTest`'s 385 cases
+too. Every streamed run fails
 `aRequestWithoutTheTokenOrWithAWrongOneIsRefused` with
 `expected: <UNAUTHORIZED> but was: <HTTP_401>`: the 401 arrives, its body
 does not.
+
+### Resends
+
+`ResendProbe.java`: one `ServerConnection.send` of a 4 MiB POST to a
+server that resets a connection without reading it (so the write
+fails), reads the whole request on the next one and closes before a
+status line, then resets the third, in a cycle. Its three attempts
+opened 9 connections and the server read 3 whole requests in both runs
+on Java 8 and in one of two on JDK 21; the other JDK 21 run opened 6 and
+read 2, because whether the reset lands before the write is a race. A
+server that reads every request and closes before the status line
+receives it 6 times, twice per attempt; `ServerHttpTest` pins that
+count.
+
+### HTTPS
+
+Read from `sun/net/www/protocol/https/HttpsClient.java` in JDK 8 and
+JDK 21, where `afterConnect` is the same on this point. With
+`HttpsURLConnection`'s default hostname verifier, the JDK sets the
+socket's endpoint identification to `HTTPS` and the trust manager checks
+the name in the handshake. With any other verifier, it leaves that unset
+and, after the handshake, `checkURLSpoofing` matches the certificate
+against the host by RFC 2818 (`HostnameChecker`, `TYPE_TLS`), asking the
+verifier only on a mismatch and closing the socket when it says no.
+`afterConnect` runs from `connect()`, before `writeRequests`, so either
+way no request byte is written to a server that fails. The engine's
+verifier always says no, and its socket factory is the default
+`SSLContext`'s, so neither of `HttpsURLConnection`'s replaceable JVM-wide
+defaults takes part. `ServerHttpTest` observes it on both JVMs: a
+self-signed server under a trust-all default factory and an allow-all
+default verifier, and a trusted certificate for another name, are each
+refused without the server reading a byte of the request.
+
+### SOCKS
+
+`SocksProbe.java`: a default `ProxySelector` that answers `socket://`
+with a SOCKS proxy (a listener that accepts and closes) and every other
+URI with a direct connection, then one request per scheme to a closed
+port, opened with `Proxy.NO_PROXY`:
+
+| Connection | Java 8 | JDK 21 |
+|---|---|---|
+| `HttpURLConnection`, `http` | reaches the SOCKS listener | direct |
+| `HttpURLConnection`, `https` | reaches the SOCKS listener | reaches the SOCKS listener |
+| `new Socket()`, as the hand-written client connected | reaches the SOCKS listener | reaches the SOCKS listener |
+
+Java 8's `NetworkClient.createSocket` is `new Socket()`, which asks the
+selector; JDK 21's is `new Socket(Proxy.NO_PROXY)`. An `https`
+connection gets its socket from the TLS socket factory's `createSocket()`
+on both, which asks. `NO_PROXY` keeps out HTTP proxies only.
 
 ## Verdict
 
 Buffered. Against the hand-written client it ranges from 0.1 ms faster
 to 0.6 ms slower on g5 across the four runs, is 0.2 to 0.5 ms slower on
 the 105 KB receipt, matches it on 4 threads, and reads a 401's problem
-document. Streamed costs 1.0 to 1.9 ms a call on g5 (about 30% fewer
-calls per second on 4 threads) and 2.5 to 3.3 ms on the 105 KB receipt,
-the stall the 2026-09-25 spike measured, and loses the 401's body.
+document. It is slower on one call: `GET /healthz` on JDK 21 went from
+26.8 to 74.1 µs (on Java 8, 54.0 to 58.4 µs), the per-request cost of
+`HttpURLConnection` with no verification to hide it. A health probe is
+not on a verdict's path, so it does not change the choice. Streamed
+costs 1.0 to 1.9 ms a call on g5 (about 30% fewer calls per second on 4
+threads) and 2.5 to 3.3 ms on the 105 KB receipt, the stall the
+2026-09-25 spike measured, and loses the 401's body.
 
-The cost of buffered is the JDK's one resend of a POST whose connection
-failed before the status line. It cannot change a verdict: verification
-has no side effects, and the request carries its own `X-Aprv-Now-Ms`, so
-the resend asks the same question at the same instant. It cannot double
-a wait either, because a read timeout is not resent.
+The cost of buffered is the JDK's resends: up to two more sends inside
+each of the engine's three attempts, nine connections in all
+(Resends, above). They cannot change a verdict: verification has no side
+effects, and the request carries its own `X-Aprv-Now-Ms`, so a resend
+asks the same question at the same instant. They cannot double a wait
+either, because a read timeout is not resent.
 `ServerConnection.send` keeps its own three attempts, which the JDK's
-resend does not replace: those restart a child that died.
+resends do not replace: those restart a child that died.
 
 ## Where this stops holding
 
@@ -99,9 +164,14 @@ resend does not replace: those restart a child that died.
   well; the 105 KB receipt shows that cost to be small next to its
   verification, but bodies between 8 KiB and about 64 KiB were not
   measured.
-- The JDK behaviour is read from the JDK 8 sources and observed on JDK 8
-  and 21. The `-wasm` artifact runs the server engine on Java 8 and
-  Endive on Java 11 and later, so other JDKs reach this code only when a
-  caller picks `Engine.server(...)`.
+- The JDK behaviour is read from the JDK 8 and JDK 21 sources and
+  observed on JDK 8 and 21; JDKs 9 to 20 and after 21 were not run. The
+  `-wasm` artifact runs the server engine on Java 8 and Endive on Java 11
+  and later, so other JDKs reach this code only when a caller picks
+  `Engine.server(...)`.
+- The latency runs predate the review's changes to the client (the TLS
+  factory and verifier, which plain `http` does not touch, and the
+  framing checks, a header lookup and a length comparison per call);
+  they were not run again.
 
 [spikes]: 2026-09-25-rust-core-spikes.md
