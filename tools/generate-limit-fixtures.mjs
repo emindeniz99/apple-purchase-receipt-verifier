@@ -33,7 +33,6 @@
  * refuse even without the cap.
  *
  *   receipt-b64-over-cap   limits/receipt-b64-at-cap.txt, then LF
- *   receipt-der-*.der      the shared generated receipt, then zero bytes
  *   body-ascii-*.json      {"receipt-data":"<genuine>"<spaces>}
  *   body-2byte-*.json      {"receipt-data":"<genuine>","password":"<U+00E9...>"}
  *   body-nested-*.json     {"receipt-data":"<genuine>","deep":[[...1...]]}
@@ -94,7 +93,6 @@ function nested(arrays) {
 
 const files = {
   'receipt-b64-over-cap.txt': padded(receiptAtCap, '\n', text(''), CAP + 1),
-  'receipt-der-over-cap.der': padded(receiptDer, '\u0000', text(''), CAP + 1),
   'body-ascii-at-cap.json': padded(Buffer.concat([bodyStart, text('"')]), ' ', text('}'), CAP),
   'body-ascii-over-cap.json': padded(Buffer.concat([bodyStart, text('"')]), ' ', text('}'), CAP + 1),
   // One space after the comma in the at-cap body only: U+00E9 is two bytes,
