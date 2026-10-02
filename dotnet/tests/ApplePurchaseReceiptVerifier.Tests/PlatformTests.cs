@@ -387,7 +387,7 @@ public class PlatformTests
     [Fact]
     public void TheFieldPathResolverSelectsWhatTheGrammarSays()
     {
-        object? model = Json.Parse(
+        object? model = TestJson.Parse(
             "{\"receipt\":{\"in_app\":[{\"product_id\":\"com.example.app.vip\",\"quantity\":\"1\"},"
             + "{\"product_id\":\"com.example.app.coins100\",\"quantity\":\"2\"}]},"
             + "\"unknown_attributes\":{\"9999\":[\"AQID\"]},\"a/b\":{\"c~d\":7}}");
@@ -406,7 +406,7 @@ public class PlatformTests
     [Fact]
     public void TheFieldPathResolverFailsWhenASelectorIsNotUnique()
     {
-        object? model = Json.Parse("{\"list\":[{\"id\":\"a\"},{\"id\":\"a\"}]}");
+        object? model = TestJson.Parse("{\"list\":[{\"id\":\"a\"},{\"id\":\"a\"}]}");
 
         Assert.ThrowsAny<Exception>(() => JsonPointer070.Resolve(model, "/list/[id=a]"));
         Assert.ThrowsAny<Exception>(() => JsonPointer070.Resolve(model, "/list/[id=missing]"));

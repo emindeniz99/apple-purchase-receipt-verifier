@@ -25,6 +25,13 @@
 
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
+    <!-- The netstandard2.0 asset's own dependency, which a consumer of that
+         asset gets from the package's netstandard2.0 dependency group. NuGet
+         restores a project reference by this project's framework and so
+         flows the net8.0 asset's dependencies (none) instead, whatever
+         SetTargetFramework below says; without this the asset fails to load
+         System.Text.Json on net8.0 and net9.0. -->
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>

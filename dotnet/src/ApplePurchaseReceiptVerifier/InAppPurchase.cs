@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json;
 using ApplePurchaseReceiptVerifier.Internal;
 
 namespace ApplePurchaseReceiptVerifier
@@ -88,22 +89,23 @@ namespace ApplePurchaseReceiptVerifier
         public IReadOnlyDictionary<int, IReadOnlyList<byte[]>> UnknownAttributes =>
             ByteOps.CopyAttributes(_unknownAttributes, nameof(UnknownAttributes));
 
-        internal OrderedMap ToJsonValue()
+        /// <summary>Writes this purchase as one <c>in_app</c> element of <see cref="ReceiptPayload.ToJson"/>.</summary>
+        internal void WriteTo(Utf8JsonWriter json)
         {
-            OrderedMap json = new OrderedMap();
-            json.Set("quantity", Quantity);
-            json.Set("product_id", ProductId);
-            json.Set("transaction_id", TransactionId);
-            json.Set("purchase_date_ms", PurchaseDateMs);
-            json.Set("original_transaction_id", OriginalTransactionId);
-            json.Set("original_purchase_date_ms", OriginalPurchaseDateMs);
-            json.Set("expires_date_ms", ExpiresDateMs);
-            json.Set("web_order_line_item_id", ReceiptPayload.IdString(WebOrderLineItemId));
-            json.Set("cancellation_date_ms", CancellationDateMs);
-            json.Set("is_trial_period", IsTrialPeriod);
-            json.Set("is_in_intro_offer_period", IsInIntroOfferPeriod);
-            json.Set("unknown_attributes", ReceiptPayload.UnknownAttributesJson(_unknownAttributes));
-            return json;
+            json.WriteStartObject();
+            Json.WriteNumberOrNull(json, "quantity", Quantity);
+            json.WriteString("product_id", ProductId);
+            json.WriteString("transaction_id", TransactionId);
+            Json.WriteNumberOrNull(json, "purchase_date_ms", PurchaseDateMs);
+            json.WriteString("original_transaction_id", OriginalTransactionId);
+            Json.WriteNumberOrNull(json, "original_purchase_date_ms", OriginalPurchaseDateMs);
+            Json.WriteNumberOrNull(json, "expires_date_ms", ExpiresDateMs);
+            json.WriteString("web_order_line_item_id", ReceiptPayload.IdString(WebOrderLineItemId));
+            Json.WriteNumberOrNull(json, "cancellation_date_ms", CancellationDateMs);
+            Json.WriteBooleanOrNull(json, "is_trial_period", IsTrialPeriod);
+            Json.WriteBooleanOrNull(json, "is_in_intro_offer_period", IsInIntroOfferPeriod);
+            ReceiptPayload.WriteUnknownAttributes(json, _unknownAttributes);
+            json.WriteEndObject();
         }
     }
 }

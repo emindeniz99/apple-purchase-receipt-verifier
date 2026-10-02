@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.Json;
 
 namespace ApplePurchaseReceiptVerifier.Internal
 {
@@ -10,7 +11,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// only reads it. An answer that does not have the shape the wire defines
     /// (0.7's canonical JSON) is an <see cref="AnswerException"/>, which the
     /// verifier reports as <see cref="VerificationReason.InternalError"/> with
-    /// the exception as the cause. It is never guessed at.
+    /// the exception as the cause. It is never guessed at. A member that
+    /// appears twice counts once, with its last value.
     /// </summary>
     internal static class ModuleAnswers
     {
@@ -47,45 +49,57 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// <exception cref="AnswerException">The answer is not init's.</exception>
         internal static void CheckInit(string answer)
         {
-            OrderedMap map = ParseObject(answer);
-            bool ok = Bool(map, "ok");
-            if (ok)
+            string message;
+            using (JsonDocument document = ParseObject(answer))
             {
-                RequireOnly(map, "ok");
-                return;
+                Dictionary<string, JsonElement> map = Members(document.RootElement);
+                bool ok = Bool(map, "ok");
+                if (ok)
+                {
+                    RequireOnly(map, "ok");
+                    return;
+                }
+
+                RequireOnly(map, "ok", "message");
+                message = Str(map, "message");
             }
 
-            RequireOnly(map, "ok", "message");
-            throw new ArgumentException("the module refused the configured roots: " + Str(map, "message"));
+            throw new ArgumentException("the module refused the configured roots: " + message);
         }
 
         /// <summary>A <c>verify-receipt</c> answer as a result.</summary>
         internal static VerificationResult<ReceiptPayload> ReadReceipt(string answer)
         {
-            OrderedMap map = ParseObject(answer);
-            if (Verdict(map, out VerificationReason reason, out string message))
+            using (JsonDocument document = ParseObject(answer))
             {
-                RequireOnly(map, "verified", "payload");
-                return VerificationResult<ReceiptPayload>.Ok(Receipt(Obj(map, "payload")));
-            }
+                Dictionary<string, JsonElement> map = Members(document.RootElement);
+                if (Verdict(map, out VerificationReason reason, out string message))
+                {
+                    RequireOnly(map, "verified", "payload");
+                    return VerificationResult<ReceiptPayload>.Ok(Receipt(Obj(map, "payload")));
+                }
 
-            return VerificationResult<ReceiptPayload>.Failed(reason, message, null);
+                return VerificationResult<ReceiptPayload>.Failed(reason, message, null);
+            }
         }
 
         /// <summary>A <c>verify-signed-data</c> answer as a result.</summary>
         internal static VerificationResult<JsonPayload> ReadSignedData(string answer)
         {
-            OrderedMap map = ParseObject(answer);
-            if (Verdict(map, out VerificationReason reason, out string message))
+            using (JsonDocument document = ParseObject(answer))
             {
-                RequireOnly(map, "verified", "payload");
-                return VerificationResult<JsonPayload>.Ok(JsonPayload.Create(Str(map, "payload")));
-            }
+                Dictionary<string, JsonElement> map = Members(document.RootElement);
+                if (Verdict(map, out VerificationReason reason, out string message))
+                {
+                    RequireOnly(map, "verified", "payload");
+                    return VerificationResult<JsonPayload>.Ok(JsonPayload.Create(Str(map, "payload")));
+                }
 
-            return VerificationResult<JsonPayload>.Failed(reason, message, null);
+                return VerificationResult<JsonPayload>.Failed(reason, message, null);
+            }
         }
 
-        private static bool Verdict(OrderedMap map, out VerificationReason reason, out string message)
+        private static bool Verdict(Dictionary<string, JsonElement> map, out VerificationReason reason, out string message)
         {
             reason = default;
             message = string.Empty;
@@ -105,13 +119,15 @@ namespace ApplePurchaseReceiptVerifier.Internal
             return false;
         }
 
-        private static ReceiptPayload Receipt(OrderedMap json)
+        private static ReceiptPayload Receipt(Dictionary<string, JsonElement> json)
         {
             RequireKeys(json, ReceiptKeys, "the receipt payload");
             List<InAppPurchase> inApp = new List<InAppPurchase>();
-            foreach (object? entry in Arr(json, "in_app"))
+            foreach (JsonElement entry in Arr(json, "in_app"))
             {
-                inApp.Add(Purchase(entry as OrderedMap ?? throw new AnswerException("an in_app entry is not an object")));
+                inApp.Add(Purchase(entry.ValueKind == JsonValueKind.Object
+                    ? Members(entry)
+                    : throw new AnswerException("an in_app entry is not an object")));
             }
 
             return new ReceiptPayload(
@@ -132,7 +148,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 Unknown(json));
         }
 
-        private static InAppPurchase Purchase(OrderedMap json)
+        private static InAppPurchase Purchase(Dictionary<string, JsonElement> json)
         {
             RequireKeys(json, PurchaseKeys, "an in_app entry");
             return new InAppPurchase(
@@ -150,21 +166,28 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 Unknown(json));
         }
 
-        private static IReadOnlyDictionary<int, IReadOnlyList<byte[]>> Unknown(OrderedMap json)
+        private static IReadOnlyDictionary<int, IReadOnlyList<byte[]>> Unknown(Dictionary<string, JsonElement> json)
         {
-            OrderedMap map = Obj(json, "unknown_attributes");
+            Dictionary<string, JsonElement> map = Obj(json, "unknown_attributes");
             Dictionary<int, IReadOnlyList<byte[]>> attributes = new Dictionary<int, IReadOnlyList<byte[]>>(map.Count);
-            foreach (KeyValuePair<string, object?> entry in map)
+            foreach (KeyValuePair<string, JsonElement> entry in map)
             {
                 if (!int.TryParse(entry.Key, NumberStyles.None, CultureInfo.InvariantCulture, out int type))
                 {
                     throw new AnswerException("an unknown_attributes key is not a decimal attribute type");
                 }
 
-                List<byte[]> values = new List<byte[]>();
-                foreach (object? value in entry.Value as List<object?> ?? throw new AnswerException("an unknown_attributes value is not an array"))
+                if (entry.Value.ValueKind != JsonValueKind.Array)
                 {
-                    values.Add(Base64(value as string ?? throw new AnswerException("an unknown attribute is not a string")));
+                    throw new AnswerException("an unknown_attributes value is not an array");
+                }
+
+                List<byte[]> values = new List<byte[]>();
+                foreach (JsonElement value in entry.Value.EnumerateArray())
+                {
+                    values.Add(Base64(value.ValueKind == JsonValueKind.String
+                        ? Text(value)
+                        : throw new AnswerException("an unknown attribute is not a string")));
                 }
 
                 attributes[type] = values;
@@ -173,24 +196,59 @@ namespace ApplePurchaseReceiptVerifier.Internal
             return attributes;
         }
 
-        private static OrderedMap ParseObject(string answer)
+        /// <summary>The answer as a document whose root is an object; the caller disposes it.</summary>
+        private static JsonDocument ParseObject(string answer)
         {
+            JsonDocument document;
             try
             {
-                return Json.ParseObject(answer, int.MaxValue);
+                document = Json.Parse(answer);
             }
             catch (JsonException e)
             {
-                throw new AnswerException("the module's answer is not a JSON object: " + e.Message);
+                throw new AnswerException("the module's answer is not JSON: " + e.Message);
+            }
+
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                document.Dispose();
+                throw new AnswerException("the module's answer is not a JSON object");
+            }
+
+            return document;
+        }
+
+        /// <summary>An object's members by name; a name that appears twice keeps its last value.</summary>
+        private static Dictionary<string, JsonElement> Members(JsonElement json)
+        {
+            Dictionary<string, JsonElement> members = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (JsonProperty member in json.EnumerateObject())
+            {
+                members[member.Name] = member.Value;
+            }
+
+            return members;
+        }
+
+        /// <summary>A string's value. A <c>\u</c> escape of a lone surrogate parses but has no value.</summary>
+        private static string Text(JsonElement json)
+        {
+            try
+            {
+                return json.GetString()!;
+            }
+            catch (InvalidOperationException)
+            {
+                throw new AnswerException("a string in the module's answer is not valid UTF-16");
             }
         }
 
-        private static void RequireOnly(OrderedMap map, params string[] keys)
+        private static void RequireOnly(Dictionary<string, JsonElement> map, params string[] keys)
         {
             RequireKeys(map, keys, "the module's answer");
         }
 
-        private static void RequireKeys(OrderedMap map, string[] keys, string what)
+        private static void RequireKeys(Dictionary<string, JsonElement> map, string[] keys, string what)
         {
             if (map.Count != keys.Length)
             {
@@ -206,45 +264,64 @@ namespace ApplePurchaseReceiptVerifier.Internal
             }
         }
 
-        private static bool Bool(OrderedMap map, string key) =>
-            map.TryGetValue(key, out object? value) && value is bool flag
-                ? flag
+        private static bool Bool(Dictionary<string, JsonElement> map, string key) =>
+            map.TryGetValue(key, out JsonElement value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? value.GetBoolean()
                 : throw new AnswerException("\"" + key + "\" is missing or not a boolean");
 
-        private static string Str(OrderedMap map, string key) =>
-            map.TryGetValue(key, out object? value) && value is string text
-                ? text
+        private static string Str(Dictionary<string, JsonElement> map, string key) =>
+            map.TryGetValue(key, out JsonElement value) && value.ValueKind == JsonValueKind.String
+                ? Text(value)
                 : throw new AnswerException("\"" + key + "\" is missing or not a string");
 
-        private static OrderedMap Obj(OrderedMap map, string key) =>
-            map.TryGetValue(key, out object? value) && value is OrderedMap inner
-                ? inner
+        private static Dictionary<string, JsonElement> Obj(Dictionary<string, JsonElement> map, string key) =>
+            map.TryGetValue(key, out JsonElement value) && value.ValueKind == JsonValueKind.Object
+                ? Members(value)
                 : throw new AnswerException("\"" + key + "\" is missing or not an object");
 
-        private static List<object?> Arr(OrderedMap map, string key) =>
-            map.TryGetValue(key, out object? value) && value is List<object?> list
-                ? list
+        private static JsonElement.ArrayEnumerator Arr(Dictionary<string, JsonElement> map, string key) =>
+            map.TryGetValue(key, out JsonElement value) && value.ValueKind == JsonValueKind.Array
+                ? value.EnumerateArray()
                 : throw new AnswerException("\"" + key + "\" is missing or not an array");
 
-        private static string? OptStr(OrderedMap map, string key)
+        private static string? OptStr(Dictionary<string, JsonElement> map, string key)
         {
-            object? value = map[key];
-            return value is null ? null : value as string ?? throw new AnswerException("\"" + key + "\" is not a string");
+            JsonElement value = map[key];
+            return value.ValueKind switch
+            {
+                JsonValueKind.Null => null,
+                JsonValueKind.String => Text(value),
+                _ => throw new AnswerException("\"" + key + "\" is not a string"),
+            };
         }
 
-        private static long? OptLong(OrderedMap map, string key)
+        /// <summary>An integer that fits 64 bits: <c>1.0</c>, <c>1e3</c> and a 20-digit number are not.</summary>
+        private static long? OptLong(Dictionary<string, JsonElement> map, string key)
         {
-            object? value = map[key];
-            return value is null ? (long?)null : value is long number ? number : throw new AnswerException("\"" + key + "\" is not an integer");
+            JsonElement value = map[key];
+            if (value.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+
+            return value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out long number)
+                ? number
+                : throw new AnswerException("\"" + key + "\" is not an integer");
         }
 
-        private static bool? OptBool(OrderedMap map, string key)
+        private static bool? OptBool(Dictionary<string, JsonElement> map, string key)
         {
-            object? value = map[key];
-            return value is null ? (bool?)null : value is bool flag ? flag : throw new AnswerException("\"" + key + "\" is not a boolean");
+            JsonElement value = map[key];
+            return value.ValueKind switch
+            {
+                JsonValueKind.Null => null,
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => throw new AnswerException("\"" + key + "\" is not a boolean"),
+            };
         }
 
-        private static long? OptId(OrderedMap map, string key)
+        private static long? OptId(Dictionary<string, JsonElement> map, string key)
         {
             string? text = OptStr(map, key);
             if (text is null)
@@ -257,7 +334,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 : throw new AnswerException("\"" + key + "\" is not a 64-bit id");
         }
 
-        private static byte[]? OptBytes(OrderedMap map, string key)
+        private static byte[]? OptBytes(Dictionary<string, JsonElement> map, string key)
         {
             string? text = OptStr(map, key);
             return text is null ? null : Base64(text);

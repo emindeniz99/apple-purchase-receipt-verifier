@@ -44,7 +44,7 @@ internal static class SyntheticAnswers
 
     /// <summary>A <c>verify-signed-data</c> answer that verified <paramref name="payloadJson"/>.</summary>
     internal static string VerifiedJws(string payloadJson) =>
-        "{\"verified\":true,\"payload\":" + Internal.Json.Write(payloadJson) + "}";
+        "{\"verified\":true,\"payload\":" + Internal.Json.Write(json => json.WriteStringValue(payloadJson)) + "}";
 
     /// <summary>A verification failure answer.</summary>
     internal static string Failed(string reason, string message) =>

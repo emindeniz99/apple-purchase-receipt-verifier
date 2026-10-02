@@ -42,7 +42,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
             Dictionary<string, ReadOnlySpanAction> targets = new Dictionary<string, ReadOnlySpanAction>(
                 StringComparer.Ordinal)
             {
-                ["json"] = JsonReader.Run,
+                ["json"] = JsonRoundTrip.Run,
                 ["receipt"] = data => (_receipt ??= new ReceiptDer()).Run(data),
                 ["receipt-base64"] = data => (_receiptBase64 ??= new ReceiptBase64()).Run(data),
                 ["jws"] = data => (_jws ??= new Targets.Jws()).Run(data),

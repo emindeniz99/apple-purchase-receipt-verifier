@@ -7,7 +7,7 @@ using Xunit;
 namespace ApplePurchaseReceiptVerifier.Tests;
 
 /// <summary>
-/// RFC 6901 JSON Pointer over the object model <see cref="Json"/> produces,
+/// RFC 6901 JSON Pointer over the object model <see cref="TestJson"/> produces,
 /// with one extension: a reference token written <c>[key=value]</c> selects
 /// the single element of an array whose member key is the JSON string value.
 /// </summary>

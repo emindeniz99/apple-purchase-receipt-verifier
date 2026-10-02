@@ -8,6 +8,9 @@
     <!-- The Wasm host for aprv.wasm. 48.0.2 is the floor the evidence ran and
          the newest release on nuget.org; netstandard2.0 is one of its targets. -->
     <PackageVersion Include="Wasmtime" Version="48.0.2" />
+    <!-- netstandard2.0 only: net8.0 and later have it in the box. The newest
+         stable release; it still ships a netstandard2.0 asset. -->
+    <PackageVersion Include="System.Text.Json" Version="10.0.12" />
     <!-- Build-time only: makes new X509Chain() and DateTime.UtcNow compile errors. -->
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />
   </ItemGroup>
