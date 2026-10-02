@@ -282,6 +282,53 @@ fn a_root_that_is_neither_der_nor_pem_holding_a_certificate_is_refused() {
 }
 
 #[test]
+fn an_encrypted_pem_block_is_refused_without_asking_for_a_password() {
+    // OpenSSL's default password callback prompts on the terminal or reads
+    // stdin for an encrypted block, which blocks the caller and could open
+    // the block with a typed passphrase; the core's reader passes one that
+    // refuses.
+    let der = common::read_fixture("generated-0.7/receipt-root.der");
+    let body: String = String::from_utf8(pem_of(&der))
+        .unwrap()
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let encrypted = format!(
+        "-----BEGIN CERTIFICATE-----\nProc-Type: 4,ENCRYPTED\n\
+         DEK-Info: AES-128-CBC,00112233445566778899AABBCCDDEEFF\n\n\
+         {body}-----END CERTIFICATE-----\n"
+    );
+    let error = TrustAnchor::from_der_or_pem(encrypted.as_bytes()).unwrap_err();
+    assert_eq!(
+        error.detail(),
+        "trust anchor is not a certificate: OpenSSL does not read it as one X.509 certificate"
+    );
+}
+
+#[test]
+fn blocks_of_other_types_in_a_pem_bundle_are_skipped_as_openssl_skips_them() {
+    // OpenSSL's PEM_read_bio_X509 passes over a block whose label is not a
+    // certificate's, so a bundle with a key or a TRUSTED CERTIFICATE in it
+    // yields its CERTIFICATE blocks; on its own such a block is no
+    // certificate and is refused.
+    let files = apple_root_files();
+    let other = |label: &str| format!("-----BEGIN {label}-----\nAAAA\n-----END {label}-----\n");
+    for label in ["PRIVATE KEY", "TRUSTED CERTIFICATE"] {
+        let bundle = [
+            pem_of(&files[0]),
+            other(label).into_bytes(),
+            pem_of(&files[1]),
+        ]
+        .concat();
+        let anchors = TrustAnchor::from_der_or_pem(&bundle).unwrap();
+        let read: Vec<&[u8]> = anchors.iter().map(TrustAnchor::der).collect();
+        assert_eq!(read, [files[0].as_slice(), files[1].as_slice()], "{label}");
+        assert!(TrustAnchor::from_der_or_pem(other(label).as_bytes()).is_err());
+    }
+}
+
+#[test]
 fn a_receipt_verifies_under_a_pem_root_exactly_as_under_its_der() {
     let der = common::read_fixture("generated-0.7/receipt-root.der");
     let from_der = TrustAnchor::from_der_or_pem(&der).unwrap();

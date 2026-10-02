@@ -105,6 +105,12 @@ impl TrustAnchor {
     /// a bundle of several is one entry. The format is never a parameter:
     /// what the bytes are decides it.
     ///
+    /// PEM is read as OpenSSL reads it: a block starts at the start of a
+    /// line; text between and after the blocks, and blocks of other types
+    /// (a key, a `TRUSTED CERTIFICATE`), are passed over; `X509
+    /// CERTIFICATE` is read as `CERTIFICATE`; an encrypted block is
+    /// refused: no passphrase is ever asked for.
+    ///
     /// This is how the module's `init` reads each root, after the base64
     /// of its configuration is decoded.
     ///
@@ -126,7 +132,11 @@ impl TrustAnchor {
     }
 
     /// Every certificate OpenSSL's PEM reader finds, each held to the bar
-    /// of [`TrustAnchor::from_der`] through its DER.
+    /// of [`TrustAnchor::from_der`] through the DER OpenSSL encodes from
+    /// it. OpenSSL decodes a block without checking that the certificate
+    /// fills it, so bytes after the certificate inside a block are dropped
+    /// here where DER input with them is refused; the certificate is the
+    /// same either way.
     fn all_from_pem(pem: &[u8]) -> Result<Vec<TrustAnchor>, ConfigError> {
         Certificate::all_from_pem(pem)
             .ok_or_else(not_a_certificate)?
@@ -135,7 +145,9 @@ impl TrustAnchor {
             .collect()
     }
 
-    /// The anchor's DER encoding, as given.
+    /// The anchor's DER encoding: the bytes given to
+    /// [`TrustAnchor::from_der`], or the DER OpenSSL encodes for a
+    /// certificate read from PEM.
     #[must_use]
     pub fn der(&self) -> &[u8] {
         &self.0.der
@@ -151,15 +163,15 @@ impl TrustAnchor {
 /// [`ConfigBuilder::build`](crate::ConfigBuilder::build), and a
 /// [`Verifier`](crate::Verifier) built from [`Config::default`](crate::Config::default)
 /// with it answers `INTERNAL_ERROR` to every call.
+pub(crate) fn apple_roots() -> &'static [TrustAnchor] {
+    static ROOTS: OnceLock<Vec<TrustAnchor>> = OnceLock::new();
+    ROOTS.get_or_init(|| load_roots(&APPLE_ROOT_DER, &APPLE_ROOT_SHA256))
+}
+
 fn not_a_certificate() -> ConfigError {
     ConfigError::new(
         "trust anchor is not a certificate: OpenSSL does not read it as one X.509 certificate",
     )
-}
-
-pub(crate) fn apple_roots() -> &'static [TrustAnchor] {
-    static ROOTS: OnceLock<Vec<TrustAnchor>> = OnceLock::new();
-    ROOTS.get_or_init(|| load_roots(&APPLE_ROOT_DER, &APPLE_ROOT_SHA256))
 }
 
 /// Every one of `ders` as an anchor, each only when its SHA-256 is the

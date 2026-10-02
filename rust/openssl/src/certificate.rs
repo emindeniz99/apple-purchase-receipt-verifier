@@ -39,17 +39,53 @@ impl Certificate {
     }
 
     /// Reads every certificate in PEM text, in order, with OpenSSL's PEM
-    /// reader (`PEM_read_bio_X509` until the input ends, as rust-openssl's
-    /// `X509::stack_from_pem`). Text outside the blocks, and blocks of
-    /// other types, are skipped as OpenSSL skips them. An empty list when
-    /// the text holds no certificate block; `None` when OpenSSL refuses a
-    /// block.
+    /// reader: `PEM_read_bio_X509` until the input ends, the loop
+    /// rust-openssl's `X509::stack_from_pem` runs, but with a password
+    /// callback that refuses. OpenSSL's default callback prompts on the
+    /// terminal, or reads stdin, for an encrypted block (`Proc-Type:
+    /// 4,ENCRYPTED`), which would block the caller and could open the
+    /// block with a typed passphrase; this one makes such a block a
+    /// refusal. Text outside the blocks, and blocks of other types, are
+    /// skipped as OpenSSL skips them. An empty list when the text holds no
+    /// certificate block; `None` when OpenSSL refuses a block.
     #[must_use]
     pub fn all_from_pem(pem: &[u8]) -> Option<Vec<Certificate>> {
         init();
-        let read = X509::stack_from_pem(pem);
+        let length = c_int::try_from(pem.len()).ok()?;
+        // SAFETY: a read-only memory BIO over `pem`, which outlives it: it
+        // is freed below, before this function returns.
+        let bio = unsafe { ffi::BIO_new_mem_buf(pem.as_ptr().cast(), length) };
+        if bio.is_null() {
+            drain_errors();
+            return None;
+        }
+        let mut certificates = Vec::new();
+        let read = loop {
+            // SAFETY: `bio` is the live BIO made above; the callback never
+            // writes to `buf`; the result is a new X509 the caller owns, or
+            // null.
+            let raw = unsafe {
+                ffi::PEM_read_bio_X509(bio, ptr::null_mut(), Some(no_password), ptr::null_mut())
+            };
+            if raw.is_null() {
+                // The input ended when the last error is "no start line".
+                let ended = openssl::error::ErrorStack::get()
+                    .errors()
+                    .last()
+                    .is_some_and(|error| {
+                        error.library_code() == ffi::ERR_LIB_PEM
+                            && error.reason_code() == ffi::PEM_R_NO_START_LINE
+                    });
+                break ended.then_some(certificates);
+            }
+            // SAFETY: `raw` is a freshly allocated X509 that nothing else
+            // owns; `X509` takes that ownership and frees it once.
+            certificates.push(Certificate(unsafe { X509::from_ptr(raw) }));
+        };
+        // SAFETY: `bio` was made above and nothing else holds it.
+        unsafe { ffi::BIO_free_all(bio) };
         drain_errors();
-        Some(read.ok()?.into_iter().map(Certificate).collect())
+        read
     }
 
     pub(crate) fn from_x509(x509: X509) -> Certificate {
@@ -337,4 +373,15 @@ fn free_extension_value(nid: c_int, value: *mut libc::c_void) {
             ffi::ASN1_BIT_STRING_free(value.cast());
         }
     }
+}
+
+/// The password callback for [`Certificate::all_from_pem`]: no password,
+/// so OpenSSL refuses an encrypted block instead of prompting for one.
+unsafe extern "C" fn no_password(
+    _buf: *mut libc::c_char,
+    _size: c_int,
+    _rwflag: c_int,
+    _user_data: *mut libc::c_void,
+) -> c_int {
+    -1
 }

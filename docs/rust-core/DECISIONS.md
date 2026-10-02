@@ -1164,12 +1164,26 @@ caller's root bytes as they are, and the core reads DER or PEM.
   reads each root entry by its bytes (`TrustAnchor::from_der_or_pem`). A
   first byte of `0x30`, an ASN.1 SEQUENCE, is one DER certificate, read as
   before. Bytes that start with `-----BEGIN`, after any ASCII whitespace,
-  go to OpenSSL's PEM reader (`X509::stack_from_pem`), and every
-  certificate in them becomes an anchor, so a PEM bundle is one entry.
-  Each one is held to the DER reader's bar. No certificate, a block
+  go to OpenSSL's PEM reader (`PEM_read_bio_X509` until the input
+  ends), and every certificate in them becomes an anchor, so a PEM
+  bundle is one entry. Each one is held to the DER reader's bar through
+  the DER OpenSSL encodes from it; OpenSSL does not check that a
+  certificate fills its block, so bytes after it inside the block are
+  dropped where DER input with them is refused. No certificate, a block
   OpenSSL refuses, or anything else is the existing refusal, with the
   existing message. No format parameter, no new error kind, no WIT
-  change: the ABI version stays.
+  change: the ABI version stays, and the WIT's comment that a root is
+  `<base64 DER>` waits for the next ABI change, since CI diffs that file.
+- **PEM is read as OpenSSL reads it.** A block starts at the start of a
+  line. Text around the blocks, and blocks of other types (a key, a
+  `TRUSTED CERTIFICATE`, a CRL), are passed over, so a bundle with a key
+  in it yields its certificates; such a block on its own is refused.
+  `X509 CERTIFICATE` is read as `CERTIFICATE`. The reader passes OpenSSL
+  a password callback that refuses: OpenSSL's default one prompts on the
+  terminal, or reads stdin, for an encrypted block (`Proc-Type:
+  4,ENCRYPTED`), which would block a native caller and could open the
+  block with a typed passphrase. An encrypted block is refused instead. The module was never
+  exposed: its OpenSSL is built with `no-ui-console`.
 - **Why:** the format is decided in one place, by OpenSSL, and no
   wrapper or caller has to convert anything. A PEM file read from disk
   is a root as it stands in every package that takes bytes.
@@ -1192,7 +1206,10 @@ caller's root bytes as they are, and the core reads DER or PEM.
   (docs/evidence/2026-10-02-server-roots-pem.md). It does
   not link OpenSSL, so `Certificate::all_from_pem` was not an option
   there. A base64 line in that file may now carry PEM bytes, which reach
-  `init` unchanged.
+  `init` unchanged; `GET /v1/info` then reports the SHA-256 of those PEM
+  bytes, one fingerprint however many certificates they hold, so a
+  client holding the DER fails closed against it. Give such a client a
+  file of DER lines or PEM blocks.
 
 ---
 
