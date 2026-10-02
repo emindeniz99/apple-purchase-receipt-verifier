@@ -16,7 +16,7 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
-those of 2026-10-02 amended R17, R25, R31, R34, R39 and R41.
+those of 2026-10-02 amended R17, R25, R31, R34, R39, R40 and R41.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1297,7 +1297,8 @@ caller's root bytes as they are, and the core reads DER or PEM.
 
 ## R40. JSON from `serde_json`, each document as a map of raw values
 
-**Status: accepted** (owner, 2026-10-01; variant B the same day).
+**Status: accepted** (owner, 2026-10-01; variant B the same day;
+amended 2026-10-02).
 
 - The core reads its three JSON documents, a JWS header, a JWS payload and
   the `verifyReceipt` request body, with `serde_json` (its `raw_value`
@@ -1357,6 +1358,24 @@ caller's root bytes as they are, and the core reads DER or PEM.
   request; a pooled Wasm instance keeps the memory it grows).
 - Cost: `aprv.wasm` −6,285 bytes (2,813,436 to 2,807,151; gzip −631),
   no new lockfile package, `cargo deny check` passes.
+
+**Amended 2026-10-02: `aprv-wire` writes its JSON with `serde_json` too.**
+The bindings' writer (`rust/bindings/wire`) was a hand-written string
+escaper and object builder beside a `serde_json` already in the graph. It
+is now `Serialize` impls over the surface types and derived envelopes,
+and `init`'s configuration is read as a `serde_json` map, with a derived
+struct refusing a repeated `roots`. The bytes do not change: `serde_json`
+escapes the set 0.7's writer did (`"`, `\` and U+0000 to U+001F, with
+`\b`, `\f`, `\n`, `\r`, `\t` and lower-case `\u00XX`), writes everything
+else raw, and writes members in the order they are serialised. A test in
+`aprv-wire` pins a fully populated receipt answer, controls, raw
+non-ASCII, negative and repeated attribute keys and `i64` extremes
+included, to the text the old writer produced for it. `serde_derive` is a
+build-time proc macro, outside the core's graph that
+`tools/check-layering.mjs` inspects. One message moves: a configuration
+with two faults now names a stray member before a `roots` that is not a
+list, where the old reader took them in document order. Hosts write the
+configuration themselves, so only a hand-made one carries two faults.
 
 ---
 
@@ -1533,6 +1552,7 @@ One table for everything the plan measured or considered and rejected.
 | A TZif file through `include_bytes!` (jiff or tz-rs) | A 2.8 KB binary in git, refreshed by hand from each tzdata release, and a TZif parser in the module: +31 KB with tz-rs, +303 KB with jiff's `TimeZone::tzif` | [Pacific time-zone crates][pactz] | — |
 | Keeping the hand-written JSON reader | 370 lines of grammar and three bounds the project maintains, for documents `serde_json`, already in the build, reads; the bounds prevented no blow-up, since both readers take a long name, number or string in linear time (R40) | [serde_json][jsonserde] | — |
 | Keeping .NET's hand-written JSON reader and writer | 610 lines of grammar and escaping the package maintains, for answers `System.Text.Json` reads; it existed only to keep netstandard2.0 free of a package dependency (R41) | [.NET JSON][stjout] | — |
+| Keeping `aprv-wire`'s hand-written JSON writer | An escaper and object builder the project maintains, for output `serde_json`, already in the build, writes byte for byte the same; a test pins a fully populated answer to the old writer's text (R40, amended 2026-10-02) | `rust/bindings/wire/src/lib.rs`, its tests | — |
 | `serde_json` variant A, `Map<String, Value>` | Builds a tree of unsigned input at up to 126 times its size: 396 MB for one 3 MiB request and 25 MB for one JWS segment, against 521 bytes for the map of raw values (R40) | [serde_json][jsonserde] | — |
 
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md

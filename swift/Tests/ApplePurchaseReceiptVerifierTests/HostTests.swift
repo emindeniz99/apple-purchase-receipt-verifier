@@ -81,6 +81,14 @@ final class AbiTests: XCTestCase {
         XCTAssertEqual(try guest.initialize(Config.initJson([])), #"{"ok":true}"#)
     }
 
+    /// init's argument, byte for byte, as the other ports write it: padded
+    /// standard base64 with `/` unescaped, an empty root as `""`, no
+    /// whitespace. `JSONEncoder` chooses these bytes, so this pins them.
+    func testTheConfigurationIsWrittenAsTheOtherPortsWriteIt() {
+        XCTAssertEqual(Config.initJson([[0xFB, 0xFF], []]), Array(#"{"roots":["+/8=",""]}"#.utf8))
+        XCTAssertEqual(Config.initJson([]), Array(#"{"roots":[]}"#.utf8))
+    }
+
     func testTheFourOperationsAnswer() throws {
         let guest = try initialized()
         let receipt = try guest.verifyReceipt(now: Self.now, try g5())

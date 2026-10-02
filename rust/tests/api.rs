@@ -7,9 +7,7 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::{
-    base64_decode_lenient, base64_encode, decode_receipt_data,
-};
+use apple_purchase_receipt_verifier::__internal::{base64_encode, decode_receipt_data};
 use apple_purchase_receipt_verifier::{
     AppleStatus, Config, ConfigError, Environment, Failure, InAppPurchase, JsonPayload, Reason,
     ReceiptPayload, TrustAnchor, Verifier, VERSION,
@@ -491,7 +489,7 @@ fn a_verified_jws_is_returned_exactly_as_signed() {
     let (_, segment, _) = common::split_jws(&jws);
     assert_eq!(
         payload.json().as_bytes(),
-        base64_decode_lenient(&segment).as_slice()
+        common::decode_base64url(&segment).as_slice()
     );
     assert_eq!(payload.to_string(), payload.json());
     // Apple's date claims stay epoch-millisecond integers.

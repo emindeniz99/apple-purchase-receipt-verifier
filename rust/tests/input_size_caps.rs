@@ -21,7 +21,7 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::{base64_decode_lenient, base64_encode};
+use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{Environment, Reason, TrustAnchor, Verifier};
 use serde_json::{json, Map, Value};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -279,7 +279,7 @@ fn brackets_inside_a_body_string_are_not_nesting() {
 // --- compact JWS: 256 KiB, before any split or decode --------------------
 
 fn decode_segment(segment: &str) -> Map<String, Value> {
-    match serde_json::from_slice(&base64_decode_lenient(segment)).unwrap() {
+    match serde_json::from_slice(&common::decode_base64url(segment)).unwrap() {
         Value::Object(map) => map,
         other => panic!("not a JSON object: {other}"),
     }
@@ -367,7 +367,7 @@ fn deeply_nested_jws_json_reaches_the_signature_check() {
     let (header, payload, signature) = common::split_jws(&common::transaction_jws());
     for depth in [65, 50_000] {
         let deepen = |segment: &str| {
-            let text = String::from_utf8(base64_decode_lenient(segment)).unwrap();
+            let text = String::from_utf8(common::decode_base64url(segment)).unwrap();
             let text = format!(r#"{{"deep":{},{}"#, nested(depth), &text[1..]);
             common::base64url(text.as_bytes())
         };

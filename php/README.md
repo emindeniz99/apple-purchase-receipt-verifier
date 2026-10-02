@@ -66,8 +66,8 @@ repository pointing at the repository root:
 Requires **PHP 8.2+** (64-bit) and `ext-json`. One runtime dependency:
 `psr/clock`, the PSR-20 clock interface, a single interface with no code and
 no transitive dependencies. No `ext-openssl`: nothing in PHP touches a
-certificate. `ext-curl` is needed for the server transport, and lets the
-installer download over HTTPS without `ext-openssl`.
+certificate. `ext-curl` is needed for the server transport and for the
+installer's download.
 
 ## Quick start
 

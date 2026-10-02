@@ -11,7 +11,7 @@
         "psr/clock": "^1.0"
     },
     "suggest": {
-        "ext-curl": "Needed by HttpTransport, and by aprv-install to download the binary over HTTPS without ext-openssl"
+        "ext-curl": "Needed by HttpTransport, and by aprv-install to download the binary"
     },
     "autoload": {
         "psr-4": {

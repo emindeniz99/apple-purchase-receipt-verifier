@@ -417,10 +417,7 @@ fn the_es256_check_is_recorded_as_a_key_use() {
     let jws = common::transaction_jws();
     let header = common::jws_header(&jws);
     let leaf_entry = header["x5c"][0].as_str().unwrap();
-    let leaf = openssl::x509::X509::from_der(
-        &apple_purchase_receipt_verifier::__internal::base64_decode_lenient(leaf_entry),
-    )
-    .unwrap();
+    let leaf = openssl::x509::X509::from_der(&common::decode_base64(leaf_entry)).unwrap();
     let leaf_spki = leaf.public_key().unwrap().public_key_to_der().unwrap();
     let (result, used) = keys_used_during(|| common::jws_verifier().verify_signed_data(&jws));
     assert!(result.is_ok());

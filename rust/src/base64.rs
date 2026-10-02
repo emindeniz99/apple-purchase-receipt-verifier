@@ -1,10 +1,7 @@
-//! Base64, in the three shapes this crate needs.
+//! Base64, in the shapes this crate needs, on the `base64` crate's engines.
 //!
-//! There are three decoders, and which one a caller gets is a security
+//! There are two decoders, and which one a caller gets is a security
 //! decision rather than a convenience.
-//!
-//! [`decode_lenient`] skips everything outside both alphabets. That is what
-//! a PEM body carrying line breaks needs.
 //!
 //! [`decode_receipt_base64`] is what `receipt-data`, the base64 string a
 //! client actually sends, and every `x5c` entry are decoded with: canonical
@@ -30,39 +27,6 @@
 //! more bits of malleability, and 16 spellings of one signature all verified
 //! before this decoder existed. No encoder produces them; they are only ever
 //! hand-made.
-
-fn value_of(byte: u8) -> Option<u32> {
-    match byte {
-        b'A'..=b'Z' => Some(u32::from(byte - b'A')),
-        b'a'..=b'z' => Some(u32::from(byte - b'a') + 26),
-        b'0'..=b'9' => Some(u32::from(byte - b'0') + 52),
-        b'+' | b'-' => Some(62),
-        b'/' | b'_' => Some(63),
-        _ => None,
-    }
-}
-
-/// Decodes base64 or base64url, skipping every character outside both
-/// alphabets (whitespace, padding, PEM line breaks). No engine of the
-/// `base64` crate skips characters, so this one stays hand-written.
-#[must_use]
-pub fn decode_lenient(text: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(text.len() / 4 * 3 + 3);
-    let mut accumulator: u32 = 0;
-    let mut bits: u32 = 0;
-    for byte in text.as_bytes() {
-        let Some(value) = value_of(*byte) else {
-            continue;
-        };
-        accumulator = (accumulator << 6) | value;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(u8::try_from((accumulator >> bits) & 0xff).unwrap_or(0));
-        }
-    }
-    out
-}
 
 /// The `base64` crate's standard engine, configured for the rule
 /// [`decode_receipt_base64`] documents: canonical padding required, and the
@@ -121,7 +85,7 @@ const JWS_SEGMENT_ENGINE: ::base64::engine::GeneralPurpose = ::base64::engine::G
 /// or `None`.
 ///
 /// One byte sequence has exactly one encoding under this function, which is
-/// the property the JWS path needs. Refused, where [`decode_lenient`] would
+/// the property the JWS path needs. Refused, where a lenient decoder would
 /// accept:
 ///
 /// - any byte outside `A-Z a-z 0-9 - _`, the standard alphabet's `+` and `/`
