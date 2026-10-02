@@ -29,6 +29,9 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -94,6 +97,8 @@ class ServerHttpTest {
      * A certificate the JVM trusts, issued for another name, is refused
      * even with an allow-all default hostname verifier: the server
      * completes the handshake (so trust passed) and never sees a request.
+     * The JDK's message for the name differs between versions, so the
+     * test reads what the server saw, not the message.
      */
     @Test
     void aTrustedCertificateForAnotherNameIsRefused() throws Exception {
@@ -102,9 +107,11 @@ class ServerHttpTest {
         try (TlsServer server = new TlsServer(keys);
                 JvmTrust trust = new JvmTrust(keys)) {
             HttpsURLConnection.setDefaultHostnameVerifier((host, session) -> true);
-            IOException e = assertThrows(IOException.class, () -> get(server.port(), true, 5_000));
-            assertTrue(e.getMessage().contains("hostname wrong"), String.valueOf(e));
-            assertTrue(server.handshakes.get() > 0, "the handshake completed, so the name was what failed");
+            assertThrows(IOException.class, () -> get(server.port(), true, 5_000));
+            assertTrue(
+                    server.handshake.await(10, TimeUnit.SECONDS),
+                    "the handshake completed, so the name was what failed");
+            assertTrue(server.connectionsDone.tryAcquire(10, TimeUnit.SECONDS), "the client closed the connection");
             assertEquals("", server.received());
         } finally {
             HttpsURLConnection.setDefaultHostnameVerifier(verifierBefore);
@@ -457,10 +464,16 @@ class ServerHttpTest {
         }
     }
 
-    /** A TLS server with the given key that records what clients send and answers each request with {@code {}}. */
+    /**
+     * A TLS server with the given key that records what clients send and
+     * answers each request with {@code {}}. {@link #handshake} opens on the
+     * first completed handshake, and {@link #connectionsDone} gets a permit
+     * each time a connection's requests have all been read.
+     */
     private static final class TlsServer implements AutoCloseable {
         final SSLServerSocket socket;
-        final AtomicInteger handshakes = new AtomicInteger();
+        final CountDownLatch handshake = new CountDownLatch(1);
+        final Semaphore connectionsDone = new Semaphore(0);
         private final StringBuffer received = new StringBuffer();
 
         TlsServer(KeyStore keys) throws Exception {
@@ -476,7 +489,7 @@ class ServerHttpTest {
                         client.setSoTimeout(5_000);
                         try {
                             client.startHandshake();
-                            handshakes.incrementAndGet();
+                            handshake.countDown();
                             String request;
                             while ((request = readRequest(client.getInputStream())) != null) {
                                 received.append(request);
@@ -486,6 +499,8 @@ class ServerHttpTest {
                             }
                         } catch (IOException e) {
                             // a refused handshake, a closed connection
+                        } finally {
+                            connectionsDone.release();
                         }
                     } catch (IOException e) {
                         return;
