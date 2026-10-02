@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -36,7 +35,21 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         private static readonly JsonDocumentOptions ReadOptions = new JsonDocumentOptions { MaxDepth = MaxDepth };
 
-        private static readonly JsonWriterOptions WriteOptions = new JsonWriterOptions { Encoder = MinimalEscaping.Instance };
+        /// <summary>
+        /// The library's relaxed encoder: text is written as itself except for
+        /// the quotation mark, the reverse solidus, the controls, and the
+        /// characters the encoder still escapes (among them U+007F to U+009F,
+        /// U+2028 and U+2029, private-use and unassigned code points, and every
+        /// character outside the BMP, as a surrogate pair). A lone surrogate,
+        /// which has no UTF-8 form, is written as <c>\uFFFD</c>. Before 0.8
+        /// <see cref="ReceiptPayload.ToJson"/> escaped only the quotation mark,
+        /// the reverse solidus and the controls; the text may differ from
+        /// then, the value does not (the owner's decision of 2026-10-02, Q20).
+        /// </summary>
+        private static readonly JsonWriterOptions WriteOptions = new JsonWriterOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        };
 
         private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, true);
 
@@ -81,92 +94,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
             else
             {
                 writer.WriteNull(name);
-            }
-        }
-
-        /// <summary>
-        /// Escapes what RFC 8259 requires and nothing else: the quotation
-        /// mark, the reverse solidus and the controls below U+0020 (as
-        /// <c>\b</c>, <c>\f</c>, <c>\n</c>, <c>\r</c>, <c>\t</c>, or
-        /// <c>\u00xx</c> in lower case). Every other character, non-ASCII and
-        /// outside the BMP included, is written as itself.
-        /// </summary>
-        /// <remarks>
-        /// <para>This is the escaping <see cref="ReceiptPayload.ToJson"/> had
-        /// before 0.8 wrote it with <c>System.Text.Json</c>, kept so its
-        /// output stays byte for byte what it was. The encoders the library
-        /// ships do not give it: even <c>UnsafeRelaxedJsonEscaping</c> writes
-        /// its hex in upper case and escapes U+007F to U+009F, U+2028 and
-        /// U+2029, U+FEFF, private-use, unassigned and noncharacter code
-        /// points, and every character outside the BMP.</para>
-        /// <para>A lone surrogate cannot be written as UTF-8 at all, and
-        /// <c>Utf8JsonWriter</c> throws on one it is not told to escape. It is
-        /// reported here, and the base encoder replaces it with U+FFFD. Only a
-        /// payload built by hand can hold one: the module's strings are
-        /// Rust strings.</para>
-        /// </remarks>
-        private sealed class MinimalEscaping : JavaScriptEncoder
-        {
-            internal static readonly MinimalEscaping Instance = new MinimalEscaping();
-
-            /// <summary><c>\u001f</c> is the longest escape.</summary>
-            public override int MaxOutputCharactersPerInputCharacter => 6;
-
-            public override bool WillEncode(int unicodeScalar) =>
-                unicodeScalar < 0x20 || unicodeScalar == '"' || unicodeScalar == '\\';
-
-            public override unsafe int FindFirstCharacterToEncode(char* text, int textLength)
-            {
-                for (int i = 0; i < textLength; i++)
-                {
-                    char c = text[i];
-                    if (c < 0x20 || c == '"' || c == '\\')
-                    {
-                        return i;
-                    }
-
-                    if (char.IsHighSurrogate(c) && i + 1 < textLength && char.IsLowSurrogate(text[i + 1]))
-                    {
-                        i++;
-                    }
-                    else if (char.IsSurrogate(c))
-                    {
-                        return i;
-                    }
-                }
-
-                return -1;
-            }
-
-            public override unsafe bool TryEncodeUnicodeScalar(
-                int unicodeScalar, char* buffer, int bufferLength, out int numberOfCharactersWritten)
-            {
-                string text = unicodeScalar switch
-                {
-                    '"' => "\\\"",
-                    '\\' => "\\\\",
-                    '\b' => "\\b",
-                    '\f' => "\\f",
-                    '\n' => "\\n",
-                    '\r' => "\\r",
-                    '\t' => "\\t",
-                    < 0x20 => "\\u" + unicodeScalar.ToString("x4", CultureInfo.InvariantCulture),
-                    _ => char.ConvertFromUtf32(unicodeScalar),
-                };
-
-                if (text.Length > bufferLength)
-                {
-                    numberOfCharactersWritten = 0;
-                    return false;
-                }
-
-                for (int i = 0; i < text.Length; i++)
-                {
-                    buffer[i] = text[i];
-                }
-
-                numberOfCharactersWritten = text.Length;
-                return true;
             }
         }
     }

@@ -6,10 +6,10 @@ using System.Text.Json;
 namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
 {
     /// <summary>
-    /// The JSON writer's escaping (<c>Internal/Json.cs</c>), the one piece of
-    /// JSON code the package still carries: a <c>JavaScriptEncoder</c> over
-    /// char pointers that keeps <c>ReceiptPayload.ToJson</c>'s bytes what
-    /// they were before <c>System.Text.Json</c>.
+    /// The options <c>ReceiptPayload.ToJson</c> is written with
+    /// (<c>Internal/Json.cs</c>): <c>Utf8JsonWriter</c> with the library's
+    /// <c>UnsafeRelaxedJsonEscaping</c> encoder, read back with the options
+    /// the module's answers are read with.
     /// </summary>
     /// <remarks>
     /// <para>The input is a string: the bytes as UTF-8 when they are valid

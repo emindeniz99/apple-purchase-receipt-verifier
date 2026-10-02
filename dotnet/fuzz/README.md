@@ -1,7 +1,7 @@
 # Fuzz targets
 
-Five [SharpFuzz] targets under [libFuzzer], over the JSON writer's escaping
-this package still carries and the verifiers a consumer calls. `run.sh` pairs each with the
+Five [SharpFuzz] targets under [libFuzzer], over the options this package
+writes and reads JSON with and the verifiers a consumer calls. `run.sh` pairs each with the
 shared fixtures that seed it, so nothing under `fixtures/` is copied here.
 
 Since 0.8 the parsers behind the verifiers are inside `aprv.wasm`, and
