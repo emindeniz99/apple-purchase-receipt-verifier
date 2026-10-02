@@ -61,9 +61,10 @@ version = 2
 allow = [
     "MIT",
     "Apache-2.0",
-    # unicode-ident's data tables, under proc-macro2, under openssl-macros
-    # (a build-time proc macro of the openssl crate) and the test-only
-    # serde_derive and clap_derive. Nothing of it is linked into the library.
+    # unicode-ident's data tables, under proc-macro2, under the build-time
+    # proc macros openssl-macros (the openssl crate's) and serde_derive
+    # (aprv-wire's), and the test-only clap_derive. Nothing of it is linked
+    # into the library.
     "Unicode-3.0",
 ]
 confidence-threshold = 0.9

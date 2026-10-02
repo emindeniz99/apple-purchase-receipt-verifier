@@ -48,159 +48,158 @@
 )]
 
 use aprv_surface::{Failure, InAppPurchase, JsonPayload, ReceiptPayload, UnknownAttributes};
-use core::fmt::Write as _;
+use serde::ser::{SerializeStruct as _, Serializer};
+use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------- writer
 
-/// `text` as a JSON string literal: `"`, `\` and U+0000 to U+001F escaped,
-/// everything else raw.
-fn string(out: &mut String, text: &str) {
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{08}' => out.push_str("\\b"),
-            '\u{0c}' => out.push_str("\\f"),
-            c if u32::from(c) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", u32::from(c));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
+/// `value` as JSON text. `serde_json` escapes `"`, `\` and U+0000 to U+001F
+/// and writes everything else raw, and a struct's members come in the
+/// order they are serialised.
+fn to_json(value: &impl Serialize) -> String {
+    // Nothing here can fail to serialise: every map key is an integer,
+    // which serde_json writes as a string, and no impl below returns an
+    // error. Were it to, the empty answer is unreadable JSON, which every
+    // host reports as INTERNAL_ERROR rather than as a verdict.
+    serde_json::to_string(value).unwrap_or_default()
 }
 
-fn base64(bytes: &[u8]) -> String {
-    use base64::Engine as _;
-    base64::engine::general_purpose::STANDARD.encode(bytes)
+/// A 64-bit id: a string holding the decimal value, so no JavaScript
+/// reader rounds it.
+struct Id(i64);
+
+impl Serialize for Id {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&self.0)
+    }
 }
 
-/// Writes one object, member by member, in the order they are added.
-struct Object<'a> {
-    out: &'a mut String,
-    first: bool,
+/// Bytes as padded standard base64.
+struct Base64<'a>(&'a [u8]);
+
+impl Serialize for Base64<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use base64::Engine as _;
+        serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(self.0))
+    }
 }
 
-impl<'a> Object<'a> {
-    fn new(out: &'a mut String) -> Self {
-        out.push('{');
-        Object { out, first: true }
-    }
+/// `unknown_attributes`: an object keyed by the decimal attribute type, in
+/// the surface's (ascending) order, each value a list of base64 strings.
+struct Attributes<'a>(&'a UnknownAttributes);
 
-    fn key(&mut self, key: &str) -> &mut String {
-        if !self.first {
-            self.out.push(',');
-        }
-        self.first = false;
-        string(self.out, key);
-        self.out.push(':');
-        self.out
+impl Serialize for Attributes<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.0.iter().map(|(attribute_type, values)| {
+            let values: Vec<Base64<'_>> = values.iter().map(|value| Base64(value)).collect();
+            (attribute_type, values)
+        }))
     }
+}
 
-    fn raw(&mut self, key: &str, json: &str) {
-        self.key(key).push_str(json);
+struct Purchase<'a>(&'a InAppPurchase);
+
+impl Serialize for Purchase<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let purchase = self.0;
+        let mut object = serializer.serialize_struct("InAppPurchase", 12)?;
+        object.serialize_field("quantity", &purchase.quantity)?;
+        object.serialize_field("product_id", &purchase.product_id)?;
+        object.serialize_field("transaction_id", &purchase.transaction_id)?;
+        object.serialize_field("purchase_date_ms", &purchase.purchase_date_ms)?;
+        object.serialize_field("original_transaction_id", &purchase.original_transaction_id)?;
+        object.serialize_field(
+            "original_purchase_date_ms",
+            &purchase.original_purchase_date_ms,
+        )?;
+        object.serialize_field("expires_date_ms", &purchase.expires_date_ms)?;
+        object.serialize_field(
+            "web_order_line_item_id",
+            &purchase.web_order_line_item_id.map(Id),
+        )?;
+        object.serialize_field("cancellation_date_ms", &purchase.cancellation_date_ms)?;
+        object.serialize_field("is_trial_period", &purchase.is_trial_period)?;
+        object.serialize_field(
+            "is_in_intro_offer_period",
+            &purchase.is_in_intro_offer_period,
+        )?;
+        object.serialize_field(
+            "unknown_attributes",
+            &Attributes(&purchase.unknown_attributes),
+        )?;
+        object.end()
     }
+}
 
-    fn text(&mut self, key: &str, value: Option<&str>) {
-        let out = self.key(key);
-        match value {
-            Some(value) => string(out, value),
-            None => out.push_str("null"),
-        }
-    }
+struct Receipt<'a>(&'a ReceiptPayload);
 
-    /// A 64-bit id: a string, so no JavaScript reader rounds it.
-    fn id(&mut self, key: &str, value: Option<i64>) {
-        let out = self.key(key);
-        match value {
-            Some(value) => {
-                let _ = write!(out, "\"{value}\"");
-            }
-            None => out.push_str("null"),
-        }
-    }
-
-    fn number(&mut self, key: &str, value: Option<i64>) {
-        let out = self.key(key);
-        match value {
-            Some(value) => {
-                let _ = write!(out, "{value}");
-            }
-            None => out.push_str("null"),
-        }
-    }
-
-    fn boolean(&mut self, key: &str, value: Option<bool>) {
-        self.raw(
-            key,
-            match value {
-                Some(true) => "true",
-                Some(false) => "false",
-                None => "null",
-            },
-        );
-    }
-
-    fn bytes(&mut self, key: &str, value: Option<&[u8]>) {
-        let out = self.key(key);
-        match value {
-            Some(value) => string(out, &base64(value)),
-            None => out.push_str("null"),
-        }
-    }
-
-    fn unknown_attributes(&mut self, attributes: &UnknownAttributes) {
-        let out = self.key("unknown_attributes");
-        let mut object = Object::new(out);
-        for (attribute_type, values) in attributes {
-            let out = object.key(&attribute_type.to_string());
-            out.push('[');
-            for (index, value) in values.iter().enumerate() {
-                if index > 0 {
-                    out.push(',');
-                }
-                string(out, &base64(value));
-            }
-            out.push(']');
-        }
-        object.end();
-    }
-
-    fn end(self) {
-        self.out.push('}');
+impl Serialize for Receipt<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let receipt = self.0;
+        let in_app: Vec<Purchase<'_>> = receipt.in_app.iter().map(Purchase).collect();
+        let mut object = serializer.serialize_struct("ReceiptPayload", 15)?;
+        object.serialize_field("receipt_type", &receipt.receipt_type)?;
+        object.serialize_field("app_item_id", &receipt.app_item_id.map(Id))?;
+        object.serialize_field("bundle_id", &receipt.bundle_id)?;
+        object.serialize_field(
+            "bundle_id_bytes",
+            &receipt.bundle_id_bytes.as_deref().map(Base64),
+        )?;
+        object.serialize_field("application_version", &receipt.application_version)?;
+        object.serialize_field("opaque_value", &receipt.opaque_value.as_deref().map(Base64))?;
+        object.serialize_field("sha1_hash", &receipt.sha1_hash.as_deref().map(Base64))?;
+        object.serialize_field(
+            "receipt_creation_date_ms",
+            &receipt.receipt_creation_date_ms,
+        )?;
+        object.serialize_field("download_id", &receipt.download_id.map(Id))?;
+        object.serialize_field(
+            "version_external_identifier",
+            &receipt.version_external_identifier.map(Id),
+        )?;
+        object.serialize_field("in_app", &in_app)?;
+        object.serialize_field(
+            "original_purchase_date_ms",
+            &receipt.original_purchase_date_ms,
+        )?;
+        object.serialize_field(
+            "original_application_version",
+            &receipt.original_application_version,
+        )?;
+        object.serialize_field("expiration_date_ms", &receipt.expiration_date_ms)?;
+        object.serialize_field(
+            "unknown_attributes",
+            &Attributes(&receipt.unknown_attributes),
+        )?;
+        object.end()
     }
 }
 
 // --------------------------------------------------------------- results
 
-fn in_app_purchase(out: &mut String, purchase: &InAppPurchase) {
-    let mut object = Object::new(out);
-    object.number("quantity", purchase.quantity);
-    object.text("product_id", purchase.product_id.as_deref());
-    object.text("transaction_id", purchase.transaction_id.as_deref());
-    object.number("purchase_date_ms", purchase.purchase_date_ms);
-    object.text(
-        "original_transaction_id",
-        purchase.original_transaction_id.as_deref(),
-    );
-    object.number(
-        "original_purchase_date_ms",
-        purchase.original_purchase_date_ms,
-    );
-    object.number("expires_date_ms", purchase.expires_date_ms);
-    object.id("web_order_line_item_id", purchase.web_order_line_item_id);
-    object.number("cancellation_date_ms", purchase.cancellation_date_ms);
-    object.boolean("is_trial_period", purchase.is_trial_period);
-    object.boolean(
-        "is_in_intro_offer_period",
-        purchase.is_in_intro_offer_period,
-    );
-    object.unknown_attributes(&purchase.unknown_attributes);
-    object.end();
+/// A verified answer: `{"verified":true,"payload":...}`.
+#[derive(Serialize)]
+struct Verified<P> {
+    verified: bool,
+    payload: P,
+}
+
+/// A refusal: `{"verified":false,"reason":"<TOKEN>","message":"..."}`.
+#[derive(Serialize)]
+struct Refused<'a> {
+    verified: bool,
+    reason: &'a str,
+    message: &'a str,
+}
+
+impl<'a> Refused<'a> {
+    fn new(failure: &'a Failure) -> Self {
+        Refused {
+            verified: false,
+            reason: failure.reason.token(),
+            message: &failure.message,
+        }
+    }
 }
 
 /// A receipt payload as 0.7's `ReceiptPayload.toJson()`: the value inside a
@@ -208,72 +207,20 @@ fn in_app_purchase(out: &mut String, purchase: &InAppPurchase) {
 /// verified receipt.
 #[must_use]
 pub fn receipt_payload(receipt: &ReceiptPayload) -> String {
-    let mut out = String::with_capacity(1024);
-    let mut object = Object::new(&mut out);
-    object.text("receipt_type", receipt.receipt_type.as_deref());
-    object.id("app_item_id", receipt.app_item_id);
-    object.text("bundle_id", receipt.bundle_id.as_deref());
-    object.bytes("bundle_id_bytes", receipt.bundle_id_bytes.as_deref());
-    object.text(
-        "application_version",
-        receipt.application_version.as_deref(),
-    );
-    object.bytes("opaque_value", receipt.opaque_value.as_deref());
-    object.bytes("sha1_hash", receipt.sha1_hash.as_deref());
-    object.number("receipt_creation_date_ms", receipt.receipt_creation_date_ms);
-    object.id("download_id", receipt.download_id);
-    object.id(
-        "version_external_identifier",
-        receipt.version_external_identifier,
-    );
-    {
-        let out = object.key("in_app");
-        out.push('[');
-        for (index, purchase) in receipt.in_app.iter().enumerate() {
-            if index > 0 {
-                out.push(',');
-            }
-            in_app_purchase(out, purchase);
-        }
-        out.push(']');
-    }
-    object.number(
-        "original_purchase_date_ms",
-        receipt.original_purchase_date_ms,
-    );
-    object.text(
-        "original_application_version",
-        receipt.original_application_version.as_deref(),
-    );
-    object.number("expiration_date_ms", receipt.expiration_date_ms);
-    object.unknown_attributes(&receipt.unknown_attributes);
-    object.end();
-    out
-}
-
-fn failure(out: &mut String, failure: &Failure) {
-    let mut object = Object::new(out);
-    object.raw("verified", "false");
-    object.text("reason", Some(failure.reason.token()));
-    object.text("message", Some(&failure.message));
-    object.end();
+    to_json(&Receipt(receipt))
 }
 
 /// The answer of `verify-receipt`: `{"verified":true,"payload":<receipt>}`
 /// or a failure (`verify-receipt-result.schema.json`).
 #[must_use]
 pub fn verify_receipt_result(result: &Result<ReceiptPayload, Failure>) -> String {
-    let mut out = String::new();
     match result {
-        Ok(receipt) => {
-            let mut object = Object::new(&mut out);
-            object.raw("verified", "true");
-            object.raw("payload", &receipt_payload(receipt));
-            object.end();
-        }
-        Err(refusal) => failure(&mut out, refusal),
+        Ok(receipt) => to_json(&Verified {
+            verified: true,
+            payload: Receipt(receipt),
+        }),
+        Err(refusal) => to_json(&Refused::new(refusal)),
     }
-    out
 }
 
 /// The answer of `verify-signed-data`: `{"verified":true,"payload":"<the
@@ -281,36 +228,42 @@ pub fn verify_receipt_result(result: &Result<ReceiptPayload, Failure>) -> String
 /// (`verify-signed-data-result.schema.json`).
 #[must_use]
 pub fn verify_signed_data_result(result: &Result<JsonPayload, Failure>) -> String {
-    let mut out = String::new();
     match result {
-        Ok(payload) => {
-            let mut object = Object::new(&mut out);
-            object.raw("verified", "true");
-            object.text("payload", Some(&payload.json));
-            object.end();
-        }
-        Err(refusal) => failure(&mut out, refusal),
+        Ok(payload) => to_json(&Verified {
+            verified: true,
+            payload: &payload.json,
+        }),
+        Err(refusal) => to_json(&Refused::new(refusal)),
     }
-    out
 }
 
 // ------------------------------------------------------------------ init
+
+/// The answer of `init`: `{"ok":true}` or `{"ok":false,"message":"..."}`.
+#[derive(Serialize)]
+struct InitAnswer<'a> {
+    ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<&'a str>,
+}
 
 /// The answer of `init` (`init-result.schema.json`): `{"ok":true}`, or
 /// `{"ok":false,"message":"..."}` naming why the configuration was refused.
 #[must_use]
 pub fn init_result(result: &Result<(), String>) -> String {
-    let mut out = String::new();
-    let mut object = Object::new(&mut out);
-    match result {
-        Ok(()) => object.raw("ok", "true"),
-        Err(message) => {
-            object.raw("ok", "false");
-            object.text("message", Some(message));
-        }
-    }
-    object.end();
-    out
+    to_json(&InitAnswer {
+        ok: result.is_ok(),
+        message: result.as_ref().err().map(String::as_str),
+    })
+}
+
+/// `init`'s configuration as serde reads a struct: a derived `Deserialize`
+/// refuses a member named twice, where `serde_json`'s own map keeps only
+/// the last. Read for that refusal alone; the value is taken from the map.
+#[derive(Deserialize)]
+struct Once {
+    #[serde(rename = "roots")]
+    _roots: Option<serde::de::IgnoredAny>,
 }
 
 /// Reads `init`'s configuration (`init-config.schema.json`) into the
@@ -324,13 +277,14 @@ pub fn init_result(result: &Result<(), String>) -> String {
 /// Anything else is refused with a message, so a wrapper that misspells a
 /// member finds out at `create` instead of getting the Apple roots it did
 /// not ask for; so is `roots` named twice, which a JSON reader that keeps
-/// the last member would read as whichever came last. Whether a root is a certificate is the surface's question,
-/// asked when the verifier is made.
+/// the last member would read as whichever came last. Whether a root is a
+/// certificate is the surface's question, asked when the verifier is made.
 ///
 /// # Errors
-/// A message naming what is wrong: not UTF-8, not JSON, not an object, a
-/// member other than `roots`, `roots` more than once, `roots` not a list,
-/// or a root that is not a string or not base64 (by its index).
+/// A message naming what is wrong: not UTF-8, not JSON, not an object,
+/// `roots` more than once, a member other than `roots`, `roots` not a
+/// list, or a root that is not a string or not base64 (by its index), the
+/// first of these that applies.
 pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let text =
         core::str::from_utf8(config).map_err(|_| "the configuration is not UTF-8".to_owned())?;
@@ -339,58 +293,33 @@ pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     }
     let value: serde_json::Value =
         serde_json::from_str(text).map_err(|_| "the configuration is not JSON".to_owned())?;
-    if !value.is_object() {
+    let serde_json::Value::Object(mut members) = value else {
         return Err("the configuration is not a JSON object".to_owned());
+    };
+    // The text is a JSON object, so the one thing `Once` can refuse is a
+    // repeated `roots`.
+    serde_json::from_str::<Once>(text)
+        .map_err(|_| "the configuration names \"roots\" more than once".to_owned())?;
+    let roots = members.remove("roots");
+    if !members.is_empty() {
+        return Err("the configuration has a member other than \"roots\"".to_owned());
     }
-    let Members(members) =
-        serde_json::from_str(text).map_err(|_| "the configuration is not JSON".to_owned())?;
-    if members.iter().filter(|(name, _)| name == "roots").count() > 1 {
-        return Err("the configuration names \"roots\" more than once".to_owned());
-    }
-    let mut roots = Vec::new();
-    for (name, value) in members {
-        if name != "roots" {
-            return Err("the configuration has a member other than \"roots\"".to_owned());
-        }
-        let serde_json::Value::Array(entries) = value else {
-            return Err("roots is not a list".to_owned());
-        };
-        for (index, entry) in entries.into_iter().enumerate() {
+    let entries = match roots {
+        None => Vec::new(),
+        Some(serde_json::Value::Array(entries)) => entries,
+        Some(_) => return Err("roots is not a list".to_owned()),
+    };
+    entries
+        .into_iter()
+        .enumerate()
+        .map(|(index, entry)| {
             let serde_json::Value::String(entry) = entry else {
                 return Err(format!("roots[{index}] is not a string"));
             };
-            let der = aprv_surface::decode_base64(entry.as_bytes())
-                .ok_or_else(|| format!("roots[{index}] is not padded standard base64"))?;
-            roots.push(der);
-        }
-    }
-    Ok(roots)
-}
-
-/// Every member of a JSON object, repeated names included, in order.
-struct Members(Vec<(String, serde_json::Value)>);
-
-impl<'de> serde::Deserialize<'de> for Members {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Members, D::Error> {
-        struct Visitor;
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = Members;
-            fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                formatter.write_str("a JSON object")
-            }
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<Members, A::Error> {
-                let mut members = Vec::new();
-                while let Some(name) = map.next_key::<String>()? {
-                    members.push((name, map.next_value()?));
-                }
-                Ok(Members(members))
-            }
-        }
-        deserializer.deserialize_map(Visitor)
-    }
+            aprv_surface::decode_base64(entry.as_bytes())
+                .ok_or_else(|| format!("roots[{index}] is not padded standard base64"))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -437,6 +366,112 @@ mod tests {
                 r#""receipt_creation_date_ms":null,"download_id":null,"version_external_identifier":null,"#,
                 r#""in_app":[],"original_purchase_date_ms":null,"original_application_version":null,"#,
                 r#""expiration_date_ms":null,"unknown_attributes":{}}"#
+            )
+        );
+    }
+
+    /// Every field `Some`, two purchases, and the strings, keys and numbers
+    /// a writer can get wrong.
+    fn full_receipt() -> ReceiptPayload {
+        ReceiptPayload {
+            receipt_type: Some("Production\u{0}\u{1}\u{1f}\u{7f}".to_owned()),
+            app_item_id: Some(i64::MIN),
+            bundle_id: Some("com.example.\u{e9}\u{2028}\u{2029}\u{1f600}/\"\\".to_owned()),
+            bundle_id_bytes: Some(vec![]),
+            application_version: Some("1.0\t\r\n\u{8}\u{c}\u{b}".to_owned()),
+            opaque_value: Some(vec![0xfb, 0xff, 0xbf]),
+            sha1_hash: Some(vec![0, 1, 2, 3, 4]),
+            receipt_creation_date_ms: Some(i64::MIN),
+            download_id: Some(i64::MAX),
+            version_external_identifier: Some(0),
+            in_app: vec![
+                InAppPurchase {
+                    quantity: Some(i64::MAX),
+                    product_id: Some("p\u{0}\u{a0}\u{feff}".to_owned()),
+                    transaction_id: Some("-1".to_owned()),
+                    purchase_date_ms: Some(-1),
+                    original_transaction_id: Some(String::new()),
+                    original_purchase_date_ms: Some(0),
+                    expires_date_ms: Some(i64::MAX),
+                    web_order_line_item_id: Some(i64::MIN),
+                    cancellation_date_ms: Some(i64::MIN),
+                    is_trial_period: Some(true),
+                    is_in_intro_offer_period: Some(false),
+                    unknown_attributes: vec![
+                        (-1, vec![vec![]]),
+                        (1714, vec![vec![1, 2, 3], vec![]]),
+                        (1714, vec![vec![0xff]]),
+                    ],
+                },
+                InAppPurchase {
+                    quantity: Some(1),
+                    product_id: Some("\u{80}\u{9f}\u{fffd}\u{10ffff}".to_owned()),
+                    transaction_id: Some("1000000000000000".to_owned()),
+                    purchase_date_ms: Some(1_375_340_400_000),
+                    original_transaction_id: Some("1000000000000000".to_owned()),
+                    original_purchase_date_ms: Some(1_375_340_400_000),
+                    expires_date_ms: Some(1_375_344_000_000),
+                    web_order_line_item_id: Some(0),
+                    cancellation_date_ms: Some(1_375_341_000_000),
+                    is_trial_period: Some(false),
+                    is_in_intro_offer_period: Some(true),
+                    unknown_attributes: vec![],
+                },
+            ],
+            original_purchase_date_ms: Some(1_375_340_400_000),
+            original_application_version: Some("\u{1e}\u{1b}\u{e000}".to_owned()),
+            expiration_date_ms: Some(-62_135_596_800_000),
+            unknown_attributes: vec![
+                (i64::MIN, vec![vec![]]),
+                (-5, vec![vec![0]]),
+                (13, vec![vec![0xfb, 0xff], vec![]]),
+                (13, vec![vec![1]]),
+                (i64::MAX, vec![]),
+            ],
+        }
+    }
+
+    /// The whole verified `verify-receipt` answer for [`full_receipt`], byte
+    /// for byte: C0 controls and U+007F, raw non-ASCII (U+2028, U+FEFF,
+    /// private use, outside the BMP), negative and repeated attribute keys,
+    /// `i64` extremes and empty byte strings. The expected text was produced
+    /// by the hand-written writer that the `serde_json` one replaced, run on
+    /// this same receipt, so a failure here is a change of 0.7's bytes.
+    #[test]
+    fn a_full_receipt_answer_keeps_the_bytes_of_the_hand_written_writer() {
+        assert_eq!(
+            verify_receipt_result(&Ok(full_receipt())),
+            concat!(
+                r#"{"verified":true,"payload":{"receipt_type":"Production\u0000\u0001\u001f"#,
+                "\u{7f}",
+                r#"","app_item_id":"-9223372036854775808","bundle_id":"com.example."#,
+                "\u{e9}\u{2028}\u{2029}\u{1f600}",
+                r#"/\"\\","bundle_id_bytes":"","application_version":"1.0\t\r\n\b\f\u000b""#,
+                r#","opaque_value":"+/+/","sha1_hash":"AAECAwQ=""#,
+                r#","receipt_creation_date_ms":-9223372036854775808"#,
+                r#","download_id":"9223372036854775807","version_external_identifier":"0""#,
+                r#","in_app":[{"quantity":9223372036854775807,"product_id":"p\u0000"#,
+                "\u{a0}\u{feff}",
+                r#"","transaction_id":"-1","purchase_date_ms":-1,"original_transaction_id":"""#,
+                r#","original_purchase_date_ms":0,"expires_date_ms":9223372036854775807"#,
+                r#","web_order_line_item_id":"-9223372036854775808""#,
+                r#","cancellation_date_ms":-9223372036854775808"#,
+                r#","is_trial_period":true,"is_in_intro_offer_period":false"#,
+                r#","unknown_attributes":{"-1":[""],"1714":["AQID",""],"1714":["/w=="]}}"#,
+                r#",{"quantity":1,"product_id":""#,
+                "\u{80}\u{9f}\u{fffd}\u{10ffff}",
+                r#"","transaction_id":"1000000000000000","purchase_date_ms":1375340400000"#,
+                r#","original_transaction_id":"1000000000000000""#,
+                r#","original_purchase_date_ms":1375340400000,"expires_date_ms":1375344000000"#,
+                r#","web_order_line_item_id":"0","cancellation_date_ms":1375341000000"#,
+                r#","is_trial_period":false,"is_in_intro_offer_period":true"#,
+                r#","unknown_attributes":{}}]"#,
+                r#","original_purchase_date_ms":1375340400000"#,
+                r#","original_application_version":"\u001e\u001b"#,
+                "\u{e000}",
+                r#"","expiration_date_ms":-62135596800000"#,
+                r#","unknown_attributes":{"-9223372036854775808":[""],"-5":["AA=="]"#,
+                r#","13":["+/8=",""],"13":["AQ=="],"9223372036854775807":[]}}}"#
             )
         );
     }

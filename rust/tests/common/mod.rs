@@ -6,10 +6,12 @@
 pub mod cms;
 pub mod der;
 
-use apple_purchase_receipt_verifier::__internal::{base64_decode_lenient, base64_encode};
+use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{
     Config, Failure, InAppPurchase, JsonPayload, ReceiptPayload, TrustAnchor, Verifier,
 };
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::Engine as _;
 use der::tag;
 use std::path::{Path, PathBuf};
 
@@ -38,7 +40,21 @@ pub fn read_fixture(relative: &str) -> Vec<u8> {
 
 pub fn read_base64_fixture(relative: &str) -> Vec<u8> {
     let text = String::from_utf8(read_fixture(relative)).expect("fixture is not UTF-8");
-    base64_decode_lenient(text.trim())
+    decode_base64(&text)
+}
+
+/// Standard base64 with its whitespace (a fixture's line breaks) skipped:
+/// a fixture's text, a certificate's base64, an `x5c` entry.
+pub fn decode_base64(text: &str) -> Vec<u8> {
+    let compact: String = text.split_whitespace().collect();
+    STANDARD.decode(compact).expect("not standard base64")
+}
+
+/// A JWS segment: unpadded base64url.
+pub fn decode_base64url(segment: &str) -> Vec<u8> {
+    URL_SAFE_NO_PAD
+        .decode(segment)
+        .expect("not unpadded base64url")
 }
 
 pub fn read_text_fixture(relative: &str) -> String {
@@ -143,10 +159,7 @@ pub fn device_guid() -> Vec<u8> {
 // --- base64url for rebuilt JWS segments ---------------------------------
 
 pub fn base64url(bytes: &[u8]) -> String {
-    base64_encode(bytes)
-        .trim_end_matches('=')
-        .replace('+', "-")
-        .replace('/', "_")
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 /// Rebuilds a compact JWS from three already-encoded segments.
@@ -166,7 +179,7 @@ pub fn split_jws(jws: &str) -> (String, String, String) {
 /// The decoded header of a JWS, as a mutable JSON object.
 pub fn jws_header(jws: &str) -> serde_json::Map<String, serde_json::Value> {
     let (header, _, _) = split_jws(jws);
-    let bytes = base64_decode_lenient(&header);
+    let bytes = decode_base64url(&header);
     match serde_json::from_slice(&bytes).expect("header is not JSON") {
         serde_json::Value::Object(map) => map,
         other => panic!("header is not a JSON object: {other}"),

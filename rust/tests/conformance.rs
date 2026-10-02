@@ -14,9 +14,10 @@
 //! here.
 
 use apple_purchase_receipt_verifier::__internal::{
-    base64_decode_lenient, base64_encode, decode_receipt_data, decode_x5c_entry, keys_used_during,
+    base64_encode, decode_receipt_data, decode_x5c_entry, keys_used_during,
 };
 use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, Verifier};
+use base64::Engine as _;
 use libtest_mimic::{Arguments, Failed, Trial};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -213,7 +214,9 @@ fn fixture_bytes(
         "base64" => {
             let text = String::from_utf8_lossy(&raw);
             let stripped: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-            base64_decode_lenient(&stripped)
+            base64::engine::general_purpose::STANDARD
+                .decode(stripped)
+                .expect("a base64 fixture is standard base64")
         }
         "utf8" => String::from_utf8_lossy(&raw).trim().as_bytes().to_vec(),
         other => {

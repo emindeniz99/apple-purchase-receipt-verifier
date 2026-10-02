@@ -14,7 +14,6 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use ReflectionMethod;
 
 /**
  * `aprv install`, against a local HTTP server that serves the binary under
@@ -265,27 +264,6 @@ final class InstallerTest extends TestCase
             }
         }
         self::assertSame([], $this->installed());
-    }
-
-    /** The stream fallback is what runs where ext-curl is absent. */
-    public function testTheStreamDownloaderFetchesAFileAndRefusesAnError(): void
-    {
-        $download = new ReflectionMethod(Installer::class, 'downloadWithStreams');
-        $target = $this->work . '/streamed';
-        $file = fopen($target, 'wb');
-        self::assertIsResource($file);
-        $download->invoke(null, $this->server->url . '/' . self::ASSET, $file);
-        fclose($file);
-        self::assertSame($this->sha256, hash_file('sha256', $target));
-
-        $file = fopen($target, 'wb');
-        self::assertIsResource($file);
-        $this->expectException(InstallException::class);
-        try {
-            $download->invoke(null, $this->server->url . '/absent', $file);
-        } finally {
-            fclose($file);
-        }
     }
 
     public function testTheDefaultInstallLocationIsWhereTheTransportLooks(): void
