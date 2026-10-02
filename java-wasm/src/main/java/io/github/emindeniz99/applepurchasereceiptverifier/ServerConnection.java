@@ -1,6 +1,7 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -8,6 +9,11 @@ import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.NoSuchAlgorithmException;
+import java.util.Locale;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -17,11 +23,14 @@ import org.jspecify.annotations.Nullable;
  * {@link HttpURLConnection}, whose keep-alive cache reuses connections, one
  * request at a time on each, so calls on several threads run in parallel.
  *
- * <p>A request whose connection fails is sent again, up to three times in
- * all: a keep-alive connection the server closed is replaced, and a child
- * that died is started again first. Verification has no side effects, so a
- * retry cannot change an answer. When every attempt fails the call throws
- * {@link ServerProcessFailure}.</p>
+ * <p>A request whose connection fails is tried again, up to three attempts
+ * in all: a keep-alive connection the server closed is replaced, and a child
+ * that died is started again first. Inside each attempt HttpURLConnection
+ * may send the request up to twice more ({@link #exchange}), so one call
+ * can put it on up to nine connections, and a server that reads each
+ * request and closes before the status line receives it six times.
+ * Verification has no side effects, so a retry cannot change an answer.
+ * When every attempt fails the call throws {@link ServerProcessFailure}.</p>
  */
 final class ServerConnection {
 
@@ -33,6 +42,11 @@ final class ServerConnection {
     static final int MAX_RESPONSE = 64 << 20;
 
     private static final int ATTEMPTS = 3;
+
+    /** The default {@link SSLContext} {@link #tlsFactory} was taken from. */
+    private static @Nullable SSLContext tlsContext;
+
+    private static @Nullable SSLSocketFactory tlsFactory;
 
     /** Where the server is: host, port, TLS or not, a base path, the token, and which child it is. */
     static final class Target {
@@ -128,10 +142,24 @@ final class ServerConnection {
 
     /**
      * One request on {@link HttpURLConnection}. {@code nowMs}, when given,
-     * goes out as {@code X-Aprv-Now-Ms}. The connection ignores the JVM's
-     * proxy settings ({@link Proxy#NO_PROXY}), so no {@code http.proxyHost}
-     * or default {@code ProxySelector} sends a request elsewhere; it follows
-     * no redirect and uses no response cache.
+     * goes out as {@code X-Aprv-Now-Ms}. The connection is opened with
+     * {@link Proxy#NO_PROXY}, so no {@code http.proxyHost},
+     * {@code https.proxyHost} or HTTP proxy from the default
+     * {@code ProxySelector} sends a request elsewhere. The socket under it
+     * still asks the default {@code ProxySelector} for a SOCKS proxy
+     * ({@code socket://}, or {@code socksProxyHost}) on Java 8 for both
+     * schemes and on JDK 21 for {@code https}, as the hand-written client
+     * did on every JDK. It follows no redirect and uses no response cache.
+     *
+     * <p>Over {@code https} the request never uses
+     * {@link HttpsURLConnection}'s JVM-wide defaults, which any code in the
+     * JVM can replace (a trust-all socket factory with an allow-all hostname
+     * verifier is a common pair). Its socket factory is the default
+     * {@link SSLContext}'s, as the hand-written client's was, and its
+     * hostname verifier refuses every name: with a verifier that is not the
+     * JDK's default, the JDK checks the certificate against the host by
+     * RFC 2818 after the handshake and asks the verifier only on a mismatch,
+     * before any request byte or the token is written.</p>
      *
      * <p>A POST body is buffered, not streamed. HttpURLConnection then writes
      * the headers and a body of up to about 8 KiB (a g5 receipt) in one
@@ -139,15 +167,23 @@ final class ServerConnection {
      * {@code setFixedLengthStreamingMode}, the headers go out first, Nagle's
      * algorithm holds the body back 1 to 2 ms a call, and a 401's body is
      * dropped (docs/evidence/2026-10-02-java-httpurlconnection.md). The
-     * price is HttpURLConnection's own resend: when a buffered request's
-     * connection fails before the status line, and not on a timeout, it
-     * sends the request once more on a new connection
-     * ({@code sun.net.http.retryPost}, a JVM-wide property this library does
-     * not set). That resend cannot change a verdict: verification has no
-     * side effects and the request carries its own {@code X-Aprv-Now-Ms}.</p>
+     * price is HttpURLConnection's own resends, on a new connection each:
+     * once when a buffered request's connection fails before the status
+     * line, other than by a read timeout ({@code sun.net.http.retryPost}, a
+     * JVM-wide property this library does not set), and once when writing
+     * the request fails, whatever that property says. A resend cannot
+     * change a verdict: verification has no side effects and the request
+     * carries its own {@code X-Aprv-Now-Ms}.</p>
      *
-     * @throws IOException when the server cannot be reached, the answer is
-     *     not HTTP, or its body is over {@link #MAX_RESPONSE} bytes
+     * <p>The body must be framed, as the hand-written client required: by
+     * chunked encoding, or by a {@code Content-Length} of at most
+     * {@link #MAX_RESPONSE} whose bytes all arrive. Only a 204, a 304 or the
+     * answer to a HEAD may carry neither.</p>
+     *
+     * @throws IOException when the server cannot be reached or fails TLS, the
+     *     answer is not HTTP, its body is unframed or over
+     *     {@link #MAX_RESPONSE} bytes, or the connection closes inside it
+     *     ({@link EOFException})
      */
     static Response exchange(
             Target target,
@@ -161,6 +197,15 @@ final class ServerConnection {
         URL url = new URL(target.tls ? "https" : "http", target.host, target.port, target.basePath + path);
         HttpURLConnection http = (HttpURLConnection) url.openConnection(Proxy.NO_PROXY);
         try {
+            if (target.tls) {
+                if (!(http instanceof HttpsURLConnection)) {
+                    // A URLStreamHandlerFactory replaced the JDK's https handler.
+                    throw new IOException("the JVM's https handler is not an HttpsURLConnection");
+                }
+                HttpsURLConnection https = (HttpsURLConnection) http;
+                https.setSSLSocketFactory(tlsFactory());
+                https.setHostnameVerifier((host, session) -> false);
+            }
             http.setRequestMethod(method);
             http.setConnectTimeout(connectTimeoutMillis);
             http.setReadTimeout(readTimeoutMillis);
@@ -183,14 +228,50 @@ final class ServerConnection {
             if (status < 0) {
                 throw new IOException("not an HTTP response");
             }
+            String encoding = http.getHeaderField("Transfer-Encoding");
+            boolean chunked =
+                    encoding != null && encoding.toLowerCase(Locale.ROOT).contains("chunked");
+            long length = chunked ? -1 : http.getContentLengthLong();
+            if (length > MAX_RESPONSE) {
+                throw new IOException("a response over " + MAX_RESPONSE + " bytes");
+            }
+            if (!chunked && length < 0 && status != 204 && status != 304 && !method.equals("HEAD")) {
+                throw new IOException("a response with neither Content-Length nor chunked encoding");
+            }
             // HttpURLConnection reads a status of 400 or more from the error stream.
             InputStream in = status >= 400 ? http.getErrorStream() : http.getInputStream();
+            byte[] responseBody = in == null ? new byte[0] : read(in);
+            if (length >= 0 && responseBody.length != length) {
+                throw new EOFException("the connection closed inside a response");
+            }
             String contentType = http.getContentType();
-            return new Response(status, contentType == null ? "" : contentType, in == null ? new byte[0] : read(in));
+            return new Response(status, contentType == null ? "" : contentType, responseBody);
         } catch (IOException | RuntimeException e) {
             http.disconnect();
             throw e;
         }
+    }
+
+    /**
+     * The default {@link SSLContext}'s socket factory, one instance for as
+     * long as that context stays the default: the JDK's keep-alive cache
+     * reuses a connection only for the same factory instance, and the
+     * context makes a new one on each call.
+     */
+    private static synchronized SSLSocketFactory tlsFactory() throws IOException {
+        SSLContext context;
+        try {
+            context = SSLContext.getDefault();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("no default TLS context", e);
+        }
+        SSLSocketFactory factory = tlsFactory;
+        if (context != tlsContext || factory == null) {
+            factory = context.getSocketFactory();
+            tlsContext = context;
+            tlsFactory = factory;
+        }
+        return factory;
     }
 
     /**
