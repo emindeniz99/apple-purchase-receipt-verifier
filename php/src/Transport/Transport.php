@@ -33,12 +33,14 @@ interface Transport
     /**
      * Runs one operation.
      *
-     * @param string $input the request bytes, exactly as the caller gave them
+     * @param string $input the request bytes, exactly as the caller gave them;
+     *        a transport sends at most the first 3,145,729 of them, the cut
+     *        every Wasm wrapper makes, which still reaches the module over its cap
      * @param int $nowMs the call's clock, epoch milliseconds
      *
-     * @return string the module's JSON, unchanged
+     * @return string the module's JSON, unchanged; for an input over the size
+     *         cap, the module's own answer to it (its size refusal)
      *
-     * @throws InputTooLargeException when `aprv` refused the input for its size before the module saw it
      * @throws ModuleFaultException when the module trapped, broke the interface or answered unreadably
      * @throws ServerProcessException when `aprv` did not answer: it could not start, died, or the connection broke
      */

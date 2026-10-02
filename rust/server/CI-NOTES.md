@@ -74,10 +74,12 @@ Notes on the steps:
   (`$CALLS/<corpus>.pinned.jsonl`) and the module's own answers to them
   (`$ROWS/module-<corpus>.jsonl`, identical to the native core); lane D's
   corpus job produces both. Expected per transport: every row identical
-  except the 27 whose body is over 3,145,728 bytes, which the module
-  refuses for size and the server answers 413 (the CLI exits 3) before
-  the module sees them. With G1d: 6,152 identical, 27 over-cap, 0
-  different, on HTTP fresh, HTTP pool and the CLI.
+  except the 27 whose body is over 3,145,728 bytes, which the server
+  answers 413 (the CLI exits 3) with the module's own size refusal for
+  their first 3,145,729 bytes, byte-identical to the module's row;
+  `corpus.py` counts them as over-cap. With G1d: 6,152 identical, 27
+  over-cap, 0 different, on HTTP fresh, HTTP pool and the CLI, counted
+  when the server still answered those 27 with a problem of its own.
 - Spectral resolves the two `$ref`s to `../bindings/wire/schema/`; on a
   branch without lane A2's files it reports 2 `invalid-ref` errors and
   nothing else. With A2's files beside it: 0 findings. Schemathesis can

@@ -119,8 +119,10 @@ embedded certificates, six certificates below the anchor, 4 SignerInfos.
 JSON has no bound of its own in the core since 2026-10-01: a value nobody
 reads is skipped, not built, within the size caps (DECISIONS.md R40);
 Java keeps its three JSON bounds. Wrappers add none. `aprv-server` adds one transport rule: an HTTP body
-over 3,145,728 bytes is refused with 413 before it reaches the module, as
-Apple's endpoint refuses it ([aprv-server §1][server]).
+over 3,145,728 bytes reaches the module cut to 3,145,729 bytes, as every
+Wasm host cuts an input, and the module's answer, its own size refusal,
+is sent with HTTP 413, the status Apple's endpoint gives such a body
+([aprv-server §1][server]; DECISIONS.md R34, amended 2026-10-02).
 
 ## 6. The contract: `fixtures/cases.json` schema v2
 

@@ -15,7 +15,6 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Outcome;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\ThrowingClock;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\InputTooLargeException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
@@ -221,19 +220,22 @@ final class FacadeTest extends TestCase
     }
 
     /**
-     * An input `aprv` refused for its size is answered as the module
-     * answers an over-cap input: TOO_LARGE, and Apple's 21002 at the
-     * endpoint.
+     * An input over the cap is the module's to answer: the transport hands
+     * back the module's size refusal and the façade maps it like any other
+     * verdict, with the module's message and no cause.
      */
-    public function testAnInputOverTheCapIsTooLargeAndStatus21002(): void
+    public function testAnInputOverTheCapIsTheModulesTooLargeAnswer(): void
     {
-        $verifier = self::verifier(new FakeTransport(static fn () => throw new InputTooLargeException('too big')));
+        $verifier = self::verifier(new FakeTransport(static fn (Operation $operation) => match ($operation) {
+            Operation::EndpointProduction, Operation::EndpointSandbox => '{"status":21002}',
+            default => '{"verified":false,"reason":"TOO_LARGE","message":"said by the module"}',
+        }));
 
-        $receipt = $verifier->verifyReceipt('x');
-        $jws = $verifier->verifySignedData('x');
-        self::assertSame(Reason::TooLarge, Outcome::failure($receipt)->reason);
-        self::assertSame(Reason::TooLarge, Outcome::failure($jws)->reason);
-        self::assertNull(Outcome::failure($receipt)->cause);
+        $receipt = Outcome::failure($verifier->verifyReceipt('x'));
+        self::assertSame(Reason::TooLarge, $receipt->reason);
+        self::assertSame('said by the module', $receipt->message);
+        self::assertNull($receipt->cause);
+        self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifySignedData('x'))->reason);
         self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Production, '{}'));
     }
 

@@ -4,8 +4,10 @@
 //! `GET /v1/info` so a client can refuse a server configured otherwise.
 //!
 //! The server does not parse a certificate: whether a root is one is
-//! `init`'s answer. Base64 lines and PEM blocks (the `pem` crate) are
-//! decoded here only to fingerprint the DER.
+//! `init`'s answer. A `--roots` file is one raw DER certificate (Apple's
+//! `.cer` files) when its first byte is 0x30, the rule the core uses to
+//! tell DER from PEM; otherwise base64 lines and PEM blocks (the `pem`
+//! crate), decoded here only to fingerprint the DER.
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -61,7 +63,36 @@ impl Roots {
         })
     }
 
-    /// A `--roots` file: one base64 root per line, or PEM `CERTIFICATE`
+    /// The `--roots` files, in order, each `(name, bytes)`: a file whose
+    /// first byte is 0x30 (an ASN.1 SEQUENCE, as the core tells DER from
+    /// PEM) is one DER certificate, passed on whole for `init` to judge;
+    /// any other file is the text format of [`Roots::from_file_text`]. No
+    /// files means the defaults.
+    pub fn from_files(files: &[(&str, &[u8])]) -> Result<Roots, String> {
+        let mut ders = Vec::new();
+        for (name, bytes) in files {
+            let one = match bytes.first() {
+                None => Err("the file is empty; omit --roots for the built-in Apple roots".into()),
+                Some(0x30) => Ok(Roots::Configured(vec![bytes.to_vec()])),
+                Some(_) => std::str::from_utf8(bytes)
+                    .map_err(|_| {
+                        "neither a DER certificate (first byte 0x30) nor UTF-8 text".to_owned()
+                    })
+                    .and_then(Roots::from_file_text),
+            };
+            match one.map_err(|e| format!("--roots {name}: {e}"))? {
+                Roots::Configured(d) => ders.extend(d),
+                Roots::Defaults => unreachable!("a file always configures roots"),
+            }
+        }
+        Ok(if ders.is_empty() {
+            Roots::Defaults
+        } else {
+            Roots::Configured(ders)
+        })
+    }
+
+    /// A text `--roots` file: one base64 root per line, or PEM `CERTIFICATE`
     /// blocks, which the `pem` crate decodes to DER. Blank lines and lines
     /// starting with `#` are ignored. An empty file is refused: an empty
     /// root set is a caller's mistake, never a request for the defaults
@@ -333,6 +364,68 @@ mod tests {
         assert_eq!(
             refused("-----END CERTIFICATE-----\n"),
             "line 1: -----END CERTIFICATE----- outside a PEM block"
+        );
+    }
+
+    fn certs() -> Vec<(String, Vec<u8>)> {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
+        let mut names: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+            .into_iter()
+            .map(|n| {
+                let bytes = std::fs::read(format!("{dir}{n}")).unwrap();
+                (n, bytes)
+            })
+            .collect()
+    }
+
+    /// Apple's `.cer` files are DER and go in as they are, one file a root;
+    /// several files add up, in order, and a DER file mixes with a PEM one.
+    #[test]
+    fn reads_der_cer_files_and_several_files() {
+        let certs = certs();
+        let files: Vec<(&str, &[u8])> = certs
+            .iter()
+            .map(|(n, b)| (n.as_str(), b.as_slice()))
+            .collect();
+        let one = Roots::from_files(&files[2..]).unwrap();
+        assert_eq!(one, Roots::Configured(vec![certs[2].1.clone()]));
+        assert_eq!(one.fingerprints(), [DEFAULT_ROOT_SHA256[2]]);
+        let all = Roots::from_files(&files).unwrap();
+        assert_eq!(all.fingerprints(), DEFAULT_ROOT_SHA256);
+        // A DER file and a PEM file: the PEM block reads back to its DER.
+        let pem = format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            STANDARD.encode(&certs[0].1)
+        );
+        let mixed = Roots::from_files(&[files[1], ("g.pem", pem.as_bytes())]).unwrap();
+        assert_eq!(
+            mixed.fingerprints(),
+            [DEFAULT_ROOT_SHA256[1], DEFAULT_ROOT_SHA256[0]]
+        );
+        assert_eq!(Roots::from_files(&[]).unwrap(), Roots::Defaults);
+    }
+
+    #[test]
+    fn refuses_an_empty_file_and_one_that_is_neither_der_nor_text() {
+        assert_eq!(
+            Roots::from_files(&[("a.cer", b"")]).unwrap_err(),
+            "--roots a.cer: the file is empty; omit --roots for the built-in Apple roots"
+        );
+        assert_eq!(
+            Roots::from_files(&[("b.cer", b"\xff\xfe")]).unwrap_err(),
+            "--roots b.cer: neither a DER certificate (first byte 0x30) nor UTF-8 text"
+        );
+        // The second file names itself in the error.
+        let certs = certs();
+        assert!(
+            Roots::from_files(&[("ok.cer", &certs[0].1), ("c.txt", b"# none\n")])
+                .unwrap_err()
+                .starts_with("--roots c.txt: the roots file holds no root")
         );
     }
 

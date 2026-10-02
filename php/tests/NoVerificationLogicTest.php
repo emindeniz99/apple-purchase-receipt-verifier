@@ -17,8 +17,11 @@ use PHPUnit\Framework\TestCase;
 #[CoversNothing]
 final class NoVerificationLogicTest extends TestCase
 {
-    /** What `src/Internal` may hold: data and mapping (PayloadJson writes the payload's JSON values), never a parser. */
-    private const INTERNAL_FILES = ['Info.php', 'PayloadJson.php', 'Text.php', 'Wire.php'];
+    /**
+     * What `src/Internal` may hold: data and mapping (PayloadJson writes the
+     * payload's JSON values, Input holds the transport cut), never a parser.
+     */
+    private const INTERNAL_FILES = ['Info.php', 'Input.php', 'PayloadJson.php', 'Text.php', 'Wire.php'];
 
     public function testTheOpensslExtensionIsNotRequired(): void
     {

@@ -6,6 +6,7 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
 use CurlHandle;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Info;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Input;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Text;
 use InvalidArgumentException;
 use LogicException;
@@ -79,12 +80,11 @@ final class HttpTransport implements Transport
 
     public function call(Operation $operation, string $input, int $nowMs): string
     {
-        [$status, $body] = $this->request('POST', $operation->httpPath(), $input, $nowMs);
-        if ($status === 200) {
+        [$status, $body, $type] = $this->request('POST', $operation->httpPath(), substr($input, 0, Input::MAX_BYTES), $nowMs);
+        // A 413 carries the module's own answer to an input over the cap, as
+        // JSON; a 413 problem document (an older server) falls through.
+        if ($status === 200 || ($status === 413 && str_starts_with(strtolower($type), 'application/json'))) {
             return $body;
-        }
-        if ($status === 413) {
-            throw new InputTooLargeException('the server refused the input for its size');
         }
         $problem = json_decode($body, true);
         $code = is_array($problem) && is_string($problem['code'] ?? null) ? $problem['code'] : null;
@@ -133,7 +133,7 @@ final class HttpTransport implements Transport
     }
 
     /**
-     * @return array{int, string} the HTTP status and the body
+     * @return array{int, string, string} the HTTP status, the body and its content type
      *
      * @throws ServerProcessException when no HTTP answer came back
      */
@@ -171,6 +171,8 @@ final class HttpTransport implements Transport
             throw new ServerProcessException('the server did not answer: ' . Text::printable(curl_error($this->curl)));
         }
 
-        return [(int) curl_getinfo($this->curl, CURLINFO_RESPONSE_CODE), $answer];
+        $type = curl_getinfo($this->curl, CURLINFO_CONTENT_TYPE);
+
+        return [(int) curl_getinfo($this->curl, CURLINFO_RESPONSE_CODE), $answer, is_string($type) ? $type : ''];
     }
 }

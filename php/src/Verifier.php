@@ -6,7 +6,6 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Wire;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\InputTooLargeException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
@@ -46,8 +45,6 @@ use Throwable;
  */
 final class Verifier
 {
-    private const TOO_LARGE_MESSAGE = 'the input is over the size cap aprv accepts';
-
     private function __construct(
         private readonly Transport $transport,
         private readonly Config $config,
@@ -114,8 +111,6 @@ final class Verifier
         }
         try {
             return Wire::receiptResult($this->transport->call(Operation::Receipt, $base64 ?? '', $nowMs));
-        } catch (InputTooLargeException) {
-            return self::failed(new Failure(Reason::TooLarge, self::TOO_LARGE_MESSAGE));
         } catch (Throwable $e) {
             return self::failed(self::internalError($e));
         }
@@ -136,8 +131,6 @@ final class Verifier
         }
         try {
             return Wire::signedDataResult($this->transport->call(Operation::SignedData, $jws ?? '', $nowMs));
-        } catch (InputTooLargeException) {
-            return self::failed(new Failure(Reason::TooLarge, self::TOO_LARGE_MESSAGE));
         } catch (Throwable $e) {
             return self::failed(self::internalError($e));
         }
@@ -164,8 +157,6 @@ final class Verifier
         };
         try {
             return Wire::endpointAnswer($this->transport->call($operation, $requestJson ?? '', $nowMs));
-        } catch (InputTooLargeException) {
-            return self::status(AppleStatus::MalformedReceiptData);
         } catch (Throwable) {
             return self::status(AppleStatus::InternalDataAccessError);
         }

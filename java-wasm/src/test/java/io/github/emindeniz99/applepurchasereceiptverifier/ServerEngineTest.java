@@ -126,6 +126,32 @@ class ServerEngineTest {
                 verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + over + "\"}"));
     }
 
+    /**
+     * An input past the server's 16 MiB drain limit: the server reads only
+     * 3,145,729 bytes of a body announced that large and closes after its
+     * answer, so an engine that sent the whole input would meet a reset
+     * (INTERNAL_ERROR). The engine cuts the input as Endive does, and the
+     * verdict is the module's, as on Endive.
+     */
+    @Test
+    @Order(4)
+    void anInputOverTheDrainLimitIsTooLargeAsOnEndive() {
+        char[] big = new char[20 << 20];
+        Arrays.fill(big, 'A');
+        String twentyMib = new String(big);
+        Failure receipt = verifier.verifyReceipt(twentyMib).failure();
+        assertEquals(Reason.TOO_LARGE, receipt.reason(), receipt.message());
+        assertEquals("receipt exceeds the maximum accepted size of 3145728 bytes", receipt.message());
+        Failure signed = verifier.verifySignedData(twentyMib).failure();
+        assertEquals(Reason.TOO_LARGE, signed.reason(), signed.message());
+        assertEquals(
+                "{\"status\":21002}",
+                verifier.verifyReceiptEndpoint(Environment.PRODUCTION, "{\"receipt-data\":\"" + twentyMib + "\"}"));
+        assertEquals(
+                "{\"status\":21002}",
+                verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + twentyMib + "\"}"));
+    }
+
     @Test
     @Order(5)
     void aChildThatAbortsIsStartedAgainByTheNextCall() throws Exception {

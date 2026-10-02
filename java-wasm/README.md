@@ -182,10 +182,12 @@ server reports (a trap in the module, an ABI error, a refused token) is
 `Failure.cause()`, whose message names the HTTP status and the server's
 code. A server that cannot be started or reached is `INTERNAL_ERROR`
 with a `ServerProcessFailure` as the cause, so it is never mistaken for
-a trap. The server refuses a body over 3 MiB before the module sees it;
-the engine answers such an input as the module does, `TOO_LARGE` (21002
-from the endpoint) with the core's own message. Both cause classes are
-internal; tell them apart by `getClass().getName()` in logs.
+a trap. An input over 3 MiB is answered by the module, `TOO_LARGE`
+(21002 from the endpoint) with the core's own message, as on Endive: the
+engine sends its first 3,145,729 bytes, the cut Endive makes before the
+module, the server sends the module's answer with HTTP 413, and the
+engine reads it as it reads a 200. Both cause classes are internal; tell
+them apart by `getClass().getName()` in logs.
 
 ## The runtime probe
 

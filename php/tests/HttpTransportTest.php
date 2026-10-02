@@ -12,7 +12,6 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\CountingClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeServer;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Outcome;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\InputTooLargeException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
@@ -106,6 +105,30 @@ final class HttpTransportTest extends TestCase
         self::assertSame('sekret', $infoHeaders['x-aprv-token'], 'the info request carries the token too');
     }
 
+    /**
+     * An input over the cap is sent cut to one byte over it, the cut every
+     * Wasm wrapper makes: the server reads no more of a body announced past
+     * its drain limit and closes after its answer. An input at the cap is
+     * sent whole.
+     */
+    public function testAnInputOverTheCapIsSentCutToOneByteOverIt(): void
+    {
+        $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
+        $transport = new HttpTransport($server->url);
+        $transport->open(null);
+        $twentyMib = str_repeat("A\xffB\0", 5 * 1024 * 1024);
+
+        $transport->call(Operation::Receipt, $twentyMib, 1);
+        $request = $server->requests()[count($server->requests()) - 1];
+        self::assertSame(3145729, $request['body_length']);
+        self::assertSame(hash('sha256', substr($twentyMib, 0, 3145729)), $request['body_sha256'], 'the first bytes, unchanged');
+
+        $atCap = str_repeat('A', 3145728);
+        $transport->call(Operation::Receipt, $atCap, 1);
+        $request = $server->requests()[count($server->requests()) - 1];
+        self::assertSame(hash('sha256', $atCap), $request['body_sha256'], 'an input at the cap is sent whole');
+    }
+
     public function testNoTokenHeaderIsSentWithoutAToken(): void
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
@@ -138,8 +161,9 @@ final class HttpTransportTest extends TestCase
     /** @return iterable<string, array{array<string, mixed>, class-string<\Throwable>}> */
     public static function problemProvider(): iterable
     {
-        yield '413 PAYLOAD_TOO_LARGE' => [self::problem(413, ['code' => 'PAYLOAD_TOO_LARGE', 'status' => 413]), InputTooLargeException::class];
-        yield '413 with no body at all' => [['status' => 413, 'body' => ''], InputTooLargeException::class];
+        // A 413 problem is an older server's, not the module's answer.
+        yield '413 PAYLOAD_TOO_LARGE problem' => [self::problem(413, ['code' => 'PAYLOAD_TOO_LARGE', 'status' => 413]), ServerProcessException::class];
+        yield '413 with no body at all' => [['status' => 413, 'body' => ''], ServerProcessException::class];
         yield '500 WASM_TRAP' => [self::problem(500, ['code' => 'WASM_TRAP', 'detail' => 'trap: unreachable']), ModuleFaultException::class];
         yield '500 ABI_ERROR' => [self::problem(500, ['code' => 'ABI_ERROR', 'detail' => 'not utf-8']), ModuleFaultException::class];
         yield '500 INTERNAL_ERROR' => [self::problem(500, ['code' => 'INTERNAL_ERROR']), ServerProcessException::class];
@@ -169,9 +193,14 @@ final class HttpTransportTest extends TestCase
 
     public function testTheFaçadeAnswersEachProblemAsItsOutcome(): void
     {
-        $server = $this->server([self::INFO_PATH => self::info(), 'default' => self::problem(413, ['code' => 'PAYLOAD_TOO_LARGE'])]);
+        // A 413 carries the module's own answer to an input over the cap, read as a 200 is.
+        $tooLarge = '{"verified":false,"reason":"TOO_LARGE","message":"said by the module"}';
+        $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 413, 'headers' => ['Content-Type' => 'application/json'], 'body' => $tooLarge]]);
         $verifier = Verifier::create(new Config(), new HttpTransport($server->url));
-        self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifyReceipt('x'))->reason);
+        $receipt = Outcome::failure($verifier->verifyReceipt('x'));
+        self::assertSame(Reason::TooLarge, $receipt->reason);
+        self::assertSame('said by the module', $receipt->message);
+        $server->respond([self::INFO_PATH => self::info(), 'default' => ['status' => 413, 'headers' => ['Content-Type' => 'application/json'], 'body' => '{"status":21002}']]);
         self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Production, '{}'));
 
         $server->respond([self::INFO_PATH => self::info(), 'default' => self::problem(500, ['code' => 'WASM_TRAP', 'detail' => 'unreachable'])]);
@@ -378,12 +407,16 @@ final class HttpTransportTest extends TestCase
         $server = Aprv::startServer();
         try {
             $verifier = Verifier::create(new Config(), new HttpTransport($server->url));
-            $over = str_repeat('A', 3145728 + 1);
-
-            self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifyReceipt($over))->reason);
-            self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifySignedData($over))->reason);
-            self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Production, $over));
-            self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Sandbox, $over));
+            // One byte over, and past the server's 16 MiB drain limit, where
+            // the server reads only what the module needs and then closes.
+            foreach ([str_repeat('A', 3145728 + 1), str_repeat('A', 20 * 1024 * 1024)] as $over) {
+                $receipt = Outcome::failure($verifier->verifyReceipt($over));
+                self::assertSame(Reason::TooLarge, $receipt->reason, $receipt->message);
+                self::assertNull($receipt->cause, 'the module\'s verdict, not a transport failure');
+                self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifySignedData($over))->reason);
+                self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Production, $over));
+                self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Sandbox, $over));
+            }
         } finally {
             $server->stop();
         }

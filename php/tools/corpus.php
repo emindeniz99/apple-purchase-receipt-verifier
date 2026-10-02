@@ -18,10 +18,9 @@ declare(strict_types=1);
  * mapping raised a wrapper-side INTERNAL_ERROR on a well-formed answer is a
  * `facade-fault`, never a pass.
  *
- * Categories: identical (equal to the reference), over-cap (the input is over
- * 3,145,728 bytes and aprv refused it before the module saw it: HTTP 413 or
- * CLI exit 3, where the module's own answer is the size refusal, TOO_LARGE or
- * status 21002), roots-refused (the reference is `init` refusing the roots,
+ * Categories: identical (equal to the reference), over-cap (equal to the
+ * reference, for an input over 3,145,728 bytes: the module's own size
+ * refusal, which aprv sends with HTTP 413 or CLI exit 3), roots-refused (the reference is `init` refusing the roots,
  * and the façade or the server refused them the same way), DIFFERENT.
  * `--out` writes the rows the façade saw as `<mode>-<corpus>.jsonl`.
  * Exit status 1 when any row is DIFFERENT or a facade-fault.
@@ -31,7 +30,6 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\InputTooLargeException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Transport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
@@ -47,8 +45,6 @@ final class Recorder implements Transport
 {
     public ?string $raw = null;
 
-    public bool $tooLarge = false;
-
     public ?Throwable $failure = null;
 
     public function __construct(private readonly Transport $inner)
@@ -63,14 +59,9 @@ final class Recorder implements Transport
     public function call(Operation $operation, string $input, int $nowMs): string
     {
         $this->raw = null;
-        $this->tooLarge = false;
         $this->failure = null;
         try {
             return $this->raw = $this->inner->call($operation, $input, $nowMs);
-        } catch (InputTooLargeException $e) {
-            $this->tooLarge = true;
-
-            throw $e;
         } catch (Throwable $e) {
             $this->failure = $e;
 
@@ -201,9 +192,7 @@ foreach ($only as $corpus) {
                     'verify-receipt-endpoint' => $verifier->verifyReceiptEndpoint($call['env'] === 0 ? Environment::Production : Environment::Sandbox, $body),
                     default => throw new RuntimeException('no adapter for ' . $call['fn']),
                 };
-                if ($recorder->tooLarge) {
-                    $got = ['over_cap' => true];
-                } elseif ($recorder->failure !== null) {
+                if ($recorder->failure !== null) {
                     $got = ['trap' => get_class($recorder->failure) . ': ' . $recorder->failure->getMessage()];
                 } else {
                     $got = ['out' => (string) $recorder->raw];
@@ -218,11 +207,9 @@ foreach ($only as $corpus) {
         }
         $a = $ref['out'] ?? $ref['trap'] ?? $ref['map'] ?? null;
         $b = $got['out'] ?? $got['trap'] ?? $got['map'] ?? null;
-        $refused = is_string($a) && (str_contains($a, '"reason":"TOO_LARGE"') || $a === '{"status":21002}');
         $category = match (true) {
             $fault => 'facade-fault',
-            $a === $b && isset($ref['trap']) === isset($got['trap']) => 'identical',
-            isset($got['over_cap']) && strlen($body ?? '') > MAX_BODY && $refused => 'over-cap',
+            $a === $b && isset($ref['trap']) === isset($got['trap']) => strlen($body ?? '') > MAX_BODY ? 'over-cap' : 'identical',
             default => 'DIFFERENT',
         };
         if ($category === 'identical' && is_string($a) && str_contains($a, '"ok":false')) {

@@ -170,8 +170,8 @@ What runs, on Java 8 and on every Endive JDK:
 
 - `ServerEngineTest`: the managed child through `executable(path)`, the
   spike's 13 managed-mode checks: start on loopback with the token on
-  stdin, the operations, 401 without or with a wrong token, 413 answered
-  as the core answers an input over its cap (`TOO_LARGE`/21002),
+  stdin, the operations, 401 without or with a wrong token, an input over
+  the cap answered by the module (`TOO_LARGE`/21002, sent with 413),
   restart after `SIGABRT` and after `SIGKILL`,
   `close()` stops the child, and the round-trip timings (`BENCH` lines).
 - `ServerUrlTest`: the spike's 6 URL-mode checks against a standalone
@@ -189,9 +189,11 @@ What runs, on Java 8 and on every Endive JDK:
   reason in order when none works, the probe off, and a root the module
   refuses (the child exits 2; the module's `init` answer comes back, and
   `create` throws `IllegalArgumentException` as on Endive).
-- `ServerProblemTest` (no binary needed): 401, 413 and 500 `WASM_TRAP` /
-  `ABI_ERROR` / non-problem bodies, the clock read once per call and sent
-  as `X-Aprv-Now-Ms`, a throwing clock, a roots mismatch, the 413 answer,
+- `ServerProblemTest` (no binary needed): 401 and 500 `WASM_TRAP` /
+  `ABI_ERROR` / non-problem bodies, a 413 carrying the module's answer
+  read as a 200 and a 413 problem as an `INTERNAL_ERROR`, the clock read
+  once per call and sent as `X-Aprv-Now-Ms`, a throwing clock, a roots
+  mismatch,
   the roots-refusal parser, the mountinfo parser behind `noexec`
   detection.
 - `ServerNoexecTest`: mounts a `noexec` tmpfs and checks the advice a user
@@ -213,9 +215,10 @@ Every case must pass: the stand-in list of the 0.6 server is gone.
 The corpus through the server engine is `APRV_SERVER=PATH
 scripts/corpus.sh ...` (see `java-wasm-endive`): one managed child per
 `init` configuration, each call one request with its pinned clock. The
-27 calls over the server's 3,145,728-byte body cap get 413 before the
-module sees them, and the engine answers them as the module does, so the
-rows must still equal the module's reference rows byte for byte.
+27 calls over the server's 3,145,728-byte body cap get 413 with the
+module's own answer to their first 3,145,729 bytes, which the engine reads
+as it reads a 200, so the rows must still equal the module's reference
+rows byte for byte.
 
 ### Measured in lane E (2026-09-29, the G1 server)
 

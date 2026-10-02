@@ -13,7 +13,6 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeCli;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Outcome;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\InputTooLargeException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
@@ -86,6 +85,21 @@ final class CliTransportTest extends TestCase
         self::assertFileDoesNotExist('pwned', 'no shell parsed anything');
     }
 
+    /** An input over the cap goes to stdin cut to one byte over it, the cut every Wasm wrapper makes; one at the cap whole. */
+    public function testAnInputOverTheCapIsSentCutToOneByteOverIt(): void
+    {
+        $transport = $this->opened();
+        $twentyMib = str_repeat("A\xffB\0", 5 * 1024 * 1024);
+        $atCap = str_repeat('A', 3145728);
+
+        $transport->call(Operation::Receipt, $twentyMib, 1);
+        $transport->call(Operation::Receipt, $atCap, 1);
+
+        $log = $this->cli->log();
+        self::assertSame([3145729, 3145728], array_column($log, 'stdin_length'));
+        self::assertSame(hash('sha256', substr($twentyMib, 0, 3145729)), $log[0]['stdin_sha256'], 'the first bytes, unchanged');
+    }
+
     public function testTheCallReturnsTheJsonOnStdoutUnchanged(): void
     {
         $answer = "{\"verified\":false, \"x\":\"\u{e9}\"}\n  ";
@@ -94,14 +108,14 @@ final class CliTransportTest extends TestCase
         self::assertSame($answer, $this->opened()->call(Operation::Receipt, 'x', 1));
     }
 
-    public function testAnInputThatMakesTheBinaryStopReadingStillGetsItsExitStatus(): void
+    public function testAnInputThatMakesTheBinaryStopReadingStillGetsItsAnswer(): void
     {
-        $this->cli->behave(['exit' => 3, 'read_stdin' => false, 'stdout' => '']);
+        $answer = '{"verified":false,"reason":"TOO_LARGE","message":"said by the module"}';
+        $this->cli->behave(['exit' => 3, 'read_stdin' => false, 'stdout' => $answer]);
         $transport = $this->opened();
 
-        $this->expectException(InputTooLargeException::class);
         // Far more than a pipe buffer: the write fails or is cut off, and neither hangs nor raises a notice.
-        $transport->call(Operation::Receipt, str_repeat('A', 6 * 1024 * 1024), 1);
+        self::assertSame($answer, $transport->call(Operation::Receipt, str_repeat('A', 6 * 1024 * 1024), 1));
     }
 
     public function testALargeAnswerIsReadInFull(): void
@@ -116,13 +130,9 @@ final class CliTransportTest extends TestCase
     {
         $transport = $this->opened();
 
-        $this->cli->behave(['exit' => 3]);
-        try {
-            $transport->call(Operation::Receipt, 'x', 1);
-            self::fail('exit 3 is an input over the size cap');
-        } catch (InputTooLargeException) {
-            $this->addToAssertionCount(1);
-        }
+        // Exit 3: the input was over the cap, and stdout is the module's answer to it.
+        $this->cli->behave(['exit' => 3, 'stdout' => '{"status":21002}']);
+        self::assertSame('{"status":21002}', $transport->call(Operation::EndpointSandbox, 'x', 1));
 
         $this->cli->behave(['exit' => 70, 'stderr' => "wasm trap: unreachable\x1b[31m"]);
         try {
@@ -309,11 +319,15 @@ final class CliTransportTest extends TestCase
 
     // --- against the real binary --------------------------------------------------
 
-    /** The 3 MiB cap is the binary's: over it, aprv exits 3 and the façade answers as the module would. */
+    /** Over the 3 MiB cap, aprv exits 3 with the module's own answer, which the façade reads as any other. */
     public function testAnInputOverTheCapIsTooLargeOnEveryOperationThroughTheRealBinary(): void
     {
         $verifier = Verifier::create(new Config(), new CliTransport(Aprv::binary()));
         $over = str_repeat('A', 3145728 + 1);
+        $receipt = Outcome::failure($verifier->verifyReceipt(str_repeat('A', 20 * 1024 * 1024)));
+        self::assertSame(Reason::TooLarge, $receipt->reason);
+        self::assertNull($receipt->cause, 'the module\'s verdict, not a transport failure');
+        self::assertStringContainsString('3145728', $receipt->message, 'the module\'s own message');
 
         self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifyReceipt($over))->reason);
         self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifySignedData($over))->reason);

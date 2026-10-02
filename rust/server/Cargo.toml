@@ -57,6 +57,14 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "sync", "macros"] }
 # Reads a request body frame by frame, to cap it (src/http.rs, read_capped).
 http-body-util = "0.1"
+# The command line (src/main.rs). No `color` (anstream and terminal
+# detection), no `suggestions` (strsim), no `env`: APRV_LISTEN and
+# APRV_TOKEN are read by hand, an empty value meaning unset, as before.
+clap = { version = "4.6", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+# The X-Aprv-Token comparison (src/http.rs, require_token), in constant
+# time over the two tokens' SHA-256 digests. no_std: only the slice
+# comparison is used.
+subtle = { version = "2.6", default-features = false }
 
 [build-dependencies]
 sha2 = { version = "0.11", default-features = false }

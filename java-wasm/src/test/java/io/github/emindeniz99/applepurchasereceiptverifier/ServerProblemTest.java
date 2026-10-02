@@ -28,8 +28,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * How the server engine maps what a server answers, against a fake server
- * on loopback reached through {@link ServerSource#url}: 401, 413 and 500
- * problems (WASM_TRAP, ABI_ERROR, and a body that is not a problem), the
+ * on loopback reached through {@link ServerSource#url}: 401 and 500
+ * problems (WASM_TRAP, ABI_ERROR, and a body that is not a problem), a 413
+ * with the module's answer and one with a problem, the
  * clock read once per call and sent as {@code X-Aprv-Now-Ms}, a clock that
  * throws, and a server whose roots differ from the config's. No binary
  * runs, so this runs wherever the tests do; the {@code noexec} parser is
@@ -143,16 +144,6 @@ class ServerProblemTest {
         assertEquals("{\"status\":21009}", verifier.verifyReceiptEndpoint(Environment.PRODUCTION, "{}"));
     }
 
-    @Test
-    void payloadTooLargeIsTooLargeAnd21002() {
-        Verifier verifier = verifier(Config.defaults());
-        answer("/v1/signed-data/verify", 413, problemText(413, "PAYLOAD_TOO_LARGE"));
-        answer("/v1/verify-receipt/sandbox", 413, problemText(413, "PAYLOAD_TOO_LARGE"));
-        Failure failure = verifier.verifySignedData("a.b.c").failure();
-        assertEquals(Reason.TOO_LARGE, failure.reason());
-        assertEquals("{\"status\":21002}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
-    }
-
     /** The clock is read once per call, and its reading is what the server is told. */
     @Test
     void theClockIsReadOncePerCallAndSentAsNow() {
@@ -248,19 +239,44 @@ class ServerProblemTest {
                 "an unreadable answer is a process failure, not a refusal");
     }
 
-    /** The server's 413 is answered as the core answers an input over its cap. */
+    /**
+     * The server sends the module's own answer to an input over the cap with
+     * 413, and the engine reads it as it reads a 200: whatever the module
+     * said, not an answer of the engine's own.
+     */
     @Test
-    void anInputOverTheCapIsAnsweredAsTheCoreAnswersIt() {
+    void a413CarryingTheModulesAnswerIsReadAsA200() {
         Verifier verifier = verifier(Config.defaults());
-        answer("/v1/receipt/verify", 413, problemText(413, "PAYLOAD_TOO_LARGE"));
+        answers.put("/v1/receipt/verify", new String[] {
+            "413",
+            "{\"verified\":false,\"reason\":\"TOO_LARGE\",\"message\":\"said by the module\"}",
+            "application/json"
+        });
+        answers.put("/v1/signed-data/verify", new String[] {
+            "413", "{\"verified\":false,\"reason\":\"TOO_LARGE\",\"message\":\"the jws one\"}", "application/json"
+        });
+        answers.put("/v1/verify-receipt/production", new String[] {"413", "{\"status\":21002}", "application/json"});
         Failure receipt = verifier.verifyReceipt("AAAA").failure();
         assertEquals(Reason.TOO_LARGE, receipt.reason());
-        assertEquals("receipt exceeds the maximum accepted size of 3145728 bytes", receipt.message());
-        assertEquals(
-                "{\"verified\":false,\"reason\":\"TOO_LARGE\",\"message\":\"jws exceeds the maximum accepted"
-                        + " size of 262144 bytes\"}",
-                ServerVerifier.tooLargeAnswer("/v1/signed-data/verify"));
-        assertEquals("{\"status\":21002}", ServerVerifier.tooLargeAnswer("/v1/verify-receipt/production"));
+        assertEquals("said by the module", receipt.message());
+        Failure jws = verifier.verifySignedData("a.b.c").failure();
+        assertEquals(Reason.TOO_LARGE, jws.reason());
+        assertEquals("the jws one", jws.message());
+        assertEquals("{\"status\":21002}", verifier.verifyReceiptEndpoint(Environment.PRODUCTION, "{}"));
+    }
+
+    /**
+     * A 413 that is a problem document, as servers before the module
+     * answered the cap sent, is a server problem like any other: the engine
+     * does not make up the module's answer.
+     */
+    @Test
+    void a413ProblemIsAnInternalError() {
+        Verifier verifier = verifier(Config.defaults());
+        answer("/v1/receipt/verify", 413, problemText(413, "PAYLOAD_TOO_LARGE"));
+        answer("/v1/verify-receipt/sandbox", 413, problemText(413, "PAYLOAD_TOO_LARGE"));
+        assertProblem(verifier.verifyReceipt("AAAA").failure(), 413, "PAYLOAD_TOO_LARGE");
+        assertEquals("{\"status\":21009}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
     }
 
     @Test

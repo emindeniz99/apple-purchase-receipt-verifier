@@ -2,7 +2,9 @@
 //!
 //! A route picks the operation and passes the request body through
 //! unchanged. A verification result, verified or not, is HTTP 200 with the
-//! module's JSON byte for byte. Everything else is an RFC 9457 problem
+//! module's JSON byte for byte; a body over MAX_BODY is cut to MAX_BODY + 1
+//! bytes, and the module's answer to that (its own size refusal) is HTTP
+//! 413 with the same JSON. Everything else is an RFC 9457 problem
 //! (`application/problem+json`) with a `code` member.
 
 use crate::runtime::{InvokeError, Op, Verifier};
@@ -16,8 +18,9 @@ use axum::routing::{get, post};
 use axum::Router;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use subtle::ConstantTimeEq;
 
 /// The problem types, documented in README.md ("Problems").
 const PROBLEM_BASE: &str =
@@ -129,12 +132,12 @@ async fn require_token(
             .get(TOKEN_HEADER)
             .map(|v| v.as_bytes())
             .unwrap_or(b"");
-        // Constant time over the expected token's length.
-        let mut diff = (got.len() != want.len()) as u8;
-        for (i, w) in want.iter().enumerate() {
-            diff |= w ^ got.get(i).copied().unwrap_or(0);
-        }
-        if diff != 0 {
+        // Compared as SHA-256 digests, in constant time: `ct_eq` on the
+        // tokens themselves returns at once on a length mismatch, which
+        // would let timing tell the token's length. Digests are always 32
+        // bytes, so every presented token costs the same comparison.
+        let (got, want) = (Sha256::digest(got), Sha256::digest(want));
+        if !bool::from(got.as_slice().ct_eq(want.as_slice())) {
             return problem(
                 StatusCode::UNAUTHORIZED,
                 "UNAUTHORIZED",
@@ -149,10 +152,7 @@ async fn require_token(
 /// `X-Aprv-Now-Ms` (a u64 in decimal) or the server's clock.
 fn now_ms(headers: &HeaderMap) -> Result<u64, Box<Response>> {
     let Some(v) = headers.get(NOW_HEADER) else {
-        return Ok(SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0));
+        return Ok(crate::clock_ms());
     };
     let s = v.to_str().unwrap_or("");
     let ok = !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit());
@@ -183,30 +183,37 @@ async fn endpoint_sandbox(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response
 /// Past the cap the server keeps reading, and discards, up to this many
 /// bytes before it answers 413: a client that is still sending when the
 /// answer comes would otherwise see its connection reset instead of the
-/// 413 (measured: Python's http.client got EPIPE on corpus rows over the
-/// cap). A body larger than this is answered 413 and the connection closed.
+/// answer (measured: Python's http.client got EPIPE on corpus rows over the
+/// cap). A body announced larger than this is read only as far as the
+/// module needs, answered, and the connection closed; one that turns out
+/// larger while it streams is answered and closed the same way.
 pub const MAX_DRAIN: usize = 16 << 20;
 
-/// The request body, at most MAX_BODY bytes; `Err` is the problem to send.
-async fn read_capped(headers: &HeaderMap, body: Body) -> Result<Vec<u8>, Box<Response>> {
-    let too_large = || {
-        problem(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "PAYLOAD_TOO_LARGE",
-            "Content Too Large",
-            &format!("the request body is larger than {MAX_BODY} bytes"),
-        )
-    };
+/// A request body as the module gets it: at most MAX_BODY + 1 bytes, so an
+/// input over the cap still reaches the module over its cap and the module
+/// answers it (TOO_LARGE, 21002 at the endpoint), as every Wasm host cuts
+/// an input to the same length (Go's `maxInput`, Swift's `maxInputBytes`).
+struct Capped {
+    bytes: Vec<u8>,
+    /// The body was larger than MAX_BODY: the answer is 413.
+    over: bool,
+    /// Part of the body was left unread: the connection is closed.
+    close: bool,
+}
+
+/// Reads the request body; `Err` is the problem to send.
+async fn read_capped(headers: &HeaderMap, body: Body) -> Result<Capped, Box<Response>> {
+    const KEEP: usize = MAX_BODY + 1;
     let announced = headers
         .get(header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
-    if announced.is_some_and(|n| n > MAX_DRAIN as u64) {
-        return Err(Box::new(too_large()));
-    }
+    // Announced past the drain limit: read what the module needs and stop.
+    let announced_big = announced.is_some_and(|n| n > MAX_DRAIN as u64);
     let mut body = body;
-    let mut buf = Vec::with_capacity(announced.map_or(0, |n| n.min(MAX_BODY as u64) as usize));
+    let mut buf = Vec::with_capacity(announced.map_or(0, |n| n.min(KEEP as u64) as usize));
     let mut total = 0usize;
+    let mut close = false;
     while let Some(frame) = body.frame().await {
         let frame = frame.map_err(|e| {
             Box::new(problem(
@@ -219,17 +226,19 @@ async fn read_capped(headers: &HeaderMap, body: Body) -> Result<Vec<u8>, Box<Res
         let Ok(data) = frame.into_data() else {
             continue;
         };
-        total += data.len();
-        if total <= MAX_BODY {
-            buf.extend_from_slice(&data);
-        } else if total > MAX_DRAIN {
+        total = total.saturating_add(data.len());
+        let room = KEEP - buf.len();
+        buf.extend_from_slice(&data[..data.len().min(room)]);
+        if (announced_big && total >= KEEP) || total > MAX_DRAIN {
+            close = true;
             break;
         }
     }
-    if total > MAX_BODY {
-        return Err(Box::new(too_large()));
-    }
-    Ok(buf)
+    Ok(Capped {
+        over: total > MAX_BODY,
+        bytes: buf,
+        close,
+    })
 }
 
 async fn run(
@@ -256,7 +265,8 @@ async fn run(
         );
     };
     let a = app.clone();
-    let res = tokio::task::spawn_blocking(move || a.verifier.invoke(op, &body)).await;
+    let input = body.bytes;
+    let res = tokio::task::spawn_blocking(move || a.verifier.invoke(op, &input)).await;
     drop(permit);
     let internal = |d: &str| {
         problem(
@@ -266,9 +276,15 @@ async fn run(
             d,
         )
     };
-    match res {
+    let mut response = match res {
+        // A body over the cap is still the module's answer, byte for byte;
+        // only the status says the cap was passed.
         Ok(Ok(json)) => (
-            StatusCode::OK,
+            if body.over {
+                StatusCode::PAYLOAD_TOO_LARGE
+            } else {
+                StatusCode::OK
+            },
             [(header::CONTENT_TYPE, "application/json")],
             json,
         )
@@ -287,7 +303,13 @@ async fn run(
         ),
         Ok(Err(InvokeError::Internal(m))) => internal(first_line(&m)),
         Err(e) => internal(&format!("the worker was lost: {e}")),
+    };
+    if body.close {
+        response
+            .headers_mut()
+            .insert(header::CONNECTION, HeaderValue::from_static("close"));
     }
+    response
 }
 
 fn first_line(s: &str) -> &str {

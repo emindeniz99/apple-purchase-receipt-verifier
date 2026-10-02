@@ -546,9 +546,10 @@ The limits are the module's, fixed in every language of this library, and not
   `verifyReceiptEndpoint()`. A larger body is `Reason::TooLarge` (status 21002).
 - **JWS size** (256 KiB, 262,144 bytes): the compact JWS given to
   `verifySignedData()`. A larger JWS is `Reason::TooLarge`.
-- **Anything over 3 MiB** never reaches the module: `aprv` refuses it (exit
-  status 3, HTTP 413) and the façade answers as the module answers an
-  over-cap input.
+- **Anything over 3 MiB** is cut to 3,145,729 bytes before either transport
+  sends it, the cut every Wasm wrapper of this library makes, so the module
+  still refuses it for its size; `aprv` returns that answer with exit status
+  3 or HTTP 413, and the façade reads it like any other.
 - **ASN.1 nesting depth 32**, **10 embedded certificates**, **4 SignerInfos**
   and **six certificates below the anchor**: the module checks them before
   any certificate is decoded or any signature is checked, and answers
@@ -637,8 +638,9 @@ server to check that a wrong hash installs nothing.
 **The corpus.** `tools/corpus.php` runs the corpus call files (1,179 rows plus
 5,000 mutants, every clock pinned) through the façade over one transport and
 compares each row byte for byte with the module's own answers. A row whose
-input is over 3,145,728 bytes is refused by `aprv` first (exit 3, HTTP 413) and
-counts as answered when the module's answer is the size refusal.
+input is over 3,145,728 bytes is counted as over-cap: `aprv` sends the
+module's answer to its first 3,145,729 bytes with exit 3 or HTTP 413, and that
+answer must equal the module's row.
 `tools/rerun.sh APRV_BINARY G1_DIR` runs the phpunit suites and the corpus over
 both transports as one command.
 

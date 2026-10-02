@@ -23,10 +23,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * child per {@code init} configuration (the roots go in the handshake, the
  * empty configuration is the built-in roots), each call one request with the
  * call's clock as {@code X-Aprv-Now-Ms}. A 200 is the module's answer as
- * written; a 413 (a body over the server's cap, which the module never sees)
- * is {@link ServerVerifier#tooLargeAnswer}, the answer the facade decodes;
- * a roots refusal at start is the module's {@code init} answer; any other
- * status is a {@code trap} row.
+ * written, and so is a 413 (a body over the server's cap, whose first
+ * 3,145,729 bytes the module answered with its size refusal); a roots
+ * refusal at start is the module's {@code init} answer; any other status
+ * is a {@code trap} row.
  *
  * <pre>java -cp JAR:TEST_CLASSES:DEPS ...ServerCorpusMain CALLS.jsonl BINARY [THREADS] &gt; OUT.jsonl</pre>
  */
@@ -129,12 +129,11 @@ public final class ServerCorpusMain {
                 : c.get("now").asLong();
         try {
             HttpConn.Response response = connection.send("POST", path, input, now);
-            if (response.status == 200) {
+            if (ServerVerifier.moduleAnswered(response)) {
+                if (response.status == 413) {
+                    overCap.incrementAndGet();
+                }
                 return "{\"id\":" + id + ",\"out\":" + quote(response.text()) + "}";
-            }
-            if (response.status == 413) {
-                overCap.incrementAndGet();
-                return "{\"id\":" + id + ",\"out\":" + quote(ServerVerifier.tooLargeAnswer(path)) + "}";
             }
             problems.incrementAndGet();
             return "{\"id\":" + id + ",\"trap\":" + quote("HTTP " + response.status + " " + response.text()) + "}";

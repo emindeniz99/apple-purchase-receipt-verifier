@@ -29,7 +29,7 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 
 | Flag | Commands | Meaning |
 |---|---|---|
-| `--roots FILE` | serve, CLI | The trusted roots: one base64 root per line (DER, or PEM bytes, which the module reads as is), or PEM `CERTIFICATE` blocks, which the `pem` crate unwraps to DER so `/v1/info` reports DER fingerprints; `#` comments and blank lines are skipped. Without it, the three Apple roots built into the module |
+| `--roots FILE` | serve, CLI | A file of trusted roots; repeat the flag for several files, whose roots add up in order. A file whose first byte is 0x30 (an ASN.1 SEQUENCE, the rule the core uses) is one DER certificate, such as Apple's `.cer` files, passed to `init` as it is. Any other file is text: one base64 root per line (DER, or PEM bytes, which the module reads as is), or PEM `CERTIFICATE` blocks, which the `pem` crate unwraps to DER so `/v1/info` reports DER fingerprints; `#` comments and blank lines are skipped. An empty file is refused. Without the flag, the three Apple roots built into the module |
 | `--now-ms N` | CLI | The verification clock, ms since the Unix epoch (u64). Default: the system clock |
 | `--listen ADDR` | serve | The bind address; overrides `APRV_LISTEN`. Default `127.0.0.1:8080` |
 | `--token-file FILE` | serve | The token `/v1/` routes require (trimmed). Overrides `APRV_TOKEN` |
@@ -37,6 +37,9 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `--workers N` | serve | Concurrent verifications. Default: the CPU count |
 | `--time-limit-ms N` | serve, CLI | The guest time limit per call. Default 10,000 |
 | `--component FILE.wasm` | all | The full build only: compile this component at start instead of the embedded one (development and tests) |
+
+`aprv --help` and `aprv <command> --help` print the same, generated from
+the parser (`clap`); a bad flag or value exits 2.
 
 | Variable | Meaning |
 |---|---|
@@ -53,7 +56,7 @@ environment variables of their own.
 |---|---|
 | 0 | A result: the module's JSON is on stdout, verified or not |
 | 2 | Usage or configuration: a bad flag, an unreadable `--roots` file, roots `init` refused |
-| 3 | stdin is over 3,145,728 bytes; the module never saw it |
+| 3 | stdin is over 3,145,728 bytes. The module got its first 3,145,729 bytes and its answer, its own size refusal, is on stdout as for 0 |
 | 70 | A trap, an ABI fault or a load failure; the message is on stderr |
 
 The CLI never drops the Wasmtime runtime before it exits
@@ -80,6 +83,13 @@ process (`docs/evidence/2026-09-27-static-musl-server.md` §3).
   `rust/bindings/wire/schema/verify-receipt-result.schema.json` and
   `verify-signed-data-result.schema.json`, which the OpenAPI document
   references.
+- **A body over 3,145,728 bytes is HTTP 413 with the module's answer.**
+  The server hands the module the body's first 3,145,729 bytes, as every
+  Wasm host cuts an input, so the module still sees it over its cap and
+  answers its own size refusal: `TOO_LARGE`, or `{"status":21002}` at the
+  endpoint. That JSON is the 413's body, byte for byte, with the 200's
+  schema; a client reads it as it reads a 200. The cap and the refusal's
+  wording live in the module alone.
 - **`X-Aprv-Now-Ms`** (u64, decimal) is the call's clock: the
   certificate-validity instant when the input states no usable date, and
   `request_date` at the endpoint. Without it, the server's clock.
@@ -93,7 +103,8 @@ process (`docs/evidence/2026-09-27-static-musl-server.md` §3).
 
 ### Problems
 
-Everything that is not a verification result is an RFC 9457 problem,
+Everything that is not a verification result (a 200, or the 413 above)
+is an RFC 9457 problem,
 `application/problem+json`, with `type` (a link to the heading below),
 `title`, `status`, `detail` and `code`.
 
@@ -110,11 +121,6 @@ or wrong.
 
 #### method-not-allowed
 405 `METHOD_NOT_ALLOWED`: the route exists for another method.
-
-#### payload-too-large
-413 `PAYLOAD_TOO_LARGE`: the body is over 3,145,728 bytes, Apple's own
-verifyReceipt limit. The module never sees it. A client maps it to
-`TOO_LARGE` (at the endpoint, Apple's `{"status":21002}`).
 
 #### wasm-trap
 500 `WASM_TRAP`: the component trapped, the guest time limit and the
@@ -159,7 +165,7 @@ A bad handshake exits 2 with a message on stderr and prints no address.
 
 | Limit | Value |
 |---|---|
-| Request body, CLI stdin | 3,145,728 bytes: 413 or exit 3 before the module sees it. Past the cap the server reads and discards up to 16 MiB before answering, so a client still sending gets the 413 rather than a reset; a larger body (or `Content-Length`) is answered at once |
+| Request body, CLI stdin | 3,145,728 bytes, Apple's own verifyReceipt limit. A larger input reaches the module cut to 3,145,729 bytes; its answer is a 413 or exit 3. Past the cap the server reads and discards up to 16 MiB before answering, so a client still sending gets the answer rather than a reset, and keeps its connection. A body announced larger (`Content-Length`) is read to 3,145,729 bytes, answered, and the connection closed; so is one that streams past 16 MiB |
 | Linear memory per store | 256 MiB (`StoreLimits`, `trap_on_grow_failure`); a larger grow traps |
 | Instances per store | one component instance (3 core instances: wit-component's shim, the module, the fixup) |
 | Guest time per call | 10 s by default (`--time-limit-ms`), by epoch interruption with a 10 ms tick |
