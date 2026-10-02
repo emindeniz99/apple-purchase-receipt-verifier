@@ -2045,11 +2045,7 @@ jobs:
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/wasm-tools"
-          pin() { sed -n "s/^$1=\(.*\)$/\1/p" tools/wasm-toolchain.sh; }
-          curl -fsSL --retry 4 --retry-delay 2 -o "$RUNNER_TEMP/wasm-tools.tar.gz" "$(pin WASM_TOOLS_URL)"
-          echo "$(pin WASM_TOOLS_SHA256)  $RUNNER_TEMP/wasm-tools.tar.gz" | sha256sum -c -
-          mkdir -p "$dir"
-          tar -C "$dir" --strip-components=1 -xzf "$RUNNER_TEMP/wasm-tools.tar.gz"
+          .github/scripts/install-wasm-tools.sh "$dir"
           echo "$dir" >> "$GITHUB_PATH"
           PATH="$dir:$PATH" tools/check-wasm.sh "$RUNNER_TEMP/aprv" rust/bindings/abi/wit/aprv.wit
       - name: the ABI tests on a hand-rolled host
@@ -2273,16 +2269,12 @@ jobs:
       - name: the managed mode
         run: python3 rust/server/scripts/managed-smoke.py --aprv "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl"
       # wasm-tools from its pinned release archive (tools/wasm-toolchain.sh
-      # holds the one pin), to assemble the hostile component the full
-      # build step 1 left serves.
+      # holds the one pin; .github/scripts/install-wasm-tools.sh fetches it),
+      # to assemble the hostile component the full build step 1 left serves.
       - name: the hostile component through a real server
         run: |
           set -euo pipefail
-          pin() { sed -n "s/^$1=\(.*\)$/\1/p" tools/wasm-toolchain.sh; }
-          curl -fsSL --retry 4 --retry-delay 2 -o "$RUNNER_TEMP/wasm-tools.tar.gz" "$(pin WASM_TOOLS_URL)"
-          echo "$(pin WASM_TOOLS_SHA256)  $RUNNER_TEMP/wasm-tools.tar.gz" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/wasm-tools"
-          tar -C "$RUNNER_TEMP/wasm-tools" --strip-components=1 -xzf "$RUNNER_TEMP/wasm-tools.tar.gz"
+          .github/scripts/install-wasm-tools.sh "$RUNNER_TEMP/wasm-tools"
           PATH="$RUNNER_TEMP/wasm-tools:$PATH" rust/server/scripts/hostile-smoke.sh rust/server/target/x86_64-unknown-linux-gnu/release/aprv
 
   # aprv-server (MIGRATION.md Phase 2): lint and tests with the component
