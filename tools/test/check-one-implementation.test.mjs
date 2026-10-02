@@ -142,6 +142,14 @@ const FILES = {
     ['// \\#(SecTrustEvaluateWithError(t, nil))', HIT],
     ['"""#', NO],
   ],
+  // The allowlisted file: its one scoped import passes, nothing wider does.
+  'swift/Sources/ApplePurchaseReceiptVerifier/Host/AprvModule.swift': [
+    ['import struct Crypto.SHA256', NO],
+    ['import Crypto', HIT],
+    ['import struct Crypto.SHA256Digest', HIT],
+    ['import struct Crypto.P256', HIT],
+    ['import struct Crypto.SHA256; import CryptoKit', HIT],
+  ],
   'swift/Sources/X/Comments.swift': [
     ['// import Security', NO],
     ['/// SecTrust', NO],

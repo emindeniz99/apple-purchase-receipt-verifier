@@ -90,6 +90,11 @@ const LANGS = {
       [/\bimport\s+(?:(?:struct|class|enum|protocol|func|var|let|typealias)\s+)?(Crypto\w*|_CryptoExtras|X509|SwiftASN1|Security\w*|CommonCrypto)\b/, 'a Swift crypto/X.509/ASN.1 module'],
       [/\bSec(Trust|Certificate)/, 'the Security framework\'s trust or certificate API'],
     ],
+    // Only the SHA-256 type, by a scoped import: a plain `import Crypto`, or
+    // any other declaration of it, is still a hit in this file too.
+    allow: [
+      { file: 'swift/Sources/ApplePurchaseReceiptVerifier/Host/AprvModule.swift', token: /\bimport struct Crypto\.SHA256\b/, why: 'checks the bundled aprv.wasm against its pinned SHA-256 (swift-crypto; CryptoKit on Apple platforms)' },
+    ],
     comments: 'swift',
   },
   ruby: {
