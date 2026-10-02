@@ -524,6 +524,37 @@ fn a_refused_root_stops_the_server_at_start() {
     );
 }
 
+/// A truncated `.cer` passes the roots file reader (its first byte is
+/// 0x30, so it is taken as DER, unparsed) and the module's `init` refuses
+/// it: the CLI exits 2, and `serve` stops at start as for any refused root.
+#[test]
+fn a_truncated_der_root_file_is_refused_by_init() {
+    let der = std::fs::read(repo("certs/AppleRootCA-G3.cer")).unwrap();
+    let roots = Roots::from_files(&[("cut.cer", &der[..der.len() / 2])]).unwrap();
+    let v = real();
+    let refused = v
+        .runtime
+        .ready_instance(&roots.config_json())
+        .unwrap()
+        .err()
+        .expect("init refuses a truncated certificate");
+    assert!(refused.contains(r#""ok":false"#), "{refused}");
+    let mut out = Vec::new();
+    let op = Op::VerifyReceipt { now_ms: NOW };
+    assert_eq!(
+        crate::answer(&v.runtime, &roots.config_json(), op, b"", false, &mut out),
+        2
+    );
+    assert!(out.is_empty());
+    // The whole file is a root the module takes.
+    let whole = Roots::from_files(&[("AppleRootCA-G3.cer", &der)]).unwrap();
+    assert!(v
+        .runtime
+        .ready_instance(&whole.config_json())
+        .unwrap()
+        .is_ok());
+}
+
 #[test]
 fn a_store_holds_exactly_one_component_instance() {
     let rt = Runtime::new(Load::File(&component_path()), 10_000).unwrap();

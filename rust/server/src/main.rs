@@ -99,9 +99,10 @@ struct OneShotArgs {
     /// The verification clock, ms since the Unix epoch [default: the system clock]
     #[arg(long, value_name = "N")]
     now_ms: Option<u64>,
-    /// The trusted roots (README.md, "Flags and environment") [default: the module's Apple roots]
+    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
+    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
     #[arg(long, value_name = "FILE")]
-    roots: Option<String>,
+    roots: Vec<String>,
     /// The guest time limit per call [default: 10000]
     #[arg(long, value_name = "N")]
     time_limit_ms: Option<NonZeroU64>,
@@ -117,9 +118,10 @@ struct ServeArgs {
     /// The child of a parent process: token and roots on stdin, 127.0.0.1:0
     #[arg(long, conflicts_with_all = ["listen", "roots", "token_file"])]
     managed: bool,
-    /// The trusted roots (README.md, "Flags and environment") [default: the module's Apple roots]
+    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
+    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
     #[arg(long, value_name = "FILE")]
-    roots: Option<String>,
+    roots: Vec<String>,
     /// The token /v1/ routes require; overrides APRV_TOKEN
     #[arg(long, value_name = "FILE")]
     token_file: Option<String>,
@@ -187,14 +189,18 @@ fn load(component: &ComponentArg, time_limit_ms: Option<NonZeroU64>) -> Result<R
     )
 }
 
-fn roots_from(roots: &Option<String>) -> Result<Roots, String> {
-    match roots {
-        None => Ok(Roots::Defaults),
-        Some(p) => {
-            let text = std::fs::read_to_string(p).map_err(|e| format!("--roots {p}: {e}"))?;
-            Roots::from_file_text(&text).map_err(|e| format!("--roots {p}: {e}"))
-        }
-    }
+/// The `--roots` files, in order; none means the module's Apple roots.
+fn roots_from(paths: &[String]) -> Result<Roots, String> {
+    let files = paths
+        .iter()
+        .map(|p| {
+            std::fs::read(p)
+                .map(|b| (p.as_str(), b))
+                .map_err(|e| format!("--roots {p}: {e}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let files: Vec<(&str, &[u8])> = files.iter().map(|(p, b)| (*p, b.as_slice())).collect();
+    Roots::from_files(&files)
 }
 
 // ------------------------------------------------------------ one-shot CLI
@@ -662,5 +668,14 @@ mod cli_tests {
             _ => unreachable!(),
         };
         assert_eq!(workers, Some(2));
+        // --roots is the one flag that adds up, in order.
+        let roots = match parse(&["verify-receipt", "--roots", "a.cer", "--roots", "b.pem"])
+            .unwrap()
+            .command
+        {
+            Cmd::VerifyReceipt(a) => a.roots,
+            _ => unreachable!(),
+        };
+        assert_eq!(roots, ["a.cer", "b.pem"]);
     }
 }

@@ -16,7 +16,7 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
-those of 2026-10-02 amended R31, R34 and R41.
+those of 2026-10-02 amended R31, R34, R39 and R41.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1238,6 +1238,15 @@ caller's root bytes as they are, and the core reads DER or PEM.
   bytes, one fingerprint however many certificates they hold, so a
   client holding the DER fails closed against it. Give such a client a
   file of DER lines or PEM blocks.
+- **`--roots` also takes a DER certificate file, and repeats** (owner,
+  2026-10-02; Q14). A file whose first byte is `0x30`, the rule the core
+  applies to a root entry, is one DER certificate, so Apple's `.cer`
+  files go in as they are; any other file is read as above. The server
+  does not parse the DER: it passes it to `init` whole, so a truncated or
+  otherwise broken `.cer` is the module's refusal at start (exit 2), and
+  `/v1/info` reports the SHA-256 of the file's bytes, which is the DER's.
+  Each `--roots` flag adds its file's roots, in order; managed mode, which
+  takes its roots on stdin, is unchanged.
 
 ---
 

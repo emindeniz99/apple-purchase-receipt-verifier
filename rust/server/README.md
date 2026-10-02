@@ -29,7 +29,7 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 
 | Flag | Commands | Meaning |
 |---|---|---|
-| `--roots FILE` | serve, CLI | The trusted roots: one base64 root per line (DER, or PEM bytes, which the module reads as is), or PEM `CERTIFICATE` blocks, which the `pem` crate unwraps to DER so `/v1/info` reports DER fingerprints; `#` comments and blank lines are skipped. Without it, the three Apple roots built into the module |
+| `--roots FILE` | serve, CLI | A file of trusted roots; repeat the flag for several files, whose roots add up in order. A file whose first byte is 0x30 (an ASN.1 SEQUENCE, the rule the core uses) is one DER certificate, such as Apple's `.cer` files, passed to `init` as it is. Any other file is text: one base64 root per line (DER, or PEM bytes, which the module reads as is), or PEM `CERTIFICATE` blocks, which the `pem` crate unwraps to DER so `/v1/info` reports DER fingerprints; `#` comments and blank lines are skipped. An empty file is refused. Without the flag, the three Apple roots built into the module |
 | `--now-ms N` | CLI | The verification clock, ms since the Unix epoch (u64). Default: the system clock |
 | `--listen ADDR` | serve | The bind address; overrides `APRV_LISTEN`. Default `127.0.0.1:8080` |
 | `--token-file FILE` | serve | The token `/v1/` routes require (trimmed). Overrides `APRV_TOKEN` |
