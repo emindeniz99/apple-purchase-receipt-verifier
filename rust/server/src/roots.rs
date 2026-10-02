@@ -4,7 +4,8 @@
 //! `GET /v1/info` so a client can refuse a server configured otherwise.
 //!
 //! The server does not parse a certificate: whether a root is one is
-//! `init`'s answer. Base64 is decoded here only to fingerprint the DER.
+//! `init`'s answer. Base64 lines and PEM blocks (the `pem` crate) are
+//! decoded here only to fingerprint the DER.
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -59,44 +60,58 @@ impl Roots {
         })
     }
 
-    /// A `--roots` file: one base64 DER per line, or PEM `CERTIFICATE`
-    /// blocks. Blank lines and lines starting with `#` are ignored. An
-    /// empty file is refused: an empty root set is a caller's mistake, never
-    /// a request for the defaults (omit `--roots` for those).
+    /// A `--roots` file: one base64 root per line, or PEM `CERTIFICATE`
+    /// blocks, which the `pem` crate decodes to DER. Blank lines and lines
+    /// starting with `#` are ignored. An empty file is refused: an empty
+    /// root set is a caller's mistake, never a request for the defaults
+    /// (omit `--roots` for those).
+    ///
+    /// The lines from a `-----BEGIN` line to the next line starting with
+    /// `-----` are one block, handed to `pem::parse` whole: it matches the
+    /// END label to the BEGIN label and decodes the base64 between them.
     pub fn from_file_text(text: &str) -> Result<Roots, String> {
         let mut ders = Vec::new();
-        let mut pem: Option<String> = None;
+        let mut block: Option<String> = None;
         for (n, raw) in text.lines().enumerate() {
             let line = raw.trim();
-            if let Some(body) = pem.as_mut() {
-                if line == "-----END CERTIFICATE-----" {
-                    ders.push(decode(body).map_err(|e| format!("line {}: PEM block: {e}", n + 1))?);
-                    pem = None;
-                } else if line.starts_with("-----") {
-                    return Err(format!(
-                        "line {}: unexpected {line} inside a PEM block",
-                        n + 1
-                    ));
-                } else {
-                    body.push_str(line);
+            // A delimiter line opens and closes with its own five dashes
+            // (so it is at least ten characters long), and no text follows
+            // the closing ones, which `pem::parse` would otherwise skip.
+            if line.starts_with("-----") && (line.len() < 10 || !line.ends_with("-----")) {
+                return Err(format!("line {}: malformed PEM line {line}", n + 1));
+            }
+            if let Some(b) = block.as_mut() {
+                // Blank lines would read as the end of RFC 1421 headers.
+                if line.is_empty() {
+                    continue;
+                }
+                // `pem` drops whitespace inside the base64; this file never
+                // allowed it there.
+                if !line.starts_with("-----") && line.contains(char::is_whitespace) {
+                    return Err(format!("line {}: whitespace inside PEM base64", n + 1));
+                }
+                b.push_str(line);
+                b.push('\n');
+                if line.starts_with("-----") {
+                    ders.push(
+                        certificate(b).map_err(|e| format!("line {}: PEM block: {e}", n + 1))?,
+                    );
+                    block = None;
                 }
                 continue;
             }
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
-            if line == "-----BEGIN CERTIFICATE-----" {
-                pem = Some(String::new());
+            if line.starts_with("-----BEGIN ") {
+                block = Some(format!("{line}\n"));
             } else if line.starts_with("-----") {
-                return Err(format!(
-                    "line {}: only CERTIFICATE PEM blocks are read, not {line}",
-                    n + 1
-                ));
+                return Err(format!("line {}: {line} outside a PEM block", n + 1));
             } else {
                 ders.push(decode(line).map_err(|e| format!("line {}: {e}", n + 1))?);
             }
         }
-        if pem.is_some() {
+        if block.is_some() {
             return Err("a PEM block has no END line".into());
         }
         if ders.is_empty() {
@@ -135,6 +150,21 @@ impl Roots {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Roots::Configured(ders))
     }
+}
+
+/// One PEM block's DER, if the block is a `CERTIFICATE`.
+fn certificate(block: &str) -> Result<Vec<u8>, String> {
+    let p = pem::parse(block).map_err(|e| e.to_string())?;
+    if p.tag() != "CERTIFICATE" {
+        return Err(format!(
+            "only CERTIFICATE PEM blocks are read, not {}",
+            p.tag()
+        ));
+    }
+    if p.contents().is_empty() {
+        return Err("empty".into());
+    }
+    Ok(p.into_contents())
 }
 
 fn decode(s: &str) -> Result<Vec<u8>, String> {
@@ -183,12 +213,108 @@ mod tests {
         assert_eq!(r.fingerprints()[0], crate::manifest::sha256_hex(&[1, 2, 3]));
     }
 
+    /// `certs/`'s three Apple roots as one PEM bundle, wrapped at 64
+    /// columns with CRLF line ends, read back to the very DER of the files:
+    /// `/v1/info` reports the same fingerprints for them as for the
+    /// defaults, which is what the Java and PHP clients compare.
+    #[test]
+    fn a_pem_bundle_of_the_apple_roots_reads_back_to_their_der() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
+        let mut names: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        names.sort();
+        let ders: Vec<Vec<u8>> = names
+            .iter()
+            .map(|n| std::fs::read(format!("{dir}{}", n.to_string_lossy())).unwrap())
+            .collect();
+        let mut bundle = String::from("# the Apple roots\r\n");
+        for der in &ders {
+            bundle += "-----BEGIN CERTIFICATE-----\r\n";
+            for chunk in STANDARD.encode(der).as_bytes().chunks(64) {
+                bundle += std::str::from_utf8(chunk).unwrap();
+                bundle += "\r\n";
+            }
+            bundle += "-----END CERTIFICATE-----\r\n\r\n";
+        }
+        let r = Roots::from_file_text(&bundle).unwrap();
+        assert_eq!(r, Roots::Configured(ders));
+        assert_eq!(r.fingerprints(), DEFAULT_ROOT_SHA256);
+    }
+
+    /// A PEM file as a tool wrote it (Apple's test CA in `fixtures/`), its
+    /// DER SHA-256 taken with `openssl x509 -outform DER | sha256sum`, and
+    /// the same certificate as a base64 DER line reads to the same root.
+    #[test]
+    fn a_pem_file_and_its_base64_line_have_one_fingerprint() {
+        const TEST_CA_SHA256: &str =
+            "48aa70550eab2cd71d51dced44e88f9143b6bc0e1a6f430c19ba9a7cf36654e6";
+        let pem = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/apple-official/certs/testCA.pem"
+        ))
+        .unwrap();
+        let r = Roots::from_file_text(&pem).unwrap();
+        assert_eq!(r.fingerprints(), [TEST_CA_SHA256]);
+        let Roots::Configured(ders) = &r else {
+            unreachable!()
+        };
+        let line = STANDARD.encode(&ders[0]);
+        let both = Roots::from_file_text(&format!("{line}\n{pem}")).unwrap();
+        assert_eq!(both.fingerprints(), [TEST_CA_SHA256, TEST_CA_SHA256]);
+    }
+
     #[test]
     fn refuses_empty_and_broken_files() {
-        assert!(Roots::from_file_text("# nothing\n").is_err());
-        assert!(Roots::from_file_text("not base64!\n").is_err());
-        assert!(Roots::from_file_text("-----BEGIN CERTIFICATE-----\nAQID\n").is_err());
-        assert!(Roots::from_file_text("-----BEGIN PRIVATE KEY-----\n").is_err());
+        let refused = |text: &str| Roots::from_file_text(text).unwrap_err();
+        assert!(refused("# nothing\n").contains("holds no root"));
+        assert!(refused("not base64!\n").starts_with("line 1: not standard base64"));
+        // A block that never ends, a nested BEGIN, END for another label.
+        assert_eq!(
+            refused("-----BEGIN CERTIFICATE-----\nAQID\n"),
+            "a PEM block has no END line"
+        );
+        assert!(refused(
+            "-----BEGIN CERTIFICATE-----\nAQID\n-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\n"
+        )
+        .starts_with("line 3: PEM block:"));
+        assert!(
+            refused("-----BEGIN CERTIFICATE-----\nAQID\n-----END X509 CRL-----\n")
+                .starts_with("line 3: PEM block: mismatching")
+        );
+        // Only CERTIFICATE blocks, whatever else a PEM file holds.
+        assert_eq!(
+            refused("-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----\n"),
+            "line 3: PEM block: only CERTIFICATE PEM blocks are read, not PRIVATE KEY"
+        );
+        assert!(refused("-----BEGIN PRIVATE KEY-----\n").contains("no END line"));
+        // A body that is not base64, an empty body, and an RFC 1421 header.
+        assert!(
+            refused("-----BEGIN CERTIFICATE-----\nAQ!D\n-----END CERTIFICATE-----\n")
+                .starts_with("line 3: PEM block: invalid data")
+        );
+        assert_eq!(
+            refused("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n"),
+            "line 2: PEM block: empty"
+        );
+        assert!(refused(
+            "-----BEGIN CERTIFICATE-----\nProc-Type:4,ENCRYPTED\n\nAQID\n-----END CERTIFICATE-----\n"
+        )
+        .starts_with("line 5: PEM block: invalid data"));
+        assert_eq!(
+            refused("-----BEGIN CERTIFICATE-----\nAQ ID\n-----END CERTIFICATE-----\n"),
+            "line 2: whitespace inside PEM base64"
+        );
+        // Text after a delimiter's dashes, and a stray delimiter.
+        assert_eq!(
+            refused("-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----AQID\n"),
+            "line 3: malformed PEM line -----END CERTIFICATE-----AQID"
+        );
+        assert_eq!(
+            refused("-----END CERTIFICATE-----\n"),
+            "line 1: -----END CERTIFICATE----- outside a PEM block"
+        );
     }
 
     #[test]
