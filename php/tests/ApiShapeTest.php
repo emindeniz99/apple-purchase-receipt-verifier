@@ -288,10 +288,26 @@ final class ApiShapeTest extends TestCase
      */
     public function testThePackageCarriesNoCopyOfTheRoots(): void
     {
-        self::assertNull(Config::defaults()->roots);
         self::assertNull((new Config())->roots);
         self::assertFalse(class_exists('EminDeniz99\\ApplePurchaseReceiptVerifier\\AppleRootCerts'));
         self::assertDirectoryDoesNotExist(__DIR__ . '/../certs');
+    }
+
+    /**
+     * `new Config()` is the one way to get the defaults. `Config::defaults()`
+     * only called it, and went on 2026-10-02 (DECISIONS.md R41), as 0.7's
+     * builder had: the constructor is the class's one method, so no
+     * `defaults()` and no `builder()`.
+     */
+    public function testConfigIsBuiltWithItsConstructorAlone(): void
+    {
+        self::assertSame(
+            ['__construct'],
+            array_map(
+                static fn (\ReflectionMethod $method): string => $method->getName(),
+                (new ReflectionClass(Config::class))->getMethods(),
+            ),
+        );
     }
 
     /** @return VerificationResult<ReceiptPayload> */
@@ -299,7 +315,7 @@ final class ApiShapeTest extends TestCase
     {
         $wire = '{"verified":true,"payload":{"receipt_type":"ProductionSandbox","bundle_id":"com.example.app",'
             . '"receipt_creation_date_ms":1722945600000,"in_app":[],"unknown_attributes":{}}}';
-        $result = Verifier::create(Config::defaults(), FakeTransport::answering($wire))->verifyReceipt('x');
+        $result = Verifier::create(new Config(), FakeTransport::answering($wire))->verifyReceipt('x');
         self::assertTrue($result->verified());
 
         return $result;

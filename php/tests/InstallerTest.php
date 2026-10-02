@@ -106,7 +106,7 @@ final class InstallerTest extends TestCase
         self::assertSame(['GET /' . self::ASSET], array_column($this->server->requests(), 'key'));
 
         // The installed file is the working binary: a Verifier opens over it.
-        Verifier::create(Config::defaults(), new CliTransport($final));
+        Verifier::create(new Config(), new CliTransport($final));
     }
 
     public function testAWrongHashInstallsNothing(): void

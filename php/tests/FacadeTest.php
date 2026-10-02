@@ -54,7 +54,7 @@ final class FacadeTest extends TestCase
 
     private static function verifier(FakeTransport $transport, ?Config $config = null): Verifier
     {
-        return Verifier::create($config ?? Config::defaults(), $transport);
+        return Verifier::create($config ?? new Config(), $transport);
     }
 
     public function testAVerifiedReceiptIsMappedFieldForField(): void
@@ -256,21 +256,20 @@ final class FacadeTest extends TestCase
         $refusal = new InvalidArgumentException('the verification module refused the roots');
 
         $this->expectExceptionObject($refusal);
-        Verifier::create(Config::defaults(), new FakeTransport(static fn () => '', $refusal));
+        Verifier::create(new Config(), new FakeTransport(static fn () => '', $refusal));
     }
 
     public function testAnAbiMismatchIsAHardFailureAtCreate(): void
     {
         $abi = new RuntimeException('speaks ABI other');
         $this->expectExceptionObject($abi);
-        Verifier::create(Config::defaults(), new FakeTransport(static fn () => '', $abi));
+        Verifier::create(new Config(), new FakeTransport(static fn () => '', $abi));
     }
 
     // --- roots and clock -------------------------------------------------------
 
     public function testTheBuiltInRootsAreNullAndCustomRootsGoThroughAsGiven(): void
     {
-        self::assertNull(Config::defaults()->roots);
         self::assertNull((new Config())->roots, 'a Config that is never given roots keeps the built-in ones');
 
         $transport = FakeTransport::answering('{}');
@@ -278,7 +277,7 @@ final class FacadeTest extends TestCase
         self::assertSame([["\x30\x00", "\x01\xff"]], $transport->opened);
 
         $builtIn = FakeTransport::answering('{}');
-        Verifier::create(Config::defaults(), $builtIn);
+        Verifier::create(new Config(), $builtIn);
         self::assertSame([null], $builtIn->opened, 'no roots given reaches the transport as null, the module\'s built-in roots');
     }
 

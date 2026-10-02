@@ -49,7 +49,7 @@ published artifact and the claim least exercised anywhere else.
           php verify-smoke.php
 ```
 
-The smoke script must, at minimum, `Verifier::create(Config::defaults())` over
+The smoke script must, at minimum, `Verifier::create(new Config())` over
 the default CLI transport and verify a genuine Apple-signed receipt: that is
 what catches a package that installed but shipped no `php/bin/aprv-install` or
 no `php/binaries.json`, an installer that cannot fetch the release's binary,

@@ -312,7 +312,7 @@ final class CliTransportTest extends TestCase
     /** The 3 MiB cap is the binary's: over it, aprv exits 3 and the façade answers as the module would. */
     public function testAnInputOverTheCapIsTooLargeOnEveryOperationThroughTheRealBinary(): void
     {
-        $verifier = Verifier::create(Config::defaults(), new CliTransport(Aprv::binary()));
+        $verifier = Verifier::create(new Config(), new CliTransport(Aprv::binary()));
         $over = str_repeat('A', 3145728 + 1);
 
         self::assertSame(Reason::TooLarge, Outcome::failure($verifier->verifyReceipt($over))->reason);

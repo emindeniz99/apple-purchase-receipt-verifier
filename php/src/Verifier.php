@@ -30,7 +30,7 @@ use Throwable;
  * call; {@see Transport\HttpTransport} talks to a server the caller runs.
  *
  * ```php
- * $verifier = Verifier::create(Config::defaults());
+ * $verifier = Verifier::create(new Config());
  * $result = $verifier->verifyReceipt($base64FromTheClient);
  * if ($result->verified()) {
  *     $receipt = $result->payload;
@@ -79,7 +79,7 @@ final class Verifier
         }
         if ($config->roots === []) {
             throw new InvalidArgumentException(
-                'the root set is empty: leave the roots out (Config::defaults()) for the built-in Apple roots, or give at least one',
+                'the root set is empty: leave the roots out (`new Config()`) for the built-in Apple roots, or give at least one',
             );
         }
         foreach ($config->roots ?? [] as $root) {

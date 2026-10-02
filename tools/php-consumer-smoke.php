@@ -15,7 +15,7 @@ declare(strict_types=1);
  *
  * Two verifications, one per verify method, both against fixtures the
  * shared cases.json pins: a genuine Apple-signed sandbox receipt against the
- * real pinned Apple roots (Config::defaults()), and the generated StoreKit 2
+ * real pinned Apple roots (`new Config()`), and the generated StoreKit 2
  * transaction against its own generated root. Digests are checked the way
  * php/tests/Support/Fixtures07.php checks them, because a smoke that
  * verifies fixture bytes nobody pinned proves nothing.
@@ -82,7 +82,7 @@ if (!str_contains((string) $reflected, '/vendor/')) {
     exit(1);
 }
 // The package carries no copy of the roots: null means the module's built-in ones.
-$check('Config::defaults() roots', Config::defaults()->roots, null);
+$check('new Config() roots', (new Config())->roots, null);
 
 // The package ships no binary. APRV_BIN names the aprv binary under test (CI
 // downloads the release asset, or builds it); `vendor/bin/aprv-install` is
@@ -95,7 +95,7 @@ if (!is_string($binary) || $binary === '') {
 $transport = static fn (): CliTransport => new CliTransport($binary);
 
 // receipt/verify-genuine-sandbox-g5-against-apple-roots.
-$receiptResult = Verifier::create(Config::defaults(), $transport())
+$receiptResult = Verifier::create(new Config(), $transport())
     ->verifyReceipt(base64_encode($fixture('public-receipt-sandbox-g5')));
 $check('receipt verified', $receiptResult->verified(), true);
 $receipt = $receiptResult->payload;

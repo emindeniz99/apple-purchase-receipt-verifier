@@ -139,7 +139,7 @@ with `extensions: json, curl`:
 ```sh
 composer require --no-interaction "emindeniz99/apple-purchase-receipt-verifier:$VERSION"
 vendor/bin/aprv-install
-php verify-smoke.php    # Verifier::create(Config::defaults()) verifies the genuine g5 receipt
+php verify-smoke.php    # Verifier::create(new Config()) verifies the genuine g5 receipt
 ```
 
 This is acceptance test 8's PHP leg: `aprv install`, then g5 verifies through

@@ -80,7 +80,7 @@ string) that reports failure instead of raising.
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 
-$verifier = Verifier::create(Config::defaults());  // Apple's three pinned roots, system clock
+$verifier = Verifier::create(new Config());  // Apple's three pinned roots, system clock
 ```
 
 `create` checks that `aprv` is where it should be and speaks the ABI this
@@ -142,7 +142,7 @@ pass a transport; one keep-alive curl handle then carries every call
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
 
 $verifier = Verifier::create(
-    Config::defaults(),
+    new Config(),
     new HttpTransport('http://127.0.0.1:8080', $token),   // the server's X-Aprv-Token, if it has one
 );
 ```
@@ -428,16 +428,18 @@ every port:
 
 The public API is 0.7's: `Verifier::create`, the three verify methods,
 `Config`, `Reason`, the result and payload types. `AppleRootCerts`,
-`ConfigBuilder` and the payload types' JSON helpers are gone. What changes
+`ConfigBuilder`, `Config::defaults()` and the payload types' JSON helpers
+are gone. What changes
 is what runs underneath, and what you can see of it:
 
 | 0.7 | 0.8 |
 |---|---|
 | PHP parsed and verified, on `ext-openssl` | `aprv` verifies; `ext-openssl` is no longer required, and `vendor/bin/aprv-install` (or a server URL) is |
 | `Verifier::create(Config)` | `Verifier::create(Config, ?Transport)`: the second argument picks the CLI (default) or a server |
-| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER or PEM strings, and "Apple's plus mine" is all four |
+| `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | `(new Config())->roots` is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER or PEM strings, and "Apple's plus mine" is all four |
 | `AppleRootCerts::pinnedRoots()` returned Apple's three roots | removed: the package carries no copy of them. Read them from Apple's PKI page or the repository's `certs/` |
 | `Config::builder()->roots($roots)->clock($clock)->build()` (`ConfigBuilder`) | `new Config(roots: $roots, clock: $clock)`; pass only what differs from the defaults. `roots` takes any iterable, as the builder did, of DER or PEM strings |
+| `Config::defaults()` | `new Config()`, which it returned: the module's built-in Apple roots and the system clock |
 | `ReceiptPayload::idJson()`, `ReceiptPayload::attributesJson()`, `InAppPurchase::jsonValue()` (marked `@internal`) | removed from the public classes; `ReceiptPayload::toJson()` writes the same JSON |
 | `Failure::$cause` carried the parser's exception | it is set only when the wrapper produced `INTERNAL_ERROR` (the module trapped, `aprv` did not answer, the clock threw) |
 | a hostile input could exhaust `memory_limit` | it cannot: the parsing is out of PHP |
@@ -453,7 +455,7 @@ thrown `VerificationException`.
 |---|---|
 | `new ReceiptVerifier($roots, $bundleId)->verify($b64)` | `Verifier::create(new Config(roots: $roots))->verifyReceipt($b64)`, then compare `$result->payload->bundleId` yourself |
 | `new JwsVerifier($roots, $bundleId, $environments)->verifyTransaction($jws)` | `Verifier::create(new Config(roots: $roots))->verifySignedData($jws)`, then compare `$payload['bundleId']` / `$payload['environment']` yourself |
-| `AppleRootCerts::receiptRoots()` / `AppleRootCerts::jwsRoots()` | `Config::defaults()` (one pinned set, for both paths) |
+| `AppleRootCerts::receiptRoots()` / `AppleRootCerts::jwsRoots()` | `new Config()` (one pinned set, for both paths) |
 | thrown `VerificationException` with `->reason` | `VerificationResult::$failure` (`Failure::$reason`, `->message`, `->cause`); nothing throws |
 | `Reason::InvalidReceiptFormat`, `::InvalidJwsFormat` | `Reason::Malformed` |
 | `Reason::RequestTooLarge` | `Reason::TooLarge` |
@@ -508,7 +510,7 @@ page or the repository's `certs/`: the package carries no copy. With a
 server URL, the server reports the SHA-256 of each root as its `--roots`
 file decodes it, and a PEM block there decodes to its DER, so give the
 `Config` DER for a server whose file holds PEM. Leaving the roots out
-(`Config::defaults()`, or `new Config()`) means the built-in Apple roots. An
+(`new Config()`) means the built-in Apple roots. An
 empty list is not "no roots": `Verifier::create` refuses it with an
 `InvalidArgumentException`, so a list that came up empty by mistake never
 widens to Apple's roots.
