@@ -20,7 +20,6 @@ import { createVerifier as createVerifierSync } from '../verifier.js';
 export type { Config, CreateConfigOptions, RootInput } from '../config.js';
 export {
   Reason,
-  VerificationError,
   type Failure,
   type VerificationResult,
   type VerifiedResult,

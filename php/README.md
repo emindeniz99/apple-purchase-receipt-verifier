@@ -427,8 +427,9 @@ every port:
 ## Upgrading from 0.7
 
 The public API is 0.7's: `Verifier::create`, the three verify methods,
-`Config`, `Reason`, the result and payload types; only `AppleRootCerts` is
-gone. What changes is what runs underneath, and what you can see of it:
+`Config`, `Reason`, the result and payload types. `AppleRootCerts`,
+`ConfigBuilder` and the payload types' JSON helpers are gone. What changes
+is what runs underneath, and what you can see of it:
 
 | 0.7 | 0.8 |
 |---|---|
@@ -436,6 +437,8 @@ gone. What changes is what runs underneath, and what you can see of it:
 | `Verifier::create(Config)` | `Verifier::create(Config, ?Transport)`: the second argument picks the CLI (default) or a server |
 | `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | it is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER or PEM strings, and "Apple's plus mine" is all four |
 | `AppleRootCerts::pinnedRoots()` returned Apple's three roots | removed: the package carries no copy of them. Read them from Apple's PKI page or the repository's `certs/` |
+| `Config::builder()->roots($roots)->clock($clock)->build()` (`ConfigBuilder`) | `new Config(roots: $roots, clock: $clock)`; pass only what differs from the defaults. `roots` takes any iterable, as the builder did, of DER or PEM strings |
+| `ReceiptPayload::idJson()`, `ReceiptPayload::attributesJson()`, `InAppPurchase::jsonValue()` (marked `@internal`) | removed from the public classes; `ReceiptPayload::toJson()` writes the same JSON |
 | `Failure::$cause` carried the parser's exception | it is set only when the wrapper produced `INTERNAL_ERROR` (the module trapped, `aprv` did not answer, the clock threw) |
 | a hostile input could exhaust `memory_limit` | it cannot: the parsing is out of PHP |
 
@@ -448,8 +451,8 @@ thrown `VerificationException`.
 
 | 0.6 | 0.7 |
 |---|---|
-| `new ReceiptVerifier($roots, $bundleId)->verify($b64)` | `Verifier::create(Config::builder()->roots($roots)->build())->verifyReceipt($b64)`, then compare `$result->payload->bundleId` yourself |
-| `new JwsVerifier($roots, $bundleId, $environments)->verifyTransaction($jws)` | `Verifier::create(Config::builder()->roots($roots)->build())->verifySignedData($jws)`, then compare `$payload['bundleId']` / `$payload['environment']` yourself |
+| `new ReceiptVerifier($roots, $bundleId)->verify($b64)` | `Verifier::create(new Config(roots: $roots))->verifyReceipt($b64)`, then compare `$result->payload->bundleId` yourself |
+| `new JwsVerifier($roots, $bundleId, $environments)->verifyTransaction($jws)` | `Verifier::create(new Config(roots: $roots))->verifySignedData($jws)`, then compare `$payload['bundleId']` / `$payload['environment']` yourself |
 | `AppleRootCerts::receiptRoots()` / `AppleRootCerts::jwsRoots()` | `Config::defaults()` (one pinned set, for both paths) |
 | thrown `VerificationException` with `->reason` | `VerificationResult::$failure` (`Failure::$reason`, `->message`, `->cause`); nothing throws |
 | `Reason::InvalidReceiptFormat`, `::InvalidJwsFormat` | `Reason::Malformed` |
@@ -499,13 +502,13 @@ thrown `VerificationException`.
 
 You can pass your own anchors instead of the built-in ones, as DER or PEM
 strings, which the module tells apart (a PEM string holding several
-certificates is one entry): `Config::builder()->roots([$myRoot])->build()`.
+certificates is one entry): `new Config(roots: [$myRoot])`.
 "Apple's roots plus mine" is all four, Apple's three read from Apple's PKI
 page or the repository's `certs/`: the package carries no copy. With a
 server URL, the server reports the SHA-256 of each root as its `--roots`
 file decodes it, and a PEM block there decodes to its DER, so give the
-`Config` DER for a server whose file holds PEM. Leaving the roots out (`Config::defaults()`,
-or a builder that never calls `roots()`) means the built-in Apple roots. An
+`Config` DER for a server whose file holds PEM. Leaving the roots out
+(`Config::defaults()`, or `new Config()`) means the built-in Apple roots. An
 empty list is not "no roots": `Verifier::create` refuses it with an
 `InvalidArgumentException`, so a list that came up empty by mistake never
 widens to Apple's roots.

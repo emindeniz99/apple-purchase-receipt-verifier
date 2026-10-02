@@ -314,14 +314,13 @@ path, the same pair on the JWS `x5c` chain).
 | SignerInfos in a receipt | 4 |
 | ASN.1 nesting depth (CMS envelope, signed content) | 32 |
 
-The module owns every bound; this package adds none. JSON has no nesting
-or length bound of its own: the module skips a value nobody reads without
-building it, so only the size caps bound it (docs/rust-core/DECISIONS.md
-R40). `maxReceiptBytes`,
-`maxEndpointRequestBytes` and `maxJwsBytes` are public so a caller can size
-an HTTP body limit from them. Past the ASN.1 depth, the envelope is
-`MALFORMED` and the signed content `UNREADABLE_PAYLOAD`. Genuine Apple
-receipts nest 9 levels deep in the envelope.
+The module owns every bound; this package adds none and exports none of
+the numbers: an input over a size cap is `.tooLarge` (21002 at the
+endpoint). JSON has no nesting or length bound of its own: the module
+skips a value nobody reads without building it, so only the size caps
+bound it (docs/rust-core/DECISIONS.md R40). Past the ASN.1 depth, the
+envelope is `MALFORMED` and the signed content `UNREADABLE_PAYLOAD`.
+Genuine Apple receipts nest 9 levels deep in the envelope.
 
 ## Speed
 
@@ -382,6 +381,10 @@ against the same `fixtures/cases.json`. What changed:
 - **`Failure.cause`** is the host's error (a trap, an unusable answer) for
   `.internalError`, and `nil` for the module's own verdicts: the core's
   cause chain stays inside the module.
+- **Removed names**: `maxReceiptBytes`, `maxEndpointRequestBytes` and
+  `maxJwsBytes` (the caps are 3,145,728, 3,145,728 and 262,144 UTF-8 bytes,
+  listed under "Resource bounds"; an input over one is `.tooLarge`), and
+  `Environment.appleValue` (use `rawValue`, the same string).
 
 ## Upgrading from 0.6
 

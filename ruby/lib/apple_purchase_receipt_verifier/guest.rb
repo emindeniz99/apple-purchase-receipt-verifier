@@ -9,6 +9,7 @@ module ApplePurchaseReceiptVerifier
   #
   # @api private
   class RootsRejected < StandardError; end
+  private_constant :RootsRejected
 
   # One Store and one Instance of `aprv.wasm`, and the hand-written call of
   # the canonical ABI (the Component Model's calling convention) over its core
@@ -175,4 +176,5 @@ module ApplePurchaseReceiptVerifier
       "wasm runtime error (#{error.class})"
     end
   end
+  private_constant :Guest
 end

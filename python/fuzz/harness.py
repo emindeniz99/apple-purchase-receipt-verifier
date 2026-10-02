@@ -59,18 +59,18 @@ RECEIPT_ANCHORS = [
 UNRELATED_ANCHORS = [_fixture("generated", "jws-root.der")]
 
 #: ``Verifier.verify_receipt`` on a string (the form a client actually sends).
-RECEIPT_VERIFIER = Verifier(Config.create(roots=RECEIPT_ANCHORS))
+RECEIPT_VERIFIER = Verifier(Config(roots=RECEIPT_ANCHORS))
 
 #: The same receipt path anchored on the unrelated set: what an accepted
 #: receipt must be refused by.
-UNRELATED_RECEIPT_VERIFIER = Verifier(Config.create(roots=UNRELATED_ANCHORS))
+UNRELATED_RECEIPT_VERIFIER = Verifier(Config(roots=UNRELATED_ANCHORS))
 
 #: Anchored on the fixture JWS root, so the generated ``.jws`` fixtures verify.
-JWS_VERIFIER = Verifier(Config.create(roots=UNRELATED_ANCHORS))
+JWS_VERIFIER = Verifier(Config(roots=UNRELATED_ANCHORS))
 
 #: The same shape of verifier anchored on Apple's production roots: the
 #: unrelated set for the JWS accept-invariant.
-APPLE_JWS_VERIFIER = Verifier(Config.defaults())
+APPLE_JWS_VERIFIER = Verifier(Config())
 
 #: One environment's worth of verifyReceipt emulation, and the environment
 #: `endpoint_json.py` renders it for.

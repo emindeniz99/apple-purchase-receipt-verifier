@@ -313,7 +313,7 @@ fn a_flipped_payload_byte_is_rejected() {
 
 #[test]
 fn a_foreign_root_is_an_untrusted_chain_not_a_purpose_error() {
-    let error = Verifier::new(Config::defaults())
+    let error = Verifier::new(Config::default())
         .verify_signed_data(&common::transaction_jws())
         .unwrap_err();
     assert_eq!(error.reason(), Reason::UntrustedChain);

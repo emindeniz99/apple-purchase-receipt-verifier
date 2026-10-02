@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
-use EminDeniz99\ApplePurchaseReceiptVerifier\ConfigBuilder;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Failure;
 use EminDeniz99\ApplePurchaseReceiptVerifier\InAppPurchase;
@@ -128,11 +127,11 @@ final class ApiShapeTest extends TestCase
     public static function misconfigurationProvider(): iterable
     {
         yield 'an empty-string root' => [
-            static fn () => Verifier::create(Config::builder()->roots([''])->build(), FakeTransport::answering('{}')),
+            static fn () => Verifier::create(new Config(roots: ['']), FakeTransport::answering('{}')),
         ];
         yield 'a non-string root' => [
             /** @phpstan-ignore-next-line deliberate misuse */
-            static fn () => Verifier::create(Config::builder()->roots([123])->build(), FakeTransport::answering('{}')),
+            static fn () => Verifier::create(new Config(roots: [123]), FakeTransport::answering('{}')),
         ];
     }
 
@@ -156,7 +155,7 @@ final class ApiShapeTest extends TestCase
     public static function publicClassProvider(): iterable
     {
         foreach ([
-            Verifier::class, Config::class, ConfigBuilder::class,
+            Verifier::class, Config::class,
             ReceiptPayload::class, InAppPurchase::class, JsonPayload::class,
             VerificationResult::class, Failure::class, Reason::class, Environment::class,
             SystemClock::class,
@@ -290,7 +289,7 @@ final class ApiShapeTest extends TestCase
     public function testThePackageCarriesNoCopyOfTheRoots(): void
     {
         self::assertNull(Config::defaults()->roots);
-        self::assertNull(Config::builder()->build()->roots);
+        self::assertNull((new Config())->roots);
         self::assertFalse(class_exists('EminDeniz99\\ApplePurchaseReceiptVerifier\\AppleRootCerts'));
         self::assertDirectoryDoesNotExist(__DIR__ . '/../certs');
     }

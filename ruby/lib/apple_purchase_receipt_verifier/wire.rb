@@ -198,4 +198,5 @@ module ApplePurchaseReceiptVerifier
       end
     end
   end
+  private_constant :Wire
 end

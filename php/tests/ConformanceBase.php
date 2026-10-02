@@ -289,17 +289,10 @@ abstract class ConformanceBase extends TestCase
     {
         /** @var array<string, mixed> $config */
         $config = Shape::asArray($case['config'], 'config');
-        $builder = Config::builder();
         $roots = self::trustedRoots($config);
-        if ($roots !== null) {
-            $builder = $builder->roots($roots);
-        }
         $clock = self::caseClock($case);
-        if ($clock !== null) {
-            $builder = $builder->clock($clock);
-        }
 
-        return $factory($builder->build());
+        return $factory($clock === null ? new Config(roots: $roots) : new Config(roots: $roots, clock: $clock));
     }
 
     /**

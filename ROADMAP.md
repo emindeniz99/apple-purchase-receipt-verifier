@@ -41,23 +41,24 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    `runtimeProbe`; roots keep the native certificate type in Java, .NET
    and Go and are bytes elsewhere; Java's `Environment.value()` becomes
    public; the WIT package version moved to `aprv:verifier@0.1.0` in one
-   pull request across every binding on 2026-10-01 (R36). **Open for the
-   owner** (the API items on 2026-10-01):
-   - Public symbols that duplicate another or that only the library
-     calls: the constructors and factories of the result and payload
-     types in every package; Python's `Config.create`, Ruby's
-     `Config.builder` and PHP's `ConfigBuilder` as third ways to build a
-     `Config`; Rust's `Config::defaults()` beside `Default`, and the
-     top-level `decode_receipt_data`; Go's `String()` methods that repeat
-     `ToJSON()`/`JSON()`, and its exported limit constants; Swift's
-     public `Limits` and `Environment.appleValue`; Node's
-     `VerificationError` export; .NET's `JsonPayload.Create`; PHP's
-     `ReceiptPayload::idJson` and `attributesJson`; Ruby's internal
-     classes `Guest`, `InstancePool`, `Runtime` and `Wire`.
+   pull request across every binding on 2026-10-01 (R36).
+   - Decided 2026-10-01 (DECISIONS.md R41): internals that leaked are
+     hidden (Rust's top-level `decode_receipt_data`; Go's `String()`
+     methods that repeated `ToJSON()`/`JSON()`; Swift's
+     `Environment.appleValue`; Node's `VerificationError`; PHP's
+     `idJson`, `attributesJson` and `jsonValue`; Ruby's `Guest`,
+     `InstancePool`, `Runtime`, `Wire`, `PayloadJson` and
+     `RootsRejected`), and each language builds a `Config` one way, in
+     its own idiom (Python's `Config.create` and `Config.defaults`,
+     Ruby's `Config.builder`, PHP's `ConfigBuilder` and Rust's
+     `Config::defaults()` removed; Go's and Swift's size-cap constants
+     removed). Kept: the result and payload types' constructors, and
+     .NET's `JsonPayload.Create`, its payload's one public constructor.
    - Decided 2026-10-01 (DECISIONS.md R39, amended the same day): the
      core reads a root as DER or PEM, told apart by the bytes, through
      OpenSSL's PEM reader; wrappers pass bytes and read neither format.
-   - Node's `createConfig()` and `createVerifier()` names.
+   - **Open for the owner:** Node's `createConfig()` and
+     `createVerifier()` names.
 
    Later, not in 0.8.0: an optional `expect {bundleId, environment}`
    argument on the verify calls, checked in the core and answered as a
@@ -92,12 +93,13 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    Functions, Hermes, GraalJS and Nashorn beside Fastly Compute and Akamai
    EdgeWorkers, each with its reason (R5).
 10. **PHP's refusal of an empty root list** stays (OD-16).
-11. **Java artifact naming. Open.** Either keep the `-wasm` artifactId
-    with the same version numbers, or publish one artifactId with a
-    `-wasm` version suffix. The suffix doubles the Maven Central
-    deployments per release, so the working budget of 5 releases a month
-    falls to 2. Dependabot and Renovate also read the suffix as a
-    pre-release and would propose "upgrading" Wasm consumers to the
+11. **Java artifact naming. Decided 2026-10-01 (DECISIONS.md R41):** the
+    `-wasm` artifactId stays, at the same version numbers as the
+    BouncyCastle artifact, with no qualifier. Its POM description and
+    README call it the newer engine, offered as a preview whose API may
+    still change before 1.0. A `-wasm` version suffix would have doubled
+    the Maven Central deployments per release, and Dependabot and
+    Renovate would have proposed "upgrading" Wasm consumers to the
     BouncyCastle build.
 12. **This record**, in one docs pull request.
 13. **CLAUDE.md** drops its section on security reviews of runtimes. The

@@ -9,7 +9,7 @@ require_relative "fake_module"
 # scales with the threads; this file is about correctness under them.)
 class ThreadTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
-  FAKE = APRV::Runtime.new(FakeModule.wat)
+  FAKE = Internals::Runtime.new(FakeModule.wat)
 
   def verifier
     APRV::Verifier.send(:new, APRV::Config.defaults, runtime: FAKE)
@@ -60,7 +60,7 @@ class ThreadTest < Minitest::Test
     starters.each(&:join)
     idle = shared.instance_variable_get(:@pool).idle_count
     assert_operator idle, :>=, 1
-    assert_operator idle, :<=, APRV::InstancePool::MAX_IDLE
+    assert_operator idle, :<=, Internals::InstancePool::MAX_IDLE
   end
 
   # Every export runs without the GVL (`to_func(gvl: false)`), which is what

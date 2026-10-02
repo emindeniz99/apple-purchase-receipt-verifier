@@ -4,9 +4,6 @@ public enum Environment: String, Sendable {
     case production = "Production"
     case sandbox = "Sandbox"
 
-    /// Apple's spelling, as the endpoint response writes it.
-    public var appleValue: String { rawValue }
-
     /// What a receipt's `receipt_type` means: `Production` and
     /// `ProductionVPP` are ``production``, `ProductionSandbox` and
     /// `ProductionVPPSandbox` are ``sandbox``, anything else (`Xcode`, a

@@ -14,7 +14,7 @@ cargo add apple-purchase-receipt-verifier
 use apple_purchase_receipt_verifier::{Config, Verifier};
 
 // Build once, share everywhere: the roots are parsed once, not per call.
-let verifier = Verifier::new(Config::defaults());
+let verifier = Verifier::new(Config::default());
 
 // A legacy app receipt, as the base64 string the app sends.
 let receipt = verifier.verify_receipt(receipt_base64)?;
@@ -71,7 +71,7 @@ These are the properties the library exists to hold, and each is asserted by
 a test rather than only documented.
 
 - **It never reads the operating system's trust store.** Anchors come from
-  the caller's `Config` or from `Config::defaults()`, which holds
+  the caller's `Config` or from `Config::default()`, which holds
   `include_bytes!`-embedded copies of Apple's three published roots, so they
   work unchanged in a `FROM scratch` container. There is no code path to a
   system store, so there is no switch to get wrong. The OpenSSL adapter
@@ -100,7 +100,7 @@ a test rather than only documented.
 ```rust
 use apple_purchase_receipt_verifier::{Config, TrustAnchor};
 
-let config = Config::defaults(); // Apple's three roots, the system clock
+let config = Config::default(); // Apple's three roots, the system clock
 
 let pinned = Config::builder()
     .roots([TrustAnchor::from_der(&root_der)?]) // replaces the defaults
@@ -116,10 +116,13 @@ told apart by the bytes, and returns every certificate a PEM bundle holds;
 it is how the module's `init` reads each root. PEM goes through OpenSSL's
 reader, as does `TrustAnchor::from_pem`.
 
-At startup, prefer `Config::builder().build()?` to `Config::defaults()`,
+At startup, prefer `Config::builder().build()?` to `Config::default()`,
 even with nothing to set: it reports bundled roots that did not load as a
-`ConfigError` where the process can stop, while `Config::defaults()` cannot
+`ConfigError` where the process can stop, while `Config::default()` cannot
 fail and leaves every call answering `INTERNAL_ERROR` instead.
+
+The defaults have one spelling, the `Default` trait. 0.7's
+`Config::defaults()` is `Config::default()` from 0.8.
 
 ### `Verifier`: three methods
 
@@ -265,7 +268,7 @@ chain. A `signatureAlgorithm` that names a hash (`sha256WithRSAEncryption`,
 
 The bundled roots are checked against their published SHA-256 fingerprints
 when they load, all three or none; `Config::builder().build()` refuses an
-empty set, and a `Verifier` from `Config::defaults()` without them answers
+empty set, and a `Verifier` from `Config::default()` without them answers
 `INTERNAL_ERROR`.
 
 `x5c[2]` is never compared to an anchor and never trusted, and neither is a
@@ -435,7 +438,7 @@ caller checks those on the returned payload.
 | `..._with_device_guid` | compute the device hash from `opaque_value` and `bundle_id_bytes` |
 | `JwsVerifier::verify_transaction`, `verify_app_transaction`, `verify_raw` | `Verifier::verify_signed_data`, then read the claims from `json()` |
 | `VerifyReceiptEndpoint::verify_receipt_json` | `Verifier::verify_receipt_endpoint` |
-| `apple_jws_roots()`, `apple_receipt_roots()` | `Config::defaults()` |
+| `apple_jws_roots()`, `apple_receipt_roots()` | `Config::default()` |
 | `Clock`, `FixedClock` | `Config::builder().clock(\|\| millis)` |
 | `VerificationError` | `Failure` |
 | `AppReceipt` (`SystemTime` dates) | `ReceiptPayload` (`*_ms` epoch milliseconds) |
@@ -469,7 +472,7 @@ compiled in with `include_bytes!("../certs/...")` from `src/roots.rs`, so
   tests in `tests/trust_pinning.rs`.
 
 The roots load all together or not at all, so a file that does not match
-its fingerprint leaves `Config::defaults()` without anchors, and every call
+its fingerprint leaves `Config::default()` without anchors, and every call
 answers `INTERNAL_ERROR`.
 
 **The tests need the shared fixtures.** They look for `fixtures/` with

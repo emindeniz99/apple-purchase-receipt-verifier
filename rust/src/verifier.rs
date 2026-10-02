@@ -32,7 +32,7 @@ use std::sync::Arc;
 /// ```no_run
 /// use apple_purchase_receipt_verifier::{Config, Verifier};
 ///
-/// let verifier = Verifier::new(Config::defaults());
+/// let verifier = Verifier::new(Config::default());
 /// match verifier.verify_receipt("MIIT...") {
 ///     Ok(receipt) => println!("{}", receipt.to_json()),
 ///     Err(failure) => eprintln!("rejected: {}", failure.reason()),
@@ -123,7 +123,7 @@ impl Verifier {
         &self,
         verify: impl FnOnce(&Clock<'_>) -> Result<T, Failure>,
     ) -> Result<T, Failure> {
-        // Only Config::defaults can hand over an empty set, when the bundled
+        // Only Config::default can hand over an empty set, when the bundled
         // roots did not load; every verdict without an anchor would be a
         // misleading UNTRUSTED_CHAIN.
         if self.roots.is_empty() {
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn a_verifier_without_anchors_answers_internal_error() {
-        // What Config::defaults hands over when the bundled roots did not
+        // What Config::default hands over when the bundled roots did not
         // load: not UNTRUSTED_CHAIN, which would blame every input.
         let verifier = Verifier {
             roots: Arc::from(Vec::new()),

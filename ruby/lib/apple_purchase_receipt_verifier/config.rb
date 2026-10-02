@@ -13,12 +13,11 @@ module ApplePurchaseReceiptVerifier
   # INTERNAL_ERROR. A caller-supplied clock must be safe to call from several
   # threads.
   #
-  #   Config.defaults                                   # Apple's pinned roots + the system clock
+  #   Config.new                                        # Apple's pinned roots + the system clock
   #   Config.new(roots: my_roots, clock: -> { Time.now.to_i * 1000 })
-  #   Config.builder.roots(my_roots).build
   class Config
-    # A proc reading the system clock, epoch milliseconds. The default
-    # {#clock} of {defaults} and of a {Builder} whose `clock` is never set.
+    # A proc reading the system clock, epoch milliseconds: the {#clock} of a
+    # Config given no `clock:`.
     SYSTEM_CLOCK = -> { (Time.now.to_r * 1000).to_i }
 
     # @return [Array<String>] the caller's pinned trust anchors as frozen
@@ -38,11 +37,6 @@ module ApplePurchaseReceiptVerifier
       # @return [Config]
       def defaults
         new
-      end
-
-      # @return [Builder] a builder whose unset parts are {defaults}'
-      def builder
-        Builder.new
       end
     end
 
@@ -99,35 +93,6 @@ module ApplePurchaseReceiptVerifier
       end
 
       root.b.freeze
-    end
-
-    # Builds a {Config} from parts set one at a time. Every 0.7 port offers
-    # this shape; in Ruby, `Config.new(roots:, clock:)` says the same thing
-    # in one call and is the more idiomatic spelling.
-    class Builder
-      def initialize
-        @roots = nil
-        @clock = nil
-      end
-
-      # @param roots [Array<#to_der, String>]
-      # @return [self]
-      def roots(roots)
-        @roots = roots
-        self
-      end
-
-      # @param clock [#call]
-      # @return [self]
-      def clock(clock)
-        @clock = clock
-        self
-      end
-
-      # @return [Config]
-      def build
-        Config.new(roots: @roots, clock: @clock)
-      end
     end
   end
 end

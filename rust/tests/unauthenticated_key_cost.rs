@@ -367,7 +367,7 @@ fn a_genuine_apple_receipt_padded_with_stranger_keys_still_verifies() {
     builder.signed_attrs = info.signed_attrs.clone();
     builder.signature = info.signature.clone();
     builder.certificates = parsed_cms.certificates.clone();
-    let verifier = Verifier::new(Config::defaults());
+    let verifier = Verifier::new(Config::default());
     let control = common::verify_der(&verifier, &builder.build())
         .expect("the rebuilt genuine receipt verifies unpadded");
 
@@ -378,7 +378,7 @@ fn a_genuine_apple_receipt_padded_with_stranger_keys_still_verifies() {
             .find(|raw| serial_number(raw) == info.serial_contents)
             .unwrap(),
     );
-    let root_name = subject_der(Config::defaults().roots()[0].der());
+    let root_name = subject_der(Config::default().roots()[0].der());
     let room = 10 - parsed_cms.certificates.len();
     let spkis = stranger_spkis();
     let mut certificates: Vec<Vec<u8>> = (0..room)

@@ -331,7 +331,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{"status":0}']]);
         $clock = new CountingClock();
-        $verifier = Verifier::create(Config::builder()->clock($clock)->build(), new HttpTransport($server->url));
+        $verifier = Verifier::create(new Config(clock: $clock), new HttpTransport($server->url));
 
         $verifier->verifyReceiptEndpoint(Environment::Production, '{}');
         $verifier->verifyReceiptEndpoint(Environment::Production, '{}');
@@ -403,7 +403,7 @@ final class HttpTransportTest extends TestCase
             } catch (InvalidArgumentException) {
                 $this->addToAssertionCount(1);
             }
-            Verifier::create(Config::builder()->roots([$certificate])->build(), new HttpTransport($server->url));
+            Verifier::create(new Config(roots: [$certificate]), new HttpTransport($server->url));
             $this->addToAssertionCount(1);
         } finally {
             $server->stop();

@@ -29,50 +29,39 @@ def _ordered_unique(roots: "Iterable[object]") -> "tuple[bytes, ...]":
     return tuple(seen)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class Config:
     """Immutable. ``Config()`` is Apple's three pinned roots plus the system
-    clock, the same as :meth:`defaults`.
+    clock; pass ``roots=`` or ``clock=`` to replace either, and leave out
+    what stays the default.
 
     **Roots** are the pinned trust anchors every chain must reach, as
-    DER-encoded certificates (``bytes``). ``None``, the default, means the
-    three Apple roots compiled into the verification module; this package
-    carries no copy of them. Tests substitute their own. An empty collection
-    is accepted here and refused by :class:`~.verifier.Verifier`. The module
-    parses the roots, so a value that is not a certificate is refused when the
-    ``Verifier`` is built.
+    DER-encoded certificates (``bytes``, ``bytearray`` or ``memoryview``),
+    kept as ``bytes`` with later duplicates dropped. ``None``, the default,
+    means the three Apple roots compiled into the verification module; this
+    package carries no copy of them. Tests substitute their own. An empty
+    collection is accepted here and refused by :class:`~.verifier.Verifier`.
+    The module parses the roots, so a value that is not a certificate is
+    refused when the ``Verifier`` is built.
 
     **The clock** answers "what time is it now?", as a zero-argument
-    callable returning epoch milliseconds (an ``int``), and nothing else. It
-    is read once per call, before the input is looked at, and the module
-    uses the value for one of two things: the chain-validity instant when a
-    receipt or JWS states no signing date, and ``request_date`` in the
-    endpoint response. It must be safe to call from several threads.
+    callable returning epoch milliseconds (an ``int``), and nothing else.
+    ``None``, the default, is the system clock. It is read once per call,
+    before the input is looked at, and the module uses the value for one of
+    two things: the chain-validity instant when a receipt or JWS states no
+    signing date, and ``request_date`` in the endpoint response. It must be
+    safe to call from several threads.
 
     :raises TypeError: if a root is not ``bytes``
     """
 
-    roots: "tuple[bytes, ...] | None" = None
-    clock: Callable[[], int] = _system_clock_ms
+    roots: "tuple[bytes, ...] | None"
+    clock: Callable[[], int]
 
-    def __post_init__(self) -> None:
-        if self.roots is not None:
-            object.__setattr__(self, "roots", _ordered_unique(self.roots))
-
-    @staticmethod
-    def defaults() -> "Config":
-        """Apple's three pinned roots and the system clock. Equivalent to
-        ``Config()``; spelled out for parity with the other ports."""
-        return Config()
-
-    @staticmethod
-    def create(
+    def __init__(
+        self,
         roots: "Iterable[bytes | bytearray | memoryview] | None" = None,
         clock: "Callable[[], int] | None" = None,
-    ) -> "Config":
-        """Builds a ``Config``, replacing only what is given; unset values
-        take :meth:`defaults`."""
-        return Config(
-            roots=tuple(_der(r) for r in roots) if roots is not None else None,
-            clock=clock if clock is not None else _system_clock_ms,
-        )
+    ) -> None:
+        object.__setattr__(self, "roots", None if roots is None else _ordered_unique(roots))
+        object.__setattr__(self, "clock", _system_clock_ms if clock is None else clock)

@@ -175,9 +175,6 @@ func (r *ReceiptPayload) ToJSON() string {
 	return string(out)
 }
 
-// String is ToJSON.
-func (r *ReceiptPayload) String() string { return r.ToJSON() }
-
 func (p *InAppPurchase) jsonValue() inAppJSON {
 	return inAppJSON{
 		Quantity:               p.Quantity,

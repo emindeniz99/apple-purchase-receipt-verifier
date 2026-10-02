@@ -97,7 +97,10 @@ fn cross_port() -> Vec<Value> {
 
         // Every call once, with the answer the conformance suite expects,
         // so no benchmark can time a fast failure by accident.
-        assert_eq!(decode_receipt_data(&text).ok().as_deref(), Some(&der[..]));
+        assert_eq!(
+            decode_receipt_data(text.as_bytes()).ok().as_deref(),
+            Some(&der[..])
+        );
         let receipt = verifier.verify_receipt(&text).expect("verifyReceipt");
         assert_eq!(receipt.bundle_id.as_deref(), Some(bundle_id));
         assert_eq!(receipt.in_app.len(), in_app_count);
@@ -116,7 +119,7 @@ fn cross_port() -> Vec<Value> {
             results.push(measure(benchmark, name, op));
         };
         run("decodeBase64", &mut || {
-            let _ = black_box(decode_receipt_data(black_box(&text)));
+            let _ = black_box(decode_receipt_data(black_box(text.as_bytes())));
         });
         // 0.7 has no DER entry point: "core" and "verifierBase64" are both
         // verify_receipt over the base64, so both include the decode that
@@ -157,7 +160,7 @@ fn worst_case() -> Vec<Value> {
             Some("utf8") => String::from_utf8_lossy(&raw).trim().as_bytes().to_vec(),
             Some("base64") => {
                 let text: String = String::from_utf8_lossy(&raw).split_whitespace().collect();
-                decode_receipt_data(&text).expect("fixture base64")
+                decode_receipt_data(text.as_bytes()).expect("fixture base64")
             }
             other => panic!("fixture {id} has codec {other:?}"),
         }
@@ -286,5 +289,5 @@ fn read_fixture(name: &str) -> Vec<u8> {
         .join("../fixtures/public-receipts")
         .join(format!("{name}.b64"));
     let text = std::fs::read_to_string(&path).expect("fixture");
-    decode_receipt_data(text.trim()).expect("fixture base64")
+    decode_receipt_data(text.trim().as_bytes()).expect("fixture base64")
 }

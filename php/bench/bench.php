@@ -137,7 +137,7 @@ if ($which !== 'cli') {
 
 $results = [];
 foreach ($transports as $name => $transport) {
-    $verifier = Verifier::create(Config::builder()->clock($clock)->build(), $transport);
+    $verifier = Verifier::create(new Config(clock: $clock), $transport);
     foreach (FIXTURES as [$fixture, $bundleId, $sha256]) {
         $text = file_get_contents(__DIR__ . "/../../fixtures/public-receipts/{$fixture}.b64");
         check($text !== false, "{$fixture} is readable");

@@ -18,7 +18,6 @@ export {
 export { createVerifier, type Verifier } from './verifier.js';
 export {
   Reason,
-  VerificationError,
   type Failure,
   type VerificationResult,
   type VerifiedResult,

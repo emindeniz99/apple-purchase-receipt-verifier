@@ -140,8 +140,9 @@ config = APRV::Config.new(
 verifier = APRV::Verifier.create(config)
 ```
 
-`Config.builder.roots(...).clock(...).build` is the same thing spelled as a
-builder, if you prefer setting parts one at a time.
+Leave out either keyword to keep its default. `Config.new` is the one way to
+build a `Config`: 0.7's `Config.builder.roots(...).clock(...).build` is gone
+in 0.8, and `Config.new(roots: ..., clock: ...)` replaces it.
 
 ## Post-verification checklist
 

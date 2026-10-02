@@ -386,6 +386,7 @@ The API is 0.7's, with these differences:
 | the clock read only when a verdict needs it | the clock read once on every call |
 | `cause` on `UNREADABLE_PAYLOAD`: the parser's error | no `cause`: the module reports its reason and message |
 | `decodeReceiptBase64`, `decodeX5cEntry` | removed: the module decodes base64 |
+| `VerificationError`, exported but never thrown | removed: a failure is the `failure` of the result; match on `failure.reason` |
 | `unknownAttributes` in receipt order across types | ordered by type; each type's values keep receipt order |
 | Fastly Compute and Akamai EdgeWorkers | not supported |
 | Deno with `--allow-read` | Deno with `--allow-read --allow-env=JCO_DEBUG` |
