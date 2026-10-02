@@ -149,6 +149,10 @@ and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   artifact's Endive cases and ABI tests on a big-endian JVM (an s390x
   Temurin under QEMU user emulation, forked by surefire through a
   wrapper); `corpus` is described above.
+- `support-matrix.yml`: weekly (Monday) and on demand, runs
+  `tools/support-matrix.mjs --check`, writes the vendor statuses to the
+  job summary, and fails when a line SUPPORT-MATRIX.md lists as tested,
+  and not as a floor or kept, is past its end of life.
 - `scorecard.yml`: OpenSSF Scorecard, weekly and on pushes to `main`,
   with `publish_results` (so the workflow keeps to Scorecard's
   restrictions) and its SARIF uploaded to code scanning.
