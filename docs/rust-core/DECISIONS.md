@@ -1180,11 +1180,18 @@ caller's root bytes as they are, and the core reads DER or PEM.
   either format, and the one-implementation allowlist is unchanged.
 - **`TrustAnchor::from_pem`** is no longer an exception: it goes through
   the same OpenSSL reader and returns the first certificate.
-- **`aprv-server`'s `--roots` file stays an exception.** Its line reader
-  still unwraps PEM `CERTIFICATE` blocks to DER itself, because
-  `GET /v1/info` reports each root's SHA-256 and the Java and PHP clients
-  compare those with the DER they hold. A base64 line in that file may
-  now carry PEM bytes, which reach `init` unchanged.
+- **`aprv-server`'s `--roots` file stays an exception, without a reader
+  of its own** (owner, 2026-10-02; Q10). The server still unwraps PEM
+  `CERTIFICATE` blocks to DER before `init`, because `GET /v1/info`
+  reports each root's SHA-256 and the Java and PHP clients compare those
+  with the DER they hold. The `pem` crate now reads each block: it matches
+  the END label to the BEGIN label and decodes the base64. The server
+  keeps only the file's line rules (base64 lines, `#` comments, blank
+  lines, where a block starts and ends) and its existing refusals
+  (docs/evidence/2026-10-02-server-roots-pem.md). It does
+  not link OpenSSL, so `Certificate::all_from_pem` was not an option
+  there. A base64 line in that file may now carry PEM bytes, which reach
+  `init` unchanged.
 
 ---
 
