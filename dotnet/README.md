@@ -455,10 +455,13 @@ and `-- --worst-case` for the hostile cases on your own hardware.
   `System.Text.Encodings.Web` (10.0.12) and
   `System.Threading.Tasks.Extensions` (4.6.3), and raises `System.Buffers`
   to 4.6.1, `System.Memory` to 4.6.3, `System.Numerics.Vectors` to 4.6.1
-  and `System.Runtime.CompilerServices.Unsafe` to 6.1.2. A .NET Framework
-  project that already references older copies of these needs binding
-  redirects, which SDK-style projects generate; a Unity project copies the
-  same assemblies beside the package's.
+  and `System.Runtime.CompilerServices.Unsafe` to 6.1.2. A Unity or .NET
+  Framework project that already ships `System.Memory`,
+  `System.Runtime.CompilerServices.Unsafe` or any other of these through
+  other packages can get duplicate-assembly errors or binding-redirect
+  conflicts. On .NET Framework, binding redirects to the higher version fix
+  it (SDK-style projects generate them); in Unity, keep one copy of each
+  assembly, the higher version.
 - **.NET Framework, Mono and Unity.** The netstandard2.0 asset compiles and
   is exercised on modern .NET; whether .NET Framework or Mono find the native
   library under `runtimes/` depends on the consuming project, and was not run.
@@ -546,6 +549,7 @@ runs under it is not.
 | `Config.Defaults().Roots` lists Apple's three roots | it is empty: the roots are pinned inside the module. To trust Apple's roots and your own, pass all four |
 | `AppleRootCertificates.Bundled()` returns Apple's three roots | removed: the package ships no copy of them. Load them from Apple's PKI page or the repository's `certs/` |
 | `Config.Defaults()` throws if the bundled roots do not load | it cannot fail; `Verifier.Create` throws `ArgumentException` for a root the module refuses and `InvalidOperationException` for a module of another ABI version |
+| `ReceiptPayload.ToJson()` escapes only the quotation mark, the reverse solidus and the controls, in lower-case hex | it escapes the way `System.Text.Json`'s `UnsafeRelaxedJsonEscaping` does: upper-case hex, and `\u` escapes for U+007F to U+009F, U+2028, U+2029, private-use, noncharacter and unassigned code points, U+FEFF and every character outside the BMP (as a surrogate pair). The text can differ from 0.7's in escaping only; the JSON value is the same |
 | `Failure.Cause` set for `UnreadablePayload` and `InternalError` | set only for an `InternalError` raised by this library (a trap, an unreadable answer, the clock) |
 | `Verifier.Create` takes microseconds | the first one in a process compiles the module, about a second on an idle machine and several under load |
 | any platform .NET runs on | the platforms Wasmtime ships a native library for; no Alpine, no 32-bit |
