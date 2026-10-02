@@ -10,6 +10,7 @@ import java.lang.reflect.Method;
 import java.net.Authenticator;
 import java.net.HttpURLConnection;
 import java.net.Proxy;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
@@ -279,7 +280,7 @@ final class ServerConnection {
             }
             // HttpURLConnection reads a status of 400 or more from the error stream.
             InputStream in = status >= 400 ? http.getErrorStream() : http.getInputStream();
-            byte[] responseBody = in == null ? new byte[0] : read(in);
+            byte[] responseBody = in == null ? new byte[0] : read(in, length);
             if (length >= 0 && responseBody.length != length) {
                 throw new EOFException("the connection closed inside a response");
             }
@@ -345,20 +346,38 @@ final class ServerConnection {
 
     /**
      * The whole body, then closed: a body read to its end hands the
-     * connection back to the keep-alive cache.
+     * connection back to the keep-alive cache. When the body has a
+     * declared {@code length}, a failed read is an {@link EOFException},
+     * as a short count is: JDK 25 and 27 throw for a body that ends before
+     * its length, where JDK 8 and 21 end the stream early.
      */
-    private static byte[] read(InputStream in) throws IOException {
+    private static byte[] read(InputStream in, long length) throws IOException {
         try (InputStream body = in) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             byte[] buffer = new byte[16 << 10];
             int n;
-            while ((n = body.read(buffer)) >= 0) {
+            while ((n = readSome(body, buffer, length)) >= 0) {
                 if (bytes.size() + n > MAX_RESPONSE) {
                     throw new IOException("a response over " + MAX_RESPONSE + " bytes");
                 }
                 bytes.write(buffer, 0, n);
             }
             return bytes.toByteArray();
+        }
+    }
+
+    private static int readSome(InputStream body, byte[] buffer, long length) throws IOException {
+        try {
+            return body.read(buffer);
+        } catch (SocketTimeoutException e) {
+            throw e;
+        } catch (IOException e) {
+            if (length < 0) {
+                throw e;
+            }
+            EOFException eof = new EOFException("the connection closed inside a response");
+            eof.initCause(e);
+            throw eof;
         }
     }
 
