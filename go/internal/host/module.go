@@ -14,7 +14,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -139,18 +140,6 @@ func coreParams(sig string) []api.ValueType {
 	return out
 }
 
-func sameTypes(a, b []api.ValueType) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // checkABI refuses a module this package would misread: it must import only
 // random-get, and export the four @0.1.0 operations with their
 // post-return functions, cabi_realloc and its memory, all with the
@@ -160,7 +149,7 @@ func checkABI(c wazero.CompiledModule) error {
 	for _, def := range c.ImportedFunctions() {
 		mod, name, _ := def.Import()
 		if mod != hostIface || name != "random-get" ||
-			!sameTypes(def.ParamTypes(), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}) || len(def.ResultTypes()) != 0 {
+			!slices.Equal(def.ParamTypes(), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}) || len(def.ResultTypes()) != 0 {
 			return &ABIError{Detail: fmt.Sprintf(
 				"aprv.wasm imports %s %s; this package binds aprv:verifier@0.1.0, whose module imports only %s random-get",
 				mod, name, hostIface)}
@@ -171,11 +160,7 @@ func checkABI(c wazero.CompiledModule) error {
 	}
 
 	have := c.ExportedFunctions()
-	var names []string
-	for name := range have {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(have))
 	missing := func(name string) error {
 		return &ABIError{Detail: fmt.Sprintf(
 			"aprv.wasm does not export %q, or exports it with another signature: this package binds aprv:verifier@0.1.0; the module exports [%s]",
@@ -183,7 +168,7 @@ func checkABI(c wazero.CompiledModule) error {
 	}
 	want := func(name string, params []api.ValueType, results []api.ValueType) error {
 		def, ok := have[name]
-		if !ok || !sameTypes(def.ParamTypes(), params) || !sameTypes(def.ResultTypes(), results) {
+		if !ok || !slices.Equal(def.ParamTypes(), params) || !slices.Equal(def.ResultTypes(), results) {
 			return missing(name)
 		}
 		return nil

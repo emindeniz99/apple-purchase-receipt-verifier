@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -67,10 +68,8 @@ func checkConfig(config *Config) error {
 	if !config.builtin && len(config.roots) == 0 {
 		return errors.New("applereceipt: config has no trust anchors")
 	}
-	for _, root := range config.roots {
-		if root == nil {
-			return errors.New("applereceipt: config has a nil trust anchor")
-		}
+	if slices.Contains(config.roots, nil) {
+		return errors.New("applereceipt: config has a nil trust anchor")
 	}
 	return nil
 }
@@ -248,11 +247,7 @@ func readResult(answer string) (payload json.RawMessage, environment *Environmen
 		return nil, nil, unreadableAnswer(errors.New("a failed result must carry a reason and no payload"))
 	}
 	reason := Reason(*wire.Reason)
-	known := false
-	for _, r := range AllReasons() {
-		known = known || r == reason
-	}
-	if !known {
+	if !slices.Contains(AllReasons(), reason) {
 		return nil, nil, unreadableAnswer(fmt.Errorf("the reason %q is not one of the eight", *wire.Reason))
 	}
 	message := ""

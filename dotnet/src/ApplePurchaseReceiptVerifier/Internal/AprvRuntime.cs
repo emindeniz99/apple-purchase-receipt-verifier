@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -103,7 +104,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             string trimmed = recorded.Trim();
             int space = trimmed.IndexOfAny(new[] { ' ', '\t' });
             string expected = (space < 0 ? trimmed : trimmed.Substring(0, space)).ToLowerInvariant();
-            string actual = Hex(Sha256(wasm));
+            string actual = BitConverter.ToString(Sha256(wasm)).Replace("-", string.Empty).ToLowerInvariant();
             if (!string.Equals(expected, actual, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
@@ -131,17 +132,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
             {
                 return sha.ComputeHash(data);
             }
-        }
-
-        private static string Hex(byte[] value)
-        {
-            StringBuilder builder = new StringBuilder(value.Length * 2);
-            foreach (byte b in value)
-            {
-                builder.Append(b.ToString("x2", CultureInfo.InvariantCulture));
-            }
-
-            return builder.ToString();
         }
 
         private static byte[] DrawRandom(int length)
@@ -210,10 +200,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         private static void CheckExports(Wasmtime.Module module)
         {
-            HashSet<string> exported = new HashSet<string>(StringComparer.Ordinal);
+            Dictionary<string, Export> exported = new Dictionary<string, Export>(StringComparer.Ordinal);
             foreach (Export export in module.Exports)
             {
-                exported.Add(export.Name);
+                exported[export.Name] = export;
             }
 
             List<string> missing = new List<string>();
@@ -227,19 +217,59 @@ namespace ApplePurchaseReceiptVerifier.Internal
             Require(exported, "memory", missing);
             if (missing.Count != 0)
             {
-                List<string> names = new List<string>(exported);
+                List<string> names = new List<string>(exported.Keys);
                 names.Sort(StringComparer.Ordinal);
                 throw new InvalidOperationException(
                     "aprv.wasm does not export the aprv:verifier@0.1.0 ABI this library binds (missing: "
                     + string.Join(", ", missing) + "); it exports: " + string.Join(", ", names));
             }
+
+            foreach (string operation in Operations)
+            {
+                CheckShape(operation, exported[Iface + operation]);
+            }
         }
 
-        private static void Require(HashSet<string> exported, string name, List<string> missing)
+        private static void Require(Dictionary<string, Export> exported, string name, List<string> missing)
         {
-            if (!exported.Contains(name))
+            if (!exported.ContainsKey(name))
             {
                 missing.Add(name);
+            }
+        }
+
+        /// <summary>
+        /// The canonical ABI's flattening of one export: its core parameters
+        /// are the scalars and <c>(ptr, len)</c> pairs the WIT signature
+        /// implies, and it returns the return-area address.
+        /// </summary>
+        private static void CheckShape(string operation, Export export)
+        {
+            List<ValueKind> expected = new List<ValueKind>();
+            foreach (char type in AprvInstance.Signatures[operation])
+            {
+                switch (type)
+                {
+                    case 'w':
+                        expected.Add(ValueKind.Int32);
+                        break;
+                    case 'd':
+                        expected.Add(ValueKind.Int64);
+                        break;
+                    default:
+                        expected.Add(ValueKind.Int32);
+                        expected.Add(ValueKind.Int32);
+                        break;
+                }
+            }
+
+            if (!(export is FunctionExport function)
+                || !function.Parameters.SequenceEqual(expected)
+                || function.Results.Count != 1
+                || function.Results[0] != ValueKind.Int32)
+            {
+                throw new InvalidOperationException(
+                    "the module's " + Iface + operation + " does not have the canonical-ABI shape this library binds");
             }
         }
     }

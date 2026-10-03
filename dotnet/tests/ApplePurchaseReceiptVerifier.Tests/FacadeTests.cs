@@ -179,6 +179,20 @@ public class FacadeTests
         Assert.Contains(missing, error.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// An export with the right name and the wrong core signature is refused
+    /// when the module is loaded, once, before any instance exists.
+    /// </summary>
+    [Fact]
+    public void AnExportOfTheWrongShapeIsRefusedWhenTheModuleLoads()
+    {
+        string wat = new StubModule().ToWat().Replace(
+            "#init\") (param i32 i32) (result i32)", "#init\") (param i32 i32 i32) (result i32)", StringComparison.Ordinal);
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => new AprvRuntime(Module.ConvertText(wat), null));
+        Assert.Contains("aprv:verifier/verify@0.1.0#init does not have the canonical-ABI shape", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void AnyImportButRandomGetIsRefused()
     {

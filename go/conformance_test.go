@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -403,27 +404,10 @@ func jsonEqual(want, got any) bool {
 		return ok && g == w
 	case map[string]any:
 		g, ok := got.(map[string]any)
-		if !ok || len(g) != len(w) {
-			return false
-		}
-		for k, wv := range w {
-			gv, present := g[k]
-			if !present || !jsonEqual(wv, gv) {
-				return false
-			}
-		}
-		return true
+		return ok && maps.EqualFunc(w, g, jsonEqual)
 	case []any:
 		g, ok := got.([]any)
-		if !ok || len(g) != len(w) {
-			return false
-		}
-		for i := range w {
-			if !jsonEqual(w[i], g[i]) {
-				return false
-			}
-		}
-		return true
+		return ok && slices.EqualFunc(w, g, jsonEqual)
 	default:
 		return false
 	}

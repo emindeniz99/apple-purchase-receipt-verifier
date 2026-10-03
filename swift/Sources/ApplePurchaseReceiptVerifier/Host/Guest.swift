@@ -132,29 +132,23 @@ final class Guest: @unchecked Sendable {
         maxInputBytes = try Wire.initAnswer(initialize(config))
     }
 
-    /// `input`, cut to ``maxInputBytes``.
-    func capped<C: Collection<UInt8>>(_ input: C) -> [UInt8] {
+    /// `input`, cut to ``maxInputBytes``. The one place an input is cut.
+    private func capped(_ input: some Collection<UInt8>) -> [UInt8] {
         guard let limit = maxInputBytes else { return Array(input) }
         return Array(input.prefix(limit))
     }
 
-    /// `input`, cut to ``maxInputBytes``, without a copy when it fits.
-    func capped(_ input: [UInt8]) -> [UInt8] {
-        guard let limit = maxInputBytes, input.count > limit else { return input }
-        return Array(input.prefix(limit))
-    }
-
-    func verifyReceipt(now: UInt64, _ receiptBase64: [UInt8]) throws(HostError) -> String {
+    func verifyReceipt(now: UInt64, _ receiptBase64: some Collection<UInt8>) throws(HostError) -> String {
         try call("verify-receipt", [.i64(now)], capped(receiptBase64))
     }
 
-    func verifySignedData(now: UInt64, _ jws: [UInt8]) throws(HostError) -> String {
+    func verifySignedData(now: UInt64, _ jws: some Collection<UInt8>) throws(HostError) -> String {
         try call("verify-signed-data", [.i64(now)], capped(jws))
     }
 
     /// `env` is 0 (production) or 1 (sandbox); the guest traps on anything
     /// else, and ``Verifier`` only ever passes those two.
-    func verifyReceiptEndpoint(env: UInt32, now: UInt64, _ requestJson: [UInt8]) throws(HostError) -> String {
+    func verifyReceiptEndpoint(env: UInt32, now: UInt64, _ requestJson: some Collection<UInt8>) throws(HostError) -> String {
         try call("verify-receipt-endpoint", [.i32(env), .i64(now)], capped(requestJson))
     }
 

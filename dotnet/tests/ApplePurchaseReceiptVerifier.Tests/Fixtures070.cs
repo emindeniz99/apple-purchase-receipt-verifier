@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -63,7 +62,7 @@ internal static class Fixtures070
             _ => throw new InvalidOperationException($"harness error: unknown fixture codec \"{codec}\""),
         };
 
-        string actual = Hex(SHA256.HashData(bytes));
+        string actual = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         if (!string.Equals(actual, expected, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
@@ -114,17 +113,6 @@ internal static class Fixtures070
 
     private static string Str(JsonMap map, string key) =>
         map[key] as string ?? throw new InvalidOperationException($"harness error: missing \"{key}\"");
-
-    private static string Hex(byte[] value)
-    {
-        StringBuilder builder = new(value.Length * 2);
-        foreach (byte b in value)
-        {
-            builder.Append(b.ToString("x2", CultureInfo.InvariantCulture));
-        }
-
-        return builder.ToString();
-    }
 
     private static JsonMap LoadCases()
     {

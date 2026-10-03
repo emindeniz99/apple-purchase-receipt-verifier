@@ -59,7 +59,7 @@ public struct Verifier: Sendable {
         }
         let export = "verify-receipt"
         do {
-            let answer = try pool.with { guest throws(HostError) in try guest.verifyReceipt(now: now, guest.capped(base64.utf8)) }
+            let answer = try pool.with { guest throws(HostError) in try guest.verifyReceipt(now: now, base64.utf8) }
             return Wire.result(answer, export, ReceiptPayload.self) { decoded, environment in
                 var payload = decoded
                 payload.environment = environment
@@ -80,7 +80,7 @@ public struct Verifier: Sendable {
         }
         let export = "verify-signed-data"
         do {
-            let answer = try pool.with { guest throws(HostError) in try guest.verifySignedData(now: now, guest.capped(jws.utf8)) }
+            let answer = try pool.with { guest throws(HostError) in try guest.verifySignedData(now: now, jws.utf8) }
             return Wire.result(answer, export, String.self) { JsonPayload(json: $0, environment: $1) }
         } catch {
             return VerificationResult(failure: Self.failure(error))
@@ -97,7 +97,7 @@ public struct Verifier: Sendable {
         let env: UInt32 = environment == .production ? 0 : 1
         guard
             let answer = try? pool.with({ guest throws(HostError) in
-                try guest.verifyReceiptEndpoint(env: env, now: now, guest.capped(requestJson.utf8))
+                try guest.verifyReceiptEndpoint(env: env, now: now, requestJson.utf8)
             }),
             (try? JSONSerialization.jsonObject(with: Data(answer.utf8))) is [String: Any]
         else { return failed }
