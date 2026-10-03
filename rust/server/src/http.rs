@@ -2,13 +2,13 @@
 //!
 //! A route picks the operation and passes the request body through
 //! unchanged. A verification result, verified or not, is HTTP 200 with the
-//! module's JSON byte for byte; a body over MAX_BODY is cut to MAX_BODY + 1
-//! bytes, and the module's answer to that (its own size refusal) is HTTP
-//! 413 with the same JSON. Everything else is an RFC 9457 problem
+//! module's JSON byte for byte; a body of the `max_input_bytes` the
+//! module's `init` answer states, or longer, is cut to that length, and
+//! the module's answer to that (its own size refusal) is HTTP 413 with the
+//! same JSON. Everything else is an RFC 9457 problem
 //! (`application/problem+json`) with a `code` member.
 
 use crate::runtime::{InvokeError, Op, Verifier};
-use crate::MAX_BODY;
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
@@ -189,21 +189,27 @@ async fn endpoint_sandbox(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response
 /// larger while it streams is answered and closed the same way.
 pub const MAX_DRAIN: usize = 16 << 20;
 
-/// A request body as the module gets it: at most MAX_BODY + 1 bytes, so an
-/// input over the cap still reaches the module over its cap and the module
-/// answers it (TOO_LARGE, 21002 at the endpoint), as every Wasm host cuts
-/// an input to the same length (Go's `maxInput`, Swift's `maxInputBytes`).
+/// A request body as the module gets it: at most the `max_input_bytes` its
+/// `init` answer states, so an input over the cap still reaches the module
+/// over its cap and the module answers it (TOO_LARGE, 21002 at the
+/// endpoint), as every Wasm host cuts an input to the length `init` states
+/// (DECISIONS.md R42).
 struct Capped {
     bytes: Vec<u8>,
-    /// The body was larger than MAX_BODY: the answer is 413.
+    /// The body was `max_input_bytes` or longer, over the module's cap:
+    /// the answer is 413.
     over: bool,
     /// Part of the body was left unread: the connection is closed.
     close: bool,
 }
 
-/// Reads the request body; `Err` is the problem to send.
-async fn read_capped(headers: &HeaderMap, body: Body) -> Result<Capped, Box<Response>> {
-    const KEEP: usize = MAX_BODY + 1;
+/// Reads the request body, keeping at most `keep` bytes (the module's
+/// `max_input_bytes`); `Err` is the problem to send.
+async fn read_capped(
+    headers: &HeaderMap,
+    body: Body,
+    keep: usize,
+) -> Result<Capped, Box<Response>> {
     let announced = headers
         .get(header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
@@ -211,7 +217,7 @@ async fn read_capped(headers: &HeaderMap, body: Body) -> Result<Capped, Box<Resp
     // Announced past the drain limit: read what the module needs and stop.
     let announced_big = announced.is_some_and(|n| n > MAX_DRAIN as u64);
     let mut body = body;
-    let mut buf = Vec::with_capacity(announced.map_or(0, |n| n.min(KEEP as u64) as usize));
+    let mut buf = Vec::with_capacity(announced.map_or(0, |n| n.min(keep as u64) as usize));
     let mut total = 0usize;
     let mut close = false;
     while let Some(frame) = body.frame().await {
@@ -227,15 +233,15 @@ async fn read_capped(headers: &HeaderMap, body: Body) -> Result<Capped, Box<Resp
             continue;
         };
         total = total.saturating_add(data.len());
-        let room = KEEP - buf.len();
+        let room = keep - buf.len();
         buf.extend_from_slice(&data[..data.len().min(room)]);
-        if (announced_big && total >= KEEP) || total > MAX_DRAIN {
+        if (announced_big && total >= keep) || total > MAX_DRAIN {
             close = true;
             break;
         }
     }
     Ok(Capped {
-        over: total > MAX_BODY,
+        over: total >= keep,
         bytes: buf,
         close,
     })
@@ -252,7 +258,7 @@ async fn run(
         Ok(n) => op(n),
         Err(p) => return *p,
     };
-    let body = match read_capped(headers, body).await {
+    let body = match read_capped(headers, body, app.verifier.max_input_bytes()).await {
         Ok(b) => b,
         Err(p) => return *p,
     };

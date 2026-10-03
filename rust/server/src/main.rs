@@ -12,24 +12,22 @@ mod tests;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use roots::Roots;
-use runtime::{Load, Op, Runtime, Verifier};
+use runtime::{Instance, Load, Op, Runtime, Verifier};
 use std::io::{BufRead, Read, Write};
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
 use std::time::Instant;
 
-/// The request body cap: Apple's verifyReceipt answers 3,145,728 bytes and
-/// refuses one more (fixtures/cases.json, "Resource bounds"). A larger body
-/// or stdin reaches the module cut to MAX_BODY + 1 bytes, so the module
-/// answers its own size refusal; the HTTP server sends that answer with
-/// status 413 and the CLI prints it and exits 3.
-pub const MAX_BODY: usize = 3_145_728;
-
-/// After `--help`: what clap's generated text does not say.
+/// After `--help`: what clap's generated text does not say. The input
+/// length is the module's own: its `init` answer states `max_input_bytes`
+/// (one over its largest cap; `aprv info` shows it), a longer body or stdin
+/// reaches the module cut to that length, and the module answers its own
+/// size refusal for it (DECISIONS.md R42). The HTTP server sends that
+/// answer with status 413 and the CLI prints it and exits 3.
 const AFTER_HELP: &str = "\
 Every command but precompile takes --component FILE.wasm in the full build.
 Environment: APRV_LISTEN (serve's address; default 127.0.0.1:8080), APRV_TOKEN (serve's token).
-CLI exit codes: 0 a result, 2 usage or configuration, 3 input over 3145728 bytes (the module's answer is on stdout), 70 trap, ABI or load failure.";
+CLI exit codes: 0 a result, 2 usage or configuration, 3 input over the module's size cap (the module's answer is on stdout), 70 trap, ABI or load failure.";
 
 /// CLI exit codes.
 const EXIT_OK: i32 = 0;
@@ -221,19 +219,16 @@ enum Command {
     Endpoint(u32),
 }
 
-/// Reads stdin, runs one operation in one fresh instance and writes the
-/// module's JSON to stdout, byte for byte. Input over MAX_BODY bytes is cut
-/// to MAX_BODY + 1, as the server cuts a body, so the module answers its
-/// own size refusal; that answer is printed like any other and the exit
-/// status is 3.
+/// Runs one operation in one fresh instance on stdin and writes the
+/// module's JSON to stdout, byte for byte. Stdin is read only after `init`,
+/// to the `max_input_bytes` its answer states: a longer input is cut to
+/// that length, as the server cuts a body, so the module answers its own
+/// size refusal; that answer is printed like any other and the exit status
+/// is 3.
 fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
     let roots = match roots_from(&o.roots) {
         Ok(r) => r,
         Err(e) => return usage(&e),
-    };
-    let (input, over) = match read_input(std::io::stdin().lock()) {
-        Ok(read) => read,
-        Err(e) => return die(format!("reading stdin: {e}")),
     };
     let runtime = match load(&o.component, o.time_limit_ms) {
         Ok(r) => r,
@@ -245,6 +240,14 @@ fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
     // LLVM libunwind a static musl binary links; the kernel frees it all at
     // exit anyway (docs/evidence/2026-09-27-static-musl-server.md §3).
     let runtime = std::mem::ManuallyDrop::new(runtime);
+    let (instance, max_input) = match ready(&runtime, &roots.config_json()) {
+        Ok(ready) => ready,
+        Err(code) => return code,
+    };
+    let (input, over) = match read_input(std::io::stdin().lock(), max_input) {
+        Ok(read) => read,
+        Err(e) => return die(format!("reading stdin: {e}")),
+    };
     let now_ms = o.now_ms.unwrap_or_else(clock_ms);
     let op = match cmd {
         Command::Receipt => Op::VerifyReceipt { now_ms },
@@ -252,42 +255,48 @@ fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
         Command::Endpoint(env) => Op::Endpoint { env, now_ms },
     };
     answer(
-        &runtime,
-        &roots.config_json(),
+        instance,
         op,
         &input,
-        over,
+        over.then_some(max_input),
         &mut std::io::stdout().lock(),
     )
 }
 
-/// The module's input: at most MAX_BODY + 1 bytes of `r`, and whether `r`
-/// held more than MAX_BODY.
-fn read_input(r: impl Read) -> std::io::Result<(Vec<u8>, bool)> {
+/// A fresh instance after `init`, and the `max_input_bytes` its answer
+/// states; otherwise the exit status, with the reason on stderr: 2 for
+/// roots `init` refused, 70 for a failure.
+fn ready(runtime: &Runtime, config_json: &[u8]) -> Result<(Instance, usize), i32> {
+    match runtime.ready_instance(config_json) {
+        Ok(Ok(ready)) => Ok(ready),
+        Ok(Err(answer)) => {
+            eprintln!("aprv: the component refused the roots configuration: {answer}");
+            Err(EXIT_USAGE)
+        }
+        Err(e) => Err(die(e)),
+    }
+}
+
+/// The module's input: at most `max_input` bytes of `r` (the length the
+/// module's `init` answer states), and whether it is over the module's cap,
+/// which an input of that length or more is.
+fn read_input(r: impl Read, max_input: usize) -> std::io::Result<(Vec<u8>, bool)> {
     let mut input = Vec::new();
-    r.take(MAX_BODY as u64 + 1).read_to_end(&mut input)?;
-    let over = input.len() > MAX_BODY;
+    r.take(max_input as u64).read_to_end(&mut input)?;
+    let over = input.len() >= max_input;
     Ok((input, over))
 }
 
-/// Runs `op` on `input` in a fresh instance, writes the module's answer to
-/// `out` and returns the exit status: 0, or 3 for an input over the cap.
+/// Runs `op` on `input` in `instance`, a fresh one after `init`, writes the
+/// module's answer to `out` and returns the exit status: 0, or 3 for an
+/// input over the cap (`over` holds the length it was cut to).
 fn answer(
-    runtime: &Runtime,
-    config_json: &[u8],
+    mut instance: Instance,
     op: Op,
     input: &[u8],
-    over: bool,
+    over: Option<usize>,
     out: &mut impl Write,
 ) -> i32 {
-    let mut instance = match runtime.ready_instance(config_json) {
-        Ok(Ok(i)) => i,
-        Ok(Err(answer)) => {
-            eprintln!("aprv: the component refused the roots configuration: {answer}");
-            return EXIT_USAGE;
-        }
-        Err(e) => return die(e),
-    };
     let json = match instance.call(op, input) {
         Ok(json) => json,
         Err(e) => return die(e),
@@ -300,10 +309,9 @@ fn answer(
     {
         return die("writing stdout");
     }
-    if over {
+    if let Some(max_input) = over {
         eprintln!(
-            "aprv: input larger than {MAX_BODY} bytes; the module answered its first {} bytes",
-            MAX_BODY + 1
+            "aprv: input over the module's size cap; the module answered its first {max_input} bytes"
         );
         return EXIT_TOO_LARGE;
     }
@@ -312,7 +320,9 @@ fn answer(
 
 // ------------------------------------------------------------ info, precompile
 
-fn build_info(runtime: &Runtime) -> serde_json::Value {
+/// What `aprv info` and `GET /v1/info` state. `max_input_bytes` is the
+/// length the module's `init` answer stated.
+fn build_info(runtime: &Runtime, max_input_bytes: usize) -> serde_json::Value {
     serde_json::json!({
         "abi": "aprv:verifier@0.1.0",
         "component_sha256": runtime.source.component_sha256,
@@ -322,7 +332,7 @@ fn build_info(runtime: &Runtime) -> serde_json::Value {
         "wasm_features": runtime::wasm_features(&runtime::config()),
         "epoch_interruption": true,
         "limits": {
-            "max_body_bytes": MAX_BODY,
+            "max_input_bytes": max_input_bytes,
             "max_guest_memory_bytes": runtime::MAX_GUEST_MEMORY,
             "max_core_instances_per_store": runtime::MAX_CORE_INSTANCES,
         },
@@ -333,11 +343,25 @@ fn build_info(runtime: &Runtime) -> serde_json::Value {
 
 fn info(component: ComponentArg) -> i32 {
     let t = Instant::now();
-    match load(&component, None) {
-        Ok(runtime) => {
+    // The input length is the module's: one instance with the built-in
+    // roots says it.
+    let ready = load(&component, None).and_then(|runtime| {
+        let runtime = std::mem::ManuallyDrop::new(runtime);
+        match runtime.ready_instance(&Roots::Defaults.config_json()) {
+            Ok(Ok((instance, max))) => {
+                std::mem::forget(instance);
+                Ok((runtime, max))
+            }
+            Ok(Err(answer)) => Err(format!(
+                "the component refused its built-in roots: {answer}"
+            )),
+            Err(e) => Err(format!("the component failed its init: {e}")),
+        }
+    });
+    match ready {
+        Ok((runtime, max_input_bytes)) => {
             // As the CLI: exit without the runtime's slow teardown.
-            let runtime = std::mem::ManuallyDrop::new(runtime);
-            let mut v = build_info(&runtime);
+            let mut v = build_info(&runtime, max_input_bytes);
             v["load_ms"] = serde_json::json!((t.elapsed().as_secs_f64() * 1e4).round() / 10.0);
             println!("{}", serde_json::to_string_pretty(&v).unwrap());
             EXIT_OK
@@ -412,7 +436,6 @@ fn serve(o: ServeArgs) -> i32 {
         Err(e) => return die(e),
     };
     let load_ms = t0.elapsed().as_secs_f64() * 1e3;
-    let mut info = build_info(&runtime);
     let verifier = match Verifier::new(runtime, roots.config_json(), o.lifecycle == Lifecycle::Pool)
     {
         Ok(v) => v,
@@ -421,6 +444,7 @@ fn serve(o: ServeArgs) -> i32 {
             return EXIT_USAGE;
         }
     };
+    let mut info = build_info(&verifier.runtime, verifier.max_input_bytes());
     let workers = o.workers.map_or_else(
         || {
             std::thread::available_parallelism()

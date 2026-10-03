@@ -196,20 +196,51 @@ impl Runtime {
         })
     }
 
-    /// A fresh instance with `init` done. `Ok(Err(message))` is `init`'s
-    /// `{"ok":false,...}` answer: the configuration was refused.
+    /// A fresh instance with `init` done, and the `max_input_bytes` its
+    /// answer states. `Ok(Err(answer))` is any answer but
+    /// `{"ok":true,...}`: the configuration was refused.
     pub fn ready_instance(
         &self,
         config_json: &[u8],
-    ) -> Result<Result<Instance, String>, InvokeError> {
+    ) -> Result<Result<(Instance, usize), String>, InvokeError> {
         let mut i = self.instantiate()?;
         let answer = i.call(Op::Init, config_json)?;
-        if answer == r#"{"ok":true}"# {
-            Ok(Ok(i))
-        } else {
-            Ok(Err(answer))
-        }
+        Ok(match max_input_bytes(&answer)? {
+            Some(max) => Ok((i, max)),
+            None => Err(answer),
+        })
     }
+}
+
+/// The `max_input_bytes` of an accepting `init` answer
+/// (`{"ok":true,"max_input_bytes":N}`, rust/bindings/wire/schema), or
+/// `None` for a refusal. The module states how many bytes of one input it
+/// needs (DECISIONS.md R42): a longer input is cut to that length, and the
+/// module answers its own size refusal for it. An accepting answer without
+/// a usable number is the component breaking the interface.
+pub fn max_input_bytes(answer: &str) -> Result<Option<usize>, InvokeError> {
+    let broken = || {
+        InvokeError::Abi(format!(
+            "init accepted the configuration but states no max_input_bytes: {answer}"
+        ))
+    };
+    let Ok(serde_json::Value::Object(members)) = serde_json::from_str::<serde_json::Value>(answer)
+    else {
+        return Ok(None);
+    };
+    if members.get("ok") != Some(&serde_json::Value::Bool(true)) {
+        return Ok(None);
+    }
+    let max = members
+        .get("max_input_bytes")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .filter(|n| *n > 0)
+        .ok_or_else(broken)?;
+    if members.len() != 2 {
+        return Err(broken());
+    }
+    Ok(Some(max))
 }
 
 fn load_embedded(engine: &Engine) -> Result<(Component, Source), String> {
@@ -423,20 +454,22 @@ pub enum Lifecycle {
     Pool(Mutex<Vec<Instance>>),
 }
 
-/// The runtime, the roots configuration every instance gets, and the
-/// lifecycle: the one entry point the HTTP routes and the CLI call.
+/// The runtime, the roots configuration every instance gets, the
+/// lifecycle and the input length the module's first `init` stated: the
+/// one entry point the HTTP routes and the CLI call.
 pub struct Verifier {
     pub runtime: Runtime,
     config_json: Vec<u8>,
     lifecycle: Lifecycle,
+    max_input_bytes: usize,
 }
 
 impl Verifier {
     /// Checks the configuration once with a real instance, so a refused
     /// root stops the server at start instead of failing every request.
     pub fn new(runtime: Runtime, config_json: Vec<u8>, pool: bool) -> Result<Verifier, String> {
-        let first = match runtime.ready_instance(&config_json) {
-            Ok(Ok(i)) => i,
+        let (first, max_input_bytes) = match runtime.ready_instance(&config_json) {
+            Ok(Ok(ready)) => ready,
             Ok(Err(answer)) => {
                 return Err(format!(
                     "the component refused the roots configuration: {answer}"
@@ -453,12 +486,22 @@ impl Verifier {
             runtime,
             config_json,
             lifecycle,
+            max_input_bytes,
         })
+    }
+
+    /// The most bytes of one input the module needs, as its `init` answer
+    /// stated: a body or stdin is cut to this length, and one of this
+    /// length or more is over the module's cap.
+    pub fn max_input_bytes(&self) -> usize {
+        self.max_input_bytes
     }
 
     fn fresh(&self) -> Result<Instance, InvokeError> {
         match self.runtime.ready_instance(&self.config_json)? {
-            Ok(i) => Ok(i),
+            // Every instance runs the one compiled component, so its answer
+            // states the same length the first one did.
+            Ok((i, _)) => Ok(i),
             Err(answer) => Err(InvokeError::Abi(format!(
                 "init refused the configuration accepted at start: {answer}"
             ))),
@@ -504,6 +547,39 @@ mod tests {
             ours == abi,
             "rust/server/wit/aprv.wit differs from rust/bindings/abi/wit/aprv.wit"
         );
+    }
+
+    /// Only an accepting answer with a positive length is ready; any other
+    /// answer is a refusal to report, and an accepting one without a usable
+    /// length breaks the interface.
+    #[test]
+    fn init_answers_are_read_for_the_input_length() {
+        assert_eq!(
+            max_input_bytes(r#"{"ok":true,"max_input_bytes":3145729}"#),
+            Ok(Some(3_145_729))
+        );
+        for refused in [
+            r#"{"ok":false,"message":"roots[0]: not a certificate"}"#,
+            r#"{"ok":false}"#,
+            "",
+            "not json",
+            "[]",
+        ] {
+            assert_eq!(max_input_bytes(refused), Ok(None), "{refused}");
+        }
+        for broken in [
+            r#"{"ok":true}"#,
+            r#"{"ok":true,"max_input_bytes":0}"#,
+            r#"{"ok":true,"max_input_bytes":-1}"#,
+            r#"{"ok":true,"max_input_bytes":"3145729"}"#,
+            r#"{"ok":true,"max_input_bytes":1.5}"#,
+            r#"{"ok":true,"max_input_bytes":3145729,"message":"m"}"#,
+        ] {
+            assert!(
+                matches!(max_input_bytes(broken), Err(InvokeError::Abi(_))),
+                "{broken}"
+            );
+        }
     }
 
     #[test]

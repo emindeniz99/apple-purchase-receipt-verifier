@@ -22,7 +22,7 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `aprv verify-receipt` | stdin: the receipt's `receipt-data` string (base64 of the DER) |
 | `aprv verify-signed-data` | stdin: a compact JWS |
 | `aprv verify-receipt-endpoint production\|sandbox` | stdin: a verifyReceipt request body; stdout: Apple's response |
-| `aprv info` | JSON: the component's SHA-256, the Wasmtime version and features, the limits |
+| `aprv info` | JSON: the component's SHA-256, the Wasmtime version and features, the limits (`max_input_bytes` from one `init` with the built-in roots) |
 | `aprv precompile C.wasm --target T -o F.ccwasm` | The full build only; see [The precompile rule](#the-precompile-rule) |
 
 ### Flags and environment
@@ -56,7 +56,7 @@ environment variables of their own.
 |---|---|
 | 0 | A result: the module's JSON is on stdout, verified or not |
 | 2 | Usage or configuration: a bad flag, an unreadable `--roots` file, roots `init` refused |
-| 3 | stdin is over 3,145,728 bytes. The module got its first 3,145,729 bytes and its answer, its own size refusal, is on stdout as for 0 |
+| 3 | stdin is over the module's size cap: `max_input_bytes` long or longer, the length the module's `init` answer states (3,145,729, one over its 3,145,728-byte cap; `aprv info` shows it). The module got that many bytes and its answer, its own size refusal, is on stdout as for 0 |
 | 70 | A trap, an ABI fault or a load failure; the message is on stderr |
 
 The CLI never drops the Wasmtime runtime before it exits
@@ -77,19 +77,22 @@ process (`docs/evidence/2026-09-27-static-musl-server.md` §3).
 | `GET /openapi.json` | | [`openapi.yaml`](openapi.yaml) as JSON, the wire schemas bundled |
 
 - **A verification result is HTTP 200** with the module's JSON, byte for
-  byte, verified or not: `{"verified":true,"payload":...}`,
+  byte, verified or not: `{"verified":true,"payload":...,"environment":...}`,
   `{"verified":false,"reason":"...","message":"..."}`, or Apple's
   endpoint response. The bodies are described by
   `rust/bindings/wire/schema/verify-receipt-result.schema.json` and
   `verify-signed-data-result.schema.json`, which the OpenAPI document
   references.
-- **A body over 3,145,728 bytes is HTTP 413 with the module's answer.**
-  The server hands the module the body's first 3,145,729 bytes, as every
-  Wasm host cuts an input, so the module still sees it over its cap and
-  answers its own size refusal: `TOO_LARGE`, or `{"status":21002}` at the
-  endpoint. That JSON is the 413's body, byte for byte, with the 200's
-  schema; a client reads it as it reads a 200. The cap and the refusal's
-  wording live in the module alone.
+- **A body over the module's cap is HTTP 413 with the module's answer.**
+  The module's `init` answer states `max_input_bytes`, one over its
+  largest cap (3,145,729 today), and `GET /v1/info` reports it under
+  `limits`. The server hands the module at most that many bytes of a body,
+  as every Wasm host cuts an input, so a body of that length or longer
+  still reaches the module over its cap and the module answers its own
+  size refusal: `TOO_LARGE`, or `{"status":21002}` at the endpoint. That
+  JSON is the 413's body, byte for byte, with the 200's schema; a client
+  reads it as it reads a 200. The cap, the length and the refusal's
+  wording live in the module alone (DECISIONS.md R42).
 - **`X-Aprv-Now-Ms`** (u64, decimal) is the call's clock: the
   certificate-validity instant when the input states no usable date, and
   `request_date` at the endpoint. Without it, the server's clock.
@@ -165,7 +168,7 @@ A bad handshake exits 2 with a message on stderr and prints no address.
 
 | Limit | Value |
 |---|---|
-| Request body, CLI stdin | 3,145,728 bytes, Apple's own verifyReceipt limit. A larger input reaches the module cut to 3,145,729 bytes; its answer is a 413 or exit 3. Past the cap the server reads and discards up to 16 MiB before answering, so a client still sending gets the answer rather than a reset, and keeps its connection. A body announced larger (`Content-Length`) is read to 3,145,729 bytes, answered, and the connection closed; so is one that streams past 16 MiB |
+| Request body, CLI stdin | The module's: its largest cap is 3,145,728 bytes, Apple's own verifyReceipt limit, and its `init` answer states `max_input_bytes`, one more. A larger input reaches the module cut to `max_input_bytes`; its answer is a 413 or exit 3. Past the cap the server reads and discards up to 16 MiB before answering, so a client still sending gets the answer rather than a reset, and keeps its connection. A body announced larger (`Content-Length`) is read to `max_input_bytes`, answered, and the connection closed; so is one that streams past 16 MiB |
 | Linear memory per store | 256 MiB (`StoreLimits`, `trap_on_grow_failure`); a larger grow traps |
 | Instances per store | one component instance (3 core instances: wit-component's shim, the module, the fixup) |
 | Guest time per call | 10 s by default (`--time-limit-ms`), by epoch interruption with a 10 ms tick |
