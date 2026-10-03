@@ -27,4 +27,5 @@ for c in cases hostile algorithms substrate fuzz; do
   printf '%s: ' "$c"
   python3 "$g1/same.py" "$g1/rows/module-$c.jsonl" "$work/host-$c.jsonl" || status=1
 done
+echo "restore the committed module and pin: git checkout -- internal/wasm/aprv.wasm internal/wasm/aprv.wasm.sha256"
 exit $status
