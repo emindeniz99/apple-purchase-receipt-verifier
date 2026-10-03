@@ -66,14 +66,20 @@ final class MeasurementTests: XCTestCase {
                     var guest = guests[config]
                     if guest == nil {
                         let fresh = try Guest(module)
-                        do {
-                            try fresh.start(Array(config.utf8))
+                        // A `Result`, not a nested `catch HostError.initRefused`
+                        // inside this `do`: Swift 6.3.3's SILGenCleanup pass
+                        // aborts on that shape (ownership verifier, "Found
+                        // outside of lifetime use").
+                        switch Result { () throws(HostError) in try fresh.start(Array(config.utf8)) } {
+                        case .success:
                             guests[config] = fresh
-                        } catch HostError.initRefused {
+                        case .failure(.initRefused):
                             // init refused the configuration: its answer, as
                             // the module wrote it, is the row's answer, read
                             // again from an instance not started.
                             answer = try Guest(module).initialize(Array(config.utf8))
+                        case .failure(let error):
+                            throw error
                         }
                         guest = fresh
                     }
