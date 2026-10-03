@@ -103,101 +103,59 @@ pub fn decode_base64url_strict(text: &[u8]) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::indexing_slicing,
-    clippy::cast_possible_truncation
-)]
 mod tests {
-    //! The engines replaced two hand-written routines; these are those
-    //! routines, kept as the oracle the engines must match byte for byte.
-    use super::{decode_base64url_strict, encode};
+    use super::{decode_base64url_strict, decode_receipt_base64, encode};
 
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    fn old_encode(bytes: &[u8]) -> String {
-        let mut out = String::new();
-        for chunk in bytes.chunks(3) {
-            let n = chunk
-                .iter()
-                .enumerate()
-                .fold(0u32, |n, (i, b)| n | (u32::from(*b) << (16 - 8 * i)));
-            for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
-                if i <= chunk.len() {
-                    out.push(char::from(ALPHABET[((n >> shift) & 0x3f) as usize]));
-                } else {
-                    out.push('=');
-                }
-            }
-        }
-        out
-    }
-
-    fn old_strict(text: &str) -> Option<Vec<u8>> {
-        let body = text.as_bytes();
-        if body.len() % 4 == 1 {
-            return None;
-        }
-        let mut out = Vec::new();
-        let (mut accumulator, mut bits) = (0u32, 0u32);
-        for byte in body {
-            let value = match byte {
-                b'A'..=b'Z' => u32::from(*byte - b'A'),
-                b'a'..=b'z' => u32::from(*byte - b'a') + 26,
-                b'0'..=b'9' => u32::from(*byte - b'0') + 52,
-                b'-' => 62,
-                b'_' => 63,
-                _ => return None,
-            };
-            accumulator = (accumulator << 6) | value;
-            bits += 6;
-            if bits >= 8 {
-                bits -= 8;
-                out.push(((accumulator >> bits) & 0xff) as u8);
-            }
-        }
-        if bits > 0 && accumulator & ((1 << bits) - 1) != 0 {
-            return None;
-        }
-        Some(out)
-    }
-
-    struct Rng(u64);
-
-    impl Rng {
-        fn next(&mut self) -> u64 {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            self.0
-        }
-    }
-
+    /// RFC 4648 §10's vectors, padded.
     #[test]
-    fn the_engines_match_the_hand_written_routines() {
-        let symbols = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_+/= \n";
-        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
-        for _ in 0..200_000 {
-            let length = (rng.next() % 24) as usize;
-            let text: String = (0..length)
-                .map(|_| {
-                    // Mostly the URL alphabet, sometimes anything else.
-                    let pick = rng.next();
-                    let index = if pick % 8 == 0 {
-                        pick % symbols.len() as u64
-                    } else {
-                        pick % 64
-                    };
-                    char::from(symbols[index as usize])
-                })
-                .collect();
-            assert_eq!(
-                decode_base64url_strict(text.as_bytes()),
-                old_strict(&text),
-                "{text:?}"
-            );
-            let bytes: Vec<u8> = (0..length).map(|_| rng.next() as u8).collect();
-            assert_eq!(encode(&bytes), old_encode(&bytes), "{bytes:?}");
+    fn encode_is_padded_standard_base64() {
+        for (bytes, text) in [
+            (&b""[..], ""),
+            (b"f", "Zg=="),
+            (b"fo", "Zm8="),
+            (b"foo", "Zm9v"),
+            (b"foob", "Zm9vYg=="),
+            (b"\xfb\xff", "+/8="),
+        ] {
+            assert_eq!(encode(bytes), text);
+        }
+    }
+
+    /// One encoding per byte sequence: every other spelling the doc
+    /// comment lists is refused.
+    #[test]
+    fn a_jws_segment_has_one_spelling() {
+        assert_eq!(decode_base64url_strict(b"Zm9vYg"), Some(b"foob".to_vec()));
+        assert_eq!(decode_base64url_strict(b"-_8"), Some(b"\xfb\xff".to_vec()));
+        assert_eq!(decode_base64url_strict(b""), Some(Vec::new()));
+        for refused in [
+            &b"Zm9vYg=="[..], // padding
+            b"Zm9vYg=",       // partial padding
+            b"+/8",           // the standard alphabet
+            b"Zm9vY",         // a dangling character
+            b"Zm9vYh",        // unused low bits that are not zero
+            b"Zm9v Yg",       // whitespace
+        ] {
+            assert_eq!(decode_base64url_strict(refused), None, "{refused:?}");
+        }
+    }
+
+    /// Canonical padded standard base64, trailing bits accepted, nothing
+    /// else.
+    #[test]
+    fn receipt_data_is_canonical_standard_base64() {
+        assert_eq!(decode_receipt_base64(b"Zm9vYg=="), Some(b"foob".to_vec()));
+        assert_eq!(decode_receipt_base64(b"Zm9vYh=="), Some(b"foob".to_vec()));
+        for refused in [
+            &b""[..],
+            b"Zm9vYg",       // padding omitted
+            b"Zm9vYg=",      // partial padding
+            b"Zm9vYg===",    // extra padding
+            b"-_8=",         // the base64url alphabet
+            b"Zm9v\nYg==",   // whitespace
+            b"Zm9vYg==Zg==", // anything after the padding
+        ] {
+            assert_eq!(decode_receipt_base64(refused), None, "{refused:?}");
         }
     }
 }
