@@ -84,15 +84,13 @@ class ServerUrlTest {
     }
 
     /**
-     * A JVM-wide HTTP proxy never carries a request to the server: a verdict
-     * travels only to the server the source names. The default
-     * {@link ProxySelector} here sends every HTTP request to a closed port,
-     * so a request that consulted it would fail, and none may consult it.
-     * Blind spot: it answers {@code socket://} with a direct connection and
-     * does not count those questions, so it does not see a SOCKS proxy. Java
-     * 8 asks it that for every new connection, as JDK 21 does for an https
-     * one, and a SOCKS answer would carry the connection
-     * (ServerConnection#exchange).
+     * A JVM-wide proxy never carries a request to the server: a verdict
+     * travels only to the server the source names. HttpConn opens its
+     * socket with {@link Proxy#NO_PROXY}, so it never asks the default
+     * {@link ProxySelector}. The one here counts every question, the
+     * {@code socket://} ones a SOCKS proxy would answer included, and sends
+     * HTTP requests to a closed port. ServerHttpTest checks a SOCKS answer
+     * on its own (aDefaultProxySelectorDoesNotRouteTheEngine).
      */
     @Test
     void aJvmWideProxyIsNeverUsed() throws Exception {
@@ -104,10 +102,10 @@ class ServerUrlTest {
             ProxySelector.setDefault(new ProxySelector() {
                 @Override
                 public List<Proxy> select(URI uri) {
+                    asked.incrementAndGet();
                     if (uri.getScheme().equals("socket")) {
                         return Collections.singletonList(Proxy.NO_PROXY);
                     }
-                    asked.incrementAndGet();
                     return Collections.singletonList(new Proxy(Proxy.Type.HTTP, closed));
                 }
 
@@ -121,7 +119,7 @@ class ServerUrlTest {
                     String answer =
                             verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + g5 + "\"}");
                     assertTrue(answer.contains("\"status\":0"), answer);
-                    assertEquals(0, asked.get(), "requests that consulted the JVM's ProxySelector");
+                    assertEquals(0, asked.get(), "questions to the JVM's ProxySelector");
                 } finally {
                     verifier.close();
                 }
