@@ -2,5 +2,5 @@
 public enum Version {
     /// Bumped by release-please together with the other version files; never
     /// edit it by hand.
-    public static let current = "0.7.0"  // x-release-please-version
+    public static let current = "0.8.0"  // x-release-please-version
 }
