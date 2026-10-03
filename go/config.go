@@ -79,12 +79,12 @@ func (c *Config) Clock() func() int64 { return c.clock }
 
 func systemMillis() int64 { return time.Now().UnixMilli() }
 
-// initConfig is init's argument: {"roots":["<base64 DER>", ...]}. An empty
-// list means the Apple roots compiled into the module, which is what the
-// default Config sends. A caller's own anchors travel as their DER bytes;
-// nothing here reads a certificate.
+// initConfig is init's argument: {"roots":["<base64 DER>", ...]}. No roots
+// key, {}, means the Apple roots compiled into the module, which is what
+// the default Config sends, as every other host does. A caller's own
+// anchors travel as their DER bytes; nothing here reads a certificate.
 func initConfig(roots []*x509.Certificate, builtin bool) []byte {
-	encoded := []string{}
+	var encoded []string
 	if !builtin {
 		for _, root := range roots {
 			encoded = append(encoded, base64.StdEncoding.EncodeToString(root.Raw))
@@ -92,7 +92,7 @@ func initConfig(roots []*x509.Certificate, builtin bool) []byte {
 	}
 	// Marshal cannot fail on a list of strings.
 	out, _ := json.Marshal(struct {
-		Roots []string `json:"roots"`
+		Roots []string `json:"roots,omitempty"`
 	}{encoded})
 	return out
 }
