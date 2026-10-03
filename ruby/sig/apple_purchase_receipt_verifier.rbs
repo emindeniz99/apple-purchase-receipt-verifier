@@ -46,8 +46,6 @@ module ApplePurchaseReceiptVerifier
     ACCOUNT_NOT_FOUND: Integer
     INTERNAL_DATA_ACCESS_ERROR_RANGE_FIRST: Integer
     INTERNAL_DATA_ACCESS_ERROR_RANGE_LAST: Integer
-
-    def self.for_reason: (Symbol reason) -> Integer
   end
 
   class AbiMismatchError < StandardError

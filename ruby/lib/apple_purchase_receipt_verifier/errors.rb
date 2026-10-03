@@ -62,25 +62,6 @@ module ApplePurchaseReceiptVerifier
     ACCOUNT_NOT_FOUND               = 21_010
     INTERNAL_DATA_ACCESS_ERROR_RANGE_FIRST = 21_100
     INTERNAL_DATA_ACCESS_ERROR_RANGE_LAST  = 21_199
-
-    class << self
-      # The status {Verifier#verify_receipt_endpoint} answers for a given
-      # verification {Reason}, the same table in every port.
-      #
-      # @param reason [Symbol] one of {Reason::ALL}
-      # @return [Integer]
-      def for_reason(reason)
-        case reason
-        when Reason::MALFORMED, Reason::TOO_LARGE
-          MALFORMED_RECEIPT_DATA
-        when Reason::INVALID_SIGNATURE, Reason::UNTRUSTED_CHAIN, Reason::INVALID_CERTIFICATE,
-             Reason::INVALID_CERTIFICATE_PURPOSE
-          RECEIPT_NOT_AUTHENTICATED
-        else # UNREADABLE_PAYLOAD, INTERNAL_ERROR
-          INTERNAL_DATA_ACCESS_ERROR
-        end
-      end
-    end
   end
 
   # The wasm module this gem carries does not speak the ABI this wrapper was

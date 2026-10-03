@@ -69,15 +69,11 @@ class ApiShapeTest < Minitest::Test
     assert_equal "SANDBOX", APRV::Environment::SANDBOX
   end
 
-  # docs/design/0.7-api.md, section 3: the status table the wrapper uses when
-  # a call fails before the module can answer (21002 for a non-String body,
-  # 21009 for a trap or a clock that failed).
-  def test_the_endpoint_status_for_each_reason_is_the_documented_table
-    {
-      MALFORMED: 21_002, TOO_LARGE: 21_002, INVALID_SIGNATURE: 21_003, UNTRUSTED_CHAIN: 21_003,
-      INVALID_CERTIFICATE: 21_003, INVALID_CERTIFICATE_PURPOSE: 21_003, UNREADABLE_PAYLOAD: 21_009,
-      INTERNAL_ERROR: 21_009
-    }.each { |reason, status| assert_equal status, APRV::AppleStatus.for_reason(reason), reason }
+  # Which status a reason answers at the endpoint is the core's table
+  # (SURFACE.md section 10), read back from the module's own body. The gem
+  # keeps no copy of it.
+  def test_the_reason_to_status_table_is_the_cores_alone
+    refute_respond_to APRV::AppleStatus, :for_reason
   end
 
   # The environment is the module's answer, on each payload (DECISIONS.md
@@ -174,15 +170,21 @@ class ApiShapeTest < Minitest::Test
     assert_equal({ "status" => 0 }, JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, body)))
   end
 
-  # The 0.7 rule for a null or non-String input: MALFORMED, not a raise, and
-  # nothing reaches the module.
-  def test_an_input_that_is_not_a_string_is_malformed
+  # The 0.7 rule for a null or non-String input: not a raise, and the module
+  # answers it as it answers an empty input (MALFORMED; 21002 at the
+  # endpoint, which the conformance cases pin on the real module). The gem
+  # decides no verdict of its own, so each answer here is the fake's answer
+  # to "".
+  def test_an_input_that_is_not_a_string_reaches_the_module_as_empty
     verifier = fake_verifier
+    empty_receipt = verifier.verify_receipt("").failure
+    empty_jws = verifier.verify_signed_data("").failure
+    empty_endpoint = verifier.verify_receipt_endpoint(APRV::Environment::PRODUCTION, "")
+    assert_equal APRV::Reason::MALFORMED, empty_receipt.reason
     [nil, 42, :sym, ["v"]].each do |input|
-      assert_equal APRV::Reason::MALFORMED, verifier.verify_receipt(input).failure.reason
-      assert_equal APRV::Reason::MALFORMED, verifier.verify_signed_data(input).failure.reason
-      assert_equal({ "status" => 21_002 },
-                   JSON.parse(verifier.verify_receipt_endpoint(APRV::Environment::SANDBOX, input)))
+      assert_equal empty_receipt, verifier.verify_receipt(input).failure
+      assert_equal empty_jws, verifier.verify_signed_data(input).failure
+      assert_equal empty_endpoint, verifier.verify_receipt_endpoint(APRV::Environment::PRODUCTION, input)
     end
   end
 
