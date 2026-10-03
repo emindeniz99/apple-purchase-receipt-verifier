@@ -25,12 +25,7 @@ export {
   type VerifiedResult,
   type FailedResult,
 } from '../errors.js';
-export {
-  AppleStatus,
-  Environment,
-  environmentFromJwsEnvironment,
-  environmentFromReceiptType,
-} from '../environment.js';
+export { AppleStatus, Environment } from '../environment.js';
 export {
   createInAppPurchase,
   createJsonPayload,

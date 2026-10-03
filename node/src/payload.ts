@@ -12,6 +12,8 @@
  * as `INTERNAL_ERROR`.
  */
 
+import type { Environment } from './environment.js';
+
 export type RawAttributes = ReadonlyMap<number, readonly Uint8Array[]>;
 
 export interface InAppPurchase {
@@ -50,18 +52,43 @@ export interface ReceiptPayload {
   readonly originalApplicationVersion: string | null;
   readonly expirationDateMs: number | null;
   readonly unknownAttributes: RawAttributes;
+  /**
+   * The environment {@link receiptType} names, as the module states it:
+   * `Production` and `ProductionVPP` are `Environment.PRODUCTION`,
+   * `ProductionSandbox` and `ProductionVPPSandbox` `Environment.SANDBOX`,
+   * anything else (`Xcode`, a missing value) `null`. Not part of
+   * {@link toJson}.
+   */
+  readonly environment: Environment | null;
   /** This payload as JSON, for logging and storage: docs/design/0.7-api.md "Our JSON". */
   toJson(): string;
 }
 
-/** A verified JWS payload: the JSON object Apple signed, unchanged. */
+/** A verified JWS payload: the JSON object Apple signed, unchanged, and the environment it names. */
 export interface JsonPayload {
   readonly json: string;
+  /**
+   * The environment the payload names, as the module states it: from the
+   * first of the top-level `environment` (a transaction, renewal info),
+   * `data.environment` (an App Store Server Notification V2) and
+   * `summary.environment` (a summary notification) that is present.
+   * `Production` is `Environment.PRODUCTION` and `Sandbox`
+   * `Environment.SANDBOX`; anything else there (`Xcode`, `LocalTesting`, a
+   * value that is not a string), or none of the three, is `null`.
+   */
+  readonly environment: Environment | null;
 }
 
-/** Builds a {@link JsonPayload} by hand, for callers' own tests. */
-export function createJsonPayload(json: string): JsonPayload {
-  return { json };
+/**
+ * Builds a {@link JsonPayload} by hand, for callers' own tests. The
+ * payload states the `environment` given, `null` when left out; nothing
+ * reads it from `json`.
+ */
+export function createJsonPayload(
+  json: string,
+  environment: Environment | null = null,
+): JsonPayload {
+  return { json, environment };
 }
 
 type ReceiptFields = Omit<ReceiptPayload, 'toJson' | 'inApp' | 'unknownAttributes'>;
@@ -183,6 +210,7 @@ export function createReceiptPayload(
       originalPurchaseDateMs: fields.originalPurchaseDateMs ?? null,
       originalApplicationVersion: fields.originalApplicationVersion ?? null,
       expirationDateMs: fields.expirationDateMs ?? null,
+      environment: fields.environment ?? null,
     },
     fields.inApp ? [...fields.inApp] : [],
     copyUnknownAttributes(fields.unknownAttributes),
@@ -286,8 +314,14 @@ function inAppFromWire(value: unknown): InAppPurchase {
   };
 }
 
-/** A {@link ReceiptPayload} from the `payload` member of a verified receipt answer. */
-export function receiptPayloadFromWire(value: unknown): ReceiptPayload {
+/**
+ * A {@link ReceiptPayload} from the `payload` member of a verified receipt
+ * answer and the `environment` member beside it.
+ */
+export function receiptPayloadFromWire(
+  value: unknown,
+  environment: Environment | null,
+): ReceiptPayload {
   const obj = object(value, 'the receipt payload');
   const inApp = obj['in_app'];
   if (!Array.isArray(inApp)) {
@@ -308,6 +342,7 @@ export function receiptPayloadFromWire(value: unknown): ReceiptPayload {
       originalPurchaseDateMs: num(obj, 'original_purchase_date_ms'),
       originalApplicationVersion: str(obj, 'original_application_version'),
       expirationDateMs: num(obj, 'expiration_date_ms'),
+      environment,
     },
     inApp.map(inAppFromWire),
     unknownAttributesField(obj),

@@ -1,5 +1,6 @@
-// The public surface is the 0.7 API (docs/design/0.7-api.md), and the two
-// entry points are one product: the same names, the same vocabulary, the
+// The public surface is the 0.7 API (docs/design/0.7-api.md) without the
+// two environment helpers, which 0.8 replaced with the payloads'
+// `environment` (DECISIONS.md R42), and the two entry points are one product: the same names, the same vocabulary, the
 // same module underneath. A name added to or dropped from either entry
 // point fails here first.
 // oxlint-disable no-await-in-loop -- two entry points, one after the other, so a failure names its entry point
@@ -21,14 +22,12 @@ const EXPORTS = [
   'createReceiptPayload',
   'createVerifier',
   'defaultConfig',
-  'environmentFromJwsEnvironment',
-  'environmentFromReceiptType',
 ];
 
 const gen = (name) =>
   readFileSync(fileURLToPath(new URL(`../../fixtures/generated-0.7/${name}`, import.meta.url)));
 
-test('both entry points export exactly the 0.7 names', () => {
+test('both entry points export exactly the same names', () => {
   assert.deepEqual(Object.keys(node).toSorted(), EXPORTS);
   assert.deepEqual(Object.keys(web).toSorted(), EXPORTS);
 });
@@ -162,5 +161,34 @@ test('createReceiptPayload and friends build what a caller mocks with', () => {
   assert.deepEqual(JSON.parse(payload.toJson()).bundle_id_bytes, 'AQI=');
   assert.deepEqual(JSON.parse(payload.toJson()).unknown_attributes, { 13: ['/w=='] });
   assert.equal(JSON.parse(payload.toJson()).in_app[0].web_order_line_item_id, '9');
-  assert.deepEqual(node.createJsonPayload('{"a":1}'), { json: '{"a":1}' });
+  assert.equal(payload.environment, null);
+  assert.deepEqual(node.createJsonPayload('{"a":1}'), { json: '{"a":1}', environment: null });
+  assert.deepEqual(node.createJsonPayload('{"a":1}', node.Environment.SANDBOX), {
+    json: '{"a":1}',
+    environment: 'Sandbox',
+  });
+});
+
+test('a hand-built payload states the environment it is given, outside toJson', () => {
+  const payload = node.createReceiptPayload({
+    receiptType: 'Xcode',
+    environment: node.Environment.PRODUCTION,
+  });
+  assert.equal(payload.environment, 'Production', 'nothing derives it from receiptType');
+  assert.ok(!('environment' in JSON.parse(payload.toJson())));
+  assert.equal(
+    node.createJsonPayload('{"environment":"Sandbox"}').environment,
+    null,
+    'nothing reads it from the JSON',
+  );
+});
+
+test('a verified payload carries the environment the module states, outside toJson', () => {
+  const verifier = node.createVerifier(
+    node.createConfig({ roots: [new Uint8Array(gen('receipt-root.der'))] }),
+  );
+  const result = verifier.verifyReceipt(gen('receipt.der').toString('base64'));
+  assert.equal(result.verified, true);
+  assert.equal(result.payload.environment, node.Environment.SANDBOX);
+  assert.ok(!('environment' in JSON.parse(result.payload.toJson())));
 });

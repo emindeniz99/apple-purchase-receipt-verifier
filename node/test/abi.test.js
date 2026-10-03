@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { instantiate } from '../dist/generated/aprv.js';
 import { getCoreModule } from '../dist/load/node.js';
-import { abiProblem, initConfig, randomGet } from '../dist/engine.js';
+import { InitRefusedError, abiProblem, initAnswer, initConfig, randomGet } from '../dist/engine.js';
 
 const repo = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)));
 const utf8 = new TextEncoder();
@@ -22,6 +22,11 @@ const JWS = utf8.encode(repo('fixtures/generated/transaction.jws').toString('asc
 const JWS_CONFIG = initConfig([repo('fixtures/generated/jws-root.der').toString('base64')]);
 const DEFAULTS = initConfig([]);
 const now = () => BigInt(Date.now());
+
+// The receipt and request-body cap; init states one byte over it as the
+// most bytes of one input a host hands over (DECISIONS.md R42).
+const CAP = 3_145_728;
+const INIT_OK = `{"ok":true,"max_input_bytes":${CAP + 1}}`;
 
 /** Fresh bindings; `host` replaces the random-get import, `onCore` sees the core instance. */
 function bindings({ host = randomGet, onCore } = {}) {
@@ -41,7 +46,7 @@ function bindings({ host = randomGet, onCore } = {}) {
 
 function ready(config = DEFAULTS, options) {
   const b = bindings(options);
-  assert.equal(b.init(config), '{"ok":true}');
+  assert.equal(b.init(config), INIT_OK);
   return b;
 }
 
@@ -118,7 +123,37 @@ test('init may be retried after it refuses a root', () => {
   const refused = JSON.parse(b.init(initConfig(['AQID'])));
   assert.equal(refused.ok, false);
   assert.equal(typeof refused.message, 'string');
-  assert.equal(b.init(DEFAULTS), '{"ok":true}');
+  assert.equal(b.init(DEFAULTS), INIT_OK);
+});
+
+test("the facade reads init's answer: max_input_bytes, or the refusal", () => {
+  assert.equal(initAnswer(INIT_OK), CAP + 1);
+  assert.equal(initAnswer('{"max_input_bytes":7,"ok":true}'), 7);
+  const refused = '{"ok":false,"message":"not a certificate"}';
+  assert.throws(
+    () => initAnswer(refused),
+    (e) => e instanceof InitRefusedError && e.answer === refused,
+  );
+  // An accepting answer without a positive integer comes from a module of
+  // another ABI version: no answer, never a cap of the facade's own.
+  for (const text of [
+    '{"ok":true}',
+    '{"ok":true,"max_input_bytes":0}',
+    '{"ok":true,"max_input_bytes":-1}',
+    '{"ok":true,"max_input_bytes":1.5}',
+    '{"ok":true,"max_input_bytes":"3145729"}',
+    '{"ok":true,"max_input_bytes":null}',
+    '{"ok":true,"max_input_bytes":1e300}',
+    '{"ok":false}',
+    'null',
+    'not json',
+  ]) {
+    assert.throws(
+      () => initAnswer(text),
+      (e) => !(e instanceof InitRefusedError) && /init answered/.test(e.message),
+      text,
+    );
+  }
 });
 
 test('a random-get answer of the wrong length traps', () => {
@@ -154,14 +189,13 @@ test('2,000 calls leave linear memory the same size', () => {
 
 // --- the input cap (ABI review) --------------------------------------------
 
-const CAP = 3_145_728;
-
 test('the facade copies at most one byte over the cap, and the module still answers TOO_LARGE', async () => {
-  const { inputBytes, MAX_INPUT_BYTES } = await import('../dist/verifier.js');
+  const { inputBytes } = await import('../dist/verifier.js');
   const { createVerifier, defaultConfig, Environment } = await import('../dist/index.js');
-  assert.equal(MAX_INPUT_BYTES, CAP + 1);
+  const max = initAnswer(bindings().init(DEFAULTS));
+  assert.equal(max, CAP + 1);
   const huge = 'A'.repeat(4 * 1024 * 1024);
-  assert.equal(inputBytes(huge).length, CAP + 1);
+  assert.equal(inputBytes(huge, max).length, CAP + 1);
 
   // The facade's answer is byte for byte the module's answer to the whole input.
   const whole = ready().verifyReceipt(now(), utf8.encode(huge));
@@ -183,19 +217,19 @@ test('the facade copies at most one byte over the cap, and the module still answ
     return memory.buffer.byteLength - before;
   };
   const MiB = 1024 * 1024;
-  assert.ok(grown(inputBytes(huge)) < 4 * MiB, 'the capped input grows memory by under 4 MiB');
+  assert.ok(grown(inputBytes(huge, max)) < 4 * MiB, 'the capped input grows memory by under 4 MiB');
   assert.ok(grown(utf8.encode(huge)) >= 4 * MiB, 'the whole input would have grown it by 4 MiB');
 });
 
 test('an input of exactly the cap is passed whole; one code point over it is not', async () => {
   const { inputBytes } = await import('../dist/verifier.js');
   for (const text of ['A'.repeat(CAP), 'é'.repeat(CAP / 2), `${'A'.repeat(CAP - 4)}\u{1F600}`]) {
-    const bytes = inputBytes(text);
+    const bytes = inputBytes(text, CAP + 1);
     assert.equal(bytes.length, CAP);
     assert.deepEqual(bytes, utf8.encode(text));
   }
   // A four-byte code point straddling the cap: at least one byte over it.
-  const over = inputBytes(`${'A'.repeat(CAP - 1)}\u{1F600}`);
+  const over = inputBytes(`${'A'.repeat(CAP - 1)}\u{1F600}`, CAP + 1);
   assert.equal(over.length, CAP + 1);
   assert.match(ready().verifyReceipt(now(), over), /"reason":"TOO_LARGE"/);
 });
