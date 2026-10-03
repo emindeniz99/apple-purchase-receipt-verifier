@@ -36,7 +36,7 @@
 // PATH; tools/test/check-layering.test.mjs plants one violation of each
 // rule in a copy of the tree and requires a failure.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -205,11 +205,9 @@ function code(text) {
 
 function rustFiles(dir) {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap((entry) => {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) return rustFiles(path);
-    return path.endsWith('.rs') ? [path] : [];
-  });
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => !entry.isDirectory() && entry.name.endsWith('.rs'))
+    .map((entry) => join(entry.parentPath, entry.name));
 }
 
 /** The directories a member's shipped code lives in: its library, binaries and build script. */

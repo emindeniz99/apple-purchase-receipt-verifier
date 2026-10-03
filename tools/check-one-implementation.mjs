@@ -35,7 +35,7 @@
 // applied, so anything else on that line, or the same token in any other
 // file, is still a hit. An entry whose file no longer uses its token is
 // reported as stale, so the list only shrinks.
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -201,13 +201,6 @@ function commentLines(lines, syntax) {
 
 const SKIP = /(^|\/)(tests?|__tests__|spec|fuzz|bench|benches|samples?|examples?|generated|node_modules|dist|build|target|vendor|\.build)(\/|$)/;
 
-function* walk(dir) {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) yield* walk(path);
-    else yield path;
-  }
-}
 
 const USAGE = 'usage: node tools/check-one-implementation.mjs [--enforce <all|lang,lang,...>] [--root <dir>]';
 let args;
@@ -234,7 +227,9 @@ for (const [lang, spec] of Object.entries(LANGS)) {
   for (const dir of spec.dirs) {
     const abs = join(root, dir);
     if (!existsSync(abs)) continue;
-    for (const path of walk(abs)) {
+    for (const entry of readdirSync(abs, { recursive: true, withFileTypes: true })) {
+      if (entry.isDirectory()) continue;
+      const path = join(entry.parentPath, entry.name);
       const rel = relative(root, path);
       if (!spec.files.test(rel) || SKIP.test(relative(abs, path)) || spec.skipDirs?.some((d) => rel.startsWith(`${d}/`))) continue;
       files++;
