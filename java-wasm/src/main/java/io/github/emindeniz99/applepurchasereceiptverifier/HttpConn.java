@@ -41,10 +41,11 @@ final class HttpConn implements Closeable {
     private static final int MAX_HEADERS = 100;
 
     /**
-     * TLS from a context of this connection's own: the JVM's trust store
-     * (javax.net.ssl.trustStore, else cacerts), but not a default SSLContext
-     * or socket factory that other code in the JVM replaced
-     * (SSLContext.setDefault, the ssl.SocketFactory.provider property).
+     * TLS from a context of this connection's own: the JVM's default trust
+     * managers (javax.net.ssl.trustStore, else lib/security/jssecacerts,
+     * else lib/security/cacerts), but not a default SSLContext or socket
+     * factory that other code in the JVM replaced (SSLContext.setDefault,
+     * the ssl.SocketFactory.provider property).
      */
     private static SSLSocketFactory tls() throws IOException {
         try {

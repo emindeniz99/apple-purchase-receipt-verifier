@@ -123,7 +123,8 @@ with every source's reason, in order.
 The engine reaches a `url()` server directly, never through a proxy the
 JVM is set up with. Over `https` it checks the certificate and the host
 name against the JVM's trust store (`javax.net.ssl.trustStore`, else the
-JDK's `cacerts`) with a TLS context of its own, so a default
+JDK's `lib/security/jssecacerts`, else its `lib/security/cacerts`) with a
+TLS context of its own, so a default
 `SSLContext` that other code installs does not apply, and it presents no
 client certificate. It accepts an answer framed by one `Content-Length`
 or by `Transfer-Encoding: chunked` alone, and refuses any other.
