@@ -73,13 +73,13 @@ verified — a chain build that ignored its anchors and a run that found nothing
 look identical.
 
 `receipt` and `receipt-base64` trust Apple's three roots **plus**
-`fixtures/generated/receipt-root.der`, so the Apple-signed public receipts get
-past the chain check and the mutations land on the code beyond it. The
-generated receipts under `fixtures/generated/` predate 0.7's WWDR marker check
-and now stop at `INVALID_CERTIFICATE_PURPOSE`. `receipt` also seeds from
-`fixtures/generated-0.7/`, where they were re-minted with the marker under
-fresh keys; those chain to `fixtures/generated-0.7/receipt-root.der`, which
-`Harness` does not trust yet, so they stop at the chain check. Anything they
+`fixtures/generated-0.7/receipt-root.der`, so the Apple-signed public receipts
+and the receipts under `fixtures/generated-0.7/` that chain to it (most chain
+to their own generator's root) get past the chain check and the mutations
+land on the code beyond it. The generated receipts
+under `fixtures/generated/` chain to the 0.6 root, which is not trusted here;
+they predate 0.7's WWDR marker check and stopped at
+`INVALID_CERTIFICATE_PURPOSE` even under that root. Anything these targets
 accept must then be refused under the fixture *JWS* root, which signed no
 receipt in this repository. `jws` is the mirror image: the fixture JWS root
 trusted, Apple's production JWS roots the unrelated set.
@@ -185,20 +185,20 @@ than its rank suggests — read its `cov`, which is the highest here, instead.
 
 ### The acceptance rates are the number to watch
 
-Measured on 0.6; the receipt rows need re-measuring once `Harness` trusts the
-root the re-minted receipts chain to. `receipt` now seeds from 55
-`fixtures/generated/*.der` and 191 `fixtures/generated-0.7/*.der`.
-
 A target whose seeds never verify still reports coverage, still finds no crash,
 and still looks healthy — while its anchor-set invariant never runs once. What
 the fixtures do under each target's own anchors, measured:
 
 | target | fixtures accepted |
 |---|---|
-| `receipt` | 6 of 28 `fixtures/generated/*.der` |
-| `receipt-base64` | 8 of 16 `fixtures/generated/receipt-b64/*` |
+| `receipt` | 17 of 191 `fixtures/generated-0.7/*.der`, 0 of 55 `fixtures/generated/*.der` |
+| `receipt-base64` | 2 of 17 `fixtures/generated/receipt-b64/*`, 2 of the 3 receipts in `fixtures/public-receipts/` (1 at the default `-max_len=65536`: `receipt-sandbox-legacy.b64` is 105 KB and is loaded cut) |
 | `jws` | 3 of 14 `fixtures/generated/*.jws` |
 | `endpoint-json` | a genuine body answers `{"status":0,…}` |
+
+The `receipt` and `receipt-base64` rows were measured on 0.7
+(`docs/evidence/2026-10-03-fuzz-seed-anchor.md`); the `jws` and
+`endpoint-json` rows on 0.6.
 
 On 0.6, `receipt-base64` read 0 of 16 until its verifier was given the bundle
 id of the genuine public receipt the base64 corpus holds: every seed was

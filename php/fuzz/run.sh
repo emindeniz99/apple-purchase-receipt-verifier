@@ -69,11 +69,19 @@ fetch_phar() {
   mv "$phar.tmp" "$phar"
 }
 
-# Fills SEED_DIRS for the named target.
+# Fills SEED_DIRS for the named target, and SEED_MAX_BYTES with the size
+# above which a seed is not copied (empty: no limit).
 seed_dirs() {
+  SEED_MAX_BYTES=""
   case "$1" in
     verify-receipt)
-      SEED_DIRS=("$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/certs") ;;
+      SEED_DIRS=("$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/certs")
+      # generated-0.7 holds the 1 MB byte-floor receipt and the 3 MB
+      # receipt strings. setMaxLen() bounds only what the fuzzer mutates
+      # to: it runs every corpus entry at full size when it loads the
+      # corpus. 65536, the -max_len the .NET, Java and Ruby receipt
+      # targets pass.
+      SEED_MAX_BYTES=65536 ;;
     verify-receipt-base64)
       SEED_DIRS=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
     verify-transaction)
@@ -91,12 +99,17 @@ run_one() {
 
   # Seeds are content-addressed so re-seeding is idempotent and a seed the
   # fuzzer replaced with a shorter equivalent is simply restored next run.
-  local dir file
+  local dir file size_filter=()
   seed_dirs "$name"
+  if [ -n "$SEED_MAX_BYTES" ]; then
+    size_filter=(-size "-$((SEED_MAX_BYTES + 1))c")
+    # A corpus seeded before the limit existed still holds the large files.
+    find "$corpus" -maxdepth 1 -type f -name 'seed-*' -size "+${SEED_MAX_BYTES}c" -delete
+  fi
   for dir in "${SEED_DIRS[@]}"; do
     while IFS= read -r file; do
       cp -n "$file" "$corpus/seed-$(sha1sum "$file" | cut -c1-40)" 2>/dev/null || true
-    done < <(find "$dir" -maxdepth 1 -type f)
+    done < <(find "$dir" -maxdepth 1 -type f ${size_filter[@]+"${size_filter[@]}"})
   done
 
   # Beside the crash directory, not in it: that directory holds crashing
