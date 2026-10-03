@@ -108,6 +108,10 @@ fn probe() {
     for (name, bytes) in &all {
         writeln!(report, "{}", line(name, bytes)).unwrap();
     }
+    // How many inputs open with an indefinite-length SEQUENCE: BER the
+    // `der` crate refuses.
+    let indefinite = all.iter().filter(|(_, bytes)| bytes.starts_with(&[0x30, 0x80])).count();
+    writeln!(report, "inputs={} starting-30-80={indefinite}", all.len()).unwrap();
     // The builder's own output and the shared receipt's parts.
     let built = common::CmsBuilder::from_shared().build();
     writeln!(report, "{}", line("<CmsBuilder::from_shared().build()>", &built)).unwrap();
