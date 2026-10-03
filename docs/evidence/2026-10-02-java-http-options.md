@@ -1,5 +1,15 @@
 # How the server engine should talk to aprv-server (2026-10-02)
 
+**Outcome (2026-10-03).** The owner took the verdict below: the engine
+keeps `HttpConn`. `httpconn-hardening.patch` landed on PR #222 in two
+commits: f1bbeff (the framing checks and `Proxy.NO_PROXY`, together
+with the fix for the IPv6 `Host` header that section 2 read but could
+not run) and 6d3231d (a TLS context per connection). Later commits on
+the same PR also require hex chunk sizes and CRLF line ends (b47892b)
+and leave an IPv6 zone id out of `Host` (2947e30). The sections below
+measured `HttpConn` as it is on `main`, before any of them;
+DECISIONS.md R17 describes the client after them.
+
 **Question.** The Java `-wasm` artifact's server engine reaches
 `aprv-server` over HTTP/1.1, either a managed child on loopback (with a
 per-process `X-Aprv-Token`) or a `ServerSource.url` the caller runs (http
@@ -154,10 +164,11 @@ takes it. The patch's cost per request (a header loop check and a regex
 per length) was not timed.
 
 Read but not run: `Target` drops an IPv6 literal's brackets
-(`ServerSources.target`), so `HttpConn` writes `Host: ::1:8080` for
-`http://[::1]:8080`, which RFC 9112 does not allow; this host has no IPv6
-to try it on. `exactly(n)` allocates the declared length (up to 64 MiB)
-before the first body byte arrives.
+(`ServerSources.target`), so `main`'s `HttpConn` writes `Host: ::1:8080`
+for `http://[::1]:8080`, which RFC 9112 does not allow; this host has no
+IPv6 to try it on. Fixed on PR #222 in f1bbeff, where `HttpConnTest`
+checks the header text. Still open there: `exactly(n)` allocates the
+declared length (up to 64 MiB) before the first body byte arrives.
 
 ## 3. A stdio transport, and one process per call
 
@@ -283,5 +294,5 @@ as the default (about 7 times slower per call); `HttpURLConnection`,
   Negotiate and other logging back ends were not.
 - The shaded jar's size, with or without minimising, was not measured.
 
-[huc]: https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/refactor/java-httpurlconnection/docs/evidence/2026-10-02-java-httpurlconnection.md
+[huc]: 2026-10-02-java-httpurlconnection.md
 [musl]: 2026-09-27-static-musl-server.md

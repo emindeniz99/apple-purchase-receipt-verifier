@@ -9,13 +9,16 @@ The note is [../2026-10-02-java-http-options.md](../2026-10-02-java-http-options
 | `JnhClients.java` | The same for `java.net.http.HttpClient`. |
 | `run-matrix.sh` | Builds and runs `ClientMatrix` on each JVM given, in three modes (plain, TLS, logging), plus the `jdk.internal.httpclient.disableHostnameVerification` run. |
 | `HttpConnServerHttpTest.java` | PR #222's `ServerHttpTest` ported to `HttpConn` (12 tests), plus 6 new ones for the gaps the matrix found. |
-| `httpconn-hardening.patch` | The 34-line change to `HttpConn` that makes all 18 pass. Not applied on this branch. |
+| `httpconn-hardening.patch` | The 34-line change to `HttpConn` that makes all 18 pass. Applied on PR #222 by f1bbeff and 6d3231d; it applies as is to `main`'s `HttpConn` at fce1407, the checkout the steps below start from. |
 | `TransportBench.java`, `run-bench.sh` | The managed child over HTTP against one `aprv verify-receipt` process per call, and a length-prefixed frame through a pipe (the floor of a stdio transport). |
 | `results/` | The output each number in the note comes from. |
 
 ## Reproduce
 
-`$REPO` is the repository root, `$SCRATCH` any directory outside it.
+`$REPO` is a checkout whose `HttpConn` is `main`'s before the patch:
+fce1407, or the note's base 756b1d7, where the file is the same. On
+PR #222's branch the patch is already in and `git apply` refuses it.
+`$SCRATCH` is any directory outside the checkout.
 `$JARS` holds, from Maven Central: `httpclient5-5.6.4.jar`,
 `httpcore5-5.4.3.jar`, `httpcore5-h2-5.4.3.jar`, `slf4j-api-1.7.36.jar`,
 `slf4j-simple-1.7.36.jar` and `jspecify-1.0.0.jar`.
