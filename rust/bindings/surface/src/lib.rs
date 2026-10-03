@@ -166,10 +166,12 @@ impl From<core_api::Failure> for Failure {
 
 // ----------------------------------------------------------- Environment
 
-/// Which of Apple's two `verifyReceipt` URLs
-/// [`Verifier::verify_receipt_endpoint`] imitates. A sandbox receipt on
-/// `Production` answers 21007 and a production receipt on `Sandbox` 21008,
-/// as Apple's endpoints do; it filters nothing else.
+/// Apple's two environments: which of Apple's two `verifyReceipt` URLs
+/// [`Verifier::verify_receipt_endpoint`] imitates, and the environment a
+/// verified receipt or JWS names ([`ReceiptPayload::environment`],
+/// [`JsonPayload::environment`]). A sandbox receipt on `Production` answers
+/// 21007 and a production receipt on `Sandbox` 21008, as Apple's endpoints
+/// do; it filters nothing else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Environment {
     /// `https://buy.itunes.apple.com/verifyReceipt`
@@ -186,6 +188,22 @@ impl From<Environment> for core_api::Environment {
         }
     }
 }
+
+impl From<core_api::Environment> for Environment {
+    fn from(environment: core_api::Environment) -> Environment {
+        match environment {
+            core_api::Environment::Production => Environment::Production,
+            core_api::Environment::Sandbox => Environment::Sandbox,
+        }
+    }
+}
+
+/// The most bytes of one input a host needs to hand the module: one over
+/// the core's largest size cap. A longer input may be cut to this length,
+/// and the module answers `TOO_LARGE` for it (21002 at the endpoint), as for
+/// the whole input. `init`'s answer states it as `max_input_bytes`, so no
+/// host keeps a copy (DECISIONS.md R42).
+pub const MAX_INPUT_BYTES: usize = core_api::__internal::MAX_INPUT_BYTES;
 
 // -------------------------------------------------------------- payloads
 
@@ -237,6 +255,12 @@ pub struct ReceiptPayload {
     pub expiration_date_ms: Option<i64>,
     /// Every attribute that did not end up in a field above.
     pub unknown_attributes: UnknownAttributes,
+    /// The environment `receipt_type` names, by the core's rule:
+    /// `Production` and `ProductionVPP` are `Production`,
+    /// `ProductionSandbox` and `ProductionVPPSandbox` are `Sandbox`,
+    /// anything else (`Xcode`, a missing value) is `None`. Not part of the
+    /// payload's JSON; the answer carries it beside the payload.
+    pub environment: Option<Environment>,
 }
 
 /// One in-app purchase (attribute 17) of a [`ReceiptPayload`].
@@ -275,6 +299,12 @@ pub struct InAppPurchase {
 pub struct JsonPayload {
     /// The signed payload's JSON text.
     pub json: String,
+    /// The environment the payload names, by the core's rule: the first of
+    /// the top-level `environment`, `data.environment` and
+    /// `summary.environment` that is present decides, `Production` and
+    /// `Sandbox` map and anything else is `None`; `None` when none is
+    /// present.
+    pub environment: Option<Environment>,
 }
 
 fn unknown_attributes(attributes: core_api::UnknownAttributes) -> UnknownAttributes {
@@ -305,6 +335,7 @@ impl From<core_api::InAppPurchase> for InAppPurchase {
 
 impl From<core_api::ReceiptPayload> for ReceiptPayload {
     fn from(receipt: core_api::ReceiptPayload) -> ReceiptPayload {
+        let environment = receipt.environment().map(Environment::from);
         ReceiptPayload {
             receipt_type: receipt.receipt_type,
             app_item_id: receipt.app_item_id,
@@ -325,6 +356,7 @@ impl From<core_api::ReceiptPayload> for ReceiptPayload {
             original_application_version: receipt.original_application_version,
             expiration_date_ms: receipt.expiration_date_ms,
             unknown_attributes: unknown_attributes(receipt.unknown_attributes),
+            environment,
         }
     }
 }
@@ -442,8 +474,12 @@ impl Verifier {
     /// A [`Failure`] naming the first check that failed.
     pub fn verify_signed_data(&self, jws: &[u8], now_ms: i64) -> Result<JsonPayload, Failure> {
         self.at(now_ms, |verifier| verifier.verify_signed_data_bytes(jws))
-            .map(|payload| JsonPayload {
-                json: payload.into_json(),
+            .map(|payload| {
+                let environment = payload.environment().map(Environment::from);
+                JsonPayload {
+                    json: payload.into_json(),
+                    environment,
+                }
             })
             .map_err(Failure::from)
     }
@@ -643,6 +679,23 @@ mod tests {
             ours.unknown_attributes,
             vec![(13, vec![vec![2], vec![3]]), (19_999, vec![vec![1]])]
         );
+    }
+
+    /// The environment is the core's answer, carried across unchanged.
+    #[test]
+    fn the_environment_crosses_as_the_core_states_it() {
+        for (receipt_type, expected) in [
+            (Some("ProductionVPP"), Some(Environment::Production)),
+            (Some("ProductionSandbox"), Some(Environment::Sandbox)),
+            (Some("Xcode"), None),
+            (None, None),
+        ] {
+            let core = core_api::ReceiptPayload {
+                receipt_type: receipt_type.map(str::to_owned),
+                ..core_api::ReceiptPayload::default()
+            };
+            assert_eq!(ReceiptPayload::from(core).environment, expected);
+        }
     }
 
     #[test]

@@ -72,7 +72,7 @@ component).
 
 | Call | Behaviour |
 |---|---|
-| `init(config-json)` | `{"roots":["<base64>", ...]}`, each root DER or PEM bytes, which the core tells apart (a PEM bundle is one entry); no bytes, `{}` or an empty list mean the three Apple roots. Answers `{"ok":true}` or `{"ok":false,"message":...}`; after a refusal it may be called again, after `{"ok":true}` it traps |
+| `init(config-json)` | `{"roots":["<base64>", ...]}`, each root DER or PEM bytes, which the core tells apart (a PEM bundle is one entry); no bytes, `{}` or an empty list mean the three Apple roots. Answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}`; after a refusal it may be called again, after an `ok` answer it traps. `N` is the most bytes of one input a host needs to hand the module, one over its largest cap (3,145,729): a longer input may be cut to `N`, and the module answers `TOO_LARGE` for it (DECISIONS.md R42) |
 | `verify-receipt(now-ms, receipt-base64)` | `aprv-wire`'s answer (`../wire/schema/verify-receipt-result.schema.json`) |
 | `verify-signed-data(now-ms, jws)` | `aprv-wire`'s answer (`../wire/schema/verify-signed-data-result.schema.json`) |
 | `verify-receipt-endpoint(env, now-ms, request-json)` | Apple's response JSON; `env` 0 is production, 1 sandbox, anything else traps |
@@ -90,9 +90,10 @@ A `list<u8>` argument is the host's to place: the canonical ABI requires
 the range to come from `cabi_realloc`. Every cap is decided on the input's
 length before a byte of it is read (a length over the input cap, 3,145,728
 bytes for a receipt or an endpoint body and 262,144 for a JWS, is
-`TOO_LARGE` or `{"status":21002}`), so a host may lower at most 3,145,729
-bytes of any input and get the answer the whole input would get, without
-copying the rest into linear memory.
+`TOO_LARGE` or `{"status":21002}`), so a host may lower at most the
+`max_input_bytes` `init` answered (3,145,729) of any input and get the
+answer the whole input would get, without copying the rest into linear
+memory. A host reads the number from `init` and keeps no copy of it.
 
 A range that did not come from `cabi_realloc` is the host's bug. One that
 runs past the end of linear memory, or wraps 32 bits, traps as each export

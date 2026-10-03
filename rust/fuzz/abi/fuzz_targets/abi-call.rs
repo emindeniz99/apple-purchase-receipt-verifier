@@ -8,7 +8,7 @@
 //! `{"receipt-data": ...}` for the endpoint, so mutations reach the
 //! envelope. Invariants beyond "the host does not crash":
 //!
-//! - `init` with Apple's roots answers `{"ok":true}`;
+//! - `init` with Apple's roots answers `{"ok":true,"max_input_bytes":...}`;
 //! - a verify call with `env` 0 or 1 never traps, and answers UTF-8 JSON of
 //!   its shape (`{"verified":...` or, at the endpoint, `{"status":...`);
 //! - `env` above 1 always traps, and the next call on a fresh instance
@@ -98,7 +98,10 @@ impl Guest {
         let answer = guest
             .call_init(br#"{"roots":[]}"#)
             .expect("init does not trap");
-        assert_eq!(answer, r#"{"ok":true}"#, "init with Apple's roots");
+        assert!(
+            answer.starts_with(r#"{"ok":true,"max_input_bytes":"#),
+            "init with Apple's roots: {answer}"
+        );
         guest
     }
 

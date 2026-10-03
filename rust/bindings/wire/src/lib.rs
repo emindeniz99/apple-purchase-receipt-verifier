@@ -17,7 +17,9 @@
 //!
 //! The rules of 0.7's "Our JSON" (docs/design/0.7-api.md), as written here:
 //!
-//! - a verified result is exactly `{"verified":true,"payload":...}`, a
+//! - a verified result is exactly
+//!   `{"verified":true,"payload":...,"environment":...}`, the environment
+//!   `"Production"`, `"Sandbox"` or `null` as the core states it, a
 //!   failure exactly `{"verified":false,"reason":"<TOKEN>","message":"..."}`,
 //!   with no other member;
 //! - 64-bit ids are JSON strings holding a decimal `i64`; dates are
@@ -47,7 +49,9 @@
     clippy::panic
 )]
 
-use aprv_surface::{Failure, InAppPurchase, JsonPayload, ReceiptPayload, UnknownAttributes};
+use aprv_surface::{
+    Environment, Failure, InAppPurchase, JsonPayload, ReceiptPayload, UnknownAttributes,
+};
 use serde::ser::{SerializeStruct as _, Serializer};
 use serde::{Deserialize, Serialize};
 
@@ -177,11 +181,22 @@ impl Serialize for Receipt<'_> {
 
 // --------------------------------------------------------------- results
 
-/// A verified answer: `{"verified":true,"payload":...}`.
+/// A verified answer: `{"verified":true,"payload":...,"environment":...}`.
+/// The field names are the wire's member names.
 #[derive(Serialize)]
+#[allow(clippy::struct_field_names)]
 struct Verified<P> {
     verified: bool,
     payload: P,
+    environment: Option<&'static str>,
+}
+
+/// Apple's spelling of an environment, `null` for none.
+fn spelling(environment: Option<Environment>) -> Option<&'static str> {
+    environment.map(|environment| match environment {
+        Environment::Production => "Production",
+        Environment::Sandbox => "Sandbox",
+    })
 }
 
 /// A refusal: `{"verified":false,"reason":"<TOKEN>","message":"..."}`.
@@ -210,21 +225,24 @@ pub fn receipt_payload(receipt: &ReceiptPayload) -> String {
     to_json(&Receipt(receipt))
 }
 
-/// The answer of `verify-receipt`: `{"verified":true,"payload":<receipt>}`
-/// or a failure (`verify-receipt-result.schema.json`).
+/// The answer of `verify-receipt`:
+/// `{"verified":true,"payload":<receipt>,"environment":<"Production",
+/// "Sandbox" or null>}` or a failure (`verify-receipt-result.schema.json`).
 #[must_use]
 pub fn verify_receipt_result(result: &Result<ReceiptPayload, Failure>) -> String {
     match result {
         Ok(receipt) => to_json(&Verified {
             verified: true,
             payload: Receipt(receipt),
+            environment: spelling(receipt.environment),
         }),
         Err(refusal) => to_json(&Refused::new(refusal)),
     }
 }
 
 /// The answer of `verify-signed-data`: `{"verified":true,"payload":"<the
-/// signed payload JSON, as a string>"}` or a failure
+/// signed payload JSON, as a string>","environment":<"Production",
+/// "Sandbox" or null>}` or a failure
 /// (`verify-signed-data-result.schema.json`).
 #[must_use]
 pub fn verify_signed_data_result(result: &Result<JsonPayload, Failure>) -> String {
@@ -232,6 +250,7 @@ pub fn verify_signed_data_result(result: &Result<JsonPayload, Failure>) -> Strin
         Ok(payload) => to_json(&Verified {
             verified: true,
             payload: &payload.json,
+            environment: spelling(payload.environment),
         }),
         Err(refusal) => to_json(&Refused::new(refusal)),
     }
@@ -239,20 +258,30 @@ pub fn verify_signed_data_result(result: &Result<JsonPayload, Failure>) -> Strin
 
 // ------------------------------------------------------------------ init
 
-/// The answer of `init`: `{"ok":true}` or `{"ok":false,"message":"..."}`.
+/// The answer of `init`: `{"ok":true,"max_input_bytes":N}` or
+/// `{"ok":false,"message":"..."}`.
 #[derive(Serialize)]
 struct InitAnswer<'a> {
     ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    max_input_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<&'a str>,
 }
 
-/// The answer of `init` (`init-result.schema.json`): `{"ok":true}`, or
-/// `{"ok":false,"message":"..."}` naming why the configuration was refused.
+/// The answer of `init` (`init-result.schema.json`):
+/// `{"ok":true,"max_input_bytes":N}`, or `{"ok":false,"message":"..."}`
+/// naming why the configuration was refused.
+///
+/// `max_input_bytes` is [`aprv_surface::MAX_INPUT_BYTES`]: the most bytes
+/// of one input a host needs to hand the module. A longer input may be cut
+/// to this length, and the module answers `TOO_LARGE` for it. A host reads
+/// it here rather than keeping a copy (DECISIONS.md R42).
 #[must_use]
 pub fn init_result(result: &Result<(), String>) -> String {
     to_json(&InitAnswer {
         ok: result.is_ok(),
+        max_input_bytes: result.as_ref().ok().map(|()| aprv_surface::MAX_INPUT_BYTES),
         message: result.as_ref().err().map(String::as_str),
     })
 }
@@ -329,7 +358,7 @@ mod tests {
         init_result, read_init_config, receipt_payload, verify_receipt_result,
         verify_signed_data_result,
     };
-    use aprv_surface::{Failure, InAppPurchase, JsonPayload, Reason, ReceiptPayload};
+    use aprv_surface::{Environment, Failure, InAppPurchase, JsonPayload, Reason, ReceiptPayload};
 
     #[test]
     fn a_failure_carries_exactly_three_members_in_a_fixed_order() {
@@ -347,10 +376,11 @@ mod tests {
         let json = "{\"b\":1, \"a\":\"\u{e9}\"}";
         let answer = verify_signed_data_result(&Ok(JsonPayload {
             json: json.to_owned(),
+            environment: None,
         }));
         assert_eq!(
             answer,
-            "{\"verified\":true,\"payload\":\"{\\\"b\\\":1, \\\"a\\\":\\\"\u{e9}\\\"}\"}"
+            "{\"verified\":true,\"payload\":\"{\\\"b\\\":1, \\\"a\\\":\\\"\u{e9}\\\"}\",\"environment\":null}"
         );
         let back: serde_json::Value = serde_json::from_str(&answer).unwrap();
         assert_eq!(back["payload"].as_str(), Some(json));
@@ -428,6 +458,9 @@ mod tests {
                 (13, vec![vec![1]]),
                 (i64::MAX, vec![]),
             ],
+            // Written as the surface carries it: the wire derives nothing
+            // from receipt_type.
+            environment: Some(Environment::Sandbox),
         }
     }
 
@@ -436,7 +469,9 @@ mod tests {
     /// private use, outside the BMP), negative and repeated attribute keys,
     /// `i64` extremes and empty byte strings. The expected text was produced
     /// by the hand-written writer that the `serde_json` one replaced, run on
-    /// this same receipt, so a failure here is a change of 0.7's bytes.
+    /// this same receipt, so a failure here is a change of 0.7's bytes. The
+    /// one deliberate change since is the `environment` member after the
+    /// payload (DECISIONS.md R42); the payload's own bytes are 0.7's.
     #[test]
     fn a_full_receipt_answer_keeps_the_bytes_of_the_hand_written_writer() {
         assert_eq!(
@@ -471,7 +506,8 @@ mod tests {
                 "\u{e000}",
                 r#"","expiration_date_ms":-62135596800000"#,
                 r#","unknown_attributes":{"-9223372036854775808":[""],"-5":["AA=="]"#,
-                r#","13":["+/8=",""],"13":["AQ=="],"9223372036854775807":[]}}}"#
+                r#","13":["+/8=",""],"13":["AQ=="],"9223372036854775807":[]}}"#,
+                r#","environment":"Sandbox"}"#
             )
         );
     }
@@ -507,8 +543,43 @@ mod tests {
     }
 
     #[test]
-    fn init_answers_ok_or_a_message() {
-        assert_eq!(init_result(&Ok(())), r#"{"ok":true}"#);
+    fn a_verified_answer_states_the_environment_after_the_payload() {
+        let receipt = |environment| ReceiptPayload {
+            environment,
+            ..ReceiptPayload::default()
+        };
+        let empty = receipt_payload(&ReceiptPayload::default());
+        for (environment, written) in [
+            (Some(Environment::Production), "\"Production\""),
+            (Some(Environment::Sandbox), "\"Sandbox\""),
+            (None, "null"),
+        ] {
+            assert_eq!(
+                verify_receipt_result(&Ok(receipt(environment))),
+                format!("{{\"verified\":true,\"payload\":{empty},\"environment\":{written}}}")
+            );
+            assert_eq!(
+                verify_signed_data_result(&Ok(JsonPayload {
+                    json: "{}".to_owned(),
+                    environment,
+                })),
+                format!("{{\"verified\":true,\"payload\":\"{{}}\",\"environment\":{written}}}")
+            );
+        }
+        // The payload's own JSON, which the C ABI's 0.7 calls hand out, has
+        // no environment member.
+        assert!(!receipt_payload(&receipt(Some(Environment::Sandbox))).contains("environment"));
+    }
+
+    #[test]
+    fn init_answers_ok_with_the_input_length_or_a_message() {
+        // One over the core's largest cap, 3 MiB: pinned here so a change
+        // of it is seen, not carried silently to every host.
+        assert_eq!(aprv_surface::MAX_INPUT_BYTES, 3_145_729);
+        assert_eq!(
+            init_result(&Ok(())),
+            r#"{"ok":true,"max_input_bytes":3145729}"#
+        );
         assert_eq!(
             init_result(&Err("roots[0]: \"x\"".to_owned())),
             r#"{"ok":false,"message":"roots[0]: \"x\""}"#

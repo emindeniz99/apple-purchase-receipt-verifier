@@ -9,7 +9,8 @@
       "type": "object",
       "required": [
         "verified",
-        "payload"
+        "payload",
+        "environment"
       ],
       "additionalProperties": false,
       "properties": {
@@ -19,6 +20,14 @@
         "payload": {
           "description": "The signed payload's JSON text.",
           "type": "string"
+        },
+        "environment": {
+          "description": "The environment the payload names, as the core states it (DECISIONS.md R42): the first of the top-level environment, data.environment and summary.environment that is present decides; \"Production\" and \"Sandbox\" map, anything else, or none of the three, is null.",
+          "enum": [
+            "Production",
+            "Sandbox",
+            null
+          ]
         }
       }
     },

@@ -21,7 +21,7 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::base64_encode;
+use apple_purchase_receipt_verifier::__internal::{base64_encode, MAX_INPUT_BYTES};
 use apple_purchase_receipt_verifier::{Environment, Reason, TrustAnchor, Verifier};
 use serde_json::{json, Map, Value};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -110,6 +110,44 @@ fn nested(depth: usize) -> String {
 
 fn endpoint(verifier: &Verifier, body: &str) -> String {
     verifier.verify_receipt_endpoint(Environment::Sandbox, body)
+}
+
+// --- the input length a host hands over ----------------------------------
+
+/// `aprv.wasm`'s `init` answer states `max_input_bytes`, and every host
+/// cuts a longer input to it (DECISIONS.md R42). That holds only if it is
+/// one over the largest cap: an input of exactly that length must still be
+/// over every cap, so the core itself answers `TOO_LARGE` (21002 at the
+/// endpoint) for the cut input as for the whole one, and one byte less must
+/// fit the largest cap.
+#[test]
+fn the_input_a_host_hands_over_is_one_over_the_largest_cap() {
+    assert_eq!(
+        MAX_INPUT_BYTES,
+        MAX_RECEIPT_BYTES.max(MAX_REQUEST_BYTES).max(MAX_JWS_BYTES) + 1
+    );
+    let verifier = verifier(common::receipt_root());
+    let cut = vec![b'A'; MAX_INPUT_BYTES];
+    assert_eq!(
+        verifier.verify_receipt_bytes(&cut).unwrap_err().reason(),
+        Reason::TooLarge
+    );
+    assert_eq!(
+        verifier
+            .verify_signed_data_bytes(&cut)
+            .unwrap_err()
+            .reason(),
+        Reason::TooLarge
+    );
+    assert_eq!(
+        verifier.verify_receipt_endpoint_bytes(Environment::Sandbox, &cut),
+        FAILED_BODY
+    );
+    let fits = "A".repeat(MAX_INPUT_BYTES - 1);
+    assert_ne!(
+        verifier.verify_receipt(&fits).unwrap_err().reason(),
+        Reason::TooLarge
+    );
 }
 
 // --- receipt string: 3 MiB, before base64 decode -------------------------

@@ -10,8 +10,9 @@
 //! reports that check's reason, and the shared cases pin it.
 
 use crate::base64::{decode_base64url_strict, decode_receipt_base64};
+use crate::environment::Environment;
 use crate::error::{malformed, Failure, Reason};
-use crate::json::{instant, string, strings, whole_object_members, JsonError};
+use crate::json::{instant, string, strings, whole_object_members, JsonError, Members};
 use crate::path::validate_pair;
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
@@ -26,20 +27,41 @@ pub(crate) const MAX_JWS_BYTES: usize = 262_144;
 
 /// A verified JWS payload: the JSON object Apple signed, unchanged.
 ///
-/// The library reads only `signedDate` from it. Parse
+/// The library reads only `signedDate` and the environment from it. Parse
 /// [`json`](JsonPayload::json) with the JSON library of your choice, into a
 /// struct declaring the claims you use; Apple's claims are epoch
 /// milliseconds already.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct JsonPayload {
     json: String,
+    environment: Option<Environment>,
 }
 
 impl JsonPayload {
-    /// A payload. Public so callers can build one in their own tests.
+    /// A payload. Public so callers can build one in their own tests; its
+    /// [`environment`](JsonPayload::environment) is read from `json` as a
+    /// verified payload's is.
     #[must_use]
     pub fn new(json: impl Into<String>) -> Self {
-        JsonPayload { json: json.into() }
+        let json = json.into();
+        let environment = whole_object_members(&json)
+            .ok()
+            .and_then(|members| environment(&members));
+        JsonPayload { json, environment }
+    }
+
+    /// The environment the payload names, from the first of the three
+    /// places Apple documents that is present: the top-level `environment`
+    /// (a transaction, renewal info), `data.environment` (an App Store
+    /// Server Notification V2), `summary.environment` (a summary
+    /// notification). `Production` is [`Environment::Production`] and
+    /// `Sandbox` [`Environment::Sandbox`]; anything else there (`Xcode`,
+    /// `LocalTesting`, a value that is not a string), or none of the three,
+    /// is `None`. It states what Apple's value means and decides nothing;
+    /// whether to accept it is the caller's decision.
+    #[must_use]
+    pub fn environment(&self) -> Option<Environment> {
+        self.environment
     }
 
     /// The verified payload, exactly as signed.
@@ -149,7 +171,7 @@ pub(crate) fn verify(
     let payload = read_payload(&payload_bytes);
     // Chain validity is judged at the payload's signing date, so a payload
     // signed with a since-rotated certificate keeps verifying.
-    let signed_date = payload.as_ref().ok().and_then(|(_, date)| *date);
+    let signed_date = payload.as_ref().ok().and_then(|read| read.signed_date);
     let at_millis = match signed_date {
         Some(millis) => millis,
         None => clock.now()?,
@@ -178,7 +200,10 @@ pub(crate) fn verify(
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
     verifier::enter(Stage::AfterSignature);
     match payload {
-        Ok((json, _)) => Ok(JsonPayload { json }),
+        Ok(read) => Ok(JsonPayload {
+            json: read.json,
+            environment: read.environment,
+        }),
         Err(err) => Err(Failure::new(
             Reason::UnreadablePayload,
             "signed payload is not a JSON object",
@@ -199,15 +224,56 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
     Ok((string(&members, "alg"), strings(&members, "x5c")))
 }
 
-/// The payload text and its last top-level `signedDate`, or why it is not a
-/// JSON object in UTF-8. Reading it never fails verification by itself.
+/// What one read of a payload yields.
+#[derive(Debug)]
+struct ReadPayload {
+    json: String,
+    /// The last top-level `signedDate`.
+    signed_date: Option<i64>,
+    /// [`JsonPayload::environment`].
+    environment: Option<Environment>,
+}
+
+/// The payload text, its last top-level `signedDate` and its environment,
+/// or why it is not a JSON object in UTF-8. Reading it never fails
+/// verification by itself.
 ///
 /// A `signedDate` that is not a number, or is a number no instant can hold
 /// (`1e300`), counts as not stated: the clock stands in for it.
-fn read_payload(bytes: &[u8]) -> Result<(String, Option<i64>), Unreadable> {
+fn read_payload(bytes: &[u8]) -> Result<ReadPayload, Unreadable> {
     let text = core::str::from_utf8(bytes).map_err(Unreadable::NotUtf8)?;
     let members = whole_object_members(text).map_err(Unreadable::NotAnObject)?;
-    Ok((text.to_owned(), instant(&members, "signedDate")))
+    Ok(ReadPayload {
+        json: text.to_owned(),
+        signed_date: instant(&members, "signedDate"),
+        environment: environment(&members),
+    })
+}
+
+/// [`JsonPayload::environment`] of a payload's top-level members. The
+/// first of `environment`, `data.environment` and `summary.environment`
+/// that is present decides, whatever its value; a `data` or `summary` that
+/// is not an object holds none. A repeated name keeps its last value, as
+/// everywhere in a payload. `data` and `summary` were checked against the
+/// grammar when the payload was read; reading their members is the one
+/// further step, and one that does not read (a lone surrogate escape in a
+/// member name) holds no environment.
+fn environment(members: &Members<'_>) -> Option<Environment> {
+    if members.contains_key("environment") {
+        return Environment::from_jws_environment(string(members, "environment").as_deref());
+    }
+    for container in ["data", "summary"] {
+        let Some(raw) = members.get(container) else {
+            continue;
+        };
+        let Ok(inner) = whole_object_members(raw.get()) else {
+            continue;
+        };
+        if inner.contains_key("environment") {
+            return Environment::from_jws_environment(string(&inner, "environment").as_deref());
+        }
+    }
+    None
 }
 
 fn verify_signature(
@@ -260,8 +326,8 @@ fn parse_x5c_certificate(entry: &str) -> Result<Certificate, Failure> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{read_header, read_payload, Unreadable};
-    use crate::Reason;
+    use super::{read_header, read_payload, JsonPayload, Unreadable};
+    use crate::{Environment, Reason};
 
     #[test]
     fn a_header_with_a_byte_order_mark_or_trailing_text_is_malformed() {
@@ -275,6 +341,70 @@ mod tests {
             let failure = read_header(&bytes).unwrap_err();
             assert_eq!(failure.reason(), Reason::Malformed, "{bytes:?}");
         }
+    }
+
+    /// The three places Apple documents, the first present one deciding:
+    /// a transaction or renewal info at the top level, a notification in
+    /// `data`, a summary notification in `summary`.
+    #[test]
+    fn the_environment_is_read_from_the_first_of_three_places() {
+        let production = Some(Environment::Production);
+        let sandbox = Some(Environment::Sandbox);
+        for (json, expected) in [
+            (r#"{"environment":"Production"}"#, production),
+            (r#"{"environment":"Sandbox","signedDate":1}"#, sandbox),
+            (r#"{"data":{"environment":"Sandbox"}}"#, sandbox),
+            (r#"{"summary":{"environment":"Production"}}"#, production),
+            // The first present one decides, whatever it says.
+            (
+                r#"{"environment":"Xcode","data":{"environment":"Sandbox"}}"#,
+                None,
+            ),
+            (
+                r#"{"environment":null,"data":{"environment":"Sandbox"}}"#,
+                None,
+            ),
+            (
+                r#"{"data":{"environment":1},"summary":{"environment":"Sandbox"}}"#,
+                None,
+            ),
+            (
+                r#"{"summary":{"environment":"Sandbox"},"data":{"environment":"Production"}}"#,
+                production,
+            ),
+            // Absent from a container that is there: the next one decides.
+            (
+                r#"{"data":{},"summary":{"environment":"Sandbox"}}"#,
+                sandbox,
+            ),
+            (
+                r#"{"data":"Sandbox","summary":{"environment":"Sandbox"}}"#,
+                sandbox,
+            ),
+            // Anything but the two spellings is no environment.
+            (r#"{"environment":"LocalTesting"}"#, None),
+            (r#"{"environment":"sandbox"}"#, None),
+            (r#"{"environment":"ProductionSandbox"}"#, None),
+            (r#"{"data":{"data":{"environment":"Sandbox"}}}"#, None),
+            (r#"{"transaction":{"environment":"Sandbox"}}"#, None),
+            ("{}", None),
+            // A repeated name keeps its last value, a container included.
+            (
+                r#"{"environment":"Sandbox","environment":"Production"}"#,
+                production,
+            ),
+            (r#"{"data":{"environment":"Production"},"data":{}}"#, None),
+            // Nested values inside a container are skipped whole.
+            (
+                r#"{"data":{"renewalInfo":{"environment":"Production"},"environment":"Sandbox"}}"#,
+                sandbox,
+            ),
+        ] {
+            let read = read_payload(json.as_bytes()).unwrap();
+            assert_eq!(read.environment, expected, "{json}");
+            assert_eq!(JsonPayload::new(json).environment(), expected, "{json}");
+        }
+        assert_eq!(JsonPayload::new("not json").environment(), None);
     }
 
     #[test]

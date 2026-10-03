@@ -23,7 +23,7 @@
 //!     Ok(receipt) => {
 //!         // The caller's checks: bundle id, environment, product id.
 //!         assert_eq!(receipt.bundle_id.as_deref(), Some("com.example.app"));
-//!         let _ = Environment::from_receipt_type(receipt.receipt_type.as_deref());
+//!         assert_eq!(receipt.environment(), Some(Environment::Production));
 //!     }
 //!     Err(failure) if failure.reason() == Reason::UnreadablePayload => {
 //!         // Apple signed it, but this library cannot read it: alert.
@@ -92,11 +92,29 @@ pub use verifier::Verifier;
 /// This library's version, for startup logs.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The most bytes of one input a host needs to hand the core: one over the
+/// largest size cap. A longer input may be cut to this length, and the core
+/// answers `TOO_LARGE` for it (21002 at the endpoint), as for the whole
+/// input. Derived from the caps, so it moves with them; `aprv.wasm`'s
+/// `init` answer states it, and no binding keeps a copy (DECISIONS.md R42).
+pub(crate) const MAX_INPUT_BYTES: usize = larger(
+    receipt::MAX_RECEIPT_BYTES,
+    larger(endpoint::MAX_REQUEST_BYTES, jws::MAX_JWS_BYTES),
+) + 1;
+
+const fn larger(a: usize, b: usize) -> usize {
+    if a > b {
+        a
+    } else {
+        b
+    }
+}
+
 /// Not part of the public API, and not covered by semver.
 ///
 /// The internals this crate's own tests, fuzz targets and benchmark reach
 /// directly: the date reader, the path policy, the key-use and full-decode
-/// seams, and the two base64
+/// seams, the input length the bindings hand over, and the two base64
 /// decoders the shared decodeBase64 cases call. The shared cases name them
 /// as an internal hook; 0.7 exposes no decoder. The workspace's
 /// `aprv-surface` reads the configuration's base64 roots with the
@@ -130,6 +148,12 @@ pub mod __internal {
     pub fn cms_full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
         aprv_openssl::full_decodes_during(body)
     }
+
+    /// The most bytes of one input a host needs to hand the core: one
+    /// over the largest size cap. A longer input may be cut to this length,
+    /// and the core answers `TOO_LARGE` for it. `aprv.wasm`'s `init` answer
+    /// states it as `max_input_bytes`.
+    pub const MAX_INPUT_BYTES: usize = crate::MAX_INPUT_BYTES;
 
     /// The linked OpenSSL, as it reports itself.
     #[must_use]

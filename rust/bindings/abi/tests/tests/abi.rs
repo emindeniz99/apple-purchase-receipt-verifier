@@ -12,6 +12,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULTS: &[u8] = br#"{"roots":[]}"#;
 
+/// `init`'s answer to a configuration it accepts: `ok`, and the most bytes
+/// of one input a host needs to hand the module, one over the largest cap
+/// (DECISIONS.md R42).
+const INIT_OK: &str = r#"{"ok":true,"max_input_bytes":3145729}"#;
+
 fn fixture(relative: &str) -> Vec<u8> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../../fixtures")
@@ -88,10 +93,10 @@ fn hosts() -> [(&'static str, Make); 2] {
     ]
 }
 
-/// A guest after `init` with `config`, which must answer `{"ok":true}`.
+/// A guest after `init` with `config`, which must answer [`INIT_OK`].
 fn ready(make: Make, config: &[u8]) -> Box<dyn Guest> {
     let mut guest = make(Randomness::default());
-    assert_eq!(guest.init(config).unwrap(), r#"{"ok":true}"#);
+    assert_eq!(guest.init(config).unwrap(), INIT_OK);
     guest
 }
 
@@ -144,7 +149,8 @@ fn no_start_function_is_needed_and_the_calls_answer_the_wire() {
             receipt["payload"]["receipt_type"], "ProductionSandbox",
             "{host}"
         );
-        assert_eq!(receipt.as_object().unwrap().len(), 2, "{host}");
+        assert_eq!(receipt["environment"], "Sandbox", "{host}");
+        assert_eq!(receipt.as_object().unwrap().len(), 3, "{host}");
 
         let sandbox = json(
             &guest
@@ -160,6 +166,7 @@ fn no_start_function_is_needed_and_the_calls_answer_the_wire() {
         let mut guest = ready(make, &jws_config());
         let jws = json(&guest.verify_signed_data(now(), &transaction()).unwrap());
         assert_eq!(jws["verified"], true, "{host}");
+        assert_eq!(jws["environment"], "Sandbox", "{host}");
         let payload = json(jws["payload"].as_str().expect("the payload is a string"));
         assert_eq!(payload["bundleId"], "com.example.app", "{host}");
     }
@@ -220,7 +227,7 @@ fn a_refused_configuration_is_a_value_and_init_may_be_retried() {
             assert!(answer["message"].is_string(), "{host}");
             assert_eq!(answer.as_object().unwrap().len(), 2, "{host}");
         }
-        assert_eq!(guest.init(b"").unwrap(), r#"{"ok":true}"#, "{host}");
+        assert_eq!(guest.init(b"").unwrap(), INIT_OK, "{host}");
         assert!(verifies(guest.as_mut()), "{host}");
     }
 }
@@ -231,7 +238,7 @@ fn a_random_get_answer_of_the_wrong_length_traps() {
         // One short, one long, none at all, and far too many.
         for trim in [1, -1, i64::MAX, -4096] {
             let mut guest = make(Randomness { trim });
-            assert_eq!(guest.init(&jws_config()).unwrap(), r#"{"ok":true}"#);
+            assert_eq!(guest.init(&jws_config()).unwrap(), INIT_OK);
             let result = guest.verify_signed_data(now(), &transaction());
             assert!(is_trap(&result), "{host} trim {trim}: {result:?}");
         }
@@ -331,23 +338,24 @@ fn a_clock_beyond_i64_is_an_internal_error() {
 fn initialize_is_optional_once_and_harmless_after_an_export() {
     let mut first = CoreGuest::new(Randomness::default()).unwrap();
     first.call_initialize().unwrap();
-    assert_eq!(first.init(DEFAULTS).unwrap(), r#"{"ok":true}"#);
+    assert_eq!(first.init(DEFAULTS).unwrap(), INIT_OK);
     assert!(verifies(&mut first));
     let mut twice = CoreGuest::new(Randomness::default()).unwrap();
     twice.call_initialize().unwrap();
     let again = twice.call_initialize();
     assert!(is_trap(&again), "{again:?}");
     let mut after = CoreGuest::new(Randomness::default()).unwrap();
-    assert_eq!(after.init(DEFAULTS).unwrap(), r#"{"ok":true}"#);
+    assert_eq!(after.init(DEFAULTS).unwrap(), INIT_OK);
     assert!(verifies(&mut after));
     after.call_initialize().unwrap();
     assert!(verifies(&mut after));
 }
 
 /// Every cap is decided on the input's length before a byte of it is read,
-/// so a host that lowers at most 3,145,729 bytes (the largest cap plus one)
-/// gets the answer a longer input would get, TOO_LARGE or 21002, and the
-/// instance grows by no more than that copy (review round 2, F2).
+/// so a host that lowers at most 3,145,729 bytes (the largest cap plus one,
+/// which `init` answers as `max_input_bytes`) gets the answer a longer
+/// input would get, TOO_LARGE or 21002, and the instance grows by no more
+/// than that copy (review round 2, F2).
 #[test]
 fn a_host_that_lowers_the_largest_cap_plus_one_gets_too_large() {
     const LARGEST_CAP_PLUS_ONE: usize = 3_145_729;
@@ -389,7 +397,7 @@ fn a_list_range_past_the_end_of_linear_memory_traps() {
     for export in ["verify-receipt", "verify-signed-data"] {
         for (at_end, len) in [(8, LARGEST_CAP_PLUS_ONE), (8, 16), (0, 1)] {
             let mut guest = CoreGuest::new(Randomness::default()).unwrap();
-            assert_eq!(guest.init(DEFAULTS).unwrap(), r#"{"ok":true}"#);
+            assert_eq!(guest.init(DEFAULTS).unwrap(), INIT_OK);
             let end = u32::try_from(guest.memory_size()).unwrap();
             let result = guest.call_with_range(export, now(), end - at_end, len);
             assert!(is_trap(&result), "{export} at end-{at_end}, {len}: {result:?}");

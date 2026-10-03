@@ -48,7 +48,7 @@
 //!
 //! The `_bytes` calls take a pointer and a length, as `aprv.wasm` takes a
 //! `list<u8>`, and answer the document `aprv.wasm` answers, byte for byte:
-//! `aprv-wire`'s `{"verified":true,"payload":...}` or
+//! `aprv-wire`'s `{"verified":true,"payload":...,"environment":...}` or
 //! `{"verified":false,"reason":...,"message":...}`, or the endpoint's body.
 //! Every input is a verdict there, an embedded NUL and bytes that are not
 //! UTF-8 included. The 0.7 calls without the suffix take C strings: the
@@ -156,7 +156,8 @@ pub enum AprvEnvironment {
 ///
 /// * `status` below 100 (a verdict): `json` is the document `aprv.wasm`
 ///   answers for the same input, byte for byte, which validates against
-///   `rust/bindings/wire/schema/`: `{"verified":true,"payload":...}` or
+///   `rust/bindings/wire/schema/`:
+///   `{"verified":true,"payload":...,"environment":...}` or
 ///   `{"verified":false,"reason":"<token>","message":"<detail>"}`.
 /// * `status` 100 or above (a mistake in the call): `json` is `NULL`.
 ///

@@ -193,10 +193,19 @@ let receipt = verifier.verify_receipt(receipt_base64)?;
 if receipt.bundle_id.as_deref() != Some("com.example.app") {
     return Err(Rejected::OtherApp);
 }
+// Production, Sandbox, or None for a receipt_type naming neither (Xcode).
+let environment = receipt.environment();
 ```
 
-For a JWS, read the claims with your own JSON parser:
-`bundleId`, `environment`, `appAppleId` for a Production `AppTransaction`,
+Both payloads state the environment Apple's value names:
+`ReceiptPayload::environment()` reads `receipt_type`, and
+`JsonPayload::environment()` the first of the top-level `environment`, a
+notification's `data.environment` and a summary notification's
+`summary.environment` that is present. Whether to accept Sandbox is
+yours to decide.
+
+For a JWS, read the other claims with your own JSON parser:
+`bundleId`, `appAppleId` for a Production `AppTransaction`,
 `revocationDate`, `expiresDate`, and `signedDate` for freshness. No payload
 is rejected for its age, as in Apple's own App Store Server Libraries: the
 right limit depends on the endpoint (Apple retries a server notification for
