@@ -50,10 +50,26 @@ class AbiTest < Minitest::Test
 
   # --- the interface's contract --------------------------------------------------
 
+  # An accepting answer states the most bytes of one input the module needs
+  # (DECISIONS.md R42), a positive integer and nothing else beside ok.
+  def assert_accepting_init_answer(text)
+    answer = JSON.parse(text)
+    assert_equal %w[max_input_bytes ok], answer.keys.sort
+    assert_same true, answer["ok"]
+    assert_kind_of Integer, answer["max_input_bytes"]
+    assert_operator answer["max_input_bytes"], :>, 0
+  end
+
   def test_init_with_no_roots_answers_ok
-    assert_equal '{"ok":true}', Internals::Guest.new(runtime, nil).call("init", [], NONE)
-    assert_equal '{"ok":true}', Internals::Guest.new(runtime, nil).call("init", [], "")
-    assert_equal '{"ok":true}', Internals::Guest.new(runtime, nil).call("init", [], "{}")
+    assert_accepting_init_answer Internals::Guest.new(runtime, nil).call("init", [], NONE)
+    assert_accepting_init_answer Internals::Guest.new(runtime, nil).call("init", [], "")
+    assert_accepting_init_answer Internals::Guest.new(runtime, nil).call("init", [], "{}")
+  end
+
+  def test_a_started_guest_holds_the_input_length_its_init_answer_stated
+    stated = JSON.parse(Internals::Guest.new(runtime, nil).call("init", [], NONE))["max_input_bytes"]
+    assert_equal stated, guest.max_input_bytes
+    assert_nil Internals::Guest.new(runtime, nil).max_input_bytes, "unknown until init has answered"
   end
 
   def test_a_verify_before_init_traps
@@ -72,7 +88,7 @@ class AbiTest < Minitest::Test
     assert_same false, answer["ok"]
     refute_empty answer["message"]
     refute_predicate fresh, :broken?
-    assert_equal '{"ok":true}', fresh.call("init", [], NONE)
+    assert_accepting_init_answer fresh.call("init", [], NONE)
     assert_includes fresh.call("verify-receipt", [NOW], receipt_base64), '"verified":true'
   end
 
@@ -180,22 +196,23 @@ class AbiTest < Minitest::Test
   def test_an_input_of_no_bytes_and_of_the_cap_are_answered
     instance = guest
     assert_includes instance.call("verify-receipt", [NOW], ""), '"verified":false'
-    big = "A" * 3_145_729
+    big = "A" * instance.max_input_bytes
     assert_includes instance.call("verify-receipt", [NOW], big), '"verified":false'
     assert_includes instance.call("verify-receipt", [NOW], receipt_base64), '"verified":true'
   end
 
-  # An input is never copied into linear memory beyond one byte over the
-  # cap: the module answers TOO_LARGE itself, with the same answer and the
-  # same memory use as for an input of exactly that length.
+  # An input is never copied into linear memory beyond the length init
+  # stated, one byte over the cap: the module answers TOO_LARGE itself, with
+  # the same answer and the same memory use as for an input of exactly that
+  # length.
   def test_an_input_over_the_cap_is_cut_to_one_byte_over_and_the_module_answers_too_large
     cut = guest
     exact = guest
-    huge = "A" * (4 * 1024 * 1024)
+    huge = "A" * (cut.max_input_bytes + (1024 * 1024))
     answer = JSON.parse(cut.call("verify-receipt", [NOW], huge))
     assert_same false, answer["verified"]
     assert_equal "TOO_LARGE", answer["reason"]
-    assert_equal exact.call("verify-receipt", [NOW], huge.byteslice(0, 3_145_729)),
+    assert_equal exact.call("verify-receipt", [NOW], huge.byteslice(0, exact.max_input_bytes)),
                  cut.call("verify-receipt", [NOW], huge)
     assert_equal exact.instance_variable_get(:@store).max_linear_memory_consumed,
                  cut.instance_variable_get(:@store).max_linear_memory_consumed
@@ -205,8 +222,8 @@ class AbiTest < Minitest::Test
 
   def test_an_input_of_exactly_the_cap_is_passed_whole
     instance = guest
-    answer = JSON.parse(instance.call("verify-receipt", [NOW], "A" * 3_145_728))
+    answer = JSON.parse(instance.call("verify-receipt", [NOW], "A" * (instance.max_input_bytes - 1)))
     assert_same false, answer["verified"]
-    refute_equal "TOO_LARGE", answer["reason"], "3,145,728 bytes is the cap itself, not over it"
+    refute_equal "TOO_LARGE", answer["reason"], "one under the stated length is the cap itself, not over it"
   end
 end

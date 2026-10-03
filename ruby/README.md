@@ -146,6 +146,13 @@ build a `Config`. Two 0.7 spellings are gone in 0.8:
 `Config.new(roots: ..., clock: ...)` replaces, and `Config.defaults`, which
 only called `Config.new` and is replaced by it.
 
+0.8 also drops the two 0.7 helpers `Environment.from_receipt_type` and
+`Environment.from_jws_environment`: read `result.payload.environment` on a
+`ReceiptPayload` or a `JsonPayload` instead, which the verifier states beside
+the payload. `ReceiptPayload.new` and `JsonPayload.new` take `environment:`
+as their last keyword, for a payload built by hand in a test; `to_json` does
+not write it.
+
 ## Post-verification checklist
 
 Verification answers one question: did Apple sign this, under a pinned Apple
@@ -154,10 +161,12 @@ root? Everything else is your decision, on the data the payload carries:
 - **Bundle id.** `result.payload.bundle_id` for a receipt;
   `JSON.parse(result.payload.json)["bundleId"]` for a JWS. Compare it against
   the app you expect — the library checks nothing here.
-- **Environment.** `APRV::Environment.from_receipt_type(result.payload.receipt_type)`
-  for a receipt; `APRV::Environment.from_jws_environment(claims["environment"])`
-  for a JWS. Both map Apple's string to `PRODUCTION`, `SANDBOX` or `nil` and
-  decide nothing themselves — reject or route on the result yourself. Accept
+- **Environment.** `result.payload.environment`, for a receipt and for a JWS:
+  `APRV::Environment::PRODUCTION`, `APRV::Environment::SANDBOX`, or `nil` when
+  Apple's value names neither (an `Xcode` receipt, a `LocalTesting` JWS). For
+  a JWS the verifier reads the top-level `environment` claim, a notification's
+  `data.environment` or a summary notification's `summary.environment`, the
+  first that is present. It decides nothing — reject or route on it yourself. Accept
   `SANDBOX` on any endpoint App Review can reach: App Review runs production
   builds against sandbox, and a single-environment hard fail rejects real
   purchases during review.
@@ -193,8 +202,7 @@ def redeem_transaction(user_id, jws)
 
   claims = JSON.parse(result.payload.json)
   return :denied if claims["bundleId"] != "com.example.app"
-  return :denied unless [APRV::Environment::PRODUCTION, APRV::Environment::SANDBOX]
-                         .include?(APRV::Environment.from_jws_environment(claims["environment"]))
+  return :denied if result.payload.environment.nil? # an Xcode or LocalTesting payload
   return :denied if claims["revocationDate"] # step 3
 
   # step 4, your call: past the window, ask the client for a fresh
@@ -484,8 +492,8 @@ rejects it.
 
 Base64 decoding, the CMS parse and JSON parsing all allocate in proportion to
 their input before any signature is checked, so the input is measured first.
-The size limits are Apple's, fixed constants in every port of this library,
-not `Config` options.
+The size limits are Apple's, fixed in the module every port of this library
+runs, not `Config` options.
 
 | Bound | Value | Failure |
 |---|---|---|
@@ -497,8 +505,10 @@ not `Config` options.
 | Chain length below the anchor | 6 certificates | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
-The gem never copies more than 3,145,729 bytes (one over the largest cap) of
-an input into the module's memory; the module answers `TOO_LARGE` itself.
+The gem never copies more of an input into the module's memory than the
+module's `init` answer states (`max_input_bytes`, today 3,145,729: one over
+the largest cap); the module answers `TOO_LARGE` itself. The number is the
+module's, read from each instance, and the gem keeps no copy of it.
 
 Measured against both of Apple's verifyReceipt endpoints, a request body of
 3,145,728 bytes is answered normally and one of 3,145,729 bytes gets HTTP

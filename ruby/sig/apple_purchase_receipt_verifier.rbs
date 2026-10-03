@@ -29,9 +29,6 @@ module ApplePurchaseReceiptVerifier
     PRODUCTION: String
     SANDBOX: String
     ALL: Array[String]
-
-    def self.from_receipt_type: (String? receipt_type) -> String?
-    def self.from_jws_environment: (String? claim) -> String?
   end
 
   module AppleStatus
@@ -98,7 +95,8 @@ module ApplePurchaseReceiptVerifier
 
   class JsonPayload
     attr_reader json: String
-    def initialize: (json: String) -> void
+    attr_reader environment: String?
+    def initialize: (json: String, environment: String?) -> void
   end
 
   class InAppPurchase
@@ -140,13 +138,15 @@ module ApplePurchaseReceiptVerifier
     attr_reader original_application_version: String?
     attr_reader expiration_date_ms: Integer?
     attr_reader unknown_attributes: Hash[Integer, Array[String]]
+    attr_reader environment: String?
 
     def initialize: (receipt_type: String?, app_item_id: Integer?, bundle_id: String?,
                      bundle_id_bytes: String?, application_version: String?, opaque_value: String?,
                      sha1_hash: String?, receipt_creation_date_ms: Integer?, download_id: Integer?,
                      version_external_identifier: Integer?, in_app: Array[InAppPurchase],
                      original_purchase_date_ms: Integer?, original_application_version: String?,
-                     expiration_date_ms: Integer?, unknown_attributes: Hash[Integer, Array[String]]) -> void
+                     expiration_date_ms: Integer?, unknown_attributes: Hash[Integer, Array[String]],
+                     environment: String?) -> void
     def to_json: (*untyped) -> String
   end
 end

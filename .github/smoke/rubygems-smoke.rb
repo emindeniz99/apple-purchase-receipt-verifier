@@ -40,6 +40,9 @@ unless receipt.receipt_type == "ProductionSandbox"
   abort "receipt_type was #{receipt.receipt_type.inspect}, expected ProductionSandbox"
 end
 abort "bundle_id was #{receipt.bundle_id.inspect}" unless receipt.bundle_id == "dev.bonzer.weeka.app"
+unless receipt.environment == APRV::Environment::SANDBOX
+  abort "environment was #{receipt.environment.inspect}, expected #{APRV::Environment::SANDBOX}"
+end
 
 # And the negative direction, so a verifier that accepted everything would fail
 # here too: the same receipt with one bit flipped in its signature, the byte

@@ -9,15 +9,20 @@ require_relative "helper"
 # The adapter below knows nothing about any individual case. It loads the
 # file, resolves fixture ids to bytes and checks their recorded digest,
 # builds a {Verifier} from the generic config, dispatches on "operation",
-# evaluates the JSON the verified payload (or the endpoint response) prints,
-# and reads the reason off a failure. There is no skip list, no case id
-# anywhere, and no per-case fixup: a vector that disagrees with the library
-# is a bug report against one of the two, never something to special-case
-# here.
+# evaluates the JSON the verified payload (or the endpoint response) prints
+# and the environment the payload states, and reads the reason off a
+# failure. There is no skip list, no case id anywhere, and no per-case
+# fixup: a vector that disagrees with the library is a bug report against
+# one of the two, never something to special-case here.
 class ConformanceTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
   CASES = TestSupport.cases
   BRACKET_TOKEN = /\A\[(.+)=(.*)\]\z/
+  # cases.json's `expected.environment` (Apple's spelling, or null) to the
+  # value a payload's `environment` reader returns.
+  ENVIRONMENTS = {
+    "Production" => APRV::Environment::PRODUCTION, "Sandbox" => APRV::Environment::SANDBOX, nil => nil
+  }.freeze
 
   # A key comes back either as this pointer form's own key, or as its
   # snake_case Ruby reader name — `unknown_attributes` values are objects
@@ -182,6 +187,7 @@ class ConformanceTest < Minitest::Test
     actual = JSON.parse(result.payload.respond_to?(:json) ? result.payload.json : result.payload.to_json,
                         allow_duplicate_key: true)
     assert_fields(expected, actual, kase["id"])
+    assert_environment(expected, result.payload, kase["id"])
 
     return unless expected.key?("toJson")
 
@@ -204,6 +210,20 @@ class ConformanceTest < Minitest::Test
     assert_operator millis, :<=, kase["maxMillis"],
                     "#{kase["id"]}: took #{millis.round(1)}ms, budget #{kase["maxMillis"]}ms"
     result
+  end
+
+  # The environment the verifier states beside the payload, on every ok
+  # case (DECISIONS.md R42).
+  def assert_environment(expected, payload, case_id)
+    assert expected.key?("environment"), "harness error: #{case_id}: an ok case states no environment"
+    want = ENVIRONMENTS.fetch(expected["environment"]) do
+      raise "harness error: #{case_id}: environment #{expected["environment"].inspect}"
+    end
+    if want.nil?
+      assert_nil payload.environment, "#{case_id}: environment"
+    else
+      assert_equal want, payload.environment, "#{case_id}: environment"
+    end
   end
 
   def assert_message_excludes(codepoints, message, case_id)
