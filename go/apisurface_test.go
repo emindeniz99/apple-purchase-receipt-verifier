@@ -185,8 +185,12 @@ func TestPublicAPIShape(t *testing.T) {
 	)
 
 	payload := &applereceipt.JSONPayload{}
-	var _ func() string = payload.JSON
-	_ = applereceipt.NewJSONPayload("{}")
+	var (
+		_ func() string                    = payload.JSON
+		_ func() *applereceipt.Environment = payload.Environment
+	)
+	var _ func(string, *applereceipt.Environment) *applereceipt.JSONPayload = applereceipt.NewJSONPayload
+	var _ *applereceipt.Environment = applereceipt.ReceiptPayload{}.Environment
 
 	failure := &applereceipt.Failure{}
 	var (
