@@ -1,5 +1,140 @@
 # Changelog
 
+## [0.8.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.7.0...v0.8.0) (2026-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ruby:** `APRV::AppleStatus.for_reason` is gone. The module answers the endpoint's status itself; `AppleStatus` keeps its named constants.
+* **php:** Environment::fromReceiptType() and Environment::fromJwsEnvironment() are removed; read ReceiptPayload::$environment or JsonPayload::$environment, which both take environment: (default null) when built by hand. The package needs an aprv binary or server that reports limits.max_input_bytes.
+* **python:** Environment.from_receipt_type and Environment.from_jws_environment are removed; read ReceiptPayload.environment or JsonPayload.environment, which both take environment= (default None) when built by hand. The package needs a module whose init answer states max_input_bytes.
+* **go:** FromReceiptType and FromJWSEnvironment are removed; read ReceiptPayload.Environment or JSONPayload.Environment(). NewJSONPayload takes the environment as a second argument, nil for none. The package needs a module whose init answer states max_input_bytes.
+* **node:** environmentFromReceiptType and environmentFromJwsEnvironment are removed from both entry points; read payload.environment on a ReceiptPayload or a JsonPayload. createJsonPayload(json, environment) returns { json, environment }, the environment null when left out. The package needs a module whose init answer states max_input_bytes.
+* **dotnet:** AppleEnvironments.FromReceiptType and AppleEnvironments.FromJwsEnvironment are removed with their class; read ReceiptPayload.Environment and JsonPayload.Environment instead. The ReceiptPayload constructor and JsonPayload.Create take the environment as their last argument. The package needs a module whose init answer states max_input_bytes.
+* **swift:** Environment.fromReceiptType(_:) and Environment.fromJwsEnvironment(_:) are removed; read ReceiptPayload.environment and JsonPayload.environment instead. JsonPayload(json:) is now JsonPayload(json:environment:). The package needs a module whose init answer states max_input_bytes.
+* **ruby:** Environment.from_receipt_type and Environment.from_jws_environment are removed; read result.payload.environment instead. ReceiptPayload.new and JsonPayload.new take environment: as their last keyword. The gem needs a module whose init answer states max_input_bytes.
+* **java:** Environment.fromReceiptType(String) and Environment.fromJwsEnvironment(String) are removed; read ReceiptPayload.environment() and JsonPayload.environment(). The ReceiptPayload and JsonPayload constructors take the environment as a last argument, and the -wasm artifact needs a module and an aprv-server that state max_input_bytes.
+* **rust:** Environment::from_receipt_type and Environment::from_jws_environment are no longer public; use ReceiptPayload::environment() and JsonPayload::environment(). init's accepting answer gains max_input_bytes and a verified answer gains environment, so a host that compared init's answer with {"ok":true} reads it as JSON instead.
+* **dotnet:** Config.Defaults() is removed; write new Config(). Config.CreateBuilder() and Config.Builder are removed; write new Config(roots: roots, clock: clock), passing only what differs from the defaults. Passing null for roots or clock now means the default instead of throwing ArgumentNullException.
+* **rust:** aprv-server answers a body over 3,145,728 bytes with HTTP 413 and the module's JSON result (TOO_LARGE, or {"status":21002} at the endpoint) instead of an application/problem+json document with code PAYLOAD_TOO_LARGE, and the CLI prints that answer on stdout before it exits 3. PHP removes Transport\InputTooLargeException: a custom Transport returns the module's answer for an over-cap input instead.
+* **php:** Config::defaults() is removed. Call new Config(), which gives the same Config: the module's built-in Apple roots and the system clock.
+* **ruby:** Config.defaults is removed. Call Config.new, which gives the same Config: the module's built-in Apple roots and the system clock.
+* **python:** receipt.MAX_RECEIPT_BYTES, endpoint.MAX_REQUEST_BYTES, jws.MAX_JWS_BYTES and the apple_purchase_receipt_verifier.endpoint and .jws modules are removed. The caps are 3,145,728 UTF-8 bytes for a receipt and an endpoint body and 262,144 for a JWS; the module reports an input over one as Reason.TOO_LARGE.
+* **go:** (*ReceiptPayload).String and (*JSONPayload).String are removed; call ToJSON() and JSON(). The six Max* constants are removed; the caps are 3,145,728 (receipt, request body) and 262,144 (JWS) UTF-8 bytes, and the module reports an input over one as TOO_LARGE.
+* **swift:** maxReceiptBytes, maxEndpointRequestBytes and maxJwsBytes are removed (the caps are 3,145,728, 3,145,728 and 262,144 UTF-8 bytes). Environment.appleValue is removed; use rawValue.
+* **ruby:** Config.builder and Config::Builder are removed; write Config.new(roots: ..., clock: ...). The internal Guest, InstancePool, Runtime, Wire, PayloadJson and RootsRejected are private constants.
+* **python:** Config.create(roots=..., clock=...) is removed; write Config(roots=..., clock=...). Config.defaults() is removed; write Config().
+* **node:** VerificationError is no longer exported. Read `result.failure.reason` instead; no method ever threw it.
+* **php:** ConfigBuilder and Config::builder() are removed; write new Config(roots: $roots, clock: $clock), passing only what differs from the defaults. ReceiptPayload::idJson(), ReceiptPayload::attributesJson() and InAppPurchase::jsonValue() are removed; toJson() writes the same JSON.
+* **rust:** Config::defaults() is removed; use Config::default(). The top-level decode_receipt_data function is no longer public.
+* **ruby:** Config.new(roots:) and the builder no longer accept PEM Strings, as 0.7 did. Pass OpenSSL::X509::Certificate.new(pem), or the DER String.
+* **node:** createConfig({ roots }) no longer accepts PEM strings, as 0.7 did. Pass the DER instead: new X509Certificate(pem).raw from node:crypto in Node, or the base64-decoded PEM body in a browser or workerd.
+* **go:** the Go module needs Go 1.25 or newer. Go 1.22 to 1.24 users stay on the previous release, whose go/v* tag is unchanged.
+* **php:** AppleRootCerts and its pinnedRoots() are removed. Config::defaults() still trusts exactly Apple's three roots; a caller who combined them with a root of their own reads Apple's certificates themselves (README, "Upgrading from 0.7").
+* **dotnet:** AppleRootCertificates and its Bundled() are removed. Config.Defaults() still trusts exactly Apple's three roots; a caller who combined them with a root of their own loads Apple's certificates themselves (README, "Upgrading from 0.7").
+* **python:** default_roots() is removed and Config.defaults().roots is None instead of three DER byte strings. The defaults still trust exactly Apple's three roots; a caller who combined them with a root of their own reads Apple's certificates themselves (README, "Your own roots").
+* **go:** AppleRoots() is removed and DefaultConfig().Roots() returns nil instead of three certificates. DefaultConfig() still trusts exactly the three Apple roots; a caller who combined them with a root of their own loads Apple's certificates themselves (README, "Upgrading from 0.7").
+
+### refactor
+
+* **dotnet:** build Config with its constructor alone ([f6c386e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f6c386e4717464ff6be50074fef3bb31545816ac))
+* **dotnet:** drop the generated roots and Bundled() ([40ead50](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/40ead50affbe9a4918e86e4b7851a7bc8c72f442))
+* **go:** drop duplicate String methods and the limit constants ([9957d85](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9957d85a1c31d8bd52830dd7970722f69e5b3c62))
+* **go:** drop the roots copy that aprv.wasm now compiles in ([0d31317](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0d3131796307e4e7db7d01305501e4b24824ab98))
+* **node:** stop exporting VerificationError ([97dc33f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/97dc33f60d53eba3f2600b34119c14e3053e601d))
+* **node:** take trust roots as DER only, drop PEM unwrapping ([36b2337](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/36b23376db700530d31b86b62b314db7fa4f457b))
+* **php:** build Config with its constructor; hide payload helpers ([0f9f085](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0f9f08544136cb606c0acb59f5cbdce9c139a389))
+* **php:** drop config::defaults() for new config() ([c050443](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c0504435fbf2f39a0450dcfafdfc2fb4e6a90f91))
+* **php:** drop the roots copy and AppleRootCerts ([8a444c2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8a444c29c2dfcbca9eef023a6360849e9792eeec))
+* **python:** build Config with its constructor alone ([a6efa7e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a6efa7e04f0263768dd399b510d3f5584851fecf))
+* **python:** drop the roots copy that aprv.wasm now compiles in ([ec6b176](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ec6b1765db577d8f2afc6666796d546769d8bc77))
+* **python:** drop the unused size-cap constants ([aa36bfc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/aa36bfc8d235b3832d8ef4068b772181c0b2a6eb))
+* **ruby:** drop Config.builder; make the gem's internals private ([b4ca758](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b4ca7587474c7636f7db3905b60f30fc4fab41de))
+* **ruby:** drop config.defaults for config.new ([067635b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/067635bc471bb5a7eaeee55298095c9113f43f54))
+* **ruby:** remove AppleStatus.for_reason from the public API ([ac5acf9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ac5acf9861252ae0ef52d917a52e54078230f345))
+* **ruby:** take trust roots as DER only, drop PEM unwrapping ([b5cc46b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b5cc46ba8b069c640249d13688a4739fd6646d39))
+* **rust:** drop Config::defaults and the top-level base64 decoder ([80307bb](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/80307bb4802caabda352c327a2d48b254f7ffdf7))
+* **swift:** drop the public size caps and Environment.appleValue ([0020ffe](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0020ffe6b4d6a7da9b3fe1c2d6652b6870665406))
+
+
+### Features
+
+* **dotnet:** take the environment and the input length from the module ([b629c92](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b629c92496a3475f6a64a6c98609727037286e0a))
+* **fixtures:** pin the environment every verified case states ([b3c8091](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b3c8091385c46599ee890160adc58bc7b6a6d6f0))
+* **go:** raise the floor to Go 1.25 for wazero 1.12 ([604785d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/604785d5693f7694dc01a70dc8128622d21eaff7))
+* **go:** read the input length and environment from the module ([7bf4a0c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7bf4a0c1851ed0c810667b5162c05a32df1e5288))
+* **java:** state the environment on the payloads and drop the helpers ([f135b62](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f135b627dae1e86b8d7364808716c76dc7860ff1))
+* **node:** read the input length and environment from the module ([1086b9d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1086b9d13d131dc87bb55422b9d5cf6824d1b3d8))
+* **php:** read the input length and environment from aprv ([e93ea9f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e93ea9f4c80e40faacbc8d7136a22472043ec721))
+* **python:** read the input length and environment from the module ([b857e25](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b857e25541bc87cccadff88146ef1eae7c89a93a))
+* **ruby:** hand a pem root string to the module as given ([945d338](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/945d338bd60bee7a6e7d75450824e49401e18de8))
+* **ruby:** take the environment and the input length from the module ([ceb63f1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ceb63f13c53dfa636e3b891a00e8004bd032ba23))
+* **rust:** answer an over-cap body with the module's own verdict ([bb0f412](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bb0f412d6084bc3ea1bad1eccf13d3ed4cbf9d0a))
+* **rust:** make the instance pool aprv-server's default lifecycle ([033fd46](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/033fd464b70931b2a0a40ce628ed60aaca4c7fa4))
+* **rust:** read a caller's root as DER or PEM in the core ([7ecd0bc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7ecd0bc9c033792f553e7003016712812382b1d3))
+* **rust:** state the environment and the input length in the answers ([c521481](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c52148136bd669bb2bfe3d6ef43ed4c2c556cdd5))
+* **rust:** take Apple's .cer files and repeat --roots in aprv-server ([ad71297](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ad71297f43ce56845dabd171db443b97c84b0bd6))
+* **rust:** take aprv-server's input length from the module's init ([4ee160a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4ee160ac8a7b6304174e74654b3ea0d3be4183db))
+* **swift:** take the environment and the input length from the module ([0fa74bd](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0fa74bd58697ce0737d8591a5aeb8d93b1ac3617))
+
+
+### Bug Fixes
+
+* **ci:** bring the differential's recorded rows up to date with main ([8e2b91d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8e2b91d030a872c38a293a9006aabec21aa3993d))
+* **ci:** close two ways past the gate's swift-crypto allowance ([51bd652](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/51bd652ba8faf4ccc25c466affa1bcdf371d365f))
+* **ci:** name the release branch release-please really opens ([3eb1125](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3eb112550fa9186ea14a337f33f9998d493cf1c2))
+* **ci:** skip only whole-line comments in the one-implementation gate ([17c0b1a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/17c0b1a8c620625f5314e3da7bdd4a2bff069486))
+* **ci:** widen the gate's swift, ruby and python import patterns ([864154c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/864154cf0a7cf77cbf51734ef6bfa8de2e9573f2))
+* **dotnet:** keep the test host off the CET shadow stack ([0f5b23a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0f5b23af83f9995bda35aefef6f6b6fbdf999828))
+* **dotnet:** throw InvalidOperationException for another ABI's init ([56168c4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/56168c46218bfdd7bd6713d05260b6d65d2d5baf))
+* **java:** cut the server engine's input as the endive engine does ([fdb4b25](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fdb4b25d21aae2b4c13efeb17a94120217cc2034))
+* **php:** cut the input to 3,145,729 bytes before either transport ([3a3b128](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3a3b12834fc21790c370b8ce385489b7d39a8c04))
+* **php:** read the installer's http status from the stream's metadata ([068dfe7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/068dfe7dc7318b79929031bb6a897e35c8d6edc7))
+* **php:** refuse a transport call made before open ([4fd8d53](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4fd8d53e075327ed73815d28a2deb850dd60107f))
+* **php:** refuse an empty root list at create ([a4ae83e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a4ae83ef35e50cff45be953e76355a2c86d6f7f1))
+* **python:** build the default Config with Config() in check-install ([b9dd86e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b9dd86eeec7694efcab28a2b5a2ed13706f4aa81))
+* **python:** let the bench's cross-port mode use the built-in roots ([2465c40](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2465c4051c07009bdfb703de86f827b863be510c))
+* **repo:** restore two files the previous commit deleted by mistake ([e03ed6a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e03ed6aed8c2d5b679c4d2122ef719d38f5995bd))
+* **repo:** take this checkout's java jar in the differential run ([63e1432](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/63e143240b4cee1d152592b40a57776accc3bc53))
+* **ruby:** unwrap PEM roots with a linear scan instead of a regex ([098b61d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/098b61d80b85383b8c2a7be80ad1d9a27aaa8f10))
+* **rust:** clean build.sh's outputs first and pin the compiler cargo runs ([0632948](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/063294858595220cc3c4696d93deab59aa335f37))
+* **rust:** compare aprv-server tokens by their sha-256 digests ([9213b0f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9213b0f1b16020d1c3ec567e14c46ad8866119d4))
+* **rust:** join a constructed string's chunks unchecked in the walk ([6c81533](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6c815335ebaa54f7c7520ad8cac264747a277789))
+* **rust:** keep the reference signedDate conversion from the raw text ([6dd248f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6dd248f60aa9cd791ddb161bc7494c972727053f))
+* **rust:** link the bag by signature alone, keeping not-a-CA reports ([9b42d0c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9b42d0cd3a8b21c139a098db076e224d175a0b2c))
+* **rust:** move the elixir nif to the byte-range exports ([34d2f24](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/34d2f243f94c6b77c9065f3125bd693a7c7cead4))
+* **rust:** narrow the bag to certificates that sign the path ([1d44bc5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1d44bc50fcbe7bee812f75994b002c0e7897e756))
+* **rust:** refuse an encrypted PEM root instead of asking for a password ([41941f7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/41941f722071fb4a23a084fc01912d16662f58b3))
+* **rust:** refuse an init input length over the server's drain limit ([ae034a4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ae034a439f7350d1b2eb55561ad54a29b88403a0))
+* **rust:** refuse anchor lengths over PTRDIFF_MAX in the C ABI ([5b1eabe](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5b1eabe084359c6a84e93285853ff9f4393a324a))
+* **rust:** refuse dashes after a PEM delimiter in the server roots file ([3ffccc9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3ffccc96a38daba0d02f048d3a5888597264711a))
+* **rust:** run every asan fuzz target even after one fails ([25ddc5f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/25ddc5fdedb03faaa355fc9eb6276980242d14b3))
+* **rust:** tighten the receipt wire schema to what the core writes ([f80143e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f80143e8fbccf039b68a1442db2770cc40ad17d8))
+* **rust:** trap on a list range past the end of linear memory ([077ec85](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/077ec85d9025bbcb2e67dff6c355bd90d728a73c))
+* **swift:** copy at most one byte over the cap into the module ([4c7a4eb](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4c7a4eb18a534552d1a55c240776c1bbdbbb4567))
+* **swift:** run wasmkit's token-threaded loop off linux x86-64 ([b768404](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b76840440dfa6d97a5474956e3fade1ef47e6d28))
+
+
+### Build & Dependencies
+
+* **dotnet:** depend on System.Text.Json on netstandard2.0, drop unsafe ([ae3fb1a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ae3fb1af2b6ab1d53fa7233af19cb58ed8fcd124))
+* **java:** drop endive's name-section prefixer for the stripped module ([a1dd695](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a1dd695ac842390a0d5ded2eea4daf27d8327594))
+* **java:** pin lane B's final aprv-server for the -wasm server engine ([14da2c5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/14da2c5ab891bab6d1473ec0ead11867bccaaaa4))
+* **java:** pin lane B's G1d aprv-server for the -wasm server engine ([942a425](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/942a4253eebfa30af7bb1bbbee4d69d151e54cb1))
+* **java:** pin the complete 0.7 module for the -wasm Endive engine ([10c9511](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/10c951198a5804743f2fbe7ffd43a821d8426528))
+* **java:** ship the module's licence texts in the -wasm jars ([3105634](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/310563493fc2dab28132e6a6c66efd69acc8b05e))
+* **node:** override weval to drop the decompress archive extractor ([9560795](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/956079562d76cac11127be6b58f156ba6465fa24))
+* **repo:** commit the module copies Go and Swift ship from git ([e9cff0e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e9cff0e41cc146a27a310c9a97ca9c8f7b10150d))
+* **repo:** pin the final module in every package ([783a3aa](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/783a3aa453a9242775b5cbfd20e870acaa7c2aa6))
+* **rust:** refresh the fuzz crate's stale lockfile ([228fb26](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/228fb26c02441c4aef094ab05bdacd5034d506de))
+* **swift:** accept swift-crypto 3.x to 5.x ([f07e2eb](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f07e2ebe8352be50d360794e723b076cf3531000))
+* **swift:** depend on swift-crypto for the module's sha-256 ([cea539b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/cea539b23007bcabf4c236713393cce913fd98af))
+
+
+### Reverts
+
+* **go:** keep {"roots":[]} for the built-in roots ([e33a5b5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e33a5b5f9dda84b38566a29ada0c9b9d75d80f42))
+
 ## [0.7.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.6.0...v0.7.0) (2026-09-28)
 
 

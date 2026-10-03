@@ -1,6 +1,6 @@
 [package]
 name = "apple-purchase-receipt-verifier"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.85.0"
 description = "Offline verification of Apple App Store JWS payloads and legacy PKCS#7 app receipts against pinned Apple roots."
@@ -37,7 +37,7 @@ path = "src/lib.rs"
 # The adapter is published beside this crate at the same version, so its
 # requirement moves with every release (release-please-config.json).
 [dependencies]
-aprv-openssl = { version = "0.7.0", path = "openssl", default-features = false } # x-release-please-version
+aprv-openssl = { version = "0.8.0", path = "openssl", default-features = false } # x-release-please-version
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 # The calendar and the US Pacific offset behind Apple's `_pst` dates
 # (src/datetime.rs). `static` embeds America/Los_Angeles, and only it, at
