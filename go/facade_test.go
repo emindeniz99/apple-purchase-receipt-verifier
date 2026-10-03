@@ -348,9 +348,9 @@ func TestAClockThatBreaksIsInternalErrorWhateverTheInput(t *testing.T) {
 	}
 }
 
-func TestTheDefaultRootsAreNoRootsKeyAndCustomRootsAreTheirDER(t *testing.T) {
+func TestTheDefaultRootsAreAnEmptyListAndCustomRootsAreTheirDER(t *testing.T) {
 	// The double refuses an init configuration over 100 bytes: three roots,
-	// or one, are far over; {} is 2.
+	// or one, are far over; {"roots":[]} is 12.
 	if _, err := applereceipt.NewVerifierOverModule(applereceipt.DefaultConfig(), mirrorModule(t)); err != nil {
 		t.Fatalf("the default Config was refused: %v", err)
 	}
