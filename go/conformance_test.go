@@ -78,6 +78,10 @@ type caseExpectedSpec struct {
 	Lengths               map[string]any `json:"lengths"`
 	ToJSON                *string        `json:"toJson"`
 	BytesHex              string         `json:"bytesHex"`
+	// Environment is what an ok verifyReceipt or verifySignedData result
+	// states beside its payload: "Production", "Sandbox" or null. Raw, so
+	// a missing member (empty) and null stay apart.
+	Environment json.RawMessage `json:"environment"`
 	// OneOf marks a port-defined case (owner, 2026-09-27): the outcome,
 	// "ok" or the reason, or at the endpoint the response's /status (a
 	// json.Number), must be one of these, and the call must not crash. No
@@ -653,29 +657,30 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 		} else {
 			input = string(fixtureBytesIn(t, dir, fixtures, c.Input.Fixture))
 		}
-		call := func() (string, error) {
+		call := func() (string, *applereceipt.Environment, error) {
 			if c.Operation == "verifyReceipt" {
 				payload, err := verifier.VerifyReceipt(input)
 				if err != nil {
-					return "", err
+					return "", nil, err
 				}
-				return payload.ToJSON(), nil
+				return payload.ToJSON(), payload.Environment, nil
 			}
 			payload, err := verifier.VerifySignedData(input)
 			if err != nil {
-				return "", err
+				return "", nil, err
 			}
-			return payload.JSON(), nil
+			return payload.JSON(), payload.Environment(), nil
 		}
 
 		var jsonText string
+		var environment *applereceipt.Environment
 		var callErr error
 		if c.MaxMillis == nil {
-			jsonText, callErr = call()
+			jsonText, environment, callErr = call()
 		} else {
-			_, _ = call() // warm-up
+			_, _, _ = call() // warm-up
 			start := time.Now()
-			jsonText, callErr = call()
+			jsonText, environment, callErr = call()
 			if elapsed, budget := time.Since(start), time.Duration(*c.MaxMillis)*time.Millisecond; elapsed > budget {
 				t.Fatalf("%s: took %v, over the %dms budget", c.ID, elapsed, *c.MaxMillis)
 			}
@@ -734,6 +739,7 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 			if expected.ToJSON != nil && !reflect.DeepEqual(parseJSONAny(t, c.ID, *expected.ToJSON), actual) {
 				t.Fatalf("%s: toJson value\n  expected %s\n  but got  %s", c.ID, *expected.ToJSON, jsonText)
 			}
+			checkEnvironment(t, c.ID, expected.Environment, environment)
 		default:
 			t.Fatalf("%s: harness error: unknown status %q", c.ID, expected.Status)
 		}
@@ -744,6 +750,28 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 
 	for _, failure := range check(c.ID, expected, actual) {
 		t.Error(failure)
+	}
+}
+
+// checkEnvironment compares an ok result's environment with the case's
+// expected.environment: "Production", "Sandbox", or null for nil.
+func checkEnvironment(t testing.TB, id string, want json.RawMessage, got *applereceipt.Environment) {
+	t.Helper()
+	if len(want) == 0 {
+		t.Fatalf("%s: harness error: an ok case states no environment", id)
+	}
+	var wantText *string
+	if err := json.Unmarshal(want, &wantText); err != nil {
+		t.Fatalf("%s: harness error: environment %s is not a string or null", id, want)
+	}
+	switch {
+	case wantText == nil && got == nil:
+	case wantText == nil:
+		t.Fatalf("%s: environment %q, want null", id, *got)
+	case got == nil:
+		t.Fatalf("%s: environment null, want %q", id, *wantText)
+	case string(*got) != *wantText:
+		t.Fatalf("%s: environment %q, want %q", id, *got, *wantText)
 	}
 }
 

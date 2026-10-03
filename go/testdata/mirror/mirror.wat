@@ -7,15 +7,16 @@
 ;;       JSON it wants back. An input starting with '!' traps. The endpoint
 ;;       traps on an env other than 0 or 1, as aprv.wasm does.
 ;;   init
-;;       answers {"ok":true}, or a refusal when the configuration is over
-;;       100 bytes (one caller-supplied root is over 1,000).
+;;       answers {"ok":true,"max_input_bytes":3145729}, the real module's
+;;       answer, or a refusal when the configuration is over 100 bytes (one
+;;       caller-supplied root is over 1,000).
 ;;
 ;; Rebuild with: wasm-tools parse mirror.wat -o mirror.wasm
 (module
   (memory (export "memory") 2)
   (global $heap (mut i32) (i32.const 4096))
-  (data (i32.const 1024) "{\"ok\":true}")
-  (data (i32.const 1056) "{\"ok\":false,\"message\":\"the double refuses this configuration\"}")
+  (data (i32.const 1024) "{\"ok\":true,\"max_input_bytes\":3145729}")
+  (data (i32.const 1088) "{\"ok\":false,\"message\":\"the double refuses this configuration\"}")
 
   (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32)
     (local $p i32) (local $end i32) (local $have i32)
@@ -70,7 +71,7 @@
     local.get $len
     i32.const 100
     i32.gt_u
-    if (result i32) i32.const 1056 else i32.const 1024 end
+    if (result i32) i32.const 1088 else i32.const 1024 end
     local.set $ptr
     i32.const 2048
     local.get $ptr
@@ -79,7 +80,7 @@
     local.get $len
     i32.const 100
     i32.gt_u
-    if (result i32) i32.const 62 else i32.const 11 end
+    if (result i32) i32.const 62 else i32.const 37 end
     i32.store
     i32.const 2048)
 

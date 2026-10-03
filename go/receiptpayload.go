@@ -74,6 +74,12 @@ type ReceiptPayload struct {
 	// UnknownAttributes holds every attribute that did not end up in a
 	// field above.
 	UnknownAttributes UnknownAttributes
+	// Environment is the environment ReceiptType names, as the verifier
+	// read it: "Production" and "ProductionVPP" are EnvironmentProduction,
+	// "ProductionSandbox" and "ProductionVPPSandbox" EnvironmentSandbox,
+	// anything else ("Xcode", a missing value) nil. It states what Apple's
+	// value means and decides nothing, and ToJSON does not write it.
+	Environment *Environment
 }
 
 // --- JSON ------------------------------------------------------------------
@@ -192,12 +198,13 @@ func (p *InAppPurchase) jsonValue() inAppJSON {
 	}
 }
 
-// receiptFromJSON reads the payload aprv.wasm wrote for a verified receipt.
-// It accepts exactly the shape 0.7 defines: a member it does not know, a
-// value of the wrong type, an id that is not a decimal int64, or bytes that
-// are not base64 is an answer this wrapper cannot use, never a payload with
-// something missing. Nothing here reads a receipt.
-func receiptFromJSON(raw []byte) (*ReceiptPayload, error) {
+// receiptFromJSON reads the payload aprv.wasm wrote for a verified receipt,
+// with the environment the answer states beside it. It accepts exactly the
+// shape 0.7 defines: a member it does not know, a value of the wrong type,
+// an id that is not a decimal int64, or bytes that are not base64 is an
+// answer this wrapper cannot use, never a payload with something missing.
+// Nothing here reads a receipt.
+func receiptFromJSON(raw []byte, environment *Environment) (*ReceiptPayload, error) {
 	var wire receiptJSON
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -216,6 +223,7 @@ func receiptFromJSON(raw []byte) (*ReceiptPayload, error) {
 		OriginalPurchaseDateMs:     wire.OriginalPurchaseDateMs,
 		OriginalApplicationVersion: wire.OriginalApplicationVersion,
 		ExpirationDateMs:           wire.ExpirationDateMs,
+		Environment:                environment,
 	}
 	if out.AppItemID, err = idFromJSON("app_item_id", wire.AppItemID); err != nil {
 		return nil, err
