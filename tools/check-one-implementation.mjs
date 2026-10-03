@@ -123,7 +123,7 @@ const LANGS = {
       [/\b(ECDsa|RSA|DSA)\s*\.\s*Create\b|ECDsa|\bRSA(Cng|OpenSsl)?\b|RSACryptoServiceProvider|Verify(Data|Hash)|Org\.BouncyCastle/, '.NET signature verification'],
     ],
     allow: [
-      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Config.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'Config.Roots and Config.Builder.Roots take X509Certificate2 (the 0.7 API); only its RawData, the DER, reaches the module' },
+      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Config.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'Config.Roots and the Config constructor\'s roots take X509Certificate2 (the 0.7 type); only its RawData, the DER, reaches the module' },
       { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Internal/Certificates.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: "wraps DER in an X509Certificate2 for Config.Roots above; no chain, no key, no signature" },
     ],
   },
