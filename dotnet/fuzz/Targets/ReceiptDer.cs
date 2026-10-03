@@ -32,8 +32,8 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
         {
             _trustedRoots = new List<X509Certificate2>(Fixtures.AppleRoots()) { Fixtures.ReceiptRoot() };
             _unrelatedRoots = new List<X509Certificate2> { Fixtures.JwsRoot() };
-            _trusted = Verifier.Create(Config.CreateBuilder().Roots(_trustedRoots).Build());
-            _unrelated = Verifier.Create(Config.CreateBuilder().Roots(_unrelatedRoots).Build());
+            _trusted = Verifier.Create(new Config(roots: _trustedRoots));
+            _unrelated = Verifier.Create(new Config(roots: _unrelatedRoots));
         }
 
         internal void Run(ReadOnlySpan<byte> data)

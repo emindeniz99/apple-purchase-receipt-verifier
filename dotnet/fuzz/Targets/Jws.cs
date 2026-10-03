@@ -26,8 +26,8 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
         internal Jws()
         {
             _root = Fixtures.JwsRoot();
-            _fixture = Verifier.Create(Config.CreateBuilder().Roots(new[] { _root }).Build());
-            _unrelated = Verifier.Create(Config.Defaults());
+            _fixture = Verifier.Create(new Config(roots: new[] { _root }));
+            _unrelated = Verifier.Create(new Config());
         }
 
         internal void Run(ReadOnlySpan<byte> data)

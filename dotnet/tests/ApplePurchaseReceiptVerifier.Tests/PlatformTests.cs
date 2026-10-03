@@ -175,7 +175,7 @@ public class PlatformTests
     {
         AprvRuntime runtime = new(
             new StubModule { ReceiptAnswer = SyntheticAnswers.Verified(SyntheticAnswers.Receipt()) }.ToWasm(), null);
-        VerifierImpl verifier = new(Config.Defaults(), runtime);
+        VerifierImpl verifier = new(new Config(), runtime);
         string receipt = "x";
 
         // Warm up: first-call statics and JIT are a one-off cost, not
@@ -304,7 +304,7 @@ public class PlatformTests
     {
         const long now = 1_700_000_000_000L;
         UTF8Encoding utf8 = new(false, false);
-        Config config = Config.Defaults();
+        Config config = new();
         byte[] input = utf8.GetBytes(receipt);
 
         Measured warm = Marginal(() => verifier.VerifyReceipt(receipt));

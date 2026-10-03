@@ -16,7 +16,7 @@ internal static class Program
         // The module answers inside Wasmtime; a trimmed build must still load
         // it, run it, and pass its text through. The verdicts are read from
         // the endpoint's status, which is the module's own text.
-        IVerifier verifier = Verifier.Create(Config.CreateBuilder().Roots(new[] { root }).Build());
+        IVerifier verifier = Verifier.Create(new Config(roots: new[] { root }));
         string request = "{\"receipt-data\":\"" + base64 + "\"}";
         string sandboxResponse = verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, request);
         string productionResponse = verifier.VerifyReceiptEndpoint(AppleEnvironment.Production, request);
@@ -27,7 +27,7 @@ internal static class Program
             return 1;
         }
 
-        IVerifier pinned = Verifier.Create(Config.Defaults());
+        IVerifier pinned = Verifier.Create(new Config());
         if (pinned.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, request) != "{\"status\":21003}")
         {
             Console.Error.WriteLine("a foreign chain was accepted after trimming");

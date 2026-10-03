@@ -48,16 +48,16 @@ public class ClockTests
     public void EveryOperationPassesTheClockToTheModule()
     {
         AprvRuntime runtime = new(new StubModule().ToWasm(), null);
-        VerifierImpl verifier = new(Config.CreateBuilder().Clock(() => Now).Build(), runtime);
+        VerifierImpl verifier = new(new Config(clock: () => Now), runtime);
 
         verifier.VerifyReceipt("x");
         Assert.Equal(Now, LastNow(verifier));
         long later = Now + 1;
-        VerifierImpl second = new(Config.CreateBuilder().Clock(() => later).Build(), runtime);
+        VerifierImpl second = new(new Config(clock: () => later), runtime);
         second.VerifySignedData("x");
         Assert.Equal(later, LastNow(second));
         long third = Now + 2;
-        VerifierImpl endpoint = new(Config.CreateBuilder().Clock(() => third).Build(), runtime);
+        VerifierImpl endpoint = new(new Config(clock: () => third), runtime);
         endpoint.VerifyReceiptEndpoint(AppleEnvironment.Production, "x");
         Assert.Equal(third, LastNow(endpoint));
     }
@@ -66,7 +66,7 @@ public class ClockTests
     public void TheDefaultClockIsTheSystemClock()
     {
         AprvRuntime runtime = new(new StubModule().ToWasm(), null);
-        VerifierImpl verifier = new(Config.Defaults(), runtime);
+        VerifierImpl verifier = new(new Config(), runtime);
         verifier.VerifyReceipt("x");
         Assert.True(Math.Abs(LastNow(verifier) - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) < 60_000);
     }

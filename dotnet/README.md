@@ -17,8 +17,8 @@ using ApplePurchaseReceiptVerifier;
 // parsed once, not per call (about a second, the first time in a process).
 // Thread-safe, immutable and never disposed: it copies the certificates you
 // hand it, so you may dispose your own X509Certificate2 instances right
-// after Build().
-IVerifier verifier = Verifier.Create(Config.Defaults());
+// after constructing the Config.
+IVerifier verifier = Verifier.Create(new Config());
 
 // A legacy app receipt, as the base64 string the app sends.
 VerificationResult<ReceiptPayload> receiptResult = verifier.VerifyReceipt(receiptBase64);
@@ -68,8 +68,8 @@ These are the properties the library exists to hold.
   system's trust store plus online revocation and AIA fetching — and on a
   developer's macOS or Windows machine, where the Apple roots are already
   in the OS store, forgetting the pin fails *permissively*. Anchors come
-  from `Config.CreateBuilder().Roots(...)`, or from `Config.Defaults()`,
-  whose roots are Apple's three published roots pinned inside the module,
+  from `new Config(roots: ...)`, or from `new Config()`, whose roots are
+  Apple's three published roots pinned inside the module,
   so they work unchanged in a container with no filesystem access.
 - **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
   download. Revocation checking is disabled by design; an integrator who
@@ -92,20 +92,24 @@ These are the properties the library exists to hold.
 ### `Config`: the roots and the clock
 
 ```csharp
-Config defaults = Config.Defaults(); // the module's Apple roots, the system clock
+Config defaults = new Config(); // the module's Apple roots, the system clock
 
-Config pinned = Config.CreateBuilder()
-    .Roots(new[] { rootCertificate })          // replaces the defaults
-    .Clock(() => 1_735_689_600_000L)           // epoch milliseconds; replaces DateTimeOffset.UtcNow
-    .Build();
+Config pinned = new Config(
+    roots: new[] { rootCertificate },          // replaces the defaults
+    clock: () => 1_735_689_600_000L);          // epoch milliseconds; replaces DateTimeOffset.UtcNow
 ```
+
+The constructor is the one way to build a `Config`. Both arguments are
+optional, and `null` for either means its default. `roots` takes any
+`IEnumerable<X509Certificate2>`; its DER is copied when the `Config` is
+constructed.
 
 `Roots` is either your own list of trust anchors or, by default, nothing:
 the three Apple roots are pinned inside the module, and `Config` lists none
-of them (`Config.Defaults().Roots` is empty), and the package ships no copy.
+of them (`new Config().Roots` is empty), and the package ships no copy.
 To trust Apple's roots and one of your own, pass all four, loading Apple's
 three from its PKI page or the repository's `certs/`. An empty `Roots` set that you pass in is an
-`ArgumentException` from `Build()`, never a verdict: a verifier with no
+`ArgumentException` from the constructor, never a verdict: a verifier with no
 roots would reject everything, and nobody would notice until production.
 `Verifier.Create` throws `ArgumentException` for a root the module cannot
 read, and `InvalidOperationException` when the embedded module is not the
@@ -540,12 +544,15 @@ for how it differs from Apple's official libraries.
 
 ## Upgrading from 0.7
 
-The API is unchanged but for `AppleRootCertificates`, which is gone; what
-runs under it is not.
+The API is unchanged but for `AppleRootCertificates`, which is gone, and
+`Config`, which is now built with its constructor alone; what runs under
+it is not.
 
 | 0.7 | 0.8 |
 |---|---|
 | verification in C#, on `System.Security.Cryptography.Pkcs` and `System.Formats.Asn1` | verification in `aprv.wasm`, hosted by the `Wasmtime` package; those two packages are no longer dependencies, and the netstandard2.0 asset takes `System.Text.Json` (see [How it runs](#how-it-runs)) |
+| `Config.Defaults()` | `new Config()` |
+| `Config.CreateBuilder().Roots(roots).Clock(clock).Build()` | `new Config(roots: roots, clock: clock)`, passing only what differs from the defaults; `Config.Builder` is gone |
 | `Config.Defaults().Roots` lists Apple's three roots | it is empty: the roots are pinned inside the module. To trust Apple's roots and your own, pass all four |
 | `AppleRootCertificates.Bundled()` returns Apple's three roots | removed: the package ships no copy of them. Load them from Apple's PKI page or the repository's `certs/` |
 | `Config.Defaults()` throws if the bundled roots do not load | it cannot fail; `Verifier.Create` throws `ArgumentException` for a root the module refuses and `InvalidOperationException` for a module of another ABI version |

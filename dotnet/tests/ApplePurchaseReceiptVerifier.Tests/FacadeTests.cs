@@ -17,7 +17,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 public class FacadeTests
 {
     private static VerifierImpl Over(StubModule stub, Config? config = null) =>
-        new(config ?? Config.Defaults(), new AprvRuntime(stub.ToWasm(), null));
+        new(config ?? new Config(), new AprvRuntime(stub.ToWasm(), null));
 
     private static long Posts(AprvInstance instance) => (int)instance.Raw.GetFunction("posts")!.Invoke()!;
 
@@ -94,7 +94,7 @@ public class FacadeTests
     public void CallerMisuseIsTheLanguagesProgrammerErrorAndNeverAVerdict()
     {
         Assert.Throws<ArgumentNullException>(() => Verifier.Create(null!));
-        Assert.Throws<ArgumentException>(() => Config.CreateBuilder().Roots(Array.Empty<System.Security.Cryptography.X509Certificates.X509Certificate2>()).Build());
+        Assert.Throws<ArgumentException>(() => new Config(roots: Array.Empty<System.Security.Cryptography.X509Certificates.X509Certificate2>()));
         VerifierImpl verifier = Over(new StubModule());
         Assert.Throws<ArgumentOutOfRangeException>(() => verifier.VerifyReceiptEndpoint((AppleEnvironment)2, "{}"));
         Assert.Throws<ArgumentOutOfRangeException>(() => verifier.VerifyReceiptEndpoint((AppleEnvironment)(-1), "{}"));
@@ -270,7 +270,7 @@ public class FacadeTests
     public void RandomGetAnsweringTheWrongLengthIsATrapThatBecomesAnInternalError()
     {
         AprvRuntime runtime = new(new StubModule().ToWasm(), length => new byte[length + 1]);
-        VerifierImpl verifier = new(Config.Defaults(), runtime);
+        VerifierImpl verifier = new(new Config(), runtime);
         Failure failure = verifier.VerifyReceipt("G").Failure!;
         Assert.Equal(VerificationReason.InternalError, failure.Reason);
         Assert.NotNull(failure.Cause);

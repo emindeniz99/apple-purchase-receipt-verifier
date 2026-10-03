@@ -262,7 +262,7 @@ public class AbiTests
     [Fact]
     public void ARealReceiptOverTheCapIsTooLargeThroughTheApi()
     {
-        VerificationResult<ReceiptPayload> result = Verifier.Create(Config.Defaults()).VerifyReceipt(new string('A', 4 * 1024 * 1024));
+        VerificationResult<ReceiptPayload> result = Verifier.Create(new Config()).VerifyReceipt(new string('A', 4 * 1024 * 1024));
         Assert.False(result.Verified);
         Assert.Equal(VerificationReason.TooLarge, result.Failure!.Reason);
         Assert.Null(result.Failure.Cause);

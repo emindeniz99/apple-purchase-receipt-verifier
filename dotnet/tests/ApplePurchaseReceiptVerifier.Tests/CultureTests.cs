@@ -80,7 +80,7 @@ public class CultureTests : IDisposable
     {
         string payload = "{\"signedDate\":1722945600000.5,\"price\":1.5,\"n\":\"\u0131\"}";
         AprvRuntime runtime = new(new StubModule { SignedDataAnswer = SyntheticAnswers.VerifiedJws(payload) }.ToWasm(), null);
-        VerifierImpl verifier = new(Config.Defaults(), runtime);
+        VerifierImpl verifier = new(new Config(), runtime);
 
         Use(culture);
         Assert.Equal(payload, verifier.VerifySignedData("x").Payload?.Json);

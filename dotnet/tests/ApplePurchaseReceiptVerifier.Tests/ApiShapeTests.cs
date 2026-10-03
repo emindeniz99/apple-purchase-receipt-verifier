@@ -139,30 +139,40 @@ public class ApiShapeTests
     /// startup, once.
     /// </summary>
     [Fact]
-    public void AnEmptyRootSetIsRefusedAtBuildTime()
+    public void AnEmptyRootSetIsRefusedAtConstruction()
     {
-        Assert.Throws<ArgumentException>(
-            () => Config.CreateBuilder().Roots(Array.Empty<X509Certificate2>()).Build());
+        Assert.Throws<ArgumentException>("roots", () => new Config(roots: Array.Empty<X509Certificate2>()));
     }
 
     [Fact]
     public void NullConfigurationIsAProgrammingError()
     {
-        Assert.Throws<ArgumentNullException>(() => Config.CreateBuilder().Roots(null!));
-        Assert.Throws<ArgumentNullException>(() => Config.CreateBuilder().Clock(null!));
         Assert.Throws<ArgumentNullException>(() => Verifier.Create(null!));
-        Assert.Throws<ArgumentException>(
-            () => Config.CreateBuilder().Roots(new X509Certificate2[] { null! }).Build());
+        Assert.Throws<ArgumentException>("roots", () => new Config(roots: new X509Certificate2[] { null! }));
     }
 
-    /// <summary>A certificate object with no data behind it is refused at build time, not sent to the module as an empty root.</summary>
+    /// <summary>
+    /// <see langword="null"/> for either argument is not an error: it asks for
+    /// that argument's default, so a caller can pass through a value it may or
+    /// may not have.
+    /// </summary>
     [Fact]
-    public void ACertificateWithNoDataIsRefusedAtBuildTime()
+    public void NullArgumentsMeanTheirDefaults()
+    {
+        Config config = new(roots: null, clock: null);
+        Assert.Empty(config.Roots);
+        Assert.Null(config.RootDer);
+        Assert.True(Math.Abs(config.Clock() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) < 60_000);
+    }
+
+    /// <summary>A certificate object with no data behind it is refused at construction, not sent to the module as an empty root.</summary>
+    [Fact]
+    public void ACertificateWithNoDataIsRefusedAtConstruction()
     {
 #pragma warning disable SYSLIB0026
         using X509Certificate2 empty = new();
 #pragma warning restore SYSLIB0026
-        Assert.Throws<ArgumentException>(() => Config.CreateBuilder().Roots(new[] { empty }).Build());
+        Assert.Throws<ArgumentException>("roots", () => new Config(roots: new[] { empty }));
     }
 
     /// <summary>
@@ -181,9 +191,38 @@ public class ApiShapeTests
     [Fact]
     public void TheDefaultsUseTheModulesBuiltInRootsAndTheSystemClock()
     {
-        Config defaults = Config.Defaults();
+        Config defaults = new();
         Assert.Empty(defaults.Roots);
         Assert.True(Math.Abs(defaults.Clock() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) < 60_000);
+    }
+
+    /// <summary>
+    /// A <see cref="Config"/> is built one way, the C# way (DECISIONS.md R41):
+    /// one public constructor whose two arguments both default to
+    /// <see langword="null"/>. No static factory and no nested builder sit
+    /// beside it as a second spelling of the same thing.
+    /// </summary>
+    [Fact]
+    public void ConfigHasOnePublicConstructorAndNoOtherWayToBuildIt()
+    {
+        ConstructorInfo constructor = Assert.Single(typeof(Config).GetConstructors());
+        ParameterInfo[] parameters = constructor.GetParameters();
+        Assert.Equal(2, parameters.Length);
+        Assert.Equal("roots", parameters[0].Name);
+        Assert.Equal(typeof(IEnumerable<X509Certificate2>), parameters[0].ParameterType);
+        Assert.Equal("clock", parameters[1].Name);
+        Assert.Equal(typeof(Func<long>), parameters[1].ParameterType);
+        Assert.All(parameters, parameter =>
+        {
+            Assert.True(parameter.IsOptional, parameter.Name);
+            Assert.Null(parameter.DefaultValue);
+        });
+
+        Assert.Empty(typeof(Config).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly));
+        Assert.Empty(typeof(Config).GetNestedTypes(BindingFlags.Public));
+        Assert.Equal(
+            new[] { "Clock", "Roots" },
+            typeof(Config).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal));
     }
 
     /// <summary>

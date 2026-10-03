@@ -8,7 +8,7 @@ string receiptB64 = File.ReadAllText("receipt-sandbox-g5.b64").Trim();
 
 // The defaults trust the module's built-in Apple roots, so Config.Roots is
 // empty; the package ships no copy of them.
-Config config = Config.Defaults();
+Config config = new Config();
 if (config.Roots.Count != 0)
 {
     throw new Exception($"expected the defaults to use the module's roots, got {config.Roots.Count} configured");

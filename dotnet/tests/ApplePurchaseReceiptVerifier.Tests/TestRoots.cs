@@ -92,13 +92,13 @@ internal static class TestRoots
     /// <summary>A verifier that trusts exactly <paramref name="roots"/>, with the clock pinned when <paramref name="nowMs"/> is given.</summary>
     internal static IVerifier Verifier(IEnumerable<X509Certificate2> roots, long? nowMs = null)
     {
-        Config.Builder builder = Config.CreateBuilder().Roots(roots);
+        Func<long>? clock = null;
         if (nowMs is long now)
         {
-            builder.Clock(() => now);
+            clock = () => now;
         }
 
-        return ApplePurchaseReceiptVerifier.Verifier.Create(builder.Build());
+        return ApplePurchaseReceiptVerifier.Verifier.Create(new Config(roots, clock));
     }
 
     /// <summary>A verifier that trusts exactly the fixture root <paramref name="rootFixtureId"/>.</summary>
@@ -106,16 +106,8 @@ internal static class TestRoots
         Verifier(new[] { FixtureCertificate(rootFixtureId) }, nowMs);
 
     /// <summary>A config that trusts exactly the fixture root <paramref name="rootFixtureId"/>, with <paramref name="clock"/> when given.</summary>
-    internal static Config FixtureConfig(string rootFixtureId, Func<long>? clock = null)
-    {
-        Config.Builder builder = Config.CreateBuilder().Roots(new[] { FixtureCertificate(rootFixtureId) });
-        if (clock is not null)
-        {
-            builder.Clock(clock);
-        }
-
-        return builder.Build();
-    }
+    internal static Config FixtureConfig(string rootFixtureId, Func<long>? clock = null) =>
+        new(new[] { FixtureCertificate(rootFixtureId) }, clock);
 
     /// <summary>Every receipt the fixture registry holds, as <c>verifyReceipt</c> takes it (<see cref="Fixtures070.ForReceipt"/>).</summary>
     internal static IEnumerable<string> ReceiptFixtureIds()
