@@ -450,7 +450,7 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
 2026-10-01).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
-  schema v2, 384 cases, is the contract. The Java implementation is a
+  schema v2, 388 cases, is the contract. The Java implementation is a
   reference that is itself held to that contract (R33).
 - **Algorithm policy:** accept any signer and chain signature algorithm
   the pinned Apple chain vouches for. With OpenSSL's CMS API the core
@@ -520,6 +520,7 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
   | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":21002}` | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
   | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
+| A lone surrogate escape in a member name inside `data` or `summary` of a genuinely signed JWS payload | not measured (the 0.7 answers carry no environment) | reads on: Jackson keeps the name, and the container's `environment` is read | ok, without that container's environment (port-defined 2026-10-03) | The core reads `data` and `summary` for the environment alone, and `serde_json` refuses the name (R40), so the container states none; the payload and the signature are unchanged. Apple's documents are ASCII | none: no case pins it; R42 |
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -840,7 +841,7 @@ FlatBuffers as the encoding.
   ([aprv-server §6][server]).
 - **Why two artifactIds:** a classifier jar cannot replace the main jar,
   since it shares the artifact's POM and dependencies.
-- **CI:** the 384 cases against the main artifact and against both engines
+- **CI:** the 388 cases against the main artifact and against both engines
   of `-wasm`; the `java-runtime-8` leg runs the server engine on real
   Temurin 8. Temurin 8 builds end in late 2026; the leg moves to Zulu or
   Corretto 8 by then.
@@ -1024,13 +1025,13 @@ classes and classifies every host.
 **Status: accepted** (owner, 2026-09-28). Supersedes R8.
 
 - **Decision:** the 0.7 Java implementation stays in the repository,
-  maintained. CI runs it and the Rust core over the 384 cases on every
+  maintained. CI runs it and the Rust core over the 388 cases on every
   change, and the differential job runs the full corpus through both
   nightly. Its differences go to R20.
 - **The one-product rule, restated for the plan** (CLAUDE.md's "Behavior
   changes" section changes to this text in Phase 7): a verification
   behaviour change touches the Rust core, the Java implementation and
-  `fixtures/` in the same PR. The 384 cases keep them in step, and every
+  `fixtures/` in the same PR. The 388 cases keep them in step, and every
   host runs all of them as one test each.
 - **Why not the frozen jar of R8:** a frozen jar answers differently
   wherever the core changes on purpose, so every intended change becomes

@@ -173,6 +173,10 @@ from the migration:
   lists 78 port-only tests whose behaviour has no shared case yet; each
   becomes a case in `fixtures/cases.json`, or a Rust test when its input is
   too large for one.
+- **The environment of a port-defined ok.** The 27 receipt and 11 JWS
+  `oneOf` cases that allow `ok` pin no `environment`; a follow-up adds an
+  optional `environment` beside `oneOf` in `fixtures/cases.schema.json`,
+  and the runners assert it when the outcome is ok.
 - **CI still missing:** `java-wasm-s390x` (the Endive corpus under QEMU
   before each release, the big-endian check); CodeQL over `java-wasm/`;
   the licence texts of the code compiled into the module inside the
