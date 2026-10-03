@@ -378,6 +378,24 @@ final class HttpTransportTest extends TestCase
         $transport->open(null);
     }
 
+    /**
+     * The input length comes from `GET /v1/info` in open(): a call before it
+     * would send an empty body and get the module's MALFORMED back as if the
+     * caller had sent an empty receipt.
+     */
+    public function testACallBeforeOpenIsALogicErrorAndSendsNothing(): void
+    {
+        $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
+        $transport = new HttpTransport($server->url);
+        try {
+            $transport->call(Operation::Receipt, 'MIIT', 1);
+            self::fail('call() before open() must throw');
+        } catch (LogicException $e) {
+            self::assertStringContainsString('open()', $e->getMessage());
+        }
+        self::assertSame([], $server->requests());
+    }
+
     /** @return iterable<string, array{string, string|null}> */
     public static function badConstructionProvider(): iterable
     {

@@ -348,6 +348,23 @@ final class CliTransportTest extends TestCase
         $transport->open(null);
     }
 
+    /**
+     * The input length comes from `aprv info` in open(): a call before it
+     * would cut every input to nothing and get the module's MALFORMED back
+     * as if the caller had sent an empty receipt.
+     */
+    public function testACallBeforeOpenIsALogicErrorAndStartsNoProcess(): void
+    {
+        $transport = $this->transport();
+        try {
+            $transport->call(Operation::Receipt, 'MIIT', 1);
+            self::fail('call() before open() must throw');
+        } catch (LogicException $e) {
+            self::assertStringContainsString('open()', $e->getMessage());
+        }
+        self::assertSame([], $this->cli->log());
+    }
+
     public function testWhatTheBinaryPrintsOnStderrNeverReachesTheCallersOutput(): void
     {
         $this->cli->behave(['stderr' => 'a warning', 'stdout' => '{"status":0}']);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
 use InvalidArgumentException;
+use LogicException;
 use RuntimeException;
 
 /**
@@ -45,6 +46,7 @@ interface Transport
      *
      * @throws ModuleFaultException when the module trapped, broke the interface or answered unreadably
      * @throws ServerProcessException when `aprv` did not answer: it could not start, died, or the connection broke
+     * @throws LogicException when no {@see open()} has succeeded yet
      */
     public function call(Operation $operation, string $input, int $nowMs): string;
 }

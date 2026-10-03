@@ -40,9 +40,10 @@ final class HttpTransport implements Transport
      * The `limits.max_input_bytes` `GET /v1/info` stated: the most of an
      * input sent. The server reads no more than this of a body announced
      * past its drain limit and closes after its answer, so sending the rest
-     * would meet a reset instead of that answer.
+     * would meet a reset instead of that answer. Null until {@see open()}
+     * has read it.
      */
-    private int $maxInputBytes = 0;
+    private ?int $maxInputBytes = null;
 
     private readonly string $baseUrl;
 
@@ -88,7 +89,9 @@ final class HttpTransport implements Transport
 
     public function call(Operation $operation, string $input, int $nowMs): string
     {
-        [$status, $body, $type] = $this->request('POST', $operation->httpPath(), substr($input, 0, $this->maxInputBytes), $nowMs);
+        $maxInputBytes = $this->maxInputBytes
+            ?? throw new LogicException('call() before a successful open(): Verifier::create() opens a transport before its first call');
+        [$status, $body, $type] = $this->request('POST', $operation->httpPath(), substr($input, 0, $maxInputBytes), $nowMs);
         // A 413 carries the module's own answer to an input over the cap, as
         // JSON; a 413 problem document (an older server) falls through.
         if ($status === 200 || ($status === 413 && str_starts_with(strtolower($type), 'application/json'))) {
