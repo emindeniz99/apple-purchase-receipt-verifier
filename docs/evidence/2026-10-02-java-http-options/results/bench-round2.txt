@@ -1,0 +1,14 @@
+# java 21.0.10; receipt 7556 bytes
+http keep-alive, g5	n=1000	mean 2874.0 us	p50 2504.6 us	p99 7477.9 us
+http keep-alive, GET /healthz	n=5000	mean 62.3 us	p50 51.6 us	p99 164.0 us
+one-shot process per call, g5	n=100	mean 17432.7 us	p50 16583.2 us	p99 25192.1 us
+# one-shot answer equals the server's: true (1923 chars)
+length-prefixed frame through a pipe and back, 2 bytes	n=5000	mean 28.5 us	p50 26.5 us	p99 64.1 us
+length-prefixed frame through a pipe and back, 7556 bytes	n=5000	mean 35.9 us	p50 32.4 us	p99 93.2 us
+# java 1.8.0_504; receipt 7556 bytes
+http keep-alive, g5	n=1000	mean 2506.6 us	p50 2283.0 us	p99 5399.5 us
+http keep-alive, GET /healthz	n=5000	mean 65.1 us	p50 54.7 us	p99 223.3 us
+one-shot process per call, g5	n=100	mean 16802.6 us	p50 15695.2 us	p99 36209.0 us
+# one-shot answer equals the server's: true (1923 chars)
+length-prefixed frame through a pipe and back, 2 bytes	n=5000	mean 32.2 us	p50 27.9 us	p99 83.5 us
+length-prefixed frame through a pipe and back, 7556 bytes	n=5000	mean 34.5 us	p50 30.2 us	p99 82.8 us
