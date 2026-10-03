@@ -1,18 +1,18 @@
-//! Shared helpers for the native suite: fixture loading, a tiny DER writer
-//! and reader, and a CMS rebuilder that lets a test state one structural
-//! fault at a time.
+//! Shared helpers for the native suite: fixture loading, a tiny DER writer,
+//! a BER reader over `asn1-rs`, and a CMS rebuilder that lets a test state
+//! one structural fault at a time.
 #![allow(dead_code)]
 
+pub mod ber;
 pub mod cms;
-pub mod der;
 
 use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{
     Config, Failure, InAppPurchase, JsonPayload, ReceiptPayload, TrustAnchor, Verifier,
 };
+use asn1_rs::{Oid, ToDer};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
-use der::tag;
 use std::path::{Path, PathBuf};
 
 /// The shared fixtures: `APRV_FIXTURES_DIR` when set, else the first
@@ -94,9 +94,9 @@ pub fn receipt_root() -> TrustAnchor {
 }
 
 /// A certificate's `serialNumber` content octets and issuer `Name` TLV,
-/// read with the test DER reader.
+/// read with the test BER reader.
 pub fn certificate_identity(certificate: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-    let certificate = der::parse_exact(certificate).ok()?;
+    let certificate = ber::parse_exact(certificate).ok()?;
     let fields = certificate.child(0)?.children();
     let index = usize::from(matches!(fields.first(), Some(f) if f.tag == tag::CONTEXT_0));
     let (serial, issuer) = (fields.get(index)?, fields.get(index + 2)?);
@@ -195,6 +195,30 @@ pub fn with_header(jws: &str, header: &serde_json::Map<String, serde_json::Value
 }
 
 // --- a minimal DER writer ------------------------------------------------
+//
+// `asn1-rs` writes the OIDs.
+
+/// Identifier octets the tests name.
+pub mod tag {
+    pub const BOOLEAN: u8 = 0x01;
+    pub const INTEGER: u8 = 0x02;
+    pub const BIT_STRING: u8 = 0x03;
+    pub const OCTET_STRING: u8 = 0x04;
+    /// `OCTET STRING`, constructed (BER) form
+    pub const OCTET_STRING_CONSTRUCTED: u8 = 0x24;
+    pub const OID: u8 = 0x06;
+    pub const UTF8_STRING: u8 = 0x0c;
+    pub const SEQUENCE: u8 = 0x30;
+    pub const SET: u8 = 0x31;
+    pub const IA5_STRING: u8 = 0x16;
+    pub const UTC_TIME: u8 = 0x17;
+    pub const GENERALIZED_TIME: u8 = 0x18;
+    /// `[0]` to `[3]`, constructed
+    pub const CONTEXT_0: u8 = 0xa0;
+    pub const CONTEXT_1: u8 = 0xa1;
+    pub const CONTEXT_2: u8 = 0xa2;
+    pub const CONTEXT_3: u8 = 0xa3;
+}
 
 /// Encodes one TLV with a definite length.
 pub fn der(tag: u8, contents: &[u8]) -> Vec<u8> {
@@ -225,7 +249,11 @@ pub fn der_set(parts: &[Vec<u8>]) -> Vec<u8> {
 }
 
 pub fn der_oid(dotted: &str) -> Vec<u8> {
-    der(tag::OID, &der::encode_oid(dotted).expect("bad OID"))
+    dotted
+        .parse::<Oid>()
+        .expect("bad OID")
+        .to_der_vec()
+        .unwrap()
 }
 
 pub fn der_int(value: u64) -> Vec<u8> {

@@ -14,8 +14,8 @@ mod common;
 
 use apple_purchase_receipt_verifier::__internal::cms_full_decodes_during;
 use apple_purchase_receipt_verifier::{Failure, Reason, ReceiptPayload};
-use common::der::{parse_exact, tag, Tlv};
-use common::{der, der_int, der_oid, der_seq, der_set, CmsBuilder};
+use common::ber::{parse_exact, Tlv};
+use common::{der, der_int, der_oid, der_seq, der_set, tag, CmsBuilder};
 use std::time::{Duration, Instant};
 
 const OID_SIGNED_DATA: &str = "1.2.840.113549.1.7.2";

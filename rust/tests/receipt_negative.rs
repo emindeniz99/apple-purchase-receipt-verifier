@@ -9,8 +9,10 @@ mod common;
 
 use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{Failure, Reason, ReceiptPayload, TrustAnchor, Verifier};
+use asn1_rs::Oid;
+use common::ber::parse_exact;
 use common::cms::parse_cms;
-use common::der::{encode_oid, parse_exact, tag};
+use common::tag;
 
 /// A verifier pinned to one root, taking DER for this file's rebuilt blobs.
 struct DerVerifier(Verifier);
@@ -607,12 +609,12 @@ fn signed_attrs_without_content_type_or_message_digest_are_refused() {
     let parsed = parse_exact(&as_set).unwrap();
 
     for dropped in [CONTENT_TYPE, MESSAGE_DIGEST] {
-        let wanted = encode_oid(dropped).unwrap();
+        let wanted: Oid = dropped.parse().unwrap();
         let kept: Vec<Vec<u8>> = parsed
             .children()
             .iter()
             .filter(|attribute| {
-                attribute.child(0).map(|oid| oid.contents) != Some(wanted.as_slice())
+                attribute.child(0).map(|oid| oid.contents) != Some(wanted.as_bytes())
             })
             .map(|attribute| attribute.full.to_vec())
             .collect();
