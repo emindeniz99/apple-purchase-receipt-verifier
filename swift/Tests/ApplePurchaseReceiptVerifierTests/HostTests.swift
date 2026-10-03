@@ -462,7 +462,7 @@ final class FacadeTests: XCTestCase {
     func testEachInstanceCutsInputToTheLengthItsInitStated() throws {
         let pool = Pool(module: .success(try TestFixtures.double()), config: Array("s".utf8))
         let echoed = try pool.with { guest throws(HostError) in
-            try guest.verifySignedData(now: 0, guest.capped("abcdefgh".utf8))
+            try guest.verifySignedData(now: 0, "abcdefgh".utf8)
         }
         XCTAssertEqual(echoed, "abcd")
         let guest = try pool.create()
