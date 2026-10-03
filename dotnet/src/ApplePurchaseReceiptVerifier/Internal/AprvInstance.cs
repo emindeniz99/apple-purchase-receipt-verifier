@@ -35,7 +35,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
 
         /// <summary>Each export's WIT parameters in order: <c>w</c> u32, <c>d</c> u64, <c>b</c> list&lt;u8&gt;.</summary>
-        private static readonly Dictionary<string, string> Signatures = new Dictionary<string, string>(StringComparer.Ordinal)
+        internal static readonly Dictionary<string, string> Signatures = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["init"] = "b",
             ["verify-receipt"] = "db",
@@ -68,7 +68,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
                         ?? throw new InvalidOperationException("the module exports no " + AprvRuntime.Iface + operation);
                     _posts[operation] = _instance.GetFunction("cabi_post_" + AprvRuntime.Iface + operation)
                         ?? throw new InvalidOperationException("the module exports no cabi_post_" + AprvRuntime.Iface + operation);
-                    CheckShape(operation);
                 }
             }
             catch
@@ -248,56 +247,5 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         private static int ToAddress(object? result) =>
             result is int value ? value : throw new InvalidOperationException("the module returned no address");
-
-        /// <summary>
-        /// The canonical ABI's flattening of one export: its core parameters
-        /// are the scalars and <c>(ptr, len)</c> pairs the WIT signature
-        /// implies, and it returns the return-area address.
-        /// </summary>
-        private void CheckShape(string operation)
-        {
-            List<ValueKind> expected = new List<ValueKind>();
-            foreach (char type in Signatures[operation])
-            {
-                switch (type)
-                {
-                    case 'w':
-                        expected.Add(ValueKind.Int32);
-                        break;
-                    case 'd':
-                        expected.Add(ValueKind.Int64);
-                        break;
-                    default:
-                        expected.Add(ValueKind.Int32);
-                        expected.Add(ValueKind.Int32);
-                        break;
-                }
-            }
-
-            Function export = _exports[operation];
-            if (!SameKinds(export.Parameters, expected) || export.Results.Count != 1 || export.Results[0] != ValueKind.Int32)
-            {
-                throw new InvalidOperationException(
-                    "the module's " + AprvRuntime.Iface + operation + " does not have the canonical-ABI shape this library binds");
-            }
-        }
-
-        private static bool SameKinds(IReadOnlyList<ValueKind> actual, List<ValueKind> expected)
-        {
-            if (actual.Count != expected.Count)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < actual.Count; i++)
-            {
-                if (actual[i] != expected[i])
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
     }
 }
