@@ -5,6 +5,7 @@
 //! Nothing here reads a receipt, a JWS or a request body: the bytes go to
 //! the component unchanged and its JSON comes back unchanged.
 
+use crate::http::MAX_DRAIN;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -217,7 +218,11 @@ impl Runtime {
 /// `None` for a refusal. The module states how many bytes of one input it
 /// needs (DECISIONS.md R42): a longer input is cut to that length, and the
 /// module answers its own size refusal for it. An accepting answer without
-/// a usable number is the component breaking the interface.
+/// a usable number is the component breaking the interface, and so is a
+/// number over [`MAX_DRAIN`]: the server reads a body no further than that
+/// before it answers, so a larger cap would answer a prefix of a body over
+/// the drain limit as if it were the whole input, and would let any client
+/// make the server reserve that much memory with a `Content-Length`.
 pub fn max_input_bytes(answer: &str) -> Result<Option<usize>, InvokeError> {
     let broken = || {
         InvokeError::Abi(format!(
@@ -239,6 +244,12 @@ pub fn max_input_bytes(answer: &str) -> Result<Option<usize>, InvokeError> {
         .ok_or_else(broken)?;
     if members.len() != 2 {
         return Err(broken());
+    }
+    if max > MAX_DRAIN {
+        return Err(InvokeError::Abi(format!(
+            "init states max_input_bytes {max}, over the {MAX_DRAIN} bytes the server reads \
+             of a request body: {answer}"
+        )));
     }
     Ok(Some(max))
 }
@@ -574,12 +585,23 @@ mod tests {
             r#"{"ok":true,"max_input_bytes":"3145729"}"#,
             r#"{"ok":true,"max_input_bytes":1.5}"#,
             r#"{"ok":true,"max_input_bytes":3145729,"message":"m"}"#,
+            r#"{"ok":true,"max_input_bytes":18446744073709551615}"#,
         ] {
             assert!(
                 matches!(max_input_bytes(broken), Err(InvokeError::Abi(_))),
                 "{broken}"
             );
         }
+    }
+
+    /// The largest cap the server takes is the drain limit of `aprv
+    /// serve`, so a body the module would read whole is never one the
+    /// server stops reading early.
+    #[test]
+    fn the_input_length_ceiling_is_the_drain_limit() {
+        let at = |n: usize| max_input_bytes(&format!(r#"{{"ok":true,"max_input_bytes":{n}}}"#));
+        assert_eq!(at(MAX_DRAIN), Ok(Some(MAX_DRAIN)));
+        assert!(matches!(at(MAX_DRAIN + 1), Err(InvokeError::Abi(_))));
     }
 
     #[test]

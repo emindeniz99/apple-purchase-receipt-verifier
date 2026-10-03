@@ -385,7 +385,9 @@ components:
               description: >-
                 The most bytes of one input the component needs, as its
                 `init` answer states: one over its largest cap. A body of
-                this length or longer is answered with HTTP 413.
+                this length or longer is answered with HTTP 413. Never
+                over 16 MiB: the server does not serve a component that
+                states more.
             max_guest_memory_bytes:
               type: integer
             max_core_instances_per_store:
