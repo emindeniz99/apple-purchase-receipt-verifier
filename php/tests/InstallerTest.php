@@ -213,8 +213,9 @@ final class InstallerTest extends TestCase
 
     public function testTheShippedSha256sumsIsOneTheInstallerReads(): void
     {
-        // Empty between releases; the release branch writes the two Linux
-        // lines. Either way the installer must accept what ships.
+        // Empty until the first release writes it; from then on main
+        // carries the last release's two Linux lines (the release branch
+        // merges into main). Either way the installer must accept it.
         $shipped = Installer::pins(__DIR__ . '/../SHA256SUMS');
         if ((string) file_get_contents(__DIR__ . '/../SHA256SUMS') === '') {
             self::assertSame(['tag' => null, 'assets' => []], $shipped);
@@ -276,7 +277,7 @@ final class InstallerTest extends TestCase
     public function testSumsWithNoPinForThisPlatformInstallNothing(): void
     {
         foreach ([
-            'an empty file, as main carries between releases' => '',
+            'an empty file, as main carries before the first release' => '',
             'another platform only' => $this->sha256 . "  v1.0.0/aprv-aarch64-unknown-linux-musl\n",
         ] as $case => $text) {
             try {

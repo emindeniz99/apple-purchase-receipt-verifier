@@ -644,9 +644,13 @@ answer must equal the module's row.
 `tools/rerun.sh APRV_BINARY G1_DIR` runs the phpunit suites and the corpus over
 both transports as one command.
 
-**Releasing.** `SHA256SUMS` is empty on `main`. On the release branch,
-before the tag, the release workflow writes sha256sum's lines for the two
-Linux binaries into it, each path `vX.Y.Z/<asset>` (`CI-NOTES.md`).
+**Releasing.** On the release branch, before the tag, the release workflow
+writes sha256sum's lines for the two Linux binaries into `SHA256SUMS`, each
+path `vX.Y.Z/<asset>` (`CI-NOTES.md`). The file is empty until the first
+release that writes it. After that `main` carries the last release's lines
+(the release branch merges into `main`), so a `dev-main` install fetches that
+release's binary, lagging the core like the committed Go and Swift module
+copies.
 
 `composer.lock` is committed and CI installs from it, so no run resolves a
 version range. `config.platform.php` is `8.2.0` in `composer.json`, matching

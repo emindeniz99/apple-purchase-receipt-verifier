@@ -145,10 +145,14 @@ final class Installer
      * SHA-256 of each release asset. Every line is sha256sum's text output
      * for a file laid out as `<tag>/<asset>`, so `sha256sum -c --strict`
      * run where the release's assets sit under `<tag>/` checks the same
-     * claim. An empty file pins nothing (a checkout between releases).
-     * Anything else is refused: a binary-mode `*`, a tagged line, a path
-     * that is not one tag and one release asset, a blank line, a CR, an
-     * asset named twice, or two tags.
+     * claim. An empty file pins nothing: the file is empty until the
+     * first release that writes it. After that `main` carries the last
+     * release's lines (the release branch merges into `main`), so an
+     * install from `main` fetches that release's binary, lagging the core
+     * like the committed Go and Swift module copies. Anything else is
+     * refused: a binary-mode `*`, a tagged line, a path that is not one
+     * tag and one release asset, a blank line, a CR, an asset named twice,
+     * or two tags.
      *
      * @internal public for the package's tests only; not part of the API
      *

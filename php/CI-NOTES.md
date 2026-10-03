@@ -109,8 +109,12 @@ assets laid out as `<tag>/<asset>`:
 
 The tag travels in each path, so `sha256sum -c --strict php/SHA256SUMS`, run
 from a directory that holds `v0.8.0/aprv-…`, checks the claim the installer
-checks. On `main` the file is empty: a git-main install pins nothing and the
-installer names the server option (exit 2).
+checks. The file is empty until the first release that writes it: an install
+from `main` then pins nothing and the installer names the server option
+(exit 2). After that, `main` carries the last release's lines, because the
+release branch merges into `main`, so a `dev-main` install fetches that
+release's binary. It lags the core between releases, the same way the
+committed Go and Swift module copies do.
 
 1. On the `release-please--*` branch, `refresh-wasm-copies` in
    `release-please.yml` copies the two Linux static musl binaries
