@@ -1,7 +1,7 @@
 {
   "$schema": "./cases.schema.json",
   "schemaVersion": 2,
-  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases.schema.json).\nIt replaced the 0.6 file of the same name (schema version 1, in git history before 0.7.0). Every 0.6 case is carried over and none is deleted: legacyId names the 0.6 case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from the 0.6 cases or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\"} or {\"status\":\"error\",\"reason\":R}. On ok, fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is one valid output of toJson(): the runner parses it and the port's output as JSON and compares the parsed values (deep equality; numbers as numbers, strings as strings), never the bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". A date decodes only in the exact form YYYY-MM-DDTHH:MM:SSZ (year 0000 to 9999, uppercase T and Z, a real calendar date, hours 00 to 23, minutes and seconds 00 to 59, no fraction, no offset); any other non-empty date string is null and kept raw, and an attribute 12 that does not decode leaves the chain instant to the clock. An IA5String holding a byte at or above 0x80, and an INTEGER that is not DER (empty or with a redundant leading octet), do not parse either: null and kept raw. verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status, unless the case lists its outcomes (below). 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nFailure messages. An error expectation may carry messageMustNotContain, a list of code points the failure message must not contain; the runner checks the message the port exposes. It pins that input quoted in a message (a JWS alg with CR, LF, NEL, U+2028 and a bidi override) is neutralised before a caller logs it.\n\nListed outcomes. expected {\"oneOf\":[...]} lists every outcome a port may give: \"ok\" (the call verified; no field is checked) or a reason. The port's outcome must be one of them. INTERNAL_ERROR is never listed and no exception or panic may escape the call, so both always fail; a case with maxMillis must also finish within it. It is used where the outcome is port-defined (owner, 2026-09-27): encoding oddities inside certificates the chain uses, and signer quirks where ports read the envelope differently (docs/design/0.7-api.md, Reading certificates and signed attributes). At the endpoint, whose call answers a body rather than a verdict, oneOf lists the /status values a port may answer and no other field is pinned. A case that lists \"ok\", or status 0, is tagged tolerant.\n\nJSON reading. A JSON object with a duplicate member keeps the last one, in a JWS header, a JWS payload and an endpoint body; receipt attributes are the other way round (the first occurrence wins). A JWS header must be strict UTF-8 with no byte-order mark, and only whitespace may follow the header or payload object: trailing content after the header is MALFORMED, after the payload it is carried past the signature and is UNREADABLE_PAYLOAD when the signature verifies (lead, 2026-09-27). A runner parses what a port returns the same strict way, so a port that appended content to its output would fail.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used, and on the tolerant cases. The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in the 0.6 file: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte, written by node tools/generate-limit-fixtures.mjs. The directory sits beside fixtures/generated/, which keeps the JWS fixtures and the 0.6 receipts that port unit tests, fuzz harnesses and smoke programs still read. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are the 0.6 files, unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture and VerificationOrderFixtures, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash. LargeReceiptFixture and VerifierApiFixtures take fixtures/generated-0.7 and ReceiptBase64CapFixture takes fixtures, each its default when given no argument, and node tools/generate-limit-fixtures.mjs runs after ReceiptBase64CapFixture. None of the three is pointed at a generated/ directory: their outputs run to megabytes, and only generated-0.7/ and limits/ may hold a fixture over 100 KB. ReviewParityFixtures (review-*), OwnerDecisionFixtures (owner-*), IntermediateKeyUsageFixtures (keyusage-*), CertificateDerFixtures (der-*) and ExpiredMarkerFixtures (expired-marker-*) write straight into fixtures/generated-0.7/, after the generators above, because each derives a few inputs from files already there. Asn1DepthFixtures (depth-*) also writes straight into fixtures/generated-0.7/, under its own root, so the ASN.1 depth inputs regenerate without re-keying anything else. SignedAttrsTypeFixtures (signed-attrs-*) does the same for the signedAttrs attribute whose type is not an OID.\n\ntoJson by value. toJson() must be valid UTF-8 JSON with the same value as the expected string; whitespace, key order and escaping style are free, so each port uses its language's standard JSON encoder (owner, 2026-09-27). The expected strings happen to be in the design's key order with JSON.stringify escaping, which a port need not match. Every key is present, a missing field is null, bytes are padded standard base64, 64-bit ids are decimal strings, booleans are booleans, and there is no NaN or Infinity. Values are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, two escapes product ids and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
+  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases.schema.json).\nIt replaced the 0.6 file of the same name (schema version 1, in git history before 0.7.0). Every 0.6 case is carried over and none is deleted: legacyId names the 0.6 case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from the 0.6 cases or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\",\"environment\":E} or {\"status\":\"error\",\"reason\":R}. On ok, environment is the environment the result states beside its payload, \"Production\", \"Sandbox\" or null, compared with ReceiptPayload.environment() or JsonPayload.environment() (in the module's answer, its top-level environment member): a receipt's comes from receipt_type (Production and ProductionVPP are Production, ProductionSandbox and ProductionVPPSandbox Sandbox, anything else null), a JWS's from the first of the top-level environment, data.environment and summary.environment that is present (Production and Sandbox map, anything else null), and null when none is (DECISIONS.md R42). Every ok case states it. fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is one valid output of toJson(): the runner parses it and the port's output as JSON and compares the parsed values (deep equality; numbers as numbers, strings as strings), never the bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". A date decodes only in the exact form YYYY-MM-DDTHH:MM:SSZ (year 0000 to 9999, uppercase T and Z, a real calendar date, hours 00 to 23, minutes and seconds 00 to 59, no fraction, no offset); any other non-empty date string is null and kept raw, and an attribute 12 that does not decode leaves the chain instant to the clock. An IA5String holding a byte at or above 0x80, and an INTEGER that is not DER (empty or with a redundant leading octet), do not parse either: null and kept raw. verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status, unless the case lists its outcomes (below). 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nFailure messages. An error expectation may carry messageMustNotContain, a list of code points the failure message must not contain; the runner checks the message the port exposes. It pins that input quoted in a message (a JWS alg with CR, LF, NEL, U+2028 and a bidi override) is neutralised before a caller logs it.\n\nListed outcomes. expected {\"oneOf\":[...]} lists every outcome a port may give: \"ok\" (the call verified; no field is checked) or a reason. The port's outcome must be one of them. INTERNAL_ERROR is never listed and no exception or panic may escape the call, so both always fail; a case with maxMillis must also finish within it. It is used where the outcome is port-defined (owner, 2026-09-27): encoding oddities inside certificates the chain uses, and signer quirks where ports read the envelope differently (docs/design/0.7-api.md, Reading certificates and signed attributes). At the endpoint, whose call answers a body rather than a verdict, oneOf lists the /status values a port may answer and no other field is pinned. A case that lists \"ok\", or status 0, is tagged tolerant.\n\nJSON reading. A JSON object with a duplicate member keeps the last one, in a JWS header, a JWS payload and an endpoint body; receipt attributes are the other way round (the first occurrence wins). A JWS header must be strict UTF-8 with no byte-order mark, and only whitespace may follow the header or payload object: trailing content after the header is MALFORMED, after the payload it is carried past the signature and is UNREADABLE_PAYLOAD when the signature verifies (lead, 2026-09-27). A runner parses what a port returns the same strict way, so a port that appended content to its output would fail.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used, and on the tolerant cases. The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in the 0.6 file: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte, written by node tools/generate-limit-fixtures.mjs. The directory sits beside fixtures/generated/, which keeps the JWS fixtures and the 0.6 receipts that port unit tests, fuzz harnesses and smoke programs still read. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are the 0.6 files, unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture and VerificationOrderFixtures, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash. LargeReceiptFixture and VerifierApiFixtures take fixtures/generated-0.7 and ReceiptBase64CapFixture takes fixtures, each its default when given no argument, and node tools/generate-limit-fixtures.mjs runs after ReceiptBase64CapFixture. None of the three is pointed at a generated/ directory: their outputs run to megabytes, and only generated-0.7/ and limits/ may hold a fixture over 100 KB. ReviewParityFixtures (review-*), OwnerDecisionFixtures (owner-*), IntermediateKeyUsageFixtures (keyusage-*), CertificateDerFixtures (der-*) and ExpiredMarkerFixtures (expired-marker-*) write straight into fixtures/generated-0.7/, after the generators above, because each derives a few inputs from files already there. Asn1DepthFixtures (depth-*) also writes straight into fixtures/generated-0.7/, under its own root, so the ASN.1 depth inputs regenerate without re-keying anything else. SignedAttrsTypeFixtures (signed-attrs-*) does the same for the signedAttrs attribute whose type is not an OID. EnvironmentFixtures (environment-*) writes straight into fixtures/generated-0.7/ under its own root too: the JWS whose environment is at each of the three places, and one whose first place names neither.\n\ntoJson by value. toJson() must be valid UTF-8 JSON with the same value as the expected string; whitespace, key order and escaping style are free, so each port uses its language's standard JSON encoder (owner, 2026-09-27). The expected strings happen to be in the design's key order with JSON.stringify escaping, which a port need not match. Every key is present, a missing field is null, bytes are padded standard base64, 64-bit ids are decimal strings, booleans are booleans, and there is no NaN or Infinity. Values are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, two escapes product ids and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
   "fixtures": {
     "device-guid": {
       "path": "generated/device-guid.hex",
@@ -2144,6 +2144,36 @@
       "role": "input",
       "codec": "raw",
       "contentSha256": "17d7efd3967cff11814056f622c6edfcef55b6eedbd8f1644db61f9fd06b08cc"
+    },
+    "environment-jws-root": {
+      "path": "generated-0.7/environment-jws-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "302816271cd802ba04cfed40686e97a3987de5c365d3388673dcef4a40cb1070"
+    },
+    "environment-transaction-production": {
+      "path": "generated-0.7/environment-transaction-production.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "ecc2e6553e687b20d67f51582ef4337aa9929f88784a39fd59adc48de738a415"
+    },
+    "environment-notification-production": {
+      "path": "generated-0.7/environment-notification-production.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "81829b32529be5415504842e384f65fab7e5f8c7e9bd163515ae86c0e51c700b"
+    },
+    "environment-summary-notification": {
+      "path": "generated-0.7/environment-summary-notification.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "8694837289de4e777e5c7dcb2bdccf534b94e635229879b1ae59107f21f17891"
+    },
+    "environment-first-present-wins": {
+      "path": "generated-0.7/environment-first-present-wins.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "32b5afd0c856f0ac26cd4ab64cfa5d12cf010a3aabee7d420e938529a5287fdd"
     }
   },
   "cases": [
@@ -2165,6 +2195,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app",
           "/environment": "Sandbox",
@@ -2200,6 +2231,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app",
           "/environment": "Sandbox"
@@ -2232,6 +2264,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/environment": "Sandbox"
         }
@@ -2348,6 +2381,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app",
           "/environment": "Sandbox",
@@ -2412,6 +2446,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example",
           "/environment": "Sandbox",
@@ -2443,6 +2478,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/data/bundleId": "com.example.wrong",
           "/notificationType": "TEST"
@@ -2534,6 +2570,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundleId": "com.example.app",
           "/receiptType": "Sandbox",
@@ -2568,6 +2605,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundleId": "com.example.app",
           "/receiptType": "Production",
@@ -2600,6 +2638,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/appAppleId": 123456789,
           "/receiptType": "Production"
@@ -2632,6 +2671,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app",
           "/environment": "Sandbox",
@@ -2663,6 +2703,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/environment": "Sandbox"
         }
@@ -2692,6 +2733,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/notificationType": "TEST"
         }
@@ -2751,6 +2793,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox",
           "/bundle_id": "com.example.app",
@@ -2802,6 +2845,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/opaque_value": "AQIDBAUGBwg=",
           "/sha1_hash": "o3ACutffcB0wrmAevzxMLcI6CcA=",
@@ -2835,6 +2879,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app",
           "/bundle_id_bytes": "DA9jb20uZXhhbXBsZS5hcHA="
@@ -2897,6 +2942,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app",
           "/application_version": "1.2.3"
@@ -2960,6 +3006,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app",
           "/application_version": "1.2.3",
@@ -3026,6 +3073,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app",
           "/unknown_attributes/9999/0": "AQID"
@@ -3057,6 +3105,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox",
           "/in_app/[transaction_id=2000001092134138]/cancellation_date_ms": null,
@@ -3090,6 +3139,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "lengths": {
           "/in_app": 187
         },
@@ -3655,6 +3705,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox",
           "/bundle_id": "com.example.app",
@@ -3803,6 +3854,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app",
           "/environment": "Sandbox",
@@ -4041,6 +4093,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox"
         },
@@ -4552,6 +4605,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox"
         },
@@ -4617,6 +4671,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/signedDate": 1e+300,
           "/bundleId": "com.example.app"
@@ -4944,6 +4999,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app",
           "/environment": "Sandbox",
@@ -5321,6 +5377,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox",
           "/bundle_id": "com.example.app",
@@ -5366,6 +5423,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox",
           "/bundle_id": "com.example.app",
@@ -5410,6 +5468,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Production",
         "fields": {
           "/app_item_id": "1234567890",
           "/download_id": "9223372036854775807",
@@ -5445,6 +5504,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/app_item_id": null,
           "/download_id": null,
@@ -5546,6 +5606,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/app_item_id": "0",
           "/download_id": "0",
@@ -5613,6 +5674,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox",
           "/opaque_value": "vh3T6pvPTQhlLrU5ueBWlA==",
@@ -5644,6 +5706,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/opaque_value": "vh3T6pvPTQhlLrU5ueBWlA==",
           "/sha1_hash": "IViEdUNoOEfpOCoPxRhTyxerzW0=",
@@ -5678,6 +5741,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app",
           "/bundle_id_bytes": "DA9jb20uZXhhbXBsZS5hcHA="
@@ -5832,6 +5896,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_creation_date_ms": null,
           "/bundle_id": "com.example.app",
@@ -5936,6 +6001,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/unknown_attributes/17/0": "BAITNw==",
           "/bundle_id": "com.example.app"
@@ -5975,6 +6041,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_creation_date_ms": 1590969600000
         },
@@ -6113,6 +6180,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_type": "ProductionSandbox",
           "/bundle_id": "com.example.app",
@@ -7550,6 +7618,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/quantity": "1",
           "/bundleId": "com.example.app"
@@ -7581,6 +7650,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/productId": 42
         }
@@ -7611,6 +7681,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/price": 1.5
         }
@@ -7641,6 +7712,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/expiresDate/ms": 1722945600000
         }
@@ -7671,6 +7743,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": 7
         }
@@ -7701,6 +7774,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/appAppleId": "123456789"
         }
@@ -7761,6 +7835,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app",
           "/productId": "com.example.app.pro",
@@ -7793,6 +7868,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app",
           "/productId": "com.example.app.pro"
@@ -7823,6 +7899,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app",
           "/receipt_creation_date_ms": 1722945600000
@@ -7883,6 +7960,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -8103,6 +8181,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/in_app/0/product_id": "com.example.app.café/€/𝄞"
         },
@@ -8134,6 +8213,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/in_app/[product_id=com.example.app.coins100]/web_order_line_item_id": "0",
           "/in_app/[product_id=com.example.app.vip]/web_order_line_item_id": "42"
@@ -8239,6 +8319,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_creation_date_ms": 1590969600000,
           "/unknown_attributes/12/0": "FhQyMDI0LTA4LTA2VDEyOjAwOjAwWg=="
@@ -8274,6 +8355,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/in_app/[transaction_id=70000000000061]/product_id": "com.example.app.a",
           "/in_app/[transaction_id=70000000000061]/unknown_attributes/1702/0": "DBFjb20uZXhhbXBsZS5hcHAuYg=="
@@ -8308,6 +8390,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/in_app/[transaction_id=70000000000062]/quantity": null,
           "/in_app/[transaction_id=70000000000062]/purchase_date_ms": null,
@@ -8342,6 +8425,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/in_app/0/transaction_id": "70000000000051"
         },
@@ -8432,6 +8516,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app",
           "/receipt_creation_date_ms": 1722945600000
@@ -8463,6 +8548,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -8521,6 +8607,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -8744,6 +8831,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -8834,6 +8922,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -9104,6 +9193,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -9316,6 +9406,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -9347,6 +9438,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -9379,6 +9471,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -9439,6 +9532,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/original_purchase_date_ms": null,
           "/unknown_attributes/18/0": "FhsrMTAwMDAwMDAwMC0wMS0wMVQwMDowMDowMFo=",
@@ -9471,6 +9565,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/unknown_attributes/2147483647/0": "AQID",
           "/unknown_attributes/9999/0": "AQID"
@@ -9503,6 +9598,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": null,
           "/bundle_id_bytes": "Ew9jb20uZXhhbXBsZS5hcHA=",
@@ -9537,6 +9633,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/app_item_id": "9223372036854775807",
           "/download_id": "-9223372036854775808",
@@ -9573,6 +9670,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": null,
           "/bundle_id_bytes": "DAViYWSAww==",
@@ -9611,6 +9709,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/in_app/0/transaction_id": "70000000000091"
         },
@@ -9642,6 +9741,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -9703,6 +9803,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -9924,6 +10025,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/productId": "com.example.app.é€中",
           "/offerIdentifier": "über-€-中文-😀"
@@ -9953,6 +10055,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -9982,6 +10085,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/signedDate": 1722945600000
         }
@@ -10183,6 +10287,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/signedDate": 1722945600000.5
         }
@@ -10548,6 +10653,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/application_version": null,
           "/unknown_attributes/3/0": "FgUxLjIusw==",
@@ -10586,6 +10692,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/app_item_id": null,
           "/unknown_attributes/1/0": "AgIABQ==",
@@ -10625,6 +10732,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_creation_date_ms": 1722945600000,
           "/in_app/[transaction_id=70000000000201]/purchase_date_ms": -62167219200000,
@@ -10689,6 +10797,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/receipt_creation_date_ms": null,
           "/unknown_attributes/12/0": "FhQyMDIwLTAxLTAxdDAwOjAwOjAwWg=="
@@ -10721,6 +10830,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app",
           "/unknown_attributes/9000/0": "AgEB"
@@ -10789,6 +10899,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -10852,6 +10963,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -10913,6 +11025,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -11799,6 +11912,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -11863,6 +11977,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -12025,6 +12140,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -12088,6 +12204,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app",
           "/unknown_attributes/9000/0": "AgEB"
@@ -12158,6 +12275,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -12257,6 +12375,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": null,
           "/bundle_id_bytes": "LIAED2NvbS5leGFtcGxlLmFwcAAA"
@@ -12324,6 +12443,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app",
           "/app_item_id": null,
@@ -12358,6 +12478,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id_bytes": "DIUAAAAAD2NvbS5leGFtcGxlLmFwcA=="
         }
@@ -12459,6 +12580,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -12529,6 +12651,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -12561,6 +12684,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -12593,6 +12717,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -12625,6 +12750,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -13262,6 +13388,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13295,6 +13422,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13328,6 +13456,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13361,6 +13490,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13394,6 +13524,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -13427,6 +13558,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": "Sandbox",
         "fields": {
           "/bundleId": "com.example.app"
         }
@@ -13772,6 +13904,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13845,6 +13978,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13878,6 +14012,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13911,6 +14046,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13944,6 +14080,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -13976,6 +14113,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -14008,6 +14146,7 @@
       },
       "expected": {
         "status": "ok",
+        "environment": null,
         "fields": {
           "/bundle_id": "com.example.app"
         }
@@ -14054,6 +14193,131 @@
         "core-review-3",
         "new-in-0-7",
         "port-defined"
+      ]
+    },
+    {
+      "id": "signed-data/environment-from-the-top-level-claim",
+      "description": "A transaction states its environment in its top-level environment claim, the first of the three places Apple documents; Production there is the result's environment (DECISIONS.md R42).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "environment-transaction-production"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "environment-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Production",
+        "fields": {
+          "/environment": "Production",
+          "/transactionId": "2000000000000002"
+        }
+      },
+      "tags": [
+        "jws",
+        "transaction",
+        "environment",
+        "positive",
+        "generated"
+      ]
+    },
+    {
+      "id": "signed-data/environment-from-a-notifications-data",
+      "description": "An App Store Server Notification V2 carries no top-level environment; its data.environment, the second of the three places, is the result's environment (DECISIONS.md R42).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "environment-notification-production"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "environment-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Production",
+        "fields": {
+          "/notificationType": "DID_RENEW",
+          "/data/environment": "Production"
+        }
+      },
+      "tags": [
+        "jws",
+        "notification",
+        "environment",
+        "positive",
+        "generated"
+      ]
+    },
+    {
+      "id": "signed-data/environment-from-a-summary-notification",
+      "description": "A summary notification (RENEWAL_EXTENSION, SUMMARY) carries neither a top-level environment nor data; its summary.environment, the third of the three places, is the result's environment (DECISIONS.md R42).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "environment-summary-notification"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "environment-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Production",
+        "fields": {
+          "/notificationType": "RENEWAL_EXTENSION",
+          "/subtype": "SUMMARY",
+          "/summary/environment": "Production"
+        }
+      },
+      "tags": [
+        "jws",
+        "notification",
+        "environment",
+        "positive",
+        "generated"
+      ]
+    },
+    {
+      "id": "signed-data/environment-first-place-present-decides",
+      "description": "The first of the three places that is present decides, whatever it names: a top-level environment of Xcode makes the result's environment null although data.environment says Sandbox (DECISIONS.md R42).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "environment-first-present-wins"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "environment-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": null,
+        "fields": {
+          "/environment": "Xcode",
+          "/data/environment": "Sandbox"
+        }
+      },
+      "tags": [
+        "jws",
+        "notification",
+        "environment",
+        "positive",
+        "generated"
       ]
     }
   ]

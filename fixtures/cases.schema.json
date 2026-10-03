@@ -225,13 +225,18 @@
         }
       }
     },
+    "environment": {
+      "description": "The environment the verified result states beside its payload (ReceiptPayload.environment(), JsonPayload.environment(); DECISIONS.md R42): Production, Sandbox, or null when the input names neither. A receipt's comes from receipt_type; a JWS's from the first of the top-level environment, data.environment and summary.environment that is present.",
+      "enum": ["Production", "Sandbox", null]
+    },
     "expectedReceiptOk": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status"],
-      "description": "Evaluated on JSON.parse(ReceiptPayload.toJson()).",
+      "required": ["status", "environment"],
+      "description": "Evaluated on JSON.parse(ReceiptPayload.toJson()), and environment on ReceiptPayload.environment().",
       "properties": {
         "status": { "const": "ok" },
+        "environment": { "$ref": "#/$defs/environment" },
         "fields": { "$ref": "#/$defs/fields" },
         "lengths": { "$ref": "#/$defs/lengths" },
         "toJson": {
@@ -244,10 +249,11 @@
     "expectedSignedDataOk": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status"],
-      "description": "Evaluated on JSON.parse(JsonPayload.json()).",
+      "required": ["status", "environment"],
+      "description": "Evaluated on JSON.parse(JsonPayload.json()), and environment on JsonPayload.environment().",
       "properties": {
         "status": { "const": "ok" },
+        "environment": { "$ref": "#/$defs/environment" },
         "fields": { "$ref": "#/$defs/fields" },
         "lengths": { "$ref": "#/$defs/lengths" }
       }
