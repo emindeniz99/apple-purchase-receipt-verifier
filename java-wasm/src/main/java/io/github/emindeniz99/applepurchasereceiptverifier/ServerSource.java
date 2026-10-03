@@ -61,7 +61,11 @@ public final class ServerSource {
      * An {@code aprv serve} the caller runs (a sidecar, a container),
      * reached at {@code uri}. This JVM starts nothing and needs no writable
      * or executable directory. {@code token}, when not null, is sent with
-     * every request for a server that requires one.
+     * every request for a server that requires one. The connection uses no
+     * proxy, trusts the JVM's trust store only (not a context passed to
+     * {@code SSLContext.setDefault}), sends no client certificate, and
+     * refuses an answer framed ambiguously; the README's "Server engine
+     * sources" section says more.
      *
      * @throws NullPointerException     if {@code uri} is null
      * @throws IllegalArgumentException if {@code uri} is not an absolute
