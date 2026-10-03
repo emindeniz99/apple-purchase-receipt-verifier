@@ -281,7 +281,7 @@ jobs:
           echo "$CORPUS_SHA256  $RUNNER_TEMP/corpus.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/g1" "$RUNNER_TEMP/out"
           tar -xzf "$RUNNER_TEMP/corpus.tar.gz" -C "$RUNNER_TEMP/g1"
-          for f in aprv.wasm aprv.component.wasm same.py calls rows; do
+          for f in aprv.wasm aprv.component.wasm aprv.wit SHA256SUMS same.py calls rows; do
             if [ ! -e "$RUNNER_TEMP/g1/$f" ]; then echo "::error::the archive has no $f at its top level (the G1 layout)"; exit 1; fi
           done
           got="$(sha256sum < "$RUNNER_TEMP/g1/aprv.wasm" | cut -c1-64)"
