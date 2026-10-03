@@ -272,8 +272,8 @@ jobs:
   # committed module copies and every tracked pin (tools/refresh-wasm-pins.sh
   # copies files and writes hashes, nothing else), and php/SHA256SUMS: the
   # two Linux binaries' hashes under the tag (sha256sum). One commit,
-  # pushed to the release branch. No build code runs here, which is what lets it hold the
-  # pushing token.
+  # pushed to the release branch. No build code runs here, which is what
+  # lets it hold the pushing token.
   refresh-wasm-copies:
     needs: [release-please, release-branch-wasm, release-branch-server]
     runs-on: ubuntu-latest
