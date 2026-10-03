@@ -5,11 +5,26 @@
 //! `asn1-rs` reads every identifier, length and end-of-contents marker,
 //! definite and indefinite (Apple's and Xcode's receipts are BER, which
 //! the `der` crate refuses; docs/rust-core/DECISIONS.md R43). This file
-//! only keeps the slices the tests rebuild from: `full` is the exact TLV
-//! consumed and `contents` the value octets inside it, and every
-//! constructed value is read into its children.
+//! only keeps the slices the tests rebuild from: `tag` is the identifier
+//! octet as it appears in the input, `full` the exact TLV consumed and
+//! `contents` the value octets inside it, and every constructed value is
+//! read into its children.
+//!
+//! One piece of BER stays hand-written: joining a constructed `OCTET
+//! STRING`'s segments, because `asn1-rs` 0.7 hands back the raw content
+//! of the constructed form. 0.8's `OctetString` joins the segments
+//! itself, so the join goes when the dependency moves to 0.8. Nothing
+//! else is decoded here. `read` adds two refusals on top of `asn1-rs`
+//! 0.7.2, both of which the reader before it made:
+//!
+//! - An identifier longer than one octet. `asn1-rs` reads `1f 05` as tag
+//!   5, which a one-octet `tag` would misreport; no fixture has one.
+//! - An indefinite value that does not end in `00 00`. `asn1-rs` ends one
+//!   at any zero-length header with tag number 0, whatever its class and
+//!   constructed bit, where X.690 8.1.5 allows only the universal
+//!   primitive `00 00`.
 
-use asn1_rs::{Any, Err, Error, FromBer};
+use asn1_rs::{Any, Err, Error, FromBer, Length};
 use std::borrow::Cow;
 
 /// One decoded ASN.1 value.
@@ -69,8 +84,9 @@ impl<'a> Tlv<'a> {
 /// Parses exactly one value, refusing any trailing bytes.
 ///
 /// # Errors
-/// What `asn1-rs` refuses, an identifier longer than one octet, or bytes
-/// after the value (`BerValueError`).
+/// What `asn1-rs` refuses, an identifier longer than one octet
+/// (`Unsupported`), an indefinite value not closed by `00 00`, or bytes
+/// after the value (both `BerValueError`).
 pub fn parse_exact(input: &[u8]) -> Result<Tlv<'_>, Error> {
     let (rest, node) = read(input)?;
     if !rest.is_empty() {
@@ -84,12 +100,15 @@ fn read(input: &[u8]) -> Result<(&[u8], Tlv<'_>), Error> {
         Err::Error(err) | Err::Failure(err) => err,
         Err::Incomplete(needed) => Error::Incomplete(needed),
     })?;
+    let tag = match any.header.raw_tag() {
+        Some(&[octet]) => octet,
+        _ => return Err(Error::Unsupported),
+    };
     let constructed = any.header.is_constructed();
-    let number = u8::try_from(any.tag().0)
-        .ok()
-        .filter(|number| *number < 0x1f)
-        .ok_or(Error::Unsupported)?;
-    let tag = (any.class() as u8) << 6 | u8::from(constructed) << 5 | number;
+    let full = &input[..input.len() - rest.len()];
+    if any.header.length() == Length::Indefinite && !full.ends_with(&[0, 0]) {
+        return Err(Error::BerValueError);
+    }
     let mut children = Vec::new();
     let mut inner = any.data;
     while constructed && !inner.is_empty() {
@@ -100,7 +119,7 @@ fn read(input: &[u8]) -> Result<(&[u8], Tlv<'_>), Error> {
     let node = Tlv {
         tag,
         constructed,
-        full: &input[..input.len() - rest.len()],
+        full,
         contents: any.data,
         children,
     };
