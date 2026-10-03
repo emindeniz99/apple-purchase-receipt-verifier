@@ -65,6 +65,17 @@ duplicates went in 0.8 (DECISIONS.md R41).
 - **No policy parameter.** No bundle id, environment filter, app Apple id
   or device id. The environment of `verifyReceiptEndpoint` is which of
   Apple's two URLs the call imitates.
+- **The environment is an answer, not a helper.** A verified receipt or
+  JWS states the environment it names, `ReceiptPayload.environment()` and
+  `JsonPayload.environment()` in Java's spelling (`environment()` on both
+  payloads in Rust): Production, Sandbox, or null when Apple's value names
+  neither. The core reads a receipt's from `receipt_type` and a JWS's
+  from the first of the top-level `environment`, `data.environment` and
+  `summary.environment` that is present; the Java implementation reads
+  them by the same rule, and the Wasm hosts take the module's answer. No
+  package has a public mapping helper (`fromReceiptType`,
+  `fromJwsEnvironment` and their twins went in 0.8; DECISIONS.md R42).
+  Whether to accept an environment is the caller's decision.
 - **No per-call time.** The `Config` clock is read once per call by the
   wrapper and crosses the ABI as `now-ms` (ARCHITECTURE.md §6). The ABI
   carries `now-ms` per call, so a public override later is additive
@@ -108,6 +119,10 @@ the verified payload exactly as signed. What the Wasm hosts depend on:
   order.
 - `JsonPayload` crosses the ABI as a JSON string holding the signed
   payload's bytes, so no host re-serialises Apple's claims.
+- A verified answer carries the environment beside the payload, never
+  inside it: `{"verified":true,"payload":...,"environment":...}`, the
+  value `"Production"`, `"Sandbox"` or `null`. The payload's JSON is 0.7's
+  unchanged (DECISIONS.md R42).
 - The endpoint's answer crosses as Apple's response JSON, byte for byte.
 
 ## 5. The bounds
@@ -118,11 +133,15 @@ none is configurable: the receipt's base64 and the endpoint body at
 embedded certificates, six certificates below the anchor, 4 SignerInfos.
 JSON has no bound of its own in the core since 2026-10-01: a value nobody
 reads is skipped, not built, within the size caps (DECISIONS.md R40);
-Java keeps its three JSON bounds. Wrappers add none. `aprv-server` adds one transport rule: an HTTP body
-over 3,145,728 bytes reaches the module cut to 3,145,729 bytes, as every
-Wasm host cuts an input, and the module's answer, its own size refusal,
-is sent with HTTP 413, the status Apple's endpoint gives such a body
-([aprv-server §1][server]; DECISIONS.md R34, amended 2026-10-02).
+Java keeps its three JSON bounds. Wrappers add none, and keep no copy of
+a cap: `init` answers `{"ok":true,"max_input_bytes":N}`, `N` one over the
+largest cap (3,145,729), and a host cuts an input to `N` bytes before it
+enters the module, so the module still sees one over its cap and answers
+`TOO_LARGE` itself (DECISIONS.md R42). `aprv-server` adds one transport
+rule: an HTTP body of `N` bytes or more reaches the module cut to `N`,
+and the module's answer, its own size refusal, is sent with HTTP 413,
+the status Apple's endpoint gives such a body ([aprv-server §1][server];
+DECISIONS.md R34, amended 2026-10-02; R42).
 
 ## 6. The contract: `fixtures/cases.json` schema v2
 
@@ -172,17 +191,19 @@ is sent with HTTP 413, the status Apple's endpoint gives such a body
 
 | 0.7 concept (Java spelling) | `aprv-surface` | `aprv-wire` / the WIT |
 |---|---|---|
-| `Config.roots()` | `Vec<Vec<u8>>` of roots, each DER or PEM (the core tells them apart), empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER or PEM>", ...]}` |
+| `Config.roots()` | `Vec<Vec<u8>>` of roots, each DER or PEM (the core tells them apart), empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER or PEM>", ...]}`; answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}` |
+| the input length a host hands over | `MAX_INPUT_BYTES`, the core's largest cap plus one | `"max_input_bytes"` in `init`'s answer |
 | `Config.clock()` | not modelled: the wrapper reads it | `now-ms: u64`, the first argument of each verify export |
 | `verifyReceipt(base64)` | `verify_receipt(&[u8], now_ms)` | `verify-receipt(now-ms, receipt-base64: list<u8>)` |
 | `verifySignedData(jws)` | `verify_signed_data(&[u8], now_ms)` | `verify-signed-data(now-ms, jws: list<u8>)` |
 | `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &[u8], now_ms)` | `verify-receipt-endpoint(env: u32, now-ms, request-json: list<u8>)` |
 | `Environment` (2) | `Environment` (2) | `env`: 0 production, 1 sandbox; anything else traps |
+| `ReceiptPayload.environment()`, `JsonPayload.environment()` | `environment: Option<Environment>` on both payloads | `"environment":"Production"`, `"Sandbox"` or `null` beside `"payload"` |
 | `Reason` (8) | `Reason` (8), with `token()` | `"reason":"<TOKEN>"` |
 | `Failure` (reason, message, cause) | `Failure { reason, message }` | `{"verified":false,"reason":...,"message":...}` |
 | `ReceiptPayload`, `InAppPurchase` | records of `Option<String>`, `Option<i64>`, `Option<bool>`, `Vec<u8>`, lists; unknown attributes as `(i64, Vec<Vec<u8>>)` in receipt order | 0.7's "Our JSON" |
 | `JsonPayload.json()` | `String`, the signed bytes | a JSON string |
-| `VerificationResult<T>` | `Result<T, Failure>` | `{"verified":true,"payload":...}` or the failure |
+| `VerificationResult<T>` | `Result<T, Failure>` | `{"verified":true,"payload":...,"environment":...}` or the failure |
 
 Conversion rules carried over from the 2026-09-25 surface audit:
 
@@ -223,8 +244,9 @@ unsafe_op_in_unsafe_fn, ffi_unwind_calls)`, Clippy's
 Certificate-chain verification, root selection and pinning, Apple's
 marker OIDs, signature algorithms, receipt parsing, strict base64, JWS
 parsing and validation, signed-date and validity-window policy, input
-caps, JSON reading rules, unknown-attribute handling, the verifyReceipt status
-mapping (21007, 21008), and the reason vocabulary. A wrapper that
+caps and the input length a host hands over, JSON reading rules,
+unknown-attribute handling, the environment a receipt or JWS names, the
+verifyReceipt status mapping (21007, 21008), and the reason vocabulary. A wrapper that
 implements any of these has failed the architecture, even when its output
 agrees. The one exception by design is the Java implementation, which is
 a second implementation, not a wrapper (DECISIONS.md R33).
