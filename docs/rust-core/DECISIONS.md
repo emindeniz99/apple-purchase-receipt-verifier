@@ -17,7 +17,7 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
 those of 2026-10-02 amended R17, R25, R31, R34, R39, R40 and R41 and
-added R42 (recorded 2026-10-03);
+added R42 and R43 (recorded 2026-10-03);
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
 client change, and amended R41 for .NET's `Config`.
 
@@ -1653,6 +1653,36 @@ the Java implementation goes.
 
 ---
 
+## R43. The Rust tests read ASN.1 with `asn1-rs`
+
+**Status: accepted** (owner, 2026-10-02, decision Q18; recorded
+2026-10-03).
+
+- **Decision:** the core's tests take fixtures apart with `asn1-rs` 0.7
+  (the parser under `x509-parser`), a dev-dependency of the core crate
+  only. `rust/tests/common/ber.rs` keeps the tests' `Tlv` shape over its
+  `Any`; the DER writer in `rust/tests/common/mod.rs` writes lengths,
+  integers and OIDs through it. The library parses nothing with it, and
+  `cargo tree -e normal` does not list it.
+- **Why:** the reader the tests used was the core's own pre-OpenSSL BER
+  reader, 391 lines kept in `rust/tests/common/der.rs` for the tests
+  alone. The project does not maintain an ASN.1 parser.
+- **What stays hand-written:** each deliberate fault (a wrong length, an
+  indefinite length with or without its end-of-contents, a retagged
+  value) is written as bytes in the test that states it, since no library
+  writes malformed encodings; and the join of a constructed
+  `OCTET STRING`'s chunks, which `asn1-rs` 0.7 does not do.
+- **Measured:** every fixture the old reader parsed reads into the same
+  tree, the writer's output is byte-identical, and the suite lists and
+  passes the same 668 tests ([asn1-rs in the tests][asn1rs]).
+- **Rejected:** A) RustCrypto `der`: DER only, so it cannot open Apple's
+  or Xcode's receipts, which are BER. B) OpenSSL's ASN.1 API from the
+  tests: raw FFI with no safe Rust API over it, `unsafe` code in the tests
+  for a job a safe crate does. C) Keep the hand-written reader: the
+  parser this decision removes.
+
+---
+
 ## Rejected alternatives
 
 One table for everything the plan measured or considered and rejected.
@@ -1749,3 +1779,4 @@ One table for everything the plan measured or considered and rejected.
 [stjout]: ../evidence/2026-10-02-dotnet-stj-output.md
 [huc]: ../evidence/2026-10-02-java-httpurlconnection.md
 [httpopt]: ../evidence/2026-10-02-java-http-options.md
+[asn1rs]: ../evidence/2026-10-03-rust-tests-asn1-rs.md
