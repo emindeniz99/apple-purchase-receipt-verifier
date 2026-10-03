@@ -127,8 +127,9 @@ figures are both upper bounds. G1c, load average 8 to 12: g5 7,685 /
 35.7 ms import, 142.6 ms first `createVerifier`, 38.0 ms second, 36.5 ms
 and 30.1 ms for the first two g5 calls.
 
-The facade copies at most 3,145,729 bytes of an input into linear memory
-(one over the receipt cap); `test/abi.test.js` checks that a 4 MiB input
+The facade copies at most `max_input_bytes` of an input into linear memory,
+the number the module's `init` states (3,145,729, one over the receipt
+cap); `test/abi.test.js` checks that a 4 MiB input
 gets the module's own `TOO_LARGE` answer byte for byte and grows linear
 memory by less than 4 MiB.
 

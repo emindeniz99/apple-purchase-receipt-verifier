@@ -1,7 +1,9 @@
 /**
- * Apple's two App Store environments, and the two verifyReceipt URLs
- * `verifyReceiptEndpoint` imitates. The helpers state what an Apple value
- * means; whether to accept an environment is the caller's decision.
+ * Apple's two App Store environments: the two verifyReceipt URLs
+ * `verifyReceiptEndpoint` imitates, and the environment a verified payload
+ * names (`ReceiptPayload.environment`, `JsonPayload.environment`, as the
+ * module states it). Whether to accept an environment is the caller's
+ * decision.
  */
 export const Environment = {
   PRODUCTION: 'Production',
@@ -9,37 +11,6 @@ export const Environment = {
 } as const;
 
 export type Environment = (typeof Environment)[keyof typeof Environment];
-
-/**
- * Maps a receipt's `receipt_type` (attribute 0): `Production` and
- * `ProductionVPP` to `PRODUCTION`, `ProductionSandbox` and
- * `ProductionVPPSandbox` to `SANDBOX`, anything else (a missing value
- * included) to `null`. The endpoint uses the same rule for 21007 and 21008.
- */
-export function environmentFromReceiptType(receiptType: string | null): Environment | null {
-  if (receiptType === 'Production' || receiptType === 'ProductionVPP') {
-    return Environment.PRODUCTION;
-  }
-  if (receiptType === 'ProductionSandbox' || receiptType === 'ProductionVPPSandbox') {
-    return Environment.SANDBOX;
-  }
-  return null;
-}
-
-/**
- * Maps a JWS `environment` claim: `Production` to `PRODUCTION`, `Sandbox`
- * to `SANDBOX`, anything else (`Xcode`, `LocalTesting`, a missing claim) to
- * `null`.
- */
-export function environmentFromJwsEnvironment(environment: string | null): Environment | null {
-  if (environment === 'Production') {
-    return Environment.PRODUCTION;
-  }
-  if (environment === 'Sandbox') {
-    return Environment.SANDBOX;
-  }
-  return null;
-}
 
 /**
  * The `status` codes Apple documents for its verifyReceipt endpoint, so

@@ -57,31 +57,25 @@ function readClock(clock: () => number): bigint {
 }
 
 /**
- * The most bytes of an input the facade copies into the module: one over
- * the largest cap the module applies (3,145,728 bytes, the receipt and the
- * request body), so the module still sees an oversized input as oversized
- * and answers `TOO_LARGE` itself, while linear memory never has to hold
- * more than this. The JWS cap is lower, so the same holds for it.
+ * The input as UTF-8 bytes, at most `maxBytes` of them: the
+ * `max_input_bytes` the instance's `init` stated, one over the largest cap
+ * the module applies, so the module still sees an oversized input as
+ * oversized and answers `TOO_LARGE` itself, while linear memory never has
+ * to hold more than this. A value that is not a string is input, not a
+ * programming error, and reaches the module as no bytes, which it answers
+ * as `MALFORMED`. The caller's value itself never reaches the bindings.
  */
-export const MAX_INPUT_BYTES = 3_145_729;
-
-/**
- * The input as UTF-8 bytes, at most {@link MAX_INPUT_BYTES} of them. A
- * value that is not a string is input, not a programming error, and
- * reaches the module as no bytes, which it answers as `MALFORMED`. The
- * caller's value itself never reaches the bindings.
- */
-export function inputBytes(value: unknown): Uint8Array {
+export function inputBytes(value: unknown, maxBytes: number): Uint8Array {
   const text = typeof value === 'string' ? value : '';
-  if (text.length * 3 <= MAX_INPUT_BYTES) {
+  if (text.length * 3 <= maxBytes) {
     return utf8.encode(text);
   }
   // Encode only a prefix. encodeInto stops before a code point that does
   // not fit, so with 3 bytes of room past the limit an input that does
-  // not fit has written at least MAX_INPUT_BYTES bytes.
-  const buffer = new Uint8Array(MAX_INPUT_BYTES + 3);
+  // not fit has written at least maxBytes bytes.
+  const buffer = new Uint8Array(maxBytes + 3);
   const { written } = utf8.encodeInto(text, buffer);
-  return buffer.subarray(0, Math.min(written, MAX_INPUT_BYTES));
+  return buffer.subarray(0, Math.min(written, maxBytes));
 }
 
 function environmentCode(environment: Environment): number {
@@ -115,13 +109,31 @@ function internalError(cause: unknown): Failure {
   };
 }
 
-/** Reads a verify answer: the payload through `payload`, or the module's failure. */
-function answer<T>(text: string, payload: (value: unknown) => T): VerificationResult<T> {
+const ENVIRONMENTS = new Set<unknown>([...Object.values(Environment), null]);
+
+/** The `environment` member of a verified answer: one of the two values, or `null`. */
+function environmentMember(doc: Record<string, unknown>): Environment | null {
+  const value = doc['environment'];
+  if (!Object.hasOwn(doc, 'environment') || !ENVIRONMENTS.has(value)) {
+    throw new WireError('a verified answer has no environment of Production, Sandbox or null');
+  }
+  return value as Environment | null;
+}
+
+/**
+ * Reads a verify answer: the payload and environment through `payload`, or
+ * the module's failure.
+ */
+function answer<T>(
+  text: string,
+  payload: (value: unknown, environment: Environment | null) => T,
+): VerificationResult<T> {
   const doc: unknown = JSON.parse(text);
   if (doc !== null && typeof doc === 'object') {
-    const { verified, reason, message } = doc as Record<string, unknown>;
+    const fields = doc as Record<string, unknown>;
+    const { verified, reason, message } = fields;
     if (verified === true) {
-      return { verified: true, payload: payload((doc as Record<string, unknown>)['payload']) };
+      return { verified: true, payload: payload(fields['payload'], environmentMember(fields)) };
     }
     if (
       verified === false &&
@@ -145,11 +157,11 @@ export function jwsAnswer(text: string): VerificationResult<JsonPayload> {
   return answer(text, jsonPayload);
 }
 
-function jsonPayload(value: unknown): JsonPayload {
+function jsonPayload(value: unknown, environment: Environment | null): JsonPayload {
   if (typeof value !== 'string') {
     throw new WireError('a verified JWS payload is not a string');
   }
-  return { json: value };
+  return { json: value, environment };
 }
 
 function endpointAnswer(text: string): string {
@@ -201,8 +213,7 @@ export function createVerifier(config: Config): Verifier {
   ): VerificationResult<T> {
     try {
       const now = readClock(clock);
-      const bytes = inputBytes(input);
-      return slot.call((bindings) => op(bindings, now, bytes), read);
+      return slot.call((bindings, max) => op(bindings, now, inputBytes(input, max)), read);
     } catch (error) {
       return { verified: false, failure: internalError(error) };
     }
@@ -219,8 +230,10 @@ export function createVerifier(config: Config): Verifier {
       const env = environmentCode(environment);
       try {
         const now = readClock(clock);
-        const bytes = inputBytes(requestJson);
-        return slot.call((b) => b.verifyReceiptEndpoint(env, now, bytes), endpointAnswer);
+        return slot.call(
+          (b, max) => b.verifyReceiptEndpoint(env, now, inputBytes(requestJson, max)),
+          endpointAnswer,
+        );
       } catch {
         return ENDPOINT_INTERNAL_ERROR;
       }
