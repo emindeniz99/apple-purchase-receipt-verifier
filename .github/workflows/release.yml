@@ -1309,7 +1309,8 @@ jobs:
   # tools/reproduce-server.sh). Every line must match the asset this run
   # built and published, under this tag, or a Composer user would be told
   # the release's own binary is not the release's. It fails the release
-  # before Packagist imports the tag. The assets are laid out as
+  # before Packagist imports the tag. Every line must be one the installer
+  # reads, and the file the two Linux lines. The assets are laid out as
   # <tag>/<asset>, the paths the file names, and sha256sum -c --strict
   # checks them: a line for another tag names a file that is not there.
   # No repository code runs next to the downloaded files.
@@ -1335,6 +1336,26 @@ jobs:
             echo "::error file=php/SHA256SUMS::php/SHA256SUMS is empty: this release pins no aprv binary"
             exit 1
           fi
+          # sha256sum -c also reads lines the installer refuses (a
+          # binary-mode *, a CR before the LF), so it alone would pass a
+          # file every Composer user is then refused. Each line must be
+          # the installer's grammar, and the file the two Linux lines.
+          line='^[0-9a-f]{64}  v[0-9A-Za-z.+-]+/aprv-[^/[:space:]]+$'
+          if bad="$(LC_ALL=C grep -Evn -- "$line" "$sums")"; then
+            printf '%s\n' "$bad" | cat -v
+            echo "::error file=php/SHA256SUMS::the lines above are not <sha256>  <tag>/<asset> as sha256sum's text mode writes it and bin/aprv-install reads it"
+            exit 1
+          fi
+          if [ "$(LC_ALL=C grep -c '' "$sums")" != 2 ]; then
+            echo "::error file=php/SHA256SUMS::php/SHA256SUMS must pin exactly the two Linux musl binaries"
+            exit 1
+          fi
+          for asset in aprv-x86_64-unknown-linux-musl aprv-aarch64-unknown-linux-musl; do
+            if [ "$(LC_ALL=C grep -c -- "/$asset\$" "$sums" || true)" != 1 ]; then
+              echo "::error file=php/SHA256SUMS::php/SHA256SUMS must pin $asset exactly once"
+              exit 1
+            fi
+          done
           mkdir -p "$RUNNER_TEMP/published/$TAG"
           cp "$RUNNER_TEMP"/in/aprv-server-*/aprv-* "$RUNNER_TEMP/published/$TAG/"
           cd "$RUNNER_TEMP/published"

@@ -126,10 +126,12 @@ installer names the server option (exit 2).
    line has no pin: the installer says no binary is pinned for the platform
    and names the server option.
 2. A check on the tag (`release.yml` `php-binaries`, after
-   `release-assets`): the file is not empty, and `sha256sum -c --strict`
-   passes against the assets this run built, laid out as `<tag>/<asset>`.
-   A changed binary, or a line for another tag, fails the release before
-   Packagist imports the tag.
+   `release-assets`): the file is not empty, every line matches the
+   installer's grammar below (`sha256sum -c` alone also accepts a
+   binary-mode `*` and a CR), it holds exactly the two Linux lines, and
+   `sha256sum -c --strict` passes against the assets this run built, laid
+   out as `<tag>/<asset>`. A changed binary, or a line for another tag,
+   fails the release before Packagist imports the tag.
 
 The installer accepts only what sha256sum writes: 64 lowercase hex digits,
 two spaces, a path of one tag (`v[0-9A-Za-z.+-]+`) and one asset from the
