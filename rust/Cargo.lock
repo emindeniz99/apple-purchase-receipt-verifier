@@ -109,6 +109,7 @@ dependencies = [
  "aprv-surface",
  "aprv-wire",
  "base64",
+ "serde_json",
 ]
 
 [[package]]
