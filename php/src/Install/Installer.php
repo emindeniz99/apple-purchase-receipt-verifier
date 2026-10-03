@@ -150,14 +150,17 @@ final class Installer
      * that is not one tag and one release asset, a blank line, a CR, an
      * asset named twice, or two tags.
      *
+     * @internal public for the package's tests only; not part of the API
+     *
      * @return array{tag: string|null, assets: array<string, string>}
      *
      * @throws InstallException
      */
     public static function pins(string $sumsPath): array
     {
-        $text = @file_get_contents($sumsPath);
-        if ($text === false) {
+        // file_get_contents() reads a directory as "", which would pass for
+        // an empty file that pins nothing.
+        if (!is_file($sumsPath) || ($text = @file_get_contents($sumsPath)) === false) {
             throw new InstallException("cannot read {$sumsPath}", InstallException::UNAVAILABLE);
         }
         $known = [];
@@ -181,7 +184,12 @@ final class Installer
             }
             [, $hash, $lineTag, $asset] = $match;
             if (!isset($known[$asset])) {
-                throw new InstallException("{$where} names {$asset}, which is not a release asset", InstallException::UNAVAILABLE);
+                throw new InstallException(
+                    "{$where} names "
+                    . (string) json_encode($asset, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES)
+                    . ', which is not a release asset',
+                    InstallException::UNAVAILABLE,
+                );
             }
             if ($tag !== null && $lineTag !== $tag) {
                 throw new InstallException("{$where} names the tag {$lineTag}, an earlier line {$tag}", InstallException::UNAVAILABLE);
