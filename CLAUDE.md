@@ -82,9 +82,9 @@ human-facing version; where they overlap, they agree.
   which pin a cap or a floor: `fixtures/limits/`, written by
   `tools/generate-limit-fixtures.mjs` (deterministic) and
   `ReceiptBase64CapFixture`, and the receipts at a cap or floor in
-  `fixtures/generated-0.7/`, written by `LargeReceiptFixture` and
-  `VerifierApiFixtures` (the Java generators sign with fresh keys). Every
-  such blob stays in history forever.
+  `fixtures/generated-0.7/`, written by `LargeReceiptFixture`,
+  `VerifierApiFixtures` and `ReceiptBase64CapFixture` (the Java generators
+  sign with fresh keys). Every such blob stays in history forever.
 
 ## The invariants that are easy to break
 

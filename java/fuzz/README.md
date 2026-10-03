@@ -76,11 +76,13 @@ look identical.
 `fixtures/generated/receipt-root.der`, so the Apple-signed public receipts get
 past the chain check and the mutations land on the code beyond it. The
 generated receipts under `fixtures/generated/` predate 0.7's WWDR marker check
-and now stop at `INVALID_CERTIFICATE_PURPOSE`; seed from a regenerated set to
-take them past it. Anything they accept must then be refused under the fixture
-*JWS* root, which signed no receipt in this repository. `jws` is the mirror
-image: the fixture JWS root trusted, Apple's production JWS roots the unrelated
-set.
+and now stop at `INVALID_CERTIFICATE_PURPOSE`. `receipt` also seeds from
+`fixtures/generated-0.7/`, where they were re-minted with the marker under
+fresh keys; those chain to `fixtures/generated-0.7/receipt-root.der`, which
+`Harness` does not trust yet, so they stop at the chain check. Anything they
+accept must then be refused under the fixture *JWS* root, which signed no
+receipt in this repository. `jws` is the mirror image: the fixture JWS root
+trusted, Apple's production JWS roots the unrelated set.
 
 The unrelated set is always a real, well-formed root rather than an empty or
 corrupt one. "Rejected because the anchor set was unusable" would prove
@@ -183,8 +185,9 @@ than its rank suggests — read its `cov`, which is the highest here, instead.
 
 ### The acceptance rates are the number to watch
 
-Measured on 0.6; the receipt rows need re-measuring once the generated receipts
-carry the WWDR marker.
+Measured on 0.6; the receipt rows need re-measuring once `Harness` trusts the
+root the re-minted receipts chain to. `receipt` now seeds from 55
+`fixtures/generated/*.der` and 191 `fixtures/generated-0.7/*.der`.
 
 A target whose seeds never verify still reports coverage, still finds no crash,
 and still looks healthy — while its anchor-set invariant never runs once. What

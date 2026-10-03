@@ -8,9 +8,13 @@ import java.util.Date;
 
 /**
  * Writes the receipt string that holds the base64 receipt cap from the
- * accepting side: {@code fixtures/limits/receipt-b64-at-cap.txt}, canonical
- * standard base64 of exactly 3,145,728 characters, and the root it verifies
- * under, {@code fixtures/generated/receipt-b64-cap-root.der}.
+ * accepting side, canonical standard base64 of exactly 3,145,728
+ * characters, and the root it verifies under: {@code
+ * fixtures/generated-0.7/receipt-b64-at-cap.txt} and {@code
+ * fixtures/generated-0.7/receipt-b64-cap-root.der}, the pair the cases
+ * read. The same string also goes to {@code
+ * fixtures/limits/receipt-b64-at-cap.txt}, which
+ * {@code tools/generate-limit-fixtures.mjs} builds the over-cap twin from.
  *
  * <p>The cap counts the string a client sends, and the string must be
  * canonical base64 with nothing around it, so the only way to reach the cap
@@ -32,8 +36,8 @@ import java.util.Date;
  * node tools/lint-cases.mjs                # re-hash: every contentSha256 must be updated
  * </pre>
  *
- * <p>Each run mints fresh keys, so regenerating changes every byte of both
- * files.</p>
+ * <p>Each run mints fresh keys, so regenerating changes every byte of all
+ * three files.</p>
  */
 public final class ReceiptBase64CapFixture {
 
@@ -53,7 +57,8 @@ public final class ReceiptBase64CapFixture {
         if (text.length != STRING_CAP) {
             throw new IllegalStateException("built " + text.length + " characters, wanted " + STRING_CAP);
         }
-        write(fixtures.resolve("generated"), "receipt-b64-cap-root.der", pki.root.getEncoded());
+        write(fixtures.resolve("generated-0.7"), "receipt-b64-cap-root.der", pki.root.getEncoded());
+        write(fixtures.resolve("generated-0.7"), "receipt-b64-at-cap.txt", text);
         write(fixtures.resolve("limits"), "receipt-b64-at-cap.txt", text);
     }
 

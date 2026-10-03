@@ -30,10 +30,14 @@ gitignored.
 The anchor-set invariant is the one that lets a fuzzer find "accepts what it
 should not" rather than only crashes: without it, an input that verifies tells
 you nothing about *why* it verified. `verify-receipt` runs against Apple's three
-bundled roots plus `fixtures/generated/receipt-root.der` — six generated
-receipts and both public Apple receipts get past the chain check with that set,
-so the branch behind it is reached on nearly every iteration rather than being
-decoration — and re-runs anything accepted against `jws-root.der`.
+bundled roots plus `fixtures/generated/receipt-root.der`, and re-runs anything
+accepted against `jws-root.der`. With that set only the two public Apple
+receipts verify today. 0.7 checks Apple's WWDR marker on the receipt
+intermediate, so the six 0.6 generated receipts that chain to that root now
+stop at `INVALID_CERTIFICATE_PURPOSE`, and the re-minted receipts in
+`fixtures/generated-0.7/`, which also seed this target, chain to roots the
+harness does not trust. Moving the anchor to a `generated-0.7` root, as the
+.NET and Ruby harnesses have, is a separate change.
 `verify-transaction` is the mirror image: the fixture JWS root accepts three
 generated payloads, and each is required to fail under Apple's roots.
 

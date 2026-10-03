@@ -64,7 +64,7 @@ target_class() {
 
 seeds_for() {
   case "$1" in
-    receipt)        echo "$fixtures/generated" "$fixtures/apple-official/certs" ;;
+    receipt)        echo "$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/certs" ;;
     receipt-base64) echo "$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode" ;;
     jws)            echo "$fixtures/generated" "$fixtures/apple-official/mock_signed_data" "$fixtures/apple-official/xcode" ;;
     endpoint-json)  echo "$here/.seeds/endpoint-json" ;;

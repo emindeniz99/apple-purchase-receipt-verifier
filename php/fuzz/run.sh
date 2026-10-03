@@ -73,7 +73,7 @@ fetch_phar() {
 seed_dirs() {
   case "$1" in
     verify-receipt)
-      SEED_DIRS=("$fixtures/generated" "$fixtures/apple-official/certs") ;;
+      SEED_DIRS=("$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/certs") ;;
     verify-receipt-base64)
       SEED_DIRS=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
     verify-transaction)

@@ -86,8 +86,12 @@ in CI, exactly as the Go and Rust targets rely on.
 ## Throughput
 
 Not measured for the wasm host. Every call runs the module, so a unit costs
-about a millisecond for a receipt (`bench/startup.rb`); seeds that are whole
-base64 receipts raise libFuzzer's `max_len` to about 100 KB and cost more.
+about a millisecond for a receipt (`bench/startup.rb`). `verify_receipt`
+passes `-max_len=65536`, as the .NET and Java receipt targets do, because
+`fixtures/generated-0.7` seeds it with files of 1 to 3 MB that would
+otherwise let libFuzzer grow inputs to its 1 MB ceiling. The other targets
+take libFuzzer's default, so seeds that are whole base64 receipts raise their
+`max_len` to about 100 KB and cost more.
 
 ## Corpus and findings
 

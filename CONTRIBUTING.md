@@ -449,25 +449,38 @@ at fixed epoch instants so nothing depends on generation time:
   and a top-level entry or in-app purchase that cannot be read, each under
   a trusted, a foreign or an expired chain as the vector needs, with their
   own trusted and expired roots.
-- `ReceiptBase64CapFixture` — the receipt string at the base64 receipt cap,
-  `fixtures/limits/receipt-b64-at-cap.txt`: the canonical base64 of a
-  genuinely signed receipt of 2,359,296 bytes, which is exactly 3,145,728
-  characters. It takes `fixtures` rather than `fixtures/generated` as its
-  argument, and `node tools/generate-limit-fixtures.mjs` must run after it,
-  because the over-cap twin is built from its output.
+- `ReceiptBase64CapFixture` — the receipt string at the base64 receipt cap:
+  the canonical base64 of a genuinely signed receipt of 2,359,296 bytes,
+  which is exactly 3,145,728 characters. It writes the string and its root
+  to `fixtures/generated-0.7/receipt-b64-at-cap.txt` and
+  `receipt-b64-cap-root.der`, the pair the cases read, and the same string
+  to `fixtures/limits/receipt-b64-at-cap.txt`, from which
+  `node tools/generate-limit-fixtures.mjs` builds the over-cap twin, so
+  that script runs after it. Until the next regeneration the committed
+  `limits/` copy is still the 0.6 string, whose root is gone; its readers
+  (the `aprv-server` size tests, the length check in
+  `generate-limit-fixtures.mjs` and the replay in
+  `docs/evidence/2026-09-26-openssl-asn1-payload/`) use only its length.
 
 The last eleven run as a `main`, not a `@Test`, so none of them costs the
-suite a permanently skipped test. All eleven regenerate the same way, only
-the class name changes:
+suite a permanently skipped test. All eleven regenerate the same way; only
+the class name and the output directory change:
 
 ```bash
 mvn -B -q -f java/pom.xml test-compile
 mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
 java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
      io.github.emindeniz99.applepurchasereceiptverifier.<ClassName> \
-     fixtures/generated
+     <output>
 node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
 ```
+
+`<output>` is `fixtures/generated` for the other nine,
+`fixtures/generated-0.7` for `LargeReceiptFixture` and `fixtures` for
+`ReceiptBase64CapFixture`; with no argument each writes to that same
+default. Never point those two at `fixtures/generated`: their outputs
+run to 1 MB and 3 MB, and only the copies in `generated-0.7/` and
+`limits/` are exempt from the 100 KB rule.
 
 Every run mints fresh keys, so regenerating changes every byte and every
 `contentSha256` that records it. The signing keys are deliberately not kept:

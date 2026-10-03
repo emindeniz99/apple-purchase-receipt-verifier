@@ -83,6 +83,11 @@ class ReceiptContentInfoTest {
         } finally {
             files.close();
         }
+        // The corpus's one many-node input: about 20,000 TLVs in its payload.
+        // Named rather than globbed, because generated-0.7 also holds the
+        // 1 MB byte-floor receipt, too large to mutate 200 times here.
+        fixtures.add(
+                Files.readAllBytes(TestFixtures.root().resolve("generated-0.7").resolve("receipt-node-floor.der")));
         Path publicReceipts = TestFixtures.publicReceipts();
         for (String name :
                 new String[] {"receipt-sandbox-g5.b64", "receipt-sandbox-legacy.b64", "receipt-xcode-with-purchases.b64"

@@ -55,10 +55,15 @@ export ASAN_OPTIONS="detect_leaks=0:allocator_may_return_null=1:use_sigaltstack=
 run_one() {
   local name="$1"
   local seeds
+  local limits=()
 
   case "$name" in
     verify_receipt)
-      seeds=("$fixtures/generated" "$fixtures/apple-official/certs") ;;
+      seeds=("$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/certs")
+      # generated-0.7 holds the 1 MB byte-floor receipt and the 3 MB
+      # receipt strings, so without a cap libFuzzer grows inputs to its
+      # 1 MB ceiling. 65536, as the .NET and Java receipt targets use.
+      limits=(-max_len=65536) ;;
     verify_receipt_base64)
       seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
     verify_transaction)
@@ -75,6 +80,7 @@ run_one() {
   LD_PRELOAD="$asan_path" \
     "${runner[@]}" "$here/tracer.rb" \
       "$here/corpus/$name" "${seeds[@]}" \
+      "${limits[@]}" \
       -max_total_time="$seconds" \
       -artifact_prefix="$here/artifacts/$name/" \
       -print_final_stats=1 \
