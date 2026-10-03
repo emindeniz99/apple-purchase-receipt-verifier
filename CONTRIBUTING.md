@@ -553,8 +553,8 @@ Fully automated — do not publish from a laptop:
    workflow regenerates the lockfiles that carry it too). On that branch,
    `release-please.yml` also builds the module and the Linux server
    binaries, rewrites every committed copy and pin of `aprv.wasm`
-   (`tools/refresh-wasm-pins.sh`), and writes the server hashes into
-   `php/binaries.json`, in one commit.
+   (`tools/refresh-wasm-pins.sh`), and writes the Linux server binaries'
+   `sha256sum` lines into `php/SHA256SUMS`, in one commit.
 2. Merging that PR creates the tag + GitHub Release, and the workflow
    dispatches `release.yml` at the tag.
 3. `release.yml` builds `aprv.wasm` and the component once, with no cache

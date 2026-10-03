@@ -19,7 +19,7 @@ module built on OpenSSL 4, in a Wasmtime sandbox). This package is the PHP
 API in front of it: it reads your clock, hands the bytes to `aprv` and maps
 the answer onto the types below. `vendor/bin/aprv-install` downloads the
 binary for your platform from the GitHub Release this package version was cut
-with and checks it against the SHA-256 that `binaries.json` pins in the
+with and checks it against the SHA-256 that `SHA256SUMS` pins in the
 package; a wrong hash installs nothing. Nothing downloads at request time.
 
 | Platform | Binary |
@@ -493,7 +493,7 @@ thrown `VerificationException`.
   wrong verdict right, which is why the module is checked by every language's
   conformance suite and by fuzzing.
 - **The binary is pinned.** `aprv-install` runs a downloaded file only after
-  its SHA-256 matches the one in `binaries.json`, which ships inside the
+  its SHA-256 matches the one in `SHA256SUMS`, which ships inside the
   package, so a replaced release asset installs nothing. A server you run
   yourself is yours to trust; `create` checks its roots and ABI, not its
   provenance.
@@ -644,9 +644,9 @@ answer must equal the module's row.
 `tools/rerun.sh APRV_BINARY G1_DIR` runs the phpunit suites and the corpus over
 both transports as one command.
 
-**Releasing.** `binaries.json` ships with no tag and no hashes. The release
-pins them with `php php/tools/update-binaries.php --tag vX.Y.Z --sums
-SHA256SUMS` on the release branch, before the tag (`CI-NOTES.md`).
+**Releasing.** `SHA256SUMS` is empty on `main`. On the release branch,
+before the tag, the release workflow writes sha256sum's lines for the two
+Linux binaries into it, each path `vX.Y.Z/<asset>` (`CI-NOTES.md`).
 
 `composer.lock` is committed and CI installs from it, so no run resolves a
 version range. `config.platform.php` is `8.2.0` in `composer.json`, matching

@@ -247,12 +247,12 @@ What landed:
 
 The archive holds the two manifests, the two licences, `php/README.md`,
 the installer command (`php/bin/aprv-install`) with its
-`php/binaries.json`, and the PHP sources. The package ships no binary and
+`php/SHA256SUMS`, and the PHP sources. The package ships no binary and
 no certificate: the roots are inside the module the `aprv` binary runs,
 and `vendor/bin/aprv-install` fetches the binary that matches
-`binaries.json` (`php/CI-NOTES.md`). The release branch writes the two
-Linux hashes into `binaries.json` before the tag; the macOS and Windows
-entries stay empty until the release publishes those builds' exact files,
+`SHA256SUMS` (`php/CI-NOTES.md`). The release branch writes the two
+Linux hashes into `SHA256SUMS` before the tag; macOS and Windows get no
+line until the release publishes those builds' exact files,
 and those platforms use a server URL meanwhile. The open question the old
 text flagged is closed. `git archive` honours `export-ignore`,
 reproduced by the guard on every run, and GitHub's **zipball** honours it

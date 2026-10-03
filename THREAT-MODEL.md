@@ -603,7 +603,7 @@ artifact on Java 8 never loads native code into the JVM.
   the jar (or the one the user gave): written to an owner-only cache
   directory as a temporary file, hashed while it streams, made executable
   and renamed only on a match, hashed again before every start. PHP's
-  `aprv-install` checks the SHA-256 in `php/binaries.json` and installs
+  `aprv-install` checks the SHA-256 in `php/SHA256SUMS` and installs
   nothing on a mismatch; nothing downloads at request time.
 - **Runtimes we do not build.** wasmtime-py, the `wasmtime` gem, Wasmtime
   .NET, wazero, WasmKit, jco and Endive are dependencies with a floor, and
@@ -741,7 +741,7 @@ crafted input. The full record, finding by finding, is
 - **No guest time limit** in the in-process hosts (§8).
 - **Python's cache** is native code on disk (§10).
 - **Downloaded server binaries** move trust to our release process; the
-  pin inside the jar or `php/binaries.json` is what makes a replaced GitHub
+  pin inside the jar or `php/SHA256SUMS` is what makes a replaced GitHub
   asset fail.
 - **The C ABI and the Rust crate run the core natively** in the caller's
   process (class E). The C ABI also moves memory discipline to the caller:

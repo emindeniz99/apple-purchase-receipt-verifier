@@ -164,7 +164,7 @@ from the migration:
   `-wasm` jar.
 - **PHP on macOS and Windows** installs no binary until the release
   publishes those builds' exact files and pins their hashes in
-  `php/binaries.json`; until then those platforms use a server URL.
+  `php/SHA256SUMS`; until then those platforms use a server URL.
 - **A guest time limit in the in-process hosts.** Only `aprv-server`
   enforces one (epoch interruption); Wasmtime's hosts could too.
 - **Python's compile time.** Winch halves the compile at half the speed;
