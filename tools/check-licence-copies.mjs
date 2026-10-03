@@ -13,7 +13,7 @@
 // layout gives it, and nothing else but the files listed as its own (Ruby's
 // NOTICE, which says what the gem's module contains). Exits 1 on any
 // difference, naming the file.
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,7 +36,6 @@ const COPIES = [
   { dir: 'swift/Sources/ApplePurchaseReceiptVerifier/Resources/licenses', name: flat, own: [] },
   { dir: 'ruby/licenses', name: nested, own: ['NOTICE'] },
 ];
-
 
 const sources = readdirSync(join(ROOT, SOURCE)).sort();
 if (sources.length === 0) {
@@ -66,8 +65,8 @@ for (const copy of COPIES) {
     }
   }
   for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
-    if (entry.isDirectory()) continue;
     const path = join(entry.parentPath, entry.name);
+    if (!statSync(path).isFile()) continue;
     const rel = relative(base, path).split('\\').join('/');
     if (!expected.has(rel)) {
       console.log(`::error file=${copy.dir}/${rel}::not in ${SOURCE}; add it there first, or list it as this copy's own`);

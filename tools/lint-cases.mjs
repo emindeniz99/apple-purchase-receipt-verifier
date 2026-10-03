@@ -35,7 +35,7 @@
  * files from those three that cases.json uses are registered.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFixture } from './lib/fixtures.mjs';
@@ -200,7 +200,6 @@ function readJson(path) {
   }
 }
 
-
 // The receipt-data / x5c base64 rule, stated independently of every port:
 // non-empty, a multiple of four, the standard alphabet followed by at most
 // two '='. Trailing bits are not checked. Returns the bytes, or null.
@@ -275,8 +274,8 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
     let files;
     try {
       files = readdirSync(dir, { recursive: true, withFileTypes: true })
-        .filter((entry) => !entry.isDirectory())
-        .map((entry) => join(entry.parentPath, entry.name));
+        .map((entry) => join(entry.parentPath, entry.name))
+        .filter((path) => statSync(path).isFile());
     } catch {
       fail(`tier "${tier}"`, `fixtures/${tier}/ does not exist`);
       continue;

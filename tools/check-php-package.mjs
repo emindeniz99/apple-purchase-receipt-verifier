@@ -120,7 +120,7 @@ for (const path of required) {
 // half-ships is a fatal on whichever class the consumer happens to touch.
 const srcFiles = readdirSync(join(repoRoot, 'php/src'), { recursive: true, withFileTypes: true })
   .filter((entry) => !entry.isDirectory() && entry.name.endsWith('.php'))
-  .map((entry) => relative(repoRoot, join(entry.parentPath, entry.name)));
+  .map((entry) => relative(repoRoot, join(entry.parentPath, entry.name)).split('\\').join('/'));
 for (const path of srcFiles) {
   if (!entries.includes(path)) problems.push(`git archive is missing ${path}`);
 }

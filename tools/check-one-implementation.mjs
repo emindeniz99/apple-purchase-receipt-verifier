@@ -201,7 +201,6 @@ function commentLines(lines, syntax) {
 
 const SKIP = /(^|\/)(tests?|__tests__|spec|fuzz|bench|benches|samples?|examples?|generated|node_modules|dist|build|target|vendor|\.build)(\/|$)/;
 
-
 const USAGE = 'usage: node tools/check-one-implementation.mjs [--enforce <all|lang,lang,...>] [--root <dir>]';
 let args;
 try {
