@@ -186,7 +186,7 @@ than its rank suggests — read its `cov`, which is the highest here, instead.
 ### The acceptance rates are the number to watch
 
 Measured on 0.6; the receipt rows need re-measuring once `Harness` trusts the
-root the re-minted receipts chain to. `receipt` now seeds from 58
+root the re-minted receipts chain to. `receipt` now seeds from 55
 `fixtures/generated/*.der` and 191 `fixtures/generated-0.7/*.der`.
 
 A target whose seeds never verify still reports coverage, still finds no crash,
