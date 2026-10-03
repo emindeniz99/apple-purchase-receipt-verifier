@@ -67,8 +67,8 @@ Verifier separateProcess = Verifier.create(config,
               .cacheDirectory(Paths.get("/var/cache/aprv")));
 ```
 
-A verifier on the server engine can own a child process, so it
-implements `Closeable`: close it when you are done with it. One you
+A verifier on the server engine owns a process or a connection pool, so
+it implements `Closeable`: close it when you are done with it. One you
 forget is closed when it becomes unreachable, and every open one is
 closed when the JVM exits.
 
@@ -119,6 +119,14 @@ with every source's reason, in order.
 | `maven()` | extracts the binary for this platform from this artifact's `linux-x86_64` or `linux-aarch64` classifier jar on the classpath |
 | `github()` | downloads the binary for this platform from this project's GitHub Release over HTTPS |
 | `download(url, sha256)` | downloads from your mirror and accepts only a file with that SHA-256 |
+
+The engine reaches a `url()` server directly, never through a proxy the
+JVM is set up with. Over `https` it checks the certificate and the host
+name against the JVM's trust store (`javax.net.ssl.trustStore`, else the
+JDK's `cacerts`) with a TLS context of its own, so a default
+`SSLContext` that other code installs does not apply, and it presents no
+client certificate. It accepts an answer framed by one `Content-Length`
+or by `Transfer-Encoding: chunked` alone, and refuses any other.
 
 `maven()` needs the classifier jar for your platform beside this one:
 
@@ -222,8 +230,7 @@ that does not work then answers `INTERNAL_ERROR` on every call.
   library raises itself: a trap, a runtime failure, a clock that threw.
 - **Dependencies.** `run.endive:runtime` and `run.endive:wasm` (Apache-2.0,
   pure Java 11 bytecode) and `jackson-core`. No BouncyCastle. The server
-  engine adds nothing: its HTTP client is the JDK's `HttpURLConnection`
-  and its JSON reader is in this jar.
+  engine adds nothing: its HTTP client and JSON reader are in this jar.
 - **Class files.** The API, the engine choice and the server client are
   Java 8 bytecode. The Endive engine and its compiled module are Java 11
   bytecode and load only when that engine is chosen, so the jar sits on a

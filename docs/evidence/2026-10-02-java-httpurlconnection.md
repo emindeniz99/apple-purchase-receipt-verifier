@@ -1,5 +1,16 @@
 # The server engine's client on HttpURLConnection (2026-10-02)
 
+**Outcome (2026-10-03).** Reverted before it merged. The owner put the
+hand-written `HttpConn` back on the same pull request, hardened, for the
+reasons this note records itself: on Java 8 the JDK answers a 401
+`Basic` challenge with the default `Authenticator`'s credentials and has
+no per-connection switch to stop it (Authentication), it resends a POST
+inside each of the engine's attempts (Resends), and a SOCKS proxy still
+reaches it (SOCKS). The comparison that decided it, with `HttpConn`,
+Apache HttpClient 5 and `java.net.http` against the same servers, is
+[the HTTP client options note][options]; DECISIONS.md R17 records both
+dates. The rest of this note is as written on 2026-10-02.
+
 **Question.** The Java `-wasm` artifact's server engine talked to
 `aprv-server` through a hand-written HTTP/1.1 client (`HttpConn`, one
 write per request with `TCP_NODELAY`), kept because the 2026-09-25 spike
@@ -233,3 +244,4 @@ resends do not replace: those restart a child that died.
   they were not run again.
 
 [spikes]: 2026-09-25-rust-core-spikes.md
+[options]: 2026-10-02-java-http-options.md
