@@ -70,7 +70,6 @@
 
 use aprv_surface::{Environment, Failure, Reason, Verifier};
 use std::ffi::{c_char, CStr, CString};
-use std::fmt::Write as _;
 use std::sync::OnceLock;
 
 // --- status codes --------------------------------------------------------
@@ -372,34 +371,15 @@ fn into_c_string(text: Option<String>) -> *mut c_char {
     }
 }
 
-/// `text` as a JSON string literal.
-fn json_string(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if u32::from(c) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", u32::from(c));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
 /// The error document: the same two keys for a verdict and for a call
-/// mistake, so a caller has one shape to parse.
+/// mistake, so a caller has one shape to parse. `serde_json` writes the two
+/// strings; the frame stays literal because `json!` would sort the keys,
+/// putting `message` before `reason`.
 fn error_json(status: i32, message: &str) -> String {
     format!(
         "{{\"reason\":{},\"message\":{}}}",
-        json_string(status_token(status)),
-        json_string(message)
+        serde_json::Value::from(status_token(status)),
+        serde_json::Value::from(message)
     )
 }
 
@@ -924,8 +904,8 @@ mod tests {
     #[test]
     fn the_error_document_escapes_its_message() {
         assert_eq!(
-            error_json(13, "a \"b\"\\\n\u{1}"),
-            r#"{"reason":"MALFORMED","message":"a \"b\"\\\n\u0001"}"#
+            error_json(13, "a \"b\"\\\n\u{1}\t\r\u{8}\u{c}\u{1F600}"),
+            r#"{"reason":"MALFORMED","message":"a \"b\"\\\n\u0001\t\r\b\f😀"}"#
         );
     }
 

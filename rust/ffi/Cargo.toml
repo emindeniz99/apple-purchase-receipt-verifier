@@ -32,6 +32,9 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 aprv-surface = { path = "../bindings/surface" }
 aprv-wire = { path = "../bindings/wire" }
+# Writes the error document's strings; the library already reads JSON
+# with it, so the graph is unchanged.
+serde_json = "1"
 
 [dev-dependencies]
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }

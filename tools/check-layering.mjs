@@ -36,9 +36,10 @@
 // PATH; tools/test/check-layering.test.mjs plants one violation of each
 // rule in a copy of the tree and requires a failure.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const CORE = 'apple-purchase-receipt-verifier';
 const ADAPTER = 'aprv-openssl';
@@ -78,13 +79,13 @@ function usage(message) {
   process.exit(2);
 }
 
-const args = process.argv.slice(2);
-let rustDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'rust');
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--rust-dir') rustDir = args[++i] ?? usage('--rust-dir needs a directory');
-  else usage(`unknown argument ${args[i]}`);
+let args;
+try {
+  args = parseArgs({ options: { 'rust-dir': { type: 'string', default: join(dirname(fileURLToPath(import.meta.url)), '..', 'rust') } } });
+} catch (error) {
+  usage(error.message);
 }
-rustDir = resolve(rustDir);
+const rustDir = resolve(args.values['rust-dir']);
 
 const TARGETS = [
   'x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl',
@@ -204,11 +205,9 @@ function code(text) {
 
 function rustFiles(dir) {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap((entry) => {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) return rustFiles(path);
-    return path.endsWith('.rs') ? [path] : [];
-  });
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => !entry.isDirectory() && entry.name.endsWith('.rs'))
+    .map((entry) => join(entry.parentPath, entry.name));
 }
 
 /** The directories a member's shipped code lives in: its library, binaries and build script. */

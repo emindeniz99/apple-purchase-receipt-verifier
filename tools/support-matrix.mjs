@@ -19,11 +19,18 @@
 // SUPPORT-MATRIX.md tables use. Spring Boot is the one framework tracked,
 // because the java-spring-boot job runs a leg per Boot line in OSS support.
 import { readFileSync } from 'node:fs';
+import { parseArgs } from 'node:util';
 
 const products = ['dotnet', 'nodejs', 'python', 'oracle-jdk', 'go', 'ruby', 'php', 'rust', 'spring-boot'];
-const args = process.argv.slice(2);
-const check = args.includes('--check');
-const date = args.find((a) => a !== '--check');
+let args;
+try {
+  args = parseArgs({ allowPositionals: true, options: { check: { type: 'boolean' } } });
+} catch (error) {
+  console.error(`support-matrix: ${error.message}\nusage: node tools/support-matrix.mjs [--check] [YYYY-MM-DD]`);
+  process.exit(2);
+}
+const { check } = args.values;
+const [date] = args.positionals;
 const today = new Date(date ?? Date.now());
 
 // SUPPORT-MATRIX.md's headings, mapped to endoflife.date's product names.

@@ -37,6 +37,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { getRandomValues } from 'node:crypto';
 import { dirname, join } from 'node:path';
+import { parseArgs } from 'node:util';
 import { parseJsonExact, readFixture } from './lib/fixtures.mjs';
 
 const IFACE = 'aprv:verifier/verify@0.1.0#';
@@ -625,14 +626,13 @@ function usage() {
   process.exit(2);
 }
 
-const [mode, ...rest] = process.argv.slice(2);
-const opts = {};
-const pos = [];
-for (let i = 0; i < rest.length; i++) {
-  if (rest[i] === '--answers' || rest[i] === '--reference') opts[rest[i].slice(2)] = rest[++i] ?? usage();
-  else if (rest[i].startsWith('--')) usage();
-  else pos.push(rest[i]);
+let args;
+try {
+  args = parseArgs({ allowPositionals: true, options: { answers: { type: 'string' }, reference: { type: 'string' } } });
+} catch {
+  usage();
 }
+const { values: opts, positionals: [mode, ...pos] } = args;
 if (mode === 'imports' && pos.length === 1) modeImports(pos[0]);
 else if (mode === 'cases' && pos.length === 2) modeCases(pos[0], pos[1], opts.answers);
 else if (mode === 'calls' && pos.length === 2) modeCalls(pos[0], pos[1], opts.reference);

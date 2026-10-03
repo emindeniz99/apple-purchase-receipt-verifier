@@ -26,19 +26,21 @@
 // does not name that id with that class; a recorded row that now answers the
 // same is reported as stale but does not fail the run.
 import { readFileSync } from 'node:fs';
+import { parseArgs } from 'node:util';
 
-const args = process.argv.slice(2);
-const recordedPaths = [];
-for (let i = args.indexOf('--recorded'); i >= 0; i = args.indexOf('--recorded')) {
-  recordedPaths.push(args[i + 1]);
-  args.splice(i, 2);
-}
-const list = args.includes('--list');
-const files = args.filter((a) => !a.startsWith('--'));
-if (files.length !== 2) {
+function usage() {
   console.error('usage: compare.mjs <core.jsonl> <java.jsonl> [--recorded <recorded.json>] [--list]');
   process.exit(2);
 }
+let args;
+try {
+  args = parseArgs({ allowPositionals: true, options: { recorded: { type: 'string', multiple: true, default: [] }, list: { type: 'boolean' } } });
+} catch {
+  usage();
+}
+const { recorded: recordedPaths, list } = args.values;
+const files = args.positionals;
+if (files.length !== 2) usage();
 
 // Integer literals a double cannot hold stay exact (the endpoint's ids).
 const BIG = '__big__:';

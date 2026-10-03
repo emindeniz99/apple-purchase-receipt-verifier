@@ -35,6 +35,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 // The repository root the pins are read from; APRV_REPO_ROOT points the
 // tool's own tests at a fixture tree.
@@ -109,8 +110,8 @@ function extraComponents(kind, opts) {
   const out = [];
   const rustc = rustcPin();
   const rustcProps = [prop('role', 'build-tool'), prop('pinned-by', 'rust/rust-toolchain.toml')];
-  if (opts.rustcVv) {
-    const vv = readFileSync(opts.rustcVv, 'utf8');
+  if (opts['rustc-vv']) {
+    const vv = readFileSync(opts['rustc-vv'], 'utf8');
     const release = /^release:\s*(\S+)$/m.exec(vv)?.[1];
     const commit = /^commit-hash:\s*([0-9a-f]+)$/m.exec(vv)?.[1];
     if (release !== rustc) fail(`rustc -vV says release ${release}, rust/rust-toolchain.toml pins ${rustc}`);
@@ -122,7 +123,7 @@ function extraComponents(kind, opts) {
     description: 'The Rust compiler and its standard library for the target',
   });
   if (kind === 'wasm') {
-    if (!opts.wasiSdkDir) fail('--kind wasm needs --wasi-sdk-dir (wasi-libc is named from its VERSION file)');
+    if (!opts['wasi-sdk-dir']) fail('--kind wasm needs --wasi-sdk-dir (wasi-libc is named from its VERSION file)');
     const p = shellPins();
     const pinned = [prop('pinned-by', 'tools/wasm-toolchain.sh')];
     out.push(
@@ -130,8 +131,8 @@ function extraComponents(kind, opts) {
         purl: `pkg:generic/openssl@${p.openssl.version}`, sha256: p.openssl.sha256, url: p.openssl.url,
         properties: [prop('role', 'linked'), prop('hash-of', 'source tarball'), ...pinned],
         description: 'libcrypto, compiled for wasm32-wasip1 with no-asm, linked into the module' }),
-      component({ ref: 'aprv-build:wasi-libc', name: 'wasi-libc', version: wasiLibcCommit(opts.wasiSdkDir), scope: 'required',
-        purl: `pkg:github/WebAssembly/wasi-libc@${wasiLibcCommit(opts.wasiSdkDir)}`,
+      component({ ref: 'aprv-build:wasi-libc', name: 'wasi-libc', version: wasiLibcCommit(opts['wasi-sdk-dir']), scope: 'required',
+        purl: `pkg:github/WebAssembly/wasi-libc@${wasiLibcCommit(opts['wasi-sdk-dir'])}`,
         properties: [prop('role', 'linked'), prop('shipped-in', `wasi-sdk ${p.wasiSdk.version}`)],
         description: 'The C library linked into the module, as shipped in wasi-sdk (version is its commit)' }),
       component({ ref: 'aprv-build:wasi-sdk', type: 'application', name: 'wasi-sdk', version: p.wasiSdk.version, scope: 'excluded',
@@ -219,24 +220,15 @@ function check(kind, sbom, opts = {}) {
 
 // --- main ------------------------------------------------------------------------
 
-function parse(argv) {
-  const [mode, ...rest] = argv;
-  const opts = { positional: [] };
-  const names = { '--kind': 'kind', '--in': 'in', '--out': 'out', '--artifact': 'artifact', '--wasi-sdk-dir': 'wasiSdkDir', '--embedded': 'embedded', '--rustc-vv': 'rustcVv' };
-  for (let i = 0; i < rest.length; i++) {
-    if (names[rest[i]]) {
-      if (rest[i + 1] === undefined) fail(`${rest[i]} needs a value`, 2);
-      opts[names[rest[i]]] = rest[++i];
-    } else if (rest[i].startsWith('--')) {
-      fail(`unknown option ${rest[i]}`, 2);
-    } else {
-      opts.positional.push(rest[i]);
-    }
-  }
-  return { mode, opts };
+let args;
+try {
+  const names = ['kind', 'in', 'out', 'artifact', 'wasi-sdk-dir', 'embedded', 'rustc-vv'];
+  args = parseArgs({ allowPositionals: true, options: Object.fromEntries(names.map((name) => [name, { type: 'string' }])) });
+} catch (error) {
+  fail(error.message, 2);
 }
-
-const { mode, opts } = parse(process.argv.slice(2));
+const [mode, ...positional] = args.positionals;
+const opts = { ...args.values, positional };
 if (!opts.kind) fail('usage: sbom-augment.mjs augment|check --kind <wasm|server|java-wasm> ... (see the header)', 2);
 
 if (mode === 'augment') {

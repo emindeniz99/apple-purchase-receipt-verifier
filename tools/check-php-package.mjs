@@ -17,7 +17,7 @@
 // rather than against a reading of the rules.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -118,13 +118,9 @@ for (const path of required) {
 
 // Every php/src file, not just the four named above: a psr-4 root that
 // half-ships is a fatal on whichever class the consumer happens to touch.
-const srcFiles = [];
-(function walk(dir) {
-  for (const entry of readdirSync(join(repoRoot, dir), { withFileTypes: true })) {
-    if (entry.isDirectory()) walk(`${dir}/${entry.name}`);
-    else if (entry.name.endsWith('.php')) srcFiles.push(`${dir}/${entry.name}`);
-  }
-}('php/src'));
+const srcFiles = readdirSync(join(repoRoot, 'php/src'), { recursive: true, withFileTypes: true })
+  .filter((entry) => !entry.isDirectory() && entry.name.endsWith('.php'))
+  .map((entry) => relative(repoRoot, join(entry.parentPath, entry.name)).split('\\').join('/'));
 for (const path of srcFiles) {
   if (!entries.includes(path)) problems.push(`git archive is missing ${path}`);
 }

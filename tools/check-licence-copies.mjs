@@ -37,14 +37,6 @@ const COPIES = [
   { dir: 'ruby/licenses', name: nested, own: ['NOTICE'] },
 ];
 
-function* walk(dir) {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) yield* walk(path);
-    else yield path;
-  }
-}
-
 const sources = readdirSync(join(ROOT, SOURCE)).sort();
 if (sources.length === 0) {
   console.error(`check-licence-copies: ${SOURCE} is empty`);
@@ -72,7 +64,9 @@ for (const copy of COPIES) {
       bad++;
     }
   }
-  for (const path of walk(base)) {
+  for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
+    const path = join(entry.parentPath, entry.name);
+    if (!statSync(path).isFile()) continue;
     const rel = relative(base, path).split('\\').join('/');
     if (!expected.has(rel)) {
       console.log(`::error file=${copy.dir}/${rel}::not in ${SOURCE}; add it there first, or list it as this copy's own`);

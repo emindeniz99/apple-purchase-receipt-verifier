@@ -6,6 +6,7 @@
 use aprv_abi_tests::{
     artifacts, is_trap, ComponentGuest, CoreGuest, Guest, Randomness, HOST, IFACE,
 };
+use base64::Engine as _;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -40,26 +41,8 @@ fn transaction() -> Vec<u8> {
 
 fn jws_config() -> Vec<u8> {
     let root = fixture("generated/jws-root.der");
-    format!("{{\"roots\":[\"{}\"]}}", standard_base64(&root)).into_bytes()
-}
-
-fn standard_base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let n = chunk
-            .iter()
-            .enumerate()
-            .fold(0u32, |n, (i, b)| n | (u32::from(*b) << (16 - 8 * i)));
-        for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
-            out.push(if i <= chunk.len() {
-                char::from(ALPHABET[((n >> shift) & 0x3f) as usize])
-            } else {
-                '='
-            });
-        }
-    }
-    out
+    let root = base64::engine::general_purpose::STANDARD.encode(root);
+    format!("{{\"roots\":[\"{root}\"]}}").into_bytes()
 }
 
 fn now() -> u64 {

@@ -200,16 +200,6 @@ function readJson(path) {
   }
 }
 
-function walk(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...walk(full));
-    else out.push(full);
-  }
-  return out;
-}
-
 // The receipt-data / x5c base64 rule, stated independently of every port:
 // non-empty, a multiple of four, the standard alphabet followed by at most
 // two '='. Trailing bits are not checked. Returns the bytes, or null.
@@ -283,7 +273,9 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
     const dir = join(FIXTURES_DIR, tier);
     let files;
     try {
-      files = walk(dir);
+      files = readdirSync(dir, { recursive: true, withFileTypes: true })
+        .map((entry) => join(entry.parentPath, entry.name))
+        .filter((path) => statSync(path).isFile());
     } catch {
       fail(`tier "${tier}"`, `fixtures/${tier}/ does not exist`);
       continue;
