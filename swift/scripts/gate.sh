@@ -95,4 +95,5 @@ if [ "$BENCH" = true ]; then
     status=1
   fi
 fi
+echo "restore the committed module and pin: git -C \"$ROOT\" checkout -- swift/Sources/ApplePurchaseReceiptVerifier/Resources"
 exit "$status"
