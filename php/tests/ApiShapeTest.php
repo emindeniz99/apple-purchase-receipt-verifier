@@ -326,7 +326,9 @@ final class ApiShapeTest extends TestCase
         self::assertNull((new JsonPayload('{}'))->environment);
         $stated = new ReceiptPayload(receiptType: 'Xcode', environment: Environment::Production);
         self::assertSame(Environment::Production, $stated->environment, 'nothing reads receiptType');
-        self::assertArrayNotHasKey('environment', json_decode($stated->toJson(), true, 32, JSON_THROW_ON_ERROR));
+        $written = json_decode($stated->toJson(), true, 32, JSON_THROW_ON_ERROR);
+        self::assertIsArray($written);
+        self::assertArrayNotHasKey('environment', $written);
         self::assertNull((new JsonPayload('{"environment":"Sandbox"}'))->environment, 'nothing reads it from the JSON');
         self::assertSame(Environment::Sandbox, self::verifiedReceipt()->payload?->environment);
     }
