@@ -57,7 +57,8 @@ def main(path: str) -> int:
                     pool = _host.Pool(
                         runtime, config.encode("utf-8"), _POOL_SIZE, _wire.init_accepted
                     )
-                    pools[config] = pool if pool.init_answer == '{"ok":true}' else pool.init_answer
+                    accepted = _wire.init_accepted(pool.init_answer) is not None
+                    pools[config] = pool if accepted else pool.init_answer
                 pool_or_refusal = pools[config]
                 if isinstance(pool_or_refusal, str):
                     answer = {"id": row["id"], "out": pool_or_refusal}

@@ -222,7 +222,7 @@ $payload = json_decode($result->payload->json, true);
 if (($payload['bundleId'] ?? null) !== 'com.example.app') {
     return;  // step 1 of the checklist below
 }
-$environment = Environment::fromJwsEnvironment($payload['environment'] ?? null);
+$environment = $result->payload->environment;  // Environment::Production, ::Sandbox or null
 if (($payload['revocationDate'] ?? null) !== null) {
     return;  // refunded or revoked as of signing time
 }
@@ -242,7 +242,7 @@ $receipt = $result->payload;
 if ($receipt->bundleId !== 'com.example.app') {
     return;
 }
-$environment = Environment::fromReceiptType($receipt->receiptType);
+$environment = $receipt->environment;
 foreach ($receipt->inApp as $purchase) {
     if ($purchase->cancellationDateMs !== null) {
         continue;
@@ -269,11 +269,16 @@ these four things with the signed fields before granting anything:
 
 1. **Bundle id.** Compare it against your app's bundle id yourself.
    Legacy: `$receipt->bundleId`. JWS: `$payload['bundleId']`.
-2. **Environment.** `Environment::fromReceiptType($receipt->receiptType)` for
-   a legacy receipt, `Environment::fromJwsEnvironment($payload['environment'] ?? null)`
-   for a JWS payload. Decide whether you accept `Sandbox` here; both return
-   `null` for a receipt type or environment claim you don't recognise, which
-   fails closed if you require a specific `Environment`.
+2. **Environment.** `$receipt->environment` for a legacy receipt and
+   `$result->payload->environment` for a JWS payload, as the module states
+   it. A receipt's comes from `receiptType` (`Production` and
+   `ProductionVPP` are `Production`, `ProductionSandbox` and
+   `ProductionVPPSandbox` `Sandbox`); a JWS's from the first of the
+   top-level `environment` claim, a notification's `data.environment` and a
+   summary notification's `summary.environment` that is present. Decide
+   whether you accept `Sandbox` here; it is `null` for a value that names
+   neither (`Xcode`, `LocalTesting`) or none, which fails closed if you
+   require a specific `Environment`. It is not part of `toJson()`.
 3. **Product id.** Compare `productId` / `$payload['productId']` against the
    catalogue of products you actually sell: a signature proves Apple signed
    it, not that it's a product your server still grants.
@@ -428,8 +433,8 @@ every port:
 
 The public API is 0.7's: `Verifier::create`, the three verify methods,
 `Config`, `Reason`, the result and payload types. `AppleRootCerts`,
-`ConfigBuilder`, `Config::defaults()` and the payload types' JSON helpers
-are gone. What changes
+`ConfigBuilder`, `Config::defaults()`, the payload types' JSON helpers and
+the two `Environment` helpers are gone. What changes
 is what runs underneath, and what you can see of it:
 
 | 0.7 | 0.8 |
@@ -442,6 +447,7 @@ is what runs underneath, and what you can see of it:
 | `Config::defaults()` | `new Config()`, which it returned: the module's built-in Apple roots and the system clock |
 | `ReceiptPayload::idJson()`, `ReceiptPayload::attributesJson()`, `InAppPurchase::jsonValue()` (marked `@internal`) | removed from the public classes; `ReceiptPayload::toJson()` writes the same JSON |
 | `Failure::$cause` carried the parser's exception | it is set only when the wrapper produced `INTERNAL_ERROR` (the module trapped, `aprv` did not answer, the clock threw) |
+| `Environment::fromReceiptType($receipt->receiptType)`, `Environment::fromJwsEnvironment($claim)` | removed: read `ReceiptPayload::$environment` or `JsonPayload::$environment`, which the module states; a JWS's also comes from a notification's `data.environment` and `summary.environment`. Both constructors take `environment:` (default `null`) for a payload built by hand |
 | a hostile input could exhaust `memory_limit` | it cannot: the parsing is out of PHP |
 
 ## Upgrading from 0.6
@@ -546,9 +552,11 @@ The limits are the module's, fixed in every language of this library, and not
   `verifyReceiptEndpoint()`. A larger body is `Reason::TooLarge` (status 21002).
 - **JWS size** (256 KiB, 262,144 bytes): the compact JWS given to
   `verifySignedData()`. A larger JWS is `Reason::TooLarge`.
-- **Anything over 3 MiB** is cut to 3,145,729 bytes before either transport
-  sends it, the cut every Wasm wrapper of this library makes, so the module
-  still refuses it for its size; `aprv` returns that answer with exit status
+- **Anything over 3 MiB** is cut to the module's `max_input_bytes` before
+  either transport sends it (3,145,729 bytes, one over the cap, which
+  `aprv info` and `GET /v1/info` report under `limits`; the package keeps no
+  copy of the number), the cut every Wasm wrapper of this library makes, so
+  the module still refuses it for its size; `aprv` returns that answer with exit status
   3 or HTTP 413, and the façade reads it like any other.
 - **ASN.1 nesting depth 32**, **10 embedded certificates**, **4 SignerInfos**
   and **six certificates below the anchor**: the module checks them before

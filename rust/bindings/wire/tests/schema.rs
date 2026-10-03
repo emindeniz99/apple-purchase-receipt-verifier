@@ -236,9 +236,13 @@ fn every_expected_value_in_the_shared_cases_fits_the_schemas() {
     for case in cases.cases() {
         let id = case["id"].as_str().expect("id");
         let expected = &case["expected"];
-        // A receipt's pinned toJson value, as the payload of a verified answer.
+        // A receipt's pinned toJson value and environment, as a verified
+        // answer.
         if let Some(to_json) = expected["toJson"].as_str() {
-            let answer = format!("{{\"verified\":true,\"payload\":{to_json}}}");
+            let environment = &expected["environment"];
+            let answer = format!(
+                "{{\"verified\":true,\"payload\":{to_json},\"environment\":{environment}}}"
+            );
             check(&receipt_schema, SCHEMAS[0], id, &answer);
             payloads += 1;
         }
@@ -279,7 +283,7 @@ fn every_expected_value_in_the_shared_cases_fits_the_schemas() {
 #[test]
 fn a_planted_wrong_type_fails_every_rule() {
     let receipt = r#"{"receipt_type":"ProductionSandbox","app_item_id":"0","bundle_id":"a","bundle_id_bytes":"DAFh","application_version":"1","opaque_value":"AQ==","sha1_hash":"AQI=","receipt_creation_date_ms":1722945600000,"download_id":"-5","version_external_identifier":null,"in_app":[{"quantity":1,"product_id":"p","transaction_id":"1","purchase_date_ms":1000,"original_transaction_id":"1","original_purchase_date_ms":null,"expires_date_ms":null,"web_order_line_item_id":"0","cancellation_date_ms":null,"is_trial_period":false,"is_in_intro_offer_period":null,"unknown_attributes":{}}],"original_purchase_date_ms":null,"original_application_version":null,"expiration_date_ms":null,"unknown_attributes":{"13":["AA=="]}}"#;
-    let good = format!("{{\"verified\":true,\"payload\":{receipt}}}");
+    let good = format!("{{\"verified\":true,\"payload\":{receipt},\"environment\":\"Sandbox\"}}");
     let receipt_schema = validator(SCHEMAS[0]);
     check(&receipt_schema, SCHEMAS[0], "the control", &good);
     let plants = [
@@ -316,6 +320,9 @@ fn a_planted_wrong_type_fails_every_rule() {
             "\"unknown_attributes\":{\"42949672950\":",
         ),
         ("\"version_external_identifier\":null,", ""),
+        (",\"environment\":\"Sandbox\"", ""),
+        ("\"environment\":\"Sandbox\"", "\"environment\":\"sandbox\""),
+        ("\"environment\":\"Sandbox\"", "\"environment\":\"Xcode\""),
         ("\"bundle_id\":\"a\"", "\"bundle_id\":\"a\",\"adam_id\":0"),
     ];
     for (from, to) in plants {
@@ -347,8 +354,17 @@ fn a_planted_wrong_type_fails_every_rule() {
         assert!(!receipt_schema.is_valid(&planted), "{planted}");
         assert!(!jws_schema.is_valid(&planted), "{planted}");
     }
-    assert!(jws_schema.is_valid(&json!({"verified": true, "payload": "{}"})));
-    assert!(!jws_schema.is_valid(&json!({"verified": true, "payload": {}})));
+    for environment in [json!("Production"), json!("Sandbox"), Value::Null] {
+        assert!(jws_schema
+            .is_valid(&json!({"verified": true, "payload": "{}", "environment": environment})));
+    }
+    for planted in [
+        json!({"verified": true, "payload": {}, "environment": null}),
+        json!({"verified": true, "payload": "{}"}),
+        json!({"verified": true, "payload": "{}", "environment": "LocalTesting"}),
+    ] {
+        assert!(!jws_schema.is_valid(&planted), "{planted}");
+    }
     let config = validator(SCHEMAS[2]);
     assert!(config.is_valid(&json!({})) && config.is_valid(&json!({"roots": ["AQID"]})));
     for planted in [
@@ -361,12 +377,17 @@ fn a_planted_wrong_type_fails_every_rule() {
     }
     let init = validator(SCHEMAS[3]);
     assert!(
-        init.is_valid(&json!({"ok": true})) && init.is_valid(&json!({"ok": false, "message": "m"}))
+        init.is_valid(&json!({"ok": true, "max_input_bytes": 3_145_729}))
+            && init.is_valid(&json!({"ok": false, "message": "m"}))
     );
     for planted in [
         json!({"ok": false}),
-        json!({"ok": true, "message": "m"}),
-        json!({"ok": "true"}),
+        json!({"ok": true}),
+        json!({"ok": true, "max_input_bytes": "3145729"}),
+        json!({"ok": true, "max_input_bytes": 0}),
+        json!({"ok": true, "max_input_bytes": 3_145_729, "message": "m"}),
+        json!({"ok": false, "max_input_bytes": 3_145_729, "message": "m"}),
+        json!({"ok": "true", "max_input_bytes": 3_145_729}),
     ] {
         assert!(!init.is_valid(&planted), "{planted}");
     }

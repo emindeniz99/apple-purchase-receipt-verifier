@@ -44,7 +44,11 @@ final class FakeCli
     public function log(): array
     {
         $entries = [];
-        foreach (file($this->directory . '/log.jsonl', FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+        $log = $this->directory . '/log.jsonl';
+        if (!is_file($log)) {
+            return $entries; // the fake never ran
+        }
+        foreach (file($log, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
             /** @var array{argv: list<string>, stdin_length: int, stdin_sha256: string, roots_file: string|null, roots_file_mode: string|null, roots_file_content: string|null} $entry */
             $entry = json_decode($line, true, 8, JSON_THROW_ON_ERROR);
             $entries[] = $entry;

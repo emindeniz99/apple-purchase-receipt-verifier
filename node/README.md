@@ -149,7 +149,7 @@ certificate is a `TypeError` from `createVerifier`.
 | Method | Input | Result |
 |---|---|---|
 | `verifyReceipt(base64)` | the base64 receipt an app sends | `VerificationResult<ReceiptPayload>` |
-| `verifySignedData(jws)` | any Apple-signed compact JWS | `VerificationResult<JsonPayload>`: `{ json }`, the signed JSON text |
+| `verifySignedData(jws)` | any Apple-signed compact JWS | `VerificationResult<JsonPayload>`: `{ json, environment }`, the signed JSON text and the environment it names |
 | `verifyReceiptEndpoint(environment, requestJson)` | a `verifyReceipt` request body | Apple's response body, as a JSON string, always |
 
 `VerificationResult<T>` is `{ verified: true, payload: T } | { verified:
@@ -178,8 +178,20 @@ payload.receiptCreationDateMs;
 payload.inApp[0].productId;
 payload.inApp[0].expiresDateMs;
 payload.unknownAttributes;         // Map<number, Uint8Array[]>, by attribute type
+payload.environment;               // Environment.PRODUCTION, Environment.SANDBOX or null
 payload.toJson();                  // JSON with the same value in every port
 ```
+
+`environment` is the environment `receiptType` names, as the module states
+it: `Production` and `ProductionVPP` are `Environment.PRODUCTION`,
+`ProductionSandbox` and `ProductionVPPSandbox` `Environment.SANDBOX`, and
+anything else (`Xcode`, a missing value) `null`. A JWS payload's
+`environment` comes from the first of the top-level `environment` claim, a
+notification's `data.environment` and a summary notification's
+`summary.environment` that is present: `Production`, `Sandbox`, or `null`
+for anything else (`Xcode`, `LocalTesting`) or none. It is not part of
+`toJson()`. `createReceiptPayload` and `createJsonPayload(json,
+environment)` take it as given, `null` when left out.
 
 The first occurrence of an attribute wins. Every attribute that does not
 end up in a typed field (a later copy, or a value that does not decode,
@@ -225,8 +237,13 @@ if (result.payload.bundleId !== 'com.example.app') {
 }
 ```
 
-For a JWS, read the claims off `JSON.parse(result.payload.json)`:
-`bundleId`, `environment`, `appAppleId` for a Production `AppTransaction`,
+**The environment** is `result.payload.environment` for a receipt and a JWS
+alike. Decide whether to accept `Environment.SANDBOX` at all, and scope what
+you grant from it: TestFlight, including public-link installs, buys in
+sandbox for free, and App Review runs production builds against sandbox.
+
+For a JWS, read the other claims off `JSON.parse(result.payload.json)`:
+`bundleId`, `appAppleId` for a Production `AppTransaction`,
 `revocationDate`, `expiresDate`, and `signedDate` for freshness. Apple's own
 [`app-store-server-library`](https://github.com/apple/app-store-server-library-node)
 publishes typed decoder classes for the transaction, renewal and
@@ -312,9 +329,11 @@ fixed, the same in every package of this library, and not options:
   reads without building it, so only the size caps bound a request body or
   a JWS header (docs/rust-core/DECISIONS.md R40).
 
-The package copies at most 3,145,729 bytes of an input into the module
-(one over the largest cap), so an oversized input costs no more module
-memory than that and still gets the module's own `TOO_LARGE`.
+The package copies at most as many bytes of an input into the module as the
+module's `init` answer states (`max_input_bytes`, one over the largest cap:
+3,145,729 today), so an oversized input costs no more module memory than
+that and still gets the module's own `TOO_LARGE`. The package keeps no copy
+of the number.
 
 `receipt-data` must be standard base64 with canonical `=` padding and
 nothing else, as Apple's `verifyReceipt` accepts it. `x5c` entries are
@@ -388,6 +407,8 @@ The API is 0.7's, with these differences:
 | `decodeReceiptBase64`, `decodeX5cEntry` | removed: the module decodes base64 |
 | `VerificationError`, exported but never thrown | removed: a failure is the `failure` of the result; match on `failure.reason` |
 | `unknownAttributes` in receipt order across types | ordered by type; each type's values keep receipt order |
+| `environmentFromReceiptType(receipt.receiptType)`, `environmentFromJwsEnvironment(claim)` | removed: read `payload.environment` on a `ReceiptPayload` or a `JsonPayload`. A JWS's also reads a notification's `data.environment` and `summary.environment` |
+| `createJsonPayload(json)` gives `{ json }` | `{ json, environment }`; pass the environment as a second argument, `null` when left out |
 | Fastly Compute and Akamai EdgeWorkers | not supported |
 | Deno with `--allow-read` | Deno with `--allow-read --allow-env=JCO_DEBUG` |
 

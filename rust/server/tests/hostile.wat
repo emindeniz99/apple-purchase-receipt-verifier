@@ -1,8 +1,8 @@
 ;; A component with aprv.wasm's interface whose operations misbehave:
-;; init answers {"ok":true}; verify-receipt loops forever; verify-signed-data
-;; grows memory by 16,384 pages (1 GiB); verify-receipt-endpoint returns
-;; bytes that are not UTF-8 as its string; and with env 1 asks the host
-;; for 1 GiB of random bytes first.
+;; init answers {"ok":true,"max_input_bytes":3145729}; verify-receipt loops
+;; forever; verify-signed-data grows memory by 16,384 pages (1 GiB);
+;; verify-receipt-endpoint returns bytes that are not UTF-8 as its string;
+;; and with env 1 asks the host for 1 GiB of random bytes first.
 ;; Used by src/tests.rs (in process) and scripts/hostile-smoke.sh (a real
 ;; server process). Component text format; wasm-tools parse builds it.
 (component
@@ -24,20 +24,20 @@
   (core module $m
     (import "libc" "memory" (memory 1))
     (import "host" "random-get" (func $random (param i32 i32)))
-    (data (i32.const 16) "{\22ok\22:true}")
+    (data (i32.const 16) "{\22ok\22:true,\22max_input_bytes\22:3145729}")
     (data (i32.const 64) "\ff\fe")
     (func $ret (param $p i32) (param $l i32) (result i32)
       (i32.store (i32.const 0) (local.get $p))
       (i32.store (i32.const 4) (local.get $l))
       (i32.const 0))
     (func (export "init") (param i32 i32) (result i32)
-      (call $ret (i32.const 16) (i32.const 11)))
+      (call $ret (i32.const 16) (i32.const 37)))
     (func (export "verify-receipt") (param i64 i32 i32) (result i32)
       (loop $l (br $l))
       (unreachable))
     (func (export "verify-signed-data") (param i64 i32 i32) (result i32)
       (drop (memory.grow (i32.const 16384)))
-      (call $ret (i32.const 16) (i32.const 11)))
+      (call $ret (i32.const 16) (i32.const 37)))
     (func (export "verify-receipt-endpoint") (param i32 i64 i32 i32) (result i32)
       (if (i32.eq (local.get 0) (i32.const 1))
         (then (call $random (i32.const 0x40000000) (i32.const 8))))

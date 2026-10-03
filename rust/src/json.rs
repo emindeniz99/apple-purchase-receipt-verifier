@@ -1,5 +1,7 @@
 //! The three documents this crate reads as JSON (a JWS header, a JWS
-//! payload and the endpoint's request body), read by `serde_json`.
+//! payload and the endpoint's request body), read by `serde_json`. Inside
+//! a payload, the members of `data` and `summary` are read the same way,
+//! for the environment.
 //!
 //! None of them is behind a signature when it is read. Each is read into a
 //! map from member name to the member's raw text, so a value nobody asks

@@ -37,10 +37,14 @@ module ApplePurchaseReceiptVerifier
     # table per Store.
     LIMITS = { memory_size: 256 * 1024 * 1024, instances: 1, memories: 1, tables: 1 }.freeze
 
-    # The most an input contributes to linear memory: one byte over the
-    # largest cap the module knows (3,145,728), so the module itself answers
-    # TOO_LARGE for anything longer and no bigger copy is ever made.
-    MAX_INPUT_BYTES = 3_145_729
+    # The most bytes of one input this instance is handed: the
+    # `max_input_bytes` its `init` answer stated (docs/rust-core/DECISIONS.md
+    # R42), one over the largest cap the module knows, so the module itself
+    # answers TOO_LARGE for anything longer and no bigger copy is ever made.
+    # nil until `init` has answered, and an input is then passed whole.
+    #
+    # @return [Integer, nil]
+    attr_reader :max_input_bytes
 
     # @param runtime [Runtime]
     # @param config_json [String, nil] `init`'s argument,
@@ -48,9 +52,11 @@ module ApplePurchaseReceiptVerifier
     #   the module does before it)
     # @raise [AbiMismatchError] the module lacks the exports this wrapper binds
     # @raise [RootsRejected] `init` refused the configuration
-    # @raise [TrapError] the module trapped, or failed, while starting
+    # @raise [TrapError] the module trapped, or failed, while starting, or
+    #   `init`'s answer states no input length
     def initialize(runtime, config_json)
       @broken = false
+      @max_input_bytes = nil
       @store = Wasmtime::Store.new(runtime.engine, limits: LIMITS)
       exports = instantiate(runtime)
       @memory = exports.fetch("memory").to_memory
@@ -85,7 +91,7 @@ module ApplePurchaseReceiptVerifier
     # @param scalars [Array<Integer>] the operation's `u32` and `u64`
     #   parameters, in declaration order
     # @param input [String] the `list<u8>` parameter's bytes; at most
-    #   {MAX_INPUT_BYTES} of them are passed on
+    #   {#max_input_bytes} of them are passed on
     # @return [String] the operation's `string` result, UTF-8
     # @raise [TrapError] the call trapped or failed; the instance is broken
     def call(name, scalars, input)
@@ -93,7 +99,8 @@ module ApplePurchaseReceiptVerifier
 
       function, post_return = @operations.fetch(name)
       bytes = input.b
-      bytes = bytes.byteslice(0, MAX_INPUT_BYTES) || bytes if bytes.bytesize > MAX_INPUT_BYTES
+      max = @max_input_bytes
+      bytes = bytes.byteslice(0, max) || bytes if max && bytes.bytesize > max
       pointer = lower(bytes)
       retptr = function.call(*scalars, pointer, bytes.bytesize) & 0xFFFFFFFF
       out = lift(retptr)
@@ -126,13 +133,14 @@ module ApplePurchaseReceiptVerifier
             "and exports #{exports.keys.grep(/#/).sort.join(", ")}"
     end
 
+    # `init`, and the input length its answer states. Every instance runs
+    # the one compiled module, so each states the same number; it is read
+    # from this instance's own answer rather than assumed.
     def start(config_json)
-      answer = call("init", [], config_json)
-      status = Wire.init_status(answer)
-      return if status.nil?
-
+      @max_input_bytes = Wire.init_answer(call("init", [], config_json))
+    rescue RootsRejected, TrapError
       discard
-      raise RootsRejected, status
+      raise
     end
 
     def discard

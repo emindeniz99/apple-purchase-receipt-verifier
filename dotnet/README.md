@@ -148,8 +148,16 @@ payload.ReceiptCreationDateMs;
 payload.InApp[0].ProductId;
 payload.InApp[0].ExpiresDateMs;
 payload.UnknownAttributes;         // IReadOnlyDictionary<int, IReadOnlyList<byte[]>> in receipt order
-payload.ToJson();                  // JSON with the same value in every port
+payload.Environment;               // AppleEnvironment.Production, .Sandbox, or null (an Xcode receipt)
+payload.ToJson();                  // JSON with the same value in every port; Environment is not in it
 ```
+
+`Environment` is the environment the verifier read from `receipt_type`:
+`Production` and `ProductionVPP` are `Production`, `ProductionSandbox` and
+`ProductionVPPSandbox` are `Sandbox`, anything else is `null`. A
+`JsonPayload` has an `Environment` too, read from the first of the
+top-level `environment` claim, a notification's `data.environment` and a
+summary notification's `summary.environment` that is present.
 
 Decoding follows the rules every port shares: the first occurrence of an
 attribute wins; every attribute that does not end up in a typed field (a
@@ -209,8 +217,10 @@ declares — this library ships no typed claim models, since .NET (like Go,
 Rust, Ruby and PHP among the other ports) has no
 [`app-store-server-library`](https://github.com/apple/app-store-server-library-dotnet)
 of its own to lean on here; if you already depend on one, that package's
-types are exactly what to deserialize into. Read `bundleId`, `environment`,
-`appAppleId` for a Production `AppTransaction`, `revocationDate`,
+types are exactly what to deserialize into. Read `result.Payload.Environment`
+(`AppleEnvironment.Production`, `.Sandbox`, or `null` for an `Xcode` or
+`LocalTesting` payload), and `bundleId`, `appAppleId` for a Production
+`AppTransaction`, `revocationDate`,
 `expiresDate`, and `signedDate` for freshness. No payload is rejected for
 its age, as in Apple's own libraries: the right limit depends on the
 endpoint (Apple retries a server notification for days), so apply one
@@ -416,7 +426,7 @@ and `-- --worst-case` for the hostile cases on your own hardware.
   `InvalidOperationException`. The module imports exactly one function,
   `random-get`, answered from `RandomNumberGenerator`; anything else it asks
   for is refused.
-- **Input cap.** At most 3,145,729 bytes of an input (one over the largest cap) are copied into the module's memory; the core decides every cap on the length, so a longer input gets the `TooLarge` answer (21002 at the endpoint) it would get whole.
+- **Input cap.** At most the number of bytes the module's `init` answer states (`max_input_bytes`, 3,145,729 today: one over the largest cap) of an input are copied into the module's memory; the core decides every cap on the length, so a longer input gets the `TooLarge` answer (21002 at the endpoint) it would get whole. The number is the module's, read from each instance; the package keeps no copy of it.
 - **Instances.** One compiled module per process. Each `IVerifier` owns a
   small pool of instances, each in a `Store` of its own limited to one
   instance and 256 MiB of linear memory. A call takes an idle instance or a
@@ -502,7 +512,8 @@ re-stringify it.
 `AppleStatus` holds these (and the codes Apple's own servers can return,
 which this local stand-in never produces) as named `int` constants. Local
 21007 / 21008 routing fails closed: only receipt types `Production` and
-`ProductionVPP` count as production (`AppleEnvironments.FromReceiptType`).
+`ProductionVPP` count as production (what `ReceiptPayload.Environment`
+states as `AppleEnvironment.Production`).
 Like Apple's endpoint, this does **not** check the bundle id: compare
 `receipt.bundle_id` in the response before granting anything. `password`
 and `exclude-old-transactions` are accepted for wire compatibility and
@@ -544,9 +555,10 @@ for how it differs from Apple's official libraries.
 
 ## Upgrading from 0.7
 
-The API is unchanged but for `AppleRootCertificates`, which is gone, and
-`Config`, which is now built with its constructor alone; what runs under
-it is not.
+The API is unchanged but for `AppleRootCertificates` and
+`AppleEnvironments`, which are gone, the payloads, which state their
+environment, and `Config`, which is now built with its constructor alone;
+what runs under it is not.
 
 | 0.7 | 0.8 |
 |---|---|
@@ -562,6 +574,8 @@ it is not.
 | `Verifier.Create` takes microseconds | the first one in a process compiles the module, about a second on an idle machine and several under load |
 | any platform .NET runs on | the platforms Wasmtime ships a native library for; no Alpine, no 32-bit |
 | SHA-224 receipts could not be verified | the module decides which algorithms verify |
+| `AppleEnvironments.FromReceiptType(payload.ReceiptType)` and `AppleEnvironments.FromJwsEnvironment(claim)` | `payload.Environment` on a `ReceiptPayload` or a `JsonPayload`, which the verifier states; `AppleEnvironments` is gone |
+| `new ReceiptPayload(..., unknownAttributes)` and `JsonPayload.Create(json)` | each takes the environment as its last argument: `new ReceiptPayload(..., unknownAttributes, environment)`, `JsonPayload.Create(json, environment)` |
 
 ## Upgrading from 0.6
 

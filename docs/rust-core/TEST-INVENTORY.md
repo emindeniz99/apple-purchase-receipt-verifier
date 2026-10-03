@@ -514,7 +514,7 @@ and `-second`.
 | Rust | `rust/tests/allocation.rs` `verification_allocates_a_bounded_multiple_of_the_input` | same fixture as `receipt/verify-genuine-legacy-sha1-chain` |
 | Rust | `rust/tests/api.rs` `every_reason_spells_the_canonical_token` | input built in code: stays with the Rust |
 | Rust | `rust/tests/api.rs` `reason_round_trips_through_from_str_and_display` | input built in code: stays with the Rust |
-| Rust | `rust/tests/api.rs` `environment_helpers_state_what_apples_strings_mean` | input built in code: stays with the Rust |
+| Rust | `rust/tests/api.rs` `a_payload_states_the_environment_apples_value_names` (was `environment_helpers_state_what_apples_strings_mean`; the helpers left the public API in R42) | input built in code: stays with the Rust; the rule itself is pinned by every ok case's `expected.environment` and the `signed-data/environment-*` cases |
 | Rust | `rust/tests/api.rs` `apple_status_names_every_documented_code` | input built in code: stays with the Rust |
 | Rust | `rust/tests/api.rs` `version_is_the_manifest_version` | input built in code: stays with the Rust |
 | Rust | `rust/tests/api.rs` `a_failure_displays_as_reason_colon_message_and_carries_its_source` | same fixture as `receipt/unreadable-payload-under-a-valid-signature` |
@@ -954,7 +954,7 @@ and `-second`.
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/VerifierApiTest.java` `toJsonOfAVerifiedReceiptMatchesItsGetters` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/VerifierApiTest.java` `bytesAndUnknownAttributesAreCopiedInAndOut` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/VerifierApiTest.java` `theModelsCompareByValue` | input built in code: stays with the Java |
-| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/VerifierApiTest.java` `environmentMapsApplesValuesAndDecidesNothing` | input built in code: stays with the Java |
+| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/VerifierApiTest.java` `environmentMapsApplesValuesAndDecidesNothing` | input built in code: stays with the Java (since R42 it tests the implementation's rule, `ReceiptDecoder.environment` and `JwsCore.jwsEnvironment`, and that the public enum has none) |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/VerifierApiTest.java` `appleStatusNamesApplesCodes` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/VerifierApiTest.java` `theVersionConstantIsThePomVersion` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/VerifierApiTest.java` `aClassWhoseStaticStateFailsFailsConstructionWithTheDependencyFloor` | input built in code: stays with the Java |

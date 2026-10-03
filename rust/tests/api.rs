@@ -53,7 +53,7 @@ fn reason_round_trips_through_from_str_and_display() {
 }
 
 #[test]
-fn environment_helpers_state_what_apples_strings_mean() {
+fn a_payload_states_the_environment_apples_value_names() {
     assert_eq!(Environment::Production.as_str(), "Production");
     assert_eq!(Environment::Sandbox.as_str(), "Sandbox");
     for (receipt_type, expected) in [
@@ -66,25 +66,32 @@ fn environment_helpers_state_what_apples_strings_mean() {
         (Some(""), None),
         (None, None),
     ] {
-        assert_eq!(
-            Environment::from_receipt_type(receipt_type),
-            expected,
-            "{receipt_type:?}"
-        );
+        let receipt = ReceiptPayload {
+            receipt_type: receipt_type.map(str::to_owned),
+            ..ReceiptPayload::default()
+        };
+        assert_eq!(receipt.environment(), expected, "{receipt_type:?}");
     }
-    for (claim, expected) in [
-        (Some("Production"), Some(Environment::Production)),
-        (Some("Sandbox"), Some(Environment::Sandbox)),
-        (Some("Xcode"), None),
-        (Some("LocalTesting"), None),
-        (Some("ProductionSandbox"), None),
-        (None, None),
+    for (json, expected) in [
+        (
+            r#"{"environment":"Production"}"#,
+            Some(Environment::Production),
+        ),
+        (r#"{"environment":"Sandbox"}"#, Some(Environment::Sandbox)),
+        (r#"{"environment":"Xcode"}"#, None),
+        (r#"{"environment":"LocalTesting"}"#, None),
+        (r#"{"environment":"ProductionSandbox"}"#, None),
+        (
+            r#"{"data":{"environment":"Sandbox"}}"#,
+            Some(Environment::Sandbox),
+        ),
+        (
+            r#"{"summary":{"environment":"Production"}}"#,
+            Some(Environment::Production),
+        ),
+        ("{}", None),
     ] {
-        assert_eq!(
-            Environment::from_jws_environment(claim),
-            expected,
-            "{claim:?}"
-        );
+        assert_eq!(JsonPayload::new(json).environment(), expected, "{json}");
     }
 }
 

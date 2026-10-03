@@ -346,6 +346,12 @@ function defineTargetTests(name, build, async_) {
       true,
       `expected ok but failed: ${result.failure && result.failure.reason}`,
     );
+    assert.ok(
+      Object.hasOwn(kase.expected, 'environment'),
+      'harness error: an ok case states its environment',
+    );
+    // The module's member beside the payload: Production, Sandbox or null.
+    assert.strictEqual(result.payload.environment, kase.expected.environment, 'environment');
     const json = kase.operation === 'verifyReceipt' ? result.payload.toJson() : result.payload.json;
     const doc = parseWithBigInts(json);
     if (kase.expected.toJson !== undefined) {

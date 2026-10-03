@@ -1,11 +1,11 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import org.jspecify.annotations.Nullable;
-
 /**
- * Apple's two App Store environments, and the two verifyReceipt URLs
- * {@link Verifier#verifyReceiptEndpoint} imitates. The helpers state what an
- * Apple value means; whether to accept an environment is the caller's
+ * Apple's two App Store environments: the environment a verified receipt or
+ * JWS names ({@link ReceiptPayload#environment()},
+ * {@link JsonPayload#environment()}), and the two verifyReceipt URLs
+ * {@link Verifier#verifyReceiptEndpoint} imitates. The verifier states what
+ * Apple's value means; whether to accept an environment is the caller's
  * decision.
  */
 public enum Environment {
@@ -23,37 +23,5 @@ public enum Environment {
     /** The {@code environment} string of a verifyReceipt response. */
     String value() {
         return value;
-    }
-
-    /**
-     * Maps a receipt's {@code receipt_type} (attribute 0):
-     * {@code Production} and {@code ProductionVPP} to {@link #PRODUCTION},
-     * {@code ProductionSandbox} and {@code ProductionVPPSandbox} to
-     * {@link #SANDBOX}, anything else, a missing value included, to
-     * {@code null}. The endpoint uses the same rule for 21007 and 21008.
-     */
-    public static @Nullable Environment fromReceiptType(@Nullable String receiptType) {
-        if ("Production".equals(receiptType) || "ProductionVPP".equals(receiptType)) {
-            return PRODUCTION;
-        }
-        if ("ProductionSandbox".equals(receiptType) || "ProductionVPPSandbox".equals(receiptType)) {
-            return SANDBOX;
-        }
-        return null;
-    }
-
-    /**
-     * Maps a JWS {@code environment} claim: {@code Production} to
-     * {@link #PRODUCTION}, {@code Sandbox} to {@link #SANDBOX}, anything else
-     * ({@code Xcode}, {@code LocalTesting}, a missing claim) to {@code null}.
-     */
-    public static @Nullable Environment fromJwsEnvironment(@Nullable String environment) {
-        if ("Production".equals(environment)) {
-            return PRODUCTION;
-        }
-        if ("Sandbox".equals(environment)) {
-            return SANDBOX;
-        }
-        return null;
     }
 }

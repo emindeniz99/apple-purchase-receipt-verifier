@@ -53,11 +53,19 @@ final class HttpTransportTest extends TestCase
      *
      * @return array<string, mixed>
      */
-    private static function info(string $source = 'defaults', array $fingerprints = [], string $abi = 'aprv:verifier@0.1.0'): array
-    {
+    private static function info(
+        string $source = 'defaults',
+        array $fingerprints = [],
+        string $abi = 'aprv:verifier@0.1.0',
+        mixed $maxInputBytes = 3145729,
+    ): array {
         return [
             'status' => 200,
-            'body' => json_encode(['abi' => $abi, 'roots' => ['source' => $source, 'sha256' => $fingerprints]], JSON_THROW_ON_ERROR),
+            'body' => json_encode([
+                'abi' => $abi,
+                'limits' => ['max_input_bytes' => $maxInputBytes],
+                'roots' => ['source' => $source, 'sha256' => $fingerprints],
+            ], JSON_THROW_ON_ERROR),
         ];
     }
 
@@ -106,10 +114,11 @@ final class HttpTransportTest extends TestCase
     }
 
     /**
-     * An input over the cap is sent cut to one byte over it, the cut every
-     * Wasm wrapper makes: the server reads no more of a body announced past
-     * its drain limit and closes after its answer. An input at the cap is
-     * sent whole.
+     * An input over the cap is sent cut to one byte over it, the
+     * `limits.max_input_bytes` `GET /v1/info` stated and the cut every Wasm
+     * wrapper makes: the server reads no more of a body announced past its
+     * drain limit and closes after its answer. An input at the cap is sent
+     * whole.
      */
     public function testAnInputOverTheCapIsSentCutToOneByteOverIt(): void
     {
@@ -127,6 +136,34 @@ final class HttpTransportTest extends TestCase
         $transport->call(Operation::Receipt, $atCap, 1);
         $request = $server->requests()[count($server->requests()) - 1];
         self::assertSame(hash('sha256', $atCap), $request['body_sha256'], 'an input at the cap is sent whole');
+    }
+
+    public function testTheCutIsTheLengthTheServerStatedNotAConstant(): void
+    {
+        $info = self::info('defaults', [], 'aprv:verifier@0.1.0', 5);
+        $server = $this->server([self::INFO_PATH => $info, 'default' => ['status' => 200, 'body' => '{}']]);
+        $transport = new HttpTransport($server->url);
+        $transport->open(null);
+
+        $transport->call(Operation::SignedData, 'abcdefgh', 1);
+        $request = $server->requests()[count($server->requests()) - 1];
+        self::assertSame(5, $request['body_length']);
+        self::assertSame(hash('sha256', 'abcde'), $request['body_sha256']);
+    }
+
+    /** A server that states no input length is older than this package: create refuses it. */
+    public function testAServerThatStatesNoInputLengthFailsCreate(): void
+    {
+        foreach ([null, 0, -1, '3145729', 1.5] as $stated) {
+            $server = $this->server([self::INFO_PATH => self::info('defaults', [], 'aprv:verifier@0.1.0', $stated)]);
+            try {
+                (new HttpTransport($server->url))->open(null);
+                self::fail('create must refuse a server stating ' . json_encode($stated));
+            } catch (RuntimeException $e) {
+                self::assertStringContainsString('max_input_bytes', $e->getMessage());
+            }
+            $server->stop();
+        }
     }
 
     public function testNoTokenHeaderIsSentWithoutAToken(): void
@@ -299,7 +336,11 @@ final class HttpTransportTest extends TestCase
         yield 'one root fewer on the server' => [[$a, $b], self::info('configured', [$fa]), false];
         yield 'one root more on the server' => [[$a], self::info('configured', [$fa, $fb]), false];
         yield 'another root' => [[$a], self::info('configured', [$fb]), false];
-        yield 'a server that reports no roots' => [[$a], ['status' => 200, 'body' => '{"abi":"aprv:verifier@0.1.0"}'], false];
+        yield 'a server that reports no roots' => [
+            [$a],
+            ['status' => 200, 'body' => '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":3145729}}'],
+            false,
+        ];
     }
 
     /**
@@ -335,6 +376,24 @@ final class HttpTransportTest extends TestCase
 
         $this->expectException(LogicException::class);
         $transport->open(null);
+    }
+
+    /**
+     * The input length comes from `GET /v1/info` in open(): a call before it
+     * would send an empty body and get the module's MALFORMED back as if the
+     * caller had sent an empty receipt.
+     */
+    public function testACallBeforeOpenIsALogicErrorAndSendsNothing(): void
+    {
+        $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
+        $transport = new HttpTransport($server->url);
+        try {
+            $transport->call(Operation::Receipt, 'MIIT', 1);
+            self::fail('call() before open() must throw');
+        } catch (LogicException $e) {
+            self::assertStringContainsString('open()', $e->getMessage());
+        }
+        self::assertSame([], $server->requests());
     }
 
     /** @return iterable<string, array{string, string|null}> */

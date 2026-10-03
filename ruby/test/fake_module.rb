@@ -23,11 +23,12 @@ require "json"
 #     env 0: {"status":21007}, env 1: {"status":0}, any other env: a trap;
 #     input "t": a trap; input "c": as above for now-ms; else as env says
 #   init
-#     `{"ok":true}`, except a root whose base64 starts with "X" (`ok:false`);
-#     a second init, and any verify before init, trap
+#     `{"ok":true,"max_input_bytes":3145729}` (or the answer `wat(init:)`
+#     names), except a root whose base64 starts with "X" (`ok:false`); a
+#     second init, and any verify before init, trap
 module FakeModule
   ANSWERS = {
-    ok: '{"ok":true}',
+    ok: '{"ok":true,"max_input_bytes":3145729}',
     refused: '{"ok":false,"message":"root 0 is not a certificate"}',
     receipt: JSON.generate(
       "verified" => true,
@@ -47,9 +48,11 @@ module FakeModule
         }],
         "original_purchase_date_ms" => nil, "original_application_version" => "1.0",
         "expiration_date_ms" => nil, "unknown_attributes" => { "13" => ["BAU=", "Bg=="] }
-      }
+      },
+      "environment" => "Sandbox"
     ),
-    jws: JSON.generate("verified" => true, "payload" => '{"bundleId":"com.example.app","signedDate":1}'),
+    jws: JSON.generate("verified" => true, "payload" => '{"bundleId":"com.example.app","signedDate":1}',
+                       "environment" => nil),
     chain: '{"verified":false,"reason":"UNTRUSTED_CHAIN",' \
            '"message":"the chain does not reach a pinned root"}',
     malformed: '{"verified":false,"reason":"MALFORMED","message":"receipt-data is not valid base64"}',
@@ -67,11 +70,12 @@ module FakeModule
     # @param import [String, nil] an extra import declaration, to test that
     #   the wrapper refuses one
     # @param abi [String] the version in the export names
+    # @param init [String] what an accepting `init` answers
     # @return [String] WAT text; Wasmtime compiles it directly
-    def wat(import: nil, abi: "0.1.0")
+    def wat(import: nil, abi: "0.1.0", init: ANSWERS[:ok])
       offsets = {}
       cursor = 64
-      data = ANSWERS.map do |name, text|
+      data = ANSWERS.merge(ok: init).map do |name, text|
         offsets[name] = [cursor, text.bytesize]
         segment = "(data (i32.const #{cursor}) \"#{text.b.bytes.map { |b| format("\\%02x", b) }.join}\")"
         cursor += ((text.bytesize + 7) / 8) * 8

@@ -38,7 +38,9 @@ import org.junit.jupiter.api.TestFactory;
  * fixture id to bytes, builds a {@link Config} from the case's trusted roots
  * and clock, dispatches on {@code operation}, and evaluates the expectation
  * on the JSON the library returns: {@link ReceiptPayload#toJson()},
- * {@link JsonPayload#json()} or the endpoint's response body. A case is added
+ * {@link JsonPayload#json()} or the endpoint's response body, and an ok
+ * case's {@code environment} on {@link ReceiptPayload#environment()} or
+ * {@link JsonPayload#environment()}. A case is added
  * by editing cases.json, never this file. The file's top-level
  * {@code comment} defines the semantics implemented here.</p>
  *
@@ -216,6 +218,16 @@ class ConformanceCasesTest {
             Failure failure = result.failure();
             fail(id + ": expected ok but failed with " + failure.reason() + ": " + failure.message());
         }
+        // The environment the verifier states beside the payload.
+        assertTrue(expected.has("environment"), id + ": harness error: an ok case states no environment");
+        Environment environment = payload instanceof ReceiptPayload
+                ? ((ReceiptPayload) payload).environment()
+                : ((JsonPayload) payload).environment();
+        JsonNode wantEnvironment = expected.get("environment");
+        assertEquals(
+                wantEnvironment.isNull() ? null : wantEnvironment.asText(),
+                environment == null ? null : environment.value(),
+                id + ": environment");
         String json;
         if (payload instanceof ReceiptPayload) {
             json = ((ReceiptPayload) payload).toJson();

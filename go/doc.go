@@ -99,6 +99,7 @@
 //	if err != nil {
 //		return err // reject the purchase
 //	}
-//	// payload.JSON() is the signed payload exactly as Apple signed it:
-//	// check bundleId, environment and productId yourself.
+//	// payload.JSON() is the signed payload exactly as Apple signed it, and
+//	// payload.Environment() the environment it names: check bundleId,
+//	// environment and productId yourself.
 package applereceipt

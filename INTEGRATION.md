@@ -37,7 +37,10 @@ against pinned roots.
                                           // no claim
    if payload.bundleId is not "com.example.app":
        deny
-   environment = Environment.fromJwsEnvironment(payload.environment)
+   environment = result.payload.environment   // read by the verifier:
+                                              // the top-level claim, a
+                                              // notification's data or
+                                              // summary; null for neither
    if environment is not PRODUCTION or SANDBOX:
        deny                         // App Review runs production builds
                                     // against Sandbox, and so does every
@@ -86,7 +89,7 @@ against pinned roots.
    receipt = result.payload
    if receipt.bundleId is not "com.example.app":
        deny                         // the library checks no bundle id
-   environment = Environment.fromReceiptType(receipt.receiptType)
+   environment = receipt.environment           // from receipt_type
    if environment is not PRODUCTION or SANDBOX:
        deny                         // Xcode and unknown receipt types
    // Or hand the request body straight to verifyReceiptEndpoint and read

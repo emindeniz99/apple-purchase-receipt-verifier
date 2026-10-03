@@ -81,26 +81,18 @@ final class PublicApiTests: XCTestCase {
             ])
     }
 
-    /// The helpers state what Apple's values mean and decide nothing. No
-    /// shared case reaches them: they take no input a receipt carries to the
-    /// verifier.
-    func testEnvironmentHelpersMapApplesSpellings() {
-        XCTAssertEqual(Environment.fromReceiptType("Production"), .production)
-        XCTAssertEqual(Environment.fromReceiptType("ProductionVPP"), .production)
-        XCTAssertEqual(Environment.fromReceiptType("ProductionSandbox"), .sandbox)
-        XCTAssertEqual(Environment.fromReceiptType("ProductionVPPSandbox"), .sandbox)
-        for other in ["Xcode", "Sandbox", "production", ""] {
-            XCTAssertNil(Environment.fromReceiptType(other), other)
-        }
-        XCTAssertNil(Environment.fromReceiptType(nil))
-        XCTAssertEqual(Environment.fromJwsEnvironment("Production"), .production)
-        XCTAssertEqual(Environment.fromJwsEnvironment("Sandbox"), .sandbox)
-        for other in ["Xcode", "LocalTesting", "ProductionSandbox", "sandbox"] {
-            XCTAssertNil(Environment.fromJwsEnvironment(other), other)
-        }
-        XCTAssertNil(Environment.fromJwsEnvironment(nil))
+    /// The environment is the verifier's answer, on each payload
+    /// (docs/rust-core/DECISIONS.md R42): `Environment` keeps Apple's two
+    /// spellings and no helper repeating the rule. The 0.7 helpers
+    /// `fromReceiptType` and `fromJwsEnvironment` are gone; a call to either
+    /// no longer compiles.
+    func testEnvironmentIsApplesTwoSpellingsAndThePayloadsCarryIt() {
         XCTAssertEqual(Environment.production.rawValue, "Production")
         XCTAssertEqual(Environment.sandbox.rawValue, "Sandbox")
+        XCTAssertNil(Environment(rawValue: "Xcode"))
+        XCTAssertNil(ReceiptPayload().environment)
+        XCTAssertEqual(JsonPayload(json: "{}", environment: .sandbox).environment, .sandbox)
+        XCTAssertNil(JsonPayload(json: "{}", environment: nil).environment)
     }
 
     /// Named constants for every status Apple documents, so a caller never
@@ -159,6 +151,8 @@ final class PublicApiTests: XCTestCase {
         receipt.originalApplicationVersion = "0"
         receipt.expirationDateMs = nil
         receipt.unknownAttributes = [13: [[0x03]]]
+        // Not part of toJson(): the payload's own fields only.
+        receipt.environment = .sandbox
         let want =
             #"{"receipt_type":"ProductionSandbox","app_item_id":"5","bundle_id":"b","bundle_id_bytes":"DAFi","#
             + #""application_version":"1","opaque_value":"AQ==","sha1_hash":"Ag==","receipt_creation_date_ms":6000,"#
@@ -174,6 +168,6 @@ final class PublicApiTests: XCTestCase {
                 try JSONSerialization.jsonObject(with: Data(receipt.toJson().utf8)),
                 try JSONSerialization.jsonObject(with: Data(want.utf8))),
             receipt.toJson())
-        XCTAssertEqual(JsonPayload(json: "{}").json, "{}")
+        XCTAssertEqual(JsonPayload(json: "{}", environment: .production).json, "{}")
     }
 }

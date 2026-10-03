@@ -76,7 +76,8 @@ Notes on the steps:
   corpus job produces both. Expected per transport: every row identical
   except the 27 whose body is over 3,145,728 bytes, which the server
   answers 413 (the CLI exits 3) with the module's own size refusal for
-  their first 3,145,729 bytes, byte-identical to the module's row;
+  their first 3,145,729 bytes (the `max_input_bytes` the module's `init`
+  answer states since DECISIONS.md R42), byte-identical to the module's row;
   `corpus.py` counts them as over-cap. With G1d: 6,152 identical, 27
   over-cap, 0 different, on HTTP fresh, HTTP pool and the CLI, counted
   when the server still answered those 27 with a problem of its own.

@@ -149,9 +149,10 @@ the JSON.
 
 `AprvResult.json` carries the answer. From the `_bytes` calls it is the
 document `aprv.wasm` answers, byte for byte, which validates against
-`rust/bindings/wire/schema/`: `{"verified":true,"payload":...}` (the
-receipt payload is 0.7's `ReceiptPayload.toJson()` value; a JWS payload is
-a JSON string holding the signed text) or
+`rust/bindings/wire/schema/`: `{"verified":true,"payload":...,"environment":...}`
+(the receipt payload is 0.7's `ReceiptPayload.toJson()` value; a JWS
+payload is a JSON string holding the signed text; `environment` is
+`"Production"`, `"Sandbox"` or `null`, as the core reads it) or
 `{"verified":false,"reason":"<token>","message":"<detail>"}`. From the 0.7
 calls it is the bare payload (the receipt value, or the signed JSON text).
 The endpoint calls hand back Apple's own response body.

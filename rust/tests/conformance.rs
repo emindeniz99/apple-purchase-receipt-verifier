@@ -147,6 +147,17 @@ struct Expected {
     /// `decodeBase64` only: what every text of an ok group decodes to.
     #[serde(default)]
     bytes_hex: Option<String>,
+    /// A verified receipt's or JWS's environment: `"Production"`,
+    /// `"Sandbox"` or `null`. Outer `None` when the case does not state
+    /// one, which an ok case of either operation must.
+    #[serde(default, deserialize_with = "present")]
+    environment: Option<Value>,
+}
+
+/// A member that is there, `null` included, as `Some`; serde leaves an
+/// absent one to `#[serde(default)]`.
+fn present<'de, D: serde::Deserializer<'de>>(value: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(value).map(Some)
 }
 
 // --- locating and decoding fixtures -------------------------------------
@@ -603,15 +614,17 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 String::from_utf8(fixture_bytes(dir, fixtures, fixture)?)
                     .map_err(|_| Failed::from(format!("{id}: harness error: JWS not UTF-8")))?
             };
+            // The payload's JSON and its environment.
             let call = || {
                 if operation == "verifyReceipt" {
                     verifier
                         .verify_receipt(&input)
-                        .map(|receipt| receipt.to_json())
+                        .map(|receipt| (receipt.to_json(), receipt.environment()))
                 } else {
-                    verifier
-                        .verify_signed_data(&input)
-                        .map(apple_purchase_receipt_verifier::JsonPayload::into_json)
+                    verifier.verify_signed_data(&input).map(|payload| {
+                        let environment = payload.environment();
+                        (payload.into_json(), environment)
+                    })
                 }
             };
             if let Some(allowed) = &expected.one_of {
@@ -706,7 +719,16 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 ("ok", Err(failure)) => {
                     return Err(Failed::from(format!("{id}: expected ok but got {failure}")))
                 }
-                ("ok", Ok(json)) => {
+                ("ok", Ok((json, environment))) => {
+                    let want = expected.environment.as_ref().ok_or_else(|| {
+                        Failed::from(format!("{id}: harness error: no expected environment"))
+                    })?;
+                    let got = environment.map_or(Value::Null, |e| Value::from(e.as_str()));
+                    if *want != got {
+                        return Err(Failed::from(format!(
+                            "{id}: environment: expected {want} but got {got}"
+                        )));
+                    }
                     let actual = parse_json(id, &json)?;
                     // Same value, not same bytes: whitespace, key order and
                     // escaping are free (docs/design/0.7-api.md "Our JSON").

@@ -36,7 +36,7 @@ defmodule AppleReceiptExample.Native do
   @doc """
   `aprv_verify_receipt_bytes`: the base64 receipt an app sends, as bytes.
   The binary is the document `aprv.wasm` answers,
-  `{"verified":true,"payload":...}` or
+  `{"verified":true,"payload":...,"environment":...}` or
   `{"verified":false,"reason":...,"message":...}`; it is empty for a status
   of 100 or above, a mistake in the call.
   """

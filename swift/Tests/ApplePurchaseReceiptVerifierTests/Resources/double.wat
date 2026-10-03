@@ -12,15 +12,20 @@
 ;;         '+'  grow memory by 1,100 pages (about 69 MiB), then echo
 ;;       The endpoint traps on an env other than 0 or 1, as aprv.wasm does.
 ;;   init
-;;       answers {"ok":true}, or a refusal when the configuration is over
-;;       100 bytes.
+;;       answers {"ok":true,"max_input_bytes":3145729}, or a refusal when
+;;       the configuration is over 100 bytes. A configuration whose first
+;;       byte is 'o' gets {"ok":true}, the answer of a module older than
+;;       max_input_bytes; one whose first byte is 's' gets an input length
+;;       of 4 bytes, so a test can see the cut in the echoed input.
 ;;
 ;; Rebuild with: wasm-tools parse double.wat -o double.wasm
 (module
   (memory (export "memory") 2)
   (global $heap (mut i32) (i32.const 4096))
-  (data (i32.const 1024) "{\"ok\":true}")
-  (data (i32.const 1056) "{\"ok\":false,\"message\":\"the double refuses this configuration\"}")
+  (data (i32.const 1024) "{\"ok\":true,\"max_input_bytes\":3145729}")
+  (data (i32.const 1088) "{\"ok\":false,\"message\":\"the double refuses this configuration\"}")
+  (data (i32.const 1152) "{\"ok\":true}")
+  (data (i32.const 1184) "{\"ok\":true,\"max_input_bytes\":4}")
 
   (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32)
     (local $p i32) (local $end i32) (local $have i32)
@@ -110,17 +115,51 @@
     i32.const 2048)
 
   (func (export "aprv:verifier/verify@0.1.0#init") (param $ptr i32) (param $len i32) (result i32)
-    i32.const 2048
+    (local $at i32) (local $n i32) (local $first i32)
+    i32.const 1024
+    local.set $at
+    i32.const 37
+    local.set $n
+    local.get $len
+    if
+      local.get $ptr
+      i32.load8_u
+      local.set $first
+      ;; 'o' answers as a module older than max_input_bytes
+      local.get $first
+      i32.const 111
+      i32.eq
+      if
+        i32.const 1152
+        local.set $at
+        i32.const 11
+        local.set $n
+      end
+      ;; 's' states an input length of 4 bytes
+      local.get $first
+      i32.const 115
+      i32.eq
+      if
+        i32.const 1184
+        local.set $at
+        i32.const 31
+        local.set $n
+      end
+    end
     local.get $len
     i32.const 100
     i32.gt_u
-    if (result i32) i32.const 1056 else i32.const 1024 end
+    if
+      i32.const 1088
+      local.set $at
+      i32.const 62
+      local.set $n
+    end
+    i32.const 2048
+    local.get $at
     i32.store
     i32.const 2052
-    local.get $len
-    i32.const 100
-    i32.gt_u
-    if (result i32) i32.const 62 else i32.const 11 end
+    local.get $n
     i32.store
     i32.const 2048)
 

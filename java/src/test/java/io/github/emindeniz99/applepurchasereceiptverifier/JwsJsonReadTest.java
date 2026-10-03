@@ -118,6 +118,48 @@ class JwsJsonReadTest {
         }
     }
 
+    /**
+     * The three places Apple documents for a payload's environment, the first
+     * present one deciding: the same table as the core's
+     * (rust/src/jws.rs, DECISIONS.md R42), so the two read it alike.
+     */
+    @Test
+    void theEnvironmentIsReadFromTheFirstOfThreePlaces() {
+        Environment production = Environment.PRODUCTION;
+        Environment sandbox = Environment.SANDBOX;
+        Object[][] table = {
+            {"{\"environment\":\"Production\"}", production},
+            {"{\"environment\":\"Sandbox\",\"signedDate\":1}", sandbox},
+            {"{\"data\":{\"environment\":\"Sandbox\"}}", sandbox},
+            {"{\"summary\":{\"environment\":\"Production\"}}", production},
+            // The first present one decides, whatever it says.
+            {"{\"environment\":\"Xcode\",\"data\":{\"environment\":\"Sandbox\"}}", null},
+            {"{\"environment\":null,\"data\":{\"environment\":\"Sandbox\"}}", null},
+            {"{\"data\":{\"environment\":1},\"summary\":{\"environment\":\"Sandbox\"}}", null},
+            {"{\"summary\":{\"environment\":\"Sandbox\"},\"data\":{\"environment\":\"Production\"}}", production},
+            // Absent from a container that is there: the next one decides.
+            {"{\"data\":{},\"summary\":{\"environment\":\"Sandbox\"}}", sandbox},
+            {"{\"data\":\"Sandbox\",\"summary\":{\"environment\":\"Sandbox\"}}", sandbox},
+            // Anything but the two spellings is no environment.
+            {"{\"environment\":\"LocalTesting\"}", null},
+            {"{\"environment\":\"sandbox\"}", null},
+            {"{\"environment\":\"ProductionSandbox\"}", null},
+            {"{\"data\":{\"data\":{\"environment\":\"Sandbox\"}}}", null},
+            {"{\"transaction\":{\"environment\":\"Sandbox\"}}", null},
+            {"{}", null},
+            // A repeated name keeps its last value, a container included.
+            {"{\"environment\":\"Sandbox\",\"environment\":\"Production\"}", production},
+            {"{\"data\":{\"environment\":\"Production\"},\"data\":{}}", null},
+            // Nested values inside a container are skipped whole.
+            {"{\"data\":{\"renewalInfo\":{\"environment\":\"Production\"},\"environment\":\"Sandbox\"}}", sandbox},
+        };
+        for (Object[] row : table) {
+            String json = (String) row[0];
+            assertEquals(row[1], JwsCore.environment(utf8(json)), json);
+        }
+        assertNull(JwsCore.environment(utf8("not json")));
+    }
+
     /** The reader bounds are stated, not inherited from whichever Jackson the host resolved. */
     @Test
     void memberNamesAndNumbersAreBounded() throws Exception {

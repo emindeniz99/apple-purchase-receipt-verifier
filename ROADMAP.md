@@ -75,6 +75,16 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    - Decided 2026-10-01 (DECISIONS.md R39, amended the same day): the
      core reads a root as DER or PEM, told apart by the bytes, through
      OpenSSL's PEM reader; wrappers pass bytes and read neither format.
+   - Decided 2026-10-02 (DECISIONS.md R42; the owner's 2a and Q19): the
+     module's `init` answer states `max_input_bytes`, and the seven Wasm
+     hosts and `aprv-server` read it there instead of keeping their own
+     copy of the input length; a verified answer carries the environment
+     beside its payload (Production, Sandbox or null, a JWS's read from
+     the top-level `environment`, `data.environment` or
+     `summary.environment`), every package exposes it on the payload, and
+     the environment helpers are removed in all nine. Done in the core,
+     `aprv-server`, both Java artifacts and the shared cases; the seven
+     Wasm packages follow on the same branch.
    - **Open for the owner:** Node's `createConfig()` and
      `createVerifier()` names.
 
@@ -163,6 +173,10 @@ from the migration:
   lists 78 port-only tests whose behaviour has no shared case yet; each
   becomes a case in `fixtures/cases.json`, or a Rust test when its input is
   too large for one.
+- **The environment of a port-defined ok.** The 27 receipt and 11 JWS
+  `oneOf` cases that allow `ok` pin no `environment`; a follow-up adds an
+  optional `environment` beside `oneOf` in `fixtures/cases.schema.json`,
+  and the runners assert it when the outcome is ok.
 - **CI still missing:** `java-wasm-s390x` (the Endive corpus under QEMU
   before each release, the big-endian check); CodeQL over `java-wasm/`;
   the licence texts of the code compiled into the module inside the

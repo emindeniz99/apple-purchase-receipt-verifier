@@ -75,7 +75,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             AprvInstance instance = new AprvInstance(_runtime);
             try
             {
-                ModuleAnswers.CheckInit(instance.Init(_configJson));
+                instance.Start(_configJson);
                 return instance;
             }
             catch

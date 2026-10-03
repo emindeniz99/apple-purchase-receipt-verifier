@@ -48,7 +48,7 @@ final class FacadeTest extends TestCase
             "original_transaction_id":"t0","original_purchase_date_ms":1722945600000,"expires_date_ms":null,
             "web_order_line_item_id":"1000000123456789","cancellation_date_ms":null,"is_trial_period":false,
             "is_in_intro_offer_period":true,"unknown_attributes":{"1799":["/w=="]}}],
-          "unknown_attributes":{"7":["Ag=="],"13":["AA==","AQ=="]}}}
+          "unknown_attributes":{"7":["Ag=="],"13":["AA==","AQ=="]}},"environment":"Sandbox"}
         JSON;
 
     private static function verifier(FakeTransport $transport, ?Config $config = null): Verifier
@@ -79,6 +79,7 @@ final class FacadeTest extends TestCase
         self::assertFalse($purchase->isTrialPeriod);
         self::assertTrue($purchase->isInIntroOfferPeriod);
         self::assertSame([1799 => ["\xff"]], $purchase->unknownAttributes);
+        self::assertSame(Environment::Sandbox, $receipt->environment, 'the member beside the payload');
     }
 
     public function testToJsonRoundTripsTheWireValue(): void
@@ -91,6 +92,7 @@ final class FacadeTest extends TestCase
         /** @var array<string, mixed> $again */
         $again = json_decode($receipt->toJson(), true, 32, JSON_THROW_ON_ERROR);
         $expected = $wire['payload'];
+        self::assertArrayNotHasKey('environment', $again, 'the environment is not part of toJson');
         ksort($expected);
         ksort($again);
         self::assertSame($expected, $again, 'same value, not the same bytes (0.7-api.md "Our JSON")');
@@ -99,12 +101,58 @@ final class FacadeTest extends TestCase
     public function testASignedPayloadIsTheJsonStringExactlyAsSigned(): void
     {
         $signed = '{"bundleId":"aé",   "n":1e3}';
-        $json = json_encode(['verified' => true, 'payload' => $signed], JSON_THROW_ON_ERROR);
+        $json = json_encode(['verified' => true, 'payload' => $signed, 'environment' => 'Production'], JSON_THROW_ON_ERROR);
         $result = self::verifier(FakeTransport::answering($json))->verifySignedData('a.b.c');
 
         self::assertTrue($result->verified());
         self::assertInstanceOf(JsonPayload::class, $result->payload);
         self::assertSame($signed, $result->payload->json);
+        self::assertSame(Environment::Production, $result->payload->environment);
+    }
+
+    /** @return iterable<string, array{mixed, Environment|null}> */
+    public static function environmentProvider(): iterable
+    {
+        yield 'Production' => ['Production', Environment::Production];
+        yield 'Sandbox' => ['Sandbox', Environment::Sandbox];
+        yield 'null' => [null, null];
+    }
+
+    /** The environment is the module's member beside the payload; the payloads here name another one. */
+    #[DataProvider('environmentProvider')]
+    public function testTheEnvironmentIsTheModulesMemberBesideThePayload(mixed $member, ?Environment $expected): void
+    {
+        $receipt = json_encode(['verified' => true, 'payload' => ['receipt_type' => 'Xcode'], 'environment' => $member], JSON_THROW_ON_ERROR);
+        $signed = json_encode(['verified' => true, 'payload' => '{"environment":"Xcode"}', 'environment' => $member], JSON_THROW_ON_ERROR);
+
+        $fromReceipt = self::verifier(FakeTransport::answering($receipt))->verifyReceipt('x')->payload;
+        $fromJws = self::verifier(FakeTransport::answering($signed))->verifySignedData('x')->payload;
+        self::assertInstanceOf(ReceiptPayload::class, $fromReceipt);
+        self::assertInstanceOf(JsonPayload::class, $fromJws);
+        self::assertSame($expected, $fromReceipt->environment);
+        self::assertSame($expected, $fromJws->environment);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function badEnvironmentProvider(): iterable
+    {
+        yield 'no environment' => [''];
+        yield 'Xcode' => [',"environment":"Xcode"'];
+        yield 'lowercase' => [',"environment":"sandbox"'];
+        yield 'a number' => [',"environment":1'];
+    }
+
+    #[DataProvider('badEnvironmentProvider')]
+    public function testAVerifiedAnswerWithoutAnEnvironmentOfTheThreeIsAnInternalError(string $member): void
+    {
+        foreach ([
+            self::verifier(FakeTransport::answering('{"verified":true,"payload":{}' . $member . '}'))->verifyReceipt('x'),
+            self::verifier(FakeTransport::answering('{"verified":true,"payload":"{}"' . $member . '}'))->verifySignedData('x'),
+        ] as $result) {
+            self::assertSame(Reason::InternalError, Outcome::failure($result)->reason);
+            self::assertInstanceOf(ModuleFaultException::class, Outcome::failure($result)->cause);
+            self::assertSame('BAD_ANSWER', Outcome::failure($result)->cause->category);
+        }
     }
 
     /** @return iterable<string, array{string}> */
@@ -141,15 +189,15 @@ final class FacadeTest extends TestCase
         yield 'verified as a string' => ['{"verified":"true","payload":{}}'];
         yield 'a reason outside the eight' => ['{"verified":false,"reason":"INVALID_JWS_FORMAT","message":"m"}'];
         yield 'a failure without a message' => ['{"verified":false,"reason":"MALFORMED"}'];
-        yield 'a verified receipt without a payload' => ['{"verified":true}'];
-        yield 'a receipt payload that is a string' => ['{"verified":true,"payload":"x"}'];
-        yield 'a non-decimal id' => ['{"verified":true,"payload":{"app_item_id":"12x"}}'];
-        yield 'a numeric id' => ['{"verified":true,"payload":{"app_item_id":12}}'];
-        yield 'an id past 64 bits' => ['{"verified":true,"payload":{"download_id":"9223372036854775808"}}'];
-        yield 'a date as a string' => ['{"verified":true,"payload":{"receipt_creation_date_ms":"1"}}'];
-        yield 'bytes that are not base64' => ['{"verified":true,"payload":{"opaque_value":"@@@"}}'];
-        yield 'an unknown attribute type that is not decimal' => ['{"verified":true,"payload":{"unknown_attributes":{"x":[]}}}'];
-        yield 'in_app not a list' => ['{"verified":true,"payload":{"in_app":"x"}}'];
+        yield 'a verified receipt without a payload' => ['{"verified":true,"environment":null}'];
+        yield 'a receipt payload that is a string' => ['{"verified":true,"payload":"x","environment":null}'];
+        yield 'a non-decimal id' => ['{"verified":true,"payload":{"app_item_id":"12x"},"environment":null}'];
+        yield 'a numeric id' => ['{"verified":true,"payload":{"app_item_id":12},"environment":null}'];
+        yield 'an id past 64 bits' => ['{"verified":true,"payload":{"download_id":"9223372036854775808"},"environment":null}'];
+        yield 'a date as a string' => ['{"verified":true,"payload":{"receipt_creation_date_ms":"1"},"environment":null}'];
+        yield 'bytes that are not base64' => ['{"verified":true,"payload":{"opaque_value":"@@@"},"environment":null}'];
+        yield 'an unknown attribute type that is not decimal' => ['{"verified":true,"payload":{"unknown_attributes":{"x":[]}},"environment":null}'];
+        yield 'in_app not a list' => ['{"verified":true,"payload":{"in_app":"x"},"environment":null}'];
     }
 
     #[DataProvider('unreadableAnswerProvider')]
@@ -165,7 +213,7 @@ final class FacadeTest extends TestCase
 
     public function testASignedPayloadThatIsAnObjectNotAStringIsAnInternalError(): void
     {
-        $result = self::verifier(FakeTransport::answering('{"verified":true,"payload":{"a":1}}'))->verifySignedData('x');
+        $result = self::verifier(FakeTransport::answering('{"verified":true,"payload":{"a":1},"environment":null}'))->verifySignedData('x');
 
         self::assertSame(Reason::InternalError, Outcome::failure($result)->reason);
         self::assertInstanceOf(ModuleFaultException::class, Outcome::failure($result)->cause);

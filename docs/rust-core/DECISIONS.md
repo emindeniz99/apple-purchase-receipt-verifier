@@ -16,7 +16,8 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
-those of 2026-10-02 amended R17, R25, R31, R34, R39, R40 and R41;
+those of 2026-10-02 amended R17, R25, R31, R34, R39, R40 and R41 and
+added R42 (recorded 2026-10-03);
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
 client change, and amended R41 for .NET's `Config`.
 
@@ -449,7 +450,7 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
 2026-10-01).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
-  schema v2, 384 cases, is the contract. The Java implementation is a
+  schema v2, 388 cases, is the contract. The Java implementation is a
   reference that is itself held to that contract (R33).
 - **Algorithm policy:** accept any signer and chain signature algorithm
   the pinned Apple chain vouches for. With OpenSSL's CMS API the core
@@ -519,6 +520,7 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
   | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":21002}` | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
   | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
+| A lone surrogate escape in a member name inside `data` or `summary` of a genuinely signed JWS payload | not measured (the 0.7 answers carry no environment) | reads on: Jackson keeps the name, and the container's `environment` is read | ok, without that container's environment (port-defined 2026-10-03) | The core reads `data` and `summary` for the environment alone, and `serde_json` refuses the name (R40), so the container states none; the payload and the signature are unchanged. Apple's documents are ASCII | none: no case pins it; R42 |
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -839,7 +841,7 @@ FlatBuffers as the encoding.
   ([aprv-server §6][server]).
 - **Why two artifactIds:** a classifier jar cannot replace the main jar,
   since it shares the artifact's POM and dependencies.
-- **CI:** the 384 cases against the main artifact and against both engines
+- **CI:** the 388 cases against the main artifact and against both engines
   of `-wasm`; the `java-runtime-8` leg runs the server engine on real
   Temurin 8. Temurin 8 builds end in late 2026; the leg moves to Zulu or
   Corretto 8 by then.
@@ -1023,13 +1025,13 @@ classes and classifies every host.
 **Status: accepted** (owner, 2026-09-28). Supersedes R8.
 
 - **Decision:** the 0.7 Java implementation stays in the repository,
-  maintained. CI runs it and the Rust core over the 384 cases on every
+  maintained. CI runs it and the Rust core over the 388 cases on every
   change, and the differential job runs the full corpus through both
   nightly. Its differences go to R20.
 - **The one-product rule, restated for the plan** (CLAUDE.md's "Behavior
   changes" section changes to this text in Phase 7): a verification
   behaviour change touches the Rust core, the Java implementation and
-  `fixtures/` in the same PR. The 384 cases keep them in step, and every
+  `fixtures/` in the same PR. The 388 cases keep them in step, and every
   host runs all of them as one test each.
 - **Why not the frozen jar of R8:** a frozen jar answers differently
   wherever the core changes on purpose, so every intended change becomes
@@ -1549,6 +1551,106 @@ the release, it is a breaking change for every caller. So the audit of
 - **Still open:** Node's `createConfig()` and `createVerifier()` names
   (ROADMAP.md, item 5).
 
+## R42. The module states its input length and the environment
+
+**Status: accepted** (owner, 2026-10-02; decisions 2a A and Q19 A,
+recorded 2026-10-03). Two facts every host needs that only the core can
+know move into the module's answers, and each copy outside the core and
+the Java implementation goes.
+
+- **Decision, the input length (2a A):** `init` answers
+  `{"ok":true,"max_input_bytes":N}` where it answered `{"ok":true}`;
+  `{"ok":false,"message":"..."}` is unchanged. `N` is the most bytes of
+  one input a host needs to hand the module: a longer input may be cut to
+  this length, and the module answers `TOO_LARGE` for it (21002 from
+  `verify-receipt-endpoint`). The core computes it from its caps, the
+  largest plus one (`MAX_INPUT_BYTES` in `rust/src/lib.rs`, 3,145,729
+  today), so no second literal exists; `aprv-wire` writes it, and
+  `init-result.schema.json` requires it.
+- **Why:** seven wrappers kept the number (Node's `MAX_INPUT_BYTES`, Go's
+  `maxInput`, Python's `MAX_INPUT_COPY`, Swift's `maxInputBytes`, .NET's
+  `MaxLoweredInputBytes`, Java `-wasm`'s `MAX_INPUT_BYTES`, PHP's
+  `Input::MAX_BYTES`), and `aprv-server` kept the cap itself
+  (`MAX_BODY`). A cap change in the core was a change in eight places
+  that no test tied together.
+- **What reads it:** each host reads `max_input_bytes` after `init` and
+  deletes its copy. `aprv-server` reads it from its first `init`, cuts a
+  body or stdin to it, and answers HTTP 413 (CLI exit 3) for a body of
+  that length or longer, the behaviour of #219 with the module's number;
+  `GET /v1/info` and `aprv info` report it as `limits.max_input_bytes`,
+  which replaces `max_body_bytes`. The Java `-wasm` artifact reads it
+  from `init` on Endive and from `GET /v1/info` on the server engine,
+  where a server that states none is refused as a source. An accepting
+  answer without the number comes from a module older than its host, and
+  every host treats it as a module failure, never as a verdict.
+- **The WIT does not change.** `init(config-json) -> string` keeps its
+  signature; only the string's shape moved. The WIT's doc comment, which
+  still quotes `{"ok":true}`, waits for the next ABI change, since CI
+  diffs that file.
+- **Decision, the environment (Q19 A):** a verified answer of
+  `verify-receipt` and of `verify-signed-data` carries a top-level
+  `environment` beside `payload`:
+  `{"verified":true,"payload":...,"environment":"Sandbox"}`, the value
+  `"Production"`, `"Sandbox"` or `null`. The payload's own JSON
+  (`ReceiptPayload.toJson`, the C ABI's `receipt_payload`) does not
+  change, and neither does `verify-receipt-endpoint`, whose response
+  already writes Apple's `environment`.
+  - A receipt's comes from `receipt_type`: `Production` and
+    `ProductionVPP` are Production, `ProductionSandbox` and
+    `ProductionVPPSandbox` Sandbox, anything else (`Xcode`, absent) null.
+  - A JWS's comes from the first of the three places Apple documents
+    that is present: the top-level `environment` (transaction and renewal
+    info), `data.environment` (App Store Server Notifications V2) and
+    `summary.environment` (summary notifications). `Production` and
+    `Sandbox` map; anything else there, a value that is not a string
+    included, is null, and so is a payload with none of the three. The
+    first one present decides even when it names neither environment. A
+    repeated name keeps its last value, a repeated `data` or `summary`
+    included, as everywhere in a payload. The core reads the three in the
+    one parse it already made for `signedDate`, reading the members of
+    `data` and `summary` from their raw text.
+- **Why:** nine languages carried a copy of the mapping
+  (`Environment::from_receipt_type` and `from_jws_environment` in Rust and
+  their twins in Java, Go, .NET, Swift, Ruby, Python, PHP and Node), and
+  none of the seven Wasm packages may hold a rule (ARCHITECTURE.md §9).
+  A notification's environment sits one level down, where a caller who
+  read only the top-level claim found nothing.
+- **Every language exposes it on the result's payload**
+  (`ReceiptPayload::environment()` and `JsonPayload::environment()` in
+  Rust, `ReceiptPayload.environment()` and `JsonPayload.environment()` in
+  Java), and the public helpers are deleted in all nine before 0.8
+  ships. In Rust the two functions become `pub(crate)`; `JsonPayload::new`
+  reads the environment from the JSON it is given, as a verified payload
+  is read. Java's two payload constructors take the environment as their
+  last argument, since the shared classes the `-wasm` artifact ships must
+  hold no rule; the `-wasm` artifact takes the module's member, and
+  refuses a verified answer without it, as it refuses one without
+  `payload`. The seven Wasm packages follow on the same branch.
+- **The rule lives in two places,** as every verification rule does: the
+  core (`rust/src/environment.rs`, `rust/src/jws.rs`) and the
+  BouncyCastle implementation (`ReceiptDecoder.environment`,
+  `JwsCore.Payload`). `fixtures/cases.json` proves they agree: every
+  `status: ok` case of `verifyReceipt` and `verifySignedData` states
+  `expected.environment` (113 cases: 74 receipts, 60 Sandbox, 1
+  Production and 13 null; 39 JWS, 30 Sandbox, 3 Production and 6 null),
+  derived from each fixture's own bytes. `EnvironmentFixtures` writes
+  four JWS under a root of their own, one per place with `Production`
+  and one whose top-level `Xcode` hides `data.environment`'s `Sandbox`;
+  Apple's own test notification covers `data` with `Sandbox`.
+- **Port-defined:** a member name with a lone surrogate escape inside
+  `data` or `summary`. The core's reader refuses such a name (R40), so
+  the container holds no environment for it; Jackson reads on. Apple's
+  documents are ASCII, and no case pins it.
+- **Rejected for the input length:** B) a new WIT function `limits()`:
+  the WIT moves to 0.2.0 and all eight hosts move with it in one PR, for
+  a number `init`'s answer can carry. C) a CI check that the seven copies
+  equal the core's number: it keeps the copies, and the check is one
+  more place to keep in step.
+- **Rejected for the environment:** B) only the top-level `environment`:
+  every App Store Server Notification would answer null, where Apple puts
+  the environment in `data` or `summary`. C) keep the nine helpers: nine
+  copies of one rule, seven of them in packages that may hold none.
+
 ---
 
 ## Rejected alternatives
@@ -1598,6 +1700,10 @@ One table for everything the plan measured or considered and rejected.
 | DER input | Apple's endpoint and clients carry base64; ABI v1 took base64 only, and 0.7 dropped the DER overload. The cap then admits at most 2,359,296 bytes of DER | [ABI v1][abi]; [0.7 API][api07], Dropped | an overload is wanted; it is additive |
 | Fastly Compute JS and Akamai EdgeWorkers as targets | Neither can run WebAssembly | [rust-core spikes][spikes], "Findings from outside the container" | they gain WebAssembly |
 | Pruning the pinned roots back to two | Apple commits to no single root for either path; the third root is insurance against re-anchoring | PLAN.md D15 | — |
+| A WIT `limits()` function for the input length | Moves the WIT to 0.2.0 and all eight hosts with it, for a number `init`'s answer carries (R42) | the owner's decision 2a, 2026-10-02; no evidence note | — |
+| A CI check that the hosts' copies of the input length equal the core's | Keeps seven copies and adds one more place to keep in step (R42) | the owner's decision 2a, 2026-10-02; no evidence note | — |
+| Reading a JWS's environment from the top-level claim only | Every App Store Server Notification would answer null: Apple puts its environment in `data` or `summary` (R42) | the owner's decision Q19, 2026-10-02; no evidence note | — |
+| Keeping the per-language environment helpers | Nine copies of one rule, seven in packages that may hold none (R42) | the owner's decision Q19, 2026-10-02; no evidence note | — |
 | A frozen 0.7.x jar as the only oracle | Diverges from the core wherever the core changes on purpose; superseded by the maintained implementation (R33) | R8 history | — |
 | wasm-bindgen | Needs `wasm32-unknown-unknown`, where `openssl-sys` 0.9.117 fails with 20 × E0432 | [CMS everywhere §3][cms] | the core stops linking C |
 | Emscripten | Works on 7 hosts, with legacy exceptions, about 18 MB of initial memory and 12.8 to 78.9 KB of glue | [wasm bake-off §7][wasmbake] | — |

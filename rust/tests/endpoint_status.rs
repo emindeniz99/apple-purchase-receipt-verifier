@@ -45,7 +45,7 @@ fn status(response: &str) -> i64 {
 #[test]
 fn routes_from_the_receipts_own_type() {
     let table = [
-        // fixture, status on PRODUCTION, status on SANDBOX, from_receipt_type
+        // fixture, status on PRODUCTION, status on SANDBOX, environment()
         (
             "generated-0.7/receipt-type-production.der",
             0,
@@ -87,12 +87,8 @@ fn routes_from_the_receipts_own_type() {
             "{fixture} on SANDBOX"
         );
         if let Ok(payload) = verifier.verify_receipt(&b64(fixture)) {
-            // The helper states the same rule the endpoint routes on.
-            assert_eq!(
-                Environment::from_receipt_type(payload.receipt_type.as_deref()),
-                environment,
-                "{fixture}"
-            );
+            // The payload states the environment the endpoint routes on.
+            assert_eq!(payload.environment(), environment, "{fixture}");
         }
     }
 }

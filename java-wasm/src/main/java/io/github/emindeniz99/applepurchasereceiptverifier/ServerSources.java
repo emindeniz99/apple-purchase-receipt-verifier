@@ -17,9 +17,10 @@ import org.jspecify.annotations.Nullable;
 /**
  * Turns the server engine's sources into one working server, trying them in
  * the caller's order (ARCHITECTURE.md §7.8). A source works when the server
- * it names answers {@code GET /v1/info} and trusts exactly the
- * {@link Config}'s roots; otherwise it fails with a reason and the next is
- * tried. When none works, {@link #open} throws with every reason.
+ * it names answers {@code GET /v1/info}, trusts exactly the
+ * {@link Config}'s roots and states the module's {@code max_input_bytes};
+ * otherwise it fails with a reason and the next is tried. When none works,
+ * {@link #open} throws with every reason.
  */
 final class ServerSources {
 
@@ -34,7 +35,7 @@ final class ServerSources {
             ServerConnection connection = null;
             try {
                 connection = connect(source, cache, rootsLine);
-                checkInfo(connection, fingerprints);
+                connection.maxInputBytes(checkInfo(connection, fingerprints));
                 return connection;
             } catch (InitRefused e) {
                 // Every source runs the same module, which would refuse the same roots.
@@ -125,9 +126,12 @@ final class ServerSources {
 
     /**
      * Refuses a server that does not answer {@code GET /v1/info}, or that
-     * trusts other roots than the config: it would run something else.
+     * trusts other roots than the config: it would run something else. Returns
+     * the {@code limits.max_input_bytes} the server read from its module's
+     * {@code init} answer (DECISIONS.md R42); a server that states none runs
+     * a module older than this library and is refused too.
      */
-    static void checkInfo(ServerConnection connection, Set<String> fingerprints) {
+    static int checkInfo(ServerConnection connection, Set<String> fingerprints) {
         HttpConn.Response response = connection.send("GET", "/v1/info", new byte[0], null);
         if (response.status != 200) {
             throw ServerJson.problem(response);
@@ -144,6 +148,15 @@ final class ServerSources {
             throw new IllegalStateException("the server trusts other roots than the Config (its root SHA-256s " + served
                     + ", the Config's " + fingerprints + ")");
         }
+        Object max = ServerJson.member(ServerJson.member(info, "limits"), "max_input_bytes");
+        // Lenient JSON: an integer arrives as Integer or Long.
+        if (!(max instanceof Integer || max instanceof Long)
+                || ((Number) max).longValue() < 1
+                || ((Number) max).longValue() > Integer.MAX_VALUE) {
+            throw new IllegalStateException("the server states no limits.max_input_bytes in GET /v1/info, so its"
+                    + " module is older than this library");
+        }
+        return ((Number) max).intValue();
     }
 
     /** The SHA-256 of each root's DER, as {@code /v1/info} lists them. */

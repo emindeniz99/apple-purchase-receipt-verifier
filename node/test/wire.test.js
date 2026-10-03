@@ -23,10 +23,14 @@ test('cases.json pins toJson for some verified receipts', () => {
 
 for (const kase of WITH_TO_JSON) {
   test(`${kase.id}: the module's payload JSON becomes a ReceiptPayload with the same toJson`, () => {
-    const result = receiptAnswer(`{"verified":true,"payload":${kase.expected.toJson}}`);
+    const environment = JSON.stringify(kase.expected.environment);
+    const result = receiptAnswer(
+      `{"verified":true,"payload":${kase.expected.toJson},"environment":${environment}}`,
+    );
     assert.equal(result.verified, true);
     assert.equal(result.failure, undefined);
     const payload = result.payload;
+    assert.equal(payload.environment, kase.expected.environment);
     assert.deepEqual(JSON.parse(payload.toJson()), JSON.parse(kase.expected.toJson));
     const wire = JSON.parse(kase.expected.toJson);
     for (const [key, field] of [
@@ -57,10 +61,33 @@ for (const kase of WITH_TO_JSON) {
   });
 }
 
-test('a verified JWS payload is the signed JSON text, exactly', () => {
+test('a verified JWS payload is the signed JSON text, exactly, and the environment beside it', () => {
   const signed = '{ "b":1,\n"a":"\\u00e9" }';
-  const result = jwsAnswer(JSON.stringify({ verified: true, payload: signed }));
-  assert.deepEqual(result, { verified: true, payload: { json: signed } });
+  for (const environment of ['Production', 'Sandbox', null]) {
+    const result = jwsAnswer(JSON.stringify({ verified: true, payload: signed, environment }));
+    assert.deepEqual(result, { verified: true, payload: { json: signed, environment } });
+  }
+});
+
+test('a verified answer without an environment of the three values throws', () => {
+  const receipt = WITH_TO_JSON[0].expected.toJson;
+  for (const member of [
+    '',
+    ',"environment":"Xcode"',
+    ',"environment":"PRODUCTION"',
+    ',"environment":0',
+  ]) {
+    assert.throws(
+      () => receiptAnswer(`{"verified":true,"payload":${receipt}${member}}`),
+      /environment/,
+      member,
+    );
+    assert.throws(
+      () => jwsAnswer(`{"verified":true,"payload":"{}"${member}}`),
+      /environment/,
+      member,
+    );
+  }
 });
 
 test('each of the eight reasons comes back as a failure with its message and no cause', () => {
@@ -84,7 +111,7 @@ test('an answer that is not the 0.7 wire format throws, for the facade to report
   for (const text of bad) {
     assert.throws(() => receiptAnswer(text), text);
   }
-  assert.throws(() => jwsAnswer('{"verified":true,"payload":{"a":1}}'));
+  assert.throws(() => jwsAnswer('{"verified":true,"payload":{"a":1},"environment":null}'));
   const receipt = JSON.parse(WITH_TO_JSON[0].expected.toJson);
   for (const mutate of [
     (r) => delete r.bundle_id,
@@ -95,6 +122,8 @@ test('an answer that is not the 0.7 wire format throws, for the facade to report
   ]) {
     const copy = structuredClone(receipt);
     mutate(copy);
-    assert.throws(() => receiptAnswer(JSON.stringify({ verified: true, payload: copy })));
+    assert.throws(() =>
+      receiptAnswer(JSON.stringify({ verified: true, payload: copy, environment: null })),
+    );
   }
 });

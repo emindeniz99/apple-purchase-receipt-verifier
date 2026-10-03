@@ -12,7 +12,9 @@
  * - the ABI check: the module must export the `@0.1.0` operations this
  *   package calls and import exactly `random-get`, or `createVerifier`
  *   fails naming what the module has;
- * - `init` once per instance, with the roots of the caller's `Config`;
+ * - `init` once per instance, with the roots of the caller's `Config`, and
+ *   the `max_input_bytes` its answer states: the most bytes of one input
+ *   the module needs, which the instance's calls cut their input to;
  * - dropping an instance after any failure inside it. A trapped component
  *   instance refuses every later call ("cannot enter component instance"),
  *   so the next call instantiates a fresh one and runs `init` again.
@@ -124,7 +126,12 @@ export function initConfig(rootsBase64: readonly string[]): Uint8Array {
   return utf8.encode(JSON.stringify({ roots: rootsBase64 }));
 }
 
-function initAnswer(text: string): void {
+/**
+ * Reads `init`'s answer: the `max_input_bytes` of `{"ok":true,
+ * "max_input_bytes":N}`, a positive integer. An accepting answer without
+ * it comes from a module of another ABI version and is no answer.
+ */
+export function initAnswer(text: string): number {
   let answer: unknown;
   try {
     answer = JSON.parse(text);
@@ -132,22 +139,29 @@ function initAnswer(text: string): void {
     throw new Error('init answered something that is not JSON');
   }
   if (answer !== null && typeof answer === 'object') {
-    const { ok, message } = answer as { ok?: unknown; message?: unknown };
-    if (ok === true) {
-      return;
+    const { ok, message, max_input_bytes: maxInputBytes } = answer as Record<string, unknown>;
+    if (ok === true && Number.isSafeInteger(maxInputBytes) && (maxInputBytes as number) > 0) {
+      return maxInputBytes as number;
     }
     if (ok === false && typeof message === 'string') {
       throw new InitRefusedError(message, text);
     }
   }
-  throw new Error('init answered neither {"ok":true} nor {"ok":false,"message":...}');
+  throw new Error(
+    'init answered neither {"ok":true,"max_input_bytes":N} nor {"ok":false,"message":...}',
+  );
 }
 
-function freshInstance(config: Uint8Array): Bindings {
+/** An initialised instance and the input length its `init` stated. */
+interface Instance {
+  readonly bindings: Bindings;
+  readonly maxInputBytes: number;
+}
+
+function freshInstance(config: Uint8Array): Instance {
   checkAbi();
   const bindings = instantiate(getCoreModule, IMPORTS).verify;
-  initAnswer(bindings.init(config));
-  return bindings;
+  return { bindings, maxInputBytes: initAnswer(bindings.init(config)) };
 }
 
 /**
@@ -157,25 +171,26 @@ function freshInstance(config: Uint8Array): Bindings {
  */
 export class Slot {
   #config: Uint8Array;
-  #bindings: Bindings | null;
+  #instance: Instance | null;
 
   /** Instantiates and runs `init` now, so a refused root fails the caller's `createVerifier`. */
   constructor(config: Uint8Array) {
     this.#config = config;
-    this.#bindings = freshInstance(config);
+    this.#instance = freshInstance(config);
   }
 
   /**
-   * Runs `op` on the instance, creating one first if the last was dropped.
-   * Anything thrown (a trap, a refused instance, an answer `read` cannot
-   * read) drops the instance and is rethrown for the caller to report.
+   * Runs `op` on the instance, creating one first if the last was dropped;
+   * `op` gets the `max_input_bytes` that instance's `init` stated. Anything
+   * thrown (a trap, a refused instance, an answer `read` cannot read) drops
+   * the instance and is rethrown for the caller to report.
    */
-  call<T>(op: (bindings: Bindings) => string, read: (text: string) => T): T {
+  call<T>(op: (bindings: Bindings, maxInputBytes: number) => string, read: (text: string) => T): T {
     try {
-      this.#bindings ??= freshInstance(this.#config);
-      return read(op(this.#bindings));
+      this.#instance ??= freshInstance(this.#config);
+      return read(op(this.#instance.bindings, this.#instance.maxInputBytes));
     } catch (error) {
-      this.#bindings = null;
+      this.#instance = null;
       throw error;
     }
   }

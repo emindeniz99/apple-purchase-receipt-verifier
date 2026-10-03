@@ -7,7 +7,8 @@ declare(strict_types=1);
 // `mode.json` says: {"exit": 0, "stdout": "...", "stderr": "...", "sleep": 0,
 // "read_stdin": true, "info": "<json>"}.
 //
-// `info` answers the ABI line; every other subcommand follows the mode.
+// `info` answers the ABI line and the module's input length; every other
+// subcommand follows the mode.
 
 $dir = (string) getenv('FAKE_APRV_DIR');
 $mode = json_decode((string) @file_get_contents($dir . '/mode.json'), true);
@@ -32,7 +33,7 @@ $entry = [
 file_put_contents($dir . '/log.jsonl', json_encode($entry, JSON_INVALID_UTF8_SUBSTITUTE) . "\n", FILE_APPEND);
 
 if (($arguments[0] ?? '') === 'info') {
-    echo $mode['info'] ?? '{"abi":"aprv:verifier@0.1.0"}';
+    echo $mode['info'] ?? '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":3145729}}';
     exit(0);
 }
 if (isset($mode['sleep'])) {

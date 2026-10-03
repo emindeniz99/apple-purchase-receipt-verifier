@@ -24,6 +24,10 @@ type Guest struct {
 	m       api.Module
 	realloc api.Function
 	dead    bool
+	// maxInput is the max_input_bytes this instance's init stated: the most
+	// bytes of one input the module needs. Every input is cut to it; 0
+	// before init, whose configuration passes whole.
+	maxInput uint32
 }
 
 // newGuest instantiates the module and runs init with config, the JSON of
@@ -45,19 +49,35 @@ func (mod *module) newGuest(config []byte) (*Guest, error) {
 	if err != nil {
 		return nil, err
 	}
-	var reply struct {
-		OK      *bool  `json:"ok"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal([]byte(answer), &reply); err != nil || reply.OK == nil {
+	g.maxInput, err = initAnswer(answer)
+	if err != nil {
 		g.close()
-		return nil, &ResultError{Fn: "init", Detail: "the answer is not {\"ok\":...}"}
-	}
-	if !*reply.OK {
-		g.close()
-		return nil, &InitRefusedError{Message: reply.Message, Answer: answer}
+		return nil, err
 	}
 	return g, nil
+}
+
+// initAnswer reads init's answer: {"ok":true,"max_input_bytes":N}, N a
+// positive integer, gives N; {"ok":false,"message":...} is an
+// *InitRefusedError. An accepting answer without N comes from a module of
+// another ABI version, and like any answer of another shape is a
+// *ResultError.
+func initAnswer(answer string) (uint32, error) {
+	var reply struct {
+		OK            *bool   `json:"ok"`
+		Message       string  `json:"message"`
+		MaxInputBytes *uint32 `json:"max_input_bytes"`
+	}
+	if err := json.Unmarshal([]byte(answer), &reply); err != nil || reply.OK == nil {
+		return 0, &ResultError{Fn: "init", Detail: "the answer is not {\"ok\":...}"}
+	}
+	if !*reply.OK {
+		return 0, &InitRefusedError{Message: reply.Message, Answer: answer}
+	}
+	if reply.MaxInputBytes == nil || *reply.MaxInputBytes == 0 {
+		return 0, &ResultError{Fn: "init", Detail: "the answer states no max_input_bytes"}
+	}
+	return *reply.MaxInputBytes, nil
 }
 
 // close discards the instance and everything in it.
@@ -75,19 +95,25 @@ func (g *Guest) close() {
 // memorySize is the instance's linear memory in bytes.
 func (g *Guest) memorySize() uint32 { return g.m.Memory().Size() }
 
-// maxInput is the most bytes of any input that is copied into linear memory:
-// one more than the largest cap the core has (3,145,728 for a receipt or an
-// endpoint body). An input over a cap is over it however long it is, so the
-// core answers TOO_LARGE (21002 at the endpoint) to the cut input exactly as it
-// would to the whole one, and a hostile caller cannot make this package copy
-// hundreds of megabytes into the module first.
-const maxInput = 3_145_729
+// cut is the first g.maxInput bytes of an input, or all of it before init.
+// g.maxInput is one more than the largest cap the core has (3,145,728 for a
+// receipt or an endpoint body), as init states it. An input over a cap is
+// over it however long it is, so the core answers TOO_LARGE (21002 at the
+// endpoint) to the cut input exactly as it would to the whole one, and a
+// hostile caller cannot make this package copy hundreds of megabytes into
+// the module first.
+func (g *Guest) cut(n int) int {
+	if g.maxInput > 0 && uint64(n) > uint64(g.maxInput) {
+		return int(g.maxInput)
+	}
+	return n
+}
 
 // lower turns WIT values into core arguments for fn: a u32 (uint32) and a
-// u64 (uint64) pass as scalars; a list<u8> (string or []byte) is copied
-// into a guest buffer from cabi_realloc, which the guest then owns, and
-// passes as (ptr, len). A wrong count or Go type is refused before
-// anything is allocated.
+// u64 (uint64) pass as scalars; a list<u8> (string or []byte) is cut to
+// the instance's max_input_bytes, copied into a guest buffer from
+// cabi_realloc, which the guest then owns, and passed as (ptr, len). A
+// wrong count or Go type is refused before anything is allocated.
 func (g *Guest) lower(fn string, args []any) ([]uint64, error) {
 	sig, ok := sigs[fn]
 	if !ok || len(sig) != len(args) {
@@ -120,14 +146,10 @@ func (g *Guest) lower(fn string, args []any) ([]uint64, error) {
 			out = append(out, v)
 			continue
 		case string:
-			if len(v) > maxInput {
-				v = v[:maxInput]
-			}
+			v = v[:g.cut(len(v))]
 			n, write = len(v), func(ptr uint32) bool { return mem.WriteString(ptr, v) }
 		case []byte:
-			if len(v) > maxInput {
-				v = v[:maxInput]
-			}
+			v = v[:g.cut(len(v))]
 			n, write = len(v), func(ptr uint32) bool { return mem.Write(ptr, v) }
 		}
 		res, err := g.realloc.Call(ctx, 0, 0, 1, uint64(n))

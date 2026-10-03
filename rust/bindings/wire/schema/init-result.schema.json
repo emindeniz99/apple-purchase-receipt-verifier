@@ -2,17 +2,23 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/rust/bindings/wire/schema/init-result.schema.json",
   "title": "The answer of init",
-  "description": "What aprv.wasm's init export returns: {\"ok\":true}, or {\"ok\":false,\"message\":...} naming why the configuration was refused (not JSON, a member other than roots, a root that is not base64 or not a certificate). After a refusal init may be called again on the same instance; after {\"ok\":true} a second init traps.",
+  "description": "What aprv.wasm's init export returns: {\"ok\":true,\"max_input_bytes\":N}, or {\"ok\":false,\"message\":...} naming why the configuration was refused (not JSON, a member other than roots, a root that is not base64 or not a certificate). After a refusal init may be called again on the same instance; after {\"ok\":true,...} a second init traps.",
   "oneOf": [
     {
       "type": "object",
       "required": [
-        "ok"
+        "ok",
+        "max_input_bytes"
       ],
       "additionalProperties": false,
       "properties": {
         "ok": {
           "const": true
+        },
+        "max_input_bytes": {
+          "description": "The most bytes of one input a host needs to hand the module: one over the core's largest size cap. A longer input may be cut to this length, and the module answers TOO_LARGE for it (21002 from verify-receipt-endpoint), as for the whole input. A host reads it here and keeps no copy (DECISIONS.md R42).",
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

@@ -6,7 +6,6 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
 use CurlHandle;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Info;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Input;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Text;
 use InvalidArgumentException;
 use LogicException;
@@ -36,6 +35,15 @@ final class HttpTransport implements Transport
     private ?CurlHandle $curl = null;
 
     private bool $opened = false;
+
+    /**
+     * The `limits.max_input_bytes` `GET /v1/info` stated: the most of an
+     * input sent. The server reads no more than this of a body announced
+     * past its drain limit and closes after its answer, so sending the rest
+     * would meet a reset instead of that answer. Null until {@see open()}
+     * has read it.
+     */
+    private ?int $maxInputBytes = null;
 
     private readonly string $baseUrl;
 
@@ -75,12 +83,15 @@ final class HttpTransport implements Transport
             throw new RuntimeException("GET /v1/info answered HTTP {$status}: is this an aprv server?");
         }
         $info = Info::decode($body, 'the server');
+        $this->maxInputBytes = Info::maxInputBytes($info, 'the server');
         $this->checkRoots($info, $roots);
     }
 
     public function call(Operation $operation, string $input, int $nowMs): string
     {
-        [$status, $body, $type] = $this->request('POST', $operation->httpPath(), substr($input, 0, Input::MAX_BYTES), $nowMs);
+        $maxInputBytes = $this->maxInputBytes
+            ?? throw new LogicException('call() before a successful open(): Verifier::create() opens a transport before its first call');
+        [$status, $body, $type] = $this->request('POST', $operation->httpPath(), substr($input, 0, $maxInputBytes), $nowMs);
         // A 413 carries the module's own answer to an input over the cap, as
         // JSON; a 413 problem document (an older server) falls through.
         if ($status === 200 || ($status === 413 && str_starts_with(strtolower($type), 'application/json'))) {

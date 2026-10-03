@@ -33,6 +33,7 @@
 //! and what does or does not decode as text is decided here.
 
 use crate::datetime::parse_receipt_date;
+use crate::environment::Environment;
 use aprv_openssl::payload::{attribute_integer, attribute_string, receipt_attributes, StringKind};
 use aprv_openssl::Budget;
 use serde_json::{json, Value};
@@ -438,6 +439,19 @@ fn attributes_json(attributes: &UnknownAttributes) -> Value {
 }
 
 impl ReceiptPayload {
+    /// The environment the receipt names, read from
+    /// [`receipt_type`](ReceiptPayload::receipt_type): `Production` and
+    /// `ProductionVPP` are [`Environment::Production`], `ProductionSandbox`
+    /// and `ProductionVPPSandbox` are [`Environment::Sandbox`], anything
+    /// else (`Xcode`, a missing value) is `None`. It states what Apple's
+    /// value means and decides nothing; whether to accept it is the
+    /// caller's decision. The endpoint routes 21007 and 21008 on the same
+    /// rule.
+    #[must_use]
+    pub fn environment(&self) -> Option<Environment> {
+        Environment::from_receipt_type(self.receipt_type.as_deref())
+    }
+
     /// This payload as JSON, for logging and storage (docs/design/0.7-api.md
     /// "Our JSON"). Every port writes the same value; the bytes may differ.
     /// `null` for a missing field, 64-bit ids as strings, bytes as padded

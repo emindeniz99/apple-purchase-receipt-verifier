@@ -36,15 +36,29 @@ internal static class SyntheticAnswers
         return new ReceiptPayload(
             "ProductionSandbox", 1234567890123456789L, "com.example.app", new byte[] { 0x0c, 0x0f, 0x63 },
             "1.2.3", new byte[] { 1, 2, 3, 4 }, new byte[] { 0xff, 0x00, 0x80 }, 1722945600000L,
-            -42L, 9007199254740993L, inApp, 1705320000000L, "1.0", 1893456000000L, topUnknown);
+            -42L, 9007199254740993L, inApp, 1705320000000L, "1.0", 1893456000000L, topUnknown,
+            AppleEnvironment.Sandbox);
     }
 
-    /// <summary>A <c>verify-receipt</c> answer that verified <paramref name="payload"/>.</summary>
-    internal static string Verified(ReceiptPayload payload) => "{\"verified\":true,\"payload\":" + payload.ToJson() + "}";
+    /// <summary>
+    /// A <c>verify-receipt</c> answer that verified <paramref name="payload"/>,
+    /// with the payload's <see cref="ReceiptPayload.Environment"/> beside it.
+    /// </summary>
+    internal static string Verified(ReceiptPayload payload) =>
+        "{\"verified\":true,\"payload\":" + payload.ToJson() + ",\"environment\":" + EnvironmentJson(payload.Environment) + "}";
 
-    /// <summary>A <c>verify-signed-data</c> answer that verified <paramref name="payloadJson"/>.</summary>
-    internal static string VerifiedJws(string payloadJson) =>
-        "{\"verified\":true,\"payload\":" + Internal.Json.Write(json => json.WriteStringValue(payloadJson)) + "}";
+    /// <summary>A <c>verify-signed-data</c> answer that verified <paramref name="payloadJson"/> in <paramref name="environment"/>.</summary>
+    internal static string VerifiedJws(string payloadJson, AppleEnvironment? environment = null) =>
+        "{\"verified\":true,\"payload\":" + Internal.Json.Write(json => json.WriteStringValue(payloadJson))
+        + ",\"environment\":" + EnvironmentJson(environment) + "}";
+
+    /// <summary>The wire's spelling of the environment beside a verified payload (DECISIONS.md R42).</summary>
+    internal static string EnvironmentJson(AppleEnvironment? environment) => environment switch
+    {
+        AppleEnvironment.Production => "\"Production\"",
+        AppleEnvironment.Sandbox => "\"Sandbox\"",
+        _ => "null",
+    };
 
     /// <summary>A verification failure answer.</summary>
     internal static string Failed(string reason, string message) =>

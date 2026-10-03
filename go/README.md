@@ -56,7 +56,7 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   moves bytes in and JSON out, and turns the answer into Go values. Its
   SHA-256 is checked against `internal/wasm/aprv.wasm.sha256` when the package
   loads, and CI checks that file against the release build.
-- **Inputs are cut at one byte over the cap.** No more than 3,145,729 bytes of any input are copied into the module, so the core itself answers `TOO_LARGE` (21002 at the endpoint) and a huge input costs no more memory than a barely oversized one.
+- **Inputs are cut at one byte over the cap.** No more of any input is copied into the module than the `max_input_bytes` its `init` answer states (3,145,729 bytes, one over the largest cap; the package keeps no copy of the number), so the core itself answers `TOO_LARGE` (21002 at the endpoint) and a huge input costs no more memory than a barely oversized one.
 - **The module is sandboxed.** It has one import, `random-get`, answered from
   `crypto/rand`; it cannot read a file, the network or the clock. A hostile
   receipt that breaks the parser inside it stays in the module's 256 MiB of
@@ -125,7 +125,7 @@ refused by `NewVerifier`.
 | Method | Input | Success |
 |---|---|---|
 | `VerifyReceipt(string)` | the base64 receipt an app sends | `*ReceiptPayload, error` |
-| `VerifySignedData(string)` | any Apple-signed compact JWS | `*JSONPayload, error`: the signed JSON text |
+| `VerifySignedData(string)` | any Apple-signed compact JWS | `*JSONPayload, error`: the signed JSON text and the environment it names |
 | `VerifyReceiptEndpoint(Environment, string)` | a `verifyReceipt` request body | Apple's response body, always, as a `string` |
 
 The first two return `error` as `*Failure` on rejection. The endpoint never
@@ -149,8 +149,20 @@ receipt.ReceiptCreationDateMs       // *int64
 receipt.InApp[0].ProductID
 receipt.InApp[0].ExpiresDateMs
 receipt.UnknownAttributes           // map[int64][][]byte, in receipt order
+receipt.Environment                 // *Environment: EnvironmentProduction, EnvironmentSandbox or nil
 receipt.ToJSON()                    // JSON with the same value in every port
 ```
+
+`Environment` is the environment `ReceiptType` names, as the module states
+it: `Production` and `ProductionVPP` are `EnvironmentProduction`,
+`ProductionSandbox` and `ProductionVPPSandbox` `EnvironmentSandbox`, and
+anything else (`Xcode`, a missing value) `nil`. A JWS payload's
+`Environment()` comes from the first of the top-level `environment` claim,
+a notification's `data.environment` and a summary notification's
+`summary.environment` that is present: `Production`, `Sandbox`, or `nil`
+for anything else (`Xcode`, `LocalTesting`) or none. `ToJSON()` does not
+write it. `NewJSONPayload(json, environment)` builds a payload for a test
+with the environment given.
 
 Decoding follows the rules every port shares: the first occurrence of an
 attribute wins; every attribute that does not end up in a typed field (a
@@ -200,20 +212,25 @@ if receipt.BundleID == nil || *receipt.BundleID != "com.example.app" {
 }
 ```
 
-For a JWS, read the claims with your own JSON decoder. No typed JWS models
+**The environment** is `receipt.Environment` for a receipt and
+`payload.Environment()` for a JWS. Decide whether to accept
+`EnvironmentSandbox` at all, and scope what you grant from it: TestFlight,
+including public-link installs, buys in sandbox for free, and App Review
+runs production builds against sandbox.
+
+For a JWS, read the other claims with your own JSON decoder. No typed JWS models
 ship with this library; Apple's own `app-store-server-library` publishes
 those for languages that have one:
 
 ```go
 var transaction struct {
     BundleID    string `json:"bundleId"`
-    Environment string `json:"environment"`
     ExpiresDate *int64 `json:"expiresDate"`
 }
 json.Unmarshal([]byte(payload.JSON()), &transaction)
 ```
 
-`bundleId`, `environment`, `appAppleId` for a Production `AppTransaction`,
+`bundleId`, `appAppleId` for a Production `AppTransaction`,
 `revocationDate`, `expiresDate`, and `signedDate` for freshness. No payload
 is rejected for its age, as in Apple's own App Store Server Libraries: the
 right limit depends on the endpoint (Apple retries a server notification for
@@ -400,10 +417,12 @@ numbers:
 |---|---|
 | `(*ReceiptPayload).String()` | `ToJSON()`, which it returned |
 | `(*JSONPayload).String()` | `JSON()`, which it returned |
-
-The two `String()` removals do not break compilation: `fmt.Println(receipt)`, `%v` and slog's text handler keep compiling but print the struct instead of the JSON. Call `ToJSON()` or `JSON()` where the JSON was printed.
 | `MaxReceiptBytes`, `MaxRequestBytes`, `MaxJWSBytes` | removed: the caps are 3,145,728, 3,145,728 and 262,144 UTF-8 bytes, and an input over one is `TOO_LARGE` (21002 at the endpoint) |
 | `MaxJSONNestingDepth`, `MaxJSONMemberNameLength`, `MaxJSONNumberDigits` | removed: the core has no JSON nesting or length bound since 0.8 (DECISIONS.md R40); only the size caps apply |
+| `FromReceiptType(receipt.ReceiptType)`, `FromJWSEnvironment(claim)` | removed: read `receipt.Environment` or `payload.Environment()`, which the module states; a JWS's also comes from a notification's `data.environment` and `summary.environment` |
+| `NewJSONPayload(json)` | `NewJSONPayload(json, environment)`, with `nil` for none |
+
+The two `String()` removals do not break compilation: `fmt.Println(receipt)`, `%v` and slog's text handler keep compiling but print the struct instead of the JSON. Call `ToJSON()` or `JSON()` where the JSON was printed.
 
 ## Vendoring
 

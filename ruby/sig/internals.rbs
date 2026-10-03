@@ -127,13 +127,15 @@ module ApplePurchaseReceiptVerifier
 
   class Guest
     LIMITS: Hash[Symbol, Integer]
-    MAX_INPUT_BYTES: Integer
 
     @broken: bool
+    @max_input_bytes: Integer?
     @store: Wasmtime::Store
     @memory: Wasmtime::Memory
     @realloc: Wasmtime::Func
     @operations: Hash[String, [Wasmtime::Func, Wasmtime::Func]]
+
+    attr_reader max_input_bytes: Integer?
 
     def initialize: (Runtime runtime, String? config_json) -> void
     def broken?: () -> bool
@@ -171,15 +173,17 @@ module ApplePurchaseReceiptVerifier
     DECIMAL: Regexp
     UNKNOWN_KEY: Regexp
     REASON_TOKEN: Regexp
+    ENVIRONMENTS: Hash[String?, String?]
 
-    def self.init_status: (String text) -> String?
+    def self.init_answer: (String text) -> Integer
     def self.receipt_result: (String text) -> VerificationResult
     def self.signed_data_result: (String text) -> VerificationResult
 
-    def self.result: (String text, String operation) { (untyped) -> (ReceiptPayload | JsonPayload) } -> VerificationResult
+    def self.result: (String text, String operation) { (untyped, String?) -> (ReceiptPayload | JsonPayload) } -> VerificationResult
     def self.failure: (Hash[String, untyped] answer, String operation) -> Failure
+    def self.environment: (Hash[String, untyped] answer, String operation) -> String?
     def self.object: (String text, String operation) -> Hash[String, untyped]
-    def self.receipt_payload: (untyped payload) -> ReceiptPayload
+    def self.receipt_payload: (untyped payload, String? environment) -> ReceiptPayload
     def self.in_app_purchase: (untyped purchase) -> InAppPurchase
     def self.unknown_attributes: (Hash[String, untyped] container) -> Hash[Integer, Array[String]]
     def self.list: [T] (Hash[String, untyped] container, String key) { (untyped) -> T } -> Array[T]

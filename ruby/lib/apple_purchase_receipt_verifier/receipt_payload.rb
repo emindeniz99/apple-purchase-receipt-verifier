@@ -40,6 +40,12 @@ module ApplePurchaseReceiptVerifier
   # (docs/design/0.7-api.md): a caller reading {#to_json}, these readers and
   # Apple's documentation sees one vocabulary.
   #
+  # {#environment} is the environment the module read from `receipt_type`
+  # (docs/rust-core/DECISIONS.md R42): {Environment::PRODUCTION} for
+  # `Production` and `ProductionVPP`, {Environment::SANDBOX} for
+  # `ProductionSandbox` and `ProductionVPPSandbox`, `nil` otherwise. It is
+  # not part of {#to_json}, which writes the receipt's own fields.
+  #
   # Public so callers can build one by hand in their own tests. Only a value
   # returned by {Verifier#verify_receipt} came from a receipt whose chain and
   # signature passed.
@@ -47,7 +53,7 @@ module ApplePurchaseReceiptVerifier
     :receipt_type, :app_item_id, :bundle_id, :bundle_id_bytes, :application_version,
     :opaque_value, :sha1_hash, :receipt_creation_date_ms, :download_id,
     :version_external_identifier, :in_app, :original_purchase_date_ms,
-    :original_application_version, :expiration_date_ms, :unknown_attributes
+    :original_application_version, :expiration_date_ms, :unknown_attributes, :environment
   ) do
     # This payload as JSON, for logging and storage (docs/design/0.7-api.md,
     # "Our JSON"). Every port writes the same value; the bytes may differ.

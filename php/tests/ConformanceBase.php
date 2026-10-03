@@ -183,6 +183,16 @@ abstract class ConformanceBase extends TestCase
             "{$id}: expected " . Shape::asString($expected['reason'] ?? '?', 'reason') . ' but verified',
         );
         $payload = $result->payload;
+        // The environment the module states beside the payload: Production,
+        // Sandbox, or null when the input names neither.
+        self::assertArrayHasKey('environment', $expected, "{$id}: harness error: an ok case states its environment");
+        $wantEnvironment = $expected['environment'];
+        self::assertTrue($payload instanceof ReceiptPayload || $payload instanceof JsonPayload, "{$id}: a verified payload");
+        self::assertSame(
+            $wantEnvironment === null ? null : Environment::from(Shape::asString($wantEnvironment, 'environment')),
+            $payload->environment,
+            "{$id}: environment",
+        );
         if ($case['operation'] === 'verifyReceipt') {
             /** @var ReceiptPayload $payload */
             $actual = json_decode($payload->toJson(), true, 65, JSON_THROW_ON_ERROR);

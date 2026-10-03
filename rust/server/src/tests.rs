@@ -12,7 +12,6 @@
 use crate::http::{self, App, ROUTES};
 use crate::roots::{Roots, DEFAULT_ROOT_SHA256};
 use crate::runtime::{Load, Op, Runtime, Verifier};
-use crate::MAX_BODY;
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
@@ -38,6 +37,14 @@ fn real() -> Arc<Verifier> {
         Arc::new(Verifier::new(rt, Roots::Defaults.config_json(), true).expect("init"))
     })
     .clone()
+}
+
+/// The most bytes of one input the real module needs, as its `init`
+/// answer states (DECISIONS.md R42): one over its largest cap, 3 MiB.
+fn max_input() -> usize {
+    let max = real().max_input_bytes();
+    assert_eq!(max, 3_145_729, "the module's init answer");
+    max
 }
 
 fn app(verifier: Arc<Verifier>, token: Option<&str>) -> axum::Router {
@@ -167,17 +174,18 @@ async fn a_verification_result_is_200_with_the_module_json_byte_for_byte() {
     }
 }
 
-/// The module's answer to `input` as every Wasm host feeds it: cut to
-/// MAX_BODY + 1 bytes.
+/// The module's answer to `input` as every Wasm host feeds it: cut to the
+/// `max_input_bytes` its `init` answer states.
 fn module_answer(v: &Verifier, op: Op, input: &[u8]) -> String {
-    v.invoke(op, &input[..input.len().min(MAX_BODY + 1)])
+    v.invoke(op, &input[..input.len().min(v.max_input_bytes())])
         .unwrap()
 }
 
 const NOW: u64 = 1_700_000_000_000;
 
 /// Each route with the size fixtures it takes (fixtures/limits, at and over
-/// the caps) and bodies far over MAX_BODY and past MAX_DRAIN.
+/// the caps) and bodies far over the module's input length and past
+/// MAX_DRAIN.
 fn size_inputs() -> Vec<(&'static str, Op, String, Vec<u8>)> {
     let receipt = Op::VerifyReceipt { now_ms: NOW };
     let jws = Op::VerifySignedData { now_ms: NOW };
@@ -225,11 +233,16 @@ fn size_inputs() -> Vec<(&'static str, Op, String, Vec<u8>)> {
         if path == "/v1/receipt/verify" {
             // A raw DER receipt one byte over the cap: only its length and
             // its leading SEQUENCE tag matter, so it is built here.
-            let mut der = vec![0; MAX_BODY + 1];
+            let mut der = vec![0; max_input()];
             der[0] = 0x30;
-            out.push((path, op, "DER of MAX_BODY + 1".into(), der));
+            out.push((path, op, "DER of max_input_bytes".into(), der));
         }
-        out.push((path, op, "2 x MAX_BODY".into(), vec![b'A'; 2 * MAX_BODY]));
+        out.push((
+            path,
+            op,
+            "2 x max_input_bytes".into(),
+            vec![b'A'; 2 * max_input()],
+        ));
         out.push((
             path,
             op,
@@ -241,7 +254,7 @@ fn size_inputs() -> Vec<(&'static str, Op, String, Vec<u8>)> {
 }
 
 /// Over the cap the server answers 413 with the module's own JSON for the
-/// first MAX_BODY + 1 bytes, byte for byte; at or under it, 200.
+/// first `max_input_bytes`, byte for byte; at or under it, 200.
 #[tokio::test]
 async fn a_body_over_the_cap_is_413_with_the_module_answer_byte_for_byte() {
     let v = real();
@@ -258,7 +271,7 @@ async fn a_body_over_the_cap_is_413_with_the_module_answer_byte_for_byte() {
             body,
         )
         .await;
-        let status = if len > MAX_BODY {
+        let status = if len >= max_input() {
             over += 1;
             assert!(
                 want.contains(r#""reason":"TOO_LARGE""#) || want == r#"{"status":21002}"#,
@@ -284,10 +297,12 @@ async fn a_body_over_the_cap_is_413_with_the_module_answer_byte_for_byte() {
 fn the_cli_prints_the_module_answer_and_exits_3_over_the_cap() {
     let v = real();
     for (path, op, name, body) in size_inputs() {
-        let (input, over) = crate::read_input(&body[..]).unwrap();
+        let (instance, max) = v.runtime.ready_instance(b"{}").unwrap().unwrap();
+        assert_eq!(max, max_input());
+        let (input, over) = crate::read_input(&body[..], max).unwrap();
         let mut out = Vec::new();
-        let code = crate::answer(&v.runtime, b"{}", op, &input, over, &mut out);
-        let want = if body.len() > MAX_BODY { 3 } else { 0 };
+        let code = crate::answer(instance, op, &input, over.then_some(max), &mut out);
+        let want = if body.len() >= max { 3 } else { 0 };
         assert_eq!(code, want, "{path} {name}");
         assert_eq!(
             String::from_utf8(out).unwrap(),
@@ -325,7 +340,7 @@ fn read_response(s: &mut impl std::io::BufRead) -> (String, Vec<(String, String)
 
 /// Over a real connection: a body between the cap and MAX_DRAIN is drained,
 /// answered 413 and the connection kept; a body announced past MAX_DRAIN is
-/// read only to MAX_BODY + 1 bytes, answered 413 and the connection closed.
+/// read only to `max_input_bytes`, answered 413 and the connection closed.
 #[tokio::test(flavor = "multi_thread")]
 async fn over_a_connection_the_drain_keeps_it_and_past_the_drain_it_closes() {
     use std::io::{BufReader, Read, Write};
@@ -340,9 +355,10 @@ async fn over_a_connection_the_drain_keeps_it_and_past_the_drain_it_closes() {
             env: 1,
             now_ms: NOW,
         },
-        &vec![b'A'; MAX_BODY + 1],
+        &vec![b'A'; max_input()],
     );
     assert_eq!(want, r#"{"status":21002}"#);
+    let max = max_input();
     tokio::task::spawn_blocking(move || {
         let head = |len: usize| {
             format!(
@@ -352,8 +368,8 @@ async fn over_a_connection_the_drain_keeps_it_and_past_the_drain_it_closes() {
         // Twice the cap, sent whole: drained, answered, the connection kept.
         let mut s = std::net::TcpStream::connect(addr).unwrap();
         s.set_read_timeout(Some(std::time::Duration::from_secs(60))).unwrap();
-        s.write_all(head(2 * MAX_BODY).as_bytes()).unwrap();
-        s.write_all(&vec![b'A'; 2 * MAX_BODY]).unwrap();
+        s.write_all(head(2 * max).as_bytes()).unwrap();
+        s.write_all(&vec![b'A'; 2 * max]).unwrap();
         let mut rd = BufReader::new(s.try_clone().unwrap());
         let (status, headers, body) = read_response(&mut rd);
         assert!(status.starts_with("HTTP/1.1 413"), "{status}");
@@ -365,11 +381,11 @@ async fn over_a_connection_the_drain_keeps_it_and_past_the_drain_it_closes() {
         assert!(status.starts_with("HTTP/1.1 200"), "{status}");
         assert_eq!(body, b"ok");
 
-        // Announced past MAX_DRAIN, MAX_BODY + 1 bytes sent: answered, closed.
+        // Announced past MAX_DRAIN, max_input_bytes sent: answered, closed.
         let mut s = std::net::TcpStream::connect(addr).unwrap();
         s.set_read_timeout(Some(std::time::Duration::from_secs(60))).unwrap();
         s.write_all(head(http::MAX_DRAIN + 1).as_bytes()).unwrap();
-        s.write_all(&vec![b'A'; MAX_BODY + 1]).unwrap();
+        s.write_all(&vec![b'A'; max]).unwrap();
         let mut rd = BufReader::new(s);
         let (status, headers, body) = read_response(&mut rd);
         assert!(status.starts_with("HTTP/1.1 413"), "{status}");
@@ -557,13 +573,11 @@ fn a_truncated_der_root_file_is_refused_by_init() {
         .err()
         .expect("init refuses a truncated certificate");
     assert!(refused.contains(r#""ok":false"#), "{refused}");
-    let mut out = Vec::new();
-    let op = Op::VerifyReceipt { now_ms: NOW };
+    // The CLI stops there, before it reads stdin or writes stdout.
     assert_eq!(
-        crate::answer(&v.runtime, &roots.config_json(), op, b"", false, &mut out),
-        2
+        crate::ready(&v.runtime, &roots.config_json()).err(),
+        Some(2)
     );
-    assert!(out.is_empty());
     // The whole file is a root the module takes.
     let whole = Roots::from_files(&[("AppleRootCA-G3.cer", &der)]).unwrap();
     assert!(v
@@ -577,7 +591,7 @@ fn a_truncated_der_root_file_is_refused_by_init() {
 fn a_store_holds_exactly_one_component_instance() {
     let rt = Runtime::new(Load::File(&component_path()), 10_000).unwrap();
     // One instance per store works (and init, and a call) ...
-    let mut i = rt.ready_instance(b"{}").unwrap().unwrap();
+    let (mut i, _) = rt.ready_instance(b"{}").unwrap().unwrap();
     assert!(i
         .call(Op::VerifyReceipt { now_ms: 0 }, &g5())
         .unwrap()
@@ -606,10 +620,10 @@ fn a_trapped_pool_instance_is_discarded_and_the_next_call_gets_a_fresh_one() {
 // ------------------------------------------------------------ hostile components
 
 /// A component with aprv.wasm's interface whose operations misbehave:
-/// init answers {"ok":true}; verify-receipt loops forever; verify-signed-data
-/// grows memory by 16,384 pages (1 GiB); verify-receipt-endpoint returns
-/// bytes that are not UTF-8 as its string; and with env 1 asks the host
-/// for 1 GiB of random bytes first.
+/// init answers {"ok":true,"max_input_bytes":3145729}; verify-receipt loops
+/// forever; verify-signed-data grows memory by 16,384 pages (1 GiB);
+/// verify-receipt-endpoint returns bytes that are not UTF-8 as its string;
+/// and with env 1 asks the host for 1 GiB of random bytes first.
 const HOSTILE: &str = include_str!("../tests/hostile.wat");
 
 fn hostile(pool: bool, time_limit_ms: u64) -> Arc<Verifier> {

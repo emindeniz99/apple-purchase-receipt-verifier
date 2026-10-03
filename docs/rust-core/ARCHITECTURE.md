@@ -190,7 +190,10 @@ world aprv {
 }
 ```
 
-The WIT file is the contract. It lives in `rust/bindings/abi/wit/`, and
+The WIT file is the contract (its doc comment on `init` still quotes the
+answer before R42 added `max_input_bytes`; the comment changes with the
+next ABI version, since CI diffs the file). It lives in
+`rust/bindings/abi/wit/`, and
 CI diffs it against what `wasm-tools component wit` reads back from the
 built module (§9). The version in the package name is the ABI version:
 export names carry it (`aprv:verifier/verify@0.1.0#init`), so a wrapper
@@ -215,12 +218,22 @@ export  memory, _initialize
 
 | Operation | Input | Output (UTF-8 JSON, aprv-wire) |
 |---|---|---|
-| `init` | the configuration JSON, roots as base64 of DER or PEM bytes | `{"ok":true}` or `{"ok":false,"message":"..."}` |
-| `verify-receipt` | `now-ms`, the `receipt-data` string's bytes (standard base64) | `{"verified":true,"payload":<ReceiptPayload JSON>}` or a failure |
-| `verify-signed-data` | `now-ms`, the compact JWS's bytes | `{"verified":true,"payload":"<the signed payload JSON, exactly>"}` or a failure |
+| `init` | the configuration JSON, roots as base64 of DER or PEM bytes | `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":"..."}` |
+| `verify-receipt` | `now-ms`, the `receipt-data` string's bytes (standard base64) | `{"verified":true,"payload":<ReceiptPayload JSON>,"environment":<E>}` or a failure |
+| `verify-signed-data` | `now-ms`, the compact JWS's bytes | `{"verified":true,"payload":"<the signed payload JSON, exactly>","environment":<E>}` or a failure |
 | `verify-receipt-endpoint` | `env`, `now-ms`, the verifyReceipt request body | Apple's response JSON, byte for byte |
 
 A failure is `{"verified":false,"reason":"<0.7 Reason>","message":"..."}`.
+`<E>` is `"Production"`, `"Sandbox"` or `null`: the environment the core
+read, from a receipt's `receipt_type` or from the first of a JWS
+payload's top-level `environment`, `data.environment` and
+`summary.environment` that is present. A wrapper exposes it on the
+result's payload and holds no mapping of its own (DECISIONS.md R42).
+`N` is the most bytes of one input a wrapper hands the module, one over
+the core's largest cap (3,145,729): a longer input may be cut to `N`,
+and the module answers `TOO_LARGE` for it. A wrapper reads `N` from
+`init` and keeps no copy; an accepting answer without it comes from an
+older module and is a module failure.
 
 - **Inputs are bytes, outputs are strings.** A WIT `string` must be UTF-8
   and the lift is unchecked in release builds of wit-bindgen, so the three
@@ -243,7 +256,7 @@ A failure is `{"verified":false,"reason":"<0.7 Reason>","message":"..."}`.
   refuses that before `init` (SURFACE.md §2). A root that does not parse is
   `{"ok":false}`, which the wrapper turns into its language's
   configuration error at `create`; `init` may then be retried on the same
-  instance. A second `init` after `{"ok":true}` traps.
+  instance. A second `init` after `{"ok":true,...}` traps.
 - **A verify before `init`** is a programmer error and traps. Wrappers
   cannot reach it: they `init` every instance they create.
 - **No policy.** No bundle id, environment filter, app Apple id or device

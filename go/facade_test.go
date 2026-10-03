@@ -47,7 +47,7 @@ func mirrorVerifier(t testing.TB, config *applereceipt.Config) *applereceipt.Ver
 
 func ptr[T any](v T) *T { return &v }
 
-const fullReceiptAnswer = `{"verified":true,"payload":{
+const fullReceiptPayload = `{
  "receipt_type":"ProductionSandbox","app_item_id":"1234567890123456789",
  "bundle_id":"com.example.app","bundle_id_bytes":"Y29tLmV4YW1wbGUuYXBw",
  "application_version":"7","opaque_value":"AQID","sha1_hash":"BAUG",
@@ -61,7 +61,9 @@ const fullReceiptAnswer = `{"verified":true,"payload":{
    "unknown_attributes":{"9999":["AQ=="]}}],
  "original_purchase_date_ms":3,"original_application_version":"1.0",
  "expiration_date_ms":null,
- "unknown_attributes":{"13":["AQI=","Aw=="],"2147483647":[]}}}`
+ "unknown_attributes":{"13":["AQI=","Aw=="],"2147483647":[]}}`
+
+const fullReceiptAnswer = `{"verified":true,"payload":` + fullReceiptPayload + `,"environment":"Sandbox"}`
 
 func TestAVerifiedReceiptIsReadIntoTheGoTypes(t *testing.T) {
 	verifier := mirrorVerifier(t, nil)
@@ -94,24 +96,26 @@ func TestAVerifiedReceiptIsReadIntoTheGoTypes(t *testing.T) {
 		OriginalPurchaseDateMs:     ptr(int64(3)),
 		OriginalApplicationVersion: ptr("1.0"),
 		UnknownAttributes:          applereceipt.UnknownAttributes{13: {{1, 2}, {3}}, 2147483647: {}},
+		Environment:                ptr(applereceipt.EnvironmentSandbox),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("payload\n got  %+v\n want %+v", got, want)
 	}
 	// ToJSON writes the same value the module did (0.7: same value, not
-	// same bytes), so what a caller logs is what the core said.
-	original := strings.TrimSuffix(strings.TrimPrefix(strings.Join(strings.Fields(fullReceiptAnswer), ""), `{"verified":true,"payload":`), "}")
+	// same bytes), so what a caller logs is what the core said; the
+	// environment beside the payload is not part of it.
+	original := strings.Join(strings.Fields(fullReceiptPayload), "")
 	if !jsonEqual(parseJSONAny(t, "answer", original), parseJSONAny(t, "answer", got.ToJSON())) {
 		t.Errorf("ToJSON is not the module's payload:\n got  %s\n want %s", got.ToJSON(), original)
 	}
 }
 
 func TestAVerifiedReceiptWithNothingCarriedHasEmptyMapsNotNil(t *testing.T) {
-	got, err := mirrorVerifier(t, nil).VerifyReceipt(`{"verified":true,"payload":{}}`)
+	got, err := mirrorVerifier(t, nil).VerifyReceipt(`{"verified":true,"payload":{},"environment":null}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.UnknownAttributes == nil || len(got.InApp) != 0 || got.BundleID != nil {
+	if got.UnknownAttributes == nil || len(got.InApp) != 0 || got.BundleID != nil || got.Environment != nil {
 		t.Fatalf("an empty payload: %+v", got)
 	}
 }
@@ -121,13 +125,35 @@ func TestSignedDataIsReturnedExactlyAsTheModuleWroteIt(t *testing.T) {
 	// The payload is a JSON string holding the signed bytes: whitespace,
 	// key order, 1.0 against 1 and escapes all survive.
 	signed := "{ \"b\":1.0,\n \"a\": \"\\u00e9\\ud83d\\ude00\" ,\"id\":12345678901234567890}"
-	answer := `{"verified":true,"payload":` + quote(signed) + `}`
+	answer := `{"verified":true,"payload":` + quote(signed) + `,"environment":"Production"}`
 	got, err := verifier.VerifySignedData(answer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.JSON() != signed {
 		t.Fatalf("payload %q, want %q", got.JSON(), signed)
+	}
+	if environment := got.Environment(); environment == nil || *environment != applereceipt.EnvironmentProduction {
+		t.Fatalf("environment %v, want Production", environment)
+	}
+}
+
+func TestTheEnvironmentIsTheModulesMemberBesideThePayload(t *testing.T) {
+	verifier := mirrorVerifier(t, nil)
+	for member, want := range map[string]*applereceipt.Environment{
+		`"Production"`: ptr(applereceipt.EnvironmentProduction),
+		`"Sandbox"`:    ptr(applereceipt.EnvironmentSandbox),
+		`null`:         nil,
+	} {
+		// The payloads name another environment: only the member counts.
+		receipt, err := verifier.VerifyReceipt(`{"verified":true,"payload":{"receipt_type":"Xcode"},"environment":` + member + `}`)
+		if err != nil || !reflect.DeepEqual(receipt.Environment, want) {
+			t.Errorf("receipt, %s: %v, %v", member, receipt, err)
+		}
+		signed, err := verifier.VerifySignedData(`{"verified":true,"payload":"{\"environment\":\"Xcode\"}","environment":` + member + `}`)
+		if err != nil || !reflect.DeepEqual(signed.Environment(), want) {
+			t.Errorf("JWS, %s: %v, %v", member, signed, err)
+		}
 	}
 }
 
@@ -176,23 +202,28 @@ func TestAnAnswerThatIsNotTheWireIsInternalErrorNeverAGuess(t *testing.T) {
 		"an array":                        `[]`,
 		"a scalar":                        `true`,
 		"content after the result":        `{"verified":false,"reason":"MALFORMED","message":""} {}`,
-		"verified without a payload":      `{"verified":true}`,
-		"verified with a reason":          `{"verified":true,"payload":{},"reason":"MALFORMED"}`,
+		"verified without a payload":      `{"verified":true,"environment":null}`,
+		"verified with a reason":          `{"verified":true,"payload":{},"environment":null,"reason":"MALFORMED"}`,
+		"verified without an environment": `{"verified":true,"payload":{}}`,
+		"an environment outside the two":  `{"verified":true,"payload":{},"environment":"Xcode"}`,
+		"a lowercase environment":         `{"verified":true,"payload":{},"environment":"sandbox"}`,
+		"an environment that is a number": `{"verified":true,"payload":{},"environment":1}`,
 		"failed without a reason":         `{"verified":false,"message":"x"}`,
 		"failed with a payload":           `{"verified":false,"reason":"MALFORMED","payload":{}}`,
+		"failed with an environment":      `{"verified":false,"reason":"MALFORMED","message":"x","environment":null}`,
 		"a reason outside the eight":      `{"verified":false,"reason":"INVALID_RECEIPT_FORMAT","message":"x"}`,
 		"a lowercase reason":              `{"verified":false,"reason":"malformed","message":"x"}`,
-		"an unknown member":               `{"verified":true,"payload":{},"payloadJson":"{}"}`,
-		"a payload with an unknown key":   `{"verified":true,"payload":{"appItemId":0}}`,
-		"an id that is not decimal":       `{"verified":true,"payload":{"app_item_id":"0x10"}}`,
-		"an id that overflows int64":      `{"verified":true,"payload":{"download_id":"9223372036854775808"}}`,
-		"an id as a number":               `{"verified":true,"payload":{"app_item_id":5}}`,
-		"an in-app id that is not text":   `{"verified":true,"payload":{"in_app":[{"web_order_line_item_id":"x"}]}}`,
-		"unknown attributes, bad key":     `{"verified":true,"payload":{"unknown_attributes":{"a":[]}}}`,
-		"unknown attributes, bad value":   `{"verified":true,"payload":{"unknown_attributes":{"1":["***"]}}}`,
-		"bytes that are not base64":       `{"verified":true,"payload":{"opaque_value":"***"}}`,
-		"a date as a string":              `{"verified":true,"payload":{"receipt_creation_date_ms":"1"}}`,
-		"a payload that is not an object": `{"verified":true,"payload":[]}`,
+		"an unknown member":               `{"verified":true,"payload":{},"environment":null,"payloadJson":"{}"}`,
+		"a payload with an unknown key":   `{"verified":true,"payload":{"appItemId":0},"environment":null}`,
+		"an id that is not decimal":       `{"verified":true,"payload":{"app_item_id":"0x10"},"environment":null}`,
+		"an id that overflows int64":      `{"verified":true,"payload":{"download_id":"9223372036854775808"},"environment":null}`,
+		"an id as a number":               `{"verified":true,"payload":{"app_item_id":5},"environment":null}`,
+		"an in-app id that is not text":   `{"verified":true,"payload":{"in_app":[{"web_order_line_item_id":"x"}]},"environment":null}`,
+		"unknown attributes, bad key":     `{"verified":true,"payload":{"unknown_attributes":{"a":[]}},"environment":null}`,
+		"unknown attributes, bad value":   `{"verified":true,"payload":{"unknown_attributes":{"1":["***"]}},"environment":null}`,
+		"bytes that are not base64":       `{"verified":true,"payload":{"opaque_value":"***"},"environment":null}`,
+		"a date as a string":              `{"verified":true,"payload":{"receipt_creation_date_ms":"1"},"environment":null}`,
+		"a payload that is not an object": `{"verified":true,"payload":[],"environment":null}`,
 		"an answer that is not UTF-8":     "{\"verified\":false,\"reason\":\"MALFORMED\",\"message\":\"\xff\"}",
 	}
 	for name, answer := range answers {
@@ -213,9 +244,11 @@ func TestAnAnswerThatIsNotTheWireIsInternalErrorNeverAGuess(t *testing.T) {
 	}
 	// The signed-data payload must be a JSON string.
 	for name, answer := range map[string]string{
-		"an object payload": `{"verified":true,"payload":{}}`,
-		"a null payload":    `{"verified":true,"payload":null}`,
-		"a number payload":  `{"verified":true,"payload":1}`,
+		"an object payload":       `{"verified":true,"payload":{},"environment":null}`,
+		"a null payload":          `{"verified":true,"payload":null,"environment":null}`,
+		"a number payload":        `{"verified":true,"payload":1,"environment":null}`,
+		"no environment":          `{"verified":true,"payload":"{}"}`,
+		"an environment of Xcode": `{"verified":true,"payload":"{}","environment":"Xcode"}`,
 	} {
 		payload, err := verifier.VerifySignedData(answer)
 		if payload != nil {
@@ -268,7 +301,7 @@ func TestATrapIsInternalErrorAndTheVerifierKeepsAnswering(t *testing.T) {
 			t.Fatalf("endpoint after a trap: %q", got)
 		}
 		// The instance that trapped is gone; the next call gets another.
-		if _, err := verifier.VerifyReceipt(`{"verified":true,"payload":{}}`); err != nil {
+		if _, err := verifier.VerifyReceipt(`{"verified":true,"payload":{},"environment":null}`); err != nil {
 			t.Fatalf("after a trap: %v", err)
 		}
 	}
@@ -281,7 +314,7 @@ func TestTheClockIsReadOnceBeforeTheInputEveryCall(t *testing.T) {
 		return 1_722_945_600_000
 	}})
 	verifier := mirrorVerifier(t, config)
-	answers := []string{`{"verified":true,"payload":{}}`, `{"verified":false,"reason":"MALFORMED","message":""}`, "!trap", ""}
+	answers := []string{`{"verified":true,"payload":{},"environment":null}`, `{"verified":false,"reason":"MALFORMED","message":""}`, "!trap", ""}
 	for i, input := range answers {
 		verifier.VerifyReceipt(input)
 		verifier.VerifySignedData(input)
@@ -404,5 +437,21 @@ func TestTheEmbeddedModuleIsBoundAndAnswersTheEmptyInputsAsValues(t *testing.T) 
 	}
 	if got := verifier.VerifyReceiptEndpoint(applereceipt.EnvironmentProduction, ""); !strings.Contains(got, `"status":`) {
 		t.Errorf("an empty endpoint body: %q", got)
+	}
+}
+
+func TestAHandBuiltJSONPayloadStatesTheEnvironmentItIsGiven(t *testing.T) {
+	sandbox := applereceipt.EnvironmentSandbox
+	payload := applereceipt.NewJSONPayload(`{"environment":"Production"}`, &sandbox)
+	sandbox = applereceipt.EnvironmentProduction
+	if environment := payload.Environment(); environment == nil || *environment != applereceipt.EnvironmentSandbox {
+		t.Fatalf("environment %v, want the Sandbox it was given", environment)
+	}
+	*payload.Environment() = applereceipt.EnvironmentProduction
+	if *payload.Environment() != applereceipt.EnvironmentSandbox {
+		t.Fatal("a caller changed the payload through the pointer Environment returned")
+	}
+	if applereceipt.NewJSONPayload(`{"environment":"Sandbox"}`, nil).Environment() != nil {
+		t.Fatal("nothing reads the environment from the JSON")
 	}
 }

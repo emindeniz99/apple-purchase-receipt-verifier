@@ -40,15 +40,18 @@ public class FacadeTests
         Assert.Equal(9223372036854775807L, result.Payload.InApp[0].WebOrderLineItemId);
         Assert.True(result.Payload.InApp[0].IsTrialPeriod);
         Assert.False(result.Payload.InApp[0].IsInIntroOfferPeriod);
+        Assert.Equal(AppleEnvironment.Sandbox, result.Payload.Environment);
     }
 
     [Fact]
     public void AVerifiedJwsIsThePayloadStringExactlyAsTheModuleGaveIt()
     {
         string payload = " {\"b\":1,  \"a\":[true,null],\"big\":123456789012345678901234567890}";
-        VerifierImpl verifier = Over(new StubModule { SignedDataAnswer = SyntheticAnswers.VerifiedJws(payload) });
+        VerifierImpl verifier = Over(new StubModule { SignedDataAnswer = SyntheticAnswers.VerifiedJws(payload, AppleEnvironment.Production) });
 
-        Assert.Equal(payload, verifier.VerifySignedData("x").Payload!.Json);
+        JsonPayload read = verifier.VerifySignedData("x").Payload!;
+        Assert.Equal(payload, read.Json);
+        Assert.Equal(AppleEnvironment.Production, read.Environment);
     }
 
     [Fact]
@@ -107,6 +110,54 @@ public class FacadeTests
         ArgumentException error = Assert.Throws<ArgumentException>(() => Over(stub));
         Assert.Contains("root 0 is not a certificate", error.Message, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// <c>{"ok":true}</c> alone is a module older than this wrapper: it states
+    /// no input length (DECISIONS.md R42), and the verifier is refused at
+    /// create, never later, as for any answer that is not init's, with the
+    /// <see cref="InvalidOperationException"/> the README promises for a
+    /// module of another ABI version.
+    /// </summary>
+    [Theory]
+    [InlineData("{\"ok\":true}")]
+    [InlineData("{\"ok\":true,\"max_input_bytes\":0}")]
+    [InlineData("{\"ok\":true,\"max_input_bytes\":\"7\"}")]
+    public void AnInitAnswerWithoutAnInputLengthFailsCreate(string answer)
+    {
+        InvalidOperationException error = Assert.ThrowsAny<InvalidOperationException>(
+            () => Over(new StubModule { InitAnswer = answer }));
+        Assert.Contains("max_input_bytes", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The input length is the module's: each instance cuts every verify input
+    /// to what its own <c>init</c> answer stated, never to a number of the
+    /// wrapper's, and passes a shorter one whole.
+    /// </summary>
+    [Fact]
+    public void EachInstanceCutsInputToTheLengthItsInitStated()
+    {
+        AprvRuntime runtime = new(new StubModule { InitAnswer = "{\"ok\":true,\"max_input_bytes\":4}" }.ToWasm(), null);
+        InstancePool pool = new(runtime, Encoding.UTF8.GetBytes("{}"));
+        AprvInstance instance = pool.Rent();
+        Assert.Equal(4, instance.MaxInputBytes);
+        instance.VerifyReceipt(1, Encoding.UTF8.GetBytes("abcdefgh"));
+        Assert.Equal(4, LastLength(instance));
+        instance.VerifySignedData(1, Encoding.UTF8.GetBytes("abc"));
+        Assert.Equal(3, LastLength(instance));
+        instance.VerifyReceiptEndpoint(0, 1, Encoding.UTF8.GetBytes("abcdefgh"));
+        Assert.Equal(4, LastLength(instance));
+        pool.Return(instance);
+
+        AprvInstance unstarted = new(runtime);
+        Assert.Null(unstarted.MaxInputBytes);
+        unstarted.Init(Encoding.UTF8.GetBytes("{}"));
+        unstarted.VerifyReceipt(1, Encoding.UTF8.GetBytes("abcdefgh"));
+        Assert.Equal(8, LastLength(unstarted));
+        unstarted.Dispose();
+    }
+
+    private static int LastLength(AprvInstance instance) => (int)instance.Raw.GetFunction("last_len")!.Invoke()!;
 
     // --- 4. ABI mismatch ------------------------------------------------------
 
@@ -307,6 +358,9 @@ public class FacadeTests
         new object[] { "{\"verified\":false,\"reason\":\"MALFORMED\",\"message\":\"x\",\"extra\":1}" },
         new object[] { "{\"verified\":true,\"payload\":{},\"extra\":1}" },
         new object[] { "{\"verified\":false,\"reason\":7,\"message\":\"x\"}" },
+        new object[] { "{\"verified\":true,\"payload\":\"{}\"}" },
+        new object[] { "{\"verified\":true,\"payload\":\"{}\",\"environment\":\"Xcode\"}" },
+        new object[] { "{\"verified\":false,\"reason\":\"MALFORMED\",\"message\":\"x\",\"environment\":null}" },
     };
 
     /// <summary>An answer that is not the wire's shape is never guessed at: INTERNAL_ERROR, the exception as the cause, the instance discarded.</summary>
@@ -326,7 +380,7 @@ public class FacadeTests
     }
 
     [Theory]
-    [InlineData("{\"verified\":true,\"payload\":{\"receipt_type\":1}}")]
+    [InlineData("{\"verified\":true,\"payload\":{\"receipt_type\":1},\"environment\":null}")]
     public void AReceiptPayloadWithoutTheWiresMembersIsUnreadable(string answer)
     {
         VerifierImpl verifier = Over(new StubModule { ReceiptAnswer = answer });

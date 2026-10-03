@@ -9,6 +9,7 @@ package host
 import (
 	"encoding/hex"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,10 @@ import (
 )
 
 const now uint64 = 1_722_945_600_000 // 2024-08-06T12:00:00Z
+
+// initOK is init's accepting answer: the most bytes of one input the module
+// needs, one over the receipt and endpoint-body cap (DECISIONS.md R42).
+const initOK = `{"ok":true,"max_input_bytes":3145729}`
 
 func testModule(t testing.TB) *module {
 	t.Helper()
@@ -63,8 +68,43 @@ func verified(answer string) bool { return strings.Contains(answer, `"verified":
 func TestInitAnswers(t *testing.T) {
 	g := bareGuest(t)
 	answer, err := g.Call("init", []byte(nil))
-	if err != nil || answer != `{"ok":true}` {
-		t.Fatalf("init(empty) = %q, %v; want {\"ok\":true}", answer, err)
+	if err != nil || answer != initOK {
+		t.Fatalf("init(empty) = %q, %v; want %s", answer, err, initOK)
+	}
+}
+
+func TestAnInstanceKeepsTheInputLengthItsInitStated(t *testing.T) {
+	if g := freshGuest(t, nil); g.maxInput != 3_145_729 {
+		t.Fatalf("maxInput = %d, want init's 3145729", g.maxInput)
+	}
+}
+
+func TestInitAnswerWithoutTheInputLengthIsUnusable(t *testing.T) {
+	if n, err := initAnswer(initOK); err != nil || n != 3_145_729 {
+		t.Fatalf("initAnswer(%s) = %d, %v", initOK, n, err)
+	}
+	refusal := `{"ok":false,"message":"not a certificate"}`
+	var refused *InitRefusedError
+	if _, err := initAnswer(refusal); !errors.As(err, &refused) || refused.Answer != refusal {
+		t.Fatalf("a refusal: %v, want *InitRefusedError", err)
+	}
+	// An accepting answer without a positive integer is a module of another
+	// ABI version: no cap of this package's own stands in for it.
+	for _, answer := range []string{
+		`{"ok":true}`,
+		`{"ok":true,"max_input_bytes":0}`,
+		`{"ok":true,"max_input_bytes":-1}`,
+		`{"ok":true,"max_input_bytes":1.5}`,
+		`{"ok":true,"max_input_bytes":"3145729"}`,
+		`{"ok":true,"max_input_bytes":null}`,
+		`{"ok":true,"max_input_bytes":1e300}`,
+		`{"max_input_bytes":3145729}`,
+		`not json`,
+	} {
+		var result *ResultError
+		if _, err := initAnswer(answer); !errors.As(err, &result) || result.Fn != "init" {
+			t.Errorf("initAnswer(%s): %v, want a *ResultError for init", answer, err)
+		}
 	}
 }
 
@@ -102,7 +142,7 @@ func TestRefusedConfigCanBeRetriedOnTheInstance(t *testing.T) {
 			if err != nil || !strings.Contains(answer, `"ok":false`) {
 				t.Fatalf("init(%q) = %q, %v; want {\"ok\":false,...}", config, answer, err)
 			}
-			if answer, err := g.Call("init", []byte(nil)); err != nil || answer != `{"ok":true}` {
+			if answer, err := g.Call("init", []byte(nil)); err != nil || answer != initOK {
 				t.Fatalf("init after a refusal = %q, %v", answer, err)
 			}
 		})
@@ -503,7 +543,7 @@ func TestMemoryLimit(t *testing.T) {
 
 func TestAnInputOverTheCapIsCutBeforeItIsCopied(t *testing.T) {
 	// The core answers TOO_LARGE to anything over 3,145,728 bytes. The host
-	// hands it at most one byte over, so a huge input costs the module no
+	// hands it at most one byte over, the max_input_bytes init stated, so a huge input costs the module no
 	// more memory than a barely oversized one, and the answer is the core's.
 	g := freshGuest(t, nil)
 	base := g.memorySize()
@@ -535,5 +575,35 @@ func TestAnInputAtTheCapIsPassedWhole(t *testing.T) {
 	answer, err = g.Call("verify-receipt", now, strings.Repeat("A", 3_145_729))
 	if err != nil || !strings.Contains(answer, `"TOO_LARGE"`) {
 		t.Fatalf("3,145,729 bytes: %q, %v; want TOO_LARGE", answer, err)
+	}
+}
+
+func TestAnInputIsCutToTheLengthTheInstancesInitStated(t *testing.T) {
+	// The test double answers each call with its input, so the bytes the
+	// guest saw come back.
+	module, err := os.ReadFile("../../testdata/mirror/mirror.wasm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := compile(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := mod.newGuest(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(g.close)
+	if g.maxInput != 3_145_729 {
+		t.Fatalf("maxInput = %d, want the double's 3145729", g.maxInput)
+	}
+	g.maxInput = 5
+	for _, input := range []any{"abcdefgh", []byte("abcdefgh")} {
+		if answer, err := g.Call("verify-receipt", now, input); err != nil || answer != "abcde" {
+			t.Fatalf("%T: %q, %v; want the first 5 bytes", input, answer, err)
+		}
+	}
+	if answer, err := g.Call("verify-signed-data", now, "abc"); err != nil || answer != "abc" {
+		t.Fatalf("a short input: %q, %v; want it whole", answer, err)
 	}
 }

@@ -88,9 +88,11 @@ if let payload = jwsResult.payload {
 let responseJson = verifier.verifyReceiptEndpoint(environment: .production, requestJson: requestJson)
 ```
 
-**Inputs are cut at 3,145,729 bytes** (one over the largest cap) before they
-are copied into the module, which then answers `.tooLarge` (21002 at the
-endpoint) exactly as it would for any longer input.
+**Inputs are cut at the length the module states** in its `init` answer
+(`max_input_bytes`, 3,145,729 bytes today: one over the largest cap) before
+they are copied into the module, which then answers `.tooLarge` (21002 at
+the endpoint) exactly as it would for any longer input. The number is the
+module's, read from each instance; the package keeps no copy of it.
 
 **No method throws for any input.** An empty `base64` / `jws` / `requestJson`
 is input and fails as `Reason.malformed`, the same as a garbled one. The
@@ -142,10 +144,14 @@ check, in your own code:
 
 - **Bundle id**: `receipt.bundleId` / the JWS payload's `bundleId` claim
   equals your app's bundle identifier.
-- **Environment**: `Environment.fromReceiptType(receipt.receiptType)` or
-  `Environment.fromJwsEnvironment(claims["environment"])` is the one you
-  expect (a sandbox receipt reaching a production server is not
-  automatically wrong, but your policy should say what to do with it).
+- **Environment**: `receipt.environment` or `payload.environment` (a
+  `JsonPayload`) is the one you expect: `.production`, `.sandbox`, or `nil`
+  when Apple's value names neither (an `Xcode` receipt, a `LocalTesting`
+  JWS). For a JWS the verifier reads the top-level `environment` claim, a
+  notification's `data.environment` or a summary notification's
+  `summary.environment`, the first that is present. A sandbox receipt
+  reaching a production server is not automatically wrong, but your policy
+  should say what to do with it.
 - **Product id**: the transaction is for a product you sell.
 - **Idempotency**: `transactionId` (JWS) or each in-app purchase's
   `transactionId` (receipt) has not been applied before; verifying the same
@@ -398,6 +404,11 @@ against the same `fixtures/cases.json`. What changed:
   `maxJwsBytes` (the caps are 3,145,728, 3,145,728 and 262,144 UTF-8 bytes,
   listed under "Resource bounds"; an input over one is `.tooLarge`), and
   `Environment.appleValue` (use `rawValue`, the same string).
+- **The environment is on the payload**: `Environment.fromReceiptType(_:)`
+  and `Environment.fromJwsEnvironment(_:)` are gone; read
+  `ReceiptPayload.environment` and `JsonPayload.environment`, which the
+  verifier states beside the payload. `JsonPayload(json:)` became
+  `JsonPayload(json:environment:)`. `toJson()` does not write it.
 
 ## Upgrading from 0.6
 

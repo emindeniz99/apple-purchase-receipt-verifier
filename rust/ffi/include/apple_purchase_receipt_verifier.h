@@ -146,7 +146,8 @@ typedef struct AprvVerifier AprvVerifier;
 //
 // * `status` below 100 (a verdict): `json` is the document `aprv.wasm`
 //   answers for the same input, byte for byte, which validates against
-//   `rust/bindings/wire/schema/`: `{"verified":true,"payload":...}` or
+//   `rust/bindings/wire/schema/`:
+//   `{"verified":true,"payload":...,"environment":...}` or
 //   `{"verified":false,"reason":"<token>","message":"<detail>"}`.
 // * `status` 100 or above (a mistake in the call): `json` is `NULL`.
 //

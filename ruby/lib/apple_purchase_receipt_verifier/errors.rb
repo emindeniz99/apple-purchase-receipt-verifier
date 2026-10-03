@@ -27,44 +27,17 @@ module ApplePurchaseReceiptVerifier
     ].freeze
   end
 
-  # Apple's two verifyReceipt endpoints. The 0.6 `XCODE` and `LOCAL_TESTING`
-  # values are gone: they only ever named JWS `environment` claim strings,
-  # never Apple-signed values, and are read straight off the verified
-  # payload now instead.
+  # Apple's two environments: the verifyReceipt endpoint
+  # {Verifier#verify_receipt_endpoint} imitates, and the one a verified
+  # payload states ({ReceiptPayload#environment}, {JsonPayload#environment}).
+  # The 0.6 `XCODE` and `LOCAL_TESTING` values are gone: they only ever named
+  # JWS `environment` claim strings, never Apple-signed values, and a payload
+  # that names neither environment states `nil`.
   module Environment
     PRODUCTION = "PRODUCTION"
     SANDBOX    = "SANDBOX"
 
     ALL = [PRODUCTION, SANDBOX].freeze
-
-    class << self
-      # Maps a legacy receipt's `receipt_type` attribute to the environment it
-      # names: `Production` and `ProductionVPP` to {PRODUCTION},
-      # `ProductionSandbox` and `ProductionVPPSandbox` to {SANDBOX}, anything
-      # else (including `nil`) to `nil`. States what Apple's value means and
-      # decides nothing; the endpoint uses this rule for status 21007/21008.
-      #
-      # @param receipt_type [String, nil]
-      # @return [String, nil]
-      def from_receipt_type(receipt_type)
-        case receipt_type
-        when "Production", "ProductionVPP" then PRODUCTION
-        when "ProductionSandbox", "ProductionVPPSandbox" then SANDBOX
-        end
-      end
-
-      # Maps a JWS `environment` claim the same way: `Production` and
-      # `Sandbox`, anything else to `nil`.
-      #
-      # @param claim [String, nil]
-      # @return [String, nil]
-      def from_jws_environment(claim)
-        case claim
-        when "Production" then PRODUCTION
-        when "Sandbox" then SANDBOX
-        end
-      end
-    end
   end
 
   # Named constants for every status code Apple documents for verifyReceipt

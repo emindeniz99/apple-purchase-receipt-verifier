@@ -29,8 +29,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Nothing in here has been checked against anything: the bundle id,
  * environment and purchases are whatever Apple signed, and deciding whether
- * to accept them is the caller's job. {@link Environment#fromReceiptType}
- * reads {@link #receiptType()}; the device-hash check is
+ * to accept them is the caller's job. {@link #environment()} states what
+ * {@link #receiptType()} names; the device-hash check is
  * {@code SHA-1(deviceId || opaqueValue() || bundleIdBytes())} compared with
  * {@link #sha1Hash()}.</p>
  *
@@ -54,8 +54,13 @@ public final class ReceiptPayload {
     private final @Nullable String originalApplicationVersion;
     private final @Nullable Long expirationDateMs;
     private final Map<Integer, List<byte[]>> unknownAttributes;
+    private final @Nullable Environment environment;
 
-    /** Public so callers can build payloads by hand in their tests. */
+    /**
+     * Public so callers can build payloads by hand in their tests. The
+     * verifier passes the {@code environment} {@code receiptType} names
+     * ({@link #environment()}); a hand-built payload states its own.
+     */
     public ReceiptPayload(
             @Nullable String receiptType,
             @Nullable Long appItemId,
@@ -71,7 +76,8 @@ public final class ReceiptPayload {
             @Nullable Long originalPurchaseDateMs,
             @Nullable String originalApplicationVersion,
             @Nullable Long expirationDateMs,
-            Map<Integer, List<byte[]>> unknownAttributes) {
+            Map<Integer, List<byte[]>> unknownAttributes,
+            @Nullable Environment environment) {
         this.receiptType = receiptType;
         this.appItemId = appItemId;
         this.bundleId = bundleId;
@@ -91,6 +97,7 @@ public final class ReceiptPayload {
         this.originalApplicationVersion = originalApplicationVersion;
         this.expirationDateMs = expirationDateMs;
         this.unknownAttributes = RawAttributes.copy(Objects.requireNonNull(unknownAttributes, "unknownAttributes"));
+        this.environment = environment;
     }
 
     /** Attribute 0, such as {@code Production} or {@code ProductionSandbox}. */
@@ -176,6 +183,18 @@ public final class ReceiptPayload {
         return RawAttributes.copy(unknownAttributes);
     }
 
+    /**
+     * The environment {@link #receiptType()} names, as the verifier read it:
+     * {@code Production} and {@code ProductionVPP} are
+     * {@link Environment#PRODUCTION}, {@code ProductionSandbox} and
+     * {@code ProductionVPPSandbox} are {@link Environment#SANDBOX}, anything
+     * else ({@code Xcode}, a missing value) is {@code null}. It states what
+     * Apple's value means and decides nothing. Not part of {@link #toJson()}.
+     */
+    public @Nullable Environment environment() {
+        return environment;
+    }
+
     // Every character outside ASCII is escaped, so the text is ASCII and
     // therefore valid UTF-8, even for a lone surrogate in a hand-built payload.
     static final JsonFactory JSON =
@@ -241,15 +260,17 @@ public final class ReceiptPayload {
         json.writeEndObject();
     }
 
-    /** Equal when {@link #toJson()} is. */
+    /** Equal when {@link #toJson()} and {@link #environment()} are. */
     @Override
     public boolean equals(@Nullable Object other) {
-        return other instanceof ReceiptPayload && toJson().equals(((ReceiptPayload) other).toJson());
+        return other instanceof ReceiptPayload
+                && toJson().equals(((ReceiptPayload) other).toJson())
+                && environment == ((ReceiptPayload) other).environment;
     }
 
     @Override
     public int hashCode() {
-        return toJson().hashCode();
+        return 31 * toJson().hashCode() + Objects.hashCode(environment);
     }
 
     /** {@link #toJson()}. */

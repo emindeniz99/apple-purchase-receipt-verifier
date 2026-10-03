@@ -309,11 +309,35 @@ final class ApiShapeTest extends TestCase
         );
     }
 
+    /**
+     * The environment is an answer, not a helper (DECISIONS.md R42): the
+     * enum holds the two values and nothing that maps an Apple string, and
+     * a hand-built payload states the one it is given.
+     */
+    public function testTheEnvironmentIsStatedOnThePayloadsAndNoHelperDerivesIt(): void
+    {
+        $methods = array_map(
+            static fn (\ReflectionMethod $method): string => $method->getName(),
+            (new ReflectionClass(Environment::class))->getMethods(),
+        );
+        sort($methods);
+        self::assertSame(['cases', 'from', 'tryFrom'], $methods, 'the enum\'s own methods only');
+        self::assertNull((new ReceiptPayload())->environment);
+        self::assertNull((new JsonPayload('{}'))->environment);
+        $stated = new ReceiptPayload(receiptType: 'Xcode', environment: Environment::Production);
+        self::assertSame(Environment::Production, $stated->environment, 'nothing reads receiptType');
+        $written = json_decode($stated->toJson(), true, 32, JSON_THROW_ON_ERROR);
+        self::assertIsArray($written);
+        self::assertArrayNotHasKey('environment', $written);
+        self::assertNull((new JsonPayload('{"environment":"Sandbox"}'))->environment, 'nothing reads it from the JSON');
+        self::assertSame(Environment::Sandbox, self::verifiedReceipt()->payload?->environment);
+    }
+
     /** @return VerificationResult<ReceiptPayload> */
     private static function verifiedReceipt(): VerificationResult
     {
         $wire = '{"verified":true,"payload":{"receipt_type":"ProductionSandbox","bundle_id":"com.example.app",'
-            . '"receipt_creation_date_ms":1722945600000,"in_app":[],"unknown_attributes":{}}}';
+            . '"receipt_creation_date_ms":1722945600000,"in_app":[],"unknown_attributes":{}},"environment":"Sandbox"}';
         $result = Verifier::create(new Config(), FakeTransport::answering($wire))->verifyReceipt('x');
         self::assertTrue($result->verified());
 

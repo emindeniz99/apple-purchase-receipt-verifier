@@ -108,7 +108,8 @@ public final class CorpusMain {
             guest = new EndiveGuest(new SecureRandom());
             created[worker]++;
             String ok = guest.init(config.getBytes(StandardCharsets.UTF_8));
-            if (ok.equals("{\"ok\":true}")) {
+            // {"ok":true,...}: the archive's module may predate max_input_bytes.
+            if (ok.startsWith("{\"ok\":true")) {
                 instances.put(config, guest);
             } else {
                 answer = ok; // init refused the configuration: that is the row's answer

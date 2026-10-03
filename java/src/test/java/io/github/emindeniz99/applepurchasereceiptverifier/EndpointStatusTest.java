@@ -71,7 +71,7 @@ class EndpointStatusTest {
     @Test
     void routesFromTheReceiptsOwnType() {
         Object[][] table = {
-            // receipt, status on PRODUCTION, status on SANDBOX, Environment.fromReceiptType
+            // receipt, status on PRODUCTION, status on SANDBOX, ReceiptPayload.environment()
             {"Production", 0, 21008, Environment.PRODUCTION},
             {"ProductionVPP", 0, 21008, Environment.PRODUCTION},
             {"ProductionSandbox", 21007, 0, Environment.SANDBOX},
@@ -86,10 +86,10 @@ class EndpointStatusTest {
             assertEquals(row[1], status(respond(Environment.PRODUCTION, RECEIPTS.get(name))), name + " on PRODUCTION");
             assertEquals(row[2], status(respond(Environment.SANDBOX, RECEIPTS.get(name))), name + " on SANDBOX");
             if (!name.equals("foreign") && !name.equals("tampered")) {
-                // The helper states the same rule the endpoint routes on.
+                // The payload states the environment the endpoint routes on.
                 ReceiptPayload payload =
                         verifier.verifyReceipt(RECEIPTS.get(name)).payload();
-                assertEquals(row[3], Environment.fromReceiptType(payload.receiptType()), name);
+                assertEquals(row[3], payload.environment(), name);
             }
         }
     }

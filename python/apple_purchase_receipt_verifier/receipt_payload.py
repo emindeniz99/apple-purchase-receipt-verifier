@@ -11,8 +11,9 @@ whole seconds, so they end in ``000``.
 
 Nothing here has been checked against anything: the bundle id, environment
 and purchases are whatever Apple signed, and deciding whether to accept them
-is the caller's job. :meth:`~.environment.Environment.from_receipt_type`
-reads :attr:`ReceiptPayload.receipt_type`; the device-hash check is
+is the caller's job. :attr:`ReceiptPayload.environment` and
+:attr:`JsonPayload.environment` state the environment the verifier read;
+the device-hash check is
 ``SHA-1(device_id + opaque_value + bundle_id_bytes)`` compared with
 :attr:`ReceiptPayload.sha1_hash`.
 """
@@ -22,6 +23,8 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
+
+from .environment import Environment
 
 
 def _id(value: "int | None") -> "str | None":
@@ -138,6 +141,14 @@ class ReceiptPayload:
     unknown_attributes: "Mapping[int, Sequence[bytes]]" = field(
         default_factory=lambda: MappingProxyType({})
     )
+    #: The environment :attr:`receipt_type` names, as the verifier read it:
+    #: ``Production`` and ``ProductionVPP`` are
+    #: :attr:`~.environment.Environment.PRODUCTION`, ``ProductionSandbox``
+    #: and ``ProductionVPPSandbox`` :attr:`~.environment.Environment.SANDBOX`,
+    #: anything else (``Xcode``, a missing value) ``None``. It states what
+    #: Apple's value means and decides nothing; :meth:`to_json` does not
+    #: write it. A payload built by hand states the one it is given.
+    environment: "Environment | None" = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "in_app", tuple(self.in_app))
@@ -178,3 +189,14 @@ class JsonPayload:
     #: The verified payload, unchanged: the exact UTF-8 text the JWS's
     #: payload segment decoded to.
     json: str
+    #: The environment the payload names, as the verifier read it: from the
+    #: first of the three places Apple documents that is present, the
+    #: top-level ``environment`` (a transaction, renewal info),
+    #: ``data.environment`` (an App Store Server Notification V2) and
+    #: ``summary.environment`` (a summary notification). ``Production`` is
+    #: :attr:`~.environment.Environment.PRODUCTION` and ``Sandbox``
+    #: :attr:`~.environment.Environment.SANDBOX`; anything else there
+    #: (``Xcode``, ``LocalTesting``, a value that is not a string), or none of
+    #: the three, is ``None``. A payload built by hand states the one it is
+    #: given; nothing reads it from :attr:`json`.
+    environment: "Environment | None" = None

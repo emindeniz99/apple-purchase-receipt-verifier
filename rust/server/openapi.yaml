@@ -7,10 +7,12 @@ info:
     operation of the aprv.wasm component (the WIT interface
     `aprv:verifier/verify@0.1.0`) on the request body, unchanged, and
     answers HTTP 200 with the component's JSON, byte for byte, whether the
-    input verified or not. A body over 3,145,728 bytes reaches the
-    component cut to 3,145,729 bytes, and its answer to that, its own size
-    refusal, is HTTP 413 with the same JSON. Every other answer is an RFC
-    9457 problem (`application/problem+json`) with a `code` member.
+    input verified or not. A body of the component's `max_input_bytes`
+    (its `init` answer states it, `GET /v1/info` reports it under
+    `limits`; one over its largest cap) or longer reaches the component cut
+    to that length, and its answer to that, its own size refusal, is HTTP
+    413 with the same JSON. Every other answer is an RFC 9457 problem
+    (`application/problem+json`) with a `code` member.
 
     The server binds 127.0.0.1 unless `APRV_LISTEN` says otherwise and
     speaks plain HTTP. With a token configured, every `/v1/` route needs
@@ -56,7 +58,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '413':
-          description: The body is over 3,145,728 bytes. The component answered its first 3,145,729 bytes with its own size refusal (`TOO_LARGE`), sent byte for byte as for a 200.
+          description: The body is over the component's size cap. The component answered its first `max_input_bytes` (`GET /v1/info`) with its own size refusal (`TOO_LARGE`), sent byte for byte as for a 200.
           content:
             application/json:
               schema:
@@ -86,7 +88,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '413':
-          description: The body is over 3,145,728 bytes. The component answered its first 3,145,729 bytes with its own size refusal (`TOO_LARGE`), sent byte for byte as for a 200.
+          description: The body is over the component's size cap. The component answered its first `max_input_bytes` (`GET /v1/info`) with its own size refusal (`TOO_LARGE`), sent byte for byte as for a 200.
           content:
             application/json:
               schema:
@@ -217,22 +219,23 @@ components:
     Text:
       required: false
       description: |
-        Up to 3,145,728 bytes, passed to the component unchanged; a longer
-        body is cut to 3,145,729 bytes and answered with HTTP 413. Any
-        bytes are an input: an absent or empty body is the empty string,
-        which the component answers as a verification failure (HTTP 200).
+        Shorter than the component's `max_input_bytes` (`GET /v1/info`),
+        passed to the component unchanged; a longer body is cut to that
+        length and answered with HTTP 413. Any bytes are an input: an absent
+        or empty body is the empty string, which the component answers as a
+        verification failure (HTTP 200).
       content:
         text/plain:
           schema:
             type: string
-            maxLength: 3145728
     EndpointRequest:
       required: false
       description: |
-        Up to 3,145,728 bytes, passed to the component unchanged; a longer
-        body is cut to 3,145,729 bytes and answered with HTTP 413. Any
-        bytes are a request: a body that is absent, not JSON or not the
-        object below is answered with Apple's status for it (HTTP 200).
+        Shorter than the component's `max_input_bytes` (`GET /v1/info`),
+        passed to the component unchanged; a longer body is cut to that
+        length and answered with HTTP 413. Any bytes are a request: a body
+        that is absent, not JSON or not the object below is answered with
+        Apple's status for it (HTTP 200).
       content:
         application/json:
           schema:
@@ -263,7 +266,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     EndpointTooLarge:
-      description: The body is over 3,145,728 bytes. The component answered its first 3,145,729 bytes as Apple's endpoint answers an oversized body, `{"status":21002}`, sent byte for byte as for a 200.
+      description: The body is over the component's size cap. The component answered its first `max_input_bytes` (`GET /v1/info`) as Apple's endpoint answers an oversized body, `{"status":21002}`, sent byte for byte as for a 200.
       content:
         application/json:
           schema:
@@ -377,8 +380,14 @@ components:
         limits:
           type: object
           properties:
-            max_body_bytes:
+            max_input_bytes:
               type: integer
+              description: >-
+                The most bytes of one input the component needs, as its
+                `init` answer states: one over its largest cap. A body of
+                this length or longer is answered with HTTP 413. Never
+                over 16 MiB: the server does not serve a component that
+                states more.
             max_guest_memory_bytes:
               type: integer
             max_core_instances_per_store:

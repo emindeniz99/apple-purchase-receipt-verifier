@@ -23,7 +23,8 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// <item>anything else returns the module's fixed answer for that export.</item>
 /// </list>
 /// <para>It also exports <c>posts</c> (how many <c>cabi_post</c> calls it has
-/// seen), <c>reallocs</c>, <c>last_now</c>, <c>last_env</c> and <c>grow</c>
+/// seen), <c>reallocs</c>, <c>last_now</c>, <c>last_env</c>, <c>last_len</c>
+/// (the length of the last verify input) and <c>grow</c>
 /// (<c>memory.grow</c>), which the host-level tests read and use.</para>
 /// </remarks>
 internal sealed class StubModule
@@ -33,7 +34,7 @@ internal sealed class StubModule
     private const int AnswerStride = 4096;
     private const int NotUtf8 = AnswerBase + (4 * AnswerStride);
 
-    internal string InitAnswer { get; set; } = "{\"ok\":true}";
+    internal string InitAnswer { get; set; } = "{\"ok\":true,\"max_input_bytes\":3145729}";
 
     internal string ReceiptAnswer { get; set; } = "{\"verified\":false,\"reason\":\"MALFORMED\",\"message\":\"stub receipt\"}";
 
@@ -57,6 +58,7 @@ internal sealed class StubModule
         (func (export "reallocs") (result i32) (global.get $reallocs))
         (func (export "last_now") (result i64) (global.get $lastNow))
         (func (export "last_env") (result i32) (global.get $lastEnv))
+        (func (export "last_len") (result i32) (global.get $lastLen))
         (func (export "grow") (param i32) (result i32) (memory.grow (local.get 0)))
         (func $answer (param $ptr i32) (param $len i32) (param $off i32) (param $n i32) (result i32)
           (local $c i32)
@@ -98,6 +100,7 @@ internal sealed class StubModule
         wat.AppendLine("  (global $reallocs (mut i32) (i32.const 0))");
         wat.AppendLine("  (global $lastNow (mut i64) (i64.const -1))");
         wat.AppendLine("  (global $lastEnv (mut i32) (i32.const -1))");
+        wat.AppendLine("  (global $lastLen (mut i32) (i32.const -1))");
         Data(wat, AnswerBase, InitAnswer);
         Data(wat, AnswerBase + AnswerStride, ReceiptAnswer);
         Data(wat, AnswerBase + (2 * AnswerStride), SignedDataAnswer);
@@ -109,11 +112,11 @@ internal sealed class StubModule
         Export(wat, iface + "init", "(param i32 i32) (result i32)",
             $"(call $answer (local.get 0) (local.get 1) (i32.const {AnswerBase}) (i32.const {Bytes(InitAnswer)}))");
         Export(wat, iface + "verify-receipt", "(param i64 i32 i32) (result i32)",
-            $"(global.set $lastNow (local.get 0)) (call $answer (local.get 1) (local.get 2) (i32.const {AnswerBase + AnswerStride}) (i32.const {Bytes(ReceiptAnswer)}))");
+            $"(global.set $lastNow (local.get 0)) (global.set $lastLen (local.get 2)) (call $answer (local.get 1) (local.get 2) (i32.const {AnswerBase + AnswerStride}) (i32.const {Bytes(ReceiptAnswer)}))");
         Export(wat, iface + "verify-signed-data", "(param i64 i32 i32) (result i32)",
-            $"(global.set $lastNow (local.get 0)) (call $answer (local.get 1) (local.get 2) (i32.const {AnswerBase + (2 * AnswerStride)}) (i32.const {Bytes(SignedDataAnswer)}))");
+            $"(global.set $lastNow (local.get 0)) (global.set $lastLen (local.get 2)) (call $answer (local.get 1) (local.get 2) (i32.const {AnswerBase + (2 * AnswerStride)}) (i32.const {Bytes(SignedDataAnswer)}))");
         Export(wat, iface + "verify-receipt-endpoint", "(param i32 i64 i32 i32) (result i32)",
-            $"(global.set $lastEnv (local.get 0)) (global.set $lastNow (local.get 1)) (call $answer (local.get 2) (local.get 3) (i32.const {AnswerBase + (3 * AnswerStride)}) (i32.const {Bytes(EndpointAnswer)}))");
+            $"(global.set $lastEnv (local.get 0)) (global.set $lastNow (local.get 1)) (global.set $lastLen (local.get 3)) (call $answer (local.get 2) (local.get 3) (i32.const {AnswerBase + (3 * AnswerStride)}) (i32.const {Bytes(EndpointAnswer)}))");
         foreach (string operation in new[] { "init", "verify-receipt", "verify-signed-data", "verify-receipt-endpoint" })
         {
             Export(wat, "cabi_post_" + iface + operation, "(param i32)", "(global.set $posts (i32.add (global.get $posts) (i32.const 1)))");

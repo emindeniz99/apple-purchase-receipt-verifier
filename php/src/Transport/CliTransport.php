@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Info;
-use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Input;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Text;
 use InvalidArgumentException;
 use LogicException;
@@ -32,6 +31,12 @@ final class CliTransport implements Transport
     private ?string $rootsFile = null;
 
     private bool $opened = false;
+
+    /**
+     * The `limits.max_input_bytes` `aprv info` stated: the most of an input
+     * sent on stdin. Null until {@see open()} has read it.
+     */
+    private ?int $maxInputBytes = null;
 
     /**
      * @param string|null $executable the `aprv` binary; null means the one
@@ -69,7 +74,7 @@ final class CliTransport implements Transport
         if ($code !== 0) {
             throw new RuntimeException($this->describe('aprv info', $code, $err));
         }
-        Info::decode($out, 'aprv info');
+        $this->maxInputBytes = Info::maxInputBytes(Info::decode($out, 'aprv info'), 'aprv info');
 
         if ($roots === null) {
             return;
@@ -92,8 +97,10 @@ final class CliTransport implements Transport
 
     public function call(Operation $operation, string $input, int $nowMs): string
     {
+        $maxInputBytes = $this->maxInputBytes
+            ?? throw new LogicException('call() before a successful open(): Verifier::create() opens a transport before its first call');
         $arguments = array_merge($operation->cliArguments(), ['--now-ms', (string) $nowMs], $this->rootsArguments());
-        [$code, $out, $err] = $this->execute($arguments, substr($input, 0, Input::MAX_BYTES));
+        [$code, $out, $err] = $this->execute($arguments, substr($input, 0, $maxInputBytes));
         // 3: the input was over the cap; stdout is still the module's answer.
         if ($code === 0 || $code === 3) {
             return $out;

@@ -66,8 +66,21 @@ final class MeasurementTests: XCTestCase {
                     var guest = guests[config]
                     if guest == nil {
                         let fresh = try Guest(module)
-                        let reply = try fresh.initialize(Array(config.utf8))
-                        if reply == #"{"ok":true}"# { guests[config] = fresh } else { answer = reply }
+                        // A `Result`, not a nested `catch HostError.initRefused`
+                        // inside this `do`: Swift 6.3.3's SILGenCleanup pass
+                        // aborts on that shape (ownership verifier, "Found
+                        // outside of lifetime use").
+                        switch Result { () throws(HostError) in try fresh.start(Array(config.utf8)) } {
+                        case .success:
+                            guests[config] = fresh
+                        case .failure(.initRefused):
+                            // init refused the configuration: its answer, as
+                            // the module wrote it, is the row's answer, read
+                            // again from an instance not started.
+                            answer = try Guest(module).initialize(Array(config.utf8))
+                        case .failure(let error):
+                            throw error
+                        }
                         guest = fresh
                     }
                     if answer == nil {
@@ -134,7 +147,7 @@ final class MeasurementTests: XCTestCase {
         let t2 = Date()
         let guest = try Guest(module)
         let t3 = Date()
-        _ = try guest.initialize(Config.initJson([]))
+        try guest.start(Config.initJson([]))
         let t4 = Date()
         _ = try guest.verifyReceipt(now: UInt64(systemMillis()), g5)
         let t5 = Date()
@@ -157,7 +170,7 @@ final class MeasurementTests: XCTestCase {
         // every call that returned.
         XCTAssertTrue(try guest.verifyReceipt(now: UInt64(systemMillis()), g5).contains(#""verified":true"#))
         let jwsGuest = try Guest(module)
-        _ = try jwsGuest.initialize(Config.initJson([try TestFixtures.bytes(TestFixtures.jwsRoot)]))
+        try jwsGuest.start(Config.initJson([try TestFixtures.bytes(TestFixtures.jwsRoot)]))
         XCTAssertTrue(try jwsGuest.verifySignedData(now: UInt64(systemMillis()), Array(jws.utf8)).contains(#""verified":true"#))
         let rows: [(String, @Sendable () -> Bool)] = [
             ("g5", { apple.verifyReceipt(base64: g5Text).failure?.message != "the verification module trapped" }),

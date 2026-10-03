@@ -90,7 +90,7 @@ emulator runs it on a dirty scheduler instead.
 ### JSON
 
 The ABI hands back one UTF-8 JSON document per call: for a verify call the
-document `aprv.wasm` answers, `{"verified":true,"payload":...}` or
+document `aprv.wasm` answers, `{"verified":true,"payload":...,"environment":...}` or
 `{"verified":false,"reason":...,"message":...}`, whose payload
 `AppleReceiptExample.payload!/1` unwraps (a JWS's payload is a JSON string
 holding the signed text, which it decodes in turn). `JSON` from

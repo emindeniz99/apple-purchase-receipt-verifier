@@ -10,10 +10,6 @@ class ApiShapeTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
   FAKE = Internals::Runtime.new(FakeModule.wat)
 
-  def assert_maps(expected, actual)
-    expected.nil? ? assert_nil(actual) : assert_equal(expected, actual)
-  end
-
   def fake_verifier
     APRV::Verifier.send(:new, APRV::Config.new, runtime: FAKE)
   end
@@ -84,14 +80,15 @@ class ApiShapeTest < Minitest::Test
     }.each { |reason, status| assert_equal status, APRV::AppleStatus.for_reason(reason), reason }
   end
 
-  # The two helpers that state what Apple's strings mean and decide nothing.
-  def test_the_environment_helpers_map_apples_strings
-    {
-      "Production" => "PRODUCTION", "ProductionVPP" => "PRODUCTION", "ProductionSandbox" => "SANDBOX",
-      "ProductionVPPSandbox" => "SANDBOX", "Xcode" => nil, "" => nil, nil => nil
-    }.each { |type, environment| assert_maps(environment, APRV::Environment.from_receipt_type(type)) }
-    { "Production" => "PRODUCTION", "Sandbox" => "SANDBOX", "Xcode" => nil, "LocalTesting" => nil, nil => nil }
-      .each { |claim, environment| assert_maps(environment, APRV::Environment.from_jws_environment(claim)) }
+  # The environment is the module's answer, on each payload (DECISIONS.md
+  # R42): the 0.7 helpers that repeated the rule in this gem are gone.
+  def test_the_environment_is_on_the_payloads_and_the_helpers_are_gone
+    refute_respond_to APRV::Environment, :from_receipt_type
+    refute_respond_to APRV::Environment, :from_jws_environment
+    assert_equal :environment, APRV::ReceiptPayload.members.last
+    assert_equal %i[json environment], APRV::JsonPayload.members
+    assert_equal APRV::Environment::SANDBOX, fake_verifier.verify_receipt("v").payload.environment
+    assert_nil fake_verifier.verify_signed_data("v").payload.environment
   end
 
   # Misconfiguration is a programming error, not a verification verdict: a

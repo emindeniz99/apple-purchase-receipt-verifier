@@ -169,7 +169,8 @@ def evaluate(case, answer):
             return
         check_fields(doc, exp)
         return
-    outcome, detail = outcome_of(json.loads(body))
+    result = json.loads(body)
+    outcome, detail = outcome_of(result)
     if "oneOf" in exp:
         if outcome not in exp["oneOf"]:
             raise AssertionError(f"outcome {outcome} not in {exp['oneOf']}")
@@ -183,6 +184,11 @@ def evaluate(case, answer):
         return
     if outcome != "ok":
         raise AssertionError(f"expected ok, got {outcome}: {str(detail)[:120]}")
+    # The environment the module states beside the payload (DECISIONS.md R42).
+    if "environment" not in exp:
+        raise AssertionError("harness error: an ok case states no environment")
+    if "environment" not in result or result["environment"] != exp["environment"]:
+        raise AssertionError(f"environment {json.dumps(result.get('environment'))}, want {json.dumps(exp['environment'])}")
     check_fields(detail, exp)
 
 

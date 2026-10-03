@@ -79,8 +79,7 @@ pub(crate) fn respond(
         .and_then(|data| receipt::verify(data.as_bytes(), anchors, clock));
     match verified {
         Ok(payload) => {
-            let production = Environment::from_receipt_type(payload.receipt_type.as_deref())
-                == Some(Environment::Production);
+            let production = payload.environment() == Some(Environment::Production);
             let status = match environment {
                 Environment::Production if !production => {
                     AppleStatus::SANDBOX_RECEIPT_ON_PRODUCTION

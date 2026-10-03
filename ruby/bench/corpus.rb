@@ -9,8 +9,9 @@
 #
 # It drives the module's raw answers: the facade's typed results would hide
 # the JSON the comparison is about. The instance handling is the facade's
-# (Guest, one per init configuration, discarded after a trap) and the module
-# is the one the gem ships, so what is measured is the gem's host path.
+# (Guest, one per init configuration, discarded after a trap, cutting an
+# input to the length its init answer states) and the module is the one the
+# gem ships, so what is measured is the gem's host path.
 #
 # Rows: {"id","out"} for an answer, {"id","trap"} when the call trapped, and
 # {"id","map"} for a row that names no call. A configuration `init` refuses
@@ -25,7 +26,7 @@ module CorpusRun
   # drives the module's exports directly, so it names them here.
   RUNTIME = APRV.const_get(:Runtime)
   GUEST = APRV.const_get(:Guest)
-  OK = '{"ok":true}'
+  ROOTS_REJECTED = APRV.const_get(:RootsRejected)
 
   module_function
 
@@ -58,14 +59,16 @@ module CorpusRun
       guest = guests[config]
       answer = nil
       if guest.nil?
-        guest = GUEST.new(runtime, nil)
         created += 1
-        init = guest.call("init", [], config)
-        if init == OK
+        begin
+          guest = GUEST.new(runtime, config)
           guests[config] = guest
-        else
-          guest.close
-          answer = init # `init` refused the configuration: that is the row's answer
+        rescue ROOTS_REJECTED
+          # `init` refused the configuration: its answer, as the module wrote
+          # it, is the row's answer, read again from an instance not started.
+          refused = GUEST.new(runtime, nil)
+          answer = refused.call("init", [], config)
+          refused.close
         end
       end
       begin

@@ -87,11 +87,11 @@ func (v *Verifier) VerifyReceipt(base64 string) (payload *ReceiptPayload, err er
 	if err != nil {
 		return nil, hostFailure(err)
 	}
-	result, err := readResult(answer)
+	result, environment, err := readResult(answer)
 	if err != nil {
 		return nil, err
 	}
-	payload, err = receiptFromJSON(result)
+	payload, err = receiptFromJSON(result, environment)
 	if err != nil {
 		return nil, unreadableAnswer(err)
 	}
@@ -112,7 +112,7 @@ func (v *Verifier) VerifySignedData(jws string) (payload *JSONPayload, err error
 	if err != nil {
 		return nil, hostFailure(err)
 	}
-	result, err := readResult(answer)
+	result, environment, err := readResult(answer)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (v *Verifier) VerifySignedData(jws string) (payload *JSONPayload, err error
 	if err := json.Unmarshal(result, &signed); err != nil {
 		return nil, unreadableAnswer(errors.New("the payload is not a JSON string"))
 	}
-	return NewJSONPayload(signed), nil
+	return &JSONPayload{json: signed, environment: environment}, nil
 }
 
 // VerifyReceiptEndpoint is the response body Apple's deprecated
@@ -209,35 +209,43 @@ func unreadableAnswer(cause error) *Failure {
 }
 
 // readResult reads the envelope of an answer: a failure becomes a
-// *Failure, a success yields the payload's JSON. An answer that is not in
-// the wire's shape, or names a reason outside the eight, is unusable and
-// therefore INTERNAL_ERROR: this never guesses at what a module meant.
-func readResult(answer string) (payload json.RawMessage, err error) {
+// *Failure, a success yields the payload's JSON and the environment beside
+// it (nil for null). An answer that is not in the wire's shape, or names a
+// reason outside the eight or an environment outside the two, is unusable
+// and therefore INTERNAL_ERROR: this never guesses at what a module meant.
+func readResult(answer string) (payload json.RawMessage, environment *Environment, err error) {
 	var wire struct {
 		Verified *bool            `json:"verified"`
 		Reason   *string          `json:"reason"`
 		Message  *string          `json:"message"`
 		Payload  *json.RawMessage `json:"payload"`
+		// Not a pointer: a RawMessage holds null as the text null, so a
+		// missing member (empty) and a null one stay apart.
+		Environment json.RawMessage `json:"environment"`
 	}
 	if !utf8.ValidString(answer) {
-		return nil, unreadableAnswer(errors.New("the answer is not UTF-8"))
+		return nil, nil, unreadableAnswer(errors.New("the answer is not UTF-8"))
 	}
 	decoder := json.NewDecoder(strings.NewReader(answer))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&wire); err != nil || wire.Verified == nil {
-		return nil, unreadableAnswer(errors.New("the answer is not a verification result"))
+		return nil, nil, unreadableAnswer(errors.New("the answer is not a verification result"))
 	}
 	if _, err := decoder.Token(); err != io.EOF {
-		return nil, unreadableAnswer(errors.New("the answer has content after the result"))
+		return nil, nil, unreadableAnswer(errors.New("the answer has content after the result"))
 	}
 	if *wire.Verified {
 		if wire.Payload == nil || wire.Reason != nil || wire.Message != nil {
-			return nil, unreadableAnswer(errors.New("a verified result must carry a payload and nothing else"))
+			return nil, nil, unreadableAnswer(errors.New("a verified result must carry a payload, an environment and nothing else"))
 		}
-		return *wire.Payload, nil
+		environment, err := environmentFromJSON(wire.Environment)
+		if err != nil {
+			return nil, nil, unreadableAnswer(err)
+		}
+		return *wire.Payload, environment, nil
 	}
-	if wire.Reason == nil || wire.Payload != nil {
-		return nil, unreadableAnswer(errors.New("a failed result must carry a reason and no payload"))
+	if wire.Reason == nil || wire.Payload != nil || wire.Environment != nil {
+		return nil, nil, unreadableAnswer(errors.New("a failed result must carry a reason and no payload"))
 	}
 	reason := Reason(*wire.Reason)
 	known := false
@@ -245,11 +253,28 @@ func readResult(answer string) (payload json.RawMessage, err error) {
 		known = known || r == reason
 	}
 	if !known {
-		return nil, unreadableAnswer(fmt.Errorf("the reason %q is not one of the eight", *wire.Reason))
+		return nil, nil, unreadableAnswer(fmt.Errorf("the reason %q is not one of the eight", *wire.Reason))
 	}
 	message := ""
 	if wire.Message != nil {
 		message = *wire.Message
 	}
-	return nil, &Failure{Reason: reason, Message: message}
+	return nil, nil, &Failure{Reason: reason, Message: message}
+}
+
+// environmentFromJSON reads the environment member of a verified answer:
+// "Production", "Sandbox" or null (nil). A missing member or any other
+// value is not the wire's shape.
+func environmentFromJSON(raw json.RawMessage) (*Environment, error) {
+	if string(raw) == "null" {
+		return nil, nil
+	}
+	var text string
+	if raw != nil && json.Unmarshal(raw, &text) == nil {
+		switch environment := Environment(text); environment {
+		case EnvironmentProduction, EnvironmentSandbox:
+			return &environment, nil
+		}
+	}
+	return nil, errors.New("a verified result must carry an environment of Production, Sandbox or null")
 }

@@ -87,7 +87,7 @@ class ScalaInteropTest:
     // expirationDateMs() is really null here (attribute 21 is VPP-only and
     // absent from this fixture).
     assertEquals(None, Option(receipt.expirationDateMs()))
-    assertEquals(Some(Environment.SANDBOX), Option(Environment.fromReceiptType(receipt.receiptType())))
+    assertEquals(Some(Environment.SANDBOX), Option(receipt.environment()))
     assertEquals("dev.bonzer.weeka.app", receipt.bundleId())
 
   @Test

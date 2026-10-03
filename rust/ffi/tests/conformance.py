@@ -26,8 +26,9 @@ x5c text as the three entries of a JWS header through
 `aprv_verify_signed_data_bytes`, and which side of the base64 rule a text
 landed on is read as tools/wasm-trap-host.mjs reads it (a decoder refusal
 names base64). Every document is checked to be the wire shape
-(`verified`, then `payload` or `reason` and `message`) with a status that
-agrees; `--answers <dir>` also writes them, one per line, for
+(`verified`, then `payload` and `environment`, or `reason` and `message`)
+with a status that agrees, and an ok case's `expected.environment` against
+the document's; `--answers <dir>` also writes them, one per line, for
 tools/validate-wire.mjs (verify-receipt.jsonl, verify-signed-data.jsonl).
 After the run every case id in the file must have run.
 """
@@ -269,7 +270,11 @@ def call_bytes(lib, verifier, function: str, data: bytes):
     document = json.loads(text)
     keys = list(document)
     if status == OK:
-        if keys != ["verified", "payload"] or document["verified"] is not True:
+        if (
+            keys != ["verified", "payload", "environment"]
+            or document["verified"] is not True
+            or document["environment"] not in ("Production", "Sandbox", None)
+        ):
             raise SystemExit(f"{function}: status 0 with the document {text[:200]}")
     elif keys != ["verified", "reason", "message"] or document["verified"] is not False or REASON_CODES.get(document["reason"]) != status:
         raise SystemExit(f"{function}: status {status} with the document {text[:200]}")
@@ -326,8 +331,9 @@ def run_decode(lib, case: dict) -> str:
 
 
 def run_case(lib, directory: Path, registry: dict, case: dict):
-    """(status, JSON text) for one case: the payload when verified, the
-    failure document otherwise, the body for the endpoint."""
+    """(status, JSON text, environment) for one case: the payload when
+    verified, the failure document otherwise, the body for the endpoint;
+    the environment the verified document states, else None."""
     verifier, _keep = verifier_for(lib, directory, registry, case)
     try:
         operation = case["operation"]
@@ -345,7 +351,7 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
             )
             if status != OK:
                 raise SystemExit(f'{case["id"]}: the endpoint call itself failed with {status}')
-            return OK, take_string(lib, response.value)
+            return OK, take_string(lib, response.value), None
         if operation == "verifyReceipt":
             data = receipt_string(directory, registry, source["fixture"])
             function = "verify-receipt"
@@ -355,12 +361,12 @@ def run_case(lib, directory: Path, registry: dict, case: dict):
         else:
             raise SystemExit(f'{case["id"]}: no adapter for operation {operation}')
         status, document = call_bytes(lib, verifier, function, data)
-        return status, payload_text(document)
+        return status, payload_text(document), document.get("environment")
     finally:
         lib.aprv_verifier_free(verifier)
 
 
-def check(case: dict, status: int, text: str) -> str:
+def check(case: dict, status: int, text: str, environment) -> str:
     """An empty string when the case passes, else what went wrong."""
     expected = case["expected"]
     if case["operation"] == "verifyReceiptEndpoint" and "oneOf" in expected:
@@ -383,6 +389,11 @@ def check(case: dict, status: int, text: str) -> str:
         return ""
     if status != OK:
         return f"expected success, got status {status}: {text}"
+    if case["operation"] != "verifyReceiptEndpoint":
+        if "environment" not in expected:
+            return "harness error: an ok case states no environment"
+        if environment != expected["environment"]:
+            return f'environment: expected {json.dumps(expected["environment"])}, got {json.dumps(environment)}'
     # Same value, not same bytes. Re-encoding both sides with sorted keys
     # ignores key order and escaping but, unlike ==, tells true from 1.
     if "toJson" in expected and json.dumps(json.loads(text), sort_keys=True) != json.dumps(
@@ -461,8 +472,8 @@ def main() -> int:
             # then the timed run whose outcome is checked.
             run_case(lib, directory, registry, case)
             start = time.perf_counter()
-        status, text = run_case(lib, directory, registry, case)
-        problem = check(case, status, text)
+        status, text, environment = run_case(lib, directory, registry, case)
+        problem = check(case, status, text, environment)
         if budget is not None and not problem:
             millis = (time.perf_counter() - start) * 1000
             if millis > budget:

@@ -16,8 +16,14 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// </summary>
     internal static class ModuleAnswers
     {
-        /// <summary>A module answer that is not the wire's JSON, or a member of the wrong type.</summary>
-        internal sealed class AnswerException : Exception
+        /// <summary>
+        /// A module answer that is not the wire's JSON, or a member of the
+        /// wrong type. It is an <see cref="InvalidOperationException"/>, the
+        /// type <see cref="Verifier.Create"/> throws for a module this library
+        /// cannot host, so an <c>init</c> answer of another ABI version
+        /// reaches that caller as the README says.
+        /// </summary>
+        internal sealed class AnswerException : InvalidOperationException
         {
             internal AnswerException(string message)
                 : base(message)
@@ -41,13 +47,18 @@ namespace ApplePurchaseReceiptVerifier.Internal
         };
 
         /// <summary>
-        /// Checks <c>init</c>'s answer. <c>{"ok":true}</c> passes;
-        /// <c>{"ok":false,"message":"..."}</c> is the module refusing the
-        /// configuration, which is the caller's roots.
+        /// Checks <c>init</c>'s answer and returns the input length it states.
+        /// <c>{"ok":true,"max_input_bytes":N}</c> passes, <c>N</c> being the most
+        /// bytes of one input the module needs (docs/rust-core/DECISIONS.md
+        /// R42): a longer input is cut to it, and the module answers TOO_LARGE
+        /// for that. <c>{"ok":false,"message":"..."}</c> is the module refusing
+        /// the configuration, which is the caller's roots. An accepting answer
+        /// without a positive integer <c>N</c> comes from a module of another
+        /// ABI version, and is not init's answer.
         /// </summary>
         /// <exception cref="ArgumentException">The module refused the roots.</exception>
-        /// <exception cref="AnswerException">The answer is not init's.</exception>
-        internal static void CheckInit(string answer)
+        /// <exception cref="AnswerException">The answer is not init's (an <see cref="InvalidOperationException"/>).</exception>
+        internal static int CheckInit(string answer)
         {
             string message;
             using (JsonDocument document = ParseObject(answer))
@@ -56,8 +67,17 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 bool ok = Bool(map, "ok");
                 if (ok)
                 {
-                    RequireOnly(map, "ok");
-                    return;
+                    if (!map.TryGetValue("max_input_bytes", out JsonElement max)
+                        || max.ValueKind != JsonValueKind.Number
+                        || !max.TryGetInt32(out int maxInputBytes)
+                        || maxInputBytes <= 0)
+                    {
+                        throw new AnswerException(
+                            "init accepted the configuration but states no max_input_bytes: the module is of another ABI version");
+                    }
+
+                    RequireOnly(map, "ok", "max_input_bytes");
+                    return maxInputBytes;
                 }
 
                 RequireOnly(map, "ok", "message");
@@ -75,8 +95,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 Dictionary<string, JsonElement> map = Members(document.RootElement);
                 if (Verdict(map, out VerificationReason reason, out string message))
                 {
-                    RequireOnly(map, "verified", "payload");
-                    return VerificationResult<ReceiptPayload>.Ok(Receipt(Obj(map, "payload")));
+                    RequireOnly(map, "verified", "payload", "environment");
+                    return VerificationResult<ReceiptPayload>.Ok(Receipt(Obj(map, "payload"), StatedEnvironment(map)));
                 }
 
                 return VerificationResult<ReceiptPayload>.Failed(reason, message, null);
@@ -91,8 +111,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 Dictionary<string, JsonElement> map = Members(document.RootElement);
                 if (Verdict(map, out VerificationReason reason, out string message))
                 {
-                    RequireOnly(map, "verified", "payload");
-                    return VerificationResult<JsonPayload>.Ok(JsonPayload.Create(Str(map, "payload")));
+                    RequireOnly(map, "verified", "payload", "environment");
+                    return VerificationResult<JsonPayload>.Ok(JsonPayload.Create(Str(map, "payload"), StatedEnvironment(map)));
                 }
 
                 return VerificationResult<JsonPayload>.Failed(reason, message, null);
@@ -119,7 +139,34 @@ namespace ApplePurchaseReceiptVerifier.Internal
             return false;
         }
 
-        private static ReceiptPayload Receipt(Dictionary<string, JsonElement> json)
+        /// <summary>
+        /// A verified answer's <c>environment</c>, beside its payload:
+        /// <c>"Production"</c>, <c>"Sandbox"</c> or <c>null</c>, the
+        /// environment the module read (docs/rust-core/DECISIONS.md R42).
+        /// </summary>
+        private static AppleEnvironment? StatedEnvironment(Dictionary<string, JsonElement> map)
+        {
+            JsonElement value = map["environment"];
+            if (value.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                switch (Text(value))
+                {
+                    case "Production":
+                        return AppleEnvironment.Production;
+                    case "Sandbox":
+                        return AppleEnvironment.Sandbox;
+                }
+            }
+
+            throw new AnswerException("\"environment\" is not \"Production\", \"Sandbox\" or null");
+        }
+
+        private static ReceiptPayload Receipt(Dictionary<string, JsonElement> json, AppleEnvironment? environment)
         {
             RequireKeys(json, ReceiptKeys, "the receipt payload");
             List<InAppPurchase> inApp = new List<InAppPurchase>();
@@ -145,7 +192,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 OptLong(json, "original_purchase_date_ms"),
                 OptStr(json, "original_application_version"),
                 OptLong(json, "expiration_date_ms"),
-                Unknown(json));
+                Unknown(json),
+                environment);
         }
 
         private static InAppPurchase Purchase(Dictionary<string, JsonElement> json)

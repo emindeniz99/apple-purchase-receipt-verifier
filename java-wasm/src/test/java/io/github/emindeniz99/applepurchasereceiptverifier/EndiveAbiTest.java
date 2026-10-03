@@ -25,6 +25,13 @@ import run.endive.runtime.Memory;
 class EndiveAbiTest {
 
     private static final byte[] NONE = new byte[0];
+    /**
+     * {@code init}'s answer to a configuration it accepts: ok, and the most
+     * bytes of one input to hand the module, one over its largest cap
+     * (DECISIONS.md R42).
+     */
+    private static final String INIT_OK = "{\"ok\":true,\"max_input_bytes\":3145729}";
+
     private static final byte[] DEFAULT_ROOTS = "{\"roots\":[]}".getBytes(StandardCharsets.US_ASCII);
     private static final long NOW = System.currentTimeMillis();
 
@@ -49,7 +56,7 @@ class EndiveAbiTest {
 
     private static EndiveGuest fresh(byte[] config) {
         EndiveGuest guest = new EndiveGuest(new SecureRandom());
-        assertEquals("{\"ok\":true}", guest.init(config));
+        assertEquals(INIT_OK, guest.init(config));
         return guest;
     }
 
@@ -62,8 +69,8 @@ class EndiveAbiTest {
 
     @Test
     void initWithNoRootsAnswersOk() {
-        assertEquals("{\"ok\":true}", new EndiveGuest(new SecureRandom()).init(NONE));
-        assertEquals("{\"ok\":true}", new EndiveGuest(new SecureRandom()).init(DEFAULT_ROOTS));
+        assertEquals(INIT_OK, new EndiveGuest(new SecureRandom()).init(NONE));
+        assertEquals(INIT_OK, new EndiveGuest(new SecureRandom()).init(DEFAULT_ROOTS));
     }
 
     @Test
@@ -83,7 +90,7 @@ class EndiveAbiTest {
         EndiveGuest guest = new EndiveGuest(new SecureRandom());
         String answer = guest.init("{not json".getBytes(StandardCharsets.US_ASCII));
         assertTrue(answer.contains("\"ok\":false"), answer);
-        assertEquals("{\"ok\":true}", guest.init(NONE));
+        assertEquals(INIT_OK, guest.init(NONE));
     }
 
     @Test

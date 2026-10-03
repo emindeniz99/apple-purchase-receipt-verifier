@@ -19,7 +19,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// The adapter knows nothing about any individual case: it loads the file,
 /// resolves fixture ids to bytes, builds a <see cref="Config"/> from the
 /// generic config, dispatches on <c>operation</c>, and evaluates the
-/// expectation the file states. A vector that disagrees with the library is a
+/// expectation the file states, an ok case's <c>environment</c> included. A vector that disagrees with the library is a
 /// bug report against one of the two; it is never something to special-case
 /// here. A case this adapter cannot map is a hard failure, never a skip.
 /// </remarks>
@@ -140,6 +140,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         {
             Assert.True(verified, $"{id}: expected success but got {reason} ({message})");
             EvaluateFields(id, payloadJsonValue, expected);
+            AssertEnvironment(id, outcome!, expected);
             if (expected.TryGetValue("toJson", out object? toJsonExpected) && toJsonExpected is string expectedJson)
             {
                 string actualJson = operation == "verifyReceipt"
@@ -237,6 +238,34 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
             default:
                 throw new InvalidOperationException($"harness error: unexpected result type for \"{operation}\"");
         }
+    }
+
+    /// <summary>
+    /// The environment the verifier states beside an ok case's payload
+    /// (DECISIONS.md R42): <c>Production</c>, <c>Sandbox</c> or <c>null</c>,
+    /// stated by every ok case of verifyReceipt and verifySignedData.
+    /// </summary>
+    private static void AssertEnvironment(string id, object outcome, JsonMap expected)
+    {
+        if (!expected.TryGetValue("environment", out object? stated))
+        {
+            throw new InvalidOperationException($"harness error: {id}: an ok case states no environment");
+        }
+
+        AppleEnvironment? want = stated switch
+        {
+            null => null,
+            "Production" => AppleEnvironment.Production,
+            "Sandbox" => AppleEnvironment.Sandbox,
+            _ => throw new InvalidOperationException($"harness error: {id}: expected.environment is {Render(stated)}"),
+        };
+        AppleEnvironment? got = outcome switch
+        {
+            VerificationResult<ReceiptPayload> receipt => receipt.Payload!.Environment,
+            VerificationResult<JsonPayload> jws => jws.Payload!.Environment,
+            _ => throw new InvalidOperationException($"harness error: {id}: unexpected result type"),
+        };
+        Assert.True(want == got, $"{id}: environment: want {want?.ToString() ?? "null"}, got {got?.ToString() ?? "null"}");
     }
 
     /// <summary>The failure's message, and the wrapper's own cause when it has one, for a failing case's report.</summary>

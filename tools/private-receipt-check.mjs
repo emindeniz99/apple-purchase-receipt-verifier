@@ -106,7 +106,7 @@ let guest;
 const fresh = () => {
   guest = new Guest(module);
   const answer = guest.call('init', enc.encode(JSON.stringify({ roots })));
-  if (answer !== '{"ok":true}') usage('init refused the roots');
+  if (JSON.parse(answer).ok !== true) usage('init refused the roots');
 };
 fresh();
 

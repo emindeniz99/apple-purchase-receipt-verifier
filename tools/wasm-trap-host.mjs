@@ -156,6 +156,17 @@ function requireOnlyRandomGet(module) {
 
 const enc = new TextEncoder();
 const bytesOf = (s) => enc.encode(s);
+// init's answer to a configuration it accepts: exactly
+// {"ok":true,"max_input_bytes":N}, N the most bytes of one input a host
+// hands the module (DECISIONS.md R42).
+const initAccepted = (answer) => {
+  try {
+    const a = JSON.parse(answer);
+    return Object.keys(a).join() === 'ok,max_input_bytes' && a.ok === true && Number.isSafeInteger(a.max_input_bytes) && a.max_input_bytes > 0;
+  } catch {
+    return false;
+  }
+};
 const isTrap = (e) => e instanceof WebAssembly.RuntimeError || e instanceof HostError;
 
 // --- fixtures/cases.json ---------------------------------------------------
@@ -304,7 +315,7 @@ function modeCases(modulePath, casesPath, answersDir) {
     const answer = g.call('init', bytesOf(config));
     answers['init-config'].push(config);
     answers.init.push(answer);
-    if (answer !== '{"ok":true}') return { refused: answer };
+    if (!initAccepted(answer)) return { refused: answer };
     pool.set(config, g);
     return { g };
   };
@@ -376,6 +387,9 @@ function modeCases(modulePath, casesPath, answersDir) {
       problems.push(`answered ${outcome} (${result.message}), want ok`);
       return problems;
     }
+    // The environment the module states beside the payload.
+    if (!('environment' in e)) problems.push('harness error: an ok case states no environment');
+    else if (result.environment !== e.environment) problems.push(`environment ${stringify(result.environment)}, want ${stringify(e.environment)}`);
     // verify-receipt's payload is the ReceiptPayload JSON; verify-signed-data's
     // is a JSON string holding the signed payload's bytes.
     const payload = typeof result.payload === 'string' ? parseBig(result.payload) : result.payload;
@@ -487,9 +501,9 @@ function modeCalls(modulePath, callsPath, referencePath) {
       if (!g) {
         g = new Guest(module);
         initAnswer = g.call('init', bytesOf(r.config));
-        if (initAnswer === '{"ok":true}') pool.set(r.config, g);
+        if (initAccepted(initAnswer)) pool.set(r.config, g);
       }
-      if (initAnswer !== '' && initAnswer !== '{"ok":true}') {
+      if (initAnswer !== '' && !initAccepted(initAnswer)) {
         o = { id: r.id, out: initAnswer }; // init refused the config: that is the row's answer
       } else {
         const input = new Uint8Array(Buffer.from(r.b64, 'base64'));
@@ -553,7 +567,7 @@ function modeAbiTests(modulePath, casesPath) {
   const fresh = (config = DEFAULTS, hooks) => {
     const g = new Guest(module, hooks);
     const answer = g.call('init', config);
-    if (answer !== '{"ok":true}') throw new Error(`init: ${answer}`);
+    if (!initAccepted(answer)) throw new Error(`init: ${answer}`);
     return g;
   };
   const verifies = (g) => {
@@ -563,7 +577,7 @@ function modeAbiTests(modulePath, casesPath) {
 
   let g = new Guest(module);
   let r = attempt(() => g.call('init', DEFAULTS));
-  check('init with no roots of its own answers {"ok":true}', r.out === '{"ok":true}', show(r));
+  check('init with no roots of its own answers {"ok":true,"max_input_bytes":3145729}', r.out === '{"ok":true,"max_input_bytes":3145729}', show(r));
   g = fresh();
   check('verify-receipt(genuine g5) verifies', verifies(g));
   r = attempt(() => fresh(jwsConfig).call('verify-signed-data', now(), jws));
@@ -587,7 +601,7 @@ function modeAbiTests(modulePath, casesPath) {
   g = new Guest(module);
   r = attempt(() => g.call('init', bytesOf('{"roots":["bm90IGEgY2VydGlmaWNhdGU="]}')));
   const retry = attempt(() => g.call('init', DEFAULTS));
-  check('a root that does not parse is {"ok":false}, and init can be retried', !r.error && JSON.parse(r.out).ok === false && retry.out === '{"ok":true}' && verifies(g), `${show(r)}; retry: ${show(retry)}`);
+  check('a root that does not parse is {"ok":false}, and init can be retried', !r.error && JSON.parse(r.out).ok === false && initAccepted(retry.out) && verifies(g), `${show(r)}; retry: ${show(retry)}`);
   g = new Guest(module);
   r = attempt(() => g.call('init', bytesOf('{not json')));
   check('a configuration that is not JSON is {"ok":false}', !r.error && JSON.parse(r.out).ok === false, show(r));
