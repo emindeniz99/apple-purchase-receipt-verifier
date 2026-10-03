@@ -130,7 +130,6 @@ final class WasmVerifier implements Verifier {
         }
     }
 
-    /** The input's UTF-8 bytes; {@code null} is the empty input, which the module answers as malformed. */
     /**
      * The most bytes of an input copied into the module's memory: one over the
      * core's largest cap (3,145,728 bytes, the receipt and endpoint body
@@ -143,7 +142,8 @@ final class WasmVerifier implements Verifier {
     static final int MAX_INPUT_BYTES = 3_145_729;
 
     /**
-     * The input's UTF-8 bytes, or its first {@link #MAX_INPUT_BYTES} of them.
+     * The input's UTF-8 bytes, or its first {@link #MAX_INPUT_BYTES} of them;
+     * {@code null} is the empty input, which the module answers as malformed.
      * Only what is kept is encoded, so a huge input costs no huge array
      * either. Lone surrogates become {@code ?}, as {@link String#getBytes}
      * makes them.

@@ -1,0 +1,215 @@
+== 21.0.10 plain
+# java 21.0.10 (Ubuntu)
+framed by length	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by length	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by length	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+framed by length	jnh-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by length	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Upgrade: h2c
+framed by chunks	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by chunks	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by chunks	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+framed by chunks	jnh-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by chunks	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Upgrade: h2c
+short of Content-Length	httpconn	REFUSED EOFException: the connection closed inside a response	server: 1 conn, 1 req, token seen
+short of Content-Length	hc5-hardened	REFUSED ConnectionClosedException: Premature end of Content-Length delimited message body (expected: 100; received: 12)	server: 1 conn, 1 req, token seen
+short of Content-Length	hc5-default	REFUSED ConnectionClosedException: Premature end of Content-Length delimited message body (expected: 100; received: 12)	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+short of Content-Length	jnh-hardened	REFUSED IOException: closed <- EOFException: EOF reached while reading	server: 1 conn, 1 req, token seen
+short of Content-Length	jnh-default	REFUSED IOException: closed <- EOFException: EOF reached while reading	server: 1 conn, 1 req, token seen, Upgrade: h2c
+chunk cut short	httpconn	REFUSED EOFException: the connection closed inside a response	server: 1 conn, 1 req, token seen
+chunk cut short	hc5-hardened	REFUSED TruncatedChunkException: Truncated chunk (expected size: 32; actual size: 12)	server: 1 conn, 1 req, token seen
+chunk cut short	hc5-default	REFUSED TruncatedChunkException: Truncated chunk (expected size: 32; actual size: 12)	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+chunk cut short	jnh-hardened	REFUSED IOException: closed <- EOFException: EOF reached while reading	server: 1 conn, 1 req, token seen
+chunk cut short	jnh-default	REFUSED IOException: closed <- EOFException: EOF reached while reading	server: 1 conn, 1 req, token seen, Upgrade: h2c
+unframed, read to close	httpconn	REFUSED IOException: a response with neither Content-Length nor chunked encoding	server: 1 conn, 1 req, token seen
+unframed, read to close	hc5-hardened	REFUSED IOException: a response with neither Content-Length nor chunked encoding	server: 1 conn, 1 req, token seen
+unframed, read to close	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+unframed, read to close	jnh-hardened	REFUSED IOException: a response with neither Content-Length nor chunked encoding	server: 1 conn, 1 req, token seen
+unframed, read to close	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Upgrade: h2c
+TE gzip, chunked (complete)	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+TE gzip, chunked (complete)	hc5-hardened	REFUSED ClientProtocolException: Unsupported transfer encoding: gzip, chunked <- NotImplementedException: Unsupported transfer encoding: gzip, chunked	server: 1 conn, 1 req, token seen
+TE gzip, chunked (complete)	hc5-default	REFUSED ClientProtocolException: Unsupported transfer encoding: gzip, chunked <- NotImplementedException: Unsupported transfer encoding: gzip, chunked	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+TE gzip, chunked (complete)	jnh-hardened	REFUSED IOException: a response with neither Content-Length nor chunked encoding	server: 1 conn, 1 req, token seen
+TE gzip, chunked (complete)	jnh-default	ACCEPTED 200 body=12B '2\r\n{}\r\n0\r\n\r\n'	server: 1 conn, 1 req, token seen, Upgrade: h2c
+TE xchunked (complete chunks)	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+TE xchunked (complete chunks)	hc5-hardened	REFUSED ClientProtocolException: Unsupported transfer encoding: xchunked <- NotImplementedException: Unsupported transfer encoding: xchunked	server: 1 conn, 1 req, token seen
+TE xchunked (complete chunks)	hc5-default	REFUSED ClientProtocolException: Unsupported transfer encoding: xchunked <- NotImplementedException: Unsupported transfer encoding: xchunked	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+TE xchunked (complete chunks)	jnh-hardened	REFUSED IOException: a response with neither Content-Length nor chunked encoding	server: 1 conn, 1 req, token seen
+TE xchunked (complete chunks)	jnh-default	ACCEPTED 200 body=12B '2\r\n{}\r\n0\r\n\r\n'	server: 1 conn, 1 req, token seen, Upgrade: h2c
+two different Content-Lengths	httpconn	ACCEPTED 200 body=4B '{}XX'	server: 1 conn, 1 req, token seen
+two different Content-Lengths	hc5-hardened	REFUSED ClientProtocolException: Multiple Content-Length headers <- ProtocolException: Multiple Content-Length headers	server: 1 conn, 1 req, token seen
+two different Content-Lengths	hc5-default	REFUSED ClientProtocolException: Multiple Content-Length headers <- ProtocolException: Multiple Content-Length headers	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+two different Content-Lengths	jnh-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+two different Content-Lengths	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Upgrade: h2c
+Content-Length and chunked	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length and chunked	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length and chunked	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+Content-Length and chunked	jnh-hardened	REFUSED IOException: closed <- EOFException: EOF reached while reading	server: 1 conn, 1 req, token seen
+Content-Length and chunked	jnh-default	REFUSED IOException: closed <- EOFException: EOF reached while reading	server: 1 conn, 1 req, token seen, Upgrade: h2c
+Content-Length with a sign	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length with a sign	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length with a sign	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+Content-Length with a sign	jnh-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length with a sign	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Upgrade: h2c
+space before the colon	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+space before the colon	hc5-hardened	REFUSED ClientProtocolException: Invalid header; error at offset 15: <Content-Length : 2> <- ParseException: Invalid header; error at offset 15: <Content-Length : 2>	server: 1 conn, 1 req, token seen
+space before the colon	hc5-default	REFUSED ClientProtocolException: Invalid header; error at offset 15: <Content-Length : 2> <- ParseException: Invalid header; error at offset 15: <Content-Length : 2>	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+space before the colon	jnh-hardened	REFUSED ProtocolException: Invalid header name "Content-Length " <- ProtocolException: Invalid header name "Content-Length "	server: 1 conn, 1 req, token seen
+space before the colon	jnh-default	REFUSED ProtocolException: Invalid header name "Content-Length " <- ProtocolException: Invalid header name "Content-Length "	server: 1 conn, 1 req, token seen, Upgrade: h2c
+Content-Encoding gzip	httpconn	ACCEPTED 200 body=22B '??????????????C???????'	server: 1 conn, 1 req, token seen
+Content-Encoding gzip	hc5-hardened	ACCEPTED 200 body=22B '??????????????C???????'	server: 1 conn, 1 req, token seen
+Content-Encoding gzip	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+Content-Encoding gzip	jnh-hardened	ACCEPTED 200 body=22B '??????????????C???????'	server: 1 conn, 1 req, token seen
+Content-Encoding gzip	jnh-default	ACCEPTED 200 body=22B '??????????????C???????'	server: 1 conn, 1 req, token seen, Upgrade: h2c
+closed before the status line	httpconn	REFUSED EOFException: the connection closed	server: 1 conn, 1 req, token seen
+closed before the status line	hc5-hardened	REFUSED NoHttpResponseException: The target server failed to respond	server: 1 conn, 1 req, token seen
+closed before the status line	hc5-default	REFUSED NoHttpResponseException: 127.0.0.1:44549 failed to respond	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+closed before the status line	jnh-hardened	REFUSED IOException: HTTP/1.1 header parser received no bytes <- EOFException: EOF reached while reading	server: 1 conn, 1 req, token seen
+closed before the status line	jnh-default	REFUSED IOException: HTTP/1.1 header parser received no bytes <- EOFException: EOF reached while reading	server: 1 conn, 1 req, token seen, Upgrade: h2c
+Content-Length over the cap, no body	httpconn	REFUSED IOException: a response over 67108864 bytes after 1 ms	server: 1 conn, 1 req, token seen
+Content-Length over the cap, no body	hc5-hardened	REFUSED IOException: a response over 67108864 bytes after 2 ms	server: 1 conn, 1 req, token seen
+Content-Length over the cap, no body	jnh-hardened	REFUSED IOException: a response over 67108864 bytes after 4 ms	server: 1 conn, 1 req, token seen
+body dripped (read timeout 3 s)	httpconn	ACCEPTED 200 body=8B '{"a":12}' after 5620 ms	server: 1 conn, 1 req, token seen
+body dripped (read timeout 3 s)	hc5-hardened	ACCEPTED 200 body=8B '{"a":12}' after 5605 ms	server: 1 conn, 1 req, token seen
+body dripped (read timeout 3 s)	jnh-hardened	ACCEPTED 200 body=8B '{"a":12}' after 5609 ms	server: 1 conn, 1 req, token seen
+401 Basic, default Authenticator set	httpconn	ACCEPTED 401 body=23B '{"code":"UNAUTHORIZED"}'; Authenticator asked 0	server: 1 conn, 1 req, token seen
+401 Basic, default Authenticator set	hc5-hardened	ACCEPTED 401 body=23B '{"code":"UNAUTHORIZED"}'; Authenticator asked 0	server: 1 conn, 1 req, token seen
+401 Basic, default Authenticator set	hc5-default	ACCEPTED 401 body=23B '{"code":"UNAUTHORIZED"}'; Authenticator asked 0	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+401 Basic, default Authenticator set	jnh-hardened	ACCEPTED 401 body=23B '{"code":"UNAUTHORIZED"}'; Authenticator asked 0	server: 1 conn, 1 req, token seen
+401 Basic, default Authenticator set	jnh-default	ACCEPTED 401 body=23B '{"code":"UNAUTHORIZED"}'; Authenticator asked 0	server: 1 conn, 1 req, token seen, Upgrade: h2c
+redirect 307	httpconn	ACCEPTED 307 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 307	hc5-hardened	ACCEPTED 307 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 307	hc5-default	ACCEPTED 200 body=2B '{}'; elsewhere saw server: 1 conn, 1 req, token seen, Accept-Encoding sent	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+redirect 307	jnh-hardened	ACCEPTED 307 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 307	jnh-default	ACCEPTED 307 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen, Upgrade: h2c
+redirect 302	httpconn	ACCEPTED 302 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 302	hc5-hardened	ACCEPTED 302 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 302	hc5-default	ACCEPTED 200 body=2B '{}'; elsewhere saw server: 1 conn, 1 req, Accept-Encoding sent	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+redirect 302	jnh-hardened	ACCEPTED 302 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 302	jnh-default	ACCEPTED 302 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen, Upgrade: h2c
+default ProxySelector set	httpconn	REFUSED SocketTimeoutException: Connect timed out; SOCKS listener server: 1 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+default ProxySelector set	hc5-hardened	REFUSED ConnectTimeoutException: Connect to http://127.0.0.1:44765 failed: Connect timed out; SOCKS listener server: 1 conn, 1 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+default ProxySelector set	hc5-default	REFUSED ConnectTimeoutException: Connect to http://127.0.0.1:42171 failed: Connect timed out; SOCKS listener server: 1 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+default ProxySelector set	jnh-hardened	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+default ProxySelector set	jnh-default	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 1 conn, 1 req, token seen	server: 0 conn, 0 req
+proxy system properties set, loopback	httpconn	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+proxy system properties set, loopback	hc5-hardened	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+proxy system properties set, loopback	hc5-default	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+proxy system properties set, loopback	jnh-hardened	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+proxy system properties set, loopback	jnh-default	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen, Upgrade: h2c
+proxy system properties set, non-loopback address	httpconn	REFUSED SocketTimeoutException: Connect timed out; SOCKS listener server: 1 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+proxy system properties set, non-loopback address	hc5-hardened	REFUSED ConnectTimeoutException: Connect to http://192.0.2.2:46041 failed: Connect timed out; SOCKS listener server: 1 conn, 1 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+proxy system properties set, non-loopback address	hc5-default	REFUSED ConnectTimeoutException: Connect to http://192.0.2.2:42459 failed: Connect timed out; SOCKS listener server: 1 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+proxy system properties set, non-loopback address	jnh-hardened	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+proxy system properties set, non-loopback address	jnh-default	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 1 conn, 1 req, token seen	server: 0 conn, 0 req
+== 21.0.10 tls
+# java 21.0.10 (Ubuntu)
+trusted certificate for the host	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate for the host	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate for the host	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate for the host	jnh-hardened	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate for the host	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate, another name	httpconn	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+trusted certificate, another name	hc5-hardened	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+trusted certificate, another name	hc5-default	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+trusted certificate, another name	jnh-hardened	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+trusted certificate, another name	jnh-default	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+self-signed; HttpsURLConnection defaults trust all	httpconn	REFUSED SSLHandshakeException: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certifi...	server: 0 handshakes, 0 req
+self-signed; HttpsURLConnection defaults trust all	hc5-hardened	REFUSED SSLHandshakeException: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certifi...	server: 0 handshakes, 0 req
+self-signed; HttpsURLConnection defaults trust all	hc5-default	REFUSED SSLHandshakeException: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certifi...	server: 0 handshakes, 0 req
+self-signed; HttpsURLConnection defaults trust all	jnh-hardened	REFUSED SSLHandshakeException: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certifi...	server: 0 handshakes, 0 req
+self-signed; HttpsURLConnection defaults trust all	jnh-default	REFUSED SSLHandshakeException: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certifi...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	httpconn	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	hc5-hardened	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	hc5-default	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	jnh-hardened	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	jnh-default	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+self-signed; SSLContext.setDefault(trust all)	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+self-signed; SSLContext.setDefault(trust all)	hc5-hardened	REFUSED SSLHandshakeException: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certifi...	server: 0 handshakes, 0 req
+self-signed; SSLContext.setDefault(trust all)	hc5-default	REFUSED SSLHandshakeException: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certifi...	server: 0 handshakes, 0 req
+self-signed; SSLContext.setDefault(trust all)	jnh-hardened	REFUSED SSLHandshakeException: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certifi...	server: 0 handshakes, 0 req
+self-signed; SSLContext.setDefault(trust all)	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+log with -D flags only	httpconn	stderr 1 lines; token in it: 0; request body in it: 0
+log with -D flags only	hc5-hardened	stderr 55 lines; token in it: 2; request body in it: 1
+log with -D flags only	jnh-hardened	stderr 16 lines; token in it: 1; request body in it: 0
+== 1.8.0_504 plain
+# java 1.8.0_504 (Temurin)
+framed by length	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by length	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by length	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+framed by chunks	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by chunks	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+framed by chunks	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+short of Content-Length	httpconn	REFUSED EOFException: the connection closed inside a response	server: 1 conn, 1 req, token seen
+short of Content-Length	hc5-hardened	REFUSED ConnectionClosedException: Premature end of Content-Length delimited message body (expected: 100; received: 12)	server: 1 conn, 1 req, token seen
+short of Content-Length	hc5-default	REFUSED ConnectionClosedException: Premature end of Content-Length delimited message body (expected: 100; received: 12)	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+chunk cut short	httpconn	REFUSED EOFException: the connection closed inside a response	server: 1 conn, 1 req, token seen
+chunk cut short	hc5-hardened	REFUSED TruncatedChunkException: Truncated chunk (expected size: 32; actual size: 12)	server: 1 conn, 1 req, token seen
+chunk cut short	hc5-default	REFUSED TruncatedChunkException: Truncated chunk (expected size: 32; actual size: 12)	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+unframed, read to close	httpconn	REFUSED IOException: a response with neither Content-Length nor chunked encoding	server: 1 conn, 1 req, token seen
+unframed, read to close	hc5-hardened	REFUSED IOException: a response with neither Content-Length nor chunked encoding	server: 1 conn, 1 req, token seen
+unframed, read to close	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+TE gzip, chunked (complete)	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+TE gzip, chunked (complete)	hc5-hardened	REFUSED ClientProtocolException: Unsupported transfer encoding: gzip, chunked <- NotImplementedException: Unsupported transfer encoding: gzip, chunked	server: 1 conn, 1 req, token seen
+TE gzip, chunked (complete)	hc5-default	REFUSED ClientProtocolException: Unsupported transfer encoding: gzip, chunked <- NotImplementedException: Unsupported transfer encoding: gzip, chunked	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+TE xchunked (complete chunks)	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+TE xchunked (complete chunks)	hc5-hardened	REFUSED ClientProtocolException: Unsupported transfer encoding: xchunked <- NotImplementedException: Unsupported transfer encoding: xchunked	server: 1 conn, 1 req, token seen
+TE xchunked (complete chunks)	hc5-default	REFUSED ClientProtocolException: Unsupported transfer encoding: xchunked <- NotImplementedException: Unsupported transfer encoding: xchunked	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+two different Content-Lengths	httpconn	ACCEPTED 200 body=4B '{}XX'	server: 1 conn, 1 req, token seen
+two different Content-Lengths	hc5-hardened	REFUSED ClientProtocolException: Multiple Content-Length headers <- ProtocolException: Multiple Content-Length headers	server: 1 conn, 1 req, token seen
+two different Content-Lengths	hc5-default	REFUSED ClientProtocolException: Multiple Content-Length headers <- ProtocolException: Multiple Content-Length headers	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+Content-Length and chunked	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length and chunked	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length and chunked	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+Content-Length with a sign	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length with a sign	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+Content-Length with a sign	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+space before the colon	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen
+space before the colon	hc5-hardened	REFUSED ClientProtocolException: Invalid header; error at offset 15: <Content-Length : 2> <- ParseException: Invalid header; error at offset 15: <Content-Length : 2>	server: 1 conn, 1 req, token seen
+space before the colon	hc5-default	REFUSED ClientProtocolException: Invalid header; error at offset 15: <Content-Length : 2> <- ParseException: Invalid header; error at offset 15: <Content-Length : 2>	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+Content-Encoding gzip	httpconn	ACCEPTED 200 body=22B '??????????????C???????'	server: 1 conn, 1 req, token seen
+Content-Encoding gzip	hc5-hardened	ACCEPTED 200 body=22B '??????????????C???????'	server: 1 conn, 1 req, token seen
+Content-Encoding gzip	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+closed before the status line	httpconn	REFUSED EOFException: the connection closed	server: 1 conn, 1 req, token seen
+closed before the status line	hc5-hardened	REFUSED NoHttpResponseException: The target server failed to respond	server: 1 conn, 1 req, token seen
+closed before the status line	hc5-default	REFUSED NoHttpResponseException: 127.0.0.1:45603 failed to respond	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+Content-Length over the cap, no body	httpconn	REFUSED IOException: a response over 67108864 bytes after 0 ms	server: 1 conn, 1 req, token seen
+Content-Length over the cap, no body	hc5-hardened	REFUSED IOException: a response over 67108864 bytes after 1 ms	server: 1 conn, 1 req, token seen
+body dripped (read timeout 3 s)	httpconn	ACCEPTED 200 body=8B '{"a":12}' after 5608 ms	server: 1 conn, 1 req, token seen
+body dripped (read timeout 3 s)	hc5-hardened	ACCEPTED 200 body=8B '{"a":12}' after 5607 ms	server: 1 conn, 1 req, token seen
+401 Basic, default Authenticator set	httpconn	ACCEPTED 401 body=23B '{"code":"UNAUTHORIZED"}'; Authenticator asked 0	server: 1 conn, 1 req, token seen
+401 Basic, default Authenticator set	hc5-hardened	ACCEPTED 401 body=23B '{"code":"UNAUTHORIZED"}'; Authenticator asked 0	server: 1 conn, 1 req, token seen
+401 Basic, default Authenticator set	hc5-default	ACCEPTED 401 body=23B '{"code":"UNAUTHORIZED"}'; Authenticator asked 0	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+redirect 307	httpconn	ACCEPTED 307 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 307	hc5-hardened	ACCEPTED 307 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 307	hc5-default	ACCEPTED 200 body=2B '{}'; elsewhere saw server: 1 conn, 1 req, token seen, Accept-Encoding sent	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+redirect 302	httpconn	ACCEPTED 302 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 302	hc5-hardened	ACCEPTED 302 body=0B ''; elsewhere saw server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+redirect 302	hc5-default	ACCEPTED 200 body=2B '{}'; elsewhere saw server: 1 conn, 1 req, Accept-Encoding sent	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+default ProxySelector set	httpconn	REFUSED SocketTimeoutException: Connect timed out; SOCKS listener server: 1 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+default ProxySelector set	hc5-hardened	REFUSED ConnectTimeoutException: Connect to http://127.0.0.1:35757 failed: Connect timed out; SOCKS listener server: 1 conn, 2 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+default ProxySelector set	hc5-default	REFUSED ConnectTimeoutException: Connect to http://127.0.0.1:38625 failed: Connect timed out; SOCKS listener server: 1 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+proxy system properties set, loopback	httpconn	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+proxy system properties set, loopback	hc5-hardened	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen
+proxy system properties set, loopback	hc5-default	ACCEPTED 200 body=2B '{}'; SOCKS listener server: 0 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 1 conn, 1 req, token seen, Accept-Encoding sent
+proxy system properties set, non-loopback address	httpconn	REFUSED SocketTimeoutException: Connect timed out; SOCKS listener server: 1 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+proxy system properties set, non-loopback address	hc5-hardened	REFUSED ConnectTimeoutException: Connect to http://192.0.2.2:44261 failed: Connect timed out; SOCKS listener server: 1 conn, 2 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+proxy system properties set, non-loopback address	hc5-default	REFUSED ConnectTimeoutException: Connect to http://192.0.2.2:37889 failed: Connect timed out; SOCKS listener server: 1 conn, 0 req; HTTP proxy server: 0 conn, 0 req	server: 0 conn, 0 req
+== 1.8.0_504 tls
+# java 1.8.0_504 (Temurin)
+trusted certificate for the host	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate for the host	hc5-hardened	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate for the host	hc5-default	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate, another name	httpconn	REFUSED SSLHandshakeException: No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative names matching IP addres...	server: 0 handshakes, 0 req
+trusted certificate, another name	hc5-hardened	REFUSED SSLHandshakeException: No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative names matching IP addres...	server: 0 handshakes, 0 req
+trusted certificate, another name	hc5-default	REFUSED SSLHandshakeException: No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative names matching IP addres...	server: 0 handshakes, 0 req
+self-signed; HttpsURLConnection defaults trust all	httpconn	REFUSED SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to request...	server: 0 handshakes, 0 req
+self-signed; HttpsURLConnection defaults trust all	hc5-hardened	REFUSED SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to request...	server: 0 handshakes, 0 req
+self-signed; HttpsURLConnection defaults trust all	hc5-default	REFUSED SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to request...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	httpconn	REFUSED SSLHandshakeException: No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative names matching IP addres...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	hc5-hardened	REFUSED SSLHandshakeException: No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative names matching IP addres...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	hc5-default	REFUSED SSLHandshakeException: No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative names matching IP addres...	server: 0 handshakes, 0 req
+self-signed; SSLContext.setDefault(trust all)	httpconn	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+self-signed; SSLContext.setDefault(trust all)	hc5-hardened	REFUSED SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to request...	server: 0 handshakes, 0 req
+self-signed; SSLContext.setDefault(trust all)	hc5-default	REFUSED SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to request...	server: 0 handshakes, 0 req
+log with -D flags only	httpconn	stderr 1 lines; token in it: 0; request body in it: 0
+log with -D flags only	hc5-hardened	stderr 55 lines; token in it: 2; request body in it: 1

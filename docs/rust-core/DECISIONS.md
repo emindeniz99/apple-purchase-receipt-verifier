@@ -16,7 +16,9 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 0.8.0 merged into `main`, the owner's decisions of 2026-09-29 and
 2026-09-30 added R35 to R37 and amended R5, R19, R20, R23 and R30, the
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
-those of 2026-10-02 amended R25, R31, R34, R39, R40 and R41.
+those of 2026-10-02 amended R17, R25, R31, R34, R39, R40 and R41;
+on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
+client change.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -316,6 +318,83 @@ binary, so `url` and `executable` sources exist; the server binds
 `127.0.0.1` and exits when its parent's stdin closes
 ([rust-core spikes][spikes], "Sidecar"). Executing from memory is in the
 rejected table.
+
+**Amended 2026-10-02 and 2026-10-03 (owner): the server engine's HTTP
+client.** On 2026-10-02 (Q17) the owner replaced the hand-written
+client, `HttpConn`, with the JDK's `HttpURLConnection`: a buffered body,
+`Proxy.NO_PROXY`, a pinned TLS socket factory and host name verifier,
+and framed bodies only ([HttpURLConnection][huc]). On 2026-10-03, before
+that change merged, the owner reversed it on the same pull request, so
+no release carried it. The reasons:
+
+- The JDK client brings JVM-wide state the engine cannot switch off. On
+  Java 8, where the server engine is the default, a 401 `Basic`
+  challenge is answered with the default `Authenticator`'s credentials:
+  20 connections an attempt, 19 of them with `Authorization`, 60 sends
+  in a call. Java 8 has no per-connection `Authenticator` to stop it.
+  A SOCKS proxy from a `ProxySelector` or `socksProxyHost` still carried
+  the connection on Java 8, and on JDK 21 for `https`.
+- The JDK resends a POST inside each of the engine's attempts. A server
+  that closes before the status line got the request 6 times where the
+  engine means 3, and one call could open 9 connections.
+- The swap added 8 lines net, where its aim was less hand-written code.
+
+The comparison that followed ran `HttpConn`, Apache HttpClient 5.6.4 and
+`java.net.http` against the same misbehaving servers and JVM-wide
+settings ([HTTP client options][httpopt]). It found six gaps in
+`HttpConn`'s own lines. Once they are closed, no JVM-wide proxy, default
+TLS context, `Authenticator` or logging setting reaches the engine. Some
+JVM-wide state still does: the security provider order
+(`SSLContext.getInstance("TLS")` takes the first provider that offers
+it), the `jdk.tls.*` properties, `ssl.TrustManagerFactory.algorithm`, a
+factory passed to `Socket.setSocketImplFactory`, and the
+`javax.net.ssl.trustStore` properties, through which a caller chooses
+the roots. The engine keeps `HttpConn`, hardened:
+
+- The socket is opened with `Proxy.NO_PROXY`, so no `ProxySelector` or
+  `socksProxyHost` routes it.
+- A response is framed by one `Content-Length` of digits, at most
+  64 MiB, or by a `Transfer-Encoding` of exactly `chunked`, once. Both
+  together, any other coding, a second length, and whitespace before a
+  header's colon or at a line's start are refused (RFC 9112 §5.1, §6.3).
+  A chunk size is hex digits only, and a line that does not end in CRLF
+  is refused (§2.2, §7.1).
+- TLS comes from an `SSLContext` built for each connection over the
+  JVM's default trust managers: `javax.net.ssl.trustStore` with its type
+  and password, else the JDK's `lib/security/jssecacerts`, else its
+  `lib/security/cacerts`. `SSLContext.setDefault` and the
+  `ssl.SocketFactory.provider` security property do not reach it, so
+  other code that installs a trust-all default cannot make the engine
+  accept a forged server. The host name is checked inside the handshake
+  (endpoint identification `HTTPS`), so a server with the wrong name
+  reads no byte of the request. The cost: a private CA trusted only in
+  code (a context passed to `setDefault`, with no trust store file) is
+  not followed, and no client certificate from `javax.net.ssl.keyStore`
+  is sent. A caller who needs either would need a `ServerSource.url`
+  overload that takes an `SSLContext`, which does not exist. The owner
+  may still choose to follow `setDefault` instead; that change is a
+  commit of its own on the pull request. The context is not cached, so
+  a change to `javax.net.ssl.trustStore` reaches the next connection
+  (the tests rely on that). Building one costs at most about 0.05 ms
+  warm and 1.2 ms on first use on JDK 21, and a new pooled connection
+  cannot resume an earlier one's TLS session, so each pays a full
+  handshake.
+- The `Host` header puts an IPv6 literal in brackets and leaves out its
+  zone id (RFC 9112 §3.2, RFC 6874 §4).
+
+What `HttpConn` already did right stays: one write per request with
+`TCP_NODELAY`, no `Authenticator`, no redirect, no resend inside an
+attempt, no content decoding, no logging, a body framed by neither
+length nor chunks refused, and an over-cap length refused from the
+headers. Two limits stay open, as for every client compared: nothing
+bounds a call's total time, so a body that arrives a byte at a time
+under the 60 s read timeout is waited for; and a declared length is
+allocated (up to 64 MiB) before its first byte arrives.
+`ServerHttpTest` checks each framing, proxy and TLS property against
+servers that misbehave on purpose, and `HttpConnTest` checks the `Host`
+header, on JDK 21 and Java 8. With the hardening reverted, the six tests
+for the gaps the comparison found fail, and so do the tests for the
+checks added after it.
 
 ---
 
@@ -1506,6 +1585,9 @@ One table for everything the plan measured or considered and rejected.
 | jco's WASI 0.2 glue as the JS package | 202,031 to 236,337 B of generated glue for the WASI shims; with no WASI imports left, jco's glue for the component is 63,523 B minified and costs 8 to 11 ms at start | [wasm bake-off §8, §9][wasmbake]; [canonical ABI final][cabifinal] | — |
 | Protobuf, CBOR or FlatBuffers as the ABI encoding | Not measured. The 0.7 contract is already JSON (canonical JSON, compared by value in `cases.json`); ABI v1's JSON out cost nothing measurable against the earlier bridge, and a binary codec would add a decoder to every host | [ABI v1][abi]; [0.7 API][api07] | — |
 | Executing the server from memory (`memfd_create` + `fexecve`) | Pure Java cannot do it, and security tools treat fileless execution as malware behaviour | R17 of 2026-09-25 (git history of this file); no evidence note | — |
+| `HttpURLConnection` as the server engine's client | Tried on 2026-10-02 and reversed on 2026-10-03 (R17). On Java 8 a 401 `Basic` challenge gets the default `Authenticator`'s credentials, 20 connections an attempt, with no per-connection switch; the JDK resends a POST inside each attempt (6 requests where the engine means 3); SOCKS from a `ProxySelector` still applies on Java 8 and for `https`; 8 lines more than the hand-written client | [HttpURLConnection][huc]; [HTTP client options §1, §4][httpopt] | — |
+| Apache HttpClient 5 (5.6.4) as the server engine's client | The strictest parser compared, but Spring Boot pins httpclient5 for every app that uses it: 5.1.4 in Boot 2.7, the Java 8 line, lacks `ConnectionConfig` and `DetachedSocketFactory`, and Boot 3.5's versions are inside two advisories' ranges. Only a shaded copy avoids that, and then each HttpClient 5 advisory is a release of this artifact against Central's five a month. Unsafe defaults to turn off: a 307 carried the token to another host, content decoding loads JNI codecs found on the classpath, a body read to the close is accepted; SLF4J debug logging prints the token and the receipt; `NO_PROXY` only through `@Internal` API; 2.3 MB of classes | [HTTP client options §1, §4][httpopt] | the hand-written client's parsing outgrows one server's wire contract |
+| A stdio transport for the managed child | Saves the transport's share only: a pipe round trip costs 25 to 32 µs against 52 to 63 µs for a loopback HTTP exchange, about 30 µs of a 2.2 ms g5 call. Costs a framed protocol with request ids and its own status codes in Rust and Java, and `ServerSource.url` still needs HTTP, so two transports would do one job | [HTTP client options §3][httpopt] | — |
 | A public per-call `now` | Dropped in 0.7: the `Config` clock covers the chain fallback and `request_date`. The ABI carries `now-ms` per call, so adding it later is additive | [0.7 API][api07], Dropped | a user needs it |
 | A handle-based ABI (verifier handles across the boundary) | Handles are state a caller can double-free or share across threads; the measured ABI passed with no verifier state at all, and the instance is the verifier (R23) | [ABI v1][abi]; root THREAT-MODEL.md §5 (C ABI handles) | — |
 | DER input | Apple's endpoint and clients carry base64; ABI v1 took base64 only, and 0.7 dropped the DER overload. The cap then admits at most 2,359,296 bytes of DER | [ABI v1][abi]; [0.7 API][api07], Dropped | an overload is wanted; it is additive |
@@ -1554,3 +1636,5 @@ One table for everything the plan measured or considered and rejected.
 [pactz]: ../evidence/2026-10-01-pacific-tz-crates.md
 [jsonserde]: ../evidence/2026-10-01-json-serde.md
 [stjout]: ../evidence/2026-10-02-dotnet-stj-output.md
+[huc]: ../evidence/2026-10-02-java-httpurlconnection.md
+[httpopt]: ../evidence/2026-10-02-java-http-options.md

@@ -1,0 +1,11 @@
+# java 21.0.10 (Ubuntu)
+trusted certificate, another name	httpconn	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+trusted certificate, another name	hc5-hardened	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+trusted certificate, another name	hc5-default	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+trusted certificate, another name	jnh-hardened	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+trusted certificate, another name	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+another name; HttpsURLConnection verifier allows all	httpconn	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	hc5-hardened	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	hc5-default	REFUSED SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 127.0.0.1 found <- CertificateException: No subject alternative na...	server: 0 handshakes, 0 req
+another name; HttpsURLConnection verifier allows all	jnh-hardened	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen
+another name; HttpsURLConnection verifier allows all	jnh-default	ACCEPTED 200 body=2B '{}'	server: 1 handshakes, 1 req, token seen

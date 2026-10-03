@@ -752,7 +752,10 @@ Verifier v3 = Verifier.create(config,
   `HttpURLConnection` costs about 1.5 ms extra per POST
   ([rust-core spikes, Sidecar][spikes]). A g5 call from Java 8 took
   3.87 ms mean and 3.71 ms p50; 258 per second on one thread, 719 on four
-  ([aprv-server §6][server]).
+  ([aprv-server §6][server]). It connects with `Proxy.NO_PROXY`, takes TLS
+  from an `SSLContext` of its own over the JVM's trust store, and accepts
+  a body framed by one `Content-Length` of digits or by `chunked` alone,
+  never both (DECISIONS.md R17, 2026-10-03).
 - **Classpath guard.** Both artifacts ship a marker resource; each façade
   fails fast at startup when it finds both. The Gradle module metadata
   declares a capability conflict between them, and the READMEs say to

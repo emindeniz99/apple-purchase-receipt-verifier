@@ -8,9 +8,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.util.Locale;
+import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
@@ -20,10 +23,14 @@ import org.jspecify.annotations.Nullable;
  * One keep-alive HTTP/1.1 connection to {@code aprv-server}. Each request
  * goes out in a single write with {@code TCP_NODELAY}: HttpURLConnection
  * writes the headers and the body separately, which cost about 1.5 ms per
- * POST against a loopback server (rust-core spikes, "Sidecar"). The response
- * is read by {@code Content-Length} or chunked encoding, up to
- * {@link #MAX_RESPONSE} bytes. Not thread-safe: {@link ServerConnection}
- * pools these, one request at a time on each.
+ * POST against a loopback server (rust-core spikes, "Sidecar"). The socket
+ * is opened with {@link Proxy#NO_PROXY}, so no {@code ProxySelector} or
+ * {@code socksProxyHost} set elsewhere in the JVM routes it. The response is
+ * read by one {@code Content-Length} of digits or by {@code Transfer-Encoding:
+ * chunked} alone, never both, up to {@link #MAX_RESPONSE} bytes; any other
+ * framing, and whitespace before a header's colon, is refused (RFC 9112
+ * §5.1, §6.3). Not thread-safe: {@link ServerConnection} pools these, one
+ * request at a time on each.
  */
 final class HttpConn implements Closeable {
 
@@ -32,6 +39,23 @@ final class HttpConn implements Closeable {
 
     private static final int MAX_LINE = 16 << 10;
     private static final int MAX_HEADERS = 100;
+
+    /**
+     * TLS from a context of this connection's own: the JVM's default trust
+     * managers (javax.net.ssl.trustStore, else lib/security/jssecacerts,
+     * else lib/security/cacerts), but not a default SSLContext or socket
+     * factory that other code in the JVM replaced (SSLContext.setDefault,
+     * the ssl.SocketFactory.provider property).
+     */
+    private static SSLSocketFactory tls() throws IOException {
+        try {
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(null, null, null);
+            return context.getSocketFactory();
+        } catch (GeneralSecurityException e) {
+            throw new IOException("no TLS context: " + e, e);
+        }
+    }
 
     /** Where the server is: host, port, TLS or not, a base path, the token, and which child it is. */
     static final class Target {
@@ -77,14 +101,13 @@ final class HttpConn implements Closeable {
 
     HttpConn(Target target, int connectTimeoutMillis, int readTimeoutMillis) throws IOException {
         this.target = target;
-        Socket plain = new Socket();
+        Socket plain = new Socket(Proxy.NO_PROXY); // no SOCKS from a ProxySelector or socksProxyHost
         try {
             plain.setTcpNoDelay(true);
             plain.connect(new InetSocketAddress(target.host, target.port), connectTimeoutMillis);
             plain.setSoTimeout(readTimeoutMillis);
             if (target.tls) {
-                SSLSocket tls = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault())
-                        .createSocket(plain, target.host, target.port, true);
+                SSLSocket tls = (SSLSocket) tls().createSocket(plain, target.host, target.port, true);
                 SSLParameters parameters = tls.getSSLParameters();
                 parameters.setEndpointIdentificationAlgorithm("HTTPS");
                 tls.setSSLParameters(parameters);
@@ -121,9 +144,7 @@ final class HttpConn implements Closeable {
                 .append(target.basePath)
                 .append(path)
                 .append(" HTTP/1.1\r\nHost: ")
-                .append(target.host)
-                .append(':')
-                .append(target.port)
+                .append(hostHeader(target.host, target.port))
                 .append("\r\n");
         if (target.token != null) {
             head.append("X-Aprv-Token: ").append(target.token).append("\r\n");
@@ -164,24 +185,33 @@ final class HttpConn implements Closeable {
                 throw new IOException("too many response headers");
             }
             int colon = header.indexOf(':');
-            if (colon <= 0) {
+            if (colon <= 0
+                    || header.charAt(colon - 1) == ' '
+                    || header.charAt(colon - 1) == '\t'
+                    || header.charAt(0) == ' '
+                    || header.charAt(0) == '\t') {
                 throw new IOException("a malformed response header");
             }
-            String name = header.substring(0, colon).trim().toLowerCase(Locale.ROOT);
+            String name = header.substring(0, colon).toLowerCase(Locale.ROOT);
             String value = header.substring(colon + 1).trim();
             if (name.equals("content-length")) {
-                try {
-                    length = Long.parseLong(value);
-                } catch (NumberFormatException e) {
-                    throw new IOException("a malformed Content-Length", e);
+                if (length >= 0 || !value.matches("[0-9]{1,18}")) {
+                    throw new IOException("a malformed or repeated Content-Length");
                 }
+                length = Long.parseLong(value);
             } else if (name.equals("transfer-encoding")) {
-                chunked = value.toLowerCase(Locale.ROOT).contains("chunked");
+                if (chunked || !value.equalsIgnoreCase("chunked")) {
+                    throw new IOException("a Transfer-Encoding other than chunked alone: " + value);
+                }
+                chunked = true;
             } else if (name.equals("connection")) {
                 close = value.toLowerCase(Locale.ROOT).contains("close");
             } else if (name.equals("content-type")) {
                 contentType = value;
             }
+        }
+        if (chunked && length >= 0) {
+            throw new IOException("a response with both Content-Length and chunked encoding");
         }
         byte[] responseBody;
         if (chunked) {
@@ -200,18 +230,34 @@ final class HttpConn implements Closeable {
         return new Response(status, contentType, responseBody);
     }
 
+    /**
+     * The Host header's value. {@link Target#host} holds an IPv6 literal
+     * without its brackets, as a socket address takes it; the header puts
+     * them back (RFC 9112 §3.2, RFC 3986 §3.2.2). A zone id
+     * ({@code %eth0}, or {@code %25eth0} as a URI writes it) names an
+     * interface on this host only, so it is left out (RFC 6874 §4).
+     */
+    static String hostHeader(String host, int port) {
+        if (host.indexOf(':') < 0) {
+            return host + ":" + port;
+        }
+        int zone = host.indexOf('%');
+        return "[" + (zone < 0 ? host : host.substring(0, zone)) + "]:" + port;
+    }
+
     private byte[] chunked() throws IOException {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         while (true) {
-            String size = line();
-            int semicolon = size.indexOf(';');
-            int n;
-            try {
-                n = Integer.parseInt((semicolon < 0 ? size : size.substring(0, semicolon)).trim(), 16);
-            } catch (NumberFormatException e) {
-                throw new IOException("a malformed chunk size", e);
+            String sizeLine = line();
+            int semicolon = sizeLine.indexOf(';');
+            String size = semicolon < 0 ? sizeLine : sizeLine.substring(0, semicolon);
+            // Hex digits only: parseInt alone would take "+1a" and, after a
+            // trim, " 1a". Seven digits hold more than MAX_RESPONSE.
+            if (!size.matches("[0-9A-Fa-f]{1,7}")) {
+                throw new IOException("a malformed chunk size");
             }
-            if (n < 0 || body.size() + (long) n > MAX_RESPONSE) {
+            int n = Integer.parseInt(size, 16);
+            if (body.size() + (long) n > MAX_RESPONSE) {
                 throw new IOException("a response over " + MAX_RESPONSE + " bytes");
             }
             if (n == 0) {
@@ -240,6 +286,11 @@ final class HttpConn implements Closeable {
         return bytes;
     }
 
+    /**
+     * One line, without its CRLF. A bare LF or a CR not followed by LF is
+     * refused rather than read as a line end or dropped (RFC 9112 §2.2):
+     * {@code aprv-server} (hyper) ends every line with CRLF.
+     */
     private String line() throws IOException {
         StringBuilder line = new StringBuilder(64);
         while (true) {
@@ -247,15 +298,23 @@ final class HttpConn implements Closeable {
             if (c < 0) {
                 throw new EOFException("the connection closed");
             }
-            if (c == '\n') {
+            if (c == '\r') {
+                int next = in.read();
+                if (next < 0) {
+                    throw new EOFException("the connection closed");
+                }
+                if (next != '\n') {
+                    throw new IOException("a CR not followed by LF in a response line");
+                }
                 return line.toString();
             }
-            if (c != '\r') {
-                if (line.length() >= MAX_LINE) {
-                    throw new IOException("a response line over " + MAX_LINE + " bytes");
-                }
-                line.append((char) c);
+            if (c == '\n') {
+                throw new IOException("a response line ended by LF alone");
             }
+            if (line.length() >= MAX_LINE) {
+                throw new IOException("a response line over " + MAX_LINE + " bytes");
+            }
+            line.append((char) c);
         }
     }
 
