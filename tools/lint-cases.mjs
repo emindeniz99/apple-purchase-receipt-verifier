@@ -36,9 +36,9 @@
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFixture } from './lib/fixtures.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES_DIR = join(REPO, 'fixtures');
@@ -210,14 +210,6 @@ function walk(dir) {
   return out;
 }
 
-function decode(bytes, codec) {
-  if (codec === 'raw') return bytes;
-  if (codec === 'utf8') return Buffer.from(bytes.toString('utf8').trim(), 'utf8');
-  if (codec === 'text') return bytes; // verbatim, untrimmed: the string a client sent
-  if (codec === 'base64') return Buffer.from(bytes.toString('utf8').replace(/\s+/g, ''), 'base64');
-  throw new Error(`unknown codec ${codec}`);
-}
-
 // The receipt-data / x5c base64 rule, stated independently of every port:
 // non-empty, a multiple of four, the standard alphabet followed by at most
 // two '='. Trailing bits are not checked. Returns the bytes, or null.
@@ -277,27 +269,10 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
   // Registered fixture files: present, and hashed over their DECODED bytes.
   for (const [id, fixture] of Object.entries(fixtures)) {
     if (typeOf(fixture) !== 'object' || typeof fixture.path !== 'string') continue;
-    const full = join(FIXTURES_DIR, fixture.path);
-    let bytes;
     try {
-      bytes = readFileSync(full);
-    } catch {
-      fail(`fixture "${id}"`, `file fixtures/${fixture.path} does not exist`);
-      continue;
-    }
-    let decoded;
-    try {
-      decoded = decode(bytes, fixture.codec);
+      readFixture(FIXTURES_DIR, fixture, id);
     } catch (e) {
-      fail(`fixture "${id}"`, e.message);
-      continue;
-    }
-    const digest = createHash('sha256').update(decoded).digest('hex');
-    if (digest !== fixture.contentSha256) {
-      fail(`fixture "${id}"`,
-        `contentSha256 is wrong for fixtures/${fixture.path} (codec ${fixture.codec})\n`
-        + `    registered: ${fixture.contentSha256}\n`
-        + `    actual:     ${digest}`);
+      problems.push(e.message);
     }
   }
 
