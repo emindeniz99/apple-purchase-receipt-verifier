@@ -43,20 +43,6 @@ enum Abi {
     /// The most random-get may ask for at once. OpenSSL asks for a few dozen
     /// bytes; a module asking for more is not the module we built.
     static let maxRandomRequest: UInt32 = 1 << 20
-    /// The most of a verify input copied into linear memory: one byte over
-    /// the core's largest cap (3,145,728, the receipt and the endpoint
-    /// body). A longer input is cut here, so the core still sees it over its
-    /// cap and answers TOO_LARGE (21002 at the endpoint) itself, while the
-    /// guest never grows to hold an input of any size a caller hands in.
-    static let maxInputBytes = 3_145_729
-
-    /// `input`, cut to ``maxInputBytes``.
-    static func capped<C: Collection<UInt8>>(_ input: C) -> [UInt8] { Array(input.prefix(maxInputBytes)) }
-
-    /// `input`, cut to ``maxInputBytes``, without a copy when it fits.
-    static func capped(_ input: [UInt8]) -> [UInt8] {
-        input.count <= maxInputBytes ? input : Array(input.prefix(maxInputBytes))
-    }
 }
 
 /// One instance of aprv.wasm in a store of its own, called through the
@@ -78,6 +64,14 @@ final class Guest: @unchecked Sendable {
     private let memory: Memory
     private let realloc: Function
     private(set) var dead = false
+    /// The most of a verify input copied into linear memory: the
+    /// `max_input_bytes` this instance's init answer stated
+    /// (docs/rust-core/DECISIONS.md R42), one byte over the core's largest
+    /// cap. A longer input is cut here, so the core still sees it over its
+    /// cap and answers TOO_LARGE (21002 at the endpoint) itself, while the
+    /// guest never grows to hold an input of any size a caller hands in.
+    /// `nil` before ``start(_:)``, and an input is then passed whole.
+    private(set) var maxInputBytes: Int?
 
     /// A fresh instance, before init. `random` supplies random-get's bytes.
     init(_ module: AprvModule, random: @escaping @Sendable (Int) -> [UInt8] = Guest.systemRandomBytes) throws(HostError) {
@@ -130,18 +124,38 @@ final class Guest: @unchecked Sendable {
         try call("init", [], config)
     }
 
+    /// init with `config`, keeping the input length its answer states:
+    /// ``HostError/initRefused(message:)`` when the module refuses the
+    /// configuration, ``HostError/unusableAnswer(export:detail:)`` when the
+    /// answer states no input length.
+    func start(_ config: [UInt8]) throws(HostError) {
+        maxInputBytes = try Wire.initAnswer(initialize(config))
+    }
+
+    /// `input`, cut to ``maxInputBytes``.
+    func capped<C: Collection<UInt8>>(_ input: C) -> [UInt8] {
+        guard let limit = maxInputBytes else { return Array(input) }
+        return Array(input.prefix(limit))
+    }
+
+    /// `input`, cut to ``maxInputBytes``, without a copy when it fits.
+    func capped(_ input: [UInt8]) -> [UInt8] {
+        guard let limit = maxInputBytes, input.count > limit else { return input }
+        return Array(input.prefix(limit))
+    }
+
     func verifyReceipt(now: UInt64, _ receiptBase64: [UInt8]) throws(HostError) -> String {
-        try call("verify-receipt", [.i64(now)], Abi.capped(receiptBase64))
+        try call("verify-receipt", [.i64(now)], capped(receiptBase64))
     }
 
     func verifySignedData(now: UInt64, _ jws: [UInt8]) throws(HostError) -> String {
-        try call("verify-signed-data", [.i64(now)], Abi.capped(jws))
+        try call("verify-signed-data", [.i64(now)], capped(jws))
     }
 
     /// `env` is 0 (production) or 1 (sandbox); the guest traps on anything
     /// else, and ``Verifier`` only ever passes those two.
     func verifyReceiptEndpoint(env: UInt32, now: UInt64, _ requestJson: [UInt8]) throws(HostError) -> String {
-        try call("verify-receipt-endpoint", [.i32(env), .i64(now)], Abi.capped(requestJson))
+        try call("verify-receipt-endpoint", [.i32(env), .i64(now)], capped(requestJson))
     }
 
     // --- canonical ABI (hand-written) begin ---

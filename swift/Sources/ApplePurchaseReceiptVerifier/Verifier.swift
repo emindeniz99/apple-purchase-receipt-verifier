@@ -59,8 +59,12 @@ public struct Verifier: Sendable {
         }
         let export = "verify-receipt"
         do {
-            let answer = try pool.with { guest throws(HostError) in try guest.verifyReceipt(now: now, Abi.capped(base64.utf8)) }
-            return Wire.result(answer, export, ReceiptPayload.self)
+            let answer = try pool.with { guest throws(HostError) in try guest.verifyReceipt(now: now, guest.capped(base64.utf8)) }
+            return Wire.result(answer, export, ReceiptPayload.self) { decoded, environment in
+                var payload = decoded
+                payload.environment = environment
+                return payload
+            }
         } catch {
             return VerificationResult(failure: Self.failure(error))
         }
@@ -76,10 +80,8 @@ public struct Verifier: Sendable {
         }
         let export = "verify-signed-data"
         do {
-            let answer = try pool.with { guest throws(HostError) in try guest.verifySignedData(now: now, Abi.capped(jws.utf8)) }
-            let result = Wire.result(answer, export, String.self)
-            if let json = result.payload { return VerificationResult(payload: JsonPayload(json: json)) }
-            return VerificationResult(failure: result.failure!)
+            let answer = try pool.with { guest throws(HostError) in try guest.verifySignedData(now: now, guest.capped(jws.utf8)) }
+            return Wire.result(answer, export, String.self) { JsonPayload(json: $0, environment: $1) }
         } catch {
             return VerificationResult(failure: Self.failure(error))
         }
@@ -95,7 +97,7 @@ public struct Verifier: Sendable {
         let env: UInt32 = environment == .production ? 0 : 1
         guard
             let answer = try? pool.with({ guest throws(HostError) in
-                try guest.verifyReceiptEndpoint(env: env, now: now, Abi.capped(requestJson.utf8))
+                try guest.verifyReceiptEndpoint(env: env, now: now, guest.capped(requestJson.utf8))
             }),
             (try? JSONSerialization.jsonObject(with: Data(answer.utf8))) is [String: Any]
         else { return failed }

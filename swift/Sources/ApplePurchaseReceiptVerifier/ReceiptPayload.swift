@@ -63,6 +63,12 @@ public struct ReceiptPayload: Sendable, Equatable {
     /// Every attribute that did not end up in a field above, by attribute
     /// type, each type's raw value octets in receipt order.
     public var unknownAttributes: [Int: [[UInt8]]] = [:]
+    /// The environment the verifier read from attribute 0
+    /// (docs/rust-core/DECISIONS.md R42): ``Environment/production`` for
+    /// `Production` and `ProductionVPP`, ``Environment/sandbox`` for
+    /// `ProductionSandbox` and `ProductionVPPSandbox`, `nil` for anything
+    /// else (`Xcode`, a missing value). Not part of ``toJson()``.
+    public var environment: Environment?
 
     public init() {}
 }
