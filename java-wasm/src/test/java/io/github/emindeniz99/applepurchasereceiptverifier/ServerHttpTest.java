@@ -308,13 +308,16 @@ class ServerHttpTest {
 
     /**
      * A header line that starts with whitespace is an obsolete line fold
-     * (RFC 9112 §5.2): read as its own field it would frame the body by a
-     * Content-Length that a proxy in between reads as part of {@code X}.
+     * (RFC 9112 §5.2), part of {@code X} to a proxy that unfolds it. It is
+     * refused as a malformed header: without that check the line would
+     * still fail, later and for another reason (its name keeps the space,
+     * so the body counts as unframed), and this test reads which.
      */
     @Test
     void whitespaceAtTheStartOfAHeaderLineIsRefused() throws Exception {
         try (RawServer server = new RawServer("HTTP/1.1 200 OK\r\nX: a\r\n Content-Length: 2\r\n\r\n{}")) {
-            assertThrows(IOException.class, () -> get(server.port(), false, 5_000));
+            IOException e = assertThrows(IOException.class, () -> get(server.port(), false, 5_000));
+            assertTrue(e.getMessage().contains("malformed response header"), String.valueOf(e));
         }
     }
 
