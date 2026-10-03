@@ -131,10 +131,10 @@
     </resources>
     <plugins>
       <!-- The public classes this artifact and the -wasm artifact share
-           byte for byte (results, payloads, Reason, Environment, the
-           classpath guard) live once, in src/shared/java, and compile into
-           both jars: a source directory, not a module, so it publishes
-           nothing of its own. The sources and javadoc jars read the
+           byte for byte (results, payloads, Config, Failure, Reason,
+           Environment, the classpath guard) live once, in src/shared/java,
+           and compile into both jars: a source directory, not a module, so
+           it publishes nothing of its own. The sources and javadoc jars read the
            project's source roots, so they carry these classes too. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>

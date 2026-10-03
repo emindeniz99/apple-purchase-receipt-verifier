@@ -27,6 +27,14 @@ public interface Verifier {
     /**
      * A verifier over {@code config}'s roots and clock.
      *
+     * <p>The runtime probe ({@link Config.Builder#runtimeProbe(boolean)})
+     * asks the BouncyCastle provider for the digest, ES256, X.509, PKIX and
+     * Collection cert store engines and checks each bundled Apple root's own
+     * signature. It checks the bundled roots, not the roots in
+     * {@code config}, so with custom roots a runtime that lacks their
+     * signature algorithm still answers {@link Reason#INTERNAL_ERROR} on the
+     * first call.</p>
+     *
      * @throws NullPointerException     if {@code config} is null
      * @throws IllegalArgumentException if {@code config} has no roots, since
      *                                  such a verifier would reject everything

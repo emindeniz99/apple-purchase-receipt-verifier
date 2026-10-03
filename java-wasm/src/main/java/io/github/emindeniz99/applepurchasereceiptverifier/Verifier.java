@@ -34,6 +34,15 @@ public interface Verifier {
      * engine ({@link Engine#server(ServerSource...)} with its default
      * sources) on Java 8. The choice depends on the JVM version alone.
      *
+     * <p>The runtime probe ({@link Config.Builder#runtimeProbe(boolean)})
+     * starts the engine and proves it can answer: the Endive engine loads
+     * the compiled verifier module, creates one instance, calls its
+     * {@code init} with {@code config}'s roots and keeps that instance for
+     * the first call. With the probe off the first call pays for that
+     * instead (on Endive, a few hundred milliseconds for the first instance
+     * in a JVM), and a module that cannot run, or a root it refuses, answers
+     * {@link Reason#INTERNAL_ERROR} on every call.</p>
+     *
      * @throws NullPointerException          if {@code config} is null
      * @throws IllegalArgumentException      if {@code config} has no roots,
      *                                       since such a verifier would reject
