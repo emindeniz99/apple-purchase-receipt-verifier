@@ -20,5 +20,6 @@ java -cp "$REPO/java/target/apple-purchase-receipt-verifier-0.7.0.jar:$(cat "$SC
 sh "$REPO/docs/evidence/2026-10-03-fuzz-seed-anchor/count-core.sh" "$REPO" "$SCRATCH/core"
 ```
 
-Both verify at the current time, so a fixture certificate that expires
-changes the counts.
+Both check the chain at the receipt's own creation date and read the clock
+only when that date is missing, so a fixture certificate that expires does
+not change the counts.
