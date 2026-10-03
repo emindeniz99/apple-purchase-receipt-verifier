@@ -10,6 +10,7 @@ import json
 from collections.abc import Callable, Iterable
 from typing import Any, TypeVar
 
+from .environment import Environment
 from .reason import Reason
 from .receipt_payload import InAppPurchase, JsonPayload, ReceiptPayload
 from .result import Failure, VerificationResult
@@ -28,22 +29,36 @@ def init_config(roots: "Iterable[bytes]") -> bytes:
     return json.dumps({"roots": encoded}, separators=(",", ":")).encode("ascii")
 
 
+def _max_input_bytes(value: "dict[str, Any]") -> int:
+    """The ``max_input_bytes`` of an accepting answer, a positive integer.
+    An answer without one comes from a module of another ABI version."""
+    limit = value.get("max_input_bytes")
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+        raise ResultShapeError("init accepted the roots but stated no max_input_bytes")
+    return limit
+
+
 def check_init(answer: str) -> "str | None":
-    """``None`` when ``init`` accepted the roots, else its refusal message."""
+    """``None`` when ``init`` accepted the roots and stated its
+    ``max_input_bytes``, else its refusal message."""
     value = _object(answer)
     if value.get("ok") is True:
+        _max_input_bytes(value)
         return None
     if value.get("ok") is False and isinstance(value.get("message"), str):
         return str(value["message"])
     raise ResultShapeError("init answered neither ok nor a refusal")
 
 
-def init_accepted(answer: str) -> bool:
-    """Whether ``answer`` is ``init`` taking the roots."""
+def init_accepted(answer: str) -> "int | None":
+    """The ``max_input_bytes`` of ``init`` taking the roots: the most bytes
+    of one input the module needs. ``None`` for a refusal or an answer of
+    another shape."""
     try:
-        return check_init(answer) is None
+        value = _object(answer)
+        return _max_input_bytes(value) if value.get("ok") is True else None
     except ResultShapeError:
-        return False
+        return None
 
 
 def _object(text: str) -> "dict[str, Any]":
@@ -138,7 +153,7 @@ def _in_app(value: object) -> InAppPurchase:
     )
 
 
-def _receipt_payload(value: object) -> ReceiptPayload:
+def _receipt_payload(value: object, environment: "Environment | None") -> ReceiptPayload:
     if not isinstance(value, dict):
         raise ResultShapeError("expected a receipt payload object")
     in_app = value.get("in_app")
@@ -160,6 +175,7 @@ def _receipt_payload(value: object) -> ReceiptPayload:
         original_application_version=_string(value.get("original_application_version")),
         expiration_date_ms=_number(value.get("expiration_date_ms")),
         unknown_attributes=_unknown(value.get("unknown_attributes")),
+        environment=environment,
     )
 
 
@@ -174,11 +190,29 @@ def _failure(value: "dict[str, Any]") -> Failure:
     return Failure(reason, message)
 
 
-def _result(text: str, payload: "Callable[[object], T]") -> "VerificationResult[T]":
+def _environment(value: "dict[str, Any]") -> "Environment | None":
+    """The ``environment`` member beside a verified payload: ``Production``,
+    ``Sandbox`` or ``null``. Missing, or anything else, is not the contract."""
+    if "environment" not in value:
+        raise ResultShapeError("a verified answer without an environment")
+    environment = value["environment"]
+    if environment is None:
+        return None
+    if isinstance(environment, str):
+        try:
+            return Environment(environment)
+        except ValueError:
+            pass
+    raise ResultShapeError("an environment other than Production, Sandbox or null")
+
+
+def _result(
+    text: str, payload: "Callable[[object, Environment | None], T]"
+) -> "VerificationResult[T]":
     value = _object(text)
     verified = value.get("verified")
     if verified is True and "payload" in value:
-        return VerificationResult(payload=payload(value["payload"]))
+        return VerificationResult(payload=payload(value["payload"], _environment(value)))
     if verified is False:
         return VerificationResult(failure=_failure(value))
     raise ResultShapeError("the answer is neither a payload nor a failure")
@@ -188,10 +222,10 @@ def receipt_result(text: str) -> "VerificationResult[ReceiptPayload]":
     return _result(text, _receipt_payload)
 
 
-def _signed_payload(value: object) -> JsonPayload:
+def _signed_payload(value: object, environment: "Environment | None") -> JsonPayload:
     if not isinstance(value, str):
         raise ResultShapeError("the signed payload is not a JSON string")
-    return JsonPayload(json=value)
+    return JsonPayload(json=value, environment=environment)
 
 
 def signed_data_result(text: str) -> "VerificationResult[JsonPayload]":

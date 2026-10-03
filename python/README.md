@@ -170,7 +170,7 @@ if not result.verified:
 payload = json.loads(result.payload.json)
 if payload.get("bundleId") != "com.example.app":
     return  # step 1 of the checklist below
-environment = Environment.from_jws_environment(payload.get("environment"))
+environment = result.payload.environment  # Environment.PRODUCTION, .SANDBOX or None
 if payload.get("revocationDate") is not None:
     return  # refunded or revoked as of signing time
 expires = payload.get("expiresDate")
@@ -186,7 +186,7 @@ if not result.verified:
 receipt = result.payload
 if receipt.bundle_id != "com.example.app":
     return
-environment = Environment.from_receipt_type(receipt.receipt_type)
+environment = receipt.environment
 for purchase in receipt.in_app:
     if purchase.cancellation_date_ms is not None:
         continue
@@ -210,11 +210,16 @@ these four things with the signed fields before granting anything:
 
 1. **Bundle id.** Compare it against your app's bundle id yourself.
    Legacy: `receipt.bundle_id`. JWS: `payload["bundleId"]`.
-2. **Environment.** `Environment.from_receipt_type(receipt.receipt_type)` for
-   a legacy receipt, `Environment.from_jws_environment(payload.get("environment"))`
-   for a JWS payload. Decide whether you accept `SANDBOX` here; both return
-   `None` for a receipt type or environment claim you don't recognise, which
-   fails closed if you require a specific `Environment`.
+2. **Environment.** `receipt.environment` for a legacy receipt and
+   `result.payload.environment` for a JWS payload, as the module states it.
+   A receipt's comes from `receipt_type` (`Production` and `ProductionVPP`
+   are `PRODUCTION`, `ProductionSandbox` and `ProductionVPPSandbox`
+   `SANDBOX`); a JWS's from the first of the top-level `environment` claim,
+   a notification's `data.environment` and a summary notification's
+   `summary.environment` that is present. Decide whether you accept
+   `SANDBOX` here; it is `None` for a value that names neither (`Xcode`,
+   `LocalTesting`) or none, which fails closed if you require a specific
+   `Environment`. It is not part of `to_json()`.
 3. **Product id.** Compare `product_id` / `payload["productId"]` against
    the catalogue of products you actually sell: a signature proves Apple
    signed it, not that it's a product your server still grants.
@@ -381,6 +386,12 @@ otherwise is what sits under it.
   dropped their copies the same way.
 - **Platforms follow wasmtime-py's wheels** (top of this file), where 0.7
   followed `cryptography`'s.
+- **`Environment.from_receipt_type` and `Environment.from_jws_environment`
+  are gone.** Read `ReceiptPayload.environment` and `JsonPayload.environment`,
+  which carry the environment the module states; a JWS's also comes from a
+  notification's `data.environment` and `summary.environment`. Both
+  dataclasses take `environment=` (default `None`) for a payload built by
+  hand.
 
 ## Upgrading from 0.6
 
@@ -461,7 +472,7 @@ exceeded one. They are the core's bounds, listed in
 `fixtures/cases.json` holds every port to these same numbers, from both
 sides of each boundary.
 
-The package copies at most 3,145,729 bytes of any input into the module (one over the cap), so the module itself answers `TOO_LARGE` and a huge input costs no memory.
+The package copies at most as many bytes of any input into the module as the module's `init` answer states (`max_input_bytes`, one over the cap: 3,145,729 today; the package keeps no copy of the number), so the module itself answers `TOO_LARGE` and a huge input costs no memory.
 
 ## Why offline
 

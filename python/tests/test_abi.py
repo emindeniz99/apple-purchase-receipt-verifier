@@ -20,7 +20,9 @@ from _support import fixture, fixture_text
 G5 = fixture_text("public-receipts", "receipt-sandbox-g5.b64").encode("ascii")
 JWS = fixture_text("generated", "transaction.jws").encode("ascii")
 JWS_ROOT = fixture("generated", "jws-root.der")
-OK = '{"ok":true}'
+#: init's accepting answer: the most bytes of one input the module needs, one
+#: over the receipt and endpoint-body cap (DECISIONS.md R42).
+OK = '{"ok":true,"max_input_bytes":3145729}'
 
 
 def now() -> int:
@@ -28,9 +30,12 @@ def now() -> int:
 
 
 def fresh(config: bytes = b"", *, init: bool = True) -> _host.Instance:
+    """An instance after ``init``, holding the length it stated, as a pool's are."""
     instance = _host.Instance(_host.default_runtime())
     if init:
-        assert instance.call("init", (), config) == OK
+        answer = instance.call("init", (), config)
+        assert answer == OK, answer
+        instance.max_input = _wire.init_accepted(answer)
     return instance
 
 
@@ -39,6 +44,28 @@ def request(receipt: bytes = G5) -> bytes:
 
 
 class ContractTest(unittest.TestCase):
+    def test_init_states_the_input_length_and_the_wrapper_reads_it(self) -> None:
+        self.assertEqual(3_145_729, _wire.init_accepted(OK))
+        self.assertEqual(3_145_729, fresh().max_input)
+        refusal = '{"ok":false,"message":"not a certificate"}'
+        self.assertIsNone(_wire.init_accepted(refusal))
+        self.assertEqual("not a certificate", _wire.check_init(refusal))
+        # An accepting answer without a positive integer is a module of
+        # another ABI version: no cap of the wrapper's own stands in for it.
+        for answer in (
+            '{"ok":true}',
+            '{"ok":true,"max_input_bytes":0}',
+            '{"ok":true,"max_input_bytes":-1}',
+            '{"ok":true,"max_input_bytes":1.5}',
+            '{"ok":true,"max_input_bytes":true}',
+            '{"ok":true,"max_input_bytes":"3145729"}',
+            '{"ok":true,"max_input_bytes":null}',
+        ):
+            with self.subTest(answer=answer):
+                self.assertIsNone(_wire.init_accepted(answer))
+                with self.assertRaises(_wire.ResultShapeError):
+                    _wire.check_init(answer)
+
     def test_init_with_no_roots_uses_the_built_in_ones_and_answers_ok(self) -> None:
         self.assertEqual(OK, _host.Instance(_host.default_runtime()).call("init", (), b""))
 
@@ -166,9 +193,9 @@ class InputCapTest(unittest.TestCase):
         self.assertEqual("TOO_LARGE", json.loads(answer)["reason"], answer)  # the core's own answer
         self.assertEqual([self.CAP + 1], sizes)
         # byte for byte what the core says when the whole input is copied
-        with mock.patch.object(_host, "MAX_INPUT_COPY", 1 << 40):
-            whole = fresh().call("verify-receipt", (now(),), big)
-        self.assertEqual(whole, answer)
+        whole = fresh()
+        whole.max_input = 1 << 40
+        self.assertEqual(whole.call("verify-receipt", (now(),), big), answer)
 
     def test_a_huge_input_does_not_grow_linear_memory(self) -> None:
         instance = fresh()
