@@ -216,7 +216,20 @@ final class InstallerTest extends TestCase
         // Empty between releases; the release branch writes the two Linux
         // lines. Either way the installer must accept what ships.
         $shipped = Installer::pins(__DIR__ . '/../SHA256SUMS');
-        self::assertSame($shipped['tag'] === null, $shipped['assets'] === []);
+        if ((string) file_get_contents(__DIR__ . '/../SHA256SUMS') === '') {
+            self::assertSame(['tag' => null, 'assets' => []], $shipped);
+
+            return;
+        }
+        self::assertIsString($shipped['tag']);
+        self::assertMatchesRegularExpression('/^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/', $shipped['tag'], 'a release tag');
+        $assets = array_keys($shipped['assets']);
+        sort($assets);
+        self::assertSame(
+            ['aprv-aarch64-unknown-linux-musl', 'aprv-x86_64-unknown-linux-musl'],
+            $assets,
+            'the two Linux binaries the release branch pins, and nothing else',
+        );
     }
 
     public function testEveryAssetTheBriefNamesCanBePinnedAndNothingElse(): void
@@ -320,6 +333,40 @@ final class InstallerTest extends TestCase
     {
         $this->expectException(InstallException::class);
         Installer::install($this->work . '/SHA256SUMS', $this->installDirectory, $this->server->url, self::TARGET);
+    }
+
+    /**
+     * file_get_contents() reads a directory as an empty string, which would
+     * pass for an empty file that pins nothing. A directory is not a sums
+     * file, and the command says it cannot read it.
+     */
+    public function testADirectoryInPlaceOfTheSumsFileIsRefused(): void
+    {
+        try {
+            Installer::pins($this->work);
+            self::fail('a directory must not read as an empty SHA256SUMS');
+        } catch (InstallException $e) {
+            self::assertSame(InstallException::UNAVAILABLE, $e->exitCode);
+            self::assertStringContainsString('cannot read ' . $this->work, $e->getMessage());
+        }
+
+        [$code, , $err] = $this->script(['--sums', $this->work, '--dir', $this->installDirectory, '--target', self::TARGET]);
+        self::assertSame(2, $code);
+        self::assertStringContainsString('cannot read', $err);
+        self::assertSame([], $this->installed());
+    }
+
+    /** An asset name is the file's text, so its control bytes are escaped before they reach a terminal. */
+    public function testAnUnknownAssetIsNamedEscaped(): void
+    {
+        try {
+            Installer::pins($this->sumsFile(str_repeat('ab', 32) . "  v1.0.0/aprv-\e[2Jx\n"));
+            self::fail('an asset outside the release list must be refused');
+        } catch (InstallException $e) {
+            self::assertStringContainsString('not a release asset', $e->getMessage());
+            self::assertStringNotContainsString("\e", $e->getMessage());
+            self::assertStringContainsString('"aprv-\u001b[2Jx"', $e->getMessage());
+        }
     }
 
     public function testPlainHttpToAnotherHostIsRefusedBeforeAnyRequest(): void
