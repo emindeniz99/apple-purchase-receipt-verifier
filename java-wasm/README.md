@@ -224,8 +224,8 @@ that does not work then answers `INTERNAL_ERROR` on every call.
 
 ## Differences from the main artifact
 
-- **The same verdicts, and different messages.** Both artifacts run the
-  311 shared cases of `fixtures/cases.json`. `Failure.message()` is
+- **The same verdicts, and different messages.** Both artifacts run every
+  shared case of `fixtures/cases.json`. `Failure.message()` is
   written by the core here and can be worded differently.
 - **`Failure.cause()`** is `null` for every reason the core decided,
   `UNREADABLE_PAYLOAD` included. It is set for the `INTERNAL_ERROR`s this

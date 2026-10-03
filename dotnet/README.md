@@ -587,13 +587,13 @@ environments, no app Apple id, no device id. Methods return a
 
 | 0.6 | 0.7 |
 |---|---|
-| `new ReceiptVerifier(roots, bundleId).Verify(base64 \| der)` | `Verifier.Create(Config.CreateBuilder().Roots(roots).Build()).VerifyReceipt(base64)`, then compare `payload.BundleId` |
+| `new ReceiptVerifier(roots, bundleId).Verify(base64 \| der)` | `Verifier.Create(new Config(roots: roots)).VerifyReceipt(base64)`, then compare `payload.BundleId` |
 | `ReceiptVerifier.VerifyReceiptCore(der, roots)` | base64-encode, then `VerifyReceipt` |
 | `Verify(base64, deviceGuid)` (device-hash checking on the verifier) | compute the hash yourself from `OpaqueValue` and `BundleIdBytes` (above) |
 | `new JwsVerifier(roots, bundleId, acceptedEnvironments).VerifyTransaction/VerifyAppTransaction/VerifyRaw(jws)` | `verifier.VerifySignedData(jws)`, then deserialize `payload.Json` yourself |
 | `new VerifyReceiptEndpoint(roots, environment).VerifyReceiptJson(body)` | `verifier.VerifyReceiptEndpoint(environment, body)` |
-| `AppleRootCertificates.JwsRoots()`, `AppleRootCertificates.ReceiptRoots()` | `Config.Defaults()` (one set, shared by every method) |
-| a `DateTimeOffset` argument for `request_date` | `Config.CreateBuilder().Clock(() => epochMs)` |
+| `AppleRootCertificates.JwsRoots()`, `AppleRootCertificates.ReceiptRoots()` | `new Config()` (one set, shared by every method) |
+| a `DateTimeOffset` argument for `request_date` | `new Config(clock: () => epochMs)` |
 | `VerificationException` (thrown) | `result.Failure` (`{ Reason, Message, Cause }`, never thrown for input) |
 | `AppReceipt` (`DateTimeOffset` fields) | `ReceiptPayload` (`*Ms` epoch milliseconds) |
 

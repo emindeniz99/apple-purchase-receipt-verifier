@@ -20,7 +20,7 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
   because nothing needed installing.
 - Replace the OpenSSL version print with
   `bundle exec ruby -e 'require "wasmtime"; puts Wasmtime::VERSION'`.
-- `bundle exec rake test`. This runs all 311 conformance cases and asserts
+- `bundle exec rake test`. This runs every conformance case and asserts
   every id ran, the facade, wire and ABI tests, and the thread test. It takes
   about a minute, most of it the module compile (once per process) and the
   2,000-call memory test.

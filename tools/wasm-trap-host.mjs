@@ -32,10 +32,12 @@
 //        retries; a wrong-length random-get traps; a trap in one instance
 //        leaves another verifying; 2,000 calls leave memory the same size.
 //
-// No dependencies: node:fs, node:crypto and WebAssembly only. Node 20+.
+// No npm dependencies: node:fs, node:crypto, WebAssembly and
+// tools/lib/fixtures.mjs. Node 22+, for that file's parseJsonExact.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { createHash, getRandomValues } from 'node:crypto';
+import { getRandomValues } from 'node:crypto';
 import { dirname, join } from 'node:path';
+import { parseJsonExact, readFixture } from './lib/fixtures.mjs';
 
 const IFACE = 'aprv:verifier/verify@0.1.0#';
 const HOST_MODULE = 'aprv:verifier/host@0.1.0';
@@ -171,44 +173,18 @@ const isTrap = (e) => e instanceof WebAssembly.RuntimeError || e instanceof Host
 
 // --- fixtures/cases.json ---------------------------------------------------
 
-// JSON.parse reads numbers as doubles; the endpoint's 64-bit ids would round.
-// Integer literals a double cannot hold become BigInts (the Node port's rule).
-const BIG = '__bigint__:';
-const LITERAL = /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
-function parseBig(text) {
-  const tagged = text.replace(LITERAL, (l) =>
-    l.startsWith('"') || !/^-?\d+$/.test(l) || Number.isSafeInteger(Number(l)) ? l : `"${BIG}${l}"`,
-  );
-  return JSON.parse(tagged, (_k, v) => (typeof v === 'string' && v.startsWith(BIG) ? BigInt(v.slice(BIG.length)) : v));
-}
-
+// JSON.parse reads numbers as doubles; the endpoint's 64-bit ids would round,
+// so cases.json and every answer go through parseJsonExact, which keeps
+// integer literals a double cannot hold as BigInts.
 function loadCases(path) {
-  const doc = parseBig(readFileSync(path, 'utf8'));
+  const doc = parseJsonExact(readFileSync(path, 'utf8'));
   const base = dirname(path);
   const cache = new Map();
   const fixture = (id) => {
     if (cache.has(id)) return cache.get(id);
     const entry = doc.fixtures[id];
     if (entry === undefined) throw new Error(`cases.json registers no fixture "${id}"`);
-    const raw = readFileSync(join(base, entry.path));
-    let bytes;
-    switch (entry.codec) {
-      case 'raw':
-      case 'text':
-        bytes = raw;
-        break;
-      case 'base64':
-        bytes = Buffer.from(raw.toString('ascii').replace(/\s+/g, ''), 'base64');
-        break;
-      case 'utf8':
-        bytes = Buffer.from(raw.toString('utf8').trim(), 'utf8');
-        break;
-      default:
-        throw new Error(`unknown fixture codec "${entry.codec}"`);
-    }
-    const digest = createHash('sha256').update(bytes).digest('hex');
-    if (digest !== entry.contentSha256) throw new Error(`fixture "${id}" has drifted from its contentSha256`);
-    const value = { entry, bytes: new Uint8Array(bytes) };
+    const value = { entry, bytes: new Uint8Array(readFixture(base, entry, id)) };
     cache.set(id, value);
     return value;
   };
@@ -353,7 +329,7 @@ function modeCases(modulePath, casesPath, answersDir) {
             ? fixture(kase.input.requestBody).bytes
             : bytesOf(JSON.stringify({ 'receipt-data': receiptText(fixture(kase.input.fixture)) }));
         out = invoke(config, 'verify-receipt-endpoint', env, now, body);
-        const doc = parseBig(out);
+        const doc = parseJsonExact(out);
         if (kase.expected.oneOf) {
           // Port-defined within a list: the response's /status must be listed.
           if (!kase.expected.oneOf.includes(doc.status)) {
@@ -367,7 +343,7 @@ function modeCases(modulePath, casesPath, answersDir) {
       default:
         throw new Error(`no mapping for operation ${kase.operation}`);
     }
-    const result = parseBig(out);
+    const result = parseJsonExact(out);
     const outcome = result.verified === true ? 'ok' : result.reason;
     const e = kase.expected;
     if (e.oneOf) {
@@ -392,8 +368,8 @@ function modeCases(modulePath, casesPath, answersDir) {
     else if (result.environment !== e.environment) problems.push(`environment ${stringify(result.environment)}, want ${stringify(e.environment)}`);
     // verify-receipt's payload is the ReceiptPayload JSON; verify-signed-data's
     // is a JSON string holding the signed payload's bytes.
-    const payload = typeof result.payload === 'string' ? parseBig(result.payload) : result.payload;
-    if (e.toJson !== undefined && !sameValue(payload, parseBig(e.toJson))) problems.push('toJson value differs');
+    const payload = typeof result.payload === 'string' ? parseJsonExact(result.payload) : result.payload;
+    if (e.toJson !== undefined && !sameValue(payload, parseJsonExact(e.toJson))) problems.push('toJson value differs');
     checkFields(payload, e, problems);
     return problems;
   };
