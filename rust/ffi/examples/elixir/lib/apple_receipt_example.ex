@@ -138,9 +138,9 @@ defmodule AppleReceiptExample do
 
   @doc """
   The verified payload of a document a verify call answered,
-  `{"verified":true,"payload":...}`: a receipt's payload is an object, and
-  a JWS's is a JSON string holding the signed text, exactly, which is
-  decoded in turn.
+  `{"verified":true,"payload":...,"environment":...}`: a receipt's
+  payload is an object, and a JWS's is a JSON string holding the signed
+  text, exactly, which is decoded in turn.
   """
   @spec payload!(binary()) :: term()
   def payload!(document) do

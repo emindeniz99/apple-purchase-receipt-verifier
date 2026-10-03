@@ -2249,7 +2249,7 @@
     {
       "id": "transaction/return-environment-for-the-caller",
       "legacyId": "transaction/reject-environment-outside-accept-set",
-      "description": "The input of the 0.6 case that a Production-only accept set refused. 0.7 takes no environment: the Sandbox transaction verifies and the payload shows environment \"Sandbox\", which the caller maps with Environment.fromJwsEnvironment and judges itself.",
+      "description": "The input of the 0.6 case that a Production-only accept set refused. 0.7 takes no environment: the Sandbox transaction verifies, the verifier states its environment (Sandbox) beside the payload, and the caller judges it itself.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "transaction"

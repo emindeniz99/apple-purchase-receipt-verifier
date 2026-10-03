@@ -31,7 +31,8 @@
  * Each binary is passed as it is, without a copy, so a binary holding a NUL
  * or bytes that are not UTF-8 gets the verdict aprv.wasm gives it, as it
  * would from every other host. On a verdict (status below 100) the JSON is
- * the document aprv.wasm answers, {"verified":true,"payload":...} or
+ * the document aprv.wasm answers,
+ * {"verified":true,"payload":...,"environment":...} or
  * {"verified":false,"reason":...,"message":...}; on a mistake in the call
  * (100 and above) there is none and the binary handed back is empty.
  *
