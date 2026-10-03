@@ -64,10 +64,7 @@ struct AprvModule: Sendable {
     /// digits. swift-crypto computes it (CryptoKit on Apple platforms); the
     /// module is the only thing this package hashes.
     static func sha256Hex(_ bytes: [UInt8]) -> String {
-        SHA256.hash(data: bytes).map { byte -> String in
-            let digits = String(byte, radix: 16)
-            return byte < 0x10 ? "0" + digits : digits
-        }.joined()
+        SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
 
     /// Parses `bytes` and refuses a module this package would misread: it
