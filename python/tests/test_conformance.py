@@ -358,6 +358,15 @@ class ConformanceCasesTest(unittest.TestCase):
             f"{case['id']}: expected {expected.get('reason')} but verified",
         )
         payload = result.payload
+        # The environment the module states beside the payload: Production,
+        # Sandbox, or null (None) when the input names neither.
+        self.assertIn("environment", expected, f"{case['id']}: harness error: no environment")
+        want = expected["environment"]
+        self.assertIs(
+            payload.environment,
+            None if want is None else Environment(want),
+            f"{case['id']}: environment",
+        )
         if case["operation"] == "verifyReceipt":
             actual = normalize_receipt(payload)
             if "toJson" in expected:

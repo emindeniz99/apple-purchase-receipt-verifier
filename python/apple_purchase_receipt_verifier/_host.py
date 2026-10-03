@@ -60,12 +60,6 @@ _RANDOM_LIMIT = 1024 * 1024
 T = TypeVar("T")
 
 
-#: The most bytes of one verification input copied into linear memory: one
-#: over the core's 3 MiB cap (3,145,728), so that the core answers TOO_LARGE
-#: itself for anything larger.
-MAX_INPUT_COPY = 3_145_729
-
-
 class AbiMismatchError(RuntimeError):
     """The module is not one this package can run: it lacks an export of ABI
     version 0.1.0, or imports anything but ``random-get``."""
@@ -202,11 +196,18 @@ def default_runtime() -> Runtime:
 
 class Instance:
     """One instance of the module in its own store. One call at a time; the
-    pool enforces that. After any :class:`Fault` it must be dropped."""
+    pool enforces that. After any :class:`Fault` it must be dropped.
 
-    __slots__ = ("_functions", "_memory", "_posts", "_realloc", "_store")
+    ``max_input`` is the ``max_input_bytes`` the instance's ``init`` answer
+    stated, which the pool sets after ``init``: the most bytes of one
+    verification input copied into linear memory, one over the core's
+    largest cap, so that the core answers TOO_LARGE itself for anything
+    larger. ``None`` until then, when inputs pass whole."""
+
+    __slots__ = ("_functions", "_memory", "_posts", "_realloc", "_store", "max_input")
 
     def __init__(self, runtime: Runtime) -> None:
+        self.max_input: int | None = None
         try:
             store = wasmtime.Store(runtime.engine)
             store.set_limits(memory_size=MEMORY_LIMIT, instances=1)
@@ -232,10 +233,11 @@ class Instance:
         this method as a pointer."""
         store, memory = self._store, self._memory
         try:
-            if export != "init" and len(data) > MAX_INPUT_COPY:
+            limit = self.max_input
+            if export != "init" and limit is not None and len(data) > limit:
                 # One byte over the core's cap is all it needs to answer
                 # TOO_LARGE; the rest of a huge input never enters memory.
-                data = bytes(memoryview(data)[:MAX_INPUT_COPY])
+                data = bytes(memoryview(data)[:limit])
             length = len(data)
             pointer = self._realloc(store, 0, 0, 1, length) & 0xFFFFFFFF
             if length:
@@ -269,11 +271,11 @@ class Pool:
         runtime: Runtime,
         config_json: bytes,
         size: int,
-        accepts: Callable[[str], bool],
+        accepts: Callable[[str], "int | None"],
     ) -> None:
-        """``accepts(answer)`` says whether an ``init`` answer means the
-        roots were taken; it is what a later instance must answer as the
-        first did."""
+        """``accepts(answer)`` reads an ``init`` answer: the
+        ``max_input_bytes`` it states when the roots were taken, ``None``
+        otherwise. A later instance must answer as the first did."""
         self._runtime = runtime
         self._config_json = config_json
         self._accepts = accepts
@@ -281,13 +283,16 @@ class Pool:
         self._lock = threading.Lock()
         self._slots = threading.BoundedSemaphore(size)
         # Made now, so an ABI mismatch or a root the module refuses fails
-        # where the caller builds the Verifier. Returns the module's answer.
+        # where the caller builds the Verifier. Keeps the module's answer.
         first, self.init_answer = self._create()
-        self._free.append(first)
+        if first.max_input is not None:
+            self._free.append(first)
 
     def _create(self) -> "tuple[Instance, str]":
         instance = Instance(self._runtime)
-        return instance, instance.call("init", (), self._config_json)
+        answer = instance.call("init", (), self._config_json)
+        instance.max_input = self._accepts(answer)
+        return instance, answer
 
     def run(
         self, export: str, scalars: "tuple[int, ...]", data: bytes, parse: Callable[[str], T]
@@ -301,8 +306,8 @@ class Pool:
             with self._lock:
                 instance = self._free.pop() if self._free else None
             if instance is None:
-                instance, answer = self._create()
-                if not self._accepts(answer):
+                instance, _ = self._create()
+                if instance.max_input is None:
                     raise Fault("init refused a configuration it accepted before")
             answer = instance.call(export, scalars, data)
             try:

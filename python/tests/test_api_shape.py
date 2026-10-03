@@ -6,6 +6,7 @@ a change to the contract."""
 import hashlib
 import importlib.util
 import inspect
+import json
 import unittest
 
 import apple_purchase_receipt_verifier as package
@@ -13,7 +14,9 @@ from apple_purchase_receipt_verifier import (
     Config,
     Environment,
     Failure,
+    JsonPayload,
     Reason,
+    ReceiptPayload,
     VerificationResult,
     Verifier,
     apple_status,
@@ -167,19 +170,21 @@ class ResultsTest(unittest.TestCase):
         self.assertNotEqual(one, Failure(Reason.MALFORMED, "m"))
         self.assertNotEqual(one, Failure(Reason.INTERNAL_ERROR, "other"))
 
-    def test_the_environment_helpers_keep_their_rules(self) -> None:
-        production = ("Production", "ProductionVPP")
-        sandbox = ("ProductionSandbox", "ProductionVPPSandbox")
-        for kind in production:
-            self.assertEqual(Environment.PRODUCTION, Environment.from_receipt_type(kind))
-        for kind in sandbox:
-            self.assertEqual(Environment.SANDBOX, Environment.from_receipt_type(kind))
-        for unknown in (None, "", "production", "Xcode"):
-            self.assertIsNone(Environment.from_receipt_type(unknown))
-        self.assertEqual(Environment.PRODUCTION, Environment.from_jws_environment("Production"))
-        self.assertEqual(Environment.SANDBOX, Environment.from_jws_environment("Sandbox"))
-        for other in (None, "Xcode", "LocalTesting"):
-            self.assertIsNone(Environment.from_jws_environment(other))
+    def test_the_environment_is_stated_on_the_payloads_and_no_helper_derives_it(self) -> None:
+        # DECISIONS.md R42: the module states it; the wrapper keeps no rule.
+        self.assertEqual({"PRODUCTION", "SANDBOX"}, {e.name for e in Environment})
+        for helper in ("from_receipt_type", "from_jws_environment"):
+            self.assertFalse(hasattr(Environment, helper), helper)
+        self.assertIsNone(ReceiptPayload().environment)
+        self.assertIsNone(JsonPayload(json="{}").environment)
+        stated = ReceiptPayload(receipt_type="Xcode", environment=Environment.PRODUCTION)
+        self.assertIs(Environment.PRODUCTION, stated.environment, "nothing reads receipt_type")
+        self.assertNotIn("environment", json.loads(stated.to_json()))
+        signed = JsonPayload(json='{"environment":"Sandbox"}')
+        self.assertIsNone(signed.environment, "nothing reads it from the JSON")
+        self.assertNotEqual(
+            JsonPayload(json="{}", environment=Environment.SANDBOX), JsonPayload(json="{}")
+        )
 
     def test_the_device_hash_is_sha1_over_the_three_inputs(self) -> None:
         expected = hashlib.sha1(b"dev" + b"opaque" + b"bundle").digest()

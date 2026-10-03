@@ -81,23 +81,64 @@ class VerifiedTest(unittest.TestCase):
             original_application_version="1.0",
             expiration_date_ms=None,
             unknown_attributes={99: (b"x",)},
+            environment=Environment.SANDBOX,
         )
-        answer = '{"verified":true,"payload":' + payload.to_json() + "}"
+        answer = '{"verified":true,"payload":' + payload.to_json() + ',"environment":"Sandbox"}'
         result = double_verifier().verify_receipt(echo(answer))
         self.assertTrue(result.verified, result.failure)
         self.assertEqual(payload, result.payload)
         self.assertEqual(payload.to_json(), result.payload.to_json() if result.payload else None)
 
     def test_an_absent_optional_field_is_none_and_an_empty_payload_is_all_none(self) -> None:
-        result = double_verifier().verify_receipt(echo('{"verified":true,"payload":{}}'))
+        result = double_verifier().verify_receipt(
+            echo('{"verified":true,"payload":{},"environment":null}')
+        )
         self.assertEqual(ReceiptPayload(), result.payload)
 
     def test_a_signed_payload_is_the_exact_text_the_module_returned(self) -> None:
         signed = '{"bundleId": "com.example.app",  "n": 1e2, "big": 12345678901234567890}'
-        answer = json.dumps({"verified": True, "payload": signed})
+        answer = json.dumps({"verified": True, "payload": signed, "environment": "Production"})
         result = double_verifier().verify_signed_data(echo(answer))
-        self.assertEqual(JsonPayload(json=signed), result.payload)
+        self.assertEqual(
+            JsonPayload(json=signed, environment=Environment.PRODUCTION), result.payload
+        )
         self.assertIs(type(result.payload.json), str)  # type: ignore[union-attr]
+
+    def test_the_environment_is_the_modules_member_beside_the_payload(self) -> None:
+        verifier = double_verifier()
+        for member, expected in (
+            ("Production", Environment.PRODUCTION),
+            ("Sandbox", Environment.SANDBOX),
+            (None, None),
+        ):
+            with self.subTest(member=member):
+                # The payloads name another environment: only the member counts.
+                receipt = verifier.verify_receipt(
+                    echo(
+                        json.dumps(
+                            {
+                                "verified": True,
+                                "payload": {"receipt_type": "Xcode"},
+                                "environment": member,
+                            }
+                        )
+                    )
+                )
+                self.assertIs(expected, receipt.payload.environment)  # type: ignore[union-attr]
+                signed = verifier.verify_signed_data(
+                    echo(
+                        json.dumps(
+                            {
+                                "verified": True,
+                                "payload": '{"environment":"Xcode"}',
+                                "environment": member,
+                            }
+                        )
+                    )
+                )
+                self.assertIs(expected, signed.payload.environment)  # type: ignore[union-attr]
+        stated = ReceiptPayload(environment=Environment.SANDBOX)
+        self.assertNotIn("environment", json.loads(stated.to_json()), "not part of to_json")
 
 
 class VerificationFailureTest(unittest.TestCase):
@@ -227,6 +268,29 @@ class AbiMismatchTest(unittest.TestCase):
             self.create(wasm)
         self.assertIn("could not be started", str(caught.exception))
 
+    def test_an_init_answer_without_max_input_bytes_is_a_runtime_error_at_create(self) -> None:
+        # {"ok":true} alone, or a number that is no length, is a module of
+        # another ABI version: never a cap of the wrapper's own.
+        for stated in (
+            "",
+            ',"max_input_bytes":0',
+            ',"max_input_bytes":true',
+            ',"max_input_bytes":1.5',
+        ):
+            with self.subTest(stated=stated):
+                answer = '{"ok":true' + stated + "}"
+                wasm = double_wat(
+                    {
+                        '"{\\"ok\\":true,\\"max_input_bytes\\":3145729}"': json.dumps(
+                            answer.ljust(37)
+                        ),
+                    }
+                )
+                with self.assertRaises(RuntimeError) as caught:
+                    self.create(wasm)
+                self.assertNotIsInstance(caught.exception, _host.AbiMismatchError)
+                self.assertIn("could not be started", str(caught.exception))
+
     def test_the_bundled_module_is_accepted(self) -> None:
         _host.default_runtime()  # compiles and checks the bundled module
 
@@ -349,16 +413,34 @@ class TrapAndInternalFailureTest(unittest.TestCase):
             "a result outside memory": "L",
             "a JSON array": echo("[]"),
             "no verdict": echo("{}"),
-            "verified with no payload": echo('{"verified":true}'),
+            "verified with no payload": echo('{"verified":true,"environment":null}'),
+            "verified with no environment": echo('{"verified":true,"payload":{}}'),
+            "an environment outside the two": echo(
+                '{"verified":true,"payload":{},"environment":"Xcode"}'
+            ),
+            "a lowercase environment": echo(
+                '{"verified":true,"payload":{},"environment":"sandbox"}'
+            ),
+            "an environment that is a number": echo(
+                '{"verified":true,"payload":{},"environment":1}'
+            ),
             "an unknown reason": echo('{"verified":false,"reason":"INVALID_CHAIN","message":"m"}'),
             "a failure without a message": echo('{"verified":false,"reason":"MALFORMED"}'),
-            "a payload that is not an object": echo('{"verified":true,"payload":[]}'),
-            "a string where a number goes": echo('{"verified":true,"payload":{"download_id":"x"}}'),
-            "a number where a string goes": echo('{"verified":true,"payload":{"bundle_id":1}}'),
-            "a bad base64 field": echo('{"verified":true,"payload":{"sha1_hash":"@@@@"}}'),
-            "a bad in-app": echo('{"verified":true,"payload":{"in_app":[1]}}'),
+            "a payload that is not an object": echo(
+                '{"verified":true,"payload":[],"environment":null}'
+            ),
+            "a string where a number goes": echo(
+                '{"verified":true,"payload":{"download_id":"x"},"environment":null}'
+            ),
+            "a number where a string goes": echo(
+                '{"verified":true,"payload":{"bundle_id":1},"environment":null}'
+            ),
+            "a bad base64 field": echo(
+                '{"verified":true,"payload":{"sha1_hash":"@@@@"},"environment":null}'
+            ),
+            "a bad in-app": echo('{"verified":true,"payload":{"in_app":[1]},"environment":null}'),
             "bad unknown attributes": echo(
-                '{"verified":true,"payload":{"unknown_attributes":{"x":[]}}}'
+                '{"verified":true,"payload":{"unknown_attributes":{"x":[]}},"environment":null}'
             ),
         }
         for name, text in answers.items():
@@ -368,7 +450,11 @@ class TrapAndInternalFailureTest(unittest.TestCase):
                 self.assertIsNotNone(failure.cause)
         self.assertEqual(
             Reason.INTERNAL_ERROR,
-            failure_of(verifier.verify_signed_data(echo('{"verified":true,"payload":{}}'))).reason,
+            failure_of(
+                verifier.verify_signed_data(
+                    echo('{"verified":true,"payload":{},"environment":null}')
+                )
+            ).reason,
             "the signed payload crosses as a JSON string, not an object",
         )
         for name, text in {
@@ -625,6 +711,15 @@ class PoolTest(unittest.TestCase):
         self.assertEqual(0, len(pool._free))
         # A pool of one that leaked its slot would block here forever.
         self.assertIn("MALFORMED", pool.run("verify-receipt", (1,), b"x", str))
+
+    def test_an_input_is_cut_to_the_length_the_instances_init_stated(self) -> None:
+        # The double states 5; an 'E' input answers the rest of what it got.
+        stated = '{"ok":true,"max_input_bytes":5}'.ljust(37)
+        wasm = double_wat({'"{\\"ok\\":true,\\"max_input_bytes\\":3145729}"': json.dumps(stated)})
+        pool = _host.Pool(_host.Runtime(wasm), _wire.init_config([ROOT]), 1, _wire.init_accepted)
+        self.assertEqual(stated, pool.init_answer)
+        self.assertEqual("abcd", pool.run("verify-receipt", (1,), b"Eabcdefgh", str))
+        self.assertEqual("ab", pool.run("verify-receipt", (1,), b"Eab", str))
 
     def test_instances_die_with_the_verifier(self) -> None:
         verifier = double_verifier()
