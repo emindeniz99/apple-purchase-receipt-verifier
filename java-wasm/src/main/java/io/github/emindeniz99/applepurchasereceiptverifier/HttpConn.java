@@ -11,7 +11,9 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.util.Locale;
+import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
@@ -37,6 +39,22 @@ final class HttpConn implements Closeable {
 
     private static final int MAX_LINE = 16 << 10;
     private static final int MAX_HEADERS = 100;
+
+    /**
+     * TLS from a context of this connection's own: the JVM's trust store
+     * (javax.net.ssl.trustStore, else cacerts), but not a default SSLContext
+     * or socket factory that other code in the JVM replaced
+     * (SSLContext.setDefault, the ssl.SocketFactory.provider property).
+     */
+    private static SSLSocketFactory tls() throws IOException {
+        try {
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(null, null, null);
+            return context.getSocketFactory();
+        } catch (GeneralSecurityException e) {
+            throw new IOException("no TLS context: " + e, e);
+        }
+    }
 
     /** Where the server is: host, port, TLS or not, a base path, the token, and which child it is. */
     static final class Target {
@@ -88,8 +106,7 @@ final class HttpConn implements Closeable {
             plain.connect(new InetSocketAddress(target.host, target.port), connectTimeoutMillis);
             plain.setSoTimeout(readTimeoutMillis);
             if (target.tls) {
-                SSLSocket tls = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault())
-                        .createSocket(plain, target.host, target.port, true);
+                SSLSocket tls = (SSLSocket) tls().createSocket(plain, target.host, target.port, true);
                 SSLParameters parameters = tls.getSSLParameters();
                 parameters.setEndpointIdentificationAlgorithm("HTTPS");
                 tls.setSSLParameters(parameters);
