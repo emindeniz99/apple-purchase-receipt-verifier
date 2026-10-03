@@ -23,10 +23,7 @@ def _ordered_unique(roots: "Iterable[object]") -> "tuple[bytes, ...]":
     """``roots`` as DER bytes with later duplicates dropped, in first-seen
     order (the behaviour of Java's ``LinkedHashSet``), which the design's
     ``Config`` mirrors."""
-    seen: dict[bytes, None] = {}
-    for root in roots:
-        seen.setdefault(_der(root), None)
-    return tuple(seen)
+    return tuple(dict.fromkeys(_der(root) for root in roots))
 
 
 @dataclass(frozen=True, init=False)
