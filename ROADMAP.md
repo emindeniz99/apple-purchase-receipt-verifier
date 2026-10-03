@@ -67,6 +67,11 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
      value only for a lone surrogate (now U+FFFD; the module never writes
      one); checked on the `verifyReceipt` and `verifySignedData` cases and
      hand-built payloads.
+   - Decided 2026-10-03 (DECISIONS.md R41, amended; the owner's Q21): .NET
+     builds a `Config` with its constructor alone,
+     `new Config(roots: ..., clock: ...)` with both arguments defaulted;
+     `Config.Defaults()`, `Config.CreateBuilder()` and `Config.Builder`
+     are removed.
    - Decided 2026-10-01 (DECISIONS.md R39, amended the same day): the
      core reads a root as DER or PEM, told apart by the bytes, through
      OpenSSL's PEM reader; wrappers pass bytes and read neither format.

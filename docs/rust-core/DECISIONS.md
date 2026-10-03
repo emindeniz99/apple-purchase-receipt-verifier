@@ -18,7 +18,7 @@ D17 onward and marks D16 superseded for the eight non-Java ports. After
 owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
 those of 2026-10-02 amended R17, R25, R31, R34, R39, R40 and R41;
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
-client change.
+client change, and amended R41 for .NET's `Config`.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1431,7 +1431,8 @@ configuration themselves, so only a hand-made one carries two faults.
 
 ## R41. The public API in 0.8: internals hidden, one way to build a Config, two Java artifactIds
 
-**Status: accepted** (owner, 2026-10-01; amended 2026-10-02). Settles the
+**Status: accepted** (owner, 2026-10-01; amended 2026-10-02 and
+2026-10-03). Settles the
 API items R36 left open in ROADMAP.md (item 5) and the Java artifact
 naming (item 11).
 
@@ -1470,6 +1471,11 @@ the release, it is a breaking change for every caller. So the audit of
     and `roots` any iterable. `ConfigBuilder` and `Config::builder()` go,
     and on 2026-10-02 so does `Config::defaults()`, which only returned
     `new Config()`.
+  - .NET: `new Config(roots: ..., clock: ...)`, both arguments defaulted
+    and `roots` any `IEnumerable`; `null` for either means its default,
+    and the constructor refuses what `Build()` refused. `Config.Defaults()`,
+    `Config.CreateBuilder()` and `Config.Builder` go (owner decision Q21,
+    2026-10-03).
   - Rust: `Config::default()`. `Config::defaults()` goes.
     `Config::builder()` stays: it is the fallible build, and the one
     place a bundled root that did not load is a `ConfigError`.
