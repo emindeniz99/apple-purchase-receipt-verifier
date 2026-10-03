@@ -67,7 +67,7 @@ public class VerificationResultTests
     [Fact]
     public void CallersCanMockTheVerifierWithHandBuiltResults()
     {
-        JsonPayload payload = JsonPayload.Create("{}");
+        JsonPayload payload = JsonPayload.Create("{}", AppleEnvironment.Sandbox);
         Failure failure = new(VerificationReason.UntrustedChain, "not ours", null);
         IVerifier stub = new StubVerifier(
             VerificationResult<ReceiptPayload>.Failed(failure),

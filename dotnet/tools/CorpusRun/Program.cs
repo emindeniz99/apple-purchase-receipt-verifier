@@ -107,15 +107,19 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
                     {
                         instance = new AprvInstance(runtime);
                         created++;
-                        string ok = instance.Init(Utf8.GetBytes(config));
-                        if (ok == "{\"ok\":true}")
+                        try
                         {
+                            instance.Start(Utf8.GetBytes(config));
                             instances[config] = instance;
                         }
-                        else
+                        catch (ArgumentException)
                         {
-                            answer = ok;
+                            // init refused the configuration: its answer, as the
+                            // module wrote it, is the row's answer, read again
+                            // from an instance not started.
                             instance.Dispose();
+                            using AprvInstance refused = new AprvInstance(runtime);
+                            answer = refused.Init(Utf8.GetBytes(config));
                         }
                     }
 
@@ -170,7 +174,8 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
             int env = int.Parse(args[4], CultureInfo.InvariantCulture);
             byte[] input = Convert.FromBase64String(args[5]);
             AprvInstance instance = new AprvInstance(AprvRuntime.Shared);
-            Console.Error.WriteLine("init: " + instance.Init(config));
+            instance.Start(config);
+            Console.Error.WriteLine("init: max_input_bytes " + instance.MaxInputBytes!.Value.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine(fn switch
             {
                 "verify-receipt" => instance.VerifyReceipt(now, input),
@@ -212,7 +217,7 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
             double compile = clock.Elapsed.TotalMilliseconds;
             clock.Restart();
             AprvInstance first = new AprvInstance(runtime);
-            first.Init(Utf8.GetBytes("{}"));
+            first.Start(Utf8.GetBytes("{}"));
             double firstInstance = clock.Elapsed.TotalMilliseconds;
             clock.Restart();
             List<double> later = new List<double>();
@@ -220,7 +225,7 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
             {
                 clock.Restart();
                 AprvInstance next = new AprvInstance(runtime);
-                next.Init(Utf8.GetBytes("{}"));
+                next.Start(Utf8.GetBytes("{}"));
                 later.Add(clock.Elapsed.TotalMilliseconds);
                 next.Dispose();
             }
@@ -246,7 +251,7 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
             for (int i = 1; i <= count; i++)
             {
                 AprvInstance instance = new AprvInstance(runtime);
-                instance.Init(Utf8.GetBytes("{}"));
+                instance.Start(Utf8.GetBytes("{}"));
                 live.Add(instance);
                 if (i == 1 || i == count || i % 8 == 0)
                 {
@@ -279,7 +284,7 @@ namespace ApplePurchaseReceiptVerifier.CorpusRun
                     pool[i] = new Thread(() =>
                     {
                         AprvInstance instance = new AprvInstance(runtime);
-                        instance.Init(config);
+                        instance.Start(config);
                         for (int w = 0; w < 30; w++)
                         {
                             Call(instance, fn, now, input);

@@ -100,35 +100,25 @@ public class ApiShapeTests
     }
 
     /// <summary>
-    /// <c>fromReceiptType</c> states what Apple's value means and decides
-    /// nothing: the four documented spellings, exactly, and nothing else.
+    /// The environment is the verifier's answer, on each payload
+    /// (DECISIONS.md R42): <c>AppleEnvironments</c> and its two helpers, which
+    /// repeated the rule in the wrapper, are gone, and each payload carries
+    /// an <see cref="AppleEnvironment"/>, <see langword="null"/> when Apple's
+    /// value names neither, given last to the hand-built payload's constructor.
     /// </summary>
-    [Theory]
-    [InlineData("Production", AppleEnvironment.Production)]
-    [InlineData("ProductionVPP", AppleEnvironment.Production)]
-    [InlineData("ProductionSandbox", AppleEnvironment.Sandbox)]
-    [InlineData("ProductionVPPSandbox", AppleEnvironment.Sandbox)]
-    [InlineData("production", null)]
-    [InlineData("Sandbox", null)]
-    [InlineData("Xcode", null)]
-    [InlineData("", null)]
-    [InlineData(null, null)]
-    public void FromReceiptTypeMapsOnlyApplesSpellings(string? receiptType, AppleEnvironment? expected)
+    [Fact]
+    public void TheEnvironmentIsOnThePayloadsAndTheHelpersAreGone()
     {
-        Assert.Equal(expected, AppleEnvironments.FromReceiptType(receiptType));
-    }
+        Assert.Null(typeof(IVerifier).Assembly.GetType("ApplePurchaseReceiptVerifier.AppleEnvironments"));
+        Assert.Equal(new[] { "Production", "Sandbox" }, Enum.GetNames<AppleEnvironment>());
+        Assert.Equal(typeof(AppleEnvironment?), typeof(ReceiptPayload).GetProperty("Environment")!.PropertyType);
+        Assert.Equal(typeof(AppleEnvironment?), typeof(JsonPayload).GetProperty("Environment")!.PropertyType);
 
-    [Theory]
-    [InlineData("Production", AppleEnvironment.Production)]
-    [InlineData("Sandbox", AppleEnvironment.Sandbox)]
-    [InlineData("Xcode", null)]
-    [InlineData("LocalTesting", null)]
-    [InlineData("sandbox", null)]
-    [InlineData("ProductionSandbox", null)]
-    [InlineData(null, null)]
-    public void FromJwsEnvironmentMapsOnlyApplesSpellings(string? claim, AppleEnvironment? expected)
-    {
-        Assert.Equal(expected, AppleEnvironments.FromJwsEnvironment(claim));
+        ParameterInfo last = typeof(ReceiptPayload).GetConstructors().Single().GetParameters().Last();
+        Assert.Equal("environment", last.Name);
+        Assert.Equal(typeof(AppleEnvironment?), last.ParameterType);
+        MethodInfo create = typeof(JsonPayload).GetMethod("Create", BindingFlags.Public | BindingFlags.Static)!;
+        Assert.Equal(new[] { typeof(string), typeof(AppleEnvironment?) }, create.GetParameters().Select(p => p.ParameterType));
     }
 
     // --- misconfiguration is an argument error, never a verdict --------------

@@ -42,7 +42,8 @@ namespace ApplePurchaseReceiptVerifier
             long? originalPurchaseDateMs,
             string? originalApplicationVersion,
             long? expirationDateMs,
-            IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknownAttributes)
+            IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknownAttributes,
+            AppleEnvironment? environment)
         {
             ReceiptType = receiptType;
             AppItemId = appItemId;
@@ -59,6 +60,7 @@ namespace ApplePurchaseReceiptVerifier
             OriginalApplicationVersion = originalApplicationVersion;
             ExpirationDateMs = expirationDateMs;
             _unknownAttributes = ByteOps.CopyAttributes(unknownAttributes, nameof(unknownAttributes));
+            Environment = environment;
         }
 
         /// <summary>Attribute 0.</summary>
@@ -116,6 +118,16 @@ namespace ApplePurchaseReceiptVerifier
         /// </summary>
         public IReadOnlyDictionary<int, IReadOnlyList<byte[]>> UnknownAttributes =>
             ByteOps.CopyAttributes(_unknownAttributes, nameof(UnknownAttributes));
+
+        /// <summary>
+        /// The environment the verifier read from attribute 0
+        /// (docs/rust-core/DECISIONS.md R42): <see cref="AppleEnvironment.Production"/>
+        /// for <c>Production</c> and <c>ProductionVPP</c>,
+        /// <see cref="AppleEnvironment.Sandbox"/> for <c>ProductionSandbox</c> and
+        /// <c>ProductionVPPSandbox</c>, <see langword="null"/> for anything else
+        /// (<c>Xcode</c>, a missing value). Not part of <see cref="ToJson"/>.
+        /// </summary>
+        public AppleEnvironment? Environment { get; }
 
         /// <summary>
         /// This payload as JSON, for logging and storage: 64-bit ids as

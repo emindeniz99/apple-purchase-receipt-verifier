@@ -32,15 +32,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// <summary>The most linear memory one instance may hold.</summary>
         internal const long MemoryLimitBytes = 256L * 1024 * 1024;
 
-        /// <summary>
-        /// The most bytes of a verify input that reaches linear memory: one over
-        /// the largest cap (3,145,728 bytes for a receipt or an endpoint body,
-        /// 262,144 for a JWS). The module decides every cap on the length before
-        /// reading a byte, so a longer input is passed cut to this and gets the
-        /// same TOO_LARGE answer the whole input would.
-        /// </summary>
-        internal const int MaxLoweredInputBytes = 3_145_729;
-
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
 
         /// <summary>Each export's WIT parameters in order: <c>w</c> u32, <c>d</c> u64, <c>b</c> list&lt;u8&gt;.</summary>
@@ -94,10 +85,28 @@ namespace ApplePurchaseReceiptVerifier.Internal
         internal Instance Raw => _instance;
 
         /// <summary>
-        /// <c>init</c>, once per instance: <c>{"ok":true}</c> or
-        /// <c>{"ok":false,"message":"..."}</c>.
+        /// The most bytes of a verify input that reaches linear memory: the
+        /// <c>max_input_bytes</c> this instance's <c>init</c> answer stated
+        /// (docs/rust-core/DECISIONS.md R42), one over the module's largest cap.
+        /// The module decides every cap on the length before reading a byte, so
+        /// a longer input is passed cut to this and gets the same TOO_LARGE
+        /// answer the whole input would. <see langword="null"/> before
+        /// <see cref="Start"/>, and an input is then passed whole.
+        /// </summary>
+        internal int? MaxInputBytes { get; private set; }
+
+        /// <summary>
+        /// <c>init</c>, once per instance: <c>{"ok":true,"max_input_bytes":N}</c>
+        /// or <c>{"ok":false,"message":"..."}</c>.
         /// </summary>
         internal string Init(byte[] configJson) => Call("init", configJson);
+
+        /// <summary>
+        /// <c>init</c>, keeping the input length its answer states.
+        /// </summary>
+        /// <exception cref="ArgumentException"><c>init</c> refused the roots.</exception>
+        /// <exception cref="ModuleAnswers.AnswerException">The answer is not init's, or states no input length.</exception>
+        internal void Start(byte[] configJson) => MaxInputBytes = ModuleAnswers.CheckInit(Init(configJson));
 
         /// <summary><c>verify-receipt</c>: the module's JSON answer.</summary>
         internal string VerifyReceipt(long nowMs, byte[] receiptBase64) => Call("verify-receipt", nowMs, receiptBase64);
@@ -166,7 +175,12 @@ namespace ApplePurchaseReceiptVerifier.Internal
                         break;
                     default:
                         byte[] bytes = (byte[])args[i];
-                        int count = operation == "init" ? bytes.Length : Math.Min(bytes.Length, MaxLoweredInputBytes);
+                        int count = bytes.Length;
+                        if (operation != "init" && MaxInputBytes is int max && count > max)
+                        {
+                            count = max;
+                        }
+
                         core.Add(Allocate(bytes, count));
                         core.Add(count);
                         break;
