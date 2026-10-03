@@ -2801,7 +2801,7 @@ jobs:
       # The root manifest is what Packagist reads and what Composer installs;
       # php/composer.json is only the development one. Both get validated.
       - run: composer validate --strict --no-check-lock composer.json
-      # src, tests, bin/ and tools/update-binaries.php (phpstan.neon).
+      # src, tests and bin/ (phpstan.neon).
       - run: vendor/bin/phpstan analyse --no-progress
         working-directory: php
       # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
@@ -2812,7 +2812,7 @@ jobs:
       # silently decides what a PHP consumer unpacks. This reads the real
       # `git archive` rather than the rules that produce it: the manifests
       # agree on bin and suggest, and the archive carries bin/aprv-install
-      # and binaries.json.
+      # and SHA256SUMS.
       - run: node tools/check-php-package.mjs
       # Then install that archive into a throwaway project and verify a
       # receipt through vendor/autoload.php and the default CLI transport

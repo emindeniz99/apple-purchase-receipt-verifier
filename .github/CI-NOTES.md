@@ -110,9 +110,10 @@ run.
   `go/internal/wasm/aprv.wasm` and its pin (the Go module is published by
   the tag alone, so the module must be committed first), and checks the
   proxy's zip carries the library and both files.
-- `php-binaries` compares `php/binaries.json` with the binaries this
-  release built (OD-06). The `smoke` job then runs post-publish-smoke.yml
-  for every published registry, `php` included.
+- `php-binaries` lays the binaries this release built out as
+  `<tag>/<asset>` and runs `sha256sum -c --strict php/SHA256SUMS` there,
+  after checking the file is not empty (OD-06). The `smoke` job then runs
+  post-publish-smoke.yml for every published registry, `php` included.
 
 ## release-please.yml
 
@@ -121,10 +122,10 @@ component from the branch, `release-branch-server` builds the two Linux
 musl binaries (read-only), and `refresh-wasm-copies` runs
 `tools/refresh-wasm-pins.sh` (every tracked copy of `aprv.wasm` and every
 `aprv.wasm.sha256` and `aprv.component.wasm.sha256`, each copy checked
-against its pin) and writes `php/binaries.json` with `jq` (the release tag
-and the two Linux hashes; the macOS and Windows entries stay `null`:
-OD-06). It commits all of that once. The lock step updates the workspace
-and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
+against its pin) and writes `php/SHA256SUMS` with `sha256sum` over the two
+Linux binaries laid out as `v<version>/<asset>` (macOS and Windows get no
+line: OD-06). It commits all of that once. The lock step updates the
+workspace and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
 
 ## Other workflows
 

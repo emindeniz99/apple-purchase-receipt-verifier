@@ -10,7 +10,7 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Install;
  * looks for it (docs/rust-core/DECISIONS.md R29).
  *
  * The binary comes from the GitHub Release the package was cut with and is
- * checked against the SHA-256 that `binaries.json` pins in the package. It
+ * checked against the SHA-256 that `SHA256SUMS` pins in the package. It
  * is written to a temporary owner-only file beside its destination, hashed
  * there, and made executable and renamed into place only when the hash
  * matches: a wrong hash installs nothing, and an existing binary stays as
@@ -24,6 +24,15 @@ final class Installer
 {
     /** No release binary is larger than this; a download that passes it is cut off. */
     private const MAX_BYTES = 64 * 1024 * 1024;
+
+    /** Where the releases are: `https://github.com/<repository>/releases/download/<tag>/<asset>`. */
+    private const REPOSITORY = 'emindeniz99/apple-purchase-receipt-verifier';
+
+    /**
+     * A `SHA256SUMS` line as sha256sum's text mode writes it for a file laid
+     * out as `<tag>/<asset>`: 64 lowercase hex digits, two spaces, the path.
+     */
+    private const SUMS_LINE = '#^([0-9a-f]{64})  (v[0-9A-Za-z.+-]+)/([^/\s]+)$#';
 
     /** The pinned hashes' asset names, by platform: `aprv-<target>[.exe]`. */
     private const TARGETS = [
@@ -49,7 +58,7 @@ final class Installer
     }
 
     /**
-     * @param string $manifestPath the package's `binaries.json`
+     * @param string $sumsPath the package's `SHA256SUMS`
      * @param string $directory where the binary goes, as `aprv` (`aprv.exe` on Windows)
      * @param string|null $baseUrl replaces the GitHub Release URL of the pinned tag; HTTPS, or HTTP to loopback
      * @param string|null $target replaces the detected release target
@@ -61,14 +70,14 @@ final class Installer
      * @throws InstallException
      */
     public static function install(
-        string $manifestPath,
+        string $sumsPath,
         string $directory,
         ?string $baseUrl = null,
         ?string $target = null,
         bool $force = false,
         ?array $platform = null,
     ): string {
-        $manifest = self::manifest($manifestPath);
+        $sums = self::pins($sumsPath);
         $target ??= self::detectTarget($platform[0] ?? null, $platform[1] ?? null);
         if ($target === null) {
             throw new InstallException(
@@ -79,15 +88,15 @@ final class Installer
             );
         }
         $asset = self::assetName($target);
-        $pinned = $manifest['assets'][$asset] ?? null;
-        if (!is_string($pinned) || preg_match('/^[0-9a-f]{64}$/', $pinned) !== 1) {
+        $pinned = $sums['assets'][$asset] ?? null;
+        if ($pinned === null || $sums['tag'] === null) {
             throw new InstallException(
-                "binaries.json pins no SHA-256 for {$asset}: this checkout has no release binaries. "
+                "SHA256SUMS pins no SHA-256 for {$asset}: this checkout has no release binaries. "
                 . 'Use HttpTransport with an aprv server, or install a released version of the package.',
                 InstallException::UNAVAILABLE,
             );
         }
-        $url = ($baseUrl ?? self::releaseUrl($manifest)) . '/' . $asset;
+        $url = ($baseUrl ?? 'https://github.com/' . self::REPOSITORY . '/releases/download/' . $sums['tag']) . '/' . $asset;
         if (!self::urlAllowed($url)) {
             throw new InstallException('the download URL must be https, or http to loopback: ' . $url, InstallException::UNAVAILABLE);
         }
@@ -111,7 +120,7 @@ final class Installer
             if ($actual === false || !hash_equals($pinned, $actual)) {
                 throw new InstallException(
                     "the download of {$asset} has SHA-256 " . ($actual === false ? 'unreadable' : $actual)
-                    . ", binaries.json pins {$pinned}: nothing was installed",
+                    . ", SHA256SUMS pins {$pinned}: nothing was installed",
                 );
             }
             if (PHP_OS_FAMILY !== 'Windows') {
@@ -132,46 +141,71 @@ final class Installer
     }
 
     /**
-     * @return array{tag: mixed, repository: mixed, assets: array<string, mixed>}
+     * Reads the package's `SHA256SUMS`: the release tag and the pinned
+     * SHA-256 of each release asset. Every line is sha256sum's text output
+     * for a file laid out as `<tag>/<asset>`, so `sha256sum -c --strict`
+     * run where the release's assets sit under `<tag>/` checks the same
+     * claim. An empty file pins nothing: the file is empty until the
+     * first release that writes it. After that `main` carries the last
+     * release's lines (the release branch merges into `main`), so an
+     * install from `main` fetches that release's binary, lagging the core
+     * like the committed Go and Swift module copies. Anything else is
+     * refused: a binary-mode `*`, a tagged line, a path that is not one
+     * tag and one release asset, a blank line, a CR, an asset named twice,
+     * or two tags.
+     *
+     * @internal public for the package's tests only; not part of the API
+     *
+     * @return array{tag: string|null, assets: array<string, string>}
      *
      * @throws InstallException
      */
-    private static function manifest(string $path): array
+    public static function pins(string $sumsPath): array
     {
-        $text = @file_get_contents($path);
-        $data = $text === false ? null : json_decode($text, true);
-        if (!is_array($data) || !is_array($data['assets'] ?? null)) {
-            throw new InstallException("cannot read the manifest {$path}", InstallException::UNAVAILABLE);
+        // file_get_contents() reads a directory as "", which would pass for
+        // an empty file that pins nothing.
+        if (!is_file($sumsPath) || ($text = @file_get_contents($sumsPath)) === false) {
+            throw new InstallException("cannot read {$sumsPath}", InstallException::UNAVAILABLE);
+        }
+        $known = [];
+        foreach (self::TARGETS as $machines) {
+            foreach ($machines as $target) {
+                $known[self::assetName($target)] = true;
+            }
         }
 
+        $tag = null;
         $assets = [];
-        foreach ($data['assets'] as $name => $hash) {
-            $assets[(string) $name] = $hash;
+        $lines = $text === '' ? [] : explode("\n", str_ends_with($text, "\n") ? substr($text, 0, -1) : $text);
+        foreach ($lines as $index => $line) {
+            $where = $sumsPath . ' line ' . ($index + 1);
+            if (preg_match(self::SUMS_LINE, $line, $match) !== 1) {
+                throw new InstallException(
+                    "{$where} is not `<sha256>  <tag>/<asset>` as sha256sum writes it: "
+                    . (string) json_encode($line, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES),
+                    InstallException::UNAVAILABLE,
+                );
+            }
+            [, $hash, $lineTag, $asset] = $match;
+            if (!isset($known[$asset])) {
+                throw new InstallException(
+                    "{$where} names "
+                    . (string) json_encode($asset, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES)
+                    . ', which is not a release asset',
+                    InstallException::UNAVAILABLE,
+                );
+            }
+            if ($tag !== null && $lineTag !== $tag) {
+                throw new InstallException("{$where} names the tag {$lineTag}, an earlier line {$tag}", InstallException::UNAVAILABLE);
+            }
+            if (isset($assets[$asset])) {
+                throw new InstallException("{$where} pins {$asset} a second time", InstallException::UNAVAILABLE);
+            }
+            $tag = $lineTag;
+            $assets[$asset] = $hash;
         }
 
-        return ['tag' => $data['tag'] ?? null, 'repository' => $data['repository'] ?? null, 'assets' => $assets];
-    }
-
-    /**
-     * @param array{tag: mixed, repository: mixed, assets: array<string, mixed>} $manifest
-     *
-     * @throws InstallException
-     */
-    private static function releaseUrl(array $manifest): string
-    {
-        $tag = $manifest['tag'];
-        $repository = $manifest['repository'];
-        if (!is_string($tag) || !is_string($repository)
-            || preg_match('#^v[0-9A-Za-z.+-]+$#', $tag) !== 1
-            || preg_match('#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $repository) !== 1) {
-            throw new InstallException(
-                'binaries.json names no release tag: this checkout has no release binaries. '
-                . 'Use HttpTransport with an aprv server, or install a released version of the package.',
-                InstallException::UNAVAILABLE,
-            );
-        }
-
-        return "https://github.com/{$repository}/releases/download/{$tag}";
+        return ['tag' => $tag, 'assets' => $assets];
     }
 
     /** HTTPS anywhere; plain HTTP only to this machine, which the tests and a local mirror use. */

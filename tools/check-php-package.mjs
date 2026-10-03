@@ -110,7 +110,7 @@ const required = [
   // What `vendor/bin/aprv-install` runs and reads: the command, and the
   // release the pinned SHA-256 of each binary belongs to.
   'php/bin/aprv-install',
-  'php/binaries.json',
+  'php/SHA256SUMS',
 ];
 for (const path of required) {
   if (!entries.includes(path)) problems.push(`git archive is missing ${path}`);
@@ -139,7 +139,7 @@ const allowed = (path) =>
   || path === 'php/LICENSE'
   || path === 'php/README.md'
   || path === 'php/bin/aprv-install'
-  || path === 'php/binaries.json'
+  || path === 'php/SHA256SUMS'
   || path.startsWith('php/src/');
 const ports = new Set(['dotnet', 'go', 'java', 'jvm-interop', 'node', 'python', 'ruby', 'rust', 'swift']);
 for (const path of entries) {

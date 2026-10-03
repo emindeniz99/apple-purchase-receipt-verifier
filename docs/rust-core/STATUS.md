@@ -95,11 +95,13 @@ On `main`:
     (R35).
   - OD-06: PHP pins the two Linux musl binaries only, from a
     release-branch job that builds them (they are reproducible per
-    `tools/reproduce-server.sh`) and writes `php/binaries.json` with `jq`
-    and `sha256sum` alone, no repository code, in the same commit as the
-    module copies; the macOS and Windows entries stay `null` (those
+    `tools/reproduce-server.sh`) and writes `php/SHA256SUMS` with
+    `sha256sum` alone, no repository code, in the same commit as the
+    module copies; the macOS and Windows binaries get no line (those
     platforms use the server URL option) until `release.yml` publishes
-    the branch run's exact files.
+    the branch run's exact files. The file was `php/binaries.json`,
+    written with `jq`, until the owner chose sha256sum's format on
+    2026-10-03.
   - OD-07: the classifier jars ship with every release; a release costs
     about 10.5 MB of the 80 MB monthly Central allowance, so the release
     budget in CLAUDE.md drops from 7 to 5 releases a month with 2 in
@@ -189,12 +191,13 @@ On `main`:
   PHPUnit phar, so the locked PHPUnit range is exercised only by CI.
   Docs still saying PHP needs `ext-openssl` (`PLAN.md`, `INVENTORY.md`)
   are Phase 7's.
-- **Open for integration: how `binaries.json` gets its hashes.** The PHP
+- **Open for integration: how the PHP pin file (`binaries.json` then,
+  `SHA256SUMS` since 2026-10-03) gets its hashes.** The PHP
   installer verifies the downloaded server binary against hashes shipped
   in the tag's archive, but the binaries are built at the tag. Proposed
   resolution: the Linux static binaries are reproducible (lane D's
   `reproduce-server.sh`), so the release-branch run builds them and pins
-  their hashes into `binaries.json` on the release PR, and the tag build
+  their hashes into that file on the release PR, and the tag build
   fails if its hashes differ; for macOS and Windows, which are not
   bit-reproducible, the tag publishes the release-branch run's own
   artifacts, or their entries stay null and those platforms use the

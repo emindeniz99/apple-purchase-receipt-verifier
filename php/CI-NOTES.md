@@ -43,8 +43,9 @@ vendor/bin/phpunit tests/ConformanceHttpTest.php
 Both conformance runs take about 45 s each with a loaded runner. The
 `InstallerTest` (in the first command) serves the binary named by `APRV_BIN`
 from a local `php -S` server and checks that the right hash installs an
-owner-only executable, and that a wrong hash, a 404 and an unsupported
-platform install nothing. It needs no network and no GitHub.
+owner-only executable, and that a wrong hash, a 404, an unsupported
+platform and a `SHA256SUMS` line sha256sum would not write install nothing.
+It needs no network and no GitHub.
 
 `php-lowest` runs the same `phpunit` (all suites) after `composer update
 --prefer-lowest`. `php-format` is unchanged (`php-cs-fixer fix --dry-run
@@ -64,13 +65,13 @@ corpus is scratch data (COMMON.md), so the job waits for wherever lane D puts it
 
 Unchanged except:
 
-- `vendor/bin/phpstan analyse --no-progress` now also reads `bin/` and
-  `tools/update-binaries.php` (already in `phpstan.neon`).
+- `vendor/bin/phpstan analyse --no-progress` now also reads `bin/`
+  (already in `phpstan.neon`).
 - `composer validate --strict` for both manifests (both now carry `bin` and
   `suggest`; `ext-openssl` is gone from both `require` blocks).
 - `node tools/check-php-package.mjs` checks the two manifests agree on `bin`
   and `suggest`, and that the archive carries `php/bin/aprv-install` and
-  `php/binaries.json`.
+  `php/SHA256SUMS`.
 - `node tools/php-consumer-smoke.mjs` needs `APRV_BIN` in its environment. It
   installs the archive into a throwaway project and verifies through the
   default CLI transport.
@@ -96,41 +97,61 @@ Unchanged except:
 
 ## Release: pinning the binaries' hashes
 
-`vendor/bin/aprv-install` checks a download against `php/binaries.json`, and
+`vendor/bin/aprv-install` checks a download against `php/SHA256SUMS`, and
 that file is in the tag's archive (Composer installs the tag's tree), so its
 hashes must be committed **before** the tag while the binaries are built by
-`release.yml` **at** the tag. The step that closes the gap, per the plan's
-handling of the committed Go and Swift copies:
+`release.yml` **at** the tag. The file is sha256sum's text output for the
+assets laid out as `<tag>/<asset>`:
 
-1. On the `release-please--*` branch, after `build-server` has built the
-   binaries for the targets (Linux static musl x86_64 and aarch64 are
-   reproducible: `tools/reproduce-server.sh`):
+```text
+<sha256>  v0.8.0/aprv-x86_64-unknown-linux-musl
+```
+
+The tag travels in each path, so `sha256sum -c --strict php/SHA256SUMS`, run
+from a directory that holds `v0.8.0/aprv-…`, checks the claim the installer
+checks. The file is empty until the first release that writes it: an install
+from `main` then pins nothing and the installer names the server option
+(exit 2). After that, `main` carries the last release's lines, because the
+release branch merges into `main`, so a `dev-main` install fetches that
+release's binary. It lags the core between releases, the same way the
+committed Go and Swift module copies do.
+
+1. On the `release-please--*` branch, `refresh-wasm-copies` in
+   `release-please.yml` copies the two Linux static musl binaries
+   `release-branch-server` built (reproducible:
+   `tools/reproduce-server.sh`) into `v$version/` and writes the file with
+   sha256sum alone:
 
    ```sh
-   (cd dist && sha256sum aprv-* > SHA256SUMS)
-   php php/tools/update-binaries.php --tag "v$VERSION" --sums dist/SHA256SUMS
-   git add php/binaries.json && git commit -m "chore(php): pin the aprv binaries of v$VERSION"
+   (cd "$RUNNER_TEMP/php-sums" && sha256sum "v$version"/*) > "$RUNNER_TEMP/SHA256SUMS"
    ```
 
-   The tool rewrites `tag` and every listed asset's hash, resets a listed asset
-   the sums file lacks to `null` (the installer then says "no binary for this
-   platform" and names the server option) and refuses to write when none of
-   the assets is present. It never edits a version number by hand:
-   release-please owns the tag it is given.
-2. A check on the tag (`release.yml`, after `release-assets`): for every
-   non-null hash in `php/binaries.json`, the SHA-256 of the published
-   `aprv-<target>[.exe]` equals it. A mismatch fails the release before
-   Packagist imports the tag.
+   It commits the file with the module copies and pins. An asset with no
+   line has no pin: the installer says no binary is pinned for the platform
+   and names the server option.
+2. A check on the tag (`release.yml` `php-binaries`, after
+   `release-assets`): the file is not empty, every line matches the
+   installer's grammar below (`sha256sum -c` alone also accepts a
+   binary-mode `*` and a CR), it holds exactly the two Linux lines, and
+   `sha256sum -c --strict` passes against the assets this run built, laid
+   out as `<tag>/<asset>`. A changed binary, or a line for another tag,
+   fails the release before Packagist imports the tag.
 
-**Open question for the orchestrator:** macOS and Windows binaries are not
-reproducible bit for bit, so a hash pinned from the release branch's build
-only holds if `release.yml` publishes those exact files (download the branch
-run's artifacts by hash instead of rebuilding). If it rebuilds, leave those
-four entries `null` (a platform gets the server option) until it is
-reproducible. Linux is the platform the plan measured.
+The installer accepts only what sha256sum writes: 64 lowercase hex digits,
+two spaces, a path of one tag (`v[0-9A-Za-z.+-]+`) and one asset from the
+release's list, LF line ends. It refuses a binary-mode `*`, a tagged (BSD)
+line, a CR, a blank line, a second tag and a repeated asset, before any
+download. `.gitattributes` marks the file `-text` so a Windows checkout keeps
+it LF.
 
-`release-please-config.json` is untouched: `binaries.json` carries no version
-string of its own to bump; its `tag` is written by the step above.
+macOS and Windows binaries are not reproducible bit for bit, so a hash
+pinned from the release branch's build holds only if `release.yml` publishes
+those exact files. It rebuilds them, so they get no line and those platforms
+use the server option.
+
+`release-please-config.json` is untouched: `SHA256SUMS` carries no version
+marker for release-please to bump. The tag in its paths comes from
+`version.txt`, which release-please has already bumped on that branch.
 
 ## Post-publish smoke (step 6.3)
 

@@ -44,7 +44,7 @@ published artifact and the claim least exercised anywhere else.
           composer require --no-interaction \
             "emindeniz99/apple-purchase-receipt-verifier:$VERSION"
           # Downloads the release's aprv binary and checks it against the
-          # SHA-256 binaries.json pins in the package.
+          # SHA-256 php/SHA256SUMS pins in the package.
           vendor/bin/aprv-install
           php verify-smoke.php
 ```
@@ -52,22 +52,22 @@ published artifact and the claim least exercised anywhere else.
 The smoke script must, at minimum, `Verifier::create(new Config())` over
 the default CLI transport and verify a genuine Apple-signed receipt: that is
 what catches a package that installed but shipped no `php/bin/aprv-install` or
-no `php/binaries.json`, an installer that cannot fetch the release's binary,
+no `php/SHA256SUMS`, an installer that cannot fetch the release's binary,
 or a pinned hash that no longer matches the published asset. It is the PHP leg
 of the plan's acceptance test 8.
 
 ## Pinning the binaries' hashes at release
 
-`php/binaries.json` names the release tag and the SHA-256 of each `aprv`
-binary; `vendor/bin/aprv-install` refuses any download that does not match.
-Because Composer installs the tag's tree, the hashes are committed on the
-release branch before the tag, from the binaries the release will publish:
+`php/SHA256SUMS` holds sha256sum's lines for the release's `aprv` binaries,
+each path `<tag>/<asset>`; `vendor/bin/aprv-install` refuses any download that
+does not match. Because Composer installs the tag's tree, the lines are
+committed on the release branch before the tag, by `release-please.yml`'s
+`refresh-wasm-copies` job, from the binaries the release will publish:
 
 ```bash
-(cd dist && sha256sum aprv-* > SHA256SUMS)
-php php/tools/update-binaries.php --tag "v$VERSION" --sums dist/SHA256SUMS
+(cd "$RUNNER_TEMP/php-sums" && sha256sum "v$version"/*) > "$RUNNER_TEMP/SHA256SUMS"
 ```
 
-An asset the sums file lacks is reset to `null`, so its platform is told to use
-the server option. `php/CI-NOTES.md` has the CI wiring and the open question
-about the macOS and Windows binaries.
+An asset with no line has no pin, so its platform is told to use the server
+option. `php/CI-NOTES.md` has the CI wiring, the format the installer accepts,
+and why macOS and Windows get no line.
