@@ -134,7 +134,9 @@ mod tests {
             b"+/8",           // the standard alphabet
             b"Zm9vY",         // a dangling character
             b"Zm9vYh",        // unused low bits that are not zero
+            b"-_9",           // the same, two bits wide
             b"Zm9v Yg",       // whitespace
+            b"Zm9v\nYg",      // a newline
         ] {
             assert_eq!(decode_base64url_strict(refused), None, "{refused:?}");
         }
@@ -151,6 +153,7 @@ mod tests {
             b"Zm9vYg",       // padding omitted
             b"Zm9vYg=",      // partial padding
             b"Zm9vYg===",    // extra padding
+            b"Zm9vY===",     // a length no encoding has
             b"-_8=",         // the base64url alphabet
             b"Zm9v\nYg==",   // whitespace
             b"Zm9vYg==Zg==", // anything after the padding

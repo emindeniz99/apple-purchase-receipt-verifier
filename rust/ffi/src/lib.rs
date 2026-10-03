@@ -904,8 +904,8 @@ mod tests {
     #[test]
     fn the_error_document_escapes_its_message() {
         assert_eq!(
-            error_json(13, "a \"b\"\\\n\u{1}"),
-            r#"{"reason":"MALFORMED","message":"a \"b\"\\\n\u0001"}"#
+            error_json(13, "a \"b\"\\\n\u{1}\t\r\u{8}\u{c}\u{1F600}"),
+            r#"{"reason":"MALFORMED","message":"a \"b\"\\\n\u0001\t\r\b\f😀"}"#
         );
     }
 
