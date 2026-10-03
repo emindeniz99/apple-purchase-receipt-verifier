@@ -42,7 +42,7 @@ floor is 11 (Endive's), and the plan asks for 11 to 27.
   `verify` runs, in order: the SHA-256 check of `src/main/wasm/aprv.wasm`
   against `aprv.wasm.sha256` (validate phase), Endive's build-time
   compilation with `interpreterFallback` FAIL, the Java 8 and Java 11
-  compiler executions, and every test: the 311 cases of
+  compiler executions, and every test: every case of
   `fixtures/cases.json` on Endive (`ConformanceCasesTest`, one dynamic test
   per case plus a last test that asserts every case id ran), the round-13
   ABI tests (`EndiveAbiTest`), the facade (`WasmVerifierTest`), the engine
@@ -66,7 +66,7 @@ floor is 11 (Endive's), and the plan asks for 11 to 27.
   repository. Run it once single-threaded and once with 4 threads.
 - **One command** for all of the above: `scripts/g1.sh BUNDLE_DIR OUT_DIR`
   checks the bundle's `aprv.wasm` against the committed pin, copies it into
-  place, runs `verify`, the 311 cases on each JVM in `ENDIVE_JVMS`, the
+  place, runs `verify`, every case on each JVM in `ENDIVE_JVMS`, the
   corpus on 1 and 4 threads, and `scripts/bench.sh`.
 - Failure means: a case that answers differently from `fixtures/cases.json`,
   an ABI misuse that no longer traps, a Java 11 class in the facade, a
@@ -201,7 +201,7 @@ What runs, on Java 8 and on every Endive JDK:
   gets. Mounting needs root, so on a GitHub runner it is reported
   **skipped** with the reason. To run it there, add a step
   `sudo -E mvn -B -f java-wasm test -Dtest=ServerNoexecTest -Dsurefire.failIfNoSpecifiedTests=false -Daprv.server.linux-x86_64="$APRV_SERVER"`.
-- `ServerConformanceCasesTest`: the 311 cases through the server engine,
+- `ServerConformanceCasesTest`: every case through the server engine,
   one managed child per root set. The 33 `decodeBase64` cases have no
   route of their own on the server; like Endive's, they go through
   `verifyReceipt` and `verifySignedData` (see `ConformanceCases`).
