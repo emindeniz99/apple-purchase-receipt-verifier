@@ -12,14 +12,14 @@
 #
 # From 0.8.0 the Go module and the Swift package carry a committed copy of
 # aprv.wasm (docs/rust-core/DECISIONS.md R14), every host tracks a pin of it
-# (aprv.wasm.sha256; Node's pins the component), and php/binaries.json pins
+# (aprv.wasm.sha256; Node's pins the component), and php/SHA256SUMS pins
 # the aprv binaries the PHP installer downloads. The tag is what those
 # consumers get, so all of it must name what the release branch builds.
 # release-branch-wasm and release-branch-server build the module and the two
 # Linux static binaries with read-only permissions and no cache;
 # refresh-wasm-copies, which runs no build code, writes the copies and pins
 # (tools/refresh-wasm-pins.sh, which only copies files and writes hashes)
-# and binaries.json (jq and sha256sum), and pushes one commit. The
+# and php/SHA256SUMS (sha256sum), and pushes one commit. The
 # release's build-wasm and php-binaries jobs then refuse to publish if
 # anything differs from what the tag builds.
 #
@@ -207,11 +207,11 @@ jobs:
 
   # The two Linux static aprv binaries the tag will publish, built on the
   # release branch around its component so their hashes can be committed in
-  # php/binaries.json before the tag exists (OD-06): they reproduce
+  # php/SHA256SUMS before the tag exists (OD-06): they reproduce
   # (tools/reproduce-server.sh), so release.yml's build at the tag makes the
   # same files, and its php-binaries job checks that it did. macOS and
-  # Windows binaries do not reproduce bit for bit, so their entries stay
-  # null (those platforms use the server URL option). Read-only, no cache.
+  # Windows binaries do not reproduce bit for bit, so they get no line
+  # (those platforms use the server URL option). Read-only, no cache.
   release-branch-server:
     needs: [release-please, release-branch-wasm]
     runs-on: ${{ matrix.os }}
@@ -270,9 +270,9 @@ jobs:
 
   # Writes what the two jobs above built into the release branch: the
   # committed module copies and every tracked pin (tools/refresh-wasm-pins.sh
-  # copies files and writes hashes, nothing else), and php/binaries.json's
-  # tag and two Linux hashes (jq and sha256sum). One commit, pushed to the
-  # release branch. No build code runs here, which is what lets it hold the
+  # copies files and writes hashes, nothing else), and php/SHA256SUMS: the
+  # two Linux binaries' hashes under the tag (sha256sum). One commit,
+  # pushed to the release branch. No build code runs here, which is what lets it hold the
   # pushing token.
   refresh-wasm-copies:
     needs: [release-please, release-branch-wasm, release-branch-server]
@@ -308,7 +308,7 @@ jobs:
           pattern: aprv-server-release-branch-*
           path: ${{ runner.temp }}/server
           merge-multiple: true
-      - name: refresh the copies, the pins and binaries.json
+      - name: refresh the copies, the pins and SHA256SUMS
         env:
           BRANCH: ${{ needs.release-please.outputs.branch }}
           BUILT_FROM: ${{ needs.release-branch-wasm.outputs.commit }}
@@ -323,28 +323,27 @@ jobs:
           echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
           echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
           mapfile -t changed < <(tools/refresh-wasm-pins.sh "$RUNNER_TEMP/aprv/aprv.wasm" "$RUNNER_TEMP/aprv/aprv.component.wasm")
-          # binaries.json: the tag this branch becomes and the two Linux
-          # binaries' hashes; every other entry null.
+          # SHA256SUMS: sha256sum's own lines for the two Linux binaries
+          # laid out as v<version>/<asset>, so the tag this branch becomes
+          # is in each path. macOS and Windows get no line.
           version="$(cat version.txt)"
-          x86="$(sha256sum "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl" | cut -c1-64)"
-          arm="$(sha256sum "$RUNNER_TEMP/server/aprv-aarch64-unknown-linux-musl" | cut -c1-64)"
-          jq --indent 4 --arg tag "v$version" --arg x86 "$x86" --arg arm "$arm" '
-            .tag = $tag
-            | .assets |= with_entries(.value = null)
-            | .assets["aprv-x86_64-unknown-linux-musl"] = $x86
-            | .assets["aprv-aarch64-unknown-linux-musl"] = $arm
-          ' php/binaries.json > "$RUNNER_TEMP/binaries.json"
-          if ! cmp -s "$RUNNER_TEMP/binaries.json" php/binaries.json; then
-            cp "$RUNNER_TEMP/binaries.json" php/binaries.json
-            changed+=(php/binaries.json)
+          mkdir -p "$RUNNER_TEMP/php-sums/v$version"
+          cp "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl" \
+            "$RUNNER_TEMP/server/aprv-aarch64-unknown-linux-musl" \
+            "$RUNNER_TEMP/php-sums/v$version/"
+          (cd "$RUNNER_TEMP/php-sums" && sha256sum "v$version"/*) > "$RUNNER_TEMP/SHA256SUMS"
+          if ! cmp -s "$RUNNER_TEMP/SHA256SUMS" php/SHA256SUMS; then
+            cp "$RUNNER_TEMP/SHA256SUMS" php/SHA256SUMS
+            changed+=(php/SHA256SUMS)
           fi
           if [ "${#changed[@]}" -eq 0 ]; then
-            echo "the copies, pins and binaries.json already name this build ($WASM_SHA256)"
+            echo "the copies, pins and SHA256SUMS already name this build ($WASM_SHA256)"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore(release): pin the module and the aprv binaries this branch builds" \
-            -m "aprv.wasm $WASM_SHA256, component $COMPONENT_SHA256; aprv-x86_64-unknown-linux-musl $x86, aprv-aarch64-unknown-linux-musl $arm." \
+            -m "aprv.wasm $WASM_SHA256, component $COMPONENT_SHA256." \
+            -m "$(cat php/SHA256SUMS)" \
             -- "${changed[@]}"
           git push origin "HEAD:$BRANCH"
