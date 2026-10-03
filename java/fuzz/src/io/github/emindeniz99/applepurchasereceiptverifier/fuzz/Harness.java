@@ -38,10 +38,10 @@ final class Harness {
     private Harness() {}
 
     /**
-     * Apple's three roots plus the fixture receipt root the re-minted 0.7
-     * receipts chain to, fixtures/generated-0.7/receipt-root.der, so that
-     * those fixtures and both public Apple receipts get past the chain check
-     * and the fuzzer can explore what lies beyond it. The receipts under
+     * Apple's three roots plus fixtures/generated-0.7/receipt-root.der, so
+     * that the re-minted 0.7 receipts that chain to it (most chain to their
+     * own generator's root) and both public Apple receipts get past the chain
+     * check and the fuzzer can explore what lies beyond it. The receipts under
      * fixtures/generated/ chain to the 0.6 root, which is not trusted here:
      * they predate 0.7's WWDR marker check and stopped at
      * INVALID_CERTIFICATE_PURPOSE even under that root.

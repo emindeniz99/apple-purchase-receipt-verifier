@@ -74,8 +74,9 @@ look identical.
 
 `receipt` and `receipt-base64` trust Apple's three roots **plus**
 `fixtures/generated-0.7/receipt-root.der`, so the Apple-signed public receipts
-and the receipts re-minted under `fixtures/generated-0.7/` get past the chain
-check and the mutations land on the code beyond it. The generated receipts
+and the receipts under `fixtures/generated-0.7/` that chain to it (most chain
+to their own generator's root) get past the chain check and the mutations
+land on the code beyond it. The generated receipts
 under `fixtures/generated/` chain to the 0.6 root, which is not trusted here;
 they predate 0.7's WWDR marker check and stopped at
 `INVALID_CERTIFICATE_PURPOSE` even under that root. Anything these targets
@@ -191,7 +192,7 @@ the fixtures do under each target's own anchors, measured:
 | target | fixtures accepted |
 |---|---|
 | `receipt` | 17 of 191 `fixtures/generated-0.7/*.der`, 0 of 55 `fixtures/generated/*.der` |
-| `receipt-base64` | 2 of 17 `fixtures/generated/receipt-b64/*`, 2 of 5 `fixtures/public-receipts/*` |
+| `receipt-base64` | 2 of 17 `fixtures/generated/receipt-b64/*`, 2 of the 3 receipts in `fixtures/public-receipts/` (1 at the default `-max_len=65536`: `receipt-sandbox-legacy.b64` is 105 KB and is loaded cut) |
 | `jws` | 3 of 14 `fixtures/generated/*.jws` |
 | `endpoint-json` | a genuine body answers `{"status":0,…}` |
 
