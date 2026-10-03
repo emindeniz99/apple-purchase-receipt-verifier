@@ -45,8 +45,8 @@ class EndiveAbiTest {
 
     /** init's configuration naming the JWS fixture's own root. */
     private static byte[] jwsConfig() throws Exception {
-        return WasmVerifier.configJson(
-                new java.util.LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]"))));
+        return InitConfig.json(new java.util.LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]"))))
+                .getBytes(StandardCharsets.US_ASCII);
     }
 
     private static byte[] endpointRequest() throws Exception {
