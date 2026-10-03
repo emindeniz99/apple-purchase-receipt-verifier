@@ -252,7 +252,8 @@ On `main`:
   will allowlist that type for `dotnet/` at integration rather than
   break the API. An out-of-range `Environment` enum value throws (a
   programmer error in C#), where Go answers 21009. Empty roots and a
-  certificate with no data are refused at `Config.Builder.Build()`.
+  certificate with no data are refused by the `Config` constructor (at
+  `Config.Builder.Build()` before 2026-10-03, R41).
   Each Wasmtime instance reserves about 4.2 GiB of virtual address
   space by default (0.25 MiB resident); a 256 MiB reservation cost 35%
   of speed and is not shipped.

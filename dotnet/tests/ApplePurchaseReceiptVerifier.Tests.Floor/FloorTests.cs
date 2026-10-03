@@ -39,7 +39,7 @@ public class FloorTests
     [Fact]
     public void ANewVerifierCompilesTheModuleAndAnswersOnTheFloorAsset()
     {
-        IVerifier verifier = Verifier.Create(Config.Defaults());
+        IVerifier verifier = Verifier.Create(new Config());
 
         Assert.Contains("\"status\":", verifier.VerifyReceiptEndpoint(AppleEnvironment.Sandbox, "{}"), StringComparison.Ordinal);
     }
@@ -47,7 +47,7 @@ public class FloorTests
     [Fact]
     public void AGenuineReceiptIsAuthenticatedAgainstAPinnedRoot()
     {
-        Config config = Config.CreateBuilder().Roots(new[] { Certificate("generated-0.7/receipt-root.der") }).Build();
+        Config config = new Config(roots: new[] { Certificate("generated-0.7/receipt-root.der") });
         IVerifier verifier = Verifier.Create(config);
 
         string response = Endpoint(verifier, Convert.ToBase64String(Bytes("generated-0.7/receipt.der")));
@@ -59,7 +59,7 @@ public class FloorTests
     [Fact]
     public void AGenuineAppleReceiptIsAuthenticatedAgainstTheModulesBuiltInRoots()
     {
-        IVerifier verifier = Verifier.Create(Config.Defaults());
+        IVerifier verifier = Verifier.Create(new Config());
 
         Assert.Contains("\"status\":0", Endpoint(verifier, Base64Text("generated/receipt-b64/01-genuine.txt")), StringComparison.Ordinal);
     }
@@ -67,7 +67,7 @@ public class FloorTests
     [Fact]
     public void AForeignChainIsNotAuthenticated()
     {
-        IVerifier verifier = Verifier.Create(Config.Defaults());
+        IVerifier verifier = Verifier.Create(new Config());
 
         Assert.Equal(
             "{\"status\":21003}",
@@ -77,7 +77,7 @@ public class FloorTests
     [Fact]
     public void AJwsAnswersAValueOnTheFloorAsset()
     {
-        Config config = Config.CreateBuilder().Roots(new[] { Certificate("generated/jws-root.der") }).Build();
+        Config config = new Config(roots: new[] { Certificate("generated/jws-root.der") });
         IVerifier verifier = Verifier.Create(config);
 
         VerificationResult<JsonPayload> result = verifier.VerifySignedData(Text("generated/transaction.jws"));
@@ -88,10 +88,9 @@ public class FloorTests
     [Fact]
     public void TheEndpointAnswersABody()
     {
-        Config config = Config.CreateBuilder()
-            .Roots(new[] { Certificate("generated-0.7/receipt-root.der") })
-            .Clock(() => new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds())
-            .Build();
+        Config config = new Config(
+            roots: new[] { Certificate("generated-0.7/receipt-root.der") },
+            clock: () => new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
         IVerifier verifier = Verifier.Create(config);
 
         string response = Endpoint(verifier, Convert.ToBase64String(Bytes("generated-0.7/receipt.der")));
@@ -111,7 +110,7 @@ public class FloorTests
     [Fact]
     public void HostileInputIsStillContained()
     {
-        IVerifier verifier = Verifier.Create(Config.Defaults());
+        IVerifier verifier = Verifier.Create(new Config());
         foreach (string input in new[] { "MAsGCSqGSIb3", "!!!!", "", "AAAA" })
         {
             VerificationResult<ReceiptPayload> result = verifier.VerifyReceipt(input);

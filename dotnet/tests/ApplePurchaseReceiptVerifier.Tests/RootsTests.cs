@@ -35,8 +35,7 @@ public class RootsTests
     [Fact]
     public void TheDefaultsListNoRootBecauseTheModuleHoldsThem()
     {
-        Assert.Empty(Config.Defaults().Roots);
-        Assert.Empty(Config.CreateBuilder().Build().Roots);
+        Assert.Empty(new Config().Roots);
         Assert.Null(typeof(Config).Assembly.GetType("ApplePurchaseReceiptVerifier.AppleRootCertificates"));
         Assert.Null(typeof(Config).Assembly.GetType("ApplePurchaseReceiptVerifier.Internal.AppleRootData"));
     }
@@ -47,7 +46,7 @@ public class RootsTests
     {
         List<X509Certificate2> roots = TestRoots.AppleRoots().ToList();
         roots.Add(TestRoots.FixtureCertificate("receipt-root"));
-        Config config = Config.CreateBuilder().Roots(roots).Build();
+        Config config = new(roots: roots);
 
         Assert.Equal(4, config.Roots.Count);
         Assert.Equal(
@@ -67,7 +66,7 @@ public class RootsTests
         X509Certificate2 root = TestRoots.FixtureCertificate("receipt-root");
         string der = Convert.ToBase64String(root.RawData);
         List<X509Certificate2> passed = new() { root };
-        Config config = Config.CreateBuilder().Roots(passed).Build();
+        Config config = new(roots: passed);
         root.Dispose();
         passed.Clear();
 
@@ -80,11 +79,11 @@ public class RootsTests
     [Fact]
     public void InitGetsTheCallersRootsInOrderOrNoneForTheDefaults()
     {
-        Assert.Equal("{}", System.Text.Encoding.UTF8.GetString(VerifierImpl.ConfigJson(Config.Defaults())));
+        Assert.Equal("{}", System.Text.Encoding.UTF8.GetString(VerifierImpl.ConfigJson(new Config())));
 
         X509Certificate2 first = TestRoots.FixtureCertificate("receipt-root");
         X509Certificate2 second = TestRoots.FixtureCertificate("jws-root");
-        Config two = Config.CreateBuilder().Roots(new[] { first, second }).Build();
+        Config two = new(roots: new[] { first, second });
         Assert.Equal(
             "{\"roots\":[\"" + Convert.ToBase64String(first.RawData) + "\",\"" + Convert.ToBase64String(second.RawData) + "\"]}",
             System.Text.Encoding.UTF8.GetString(VerifierImpl.ConfigJson(two)));

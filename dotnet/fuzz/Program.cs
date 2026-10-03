@@ -22,7 +22,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz
     /// execution, never here.</strong> SharpFuzz's instrumentation makes the
     /// library's methods write edge counters through a shared-memory pointer
     /// that <c>Fuzzer.LibFuzzer.Run</c> installs; calling instrumented code
-    /// before that — an eager <c>Config.Defaults()</c> in
+    /// before that — an eager <c>new Config()</c> in
     /// <c>Main</c> is enough — dereferences a pointer that does not
     /// exist yet and kills the process with an
     /// <c>AccessViolationException</c> that looks like a library crash and is

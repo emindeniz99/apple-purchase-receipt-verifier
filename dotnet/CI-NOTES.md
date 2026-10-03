@@ -55,10 +55,12 @@ runs the whole re-check for a new module as one command.
 | new, optional `dotnet-corpus` | `dotnet build -c Release dotnet/tools/CorpusRun`, then `CorpusRun calls <calls.jsonl>` per corpus and the reference rows' `same.py`, wherever the corpora live (they are not in the repository). The result here was 6,179 of 6,179 rows byte for byte identical to the module's own rows, 0 traps (`scripts/corpus.sh`) |
 
 The post-publish smoke for NuGet should restore from nuget.org into an
-empty package folder on `ubuntu-latest` and run a receipt through
-`Config.Defaults()`; `docs/evidence/2026-09-29-dotnet-host/Consumer`
-is a ready consumer, and it printed `endpoint: "status":0` for the genuine
-G5 receipt from a local feed on .NET 10.
+empty package folder on `ubuntu-latest` and run a receipt through the
+default `Config`; `.github/smoke/nuget-smoke` is that consumer
+(`post-publish-smoke.yml`). Its 0.7-API ancestor,
+`docs/evidence/2026-09-29-dotnet-host/Consumer`, printed
+`endpoint: "status":0` for the genuine G5 receipt from a local feed on
+.NET 10.
 
 ## Platforms and the musl note
 

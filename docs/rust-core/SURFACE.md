@@ -59,8 +59,8 @@ type of each, and 0.8.0 keeps every row. Each package builds a `Config`
 one way, in its language's idiom: Java's `defaults()` and `builder()`,
 Rust's `Config::default()` and `Config::builder()`, Python's
 `Config(roots=..., clock=...)`, Ruby's `Config.new(roots:, clock:)`, PHP's
-`new Config(roots: ..., clock: ...)`; the Java-shaped duplicates went in
-0.8 (DECISIONS.md R41).
+and .NET's `new Config(roots: ..., clock: ...)`; the Java-shaped
+duplicates went in 0.8 (DECISIONS.md R41).
 
 - **No policy parameter.** No bundle id, environment filter, app Apple id
   or device id. The environment of `verifyReceiptEndpoint` is which of

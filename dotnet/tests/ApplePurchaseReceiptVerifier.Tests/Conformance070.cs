@@ -342,14 +342,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     private static object RunCase(string operation, JsonMap kase)
     {
         JsonMap configSpec = AsMap(kase["config"]);
-        Config.Builder builder = Config.CreateBuilder().Clock(Clock(kase));
-        IReadOnlyList<X509Certificate2>? roots = Roots(configSpec);
-        if (roots is not null)
-        {
-            builder.Roots(roots);
-        }
-
-        IVerifier verifier = Verifier.Create(builder.Build());
+        IVerifier verifier = Verifier.Create(new Config(Roots(configSpec), Clock(kase)));
 
         switch (operation)
         {
@@ -453,7 +446,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
             ?? throw new InvalidOperationException("harness error: input.texts is not a list");
         List<object?> decoders = kase["decoders"] as List<object?>
             ?? throw new InvalidOperationException("harness error: decoders is not a list");
-        IVerifier verifier = Verifier.Create(Config.Defaults());
+        IVerifier verifier = Verifier.Create(new Config());
         List<string> failures = new();
         foreach (object? decoder in decoders)
         {

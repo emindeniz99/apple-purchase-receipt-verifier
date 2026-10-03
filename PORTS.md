@@ -94,10 +94,11 @@ the contract.
 - A `Config` is built one way per package, in the language's idiom
   (DECISIONS.md R41): `Config(roots=..., clock=...)` in Python,
   `Config.new(roots:, clock:)` in Ruby, `new Config(roots: ..., clock: ...)`
-  in PHP, `Config::default()` or `Config::builder()` in Rust. Python's
-  `Config.create`/`Config.defaults`, Ruby's `Config.builder` and
-  `Config.defaults`, PHP's `ConfigBuilder` and `Config::defaults()`, and
-  Rust's `Config::defaults()` are gone.
+  in PHP and .NET, `Config::default()` or `Config::builder()` in Rust.
+  Python's `Config.create`/`Config.defaults`, Ruby's `Config.builder` and
+  `Config.defaults`, PHP's `ConfigBuilder` and `Config::defaults()`,
+  .NET's `Config.Defaults()`, `Config.CreateBuilder()` and
+  `Config.Builder`, and Rust's `Config::defaults()` are gone.
 - `receipt-data` and `x5c` entries are canonical standard base64 only, as
   Apple's `verifyReceipt` was measured to accept it (THREAT-MODEL.md
   §3.8). The module decodes them; no wrapper has a base64 decoder of its

@@ -21,7 +21,7 @@ namespace ApplePurchaseReceiptVerifier
     /// receipt or JWS carries no signing date, and <c>request_date</c> in the
     /// endpoint response. A caller-supplied clock must be safe to call from
     /// several threads.</para>
-    /// <para>Building a <see cref="Config"/> from a root set that was passed
+    /// <para>Constructing a <see cref="Config"/> from a root set that was passed
     /// in but is empty throws <see cref="ArgumentException"/> — a verifier
     /// with no roots would answer <c>UNTRUSTED_CHAIN</c> to everything and
     /// nobody would notice until production. That happens once, at startup,
@@ -32,17 +32,26 @@ namespace ApplePurchaseReceiptVerifier
     {
         private readonly List<byte[]>? _rootDer;
 
-        private Config(List<byte[]>? rootDer, Func<long> clock)
+        /// <summary>
+        /// Creates a configuration. With no arguments it is the default: the
+        /// module's built-in Apple roots and the system clock.
+        /// </summary>
+        /// <param name="roots">
+        /// The trust anchors to pin, replacing the built-in Apple roots, or
+        /// <see langword="null"/> for the three Apple roots pinned inside the
+        /// module. Each certificate's DER is copied here, so the caller may
+        /// dispose theirs afterwards.
+        /// </param>
+        /// <param name="clock">
+        /// The clock to read "now" from, in epoch milliseconds, or
+        /// <see langword="null"/> for the system clock.
+        /// </param>
+        /// <exception cref="ArgumentException"><paramref name="roots"/> was passed in and it is empty, or contains null or a certificate with no data.</exception>
+        public Config(IEnumerable<X509Certificate2>? roots = null, Func<long>? clock = null)
         {
-            _rootDer = rootDer;
-            Clock = clock;
+            _rootDer = roots is null ? null : CopyDer(roots);
+            Clock = clock ?? SystemClockMillis;
         }
-
-        /// <summary>The default configuration: the module's built-in Apple roots and the system clock.</summary>
-        public static Config Defaults() => new Builder().Build();
-
-        /// <summary>Starts building a <see cref="Config"/> with different roots or a different clock.</summary>
-        public static Builder CreateBuilder() => new Builder();
 
         /// <summary>
         /// The trust anchors the caller passed in: an unmodifiable list of
@@ -50,7 +59,7 @@ namespace ApplePurchaseReceiptVerifier
         /// back — casting the list, disposing a certificate — reaches this
         /// config or a verifier built from it. Empty when the config uses the
         /// module's built-in Apple roots, which is what
-        /// <see cref="Defaults"/> does.
+        /// <c>new Config()</c> does.
         /// </summary>
         public IReadOnlyList<X509Certificate2> Roots
         {
@@ -79,74 +88,40 @@ namespace ApplePurchaseReceiptVerifier
         /// <summary>The source of "now", in epoch milliseconds.</summary>
         public Func<long> Clock { get; }
 
-        /// <summary>Builds a <see cref="Config"/>.</summary>
-        public sealed class Builder
+        private static List<byte[]> CopyDer(IEnumerable<X509Certificate2> roots)
         {
-            private IEnumerable<X509Certificate2>? _roots;
-            private Func<long>? _clock;
-
-            /// <summary>
-            /// The trust anchors to pin, replacing the built-in Apple roots.
-            /// Copied when <see cref="Build"/> is called, so the caller may
-            /// dispose theirs afterwards. When never called, the verifier
-            /// trusts the three Apple roots pinned inside its module.
-            /// </summary>
-            public Builder Roots(IEnumerable<X509Certificate2> roots)
+            List<byte[]> rootDer = new List<byte[]>();
+            foreach (X509Certificate2 root in roots)
             {
-                _roots = roots ?? throw new ArgumentNullException(nameof(roots));
-                return this;
-            }
-
-            /// <summary>The clock to read "now" from. Defaults to the system clock.</summary>
-            public Builder Clock(Func<long> clock)
-            {
-                _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-                return this;
-            }
-
-            /// <summary>Builds the immutable <see cref="Config"/>.</summary>
-            /// <exception cref="ArgumentException">A root set was passed in and it is empty, or contains null or a certificate with no data.</exception>
-            public Config Build()
-            {
-                Func<long> clock = _clock ?? SystemClockMillis;
-                if (_roots is null)
+                if (root is null)
                 {
-                    return new Config(null, clock);
+                    throw new ArgumentException("roots must not contain null", nameof(roots));
                 }
 
-                List<byte[]> rootDer = new List<byte[]>();
-                foreach (X509Certificate2 root in _roots)
+                byte[] der;
+                try
                 {
-                    if (root is null)
-                    {
-                        throw new ArgumentException("roots must not contain null", "roots");
-                    }
-
-                    byte[] der;
-                    try
-                    {
-                        der = root.RawData;
-                    }
-                    catch (CryptographicException)
-                    {
-                        der = Array.Empty<byte>();
-                    }
-
-                    if (der.Length == 0)
-                    {
-                        throw new ArgumentException("roots contains an unreadable certificate", "roots");
-                    }
-
-                    rootDer.Add(der);
+                    der = root.RawData;
+                }
+                catch (CryptographicException)
+                {
+                    der = Array.Empty<byte>();
                 }
 
-                if (rootDer.Count == 0)
+                if (der.Length == 0)
                 {
-                    throw new ArgumentException("roots must not be empty", "roots");
+                    throw new ArgumentException("roots contains an unreadable certificate", nameof(roots));
                 }
 
-                return new Config(rootDer, clock);
+                rootDer.Add(der);
             }
+
+            if (rootDer.Count == 0)
+            {
+                throw new ArgumentException("roots must not be empty", nameof(roots));
+            }
+
+            return rootDer;
         }
 
         private static long SystemClockMillis() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

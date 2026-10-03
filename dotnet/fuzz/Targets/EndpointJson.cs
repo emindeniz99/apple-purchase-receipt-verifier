@@ -23,7 +23,7 @@ namespace ApplePurchaseReceiptVerifier.Fuzz.Targets
 
         internal EndpointJson()
         {
-            _verifier = Verifier.Create(Config.Defaults());
+            _verifier = Verifier.Create(new Config());
         }
 
         internal void Run(ReadOnlySpan<byte> data)
