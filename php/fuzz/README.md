@@ -115,6 +115,12 @@ content-addressed so re-seeding is idempotent, and that directory is
 gitignored. `fixtures/` is never written to and nothing from it is committed
 under `php/`.
 
+For `verify-receipt` it copies only seeds of at most 64 KiB, the `-max_len`
+the .NET, Java and Ruby receipt targets pass. `setMaxLen()` bounds what the
+fuzzer mutates to, but it runs every corpus entry at full size when it loads
+the corpus, and `fixtures/generated-0.7/` holds a 1 MB receipt and four 3 MB
+receipt strings. Nine of its files are left out, none of which verifies.
+
 ## When a crasher is found
 
 The run exits non-zero and leaves `crashes/<target>/crash-<hash>.txt`. Reduce
