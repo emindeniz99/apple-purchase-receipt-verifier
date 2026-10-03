@@ -114,7 +114,9 @@ public class FacadeTests
     /// <summary>
     /// <c>{"ok":true}</c> alone is a module older than this wrapper: it states
     /// no input length (DECISIONS.md R42), and the verifier is refused at
-    /// create, never later, as for any answer that is not init's.
+    /// create, never later, as for any answer that is not init's, with the
+    /// <see cref="InvalidOperationException"/> the README promises for a
+    /// module of another ABI version.
     /// </summary>
     [Theory]
     [InlineData("{\"ok\":true}")]
@@ -122,7 +124,7 @@ public class FacadeTests
     [InlineData("{\"ok\":true,\"max_input_bytes\":\"7\"}")]
     public void AnInitAnswerWithoutAnInputLengthFailsCreate(string answer)
     {
-        ModuleAnswers.AnswerException error = Assert.Throws<ModuleAnswers.AnswerException>(
+        InvalidOperationException error = Assert.ThrowsAny<InvalidOperationException>(
             () => Over(new StubModule { InitAnswer = answer }));
         Assert.Contains("max_input_bytes", error.Message, StringComparison.Ordinal);
     }

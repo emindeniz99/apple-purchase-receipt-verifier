@@ -16,8 +16,14 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// </summary>
     internal static class ModuleAnswers
     {
-        /// <summary>A module answer that is not the wire's JSON, or a member of the wrong type.</summary>
-        internal sealed class AnswerException : Exception
+        /// <summary>
+        /// A module answer that is not the wire's JSON, or a member of the
+        /// wrong type. It is an <see cref="InvalidOperationException"/>, the
+        /// type <see cref="Verifier.Create"/> throws for a module this library
+        /// cannot host, so an <c>init</c> answer of another ABI version
+        /// reaches that caller as the README says.
+        /// </summary>
+        internal sealed class AnswerException : InvalidOperationException
         {
             internal AnswerException(string message)
                 : base(message)
@@ -51,7 +57,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// ABI version, and is not init's answer.
         /// </summary>
         /// <exception cref="ArgumentException">The module refused the roots.</exception>
-        /// <exception cref="AnswerException">The answer is not init's.</exception>
+        /// <exception cref="AnswerException">The answer is not init's (an <see cref="InvalidOperationException"/>).</exception>
         internal static int CheckInit(string answer)
         {
             string message;
