@@ -332,6 +332,48 @@ class ServerHttpTest {
     }
 
     /**
+     * A chunk size is hex digits and nothing else (RFC 9112 §7.1). A sign,
+     * whitespace or a {@code 0x} prefix that a lenient parser skips would
+     * let a proxy in between and this client split the body in different
+     * places. Eight digits or more are refused as well: seven already
+     * exceed the 64 MiB cap. An extension after {@code ;} is still read.
+     */
+    @Test
+    void aChunkSizeOtherThanHexDigitsIsRefused() throws Exception {
+        for (String size : new String[] {"+2", " 2", "2 ", "0x2", "-2", "", "00000002"}) {
+            try (RawServer server = new RawServer(
+                    "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n" + size + "\r\n{}\r\n0\r\n\r\n")) {
+                assertThrows(IOException.class, () -> get(server.port(), false, 5_000), "[" + size + "]");
+            }
+        }
+        try (RawServer server =
+                new RawServer("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2;name=value\r\n{}\r\n0\r\n\r\n")) {
+            assertEquals("{}", get(server.port(), false, 5_000).text());
+        }
+    }
+
+    /**
+     * Lines end with CRLF. A bare LF taken as a line end, or a CR dropped
+     * from inside a line, reads a head that a stricter parser in between
+     * reads differently (RFC 9112 §2.2); aprv-server writes CRLF only.
+     */
+    @Test
+    void aLineEndOtherThanCrlfIsRefused() throws Exception {
+        String[] responses = {
+            "HTTP/1.1 200 OK\nContent-Length: 2\r\n\r\n{}",
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\n\r\n{}",
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\n{}",
+            "HTTP/1.1 200 OK\r\nContent-\rLength: 2\r\n\r\n{}",
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\n{}\r\n0\r\n\r\n",
+        };
+        for (String response : responses) {
+            try (RawServer server = new RawServer(response)) {
+                assertThrows(IOException.class, () -> get(server.port(), false, 5_000), response);
+            }
+        }
+    }
+
+    /**
      * A message with both Transfer-Encoding and Content-Length "ought to be
      * handled as an error", and the connection must not be reused
      * (RFC 9112 §6.3).

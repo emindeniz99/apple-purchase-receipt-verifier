@@ -241,15 +241,16 @@ final class HttpConn implements Closeable {
     private byte[] chunked() throws IOException {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         while (true) {
-            String size = line();
-            int semicolon = size.indexOf(';');
-            int n;
-            try {
-                n = Integer.parseInt((semicolon < 0 ? size : size.substring(0, semicolon)).trim(), 16);
-            } catch (NumberFormatException e) {
-                throw new IOException("a malformed chunk size", e);
+            String sizeLine = line();
+            int semicolon = sizeLine.indexOf(';');
+            String size = semicolon < 0 ? sizeLine : sizeLine.substring(0, semicolon);
+            // Hex digits only: parseInt alone would take "+1a" and, after a
+            // trim, " 1a". Seven digits hold more than MAX_RESPONSE.
+            if (!size.matches("[0-9A-Fa-f]{1,7}")) {
+                throw new IOException("a malformed chunk size");
             }
-            if (n < 0 || body.size() + (long) n > MAX_RESPONSE) {
+            int n = Integer.parseInt(size, 16);
+            if (body.size() + (long) n > MAX_RESPONSE) {
                 throw new IOException("a response over " + MAX_RESPONSE + " bytes");
             }
             if (n == 0) {
@@ -278,6 +279,11 @@ final class HttpConn implements Closeable {
         return bytes;
     }
 
+    /**
+     * One line, without its CRLF. A bare LF or a CR not followed by LF is
+     * refused rather than read as a line end or dropped (RFC 9112 §2.2):
+     * {@code aprv-server} (hyper) ends every line with CRLF.
+     */
     private String line() throws IOException {
         StringBuilder line = new StringBuilder(64);
         while (true) {
@@ -285,15 +291,23 @@ final class HttpConn implements Closeable {
             if (c < 0) {
                 throw new EOFException("the connection closed");
             }
-            if (c == '\n') {
+            if (c == '\r') {
+                int next = in.read();
+                if (next < 0) {
+                    throw new EOFException("the connection closed");
+                }
+                if (next != '\n') {
+                    throw new IOException("a CR not followed by LF in a response line");
+                }
                 return line.toString();
             }
-            if (c != '\r') {
-                if (line.length() >= MAX_LINE) {
-                    throw new IOException("a response line over " + MAX_LINE + " bytes");
-                }
-                line.append((char) c);
+            if (c == '\n') {
+                throw new IOException("a response line ended by LF alone");
             }
+            if (line.length() >= MAX_LINE) {
+                throw new IOException("a response line over " + MAX_LINE + " bytes");
+            }
+            line.append((char) c);
         }
     }
 
