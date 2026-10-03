@@ -28,6 +28,10 @@ if (receipt.BundleId != "dev.bonzer.weeka.app")
 {
     throw new Exception($"BundleId was {receipt.BundleId}");
 }
+if (receipt.Environment != AppleEnvironment.Sandbox)
+{
+    throw new Exception($"Environment was {receipt.Environment}, expected Sandbox");
+}
 
 // And the negative direction, so a verifier that accepted everything would fail
 // here too: the same receipt with one bit flipped in its signature, the byte

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text;
 using ApplePurchaseReceiptVerifier.Internal;
 using Wasmtime;
@@ -29,9 +30,24 @@ public class AbiTests
     private static AprvInstance Fresh(byte[] config)
     {
         AprvInstance instance = new(AprvRuntime.Shared);
-        string answer = instance.Init(config);
-        Assert.Equal("{\"ok\":true}", answer);
+        instance.Start(config);
         return instance;
+    }
+
+    /// <summary>
+    /// An accepting <c>init</c> answer states the most bytes of one input the
+    /// module needs (DECISIONS.md R42): a positive integer, and nothing else
+    /// beside <c>ok</c>.
+    /// </summary>
+    private static int AssertAccepts(string answer)
+    {
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(answer);
+        System.Text.Json.JsonElement root = document.RootElement;
+        Assert.Equal(2, root.EnumerateObject().Count());
+        Assert.True(root.GetProperty("ok").GetBoolean(), answer);
+        int max = root.GetProperty("max_input_bytes").GetInt32();
+        Assert.True(max > 0, answer);
+        return max;
     }
 
     private static bool Traps(Func<string> call)
@@ -51,9 +67,24 @@ public class AbiTests
     public void InitWithNoRootsAndWithAnEmptyObjectAnswersOk()
     {
         using AprvInstance empty = new(AprvRuntime.Shared);
-        Assert.Equal("{\"ok\":true}", empty.Init(None));
+        AssertAccepts(empty.Init(None));
         using AprvInstance braces = new(AprvRuntime.Shared);
-        Assert.Equal("{\"ok\":true}", braces.Init(Encoding.UTF8.GetBytes("{}")));
+        AssertAccepts(braces.Init(Encoding.UTF8.GetBytes("{}")));
+    }
+
+    /// <summary>
+    /// A started instance holds the input length its own <c>init</c> answer
+    /// stated; before <c>init</c> it knows none and cuts nothing.
+    /// </summary>
+    [Fact]
+    public void AStartedInstanceHoldsTheInputLengthItsInitStated()
+    {
+        using AprvInstance raw = new(AprvRuntime.Shared);
+        Assert.Null(raw.MaxInputBytes);
+        int stated = AssertAccepts(raw.Init(None));
+        Assert.Null(raw.MaxInputBytes);
+        using AprvInstance started = Fresh(None);
+        Assert.Equal(stated, started.MaxInputBytes);
     }
 
     /// <summary>
@@ -104,7 +135,7 @@ public class AbiTests
         using AprvInstance instance = new(AprvRuntime.Shared);
         string refused = instance.Init(Encoding.UTF8.GetBytes("{not json"));
         Assert.Contains("\"ok\":false", refused, StringComparison.Ordinal);
-        Assert.Equal("{\"ok\":true}", instance.Init(None));
+        AssertAccepts(instance.Init(None));
     }
 
     [Fact]
@@ -173,7 +204,7 @@ public class AbiTests
         AprvInstance instance = new(shortRuntime);
         try
         {
-            Assert.Equal("{\"ok\":true}", instance.Init(JwsConfig));
+            instance.Start(JwsConfig);
             Assert.True(Traps(() => instance.VerifySignedData(Now, Jws)));
         }
         finally
@@ -223,9 +254,10 @@ public class AbiTests
 
     /// <summary>
     /// An input longer than the largest cap never reaches linear memory past
-    /// one byte over it, and the core, which decides every cap on the length,
-    /// answers exactly what it answers for that length: TOO_LARGE for a
-    /// receipt and a JWS, 21002 for an endpoint body.
+    /// the length <c>init</c> stated, one byte over the cap, and the core,
+    /// which decides every cap on the length, answers exactly what it answers
+    /// for that length: TOO_LARGE for a receipt and a JWS, 21002 for an
+    /// endpoint body.
     /// </summary>
     [Theory]
     [InlineData(4 * 1024 * 1024)]
@@ -233,29 +265,36 @@ public class AbiTests
     public void AnInputOverTheCapIsCutAndTheCoreAnswersTooLarge(int length)
     {
         using AprvInstance instance = Fresh(None);
+        int max = instance.MaxInputBytes!.Value;
+        Assert.True(max < length);
         long before = instance.MemoryBytes;
 
         string receipt = instance.VerifyReceipt(Now, Filled(length, 'A'));
         Assert.Contains("\"reason\":\"TOO_LARGE\"", receipt, StringComparison.Ordinal);
-        Assert.Equal(instance.VerifyReceipt(Now, Filled(AprvInstance.MaxLoweredInputBytes, 'A')), receipt);
+        Assert.Equal(instance.VerifyReceipt(Now, Filled(max, 'A')), receipt);
 
         string jws = instance.VerifySignedData(Now, Filled(length, 'e'));
         Assert.Contains("\"reason\":\"TOO_LARGE\"", jws, StringComparison.Ordinal);
 
         Assert.Equal("{\"status\":21002}", instance.VerifyReceiptEndpoint(1, Now, Filled(length, '{')));
 
-        Assert.True(instance.MemoryBytes < before + AprvInstance.MaxLoweredInputBytes + (2L * 1024 * 1024), "linear memory grew to " + instance.MemoryBytes);
+        Assert.True(instance.MemoryBytes < before + max + (2L * 1024 * 1024), "linear memory grew to " + instance.MemoryBytes);
     }
 
-    /// <summary>The cap itself, 3,145,728 bytes, is passed whole: the core reads it and does not say TOO_LARGE, and one byte more it does.</summary>
+    /// <summary>
+    /// The cap itself, one byte under the length <c>init</c> states (3,145,728
+    /// bytes today), is passed whole: the core reads it and does not say
+    /// TOO_LARGE, and one byte more it does.
+    /// </summary>
     [Fact]
     public void AnInputAtTheCapIsPassedWhole()
     {
         using AprvInstance instance = Fresh(None);
-        string atCap = instance.VerifyReceipt(Now, Filled(3_145_728, 'A'));
+        int max = instance.MaxInputBytes!.Value;
+        string atCap = instance.VerifyReceipt(Now, Filled(max - 1, 'A'));
         Assert.DoesNotContain("TOO_LARGE", atCap, StringComparison.Ordinal);
         Assert.Contains("\"verified\":false", atCap, StringComparison.Ordinal);
-        Assert.Contains("TOO_LARGE", instance.VerifyReceipt(Now, Filled(3_145_729, 'A')), StringComparison.Ordinal);
+        Assert.Contains("TOO_LARGE", instance.VerifyReceipt(Now, Filled(max, 'A')), StringComparison.Ordinal);
     }
 
     /// <summary>Through the public API: a receipt of 4 MiB is a TooLarge failure the core made, not the wrapper (no cause).</summary>

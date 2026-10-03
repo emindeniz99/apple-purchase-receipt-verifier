@@ -104,8 +104,12 @@ public class CultureTests : IDisposable
             Assert.Equal(reason, parsed);
         }
 
-        Assert.Equal(AppleEnvironment.Production, AppleEnvironments.FromReceiptType("ProductionVPP"));
-        Assert.Equal(AppleEnvironment.Sandbox, AppleEnvironments.FromJwsEnvironment("Sandbox"));
+        Assert.Equal(
+            AppleEnvironment.Production,
+            ModuleAnswers.ReadSignedData(SyntheticAnswers.VerifiedJws("{}", AppleEnvironment.Production)).Payload!.Environment);
+        Assert.Equal(
+            AppleEnvironment.Sandbox,
+            ModuleAnswers.ReadSignedData(SyntheticAnswers.VerifiedJws("{}", AppleEnvironment.Sandbox)).Payload!.Environment);
     }
 
     private static ReceiptPayload Read(string answer)
