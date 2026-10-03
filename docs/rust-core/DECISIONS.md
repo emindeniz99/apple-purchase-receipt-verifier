@@ -342,8 +342,14 @@ no release carried it. The reasons:
 The comparison that followed ran `HttpConn`, Apache HttpClient 5.6.4 and
 `java.net.http` against the same misbehaving servers and JVM-wide
 settings ([HTTP client options][httpopt]). It found six gaps in
-`HttpConn`'s own lines and no JVM-wide state left once they are closed.
-The engine keeps `HttpConn`, hardened:
+`HttpConn`'s own lines. Once they are closed, no JVM-wide proxy, default
+TLS context, `Authenticator` or logging setting reaches the engine. Some
+JVM-wide state still does: the security provider order
+(`SSLContext.getInstance("TLS")` takes the first provider that offers
+it), the `jdk.tls.*` properties, `ssl.TrustManagerFactory.algorithm`, a
+factory passed to `Socket.setSocketImplFactory`, and the
+`javax.net.ssl.trustStore` properties, through which a caller chooses
+the roots. The engine keeps `HttpConn`, hardened:
 
 - The socket is opened with `Proxy.NO_PROXY`, so no `ProxySelector` or
   `socksProxyHost` routes it.
@@ -351,9 +357,12 @@ The engine keeps `HttpConn`, hardened:
   64 MiB, or by a `Transfer-Encoding` of exactly `chunked`, once. Both
   together, any other coding, a second length, and whitespace before a
   header's colon or at a line's start are refused (RFC 9112 §5.1, §6.3).
+  A chunk size is hex digits only, and a line that does not end in CRLF
+  is refused (§2.2, §7.1).
 - TLS comes from an `SSLContext` built for each connection over the
   JVM's default trust managers: `javax.net.ssl.trustStore` with its type
-  and password, else `cacerts`. `SSLContext.setDefault` and the
+  and password, else the JDK's `lib/security/jssecacerts`, else its
+  `lib/security/cacerts`. `SSLContext.setDefault` and the
   `ssl.SocketFactory.provider` security property do not reach it, so
   other code that installs a trust-all default cannot make the engine
   accept a forged server. The host name is checked inside the handshake
@@ -364,8 +373,14 @@ The engine keeps `HttpConn`, hardened:
   is sent. A caller who needs either would need a `ServerSource.url`
   overload that takes an `SSLContext`, which does not exist. The owner
   may still choose to follow `setDefault` instead; that change is a
-  commit of its own on the pull request.
-- The `Host` header puts an IPv6 literal in brackets (RFC 9112 §3.2).
+  commit of its own on the pull request. The context is not cached, so
+  a change to `javax.net.ssl.trustStore` reaches the next connection
+  (the tests rely on that). Building one costs at most about 0.05 ms
+  warm and 1.2 ms on first use on JDK 21, and a new pooled connection
+  cannot resume an earlier one's TLS session, so each pays a full
+  handshake.
+- The `Host` header puts an IPv6 literal in brackets and leaves out its
+  zone id (RFC 9112 §3.2, RFC 6874 §4).
 
 What `HttpConn` already did right stays: one write per request with
 `TCP_NODELAY`, no `Authenticator`, no redirect, no resend inside an
@@ -375,8 +390,11 @@ headers. Two limits stay open, as for every client compared: nothing
 bounds a call's total time, so a body that arrives a byte at a time
 under the 60 s read timeout is waited for; and a declared length is
 allocated (up to 64 MiB) before its first byte arrives.
-`ServerHttpTest` checks each property on JDK 21 and Java 8; with the
-hardening reverted, its six tests for the gaps fail.
+`ServerHttpTest` checks each framing, proxy and TLS property against
+servers that misbehave on purpose, and `HttpConnTest` checks the `Host`
+header, on JDK 21 and Java 8. With the hardening reverted, the six tests
+for the gaps the comparison found fail, and so do the tests for the
+checks added after it.
 
 ---
 
