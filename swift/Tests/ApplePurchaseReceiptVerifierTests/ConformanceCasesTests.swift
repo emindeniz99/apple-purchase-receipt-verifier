@@ -7,7 +7,8 @@ import XCTest
 // WasmKit behind the 0.7 API. The adapter below
 // knows nothing about any individual case: it loads the file, resolves
 // fixture ids to bytes, builds a Verifier from the generic config, dispatches
-// on "operation", and evaluates "expected" against the result. A vector that
+// on "operation", and evaluates "expected" against the result, an ok case's
+// "environment" included. A vector that
 // disagrees with the library is a bug report against one of the two; it is
 // never something to special-case here.
 
@@ -439,6 +440,7 @@ final class ConformanceCasesTests: XCTestCase {
                 XCTAssertTrue(sameJsonValue(parsed, want), "\(id): toJson value\n  want: \(wantJson)\n  got:  \(json)")
             }
             try assertFieldsAndLengths(parsed, expected: expected, id: id)
+            try assertEnvironment(payload.environment, expected: expected, id: id)
         } else if status == "error" {
             try assertError(result.failure, expected: expected, id: id)
         } else {
@@ -465,11 +467,27 @@ final class ConformanceCasesTests: XCTestCase {
                 return
             }
             try assertFieldsAndLengths(parsed, expected: expected, id: id)
+            try assertEnvironment(payload.environment, expected: expected, id: id)
         } else if status == "error" {
             try assertError(result.failure, expected: expected, id: id)
         } else {
             XCTFail("\(id): unrecognised expected shape")
         }
+    }
+
+    /// The environment the verifier states beside an ok case's payload
+    /// (docs/rust-core/DECISIONS.md R42): `Production`, `Sandbox` or null,
+    /// stated by every ok case of verifyReceipt and verifySignedData.
+    private func assertEnvironment(_ got: Environment?, expected: [String: Any], id: String) throws {
+        guard let want = expected["environment"] else { throw HarnessError("\(id): an ok case states no environment") }
+        if want is NSNull {
+            XCTAssertNil(got, "\(id): environment")
+            return
+        }
+        guard let name = want as? String, let environment = Environment(rawValue: name) else {
+            throw HarnessError("\(id): expected.environment must be Production, Sandbox or null")
+        }
+        XCTAssertEqual(got, environment, "\(id): environment")
     }
 
     private func assertEndpoint(_ response: String, expected: [String: Any], id: String) throws {

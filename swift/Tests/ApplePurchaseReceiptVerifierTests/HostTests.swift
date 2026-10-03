@@ -19,8 +19,18 @@ final class AbiTests: XCTestCase {
 
     func initialized(_ config: [UInt8] = Config.initJson([])) throws -> Guest {
         let guest = try Guest(module())
-        XCTAssertEqual(try guest.initialize(config), #"{"ok":true}"#)
+        try guest.start(config)
         return guest
+    }
+
+    /// An accepting init answer states the most bytes of one input the
+    /// module needs (docs/rust-core/DECISIONS.md R42): a positive integer,
+    /// and nothing else beside `ok`.
+    func assertAccepts(_ answer: String, _ what: String = "", file: StaticString = #filePath, line: UInt = #line) {
+        let reply = (try? JSONSerialization.jsonObject(with: Data(answer.utf8))) as? [String: Any]
+        XCTAssertEqual(reply.map { Set($0.keys) }, ["ok", "max_input_bytes"], "\(what): \(answer)", file: file, line: line)
+        XCTAssertEqual(reply?["ok"] as? Bool, true, "\(what): \(answer)", file: file, line: line)
+        XCTAssertGreaterThan(reply?["max_input_bytes"] as? Int ?? 0, 0, "\(what): \(answer)", file: file, line: line)
     }
 
     func assertTraps(_ body: () throws -> String, _ what: String) {
@@ -61,10 +71,23 @@ final class AbiTests: XCTestCase {
     }
 
     func testInitWithNoRootsAcceptsAndASecondInitTraps() throws {
-        let guest = try initialized()
+        let guest = try Guest(module())
+        assertAccepts(try guest.initialize(Config.initJson([])), "no roots")
         assertTraps({ try guest.initialize(Config.initJson([])) }, "a second init")
         let empty = try Guest(module())
-        XCTAssertEqual(try empty.initialize([]), #"{"ok":true}"#, "an empty configuration is the built-in roots too")
+        assertAccepts(try empty.initialize([]), "an empty configuration is the built-in roots too")
+    }
+
+    /// A started instance holds the input length its own init answer stated;
+    /// before init it knows none and cuts nothing.
+    func testAStartedInstanceHoldsTheInputLengthItsInitStated() throws {
+        let raw = try Guest(module())
+        XCTAssertNil(raw.maxInputBytes)
+        let answer = try raw.initialize(Config.initJson([]))
+        let reply = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(answer.utf8)) as? [String: Any])
+        let stated = try XCTUnwrap(reply["max_input_bytes"] as? Int)
+        XCTAssertNil(raw.maxInputBytes, "initialize(_:) only calls the export")
+        XCTAssertEqual(try initialized().maxInputBytes, stated)
     }
 
     func testAVerifyBeforeInitTraps() throws {
@@ -76,7 +99,7 @@ final class AbiTests: XCTestCase {
         let guest = try Guest(module())
         let refused = try guest.initialize(Array("{not json".utf8))
         XCTAssertTrue(refused.contains(#""ok":false"#), refused)
-        XCTAssertEqual(try guest.initialize(Config.initJson([])), #"{"ok":true}"#)
+        assertAccepts(try guest.initialize(Config.initJson([])), "after a refusal")
     }
 
     /// init's argument, byte for byte, as the other ports write it: padded
@@ -119,7 +142,7 @@ final class AbiTests: XCTestCase {
     /// otherwise. ECDSA verification draws random bytes, so a JWS reaches it.
     func testRandomGetAnsweringTheWrongLengthTraps() throws {
         let guest = try Guest(module(), random: { n in [UInt8](repeating: 7, count: max(n - 1, 0)) })
-        XCTAssertEqual(try guest.initialize(Config.initJson([try TestFixtures.bytes(TestFixtures.jwsRoot)])), #"{"ok":true}"#)
+        try guest.start(Config.initJson([try TestFixtures.bytes(TestFixtures.jwsRoot)]))
         assertTraps(
             { try guest.verifySignedData(now: Self.now, Array(try TestFixtures.text(TestFixtures.jws).utf8)) }, "short random-get")
     }
@@ -138,14 +161,17 @@ final class AbiTests: XCTestCase {
         assertTraps({ try a.verifyReceipt(now: Self.now, g5) }, "the discarded instance")
     }
 
-    /// An input over the core's largest cap is cut to one byte over it
-    /// before it is copied in: the core still answers TOO_LARGE (21002 at the
-    /// endpoint), byte for byte what it answers for exactly one byte over,
-    /// and the guest's memory never has to hold the whole input.
+    /// An input over the core's largest cap is cut to the length init
+    /// stated, one byte over it, before it is copied in: the core still
+    /// answers TOO_LARGE (21002 at the endpoint), byte for byte what it
+    /// answers for exactly one byte over, and the guest's memory never has to
+    /// hold the whole input.
     func testAnInputOverTheCapIsCutAndTheCoreStillRefusesIt() throws {
         let huge = [UInt8](repeating: 0x41, count: 4 << 20)
-        let oneOver = [UInt8](repeating: 0x41, count: Abi.maxInputBytes)
         let receipt = try initialized()
+        let maxInputBytes = try XCTUnwrap(receipt.maxInputBytes)
+        XCTAssertLessThan(maxInputBytes, huge.count)
+        let oneOver = [UInt8](repeating: 0x41, count: maxInputBytes)
         let answer = try receipt.verifyReceipt(now: Self.now, huge)
         XCTAssertEqual(answer, try initialized().verifyReceipt(now: Self.now, oneOver))
         XCTAssertTrue(answer.contains(#""reason":"TOO_LARGE""#), answer)
@@ -156,7 +182,7 @@ final class AbiTests: XCTestCase {
         let body = Array(#"{"receipt-data":""#.utf8) + huge + Array(#""}"#.utf8)
         let endpoint = try initialized().verifyReceiptEndpoint(env: 1, now: Self.now, body)
         XCTAssertEqual(
-            endpoint, try initialized().verifyReceiptEndpoint(env: 1, now: Self.now, Array(body.prefix(Abi.maxInputBytes))))
+            endpoint, try initialized().verifyReceiptEndpoint(env: 1, now: Self.now, Array(body.prefix(maxInputBytes))))
         XCTAssertEqual(endpoint, #"{"status":21002}"#)
         let jws = try initialized().verifySignedData(now: Self.now, huge)
         XCTAssertTrue(jws.contains(#""reason":"TOO_LARGE""#), jws)
@@ -168,15 +194,17 @@ final class AbiTests: XCTestCase {
         XCTAssertEqual(verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: text), #"{"status":21002}"#)
     }
 
-    /// An input of exactly the cap, 3,145,728 bytes, passes whole: the core
-    /// answers about its content, not its size.
+    /// An input of exactly the cap, one byte under the length init states
+    /// (3,145,728 bytes today), passes whole: the core answers about its
+    /// content, not its size.
     func testAnInputAtTheCapIsPassedWhole() throws {
-        let atCap = String(repeating: "A", count: Abi.maxInputBytes - 1)
+        let guest = try initialized()
+        let cap = try XCTUnwrap(guest.maxInputBytes) - 1
+        let atCap = String(repeating: "A", count: cap)
         let failure = try XCTUnwrap(Verifier(config: .defaults()).verifyReceipt(base64: atCap).failure)
         XCTAssertNotEqual(failure.reason, .tooLarge, failure.message)
-        let guest = try initialized()
         _ = try guest.verifyReceipt(now: Self.now, Array(atCap.utf8))
-        XCTAssertGreaterThanOrEqual(guest.memoryBytes, Abi.maxInputBytes - 1, "the whole input reached linear memory")
+        XCTAssertGreaterThanOrEqual(guest.memoryBytes, cap, "the whole input reached linear memory")
     }
 
     /// Many calls on one instance leave its linear memory the same size:
@@ -224,8 +252,10 @@ final class FacadeTests: XCTestCase {
     // MARK: the six outcomes (ARCHITECTURE.md §4)
 
     func testVerifiedIsThePayload() throws {
-        let result = try verifier().verifyReceipt(base64: #"{"verified":true,"payload":\#(Self.receiptJson)}"#)
+        let result = try verifier().verifyReceipt(
+            base64: #"{"verified":true,"payload":\#(Self.receiptJson),"environment":"Sandbox"}"#)
         let payload = try XCTUnwrap(result.payload, "\(String(describing: result.failure))")
+        XCTAssertEqual(payload.environment, .sandbox)
         XCTAssertEqual(payload.appItemId, 123_456_789_012_345_678)
         XCTAssertEqual(payload.downloadId, -7)
         XCTAssertEqual(payload.bundleIdBytes, [0x0C, 0x01, 0x62])
@@ -236,8 +266,12 @@ final class FacadeTests: XCTestCase {
         let same = try JSONSerialization.jsonObject(with: Data(payload.toJson().utf8))
         XCTAssertTrue(sameJsonValue(same, try JSONSerialization.jsonObject(with: Data(Self.receiptJson.utf8))), payload.toJson())
 
-        let jws = try verifier().verifySignedData(jws: #"{"verified":true,"payload":"{\"a\":1,\"a\":2}"}"#)
+        let jws = try verifier().verifySignedData(jws: #"{"verified":true,"payload":"{\"a\":1,\"a\":2}","environment":null}"#)
         XCTAssertEqual(jws.payload?.json, #"{"a":1,"a":2}"#, "the signed payload, exactly")
+        XCTAssertNotNil(jws.payload)
+        XCTAssertNil(jws.payload?.environment)
+        let production = try verifier().verifySignedData(jws: #"{"verified":true,"payload":"{}","environment":"Production"}"#)
+        XCTAssertEqual(production.payload?.environment, .production)
     }
 
     func testAVerificationFailureIsTheModulesReason() throws {
@@ -305,7 +339,7 @@ final class FacadeTests: XCTestCase {
         XCTAssertEqual(failure.message, "the verification module trapped")
         guard case HostError.trap = try XCTUnwrap(failure.cause as? HostError) else { return XCTFail("\(failure)") }
         XCTAssertEqual(verifier.pool.idleCount, 0, "the trapped instance is not kept")
-        XCTAssertEqual(verifier.verifySignedData(jws: #"{"verified":true,"payload":"{}"}"#).payload?.json, "{}")
+        XCTAssertEqual(verifier.verifySignedData(jws: #"{"verified":true,"payload":"{}","environment":null}"#).payload?.json, "{}")
         XCTAssertEqual(verifier.pool.idleCount, 1)
         XCTAssertEqual(verifier.verifyReceiptEndpoint(environment: .production, requestJson: "!"), #"{"status":21009}"#)
     }
@@ -325,7 +359,7 @@ final class FacadeTests: XCTestCase {
             XCTAssertEqual(verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: input), #"{"status":21009}"#)
         }
         XCTAssertEqual(verifier.pool.idleCount, 0)
-        XCTAssertTrue(verifier.verifySignedData(jws: #"{"verified":true,"payload":"{}"}"#).verified)
+        XCTAssertTrue(verifier.verifySignedData(jws: #"{"verified":true,"payload":"{}","environment":null}"#).verified)
     }
 
     /// An answer not in the wire's shape is INTERNAL_ERROR: this package
@@ -337,6 +371,12 @@ final class FacadeTests: XCTestCase {
             #"{"verified":false,"reason":"NOT_A_REASON","message":"m"}"#,
             #"{"verified":true,"payload":"{}","reason":"MALFORMED"}"#, #"{"verified":false,"reason":"MALFORMED","payload":"{}"}"#,
             #"{"verified":true,"payload":"{}","extra":1}"#, #"{"verified":true,"payload":{}}"#,
+            // The environment: present on a verified answer, one of the
+            // three values, and absent from a failed one.
+            #"{"verified":true,"payload":"{}"}"#, #"{"verified":true,"payload":"{}","environment":"Xcode"}"#,
+            #"{"verified":true,"payload":"{}","environment":"PRODUCTION"}"#,
+            #"{"verified":true,"payload":"{}","environment":1}"#,
+            #"{"verified":false,"reason":"MALFORMED","message":"m","environment":null}"#,
         ] {
             let failure = verifier.verifySignedData(jws: answer).failure
             XCTAssertEqual(failure?.reason, .internalError, answer)
@@ -346,7 +386,7 @@ final class FacadeTests: XCTestCase {
             #"{"app_item_id":1}"#, #"{"download_id":"x"}"#, #"{"sha1_hash":"*"}"#, #"{"unknown_attributes":{"x":[]}}"#,
             #"{"surprise":null}"#,
         ] {
-            let failure = verifier.verifyReceipt(base64: #"{"verified":true,"payload":\#(payload)}"#).failure
+            let failure = verifier.verifyReceipt(base64: #"{"verified":true,"payload":\#(payload),"environment":null}"#).failure
             XCTAssertEqual(failure?.reason, .internalError, payload)
         }
         XCTAssertEqual(verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: "not json"), #"{"status":21009}"#)
@@ -360,7 +400,7 @@ final class FacadeTests: XCTestCase {
         let clock = CountingClock(1_735_689_600_000)
         let verifier = try verifier(clock: clock.read)
         _ = verifier.verifyReceipt(base64: "")
-        _ = verifier.verifySignedData(jws: #"{"verified":true,"payload":"{}"}"#)
+        _ = verifier.verifySignedData(jws: #"{"verified":true,"payload":"{}","environment":null}"#)
         _ = verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: "!")
         XCTAssertEqual(clock.reads, 3)
     }
@@ -387,13 +427,57 @@ final class FacadeTests: XCTestCase {
         XCTAssertEqual(TestFixtures.status(verifier.verifyReceiptEndpoint(environment: .production, requestJson: body)), 21007)
     }
 
+    // MARK: init's answer
+
+    /// An accepting init answer without max_input_bytes comes from a module
+    /// of another ABI version: the instance is refused as an unusable
+    /// answer, never used.
+    func testAnInitAnswerWithoutAnInputLengthIsUnusable() throws {
+        let pool = Pool(module: .success(try TestFixtures.double()), config: Array("old".utf8))
+        XCTAssertThrowsError(try pool.create()) { error in
+            guard case HostError.unusableAnswer(let export, let detail) = error else { return XCTFail("\(error)") }
+            XCTAssertEqual(export, "init")
+            XCTAssertTrue(detail.contains("max_input_bytes"), detail)
+        }
+        for answer in [
+            #"{"ok":true}"#, #"{"ok":true,"max_input_bytes":0}"#, #"{"ok":true,"max_input_bytes":-1}"#,
+            #"{"ok":true,"max_input_bytes":"3145729"}"#, #"{"ok":true,"max_input_bytes":1.5}"#,
+            #"{"ok":true,"max_input_bytes":null}"#, "not json",
+        ] {
+            XCTAssertThrowsError(try Wire.initAnswer(answer), answer) { error in
+                guard case HostError.unusableAnswer(let export, _) = error, export == "init" else {
+                    return XCTFail("\(answer): \(error)")
+                }
+            }
+        }
+        XCTAssertEqual(try Wire.initAnswer(#"{"ok":true,"max_input_bytes":3145729}"#), 3_145_729)
+        XCTAssertThrowsError(try Wire.initAnswer(#"{"ok":false,"message":"no"}"#)) { error in
+            guard case HostError.initRefused(let message) = error, message == "no" else { return XCTFail("\(error)") }
+        }
+    }
+
+    /// The input length is the module's: an instance cuts every input to
+    /// what its own init answer stated, here the double's 4 bytes, which the
+    /// double's echo makes visible.
+    func testEachInstanceCutsInputToTheLengthItsInitStated() throws {
+        let pool = Pool(module: .success(try TestFixtures.double()), config: Array("s".utf8))
+        let echoed = try pool.with { guest throws(HostError) in
+            try guest.verifySignedData(now: 0, guest.capped("abcdefgh".utf8))
+        }
+        XCTAssertEqual(echoed, "abcd")
+        let guest = try pool.create()
+        XCTAssertEqual(guest.maxInputBytes, 4)
+        XCTAssertEqual(try guest.verifyReceipt(now: 0, Array("abcdefgh".utf8)), "abcd")
+        XCTAssertEqual(try guest.verifyReceiptEndpoint(env: 1, now: 0, Array("abc".utf8)), "abc")
+    }
+
     // MARK: the pool
 
     /// An instance whose memory grew past the reuse limit is dropped after
     /// its call rather than kept for the next caller.
     func testAnInstanceThatGrewIsNotReused() throws {
         let verifier = try verifier()
-        XCTAssertTrue(verifier.verifySignedData(jws: #"{"verified":true,"payload":"{}"}"#).verified)
+        XCTAssertTrue(verifier.verifySignedData(jws: #"{"verified":true,"payload":"{}","environment":null}"#).verified)
         XCTAssertEqual(verifier.pool.idleCount, 1)
         let grown = verifier.verifySignedData(jws: #"+"#)
         XCTAssertEqual(grown.failure?.reason, .internalError, "'+' is not a verification result")

@@ -38,16 +38,14 @@ final class Pool: @unchecked Sendable {
         return try body(guest)
     }
 
-    /// A new instance after a successful init, or the error that stopped it:
+    /// A new instance after a successful init, holding the input length its
+    /// answer stated, or the error that stopped it:
     /// ``HostError/initRefused(message:)`` when the module refuses the
-    /// configuration.
+    /// configuration, ``HostError/unusableAnswer(export:detail:)`` when the
+    /// answer states no input length (a module of another ABI version).
     func create() throws(HostError) -> Guest {
         let guest = try Guest(module.get(), random: random)
-        let answer = try guest.initialize(config)
-        guard let reply = try? JSONSerialization.jsonObject(with: Data(answer.utf8)) as? [String: Any],
-            let ok = reply["ok"] as? Bool
-        else { throw .unusableAnswer(export: "init", detail: "the answer is not {\"ok\":...}") }
-        guard ok else { throw .initRefused(message: reply["message"] as? String ?? "") }
+        try guest.start(config)
         return guest
     }
 

@@ -6,6 +6,15 @@
 /// build one by hand in their own tests.
 public struct JsonPayload: Sendable, Equatable {
     public let json: String
+    /// The environment the verifier read from the payload
+    /// (docs/rust-core/DECISIONS.md R42): the first of the top-level
+    /// `environment` claim, a notification's `data.environment` and a summary
+    /// notification's `summary.environment` that is present, `nil` when that
+    /// one names neither environment (`Xcode`, `LocalTesting`) or none is.
+    public let environment: Environment?
 
-    public init(json: String) { self.json = json }
+    public init(json: String, environment: Environment?) {
+        self.json = json
+        self.environment = environment
+    }
 }
