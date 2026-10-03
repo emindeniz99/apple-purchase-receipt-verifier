@@ -307,6 +307,31 @@ class ServerHttpTest {
     }
 
     /**
+     * A header line that starts with whitespace is an obsolete line fold
+     * (RFC 9112 §5.2): read as its own field it would frame the body by a
+     * Content-Length that a proxy in between reads as part of {@code X}.
+     */
+    @Test
+    void whitespaceAtTheStartOfAHeaderLineIsRefused() throws Exception {
+        try (RawServer server = new RawServer("HTTP/1.1 200 OK\r\nX: a\r\n Content-Length: 2\r\n\r\n{}")) {
+            assertThrows(IOException.class, () -> get(server.port(), false, 5_000));
+        }
+    }
+
+    /**
+     * Two Transfer-Encoding lines are one list of codings, {@code chunked,
+     * chunked} (RFC 9110 §5.3): chunked applied twice, which the
+     * one-line form above refuses, must be refused when split as well.
+     */
+    @Test
+    void aRepeatedTransferEncodingLineIsRefused() throws Exception {
+        try (RawServer server = new RawServer("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n"
+                + "Transfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n")) {
+            assertThrows(IOException.class, () -> get(server.port(), false, 5_000));
+        }
+    }
+
+    /**
      * A message with both Transfer-Encoding and Content-Length "ought to be
      * handled as an error", and the connection must not be reused
      * (RFC 9112 §6.3).
