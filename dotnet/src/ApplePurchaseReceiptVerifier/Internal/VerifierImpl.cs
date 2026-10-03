@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
+using System.Text.Json;
 
 namespace ApplePurchaseReceiptVerifier.Internal
 {
@@ -72,19 +75,27 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// <summary>The <c>init</c> configuration: <c>{}</c> for the module's built-in roots, else each root's DER as base64.</summary>
         internal static byte[] ConfigJson(Config config)
         {
-            System.Collections.Generic.IReadOnlyList<byte[]>? roots = config.RootDer;
-            if (roots is null)
+            using (MemoryStream json = new MemoryStream())
             {
-                return Utf8.GetBytes("{}");
-            }
+                using (Utf8JsonWriter writer = new Utf8JsonWriter(json))
+                {
+                    writer.WriteStartObject();
+                    if (config.RootDer is IReadOnlyList<byte[]> roots)
+                    {
+                        writer.WriteStartArray("roots");
+                        foreach (byte[] der in roots)
+                        {
+                            writer.WriteBase64StringValue(der);
+                        }
 
-            StringBuilder json = new StringBuilder("{\"roots\":[");
-            for (int i = 0; i < roots.Count; i++)
-            {
-                json.Append(i == 0 ? "\"" : ",\"").Append(Convert.ToBase64String(roots[i])).Append('"');
-            }
+                        writer.WriteEndArray();
+                    }
 
-            return Utf8.GetBytes(json.Append("]}").ToString());
+                    writer.WriteEndObject();
+                }
+
+                return json.ToArray();
+            }
         }
 
         private TResult Run<TResult>(
