@@ -71,8 +71,13 @@ class WireTest {
      */
     @Test
     void aVerifiedAnswerWithoutAnEnvironmentIsAModuleFailure() {
-        for (String environment : new String[] {"", ",\"environment\":\"sandbox\"", ",\"environment\":\"Xcode\"",
-            ",\"environment\":1", ",\"environment\":\"Sandbox\",\"environment\":null"}) {
+        for (String environment : new String[] {
+            "",
+            ",\"environment\":\"sandbox\"",
+            ",\"environment\":\"Xcode\"",
+            ",\"environment\":1",
+            ",\"environment\":\"Sandbox\",\"environment\":null"
+        }) {
             String answer = "{\"verified\":true,\"payload\":\"{}\"" + environment + "}";
             assertThrows(GuestFailure.class, () -> Wire.signedDataAnswer(answer), answer);
         }

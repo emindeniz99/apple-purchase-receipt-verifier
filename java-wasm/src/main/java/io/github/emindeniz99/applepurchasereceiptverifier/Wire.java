@@ -74,8 +74,7 @@ final class Wire {
     static VerificationResult<ReceiptPayload> receiptAnswer(String answer) {
         Map<String, Object> object = object(parse(answer), "verify-receipt answer");
         if (verified(object, "verify-receipt answer")) {
-            return VerificationResult.of(
-                    receipt(object(object.get("payload"), "payload"), environment(object)));
+            return VerificationResult.of(receipt(object(object.get("payload"), "payload"), environment(object)));
         }
         return VerificationResult.failed(failure(object, "verify-receipt answer"));
     }

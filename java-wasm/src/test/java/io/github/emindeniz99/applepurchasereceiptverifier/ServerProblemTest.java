@@ -247,14 +247,19 @@ class ServerProblemTest {
         answers.put("/v1/receipt/verify", new String[] {
             "413", "{\"verified\":false,\"reason\":\"TOO_LARGE\",\"message\":\"m\"}", "application/json"
         });
-        assertEquals(Reason.TOO_LARGE, verifier.verifyReceipt(repeat('A', 100)).failure().reason());
-        assertEquals(Reason.TOO_LARGE, verifier.verifyReceipt(repeat('A', 9)).failure().reason());
+        assertEquals(
+                Reason.TOO_LARGE,
+                verifier.verifyReceipt(repeat('A', 100)).failure().reason());
+        assertEquals(
+                Reason.TOO_LARGE,
+                verifier.verifyReceipt(repeat('A', 9)).failure().reason());
         assertEquals(Arrays.asList(10, 9), bodyLengths);
         for (String limits : new String[] {
             "", ",\"limits\":{}", ",\"limits\":{\"max_input_bytes\":0}", ",\"limits\":{\"max_input_bytes\":\"10\"}"
         }) {
             infoLimits = limits;
-            IllegalStateException refused = assertThrows(IllegalStateException.class, () -> verifier(Config.defaults()));
+            IllegalStateException refused =
+                    assertThrows(IllegalStateException.class, () -> verifier(Config.defaults()));
             assertTrue(refused.getMessage().contains("max_input_bytes"), refused.getMessage());
         }
     }

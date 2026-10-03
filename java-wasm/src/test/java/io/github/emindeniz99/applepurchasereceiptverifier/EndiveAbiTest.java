@@ -31,6 +31,7 @@ class EndiveAbiTest {
      * (DECISIONS.md R42).
      */
     private static final String INIT_OK = "{\"ok\":true,\"max_input_bytes\":3145729}";
+
     private static final byte[] DEFAULT_ROOTS = "{\"roots\":[]}".getBytes(StandardCharsets.US_ASCII);
     private static final long NOW = System.currentTimeMillis();
 
