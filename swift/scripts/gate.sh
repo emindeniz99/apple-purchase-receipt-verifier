@@ -3,14 +3,18 @@
 #
 #   swift/scripts/gate.sh DIR [--pin] [--bench]
 #
-# DIR has the G1 layout: aprv.wasm, calls/<corpus>.pinned.jsonl (round 13's
-# calls format, every clock pinned), rows/module-<corpus>.jsonl (the
-# module's own answers through the trap host, the reference rows) and
+# DIR has the corpus archive's layout: aprv.wasm, aprv.component.wasm and
+# aprv.wit with the SHA256SUMS over them, calls/<corpus>.pinned.jsonl
+# (round 13's calls format, every clock pinned), rows/module-<corpus>.jsonl
+# (the module's own answers through the trap host, the reference rows) and
 # same.py (the byte-for-byte row comparison).
 #
 #  1. checks DIR/aprv.wasm against the committed aprv.wasm.sha256 (--pin
-#     rewrites the pin to the module's hash instead; commit that change)
-#     and copies the module to the package's resource path (gitignored);
+#     accepts a module the pin does not name), then
+#     .github/scripts/place-module.sh checks DIR against its SHA256SUMS and
+#     copies the module over the package's committed resource, rewriting the
+#     pin in this checkout. Both are for this run only and never committed:
+#     the release tooling refreshes the module and its pin;
 #  2. builds the package and its tests, optimised (WasmKit interprets, and
 #     a debug build is far too slow for the suite), and runs the whole
 #     suite, every case in fixtures/cases.json included;
@@ -48,16 +52,12 @@ reap() { pkill -f "$SCRATCH_PATH/.*PackageTests[.]xctest" 2>/dev/null || true; }
 
 echo "== 1. module"
 got=$(sha256sum "$DIR/aprv.wasm" | cut -c1-64)
-if [ "$PIN" = true ]; then
-  printf '%s  aprv.wasm\n' "$got" > "$RES/aprv.wasm.sha256"
-  echo "pinned $got in aprv.wasm.sha256"
-fi
 want=$(cut -c1-64 "$RES/aprv.wasm.sha256")
-if [ "$got" != "$want" ]; then
+if [ "$PIN" != true ] && [ "$got" != "$want" ]; then
   echo "FAIL: $DIR/aprv.wasm is $got, the pin is $want (rerun with --pin)"
   exit 1
 fi
-cp "$DIR/aprv.wasm" "$RES/aprv.wasm"
+bash "$ROOT/.github/scripts/place-module.sh" "$DIR" swift || exit 1
 echo "aprv.wasm $got, $(wc -c < "$RES/aprv.wasm") bytes, in place"
 
 echo "== 2. build and the whole suite"
