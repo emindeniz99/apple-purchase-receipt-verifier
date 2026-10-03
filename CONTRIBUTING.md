@@ -449,12 +449,15 @@ at fixed epoch instants so nothing depends on generation time:
   and a top-level entry or in-app purchase that cannot be read, each under
   a trusted, a foreign or an expired chain as the vector needs, with their
   own trusted and expired roots.
-- `ReceiptBase64CapFixture` — the receipt string at the base64 receipt cap,
-  `fixtures/limits/receipt-b64-at-cap.txt`: the canonical base64 of a
-  genuinely signed receipt of 2,359,296 bytes, which is exactly 3,145,728
-  characters. It takes `fixtures` rather than `fixtures/generated` as its
-  argument, and `node tools/generate-limit-fixtures.mjs` must run after it,
-  because the over-cap twin is built from its output.
+- `ReceiptBase64CapFixture` — the receipt string at the base64 receipt cap:
+  the canonical base64 of a genuinely signed receipt of 2,359,296 bytes,
+  which is exactly 3,145,728 characters. It writes the string and its root
+  to `fixtures/generated-0.7/receipt-b64-at-cap.txt` and
+  `receipt-b64-cap-root.der`, the pair the cases read, and the string again
+  to `fixtures/limits/receipt-b64-at-cap.txt`. It takes `fixtures` rather
+  than `fixtures/generated` as its argument, and
+  `node tools/generate-limit-fixtures.mjs` must run after it, because the
+  over-cap twin is built from its output.
 
 The last eleven run as a `main`, not a `@Test`, so none of them costs the
 suite a permanently skipped test. All eleven regenerate the same way, only
