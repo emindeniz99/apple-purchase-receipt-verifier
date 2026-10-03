@@ -103,7 +103,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             string trimmed = recorded.Trim();
             int space = trimmed.IndexOfAny(new[] { ' ', '\t' });
             string expected = (space < 0 ? trimmed : trimmed.Substring(0, space)).ToLowerInvariant();
-            string actual = Hex(Sha256(wasm));
+            string actual = BitConverter.ToString(Sha256(wasm)).Replace("-", string.Empty).ToLowerInvariant();
             if (!string.Equals(expected, actual, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
@@ -131,17 +131,6 @@ namespace ApplePurchaseReceiptVerifier.Internal
             {
                 return sha.ComputeHash(data);
             }
-        }
-
-        private static string Hex(byte[] value)
-        {
-            StringBuilder builder = new StringBuilder(value.Length * 2);
-            foreach (byte b in value)
-            {
-                builder.Append(b.ToString("x2", CultureInfo.InvariantCulture));
-            }
-
-            return builder.ToString();
         }
 
         private static byte[] DrawRandom(int length)
