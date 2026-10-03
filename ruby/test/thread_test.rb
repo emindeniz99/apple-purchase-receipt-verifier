@@ -65,10 +65,15 @@ class ThreadTest < Minitest::Test
 
   # Every export runs without the GVL (`to_func(gvl: false)`), which is what
   # lets threads verify in parallel. The 1 MiB byte-floor receipt takes the
-  # module about 100 ms; a thread that sleeps a millisecond at a time keeps
-  # ticking through it. With the GVL held it would not tick until the call
-  # returned. (bench/threads.rb measures the rate this buys on real cores;
-  # this test does not depend on there being any.)
+  # module about 100 ms on an x86 runner and under 40 ms on an arm64 Mac; a
+  # thread that sleeps a millisecond at a time keeps ticking through it.
+  # With the GVL held it would not tick until the call returned, so any
+  # tick during the call is the proof. Two are asked for because a tick
+  # that was due as the call ended could land after it; a loaded macOS
+  # runner wakes a 1 ms sleeper every 5 to 10 ms, which made 4 ticks in a
+  # 37 ms call (CI, 2026-10-03), so the bar does not count milliseconds.
+  # (bench/threads.rb measures the rate this buys on real cores; this test
+  # does not depend on there being any.)
   def test_a_long_call_does_not_hold_the_gvl
     root = TestSupport.fixture_bytes("large-receipt-root")
     receipt = [TestSupport.fixture_bytes("receipt-byte-floor")].pack("m0")
@@ -88,7 +93,7 @@ class ThreadTest < Minitest::Test
 
     assert_includes answer, '"verified":true'
     assert_operator elapsed, :>, 0.02, "the call was too short to tell"
-    assert_operator during, :>=, 5, "the ticker made #{during} ticks in a #{(elapsed * 1000).round} ms call"
+    assert_operator during, :>=, 2, "the ticker made #{during} ticks in a #{(elapsed * 1000).round} ms call"
   end
 
   def test_a_call_cut_short_discards_its_instance
