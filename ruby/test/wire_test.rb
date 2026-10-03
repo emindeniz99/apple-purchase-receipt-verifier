@@ -9,7 +9,7 @@ class WireTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
   WIRE = Internals::Wire
 
-  def receipt_json(**overrides)
+  def receipt_json(environment: "Production", **overrides)
     payload = {
       "receipt_type" => "Production", "app_item_id" => "1", "bundle_id" => "com.example",
       "bundle_id_bytes" => "AQI=", "application_version" => "3", "opaque_value" => "",
@@ -17,7 +17,7 @@ class WireTest < Minitest::Test
       "version_external_identifier" => "0", "in_app" => [], "original_purchase_date_ms" => nil,
       "original_application_version" => nil, "expiration_date_ms" => nil, "unknown_attributes" => {}
     }.merge(overrides.transform_keys(&:to_s))
-    JSON.generate("verified" => true, "payload" => payload)
+    JSON.generate("verified" => true, "payload" => payload, "environment" => environment)
   end
 
   def refused(text)
@@ -81,16 +81,59 @@ class WireTest < Minitest::Test
 
   def test_a_signed_payload_is_the_string_exactly_as_signed
     signed = %({ "a" : 1e400,\n "b":"\\u00e9" })
-    text = JSON.generate("verified" => true, "payload" => signed)
+    text = JSON.generate("verified" => true, "payload" => signed, "environment" => nil)
     assert_equal signed, WIRE.signed_data_result(text).payload.json
   end
 
+  # The environment the module states beside the payload (DECISIONS.md R42),
+  # in this gem's Environment values; the payload's own JSON is unchanged.
+  def test_the_environment_beside_the_payload_is_read_into_the_payload
+    { "Production" => APRV::Environment::PRODUCTION, "Sandbox" => APRV::Environment::SANDBOX,
+      nil => nil }.each do |stated, environment|
+      receipt = WIRE.receipt_result(receipt_json(environment: stated)).payload
+      jws = WIRE.signed_data_result(JSON.generate("verified" => true, "payload" => "{}",
+                                                  "environment" => stated)).payload
+      [receipt, jws].each do |payload|
+        environment.nil? ? assert_nil(payload.environment) : assert_equal(environment, payload.environment)
+      end
+      refute JSON.parse(receipt.to_json).key?("environment"), "to_json writes the receipt's own fields"
+    end
+  end
+
+  # A verified answer without the member, or with a value that is not one of
+  # the three, comes from a module this wrapper cannot read.
+  def test_a_verified_answer_without_a_known_environment_is_refused
+    payload = JSON.parse(receipt_json)["payload"]
+    [{}, { "environment" => "PRODUCTION" }, { "environment" => "Xcode" }, { "environment" => "" },
+     { "environment" => 1 }, { "environment" => false }, { "environment" => {} }].each do |member|
+      refused(JSON.generate({ "verified" => true, "payload" => payload }.merge(member))) do |t|
+        WIRE.receipt_result(t)
+      end
+      refused(JSON.generate({ "verified" => true, "payload" => "{}" }.merge(member))) do |t|
+        WIRE.signed_data_result(t)
+      end
+    end
+  end
+
   def test_init_answers
-    assert_nil WIRE.init_status('{"ok":true}')
-    assert_equal "no", WIRE.init_status('{"ok":false,"message":"no"}')
-    assert_equal "the roots were refused", WIRE.init_status('{"ok":false}')
-    refused("{}") { |t| WIRE.init_status(t) }
-    refused("[]") { |t| WIRE.init_status(t) }
+    assert_equal 3_145_729, WIRE.init_answer('{"ok":true,"max_input_bytes":3145729}')
+    assert_equal 1, WIRE.init_answer('{"ok":true,"max_input_bytes":1}')
+    no = assert_raises(Internals::RootsRejected) { WIRE.init_answer('{"ok":false,"message":"no"}') }
+    assert_equal "no", no.message
+    unnamed = assert_raises(Internals::RootsRejected) { WIRE.init_answer('{"ok":false}') }
+    assert_equal "the roots were refused", unnamed.message
+    refused("{}") { |t| WIRE.init_answer(t) }
+    refused("[]") { |t| WIRE.init_answer(t) }
+  end
+
+  # `{"ok":true}` alone is the answer of a module older than this wrapper,
+  # which states no input length: a module failure, never a usable instance.
+  def test_an_accepting_init_answer_without_a_positive_integer_length_is_refused
+    ['{"ok":true}', '{"ok":true,"max_input_bytes":0}', '{"ok":true,"max_input_bytes":-1}',
+     '{"ok":true,"max_input_bytes":"3145729"}', '{"ok":true,"max_input_bytes":3145729.0}',
+     '{"ok":true,"max_input_bytes":1.5}', '{"ok":true,"max_input_bytes":null}'].each do |text|
+      refused(text) { |t| WIRE.init_answer(t) }
+    end
   end
 
   # An answer that is not the shape the contract says is the module

@@ -14,33 +14,53 @@ module ApplePurchaseReceiptVerifier
     DECIMAL = /\A-?\d+\z/
     UNKNOWN_KEY = /\A\d+\z/
     REASON_TOKEN = /\A[A-Z_]{1,40}\z/
+    # The top-level `environment` of a verified answer, to this gem's
+    # {Environment} values.
+    ENVIRONMENTS = {
+      "Production" => Environment::PRODUCTION, "Sandbox" => Environment::SANDBOX, nil => nil
+    }.freeze
 
     class << self
-      # `init`'s answer: `{"ok":true}` or `{"ok":false,"message":"..."}`.
+      # `init`'s answer: `{"ok":true,"max_input_bytes":N}` or
+      # `{"ok":false,"message":"..."}`. `N` is the most bytes of one input
+      # the module needs (docs/rust-core/DECISIONS.md R42): a longer input is
+      # cut to it, and the module answers TOO_LARGE for that. An accepting
+      # answer without a positive integer there comes from a module of
+      # another ABI version, and is a {TrapError} like any unusable answer.
       #
       # @param text [String]
-      # @return [String, nil] the refusal's message, or nil when it succeeded
-      def init_status(text)
+      # @return [Integer] `max_input_bytes`
+      # @raise [RootsRejected] the module refused the configuration
+      # @raise [TrapError] the answer is not an `init` answer
+      def init_answer(text)
         answer = object(text, "init")
-        return nil if answer["ok"] == true
-        return string(answer, "message") || "the roots were refused" if answer["ok"] == false
+        case answer["ok"]
+        when true
+          max = answer["max_input_bytes"]
+          return max if max.is_a?(Integer) && max.positive?
 
-        raise TrapError, "init answered neither ok:true nor ok:false"
+          raise TrapError, "init accepted the configuration but states no max_input_bytes: " \
+                           "the module is of another ABI version"
+        when false
+          raise RootsRejected, string(answer, "message") || "the roots were refused"
+        else
+          raise TrapError, "init answered neither ok:true nor ok:false"
+        end
       end
 
       # @param text [String] a `verify-receipt` answer
       # @return [VerificationResult] of {ReceiptPayload}
       def receipt_result(text)
-        result(text, "verify-receipt") { |payload| receipt_payload(payload) }
+        result(text, "verify-receipt") { |payload, environment| receipt_payload(payload, environment) }
       end
 
       # @param text [String] a `verify-signed-data` answer
       # @return [VerificationResult] of {JsonPayload}
       def signed_data_result(text)
-        result(text, "verify-signed-data") do |payload|
+        result(text, "verify-signed-data") do |payload, environment|
           raise TrapError, "verify-signed-data: the payload is not a string" unless payload.is_a?(String)
 
-          JsonPayload.new(json: payload.freeze)
+          JsonPayload.new(json: payload.freeze, environment: environment)
         end
       end
 
@@ -50,7 +70,7 @@ module ApplePurchaseReceiptVerifier
         answer = object(text, operation)
         case answer["verified"]
         when true
-          VerificationResult.ok(yield(answer["payload"]))
+          VerificationResult.ok(yield(answer["payload"], environment(answer, operation)))
         when false
           VerificationResult.error(failure(answer, operation))
         else
@@ -70,6 +90,17 @@ module ApplePurchaseReceiptVerifier
         Failure.new(reason: reason, message: required_string(answer, "message"), cause: nil)
       end
 
+      # A verified answer's `environment`: "Production", "Sandbox" or null,
+      # and present. Anything else is an answer this wrapper cannot read.
+      def environment(answer, operation)
+        raise TrapError, "#{operation}: the answer has no environment" unless answer.key?("environment")
+
+        value = answer["environment"]
+        return ENVIRONMENTS.fetch(value) if ENVIRONMENTS.key?(value)
+
+        raise TrapError, "#{operation}: the answer states an environment this wrapper does not know"
+      end
+
       def object(text, operation)
         parsed = JSON.parse(text)
         return parsed if parsed.is_a?(Hash)
@@ -79,7 +110,7 @@ module ApplePurchaseReceiptVerifier
         raise TrapError, "#{operation}: the answer is not JSON"
       end
 
-      def receipt_payload(payload)
+      def receipt_payload(payload, environment)
         raise TrapError, "verify-receipt: the payload is not an object" unless payload.is_a?(Hash)
 
         ReceiptPayload.new(
@@ -97,7 +128,8 @@ module ApplePurchaseReceiptVerifier
           original_purchase_date_ms: integer(payload, "original_purchase_date_ms"),
           original_application_version: string(payload, "original_application_version"),
           expiration_date_ms: integer(payload, "expiration_date_ms"),
-          unknown_attributes: unknown_attributes(payload)
+          unknown_attributes: unknown_attributes(payload),
+          environment: environment
         )
       end
 

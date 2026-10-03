@@ -48,6 +48,14 @@ class FacadeTest < Minitest::Test
     assert_equal({ 1799 => ["\x01\x02\x03".b] }, purchase.unknown_attributes)
   end
 
+  # The environment is the module's top-level answer beside the payload
+  # (DECISIONS.md R42), and not part of the payload's own JSON.
+  def test_the_payloads_state_the_environment_the_module_answered
+    assert_equal APRV::Environment::SANDBOX, verifier.verify_receipt("v").payload.environment
+    assert_nil verifier.verify_signed_data("v").payload.environment
+    refute JSON.parse(verifier.verify_receipt("v").payload.to_json).key?("environment")
+  end
+
   def test_to_json_writes_the_payload_the_module_answered_with
     payload = JSON.parse(FakeModule::ANSWERS.fetch(:receipt))["payload"]
     assert_equal payload, JSON.parse(verifier.verify_receipt("v").payload.to_json)
@@ -137,6 +145,24 @@ class FacadeTest < Minitest::Test
     error = assert_raises(APRV::AbiMismatchError) { verifier(runtime: other) }
     assert_includes error.message, "aprv:verifier/verify@0.1.0"
     assert_includes error.message, "aprv:verifier/verify@2.0.0#init"
+  end
+
+  # The input length is the module's, read from each instance's `init`
+  # answer (DECISIONS.md R42), never a number of the wrapper's own.
+  def test_each_instance_takes_the_input_length_its_init_answer_states
+    stated = Internals::Runtime.new(FakeModule.wat(init: '{"ok":true,"max_input_bytes":7}'))
+    assert_equal 7, Internals::Guest.new(stated, "{}").max_input_bytes
+    assert_equal 3_145_729, Internals::Guest.new(FAKE, "{}").max_input_bytes
+  end
+
+  # `{"ok":true}` alone is a module older than this wrapper: it states no
+  # input length, and the verifier is refused at create, never later.
+  def test_an_init_answer_without_an_input_length_fails_at_create
+    ['{"ok":true}', '{"ok":true,"max_input_bytes":0}', '{"ok":true,"max_input_bytes":"7"}'].each do |answer|
+      older = Internals::Runtime.new(FakeModule.wat(init: answer))
+      error = assert_raises(APRV::TrapError, answer) { verifier(runtime: older) }
+      assert_includes error.message, "max_input_bytes", answer
+    end
   end
 
   def test_a_module_that_imports_anything_but_random_get_is_refused
