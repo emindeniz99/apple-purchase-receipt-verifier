@@ -6,10 +6,13 @@
 #
 #   g1.sh G1_DIR OUT_DIR
 #
-# G1_DIR is lane A's bundle: aprv.wasm, calls/<corpus>.pinned.jsonl,
+# G1_DIR has the corpus archive's layout: aprv.wasm, aprv.component.wasm and
+# aprv.wit with the SHA256SUMS over them, calls/<corpus>.pinned.jsonl,
 # rows/module-<corpus>.jsonl. The module must hash to the pin committed in
-# src/main/wasm/aprv.wasm.sha256; it is copied to src/main/wasm/aprv.wasm,
-# which git ignores. Build tooling settings, not the library's:
+# src/main/wasm/aprv.wasm.sha256; .github/scripts/place-module.sh then checks
+# G1_DIR against its SHA256SUMS and puts the module in
+# src/main/wasm/aprv.wasm, which git ignores, for this run only (the release
+# tooling refreshes the pin). Build tooling settings, not the library's:
 #   ENDIVE_JVMS   java binaries for the extra 311-case runs (space-separated)
 #   APRV_SERVER   the static aprv-server binary, pinned in
 #                 src/main/server/SHA256SUMS; without it the server tests
@@ -29,7 +32,7 @@ if [ "$pin" != "$got" ]; then
   echo "g1: $g1/aprv.wasm hashes to $got, the pin is $pin" >&2
   exit 1
 fi
-cp "$g1/aprv.wasm" "$here/src/main/wasm/aprv.wasm"
+bash "$here/../.github/scripts/place-module.sh" "$g1" java
 status=0
 
 if [ -n "${APRV_SERVER:-}" ]; then
