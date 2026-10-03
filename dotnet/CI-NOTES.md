@@ -51,14 +51,16 @@ runs the whole re-check for a new module as one command.
 | `dotnet-trim` | Unchanged command. The sample was rewritten to read verdicts from the endpoint's `status` and passes here: `dotnet publish samples/TrimAotSmoke -c Release -warnaserror` (net9.0, self-contained, trimmed, `linux-x64`) then running it prints `trimmed smoke ok`. Wasmtime is trim-clean under `-warnaserror` in that configuration |
 | `dotnet-fuzz` | Unchanged: `./run.sh all 60`. It builds and runs against the new library; 15 s per target here gave 0 crashes and 0 invariant failures (json 173,909 runs, receipt 44,333, receipt-base64 51,220, jws 32,611, endpoint-json 75,738). SharpFuzz instruments .NET IL only, so the module is a black box to it; the README says so. `dotnet/bench` builds (its `decodeBase64` row has no successor: the package has no public decoder) |
 | `dotnet-format` | Unchanged: `dotnet format --verify-no-changes --severity info` is clean |
-| `one-implementation` | `--enforce dotnet` fails today with 14 hits, all of one kind: `X509Certificate2` in `Config.cs`, `AppleRootCertificates.cs` and `Internal/Certificates.cs`. That type is the public 0.7 API (`Config.Roots`, the `Config` constructor's `roots`, `AppleRootCertificates.Bundled`), which the lane brief keeps, and here it only carries DER in and out. Either the checker's `.NET X.509/CMS/ASN.1` pattern drops `X509Certificate2?` (the rest of it, `Pkcs`, `Formats.Asn1`, `AsnReader`, `SignedCms` and the signature APIs, has 0 hits), or the API changes in a breaking release; an owner call. Everything else the gate looks for is gone from `dotnet/src` |
+| `one-implementation` | `--enforce dotnet` fails today with 14 hits, all of one kind: `X509Certificate2` in `Config.cs`, `AppleRootCertificates.cs` and `Internal/Certificates.cs`. That type is the public 0.7 API (`Config.Roots`, `Config.Builder.Roots`, `AppleRootCertificates.Bundled`), which the lane brief keeps, and here it only carries DER in and out. Either the checker's `.NET X.509/CMS/ASN.1` pattern drops `X509Certificate2?` (the rest of it, `Pkcs`, `Formats.Asn1`, `AsnReader`, `SignedCms` and the signature APIs, has 0 hits), or the API changes in a breaking release; an owner call. Everything else the gate looks for is gone from `dotnet/src` |
 | new, optional `dotnet-corpus` | `dotnet build -c Release dotnet/tools/CorpusRun`, then `CorpusRun calls <calls.jsonl>` per corpus and the reference rows' `same.py`, wherever the corpora live (they are not in the repository). The result here was 6,179 of 6,179 rows byte for byte identical to the module's own rows, 0 traps (`scripts/corpus.sh`) |
 
 The post-publish smoke for NuGet should restore from nuget.org into an
-empty package folder on `ubuntu-latest` and run a receipt through
-`new Config()`; `docs/evidence/2026-09-29-dotnet-host/Consumer`
-is a ready consumer, and it printed `endpoint: "status":0` for the genuine
-G5 receipt from a local feed on .NET 10.
+empty package folder on `ubuntu-latest` and run a receipt through the
+default `Config`; `.github/smoke/nuget-smoke` is that consumer
+(`post-publish-smoke.yml`). Its 0.7-API ancestor,
+`docs/evidence/2026-09-29-dotnet-host/Consumer`, printed
+`endpoint: "status":0` for the genuine G5 receipt from a local feed on
+.NET 10.
 
 ## Platforms and the musl note
 
@@ -92,12 +94,12 @@ are gone: Apple's three roots live only in the module. `Bundled()` was
 removed rather than made to return an empty list, because an empty
 "Apple's roots" list would turn "Apple's roots plus mine" into "mine
 only" without a compile error; the README's "Upgrading from 0.7" table
-says what replaces it. `new Config().Roots` stays empty.
+says what replaces it. `Config.Defaults().Roots` stays empty.
 
 | Where | Change |
 |---|---|
 | `ci.yml` `dotnet-roots` | delete the job: no generator and no generated file are left. |
-| `one-implementation` | the .NET allowlist keeps `Config.cs` (`Config.Roots` and the `Config` constructor's `roots` are `X509Certificate2`, the 0.7 type; only `RawData` reaches the module) and `Internal/Certificates.cs` (rebuilds an `X509Certificate2` from the DER `Config.Roots` hands back; no chain, key or signature). The `AppleRootCertificates.cs` entry is stale and must go. |
+| `one-implementation` | the .NET allowlist keeps `Config.cs` (`Config.Roots` and `Config.Builder.Roots` are `X509Certificate2`, the 0.7 API; only `RawData` reaches the module) and `Internal/Certificates.cs` (rebuilds an `X509Certificate2` from the DER `Config.Roots` hands back; no chain, key or signature). The `AppleRootCertificates.cs` entry is stale and must go. |
 | `.github/smoke/nuget-smoke/Program.cs` | changed on this lane: the `AppleRootCertificates.Bundled().Count != 3` check is gone; the empty-`Roots` assertion and the genuine receipt stay. |
 | `release.yml` `publish-nuget` | nothing: the package never listed the roots as a packed file. |
 
