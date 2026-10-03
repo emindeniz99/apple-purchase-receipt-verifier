@@ -76,7 +76,9 @@ class Verifier:
             self._pool = _host.Pool(
                 runtime(), _wire.init_config(config.roots or ()), _pool_size(), _wire.init_accepted
             )
-            refusal = _wire.check_init(self._pool.init_answer)
+            # An answer the pool already read as accepting needs no second
+            # parse; any other is read for its refusal or its shape fault.
+            refusal = None if self._pool.accepted else _wire.check_init(self._pool.init_answer)
         except _host.AbiMismatchError:
             raise
         except (_host.Fault, _wire.ResultShapeError) as error:

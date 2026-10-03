@@ -283,9 +283,11 @@ class Pool:
         self._lock = threading.Lock()
         self._slots = threading.BoundedSemaphore(size)
         # Made now, so an ABI mismatch or a root the module refuses fails
-        # where the caller builds the Verifier. Keeps the module's answer.
+        # where the caller builds the Verifier. Keeps the module's answer
+        # and whether ``accepts`` read it as taking the roots.
         first, self.init_answer = self._create()
-        if first.max_input is not None:
+        self.accepted = first.max_input is not None
+        if self.accepted:
             self._free.append(first)
 
     def _create(self) -> "tuple[Instance, str]":
