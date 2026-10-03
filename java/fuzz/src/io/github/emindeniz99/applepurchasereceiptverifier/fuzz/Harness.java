@@ -38,12 +38,13 @@ final class Harness {
     private Harness() {}
 
     /**
-     * Apple's three roots plus the fixture receipt root, so that the
-     * generated fixtures and both public Apple receipts get past the chain
-     * check and the fuzzer can explore what lies beyond it. The generated
-     * receipts under fixtures/generated/ predate 0.7's WWDR marker check, so
-     * they now stop at INVALID_CERTIFICATE_PURPOSE; seed from a regenerated
-     * set to reach past it.
+     * Apple's three roots plus the fixture receipt root the re-minted 0.7
+     * receipts chain to, fixtures/generated-0.7/receipt-root.der, so that
+     * those fixtures and both public Apple receipts get past the chain check
+     * and the fuzzer can explore what lies beyond it. The receipts under
+     * fixtures/generated/ chain to the 0.6 root, which is not trusted here:
+     * they predate 0.7's WWDR marker check and stopped at
+     * INVALID_CERTIFICATE_PURPOSE even under that root.
      */
     static final Verifier RECEIPTS;
 
@@ -66,7 +67,7 @@ final class Harness {
 
     static {
         Path fixtures = fixturesDir();
-        X509Certificate receiptRoot = certificate(fixtures.resolve("generated/receipt-root.der"));
+        X509Certificate receiptRoot = certificate(fixtures.resolve("generated-0.7/receipt-root.der"));
         X509Certificate jwsRoot = certificate(fixtures.resolve("generated/jws-root.der"));
 
         Set<X509Certificate> receiptAnchors =
