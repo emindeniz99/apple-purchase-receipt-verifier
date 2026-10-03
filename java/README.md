@@ -836,8 +836,8 @@ from the verified payload and decide yourself (see
 The library is one package with no generated code, so copying
 `src/main/java` and `src/shared/java` into another build works. The second
 directory holds the config, result and payload classes the `-wasm`
-artifact compiles too; both are the same package. What a vendored copy has to carry
-with it:
+artifact compiles too; both are the same package. What a vendored copy has
+to carry with it:
 
 **Dependency floors.** `jackson-core` 2.16 or later: the JSON readers set
 `StreamReadConstraints` (`maxDocumentLength` and `maxNameLength` are 2.16

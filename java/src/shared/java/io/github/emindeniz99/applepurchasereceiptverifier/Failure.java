@@ -37,8 +37,10 @@ public final class Failure {
     /**
      * The exception behind the failure, when there is one, for logs. An
      * {@link Reason#INTERNAL_ERROR} this library raised itself (a runtime
-     * failure, an answer it could not read, a clock that threw) carries one;
-     * a reason decided from the input normally carries none. Match on
+     * failure, an answer it could not read, a clock that threw) carries one.
+     * In the main artifact an {@link Reason#UNREADABLE_PAYLOAD} carries the
+     * parser's exception; in the {@code -wasm} artifact the core decides
+     * every reason from the input and none of them carries one. Match on
      * {@link #reason()}, not on this.
      */
     public @Nullable Throwable cause() {
