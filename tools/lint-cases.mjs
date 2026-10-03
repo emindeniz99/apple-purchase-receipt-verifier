@@ -5,7 +5,7 @@
  *
  *   node tools/lint-cases.mjs
  *
- * Dependency-free by design (Node >= 20, no npm packages): it carries a small
+ * Dependency-free by design (the tools' Node floor, no npm packages): it carries a small
  * validator covering exactly the JSON Schema keywords fixtures/cases.schema.json
  * uses, plus the checks a schema cannot express. The port runners re-hash the
  * fixtures they use, but none validates the file against its schema or looks

@@ -16,7 +16,7 @@
 # reported as stale and does not fail the run. tools/differential/README.md
 # explains the classes.
 #
-# Needs node (20+), a JDK and Maven. TRAP_HOST overrides the host that runs
+# Needs node (the tools' floor, tools/package.json), a JDK and Maven. TRAP_HOST overrides the host that runs
 # the module (default tools/wasm-trap-host.mjs); RECORDED adds recorded-row
 # files, space-separated, to tools/differential/recorded.json.
 set -euo pipefail
