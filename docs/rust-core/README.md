@@ -149,7 +149,7 @@ gain, 11 to 17 MiB more RSS), Wasmi as the Python default
 | Q54, R28 and R30 (2026-09-28) | Floors, and platforms without a wasmtime-py wheel? | Java 8, Python 3.10, Swift 6.3 with macOS 15 and iOS 18, Ruby 3.3, .NET netstandard2.0 (tested on net8+), Node 20, Go as today, PHP 8.2. Where wasmtime-py has no wheel, install fails with a message that points to `aprv-server` or the C ABI |
 | Q47 (a), R29 (2026-09-28) | PHP? | One-shot `aprv` CLI per call by default, an optional server URL, and an `aprv install` command that downloads the binary from GitHub Releases against a pinned SHA-256 |
 | R31 (2026-09-28) | Server build? | Wasmtime 49 runtime-only with an embedded baseline `.cwasm`; static musl on Linux; musl's own malloc; `cli-fast-exit`. Exotic CPUs stay open |
-| R33 (2026-09-28), supersedes R8 | What independent checking survives? | The maintained Java implementation, run against the core on all 311 cases in CI and on the corpus in the differential job |
+| R33 (2026-09-28), supersedes R8 | What independent checking survives? | The maintained Java implementation, run against the core on every case in CI and on the corpus in the differential job |
 | R21 (2026-09-26) | Security substrate? | OpenSSL 4 through rust-openssl, CMS API, our own chain policy, ASN.1 templates for the payload |
 | R4, R5, R6, R19, R20 | npm, Fastly/Akamai, Go, versions, Apple compatibility | Plain Wasm for npm; drop Fastly and Akamai; wazero for Go; one 0.8.0 release; `fixtures/cases.json` is the contract and a divergence that changes an Apple-signed verdict is a bug |
 

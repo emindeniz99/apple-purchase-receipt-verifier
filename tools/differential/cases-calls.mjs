@@ -16,8 +16,8 @@
 // A case without a clock runs at one pinned instant, so both
 // implementations judge a dateless input at the same moment.
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
+import { readFixture } from '../lib/fixtures.mjs';
 
 const PINNED_NOW = 1790640000000; // 2026-09-29T00:00:00Z
 
@@ -34,26 +34,7 @@ function fixture(id) {
   if (cache.has(id)) return cache.get(id);
   const entry = doc.fixtures[id];
   if (entry === undefined) throw new Error(`cases.json registers no fixture "${id}"`);
-  const raw = readFileSync(join(base, entry.path));
-  let bytes;
-  switch (entry.codec) {
-    case 'raw':
-    case 'text':
-      bytes = raw;
-      break;
-    case 'base64':
-      bytes = Buffer.from(raw.toString('ascii').replace(/\s+/g, ''), 'base64');
-      break;
-    case 'utf8':
-      bytes = Buffer.from(raw.toString('utf8').trim(), 'utf8');
-      break;
-    default:
-      throw new Error(`unknown fixture codec "${entry.codec}"`);
-  }
-  if (createHash('sha256').update(bytes).digest('hex') !== entry.contentSha256) {
-    throw new Error(`fixture "${id}" has drifted from its contentSha256`);
-  }
-  const value = { entry, bytes };
+  const value = { entry, bytes: readFixture(base, entry, id) };
   cache.set(id, value);
   return value;
 }

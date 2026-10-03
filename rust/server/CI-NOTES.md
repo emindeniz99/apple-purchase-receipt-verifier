@@ -44,7 +44,7 @@ BIN=dist/aprv-<target>
 # a static binary runs with nothing around it
 mkdir -p /tmp/empty && cp $BIN /tmp/empty/aprv && sudo chroot /tmp/empty /aprv info
 
-python3 scripts/cases.py --aprv $BIN --mode both --list     # the 311 cases
+python3 scripts/cases.py --aprv $BIN --mode both --list     # every case
 python3 scripts/managed-smoke.py --aprv $BIN
 sh scripts/hostile-smoke.sh target/<host triple>/release/aprv   # the full build step 1 left; needs wasm-tools
 R="--calls $CALLS --suffix .pinned --reference $ROWS"

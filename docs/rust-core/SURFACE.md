@@ -56,11 +56,14 @@ Verifier.create(config)                 // throws at startup, never later
 Each language spells these in its own idiom; the 0.7 table of ports
 ("The other ports") gives the result form, clock type, data types and id
 type of each, and 0.8.0 keeps every row. Each package builds a `Config`
-one way, in its language's idiom: Java's `defaults()` and `builder()`,
-Rust's `Config::default()` and `Config::builder()`, Python's
-`Config(roots=..., clock=...)`, Ruby's `Config.new(roots:, clock:)`, PHP's
-and .NET's `new Config(roots: ..., clock: ...)`; the Java-shaped
-duplicates went in 0.8 (DECISIONS.md R41).
+in its language's idiom: Java's `defaults()` and `builder()`, Rust's
+`Config::default()` and `Config::builder()`, Go's `DefaultConfig()` and
+`NewConfig(ConfigOptions{...})`, Swift's `Config.defaults()` and
+`Config.builder()`, Node's `defaultConfig()` and `createConfig({...})`,
+Python's `Config(roots=..., clock=...)`, Ruby's
+`Config.new(roots:, clock:)`, PHP's and .NET's
+`new Config(roots: ..., clock: ...)`; the Java-shaped duplicates in
+Python, Ruby, PHP and .NET went in 0.8 (DECISIONS.md R41).
 
 - **No policy parameter.** No bundle id, environment filter, app Apple id
   or device id. The environment of `verifyReceiptEndpoint` is which of
@@ -145,9 +148,9 @@ DECISIONS.md R34, amended 2026-10-02; R42).
 
 ## 6. The contract: `fixtures/cases.json` schema v2
 
-- 311 cases, validated by `fixtures/cases.schema.json`: 136
-  `verifyReceipt`, 99 `verifySignedData`, 43 `verifyReceiptEndpoint` and
-  33 `decodeBase64` (counted from the file on 2026-09-28).
+- Every case is validated by `fixtures/cases.schema.json` and is one of
+  four operations: `verifyReceipt`, `verifySignedData`,
+  `verifyReceiptEndpoint` and `decodeBase64`.
 - A case's `config.trustedRoots` is either the defaults or registered
   trust-anchor fixtures; its `config.now`, when present, is the instant
   the `Config` clock answers. A Wasm host expresses both through the
@@ -168,7 +171,7 @@ DECISIONS.md R34, amended 2026-10-02; R42).
 
 ## 7. Enforcement
 
-- **Every host runs all 311 cases, as one test each,** as every port does
+- **Every host runs every case, as one test each,** as every port does
   today. A runner also asserts that every case id in the file ran.
 - **The Java `-wasm` artifact runs them once per engine:** Endive, and the
   server engine (on Temurin 8 in the `java-runtime-8` leg, and on a

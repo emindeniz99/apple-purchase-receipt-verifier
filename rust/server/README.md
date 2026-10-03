@@ -249,7 +249,7 @@ messages and no code path the timings exercise.
 | What | How |
 |---|---|
 | Unit and in-process tests | `APRV_TEST_COMPONENT=<component .wasm> cargo test --features compile` (the real component over the router; hostile components: an infinite loop, a 1 GiB grow, a non-UTF-8 result, a 1 GiB `random-get`). Two tests tie the server to `rust/bindings/`: its WIT equals `rust/bindings/abi/wit/aprv.wit`, and `/openapi.json` bundles the wire schemas |
-| The 311 cases | `scripts/cases.py --aprv <binary>`, over HTTP and the CLI |
+| Every case of `fixtures/cases.json` | `scripts/cases.py --aprv <binary>`, over HTTP and the CLI |
 | The corpus | `scripts/corpus.py --aprv <binary> --calls ... --node ... --mode http\|cli` |
 | Limits in a real process | `scripts/hostile-smoke.sh <full build>` (the hostile component of `tests/hostile.wat`) |
 | Managed mode | `scripts/managed-smoke.py --aprv <binary>` |

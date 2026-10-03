@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs the 311 cases of fixtures/cases.json through aprv-server, over HTTP
+"""Runs every case of fixtures/cases.json through aprv-server, over HTTP
 and through the one-shot CLI, and evaluates each case's expectation the way
 the file's comment defines it.
 

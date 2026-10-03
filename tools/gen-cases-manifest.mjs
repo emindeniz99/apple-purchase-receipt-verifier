@@ -78,9 +78,9 @@
  */
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseJsonExact, readFixture } from './lib/fixtures.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES_DIR = join(REPO, 'fixtures');
@@ -95,72 +95,8 @@ function fail(message) {
   process.exit(1);
 }
 
-/** The decoded logical bytes of a fixture, checked against its digest. */
-function fixtureBytes(entry, id) {
-  const raw = readFileSync(join(FIXTURES_DIR, entry.path));
-  let bytes;
-  switch (entry.codec) {
-    case 'raw':
-    case 'text':
-      bytes = raw;
-      break;
-    case 'utf8':
-      bytes = Buffer.from(raw.toString('utf8').trim(), 'utf8');
-      break;
-    case 'base64':
-      bytes = Buffer.from(raw.toString('utf8').replace(/\s+/g, ''), 'base64');
-      break;
-    default:
-      fail(`fixture "${id}" has unknown codec "${entry.codec}"`);
-  }
-  const actual = createHash('sha256').update(bytes).digest('hex');
-  if (actual !== entry.contentSha256) {
-    fail(
-      `fixture "${id}" (${entry.path}, codec ${entry.codec}) has drifted: ` +
-        `cases.json records ${entry.contentSha256}, the decoded bytes hash to ${actual}`,
-    );
-  }
-  return bytes;
-}
-
 function safeName(id) {
   return id.replace(/[^A-Za-z0-9._-]/g, '_');
-}
-
-/**
- * An integer literal whose digits a JavaScript number cannot hold. The
- * vectors pin a `download_id` of 2^63 - 1 on purpose, and `JSON.parse`
- * answers 9223372036854775808 for it, the nearest double. The digits are
- * kept as text instead, so no harness is failed for being right.
- */
-class ExactInteger {
-  constructor(digits) {
-    this.digits = digits;
-  }
-}
-
-/**
- * `JSON.parse` with the source text of each primitive (the third reviver
- * argument, Node >= 22), so an integer literal that does not survive the
- * round trip through a double keeps its digits.
- */
-function parseCasesKeepingExactIntegers(text) {
-  let sourceSeen = false;
-  const parsed = JSON.parse(text, function reviver(key, value, context) {
-    if (typeof value !== 'number') return value;
-    const source = context?.source;
-    if (source === undefined) return value;
-    sourceSeen = true;
-    if (String(value) === source || !/^-?\d+$/.test(source)) return value;
-    return new ExactInteger(source);
-  });
-  if (!sourceSeen) {
-    fail(
-      'this Node build does not hand JSON.parse revivers the source text, so an integer ' +
-        'wider than a double would be silently rounded; Node 22 or newer is required',
-    );
-  }
-  return parsed;
 }
 
 function checkPart(id, text) {
@@ -171,7 +107,7 @@ function checkPart(id, text) {
 function encodeField(id, pointer, value) {
   let tagged;
   if (value === null) tagged = 'z:';
-  else if (value instanceof ExactInteger) tagged = `n:${value.digits}`;
+  else if (typeof value === 'bigint') tagged = `n:${value}`;
   else if (typeof value === 'number') tagged = `n:${value}`;
   else if (typeof value === 'boolean') tagged = `b:${value}`;
   else if (typeof value === 'string') tagged = `s:${value}`;
@@ -201,7 +137,12 @@ function main() {
   if (!outDir) fail('usage: node tools/gen-cases-manifest.mjs <outdir>');
 
   const casesText = readFileSync(join(FIXTURES_DIR, 'cases.json'), 'utf8');
-  const file = parseCasesKeepingExactIntegers(casesText);
+  let file;
+  try {
+    file = parseJsonExact(casesText);
+  } catch (e) {
+    fail(e.message);
+  }
   if (file.schemaVersion !== 2) {
     fail(`cases.json is schemaVersion ${file.schemaVersion}, this generator implements 2`);
   }
@@ -216,7 +157,12 @@ function main() {
   // unnoticed: the guarantee is over the registry, not over what is used.
   const decoded = new Map();
   for (const [id, entry] of Object.entries(file.fixtures)) {
-    const bytes = fixtureBytes(entry, id);
+    let bytes;
+    try {
+      bytes = readFixture(FIXTURES_DIR, entry, id);
+    } catch (e) {
+      fail(e.message);
+    }
     decoded.set(id, bytes);
     writeFileSync(join(out, 'fixtures', `${safeName(id)}.bin`), bytes);
   }
