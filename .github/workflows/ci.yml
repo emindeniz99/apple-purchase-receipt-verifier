@@ -1100,7 +1100,7 @@ jobs:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
-      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1145,7 +1145,7 @@ jobs:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
-      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1171,7 +1171,7 @@ jobs:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
-      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -1209,7 +1209,7 @@ jobs:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
-      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: "3.4"
           # The lockfile exists now, so the action can install and cache the
@@ -1714,7 +1714,7 @@ jobs:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
-      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           # One line, not the library's matrix: this job proves the parsers
           # hold, not that they hold on five rubies. 3.3 is where the harness
@@ -3393,7 +3393,7 @@ jobs:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" ruby
-      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: "3.3"
           bundler-cache: false
