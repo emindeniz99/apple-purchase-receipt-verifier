@@ -58,7 +58,7 @@ Against the G1 module: 6,179 of 6,179 rows identical (cases 153, hostile 811,
 algorithms 22, substrate 193, fuzz 5,000), 0 traps. `corpusrun -module` runs a
 candidate without copying it into the package. The host layer is compared byte
 for byte; the typed reading in `receiptFromJSON` and `readResult` is what the
-311 cases pin.
+shared cases pin.
 
 ## Suggested legs, not built here
 

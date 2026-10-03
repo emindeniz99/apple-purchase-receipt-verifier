@@ -98,10 +98,13 @@ the contract.
   spelling): Production, Sandbox or null, as the core or the Java
   implementation read it. No package has a mapping helper of its own
   (DECISIONS.md R42).
-- A `Config` is built one way per package, in the language's idiom
-  (DECISIONS.md R41): `Config(roots=..., clock=...)` in Python,
-  `Config.new(roots:, clock:)` in Ruby, `new Config(roots: ..., clock: ...)`
-  in PHP and .NET, `Config::default()` or `Config::builder()` in Rust.
+- A `Config` is built in the language's idiom (DECISIONS.md R41):
+  `Config(roots=..., clock=...)` in Python, `Config.new(roots:, clock:)` in
+  Ruby, `new Config(roots: ..., clock: ...)` in PHP and .NET,
+  `Config::default()` or `Config::builder()` in Rust, `Config.defaults()`
+  or `Config.builder()` in Java and Swift, `DefaultConfig()` or
+  `NewConfig(ConfigOptions{...})` in Go, `defaultConfig()` or
+  `createConfig({...})` in Node.
   Python's `Config.create`/`Config.defaults`, Ruby's `Config.builder` and
   `Config.defaults`, PHP's `ConfigBuilder` and `Config::defaults()`,
   .NET's `Config.Defaults()`, `Config.CreateBuilder()` and

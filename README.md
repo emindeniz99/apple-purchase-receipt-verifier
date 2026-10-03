@@ -191,10 +191,10 @@ the module from a tag and compares it. [THREAT-MODEL.md](./THREAT-MODEL.md)
 
 What was measured before the release:
 
-- The module answers all 377 cases through a host that traps on any
-  import but `random-get`, with no trap, and answered every one of the
-  6,179 rows of the generated corpora (1,179 receipts and 5,000 mutants)
-  byte for byte as its native build
+- The module answers every case of `fixtures/cases.json` through a host
+  that traps on any import but `random-get`, with no trap, and answered
+  every one of the 6,179 rows of the generated corpora (1,179 receipts and
+  5,000 mutants) byte for byte as its native build
   ([aprv.wasm parity](docs/evidence/2026-09-29-aprv-wasm-parity.md),
   [review fixes](docs/evidence/2026-09-29-core-review-fixes.md)).
 - Every package answered the shared cases and the corpora through its own
