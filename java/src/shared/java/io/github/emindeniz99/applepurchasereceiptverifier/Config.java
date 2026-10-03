@@ -103,19 +103,12 @@ public final class Config {
 
         /**
          * Turns the runtime probe on or off. When on, {@link Verifier#create}
-         * starts the engine and proves it can answer before it returns: the
-         * Endive engine loads the compiled verifier module, creates one
-         * instance and calls its {@code init} with this config's roots, and
-         * keeps that instance for the first call. {@code create} then throws
-         * {@link IllegalStateException} if the module cannot be loaded or
-         * instantiated on this JVM, or does not export the ABI this library
-         * binds, and {@link IllegalArgumentException} if the module refuses
-         * one of the roots. Turned off, {@code create} does none of that and
-         * the first call pays for it instead (on Endive, a few hundred
-         * milliseconds for the first instance in a JVM); a module that cannot
-         * run, or a root it refuses, then answers
-         * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint) on every
-         * call. Leaving it unset means on.
+         * proves that this runtime can verify before it returns, and throws as
+         * its documentation states if it cannot; that documentation also says
+         * what the probe checks. Turned off, {@code create} skips the check,
+         * and a runtime that cannot verify answers
+         * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint) when it is
+         * called instead. Leaving it unset means on.
          */
         public Builder runtimeProbe(boolean runtimeProbe) {
             this.runtimeProbe = runtimeProbe;

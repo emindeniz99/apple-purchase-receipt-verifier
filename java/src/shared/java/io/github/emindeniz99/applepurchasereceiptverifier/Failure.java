@@ -35,11 +35,13 @@ public final class Failure {
     }
 
     /**
-     * The exception behind an {@link Reason#INTERNAL_ERROR} this library
-     * raised itself: a trap in the verifier module, a runtime failure, an
-     * answer it could not read, or a clock that threw. {@code null} for every
-     * reason the verifier module decided, {@link Reason#UNREADABLE_PAYLOAD}
-     * included: the module's answer carries a message, not an exception.
+     * The exception behind the failure, when there is one, for logs. An
+     * {@link Reason#INTERNAL_ERROR} this library raised itself (a runtime
+     * failure, an answer it could not read, a clock that threw) carries one.
+     * In the main artifact an {@link Reason#UNREADABLE_PAYLOAD} carries the
+     * parser's exception; in the {@code -wasm} artifact the core decides
+     * every reason from the input and none of them carries one. Match on
+     * {@link #reason()}, not on this.
      */
     public @Nullable Throwable cause() {
         return cause;

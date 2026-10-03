@@ -4,13 +4,9 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.security.cert.CertificateEncodingException;
-import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Objects;
-import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -40,7 +36,7 @@ final class WasmVerifier implements Verifier {
         this.clock = config.clock();
         this.pool = new GuestPool(
                 factory,
-                configJson(config.roots()),
+                InitConfig.json(config.roots()).getBytes(StandardCharsets.US_ASCII),
                 Math.max(2, Runtime.getRuntime().availableProcessors()));
         if (config.runtimeProbe()) {
             try {
@@ -54,33 +50,6 @@ final class WasmVerifier implements Verifier {
                         e);
             }
         }
-    }
-
-    /**
-     * {@code init}'s configuration: {@code {"roots":[]}}, the module's
-     * built-in Apple roots, when {@code roots} are exactly the bundled three
-     * ({@link Config#defaults()}); otherwise each root's DER as padded
-     * standard base64, in the config's order.
-     */
-    static byte[] configJson(Set<X509Certificate> roots) {
-        StringBuilder json = new StringBuilder("{\"roots\":[");
-        if (!roots.equals(AppleRootCerts.roots())) {
-            String separator = "";
-            for (X509Certificate root : roots) {
-                byte[] der;
-                try {
-                    der = root.getEncoded();
-                } catch (CertificateEncodingException e) {
-                    throw new IllegalArgumentException("a root in the config cannot be encoded: " + e.getMessage(), e);
-                }
-                json.append(separator)
-                        .append('"')
-                        .append(Base64.getEncoder().encodeToString(der))
-                        .append('"');
-                separator = ",";
-            }
-        }
-        return json.append("]}").toString().getBytes(StandardCharsets.US_ASCII);
     }
 
     /** How many module instances this verifier has made, for tests. */

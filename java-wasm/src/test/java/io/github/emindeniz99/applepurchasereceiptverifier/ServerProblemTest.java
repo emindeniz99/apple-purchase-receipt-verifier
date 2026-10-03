@@ -49,7 +49,7 @@ class ServerProblemTest {
 
     @BeforeEach
     void serve() throws Exception {
-        infoRoots = new ArrayList<>(ServerSources.fingerprints(AppleRootCerts.roots()));
+        infoRoots = new ArrayList<>(InitConfig.fingerprints(AppleRootCerts.roots()));
         http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         http.createContext("/", exchange -> {
             String path = exchange.getRequestURI().getPath();
@@ -227,7 +227,7 @@ class ServerProblemTest {
         infoRoots = new ArrayList<>(infoRoots.subList(0, 2));
         IllegalStateException fewer = assertThrows(IllegalStateException.class, () -> verifier(Config.defaults()));
         assertTrue(fewer.getMessage().contains("trusts other roots than the Config"), fewer.getMessage());
-        infoRoots = new ArrayList<>(ServerSources.fingerprints(AppleRootCerts.roots()));
+        infoRoots = new ArrayList<>(InitConfig.fingerprints(AppleRootCerts.roots()));
         infoRoots.add("00".replace("0", "ab"));
         assertThrows(IllegalStateException.class, () -> verifier(Config.defaults()));
         infoRoots = Collections.emptyList();

@@ -71,6 +71,7 @@ module ApplePurchaseReceiptVerifier
   class Verifier
     ENV_CODES: Hash[String, Integer]
     MAX_CLOCK_MILLIS: Integer
+    ENDPOINT_INTERNAL_ERROR: String
 
     class ClockError < StandardError
     end
@@ -84,7 +85,7 @@ module ApplePurchaseReceiptVerifier
     def read_clock: () -> Integer
     def endpoint_answer: (Integer env, untyped request_json) -> String
     def internal_error: (Exception cause) -> VerificationResult
-    def status_only: (Symbol reason) -> String
+    def text_of: (untyped value) -> String
   end
 
   class Config

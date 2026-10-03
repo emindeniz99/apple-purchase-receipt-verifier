@@ -89,10 +89,12 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 ## The gate, in one command
 
 `swift/scripts/gate.sh DIR [--pin] [--bench]` runs everything this lane
-checks against one module build, where `DIR` has the G1 layout (`aprv.wasm`,
-`calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`, `same.py`):
-it checks the module against the pin (`--pin` rewrites the pin), copies it
-into place, builds optimised, runs the whole suite with every shared case, runs
+checks against one module build, where `DIR` has the corpus archive's
+layout (`aprv.wasm`, `aprv.component.wasm` and `aprv.wit` with their
+`SHA256SUMS`, `calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`,
+`same.py`): it checks the module against the pin (`--pin` accepts another
+module), puts it in place with `.github/scripts/place-module.sh` for this
+run only, builds optimised, runs the whole suite with every shared case, runs
 the five corpora through the package's host layer
 (`MeasurementTests.testCorpus`, the `Guest` the `Verifier` uses) and
 compares each corpus's rows byte for byte with the module's reference rows,

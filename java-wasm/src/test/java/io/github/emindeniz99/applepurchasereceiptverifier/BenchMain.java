@@ -55,8 +55,8 @@ public final class BenchMain {
 
         byte[] g5 = Base64.getEncoder().encode(Cases.fixtureBytes("public-receipt-sandbox-g5"));
         byte[] jws = Cases.fixtureBytes("transaction");
-        byte[] jwsConfig =
-                WasmVerifier.configJson(new LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]"))));
+        byte[] jwsConfig = InitConfig.json(new LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]"))))
+                .getBytes(StandardCharsets.US_ASCII);
         long now = System.currentTimeMillis();
         long t1 = System.nanoTime();
         String answer = first.verifyReceipt(now, g5);

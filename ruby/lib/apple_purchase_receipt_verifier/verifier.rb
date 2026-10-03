@@ -37,6 +37,11 @@ module ApplePurchaseReceiptVerifier
     MAX_CLOCK_MILLIS = (2**63) - 1
     private_constant :MAX_CLOCK_MILLIS
 
+    # The endpoint's body when the call failed before the module answered:
+    # a trap, an answer that is not UTF-8, or a clock that failed.
+    ENDPOINT_INTERNAL_ERROR = %({"status":#{AppleStatus::INTERNAL_DATA_ACCESS_ERROR}}).freeze
+    private_constant :ENDPOINT_INTERNAL_ERROR
+
     class << self
       # Compiles the wasm module on the first call in a process (about a
       # second; later calls reuse it), and makes one instance to prove the
@@ -122,13 +127,7 @@ module ApplePurchaseReceiptVerifier
     # input.
     def verify(operation, input, &)
       now = read_clock
-      unless input.is_a?(String)
-        return VerificationResult.error(
-          Failure.new(reason: Reason::MALFORMED, message: "input must be a String", cause: nil)
-        )
-      end
-
-      call(operation, [now], input, &)
+      call(operation, [now], text_of(input), &)
     rescue ClockError, TrapError => e
       internal_error(e)
     rescue StandardError => e
@@ -156,29 +155,30 @@ module ApplePurchaseReceiptVerifier
       value
     end
 
-    # The endpoint's answer: the module's own bytes, or a status alone when
-    # the input is no String or the call failed.
+    # The endpoint's answer: the module's own bytes, or
+    # {ENDPOINT_INTERNAL_ERROR} when the call failed.
     def endpoint_answer(env, request_json)
       now = read_clock
-      return status_only(Reason::MALFORMED) unless request_json.is_a?(String)
-
-      call("verify-receipt-endpoint", [env, now], request_json) do |text|
+      call("verify-receipt-endpoint", [env, now], text_of(request_json)) do |text|
         raise TrapError, "verify-receipt-endpoint: the answer is not UTF-8" unless text.valid_encoding?
 
         text
       end
     rescue StandardError
-      status_only(Reason::INTERNAL_ERROR)
+      ENDPOINT_INTERNAL_ERROR
+    end
+
+    # A value that is not a String is input, not a programming error: it
+    # reaches the module as no bytes, which the module answers as MALFORMED
+    # (21002 at the endpoint), as every other package does.
+    def text_of(value)
+      value.is_a?(String) ? value : ""
     end
 
     def internal_error(cause)
       VerificationResult.error(
         Failure.new(reason: Reason::INTERNAL_ERROR, message: cause.message, cause: cause)
       )
-    end
-
-    def status_only(reason)
-      %({"status":#{AppleStatus.for_reason(reason)}})
     end
   end
 end

@@ -3,15 +3,18 @@
 #
 #     PYTHON=/path/to/venv/bin/python tools/g1.sh G1_DIR
 #
-# G1_DIR holds aprv.wasm, calls/<corpus>.pinned.jsonl, rows/module-<corpus>.jsonl
-# and same.py (the layout the core lane hands over). The steps:
-#   1. copy aprv.wasm into the package (git-ignored) and rewrite the tracked
-#      aprv.wasm.sha256 from it; `git diff` then shows the pin to commit;
+# G1_DIR has the corpus archive's layout: aprv.wasm, aprv.component.wasm and
+# aprv.wit with the SHA256SUMS over them, calls/<corpus>.pinned.jsonl,
+# rows/module-<corpus>.jsonl and same.py. The steps:
+#   1. .github/scripts/place-module.sh checks G1_DIR against its SHA256SUMS
+#      and puts aprv.wasm in the package, rewriting aprv.wasm.sha256 in this
+#      checkout. Both are for this run only and never committed: the release
+#      tooling refreshes the pin;
 #   2. the whole test suite, every conformance case included;
 #   3. every corpus through the host layer, compared byte for byte with the
 #      module's own rows. A differing row is reported, never adjusted.
-# Exit status is 0 only when all of it passed. Nothing here is committed but
-# the pin; the module and the outputs stay outside the repository.
+# Exit status is 0 only when all of it passed. The module and the outputs
+# stay outside the repository.
 set -eu
 G1=${1:?usage: tools/g1.sh G1_DIR}
 PYTHON=${PYTHON:-python3}
@@ -20,10 +23,8 @@ PKG=$HERE/apple_purchase_receipt_verifier
 OUT=${G1_OUT:-$(mktemp -d)}
 status=0
 
-cp "$G1/aprv.wasm" "$PKG/aprv.wasm"
-digest=$("$PYTHON" -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PKG/aprv.wasm")
-printf '%s  aprv.wasm\n' "$digest" > "$PKG/aprv.wasm.sha256"
-echo "== module $digest"
+bash "$HERE/../.github/scripts/place-module.sh" "$G1" python
+echo "== module $(cut -c1-64 "$PKG/aprv.wasm.sha256")"
 
 echo "== tests"
 (cd "$HERE" && "$PYTHON" -m unittest discover -s tests) || status=1

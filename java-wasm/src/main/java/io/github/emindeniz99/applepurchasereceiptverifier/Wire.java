@@ -5,10 +5,8 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import java.io.IOException;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +42,7 @@ final class Wire {
     private Wire() {}
 
     /** Stands for a JSON {@code null} inside the parsed tree. */
-    private static final Object NULL = new Object();
+    private static final Object NULL = JsonTree.NULL;
 
     private static final JsonFactory JSON = JsonFactory.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
@@ -369,7 +367,7 @@ final class Wire {
             if (first == null) {
                 throw malformed("empty answer");
             }
-            Object value = value(parser, first);
+            Object value = JsonTree.read(parser, first, true, Wire::malformed);
             if (parser.nextToken() != null) {
                 throw malformed("text after the answer");
             }
@@ -377,48 +375,6 @@ final class Wire {
         } catch (IOException e) {
             throw new GuestFailure(
                     "the verifier module's answer is not JSON: " + e.getClass().getName(), e);
-        }
-    }
-
-    private static Object value(JsonParser parser, @Nullable JsonToken token) throws IOException {
-        if (token == null) {
-            throw malformed("the answer ends early");
-        }
-        switch (token) {
-            case START_OBJECT: {
-                Map<String, Object> object = new LinkedHashMap<>();
-                while (parser.nextToken() == JsonToken.FIELD_NAME) {
-                    String name = parser.currentName();
-                    object.put(name, value(parser, parser.nextToken()));
-                }
-                return Collections.unmodifiableMap(object);
-            }
-            case START_ARRAY: {
-                List<Object> array = new ArrayList<>();
-                JsonToken next;
-                while ((next = parser.nextToken()) != JsonToken.END_ARRAY) {
-                    array.add(value(parser, next));
-                }
-                return Collections.unmodifiableList(array);
-            }
-            case VALUE_STRING:
-                return parser.getText();
-            case VALUE_NUMBER_INT: {
-                Number number = parser.getNumberValue();
-                if (number instanceof BigInteger) {
-                    throw malformed("a number beyond 64 bits");
-                }
-                return number.longValue();
-            }
-            case VALUE_TRUE:
-                return Boolean.TRUE;
-            case VALUE_FALSE:
-                return Boolean.FALSE;
-            case VALUE_NULL:
-                return NULL;
-            default:
-                // A fraction or an exponent: the wire writes neither.
-                throw malformed("a " + token + " token");
         }
     }
 }

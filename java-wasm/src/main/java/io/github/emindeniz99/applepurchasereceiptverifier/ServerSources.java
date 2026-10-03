@@ -4,10 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Path;
-import java.security.cert.CertificateEncodingException;
-import java.security.cert.X509Certificate;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -28,8 +25,8 @@ final class ServerSources {
 
     static ServerConnection open(Config config, Engine.Server engine) {
         Path cache = engine.cacheDirectory() != null ? engine.cacheDirectory() : Platform.defaultCacheDirectory();
-        String rootsLine = rootsLine(config.roots());
-        Set<String> fingerprints = fingerprints(config.roots());
+        String rootsLine = InitConfig.json(config.roots());
+        Set<String> fingerprints = InitConfig.fingerprints(config.roots());
         List<String> reasons = new ArrayList<>();
         for (ServerSource source : engine.sources()) {
             ServerConnection connection = null;
@@ -149,51 +146,12 @@ final class ServerSources {
                     + ", the Config's " + fingerprints + ")");
         }
         Object max = ServerJson.member(ServerJson.member(info, "limits"), "max_input_bytes");
-        // Lenient JSON: an integer arrives as Integer or Long.
-        if (!(max instanceof Integer || max instanceof Long)
+        if (!(max instanceof Long)
                 || ((Number) max).longValue() < 1
                 || ((Number) max).longValue() > Integer.MAX_VALUE) {
             throw new IllegalStateException("the server states no limits.max_input_bytes in GET /v1/info, so its"
                     + " module is older than this library");
         }
         return ((Number) max).intValue();
-    }
-
-    /** The SHA-256 of each root's DER, as {@code /v1/info} lists them. */
-    static Set<String> fingerprints(Set<X509Certificate> roots) {
-        Set<String> fingerprints = new HashSet<>();
-        for (X509Certificate root : roots) {
-            fingerprints.add(ServerBinary.sha256(der(root)));
-        }
-        return fingerprints;
-    }
-
-    /**
-     * The managed handshake's second line: {@code {}} for the Apple roots
-     * compiled into the module when the config's roots are exactly the
-     * bundled three, otherwise each root's DER in base64.
-     */
-    static String rootsLine(Set<X509Certificate> roots) {
-        if (roots.equals(AppleRootCerts.roots())) {
-            return "{}";
-        }
-        StringBuilder line = new StringBuilder("{\"roots\":[");
-        String separator = "";
-        for (X509Certificate root : roots) {
-            line.append(separator)
-                    .append('"')
-                    .append(Base64.getEncoder().encodeToString(der(root)))
-                    .append('"');
-            separator = ",";
-        }
-        return line.append("]}").toString();
-    }
-
-    private static byte[] der(X509Certificate root) {
-        try {
-            return root.getEncoded();
-        } catch (CertificateEncodingException e) {
-            throw new IllegalArgumentException("a root in the config cannot be encoded: " + e.getMessage(), e);
-        }
     }
 }

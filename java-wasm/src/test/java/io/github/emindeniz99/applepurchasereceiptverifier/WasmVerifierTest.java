@@ -382,13 +382,12 @@ class WasmVerifierTest {
         new EndiveGuestFactory().newGuest();
     }
 
+    /** One form for the built-in roots in both engines: aprv-server refuses {"roots":[]}. */
     @Test
     void theDefaultRootsReachTheModuleAsTheBuiltInOnes() throws Exception {
-        assertEquals("{\"roots\":[]}", new String(WasmVerifier.configJson(DEFAULTS.roots()), "US-ASCII"));
-        String custom = new String(
-                WasmVerifier.configJson(
-                        new java.util.LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]")))),
-                "US-ASCII");
+        assertEquals("{}", InitConfig.json(DEFAULTS.roots()));
+        String custom =
+                InitConfig.json(new java.util.LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]"))));
         assertTrue(custom.startsWith("{\"roots\":[\"MII") && custom.endsWith("\"]}"), custom);
     }
 

@@ -153,10 +153,9 @@ const LANGS = {
     // .NET's entries (OD-04). Only the imports are allowed; any other use of
     // java.security.cert, or these imports anywhere else, is still a hit.
     allow: [
-      { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/Config.java', token: /import java\.security\.cert\.X509Certificate;/, why: 'Config.roots() holds X509Certificate (the 0.7 API); only getEncoded(), the DER, reaches the module' },
+      { file: 'java/src/shared/java/io/github/emindeniz99/applepurchasereceiptverifier/Config.java', token: /import java\.security\.cert\.X509Certificate;/, why: 'Config.roots() holds X509Certificate (the 0.7 API); only getEncoded(), the DER, reaches the module' },
       { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/AppleRootCerts.java', token: /import java\.security\.cert\.(CertificateException|CertificateFactory|X509Certificate);/, why: 'AppleRootCerts returns the three bundled roots as X509Certificate for the 0.7 API; the module holds its own copy and decides trust' },
-      { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/WasmVerifier.java', token: /import java\.security\.cert\.(CertificateEncodingException|X509Certificate);/, why: "takes each root's getEncoded() DER for the Endive engine's init; nothing is parsed or checked" },
-      { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ServerSources.java', token: /import java\.security\.cert\.(CertificateEncodingException|X509Certificate);/, why: "takes each root's getEncoded() DER for the server engine's roots file; nothing is parsed or checked" },
+      { file: 'java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/InitConfig.java', token: /import java\.security\.cert\.(CertificateEncodingException|X509Certificate);/, why: "takes each root's getEncoded() DER for init's configuration (both engines) and the SHA-256s /v1/info lists; nothing is parsed or checked" },
     ],
   },
 };

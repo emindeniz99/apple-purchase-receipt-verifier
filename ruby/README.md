@@ -153,6 +153,13 @@ the payload. `ReceiptPayload.new` and `JsonPayload.new` take `environment:`
 as their last keyword, for a payload built by hand in a test; `to_json` does
 not write it.
 
+0.8 also removes `AppleStatus.for_reason`, the reason-to-status table Ruby
+alone kept beside the module: the module answers the endpoint's status
+itself, as it does for every other host. `AppleStatus` still names every
+status Apple documents. A non-String input reaches the module as an empty
+string, so its message is now the module's (`receipt is empty`, `jws is
+empty`) instead of Ruby's own; the reason and the status are unchanged.
+
 ## Post-verification checklist
 
 Verification answers one question: did Apple sign this, under a pinned Apple

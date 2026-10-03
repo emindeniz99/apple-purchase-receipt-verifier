@@ -866,8 +866,10 @@ nothing of the Central budget. It sits under `java/` because spotless
 reads only below a pom's own directory, and `java/pom.xml`'s spotless is
 the one CI runs. Both jars hold the same class files, byte for byte, as
 before the move. A class that differs between the artifacts in any way
-(`Config`, `Failure`, `Version`, `AppleRootCerts`, `Verifier`,
-`package-info`) keeps one copy in each.
+(`Version`, `AppleRootCerts`, `Verifier`, `package-info`) keeps one copy
+in each. `Config` and `Failure` differed only in Javadoc and joined the
+shared directory on 2026-10-03, with Javadoc true for both engines; what
+each engine's runtime probe checks moved to its own `Verifier.create`.
 
 ---
 
