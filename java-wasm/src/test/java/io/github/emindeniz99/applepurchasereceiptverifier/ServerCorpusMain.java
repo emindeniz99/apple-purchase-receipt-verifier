@@ -128,7 +128,7 @@ public final class ServerCorpusMain {
                 ? System.currentTimeMillis()
                 : c.get("now").asLong();
         try {
-            ServerConnection.Response response = connection.send("POST", path, input, now);
+            HttpConn.Response response = connection.send("POST", path, input, now);
             if (ServerVerifier.moduleAnswered(response)) {
                 if (response.status == 413) {
                     overCap.incrementAndGet();

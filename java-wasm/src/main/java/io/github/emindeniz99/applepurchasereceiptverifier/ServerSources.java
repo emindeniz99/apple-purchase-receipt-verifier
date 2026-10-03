@@ -109,7 +109,7 @@ final class ServerSources {
     }
 
     /** A URL source's address: host, port, TLS and base path. */
-    static ServerConnection.Target target(URI uri, @Nullable String token) {
+    static HttpConn.Target target(URI uri, @Nullable String token) {
         boolean tls = "https".equals(uri.getScheme().toLowerCase(Locale.ROOT));
         String host = uri.getHost();
         if (host.startsWith("[") && host.endsWith("]")) {
@@ -120,7 +120,7 @@ final class ServerSources {
         while (path.endsWith("/")) {
             path = path.substring(0, path.length() - 1);
         }
-        return new ServerConnection.Target(host, port, tls, path, token, 0);
+        return new HttpConn.Target(host, port, tls, path, token, 0);
     }
 
     /**
@@ -128,7 +128,7 @@ final class ServerSources {
      * trusts other roots than the config: it would run something else.
      */
     static void checkInfo(ServerConnection connection, Set<String> fingerprints) {
-        ServerConnection.Response response = connection.send("GET", "/v1/info", new byte[0], null);
+        HttpConn.Response response = connection.send("GET", "/v1/info", new byte[0], null);
         if (response.status != 200) {
             throw ServerJson.problem(response);
         }

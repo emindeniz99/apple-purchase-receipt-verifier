@@ -62,7 +62,7 @@ class ServerEngineTest {
     }
 
     private static String raw(String path, String body) {
-        ServerConnection.Response response =
+        HttpConn.Response response =
                 verifier.connection().send("POST", path, body.getBytes(StandardCharsets.UTF_8), NOW);
         assertEquals(200, response.status, response.text());
         return response.text();
@@ -76,7 +76,7 @@ class ServerEngineTest {
     @Order(1)
     void theChildStartedOnLoopbackWithTheTokenOnStdin() {
         assertTrue(ServerTests.alive(pid()), "pid " + pid());
-        ServerConnection.Target target = verifier.connection().process().target();
+        HttpConn.Target target = verifier.connection().process().target();
         assertEquals("127.0.0.1", target.host);
         assertEquals(64, target.token.length(), "a 256-bit token in hex");
     }
@@ -101,13 +101,15 @@ class ServerEngineTest {
     @Test
     @Order(3)
     void aRequestWithoutTheTokenOrWithAWrongOneIsRefused() throws Exception {
-        ServerConnection.Target real = verifier.connection().process().target();
+        HttpConn.Target real = verifier.connection().process().target();
         for (String token : new String[] {null, real.token.replace('a', 'b').replace('0', '1') + "x"}) {
-            ServerConnection.Target target = new ServerConnection.Target(real.host, real.port, false, "", token, 0);
-            ServerConnection.Response response = ServerConnection.exchange(
-                    target, "POST", "/v1/receipt/verify", g5.getBytes(StandardCharsets.US_ASCII), NOW, 2000, 10_000);
-            assertEquals(401, response.status, response.text());
-            assertEquals("UNAUTHORIZED", ServerJson.problem(response).code());
+            HttpConn.Target target = new HttpConn.Target(real.host, real.port, false, "", token, 0);
+            try (HttpConn conn = new HttpConn(target, 2000, 10_000)) {
+                HttpConn.Response response =
+                        conn.exchange("POST", "/v1/receipt/verify", g5.getBytes(StandardCharsets.US_ASCII), NOW);
+                assertEquals(401, response.status, response.text());
+                assertEquals("UNAUTHORIZED", ServerJson.problem(response).code());
+            }
         }
     }
 

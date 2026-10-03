@@ -46,7 +46,7 @@ final class ServerProcess {
     private final AtomicInteger restarts = new AtomicInteger();
 
     private @Nullable Process process;
-    private ServerConnection.@Nullable Target target;
+    private HttpConn.@Nullable Target target;
     private int generation;
     private boolean stopped;
     private @Nullable String stoppedBecause;
@@ -65,7 +65,7 @@ final class ServerProcess {
     }
 
     /** The running child's address, starting it first if it is not running. */
-    synchronized ServerConnection.Target target() {
+    synchronized HttpConn.Target target() {
         if (stopped) {
             throw new ServerProcessFailure(stoppedBecause != null ? stoppedBecause : "the server engine was closed");
         }
@@ -190,7 +190,7 @@ final class ServerProcess {
         }
         process = child;
         generation++;
-        target = new ServerConnection.Target("127.0.0.1", port, false, "", token, generation);
+        target = new HttpConn.Target("127.0.0.1", port, false, "", token, generation);
     }
 
     /** Closes stdin (the child exits on EOF), then waits, then ends it harder. */

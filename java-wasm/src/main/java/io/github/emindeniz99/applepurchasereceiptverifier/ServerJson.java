@@ -78,7 +78,7 @@ final class ServerJson {
     }
 
     /** A problem's {@code code}, or {@code HTTP_<status>} when the body is not a problem with one. */
-    static ServerProblem problem(ServerConnection.Response response) {
+    static ServerProblem problem(HttpConn.Response response) {
         Object body = parse(response.text());
         Object code = member(body, "code");
         Object detail = member(body, "detail");
