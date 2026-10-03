@@ -23,10 +23,10 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
  * fuzzer can find crashes but never "accepts what it should not".
  *
  * The anchor set is the pinned Apple roots plus
- * `fixtures/generated-0.7/receipt-root.der`, so the re-minted receipts that
- * `run.sh` seeds from `fixtures/generated-0.7/` and the two public Apple
- * receipts get past the chain check and the fuzzer can explore what lies
- * beyond it. The 0.6 receipts it also seeds from `fixtures/generated/` chain
+ * `fixtures/generated-0.7/receipt-root.der`, so the re-minted receipts under
+ * `fixtures/generated-0.7/` that chain to it (most chain to their own
+ * generator's root) and the two public Apple receipts get past the chain
+ * check and the fuzzer can explore what lies beyond it. The 0.6 receipts it also seeds from `fixtures/generated/` chain
  * to a root not trusted here. The unrelated set is the fixture *JWS* root.
  */
 

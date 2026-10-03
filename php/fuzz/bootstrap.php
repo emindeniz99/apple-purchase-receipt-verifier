@@ -63,10 +63,10 @@ final class FuzzFixtures
     }
 
     /**
-     * The pinned Apple receipt anchors plus the fixture receipt root the
-     * re-minted receipts under `fixtures/generated-0.7/` chain to, so those
-     * receipts and the two public Apple receipts get past the chain check
-     * and the fuzzer can explore what lies beyond it. The 0.6 receipts under
+     * The pinned Apple receipt anchors plus `fixtures/generated-0.7/receipt-
+     * root.der`, so the re-minted receipts that chain to it (most chain to
+     * their own generator's root) and the two public Apple receipts get past
+     * the chain check and the fuzzer can explore what lies beyond it. The 0.6 receipts under
      * `fixtures/generated/` chain to a root that is not trusted here.
      *
      * @param list<string> $appleRoots

@@ -103,11 +103,13 @@ run_one() {
   seed_dirs "$name"
   if [ -n "$SEED_MAX_BYTES" ]; then
     size_filter=(-size "-$((SEED_MAX_BYTES + 1))c")
+    # A corpus seeded before the limit existed still holds the large files.
+    find "$corpus" -maxdepth 1 -type f -name 'seed-*' -size "+${SEED_MAX_BYTES}c" -delete
   fi
   for dir in "${SEED_DIRS[@]}"; do
     while IFS= read -r file; do
       cp -n "$file" "$corpus/seed-$(sha1sum "$file" | cut -c1-40)" 2>/dev/null || true
-    done < <(find "$dir" -maxdepth 1 -type f "${size_filter[@]}")
+    done < <(find "$dir" -maxdepth 1 -type f ${size_filter[@]+"${size_filter[@]}"})
   done
 
   # Beside the crash directory, not in it: that directory holds crashing
