@@ -104,7 +104,9 @@ class SignedDataTest {
         String jws = pki.signJws(claims);
         JsonNode payload = verify(pki, jws);
         assertEquals("com.other.app", payload.get("bundleId").asText());
-        assertEquals(Environment.PRODUCTION, Checks.signedData(Checks.verifier(pki), jws).environment());
+        assertEquals(
+                Environment.PRODUCTION,
+                Checks.signedData(Checks.verifier(pki), jws).environment());
     }
 
     @Test
