@@ -582,6 +582,10 @@ artifact on Java 8 never loads native code into the JVM.
   SHA-256 before it runs it: Go and Swift commit the module, the other
   packages pack the file the release built, and no library reads an
   environment variable or a path that could make it load another module.
+  Swift computes that hash with swift-crypto: CryptoKit on Apple
+  platforms, and on Linux swift-crypto's vendored BoringSSL, compiled into
+  the caller's binary. Only the bundled module's bytes reach it, never an
+  input.
 - **The WIT is the contract.** CI reads the interface back from the built
   module and diffs it against `rust/bindings/abi/wit/aprv.wit`. The export
   names carry the ABI version, so a wrapper built for one version finds no

@@ -75,7 +75,7 @@ private struct Vectors {
         guard let expected = fixtures[id]?["contentSha256"] as? String else {
             throw HarnessError("fixture \"\(id)\" registers no contentSha256")
         }
-        let actual = SHA256.hex(decoded)
+        let actual = AprvModule.sha256Hex(decoded)
         guard actual == expected.lowercased() else {
             throw HarnessError(
                 "fixture \"\(id)\" has content sha256 \(actual), but cases.json records \(expected)")
