@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Writes fixtures/limits/, the inputs of the resource-bounds vectors in
- * fixtures/cases.json.
+ * fixtures/cases.json, and fixtures/generated-0.7/receipt-der-trailing-byte.der.
  *
  *   node tools/generate-limit-fixtures.mjs
  *
@@ -43,6 +43,12 @@
  *
  *   body-receipt-data-leading-bom.json   {"receipt-data":"<U+FEFF><genuine>"}
  *
+ * And one file outside limits/, in generated-0.7/ beside the receipt it
+ * extends, because its input is the 0.7 shared receipt:
+ *
+ *   generated-0.7/receipt-der-trailing-byte.der   generated-0.7/receipt.der,
+ *                                                 then one zero byte
+ *
  * None contains a lone surrogate or any character outside the Basic
  * Multilingual Plane, so no port has to agree on how those are counted.
  */
@@ -63,6 +69,8 @@ const read = (path) => readFileSync(join(FIXTURES, path));
 
 // The genuine sandbox receipt as a client sends it: canonical base64, one line.
 const receiptText = read('generated/receipt-b64/01-genuine.txt');
+// The 0.7 shared generated receipt, as DER.
+const receiptDer = read('generated-0.7/receipt.der');
 // ReceiptBase64CapFixture's canonical string of exactly CAP characters.
 const receiptAtCap = read('limits/receipt-b64-at-cap.txt');
 if (receiptAtCap.length !== CAP) throw new Error(`limits/receipt-b64-at-cap.txt is ${receiptAtCap.length} bytes`);
@@ -112,3 +120,10 @@ for (const [name, bytes] of Object.entries(files)) {
   const characters = bytes.toString('utf8').length;
   console.log(`limits/${name}\t${bytes.length} bytes\t${characters} UTF-16 units\t${digest}`);
 }
+
+// Apple decodes a receipt with bytes after it; every port refuses them.
+const trailing = Buffer.concat([receiptDer, Buffer.alloc(1)]);
+writeFileSync(join(FIXTURES, 'generated-0.7', 'receipt-der-trailing-byte.der'), trailing);
+console.log(
+  `generated-0.7/receipt-der-trailing-byte.der\t${trailing.length} bytes\t${createHash('sha256').update(trailing).digest('hex')}`,
+);
