@@ -9,8 +9,10 @@ mod common;
 
 use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{Failure, Reason, ReceiptPayload, TrustAnchor, Verifier};
+use asn1_rs::Oid;
+use common::ber::parse_exact;
 use common::cms::parse_cms;
-use common::der::{encode_oid, parse_exact, tag};
+use common::tag;
 
 /// A verifier pinned to one root, taking DER for this file's rebuilt blobs.
 struct DerVerifier(Verifier);
@@ -607,12 +609,12 @@ fn signed_attrs_without_content_type_or_message_digest_are_refused() {
     let parsed = parse_exact(&as_set).unwrap();
 
     for dropped in [CONTENT_TYPE, MESSAGE_DIGEST] {
-        let wanted = encode_oid(dropped).unwrap();
+        let wanted: Oid = dropped.parse().unwrap();
         let kept: Vec<Vec<u8>> = parsed
             .children()
             .iter()
             .filter(|attribute| {
-                attribute.child(0).map(|oid| oid.contents) != Some(wanted.as_slice())
+                attribute.child(0).map(|oid| oid.contents) != Some(wanted.as_bytes())
             })
             .map(|attribute| attribute.full.to_vec())
             .collect();
@@ -757,4 +759,54 @@ fn a_dateless_receipt_is_judged_at_the_clock_to_the_millisecond() {
     for outside in [NOT_AFTER + 1, NOT_AFTER + 999] {
         assert_eq!(at(outside), Some(Reason::InvalidCertificate), "{outside}");
     }
+}
+
+// The reader every test above takes the receipt apart with. A fault it
+// misreads is a fault the rebuilt receipt does not carry, so it refuses
+// what X.690 refuses instead of guessing.
+
+/// X.690 8.1.5: an indefinite value ends at `00 00`, the universal
+/// primitive end-of-contents. `asn1-rs` 0.7.2 also ends one at any other
+/// zero-length header with tag number 0 (`a0 00`, `80 00`), so a reader
+/// that trusted it would split one value into siblings.
+#[test]
+fn the_test_reader_refuses_an_end_of_contents_other_than_00_00() {
+    let refused: [&[u8]; 4] = [
+        &[0x30, 0x80, 0xa0, 0x00, 0x02, 0x01, 0x05, 0x00, 0x00],
+        &[0x30, 0x80, 0x80, 0x00],
+        // Inside a SET, where trusting `a0 00` reads it as three children.
+        &[
+            0x31, 0x09, 0x30, 0x80, 0xa0, 0x00, 0x02, 0x01, 0x05, 0x00, 0x00,
+        ],
+        // Closed by `00 00` itself, holding one closed by `a0 00`.
+        &[0x30, 0x80, 0x30, 0x80, 0xa0, 0x00, 0x00, 0x00],
+    ];
+    for input in refused {
+        assert_eq!(
+            parse_exact(input).err(),
+            Some(asn1_rs::Error::BerValueError),
+            "{input:02x?}"
+        );
+    }
+
+    let well_formed = [0x30, 0x80, 0x02, 0x01, 0x05, 0x00, 0x00];
+    let sequence = parse_exact(&well_formed).unwrap();
+    assert_eq!(sequence.tag, tag::SEQUENCE);
+    assert_eq!(sequence.full, &well_formed[..]);
+    assert_eq!(sequence.contents, &[0x02, 0x01, 0x05]);
+    assert_eq!(sequence.children().len(), 1);
+    assert_eq!(sequence.child(0).unwrap().contents, &[0x05]);
+}
+
+/// The tests compare `tag` against one-octet constants, so the reader
+/// keeps the identifier octet as written. `asn1-rs` reads the long form
+/// `1f 05` as tag 5; taken as `0x05` it would make a non-canonical
+/// identifier look like `NULL`.
+#[test]
+fn the_test_reader_refuses_a_multi_octet_identifier() {
+    assert_eq!(
+        parse_exact(&[0x1f, 0x05, 0x00]).err(),
+        Some(asn1_rs::Error::Unsupported)
+    );
+    assert_eq!(parse_exact(&[0x05, 0x00]).unwrap().tag, 0x05);
 }

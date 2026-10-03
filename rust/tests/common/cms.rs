@@ -1,8 +1,10 @@
-//! A test-only walk of a CMS `SignedData`, over the test DER reader, for
+//! A test-only walk of a CMS `SignedData`, over the test BER reader, for
 //! taking a fixture apart so a test can rebuild it with one thing changed.
 //! The library does not use it.
 
-use super::der::{parse_exact, tag, Asn1Error, Tlv};
+use super::ber::{parse_exact, Tlv};
+use super::tag;
+use asn1_rs::Error as Asn1Error;
 
 /// One `SignerInfo`, as the test rebuilds it.
 #[derive(Debug, Clone)]
@@ -28,7 +30,8 @@ pub struct ParsedCms {
     pub signer_infos: Vec<CmsSignerInfo>,
 }
 
-const BAD: Asn1Error = Asn1Error("malformed CMS structure");
+/// Not the shape of a `ContentInfo` holding a `SignedData`.
+const BAD: Asn1Error = Asn1Error::BerTypeError;
 
 /// Takes a `ContentInfo` holding a `SignedData` apart.
 pub fn parse_cms(der: &[u8]) -> Result<ParsedCms, Asn1Error> {

@@ -20,8 +20,8 @@ mod common;
 use apple_purchase_receipt_verifier::__internal::path::{self, Certificate};
 use apple_purchase_receipt_verifier::__internal::{base64_encode, keys_used_during};
 use apple_purchase_receipt_verifier::Reason;
-use common::der::{parse_exact, tag};
-use common::{der, der_int, der_oid, der_seq, CmsBuilder};
+use common::ber::parse_exact;
+use common::{der, der_int, der_oid, der_seq, tag, CmsBuilder};
 use std::time::{Duration, Instant};
 
 /// For a receipt that verifies: a debug-build verify of the padded
@@ -148,7 +148,7 @@ fn parsed(der: &[u8]) -> Certificate {
     Certificate::from_der(der).unwrap()
 }
 
-/// A certificate's TBS fields, read with the test DER reader.
+/// A certificate's TBS fields, read with the test BER reader.
 fn tbs_field(certificate: &[u8], after_version: usize) -> Vec<u8> {
     let certificate = parse_exact(certificate).unwrap();
     let fields = certificate.child(0).unwrap().children();

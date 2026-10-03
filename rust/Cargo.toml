@@ -55,6 +55,11 @@ default = ["vendored"]
 vendored = ["aprv-openssl/vendored"]
 
 [dev-dependencies]
+# The tests read the fixtures they take apart and rebuild (BER: Apple's and
+# Xcode's receipts use indefinite lengths) and write DER with asn1-rs
+# (tests/common/; docs/rust-core/DECISIONS.md R43). Tests only: the library
+# parses nothing with it.
+asn1-rs = "0.7.2"
 libtest-mimic = "0.8.2"
 hex = "0.4.3"
 # The tests mint their own certificates, keys and signatures, and hash
