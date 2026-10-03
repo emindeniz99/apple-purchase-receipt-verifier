@@ -21,6 +21,19 @@ final readonly class JsonPayload
     public function __construct(
         /** The verified payload, unchanged: the exact JSON text the JWS's payload segment decoded to. */
         public string $json,
+        /**
+         * The environment the payload names, as the verifier read it: from the
+         * first of the three places Apple documents that is present, the
+         * top-level `environment` (a transaction, renewal info),
+         * `data.environment` (an App Store Server Notification V2) and
+         * `summary.environment` (a summary notification). `Production` is
+         * {@see Environment::Production} and `Sandbox`
+         * {@see Environment::Sandbox}; anything else there (`Xcode`,
+         * `LocalTesting`, a value that is not a string), or none of the
+         * three, is `null`. A payload built by hand states the one it is
+         * given; nothing reads it from {@see $json}.
+         */
+        public ?Environment $environment = null,
     ) {
     }
 }

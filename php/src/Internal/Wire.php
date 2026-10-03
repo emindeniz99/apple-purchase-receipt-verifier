@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
 
+use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Failure;
 use EminDeniz99\ApplePurchaseReceiptVerifier\InAppPurchase;
 use EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload;
@@ -35,7 +36,9 @@ final class Wire
     {
         $value = self::object($json);
         if (($value['verified'] ?? null) === true) {
-            return new VerificationResult(payload: self::receiptPayload($value['payload'] ?? null));
+            return new VerificationResult(
+                payload: self::receiptPayload($value['payload'] ?? null, self::environment($value)),
+            );
         }
 
         return self::failure($value);
@@ -55,7 +58,7 @@ final class Wire
                 throw self::bad('the signed payload is not a JSON string');
             }
 
-            return new VerificationResult(payload: new JsonPayload($payload));
+            return new VerificationResult(payload: new JsonPayload($payload, self::environment($value)));
         }
 
         return self::failure($value);
@@ -105,8 +108,30 @@ final class Wire
         return $result;
     }
 
+    /**
+     * The `environment` member beside a verified payload: `Production`,
+     * `Sandbox` or `null`. Missing, or anything else, is not the contract.
+     *
+     * @param array<array-key, mixed> $value
+     *
+     * @throws ModuleFaultException
+     */
+    private static function environment(array $value): ?Environment
+    {
+        if (!array_key_exists('environment', $value)) {
+            throw self::bad('a verified answer without an environment');
+        }
+        $environment = $value['environment'];
+        if ($environment === null) {
+            return null;
+        }
+
+        return (is_string($environment) ? Environment::tryFrom($environment) : null)
+            ?? throw self::bad('an environment other than Production, Sandbox or null');
+    }
+
     /** @throws ModuleFaultException */
-    private static function receiptPayload(mixed $value): ReceiptPayload
+    private static function receiptPayload(mixed $value, ?Environment $environment): ReceiptPayload
     {
         $v = self::asObject($value, 'a receipt payload');
         $inApp = $v['in_app'] ?? null;
@@ -130,6 +155,7 @@ final class Wire
             originalApplicationVersion: self::string($v['original_application_version'] ?? null),
             expirationDateMs: self::int($v['expiration_date_ms'] ?? null),
             unknownAttributes: self::unknown($v['unknown_attributes'] ?? null),
+            environment: $environment,
         );
     }
 

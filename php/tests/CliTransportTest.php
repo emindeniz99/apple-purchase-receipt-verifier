@@ -85,7 +85,11 @@ final class CliTransportTest extends TestCase
         self::assertFileDoesNotExist('pwned', 'no shell parsed anything');
     }
 
-    /** An input over the cap goes to stdin cut to one byte over it, the cut every Wasm wrapper makes; one at the cap whole. */
+    /**
+     * An input over the cap goes to stdin cut to one byte over it, the
+     * `limits.max_input_bytes` `aprv info` stated and the cut every Wasm
+     * wrapper makes; one at the cap whole.
+     */
     public function testAnInputOverTheCapIsSentCutToOneByteOverIt(): void
     {
         $transport = $this->opened();
@@ -98,6 +102,40 @@ final class CliTransportTest extends TestCase
         $log = $this->cli->log();
         self::assertSame([3145729, 3145728], array_column($log, 'stdin_length'));
         self::assertSame(hash('sha256', substr($twentyMib, 0, 3145729)), $log[0]['stdin_sha256'], 'the first bytes, unchanged');
+    }
+
+    public function testTheCutIsTheLengthAprvInfoStatedNotAConstant(): void
+    {
+        $this->cli->behave(['info' => '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":5}}']);
+        $transport = $this->transport();
+        $transport->open(null);
+
+        $transport->call(Operation::SignedData, 'abcdefgh', 1);
+        $transport->call(Operation::SignedData, 'abc', 1);
+
+        $log = array_slice($this->cli->log(), -2);
+        self::assertSame([5, 3], array_column($log, 'stdin_length'));
+        self::assertSame(hash('sha256', 'abcde'), $log[0]['stdin_sha256']);
+    }
+
+    /** A binary that states no input length is older than this package: create refuses it. */
+    public function testABinaryThatStatesNoInputLengthFailsCreate(): void
+    {
+        foreach ([
+            '{"abi":"aprv:verifier@0.1.0"}',
+            '{"abi":"aprv:verifier@0.1.0","limits":{"max_body_bytes":3145729}}',
+            '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":0}}',
+            '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":"3145729"}}',
+            '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":1.5}}',
+        ] as $info) {
+            $this->cli->behave(['info' => $info]);
+            try {
+                $this->transport()->open(null);
+                self::fail("aprv info answered {$info}: create must refuse it");
+            } catch (RuntimeException $e) {
+                self::assertStringContainsString('max_input_bytes', $e->getMessage(), $info);
+            }
+        }
     }
 
     public function testTheCallReturnsTheJsonOnStdoutUnchanged(): void
