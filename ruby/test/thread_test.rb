@@ -65,15 +65,17 @@ class ThreadTest < Minitest::Test
 
   # Every export runs without the GVL (`to_func(gvl: false)`), which is what
   # lets threads verify in parallel. The 1 MiB byte-floor receipt takes the
-  # module about 100 ms on an x86 runner and under 40 ms on an arm64 Mac; a
-  # thread that sleeps a millisecond at a time keeps ticking through it.
-  # With the GVL held it would not tick until the call returned, so any
-  # tick during the call is the proof. Two are asked for because a tick
-  # that was due as the call ended could land after it; a loaded macOS
-  # runner wakes a 1 ms sleeper every 5 to 10 ms, which made 4 ticks in a
-  # 37 ms call (CI, 2026-10-03), so the bar does not count milliseconds.
-  # (bench/threads.rb measures the rate this buys on real cores; this test
-  # does not depend on there being any.)
+  # module about 100 ms on an x86 runner and 37 ms on the arm64 macos-latest
+  # runner; a thread that sleeps a millisecond at a time keeps ticking
+  # through it, and with every export holding the GVL it made no tick at
+  # all. The ticks are timestamped and only those strictly inside the call
+  # count: `cabi_realloc` before the export and the post-return call after
+  # it release the GVL on their own, so an export that held it could still
+  # show one tick at each end. One tick inside is the proof; a count was
+  # not, because on the arm64 runner a 1 ms sleeper woke about every 9 ms,
+  # 4 ticks in a 37 ms call (CI, 2026-10-03). (bench/threads.rb measures
+  # the rate this buys on real cores; this test does not depend on there
+  # being any.)
   def test_a_long_call_does_not_hold_the_gvl
     root = TestSupport.fixture_bytes("large-receipt-root")
     receipt = [TestSupport.fixture_bytes("receipt-byte-floor")].pack("m0")
@@ -81,19 +83,23 @@ class ThreadTest < Minitest::Test
     now = (Time.now.to_r * 1000).to_i
     pool.with_guest { |guest| guest.call("verify-receipt", [now], receipt) } # first call warms the instance
 
-    ticks = 0
-    ticker = Thread.new { loop { sleep 0.001 and (ticks += 1) } }
+    ticks = []
+    ticker = Thread.new do
+      loop { sleep 0.001 and (ticks << Process.clock_gettime(Process::CLOCK_MONOTONIC)) }
+    end
     sleep 0.01
-    before = ticks
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     answer = pool.with_guest { |guest| guest.call("verify-receipt", [now], receipt) }
-    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
-    during = ticks - before
+    ended = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     ticker.kill
+    ticker.join
+    elapsed = ended - started
+    inside = ticks.count { |tick| tick > started + 0.002 && tick < ended - 0.002 }
 
     assert_includes answer, '"verified":true'
     assert_operator elapsed, :>, 0.02, "the call was too short to tell"
-    assert_operator during, :>=, 2, "the ticker made #{during} ticks in a #{(elapsed * 1000).round} ms call"
+    assert_operator inside, :>=, 1,
+                    "the ticker made #{inside} ticks inside a #{(elapsed * 1000).round} ms call"
   end
 
   def test_a_call_cut_short_discards_its_instance
