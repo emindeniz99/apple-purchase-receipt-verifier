@@ -232,10 +232,16 @@ final class HttpConn implements Closeable {
     /**
      * The Host header's value. {@link Target#host} holds an IPv6 literal
      * without its brackets, as a socket address takes it; the header puts
-     * them back (RFC 9112 §3.2, RFC 3986 §3.2.2).
+     * them back (RFC 9112 §3.2, RFC 3986 §3.2.2). A zone id
+     * ({@code %eth0}, or {@code %25eth0} as a URI writes it) names an
+     * interface on this host only, so it is left out (RFC 6874 §4).
      */
     static String hostHeader(String host, int port) {
-        return (host.indexOf(':') >= 0 ? "[" + host + "]" : host) + ":" + port;
+        if (host.indexOf(':') < 0) {
+            return host + ":" + port;
+        }
+        int zone = host.indexOf('%');
+        return "[" + (zone < 0 ? host : host.substring(0, zone)) + "]:" + port;
     }
 
     private byte[] chunked() throws IOException {

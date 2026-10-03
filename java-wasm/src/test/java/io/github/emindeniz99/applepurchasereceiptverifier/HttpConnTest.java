@@ -21,6 +21,19 @@ class HttpConnTest {
         assertEquals("aprv.internal:80", host("http://aprv.internal"));
     }
 
+    /**
+     * A zone id says which interface of this host reaches a link-local
+     * address; it means nothing to the server, so it does not go into the
+     * Host header (RFC 6874 §4), whether the URI writes it as {@code %25}
+     * or the literal carries a bare {@code %}.
+     */
+    @Test
+    void theHostHeaderLeavesOutAnIpv6ZoneId() {
+        assertEquals("[fe80::1]:8080", host("http://[fe80::1%25eth0]:8080/aprv"));
+        assertEquals("[fe80::1]:8080", HttpConn.hostHeader("fe80::1%eth0", 8080));
+        assertEquals("[fe80::1]:443", HttpConn.hostHeader("fe80::1%2", 443));
+    }
+
     private static String host(String url) {
         HttpConn.Target target = ServerSources.target(URI.create(url), null);
         return HttpConn.hostHeader(target.host, target.port);
