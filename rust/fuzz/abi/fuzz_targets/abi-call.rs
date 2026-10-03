@@ -20,6 +20,7 @@
 //!
 //!   APRV_WASM=<out>/aprv.wasm cargo +nightly fuzz run --fuzz-dir rust/fuzz/abi abi-call
 
+use base64::Engine as _;
 use libfuzzer_sys::fuzz_target;
 use std::sync::{Mutex, OnceLock};
 use wasmtime::{Caller, Config, Engine, Instance, Linker, Memory, Module, Store, Trap, TypedFunc};
@@ -179,25 +180,6 @@ impl Guest {
     }
 }
 
-fn base64(bytes: &[u8]) -> String {
-    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let n = chunk
-            .iter()
-            .enumerate()
-            .fold(0u32, |n, (i, b)| n | (u32::from(*b) << (16 - 8 * i)));
-        for (i, shift) in [18u32, 12, 6, 0].into_iter().enumerate() {
-            out.push(if i <= chunk.len() {
-                char::from(A[((n >> shift) & 0x3f) as usize])
-            } else {
-                '='
-            });
-        }
-    }
-    out
-}
-
 /// One pooled instance, `init`ed once, as a pooled host keeps it; replaced
 /// after a trap.
 fn guest() -> &'static Mutex<Option<Guest>> {
@@ -220,7 +202,7 @@ fuzz_target!(|data: &[u8]| {
     let now_ms = u64::from_le_bytes(data[5..13].try_into().unwrap());
     let wrapped;
     let input = if data[0] & 0x40 != 0 && op != 1 {
-        let text = base64(&data[13..]);
+        let text = base64::engine::general_purpose::STANDARD.encode(&data[13..]);
         wrapped = if op == 0 {
             text.into_bytes()
         } else {

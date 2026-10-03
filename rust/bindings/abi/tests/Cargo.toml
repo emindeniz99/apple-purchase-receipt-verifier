@@ -20,6 +20,8 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
+# The library's base64 crate and pin, to encode init's roots.
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 # aprv-server's pin: the ABI is tested on the runtime the server ships.
 wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std", "cranelift", "component-model", "parallel-compilation"] }
 getrandom = "0.4"

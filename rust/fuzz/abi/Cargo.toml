@@ -14,6 +14,8 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
+# The library's base64 crate and pin, to encode the receipt-data a client sends.
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 libfuzzer-sys = "0.4"
 # aprv-server's and the ABI tests' pin.
 wasmtime = { version = "=49.0.1", default-features = false, features = ["runtime", "std", "cranelift"] }
