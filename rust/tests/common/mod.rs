@@ -1,4 +1,4 @@
-//! Shared helpers for the native suite: fixture loading, a tiny DER writer,
+//! Shared helpers for the native suite: fixture loading, a DER writer and
 //! a BER reader over `asn1-rs`, and a CMS rebuilder that lets a test state
 //! one structural fault at a time.
 #![allow(dead_code)]
@@ -10,7 +10,7 @@ use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{
     Config, Failure, InAppPurchase, JsonPayload, ReceiptPayload, TrustAnchor, Verifier,
 };
-use asn1_rs::{Oid, ToDer};
+use asn1_rs::{Class, Header, Length, Oid, Tag, ToDer};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use std::path::{Path, PathBuf};
@@ -196,7 +196,10 @@ pub fn with_header(jws: &str, header: &serde_json::Map<String, serde_json::Value
 
 // --- a minimal DER writer ------------------------------------------------
 //
-// `asn1-rs` writes the OIDs.
+// `asn1-rs` writes the identifiers, lengths, integers and OIDs. What a test
+// breaks on purpose (a length one octet too long, an indefinite length, a
+// missing end-of-contents, a retagged value) it writes as bytes in the
+// test itself, where the fault is stated: no library writes those.
 
 /// Identifier octets the tests name.
 pub mod tag {
@@ -220,24 +223,19 @@ pub mod tag {
     pub const CONTEXT_3: u8 = 0xa3;
 }
 
-/// Encodes one TLV with a definite length.
+/// Encodes one TLV with a definite length, under the one identifier octet
+/// `tag` (a tag number up to 30).
 pub fn der(tag: u8, contents: &[u8]) -> Vec<u8> {
-    let mut out = vec![tag];
-    let length = contents.len();
-    if length < 0x80 {
-        out.push(length as u8);
-    } else {
-        let mut bytes = Vec::new();
-        let mut value = length;
-        while value > 0 {
-            bytes.insert(0, (value & 0xff) as u8);
-            value >>= 8;
-        }
-        out.push(0x80 | bytes.len() as u8);
-        out.extend_from_slice(&bytes);
-    }
-    out.extend_from_slice(contents);
-    out
+    assert!(tag & 0x1f != 0x1f, "one identifier octet only");
+    let class = Class::try_from(tag >> 6).unwrap();
+    let number = Tag(u32::from(tag & 0x1f));
+    let header = Header::new(
+        class,
+        tag & 0x20 != 0,
+        number,
+        Length::Definite(contents.len()),
+    );
+    [header.to_der_vec().unwrap(), contents.to_vec()].concat()
 }
 
 pub fn der_seq(parts: &[Vec<u8>]) -> Vec<u8> {
@@ -257,14 +255,7 @@ pub fn der_oid(dotted: &str) -> Vec<u8> {
 }
 
 pub fn der_int(value: u64) -> Vec<u8> {
-    let mut bytes = value.to_be_bytes().to_vec();
-    while bytes.len() > 1 && bytes[0] == 0 {
-        bytes.remove(0);
-    }
-    if bytes[0] >= 0x80 {
-        bytes.insert(0, 0);
-    }
-    der(tag::INTEGER, &bytes)
+    value.to_der_vec().unwrap()
 }
 
 /// A P-256 test PKI minted on the spot from fixed scalars, for tests that
