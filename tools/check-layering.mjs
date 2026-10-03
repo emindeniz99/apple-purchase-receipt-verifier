@@ -39,6 +39,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const CORE = 'apple-purchase-receipt-verifier';
 const ADAPTER = 'aprv-openssl';
@@ -78,13 +79,13 @@ function usage(message) {
   process.exit(2);
 }
 
-const args = process.argv.slice(2);
-let rustDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'rust');
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--rust-dir') rustDir = args[++i] ?? usage('--rust-dir needs a directory');
-  else usage(`unknown argument ${args[i]}`);
+let args;
+try {
+  args = parseArgs({ options: { 'rust-dir': { type: 'string', default: join(dirname(fileURLToPath(import.meta.url)), '..', 'rust') } } });
+} catch (error) {
+  usage(error.message);
 }
-rustDir = resolve(rustDir);
+const rustDir = resolve(args.values['rust-dir']);
 
 const TARGETS = [
   'x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl',

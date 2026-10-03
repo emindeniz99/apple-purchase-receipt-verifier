@@ -21,6 +21,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
+import { parseArgs } from 'node:util';
 
 const require = createRequire(import.meta.url);
 const Ajv2020 = require('ajv/dist/2020.js');
@@ -31,21 +32,16 @@ function usage(message) {
   process.exit(2);
 }
 
-const args = process.argv.slice(2);
-let field;
-const positional = [];
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--field') {
-    field = args[++i];
-    if (!field) usage('--field needs a name');
-  } else if (args[i].startsWith('--')) {
-    usage(`unknown option ${args[i]}`);
-  } else {
-    positional.push(args[i]);
-  }
+let args;
+try {
+  args = parseArgs({ allowPositionals: true, options: { field: { type: 'string' } } });
+} catch (error) {
+  usage(error.message);
 }
-if (positional.length !== 2) usage();
-const [schemaPath, answersPath] = positional.map((p) => resolve(p));
+const { field } = args.values;
+if (field === '') usage('--field needs a name');
+if (args.positionals.length !== 2) usage();
+const [schemaPath, answersPath] = args.positionals.map((p) => resolve(p));
 
 const ajv = new Ajv2020({ strict: true, allErrors: true, validateFormats: false });
 const schemaDir = dirname(schemaPath);

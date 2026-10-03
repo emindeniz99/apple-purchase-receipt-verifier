@@ -31,6 +31,7 @@ import { readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { getRandomValues } from 'node:crypto';
 import { join, resolve, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const IFACE = 'aprv:verifier/verify@0.1.0#';
 const HOST = 'aprv:verifier/host@0.1.0';
@@ -40,22 +41,17 @@ function usage(message) {
   process.exit(2);
 }
 
-const args = process.argv.slice(2);
-let modulePath = process.env.APRV_WASM;
-const at = args.indexOf('--module');
-if (at >= 0) {
-  modulePath = args[at + 1];
-  args.splice(at, 2);
+let args;
+try {
+  args = parseArgs({ allowPositionals: true, options: { module: { type: 'string' }, root: { type: 'string', multiple: true, default: [] } } });
+} catch (error) {
+  usage(error.message);
 }
-const roots = [];
-for (let r = args.indexOf('--root'); r >= 0; r = args.indexOf('--root')) {
-  if (!args[r + 1]) usage('--root needs a file');
-  roots.push(readFileSync(args[r + 1]).toString('base64'));
-  args.splice(r, 2);
-}
-if (args.length !== 1) usage('name one directory');
+const modulePath = args.values.module ?? process.env.APRV_WASM;
+const roots = args.values.root.map((path) => readFileSync(path).toString('base64'));
+if (args.positionals.length !== 1) usage('name one directory');
 if (!modulePath) usage('no module: set APRV_WASM or pass --module');
-const dir = realpathSync(resolve(args[0]));
+const dir = realpathSync(resolve(args.positionals[0]));
 const repo = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 if (dir === repo || dir.startsWith(repo + sep)) usage('the directory is inside the repository; keep private receipts outside it');
 

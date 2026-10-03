@@ -38,6 +38,7 @@
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -209,25 +210,19 @@ function* walk(dir) {
 }
 
 const USAGE = 'usage: node tools/check-one-implementation.mjs [--enforce <all|lang,lang,...>] [--root <dir>]';
-const args = process.argv.slice(2);
-let enforce = new Set();
-let root = ROOT;
-while (args.length) {
-  const [flag, value] = args.splice(0, 2);
-  if (!value || !['--enforce', '--root'].includes(flag)) {
-    console.error(USAGE);
+let args;
+try {
+  args = parseArgs({ options: { enforce: { type: 'string' }, root: { type: 'string', default: ROOT } } });
+} catch {
+  console.error(USAGE);
+  process.exit(2);
+}
+const { root } = args.values;
+const enforce = new Set(args.values.enforce === 'all' ? Object.keys(LANGS) : args.values.enforce?.split(','));
+for (const l of enforce) {
+  if (!LANGS[l]) {
+    console.error(`check-one-implementation: unknown language ${l}; known: ${Object.keys(LANGS).join(', ')}`);
     process.exit(2);
-  }
-  if (flag === '--root') {
-    root = value;
-    continue;
-  }
-  enforce = new Set(value === 'all' ? Object.keys(LANGS) : value.split(','));
-  for (const l of enforce) {
-    if (!LANGS[l]) {
-      console.error(`check-one-implementation: unknown language ${l}; known: ${Object.keys(LANGS).join(', ')}`);
-      process.exit(2);
-    }
   }
 }
 
