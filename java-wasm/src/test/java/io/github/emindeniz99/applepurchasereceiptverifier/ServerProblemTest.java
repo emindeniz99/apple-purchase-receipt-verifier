@@ -43,7 +43,9 @@ class ServerProblemTest {
     private HttpServer http;
     private final Map<String, String[]> answers = new ConcurrentHashMap<>();
     private final List<String> nowHeaders = Collections.synchronizedList(new ArrayList<>());
+    private final List<Integer> bodyLengths = Collections.synchronizedList(new ArrayList<>());
     private volatile List<String> infoRoots;
+    private volatile String infoLimits = ",\"limits\":{\"max_input_bytes\":3145729}";
 
     @BeforeEach
     void serve() throws Exception {
@@ -67,10 +69,17 @@ class ServerProblemTest {
                             .append('"');
                 }
                 status = 200;
-                body = ("{\"roots\":{\"source\":\"test\",\"sha256\":[" + roots + "]},\"component_sha256\":\"fake\"}")
+                body = ("{\"roots\":{\"source\":\"test\",\"sha256\":[" + roots + "]},\"component_sha256\":\"fake\""
+                                + infoLimits + "}")
                         .getBytes(StandardCharsets.UTF_8);
             } else {
                 nowHeaders.add(exchange.getRequestHeaders().getFirst("X-Aprv-Now-Ms"));
+                int length = 0;
+                byte[] buffer = new byte[8192];
+                for (int n; (n = exchange.getRequestBody().read(buffer)) > 0; ) {
+                    length += n;
+                }
+                bodyLengths.add(length);
                 String[] answer = answers.get(path);
                 status = Integer.parseInt(answer[0]);
                 body = answer[1].getBytes(StandardCharsets.UTF_8);
@@ -223,6 +232,37 @@ class ServerProblemTest {
         assertThrows(IllegalStateException.class, () -> verifier(Config.defaults()));
         infoRoots = Collections.emptyList();
         assertThrows(IllegalStateException.class, () -> verifier(Config.defaults()));
+    }
+
+    /**
+     * The input length is the module's (DECISIONS.md R42): the engine cuts an
+     * input to the {@code limits.max_input_bytes} the server states, and
+     * refuses a server that states none, whose module is older than this
+     * library.
+     */
+    @Test
+    void inputsAreCutToTheLengthTheServerStatesAndAServerStatingNoneIsRefused() {
+        infoLimits = ",\"limits\":{\"max_input_bytes\":10}";
+        Verifier verifier = verifier(Config.defaults());
+        answers.put("/v1/receipt/verify", new String[] {
+            "413", "{\"verified\":false,\"reason\":\"TOO_LARGE\",\"message\":\"m\"}", "application/json"
+        });
+        assertEquals(Reason.TOO_LARGE, verifier.verifyReceipt(repeat('A', 100)).failure().reason());
+        assertEquals(Reason.TOO_LARGE, verifier.verifyReceipt(repeat('A', 9)).failure().reason());
+        assertEquals(Arrays.asList(10, 9), bodyLengths);
+        for (String limits : new String[] {
+            "", ",\"limits\":{}", ",\"limits\":{\"max_input_bytes\":0}", ",\"limits\":{\"max_input_bytes\":\"10\"}"
+        }) {
+            infoLimits = limits;
+            IllegalStateException refused = assertThrows(IllegalStateException.class, () -> verifier(Config.defaults()));
+            assertTrue(refused.getMessage().contains("max_input_bytes"), refused.getMessage());
+        }
+    }
+
+    private static String repeat(char c, int n) {
+        char[] chars = new char[n];
+        Arrays.fill(chars, c);
+        return new String(chars);
     }
 
     @Test

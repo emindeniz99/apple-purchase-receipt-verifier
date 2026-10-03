@@ -17,9 +17,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 final class GuestPool {
 
-    /** One operation on an instance, and the decoding of its answer, as one unit. */
+    /**
+     * One operation on an instance, and the decoding of its answer, as one
+     * unit. {@code maxInputBytes} is what the instance's {@code init} answer
+     * stated: the most bytes of one input to hand it.
+     */
     interface Call<T> {
-        T run(Guest guest);
+        T run(Guest guest, int maxInputBytes);
     }
 
     private final GuestFactory factory;
@@ -28,6 +32,8 @@ final class GuestPool {
     private final ConcurrentLinkedDeque<Guest> idle = new ConcurrentLinkedDeque<>();
     private final AtomicInteger idleCount = new AtomicInteger();
     private final AtomicInteger created = new AtomicInteger();
+    /** The {@code max_input_bytes} of the last {@code init} answer; 0 before the first. */
+    private volatile int maxInputBytes;
 
     GuestPool(GuestFactory factory, byte[] configJson, int maxIdle) {
         this.factory = factory;
@@ -53,7 +59,7 @@ final class GuestPool {
         }
         T result;
         try {
-            result = call.run(guest);
+            result = call.run(guest, maxInputBytes);
         } catch (GuestFailure e) {
             throw e;
         } catch (RuntimeException e) {
@@ -80,6 +86,11 @@ final class GuestPool {
         return created.get();
     }
 
+    /** The {@code max_input_bytes} the module's {@code init} stated, for tests; 0 before the first instance. */
+    int maxInputBytes() {
+        return maxInputBytes;
+    }
+
     /** How many instances are idle now, for tests. */
     int idle() {
         return idleCount.get();
@@ -103,7 +114,9 @@ final class GuestPool {
         } catch (RuntimeException e) {
             throw new GuestFailure("the verifier module failed in init: " + e, e);
         }
-        Wire.initAnswer(answer);
+        // Every instance runs the one compiled module, so each answer states
+        // the same length; the last one read is kept.
+        maxInputBytes = Wire.initAnswer(answer);
         return guest;
     }
 

@@ -17,7 +17,8 @@ import org.jspecify.annotations.Nullable;
  * The {@link Verifier} over {@code aprv-server} (the server engine). It reads
  * the clock once per call before the input is touched and sends it as
  * {@code X-Aprv-Now-Ms}, posts the input bytes cut as the Endive engine cuts
- * them ({@link WasmVerifier#bytes}), and maps the answer: a 200 through the
+ * them ({@link WasmVerifier#bytes}, to the {@code max_input_bytes} the server
+ * states for its module), and maps the answer: a 200 through the
  * same {@link Wire} decoder as the Endive engine, and a 413 the same way, since its body is the module's own answer to an
  * input over the cap ({@code TOO_LARGE}, 21002 from the endpoint); every
  * problem as {@link Reason#INTERNAL_ERROR} with a {@link ServerProblem} cause,
@@ -80,7 +81,8 @@ final class ServerVerifier implements Verifier, Closeable {
                 environment == Environment.PRODUCTION ? "/v1/verify-receipt/production" : "/v1/verify-receipt/sandbox";
         try {
             long now = clock.millis();
-            HttpConn.Response response = holder.get().send("POST", path, bytes(requestJson), now);
+            ServerConnection connection = holder.get();
+            HttpConn.Response response = connection.send("POST", path, bytes(requestJson, connection), now);
             if (moduleAnswered(response)) {
                 return Wire.endpointAnswer(response.text());
             }
@@ -94,7 +96,8 @@ final class ServerVerifier implements Verifier, Closeable {
             String path, @Nullable String input, Function<String, VerificationResult<T>> decode) {
         try {
             long now = clock.millis();
-            HttpConn.Response response = holder.get().send("POST", path, bytes(input), now);
+            ServerConnection connection = holder.get();
+            HttpConn.Response response = connection.send("POST", path, bytes(input, connection), now);
             if (moduleAnswered(response)) {
                 return decode.apply(response.text());
             }
@@ -110,13 +113,14 @@ final class ServerVerifier implements Verifier, Closeable {
     }
 
     /**
-     * The input cut as the Endive engine cuts it ({@link WasmVerifier#bytes}):
-     * the server reads only that many bytes of a larger body before it
-     * answers and closes, so sending the rest would meet a reset instead of
-     * the module's TOO_LARGE answer.
+     * The input cut as the Endive engine cuts it ({@link WasmVerifier#bytes}),
+     * to the module's {@code max_input_bytes} the server stated: the server
+     * reads only that many bytes of a larger body before it answers and
+     * closes, so sending the rest would meet a reset instead of the module's
+     * TOO_LARGE answer.
      */
-    private static byte[] bytes(@Nullable String text) {
-        return WasmVerifier.bytes(text);
+    private static byte[] bytes(@Nullable String text, ServerConnection connection) {
+        return WasmVerifier.bytes(text, connection.maxInputBytes());
     }
 
     /** Stops a managed child now; later calls answer {@link Reason#INTERNAL_ERROR}. Idempotent. */

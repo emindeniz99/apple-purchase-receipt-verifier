@@ -129,6 +129,13 @@ class WasmVerifierTest {
         };
     }
 
+    /**
+     * The {@code max_input_bytes} the module's {@code init} answer states
+     * (DECISIONS.md R42): one over its largest cap, 3 MiB. Pinned here so a
+     * change of it is seen.
+     */
+    private static final int MAX_INPUT_BYTES = 3_145_729;
+
     private static String repeat(char c, int n) {
         char[] chars = new char[n];
         java.util.Arrays.fill(chars, c);
@@ -136,10 +143,11 @@ class WasmVerifierTest {
     }
 
     /**
-     * An input far over the cap is cut to one byte over it before it enters
-     * the module, and the core answers exactly as for the whole input:
-     * TOO_LARGE with its own message, 21002 from the endpoint. The instance
-     * does not grow to the input's size.
+     * An input far over the cap is cut to one byte over it, the length the
+     * module's {@code init} answer states, before it enters the module, and
+     * the core answers exactly as for the whole input: TOO_LARGE with its own
+     * message, 21002 from the endpoint. The instance does not grow to the
+     * input's size.
      */
     @Test
     void anInputOverTheCapReachesTheModuleOneByteOverIt() {
@@ -150,7 +158,8 @@ class WasmVerifierTest {
         Failure receipt = verifier.verifyReceipt(fourMib).failure();
         assertEquals(Reason.TOO_LARGE, receipt.reason());
         assertEquals("receipt exceeds the maximum accepted size of 3145728 bytes", receipt.message());
-        assertEquals(WasmVerifier.MAX_INPUT_BYTES, longest.get());
+        assertEquals(MAX_INPUT_BYTES, verifier.pool().maxInputBytes(), "the init answer");
+        assertEquals(MAX_INPUT_BYTES, longest.get());
         assertEquals(
                 Reason.TOO_LARGE, verifier.verifySignedData(fourMib).failure().reason());
         assertEquals(
@@ -161,7 +170,7 @@ class WasmVerifierTest {
                 "{\"status\":21002}",
                 verifier.verifyReceiptEndpoint(
                         Environment.SANDBOX, "{\"receipt-data\":\"" + repeat('\u00e9', 2 << 20) + "\"}"));
-        assertEquals(WasmVerifier.MAX_INPUT_BYTES, longest.get());
+        assertEquals(MAX_INPUT_BYTES, longest.get());
         assertTrue(memory.get() < 16L << 20, "linear memory stayed small: " + memory.get());
     }
 
@@ -174,10 +183,15 @@ class WasmVerifierTest {
         Failure failure = verifier.verifyReceipt(atCap).failure();
         assertEquals(3_145_728, longest.get());
         assertTrue(failure.reason() != Reason.TOO_LARGE, "at the cap is not over it: " + failure);
-        assertEquals(3_145_728, WasmVerifier.bytes(atCap).length);
-        assertEquals(WasmVerifier.MAX_INPUT_BYTES, WasmVerifier.bytes(atCap + "A").length);
-        assertEquals(WasmVerifier.MAX_INPUT_BYTES, WasmVerifier.bytes(repeat('\u20ac', 1_100_000)).length);
-        assertEquals("a?b", new String(WasmVerifier.bytes("a\ud800b"), java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals(3_145_728, WasmVerifier.bytes(atCap, MAX_INPUT_BYTES).length);
+        assertEquals(MAX_INPUT_BYTES, WasmVerifier.bytes(atCap + "A", MAX_INPUT_BYTES).length);
+        assertEquals(MAX_INPUT_BYTES, WasmVerifier.bytes(repeat('\u20ac', 1_100_000), MAX_INPUT_BYTES).length);
+        assertEquals(
+                "a?b",
+                new String(WasmVerifier.bytes("a\ud800b", MAX_INPUT_BYTES), java.nio.charset.StandardCharsets.UTF_8));
+        // The length is the one stated, whatever it is.
+        assertEquals(10, WasmVerifier.bytes(repeat('A', 100), 10).length);
+        assertEquals(0, WasmVerifier.bytes(null, 10).length);
     }
 
     private static String g5() throws Exception {

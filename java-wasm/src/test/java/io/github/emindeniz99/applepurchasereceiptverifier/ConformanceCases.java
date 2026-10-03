@@ -190,6 +190,16 @@ abstract class ConformanceCases {
             Failure failure = result.failure();
             fail(id + ": expected ok but failed with " + failure.reason() + ": " + failure.message());
         }
+        // The environment the module states beside the payload.
+        assertTrue(expected.has("environment"), id + ": harness error: an ok case states no environment");
+        Environment environment = payload instanceof ReceiptPayload
+                ? ((ReceiptPayload) payload).environment()
+                : ((JsonPayload) payload).environment();
+        JsonNode wantEnvironment = expected.get("environment");
+        assertEquals(
+                wantEnvironment.isNull() ? null : wantEnvironment.asText(),
+                environment == null ? null : environment.value(),
+                id + ": environment");
         String json;
         if (payload instanceof ReceiptPayload) {
             json = ((ReceiptPayload) payload).toJson();

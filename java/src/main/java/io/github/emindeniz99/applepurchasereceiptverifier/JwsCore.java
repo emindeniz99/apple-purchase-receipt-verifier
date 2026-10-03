@@ -96,7 +96,8 @@ final class JwsCore {
         // before anything is trusted. That only moves the validity window; the
         // signature and the chain to a pinned root are still required, as in
         // Apple's own rule. Absent or unreadable, the clock stands in.
-        Long signedDate = signedDate(payloadBytes);
+        Payload read = readOrNull(payloadBytes);
+        Long signedDate = read != null ? read.signedDate : null;
         authenticateTopDown(leaf, intermediate, trustAnchors);
         validateChain(leaf, intermediate, new Date(signedDate != null ? signedDate : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
@@ -111,8 +112,9 @@ final class JwsCore {
                     "intermediate certificate lacks Apple marker OID " + AppleTrust.INTERMEDIATE_OID);
         }
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
-        requireJsonObject(payloadBytes);
-        return new JsonPayload(new String(payloadBytes, StandardCharsets.UTF_8));
+        // A payload that did not read fails here, as UNREADABLE_PAYLOAD.
+        Payload payload = read != null ? read : readPayload(payloadBytes);
+        return new JsonPayload(new String(payloadBytes, StandardCharsets.UTF_8), payload.environment());
     }
 
     /**
@@ -164,11 +166,17 @@ final class JwsCore {
      * does not read. Never throws: nothing is trusted yet.
      */
     static @Nullable Long signedDate(byte[] payload) {
-        try {
-            return readPayload(payload);
-        } catch (VerificationException e) {
-            return null;
-        }
+        Payload read = readOrNull(payload);
+        return read != null ? read.signedDate : null;
+    }
+
+    /**
+     * The environment the payload names ({@link JsonPayload#environment()}),
+     * or null when the payload does not read. Never throws.
+     */
+    static @Nullable Environment environment(byte[] payload) {
+        Payload read = readOrNull(payload);
+        return read != null ? read.environment() : null;
     }
 
     /** Refuses, as UNREADABLE_PAYLOAD, a signed payload that is not one JSON object in strict UTF-8. */
@@ -176,15 +184,118 @@ final class JwsCore {
         readPayload(payload);
     }
 
-    /** Reads the payload as one JSON object with nothing after it; returns its last top-level signedDate. */
-    private static @Nullable Long readPayload(byte[] payload) throws VerificationException {
-        Long[] signedDate = {null};
+    private static @Nullable Payload readOrNull(byte[] payload) {
+        try {
+            return readPayload(payload);
+        } catch (VerificationException e) {
+            return null;
+        }
+    }
+
+    /** Reads the payload as one JSON object with nothing after it, once, for everything this class needs of it. */
+    private static Payload readPayload(byte[] payload) throws VerificationException {
+        Payload read = new Payload();
         readObject(payload, Reason.UNREADABLE_PAYLOAD, "signed payload", (name, value, parser) -> {
             if ("signedDate".equals(name)) {
-                signedDate[0] = JsonFields.instant(parser, value);
+                read.signedDate = JsonFields.instant(parser, value);
+            } else if ("environment".equals(name)) {
+                read.topLevel.state(value, parser);
+            } else if ("data".equals(name)) {
+                read.data.readContainer(value, parser);
+            } else if ("summary".equals(name)) {
+                read.summary.readContainer(value, parser);
             }
         });
-        return signedDate[0];
+        return read;
+    }
+
+    /**
+     * What one read of a signed payload yields: its last top-level
+     * {@code signedDate}, and the three places Apple documents for its
+     * environment. A repeated name keeps its last value, a repeated
+     * {@code data} or {@code summary} included, as everywhere in a payload.
+     */
+    static final class Payload {
+        @Nullable
+        Long signedDate;
+
+        /** The top-level {@code environment}: a transaction, renewal info. */
+        final Place topLevel = new Place();
+
+        /** {@code data.environment}: an App Store Server Notification V2. */
+        final Place data = new Place();
+
+        /** {@code summary.environment}: a summary notification. */
+        final Place summary = new Place();
+
+        /**
+         * The first of the three places that is present decides, whatever
+         * its value: {@code Production} and {@code Sandbox} map, anything
+         * else is null, as is a payload with none of them. The core states
+         * the same rule (rust/src/jws.rs; DECISIONS.md R42).
+         */
+        @Nullable
+        Environment environment() {
+            for (Place place : new Place[] {topLevel, data, summary}) {
+                if (place.present) {
+                    return jwsEnvironment(place.value);
+                }
+            }
+            return null;
+        }
+    }
+
+    /** One place an {@code environment} member may be: whether it is there, and its string value. */
+    static final class Place {
+        boolean present;
+
+        /** The value when it is a string, else null. */
+        @Nullable
+        String value;
+
+        /** The member is here: its value is {@code token}, which this leaves for the caller to skip. */
+        void state(JsonToken token, JsonParser parser) throws IOException {
+            present = true;
+            value = token == JsonToken.VALUE_STRING ? parser.getText() : null;
+        }
+
+        /**
+         * Reads a {@code data} or {@code summary} member for its
+         * {@code environment}, forgetting an earlier one of the same name. A
+         * value that is not an object holds none. Leaves the parser on the
+         * object's closing brace.
+         */
+        void readContainer(JsonToken token, JsonParser parser) throws IOException {
+            present = false;
+            value = null;
+            if (token != JsonToken.START_OBJECT) {
+                return;
+            }
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                String name = parser.currentName();
+                JsonToken member = parser.nextToken();
+                if ("environment".equals(name)) {
+                    state(member, parser);
+                }
+                parser.skipChildren();
+            }
+        }
+    }
+
+    /**
+     * What a JWS {@code environment} value names: {@code Production} is
+     * {@link Environment#PRODUCTION}, {@code Sandbox} is
+     * {@link Environment#SANDBOX}, anything else ({@code Xcode},
+     * {@code LocalTesting}, a value that is not a string) is null.
+     */
+    static @Nullable Environment jwsEnvironment(@Nullable String value) {
+        if ("Production".equals(value)) {
+            return Environment.PRODUCTION;
+        }
+        if ("Sandbox".equals(value)) {
+            return Environment.SANDBOX;
+        }
+        return null;
     }
 
     /**

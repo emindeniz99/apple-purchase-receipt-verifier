@@ -119,7 +119,7 @@ class VerifierApiTest {
 
     @Test
     void resultsAndFailuresCanBeBuiltForAMockedVerifier() {
-        JsonPayload payload = new JsonPayload("{}");
+        JsonPayload payload = new JsonPayload("{}", null);
         assertEquals(payload, VerificationResult.of(payload).payload());
         Failure failure = new Failure(Reason.UNTRUSTED_CHAIN, "a message", null);
         VerificationResult<JsonPayload> failed = VerificationResult.failed(failure);
@@ -127,7 +127,9 @@ class VerifierApiTest {
         assertEquals(failure, failed.failure());
         assertThrows(NullPointerException.class, () -> VerificationResult.of(null));
         assertThrows(NullPointerException.class, () -> VerificationResult.failed(null));
-        assertEquals(VerificationResult.of(payload), VerificationResult.of(new JsonPayload("{}")));
+        assertEquals(VerificationResult.of(payload), VerificationResult.of(new JsonPayload("{}", null)));
+        assertNotEquals(payload, new JsonPayload("{}", Environment.SANDBOX));
+        assertEquals(Environment.PRODUCTION, new JsonPayload("{}", Environment.PRODUCTION).environment());
     }
 
     /**
@@ -213,7 +215,8 @@ class VerifierApiTest {
                 null,
                 null,
                 null,
-                unknown);
+                unknown,
+                null);
     }
 
     @Test
@@ -233,7 +236,8 @@ class VerifierApiTest {
                 null,
                 null,
                 null,
-                Collections.<Integer, List<byte[]>>emptyMap());
+                Collections.<Integer, List<byte[]>>emptyMap(),
+                null);
         assertSameJsonValue(
                 "{\"receipt_type\":null,\"app_item_id\":null,\"bundle_id\":null,\"bundle_id_bytes\":null,"
                         + "\"application_version\":null,\"opaque_value\":null,\"sha1_hash\":null,"
@@ -284,7 +288,8 @@ class VerifierApiTest {
                 1722945600000L,
                 "1.0",
                 null,
-                unknown);
+                unknown,
+                Environment.SANDBOX);
         assertSameJsonValue(
                 "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":\"0\",\"bundle_id\":\"com.example.app\","
                         + "\"bundle_id_bytes\":\"Y29tLmV4YW1wbGUuYXBw\",\"application_version\":\"1.2.3\","
@@ -336,7 +341,8 @@ class VerifierApiTest {
                 null,
                 null,
                 null,
-                Collections.<Integer, List<byte[]>>emptyMap());
+                Collections.<Integer, List<byte[]>>emptyMap(),
+                null);
         String json = payload.toJson();
         for (int i = 0; i < json.length(); i++) {
             assertTrue(json.charAt(i) < 0x80, json);
@@ -436,7 +442,8 @@ class VerifierApiTest {
                 null,
                 null,
                 null,
-                unknown);
+                unknown,
+                null);
         opaque[0] = 9;
         values.get(0)[0] = 9;
         values.add(new byte[] {8});
@@ -480,28 +487,61 @@ class VerifierApiTest {
                 first.originalPurchaseDateMs(),
                 first.originalApplicationVersion(),
                 first.expirationDateMs(),
-                first.unknownAttributes());
+                first.unknownAttributes(),
+                first.environment());
         assertEquals(first, rebuilt);
         assertEquals(first.toJson(), rebuilt.toJson());
+        assertEquals(Environment.SANDBOX, first.environment());
+        // The environment is part of the value, not of toJson().
+        ReceiptPayload elsewhere = new ReceiptPayload(
+                first.receiptType(),
+                first.appItemId(),
+                first.bundleId(),
+                first.bundleIdBytes(),
+                first.applicationVersion(),
+                first.opaqueValue(),
+                first.sha1Hash(),
+                first.receiptCreationDateMs(),
+                first.downloadId(),
+                first.versionExternalIdentifier(),
+                first.inApp(),
+                first.originalPurchaseDateMs(),
+                first.originalApplicationVersion(),
+                first.expirationDateMs(),
+                first.unknownAttributes(),
+                Environment.PRODUCTION);
+        assertNotEquals(first, elsewhere);
+        assertEquals(first.toJson(), elsewhere.toJson());
     }
 
     // ------------------------------------------------------------ helpers
 
+    /**
+     * The rule lives in the implementation (ReceiptDecoder, JwsCore), where
+     * the verifier computes a payload's environment; the public enum states
+     * none (DECISIONS.md R42).
+     */
     @Test
     void environmentMapsApplesValuesAndDecidesNothing() {
-        assertEquals(Environment.PRODUCTION, Environment.fromReceiptType("Production"));
-        assertEquals(Environment.PRODUCTION, Environment.fromReceiptType("ProductionVPP"));
-        assertEquals(Environment.SANDBOX, Environment.fromReceiptType("ProductionSandbox"));
-        assertEquals(Environment.SANDBOX, Environment.fromReceiptType("ProductionVPPSandbox"));
+        assertEquals(Environment.PRODUCTION, ReceiptDecoder.environment("Production"));
+        assertEquals(Environment.PRODUCTION, ReceiptDecoder.environment("ProductionVPP"));
+        assertEquals(Environment.SANDBOX, ReceiptDecoder.environment("ProductionSandbox"));
+        assertEquals(Environment.SANDBOX, ReceiptDecoder.environment("ProductionVPPSandbox"));
         for (String other : Arrays.asList("Xcode", "Sandbox", "production", "", null)) {
-            assertNull(Environment.fromReceiptType(other), String.valueOf(other));
+            assertNull(ReceiptDecoder.environment(other), String.valueOf(other));
         }
-        assertEquals(Environment.PRODUCTION, Environment.fromJwsEnvironment("Production"));
-        assertEquals(Environment.SANDBOX, Environment.fromJwsEnvironment("Sandbox"));
+        assertEquals(Environment.PRODUCTION, JwsCore.jwsEnvironment("Production"));
+        assertEquals(Environment.SANDBOX, JwsCore.jwsEnvironment("Sandbox"));
         for (String other : Arrays.asList("Xcode", "LocalTesting", "ProductionSandbox", "sandbox", "", null)) {
-            assertNull(Environment.fromJwsEnvironment(other), String.valueOf(other));
+            assertNull(JwsCore.jwsEnvironment(other), String.valueOf(other));
         }
         assertEquals(2, Environment.values().length);
+        for (java.lang.reflect.Method method : Environment.class.getDeclaredMethods()) {
+            assertFalse(
+                    java.lang.reflect.Modifier.isPublic(method.getModifiers())
+                            && method.getName().startsWith("from"),
+                    method.getName());
+        }
     }
 
     @Test

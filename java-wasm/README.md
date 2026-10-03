@@ -193,9 +193,10 @@ code. A server that cannot be started or reached is `INTERNAL_ERROR`
 with a `ServerProcessFailure` as the cause, so it is never mistaken for
 a trap. An input over 3 MiB is answered by the module, `TOO_LARGE`
 (21002 from the endpoint) with the core's own message, as on Endive: the
-engine sends its first 3,145,729 bytes, the cut Endive makes before the
-module, the server sends the module's answer with HTTP 413, and the
-engine reads it as it reads a 200. Both cause classes are internal; tell
+engine sends only as many bytes as the module's `init` answer states
+(`max_input_bytes`, which the server reports in `GET /v1/info`), the cut
+Endive makes before the module, the server sends the module's answer
+with HTTP 413, and the engine reads it as it reads a 200. Both cause classes are internal; tell
 them apart by `getClass().getName()` in logs.
 
 ## The runtime probe

@@ -23,10 +23,15 @@ import org.jspecify.annotations.Nullable;
  * never a verdict.
  *
  * <ul>
- *   <li>{@code init}: {@code {"ok":true}} or {@code {"ok":false,"message":"..."}}.</li>
- *   <li>{@code verify-receipt}: {@code {"verified":true,"payload":<ReceiptPayload>}},
- *       the payload in 0.7's "Our JSON" (docs/design/0.7-api.md).</li>
- *   <li>{@code verify-signed-data}: {@code {"verified":true,"payload":"<the signed JSON>"}}.</li>
+ *   <li>{@code init}: {@code {"ok":true,"max_input_bytes":N}} or
+ *       {@code {"ok":false,"message":"..."}}.</li>
+ *   <li>{@code verify-receipt}:
+ *       {@code {"verified":true,"payload":<ReceiptPayload>,"environment":<E>}}, the
+ *       payload in 0.7's "Our JSON" (docs/design/0.7-api.md).</li>
+ *   <li>{@code verify-signed-data}:
+ *       {@code {"verified":true,"payload":"<the signed JSON>","environment":<E>}}.</li>
+ *   <li>{@code <E>}: {@code "Production"}, {@code "Sandbox"} or {@code null}, the
+ *       environment the module read (DECISIONS.md R42).</li>
  *   <li>Either failure: {@code {"verified":false,"reason":"<Reason>","message":"..."}}.</li>
  *   <li>{@code verify-receipt-endpoint}: Apple's response JSON, passed through.</li>
  * </ul>
@@ -46,14 +51,19 @@ final class Wire {
             .build();
 
     /**
+     * The {@code max_input_bytes} of an {@code init} answer: the most bytes of
+     * one input the module needs (DECISIONS.md R42). A longer input is cut to
+     * this length, and the module answers {@code TOO_LARGE} for it.
+     *
      * @throws InitRefused  when the module answered {@code {"ok":false}}
-     * @throws GuestFailure when the answer is not an {@code init} answer
+     * @throws GuestFailure when the answer is not an {@code init} answer, an
+     *     accepting one without a positive {@code max_input_bytes} included
      */
-    static void initAnswer(String answer) {
+    static int initAnswer(String answer) {
         Map<String, Object> object = object(parse(answer), "init answer");
         Object ok = object.get("ok");
-        if (Boolean.TRUE.equals(ok) && object.size() == 1) {
-            return;
+        if (Boolean.TRUE.equals(ok) && object.size() == 2) {
+            return maxInputBytes(object.get("max_input_bytes"), "init answer \"max_input_bytes\"");
         }
         if (Boolean.FALSE.equals(ok) && object.size() == 2 && object.get("message") instanceof String) {
             throw new InitRefused((String) object.get("message"));
@@ -64,7 +74,8 @@ final class Wire {
     static VerificationResult<ReceiptPayload> receiptAnswer(String answer) {
         Map<String, Object> object = object(parse(answer), "verify-receipt answer");
         if (verified(object, "verify-receipt answer")) {
-            return VerificationResult.of(receipt(object(object.get("payload"), "payload")));
+            return VerificationResult.of(
+                    receipt(object(object.get("payload"), "payload"), environment(object)));
         }
         return VerificationResult.failed(failure(object, "verify-receipt answer"));
     }
@@ -76,9 +87,21 @@ final class Wire {
             if (!(payload instanceof String)) {
                 throw malformed("payload");
             }
-            return VerificationResult.of(new JsonPayload((String) payload));
+            return VerificationResult.of(new JsonPayload((String) payload, environment(object)));
         }
         return VerificationResult.failed(failure(object, "verify-signed-data answer"));
+    }
+
+    /**
+     * An input length the module stated, as an {@code int}: a positive JSON
+     * integer no larger than {@link Integer#MAX_VALUE} (a Java array's
+     * bound).
+     */
+    static int maxInputBytes(@Nullable Object value, String what) {
+        if (!(value instanceof Long) || (Long) value < 1 || (Long) value > Integer.MAX_VALUE) {
+            throw malformed(what);
+        }
+        return (int) (long) (Long) value;
     }
 
     /** Apple's response JSON, unchanged; only an empty answer is refused. */
@@ -91,11 +114,11 @@ final class Wire {
 
     // ------------------------------------------------------------ the envelope
 
-    /** True for {"verified":true,"payload":...}; false for a well-formed failure. */
+    /** True for {"verified":true,"payload":...,"environment":...}; false for a well-formed failure. */
     private static boolean verified(Map<String, Object> object, String what) {
         Object verified = object.get("verified");
         if (Boolean.TRUE.equals(verified)) {
-            keys(object, what, "verified", "payload");
+            keys(object, what, "verified", "payload", "environment");
             return true;
         }
         if (Boolean.FALSE.equals(verified)) {
@@ -103,6 +126,24 @@ final class Wire {
             return false;
         }
         throw malformed(what + " \"verified\"");
+    }
+
+    /**
+     * The verified answer's {@code environment}: Apple's spelling of one of
+     * the two, or {@code null}. The module decided it; this only names the
+     * constant.
+     */
+    private static @Nullable Environment environment(Map<String, Object> object) {
+        Object value = object.get("environment");
+        if (value == NULL) {
+            return null;
+        }
+        for (Environment known : Environment.values()) {
+            if (known.value().equals(value)) {
+                return known;
+            }
+        }
+        throw malformed("\"environment\"");
     }
 
     private static Failure failure(Map<String, Object> object, String what) {
@@ -154,7 +195,7 @@ final class Wire {
         "unknown_attributes"
     };
 
-    private static ReceiptPayload receipt(Map<String, Object> m) {
+    private static ReceiptPayload receipt(Map<String, Object> m, @Nullable Environment environment) {
         keys(m, "payload", RECEIPT_KEYS);
         Object purchases = m.get("in_app");
         if (!(purchases instanceof List)) {
@@ -179,7 +220,8 @@ final class Wire {
                 number(m, "original_purchase_date_ms"),
                 string(m, "original_application_version"),
                 number(m, "expiration_date_ms"),
-                attributes(m));
+                attributes(m),
+                environment);
     }
 
     private static InAppPurchase purchase(Map<String, Object> m) {

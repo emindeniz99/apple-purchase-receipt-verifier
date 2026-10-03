@@ -92,8 +92,7 @@ final class WasmVerifier implements Verifier {
     public VerificationResult<ReceiptPayload> verifyReceipt(@Nullable String base64) {
         try {
             long now = clock.millis();
-            byte[] input = bytes(base64);
-            return pool.call(guest -> Wire.receiptAnswer(guest.verifyReceipt(now, input)));
+            return pool.call((guest, max) -> Wire.receiptAnswer(guest.verifyReceipt(now, bytes(base64, max))));
         } catch (GuestFailure e) {
             return VerificationResult.failed(moduleFailure(e));
         } catch (RuntimeException e) {
@@ -105,8 +104,7 @@ final class WasmVerifier implements Verifier {
     public VerificationResult<JsonPayload> verifySignedData(@Nullable String jws) {
         try {
             long now = clock.millis();
-            byte[] input = bytes(jws);
-            return pool.call(guest -> Wire.signedDataAnswer(guest.verifySignedData(now, input)));
+            return pool.call((guest, max) -> Wire.signedDataAnswer(guest.verifySignedData(now, bytes(jws, max))));
         } catch (GuestFailure e) {
             return VerificationResult.failed(moduleFailure(e));
         } catch (RuntimeException e) {
@@ -122,48 +120,43 @@ final class WasmVerifier implements Verifier {
         int env = environment == Environment.PRODUCTION ? 0 : 1;
         try {
             long now = clock.millis();
-            byte[] input = bytes(requestJson);
             // Apple's response JSON, byte for byte as the module wrote it.
-            return pool.call(guest -> Wire.endpointAnswer(guest.verifyReceiptEndpoint(env, now, input)));
+            return pool.call((guest, max) ->
+                    Wire.endpointAnswer(guest.verifyReceiptEndpoint(env, now, bytes(requestJson, max))));
         } catch (RuntimeException e) {
             return "{\"status\":" + AppleStatus.INTERNAL_DATA_ACCESS_ERROR + "}";
         }
     }
 
     /**
-     * The most bytes of an input copied into the module's memory: one over the
-     * core's largest cap (3,145,728 bytes, the receipt and endpoint body
-     * cap), so an input over it still reaches the core over it and the core
-     * itself answers TOO_LARGE (21002 from the endpoint), as it does for the
-     * whole input. Copying all of a larger input would grow the instance's
-     * linear memory to the input's size for the instance's life, and past
-     * about 2 GiB trap as INTERNAL_ERROR instead.
+     * The input's UTF-8 bytes, or its first {@code maxInputBytes} of them:
+     * the length the module's {@code init} answer states (DECISIONS.md R42),
+     * one over the core's largest cap, so an input over it still reaches the
+     * core over it and the core itself answers TOO_LARGE (21002 from the
+     * endpoint), as it does for the whole input. Copying all of a larger
+     * input would grow the instance's linear memory to the input's size for
+     * the instance's life, and past about 2 GiB trap as INTERNAL_ERROR
+     * instead. {@code null} is the empty input, which the module answers as
+     * malformed. Only what is kept is encoded, so a huge input costs no huge
+     * array either. Lone surrogates become {@code ?}, as
+     * {@link String#getBytes} makes them.
      */
-    static final int MAX_INPUT_BYTES = 3_145_729;
-
-    /**
-     * The input's UTF-8 bytes, or its first {@link #MAX_INPUT_BYTES} of them;
-     * {@code null} is the empty input, which the module answers as malformed.
-     * Only what is kept is encoded, so a huge input costs no huge array
-     * either. Lone surrogates become {@code ?}, as {@link String#getBytes}
-     * makes them.
-     */
-    static byte[] bytes(@Nullable String text) {
+    static byte[] bytes(@Nullable String text, int maxInputBytes) {
         if (text == null) {
             return new byte[0];
         }
-        if (text.length() <= MAX_INPUT_BYTES / 3) {
+        if (text.length() <= maxInputBytes / 3) {
             return text.getBytes(StandardCharsets.UTF_8); // at most 3 bytes per char: under the limit
         }
         // Room for one more character, so a stop at a character boundary is
         // never short of the limit.
-        ByteBuffer out = ByteBuffer.allocate(MAX_INPUT_BYTES + 3);
+        ByteBuffer out = ByteBuffer.allocate(maxInputBytes + 3);
         StandardCharsets.UTF_8
                 .newEncoder()
                 .onMalformedInput(CodingErrorAction.REPLACE)
                 .onUnmappableCharacter(CodingErrorAction.REPLACE)
                 .encode(CharBuffer.wrap(text), out, true);
-        return Arrays.copyOf(out.array(), Math.min(out.position(), MAX_INPUT_BYTES));
+        return Arrays.copyOf(out.array(), Math.min(out.position(), maxInputBytes));
     }
 
     private static Failure moduleFailure(GuestFailure e) {

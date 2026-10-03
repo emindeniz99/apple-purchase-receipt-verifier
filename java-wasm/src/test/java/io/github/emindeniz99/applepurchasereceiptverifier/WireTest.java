@@ -29,13 +29,18 @@ class WireTest {
                 continue;
             }
             String payload = expected.get("toJson").asText();
-            VerificationResult<ReceiptPayload> result =
-                    Wire.receiptAnswer("{\"verified\":true,\"payload\":" + payload + "}");
+            JsonNode environment = expected.get("environment");
+            VerificationResult<ReceiptPayload> result = Wire.receiptAnswer(
+                    "{\"verified\":true,\"payload\":" + payload + ",\"environment\":" + environment + "}");
             ReceiptPayload decoded = result.payload();
             assertTrue(decoded != null, kase.get("id").asText());
             assertEquals(
                     Cases.MAPPER.readTree(payload),
                     Cases.MAPPER.readTree(decoded.toJson()),
+                    kase.get("id").asText());
+            assertEquals(
+                    environment.isNull() ? null : environment.asText(),
+                    decoded.environment() == null ? null : decoded.environment().value(),
                     kase.get("id").asText());
             checked++;
         }
@@ -45,9 +50,32 @@ class WireTest {
     @Test
     void aSignedPayloadIsTheStringTheModuleReturned() {
         String signed = "{\"b\":1, \"a\":\"\\u00e9\"}";
-        VerificationResult<JsonPayload> result =
-                Wire.signedDataAnswer("{\"verified\":true,\"payload\":" + quote(signed) + "}");
+        VerificationResult<JsonPayload> result = Wire.signedDataAnswer(
+                "{\"verified\":true,\"payload\":" + quote(signed) + ",\"environment\":\"Sandbox\"}");
         assertEquals(signed, result.payload().json());
+        assertEquals(Environment.SANDBOX, result.payload().environment());
+        assertEquals(
+                Environment.PRODUCTION,
+                Wire.signedDataAnswer("{\"verified\":true,\"payload\":\"{}\",\"environment\":\"Production\"}")
+                        .payload()
+                        .environment());
+        assertNull(Wire.signedDataAnswer("{\"verified\":true,\"payload\":\"{}\",\"environment\":null}")
+                .payload()
+                .environment());
+    }
+
+    /**
+     * The environment is the module's answer, refused like a missing payload
+     * when it is absent or not one of Apple's two spellings or null: a module
+     * that does not state it is older than this library.
+     */
+    @Test
+    void aVerifiedAnswerWithoutAnEnvironmentIsAModuleFailure() {
+        for (String environment : new String[] {"", ",\"environment\":\"sandbox\"", ",\"environment\":\"Xcode\"",
+            ",\"environment\":1", ",\"environment\":\"Sandbox\",\"environment\":null"}) {
+            String answer = "{\"verified\":true,\"payload\":\"{}\"" + environment + "}";
+            assertThrows(GuestFailure.class, () -> Wire.signedDataAnswer(answer), answer);
+        }
     }
 
     @Test
@@ -64,11 +92,25 @@ class WireTest {
 
     @Test
     void initAnswers() {
-        Wire.initAnswer("{\"ok\":true}");
+        assertEquals(3_145_729, Wire.initAnswer("{\"ok\":true,\"max_input_bytes\":3145729}"));
+        assertEquals(1, Wire.initAnswer("{\"max_input_bytes\":1,\"ok\":true}"));
         InitRefused refused =
                 assertThrows(InitRefused.class, () -> Wire.initAnswer("{\"ok\":false,\"message\":\"no root\"}"));
         assertEquals("no root", refused.getMessage());
-        for (String bad : new String[] {"", "{}", "{\"ok\":1}", "{\"ok\":true,\"x\":1}", "{\"ok\":false}", "[true]"}) {
+        for (String bad : new String[] {
+            "",
+            "{}",
+            "{\"ok\":1}",
+            "{\"ok\":true}", // a module older than this library
+            "{\"ok\":true,\"x\":1}",
+            "{\"ok\":true,\"max_input_bytes\":0}",
+            "{\"ok\":true,\"max_input_bytes\":-1}",
+            "{\"ok\":true,\"max_input_bytes\":\"3145729\"}",
+            "{\"ok\":true,\"max_input_bytes\":2147483648}",
+            "{\"ok\":true,\"max_input_bytes\":3145729,\"x\":1}",
+            "{\"ok\":false}",
+            "[true]"
+        }) {
             assertThrows(GuestFailure.class, () -> Wire.initAnswer(bad), bad);
         }
     }
@@ -87,6 +129,7 @@ class WireTest {
             "{\"verified\":\"yes\"}",
             "{\"verified\":true}",
             "{\"verified\":true,\"payload\":{}}",
+            "{\"verified\":true,\"payload\":{},\"environment\":null}",
             "{\"verified\":true,\"payload\":\"a string, not a receipt\"}",
             "{\"verified\":true,\"payload\":{\"bundleId\":\"0.6 shape\"}",
         };
@@ -94,6 +137,9 @@ class WireTest {
             assertThrows(GuestFailure.class, () -> Wire.receiptAnswer(answer), answer);
         }
         assertThrows(GuestFailure.class, () -> Wire.signedDataAnswer("{\"verified\":true,\"payload\":{}}"));
+        assertThrows(
+                GuestFailure.class,
+                () -> Wire.signedDataAnswer("{\"verified\":true,\"payload\":{},\"environment\":null}"));
         assertThrows(GuestFailure.class, () -> Wire.endpointAnswer(""));
     }
 
@@ -122,12 +168,23 @@ class WireTest {
         for (String[] mutation : mutations) {
             ObjectNode changed = good.deepCopy();
             changed.set(mutation[0], Cases.MAPPER.readTree(mutation[1]));
-            String answer = "{\"verified\":true,\"payload\":" + changed + "}";
+            String answer = "{\"verified\":true,\"payload\":" + changed + ",\"environment\":\"Sandbox\"}";
             assertThrows(GuestFailure.class, () -> Wire.receiptAnswer(answer), mutation[0] + "=" + mutation[1]);
         }
         ObjectNode missing = good.deepCopy();
         missing.remove("expiration_date_ms");
-        assertThrows(GuestFailure.class, () -> Wire.receiptAnswer("{\"verified\":true,\"payload\":" + missing + "}"));
+        assertThrows(
+                GuestFailure.class,
+                () -> Wire.receiptAnswer(
+                        "{\"verified\":true,\"payload\":" + missing + ",\"environment\":\"Sandbox\"}"));
+        // The control: the unchanged payload decodes, and without its
+        // environment it does not.
+        assertEquals(
+                Environment.SANDBOX,
+                Wire.receiptAnswer("{\"verified\":true,\"payload\":" + good + ",\"environment\":\"Sandbox\"}")
+                        .payload()
+                        .environment());
+        assertThrows(GuestFailure.class, () -> Wire.receiptAnswer("{\"verified\":true,\"payload\":" + good + "}"));
     }
 
     @Test
@@ -137,7 +194,7 @@ class WireTest {
                 + "\"sha1_hash\":null,\"receipt_creation_date_ms\":null,\"download_id\":null,"
                 + "\"version_external_identifier\":null,\"in_app\":[],\"original_purchase_date_ms\":null,"
                 + "\"original_application_version\":null,\"expiration_date_ms\":null,"
-                + "\"unknown_attributes\":{\"13\":[\"AQ==\",\"Ag==\"],\"-5\":[\"\"]}}}";
+                + "\"unknown_attributes\":{\"13\":[\"AQ==\",\"Ag==\"],\"-5\":[\"\"]}},\"environment\":null}";
         ReceiptPayload payload = Wire.receiptAnswer(answer).payload();
         assertEquals(Long.valueOf(-1), payload.appItemId());
         List<byte[]> values = payload.unknownAttributes().get(13);

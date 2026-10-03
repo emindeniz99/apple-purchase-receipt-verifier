@@ -29,6 +29,8 @@ final class ServerConnection {
     private final String description;
     private final ConcurrentLinkedQueue<HttpConn> idle = new ConcurrentLinkedQueue<>();
     private volatile boolean closed;
+    /** The module's {@code max_input_bytes}, as {@code GET /v1/info} stated it; 0 until it is read. */
+    private volatile int maxInputBytes;
 
     private ServerConnection(HttpConn.@Nullable Target fixed, @Nullable ServerProcess process, String description) {
         this.fixed = fixed;
@@ -48,6 +50,26 @@ final class ServerConnection {
 
     String description() {
         return description;
+    }
+
+    /**
+     * The most bytes of one input to send: the module's
+     * {@code max_input_bytes}, which {@link ServerSources#open} reads before it
+     * hands the connection out.
+     *
+     * @throws ServerProcessFailure when it was never read, rather than cut
+     *     every input to nothing
+     */
+    int maxInputBytes() {
+        int max = maxInputBytes;
+        if (max < 1) {
+            throw new ServerProcessFailure("aprv-server (" + description + "): its max_input_bytes was never read");
+        }
+        return max;
+    }
+
+    void maxInputBytes(int maxInputBytes) {
+        this.maxInputBytes = maxInputBytes;
     }
 
     @Nullable

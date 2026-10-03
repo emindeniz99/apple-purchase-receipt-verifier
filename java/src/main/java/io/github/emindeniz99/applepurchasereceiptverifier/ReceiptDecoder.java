@@ -131,8 +131,9 @@ final class ReceiptDecoder {
         // The raw octets are a typed field of their own, kept even when the
         // string does not decode, so they are not also kept raw.
         byte[] bundleIdBytes = attributes.firsts.get(ATTR_BUNDLE_ID);
+        String receiptType = attributes.string(ATTR_RECEIPT_TYPE);
         return new ReceiptPayload(
-                attributes.string(ATTR_RECEIPT_TYPE),
+                receiptType,
                 attributes.integer(ATTR_APP_ITEM_ID),
                 bundleIdBytes != null ? decodeBundleId(bundleIdBytes) : null,
                 bundleIdBytes,
@@ -146,7 +147,27 @@ final class ReceiptDecoder {
                 attributes.date(ATTR_ORIGINAL_PURCHASE_DATE),
                 attributes.string(ATTR_ORIGINAL_APP_VERSION),
                 attributes.date(ATTR_EXPIRATION_DATE),
-                attributes.unknown);
+                attributes.unknown,
+                environment(receiptType));
+    }
+
+    /**
+     * What a receipt's {@code receipt_type} (attribute 0) names:
+     * {@code Production} and {@code ProductionVPP} are
+     * {@link Environment#PRODUCTION}, {@code ProductionSandbox} and
+     * {@code ProductionVPPSandbox} are {@link Environment#SANDBOX}, anything
+     * else ({@code Xcode}, a missing value) is {@code null}. The core states
+     * the same rule (rust/src/environment.rs; DECISIONS.md R42), and the
+     * endpoint routes 21007 and 21008 on it.
+     */
+    static @Nullable Environment environment(@Nullable String receiptType) {
+        if ("Production".equals(receiptType) || "ProductionVPP".equals(receiptType)) {
+            return Environment.PRODUCTION;
+        }
+        if ("ProductionSandbox".equals(receiptType) || "ProductionVPPSandbox".equals(receiptType)) {
+            return Environment.SANDBOX;
+        }
+        return null;
     }
 
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {

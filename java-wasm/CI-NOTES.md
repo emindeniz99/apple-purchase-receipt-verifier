@@ -143,9 +143,10 @@ Temurin 8), of which 27 are the server's 413s answered as the core
 answers them and 1 is the roots refusal at start.
 
 The Endive engine copies at most 3,145,729 bytes of an input into the
-module (`WasmVerifier.MAX_INPUT_BYTES`, one over the core's largest cap),
-so a larger input still gets the core's own TOO_LARGE answer and never
-grows an instance's linear memory to its size;
+module (one over the core's largest cap; since DECISIONS.md R42 the
+module's `init` answer states it as `max_input_bytes` and the engine reads
+it there), so a larger input still gets the core's own TOO_LARGE answer
+and never grows an instance's linear memory to its size;
 `WasmVerifierTest` checks a 4 MiB input and a 3,145,728-byte one, which
 is passed whole.
 

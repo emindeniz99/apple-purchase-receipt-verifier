@@ -98,14 +98,13 @@ class SignedDataTest {
     @Test
     void returnsWhateverEnvironmentAndBundleIdAppleSignedWithoutJudgingThem() throws Exception {
         // 0.6 took an accept set and a bundle id; 0.7 takes neither. What the
-        // payload says comes back, and Environment maps it for the caller.
+        // payload says comes back, and the result states its environment.
         Map<String, Object> claims = transactionClaims("Production");
         claims.put("bundleId", "com.other.app");
-        JsonNode payload = verify(pki, pki.signJws(claims));
+        String jws = pki.signJws(claims);
+        JsonNode payload = verify(pki, jws);
         assertEquals("com.other.app", payload.get("bundleId").asText());
-        assertEquals(
-                Environment.PRODUCTION,
-                Environment.fromJwsEnvironment(payload.get("environment").asText()));
+        assertEquals(Environment.PRODUCTION, Checks.signedData(Checks.verifier(pki), jws).environment());
     }
 
     @Test

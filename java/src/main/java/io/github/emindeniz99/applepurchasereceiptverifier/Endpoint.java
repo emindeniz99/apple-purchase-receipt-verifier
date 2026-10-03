@@ -52,7 +52,7 @@ final class Endpoint {
     }
 
     private static int status(Environment environment, ReceiptPayload receipt) {
-        boolean productionReceipt = Environment.fromReceiptType(receipt.receiptType()) == Environment.PRODUCTION;
+        boolean productionReceipt = receipt.environment() == Environment.PRODUCTION;
         if (environment == Environment.PRODUCTION && !productionReceipt) {
             return AppleStatus.SANDBOX_RECEIPT_ON_PRODUCTION;
         }

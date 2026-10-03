@@ -152,7 +152,7 @@ time:
 | Check | How |
 |---|---|
 | Bundle id | `receipt.bundleId()` (or, in a JWS payload, the `bundleId` claim in `json()`) equals your app's id |
-| Environment | `Environment.fromReceiptType(receipt.receiptType())` for a receipt, or the JWS `environment` claim for a JWS. Decide whether to accept `SANDBOX` at all, and scope what you grant from it: TestFlight, including public-link installs, buys in sandbox for free, and App Review runs production builds against sandbox |
+| Environment | `receipt.environment()` for a receipt, `payload.environment()` for a JWS: `PRODUCTION`, `SANDBOX`, or `null` when Apple's value names neither (an `Xcode` receipt, a `LocalTesting` JWS). For a JWS the verifier reads the top-level `environment` claim, a notification's `data.environment` or a summary notification's `summary.environment`, the first that is present. Decide whether to accept `SANDBOX` at all, and scope what you grant from it: TestFlight, including public-link installs, buys in sandbox for free, and App Review runs production builds against sandbox |
 | Product id | The purchase or transaction names a product you actually sell |
 | Idempotency | Key grants on the transaction id (`transactionId` claim, or `InAppPurchase.transactionId()`), not on the receipt or JWS bytes: a legacy receipt is BER, so one signed receipt has more than one byte spelling, and Apple retries a notification for days, so the same `notificationUUID` arrives more than once. A retry by the same user for a transaction already granted to them should answer "granted" again without granting twice; the same transaction from another user is a replay and is denied |
 
@@ -435,7 +435,7 @@ There is no separate method to re-render a result for the other
 environment without a second verification, unlike 0.6's
 `VerifyReceiptResult.toJson(Environment)`: call `verifyReceiptEndpoint`
 again with the other `Environment`, or call `verifyReceipt` once yourself
-and decide with `Environment.fromReceiptType`.
+and decide with `receipt.environment()`.
 
 ## The error vocabulary
 
@@ -818,7 +818,7 @@ from the verified payload and decide yourself (see
 | `VerificationException` (checked), `.reason()`, `.getCause()` | Gone. `VerificationResult<T>.verified()` / `.payload()` / `.failure()`; `Failure.reason()` / `.message()` / `.cause()`. No method throws for a rejected input |
 | `VerificationException.Reason` (eleven values) | `Reason` (eight values). See the mapping below |
 | `VerifyReceiptEndpoint.STATUS_*` constants | `AppleStatus` constants, with the full set Apple documents (not just the ones this library returns) |
-| `Environment.PRODUCTION`, `.SANDBOX`, `.XCODE`, `.LOCAL_TESTING`; `.fromValue(String)` | `Environment.PRODUCTION`, `.SANDBOX` only. `XCODE` and `LOCAL_TESTING` only ever named a JWS `environment` string; such a payload is never Apple-signed and always failed the chain check regardless of what `acceptedEnvironments` allowed. `fromValue` splits into `Environment.fromReceiptType(String)` (a receipt's `receipt_type`) and `Environment.fromJwsEnvironment(String)` (a JWS `environment` claim) |
+| `Environment.PRODUCTION`, `.SANDBOX`, `.XCODE`, `.LOCAL_TESTING`; `.fromValue(String)` | `Environment.PRODUCTION`, `.SANDBOX` only. `XCODE` and `LOCAL_TESTING` only ever named a JWS `environment` string; such a payload is never Apple-signed and always failed the chain check regardless of what `acceptedEnvironments` allowed. `fromValue` is gone: `ReceiptPayload.environment()` and `JsonPayload.environment()` state the environment the verifier read (0.8; 0.7 had the helpers `Environment.fromReceiptType(String)` and `Environment.fromJwsEnvironment(String)`) |
 
 ### `Reason` mapping
 
