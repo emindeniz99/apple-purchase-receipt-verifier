@@ -122,7 +122,7 @@ class KotlinInteropTest {
         // (attribute 21 is VPP-only and absent from this fixture).
         val receiptType: String? = receipt.receiptType()
         assertEquals("ProductionSandbox", receiptType)
-        val environment: Environment? = Environment.fromReceiptType(receiptType)
+        val environment: Environment? = receipt.environment()
         assertEquals(Environment.SANDBOX, environment)
         val bundleId: String? = receipt.bundleId()
         assertEquals("dev.bonzer.weeka.app", bundleId)
