@@ -84,8 +84,9 @@ component API.
 PYTHON=/path/to/venv/bin/python tools/g1.sh $G1
 ```
 
-copies `$G1/aprv.wasm` into the package (git-ignored), rewrites the tracked
-`aprv.wasm.sha256` from it (commit that file), runs the whole suite and then
+puts `$G1/aprv.wasm` in the package with `.github/scripts/place-module.sh`
+(which rewrites `aprv.wasm.sha256` in the checkout for this run only; the
+release tooling refreshes the committed pin), runs the whole suite and then
 the section 2 comparison for every corpus, and exits non-zero on any failure.
 
 ## 3. Install failure (new job `python-install`, R28)
