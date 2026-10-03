@@ -17,6 +17,9 @@ certs/** -text
 *.b64 -text
 *.jws -text
 *.hex -text
+# The installer reads php/SHA256SUMS as sha256sum writes it, LF only, and
+# refuses a CR; a Windows checkout must not add one.
+php/SHA256SUMS -text
 
 # What a Composer install of this repository receives.
 #
@@ -56,6 +59,6 @@ certs/** -text
 /php/README.md -export-ignore
 /php/bin -export-ignore
 /php/bin/aprv-install -export-ignore
-/php/binaries.json -export-ignore
+/php/SHA256SUMS -export-ignore
 /php/src -export-ignore
 /php/src/** -export-ignore

@@ -5,10 +5,10 @@ declare(strict_types=1);
 
 /**
  * Downloads the `aprv` binary for this platform from the package's GitHub
- * Release, checks it against the SHA-256 pinned in binaries.json and
+ * Release, checks it against the SHA-256 pinned in SHA256SUMS and
  * installs it where the library looks for it (php/bin/aprv).
  *
- *   vendor/bin/aprv-install [--force] [--dir DIR] [--manifest FILE]
+ *   vendor/bin/aprv-install [--force] [--dir DIR] [--sums FILE]
  *                           [--target TARGET] [--base-url URL]
  *
  * Exit status: 0 installed (or already installed), 1 the download or the
@@ -22,13 +22,13 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Install\InstallException;
 require_once dirname(__DIR__) . '/src/Install/InstallException.php';
 require_once dirname(__DIR__) . '/src/Install/Installer.php';
 
-$options = getopt('', ['force', 'dir:', 'manifest:', 'target:', 'base-url:', 'help'], $rest);
+$options = getopt('', ['force', 'dir:', 'sums:', 'target:', 'base-url:', 'help'], $rest);
 if (isset($options['help']) || $rest < $argc) {
     $unknown = array_slice($argv, $rest);
     if (!isset($options['help'])) {
         fwrite(STDERR, 'aprv-install: unknown argument ' . ($unknown[0] ?? '') . "\n");
     }
-    fwrite(STDERR, "usage: aprv-install [--force] [--dir DIR] [--manifest FILE] [--target TARGET] [--base-url URL]\n");
+    fwrite(STDERR, "usage: aprv-install [--force] [--dir DIR] [--sums FILE] [--target TARGET] [--base-url URL]\n");
     exit(isset($options['help']) ? 0 : 2);
 }
 
@@ -36,7 +36,7 @@ $string = static fn (string $name): ?string => isset($options[$name]) && is_stri
 
 try {
     $message = Installer::install(
-        $string('manifest') ?? dirname(__DIR__) . '/binaries.json',
+        $string('sums') ?? dirname(__DIR__) . '/SHA256SUMS',
         $string('dir') ?? __DIR__,
         $string('base-url'),
         $string('target'),

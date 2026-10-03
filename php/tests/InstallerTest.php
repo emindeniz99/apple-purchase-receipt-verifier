@@ -66,16 +66,21 @@ final class InstallerTest extends TestCase
         @rmdir($this->work);
     }
 
-    /** @param array<string, string|null> $assets */
-    private function manifest(array $assets, ?string $tag = 'v0.0.0-test'): string
+    /** @param array<string, string> $assets asset name => SHA-256, one sha256sum line each under `$tag/` */
+    private function sums(array $assets, string $tag = 'v0.0.0-test'): string
     {
-        $path = $this->work . '/binaries.json';
-        file_put_contents($path, json_encode([
-            'schema' => 1,
-            'repository' => 'example/repo',
-            'tag' => $tag,
-            'assets' => $assets,
-        ], JSON_THROW_ON_ERROR));
+        $text = '';
+        foreach ($assets as $asset => $hash) {
+            $text .= "{$hash}  {$tag}/{$asset}\n";
+        }
+
+        return $this->sumsFile($text);
+    }
+
+    private function sumsFile(string $text): string
+    {
+        $path = $this->work . '/SHA256SUMS';
+        file_put_contents($path, $text);
 
         return $path;
     }
@@ -91,7 +96,7 @@ final class InstallerTest extends TestCase
     public function testTheRightHashInstallsAnOwnerOnlyExecutableThatRuns(): void
     {
         $message = Installer::install(
-            $this->manifest([self::ASSET => $this->sha256]),
+            $this->sums([self::ASSET => $this->sha256]),
             $this->installDirectory,
             $this->server->url,
             self::TARGET,
@@ -112,7 +117,7 @@ final class InstallerTest extends TestCase
     {
         $wrong = str_repeat('ab', 32);
         try {
-            Installer::install($this->manifest([self::ASSET => $wrong]), $this->installDirectory, $this->server->url, self::TARGET);
+            Installer::install($this->sums([self::ASSET => $wrong]), $this->installDirectory, $this->server->url, self::TARGET);
             self::fail('a binary that does not match its pinned hash must not be installed');
         } catch (InstallException $e) {
             self::assertSame(InstallException::FAILED, $e->exitCode);
@@ -132,7 +137,7 @@ final class InstallerTest extends TestCase
         $this->expectException(InstallException::class);
         try {
             Installer::install(
-                $this->manifest([self::ASSET => str_repeat('cd', 32)]),
+                $this->sums([self::ASSET => str_repeat('cd', 32)]),
                 $this->installDirectory,
                 $this->server->url,
                 self::TARGET,
@@ -145,15 +150,15 @@ final class InstallerTest extends TestCase
 
     public function testAnInstalledBinaryWithThePinnedHashIsNotDownloadedAgainUnlessForced(): void
     {
-        $manifest = $this->manifest([self::ASSET => $this->sha256]);
-        Installer::install($manifest, $this->installDirectory, $this->server->url, self::TARGET);
+        $sums = $this->sums([self::ASSET => $this->sha256]);
+        Installer::install($sums, $this->installDirectory, $this->server->url, self::TARGET);
         self::assertCount(1, $this->server->requests());
 
-        $again = Installer::install($manifest, $this->installDirectory, $this->server->url, self::TARGET);
+        $again = Installer::install($sums, $this->installDirectory, $this->server->url, self::TARGET);
         self::assertStringContainsString('already installed', $again);
         self::assertCount(1, $this->server->requests(), 'nothing was downloaded');
 
-        Installer::install($manifest, $this->installDirectory, $this->server->url, self::TARGET, true);
+        Installer::install($sums, $this->installDirectory, $this->server->url, self::TARGET, true);
         self::assertCount(2, $this->server->requests());
     }
 
@@ -161,7 +166,7 @@ final class InstallerTest extends TestCase
     {
         $other = 'aprv-aarch64-unknown-linux-musl';
         try {
-            Installer::install($this->manifest([$other => $this->sha256]), $this->installDirectory, $this->server->url, 'aarch64-unknown-linux-musl');
+            Installer::install($this->sums([$other => $this->sha256]), $this->installDirectory, $this->server->url, 'aarch64-unknown-linux-musl');
             self::fail('a 404 must not install anything');
         } catch (InstallException $e) {
             self::assertSame(InstallException::FAILED, $e->exitCode);
@@ -173,7 +178,7 @@ final class InstallerTest extends TestCase
     public function testAnUnsupportedPlatformNamesTheServerOption(): void
     {
         try {
-            Installer::install($this->manifest([self::ASSET => $this->sha256]), $this->installDirectory, $this->server->url, null, false, ['FreeBSD', 'amd64']);
+            Installer::install($this->sums([self::ASSET => $this->sha256]), $this->installDirectory, $this->server->url, null, false, ['FreeBSD', 'amd64']);
             self::fail('there is no binary for FreeBSD');
         } catch (InstallException $e) {
             self::assertSame(InstallException::UNAVAILABLE, $e->exitCode);
@@ -206,58 +211,122 @@ final class InstallerTest extends TestCase
         }
     }
 
-    public function testEveryAssetTheBriefNamesHasAPinSlotInTheShippedManifest(): void
+    public function testTheShippedSha256sumsIsOneTheInstallerReads(): void
     {
-        /** @var array{assets: array<string, mixed>} $shipped */
-        $shipped = json_decode((string) file_get_contents(__DIR__ . '/../binaries.json'), true, 8, JSON_THROW_ON_ERROR);
-
-        self::assertSame(
-            [
-                'aprv-x86_64-unknown-linux-musl',
-                'aprv-aarch64-unknown-linux-musl',
-                'aprv-x86_64-apple-darwin',
-                'aprv-aarch64-apple-darwin',
-                'aprv-x86_64-pc-windows-msvc.exe',
-                'aprv-aarch64-pc-windows-msvc.exe',
-            ],
-            array_keys($shipped['assets']),
-        );
+        // Empty between releases; the release branch writes the two Linux
+        // lines. Either way the installer must accept what ships.
+        $shipped = Installer::pins(__DIR__ . '/../SHA256SUMS');
+        self::assertSame($shipped['tag'] === null, $shipped['assets'] === []);
     }
 
-    public function testAManifestWithNoPinnedHashOrNoTagInstallsNothing(): void
+    public function testEveryAssetTheBriefNamesCanBePinnedAndNothingElse(): void
+    {
+        $assets = [
+            'aprv-x86_64-unknown-linux-musl',
+            'aprv-aarch64-unknown-linux-musl',
+            'aprv-x86_64-apple-darwin',
+            'aprv-aarch64-apple-darwin',
+            'aprv-x86_64-pc-windows-msvc.exe',
+            'aprv-aarch64-pc-windows-msvc.exe',
+        ];
+        $pins = Installer::pins($this->sums(array_fill_keys($assets, $this->sha256), 'v0.8.0'));
+        self::assertSame('v0.8.0', $pins['tag']);
+        self::assertSame($assets, array_keys($pins['assets']));
+
+        $this->expectException(InstallException::class);
+        Installer::pins($this->sums(['aprv.wasm' => $this->sha256]));
+    }
+
+    /**
+     * The format is sha256sum's own: what the tool writes for files laid out
+     * as `<tag>/<asset>` is what the installer reads, so `sha256sum -c
+     * --strict` beside the release assets checks the claim the package
+     * ships.
+     */
+    public function testSha256sumsOwnOutputIsWhatTheInstallerReads(): void
+    {
+        $sha256sum = trim((string) shell_exec('command -v sha256sum 2>/dev/null'));
+        if ($sha256sum === '') {
+            self::markTestSkipped('no sha256sum on this machine (coreutils)');
+        }
+        mkdir($this->work . '/release/v0.8.0', 0700, true);
+        copy($this->work . '/served/' . self::ASSET, $this->work . '/release/v0.8.0/' . self::ASSET);
+        $out = shell_exec('cd ' . escapeshellarg($this->work . '/release') . ' && sha256sum v0.8.0/*');
+        self::assertIsString($out);
+        unlink($this->work . '/release/v0.8.0/' . self::ASSET);
+        rmdir($this->work . '/release/v0.8.0');
+        rmdir($this->work . '/release');
+
+        self::assertSame(['tag' => 'v0.8.0', 'assets' => [self::ASSET => $this->sha256]], Installer::pins($this->sumsFile($out)));
+    }
+
+    public function testSumsWithNoPinForThisPlatformInstallNothing(): void
     {
         foreach ([
-            [[self::ASSET => null], 'v1.0.0'],
-            [[self::ASSET => 'not a hash'], 'v1.0.0'],
-            [[], 'v1.0.0'],
-            [[self::ASSET => $this->sha256], null],
-            [[self::ASSET => $this->sha256], 'main'],
-        ] as [$assets, $tag]) {
+            'an empty file, as main carries between releases' => '',
+            'another platform only' => $this->sha256 . "  v1.0.0/aprv-aarch64-unknown-linux-musl\n",
+        ] as $case => $text) {
             try {
-                // No base URL: the tag alone decides where GitHub would be asked.
-                Installer::install($this->manifest($assets, $tag), $this->installDirectory, null, self::TARGET);
-                self::fail('nothing is pinned, so nothing may install');
+                // No base URL: the file alone decides where GitHub would be asked.
+                Installer::install($this->sumsFile($text), $this->installDirectory, null, self::TARGET);
+                self::fail("{$case}: nothing is pinned, so nothing may install");
             } catch (InstallException $e) {
-                self::assertSame(InstallException::UNAVAILABLE, $e->exitCode, json_encode([$assets, $tag]) ?: '');
-                self::assertStringContainsString('HttpTransport', $e->getMessage());
+                self::assertSame(InstallException::UNAVAILABLE, $e->exitCode, $case);
+                self::assertStringContainsString('HttpTransport', $e->getMessage(), $case);
             }
         }
         self::assertSame([], $this->installed());
         self::assertSame([], $this->server->requests());
     }
 
-    public function testAnUnreadableManifestIsRefused(): void
+    /** @return iterable<string, array{string}> */
+    public static function malformedSumsProvider(): iterable
     {
-        file_put_contents($this->work . '/binaries.json', '{not json');
+        $hash = str_repeat('ab', 32);
+        $line = static fn (string $path): string => "{$hash}  {$path}\n";
+        yield 'binary mode' => ["{$hash} *v1.0.0/" . self::ASSET . "\n"];
+        yield 'one space' => ["{$hash} v1.0.0/" . self::ASSET . "\n"];
+        yield 'upper-case hex' => [strtoupper($hash) . '  v1.0.0/' . self::ASSET . "\n"];
+        yield '63 digits' => [substr($hash, 1) . '  v1.0.0/' . self::ASSET . "\n"];
+        yield 'BSD tagged' => ['SHA256 (v1.0.0/' . self::ASSET . ") = {$hash}\n"];
+        yield 'no tag' => [$line(self::ASSET)];
+        yield 'two slashes' => [$line('v1.0.0/x/' . self::ASSET)];
+        yield 'absolute path' => [$line('/v1.0.0/' . self::ASSET)];
+        yield 'parent directory' => [$line('../' . self::ASSET)];
+        yield 'a branch, not a tag' => [$line('main/' . self::ASSET)];
+        yield 'not a release asset' => [$line('v1.0.0/aprv.wasm')];
+        yield 'CRLF' => ["{$hash}  v1.0.0/" . self::ASSET . "\r\n"];
+        yield 'a blank line' => ["\n" . $line('v1.0.0/' . self::ASSET)];
+        yield 'two tags' => [$line('v1.0.0/' . self::ASSET) . $line('v1.0.1/aprv-aarch64-unknown-linux-musl')];
+        yield 'an asset twice' => [$line('v1.0.0/' . self::ASSET) . $line('v1.0.0/' . self::ASSET)];
+        yield 'the old binaries.json' => ['{"schema": 1, "tag": null, "assets": {}}'];
+    }
+
+    #[DataProvider('malformedSumsProvider')]
+    public function testAMalformedSumsFileIsRefusedBeforeAnyRequest(string $text): void
+    {
+        try {
+            Installer::install($this->sumsFile($text), $this->installDirectory, $this->server->url, self::TARGET);
+            self::fail('a SHA256SUMS line sha256sum would not write, or the installer cannot trust, must be refused');
+        } catch (InstallException $e) {
+            self::assertSame(InstallException::UNAVAILABLE, $e->exitCode);
+            self::assertStringContainsString('SHA256SUMS', $e->getMessage(), 'the message names the file');
+        }
+        self::assertSame([], $this->installed());
+        self::assertSame([], $this->server->requests());
+    }
+
+    public function testAMissingSumsFileIsRefused(): void
+    {
         $this->expectException(InstallException::class);
-        Installer::install($this->work . '/binaries.json', $this->installDirectory, $this->server->url, self::TARGET);
+        Installer::install($this->work . '/SHA256SUMS', $this->installDirectory, $this->server->url, self::TARGET);
     }
 
     public function testPlainHttpToAnotherHostIsRefusedBeforeAnyRequest(): void
     {
         foreach (['http://example.com/releases', 'ftp://127.0.0.1/x', 'file:///etc/passwd'] as $base) {
             try {
-                Installer::install($this->manifest([self::ASSET => $this->sha256]), $this->installDirectory, $base, self::TARGET);
+                Installer::install($this->sums([self::ASSET => $this->sha256]), $this->installDirectory, $base, self::TARGET);
                 self::fail("{$base} must be refused");
             } catch (InstallException $e) {
                 self::assertSame(InstallException::UNAVAILABLE, $e->exitCode, $base);
@@ -298,7 +367,7 @@ final class InstallerTest extends TestCase
     public function testTheCommandInstallsAndExitsZero(): void
     {
         [$code, $out, $err] = $this->script([
-            '--manifest', $this->manifest([self::ASSET => $this->sha256]),
+            '--sums', $this->sums([self::ASSET => $this->sha256]),
             '--dir', $this->installDirectory,
             '--base-url', $this->server->url,
             '--target', self::TARGET,
@@ -312,7 +381,7 @@ final class InstallerTest extends TestCase
     public function testTheCommandExitsOneOnAWrongHashAndInstallsNothing(): void
     {
         [$code, , $err] = $this->script([
-            '--manifest', $this->manifest([self::ASSET => str_repeat('00', 32)]),
+            '--sums', $this->sums([self::ASSET => str_repeat('00', 32)]),
             '--dir', $this->installDirectory,
             '--base-url', $this->server->url,
             '--target', self::TARGET,
@@ -325,7 +394,7 @@ final class InstallerTest extends TestCase
 
     public function testTheCommandExitsTwoWhenThereIsNothingToInstall(): void
     {
-        [$code, , $err] = $this->script(['--manifest', $this->manifest([self::ASSET => null]), '--dir', $this->installDirectory, '--target', self::TARGET]);
+        [$code, , $err] = $this->script(['--sums', $this->sums([]), '--dir', $this->installDirectory, '--target', self::TARGET]);
         self::assertSame(2, $code);
         self::assertStringContainsString('HttpTransport', $err);
 

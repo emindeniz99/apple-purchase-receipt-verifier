@@ -2812,7 +2812,7 @@ jobs:
       # silently decides what a PHP consumer unpacks. This reads the real
       # `git archive` rather than the rules that produce it: the manifests
       # agree on bin and suggest, and the archive carries bin/aprv-install
-      # and binaries.json.
+      # and SHA256SUMS.
       - run: node tools/check-php-package.mjs
       # Then install that archive into a throwaway project and verify a
       # receipt through vendor/autoload.php and the default CLI transport

@@ -12,7 +12,7 @@ declare(strict_types=1);
 //   php <repo>/.github/smoke/packagist-smoke.php
 //
 // Everything comes through vendor/autoload.php and the default CLI transport,
-// so a package that shipped no bin/aprv-install or binaries.json, an installer
+// so a package that shipped no bin/aprv-install or SHA256SUMS, an installer
 // that cannot fetch the release's binary, or a pin that no longer matches the
 // published asset fails here rather than in a user's project.
 
