@@ -1734,6 +1734,9 @@ One table for everything the plan measured or considered and rejected.
 | A CI check that the hosts' copies of the input length equal the core's | Keeps seven copies and adds one more place to keep in step (R42) | the owner's decision 2a, 2026-10-02; no evidence note | — |
 | Reading a JWS's environment from the top-level claim only | Every App Store Server Notification would answer null: Apple puts its environment in `data` or `summary` (R42) | the owner's decision Q19, 2026-10-02; no evidence note | — |
 | Keeping the per-language environment helpers | Nine copies of one rule, seven in packages that may hold none (R42) | the owner's decision Q19, 2026-10-02; no evidence note | — |
+| RustCrypto `der` for the tests' ASN.1 reading | Reads DER only, so it cannot open Apple's or Xcode's receipts, which are BER (indefinite lengths, constructed `OCTET STRING`s) (R43, option A) | the owner's decision Q18, 2026-10-02; [asn1-rs in the tests][asn1rs] | — |
+| OpenSSL's ASN.1 API from the tests | Raw FFI with no safe Rust API over it: `unsafe` code in the tests, heavier than a parser crate for a job a safe crate does (R43, option B) | the owner's decision Q18, 2026-10-02; no evidence note | — |
+| Keeping the tests' hand-written BER reader | 391 lines of the core's pre-OpenSSL reader kept for the tests alone, an ASN.1 parser the project would maintain (R43, option C) | the owner's decision Q18, 2026-10-02; [asn1-rs in the tests][asn1rs] | — |
 | A frozen 0.7.x jar as the only oracle | Diverges from the core wherever the core changes on purpose; superseded by the maintained implementation (R33) | R8 history | — |
 | wasm-bindgen | Needs `wasm32-unknown-unknown`, where `openssl-sys` 0.9.117 fails with 20 × E0432 | [CMS everywhere §3][cms] | the core stops linking C |
 | Emscripten | Works on 7 hosts, with legacy exceptions, about 18 MB of initial memory and 12.8 to 78.9 KB of glue | [wasm bake-off §7][wasmbake] | — |
