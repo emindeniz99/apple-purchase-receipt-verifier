@@ -58,7 +58,7 @@ run_one() {
 
   case "$name" in
     verify_receipt)
-      seeds=("$fixtures/generated" "$fixtures/apple-official/certs") ;;
+      seeds=("$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/certs") ;;
     verify_receipt_base64)
       seeds=("$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode") ;;
     verify_transaction)

@@ -76,7 +76,7 @@ build() {
 seeds_for() {
   case "$1" in
     receipt)
-      echo "$fixtures/generated" "$fixtures/apple-official/certs" ;;
+      echo "$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/certs" ;;
     receipt-base64)
       echo "$fixtures/generated/receipt-b64" "$fixtures/public-receipts" "$fixtures/apple-official/xcode" ;;
     jws)
