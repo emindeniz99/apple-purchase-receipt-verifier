@@ -28,7 +28,7 @@ the core as a second opinion on every verdict. **`aprv-server`** runs the
 same module as an HTTP server, a Docker image or a one-shot CLI for any
 other language, and **C and C++** can link the core through a C ABI, which
 any FFI-capable runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load. The
-core and the Java implementation answer the same 384 cases of
+core and the Java implementation answer the same 388 cases of
 [`fixtures/cases.json`](./fixtures/cases.json), and every package runs all
 of them. [PORTS.md](PORTS.md) shows what each package runs on, and
 [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the

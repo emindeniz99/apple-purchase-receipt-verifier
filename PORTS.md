@@ -3,7 +3,7 @@
 What each package runs the verification on, where it runs, and how to
 check it. Every package exposes the same API (one `Verifier`, built from a
 `Config` of roots and a clock, with `verifyReceipt`, `verifySignedData` and
-`verifyReceiptEndpoint`) and answers the same 384 cases of
+`verifyReceiptEndpoint`) and answers the same 388 cases of
 `fixtures/cases.json`, one test each. The verdicts come from two places
 only: the Rust core, which every package but the Java main artifact runs
 as `aprv.wasm`, and the Java implementation. No wrapper holds a parser, a
@@ -20,6 +20,8 @@ module" is the most any wrapper copies into the module's memory: the
 input caps themselves (3,145,728 UTF-8 bytes for a receipt's base64 or an
 endpoint body, 262,144 for a JWS) are the core's, the same everywhere, so
 one byte over the cap is enough for the module to answer `TOO_LARGE`.
+The module states that length in its `init` answer (`max_input_bytes`),
+and a host reads it there rather than keeping a copy (DECISIONS.md R42).
 
 | Package | Runs the core on | Floor | Platforms | Module | Input into the module | Roots in `Config` | One-command check |
 |---|---|---|---|---|---|---|---|
@@ -91,6 +93,11 @@ the contract.
   `fixtures/cases.json` pins them as a MUST, and no caller can change
   either cap. Go, Swift and Python no longer export them as constants; an
   input over a cap is `TOO_LARGE` (DECISIONS.md R41).
+- The environment a verified receipt or JWS names is on the result's
+  payload in every package (`environment()` in Java's and Rust's
+  spelling): Production, Sandbox or null, as the core or the Java
+  implementation read it. No package has a mapping helper of its own
+  (DECISIONS.md R42).
 - A `Config` is built one way per package, in the language's idiom
   (DECISIONS.md R41): `Config(roots=..., clock=...)` in Python,
   `Config.new(roots:, clock:)` in Ruby, `new Config(roots: ..., clock: ...)`

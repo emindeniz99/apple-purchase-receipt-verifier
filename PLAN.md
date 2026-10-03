@@ -30,8 +30,11 @@ recorded here.
   **Superseded in 0.7** ([docs/design/0.7-api.md](./docs/design/0.7-api.md),
   principle 2): the verifier takes no environment. The caller reads it off
   the payload, with `Environment.fromJwsEnvironment` or
-  `Environment.fromReceiptType`; only `verifyReceiptEndpoint` takes one,
-  per call, to answer 21007 or 21008 as Apple would.
+  `Environment.fromReceiptType` in 0.7 and with the payload's own
+  `environment()` from 0.8, where the verifier states it
+  ([DECISIONS.md R42](./docs/rust-core/DECISIONS.md)); only
+  `verifyReceiptEndpoint` takes one, per call, to answer 21007 or 21008
+  as Apple would.
 - **D4 — Device-hash check stays optional, off by default.**
   The device GUID (the raw bytes of `identifierForVendor` on iOS, iPadOS,
   tvOS and watchOS, including an iOS app running on an Apple silicon Mac,
