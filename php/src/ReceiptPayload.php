@@ -22,7 +22,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\PayloadJson;
  * Nothing here has been checked against anything: the bundle id,
  * environment and purchases are whatever Apple signed, and deciding whether
  * to accept them is the caller's job (docs/design/0.7-api.md, "Principles").
- * {@see Environment::fromReceiptType()} reads {@see $receiptType}; the
+ * {@see $environment} states the environment the verifier read; the
  * device-hash check is `SHA-1($deviceId . $opaqueValue . $bundleIdBytes)`
  * compared with {@see $sha1Hash}.
  */
@@ -47,6 +47,12 @@ final readonly class ReceiptPayload
      *        the attribute types not modelled above, by type, in receipt
      *        order — forward compatibility for fields Apple may add. The
      *        attribute's `version` integer is not kept. Verified, but undecoded.
+     * @param Environment|null $environment the environment {@see $receiptType}
+     *        names, as the verifier read it: `Production` and `ProductionVPP`
+     *        are {@see Environment::Production}, `ProductionSandbox` and
+     *        `ProductionVPPSandbox` {@see Environment::Sandbox}, anything else
+     *        (`Xcode`, a missing value) `null`. Not part of {@see toJson()}; a
+     *        payload built by hand states the one it is given.
      */
     public function __construct(
         public ?string $receiptType = null,
@@ -64,6 +70,7 @@ final readonly class ReceiptPayload
         public ?string $originalApplicationVersion = null,
         public ?int $expirationDateMs = null,
         public array $unknownAttributes = [],
+        public ?Environment $environment = null,
     ) {
     }
 

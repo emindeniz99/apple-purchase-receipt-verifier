@@ -20,13 +20,14 @@ use RuntimeException;
 interface Transport
 {
     /**
-     * Checks that `aprv` is reachable and speaks this package's ABI, and
-     * that it will run with `$roots`. Called once, by `Verifier::create()`.
+     * Checks that `aprv` is reachable and speaks this package's ABI, reads
+     * the `limits.max_input_bytes` it states, and checks that it will run
+     * with `$roots`. Called once, by `Verifier::create()`.
      *
      * @param list<string>|null $roots DER or PEM bytes; null means the module's built-in Apple roots
      *
      * @throws InvalidArgumentException when the module refuses the roots, or the server refuses the token
-     * @throws RuntimeException when the binary or the server cannot be used, or speaks another ABI
+     * @throws RuntimeException when the binary or the server cannot be used, speaks another ABI or states no input length
      */
     public function open(?array $roots): void;
 
@@ -34,8 +35,9 @@ interface Transport
      * Runs one operation.
      *
      * @param string $input the request bytes, exactly as the caller gave them;
-     *        a transport sends at most the first 3,145,729 of them, the cut
-     *        every Wasm wrapper makes, which still reaches the module over its cap
+     *        a transport sends at most the first `max_input_bytes` of them, the
+     *        length `aprv` stated at {@see open()} and the cut every Wasm
+     *        wrapper makes, which still reaches the module over its cap
      * @param int $nowMs the call's clock, epoch milliseconds
      *
      * @return string the module's JSON, unchanged; for an input over the size
