@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -20,10 +21,14 @@ import org.jspecify.annotations.Nullable;
  * One keep-alive HTTP/1.1 connection to {@code aprv-server}. Each request
  * goes out in a single write with {@code TCP_NODELAY}: HttpURLConnection
  * writes the headers and the body separately, which cost about 1.5 ms per
- * POST against a loopback server (rust-core spikes, "Sidecar"). The response
- * is read by {@code Content-Length} or chunked encoding, up to
- * {@link #MAX_RESPONSE} bytes. Not thread-safe: {@link ServerConnection}
- * pools these, one request at a time on each.
+ * POST against a loopback server (rust-core spikes, "Sidecar"). The socket
+ * is opened with {@link Proxy#NO_PROXY}, so no {@code ProxySelector} or
+ * {@code socksProxyHost} set elsewhere in the JVM routes it. The response is
+ * read by one {@code Content-Length} of digits or by {@code Transfer-Encoding:
+ * chunked} alone, never both, up to {@link #MAX_RESPONSE} bytes; any other
+ * framing, and whitespace before a header's colon, is refused (RFC 9112
+ * §5.1, §6.3). Not thread-safe: {@link ServerConnection} pools these, one
+ * request at a time on each.
  */
 final class HttpConn implements Closeable {
 
@@ -77,7 +82,7 @@ final class HttpConn implements Closeable {
 
     HttpConn(Target target, int connectTimeoutMillis, int readTimeoutMillis) throws IOException {
         this.target = target;
-        Socket plain = new Socket();
+        Socket plain = new Socket(Proxy.NO_PROXY); // no SOCKS from a ProxySelector or socksProxyHost
         try {
             plain.setTcpNoDelay(true);
             plain.connect(new InetSocketAddress(target.host, target.port), connectTimeoutMillis);
@@ -121,9 +126,7 @@ final class HttpConn implements Closeable {
                 .append(target.basePath)
                 .append(path)
                 .append(" HTTP/1.1\r\nHost: ")
-                .append(target.host)
-                .append(':')
-                .append(target.port)
+                .append(hostHeader(target.host, target.port))
                 .append("\r\n");
         if (target.token != null) {
             head.append("X-Aprv-Token: ").append(target.token).append("\r\n");
@@ -164,24 +167,33 @@ final class HttpConn implements Closeable {
                 throw new IOException("too many response headers");
             }
             int colon = header.indexOf(':');
-            if (colon <= 0) {
+            if (colon <= 0
+                    || header.charAt(colon - 1) == ' '
+                    || header.charAt(colon - 1) == '\t'
+                    || header.charAt(0) == ' '
+                    || header.charAt(0) == '\t') {
                 throw new IOException("a malformed response header");
             }
-            String name = header.substring(0, colon).trim().toLowerCase(Locale.ROOT);
+            String name = header.substring(0, colon).toLowerCase(Locale.ROOT);
             String value = header.substring(colon + 1).trim();
             if (name.equals("content-length")) {
-                try {
-                    length = Long.parseLong(value);
-                } catch (NumberFormatException e) {
-                    throw new IOException("a malformed Content-Length", e);
+                if (length >= 0 || !value.matches("[0-9]{1,18}")) {
+                    throw new IOException("a malformed or repeated Content-Length");
                 }
+                length = Long.parseLong(value);
             } else if (name.equals("transfer-encoding")) {
-                chunked = value.toLowerCase(Locale.ROOT).contains("chunked");
+                if (chunked || !value.equalsIgnoreCase("chunked")) {
+                    throw new IOException("a Transfer-Encoding other than chunked alone: " + value);
+                }
+                chunked = true;
             } else if (name.equals("connection")) {
                 close = value.toLowerCase(Locale.ROOT).contains("close");
             } else if (name.equals("content-type")) {
                 contentType = value;
             }
+        }
+        if (chunked && length >= 0) {
+            throw new IOException("a response with both Content-Length and chunked encoding");
         }
         byte[] responseBody;
         if (chunked) {
@@ -198,6 +210,15 @@ final class HttpConn implements Closeable {
         }
         reusable = !close;
         return new Response(status, contentType, responseBody);
+    }
+
+    /**
+     * The Host header's value. {@link Target#host} holds an IPv6 literal
+     * without its brackets, as a socket address takes it; the header puts
+     * them back (RFC 9112 §3.2, RFC 3986 §3.2.2).
+     */
+    static String hostHeader(String host, int port) {
+        return (host.indexOf(':') >= 0 ? "[" + host + "]" : host) + ":" + port;
     }
 
     private byte[] chunked() throws IOException {
