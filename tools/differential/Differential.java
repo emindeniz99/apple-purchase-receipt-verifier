@@ -43,7 +43,7 @@ import java.util.Map;
  * tools/wasm-trap-host.mjs reads in its {@code calls} mode: {@code id},
  * {@code fn} ({@code verify-receipt}, {@code verify-signed-data},
  * {@code verify-receipt-endpoint}), {@code config} (init's JSON text,
- * {@code {"roots":[base64 DER, ...]}}, an empty list meaning Apple's
+ * {@code {"roots":[base64 DER, ...]}}, or {@code {}} for Apple's
  * roots), {@code now} (epoch milliseconds), {@code env} (0 production, 1
  * sandbox) and {@code b64} (the input bytes, base64); or {@code id} and
  * {@code map} for a row that makes no call. It prints one row per call on
@@ -148,7 +148,7 @@ public final class Differential {
         return verifier;
     }
 
-    /** The config's roots; an empty list is Apple's roots (null here). */
+    /** The config's roots; none is Apple's roots (null here). */
     private static List<X509Certificate> roots(String config)
             throws IOException, java.security.cert.CertificateException {
         List<X509Certificate> roots = new ArrayList<X509Certificate>();

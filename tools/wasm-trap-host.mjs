@@ -196,11 +196,11 @@ function receiptText({ entry, bytes }) {
   return entry.codec === 'raw' || entry.codec === 'base64' ? Buffer.from(bytes).toString('base64') : Buffer.from(bytes).toString('utf8');
 }
 
-/** init's argument for a case: its roots as base64 DER, or [] for the three Apple roots. */
+/** init's argument for a case: its roots as base64 DER, or {} for the three Apple roots. */
 function initConfig(kase, fixture) {
   const spec = kase.config?.trustedRoots;
-  const roots = spec === undefined || spec.source === 'defaults' ? [] : spec.fixtures.map((id) => Buffer.from(fixture(id).bytes).toString('base64'));
-  return JSON.stringify({ roots });
+  if (spec === undefined || spec.source === 'defaults') return '{}';
+  return JSON.stringify({ roots: spec.fixtures.map((id) => Buffer.from(fixture(id).bytes).toString('base64')) });
 }
 
 function nowMs(kase) {
@@ -382,7 +382,7 @@ function modeCases(modulePath, casesPath, answersDir) {
   // no certificate) does not.
   const runDecode = (kase) => {
     const problems = [];
-    const config = JSON.stringify({ roots: [] });
+    const config = '{}';
     for (const decoder of kase.decoders) {
       kase.input.texts.forEach((text, i) => {
         let out;
@@ -536,7 +536,7 @@ function modeAbiTests(modulePath, casesPath) {
   };
   const show = (r) => (r.error ? `${r.trap ? 'trap' : 'error'}: ${String(r.error.message).split('\n')[0]}` : String(r.out).slice(0, 100));
   const now = () => BigInt(Date.now());
-  const DEFAULTS = bytesOf('{"roots":[]}');
+  const DEFAULTS = bytesOf('{}');
   const g5 = bytesOf(receiptText(fixture('public-receipt-sandbox-g5')));
   const jws = fixture('transaction').bytes;
   const jwsConfig = bytesOf(JSON.stringify({ roots: [Buffer.from(fixture('jws-root').bytes).toString('base64')] }));
@@ -582,6 +582,9 @@ function modeAbiTests(modulePath, casesPath) {
   g = new Guest(module);
   r = attempt(() => g.call('init', bytesOf('{not json')));
   check('a configuration that is not JSON is {"ok":false}', !r.error && JSON.parse(r.out).ok === false, show(r));
+  g = new Guest(module);
+  r = attempt(() => g.call('init', bytesOf('{"roots":[]}')));
+  check('an empty root list is refused: {} is the one spelling of the built-in roots', r.out === '{"ok":false,"message":"roots must not be empty"}', show(r));
 
   for (const env of [2, 255, 0xffffffff]) {
     r = attempt(() => fresh().call('verify-receipt-endpoint', env, now(), request));

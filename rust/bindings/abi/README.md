@@ -72,7 +72,7 @@ component).
 
 | Call | Behaviour |
 |---|---|
-| `init(config-json)` | `{"roots":["<base64>", ...]}`, each root DER or PEM bytes, which the core tells apart (a PEM bundle is one entry); no bytes, `{}` or an empty list mean the three Apple roots. Answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}`; after a refusal it may be called again, after an `ok` answer it traps. `N` is the most bytes of one input a host needs to hand the module, one over its largest cap (3,145,729): a longer input may be cut to `N`, and the module answers `TOO_LARGE` for it (DECISIONS.md R42) |
+| `init(config-json)` | `{"roots":["<base64>", ...]}`, each root DER or PEM bytes, which the core tells apart (a PEM bundle is one entry); no bytes or `{}` mean the three Apple roots, and an empty list is refused (`roots must not be empty`). Answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}`; after a refusal it may be called again, after an `ok` answer it traps. `N` is the most bytes of one input a host needs to hand the module, one over its largest cap (3,145,729): a longer input may be cut to `N`, and the module answers `TOO_LARGE` for it (DECISIONS.md R42) |
 | `verify-receipt(now-ms, receipt-base64)` | `aprv-wire`'s answer (`../wire/schema/verify-receipt-result.schema.json`) |
 | `verify-signed-data(now-ms, jws)` | `aprv-wire`'s answer (`../wire/schema/verify-signed-data-result.schema.json`) |
 | `verify-receipt-endpoint(env, now-ms, request-json)` | Apple's response JSON; `env` 0 is production, 1 sandbox, anything else traps |

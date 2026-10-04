@@ -44,9 +44,8 @@ const receiptText = ({ entry, bytes }) =>
 
 function config(kase) {
   const spec = kase.config?.trustedRoots;
-  const roots =
-    spec === undefined || spec.source === 'defaults' ? [] : spec.fixtures.map((id) => fixture(id).bytes.toString('base64'));
-  return JSON.stringify({ roots });
+  if (spec === undefined || spec.source === 'defaults') return '{}';
+  return JSON.stringify({ roots: spec.fixtures.map((id) => fixture(id).bytes.toString('base64')) });
 }
 
 function now(kase) {
