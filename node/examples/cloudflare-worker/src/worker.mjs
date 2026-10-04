@@ -175,7 +175,6 @@ async function route(request, env) {
 
 export default {
   async fetch(request, env) {
-    const started = Date.now();
     let response;
     try {
       response = await route(request, env);
@@ -191,7 +190,7 @@ export default {
     // Not part of aprv-server's contract: which package release answered.
     response.headers.set('x-aprv-version', pkg.version);
     const { pathname } = new URL(request.url);
-    console.log(`${request.method} ${pathname} ${response.status} ${Date.now() - started}ms`);
+    console.log(`${request.method} ${pathname} ${response.status}`);
     return response;
   },
 };

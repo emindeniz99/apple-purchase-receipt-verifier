@@ -37,6 +37,9 @@ verified:
 - **In this browser.** The page imports the package through an import map
   and verifies in the page. The input never leaves the device.
 - **On the Worker.** The page posts the input to the routes below.
+- **Both, compared.** The page does both and says whether the two answers
+  are the same, leaving out the endpoint's `request_date`, which is each
+  side's own clock.
 
 Both sides run the same installed release and build their answer with the
 same [`src/wire.mjs`](src/wire.mjs), so the two answers can be compared.
@@ -119,7 +122,8 @@ Rate limiting rules), not in this code.
 
 ## Logging
 
-One line per request: method, path, status and duration. The Worker never
+One line per request: method, path and status (a Worker's clock does not
+advance while it computes, so a duration would always read 0). The Worker never
 logs a body, a receipt or a payload, because a receipt carries a user's
 purchase history. Keep it that way if you extend it.
 

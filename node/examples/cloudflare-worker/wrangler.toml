@@ -3,7 +3,7 @@ main = "src/worker.mjs"
 compatibility_date = "2026-09-22"
 # No compatibility_flags: the package uses no Node API on workerd.
 
-# The log line is method, path, status and duration; never a body.
+# The log line is method, path and status; never a body.
 [observability]
 enabled = true
 
