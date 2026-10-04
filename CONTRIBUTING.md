@@ -114,8 +114,8 @@ dotnet test -c Release dotnet/tests/ApplePurchaseReceiptVerifier.Tests
 # PHP (8.2+; the suite runs against a real aprv binary)
 (cd php && composer install && APRV_BIN="$APRV_BIN" vendor/bin/phpunit)
 
-# The shared cases file itself
-node tools/lint-cases.mjs
+# The shared cases file itself (ajv, from tools/package-lock.json)
+npm ci --ignore-scripts --prefix tools && node tools/lint-cases.mjs
 
 # No wrapper reaches a crypto, X.509, ASN.1, CMS or JWS API
 node tools/check-one-implementation.mjs --enforce all
@@ -358,7 +358,8 @@ behind the expectations. Read it before adding a case.
    `expected: {"oneOf": [...]}` lists every outcome an implementation may
    give (at the endpoint, every `/status` the body may carry). Add a `clock` if — and only if — the answer depends on the
    current time; see below.
-3. Run `node tools/lint-cases.mjs`. It validates the file against
+3. Run `node tools/lint-cases.mjs` (after `npm ci --prefix tools`, which
+   installs the ajv it validates with). It validates the file against
    `fixtures/cases.schema.json`, re-hashes every registered fixture, and
    fails on a fixture file no case registers or an `input` fixture no case
    uses. CI runs the same command in the `conformance` job.

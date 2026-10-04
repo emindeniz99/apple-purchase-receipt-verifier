@@ -5,11 +5,12 @@
  *
  *   node tools/lint-cases.mjs
  *
- * Dependency-free by design (the tools' Node floor, no npm packages): it carries a small
- * validator covering exactly the JSON Schema keywords fixtures/cases.schema.json
- * uses, plus the checks a schema cannot express. The port runners re-hash the
- * fixtures they use, but none validates the file against its schema or looks
- * for files nothing registers, so this stays the one place that does.
+ * Needs `npm ci --prefix tools` (ajv, pinned in tools/package-lock.json), as
+ * tools/validate-wire.mjs does. Ajv validates the file against
+ * fixtures/cases.schema.json (JSON Schema 2020-12); this script adds the
+ * checks a schema cannot express. The port runners re-hash the fixtures
+ * they use, but none validates the file against its schema or looks for
+ * files nothing registers, so this stays the one place that does.
  *
  * It fails, listing EVERY problem rather than the first, when:
  *   - cases.json does not match cases.schema.json structurally
@@ -38,7 +39,18 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { readFixture } from './lib/fixtures.mjs';
+
+const require = createRequire(import.meta.url);
+let Ajv2020;
+try {
+  Ajv2020 = require('ajv/dist/2020.js');
+} catch (e) {
+  if (e.code !== 'MODULE_NOT_FOUND') throw e;
+  console.error('lint-cases: ajv is missing; run `npm ci --prefix tools` first');
+  process.exit(2);
+}
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES_DIR = join(REPO, 'fixtures');
@@ -58,17 +70,6 @@ const EXPECTABLE = REASONS.filter((reason) => reason !== 'INTERNAL_ERROR');
 const problems = [];
 const fail = (where, message) => problems.push(`${where}: ${message}`);
 
-/* ------------------------------------------------------------------ */
-/* A small JSON Schema (draft 2020-12) subset validator.               */
-/* Supported: $ref (local), type, enum, const, required, properties,   */
-/* additionalProperties, propertyNames, minProperties, minItems,       */
-/* uniqueItems, minLength, pattern, items, oneOf, allOf, if/then/else, */
-/* minimum, maximum.                                                    */
-/* Anything else in the schema is ignored, so an unsupported keyword   */
-/* silently weakens the check rather than crashing — keep the schema    */
-/* inside this subset.                                                  */
-/* ------------------------------------------------------------------ */
-
 function typeOf(value) {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'array';
@@ -76,120 +77,93 @@ function typeOf(value) {
   return typeof value; // string | number | boolean | object
 }
 
-function typeMatches(value, expected) {
-  const actual = typeOf(value);
-  if (expected === 'number') return actual === 'number' || actual === 'integer';
-  if (expected === 'integer') return actual === 'integer';
-  return actual === expected;
-}
+// Validates cases.json against cases.schema.json with Ajv, one line per
+// problem. Strict mode makes an unknown keyword in the schema an error, so
+// a typo cannot silently validate everything. strictTypes and
+// strictRequired stay off: both reject valid 2020-12 the schema relies on,
+// an untyped `then: { required: ["fault"] }` and a union `type`. verbose
+// puts the data and the oneOf branches on each error, for explain().
+function lintSchema(schema, doc) {
+  const ajv = new Ajv2020({
+    strict: true, strictTypes: false, strictRequired: false, allErrors: true, verbose: true,
+  });
+  const validate = ajv.compile(schema);
+  // A failed oneOf is explained by validating against each branch, found by
+  // the oneOf's place in the schema. Ajv's errors carry a copy of the
+  // schema value, not the object, so the lookup is by content.
+  const pointers = new Map();
+  (function walk(node, pointer) {
+    if (node === null || typeof node !== 'object') return;
+    if (!pointers.has(JSON.stringify(node))) pointers.set(JSON.stringify(node), pointer);
+    for (const [key, child] of Object.entries(node)) {
+      walk(child, `${pointer}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`);
+    }
+  })(schema, '');
+  const branch = (oneOf, i) =>
+    ajv.getSchema(`${schema.$id}#${pointers.get(JSON.stringify(oneOf))}/${i}`);
 
-function deref(schema, root) {
-  let current = schema;
-  const seen = new Set();
-  while (current && typeof current === 'object' && typeof current.$ref === 'string') {
-    if (seen.has(current.$ref)) throw new Error(`cyclic $ref ${current.$ref}`);
-    seen.add(current.$ref);
-    if (!current.$ref.startsWith('#/')) throw new Error(`unsupported $ref ${current.$ref}`);
-    let target = root;
-    for (const segment of current.$ref.slice(2).split('/')) {
-      target = target?.[segment.replace(/~1/g, '/').replace(/~0/g, '~')];
-    }
-    if (target === undefined) throw new Error(`unresolvable $ref ${current.$ref}`);
-    current = target;
-  }
-  return current;
-}
-
-function validate(value, schema, root, path, errors) {
-  const s = deref(schema, root);
-  if (s === true || s === undefined) return;
-  if (s === false) { errors.push(`${path}: nothing is allowed here`); return; }
-
-  if (s.type !== undefined) {
-    const allowed = Array.isArray(s.type) ? s.type : [s.type];
-    if (!allowed.some((t) => typeMatches(value, t))) {
-      errors.push(`${path}: expected type ${allowed.join('|')}, got ${typeOf(value)}`);
-      return;
-    }
-  }
-  if (s.const !== undefined && JSON.stringify(value) !== JSON.stringify(s.const)) {
-    errors.push(`${path}: expected the constant ${JSON.stringify(s.const)}, got ${JSON.stringify(value)}`);
-  }
-  if (s.enum !== undefined && !s.enum.some((e) => JSON.stringify(e) === JSON.stringify(value))) {
-    errors.push(`${path}: ${JSON.stringify(value)} is not one of ${s.enum.map((e) => JSON.stringify(e)).join(', ')}`);
-  }
-  if (typeof value === 'string') {
-    if (s.pattern !== undefined && !new RegExp(s.pattern).test(value)) {
-      errors.push(`${path}: ${JSON.stringify(value)} does not match /${s.pattern}/`);
-    }
-    if (s.minLength !== undefined && value.length < s.minLength) {
-      errors.push(`${path}: shorter than minLength ${s.minLength}`);
-    }
-  }
-  if (typeof value === 'number' && s.minimum !== undefined && value < s.minimum) {
-    errors.push(`${path}: ${value} is below the minimum ${s.minimum}`);
-  }
-  if (typeof value === 'number' && s.maximum !== undefined && value > s.maximum) {
-    errors.push(`${path}: ${value} is above the maximum ${s.maximum}`);
-  }
-  if (Array.isArray(value)) {
-    if (s.minItems !== undefined && value.length < s.minItems) {
-      errors.push(`${path}: has ${value.length} items, fewer than minItems ${s.minItems}`);
-    }
-    if (s.uniqueItems === true && new Set(value.map((item) => JSON.stringify(item))).size !== value.length) {
-      errors.push(`${path}: items are not unique`);
-    }
-    if (s.items !== undefined) {
-      value.forEach((item, i) => validate(item, s.items, root, `${path}[${i}]`, errors));
-    }
-  }
-  if (value !== null && typeOf(value) === 'object') {
-    const keys = Object.keys(value);
-    if (s.minProperties !== undefined && keys.length < s.minProperties) {
-      errors.push(`${path}: has ${keys.length} properties, fewer than minProperties ${s.minProperties}`);
-    }
-    for (const required of s.required ?? []) {
-      if (!Object.prototype.hasOwnProperty.call(value, required)) {
-        errors.push(`${path}: missing required property "${required}"`);
-      }
-    }
-    if (s.propertyNames !== undefined) {
-      for (const key of keys) validate(key, s.propertyNames, root, `${path} property name "${key}"`, errors);
-    }
-    for (const key of keys) {
-      if (s.properties && Object.prototype.hasOwnProperty.call(s.properties, key)) {
-        validate(value[key], s.properties[key], root, `${path}.${key}`, errors);
-      } else if (s.additionalProperties === false) {
-        errors.push(`${path}: unexpected property "${key}"`);
-      } else if (s.additionalProperties !== undefined) {
-        validate(value[key], s.additionalProperties, root, `${path}.${key}`, errors);
-      }
-    }
-  }
-  for (const sub of s.allOf ?? []) validate(value, sub, root, path, errors);
-  if (s.oneOf !== undefined) {
-    const branches = s.oneOf.map((branch) => {
-      const branchErrors = [];
-      validate(value, branch, root, path, branchErrors);
-      return branchErrors;
-    });
-    const matched = branches.filter((e) => e.length === 0).length;
-    if (matched === 0) {
-      const best = branches.reduce((a, b) => (b.length < a.length ? b : a));
-      errors.push(`${path}: matches no allowed shape; closest one reports: ${best.join('; ')}`);
-    } else if (matched > 1) {
-      errors.push(`${path}: ambiguous — matches ${matched} allowed shapes at once`);
-    }
-  }
-  if (s.if !== undefined) {
-    const ifErrors = [];
-    validate(value, s.if, root, path, ifErrors);
-    if (ifErrors.length === 0 && s.then !== undefined) validate(value, s.then, root, path, errors);
-    if (ifErrors.length !== 0 && s.else !== undefined) validate(value, s.else, root, path, errors);
+  for (const error of explain(validate, doc, '', branch)) {
+    const index = /^\/cases\/(\d+)(\/|$)/.exec(error.instancePath)?.[1];
+    const id = index === undefined ? undefined : doc.cases[index]?.id;
+    const where = index === undefined ? 'cases.json'
+      : `case #${index}${typeof id === 'string' ? ` "${id}"` : ''}`;
+    fail(where, `${error.instancePath || '/'} ${describe(error)}`);
   }
 }
 
-/* ------------------------------------------------------------------ */
+// Ajv's errors for data, with instance paths under `at`, one per problem.
+// A oneOf that matched nothing carries every branch's errors; it is
+// replaced by the errors of its closest branch (the one with the fewest),
+// so a case reports what is wrong with the shape it was meant to have, not
+// how it differs from every other shape. The errors of if and
+// propertyNames only restate the inner error beside them, so they go.
+function explain(validate, data, at, branch) {
+  if (validate(data)) return [];
+  const errors = validate.errors
+    .map((e) => ({ ...e, instancePath: at + e.instancePath }))
+    .filter((e) => e.keyword !== 'if' && e.keyword !== 'propertyNames');
+  const isOneOf = (e) => e.keyword === 'oneOf';
+  const inside = (e, o) =>
+    e.instancePath === o.instancePath || e.instancePath.startsWith(`${o.instancePath}/`);
+  // Ajv reports a oneOf after the oneOfs inside its branches, so a oneOf is
+  // outermost when no later one encloses its data.
+  const outer = errors.filter((e, i) =>
+    isOneOf(e) && !errors.some((o, j) => j > i && isOneOf(o) && inside(e, o)));
+  const result = [];
+  for (const e of errors) {
+    if (outer.includes(e) && e.params.passingSchemas !== null) {
+      result.push(e);
+    } else if (outer.includes(e)) {
+      const explained = e.schema.map((_, i) =>
+        explain(branch(e.schema, i), e.data, e.instancePath, branch));
+      result.push(...explained.reduce((a, b) => (b.length < a.length ? b : a)));
+    } else if (!outer.some((o) => inside(e, o))) {
+      result.push(e);
+    }
+  }
+  return result;
+}
+
+function describe(error) {
+  const { params } = error;
+  if (error.keyword === 'oneOf') {
+    return `matches ${params.passingSchemas.length} allowed shapes at once `
+      + `(oneOf branches ${params.passingSchemas.join(', ')})`;
+  }
+  const subject = error.propertyName === undefined
+    ? '' : `property name ${JSON.stringify(error.propertyName)} `;
+  let detail = '';
+  if (params.additionalProperty !== undefined) {
+    detail = `: ${JSON.stringify(params.additionalProperty)}`;
+  } else if (params.allowedValue !== undefined) {
+    detail = ` ${JSON.stringify(params.allowedValue)}`;
+  } else if (params.allowedValues !== undefined) {
+    detail = ` ${params.allowedValues.map((v) => JSON.stringify(v)).join(', ')}`;
+  }
+  const got = ['type', 'const', 'enum', 'pattern'].includes(error.keyword)
+    && error.propertyName === undefined ? `, got ${JSON.stringify(error.data)}` : '';
+  return `${subject}${error.message}${detail}${got}`;
+}
 
 function readJson(path) {
   try {
@@ -244,13 +218,11 @@ const schema = readJson(SCHEMA_PATH);
 const doc = readJson(CASES_PATH);
 
 if (schema && doc) {
-  const errors = [];
   try {
-    validate(doc, schema, schema, 'cases.json', errors);
+    lintSchema(schema, doc);
   } catch (e) {
-    errors.push(`the schema itself could not be applied — ${e.message}`);
+    fail('schema', `the schema itself could not be applied — ${e.message}`);
   }
-  for (const error of errors) fail('schema', error);
 }
 
 if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
