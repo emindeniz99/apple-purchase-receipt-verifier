@@ -109,8 +109,9 @@ class BouncyCastleFloorTest {
 
     /**
      * Nine is the exact need: at 8 the genuine receipt is MALFORMED and
-     * create refuses, at 9 both pass. Without the probe the lowered bound
-     * would show up only as MALFORMED on every genuine receipt.
+     * create refuses, with the runtime probe on or off; at 9 both pass.
+     * Without the check the lowered bound would show up only as MALFORMED
+     * on every genuine receipt.
      */
     @Test
     void createRefusesANestingBoundGenuineReceiptsDoNotFit() throws Exception {
@@ -128,6 +129,10 @@ class BouncyCastleFloorTest {
                     assertThrows(IllegalStateException.class, () -> Verifier.create(Config.defaults()));
             assertTrue(e.getMessage().contains(MAX_CONS_DEPTH + " is set below 9"), e.getMessage());
             assertNotNull(e.getCause());
+            // runtimeProbe(false) turns off the engine probe only.
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> Verifier.create(Config.builder().runtimeProbe(false).build()));
 
             System.setProperty(MAX_CONS_DEPTH, String.valueOf(DefaultVerifier.RECEIPT_NESTING));
             assertTrue(Verifier.create(Config.defaults()).verifyReceipt(legacy).verified());
