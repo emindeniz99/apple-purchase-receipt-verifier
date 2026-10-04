@@ -603,6 +603,43 @@ async fn the_wire_schemas_are_bundled() {
     assert!(!http::OPENAPI_JSON.contains("not present when this binary was built"));
 }
 
+/// Every `$ref` in the served document is a pointer into the document
+/// itself. The wire schemas' own `#/$defs/...` references are rewritten to
+/// their bundled place: left as they were, they resolved only for a reader
+/// that takes the embedded `$id` as a new base, and Schemathesis, which
+/// does not, skipped the 200 and 413 responses of the two verify routes.
+#[test]
+fn every_reference_in_the_served_document_resolves_in_it() {
+    fn refs<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
+        match v {
+            Value::Object(m) => {
+                for (k, x) in m {
+                    match x {
+                        Value::String(s) if k == "$ref" => out.push(s),
+                        _ => refs(x, out),
+                    }
+                }
+            }
+            Value::Array(a) => a.iter().for_each(|x| refs(x, out)),
+            _ => {}
+        }
+    }
+    let doc: Value = serde_json::from_str(http::OPENAPI_JSON).unwrap();
+    let mut found = Vec::new();
+    refs(&doc, &mut found);
+    assert!(found.iter().any(|r| r.contains("/$defs/")), "{found:?}");
+    for r in found {
+        let target = r.strip_prefix('#').and_then(|p| doc.pointer(p));
+        assert!(
+            target.is_some(),
+            "{r} does not resolve in the served document"
+        );
+    }
+    for (name, schema) in doc["components"]["schemas"].as_object().unwrap() {
+        assert!(schema.get("$id").is_none(), "{name} keeps its $id");
+    }
+}
+
 #[test]
 fn a_refused_root_stops_the_server_at_start() {
     let rt = Runtime::new(Load::File(&component_path()), 10_000).unwrap();
