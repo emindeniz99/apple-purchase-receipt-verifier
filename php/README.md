@@ -66,9 +66,9 @@ repository pointing at the repository root:
 Requires **PHP 8.2+** (64-bit) and `ext-json`. Two runtime dependencies,
 neither with dependencies of its own: `psr/clock`, the PSR-20 clock
 interface, a single interface with no code; and `symfony/process`
-(`^6.4.33 || ^7.4.5`), which runs the `aprv` binary for the default
-transport. Symfony 8 is not covered yet: an application that has moved
-`symfony/process` to 8.x cannot install this package until it is. No
+(`^6.4.33 || ^7.4.5 || ^8.0.5`), which runs the `aprv` binary for the
+default transport. Symfony 8 needs PHP 8.4 or later (8.1 needs 8.4.1), so
+Composer can pick 8.x there and picks 6.4 or 7.4 on PHP 8.2 and 8.3. No
 `ext-openssl`: nothing in PHP touches a certificate. `ext-curl` is
 needed for the server transport and for the installer's download.
 
