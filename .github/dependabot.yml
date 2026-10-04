@@ -137,6 +137,7 @@ updates:
       - dependency-name: openssl-sys
       - dependency-name: openssl-src
         update-types: ["version-update:semver-major"]
+      - dependency-name: foreign-types
   - package-ecosystem: swift
     directory: /swift/fuzz
     schedule:
@@ -209,6 +210,13 @@ updates:
       - dependency-name: openssl-sys
       - dependency-name: openssl-src
         update-types: ["version-update:semver-major"]
+      # aprv-openssl imports foreign-types' ForeignType and ForeignTypeRef
+      # to reach the raw pointers of the openssl crate's types, and those
+      # types implement the traits of the foreign-types the openssl crate
+      # itself depends on (0.3 for openssl 0.10). A newer foreign-types is a
+      # different pair of traits that nothing implements, so the crate stops
+      # compiling (#197). It moves only together with the openssl crate.
+      - dependency-name: foreign-types
       # wit-bindgen's generated glue is part of the released module's bytes,
       # so its exact pin moves only together with the wit-bindgen CLI in
       # tools/wasm-toolchain.sh (rust/bindings/CI-NOTES.md).
