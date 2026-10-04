@@ -125,13 +125,14 @@ purchase history. Keep it that way if you extend it.
 
 ## Deployed
 
-https://aprv-example.emindeniz99.workers.dev, deployed on 2026-10-04 with
-wrangler 4.147.0 and package 0.7.0 (every response says which in
-`X-Aprv-Version`).
+https://aprv-example.emindeniz99.workers.dev, deployed on 2026-10-05 with
+wrangler 4.147.0 and package 0.8.1, the WebAssembly core (every response
+says which release in `X-Aprv-Version`). The Worker upload is 2,895 KiB,
+958 KiB gzipped, and starts in 1 ms.
 
-The example depends on `^0.7.0` until 0.8.0 is on npm. 0.7.0 is the last
-release written in JavaScript over WebCrypto; from 0.8.0 the package runs
-the `aprv.wasm` core, and this deployment proves the WebAssembly build on
-Workers only once it is redeployed with that release. Two things are
-known to differ under 0.7.0: `X-Aprv-Now-Ms` does not set the clock, and a
-verified receipt's `environment` is `null`.
+Checked against that URL: the public sandbox receipt verifies with
+`"environment":"Sandbox"` on the Worker and in the browser, where the page
+fetches the three `.wasm` core modules; a receipt with one character
+flipped is refused; `/v1/verify-receipt/sandbox` answers `"status":0` and
+`/production` `21007`; `X-Aprv-Now-Ms` sets `request_date_ms`; a body of
+3,145,729 bytes is a 413 with `TOO_LARGE`.
