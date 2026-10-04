@@ -220,9 +220,11 @@ directory can plant code the next Python process runs
   the clock and the roots file's path. The input goes on stdin, so
   nothing a caller or a receipt contains reaches a command line
   ([aprv-server §7][server]). How the binary starts depends on the
-  release and the platform. On Unix, 7.4 starts it directly and uses
-  `/bin/sh -c 'exec …'` only on a PHP built with `--enable-sigchild` or
-  when the direct start fails; 6.4 always uses `/bin/sh -c 'exec …'`.
+  release and the platform. On Unix, 7.4 and 8.x start it directly and
+  use `/bin/sh -c 'exec …'` only on a PHP built with `--enable-sigchild`
+  or when the direct start fails; 6.4 always uses `/bin/sh -c 'exec …'`.
+  8.x's `Process.php` differs from 7.4's only in docblocks (8.0.5
+  against 7.4.5, 8.1.7 against 7.4.19).
   On Windows it goes through `cmd.exe`. Every argument is quoted for the
   shell that reads it.
 - The child's environment holds `PATH` and nothing else (on Windows also
