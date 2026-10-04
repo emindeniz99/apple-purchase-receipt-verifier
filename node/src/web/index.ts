@@ -3,8 +3,8 @@
  * point, kept from 0.7 so code written for it keeps working.
  *
  * Same verifier, same module, same `Reason`s as the default entry point;
- * `createConfig` and every `Verifier` method return a
- * Promise. Porting between the two is adding or removing `await`.
+ * `createConfig` and every `Verifier` method return a Promise. Porting
+ * between the two is adding or removing `await`.
  */
 import {
   createConfig as createConfigSync,

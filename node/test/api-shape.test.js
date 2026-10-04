@@ -1,8 +1,10 @@
 // The public surface is the 0.7 API (docs/design/0.7-api.md) without the
 // two environment helpers, which 0.8 replaced with the payloads'
-// `environment` (DECISIONS.md R42), and the two entry points are one product: the same names, the same vocabulary, the
-// same module underneath. A name added to or dropped from either entry
-// point fails here first.
+// `environment` (DECISIONS.md R42), and without `defaultConfig`, which 0.8
+// folded into `createConfig()` (R41). The two entry points are one
+// product: the same names, the same vocabulary, the same module
+// underneath. A name added to or dropped from either entry point fails
+// here first.
 // oxlint-disable no-await-in-loop -- two entry points, one after the other, so a failure names its entry point
 import test from 'node:test';
 import assert from 'node:assert/strict';
