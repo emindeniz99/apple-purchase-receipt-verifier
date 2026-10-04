@@ -38,7 +38,7 @@ public final class BenchMain {
             threadCounts.add(2);
             threadCounts.add(4);
         }
-        byte[] none = "{\"roots\":[]}".getBytes(StandardCharsets.US_ASCII);
+        byte[] none = "{}".getBytes(StandardCharsets.US_ASCII);
 
         long t0 = System.nanoTime();
         EndiveGuestFactory factory = new EndiveGuestFactory();

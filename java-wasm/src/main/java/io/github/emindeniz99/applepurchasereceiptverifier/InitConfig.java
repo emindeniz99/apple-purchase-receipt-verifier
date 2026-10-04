@@ -29,9 +29,9 @@ final class InitConfig {
      * {@code {}}, the module's built-in Apple roots, when {@code roots} are
      * exactly the bundled three ({@link Config#defaults()}); otherwise
      * {@code {"roots":[...]}} with each root's DER as padded standard base64,
-     * in the config's order. The module also reads {@code {"roots":[]}} as
-     * the built-in roots, but {@code aprv-server} refuses it, so {@code {}}
-     * is the one form both engines send.
+     * in the config's order. {@code {}} is the one form of the built-in
+     * roots: the module and {@code aprv-server} both refuse
+     * {@code {"roots":[]}}.
      */
     static String json(Set<X509Certificate> roots) {
         if (roots.equals(AppleRootCerts.roots())) {
