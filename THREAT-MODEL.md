@@ -661,7 +661,10 @@ the core's bounds are what keep every call short (§3.7). Only
 - **The image** is distroless, runs as a non-root user, has no shell, and
   its bases are pinned by digest.
 - **The one-shot CLI** has no socket: stdin in, stdout out, exit codes 0,
-  2, 3 and 70. PHP runs it with an argv array and no shell.
+  2, 3 and 70. PHP runs it through `symfony/process` from an argv array
+  that holds no caller input; a shell (`/bin/sh` on 6.4, `cmd.exe` on
+  Windows) may start it, with every argument quoted
+  (docs/rust-core/THREAT-MODEL.md §9).
 - **Errors that are not results** (401, a trap, an ABI fault) are RFC
   9457 problem documents; a verification result is always the module's
   JSON, with HTTP 200, or 413 when the body was over the cap and the

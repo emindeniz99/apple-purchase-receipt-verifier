@@ -788,8 +788,9 @@ Verifier v3 = Verifier.create(config,
 - A PHP 8.2 façade (`verifyReceipt`, `verifySignedData`,
   `verifyReceiptEndpoint`) over two transports: the one-shot `aprv` CLI
   per call by default, through `symfony/process` with an argv array that
-  holds no caller input (the input goes on stdin); or a server URL the user configures, over one keep-alive curl
-  handle ([aprv-server §7][server]).
+  holds no caller input (the input goes on stdin); or a server URL the
+  user configures, over one keep-alive curl handle
+  ([aprv-server §7][server]).
 - Measured: 11.6 ms per g5 through the CLI and 3.56 ms over HTTP; a
   200-row slice of the corpus matched Node on both.
 - **`aprv install`**, a command the Composer package ships, downloads the
