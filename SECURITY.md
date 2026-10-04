@@ -36,7 +36,9 @@ WasmKit; PORTS.md). Swift has one more, swift-crypto, for the SHA-256 that
 checks the bundled module against its pin (CryptoKit on Apple platforms);
 no input reaches it. The Java main artifact keeps BouncyCastle and
 `jackson-core`, the `-wasm` artifact Endive's runtime and `jackson-core`,
-and PHP `psr/clock`; npm has none. What goes into the module is pinned at
+and PHP `psr/clock` and `symfony/process` (which starts the `aprv` binary;
+its floors, 6.4.33 and 7.4.5, are the first releases outside
+CVE-2026-24739); npm has none. What goes into the module is pinned at
 build time: the Rust compiler by `rust/rust-toolchain.toml`, and wasi-sdk,
 wasm-tools, wit-bindgen and the OpenSSL tarball by version and SHA-256 in
 `tools/wasm-toolchain.sh`. The rest of the surface is the test and release
