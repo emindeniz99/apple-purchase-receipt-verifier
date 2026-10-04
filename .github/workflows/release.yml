@@ -119,16 +119,24 @@ jobs:
           TAG: ${{ inputs.tag }}
           DRY_RUN: ${{ inputs.dry_run }}
           REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
           if [ -z "$TAG" ]; then
-            if [ "$REF_TYPE" != "tag" ] && [ "$DRY_RUN" != "true" ]; then
+            if [ "$REF_TYPE" = "tag" ]; then
+              # Another tag (go/vX.Y.Z, corpus-*) names no release.
+              if ! [[ "$REF_NAME" =~ $semver ]]; then
+                echo "::error::'$REF_NAME' is not a vX.Y.Z release tag"
+                exit 1
+              fi
+            elif [ "$DRY_RUN" != "true" ]; then
               echo "::error::a dispatch from a branch must name the tag it completes (tag=vX.Y.Z) or be a dry run (dry_run=true)"
               exit 1
             fi
             exit 0
           fi
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if ! [[ "$TAG" =~ $semver ]]; then
             echo "::error::tag '$TAG' is not vX.Y.Z"
             exit 1
           fi
@@ -140,6 +148,15 @@ jobs:
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
             echo "::error::tag $TAG does not exist; a completion finishes a release that release-please already tagged"
             exit 1
+          fi
+          # A completion publishes this tree, not the tag's. The packages
+          # that already carry the version were built at the tag, so every
+          # package file changed since is named for the operator to judge.
+          changed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/compare/$TAG...$GITHUB_SHA" --jq '.files[].filename' \
+            | grep -E '^(java|java-wasm|node|python|ruby|dotnet|rust|go|swift|php)/|^composer\.json$' || true)
+          if [ -n "$changed" ]; then
+            echo "::warning::completing $TAG from $GITHUB_SHA, whose package files differ from the tag's:"
+            while IFS= read -r f; do echo "::warning::  $f"; done <<<"$changed"
           fi
           echo "completing $TAG from $GITHUB_SHA"
       - name: poll the ci workflow run for this commit
@@ -245,6 +262,7 @@ jobs:
       - name: the build reproduces in a fresh clone
         env:
           EXPECTED: ${{ steps.build.outputs.wasm-sha256 }}
+          APRV_EXPECTED_COMPONENT_SHA256: ${{ steps.build.outputs.component-sha256 }}
         run: |
           APRV_REPO_URL="file://$GITHUB_WORKSPACE" APRV_TOOLCHAIN_DIR="$RUNNER_TEMP/wasm-toolchain" \
             tools/reproduce-wasm.sh "$GITHUB_SHA" "$EXPECTED"
@@ -594,6 +612,9 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
+          # A dry run from a branch has no tag: the image is named after the
+          # tree's version (a branch name is not a valid image tag anyway).
+          if [ "$DRY_RUN" = "true" ] && [[ "$TAG" != v[0-9]* ]]; then TAG="v$(cat version.txt)"; fi
           version="${TAG#v}"
           owner=$(tr '[:upper:]' '[:lower:]' <<<"$GITHUB_REPOSITORY_OWNER")
           image="ghcr.io/$owner/aprv-server"
@@ -1457,8 +1478,12 @@ jobs:
           path: ${{ runner.temp }}/in
       - env:
           TAG: ${{ inputs.tag || github.ref_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
+          # A dry run from a branch has no tag; the pinned lines name the
+          # tree's version, so lay the binaries out under it.
+          if [ "$DRY_RUN" = "true" ] && [[ "$TAG" != v[0-9]* ]]; then TAG="v$(cat version.txt)"; fi
           sums="$PWD/php/SHA256SUMS"
           if [ ! -s "$sums" ]; then
             echo "::error file=php/SHA256SUMS::php/SHA256SUMS is empty: this release pins no aprv binary"

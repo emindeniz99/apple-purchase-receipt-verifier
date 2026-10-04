@@ -3204,12 +3204,14 @@ jobs:
       # npm pack runs prepack (jco transpile, then tsc), so the tarball
       # carries a fresh dist/ built around this tree's component. Its JSON
       # goes through the same check release.yml runs before `npm publish`,
-      # so a tarball missing a file, or a build script writing to stdout,
-      # fails here and not at the release.
+      # with the component named through APRV_COMPONENT as the release
+      # names it, so a tarball missing a file, or a build script writing to
+      # stdout on that path, fails here and not at the release.
       - run: |
           npm ci --ignore-scripts
           mkdir -p "$RUNNER_TEMP/npm-pack"
-          npm pack --json --pack-destination "$RUNNER_TEMP/npm-pack" | node scripts/check-pack.mjs
+          APRV_COMPONENT="$RUNNER_TEMP/aprv/aprv.component.wasm" \
+            npm pack --json --pack-destination "$RUNNER_TEMP/npm-pack" | node scripts/check-pack.mjs
         working-directory: node
       # The tarball is a file this job just built, not a registry fetch.
       - name: install the packed tarball outside the checkout # zizmor: ignore[adhoc-packages]

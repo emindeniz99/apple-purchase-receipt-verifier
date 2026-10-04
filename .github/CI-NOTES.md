@@ -147,13 +147,20 @@ gh workflow run release.yml --ref main -f tag=vX.Y.Z
 `ci-passed` refuses a `tag` that is not `v` + `version.txt` at the
 dispatched commit or that release-please has not created; a branch
 dispatch with neither `tag` nor `dry_run` is refused too (it would tag
-`go/<branch>` and push an image named `<branch>`). The publish jobs skip
-every registry that already carries the version and publish the rest; the
-tag-keyed jobs (`release-assets`, `publish-image`, `tag-go-module`,
-`php-binaries`, `smoke`) take the tag from the input. The attestations and
+`go/<branch>` and push an image named `<branch>`), as is a dispatch on a
+tag that is not `vX.Y.Z`. The publish jobs skip every registry that
+already carries the version and publish the rest; the tag-keyed jobs
+(`release-assets`, `publish-image`, `tag-go-module`, `php-binaries`,
+`smoke`) take the tag from the input. A completion publishes the tree at
+the dispatched commit, not the tag's: the guard lists, as warnings, every
+file under a package directory that changed since the tag, for the
+operator to judge before the registries that already carry the version
+(built at the tag) are joined by ones built here. The attestations and
 the image's `revision` name the dispatched commit, which built the files.
 The GitHub Release must not be immutable for the assets to land (it is
-not; the setting is off).
+not; the setting is off). `post-publish-smoke.yml`'s `workflow_run`
+trigger ignores a release run from a branch; the `smoke` job dispatches it
+with the version.
 
 A rehearsal runs the same file with nothing submitted:
 
@@ -171,7 +178,12 @@ the smoke dispatch. npm runs `npm publish --dry-run`, crates.io
 central-publishing-maven-plugin builds, tests, signs and bundles, then
 stops). A registry that already carries the version is skipped as in a
 release, so a rehearsal on a published version exercises the gates, not
-the package builds behind them.
+the package builds behind them. Without a `tag`, the image name and the
+PHP pin layout use `v` + `version.txt`; `-f tag=vX.Y.Z -f dry_run=true`
+rehearses a completion. A rehearsal needs the committed module copies and
+pins to equal the build, as every run does, so between a release and the
+next core change it runs from main; after a core change it runs only from
+a release branch, where release-please.yml has refreshed the pins.
 
 ## release-please.yml
 

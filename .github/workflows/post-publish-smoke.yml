@@ -84,8 +84,14 @@ jobs:
     name: resolve the published version
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # A failed release has nothing to smoke-test.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # A failed release has nothing to smoke-test. Neither has a release run
+    # dispatched from a branch (a dry run or a completion, release.yml's
+    # header): its own smoke job dispatches this workflow with the version
+    # when there is one, and head_branch is a branch name, not a version.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && startsWith(github.event.workflow_run.head_branch, 'v'))
     outputs:
       version: ${{ steps.pick.outputs.version }}
       ref: ${{ steps.pick.outputs.ref }}

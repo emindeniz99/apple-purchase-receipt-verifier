@@ -25,6 +25,9 @@
 #                       still checks it was made by the ref's own script
 #   APRV_REPRODUCE_OUT  where to leave the rebuilt files (default: a
 #                       temporary directory, printed at the end)
+#   APRV_EXPECTED_COMPONENT_SHA256
+#                       also require the rebuilt aprv.component.wasm to
+#                       have this hash (the release checks both files)
 #
 # Exit status: 0 when the hashes match, 1 when they differ or a step fails,
 # 2 on a usage error.
@@ -91,12 +94,18 @@ mkdir -p "$out"
 actual="$(sha256sum "$out/aprv.wasm" | cut -c1-64)"
 echo "reproduce-wasm: aprv.wasm   $actual (rebuilt from $commit)"
 echo "reproduce-wasm: expected    $EXPECTED"
+component=""
 if [[ -f "$out/aprv.component.wasm" ]]; then
-  echo "reproduce-wasm: component   $(sha256sum "$out/aprv.component.wasm" | cut -c1-64)"
+  component="$(sha256sum "$out/aprv.component.wasm" | cut -c1-64)"
+  echo "reproduce-wasm: component   $component"
 fi
 echo "reproduce-wasm: files in $out"
 if [[ "$actual" != "$EXPECTED" ]]; then
   echo "reproduce-wasm: MISMATCH: the rebuild does not reproduce the expected hash" >&2
+  exit 1
+fi
+if [[ -n "${APRV_EXPECTED_COMPONENT_SHA256:-}" && "$component" != "$APRV_EXPECTED_COMPONENT_SHA256" ]]; then
+  echo "reproduce-wasm: MISMATCH: the rebuilt component is not the expected $APRV_EXPECTED_COMPONENT_SHA256" >&2
   exit 1
 fi
 echo "reproduce-wasm: reproduced"
