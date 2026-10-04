@@ -3,7 +3,10 @@
  * Lints fixtures/cases.json — the normative cross-language conformance vectors
  * (schema version 2, the 0.7 API).
  *
- *   node tools/lint-cases.mjs
+ *   node tools/lint-cases.mjs [--fixtures <dir>]
+ *
+ * --fixtures lints a copy of fixtures/ instead (default: the repository's);
+ * the tool's own tests plant violations in one.
  *
  * Needs `npm ci --prefix tools` (ajv, pinned in tools/package-lock.json), as
  * tools/validate-wire.mjs does. Ajv validates the file against
@@ -40,6 +43,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { parseArgs } from 'node:util';
 import { readFixture } from './lib/fixtures.mjs';
 
 const require = createRequire(import.meta.url);
@@ -53,7 +57,14 @@ try {
 }
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const FIXTURES_DIR = join(REPO, 'fixtures');
+let args;
+try {
+  args = parseArgs({ options: { fixtures: { type: 'string', default: join(REPO, 'fixtures') } } });
+} catch (e) {
+  console.error(`lint-cases: ${e.message}\nusage: node tools/lint-cases.mjs [--fixtures <dir>]`);
+  process.exit(2);
+}
+const FIXTURES_DIR = resolve(args.values.fixtures);
 const CASES_PATH = join(FIXTURES_DIR, 'cases.json');
 const SCHEMA_PATH = join(FIXTURES_DIR, 'cases.schema.json');
 const SCANNED_TIERS = ['generated-0.7', 'public-receipts'];
