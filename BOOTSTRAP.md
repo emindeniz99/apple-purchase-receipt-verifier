@@ -34,10 +34,11 @@ Releases** carry `aprv.wasm`, the component, the server binaries and
 `SHA256SUMS` with the workflow's own token.
 
 Still open: RubyGems, NuGet, Packagist and Docker Hub (a first publish or
-a one-time setup each, below); crates.io, held at 0.7 on purpose; two
-owner decisions that are not registries, the Maven Central release count
-and the Java 8 CI distribution; and the one-time setup for fuzz findings
-and OSS-Fuzz.
+a one-time setup each, below); crates.io, held at 0.7 on purpose; the
+`-wasm` Maven artifact, held until the owner flips
+`APRV_PUBLISH_JAVA_WASM`; two owner decisions that are not registries, the
+Maven Central release count and the Java 8 CI distribution; and the
+one-time setup for fuzz findings and OSS-Fuzz.
 
 ## RubyGems
 
@@ -308,14 +309,18 @@ classifier jars only while the repository variable `APRV_PUBLISH_JAVA_WASM`
 is `true`; until then every release deploys the main artifact alone and the
 job prints a notice. The reason is the artifact's preview status
 (DECISIONS.md R41): its public API may still change before 1.0, and a
-version on Central can never be withdrawn. The jar is built and tested on
-every push, and release-please keeps its version in step, so the first
-published `-wasm` carries whatever version the release after the flip has.
+version on Central is permanent (Central does not delete or replace a
+published release). The jar is built and tested in CI whenever Java or the
+core changes, and release-please keeps its version in step, so the first
+published `-wasm` carries the version of the first release after the flip.
 
 3. When the `-wasm` API is settled, set `APRV_PUBLISH_JAVA_WASM` to `true`
-   in the repository's variables and remove the "not yet on Maven Central"
-   notes from `java-wasm/README.md` and the root README's registry table
-   in the same release.
+   in the repository's variables, and in a commit merged before the first
+   release that carries it: remove the "not yet on Maven Central" notes
+   from `java-wasm/README.md`, `java/README.md`, `CONTRIBUTING.md` and the
+   root README's registry table, and add a `-wasm` leg to
+   `post-publish-smoke.yml`'s `maven` job (it has only ever resolved the
+   main artifact).
 
 RubyGems, crates.io, NuGet and the Go proxy have no monthly cap, so they
 add no pressure of their own — but a fix in any one of them still spends a

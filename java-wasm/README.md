@@ -13,11 +13,15 @@ still change before 1.0. The BouncyCastle artifact,
 `apple-purchase-receipt-verifier`, is the long-standing one.
 
 **Not yet on Maven Central.** Because the API is still a preview and a
-version on Central can never be withdrawn, the owner holds its first upload
-(the repository variable `APRV_PUBLISH_JAVA_WASM`, BOOTSTRAP.md). The jar
-is built and tested on every push, and the coordinates below are the ones
-it will have; until the first published version, build it from this
-repository (`java-wasm/CI-NOTES.md`).
+version on Central is permanent (Central does not delete or replace a
+published release), the owner holds its first upload until the API
+settles. The jar is built and tested in CI whenever Java or the core
+changes; the groupId and artifactId below are the ones it will have, and
+its first version is that of the first release that carries it. Until
+then a local build (`mvn -f java-wasm/pom.xml -Daprv.wasm=<aprv.wasm from
+a release's assets> install`) gives the Endive engine and the
+`executable()` and `url()` server sources; `maven()` and `github()` need
+the published jar's pins.
 
 Use one artifact or the other, never both. They have the same class names;
 `Verifier.create` throws `IllegalStateException` when it finds both on the

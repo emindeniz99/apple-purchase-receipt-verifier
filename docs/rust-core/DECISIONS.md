@@ -1606,7 +1606,8 @@ the release, it is a breaking change for every caller. So the audit of
   second version per release would spend two. **Amended 2026-10-04:** the
   `-wasm` upload is held behind the repository variable
   `APRV_PUBLISH_JAVA_WASM` until the owner judges the preview API settled,
-  because a version on Central cannot be withdrawn; the artifactId, the
+  because a version on Central is permanent (Central does not delete or
+  replace a published release); the artifactId, the
   shared version and the release-please wiring are unchanged, and the
   main artifact deploys on every release (BOOTSTRAP.md, "Maven Central").
 - **The shared cases do not change.** The Python and PHP conformance

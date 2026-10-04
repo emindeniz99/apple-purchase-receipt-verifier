@@ -16,7 +16,9 @@ Delete a line in the commit that ships it.
    enforce branch protection for admins, bootstrap RubyGems, NuGet and
    Docker Hub, submit the repository to Packagist, and settle the Maven
    Central release count and the Java 8 CI distribution (BOOTSTRAP.md has
-   each). crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4.
+   each). crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4;
+   the `-wasm` Maven artifact is held until the owner flips
+   `APRV_PUBLISH_JAVA_WASM` (item 11).
 
 ## Decisions of 2026-09-29 and 30 (owner)
 

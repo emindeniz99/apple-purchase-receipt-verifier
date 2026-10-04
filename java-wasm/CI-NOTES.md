@@ -349,7 +349,8 @@ nightly `corpus` job, which needs the OD-05 archive.
   - `{"type": "generic", "path": "java-wasm/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/Version.java"}`
   - `{"type": "generic", "path": "java-wasm/README.md"}`
 - `publish-maven`: `mvn -B -f java-wasm -P central deploy` beside the main
-  artifact's, with the same GPG and Central credentials, and no cache.
+  artifact's, with the same GPG and Central credentials, and no cache;
+  only while `vars.APRV_PUBLISH_JAVA_WASM` is `true` (BOOTSTRAP.md).
   Files per release: the jar (1.9 MB with the G1 module), sources,
   javadoc (the public API only: the `central` profile points javadoc at
   `src/main/java` and `../java/src/shared/java`), the `.module` file, the CycloneDX SBOM, their

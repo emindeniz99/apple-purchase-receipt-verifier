@@ -740,7 +740,7 @@ jobs:
             npm publish
           fi
 
-  # Two artifactIds from 0.8.0 (R25, ARCHITECTURE.md §7.8): the main
+  # Two artifactIds (R25, ARCHITECTURE.md §7.8): the main
   # artifact from java/, unchanged, and apple-purchase-receipt-verifier-wasm
   # from java-wasm/, whose Endive classes are compiled from build-wasm's
   # aprv.wasm and which carries the two static Linux server binaries from
@@ -750,9 +750,10 @@ jobs:
   # (BOOTSTRAP.md, "Maven Central"). The -wasm deployment is held behind
   # the repository variable APRV_PUBLISH_JAVA_WASM (owner, 2026-10-04): the
   # artifact is a preview whose API may still change, and a version on
-  # Central can never be withdrawn, so until the variable is `true` a
-  # release deploys the main artifact alone. The -wasm jar is still built
-  # and tested on every push; only its upload waits.
+  # Central is permanent (Central does not delete or replace a published
+  # release), so until the variable is `true` a release deploys the main
+  # artifact alone. The -wasm jar is still built and tested in CI whenever
+  # Java or the core changes; only its upload waits.
   publish-maven:
     name: publish java to Maven Central
     runs-on: ubuntu-latest
@@ -798,8 +799,8 @@ jobs:
           if [ ! -f java-wasm/pom.xml ]; then
             echo "::error::java-wasm/pom.xml is missing; the release ships the -wasm artifact"
             exit 1
-          elif [ "$PUBLISH_JAVA_WASM" != "true" ]; then
-            echo "::notice::APRV_PUBLISH_JAVA_WASM is not true — the -wasm artifact $VERSION is held; deploying the main artifact only."
+          elif [ "${PUBLISH_JAVA_WASM:-}" != "true" ]; then
+            echo "::notice::APRV_PUBLISH_JAVA_WASM is not true — the -wasm artifact $VERSION is held; skipping the -wasm upload."
             echo "publish=false" >> "$GITHUB_OUTPUT"
           elif curl -fsSL "https://repo1.maven.org/maven2/io/github/emindeniz99/apple-purchase-receipt-verifier-wasm/$VERSION/" >/dev/null 2>&1; then
             echo "Central already has the -wasm artifact $VERSION — skipping it."

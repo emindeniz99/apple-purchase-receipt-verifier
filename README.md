@@ -152,8 +152,8 @@ The import namespace is the registry name in each ecosystem's casing
 convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 `ApplePurchaseReceiptVerifier`), one name everywhere.
 
-Maven Central, npm, PyPI, SwiftPM and the Go proxy publish on every
-release. RubyGems, NuGet, Packagist and Docker Hub each wait on a one-time
+Maven Central (the main artifact; `-wasm` is held), npm, PyPI, SwiftPM
+and the Go proxy publish on every release. RubyGems, NuGet, Packagist and Docker Hub each wait on a one-time
 owner action, listed in [BOOTSTRAP.md](./BOOTSTRAP.md). The Rust crate
 stays at 0.7 on crates.io until `openssl-sys` accepts OpenSSL 4; building
 the 0.8 core from source needs `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL

@@ -22,7 +22,8 @@ Java **8** is the compiled target (`maven.compiler.release=8`), built and
 tested with any modern JDK.
 
 Depend on this artifact or on `apple-purchase-receipt-verifier-wasm` (the
-same API on the shared Rust core), never both: they have the same class
+same API on the shared Rust core; not yet on Maven Central, see
+[../java-wasm/README.md](../java-wasm/README.md)), never both: they have the same class
 names. `Verifier.create` throws `IllegalStateException` when it finds both
 on the classpath.
 

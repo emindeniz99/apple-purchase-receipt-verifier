@@ -779,9 +779,10 @@ Verifier v3 = Verifier.create(config,
   fails fast at startup when it finds both. The Gradle module metadata
   declares a capability conflict between them, and the READMEs say to
   depend on exactly one.
-- **Maven Central** carries two classifier jars of the static musl
+- **Maven Central** will carry two classifier jars of the static musl
   server, `linux-x86_64` and `linux-aarch64`, attached to the `-wasm`
-  artifact (R26). A classifier cannot replace the main jar: it shares the
+  artifact (R26), once its upload is enabled (R41 amendment of
+  2026-10-04). A classifier cannot replace the main jar: it shares the
   artifact's POM and dependencies, which is why the two implementations
   have two artifactIds. macOS and Windows binaries come from GitHub
   Releases.
