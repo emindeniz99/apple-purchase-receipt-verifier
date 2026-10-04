@@ -452,8 +452,9 @@ impl ReceiptPayload {
         Environment::from_receipt_type(self.receipt_type.as_deref())
     }
 
-    /// This payload as JSON, for logging and storage (docs/design/0.7-api.md
-    /// "Our JSON"). Every port writes the same value; the bytes may differ.
+    /// This payload as JSON (docs/design/0.7-api.md "Our JSON"). It holds the
+    /// full purchase data; the caller decides what to write where. Every port
+    /// writes the same value; the bytes may differ.
     /// `null` for a missing field, 64-bit ids as strings, bytes as padded
     /// standard base64, dates as epoch-millisecond numbers.
     ///

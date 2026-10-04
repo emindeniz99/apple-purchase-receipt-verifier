@@ -144,10 +144,11 @@ func attributesJSON(attrs UnknownAttributes) map[string][]string {
 	return out
 }
 
-// ToJSON is this payload as JSON, for logging and storage
-// (docs/design/0.7-api.md, "Our JSON"). Every port writes the same value;
-// the bytes may differ. null for a missing field, 64-bit ids as strings,
-// bytes as padded standard base64, dates as epoch-millisecond numbers.
+// ToJSON is this payload as JSON (docs/design/0.7-api.md, "Our JSON"). It
+// holds the full purchase data; the caller decides what to write where.
+// Every port writes the same value; the bytes may differ. null for a
+// missing field, 64-bit ids as strings, bytes as padded standard base64,
+// dates as epoch-millisecond numbers.
 //
 // receipt_type, app_item_id, bundle_id, bundle_id_bytes,
 // application_version, opaque_value, sha1_hash, receipt_creation_date_ms,

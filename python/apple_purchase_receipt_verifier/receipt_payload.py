@@ -155,9 +155,10 @@ class ReceiptPayload:
         object.__setattr__(self, "unknown_attributes", _frozen_attributes(self.unknown_attributes))
 
     def to_json(self) -> str:
-        """This payload as JSON, for logging and storage. Every port writes
-        the same value (the bytes may differ): snake_case keys, dates as
-        numbers with a ``_ms`` suffix, 64-bit ids (``app_item_id``,
+        """This payload as JSON. It holds the full purchase data; the caller
+        decides what to write where. Every port writes the same value (the
+        bytes may differ): snake_case keys, dates as numbers with a ``_ms``
+        suffix, 64-bit ids (``app_item_id``,
         ``download_id``, ``version_external_identifier``,
         ``web_order_line_item_id``) as strings, bytes as padded standard
         base64 and ``null`` for a missing value. Non-ASCII is escaped, so

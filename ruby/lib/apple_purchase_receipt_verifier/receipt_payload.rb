@@ -55,8 +55,9 @@ module ApplePurchaseReceiptVerifier
     :version_external_identifier, :in_app, :original_purchase_date_ms,
     :original_application_version, :expiration_date_ms, :unknown_attributes, :environment
   ) do
-    # This payload as JSON, for logging and storage (docs/design/0.7-api.md,
-    # "Our JSON"). Every port writes the same value; the bytes may differ.
+    # This payload as JSON (docs/design/0.7-api.md, "Our JSON"). It holds the
+    # full purchase data; the caller decides what to write where. Every port
+    # writes the same value; the bytes may differ.
     # `null` for a missing field, 64-bit ids as JSON strings, bytes as padded
     # standard base64, `unknown_attributes` keyed by the decimal type with
     # each key's values in receipt order.
