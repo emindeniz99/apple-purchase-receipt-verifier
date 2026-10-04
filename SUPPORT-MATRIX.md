@@ -172,7 +172,7 @@ Ruby 4.1 ships in December 2026. 0.7 raised the floor from 3.1 to 3.3 for
 |---|---|---|---|
 | 8.2 | floor, security | 2026-12-31 | `php`, `php-lowest` |
 | 8.3 | security | 2027-12-31 | `php` |
-| 8.4 | active | 2028-12-31 | `php` (also over HTTP), `php-static`, `php-fuzz` |
+| 8.4 | active | 2028-12-31 | `php` (also over HTTP), `php-symfony-process-8`, `php-static`, `php-fuzz` |
 | 8.5 | active | 2029-12-31 | `php` |
 
 PHP 8.6 ships in November 2026. 0.7 raised the floor from 8.1 to 8.2 for

@@ -27,6 +27,17 @@ the same run.
   pin in the checkout. A pin that differs from the build is a
   `::warning::`, not an error: pins lag the core between releases, and
   `release-please.yml` rewrites them on the release branch.
+- The ci.yml host jobs take both steps from one composite action,
+  `uses: ./.github/actions/place-module` with `host:`, after their
+  checkout: it downloads `aprv-wasm` to `$RUNNER_TEMP/aprv` and runs
+  `place-module.sh` for that host. The two java-wasm jobs that also need
+  the server binary still download and place in their own steps. The call
+  is the `./` path form on purpose: GitHub's `$/` self-repository form
+  loads the action from the repository archive, which `.gitattributes`
+  (`* export-ignore`, the PHP package allowlist) leaves without `.github/`,
+  so every job failed at "Set up job" with "Can't find action.yml" (#245,
+  run 37184611615). zizmor's `self-repository` audit, which asks for `$/`,
+  is disabled in `.github/zizmor.yml` for that reason.
 - `aprv-server-linux` builds the static x86_64 musl `aprv` around the
   run's component (`rust/server/scripts/build-static.sh`, which needs
   `musl-tools` for the C that Wasmtime compiles) and uploads it as
@@ -55,7 +66,7 @@ second column is what it takes from other jobs.
 | swift | `swift` (6.3 and 6.4 containers, debug build then release tests), `swift-crypto-floor` (the same on 6.3 with swift-crypto moved to the manifest's 3.0.0 floor), `swift-macos` and `swift-ios` (`macos-26`: the package needs Swift tools 6.3), `swift-fuzz`, `swift-format`, `smoke-swiftpm` | `aprv-wasm` |
 | ruby | `ruby`, `ruby-gem`, `ruby-macos`, `ruby-tools`, `ruby-fuzz`, `smoke-rubygems` | `aprv-wasm` |
 | dotnet | `dotnet`, `dotnet-mono`, `dotnet-trim`, `dotnet-fuzz`, `dotnet-format`, `smoke-nuget` | `aprv-wasm` |
-| php | `php` (the suites, then the conformance cases, then HTTP on 8.4), `php-lowest`, `php-static`, `php-fuzz`, `php-format` | `aprv-server-x86_64-unknown-linux-musl` |
+| php | `php` (the suites, then the conformance cases, then HTTP on 8.4), `php-lowest`, `php-symfony-process-8` (PHP 8.4 with symfony/process moved alone to the 8.0.5 floor and to an exact, cooled-down newest 8.x; the lock pins 7.4), `php-static`, `php-fuzz`, `php-format` | `aprv-server-x86_64-unknown-linux-musl` |
 | java | `java`, `java-runtime-8`, `java-hardened-policy`, `java-distroless`, `jvm-interop`, `java-spring-boot`, `java-fuzz`, `java-format`, `smoke-maven` (the pure-Java 0.7 artifact, which needs no module) | nothing |
 | java | `java-wasm-endive` (JDK 11 to 27), `java-wasm-runtime-8` (the server engine on a real Java 8, with a noexec check), `java-wasm-consumers` (jvm-interop and Spring Boot on the -wasm artifact), `java-classpath-guard` (`java-wasm/scripts/classpath-guard.sh`) | `aprv-wasm`; the server binary for the first two |
 | always | `one-implementation` (`--enforce all`, with the per-file allowlist OD-04 describes in `tools/check-one-implementation.mjs`), `conformance` (`tools/check-cert-copies.mjs`, which finds `rust/certs` alone since Phase 7, and `tools/check-licence-copies.mjs`), `zizmor` | nothing |

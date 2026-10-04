@@ -47,9 +47,12 @@ php/SHA256SUMS -text
 # The cost, which is real and applies to more than Composer: GitHub builds
 # the "Source code (zip)" asset on every Release from the same archive, so
 # that asset is now the PHP package rather than the whole monorepo. Nothing
-# in .github/workflows/ consumes it. Every other registry publishes a built
-# artifact, and SwiftPM and the Go module proxy clone the repository instead
-# of downloading an archive, so none of them see these rules.
+# in .github/workflows/ consumes it: a `uses: $/...` self-repository action
+# would (it loads the archive, which has no .github/), so the workflows call
+# .github/actions/* as `./...` (see .github/zizmor.yml). Every other
+# registry publishes a built artifact, and SwiftPM and the Go module proxy
+# clone the repository instead of downloading an archive, so none of them
+# see these rules.
 * export-ignore
 /composer.json -export-ignore
 /LICENSE -export-ignore

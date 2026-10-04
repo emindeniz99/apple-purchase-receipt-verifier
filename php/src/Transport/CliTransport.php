@@ -225,9 +225,9 @@ final class CliTransport implements Transport
     /**
      * The child's environment: what the OS needs to start a binary, and
      * nothing else. symfony/process otherwise passes getenv() and $_ENV,
-     * which holds what Dotenv loaded (and, under FPM before 6.4.41 and
-     * 7.4.13, the request's variables). aprv's one-shot commands read no
-     * variable. Every other name is set to false, which symfony/process
+     * which holds what Dotenv loaded (and, under FPM before 6.4.41, 7.4.13
+     * and 8.0.13, the request's variables). aprv's one-shot commands read
+     * no variable. Every other name is set to false, which symfony/process
      * reads as "unset".
      *
      * @return array<string, string|false>
