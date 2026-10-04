@@ -7,6 +7,7 @@ The note is [`../2026-10-04-java-bc-floor.md`](../2026-10-04-java-bc-floor.md).
 | `DepthSweep.java` | At which `org.bouncycastle.asn1.max_cons_depth` do the sandbox receipts under `fixtures/public-receipts/` stop parsing, and does the 9-deep probe `Verifier.create` parses stop at the same bound? |
 | `FloorCheck.java` | Which bcprov does `Verifier.create` accept, and what does each bcprov's ASN.1 parser do with 400,000 nested indefinite-length SEQUENCEs? |
 | `HostileCost.java` | What does a cap-sized receipt that no pinned root vouches for cost before it is refused? |
+| `ChainLinkCost.java` | What does PKIX's second check of each chain signature cost, after the top-down walk has checked it once, for the legacy sandbox receipt and `fixtures/generated/transaction.jws`? |
 
 ## Reproduce
 
@@ -37,6 +38,7 @@ for v in 1.81 1.81.1 1.85.2 1.86; do
   java -cp "$SCRATCH/classes:$LIB:$SCRATCH/jars/bcprov-jdk18on-$v.jar" FloorCheck
 done
 java -cp "$SCRATCH/classes:$LIB:$BC186" HostileCost
+java -cp "$SCRATCH/classes:$LIB:$BC186" ChainLinkCost "$REPO/fixtures"
 ```
 
 `FloorCheck` swaps only bcprov: bcutil and bcpkix stay at 1.86, as when a
