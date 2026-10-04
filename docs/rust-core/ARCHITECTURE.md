@@ -193,10 +193,11 @@ world aprv {
 The WIT file is the contract (its doc comment on `init` still quotes the
 answer before R42 added `max_input_bytes`, and its "empty" now means no
 bytes, since the module refuses an empty `roots` list (R23, Q30); the
-comment changes with the next ABI version, since CI diffs the file). It lives in
-`rust/bindings/abi/wit/`, and
-CI diffs it against what `wasm-tools component wit` reads back from the
-built module (§9). The version in the package name is the ABI version:
+comment waits for the next ABI version, because any edit to the WIT is
+an ABI change by this repository's rule). It lives in
+`rust/bindings/abi/wit/`, and CI diffs it against what `wasm-tools
+component wit` reads back from the built module (§9). The version in the
+package name is the ABI version:
 export names carry it (`aprv:verifier/verify@0.1.0#init`), so a wrapper
 built for one version finds no export on a module of another and fails at
 `create` instead of misreading arguments.
