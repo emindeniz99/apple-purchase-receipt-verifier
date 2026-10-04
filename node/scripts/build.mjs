@@ -39,7 +39,9 @@ if (!existsSync(component)) {
 }
 const sha256 = createHash('sha256').update(readFileSync(component)).digest('hex');
 if (override) {
-  console.log(`build: component ${override} (APRV_COMPONENT), sha256 ${sha256}`);
+  // stderr, like every other line here: `npm pack --json` runs this script
+  // through prepack and its stdout must stay the JSON a caller parses.
+  console.error(`build: component ${override} (APRV_COMPONENT), sha256 ${sha256}`);
 } else {
   const pinned = readFileSync(here('wasm/aprv.component.wasm.sha256'), 'ascii').split(/\s/)[0];
   if (pinned !== sha256) {
