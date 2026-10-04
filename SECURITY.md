@@ -59,7 +59,8 @@ toolchain. Four rules:
   what they test: `php-lowest` (`composer update --prefer-lowest`) and
   Java, which pins exact versions and has no lockfile format.
   `php-symfony-process-8` moves one PHP package, symfony/process, to the
-  newest 8.x on PHP 8.4 and keeps every other locked version.
+  newest 8.x and to the 8.0.5 floor on PHP 8.4 and keeps every other
+  locked version.
   `swift-crypto-floor` moves one Swift pin, swift-crypto, to the
   manifest's 3.0.0 floor, and fails unless the pin records the commit
   that tag named when the leg was written.

@@ -2773,6 +2773,12 @@ jobs:
     if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # The newest 8.x and the 8.0.5 floor the constraint claims
+        # (CLAUDE.md: floors are tested claims).
+        symfony-process: ["^8.0", "8.0.5"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2792,8 +2798,10 @@ jobs:
           coverage: none
       - run: composer config --unset platform.php
         working-directory: php
-      - run: composer update symfony/process --with "symfony/process:^8.0" --no-scripts --no-progress --no-interaction --prefer-dist
+      - run: composer update symfony/process --with "symfony/process:$SYMFONY_PROCESS" --no-scripts --no-progress --no-interaction --prefer-dist
         working-directory: php
+        env:
+          SYMFONY_PROCESS: ${{ matrix.symfony-process }}
       - run: vendor/bin/phpunit
         working-directory: php
 
