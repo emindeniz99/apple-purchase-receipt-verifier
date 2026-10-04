@@ -112,12 +112,20 @@ run.
 - `build-server` builds `aprv-<target>[.exe]` for the release targets
   with `build-static.sh` (musl legs install `musl-tools`), refuses any
   component but build-wasm's (`COMPONENT_SHA256`), and reproduces the
-  Linux builds in a fresh clone (`tools/reproduce-server.sh`).
+  Linux builds in a fresh clone (`tools/reproduce-server.sh`). On x86_64
+  the clone rebuilds the component too; on aarch64 the script is handed
+  build-wasm's component (`APRV_COMPONENT`), because
+  `tools/wasm-toolchain.sh` pins x86_64 archives only, and reproduces the
+  server stage. 0.8.0's first run (2026-10-04) failed on the arm leg for
+  want of that, and `fail-fast` cancelled the other five builds.
 - The publish jobs never cache. `publish-pypi` builds with
   `tools/build_dist.py`. `publish-npm` requires the transpiled module and
-  every licence file in the tarball. `publish-maven` hands both Linux
-  binaries and their `SHA256SUMS` to the -wasm build. `publish-rubygems`
-  copies the module into `lib/` and checks its pin.
+  every licence file in the tarball (`node/scripts/check-pack.mjs` over
+  `npm pack --json`; ci.yml's `smoke-npm` runs the same check, after the
+  0.8.0 run found `prepack`'s build log on stdout ahead of the JSON).
+  `publish-maven` hands both Linux binaries and their `SHA256SUMS` to the
+  -wasm build. `publish-rubygems` copies the module into `lib/` and
+  checks its pin.
 - `tag-go-module` refuses to tag a tree without
   `go/internal/wasm/aprv.wasm` and its pin (the Go module is published by
   the tag alone, so the module must be committed first), and checks the
@@ -126,6 +134,56 @@ run.
   `<tag>/<asset>` and runs `sha256sum -c --strict php/SHA256SUMS` there,
   after checking the file is not empty (OD-06). The `smoke` job then runs
   post-publish-smoke.yml for every published registry, `php` included.
+
+### Completing or rehearsing a release from a branch
+
+The tag's commit cannot be changed, so a release whose run failed part
+way is completed from main: fix, merge, then
+
+```sh
+gh workflow run release.yml --ref main -f tag=vX.Y.Z
+```
+
+`ci-passed` refuses a `tag` that is not `v` + `version.txt` at the
+dispatched commit or that release-please has not created; a branch
+dispatch with neither `tag` nor `dry_run` is refused too (it would tag
+`go/<branch>` and push an image named `<branch>`), as is a dispatch on a
+tag that is not `vX.Y.Z`. The publish jobs skip every registry that
+already carries the version and publish the rest; the tag-keyed jobs
+(`release-assets`, `publish-image`, `tag-go-module`, `php-binaries`,
+`smoke`) take the tag from the input. A completion publishes the tree at
+the dispatched commit, not the tag's: the guard lists, as warnings, every
+file under a package directory that changed since the tag, for the
+operator to judge before the registries that already carry the version
+(built at the tag) are joined by ones built here. The attestations and
+the image's `revision` name the dispatched commit, which built the files.
+The GitHub Release must not be immutable for the assets to land (it is
+not; the setting is off). `post-publish-smoke.yml`'s `workflow_run`
+trigger ignores a release run from a branch; the `smoke` job dispatches it
+with the version.
+
+A rehearsal runs the same file with nothing submitted:
+
+```sh
+gh workflow run release.yml --ref main -f dry_run=true
+```
+
+Every job builds, checks and reproduces as in a release. Skipped: the
+attestations (so release-assets copies no provenance bundle), the GitHub
+Release upload, the image push (the index is built into a local OCI layout
+instead), the Docker Hub copy, the Go tag and proxy warm, the RubyGems,
+crates.io and NuGet credential exchanges and pushes, the PyPI upload, and
+the smoke dispatch. npm runs `npm publish --dry-run`, crates.io
+`cargo publish --dry-run`, Maven `deploy -DskipPublishing=true` (the
+central-publishing-maven-plugin builds, tests, signs and bundles, then
+stops). A registry that already carries the version is skipped as in a
+release, so a rehearsal on a published version exercises the gates, not
+the package builds behind them. Without a `tag`, the image name and the
+PHP pin layout use `v` + `version.txt`; `-f tag=vX.Y.Z -f dry_run=true`
+rehearses a completion. A rehearsal needs the committed module copies and
+pins to equal the build, as every run does, so between a release and the
+next core change it runs from main; after a core change it runs only from
+a release branch, where release-please.yml has refreshed the pins.
 
 ## release-please.yml
 

@@ -22,7 +22,13 @@
 # OD-08).
 #
 # Environment: APRV_REPO_URL, APRV_TOOLCHAIN_DIR and APRV_REPRODUCE_OUT as
-# for tools/reproduce-wasm.sh. Exit status: 0 on a match, 1 on a mismatch or
+# for tools/reproduce-wasm.sh. APRV_COMPONENT names a component file to
+# embed instead of rebuilding one: tools/wasm-toolchain.sh pins Linux x86_64
+# archives only, so on an aarch64 host the component cannot be rebuilt here;
+# the release hands this script build-wasm's component, which build-wasm
+# already rebuilt in a fresh clone on x86_64, and the rebuild below covers
+# the server stage alone. APRV_EXPECTED_COMPONENT_SHA256 is then required
+# and the file must match it. Exit status: 0 on a match, 1 on a mismatch or
 # a failed step, 2 on a usage error.
 set -euo pipefail
 
@@ -59,10 +65,12 @@ for f in rust/bindings/abi/build.sh rust/server/scripts/build-static.sh; do
   [[ -f "$src/$f" ]] || { echo "reproduce-server: $REF has no $f" >&2; exit 1; }
 done
 
-toolchain="${APRV_TOOLCHAIN_DIR:-$work/toolchain}"
-env_lines="$("$src/tools/wasm-toolchain.sh" "$toolchain")"
-eval "$env_lines"
-export WASI_SDK_DIR OPENSSL_WASM_DIR PATH
+if [[ -z "${APRV_COMPONENT:-}" ]]; then
+  toolchain="${APRV_TOOLCHAIN_DIR:-$work/toolchain}"
+  env_lines="$("$src/tools/wasm-toolchain.sh" "$toolchain")"
+  eval "$env_lines"
+  export WASI_SDK_DIR OPENSSL_WASM_DIR PATH
+fi
 
 channel="$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' "$src/rust/rust-toolchain.toml")"
 [[ -n "$channel" ]] || { echo "reproduce-server: rust/rust-toolchain.toml names no channel" >&2; exit 1; }
@@ -72,7 +80,14 @@ export RUSTUP_TOOLCHAIN="$channel"
 
 out="${APRV_REPRODUCE_OUT:-$work/out}"
 mkdir -p "$out/wasm"
-(cd "$src" && rust/bindings/abi/build.sh "$out/wasm" >&2)
+if [[ -n "${APRV_COMPONENT:-}" ]]; then
+  [[ -n "${APRV_EXPECTED_COMPONENT_SHA256:-}" ]] \
+    || { echo "reproduce-server: APRV_COMPONENT needs APRV_EXPECTED_COMPONENT_SHA256, the hash the release attested for it" >&2; exit 2; }
+  cp "$APRV_COMPONENT" "$out/wasm/aprv.component.wasm"
+  echo "reproduce-server: component taken from $APRV_COMPONENT, not rebuilt (the toolchain pins x86_64 archives only)" >&2
+else
+  (cd "$src" && rust/bindings/abi/build.sh "$out/wasm" >&2)
+fi
 component_sha="$(sha256sum "$out/wasm/aprv.component.wasm" | cut -c1-64)"
 echo "reproduce-server: component   $component_sha"
 if [[ -n "${APRV_EXPECTED_COMPONENT_SHA256:-}" && "$component_sha" != "$APRV_EXPECTED_COMPONENT_SHA256" ]]; then
