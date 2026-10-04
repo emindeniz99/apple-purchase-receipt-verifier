@@ -384,8 +384,8 @@ shared by every `Verifier` of the process; nothing needs closing.
 
 ## Upgrading from 0.7
 
-The API is 0.7's, and so are the answers: every port runs the same module
-against the same `fixtures/cases.json`. What changed:
+The answers are 0.7's: every port runs the same module against the same
+`fixtures/cases.json`. What changed:
 
 - **Floors**: Swift 6.3, macOS 15, iOS 18 (were 6.1 and macOS 13).
 - **`Config.roots`** is `[[UInt8]]?`, DER or PEM bytes, where it was

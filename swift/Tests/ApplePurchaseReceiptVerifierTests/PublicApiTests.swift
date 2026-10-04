@@ -61,7 +61,7 @@ final class PublicApiTests: XCTestCase {
     /// refused the same way. `Config` stores what it is given and the
     /// `Verifier` refuses it; the defaults never throw, and their roots are
     /// the module's built-in Apple roots, which `nil` names.
-    func testConfigRefusesMisconfigurationAtStartup() {
+    func testVerifierRefusesMisconfigurationAtStartup() {
         XCTAssertThrowsError(try Verifier(config: Config(roots: []))) { XCTAssertTrue($0 is ConfigError) }
         XCTAssertThrowsError(try Verifier(config: Config(roots: [[0x30, 0x00]]))) { XCTAssertTrue($0 is ConfigError) }
         XCTAssertNoThrow(try Verifier(config: Config()))

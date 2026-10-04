@@ -6,10 +6,11 @@ import Foundation
 }
 
 /// A programming mistake in how a ``Config`` was built: no trust anchors, or
-/// bytes the verification module refuses as a certificate. Not a
-/// ``Failure``: misconfiguration is not a verdict about any input, and
-/// happens once, at startup. Also thrown when the verification module this
-/// package carries cannot be loaded at all.
+/// bytes the verification module refuses as a certificate. Thrown by
+/// ``Verifier/init(config:)``, which creates one module instance at startup
+/// when roots are given. Not a ``Failure``: misconfiguration is not a
+/// verdict about any input, and happens once, at startup. Also thrown when
+/// the verification module this package carries cannot be loaded at all.
 public struct ConfigError: Error, Sendable, CustomStringConvertible {
     public let detail: String
     init(_ detail: String) { self.detail = detail }

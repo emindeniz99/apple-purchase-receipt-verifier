@@ -35,8 +35,10 @@ public struct Verifier: Sendable {
     private let clock: @Sendable () -> Int64
 
     /// A verifier for `config`. The first `Verifier` of a process loads
-    /// aprv.wasm (checks its SHA-256 and parses it, a few milliseconds);
-    /// the instances are created on first use.
+    /// aprv.wasm (checks its SHA-256 and parses it, a few milliseconds).
+    /// When `config` gives roots, one instance is created here, at startup,
+    /// to check them; the instances that serve calls are created on first
+    /// use.
     ///
     /// - Throws: ``ConfigError`` for an empty root set, or when the
     ///   verification module refuses one of the caller's roots as a
@@ -49,6 +51,7 @@ public struct Verifier: Sendable {
         self.init(config: config, module: AprvModule.bundled)
     }
 
+    // Skips `Config.check()`: a `Config(roots: [])` here reaches the module as `{"roots":[]}`, the built-in roots.
     init(
         config: Config, module: Result<AprvModule, HostError>,
         random: @escaping @Sendable (Int) -> [UInt8] = Guest.systemRandomBytes
