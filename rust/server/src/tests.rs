@@ -398,6 +398,67 @@ async fn over_a_connection_the_drain_keeps_it_and_past_the_drain_it_closes() {
     .unwrap();
 }
 
+/// Over a real connection, spaces and tabs around the `X-Aprv-Now-Ms` value
+/// are the optional whitespace RFC 9110 §5.5 puts around every field value:
+/// the HTTP parser strips them, so `6\t\t` is the clock 6, and openapi.yaml's
+/// pattern admits them (Schemathesis sent `6\t\t` as a pattern violation,
+/// got the 200 this test pins, and failed the contract job). Whitespace
+/// inside the digits is part of the value and stays a 400.
+#[tokio::test(flavor = "multi_thread")]
+async fn over_a_connection_whitespace_around_the_clock_is_not_part_of_it() {
+    use std::io::{BufReader, Write};
+    let doc: Value = serde_json::from_str(http::OPENAPI_JSON).unwrap();
+    let pattern = doc["components"]["parameters"]["NowMs"]["schema"]["pattern"]
+        .as_str()
+        .unwrap();
+    assert!(
+        pattern.starts_with(r"^[ \t]*(?:") && pattern.ends_with(r")[ \t]*$"),
+        "the documented pattern admits what the server accepts: {pattern}"
+    );
+    let v = real();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let r = app(v.clone(), None);
+    tokio::spawn(async move { axum::serve(listener, r).await.unwrap() });
+    let body = format!(
+        r#"{{"receipt-data":"{}"}}"#,
+        String::from_utf8(g5()).unwrap()
+    );
+    let answer = |now_ms| module_answer(&v, Op::Endpoint { env: 1, now_ms }, body.as_bytes());
+    let want = answer(NOW);
+    assert_ne!(want, answer(NOW + 1000), "the answer moves with the clock");
+    tokio::task::spawn_blocking(move || {
+        let post = |clock: &str| {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            s.set_read_timeout(Some(std::time::Duration::from_secs(60))).unwrap();
+            write!(
+                s,
+                "POST /v1/verify-receipt/sandbox HTTP/1.1\r\nHost: aprv\r\nX-Aprv-Now-Ms:{clock}\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            read_response(&mut BufReader::new(s))
+        };
+        for clock in [
+            format!("{NOW}"),
+            format!(" {NOW}"),
+            format!("{NOW}\t\t"),
+            format!(" \t{NOW} \t "),
+        ] {
+            let (status, _, got) = post(&clock);
+            assert!(status.starts_with("HTTP/1.1 200"), "{clock:?}: {status}");
+            assert_eq!(String::from_utf8(got).unwrap(), want, "{clock:?}");
+        }
+        let digits = NOW.to_string();
+        let (status, headers, got) = post(&format!(" {} {}", &digits[..6], &digits[6..]));
+        assert!(status.starts_with("HTTP/1.1 400"), "{status}");
+        let ct = &headers.iter().find(|(k, _)| k == "content-type").unwrap().1;
+        assert_eq!(problem(ct, &got)["code"], "BAD_REQUEST");
+    })
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn the_token_guards_every_v1_route_and_nothing_else() {
     let r = app(real(), Some("0123456789abcdef0123456789abcdef"));
