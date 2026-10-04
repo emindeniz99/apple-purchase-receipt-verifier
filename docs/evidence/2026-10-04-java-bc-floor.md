@@ -1,9 +1,10 @@
 # Java: the BouncyCastle floor, the nesting probe and the pre-trust cost
 
 Date: 2026-10-04. Feeds owner decisions Q33 (a), refuse bcprov below 1.86
-and a nesting bound below 9 at `Verifier.create`, and Q35 (c), state the
-pre-trust cost of a hostile receipt in `java/README.md`. Sources and
-commands: [`2026-10-04-java-bc-floor/`](2026-10-04-java-bc-floor/).
+and a nesting bound below 9 at `Verifier.create`, Q35 (c), state the
+pre-trust cost of a hostile receipt in `java/README.md`, and review
+finding L6, record the duplicate chain check as accepted cost. Sources
+and commands: [`2026-10-04-java-bc-floor/`](2026-10-04-java-bc-floor/).
 
 ## Questions
 
@@ -14,6 +15,8 @@ commands: [`2026-10-04-java-bc-floor/`](2026-10-04-java-bc-floor/).
    envelope parser of each do with 400,000 nested SEQUENCEs?
 3. What does a cap-sized receipt that no pinned root vouches for cost
    before it is refused?
+4. What does PKIX's second check of each chain signature cost, after the
+   top-down walk has checked it once?
 
 ## Setup
 
@@ -97,3 +100,49 @@ allocation per call. That is what `java/README.md` now states, in place of
   it.
 - `FloorCheck` swaps bcprov only. A consumer whose bcutil or bcpkix lags is
   not checked at create; the pom declares all three at one version.
+
+## Duplicate chain check (`ChainLinkCost.java`, bcprov 1.86)
+
+Added the same day for review finding L6. Both paths authenticate the
+chain top-down first, so that no key a pinned root has not vouched for is
+ever decoded (#161): `ReceiptCore.authenticatedTopDown` with
+`AppleTrust.signedByAny`, and `JwsCore.authenticateTopDown`. BouncyCastle's
+PKIX engine then checks the same signatures again (`CertPathBuilder` for
+receipts, `CertPathValidator` for JWS). `ChainLinkCost` times one link
+check, `X509Certificate.verify(issuerKey, provider)` on a fresh
+`BouncyCastleProvider`, for each link PKIX repeats, and one whole verify
+call for the same input. Library at `1308d83` on `fix/java-bc-followups`,
+whose `java/src/main` differs from `main` at `dc3918e` only in
+`BouncyCastle`'s Javadoc; the same JDK and machine as above. Links are timed over 20,000 calls after 5,000 of
+warm-up, verify calls over 3,000 after 3,000.
+
+| Input | Link | Algorithm | ms per check (3 runs) |
+|---|---|---|---|
+| `public-receipts/receipt-sandbox-legacy.b64` | leaf ← WWDR | SHA1withRSA | 0.054, 0.061, 0.048 |
+| | WWDR ← Apple Inc. Root CA | SHA1withRSA | 0.055, 0.050, 0.049 |
+| `generated/transaction.jws` | leaf ← intermediate | SHA256withECDSA | 0.088, 0.089, 0.094 |
+| | intermediate ← `jws-root.der` | SHA256withECDSA | 0.091, 0.092, 0.090 |
+
+| Input | Repeated links, ms | Whole verify, ms | Share |
+|---|---|---|---|
+| legacy receipt, default roots | 0.109, 0.111, 0.097 | 3.40, 3.39, 3.35 | about 3% |
+| `transaction.jws`, `jws-root.der` | 0.179, 0.181, 0.184 | 0.95, 0.80, 0.83 | 19 to 23% |
+
+So the duplicate costs about 0.1 ms per receipt and about 0.2 ms per JWS.
+The walk itself checks one link more on the legacy receipt than PKIX
+repeats: the receipt embeds Apple Inc. Root CA, which the walk checks
+against the pinned copy before the leaf. That check is not duplicated.
+
+The alternatives cost more than the 0.1 to 0.2 ms. Dropping the walk
+reopens #161. Dropping PKIX means writing RFC 5280 path validation by
+hand (validity at the signing instant, basicConstraints, keyUsage,
+unknown critical extensions), which shared cases such as
+`receipt/reject-intermediate-with-an-unknown-critical-extension` rely on.
+Caching authenticated intermediates adds state across calls. The
+duplicate is recorded as accepted cost in `AppleTrust`'s class Javadoc.
+
+Limits: the count of two repeated links per input is read from the code
+(PKIX checks the leaf and each intermediate against its issuer, never the
+anchor); the probe does not count PKIX's own calls. `transaction.jws` is
+signed by a synthetic P-256 chain. Apple's real JWS chain under Apple Root
+CA - G3 uses P-384, which was not measured and costs more per link.

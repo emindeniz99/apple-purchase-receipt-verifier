@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -134,12 +135,14 @@ class VerifierApiTest {
 
     /**
      * The cause is kept for what an operator must see (the parser's exception
-     * behind Apple-signed content that does not parse) and dropped for every
-     * verdict about unverified input, whose parser messages can quote raw
-     * certificate text.
+     * behind Apple-signed content that does not parse) and dropped for the
+     * verdicts the library decides about unverified input, whose parser
+     * messages can quote raw certificate text. The one exception, an
+     * unchecked BouncyCastle or Jackson exception behind a MALFORMED, is in
+     * HostileReceiptInputTest.
      */
     @Test
-    void theCauseIsKeptOnlyBehindUnreadablePayloadAndInternalError() throws Exception {
+    void theCauseIsKeptBehindUnreadablePayloadAndDroppedBehindVerdictsOnInput() throws Exception {
         Verifier verifier = verifier();
         Failure unreadable = verifier.verifyReceipt(Base64.getEncoder()
                         .encodeToString(SyntheticReceipts.pki().signReceipt(new byte[] {0x31, 0x05, 0x01})))
@@ -151,11 +154,14 @@ class VerifierApiTest {
         assertEquals(Reason.MALFORMED, notBase64.reason());
         assertNull(notBase64.cause());
 
-        Failure foreign = verifier.verifyReceipt(
-                        Base64.getEncoder().encodeToString(TestPki.receipt().signReceipt(new byte[] {0x31, 0})))
+        // The path builder's exception stands behind this verdict and can
+        // name certificates; the reason and message already say what failed.
+        TestPki expired = TestPki.receipt(new Date(1577836800000L), new Date(1609459200000L));
+        Failure outsideValidity = Checks.verifier(expired)
+                .verifyReceipt(Base64.getEncoder().encodeToString(expired.signReceipt(new byte[] {0x31, 0})))
                 .failure();
-        assertEquals(Reason.UNTRUSTED_CHAIN, foreign.reason());
-        assertNull(foreign.cause());
+        assertEquals(Reason.INVALID_CERTIFICATE, outsideValidity.reason());
+        assertNull(outsideValidity.cause());
     }
 
     // ----------------------------------------------- parse after signature

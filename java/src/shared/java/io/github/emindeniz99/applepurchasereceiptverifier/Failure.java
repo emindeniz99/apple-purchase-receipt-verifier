@@ -39,9 +39,13 @@ public final class Failure {
      * {@link Reason#INTERNAL_ERROR} this library raised itself (a runtime
      * failure, an answer it could not read, a clock that threw) carries one.
      * In the main artifact an {@link Reason#UNREADABLE_PAYLOAD} carries the
-     * parser's exception; in the {@code -wasm} artifact the core decides
-     * every reason from the input and none of them carries one. Match on
-     * {@link #reason()}, not on this.
+     * parser's exception, and a {@link Reason#MALFORMED} whose message is
+     * {@code "unexpected <class>"} carries the unchecked exception
+     * BouncyCastle or Jackson threw before the signature, for debugging.
+     * That exception's message is theirs and may quote fragments of the
+     * unverified input, so log it as you would the input. In the
+     * {@code -wasm} artifact the core decides every reason from the input
+     * and none of them carries one. Match on {@link #reason()}, not on this.
      */
     public @Nullable Throwable cause() {
         return cause;

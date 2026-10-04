@@ -535,13 +535,16 @@ omitted when 0, `Environment.fromReceiptType`, the runtime probe in
 From the six pre- and post-0.6.0 Java reviews; none lets a forged receipt
 or JWS through. Kept here so they are not lost with the review reports.
 
-- **THREAT-MODEL.md correction:** "the host cannot
-  change a verdict" is overstated, because BouncyCastle still reads JVM-wide
-  `org.bouncycastle.*` properties (`rsa.max_size`, `rsa.max_mr_tests`,
-  `x509.max_cert_path_build_nodes`).
-- **Performance leftovers:** the receipt payload is parsed twice; each chain
-  signature is verified twice (top-down walk, then PKIX); JCA factories are
-  looked up per call.
+- **THREAT-MODEL.md correction (done 2026-10-04):** "the host cannot
+  change a verdict" was overstated, because BouncyCastle still reads
+  JVM-wide `org.bouncycastle.*` properties. THREAT-MODEL.md, the
+  `BouncyCastle` Javadoc and java/README.md now name the settings a host
+  can reach and what each can and cannot change.
+- **Performance leftovers:** the receipt payload is parsed twice and each
+  chain signature is verified twice (top-down walk, then PKIX); both are
+  recorded as accepted cost (java/README.md "cheap to reject", the
+  `AppleTrust` Javadoc, docs/evidence/2026-10-04-java-bc-floor.md). JCA
+  factories are looked up per call.
 - **Small code hygiene:** `catch (Exception e)` where the types are known;
   a `@Nullable ASN1Set` dereferenced without a guard (safe today because the
   count is checked first); a redundant `unmodifiableMap` wrap in the models.

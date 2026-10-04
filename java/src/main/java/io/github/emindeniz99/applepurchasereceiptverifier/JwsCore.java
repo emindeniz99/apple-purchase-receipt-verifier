@@ -58,14 +58,13 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.TOO_LARGE, "jws exceeds the maximum accepted size of " + MAX_JWS_BYTES + " bytes");
         }
-        // MALFORMED, not INTERNAL_ERROR, for what Jackson or BouncyCastle
-        // throw unchecked: nothing is signed yet, and anyone could otherwise
-        // raise the 21009 alarm.
+        // What Jackson or BouncyCastle throw unchecked. No known input
+        // reaches this catch (the steps below contain their own failures);
+        // it keeps verify from throwing if one ever does.
         try {
             return verifyUnguarded(jws, trustAnchors, now);
         } catch (RuntimeException e) {
-            throw new VerificationException(
-                    Reason.MALFORMED, "unexpected " + e.getClass().getName(), e);
+            throw VerificationException.unexpected(e);
         }
     }
 

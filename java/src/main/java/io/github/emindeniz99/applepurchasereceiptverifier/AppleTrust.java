@@ -17,7 +17,10 @@ import java.util.Set;
  * root has not vouched for is ever decoded or used, so certificates are
  * checked top-down from the roots (#161). BouncyCastle validates an RSA key
  * as it decodes it, which costs seconds for a 16384-bit modulus.
- * {@code UnauthenticatedKeyCostTest} pins the rule.
+ * {@code UnauthenticatedKeyCostTest} pins the rule. PKIX then verifies the
+ * same signatures again; that duplicate (about 0.1 ms per receipt, about
+ * 0.2 ms per JWS; docs/evidence/2026-10-04-java-bc-floor.md) is the price of
+ * never decoding an unvouched key (#161).
  */
 final class AppleTrust {
 

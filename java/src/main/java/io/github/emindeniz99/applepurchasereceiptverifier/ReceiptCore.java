@@ -77,10 +77,8 @@ final class ReceiptCore {
             payload = verifySignature(receiptDer, trustAnchors, now);
         } catch (RuntimeException e) {
             // BouncyCastle reports hostile input with undocumented unchecked
-            // exceptions. MALFORMED, not INTERNAL_ERROR: nothing here is
-            // signed yet, and anyone could otherwise raise the 21009 alarm.
-            throw new VerificationException(
-                    Reason.MALFORMED, "unexpected " + e.getClass().getName(), e);
+            // exceptions.
+            throw VerificationException.unexpected(e);
         }
         return parseSignedPayload(payload);
     }

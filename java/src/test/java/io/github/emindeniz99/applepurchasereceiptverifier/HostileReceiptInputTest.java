@@ -2,16 +2,22 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.security.cert.TrustAnchor;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
@@ -124,6 +130,51 @@ class HostileReceiptInputTest {
                         "mutation " + i + " leaked " + e.getClass().getName(), e);
             }
         }
+    }
+
+    /**
+     * An unchecked exception BouncyCastle throws before trust is MALFORMED
+     * {@code "unexpected <class>"}, and the exception itself is the caller's
+     * cause: the message names only the class, so it stays free of input,
+     * and the cause is the developer's one clue to what BouncyCastle
+     * rejected. A
+     * MALFORMED the library decided itself still carries no cause, whether
+     * or not a parser exception stood behind it, since its message already
+     * says what was refused.
+     */
+    @Test
+    void anUncheckedExceptionBeforeTrustIsTheCauseOfItsMalformed() throws Exception {
+        byte[] wrongShape = hostileBlobs().get("signerInfos[0] is the wrong shape");
+        Set<TrustAnchor> anchors = AppleTrust.anchors(Collections.singleton(pki.root));
+        long now = System.currentTimeMillis();
+
+        VerificationException thrown =
+                assertThrows(VerificationException.class, () -> ReceiptCore.verifyDer(wrongShape, anchors, now));
+        Throwable raised = thrown.getCause();
+        assertTrue(raised instanceof RuntimeException, String.valueOf(raised));
+        assertSame(raised, thrown.toFailure().cause());
+
+        Failure failure = verifier.verifyReceipt(Base64.getEncoder().encodeToString(wrongShape))
+                .failure();
+        assertEquals(Reason.MALFORMED, failure.reason());
+        Throwable cause = failure.cause();
+        assertNotNull(cause, "the unchecked exception is the cause");
+        assertEquals("unexpected " + cause.getClass().getName(), failure.message());
+        assertTrue(
+                Arrays.stream(cause.getStackTrace())
+                        .anyMatch(f -> f.getClassName().startsWith("org.bouncycastle.")),
+                "BouncyCastle threw it");
+
+        Failure empty = verifier.verifyReceipt("").failure();
+        assertEquals(Reason.MALFORMED, empty.reason());
+        assertNull(empty.cause());
+
+        byte[] truncated = hostileBlobs().get("truncated SEQUENCE header");
+        VerificationException refused =
+                assertThrows(VerificationException.class, () -> ReceiptCore.verifyDer(truncated, anchors, now));
+        assertEquals(Reason.MALFORMED, refused.reason());
+        assertNotNull(refused.getCause(), "the parser's exception stands behind it");
+        assertNull(refused.toFailure().cause());
     }
 
     private static ReceiptPayload verify(byte[] der) throws VerificationException {
