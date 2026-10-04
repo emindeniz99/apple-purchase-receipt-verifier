@@ -75,7 +75,7 @@ const PAGE = `<!doctype html>
     failure.randomGetValues = [...window.diag.random];
     try {
       const api = await import('/node/dist/index.js');
-      api.createVerifier(api.defaultConfig());
+      api.createVerifier(api.createConfig());
       failure.retry = 'a second createVerifier in the same page worked';
     } catch (again) {
       failure.retry = 'a second createVerifier in the same page failed too: ' + again?.name + ': ' + again?.message;

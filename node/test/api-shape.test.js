@@ -21,7 +21,6 @@ const EXPORTS = [
   'createJsonPayload',
   'createReceiptPayload',
   'createVerifier',
-  'defaultConfig',
 ];
 
 const gen = (name) =>
@@ -59,7 +58,6 @@ test('both entry points share the vocabulary objects', () => {
 test('/web returns Promises where the default entry point returns values', async () => {
   const config = web.createConfig();
   assert.ok(config instanceof Promise);
-  assert.ok(web.defaultConfig() instanceof Promise);
   const verifier = web.createVerifier(await config);
   const pending = [
     verifier.verifyReceipt('AQIDBA=='),
@@ -70,7 +68,7 @@ test('/web returns Promises where the default entry point returns values', async
     assert.ok(p instanceof Promise);
   }
   await Promise.all(pending);
-  const sync = node.createVerifier(node.defaultConfig());
+  const sync = node.createVerifier(node.createConfig());
   assert.equal(typeof sync.verifyReceiptEndpoint(node.Environment.SANDBOX, '{}'), 'string');
 });
 
@@ -99,8 +97,8 @@ test('a result carries exactly one of payload and failure, in both entry points'
   }
 });
 
-test('defaultConfig() names no roots: Apple roots are pinned inside the module', () => {
-  const config = node.defaultConfig();
+test('createConfig() names no roots: Apple roots are pinned inside the module', () => {
+  const config = node.createConfig();
   assert.equal(config.roots, null);
   assert.equal(typeof config.clock(), 'number');
   assert.ok(Object.isFrozen(config));

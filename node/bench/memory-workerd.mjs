@@ -34,11 +34,11 @@ try {
   for (const [name, base64] of Object.entries(receipts)) {
     writeFileSync(join(work, `${name}.b64`), base64);
     for (const via of ['verifyReceipt', 'endpoint']) {
-      const worker = `import { createVerifier, defaultConfig, Environment } from 'dist/index.js';
+      const worker = `import { createVerifier, createConfig, Environment } from 'dist/index.js';
 import receipt from 'receipt.b64';
 export default {
   async test() {
-    const v = createVerifier(defaultConfig());
+    const v = createVerifier(createConfig());
     const answer = ${JSON.stringify(via)} === 'endpoint'
       ? JSON.parse(v.verifyReceiptEndpoint(Environment.PRODUCTION, JSON.stringify({ 'receipt-data': receipt }))).status
       : v.verifyReceipt(receipt).failure?.reason;

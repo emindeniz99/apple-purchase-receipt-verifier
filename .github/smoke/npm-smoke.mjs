@@ -9,14 +9,14 @@
 // missing entry point fails here rather than in a user's project. 0.1.1 and
 // 0.2.0 shipped with no dist/ at all and this file is what would have caught it.
 import { readFileSync } from 'node:fs'
-import { Reason, createVerifier, defaultConfig } from 'apple-purchase-receipt-verifier'
+import { Reason, createConfig, createVerifier } from 'apple-purchase-receipt-verifier'
 
 const receiptB64 = readFileSync('receipt-sandbox-g5.b64', 'ascii').trim()
 
 // Apple's three roots are compiled into aprv.wasm, so the defaults name no
 // roots of their own (null means the module's); a package that lost the
 // module or its glue fails below, on the genuine receipt.
-const config = defaultConfig()
+const config = createConfig()
 if (config.roots !== null) {
   throw new Error(`expected the module's built-in roots (null), got ${config.roots}`)
 }
