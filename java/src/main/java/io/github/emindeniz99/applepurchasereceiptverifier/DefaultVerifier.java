@@ -16,6 +16,8 @@ import java.time.Clock;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -111,8 +113,8 @@ final class DefaultVerifier implements Verifier {
         Objects.requireNonNull(ASN1UTF8String.class);
     }
 
-    /** The oldest bcprov {@link #requireBouncyCastle} accepts. */
-    static final double BOUNCY_CASTLE_FLOOR = 1.86;
+    /** The release named in BouncyCastle's provider info, "BouncyCastle Security Provider v1.86". */
+    private static final Pattern BOUNCY_CASTLE_RELEASE = Pattern.compile("v(\\d{1,4})\\.(\\d{1,4})");
 
     /**
      * How deep a genuine Apple receipt nests constructed ASN.1 values, as
@@ -123,28 +125,33 @@ final class DefaultVerifier implements Verifier {
     static final int RECEIPT_NESTING = 9;
 
     /**
-     * Refuses a bcprov older than 1.86. The version is the one the provider
-     * instance this library holds reports (BouncyCastle passes its release to
-     * {@link Provider}'s constructor, 1.86 as {@code 1.86d}), so nothing is
-     * registered with {@code Security}. {@code getVersion} is the Java 8
-     * accessor; {@code getVersionStr} is Java 9 API. 1.84 added the ASN.1
-     * nesting bound (bcprov 1.81 throws {@code StackOverflowError} out of
-     * {@code verifyReceipt} on a deeply nested receipt), and 1.85 fixed
-     * CVE-2026-13506 (a lazily forced sequence reset the nesting guard) and
-     * CVE-2026-12860 (RSA PKCS#1 verification skipped two hash bytes), on
-     * paths this library uses. Every bcprov from 1.70 links, so the class
-     * loading in {@link #buildStaticState} cannot tell these apart.
+     * Refuses a bcprov older than 1.86, reading the release from the provider
+     * instance this library holds, so nothing is registered with
+     * {@code Security}. The info string ("BouncyCastle Security Provider
+     * v1.81.1") is compared by its parts; the double BouncyCastle passes to
+     * {@link Provider}'s constructor (1.81.1 is {@code 1.8101}) is the
+     * fallback for an info string without a release in it. 1.84 added the
+     * ASN.1 nesting bound (bcprov 1.81 throws {@code StackOverflowError} out
+     * of {@code verifyReceipt} on a deeply nested receipt), and 1.85 fixed
+     * CVE-2026-12860 (RSA PKCS#1 verification skipped two hash bytes), which
+     * the receipt signature check reaches, and CVE-2026-13506. Every bcprov
+     * from 1.70 links, so the class loading in {@link #buildStaticState}
+     * cannot tell these apart.
      *
-     * @throws IllegalStateException naming the version found
+     * @throws IllegalStateException naming the release found
      */
     @SuppressWarnings("deprecation")
     static void requireBouncyCastle(Provider provider) {
-        double version = provider.getVersion();
-        if (version < BOUNCY_CASTLE_FLOOR) {
-            throw new IllegalStateException("BouncyCastle bcprov " + version
-                    + " is on the classpath; the verifier needs 1.86 or later: 1.84 added the ASN.1"
-                    + " nesting bound that keeps a deeply nested receipt from overflowing the stack,"
-                    + " and 1.85 fixed CVE-2026-13506 and CVE-2026-12860 on paths the verifier uses."
+        String info = String.valueOf(provider.getInfo());
+        Matcher release = BOUNCY_CASTLE_RELEASE.matcher(info);
+        boolean atFloor = release.find()
+                ? Integer.parseInt(release.group(1)) * 1000 + Integer.parseInt(release.group(2)) >= 1086
+                : provider.getVersion() >= 1.86;
+        if (!atFloor) {
+            throw new IllegalStateException("BouncyCastle bcprov on the classpath is \"" + info
+                    + "\"; the verifier needs 1.86 or later: 1.84 added the ASN.1 nesting bound that"
+                    + " keeps a deeply nested receipt from overflowing the stack, and 1.85 fixed"
+                    + " CVE-2026-12860 in the RSA signature check receipts use (and CVE-2026-13506)."
                     + " Resolve bcprov, bcutil and bcpkix to 1.86 or later");
         }
     }
