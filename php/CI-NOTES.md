@@ -51,8 +51,9 @@ It needs no network and no GitHub.
 `php-lowest` runs the same `phpunit` (all suites) after `composer update
 --prefer-lowest`. `php-symfony-process-8` runs it on PHP 8.4 after
 `composer config --unset platform.php` and `composer update
-symfony/process --with "symfony/process:<v>"`, once for the newest 8.x
-and once for the 8.0.5 floor. `php-format` is unchanged
+symfony/process --with "symfony/process:<v>"`, once for the 8.0.5 floor
+and once for the newest 8.x that has cleared the cooldown (an exact
+version in the workflow matrix, bumped by hand). `php-format` is unchanged
 (`php-cs-fixer fix --dry-run --diff --allow-risky=yes`; the finder now
 includes `bin/aprv-install`).
 

@@ -55,12 +55,13 @@ toolchain. Four rules:
   it: `npm ci`, `cargo --locked`, `uv sync --locked`, `composer install`,
   `BUNDLE_FROZEN=true`, `RestoreLockedMode` for NuGet, `swift
   --force-resolved-versions`, and Go's default `-mod=readonly` against
-  `go.sum`. Two legs resolve from ranges on purpose, because resolving is
-  what they test: `php-lowest` (`composer update --prefer-lowest`) and
-  Java, which pins exact versions and has no lockfile format.
-  `php-symfony-process-8` moves one PHP package, symfony/process, to the
-  newest 8.x and to the 8.0.5 floor on PHP 8.4 and keeps every other
-  locked version.
+  `go.sum`. A few legs resolve from ranges on purpose, because resolving
+  is what they test, and none of them can take a release younger than the
+  cooldown: `php-lowest` (`composer update --prefer-lowest`) and Java,
+  which pins exact versions and has no lockfile format.
+  `php-symfony-process-8` moves one PHP package, symfony/process, to two
+  exact versions on PHP 8.4, the 8.0.5 floor and a newest 8.x pinned in
+  the workflow and bumped by hand, and keeps every other locked version.
   `swift-crypto-floor` moves one Swift pin, swift-crypto, to the
   manifest's 3.0.0 floor, and fails unless the pin records the commit
   that tag named when the leg was written.
