@@ -187,7 +187,7 @@ final class AbiTests: XCTestCase {
         let jws = try initialized().verifySignedData(now: Self.now, huge)
         XCTAssertTrue(jws.contains(#""reason":"TOO_LARGE""#), jws)
 
-        let verifier = Verifier(config: .defaults())
+        let verifier = try Verifier(config: Config())
         let text = String(repeating: "A", count: 4 << 20)
         XCTAssertEqual(verifier.verifyReceipt(base64: text).failure?.reason, .tooLarge)
         XCTAssertEqual(verifier.verifySignedData(jws: text).failure?.reason, .tooLarge)
@@ -201,7 +201,7 @@ final class AbiTests: XCTestCase {
         let guest = try initialized()
         let cap = try XCTUnwrap(guest.maxInputBytes) - 1
         let atCap = String(repeating: "A", count: cap)
-        let failure = try XCTUnwrap(Verifier(config: .defaults()).verifyReceipt(base64: atCap).failure)
+        let failure = try XCTUnwrap(try Verifier(config: Config()).verifyReceipt(base64: atCap).failure)
         XCTAssertNotEqual(failure.reason, .tooLarge, failure.message)
         _ = try guest.verifyReceipt(now: Self.now, Array(atCap.utf8))
         XCTAssertGreaterThanOrEqual(guest.memoryBytes, cap, "the whole input reached linear memory")
@@ -236,7 +236,7 @@ final class AbiTests: XCTestCase {
 /// can be produced on purpose.
 final class FacadeTests: XCTestCase {
     func verifier(clock: @escaping @Sendable () -> Int64 = { 1_735_689_600_000 }) throws -> Verifier {
-        Verifier(config: try Config.builder().clock(clock).build(), module: .success(try TestFixtures.double()))
+        Verifier(config: Config(clock: clock), module: .success(try TestFixtures.double()))
     }
 
     static let receiptJson =
@@ -286,11 +286,11 @@ final class FacadeTests: XCTestCase {
     /// Caller misuse: an empty root set, and a root the module refuses, are
     /// the language's programmer error at startup, never a verdict.
     func testCallerMisuseIsAConfigErrorAtStartup() throws {
-        XCTAssertThrowsError(try Config.builder().roots([]).build()) { XCTAssertTrue($0 is ConfigError, "\($0)") }
-        XCTAssertThrowsError(try Config.builder().roots([Array("not a certificate".utf8)])) {
+        XCTAssertThrowsError(try Verifier(config: Config(roots: []))) { XCTAssertTrue($0 is ConfigError, "\($0)") }
+        XCTAssertThrowsError(try Verifier(config: Config(roots: [Array("not a certificate".utf8)]))) {
             XCTAssertTrue(($0 as? ConfigError)?.detail.hasPrefix("trust anchor is not a certificate") == true, "\($0)")
         }
-        XCTAssertNoThrow(try Config.builder().roots([try TestFixtures.bytes(TestFixtures.receiptRoot)]).build())
+        XCTAssertNoThrow(try Verifier(config: Config(roots: [try TestFixtures.bytes(TestFixtures.receiptRoot)])))
     }
 
     /// A module without the @0.1.0 exports, or with an import beyond
@@ -307,7 +307,7 @@ final class FacadeTests: XCTestCase {
             guard case HostError.abiMismatch(let detail) = error else { return XCTFail("\(error)") }
             XCTAssertTrue(detail.contains("fd_write"), detail)
         }
-        let verifier = Verifier(config: .defaults(), module: Result { () throws(HostError) in try AprvModule.load(other) })
+        let verifier = Verifier(config: Config(), module: Result { () throws(HostError) in try AprvModule.load(other) })
         let failure = try XCTUnwrap(verifier.verifyReceipt(base64: "AAAA").failure)
         XCTAssertEqual(failure.reason, .internalError)
         XCTAssertTrue(failure.cause is HostError, "\(String(describing: failure.cause))")
@@ -419,7 +419,7 @@ final class FacadeTests: XCTestCase {
     /// `Environment` maps onto 0 and 1: the genuine sandbox receipt is 21007
     /// on production and 0 on sandbox.
     func testTheClockAndTheEnvironmentReachTheModule() throws {
-        let verifier = Verifier(config: try Config.builder().clock { 1_735_689_600_000 }.build())
+        let verifier = try Verifier(config: Config(clock: { 1_735_689_600_000 }))
         let body = #"{"receipt-data":"\#(try TestFixtures.text(TestFixtures.g5))"}"#
         let sandbox = verifier.verifyReceiptEndpoint(environment: .sandbox, requestJson: body)
         XCTAssertEqual(TestFixtures.status(sandbox), 0, String(sandbox.prefix(200)))
@@ -517,11 +517,9 @@ enum TinyModules {
 final class ThreadTests: XCTestCase {
     func testFourThreadsGiveTheSingleThreadRows() throws {
         let clock: @Sendable () -> Int64 = { 1_735_689_600_000 }
-        let receipts = Verifier(
-            config: try Config.builder().roots([try TestFixtures.bytes(TestFixtures.receiptRoot)]).clock(clock).build())
-        let jwses = Verifier(
-            config: try Config.builder().roots([try TestFixtures.bytes(TestFixtures.jwsRoot)]).clock(clock).build())
-        let apple = Verifier(config: try Config.builder().clock(clock).build())
+        let receipts = try Verifier(config: Config(roots: [try TestFixtures.bytes(TestFixtures.receiptRoot)], clock: clock))
+        let jwses = try Verifier(config: Config(roots: [try TestFixtures.bytes(TestFixtures.jwsRoot)], clock: clock))
+        let apple = try Verifier(config: Config(clock: clock))
         let receipt = standardBase64Encode(try TestFixtures.bytes(TestFixtures.receipt))
         let g5 = try TestFixtures.text(TestFixtures.g5)
         let jws = try TestFixtures.text(TestFixtures.jws)

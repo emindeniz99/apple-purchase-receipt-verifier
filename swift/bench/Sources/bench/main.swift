@@ -205,13 +205,12 @@ func worstCase(repository: URL) throws -> [Result] {
             let config = kase["config"] as? [String: Any], let expected = kase["expected"] as? [String: Any],
             let trusted = config["trustedRoots"] as? [String: Any]
         else { throw SetupFailure(description: "a budgeted case is not in the shape this bench reads") }
-        var builder = Config.builder().clock { nowMillis }
+        var roots: [[UInt8]]?
         if trusted["source"] as? String == "fixtures" {
             let ids = trusted["fixtures"] as? [String] ?? []
-            builder = try builder.roots(
-                ids.map { try fixtureBytes($0, registry: registry, fixturesDirectory: fixturesDirectory) })
+            roots = try ids.map { try fixtureBytes($0, registry: registry, fixturesDirectory: fixturesDirectory) }
         }
-        let verifier = Verifier(config: try builder.build())
+        let verifier = try Verifier(config: Config(roots: roots, clock: { nowMillis }))
         let bytes = try fixtureBytes(fixtureId, registry: registry, fixturesDirectory: fixturesDirectory)
         let codec = registry[fixtureId]?["codec"] as? String
 
@@ -282,7 +281,7 @@ func threads(repository: URL) throws {
     let jwsRoot = [UInt8](try Data(contentsOf: fixturesDirectory.appendingPathComponent("generated/jws-root.der")))
 
     let start = ContinuousClock.now
-    let apple = Verifier(config: .defaults())
+    let apple = try Verifier(config: Config())
     let created = ContinuousClock.now
     let first = apple.verifyReceipt(base64: g5)
     let answered = ContinuousClock.now
@@ -292,7 +291,7 @@ func threads(repository: URL) throws {
         #"startup: {"verifier_ms":\#(microseconds(created - start) / 1000),"first_g5_ms":\#(microseconds(answered - created) / 1000),"#
             + #""second_g5_ms":\#(microseconds(second - answered) / 1000),"first_answer":"\#(first.failure?.reason.rawValue ?? "verified")"}"#)
 
-    let jwses = Verifier(config: try Config.builder().roots([jwsRoot]).build())
+    let jwses = try Verifier(config: Config(roots: [jwsRoot]))
     let seconds = Double(ProcessInfo.processInfo.environment["APRV_BENCH_SECONDS"] ?? "") ?? 10
     let rows: [(String, @Sendable () -> String)] = [
         ("g5", { apple.verifyReceipt(base64: g5).failure?.reason.rawValue ?? "verified" }),
@@ -343,7 +342,7 @@ if CommandLine.arguments.dropFirst().contains("--threads") {
     results = try worstCase(repository: repository)
 } else {
     mode = "cross-port"
-    let verifier = Verifier(config: try Config.builder().clock { nowMillis }.build())
+    let verifier = try Verifier(config: Config(clock: { nowMillis }))
     for fixture in fixtures {
         results += try run(fixture, repository: repository, verifier: verifier)
     }

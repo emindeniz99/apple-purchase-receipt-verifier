@@ -62,7 +62,7 @@ final class PortBehaviourTests: XCTestCase {
     /// "false", not a JSON boolean.
     func testRendersIsInIntroOfferPeriodAsAString() throws {
         let receiptData = try TestFixtures.text(TestFixtures.g5)
-        let body = Verifier(config: .defaults()).verifyReceiptEndpoint(
+        let body = try Verifier(config: Config()).verifyReceiptEndpoint(
             environment: .sandbox, requestJson: #"{"receipt-data":"\#(receiptData)"}"#)
         let parsed = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
         let receipt = try XCTUnwrap(parsed["receipt"] as? [String: Any], String(body.prefix(200)))
@@ -107,12 +107,12 @@ final class PortBehaviourTests: XCTestCase {
         let receipt = standardBase64Encode(try TestFixtures.bytes(TestFixtures.receipt))
         let accepted = try TestFixtures.verifier(roots: [TestFixtures.receiptRoot]).verifyReceipt(base64: receipt)
         XCTAssertEqual(accepted.payload?.bundleId, "com.example.app")
-        for verifier in [try TestFixtures.verifier(roots: [TestFixtures.jwsRoot]), Verifier(config: .defaults())] {
+        for verifier in [try TestFixtures.verifier(roots: [TestFixtures.jwsRoot]), try Verifier(config: Config())] {
             XCTAssertEqual(verifier.verifyReceipt(base64: receipt).failure?.reason, .untrustedChain)
         }
         let jws = try TestFixtures.text(TestFixtures.jws)
         XCTAssertTrue(try TestFixtures.verifier(roots: [TestFixtures.jwsRoot]).verifySignedData(jws: jws).verified)
-        for verifier in [try TestFixtures.verifier(roots: [TestFixtures.receiptRoot]), Verifier(config: .defaults())] {
+        for verifier in [try TestFixtures.verifier(roots: [TestFixtures.receiptRoot]), try Verifier(config: Config())] {
             XCTAssertEqual(verifier.verifySignedData(jws: jws).failure?.reason, .untrustedChain)
         }
     }
@@ -150,7 +150,7 @@ final class PortBehaviourTests: XCTestCase {
             if name.hasSuffix("-root.der") {
                 // A root fixture that is deliberately not a certificate is
                 // refused at startup, which is not what this test is about.
-                if (try? Config.builder().roots([bytes])) != nil { roots.append(bytes) }
+                if (try? Verifier(config: Config(roots: [bytes]))) != nil { roots.append(bytes) }
             } else {
                 inputs.append((name, standardBase64Encode(bytes)))
             }
@@ -165,7 +165,7 @@ final class PortBehaviourTests: XCTestCase {
         for source in [".der", ".txt", ".b64"] {
             XCTAssertTrue(inputs.contains { $0.0.hasSuffix(source) }, "no \(source) receipt fixtures found")
         }
-        let verifier = Verifier(config: try Config.builder().roots(roots).clock { 1_735_689_600_000 }.build())
+        let verifier = try Verifier(config: Config(roots: roots, clock: { 1_735_689_600_000 }))
         var statuses: Set<Int> = []
         for (name, receiptData) in inputs {
             let result = verifier.verifyReceipt(base64: receiptData)

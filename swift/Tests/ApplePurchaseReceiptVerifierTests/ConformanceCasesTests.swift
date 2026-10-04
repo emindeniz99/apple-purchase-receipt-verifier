@@ -151,11 +151,9 @@ private struct Vectors {
 
     func config(_ config: [String: Any], clockMillis: Int64?) throws -> Config {
         let roots = try trustedRootsDER(config)
-        if roots == nil, clockMillis == nil { return Config.defaults() }
-        var builder = Config.builder()
-        if let roots { builder = try builder.roots(roots) }
-        if let clockMillis { builder = builder.clock { clockMillis } }
-        return try builder.build()
+        var clock: (@Sendable () -> Int64)?
+        if let clockMillis { clock = { clockMillis } }
+        return Config(roots: roots, clock: clock)
     }
 }
 
@@ -364,7 +362,7 @@ final class ConformanceCasesTests: XCTestCase {
             default: throw HarnessError("\(id): config.environment must be PRODUCTION or SANDBOX")
             }
             let verifierConfig = try vectors.config(config, clockMillis: clock)
-            let verifier = Verifier(config: verifierConfig)
+            let verifier = try Verifier(config: verifierConfig)
             let requestJSON = try endpointRequestJSON(input, vectors: vectors)
             var response = ""
             let call = { response = verifier.verifyReceiptEndpoint(environment: environment, requestJson: requestJSON) }
@@ -374,7 +372,7 @@ final class ConformanceCasesTests: XCTestCase {
         }
 
         let verifierConfig = try vectors.config(config, clockMillis: clock)
-        let verifier = Verifier(config: verifierConfig)
+        let verifier = try Verifier(config: verifierConfig)
 
         if operation == "verifyReceipt" {
             guard let fixtureId = input["fixture"] as? String else {
@@ -565,7 +563,7 @@ final class ConformanceCasesTests: XCTestCase {
             let expected = kase["expected"] as? [String: Any], let status = expected["status"] as? String
         else { throw HarnessError("\(id): a decodeBase64 case needs decoders, input.texts and expected.status") }
         let ok = status == "ok"
-        let verifier = Verifier(config: .defaults())
+        let verifier = try Verifier(config: Config())
         for decoder in decoders {
             for (index, text) in texts.enumerated() {
                 let at = "\(id): \(decoder) texts[\(index)] \(text.debugDescription)"

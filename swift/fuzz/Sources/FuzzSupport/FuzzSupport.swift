@@ -43,10 +43,10 @@ public enum Fixtures {
 
     /// A verifier over `roots` and the system clock, or a setup failure.
     public static func verifier(roots: [[UInt8]], what: String) -> Verifier {
-        guard let config = try? Config.builder().roots(roots).build() else {
+        guard let verifier = try? Verifier(config: Config(roots: roots)) else {
             fatalError("fuzz harness setup failed: the \(what) anchor set is not loadable")
         }
-        return Verifier(config: config)
+        return verifier
     }
 
     /// Apple's three pinned roots, as DER, from the repository's `certs/`

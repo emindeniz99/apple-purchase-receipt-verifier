@@ -32,18 +32,39 @@ public struct Config: Sendable {
     public let roots: [[UInt8]]?
     let clock: @Sendable () -> Int64
 
-    fileprivate init(roots: [[UInt8]]?, clock: @escaping @Sendable () -> Int64) {
+    /// The configuration, built one way. `nil` for either argument means
+    /// its default: Apple's three published roots, and the system clock.
+    /// It stores what it is given; ``Verifier/init(config:)`` checks it.
+    ///
+    /// - Parameters:
+    ///   - roots: The roots a chain must reach, replacing Apple's, as
+    ///     DER-encoded certificates. Tests use their own.
+    ///   - clock: The clock, as a closure returning epoch milliseconds.
+    ///     Must be safe to call from several threads.
+    public init(roots: [[UInt8]]? = nil, clock: (@Sendable () -> Int64)? = nil) {
         self.roots = roots
-        self.clock = clock
+        self.clock = clock ?? systemMillis
     }
 
-    /// Apple's three pinned roots and the system clock. Never throws.
-    public static func defaults() -> Config {
-        Config(roots: nil, clock: systemMillis)
+    /// The startup check ``Verifier/init(config:)`` makes: an empty root
+    /// set is refused, since a verifier with no roots would answer
+    /// ``Reason/untrustedChain`` to everything and nobody would notice
+    /// until production; and the roots are handed to a fresh module
+    /// instance, so one the module refuses is a ``ConfigError`` at startup
+    /// rather than a verdict on the first call.
+    func check() throws {
+        guard let roots else { return }
+        if roots.isEmpty {
+            throw ConfigError("roots must not be empty")
+        }
+        do {
+            _ = try Pool(module: AprvModule.bundled, config: Config.initJson(roots)).create()
+        } catch .initRefused(let message) {
+            throw ConfigError("trust anchor is not a certificate: \(message)")
+        } catch {
+            throw ConfigError("the verification module could not check the trust anchors: \(error)")
+        }
     }
-
-    /// A builder whose unset parts are ``defaults()``.
-    public static func builder() -> ConfigBuilder { ConfigBuilder() }
 
     /// init's argument (docs/rust-core/ARCHITECTURE.md §4): the roots as
     /// base64 DER, where an empty list means the module's built-in roots.
@@ -68,52 +89,4 @@ public struct Config: Sendable {
 /// init's configuration (rust/bindings/wire/schema/init-config.schema.json).
 private struct InitConfig: Encodable {
     let roots: [Data]
-}
-
-/// Builds a ``Config``.
-public struct ConfigBuilder: Sendable {
-    private var roots: [[UInt8]]?
-    private var clock: (@Sendable () -> Int64)?
-
-    /// The roots a chain must reach, replacing Apple's bundled ones. Tests
-    /// use their own, given as DER-encoded certificates.
-    ///
-    /// - Throws: ``ConfigError`` when the verification module refuses one of
-    ///   them as a certificate, or cannot be loaded at all. The roots are
-    ///   handed to a fresh module instance here, so a bad one is refused at
-    ///   startup rather than on the first call.
-    public func roots(_ roots: [[UInt8]]) throws -> ConfigBuilder {
-        if !roots.isEmpty {
-            do {
-                _ = try Pool(module: AprvModule.bundled, config: Config.initJson(roots)).create()
-            } catch .initRefused(let message) {
-                throw ConfigError("trust anchor is not a certificate: \(message)")
-            } catch {
-                throw ConfigError("the verification module could not check the trust anchors: \(error)")
-            }
-        }
-        var copy = self
-        copy.roots = roots
-        return copy
-    }
-
-    /// The clock, as a closure returning epoch milliseconds. Must be safe to
-    /// call from several threads.
-    public func clock(_ clock: @escaping @Sendable () -> Int64) -> ConfigBuilder {
-        var copy = self
-        copy.clock = clock
-        return copy
-    }
-
-    /// The configuration.
-    ///
-    /// - Throws: ``ConfigError`` for an empty root set: a verifier with no
-    ///   roots would answer ``Reason/untrustedChain`` to everything, and
-    ///   nobody would notice until production.
-    public func build() throws -> Config {
-        if let roots, roots.isEmpty {
-            throw ConfigError("roots must not be empty")
-        }
-        return Config(roots: roots, clock: clock ?? systemMillis)
-    }
 }

@@ -46,11 +46,11 @@ final class ConcurrencyTests: XCTestCase {
         // by design, and two calls a millisecond apart legitimately differ
         // on it. Nothing else in the response moves with time.
         let fixedNow: Int64 = 1_735_689_600_000  // 2025-01-01T00:00:00Z
-        let receiptConfig = try Config.builder().roots([receiptRoot]).clock { fixedNow }.build()
-        let jwsConfig = try Config.builder().roots([jwsRoot]).clock { fixedNow }.build()
-        let receiptVerifier = Verifier(config: receiptConfig)
-        let endpointVerifier = Verifier(config: receiptConfig)
-        let jwsVerifier = Verifier(config: jwsConfig)
+        let receiptConfig = Config(roots: [receiptRoot], clock: { fixedNow })
+        let jwsConfig = Config(roots: [jwsRoot], clock: { fixedNow })
+        let receiptVerifier = try Verifier(config: receiptConfig)
+        let endpointVerifier = try Verifier(config: receiptConfig)
+        let jwsVerifier = try Verifier(config: jwsConfig)
 
         let receiptBase64 = standardBase64Encode(try Self.der("generated-0.7/receipt.der"))
         let requestJSON = #"{"receipt-data":""# + receiptBase64 + #""}"#

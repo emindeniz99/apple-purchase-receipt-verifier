@@ -80,7 +80,7 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 | `swift-fuzz` | the targets are now `receipt-der`, `receipt-base64`, `jws` and `endpoint-json` (`receipt-payload` and `readers` went with the hand-written parsers); `run.sh` no longer passes `-enable-testing`. With the round-13 stand-in the `requireNoInternalError` invariant fired at once (its 0.6 wire); with the G1 module the wire is the one this package reads, so the job can run again once the module is copied into place first. `swift/bench` still builds with `swift build --package-path swift/bench --force-resolved-versions`; its manifest is tools 6.3 now. |
 | `smoke-swiftpm` | image to `swift:6.3@sha256:56ef1be2...`. `.github/smoke/swiftpm-smoke/Package.swift`: `swift-tools-version:6.3`, `platforms: [.macOS(.v15), .iOS(.v18)]`. `Sources/Smoke/main.swift`: `config.roots.count == 3` no longer compiles; the defaults are `roots == nil` (the module's built-in roots), so replace the check with `guard config.roots == nil`. The rest (g5 verifies, one flipped signature bit is `INVALID_SIGNATURE`) stands. |
 | post-publish `swiftpm` | same image and smoke changes. |
-| `wasm-copies` | for Swift: `cd swift/Sources/ApplePurchaseReceiptVerifier/Resources && sha256sum -c aprv.wasm.sha256`, and the hash in that file must equal the build's. The package checks the pair when it loads the module, so a copy swapped without its hash file answers `INTERNAL_ERROR` to every call (and `Config.builder().roots(...)` throws). |
+| `wasm-copies` | for Swift: `cd swift/Sources/ApplePurchaseReceiptVerifier/Resources && sha256sum -c aprv.wasm.sha256`, and the hash in that file must equal the build's. The package checks the pair when it loads the module, so a copy swapped without its hash file answers `INTERNAL_ERROR` to every call (and `Verifier(config:)` over the caller's own roots throws). |
 | `release-please.yml` `refresh-wasm-copies` | **must also rewrite each copy's `.sha256`**: today it copies `aprv.wasm` over every committed copy and leaves `aprv.wasm.sha256` stale, which breaks both the Go and the Swift package on the release branch. For each copy `f`: `printf '%s  aprv.wasm\n' "$WASM_SHA256" > "$f.sha256"`, and add those files to the commit. |
 | `one-implementation` | add `swift` to `--enforce`. `swift/Sources` imports Foundation, WasmKit and, in `Host/AprvModule.swift` only, `import struct Crypto.SHA256` for the SHA-256 that checks the module, the one entry in the gate's Swift allowlist. The crypto bans live in the gate alone; `SourceIsolationTests` checks other things: that no source names a network API or a trust store, and that WasmKit and swift-crypto are the only dependencies. |
 | `dependabot.yml` | the three `swift` entries stay, and now watch swift-crypto and the swift-asn1 it brings into `Package.resolved` as well as WasmKit; the swift-certificates history goes. Add an ignore for WasmKit `>= 0.5.0` only if 0.5 raises a floor; 0.4.x patch releases should arrive (0.4.1 was a security fix). |
@@ -132,7 +132,7 @@ four threads. Not a CI job; the numbers are in the README and the hand-back.
 
 `swift/Sources/ApplePurchaseReceiptVerifier/certs` is gone, with the
 `exclude: ["certs"]` line in the root `Package.swift`: the library had not
-read it since the WasmKit host landed (`Config.defaults().roots` is `nil`,
+read it since the WasmKit host landed (`Config().roots` is `nil`,
 the module's compiled-in roots). The README's SwiftPM line now reads
 `from: "0.8.0"`, the first release built this way.
 

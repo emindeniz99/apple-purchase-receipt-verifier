@@ -22,7 +22,7 @@ import Foundation
 /// ``Reason/internalError``, with the category in ``Failure/cause``.
 ///
 /// ```swift
-/// let verifier = Verifier(config: .defaults())
+/// let verifier = try Verifier(config: Config())
 /// let result = verifier.verifyReceipt(base64: receiptString)
 /// if let payload = result.payload {
 ///     print(payload.toJson())
@@ -37,7 +37,15 @@ public struct Verifier: Sendable {
     /// A verifier for `config`. The first `Verifier` of a process loads
     /// aprv.wasm (checks its SHA-256 and parses it, a few milliseconds);
     /// the instances are created on first use.
-    public init(config: Config) {
+    ///
+    /// - Throws: ``ConfigError`` for an empty root set, or when the
+    ///   verification module refuses one of the caller's roots as a
+    ///   certificate or cannot be loaded to check them. The roots are
+    ///   handed to a fresh module instance here, so a bad one is refused
+    ///   at startup rather than on the first call. The default roots are
+    ///   not checked here and never throw.
+    public init(config: Config) throws {
+        try config.check()
         self.init(config: config, module: AprvModule.bundled)
     }
 
