@@ -88,8 +88,8 @@ or delete one; a bad release is fixed forward with `retract`.
 
 The package no longer carries the roots: `go/roots/certs`, `roots.go`,
 `gen.go` (`go generate`) and `internal/gencerts` are gone. The module
-compiles the three Apple roots in, the default `Config`'s `Roots()` is nil, and
-`AppleRoots()` is removed (README, "Upgrading from 0.7").
+compiles the three Apple roots in, the default `Config`'s `Roots()` is nil,
+and `AppleRoots()` is removed (README, "Upgrading from 0.7").
 
 | Where | Change |
 |---|---|
