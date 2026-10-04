@@ -135,6 +135,7 @@ func TestRefusedConfigCanBeRetriedOnTheInstance(t *testing.T) {
 		"not JSON":                      []byte("{not json"),
 		"not UTF-8":                     {'{', 0xff, '}'},
 		"a root that is not base64 DER": []byte(`{"roots":["AAAA"]}`),
+		"an empty root list":            []byte(`{"roots":[]}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := bareGuest(t)

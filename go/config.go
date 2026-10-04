@@ -21,8 +21,7 @@ type Config struct {
 	roots []*x509.Certificate
 	clock func() int64
 	// builtin marks the default roots: roots is nil and the Verifier sends
-	// init an empty list, which means the three Apple roots compiled into
-	// the module.
+	// init {}, which means the three Apple roots compiled into the module.
 	builtin bool
 }
 
@@ -73,16 +72,17 @@ func (c *Config) Clock() func() int64 { return c.clock }
 
 func systemMillis() int64 { return time.Now().UnixMilli() }
 
-// initConfig is init's argument: {"roots":["<base64 DER>", ...]}. An empty
-// list means the Apple roots compiled into the module, which is what the
-// default Config sends. A caller's own anchors travel as their DER bytes;
-// nothing here reads a certificate.
+// initConfig is init's argument: {"roots":["<base64 DER>", ...]}, or {}
+// for the Apple roots compiled into the module, which is what the default
+// Config sends. A caller's own anchors travel as their DER bytes; nothing
+// here reads a certificate.
 func initConfig(roots []*x509.Certificate, builtin bool) []byte {
+	if builtin {
+		return []byte("{}")
+	}
 	encoded := []string{}
-	if !builtin {
-		for _, root := range roots {
-			encoded = append(encoded, base64.StdEncoding.EncodeToString(root.Raw))
-		}
+	for _, root := range roots {
+		encoded = append(encoded, base64.StdEncoding.EncodeToString(root.Raw))
 	}
 	// Marshal cannot fail on a list of strings.
 	out, _ := json.Marshal(struct {
