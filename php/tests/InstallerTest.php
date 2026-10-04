@@ -446,13 +446,24 @@ final class InstallerTest extends TestCase
         self::assertSame(2, $code);
         self::assertStringContainsString('HttpTransport', $err);
 
-        // An unknown option is refused before anything is read or installed:
-        // getopt() alone drops it, and the script would then install from
-        // the package's own SHA256SUMS into the package's bin directory.
-        foreach ([['--bogus'], ['--dir', $this->installDirectory, '--bogus=1'], ['stray'], ['--sums=' . $this->sums([]), '--force', '--bogus']] as $arguments) {
+        // An unknown option, a value option without one value, or a stray
+        // word is refused before anything is read or installed: getopt()
+        // alone drops them, and the script would then install from the
+        // package's own SHA256SUMS into the package's bin directory.
+        $directory = $this->installDirectory;
+        foreach ([
+            [['--bogus'], 'unknown argument --bogus'],
+            [['--dir', $directory, '--bogus=1'], 'unknown argument --bogus=1'],
+            [['stray'], 'unknown argument stray'],
+            [['--sums=' . $this->sums([]), '--force', '--bogus'], 'unknown argument --bogus'],
+            [['--help', '--bogus'], 'unknown argument --bogus'],
+            [['--dir'], '--dir needs one value'],
+            [['--dir='], '--dir needs one value'],
+            [['--dir', $directory, '--dir', $directory], '--dir needs one value'],
+        ] as [$arguments, $reason]) {
             [$code, , $err] = $this->script($arguments);
             self::assertSame(2, $code, implode(' ', $arguments));
-            self::assertStringContainsString('unknown argument ' . end($arguments), $err);
+            self::assertStringContainsString('aprv-install: ' . $reason, $err);
             self::assertStringNotContainsString('SHA256SUMS', $err);
         }
         [$code] = $this->script(['--help']);
