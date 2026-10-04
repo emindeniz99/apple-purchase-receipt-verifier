@@ -26,7 +26,8 @@ and **.NET** (netstandard2.0, tested on .NET 8 and later). Java also keeps
 its own, independent implementation over BouncyCastle, maintained beside
 the core as a second opinion on every verdict. **`aprv-server`** runs the
 same module as an HTTP server, a Docker image or a one-shot CLI for any
-other language, and **C and C++** can link the core through a C ABI, which
+other language (or as a Cloudflare Worker over the Node package, see
+[node/examples/cloudflare-worker](node/examples/cloudflare-worker/)), and **C and C++** can link the core through a C ABI, which
 any FFI-capable runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load. The
 core and the Java implementation answer the same 388 cases of
 [`fixtures/cases.json`](./fixtures/cases.json), and every package runs all
