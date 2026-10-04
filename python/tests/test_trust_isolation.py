@@ -277,6 +277,9 @@ class AnchorsReachTheModuleUnchangedTest(unittest.TestCase):
             verifier(roots)
         self.assertEqual(1, len(seen))
         document = json.loads(seen[0])
+        if roots is None:
+            self.assertEqual({}, document)
+            return []
         self.assertEqual(["roots"], list(document))
         return [base64.b64decode(r, validate=True) for r in document["roots"]]
 
@@ -285,8 +288,8 @@ class AnchorsReachTheModuleUnchangedTest(unittest.TestCase):
         self.assertEqual(passed, self.sent_to_init(passed))
         self.assertEqual(passed[::-1], self.sent_to_init(passed[::-1]))
 
-    def test_the_defaults_send_an_empty_list_and_nothing_else(self) -> None:
-        # Empty means the three Apple roots compiled into the module. The
+    def test_the_defaults_send_no_roots_and_nothing_else(self) -> None:
+        # {} means the three Apple roots compiled into the module. The
         # package carries no copy of them, so nothing from this machine, or
         # anywhere else, can be folded into the default set on the way.
         self.assertIsNone(Config().roots)

@@ -67,7 +67,16 @@ class ContractTest(unittest.TestCase):
                     _wire.check_init(answer)
 
     def test_init_with_no_roots_uses_the_built_in_ones_and_answers_ok(self) -> None:
-        self.assertEqual(OK, _host.Instance(_host.default_runtime()).call("init", (), b""))
+        self.assertEqual(b"{}", _wire.init_config(None))
+        for config in (b"", _wire.init_config(None)):
+            with self.subTest(config=config):
+                self.assertEqual(
+                    OK, _host.Instance(_host.default_runtime()).call("init", (), config)
+                )
+
+    def test_init_refuses_an_empty_root_list(self) -> None:
+        answer = _host.Instance(_host.default_runtime()).call("init", (), _wire.init_config([]))
+        self.assertEqual("roots must not be empty", _wire.check_init(answer))
 
     def test_init_takes_roots_as_base64_der_and_answers_ok(self) -> None:
         self.assertEqual(

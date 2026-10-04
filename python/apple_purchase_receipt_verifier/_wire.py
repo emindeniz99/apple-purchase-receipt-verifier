@@ -22,9 +22,12 @@ class ResultShapeError(Exception):
     """The module's answer is not the JSON the contract describes."""
 
 
-def init_config(roots: "Iterable[bytes]") -> bytes:
+def init_config(roots: "Iterable[bytes] | None") -> bytes:
     """``init``'s argument: ``{"roots":["<base64>", ...]}``, each root's DER or
-    PEM bytes. An empty list means the Apple roots compiled into the module."""
+    PEM bytes, or ``{}`` for ``None``, the Apple roots compiled into the
+    module."""
+    if roots is None:
+        return b"{}"
     encoded = [base64.b64encode(der).decode("ascii") for der in roots]
     return json.dumps({"roots": encoded}, separators=(",", ":")).encode("ascii")
 
