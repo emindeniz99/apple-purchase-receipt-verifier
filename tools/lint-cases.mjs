@@ -40,7 +40,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
@@ -59,12 +59,14 @@ try {
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 let args;
 try {
-  args = parseArgs({ options: { fixtures: { type: 'string', default: join(REPO, 'fixtures') } } });
+  args = parseArgs({ options: { fixtures: { type: 'string' } } });
 } catch (e) {
   console.error(`lint-cases: ${e.message}\nusage: node tools/lint-cases.mjs [--fixtures <dir>]`);
   process.exit(2);
 }
-const FIXTURES_DIR = resolve(args.values.fixtures);
+// Paths in messages are spelled as the command line gave them.
+const FIXTURES_SHOWN = args.values.fixtures ?? 'fixtures';
+const FIXTURES_DIR = resolve(args.values.fixtures ?? join(REPO, 'fixtures'));
 const CASES_PATH = join(FIXTURES_DIR, 'cases.json');
 const SCHEMA_PATH = join(FIXTURES_DIR, 'cases.schema.json');
 const SCANNED_TIERS = ['generated-0.7', 'public-receipts'];
@@ -110,10 +112,11 @@ function lintSchema(schema, doc) {
   // matched nothing carries every branch's errors; it is replaced by the
   // errors of its closest branch (the one with the fewest), so a case
   // reports what is wrong with the shape it was meant to have, not how it
-  // differs from every other shape. Ajv reports a oneOf after the oneOfs
-  // inside its branches, so the outermost is the one no later one encloses.
-  // The errors of if and propertyNames only restate the inner one beside
-  // them.
+  // differs from every other shape. Ajv pushes a oneOf's branch errors
+  // before the oneOf's own error, and the errors of keywords beside it
+  // after, so the outermost oneOf is the one no later one encloses, and an
+  // error is a branch's only when it comes before its enclosing oneOf. The
+  // errors of if and propertyNames only restate the inner one beside them.
   function explain(validate, data, at) {
     if (validate(data)) return [];
     const errors = validate.errors
@@ -123,8 +126,10 @@ function lintSchema(schema, doc) {
       e.instancePath === o.instancePath || e.instancePath.startsWith(`${o.instancePath}/`);
     const outer = errors.filter((e, i) => e.keyword === 'oneOf'
       && !errors.some((o, j) => j > i && o.keyword === 'oneOf' && inside(e, o)));
-    return errors.flatMap((e) => {
-      if (!outer.includes(e)) return outer.some((o) => inside(e, o)) ? [] : [e];
+    return errors.flatMap((e, i) => {
+      if (!outer.includes(e)) {
+        return outer.some((o) => inside(e, o) && i < errors.indexOf(o)) ? [] : [e];
+      }
       if (e.params.passingSchemas !== null) return [e];
       return e.schema.map((sub) => explain(branch(sub), e.data, e.instancePath))
         .reduce((a, b) => (b.length < a.length ? b : a));
@@ -154,8 +159,9 @@ function describe({ keyword, params, propertyName, message, data }) {
   const detail = params.additionalProperty !== undefined
     ? `: ${JSON.stringify(params.additionalProperty)}`
     : allowed !== undefined ? ` ${allowed.map((v) => JSON.stringify(v)).join(', ')}` : '';
+  const value = JSON.stringify(data) ?? 'undefined';
   const got = ['type', 'const', 'enum', 'pattern'].includes(keyword) && propertyName === undefined
-    ? `, got ${JSON.stringify(data)}` : '';
+    ? `, got ${value.length > 80 ? `${value.slice(0, 77)}...` : value}` : '';
   return `${subject}${message}${detail}${got}`;
 }
 
@@ -163,7 +169,7 @@ function readJson(path) {
   try {
     return JSON.parse(readFileSync(path, 'utf8'));
   } catch (e) {
-    fail(relative(REPO, path), `cannot be read as JSON — ${e.message}`);
+    fail(join(FIXTURES_SHOWN, basename(path)), `cannot be read as JSON — ${e.message}`);
     return null;
   }
 }
@@ -319,13 +325,15 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
   }
 }
 
+// exitCode, not exit(): exit() can cut off stderr still queued for a pipe.
 if (problems.length > 0) {
-  console.error(`lint-cases: ${problems.length} problem${problems.length === 1 ? '' : 's'} in fixtures/cases.json\n`);
+  const count = `${problems.length} problem${problems.length === 1 ? '' : 's'}`;
+  console.error(`lint-cases: ${count} in ${join(FIXTURES_SHOWN, 'cases.json')}\n`);
   for (const problem of problems) console.error(`  - ${problem}`);
   console.error('');
-  process.exit(1);
+  process.exitCode = 1;
+} else {
+  const caseCount = doc.cases.length;
+  const fixtureCount = Object.keys(doc.fixtures).length;
+  console.log(`lint-cases: OK — ${caseCount} cases over ${fixtureCount} registered fixtures.`);
 }
-
-const caseCount = doc.cases.length;
-const fixtureCount = Object.keys(doc.fixtures).length;
-console.log(`lint-cases: OK — ${caseCount} cases over ${fixtureCount} registered fixtures.`);
