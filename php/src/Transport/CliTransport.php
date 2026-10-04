@@ -46,12 +46,19 @@ final class CliTransport implements Transport
     /**
      * @param string|null $executable the `aprv` binary; null means the one
      *        `bin/aprv-install` put in this package's `php/bin/` directory
-     * @param int $timeoutSeconds how long one process may run before it is killed
+     * @param int $timeoutSeconds how long one process may run before it is
+     *        killed, at least 1
+     *
+     * @throws InvalidArgumentException when the timeout is under one second
      */
     public function __construct(
         private readonly ?string $executable = null,
         private readonly int $timeoutSeconds = 30,
     ) {
+        // symfony/process reads 0 as "no timeout"; a hung aprv must still end.
+        if ($timeoutSeconds < 1) {
+            throw new InvalidArgumentException('timeoutSeconds must be at least 1');
+        }
     }
 
     /** Where `aprv-install` puts the binary, and where this transport looks by default. */
@@ -66,6 +73,16 @@ final class CliTransport implements Transport
             throw new LogicException('a transport serves one Verifier');
         }
         $this->opened = true;
+        $missing = array_filter(
+            ['proc_open', 'proc_get_status', 'proc_terminate', 'proc_close'],
+            static fn (string $function): bool => !function_exists($function),
+        );
+        if ($missing !== []) {
+            throw new RuntimeException(
+                'the CLI transport needs ' . implode(', ', $missing) . ', which this PHP does not allow '
+                . '(disable_functions): use HttpTransport with a server URL',
+            );
+        }
         $binary = $this->executable ?? self::defaultPath();
         if (!is_file($binary) || (PHP_OS_FAMILY !== 'Windows' && !is_executable($binary))) {
             throw new RuntimeException(
@@ -73,7 +90,8 @@ final class CliTransport implements Transport
                 . 'pass CliTransport the path of an aprv binary, or use HttpTransport with a server URL',
             );
         }
-        $this->binary = $binary;
+        // Absolute, so a relative path runs that file rather than an aprv on PATH.
+        $this->binary = realpath($binary) ?: $binary;
 
         [$code, $out, $err] = $this->execute(['info'], '');
         if ($code !== 0) {
@@ -172,9 +190,27 @@ final class CliTransport implements Transport
      */
     private function execute(array $arguments, string $stdin): array
     {
-        $process = new Process(array_merge([(string) $this->binary], $arguments), null, null, $stdin, $this->timeoutSeconds);
+        $out = '';
+        $err = '';
         try {
-            $code = $process->run();
+            $process = new Process(
+                array_merge([(string) $this->binary], $arguments),
+                null,
+                self::environment(),
+                $stdin,
+                $this->timeoutSeconds,
+            );
+            // symfony/process would buffer the answer in php://temp, which
+            // spills past 1 MiB to a temporary file; the callback keeps it
+            // in these two strings instead.
+            $process->disableOutput();
+            $code = $process->run(static function (string $type, string $chunk) use (&$out, &$err): void {
+                if ($type === Process::OUT) {
+                    $out .= $chunk;
+                } else {
+                    $err .= $chunk;
+                }
+            });
         } catch (ProcessSignaledException) {
             $code = -1;
         } catch (ProcessTimedOutException) {
@@ -183,6 +219,31 @@ final class CliTransport implements Transport
             throw new ServerProcessException('aprv could not be started');
         }
 
-        return [$code, $process->getOutput(), $process->getErrorOutput()];
+        return [$code, $out, $err];
+    }
+
+    /**
+     * The child's environment: what the OS needs to start a binary, and
+     * nothing else. symfony/process otherwise passes getenv() and $_ENV,
+     * which holds what Dotenv loaded (and, under FPM before 6.4.41 and
+     * 7.4.13, the request's variables). aprv's one-shot commands read no
+     * variable. Every other name is set to false, which symfony/process
+     * reads as "unset".
+     *
+     * @return array<string, string|false>
+     */
+    private static function environment(): array
+    {
+        $windows = PHP_OS_FAMILY === 'Windows';
+        // cmd.exe, which starts the binary on Windows, needs SystemRoot and ComSpec.
+        $keep = $windows ? ['PATH', 'SYSTEMROOT', 'COMSPEC'] : ['PATH'];
+        $env = [];
+        foreach (getenv() + $_ENV as $name => $value) {
+            $name = (string) $name;
+            $kept = in_array($windows ? strtoupper($name) : $name, $keep, true) && is_string($value);
+            $env[$name] = $kept ? $value : false;
+        }
+
+        return $env;
     }
 }

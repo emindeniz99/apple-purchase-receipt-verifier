@@ -365,6 +365,53 @@ final class CliTransportTest extends TestCase
         self::assertSame([], $this->cli->log());
     }
 
+    /**
+     * aprv's one-shot commands read no variable, and symfony/process would
+     * otherwise hand the child getenv() and $_ENV, where Dotenv puts an
+     * application's secrets. Only PATH goes through (the wrapper script
+     * adds its own FAKE_APRV_DIR).
+     */
+    public function testTheBinaryGetsNoneOfTheCallersEnvironment(): void
+    {
+        $_ENV['APRV_TEST_LEAK'] = 'from $_ENV';
+        putenv('APRV_TEST_LEAK_GETENV=from getenv()');
+        try {
+            $this->opened()->call(Operation::Receipt, 'x', 1);
+        } finally {
+            unset($_ENV['APRV_TEST_LEAK']);
+            putenv('APRV_TEST_LEAK_GETENV');
+        }
+
+        $names = $this->cli->log()[0]['env_names'];
+        self::assertNotContains('APRV_TEST_LEAK', $names);
+        self::assertNotContains('APRV_TEST_LEAK_GETENV', $names);
+        self::assertContains('PATH', $names, 'what the OS needs to start a binary stays');
+        self::assertNotContains('HOME', $names);
+    }
+
+    public function testATimeoutUnderOneSecondIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('timeoutSeconds must be at least 1');
+        new CliTransport($this->cli->executable, 0);
+    }
+
+    /** A relative path names the file it names, not a binary of that name on PATH. */
+    public function testARelativePathRunsThatFile(): void
+    {
+        $cwd = (string) getcwd();
+        chdir($this->cli->directory);
+        try {
+            $transport = new CliTransport('aprv');
+            $transport->open(null);
+            $transport->call(Operation::Receipt, 'x', 1);
+        } finally {
+            chdir($cwd);
+        }
+
+        self::assertSame([['info'], ['verify-receipt', '--now-ms', '1']], array_column($this->cli->log(), 'argv'));
+    }
+
     public function testWhatTheBinaryPrintsOnStderrNeverReachesTheCallersOutput(): void
     {
         $this->cli->behave(['stderr' => 'a warning', 'stdout' => '{"status":0}']);

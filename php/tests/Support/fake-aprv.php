@@ -29,6 +29,7 @@ $entry = [
     'roots_file' => $rootsFile,
     'roots_file_mode' => $rootsFile !== null && is_file($rootsFile) ? substr(sprintf('%o', fileperms($rootsFile)), -4) : null,
     'roots_file_content' => $rootsFile !== null && is_file($rootsFile) ? file_get_contents($rootsFile) : null,
+    'env_names' => array_keys(getenv()),
 ];
 file_put_contents($dir . '/log.jsonl', json_encode($entry, JSON_INVALID_UTF8_SUBSTITUTE) . "\n", FILE_APPEND);
 
