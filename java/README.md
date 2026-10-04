@@ -236,8 +236,9 @@ the same for both:
   `webOrderLineItemId`) are `Long`, not `int`: genuine receipts carry
   18-digit `downloadId` values.
 
-`ReceiptPayload.toJson()` renders the payload as JSON for logging and
-storage, written by jackson-core's generator. Every one of the nine ports of
+`ReceiptPayload.toJson()` renders the payload as JSON, written by
+jackson-core's generator. It holds the full purchase data; the caller
+decides what to write where. Every one of the nine ports of
 this library produces the same JSON value, not the same bytes: key order,
 whitespace and escaping style are free. The 64-bit ids above are JSON
 strings (dates stay numbers: epoch milliseconds do not exceed 2^53 until
