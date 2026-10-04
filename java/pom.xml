@@ -341,8 +341,9 @@
             </executions>
           </plugin>
           <!-- CycloneDX SBOM, attached as <artifact>-<version>-cyclonedx.json
-               so it is signed and uploaded with the jars: runtime scope only,
-               which is the three BouncyCastle jars and jackson-core. -->
+               so it is signed and uploaded with the jars: the three
+               BouncyCastle jars and jackson-core as required, jspecify as
+               optional, nothing from test scope. -->
           <plugin>
             <groupId>org.cyclonedx</groupId>
             <artifactId>cyclonedx-maven-plugin</artifactId>

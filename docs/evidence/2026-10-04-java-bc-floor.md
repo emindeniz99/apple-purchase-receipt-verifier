@@ -84,9 +84,11 @@ does 30 warm-up calls, then measures 20.
 The 2026-10 review measured the same shape at 152 ms and 133 MiB (no
 type 12), and 133 ms and 181 ms with type 12 first and last. That was a
 different session, and it reported MiB where these runs report 10^6 bytes.
-So the cost is on the order of 100 to 200 ms and about 140 MB of
-allocation per call. That is what `java/README.md` now states, in place of
-"a 1 MB forgery about 5 ms".
+A review on 2026-10-04 measured a variant whose SignerInfo names the
+genuine chain, so the chain walk and the signature check run too, at 277 ms
+and 210 MB per call on the same class of machine. `java/README.md` therefore
+gives the order of magnitude, a few hundred milliseconds and 150 to 200 MB
+on one 4 vCPU machine, in place of "a 1 MB forgery about 5 ms".
 
 ## Where this stops holding
 

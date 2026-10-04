@@ -150,8 +150,9 @@ Java:
 
 1. Decode the base64 and parse the CMS. Bad base64, trailing bytes, absent
    content, no `SignerInfo` or more than four, more than ten embedded
-   certificates or CRLs, and an envelope over the depth or value bounds
-   (§3.7) are `MALFORMED`.
+   certificates, and an envelope over the nesting bound (§3.7: the core's
+   32, BouncyCastle's 64 in Java) are `MALFORMED`. The core alone also
+   refuses more than ten CRLs and an envelope over its value budget.
 2. Read the receipt creation date, attribute 12, and nothing else: walk the
    top-level attribute SET under the depth and value bounds, read each
    entry's type, decode only the value of the first type 12. No usable
