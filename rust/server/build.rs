@@ -144,9 +144,11 @@ fn bundle_openapi(dir: &Path) -> String {
 /// resource. Embedded, a resolver that does not treat the `$id` as a new
 /// base resolves them against the OpenAPI document, where they lead
 /// nowhere (Schemathesis 4.28 skipped the four responses that use them).
-/// So the embedded copy drops `$id` and `$schema` (the document's dialect,
-/// 2020-12, is the same) and points each local reference at its place in
-/// the document, which every resolver follows the same way.
+/// So the embedded copy drops `$id` and `$schema` (`$schema` may stand
+/// only at a resource root, which the embedded copy no longer is) and
+/// points each local reference at its place in the document, which every
+/// resolver follows the same way. A reference in any other form would be
+/// re-anchored wrongly, so the build refuses it.
 fn embed_schema(mut schema: Value, name: &str) -> Value {
     if let Value::Object(m) = &mut schema {
         m.remove("$id");
@@ -163,6 +165,11 @@ fn anchor_local_refs(v: &mut Value, base: &str) {
                 match x {
                     Value::String(s) if k == "$ref" && s.starts_with("#/") => {
                         *s = format!("{base}{}", &s[1..]);
+                    }
+                    Value::String(s) if k == "$ref" => {
+                        panic!(
+                            "{base}: a $ref of the form {s:?} cannot be embedded; only #/... is"
+                        );
                     }
                     _ => anchor_local_refs(x, base),
                 }

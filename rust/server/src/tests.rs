@@ -513,6 +513,9 @@ async fn the_token_guards_every_v1_route_and_nothing_else() {
 #[tokio::test]
 async fn a_bad_clock_header_404_and_405_are_problems() {
     let r = app(real(), None);
+    // " 1" reaches the handler only here, where nothing parsed HTTP; over a
+    // connection hyper strips the padding first
+    // (over_a_connection_whitespace_around_the_clock_is_not_part_of_it).
     for bad in ["", "-1", "1.5", "18446744073709551616", "0x10", " 1"] {
         let (s, ct, body) = send(
             &r,
@@ -629,6 +632,7 @@ fn every_reference_in_the_served_document_resolves_in_it() {
     refs(&doc, &mut found);
     assert!(found.iter().any(|r| r.contains("/$defs/")), "{found:?}");
     for r in found {
+        assert!(r.starts_with("#/"), "{r} is not a local JSON pointer");
         let target = r.strip_prefix('#').and_then(|p| doc.pointer(p));
         assert!(
             target.is_some(),
