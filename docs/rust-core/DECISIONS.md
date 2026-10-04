@@ -933,6 +933,23 @@ each engine's runtime probe checks moved to its own `Verifier.create`.
   the cache directory is read-only; its path overridable by an
   environment variable. A warm start took 95 ms ([runtime options][pyopt]).
   THREAT-MODEL.md §8 has the directory rules.
+- **Amended 2026-10-04 (owner, Q27): the cache's default directory comes
+  from platformdirs**, `user_cache_dir()` plus `wasmtime`, instead of
+  platform logic written by hand. Every check that makes the directory
+  safe stays in the package. The floor is 4.12.0, the oldest release that
+  names this directory as every newer one does: it honours an absolute
+  `XDG_CACHE_HOME` on macOS too (4.6.0), ignores a relative one (4.11.8)
+  and raises when no home directory resolves (4.12.0)
+  ([platformdirs floor][pydirs]). It still returns a relative path for a
+  relative `HOME`, so the package keeps its own check that the directory
+  is absolute, and any exception from platformdirs turns the cache off
+  rather than reaching the caller. Python's runtime dependencies are now
+  the Wasm runtime plus platformdirs (SECURITY.md). Three defaults moved:
+  an absolute `XDG_CACHE_HOME` now holds the cache on macOS as on Linux; a
+  relative one falls back to the platform default instead of turning the
+  cache off; and an empty `HOME` resolves through the password database
+  instead of putting the cache under `/.cache` (`/Library/Caches` on
+  macOS).
 - **Lambda** pays the compile per new container, about 3 s on one vCPU;
   the README documents it.
 - **Winch** is a later improvement, once wasmtime-py exposes it: 468 ms
@@ -1806,6 +1823,7 @@ One table for everything the plan measured or considered and rejected.
 [payload]: ../evidence/2026-09-26-openssl-asn1-payload.md
 [pyfinal]: ../evidence/2026-09-27-python-runtime-final.md
 [pyopt]: ../evidence/2026-09-27-python-runtime-options.md
+[pydirs]: ../evidence/2026-10-04-python-platformdirs-floor.md
 [pywt]: ../evidence/2026-09-26-python-wasmtime.md
 [ruby]: ../evidence/2026-09-26-ruby-wasmtime.md
 [server]: ../evidence/2026-09-26-aprv-server.md

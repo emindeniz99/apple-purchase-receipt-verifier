@@ -34,10 +34,11 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
   # uv, not pip: python/uv.lock is what CI installs from, and only the uv
-  # ecosystem reads and rewrites that file. The one runtime dependency is
-  # wasmtime, with no upper pin by design (R27): a new major changes the
+  # ecosystem reads and rewrites that file. Of the two runtime dependencies,
+  # wasmtime has no upper pin by design (R27): a new major changes the
   # runtime under the module, and tests/test_cache.py is what notices a
-  # change in Wasmtime's cache configuration format.
+  # change in Wasmtime's cache configuration format. The same file notices
+  # a platformdirs release that names the cache's directory differently.
   - package-ecosystem: uv
     directory: /python
     schedule:

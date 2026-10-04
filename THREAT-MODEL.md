@@ -686,8 +686,9 @@ the core's bounds are what keep every call short (§3.7). Only
 - **Python's compile cache holds native code.** wasmtime-py compiles the
   module at start and, with the cache on, stores the result on disk, where
   the next process runs it. Anyone who can write that directory can plant
-  code. The cache lives in the user's own cache directory, created private;
-  it is off, silently, when the directory is read-only, not owned by the
+  code. The cache lives in the user's own cache directory (the one
+  platformdirs names), created private; it is off, silently, when there is
+  no home directory, or when the directory is read-only, not owned by the
   running user, writable by group or others, or under a parent someone else
   could swap; `APRV_WASM_CACHE_DIR` moves it and an empty value turns it
   off (python/README.md, "The compile cache").

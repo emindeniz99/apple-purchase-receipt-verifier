@@ -13,10 +13,10 @@
 # as a test under ../tests/ rather than committing it here.
 #
 # Requires uv. The fuzzer is installed into an ephemeral environment next to
-# wasmtime, the package's one dependency, so nothing here is a dependency of
-# the package: `uv pip install -e .` in python/ never sees atheris. FUZZ_PYTHON
-# overrides the interpreter, which is pinned to a line atheris publishes a
-# wheel for (see README.md).
+# wasmtime and platformdirs, the package's dependencies, so nothing here is a
+# dependency of the package: `uv pip install -e .` in python/ never sees
+# atheris. FUZZ_PYTHON overrides the interpreter, which is pinned to a line
+# atheris publishes a wheel for (see README.md).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +36,7 @@ fi
 # without importing it ahead of the instrumentation block.
 export PYTHONPATH="$here/..:$here"
 python=(uv run --no-project --python "${FUZZ_PYTHON:-3.13}"
-  --with atheris --with wasmtime python)
+  --with atheris --with wasmtime --with platformdirs python)
 
 # One seed is built here from a shared fixture rather than checked in, so the
 # genuine receipt keeps exactly one copy in the repository: the endpoint's

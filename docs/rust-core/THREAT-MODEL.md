@@ -203,7 +203,8 @@ stores the compiled native code on disk (R27). Anyone who can write that
 directory can plant code the next Python process runs
 ([runtime options][pyopt], "Trust"). The rules:
 
-1. The default is the running user's own cache directory.
+1. The default is the running user's own cache directory, as
+   platformdirs names it; with no home directory the cache is off.
 2. An environment variable can point it elsewhere.
 3. The cache is off, silently, when the directory is read-only. The
    process then compiles at start: about 1 s on 4 CPUs, 3 s on one.

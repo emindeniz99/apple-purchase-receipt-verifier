@@ -2,7 +2,8 @@
 section 8. The cache holds native code the next process runs, so a
 directory anyone else can write would let them plant code:
 
-1. the default is the running user's own cache directory;
+1. the default is the running user's own cache directory, as
+   ``platformdirs`` names it;
 2. ``APRV_WASM_CACHE_DIR`` overrides the path (empty means: no cache);
 3. the cache is off, silently, when the directory is read-only, cannot be
    created, is not owned by the running user, or is writable by group or
@@ -17,10 +18,10 @@ read-only rule applies.
 import contextlib
 import os
 import stat
-import sys
 import tempfile
 from pathlib import Path
 
+import platformdirs
 import wasmtime
 
 #: The environment variable that names the cache directory.
@@ -30,17 +31,19 @@ _APP = "apple-purchase-receipt-verifier"
 
 
 def _default_directory() -> "str | None":
-    if sys.platform == "win32":
-        base = os.environ.get("LOCALAPPDATA") or os.path.join(
-            os.path.expanduser("~"), "AppData", "Local"
-        )
-    elif sys.platform == "darwin":
-        base = os.path.join(os.path.expanduser("~"), "Library", "Caches")
-    else:
-        base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    if not os.path.isabs(base):  # no home directory, or a relative XDG value
+    # appauthor=False and opinion=False keep Windows at
+    # %LOCALAPPDATA%\<app>, without the <author>\<app>\Cache levels
+    # platformdirs adds there by default; Linux and macOS ignore both.
+    try:
+        base = platformdirs.user_cache_dir(_APP, appauthor=False, opinion=False)
+    except Exception:
+        # The cache is a convenience, so any failure to name its directory
+        # means off, whatever platformdirs raises: RuntimeError when no home
+        # directory resolves, ValueError when Windows has no folder to give.
         return None
-    return os.path.join(base, _APP, "wasmtime")
+    if not os.path.isabs(base):  # a relative HOME gives a relative path
+        return None
+    return os.path.join(base, "wasmtime")
 
 
 def _directory() -> "str | None":
