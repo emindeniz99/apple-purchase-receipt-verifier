@@ -191,8 +191,9 @@ world aprv {
 ```
 
 The WIT file is the contract (its doc comment on `init` still quotes the
-answer before R42 added `max_input_bytes`; the comment changes with the
-next ABI version, since CI diffs the file). It lives in
+answer before R42 added `max_input_bytes`, and its "empty" now means no
+bytes, since the module refuses an empty `roots` list (R23, Q30); the
+comment changes with the next ABI version, since CI diffs the file). It lives in
 `rust/bindings/abi/wit/`, and
 CI diffs it against what `wasm-tools component wit` reads back from the
 built module (§9). The version in the package name is the ABI version:
@@ -250,10 +251,14 @@ older module and is a module failure.
   ([canonical ABI final][cabifinal], finding 2).
 - **`now-ms` is a `u64` argument** on every verify call (§6). The core's
   chain instant takes at most `i64::MAX`.
-- **`init`** parses the roots once per instance. An empty list means the
-  three Apple roots compiled into the module. A wrapper never sends an
-  empty list for a caller's own empty root set: 0.7's `Verifier.create`
-  refuses that before `init` (SURFACE.md §2). A root that does not parse is
+- **`init`** parses the roots once per instance. `{}` means the three
+  Apple roots compiled into the module, and it is what every wrapper sends
+  for them; no bytes at all mean the same. An empty `roots` list is
+  refused with `{"ok":false,"message":"roots must not be empty"}`, the
+  core's `Config` refusal of an empty root set, so a module instance never
+  holds a verifier with no roots (DECISIONS.md R23, Q30). 0.7's
+  `Verifier.create` refuses a caller's empty root set before `init` all
+  the same (SURFACE.md §2). A root that does not parse is
   `{"ok":false}`, which the wrapper turns into its language's
   configuration error at `create`; `init` may then be retried on the same
   instance. A second `init` after `{"ok":true,...}` traps.

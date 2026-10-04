@@ -20,7 +20,8 @@ those of 2026-10-02 amended R17, R25, R31, R34, R39, R40 and R41 and
 added R42 and R43 (recorded 2026-10-03);
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
 client change, and amended R41 for .NET's `Config`; on 2026-10-04 the
-owner amended R41 for Go's, Swift's and Node's `Config`.
+owner amended R41 for Go's, Swift's and Node's `Config`, and R23 for the
+form of `init`'s configuration (Q30).
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -713,7 +714,8 @@ The measured cost is speed, above the floor on every host (R4).
 instance model, Q49 option d). Supersedes the ABI v1 export list of the
 2026-09-28 record. Amended 2026-09-30: the WIT package version moves from
 `1.0.0` to `0.1.0` (R36); done on 2026-10-01, and the export names below
-carry it.
+carry it. Amended 2026-10-04: one form for the built-in roots in `init`'s
+configuration (Q30, below).
 
 **The ABI.** `aprv.wasm` exports its four operations through the
 canonical ABI, the Component Model's calling convention, from one WIT
@@ -791,6 +793,29 @@ with everything in it; instances die with the `Verifier`; no handles,
 nothing to free. Node: one instance. `aprv-server`: a fresh instance and
 `init` per request by default. Phase 1 measures `init`; if it exceeds 10%
 of a call, the server's default flips to `--lifecycle pool`.
+
+**Amended 2026-10-04 (owner, Q30): one form for the built-in roots.**
+
+- **Decision:** `{}`, with `roots` left out, is the one spelling of the
+  three built-in Apple roots in `init`'s configuration, and every wrapper
+  sends it. An empty `roots` list is refused:
+  `{"ok":false,"message":"roots must not be empty"}`, the message the
+  core's `Config` gives an empty root set. No bytes at all still mean the
+  built-in roots, as the WIT's comment says.
+- **Before:** the module read an empty list, `{}` and no bytes alike as
+  the built-in roots, and the wrappers split: Node, Python, Ruby, Swift
+  and Go sent `{"roots":[]}`; .NET, the Java `-wasm` artifact and
+  `aprv-server` sent `{}`, and `aprv-server` already refused an empty
+  list on its managed roots line.
+- **Why:** fail loud. A list is the form a caller's own roots take, so an
+  empty one is a root set that came up empty; read as the Apple roots,
+  that mistake passed silently. Refused, it fails at `create`, and a
+  verifier with no roots cannot exist, as in the Rust crate.
+- **No caller sees a change.** Every package already refuses a caller's
+  empty root list at `create`, before the module is reached; the module's
+  refusal is a second line behind it. `fixtures/cases.json` does not
+  change. The WIT does not change, so the ABI version stays;
+  `init-config.schema.json` states the refusal (`minItems: 1`).
 
 **Options rejected** (table at the end): ABI v1's `aprv_call` with
 operation numbers and result handles; `now_ms` as an 8-byte prefix; one
