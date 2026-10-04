@@ -134,12 +134,14 @@ class VerifierApiTest {
 
     /**
      * The cause is kept for what an operator must see (the parser's exception
-     * behind Apple-signed content that does not parse) and dropped for every
-     * verdict about unverified input, whose parser messages can quote raw
-     * certificate text.
+     * behind Apple-signed content that does not parse) and dropped for the
+     * verdicts the library decides about unverified input, whose parser
+     * messages can quote raw certificate text. The one exception, an
+     * unchecked BouncyCastle or Jackson exception behind a MALFORMED, is in
+     * HostileReceiptInputTest.
      */
     @Test
-    void theCauseIsKeptOnlyBehindUnreadablePayloadAndInternalError() throws Exception {
+    void theCauseIsKeptBehindUnreadablePayloadAndDroppedBehindVerdictsOnInput() throws Exception {
         Verifier verifier = verifier();
         Failure unreadable = verifier.verifyReceipt(Base64.getEncoder()
                         .encodeToString(SyntheticReceipts.pki().signReceipt(new byte[] {0x31, 0x05, 0x01})))

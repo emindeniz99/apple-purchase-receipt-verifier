@@ -468,7 +468,7 @@ never by `ordinal()`.
 
 | `Reason` | Meaning |
 |---|---|
-| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, ASN.1 nesting past BouncyCastle's bound, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check |
+| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, ASN.1 nesting past BouncyCastle's bound, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check. When BouncyCastle or Jackson threw an unchecked exception, the message is `unexpected <class>` and `Failure.cause()` carries that exception, for debugging. The cause's message is BouncyCastle's and may quote fragments of the unverified input (tag numbers, lengths, a DN), so treat it like the receipt bytes when logging |
 | `TOO_LARGE` | Over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt or an endpoint request body, 262,144 for a JWS. Decided before anything is decoded |
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
 | `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or has more than six certificates below the anchor |
@@ -622,8 +622,9 @@ cannot construct a crypto engine answers `INTERNAL_ERROR`, but an unchecked
 exception BouncyCastle throws while parsing is reported as a verdict on the
 input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
 is by design, so hostile input cannot page you. It also means a broken host
-and an attack wave look alike in the counters. A known-good input that must
-verify is what tells them apart.
+and an attack wave look alike in the counters. `Failure.cause()` carries the
+exception, which explains one call but does not separate the two in
+aggregate. A known-good input that must verify is what tells them apart.
 
 **Let `Verifier.create` fail a broken runtime at deployment.** By default
 `Verifier.create` asks the library's BouncyCastle provider for the SHA-256

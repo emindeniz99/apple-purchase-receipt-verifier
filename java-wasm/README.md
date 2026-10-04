@@ -228,8 +228,10 @@ that does not work then answers `INTERNAL_ERROR` on every call.
   shared case of `fixtures/cases.json`. `Failure.message()` is
   written by the core here and can be worded differently.
 - **`Failure.cause()`** is `null` for every reason the core decided,
-  `UNREADABLE_PAYLOAD` included. It is set for the `INTERNAL_ERROR`s this
-  library raises itself: a trap, a runtime failure, a clock that threw.
+  `UNREADABLE_PAYLOAD` and `MALFORMED` included, where the main artifact
+  carries the parser's or BouncyCastle's exception. It is set for the
+  `INTERNAL_ERROR`s this library raises itself: a trap, a runtime failure,
+  a clock that threw.
 - **Dependencies.** `run.endive:runtime` and `run.endive:wasm` (Apache-2.0,
   pure Java 11 bytecode) and `jackson-core`. No BouncyCastle. The server
   engine adds nothing: its HTTP client and JSON reader are in this jar.
