@@ -18,8 +18,8 @@
 // a release), so the binary under test comes from APRV_BIN.
 //
 // --no-scripts for the same reason every composer install in ci.yml carries
-// it. psr/clock still comes from packagist.org; there is nothing else in the
-// resolved graph.
+// it. psr/clock and symfony/process still come from packagist.org; there is
+// nothing else in the resolved graph.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

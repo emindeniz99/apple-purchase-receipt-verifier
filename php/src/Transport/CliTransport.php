@@ -9,13 +9,18 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Text;
 use InvalidArgumentException;
 use LogicException;
 use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessSignaledException;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
+use Symfony\Component\Process\Process;
 
 /**
  * The default transport: one `aprv` process per call, its input on stdin
  * and its JSON on stdout (docs/rust-core/ARCHITECTURE.md §7.7, §7.9).
  *
- * The process is started with an argv array and no shell, so nothing the
- * caller or a receipt contains is ever parsed by one. It lives for one call
+ * symfony/process starts it from an argv array that carries only the
+ * subcommand, the clock and the roots file's path: nothing the caller or a
+ * receipt contains is ever on a command line. It lives for one call
  * (about 12 ms) and ends with it: a hostile input reaches nothing that
  * outlives the call. Exit status 0 is a result (verified or not), 3 the
  * module's answer to an input over the size cap (on stdout, like any
@@ -161,135 +166,23 @@ final class CliTransport implements Transport
     /**
      * @param list<string> $arguments
      *
-     * @return array{int, string, string} the exit status, stdout and stderr
+     * @return array{int, string, string} the exit status (-1 when a signal ended it), stdout and stderr
      *
      * @throws ServerProcessException when the process cannot be started or outlives its timeout
      */
     private function execute(array $arguments, string $stdin): array
     {
-        $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-        // An argv array and no shell: nothing is interpolated or parsed.
-        $process = @proc_open(
-            array_merge([(string) $this->binary], $arguments),
-            $descriptors,
-            $pipes,
-            null,
-            null,
-            ['bypass_shell' => true],
-        );
-        if (!is_resource($process)) {
+        $process = new Process(array_merge([(string) $this->binary], $arguments), null, null, $stdin, $this->timeoutSeconds);
+        try {
+            $code = $process->run();
+        } catch (ProcessSignaledException) {
+            $code = -1;
+        } catch (ProcessTimedOutException) {
+            throw new ServerProcessException('aprv did not answer within ' . $this->timeoutSeconds . ' seconds');
+        } catch (ProcessRuntimeException) {
             throw new ServerProcessException('aprv could not be started');
         }
 
-        $timedOut = false;
-        if (PHP_OS_FAMILY === 'Windows') {
-            // Windows pipes cannot be polled. aprv reads its whole input
-            // before it writes anything, so writing all, then reading all,
-            // cannot deadlock.
-            [$out, $err] = self::exchangeBlocking($pipes, $stdin);
-        } else {
-            [$out, $err, $timedOut] = self::exchange($pipes, $stdin, $this->timeoutSeconds);
-        }
-        foreach ($pipes as $pipe) {
-            if (is_resource($pipe)) {
-                fclose($pipe);
-            }
-        }
-        if ($timedOut) {
-            proc_terminate($process, 9);
-            proc_close($process);
-            throw new ServerProcessException('aprv did not answer within ' . $this->timeoutSeconds . ' seconds');
-        }
-
-        return [proc_close($process), $out, $err];
-    }
-
-    /**
-     * Writes stdin and reads stdout and stderr together without deadlocking
-     * on a large body, until both outputs end or the timeout passes.
-     *
-     * @param array<int, resource> $pipes
-     *
-     * @return array{string, string, bool} stdout, stderr, whether the timeout passed
-     */
-    private static function exchange(array $pipes, string $stdin, int $timeoutSeconds): array
-    {
-        foreach ($pipes as $pipe) {
-            stream_set_blocking($pipe, false);
-        }
-        $out = '';
-        $err = '';
-        $offset = 0;
-        $length = strlen($stdin);
-        $deadline = microtime(true) + $timeoutSeconds;
-        $inputOpen = true;
-        while (true) {
-            if ($inputOpen && $offset >= $length) {
-                fclose($pipes[0]);
-                $inputOpen = false;
-            }
-            $read = [];
-            foreach ([1, 2] as $index) {
-                if (!feof($pipes[$index])) {
-                    $read[] = $pipes[$index];
-                }
-            }
-            if ($read === []) {
-                return [$out, $err, false];
-            }
-            $write = $inputOpen ? [$pipes[0]] : [];
-            $except = null;
-            $remaining = $deadline - microtime(true);
-            if ($remaining <= 0) {
-                return [$out, $err, true];
-            }
-            $ready = @stream_select($read, $write, $except, 0, min(500_000, (int) ($remaining * 1_000_000)));
-            if ($ready === false || $ready === 0) {
-                continue;
-            }
-            if (in_array($pipes[0], $write, true)) {
-                // A child that ended early (the size cap) closes its end:
-                // stop writing and read what it said.
-                $written = @fwrite($pipes[0], substr($stdin, $offset, 65536));
-                if ($written === false) {
-                    fclose($pipes[0]);
-                    $inputOpen = false;
-                } else {
-                    $offset += $written;
-                }
-            }
-            foreach ($read as $stream) {
-                $chunk = fread($stream, 65536);
-                if ($chunk === false || $chunk === '') {
-                    continue;
-                }
-                if ($stream === $pipes[1]) {
-                    $out .= $chunk;
-                } else {
-                    $err .= $chunk;
-                }
-            }
-        }
-    }
-
-    /**
-     * @param array<int, resource> $pipes
-     *
-     * @return array{string, string}
-     */
-    private static function exchangeBlocking(array $pipes, string $stdin): array
-    {
-        $offset = 0;
-        $length = strlen($stdin);
-        while ($offset < $length) {
-            $written = @fwrite($pipes[0], substr($stdin, $offset, 65536));
-            if ($written === false || $written === 0) {
-                break;
-            }
-            $offset += $written;
-        }
-        fclose($pipes[0]);
-
-        return [(string) stream_get_contents($pipes[1]), (string) stream_get_contents($pipes[2])];
+        return [$code, $process->getOutput(), $process->getErrorOutput()];
     }
 }

@@ -226,7 +226,7 @@ What landed:
 
 - **`composer.json` at the root** — the package Packagist and Composer see.
   Same name, description, licence, keywords and `require` as
-  `php/composer.json`, `psr/clock` included. No `require-dev`:
+  `php/composer.json`, `psr/clock` and `symfony/process` included. No `require-dev`:
   `php/composer.json` stays the development manifest, and `php/composer.lock`
   stays the lockfile every CI leg installs.
 - **A `.gitattributes` allowlist** — `* export-ignore`, then each shipped path

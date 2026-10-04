@@ -215,9 +215,15 @@ directory can plant code the next Python process runs
 
 ## 9. PHP
 
-- The default transport runs the `aprv` binary once per call with
-  `proc_open` and an argv array, so no shell parses anything
-  ([aprv-server §7][server]). The process boundary is class D and ends
+- The default transport runs the `aprv` binary once per call through
+  `symfony/process`, from an argv array that holds only the subcommand,
+  the clock and the roots file's path. The input goes on stdin, so
+  nothing a caller or a receipt contains reaches a command line
+  ([aprv-server §7][server]). On Unix PHP starts the binary directly;
+  `symfony/process` goes through `/bin/sh` (with `exec` and every
+  argument escaped) only on a PHP built with `--enable-sigchild` or when
+  the direct start fails, and on Windows always through `cmd.exe`, again
+  with every argument escaped. The process boundary is class D and ends
   with the call.
 - `aprv install` downloads the binary from GitHub Releases and checks it
   against the SHA-256 pinned in the Composer package before it installs

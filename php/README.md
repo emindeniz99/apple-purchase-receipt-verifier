@@ -63,11 +63,12 @@ repository pointing at the repository root:
 }
 ```
 
-Requires **PHP 8.2+** (64-bit) and `ext-json`. One runtime dependency:
-`psr/clock`, the PSR-20 clock interface, a single interface with no code and
-no transitive dependencies. No `ext-openssl`: nothing in PHP touches a
-certificate. `ext-curl` is needed for the server transport and for the
-installer's download.
+Requires **PHP 8.2+** (64-bit) and `ext-json`. Two runtime dependencies,
+neither with dependencies of its own: `psr/clock`, the PSR-20 clock
+interface, a single interface with no code; and `symfony/process`
+(`^6.4.31 || ^7.4.3`), which runs the `aprv` binary for the default transport.
+No `ext-openssl`: nothing in PHP touches a certificate. `ext-curl` is
+needed for the server transport and for the installer's download.
 
 ## Quick start
 
@@ -608,9 +609,10 @@ should use the server transport.
   no binary for your platform it names the server option.
 - **`proc_open` must be allowed.** The default transport needs it (a hardened
   `disable_functions` list often removes it); use `HttpTransport` there.
-- **The CLI transport on Windows** writes the whole input before it reads the
-  answer (Windows pipes cannot be polled), which `aprv` allows because it
-  reads its whole input first. It has not been exercised in CI yet.
+- **The CLI transport on Windows** starts `aprv` through `cmd.exe`, which is
+  how `symfony/process` starts any process there. Each argument is escaped,
+  and none of them carries caller input: the input goes on stdin. It has not
+  been exercised in CI yet.
 - **PHP-FPM and long-running workers** keep the `Verifier` (and so its roots
   file) for their lifetime; the file is deleted when the object is destroyed
   or the process ends normally.
