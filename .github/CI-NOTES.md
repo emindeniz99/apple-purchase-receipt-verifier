@@ -171,9 +171,11 @@ workspace and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
 - `dependabot.yml` watches `java-wasm/`, `rust/server/`'s image bases,
   and `rust/server` with `rust/bindings/abi/tests` as one cargo entry
   (their exact wasmtime pins move together). It ignores `openssl-sys`
-  (vendored and patched), `openssl-src` majors, `wit-bindgen` (moves with
-  the toolchain's CLI) and `golang.org/x/sys` `>= 0.48.0` (each raises
-  Go's 1.25 floor).
+  (vendored and patched), `openssl-src` majors, `foreign-types`
+  `>= 0.4.0` (its traits must be the ones the openssl crate's types
+  implement, so it moves with the openssl crate; rust/openssl/CI-NOTES.md
+  item 15), `wit-bindgen` (moves with the toolchain's CLI) and
+  `golang.org/x/sys` `>= 0.48.0` (each raises Go's 1.25 floor).
 
 ## Why the smoke jobs fetch the tag themselves
 

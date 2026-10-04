@@ -96,6 +96,14 @@ here; the workflow files belong to the integration of this branch.
     `openssl-sys` (and keep `openssl-src` on 400.x) in the three cargo
     ecosystems; move it with `rust/vendor/refresh-openssl-sys.sh`, which
     downloads the release, checks its SHA-256 and changes the one line.
+15. `aprv-openssl` imports `ForeignType` and `ForeignTypeRef` from
+    foreign-types 0.3 to reach the raw pointers behind the openssl crate's
+    `X509` and CMS types. Those types implement the traits of the
+    foreign-types release the openssl crate depends on (0.3, through
+    foreign-types-shared 0.1), so a newer foreign-types is a second pair
+    of traits that nothing implements and the crate stops compiling (#197).
+    Dependabot ignores `foreign-types >= 0.4.0` in `/rust` and
+    `/rust/fuzz`; it moves only together with the openssl crate.
 
 ## `changes` filter
 
