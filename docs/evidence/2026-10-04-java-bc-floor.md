@@ -1,9 +1,10 @@
 # Java: the BouncyCastle floor, the nesting probe and the pre-trust cost
 
 Date: 2026-10-04. Feeds owner decisions Q33 (a), refuse bcprov below 1.86
-and a nesting bound below 9 at `Verifier.create`, and Q35 (c), state the
-pre-trust cost of a hostile receipt in `java/README.md`. Sources and
-commands: [`2026-10-04-java-bc-floor/`](2026-10-04-java-bc-floor/).
+and a nesting bound below 9 at `Verifier.create`, Q35 (c), state the
+pre-trust cost of a hostile receipt in `java/README.md`, and review
+finding L6, record the duplicate chain check as accepted cost. Sources
+and commands: [`2026-10-04-java-bc-floor/`](2026-10-04-java-bc-floor/).
 
 ## Questions
 
@@ -14,6 +15,8 @@ commands: [`2026-10-04-java-bc-floor/`](2026-10-04-java-bc-floor/).
    envelope parser of each do with 400,000 nested SEQUENCEs?
 3. What does a cap-sized receipt that no pinned root vouches for cost
    before it is refused?
+4. What does PKIX's second check of each chain signature cost, after the
+   top-down walk has checked it once?
 
 ## Setup
 
@@ -108,8 +111,9 @@ PKIX engine then checks the same signatures again (`CertPathBuilder` for
 receipts, `CertPathValidator` for JWS). `ChainLinkCost` times one link
 check, `X509Certificate.verify(issuerKey, provider)` on a fresh
 `BouncyCastleProvider`, for each link PKIX repeats, and one whole verify
-call for the same input. Library at `main` after `20296cf`; the same JDK
-and machine as above. Links are timed over 20,000 calls after 5,000 of
+call for the same input. Library at `1308d83` on `fix/java-bc-followups`,
+whose `java/src/main` differs from `main` at `dc3918e` only in
+`BouncyCastle`'s Javadoc; the same JDK and machine as above. Links are timed over 20,000 calls after 5,000 of
 warm-up, verify calls over 3,000 after 3,000.
 
 | Input | Link | Algorithm | ms per check (3 runs) |

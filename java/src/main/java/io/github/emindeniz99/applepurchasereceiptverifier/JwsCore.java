@@ -58,7 +58,9 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.TOO_LARGE, "jws exceeds the maximum accepted size of " + MAX_JWS_BYTES + " bytes");
         }
-        // What Jackson or BouncyCastle throw unchecked.
+        // What Jackson or BouncyCastle throw unchecked. No known input
+        // reaches this catch (the steps below contain their own failures);
+        // it keeps verify from throwing if one ever does.
         try {
             return verifyUnguarded(jws, trustAnchors, now);
         } catch (RuntimeException e) {

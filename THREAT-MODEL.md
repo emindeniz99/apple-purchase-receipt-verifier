@@ -498,18 +498,19 @@ Not defended against here, by decision rather than omission.
   certificates, builds and validates chains, and checks signatures and
   digests with its own pinned BouncyCastle instance, never through the JVM's
   provider list, so `jdk.certpath.disabledAlgorithms` and the JDK's other
-  algorithm restrictions in `java.security` do not apply to it. That is deliberate: a policy that
-  disables SHA-1 outright, as RHEL and Fedora crypto policies do, made the
-  JDK's PKIX code refuse every genuine legacy receipt. The cost is that an
-  administrator cannot restrict this library through that policy; what it
-  accepts is set by the library and the caller's roots. BouncyCastle's own
-  `org.bouncycastle.*` settings, which `java.security` or a system property
-  can carry, still reach it: none can make a forged signature verify, but
-  they can refuse genuine input or admit an unusual encoding of signed
-  content (java/README.md, "One platform caveat: BouncyCastle, not the
-  JDK's PKIX", lists them). The Wasm packages are
-  in the same position for a different reason: the module carries its own
-  OpenSSL, so the host's OpenSSL configuration never reaches it.
+  algorithm restrictions in `java.security` do not apply to it. That is
+  deliberate: a policy that disables SHA-1 outright, as RHEL and Fedora
+  crypto policies do, made the JDK's PKIX code refuse every genuine legacy
+  receipt. The cost is that an administrator cannot restrict this library
+  through that policy; what it accepts is set by the library and the
+  caller's roots. BouncyCastle's own `org.bouncycastle.*` settings, which
+  `java.security`, a thread-local override or a system property can carry,
+  still reach it: none can make a forged signature verify, but they can
+  refuse genuine input or admit an unusual encoding of signed content
+  (java/README.md, "One platform caveat: BouncyCastle, not the JDK's
+  PKIX", lists them). The Wasm packages are in the same position for a
+  different reason: the module carries its own OpenSSL, so the host's
+  OpenSSL configuration never reaches it.
 - **SHA-1 is accepted for legacy receipts**, and the device-hash binding is
   SHA-1, because Apple signs them that way. Neither can be chosen differently
   and still verify genuine receipts.

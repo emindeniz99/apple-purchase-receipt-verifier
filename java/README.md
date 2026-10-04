@@ -541,12 +541,13 @@ order. None of them can make a forged signature verify. Some refuse more,
 some accept odd encodings of signed content, some move resource bounds.
 Keep them unset in production. `Verifier.create` refuses a nesting bound
 too low for a genuine receipt, and the [startup
-self-test](#running-in-production) catches any setting that refuses
-genuine input, including one changed after create.
+self-test](#running-in-production) catches a JVM-wide setting that
+refuses the canary's inputs, including one changed after create. A
+thread-local override is seen only on its own thread.
 
-The settings BouncyCastle 1.86 reads on this library's paths (it names
-about 50 in all; those for TLS, PGP, PKCS#12 and the rest are never
-reached):
+The settings BouncyCastle 1.86 reads on this library's paths (bcprov,
+bcutil and bcpkix 1.86 name about 65 in all; those for TLS, PGP, PKCS#12
+and the rest are never reached):
 
 | Setting | Default | Effect when a host sets it | Can a forged signature verify? |
 |---|---|---|---|
@@ -554,18 +555,21 @@ reached):
 | `org.bouncycastle.asn1.max_limit` | sized from the input | Lower can only refuse input | No |
 | `org.bouncycastle.asn1.allow_unsafe_integer` | off | On accepts INTEGERs that are not minimally encoded. A padded integer in a signed payload then fills a typed field instead of staying raw. This loosens parsing, but only of content a valid signature covers | No |
 | `org.bouncycastle.x509.allow_non-der_tbscert` | unset: a certificate is verified as received | `false` re-encodes it as DER first, so a genuinely signed certificate in another encoding fails. Stricter | No |
-| `org.bouncycastle.x509.allow_empty_issuer_cert`, `org.bouncycastle.asn1.allow_zoneless_utctime`, `org.bouncycastle.asn1.allow_wrong_oid_enc` | off | On loosens certificate and time parsing. The certificate must still chain to a pinned root and verify | No |
+| `org.bouncycastle.asn1.allow_non_der_time` | on: a UTCTime or GeneralizedTime not in DER form is written out as received | `false` throws where such a time must be written as DER, so input that carries one can be refused. Stricter | No |
+| `org.bouncycastle.x509.allow_empty_issuer_cert`, `org.bouncycastle.x509.ignore_repeated_extensions`, `org.bouncycastle.x509.allow_absent_equiv_NULL`, `org.bouncycastle.asn1.allow_zoneless_utctime`, `org.bouncycastle.asn1.allow_wrong_oid_enc` | off | On loosens certificate and time parsing: an empty issuer, a repeated extension (read on every certificate decode), absent and NULL algorithm parameters taken as equal. The certificate must still chain to a pinned root and verify | No |
 | `org.bouncycastle.pkcs1.strict_digestinfo` | off: the receipt's RSA check accepts a DigestInfo without its NULL parameters | On refuses that form. Stricter | No |
-| `org.bouncycastle.rsa.max_size` (16384 bits), `org.bouncycastle.rsa.allow_unsafe_mod`, `org.bouncycastle.rsa.max_mr_tests`, `org.bouncycastle.ec.fp_max_size`, `org.bouncycastle.ec.max_f2m_field_size` | BouncyCastle's | Move the key size and key validation bounds, or refuse keys. A key is decoded only after a pinned root has vouched for its certificate | No |
+| `org.bouncycastle.rsa.max_size` (16384 bits), `org.bouncycastle.rsa.allow_unsafe_mod`, `org.bouncycastle.rsa.max_mr_tests`, `org.bouncycastle.ec.fp_max_size`, `org.bouncycastle.ec.fp_certainty`, `org.bouncycastle.ec.max_f2m_field_size` | BouncyCastle's | Move the key size and key validation bounds, or refuse keys. A key is decoded only after a pinned root has vouched for its certificate | No |
 | `org.bouncycastle.x509.max_cert_path_build_nodes` | 262,144 | Lower can only refuse a chain build. A receipt's build sees at most 10 certificates, each already authenticated | No |
-| A provider registered with `Security` as `"BC"` | none | BouncyCastle's PKIX builder and validator run their internal checks on that instance instead of their own. It is the same code; only in-process code that changes that instance could matter | No |
+| `org.bouncycastle.x509.max_policy_nodes` | 8,192 | Lower can only refuse a chain whose policy tree grows past it. Apple's certificates carry policies, so a very low value refuses genuine input | No |
+| A provider registered with `Security` as `"BC"` | none | BouncyCastle's PKIX builder and validator run their internal checks on that instance instead of their own. It is the same class, or a subclass; only in-process code that changes that instance could matter | No |
 
 ## Resource bounds
 
 Fixed constants, not configurable, except the ASN.1 nesting bound (below
 the table) and BouncyCastle's other settings ([listed
-above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The three size caps are checked before anything is decoded;
-the others as the structure they bound is read:
+above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The three
+size caps are checked before anything is decoded; the others as the
+structure they bound is read:
 
 | Bound | Value | `Reason` |
 |---|---|---|
@@ -593,8 +597,9 @@ genuine Apple receipt nests 9 deep
 ([measured](../docs/evidence/2026-10-04-java-bc-floor.md)): a host that
 sets the property below 9 would refuse every genuine receipt as
 `MALFORMED`, so `Verifier.create` parses a value nested 9 deep and throws
-`IllegalStateException` if BouncyCastle refuses it. A host that lowers the property after create is
-not caught.
+`IllegalStateException` if BouncyCastle refuses it. A host that lowers
+the property after create is not caught by create; the
+[canary](#running-in-production) catches it.
 
 Apple's own endpoint answers a request body of exactly 3,145,728 bytes and
 sends HTTP 413 for 3,145,729 (measured 2026-09-23 against both of Apple's
