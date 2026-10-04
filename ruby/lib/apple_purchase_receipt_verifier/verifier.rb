@@ -72,7 +72,7 @@ module ApplePurchaseReceiptVerifier
     def initialize(config, runtime: Runtime.shared)
       @clock_proc = config.clock
       roots = config.roots.map { |root| [root].pack("m0") }
-      @pool = InstancePool.new(runtime, JSON.generate("roots" => roots))
+      @pool = InstancePool.new(runtime, config.custom_roots? ? JSON.generate("roots" => roots) : "{}")
       freeze
     rescue RootsRejected => e
       raise ArgumentError, "the module refused config.roots: #{e.message}"
