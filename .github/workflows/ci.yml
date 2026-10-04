@@ -2762,6 +2762,41 @@ jobs:
       - run: vendor/bin/phpunit
         working-directory: php
 
+  # The manifest admits symfony/process 8.x, which needs PHP 8.4 or later,
+  # but the committed lock is resolved for the 8.2 floor and pins 7.4, so
+  # no other leg ever runs 8.x. This one drops the platform override and
+  # moves symfony/process alone to the newest 8.x this PHP accepts; every
+  # other package stays at its locked version. --with fails the step when
+  # no 8.x resolves, so the leg cannot pass on 7.4 by accident.
+  php-symfony-process-8:
+    needs: [changes, aprv-server-linux]
+    if: needs.changes.outputs.php == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/aprv-bin
+      - name: the aprv binary this tree builds
+        run: |
+          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
+          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: json, curl, posix
+          coverage: none
+      - run: composer config --unset platform.php
+        working-directory: php
+      - run: composer update symfony/process --with "symfony/process:^8.0" --no-scripts --no-progress --no-interaction --prefer-dist
+        working-directory: php
+      - run: vendor/bin/phpunit
+        working-directory: php
+
   php-static:
     needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
