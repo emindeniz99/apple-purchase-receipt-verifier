@@ -216,11 +216,32 @@ class RulesTest(Sandbox):
         env["XDG_CACHE_HOME"] = "relative/cache"
         self.assertEqual(str(cache / APP / "wasmtime"), self.default(env))
 
+    @unittest.skipUnless(POSIX, "Windows takes the folder from the shell, not from HOME")
     def test_no_home_directory_turns_the_cache_off(self) -> None:
-        # platformdirs raises when no home directory resolves (4.12.0); the
-        # cache is then off, which is never an error.
-        with mock.patch("platformdirs.user_cache_dir", side_effect=RuntimeError("no home")):
-            self.assertIsNone(self.default({}))
+        # A HOME that does not expand leaves no home directory, and
+        # platformdirs raises (4.12.0); the cache is then off, not an error.
+        self.assertIsNone(self.default({"HOME": "~nouser"}))
+
+    @unittest.skipUnless(POSIX, "Windows takes the folder from the shell, not from HOME")
+    def test_a_relative_home_turns_the_cache_off(self) -> None:
+        # platformdirs builds the path on a relative HOME as given, and a
+        # relative cache directory would sit under whatever the working
+        # directory is. Nothing may be created there.
+        cwd = self.directory()
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(cwd)
+        self.assertIsNone(self.default({"HOME": "relative"}))
+        self.assertEqual([], list(cwd.iterdir()))
+
+    def test_any_failure_naming_the_directory_turns_the_cache_off(self) -> None:
+        # Not only the RuntimeError above: on Windows a folder the shell
+        # cannot give is a ValueError. Whatever is raised, the cache is off.
+        for error in (RuntimeError("no home"), ValueError("no folder"), KeyError("HOME")):
+            with (
+                self.subTest(error=type(error).__name__),
+                mock.patch("platformdirs.user_cache_dir", side_effect=error),
+            ):
+                self.assertIsNone(self.default({}))
 
     def test_the_toml_wasmtime_reads_is_written_privately_and_removed(self) -> None:
         import wasmtime

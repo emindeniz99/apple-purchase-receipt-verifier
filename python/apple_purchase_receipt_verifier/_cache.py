@@ -36,7 +36,12 @@ def _default_directory() -> "str | None":
     # platformdirs adds there by default; Linux and macOS ignore both.
     try:
         base = platformdirs.user_cache_dir(_APP, appauthor=False, opinion=False)
-    except RuntimeError:  # no home directory to put it under
+    except Exception:
+        # The cache is a convenience, so any failure to name its directory
+        # means off, whatever platformdirs raises: RuntimeError when no home
+        # directory resolves, ValueError when Windows has no folder to give.
+        return None
+    if not os.path.isabs(base):  # a relative HOME gives a relative path
         return None
     return os.path.join(base, "wasmtime")
 

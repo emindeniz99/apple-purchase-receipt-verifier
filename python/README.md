@@ -137,8 +137,10 @@ code. The rules:
    `~/Library/Caches/apple-purchase-receipt-verifier/wasmtime` on macOS (on
    both, under `$XDG_CACHE_HOME` when that is an absolute path), and
    `%LOCALAPPDATA%\apple-purchase-receipt-verifier\wasmtime` on Windows. It is
-   created private (mode 0700). With no home directory to put it in, the
-   cache is off.
+   created private (mode 0700). An empty `HOME` counts as unset, and the
+   home directory then comes from the password database. With no home
+   directory, a relative `HOME`, or any other failure to name the directory,
+   the cache is off.
 2. `APRV_WASM_CACHE_DIR` names another absolute path. Set it empty for no cache.
 3. The cache is off, silently, when the directory is read-only or cannot be
    created, is not owned by you, or is writable by group or others, or when
