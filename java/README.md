@@ -626,9 +626,13 @@ large receipts. Put a `Semaphore` (or a bounded executor) of about twice the
 core count around the verify call. Why: memory, not CPU, is the limit. A
 1 MB genuine receipt costs about 30 ms and about 30 MB of allocation per
 call, a cap-sized one about 70 ms and 75 MB (approximate), so 100 such calls
-at once exhaust a normal heap. Hostile input is cheap to reject, a 1 MB
-forgery about 5 ms, because nothing expensive runs before the chain is
-trusted.
+at once exhaust a normal heap. Hostile input is not cheap to reject
+either. Before the chain is trusted, the library decodes the payload's
+whole attribute SET to find the receipt's creation date, the instant the
+chain is judged at, and BouncyCastle builds the full tree to do it. A
+cap-sized forgery built from many tiny attributes costs about 130 to 180 ms
+and 130 MB of allocation per call (approximate). The body cap and the
+concurrency limit are what bound that, and they are the deployment's job.
 
 **Warm up before taking traffic.** Build the `Verifier` at startup, not
 lazily on the first request. `Verifier.create` takes about 450 ms cold, the
