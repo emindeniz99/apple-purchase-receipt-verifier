@@ -25,6 +25,8 @@ CASES = {
     "xdg-rel": {"HOME": "/h", "XDG_CACHE_HOME": "rel/x"},
     "xdg-empty": {"HOME": "/h", "XDG_CACHE_HOME": ""},
     "home-empty": {"HOME": ""},
+    "home-rel": {"HOME": "relative"},
+    "home-tilde": {"HOME": "~nouser"},
 }
 
 

@@ -2,7 +2,7 @@
 
 | File | Question |
 |---|---|
-| `probe.py` | What does `user_cache_dir` answer for the package's cache, per platform class, with HOME set, XDG_CACHE_HOME absolute, relative, empty, and HOME empty? |
+| `probe.py` | What does `user_cache_dir` answer for the package's cache, per platform class, with HOME set, XDG_CACHE_HOME absolute, relative, empty, and HOME empty, relative or unexpandable (`~nouser`)? |
 | `nohome.py` | What does it answer when no home directory resolves at all? |
 
 Reproduce (any POSIX machine with uv; nothing is written outside uv's own

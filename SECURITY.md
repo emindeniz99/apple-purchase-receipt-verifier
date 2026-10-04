@@ -37,15 +37,14 @@ checks the bundled module against its pin (CryptoKit on Apple platforms);
 no input reaches it. Python has one more, platformdirs, pure Python with no
 dependencies of its own, which names the compile cache's default directory;
 the checks on that directory stay the package's own (THREAT-MODEL.md §10).
-The Java main artifact keeps BouncyCastle and
-`jackson-core`, the `-wasm` artifact Endive's runtime and `jackson-core`,
-and PHP `psr/clock` and `symfony/process` (which starts the `aprv` binary;
-its floors, 6.4.33 and 7.4.5, are the first releases outside
-CVE-2026-24739); npm has none. What goes into the module is pinned at
-build time: the Rust compiler by `rust/rust-toolchain.toml`, and wasi-sdk,
-wasm-tools, wit-bindgen and the OpenSSL tarball by version and SHA-256 in
-`tools/wasm-toolchain.sh`. The rest of the surface is the test and release
-toolchain. Four rules:
+The Java main artifact keeps BouncyCastle and `jackson-core`, the `-wasm`
+artifact Endive's runtime and `jackson-core`, and PHP `psr/clock` and
+`symfony/process` (which starts the `aprv` binary; its floors, 6.4.33 and
+7.4.5, are the first releases outside CVE-2026-24739); npm has none. What
+goes into the module is pinned at build time: the Rust compiler by
+`rust/rust-toolchain.toml`, and wasi-sdk, wasm-tools, wit-bindgen and the
+OpenSSL tarball by version and SHA-256 in `tools/wasm-toolchain.sh`. The
+rest of the surface is the test and release toolchain. Four rules:
 
 - **Seven-day cooldown.** Every ecosystem in `.github/dependabot.yml` waits
   seven days after a release before proposing it. Manual bumps follow the

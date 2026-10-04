@@ -914,12 +914,17 @@ each engine's runtime probe checks moved to its own `Verifier.create`.
   safe stays in the package. The floor is 4.12.0, the oldest release that
   names this directory as every newer one does: it honours an absolute
   `XDG_CACHE_HOME` on macOS too (4.6.0), ignores a relative one (4.11.8)
-  and raises when no home directory resolves (4.12.0), which turns the
-  cache off ([platformdirs floor][pydirs]). Python's runtime dependencies
-  are now the Wasm runtime plus platformdirs (SECURITY.md). Two defaults
-  moved: an absolute `XDG_CACHE_HOME` now holds the cache on macOS as on
-  Linux, and a relative one falls back to the platform default instead of
-  turning the cache off.
+  and raises when no home directory resolves (4.12.0)
+  ([platformdirs floor][pydirs]). It still returns a relative path for a
+  relative `HOME`, so the package keeps its own check that the directory
+  is absolute, and any exception from platformdirs turns the cache off
+  rather than reaching the caller. Python's runtime dependencies are now
+  the Wasm runtime plus platformdirs (SECURITY.md). Three defaults moved:
+  an absolute `XDG_CACHE_HOME` now holds the cache on macOS as on Linux; a
+  relative one falls back to the platform default instead of turning the
+  cache off; and an empty `HOME` resolves through the password database
+  instead of putting the cache under `/.cache` (`/Library/Caches` on
+  macOS).
 - **Lambda** pays the compile per new container, about 3 s on one vCPU;
   the README documents it.
 - **Winch** is a later improvement, once wasmtime-py exposes it: 468 ms

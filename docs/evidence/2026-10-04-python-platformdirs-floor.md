@@ -31,6 +31,8 @@ From `probe.py` and `nohome.py` (`~` is the HOME the probe set):
 | `XDG_CACHE_HOME=/x` | `/x/<app>` on Linux; ignored on macOS | `/x/<app>` on both | same | same |
 | `XDG_CACHE_HOME=rel/x` | `rel/x/<app>` on Linux | `rel/x/<app>` on both | ignored: `~/.cache/<app>`, `~/Library/Caches/<app>` | same as 4.11.8 |
 | `HOME=""` | `/.cache/<app>`, `/Library/Caches/<app>` | same | same | the password database's home |
+| `HOME=relative` | `relative/.cache/<app>`, `relative/Library/Caches/<app>` | same | same | same |
+| `HOME=~nouser` | `~nouser/.cache/<app>`, unexpanded | same | same | `RuntimeError` |
 | no home at all | `~/.cache/<app>`, unexpanded | same | same | `RuntimeError` |
 | Windows | `<Local AppData>\<app>` (joined with `/` when the class runs on Linux) | same | same | same |
 
@@ -47,13 +49,18 @@ later).
 ## Verdict
 
 **Floor 4.12.0.** It is the oldest release that answers every case above
-as the newest does, and every answer is either an absolute path or a
-`RuntimeError`. So `_cache.py` drops its `os.path.isabs` guard on the
-default directory (no release at or above the floor returns a relative
-one) and turns the cache off on `RuntimeError` instead. Below the floor a
-relative `XDG_CACHE_HOME` would become a cache directory relative to the
-working directory, which is the case the guard existed for;
+as the newest does. Below the floor a relative `XDG_CACHE_HOME` becomes a
+cache directory relative to the working directory;
 `tests/test_cache.py`'s relative-XDG test fails on 4.11.7.
+
+Not every answer at the floor is absolute: a relative `HOME` still gives
+a relative path in every release probed (the `HOME=relative` row). So
+`_cache.py` keeps its `os.path.isabs` check on the default directory, and
+turns the cache off on any exception from platformdirs, not only the
+`RuntimeError` of a missing home directory: on Windows the 4.12 source
+raises `ValueError` when `SHGetKnownFolderPath` gives no folder. An
+earlier version of this note said the floor made the check unnecessary;
+the `HOME=relative` row, added after review, shows it does not.
 
 4.12.0 was published on 2026-09-26, eight days before this note, so it
 clears the seven-day cooldown; `python/uv.lock` locks it, not 4.12.3
