@@ -4,12 +4,21 @@
 # first week (the common shape of a hijacked package) never reaches a PR.
 version: 2
 updates:
+  # `/` covers .github/workflows only; .github/actions/* holds the
+  # composite actions the workflows call (place-module), with pins of their
+  # own. group-by keeps one pull request per action, so a pin moves in the
+  # workflows and in the composite actions together.
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /.github/actions/*
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    groups:
+      actions:
+        group-by: dependency-name
   - package-ecosystem: npm
     directory: /node
     schedule:

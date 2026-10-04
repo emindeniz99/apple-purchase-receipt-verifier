@@ -27,6 +27,11 @@ the same run.
   pin in the checkout. A pin that differs from the build is a
   `::warning::`, not an error: pins lag the core between releases, and
   `release-please.yml` rewrites them on the release branch.
+- The ci.yml host jobs take both steps from one composite action,
+  `uses: $/.github/actions/place-module` with `host:`, after their
+  checkout: it downloads `aprv-wasm` to `$RUNNER_TEMP/aprv` and runs
+  `place-module.sh` for that host. The two java-wasm jobs that also need
+  the server binary still download and place in their own steps.
 - `aprv-server-linux` builds the static x86_64 musl `aprv` around the
   run's component (`rust/server/scripts/build-static.sh`, which needs
   `musl-tools` for the C that Wasmtime compiles) and uploads it as
