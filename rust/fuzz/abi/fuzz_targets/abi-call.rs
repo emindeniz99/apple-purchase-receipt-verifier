@@ -96,9 +96,7 @@ impl Guest {
             memory,
             realloc,
         };
-        let answer = guest
-            .call_init(br#"{"roots":[]}"#)
-            .expect("init does not trap");
+        let answer = guest.call_init(b"{}").expect("init does not trap");
         assert!(
             answer.starts_with(r#"{"ok":true,"max_input_bytes":"#),
             "init with Apple's roots: {answer}"

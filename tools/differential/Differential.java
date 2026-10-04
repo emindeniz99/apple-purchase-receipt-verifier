@@ -43,8 +43,9 @@ import java.util.Map;
  * tools/wasm-trap-host.mjs reads in its {@code calls} mode: {@code id},
  * {@code fn} ({@code verify-receipt}, {@code verify-signed-data},
  * {@code verify-receipt-endpoint}), {@code config} (init's JSON text,
- * {@code {"roots":[base64 DER, ...]}}, an empty list meaning Apple's
- * roots), {@code now} (epoch milliseconds), {@code env} (0 production, 1
+ * {@code {"roots":[base64 DER, ...]}}, or {@code {}} for Apple's
+ * roots; an empty list is answered with the module's refusal, as the
+ * module answers it), {@code now} (epoch milliseconds), {@code env} (0 production, 1
  * sandbox) and {@code b64} (the input bytes, base64); or {@code id} and
  * {@code map} for a row that makes no call. It prints one row per call on
  * stdout, in the core's wire JSON, so a row compares with the module's:
@@ -104,6 +105,14 @@ public final class Differential {
                     out.write(object(row));
                     continue;
                 }
+                List<X509Certificate> listed = ROOTS.get(config);
+                if (listed != null && listed.isEmpty()) {
+                    // The module refuses an empty list (R23, Q30); Java's Config
+                    // would too, so the row carries the module's answer.
+                    row.put("out", "{\"ok\":false,\"message\":\"roots must not be empty\"}");
+                    out.write(object(row));
+                    continue;
+                }
                 String input = utf8((String) call.get("b64"));
                 if (input == null) {
                     row.put("map", "not-utf8");
@@ -148,16 +157,17 @@ public final class Differential {
         return verifier;
     }
 
-    /** The config's roots; an empty list is Apple's roots (null here). */
+    /** The config's roots: null when the member is absent (Apple's roots), else the list, empty included. */
     private static List<X509Certificate> roots(String config)
             throws IOException, java.security.cert.CertificateException {
-        List<X509Certificate> roots = new ArrayList<X509Certificate>();
+        List<X509Certificate> roots = null;
         JsonParser p = JSON.createParser(config);
         p.nextToken();
         while (p.nextToken() == JsonToken.FIELD_NAME) {
             String name = p.currentName();
             p.nextToken();
             if ("roots".equals(name) && p.currentToken() == JsonToken.START_ARRAY) {
+                roots = new ArrayList<X509Certificate>();
                 CertificateFactory factory = CertificateFactory.getInstance("X.509");
                 while (p.nextToken() == JsonToken.VALUE_STRING) {
                     byte[] der = Base64.getDecoder().decode(p.getText());
@@ -167,7 +177,7 @@ public final class Differential {
                 p.skipChildren();
             }
         }
-        return roots.isEmpty() ? null : roots;
+        return roots;
     }
 
     private static String call(Verifier verifier, String fn, Object env, String input) throws IOException {

@@ -20,7 +20,7 @@ const G5 = utf8.encode(
 const G5_REQUEST = utf8.encode(JSON.stringify({ 'receipt-data': new TextDecoder().decode(G5) }));
 const JWS = utf8.encode(repo('fixtures/generated/transaction.jws').toString('ascii').trim());
 const JWS_CONFIG = initConfig([repo('fixtures/generated/jws-root.der').toString('base64')]);
-const DEFAULTS = initConfig([]);
+const DEFAULTS = initConfig();
 const now = () => BigInt(Date.now());
 
 // The receipt and request-body cap; init states one byte over it as the
@@ -124,6 +124,11 @@ test('init may be retried after it refuses a root', () => {
   assert.equal(refused.ok, false);
   assert.equal(typeof refused.message, 'string');
   assert.equal(b.init(DEFAULTS), INIT_OK);
+});
+
+test('the built-in roots are sent as {}, and an empty root list is refused', () => {
+  assert.equal(new TextDecoder().decode(DEFAULTS), '{}');
+  assert.equal(bindings().init(initConfig([])), '{"ok":false,"message":"roots must not be empty"}');
 });
 
 test("the facade reads init's answer: max_input_bytes, or the refusal", () => {

@@ -101,7 +101,7 @@ later verdict.
 
 Apple's three roots are compiled into the module, and the package carries no
 copy of them: `Config().roots` is `None`, which the `Verifier` hands
-the module as an empty list meaning those three. To trust Apple's roots and one
+the module as `{}`, meaning those three. To trust Apple's roots and one
 of your own, pass all of them, reading Apple's from its PKI page or the
 repository's `certs/`:
 

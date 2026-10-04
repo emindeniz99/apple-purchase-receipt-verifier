@@ -297,23 +297,28 @@ struct Once {
 
 /// Reads `init`'s configuration (`init-config.schema.json`) into the
 /// decoded bytes of the roots it names, in order: DER or PEM, which the
-/// core tells apart. An empty list means the three Apple roots
+/// core tells apart. An empty result means the three Apple roots
 /// compiled into the library.
 ///
-/// Accepted: no bytes at all (or only JSON whitespace), `{}`, and
-/// `{"roots":["<base64>", ...]}`, each root in padded standard base64
-/// by the core's `receipt-data` rule ([`aprv_surface::decode_base64`]).
-/// Anything else is refused with a message, so a wrapper that misspells a
-/// member finds out at `create` instead of getting the Apple roots it did
-/// not ask for; so is `roots` named twice, which a JSON reader that keeps
-/// the last member would read as whichever came last. Whether a root is a
-/// certificate is the surface's question, asked when the verifier is made.
+/// Accepted: no bytes at all (or only JSON whitespace) and `{}`, both the
+/// Apple roots, and `{"roots":["<base64>", ...]}` with at least one root,
+/// each in padded standard base64 by the core's `receipt-data` rule
+/// ([`aprv_surface::decode_base64`]). Anything else is refused with a
+/// message, so a wrapper that misspells a member finds out at `create`
+/// instead of getting the Apple roots it did not ask for; so is `roots`
+/// named twice, which a JSON reader that keeps the last member would read
+/// as whichever came last. An empty `roots` list is refused with the
+/// message the core's `Config` gives an empty root set, so no verifier
+/// with no roots is made and a configuration that came up empty fails at
+/// `create` rather than reading as the Apple roots (DECISIONS.md R23,
+/// owner decision Q30). Whether a root is a certificate is the surface's
+/// question, asked when the verifier is made.
 ///
 /// # Errors
 /// A message naming what is wrong: not UTF-8, not JSON, not an object,
 /// `roots` more than once, a member other than `roots`, `roots` not a
-/// list, or a root that is not a string or not base64 (by its index), the
-/// first of these that applies.
+/// list, `roots` an empty list, or a root that is not a string or not
+/// base64 (by its index), the first of these that applies.
 pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let text =
         core::str::from_utf8(config).map_err(|_| "the configuration is not UTF-8".to_owned())?;
@@ -335,6 +340,9 @@ pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     }
     let entries = match roots {
         None => Vec::new(),
+        Some(serde_json::Value::Array(entries)) if entries.is_empty() => {
+            return Err("roots must not be empty".to_owned())
+        }
         Some(serde_json::Value::Array(entries)) => entries,
         Some(_) => return Err("roots is not a list".to_owned()),
     };
@@ -588,7 +596,7 @@ mod tests {
 
     #[test]
     fn the_configuration_names_roots_or_nothing() {
-        for built_in in ["", " \n", "{}", "{\"roots\":[]}", " { \"roots\" : [ ] } "] {
+        for built_in in ["", " \n", "{}", " { } "] {
             assert_eq!(
                 read_init_config(built_in.as_bytes()),
                 Ok(Vec::new()),
@@ -599,7 +607,11 @@ mod tests {
             read_init_config(b"{\"roots\":[\"AQID\",\"BA==\"]}"),
             Ok(vec![vec![1, 2, 3], vec![4]])
         );
-        let refused: [(&[u8], &str); 11] = [
+        let refused: [(&[u8], &str); 13] = [
+            // One spelling for the Apple roots, `{}`: an empty list is a
+            // root set that came up empty, the core's `Config` refusal.
+            (b"{\"roots\":[]}", "roots must not be empty"),
+            (b" { \"roots\" : [ ] } ", "roots must not be empty"),
             // Named twice, a reader keeping the last member would take the
             // Apple roots here, and the first root in the other order.
             (

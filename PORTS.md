@@ -55,8 +55,8 @@ Notes:
 - **Roots.** "The module's roots" are Apple's three published roots,
   compiled into `aprv.wasm`; a `Config` that names no roots selects
   them. An explicitly empty root list is refused at `Verifier` creation in
-  every package but PHP, where it means the module's roots: a verifier
-  that trusts nothing would reject everything silently. A root the module
+  every package, and the module's `init` refuses one too: a verifier that
+  trusts nothing would reject everything silently. A root the module
   cannot read as a certificate fails `Verifier` creation too. To trust
   Apple's roots and your own, pass all four.
 - **The clock** is read once per call, before the input is looked at, and

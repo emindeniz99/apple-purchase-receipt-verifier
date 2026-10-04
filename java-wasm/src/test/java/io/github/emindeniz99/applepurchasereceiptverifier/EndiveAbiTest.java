@@ -32,7 +32,7 @@ class EndiveAbiTest {
      */
     private static final String INIT_OK = "{\"ok\":true,\"max_input_bytes\":3145729}";
 
-    private static final byte[] DEFAULT_ROOTS = "{\"roots\":[]}".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] DEFAULT_ROOTS = "{}".getBytes(StandardCharsets.US_ASCII);
     private static final long NOW = System.currentTimeMillis();
 
     private static byte[] g5() throws Exception {
@@ -71,6 +71,13 @@ class EndiveAbiTest {
     void initWithNoRootsAnswersOk() {
         assertEquals(INIT_OK, new EndiveGuest(new SecureRandom()).init(NONE));
         assertEquals(INIT_OK, new EndiveGuest(new SecureRandom()).init(DEFAULT_ROOTS));
+    }
+
+    @Test
+    void anEmptyRootListIsRefused() {
+        assertEquals(
+                "{\"ok\":false,\"message\":\"roots must not be empty\"}",
+                new EndiveGuest(new SecureRandom()).init("{\"roots\":[]}".getBytes(StandardCharsets.US_ASCII)));
     }
 
     @Test

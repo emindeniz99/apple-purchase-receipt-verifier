@@ -382,7 +382,7 @@ class WasmVerifierTest {
         new EndiveGuestFactory().newGuest();
     }
 
-    /** One form for the built-in roots in both engines: aprv-server refuses {"roots":[]}. */
+    /** One form for the built-in roots in both engines: the module and aprv-server refuse {"roots":[]}. */
     @Test
     void theDefaultRootsReachTheModuleAsTheBuiltInOnes() throws Exception {
         assertEquals("{}", InitConfig.json(DEFAULTS.roots()));

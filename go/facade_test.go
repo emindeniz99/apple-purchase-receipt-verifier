@@ -348,16 +348,19 @@ func TestAClockThatBreaksIsInternalErrorWhateverTheInput(t *testing.T) {
 	}
 }
 
-func TestTheDefaultRootsAreAnEmptyListAndCustomRootsAreTheirDER(t *testing.T) {
+func TestTheDefaultRootsAreAnEmptyConfigurationAndCustomRootsAreTheirDER(t *testing.T) {
+	if got := applereceipt.InitConfigOf(applereceipt.NewConfig(applereceipt.ConfigOptions{})); got != "{}" {
+		t.Errorf("the default Config sends init %q, want {}", got)
+	}
 	// The double refuses an init configuration over 100 bytes: three roots,
-	// or one, are far over; {"roots":[]} is 12.
+	// or one, are far over; {} is 2.
 	if _, err := applereceipt.NewVerifierOverModule(applereceipt.NewConfig(applereceipt.ConfigOptions{}), mirrorModule(t)); err != nil {
 		t.Fatalf("the default Config was refused: %v", err)
 	}
 	explicit := applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: []*x509.Certificate{parseFixtureCertificate(t, "jws-root")}})
 	_, err := applereceipt.NewVerifierOverModule(explicit, mirrorModule(t))
 	if err == nil || !strings.Contains(err.Error(), "refused") || !strings.Contains(err.Error(), "the double refuses") {
-		t.Fatalf("a Config with explicit roots reached init as an empty list: %v", err)
+		t.Fatalf("a Config with explicit roots reached init as the built-in roots: %v", err)
 	}
 	var plain *applereceipt.Failure
 	if errors.As(err, &plain) {

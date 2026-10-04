@@ -183,7 +183,12 @@ fn every_answer_to_every_shared_case_validates() {
     for case in cases.cases() {
         let id = case["id"].as_str().expect("id");
         let roots = cases.roots(case);
-        let config = json!({"roots": roots.iter().map(|der| standard(der)).collect::<Vec<_>>()});
+        // `{}` is the one spelling of the Apple roots; an empty list is refused.
+        let config = if roots.is_empty() {
+            json!({})
+        } else {
+            json!({"roots": roots.iter().map(|der| standard(der)).collect::<Vec<_>>()})
+        };
         let config = config.to_string();
         check(&config_schema, SCHEMAS[2], id, &config);
         let made = aprv_wire::read_init_config(config.as_bytes())
@@ -372,6 +377,7 @@ fn a_planted_wrong_type_fails_every_rule() {
         json!({"roots": "AQID"}),
         json!({"root": []}),
         json!({"roots": ["AQ"]}),
+        json!({"roots": []}),
     ] {
         assert!(!config.is_valid(&planted), "{planted}");
     }

@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULTS: &[u8] = br#"{"roots":[]}"#;
+const DEFAULTS: &[u8] = b"{}";
 
 /// `init`'s answer to a configuration it accepts: `ok`, and the most bytes
 /// of one input a host needs to hand the module, one over the largest cap
@@ -204,6 +204,7 @@ fn a_refused_configuration_is_a_value_and_init_may_be_retried() {
             br#"{"root":[]}"#,
             b"\xff",
             br#"{"roots":["AQ"]}"#,
+            br#"{"roots":[]}"#,
         ] {
             let answer = json(&guest.init(refused).unwrap());
             assert_eq!(answer["ok"], false, "{host}");

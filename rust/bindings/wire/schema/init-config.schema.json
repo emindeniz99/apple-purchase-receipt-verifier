@@ -2,13 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/rust/bindings/wire/schema/init-config.schema.json",
   "title": "The configuration init takes",
-  "description": "The argument of aprv.wasm's init export: the roots a chain must reach, each in padded standard base64: one DER certificate, or PEM text holding one or more certificates, which the core tells apart by the decoded bytes. An empty list, {}, or no bytes at all mean the three Apple roots compiled into the module. A wrapper never sends an empty list for a caller's own empty root set: Verifier.create refuses that first.",
+  "description": "The argument of aprv.wasm's init export: the roots a chain must reach, each in padded standard base64: one DER certificate, or PEM text holding one or more certificates, which the core tells apart by the decoded bytes. {} (the one spelling a wrapper sends) or no bytes at all mean the three Apple roots compiled into the module. An empty roots list is refused (\"roots must not be empty\"), so a root set that came up empty fails at create instead of reading as the Apple roots; Verifier.create refuses a caller's empty root set before init all the same.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "roots": {
       "description": "DER certificates or PEM text, padded standard base64, in the order given.",
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "string",
         "minLength": 1,

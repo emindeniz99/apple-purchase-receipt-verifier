@@ -19,3 +19,8 @@ func NewVerifierOverModule(config *Config, module []byte) (*Verifier, error) {
 	}
 	return &Verifier{pool: pool, clock: config.clock}, nil
 }
+
+// InitConfigOf is the init configuration NewVerifier sends for config.
+func InitConfigOf(config *Config) string {
+	return string(initConfig(config.roots, config.builtin))
+}

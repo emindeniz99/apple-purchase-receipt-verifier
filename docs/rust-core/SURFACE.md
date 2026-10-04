@@ -194,7 +194,7 @@ DECISIONS.md R34, amended 2026-10-02; R42).
 
 | 0.7 concept (Java spelling) | `aprv-surface` | `aprv-wire` / the WIT |
 |---|---|---|
-| `Config.roots()` | `Vec<Vec<u8>>` of roots, each DER or PEM (the core tells them apart), empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER or PEM>", ...]}`; answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}` |
+| `Config.roots()` | `Vec<Vec<u8>>` of roots, each DER or PEM (the core tells them apart), empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER or PEM>", ...]}`, or `{}` for the compiled-in roots (an empty list is refused); answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}` |
 | the input length a host hands over | `MAX_INPUT_BYTES`, the core's largest cap plus one | `"max_input_bytes"` in `init`'s answer |
 | `Config.clock()` | not modelled: the wrapper reads it | `now-ms: u64`, the first argument of each verify export |
 | `verifyReceipt(base64)` | `verify_receipt(&[u8], now_ms)` | `verify-receipt(now-ms, receipt-base64: list<u8>)` |

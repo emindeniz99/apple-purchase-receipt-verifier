@@ -101,7 +101,7 @@ const module = new WebAssembly.Module(readFileSync(modulePath));
 let guest;
 const fresh = () => {
   guest = new Guest(module);
-  const answer = guest.call('init', enc.encode(JSON.stringify({ roots })));
+  const answer = guest.call('init', enc.encode(roots.length === 0 ? '{}' : JSON.stringify({ roots })));
   if (JSON.parse(answer).ok !== true) usage('init refused the roots');
 };
 fresh();

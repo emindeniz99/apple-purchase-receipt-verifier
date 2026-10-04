@@ -68,19 +68,20 @@ public struct Config: Sendable {
     }
 
     /// init's argument (docs/rust-core/ARCHITECTURE.md §4): the roots as
-    /// base64 DER, where an empty list means the module's built-in roots.
+    /// base64 DER, or `{}` for the module's built-in roots.
     var initJson: [UInt8] {
-        Config.initJson(roots ?? [])
+        Config.initJson(roots)
     }
 
     /// init's argument for `roots`, written by Foundation's `JSONEncoder`.
     /// `Data` encodes as padded standard base64; slashes stay unescaped, so
     /// the text is `{"roots":["<base64>",...]}` as the other ports write it
-    /// (the module would read `\/` as `/` all the same).
-    static func initJson(_ roots: [[UInt8]]) -> [UInt8] {
+    /// (the module would read `\/` as `/` all the same). `nil` leaves the
+    /// member out: `{}`, the built-in roots.
+    static func initJson(_ roots: [[UInt8]]?) -> [UInt8] {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
-        guard let data = try? encoder.encode(InitConfig(roots: roots.map { Data($0) })) else {
+        guard let data = try? encoder.encode(InitConfig(roots: roots?.map { Data($0) })) else {
             preconditionFailure("JSONEncoder refused a list of byte strings")
         }
         return Array(data)
@@ -89,5 +90,5 @@ public struct Config: Sendable {
 
 /// init's configuration (rust/bindings/wire/schema/init-config.schema.json).
 private struct InitConfig: Encodable {
-    let roots: [Data]
+    let roots: [Data]?
 }

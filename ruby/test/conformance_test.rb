@@ -35,7 +35,7 @@ class ConformanceTest < Minitest::Test
 
   # The module with Apple's roots, for the decodeBase64 cases, which read its
   # raw answers.
-  RAW_POOL = Internals::InstancePool.new(Internals::Runtime.shared, '{"roots":[]}')
+  RAW_POOL = Internals::InstancePool.new(Internals::Runtime.shared, "{}")
 
   # Mutable on purpose: the coverage self-check below records what actually
   # ran, which is the point.

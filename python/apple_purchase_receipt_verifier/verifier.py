@@ -74,7 +74,7 @@ class Verifier:
         self._clock = config.clock
         try:
             self._pool = _host.Pool(
-                runtime(), _wire.init_config(config.roots or ()), _pool_size(), _wire.init_accepted
+                runtime(), _wire.init_config(config.roots), _pool_size(), _wire.init_accepted
             )
             # An answer the pool already read as accepting needs no second
             # parse; any other is read for its refusal or its shape fault.

@@ -51,7 +51,7 @@ public struct Verifier: Sendable {
         self.init(config: config, module: AprvModule.bundled)
     }
 
-    // Skips `Config.check()`: a `Config(roots: [])` here reaches the module as `{"roots":[]}`, the built-in roots.
+    // Skips `Config.check()`: a `Config(roots: [])` here reaches the module as `{"roots":[]}`, which init refuses.
     init(
         config: Config, module: Result<AprvModule, HostError>,
         random: @escaping @Sendable (Int) -> [UInt8] = Guest.systemRandomBytes

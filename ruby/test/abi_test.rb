@@ -18,7 +18,7 @@ require_relative "helper"
 class AbiTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
   CASES = TestSupport.cases["cases"]
-  NONE = '{"roots":[]}'
+  NONE = "{}"
   NOW = 1_767_225_600_000
 
   def runtime
@@ -63,7 +63,11 @@ class AbiTest < Minitest::Test
   def test_init_with_no_roots_answers_ok
     assert_accepting_init_answer Internals::Guest.new(runtime, nil).call("init", [], NONE)
     assert_accepting_init_answer Internals::Guest.new(runtime, nil).call("init", [], "")
-    assert_accepting_init_answer Internals::Guest.new(runtime, nil).call("init", [], "{}")
+  end
+
+  def test_an_empty_root_list_is_refused_at_init
+    error = assert_raises(Internals::RootsRejected) { guest('{"roots":[]}') }
+    assert_equal "roots must not be empty", error.message
   end
 
   def test_a_started_guest_holds_the_input_length_its_init_answer_stated
