@@ -9,10 +9,17 @@ description = "Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PK
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-# The one runtime dependency runs aprv.wasm (docs/rust-core R27): at or above
-# the tested major, deliberately with no upper pin to one major.
+# wasmtime runs aprv.wasm (docs/rust-core R27): at or above the tested
+# major, deliberately with no upper pin to one major. platformdirs names the
+# compile cache's default directory. Its floor, 4.12.0, is the oldest
+# release that names that directory as every newer one does: an absolute
+# XDG_CACHE_HOME honoured on Linux and macOS (since 4.6.0), a relative one
+# ignored (since 4.11.8), and no home directory an error rather than a
+# relative "~/..." path (since 4.12.0); see
+# docs/evidence/2026-10-04-python-platformdirs-floor.md.
 dependencies = [
     "wasmtime>=49",
+    "platformdirs>=4.12.0",
 ]
 
 # PyPI renders these as sidebar links; Changelog is the one registries

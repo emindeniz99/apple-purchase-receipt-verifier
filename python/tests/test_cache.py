@@ -1,5 +1,6 @@
 """Wasmtime's compile cache under THREAT-MODEL.md section 8: on by default in
-the user's own cache directory, ``APRV_WASM_CACHE_DIR`` overrides the path,
+the user's own cache directory (the one ``platformdirs`` names for the
+platform), ``APRV_WASM_CACHE_DIR`` overrides the path,
 and a directory that is read-only, foreign-owned, or writable by anyone else
 turns the cache off silently: the process compiles at start and still
 verifies. The end-to-end cases run a fresh interpreter, because the compiled
@@ -21,6 +22,10 @@ from apple_purchase_receipt_verifier import _cache
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 POSIX = hasattr(os, "geteuid")
 ROOT_USER = POSIX and os.geteuid() == 0
+APP = "apple-purchase-receipt-verifier"
+#: What decides the default directory besides HOME: a test sets each one it
+#: needs and starts from none of the caller's.
+LOCATION_VARIABLES = ("XDG_CACHE_HOME", "WIN_PD_OVERRIDE_LOCAL_APPDATA")
 
 CHILD = """
 import json, os, time
@@ -62,10 +67,25 @@ def module_entries(directory: Path) -> "dict[str, tuple[int, int]]":
     return found
 
 
+def user_cache_under(home: Path) -> "tuple[dict[str, str], Path]":
+    """The environment that moves the user's cache directory under ``home``,
+    and where it then is: ``~/.cache`` on Linux, ``~/Library/Caches`` on
+    macOS, the Local AppData folder on Windows. Windows reads that folder
+    from the shell, not from the environment, so platformdirs' documented
+    override stands in for it there."""
+    if sys.platform == "win32":
+        local = home / "AppData" / "Local"
+        return {"WIN_PD_OVERRIDE_LOCAL_APPDATA": str(local)}, local
+    if sys.platform == "darwin":
+        return {"HOME": str(home)}, home / "Library" / "Caches"
+    return {"HOME": str(home)}, home / ".cache"
+
+
 def run_child(env: "dict[str, str]", prelude: str = "") -> "dict[str, object]":
     receipt = PACKAGE_ROOT.parent / "fixtures" / "public-receipts" / "receipt-sandbox-g5.b64"
     code = CHILD.format(prelude=textwrap.dedent(prelude), receipt=str(receipt))
-    environment = {k: v for k, v in os.environ.items() if k != _cache.ENV_VAR}
+    dropped = (_cache.ENV_VAR, *LOCATION_VARIABLES)
+    environment = {k: v for k, v in os.environ.items() if k not in dropped}
     environment.update(env)
     environment["PYTHONPATH"] = os.pathsep.join(
         [str(PACKAGE_ROOT), environment.get("PYTHONPATH", "")]
@@ -160,20 +180,47 @@ class RulesTest(Sandbox):
             os.chmod(shared, 0o1777)
             self.assertIsNone(self.usable(shared))
 
-    def test_the_default_is_the_users_own_cache_directory(self) -> None:
-        home = self.directory()
-        env = {
-            "HOME": str(home),
-            "USERPROFILE": str(home),
-            "XDG_CACHE_HOME": "",
-            "LOCALAPPDATA": str(home),
-        }
+    def default(self, env: "dict[str, str]") -> "str | None":
+        """``usable_directory`` with no ``APRV_WASM_CACHE_DIR``, under ``env``."""
         with mock.patch.dict(os.environ, env):
-            os.environ.pop(_cache.ENV_VAR, None)
-            path = _cache.usable_directory()
-        assert path is not None
-        self.assertTrue(path.startswith(str(home)), path)
-        self.assertTrue(path.endswith(os.path.join("apple-purchase-receipt-verifier", "wasmtime")))
+            for name in (_cache.ENV_VAR, *LOCATION_VARIABLES):
+                if name not in env:
+                    os.environ.pop(name, None)
+            return _cache.usable_directory()
+
+    def test_the_default_is_the_users_own_cache_directory(self) -> None:
+        # The platform's per-user cache directory, one folder for the package
+        # and one for Wasmtime in it, created private like any other.
+        env, cache = user_cache_under(self.directory())
+        expected = cache / APP / "wasmtime"
+        self.assertEqual(os.path.normpath(expected), self.default(env))
+        if POSIX:
+            for made in (cache / APP, expected):
+                self.assertEqual(0, stat.S_IMODE(made.stat().st_mode) & 0o077, made)
+
+    @unittest.skipIf(sys.platform == "win32", "XDG_CACHE_HOME is a Linux and macOS variable")
+    def test_an_absolute_xdg_cache_home_holds_the_default(self) -> None:
+        # The XDG base directory spec's variable, which macOS honours too
+        # (platformdirs 4.6.0), so one setting moves every XDG-aware cache.
+        home = self.directory()
+        env, _ = user_cache_under(home)
+        env["XDG_CACHE_HOME"] = str(home / "xdg")
+        self.assertEqual(str(home / "xdg" / APP / "wasmtime"), self.default(env))
+
+    @unittest.skipIf(sys.platform == "win32", "XDG_CACHE_HOME is a Linux and macOS variable")
+    def test_a_relative_xdg_cache_home_is_ignored(self) -> None:
+        # The spec calls a relative value invalid. Taking it would put native
+        # code under whatever the working directory is, so the platform
+        # default stands (platformdirs 4.11.8, the reason for the floor).
+        env, cache = user_cache_under(self.directory())
+        env["XDG_CACHE_HOME"] = "relative/cache"
+        self.assertEqual(str(cache / APP / "wasmtime"), self.default(env))
+
+    def test_no_home_directory_turns_the_cache_off(self) -> None:
+        # platformdirs raises when no home directory resolves (4.12.0); the
+        # cache is then off, which is never an error.
+        with mock.patch("platformdirs.user_cache_dir", side_effect=RuntimeError("no home")):
+            self.assertIsNone(self.default({}))
 
     def test_the_toml_wasmtime_reads_is_written_privately_and_removed(self) -> None:
         import wasmtime
@@ -258,13 +305,8 @@ class EndToEndTest(Sandbox):
 
     def test_an_empty_variable_turns_the_cache_off(self) -> None:
         home = self.directory()
-        env = {
-            _cache.ENV_VAR: "",
-            "HOME": str(home),
-            "USERPROFILE": str(home),
-            "XDG_CACHE_HOME": str(home),
-            "LOCALAPPDATA": str(home),
-        }
+        env, _ = user_cache_under(home)
+        env[_cache.ENV_VAR] = ""
         self.assertTrue(run_child(env)["verified"])
         self.assertEqual(
             [], list(home.iterdir()), "the cache was created despite the empty variable"
@@ -272,16 +314,11 @@ class EndToEndTest(Sandbox):
 
     def test_with_no_variable_the_cache_lives_in_the_users_cache_directory(self) -> None:
         home = self.directory()
-        env = {
-            "HOME": str(home),
-            "USERPROFILE": str(home),
-            "XDG_CACHE_HOME": str(home / "xdg"),
-            "LOCALAPPDATA": str(home / "local"),
-        }
+        env, cache = user_cache_under(home)
         self.assertTrue(run_child(env)["verified"])
         found = [p for p in home.rglob("modules") if p.is_dir()]
         self.assertEqual(1, len(found), [str(p) for p in home.rglob("*")][:20])
-        self.assertIn("apple-purchase-receipt-verifier", found[0].parts)
+        self.assertEqual(cache / APP / "wasmtime" / "modules", found[0])
 
 
 if __name__ == "__main__":

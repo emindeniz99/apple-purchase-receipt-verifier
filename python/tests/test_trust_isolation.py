@@ -14,7 +14,8 @@ ports use:
   out of this machine's own CA bundle;
 * **structurally** — no module of the package imports or names anything that
   could reach a trust store or the network, and its runtime dependency set is
-  exactly the one reviewed package (the Wasm runtime);
+  exactly the two reviewed packages (the Wasm runtime, and platformdirs for
+  the compile cache's directory);
 * **positively** — the anchor list that reaches the module's ``init`` is,
   byte for byte, the list the caller handed in: nothing is appended, dropped
   or substituted on the way.
@@ -347,10 +348,10 @@ class SourceScanTest(unittest.TestCase):
             "json",
             "os",
             "pathlib",
+            "platformdirs",
             "secrets",
             "stat",
             "struct",
-            "sys",
             "tempfile",
             "threading",
             "time",
@@ -448,7 +449,7 @@ class SourceScanTest(unittest.TestCase):
         # not be possible to make one by accident: any HTTP client on this
         # list would drag `certifi` in with it.
         declared = declared_dependencies((PORT / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(["wasmtime"], sorted(declared))
+        self.assertEqual(["platformdirs", "wasmtime"], sorted(declared))
 
     def test_no_module_is_named_for_verification_logic(self) -> None:
         # Mirrors rust/tools' layering rule: the wrappers hold none of it.
