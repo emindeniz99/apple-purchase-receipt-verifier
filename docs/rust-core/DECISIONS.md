@@ -438,10 +438,11 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   leaves `vendored` as it is. On the fork's CI the same seven jobs fail
   with and without the change, for reasons outside it, and all six new
   `vendored-4` legs pass ([vendored-4][vendored4]).
-- **Open item:** 0.8.0 deploys two artifactIds and two classifier jars to
-  Maven Central. Whether Central's Usage Center counts that as one
-  release event is unconfirmed; the owner checks (MIGRATION.md, owner
-  actions).
+- **Open item:** a release with the `-wasm` upload enabled deploys two
+  artifactIds and two classifier jars to Maven Central. Whether Central's
+  Usage Center counts that as one release event is unconfirmed; the owner
+  checks after the first such deployment (BOOTSTRAP.md, "Maven Central";
+  the upload is held until `APRV_PUBLISH_JAVA_WASM` is `true`, R41).
 
 ---
 
@@ -1602,7 +1603,13 @@ the release, it is a breaking change for every caller. So the audit of
   so Dependabot and Renovate would propose the BouncyCastle build to every
   Wasm user as an upgrade. Two artifactIds keep the engines apart, and a
   release stays one of the month's Maven Central releases, where a
-  second version per release would spend two.
+  second version per release would spend two. **Amended 2026-10-04:** the
+  `-wasm` upload is held behind the repository variable
+  `APRV_PUBLISH_JAVA_WASM` until the owner judges the preview API settled,
+  because a version on Central is permanent (Central does not delete or
+  replace a published release); the artifactId, the
+  shared version and the release-please wiring are unchanged, and the
+  main artifact deploys on every release (BOOTSTRAP.md, "Maven Central").
 - **The shared cases do not change.** The Python and PHP conformance
   runners build their `Config` with the constructor now; no case and no
   fixture moved.

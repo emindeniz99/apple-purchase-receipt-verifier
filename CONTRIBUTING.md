@@ -579,8 +579,10 @@ Fully automated — do not publish from a laptop:
    binaries and `SHA256SUMS` to the Release; and pushes the server image
    to GHCR (and Docker Hub once bootstrapped). The publish jobs take those
    files and never rebuild them: npm (OIDC), PyPI (OIDC), RubyGems (OIDC),
-   NuGet (OIDC), Maven Central (token + GPG; both artifactIds and the two
-   classifier jars), and the `go/vX.Y.Z` tag that publishes the Go module
+   NuGet (OIDC), Maven Central (token + GPG; the main artifact, and the
+   `-wasm` artifact with its two classifier jars once the owner sets
+   `APRV_PUBLISH_JAVA_WASM`, BOOTSTRAP.md), and the `go/vX.Y.Z` tag that
+   publishes the Go module
    through `proxy.golang.org`. SwiftPM consumes the plain tag directly,
    and Packagist reads the tag once the owner has submitted the repository.
    crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4
@@ -597,9 +599,10 @@ per registry in [BOOTSTRAP.md](./BOOTSTRAP.md).
 
 Maven Central's Usage Center caps `io.github.emindeniz99` at 7 releases and
 about 80 MB per calendar month, and every release-please PR merge spends
-one, since `release.yml` publishes to Central on every tag. With the two
-server classifier jars a release is about 10.5 MB, so the working budget
-is 5 releases a month. Merge a release PR only for a consumer-visible
+one, since `release.yml` publishes to Central on every tag. Once the
+`-wasm` artifact ships, with its two server classifier jars, a release is
+about 10.5 MB, so the working budget is 5 releases a month. Merge a
+release PR only for a consumer-visible
 change — a fix, a feature, a docs correction that registries display, or a
 security bump of a shipped dependency (an OpenSSL advisory that reaches
 the core is one) — not for a `Package.resolved`/lockfile or CI-only bump;

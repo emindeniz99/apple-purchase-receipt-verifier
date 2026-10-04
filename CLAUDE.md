@@ -165,10 +165,12 @@ human-facing version; where they overlap, they agree.
 - Maven Central's Usage Center caps `io.github.emindeniz99` at **7 releases
   per calendar month**, about 80 MB and about 1,000 files per calendar month
   (https://central.sonatype.org/publish/maven-central-publishing-limits/).
-  From 0.8.0 a release deploys two artifactIds and the two `aprv-server`
-  classifier jars, about 10.5 MB, so the working budget is **5 releases a
-  month**, with 2 of them kept in reserve for an emergency fix (the owner
-  confirms the count with Sonatype; BOOTSTRAP.md). Every release-please PR
+  The working budget is **5 releases a month**, with 2 of them kept in
+  reserve for an emergency fix: once `vars.APRV_PUBLISH_JAVA_WASM` is
+  `true` (the `-wasm` artifact is held until the owner flips it;
+  BOOTSTRAP.md) a release deploys two artifactIds and the two
+  `aprv-server` classifier jars, about 10.5 MB, and the owner confirms
+  the count with Sonatype (BOOTSTRAP.md). Every release-please PR
   merge spends one — `release.yml` publishes to Central on every tag, no
   dry-run.
 - Merge a release PR only for a consumer-visible change: a fix, a feature, a
