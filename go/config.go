@@ -26,22 +26,15 @@ type Config struct {
 	builtin bool
 }
 
-// DefaultConfig is Apple's three pinned roots and the system clock.
-//
-// The roots are the three published Apple roots compiled into the
-// verification module; this package carries no copy of them, so
-// Roots() of a DefaultConfig is nil.
-func DefaultConfig() *Config {
-	return &Config{clock: systemMillis, builtin: true}
-}
-
-// ConfigOptions configures a Config.
+// ConfigOptions configures a Config. The zero value is the defaults:
+// Apple's three pinned roots and the system clock.
 type ConfigOptions struct {
 	// Roots are the pinned anchors, replacing Apple's. Tests use their
-	// own. nil means DefaultConfig's roots, the three Apple roots compiled
-	// into the module; an explicitly empty non-nil slice is kept as given,
-	// and NewVerifier then refuses it: a verifier with no roots would
-	// answer UNTRUSTED_CHAIN to everything, and nobody would notice until
+	// own. nil means the three published Apple roots compiled into the
+	// verification module, of which this package carries no copy; an
+	// explicitly empty non-nil slice is kept as given, and NewVerifier
+	// then refuses it: a verifier with no roots would answer
+	// UNTRUSTED_CHAIN to everything, and nobody would notice until
 	// production.
 	Roots []*x509.Certificate
 
@@ -50,8 +43,9 @@ type ConfigOptions struct {
 	Clock func() int64
 }
 
-// NewConfig builds a Config from opts. A field left unset is
-// DefaultConfig's.
+// NewConfig builds a Config from opts, the one way to build one. A field
+// left unset is the default, so NewConfig(ConfigOptions{}) is Apple's
+// three roots and the system clock, and its Roots() is nil.
 func NewConfig(opts ConfigOptions) *Config {
 	var roots []*x509.Certificate
 	builtin := opts.Roots == nil

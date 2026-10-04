@@ -55,12 +55,10 @@ function normalizeRoots(roots: readonly RootInput[]): readonly Uint8Array[] {
 
 const systemClock = (): number => Date.now();
 
-/** Apple's three pinned roots and the system clock. */
-export function defaultConfig(): Config {
-  return Object.freeze({ roots: null, clock: systemClock });
-}
-
-/** A config with explicit roots and/or clock; anything left out takes the default. */
+/**
+ * The one way to build a config. Anything left out takes the default, so
+ * `createConfig()` is Apple's three pinned roots and the system clock.
+ */
 export function createConfig(options: CreateConfigOptions = {}): Config {
   return Object.freeze({
     roots: options.roots === undefined ? null : normalizeRoots(options.roots),

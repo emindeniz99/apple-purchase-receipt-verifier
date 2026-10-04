@@ -36,7 +36,7 @@ func mirrorModule(t testing.TB) []byte {
 func mirrorVerifier(t testing.TB, config *applereceipt.Config) *applereceipt.Verifier {
 	t.Helper()
 	if config == nil {
-		config = applereceipt.DefaultConfig()
+		config = applereceipt.NewConfig(applereceipt.ConfigOptions{})
 	}
 	verifier, err := applereceipt.NewVerifierOverModule(config, mirrorModule(t))
 	if err != nil {
@@ -351,7 +351,7 @@ func TestAClockThatBreaksIsInternalErrorWhateverTheInput(t *testing.T) {
 func TestTheDefaultRootsAreAnEmptyListAndCustomRootsAreTheirDER(t *testing.T) {
 	// The double refuses an init configuration over 100 bytes: three roots,
 	// or one, are far over; {"roots":[]} is 12.
-	if _, err := applereceipt.NewVerifierOverModule(applereceipt.DefaultConfig(), mirrorModule(t)); err != nil {
+	if _, err := applereceipt.NewVerifierOverModule(applereceipt.NewConfig(applereceipt.ConfigOptions{}), mirrorModule(t)); err != nil {
 		t.Fatalf("the default Config was refused: %v", err)
 	}
 	explicit := applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: []*x509.Certificate{parseFixtureCertificate(t, "jws-root")}})
@@ -397,7 +397,7 @@ func mustHex(s string) []byte {
 }
 
 func TestAModuleOfAnotherABIVersionFailsCreateNamingTheVersion(t *testing.T) {
-	verifier, err := applereceipt.NewVerifierOverModule(applereceipt.DefaultConfig(), wrongVersionModule)
+	verifier, err := applereceipt.NewVerifierOverModule(applereceipt.NewConfig(applereceipt.ConfigOptions{}), wrongVersionModule)
 	if err == nil || verifier != nil {
 		t.Fatal("created a Verifier over a module of another ABI version")
 	}
@@ -425,7 +425,7 @@ func TestAVerifierNotMadeByNewVerifierAnswersInternalErrorNotAPanic(t *testing.T
 func TestTheEmbeddedModuleIsBoundAndAnswersTheEmptyInputsAsValues(t *testing.T) {
 	// Not a verdict test: the real module is created and every entry point
 	// answers something for the smallest inputs without an error escaping.
-	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
+	verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -82,9 +82,9 @@ export function hostileReceipts() {
 }
 
 async function child(name, via) {
-  const { createVerifier, defaultConfig, Environment } = await import('../dist/index.js');
+  const { createVerifier, createConfig, Environment } = await import('../dist/index.js');
   const base64 = hostileReceipts()[name];
-  const verifier = createVerifier(defaultConfig());
+  const verifier = createVerifier(createConfig());
   const answer =
     via === 'endpoint'
       ? JSON.parse(

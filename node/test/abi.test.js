@@ -191,7 +191,7 @@ test('2,000 calls leave linear memory the same size', () => {
 
 test('the facade copies at most one byte over the cap, and the module still answers TOO_LARGE', async () => {
   const { inputBytes } = await import('../dist/verifier.js');
-  const { createVerifier, defaultConfig, Environment } = await import('../dist/index.js');
+  const { createVerifier, createConfig, Environment } = await import('../dist/index.js');
   const max = initAnswer(bindings().init(DEFAULTS));
   assert.equal(max, CAP + 1);
   const huge = 'A'.repeat(4 * 1024 * 1024);
@@ -199,12 +199,12 @@ test('the facade copies at most one byte over the cap, and the module still answ
 
   // The facade's answer is byte for byte the module's answer to the whole input.
   const whole = ready().verifyReceipt(now(), utf8.encode(huge));
-  const result = createVerifier(defaultConfig()).verifyReceipt(huge);
+  const result = createVerifier(createConfig()).verifyReceipt(huge);
   assert.equal(result.failure?.reason, 'TOO_LARGE');
   assert.deepEqual({ verified: false, ...result.failure }, JSON.parse(whole));
   const body = `{"receipt-data":"${huge}"}`;
   assert.equal(
-    createVerifier(defaultConfig()).verifyReceiptEndpoint(Environment.SANDBOX, body),
+    createVerifier(createConfig()).verifyReceiptEndpoint(Environment.SANDBOX, body),
     ready().verifyReceiptEndpoint(1, now(), utf8.encode(body)),
   );
 

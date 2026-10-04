@@ -266,9 +266,9 @@ nothing of it in the tarball.
 ## Phase 7
 
 `node/certs`, `src/roots-data.ts` and `scripts/gen-roots.mjs` are gone:
-Apple's three roots live only in the module, and `defaultConfig().roots`
-was already `null`. The tarball never carried them (`files` is `dist` and
-`licenses`).
+Apple's three roots live only in the module, and the default config's
+`roots` was already `null`. The tarball never carried them (`files` is
+`dist` and `licenses`).
 
 | Where | Change |
 |---|---|

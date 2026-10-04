@@ -32,7 +32,7 @@ func main() {
 	}
 	receiptB64 := strings.TrimSpace(string(raw))
 
-	config := applereceipt.DefaultConfig()
+	config := applereceipt.NewConfig(applereceipt.ConfigOptions{})
 	if roots := config.Roots(); roots != nil {
 		fail("expected the module's built-in roots (nil), got %d configured", len(roots))
 	}

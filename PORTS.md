@@ -53,7 +53,7 @@ Notes:
   native code in the caller's process, which is the caller's choice; no
   package does that by default.
 - **Roots.** "The module's roots" are Apple's three published roots,
-  compiled into `aprv.wasm`; `Config.defaults()` (or its spelling) selects
+  compiled into `aprv.wasm`; a `Config` that names no roots selects
   them. An explicitly empty root list is refused at `Verifier` creation in
   every package but PHP, where it means the module's roots: a verifier
   that trusts nothing would reject everything silently. A root the module
@@ -102,13 +102,15 @@ the contract.
   `Config(roots=..., clock=...)` in Python, `Config.new(roots:, clock:)` in
   Ruby, `new Config(roots: ..., clock: ...)` in PHP and .NET,
   `Config::default()` or `Config::builder()` in Rust, `Config.defaults()`
-  or `Config.builder()` in Java and Swift, `DefaultConfig()` or
-  `NewConfig(ConfigOptions{...})` in Go, `defaultConfig()` or
-  `createConfig({...})` in Node.
+  or `Config.builder()` in Java, `Config(roots: ..., clock: ...)` in
+  Swift, `NewConfig(ConfigOptions{...})` in Go, `createConfig({...})` in
+  Node; an argument or option left out means its default.
   Python's `Config.create`/`Config.defaults`, Ruby's `Config.builder` and
   `Config.defaults`, PHP's `ConfigBuilder` and `Config::defaults()`,
   .NET's `Config.Defaults()`, `Config.CreateBuilder()` and
-  `Config.Builder`, and Rust's `Config::defaults()` are gone.
+  `Config.Builder`, Rust's `Config::defaults()`, Go's `DefaultConfig()`,
+  Swift's `Config.defaults()`, `Config.builder()` and `ConfigBuilder`,
+  and Node's `defaultConfig()` are gone.
 - `receipt-data` and `x5c` entries are canonical standard base64 only, as
   Apple's `verifyReceipt` was measured to accept it (THREAT-MODEL.md
   §3.8). The module decodes them; no wrapper has a base64 decoder of its

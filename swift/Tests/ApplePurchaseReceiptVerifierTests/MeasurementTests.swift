@@ -159,10 +159,9 @@ final class MeasurementTests: XCTestCase {
                 + #""init_ms":\#(ms(t3, t4)),"first_g5_ms":\#(ms(t4, t5)),"second_g5_ms":\#(ms(t5, t6))}"#)
 
         let seconds = Double(Self.env["APRV_BENCH_SECONDS"] ?? "") ?? 10
-        let apple = Verifier(config: .defaults(), module: .success(module))
+        let apple = Verifier(config: Config(), module: .success(module))
         let jws = try TestFixtures.text(TestFixtures.jws)
-        let jwses = Verifier(
-            config: try Config.builder().roots([try TestFixtures.bytes(TestFixtures.jwsRoot)]).build(), module: .success(module))
+        let jwses = Verifier(config: Config(roots: [try TestFixtures.bytes(TestFixtures.jwsRoot)]), module: .success(module))
         // The module must verify both inputs, or the rows would time a
         // refusal. Checked on its raw answer, which is the same with the
         // stand-in module (whose 0.6 wire the public API does not read) and

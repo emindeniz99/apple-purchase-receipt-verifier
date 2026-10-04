@@ -29,7 +29,7 @@ export async function run(api, fx) {
   const g5 = fx.sandboxReceiptB64.trim();
   const request = JSON.stringify({ 'receipt-data': g5 });
 
-  const apple = api.createVerifier(await api.defaultConfig());
+  const apple = api.createVerifier(await api.createConfig());
   const sandbox = JSON.parse(await apple.verifyReceiptEndpoint(api.Environment.SANDBOX, request));
   if (sandbox.status !== 0 || sandbox.receipt?.bundle_id !== 'dev.bonzer.weeka.app') {
     throw new Error(`genuine receipt on the sandbox endpoint: status ${sandbox.status}`);

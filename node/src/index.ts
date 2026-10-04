@@ -8,13 +8,7 @@
  * environment, product id, device binding, refunds and idempotency are the
  * caller's decisions; see the README's post-verification checklist.
  */
-export {
-  createConfig,
-  defaultConfig,
-  type Config,
-  type CreateConfigOptions,
-  type RootInput,
-} from './config.js';
+export { createConfig, type Config, type CreateConfigOptions, type RootInput } from './config.js';
 export { createVerifier, type Verifier } from './verifier.js';
 export {
   Reason,

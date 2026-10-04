@@ -14,13 +14,10 @@ import (
 // fixtures/cases.json whose trustedRoots source is "default" verifies a
 // genuine Apple chain through exactly this path.
 func TestTheDefaultsNameNoRootsOfTheirOwn(t *testing.T) {
-	if roots := applereceipt.DefaultConfig().Roots(); roots != nil {
-		t.Fatalf("DefaultConfig().Roots() = %d certificates, want nil (the module's roots)", len(roots))
-	}
 	if roots := applereceipt.NewConfig(applereceipt.ConfigOptions{}).Roots(); roots != nil {
 		t.Fatalf("NewConfig with no Roots = %d certificates, want nil (the module's roots)", len(roots))
 	}
-	if _, err := applereceipt.NewVerifier(applereceipt.DefaultConfig()); err != nil {
+	if _, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{})); err != nil {
 		t.Fatalf("the defaults were refused: %v", err)
 	}
 }

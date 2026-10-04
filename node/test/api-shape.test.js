@@ -1,8 +1,10 @@
 // The public surface is the 0.7 API (docs/design/0.7-api.md) without the
 // two environment helpers, which 0.8 replaced with the payloads'
-// `environment` (DECISIONS.md R42), and the two entry points are one product: the same names, the same vocabulary, the
-// same module underneath. A name added to or dropped from either entry
-// point fails here first.
+// `environment` (DECISIONS.md R42), and without `defaultConfig`, which 0.8
+// folded into `createConfig()` (R41). The two entry points are one
+// product: the same names, the same vocabulary, the same module
+// underneath. A name added to or dropped from either entry point fails
+// here first.
 // oxlint-disable no-await-in-loop -- two entry points, one after the other, so a failure names its entry point
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +23,6 @@ const EXPORTS = [
   'createJsonPayload',
   'createReceiptPayload',
   'createVerifier',
-  'defaultConfig',
 ];
 
 const gen = (name) =>
@@ -59,7 +60,6 @@ test('both entry points share the vocabulary objects', () => {
 test('/web returns Promises where the default entry point returns values', async () => {
   const config = web.createConfig();
   assert.ok(config instanceof Promise);
-  assert.ok(web.defaultConfig() instanceof Promise);
   const verifier = web.createVerifier(await config);
   const pending = [
     verifier.verifyReceipt('AQIDBA=='),
@@ -70,7 +70,7 @@ test('/web returns Promises where the default entry point returns values', async
     assert.ok(p instanceof Promise);
   }
   await Promise.all(pending);
-  const sync = node.createVerifier(node.defaultConfig());
+  const sync = node.createVerifier(node.createConfig());
   assert.equal(typeof sync.verifyReceiptEndpoint(node.Environment.SANDBOX, '{}'), 'string');
 });
 
@@ -99,8 +99,8 @@ test('a result carries exactly one of payload and failure, in both entry points'
   }
 });
 
-test('defaultConfig() names no roots: Apple roots are pinned inside the module', () => {
-  const config = node.defaultConfig();
+test('createConfig() names no roots: Apple roots are pinned inside the module', () => {
+  const config = node.createConfig();
   assert.equal(config.roots, null);
   assert.equal(typeof config.clock(), 'number');
   assert.ok(Object.isFrozen(config));

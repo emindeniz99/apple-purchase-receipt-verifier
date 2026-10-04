@@ -68,7 +68,7 @@ is out of range.
 import ApplePurchaseReceiptVerifier
 
 // Build once, at startup, and share it: Verifier is immutable and Sendable.
-let verifier = Verifier(config: .defaults())
+let verifier = try Verifier(config: Config())
 
 // A legacy PKCS#7 app receipt, as StoreKit hands it to the app.
 let receiptResult = verifier.verifyReceipt(base64: receiptBase64)
@@ -105,21 +105,23 @@ that trapped is discarded, and the next call runs on a fresh one.
 **A custom clock**, for tests or for pinning `request_date`:
 
 ```swift
-let config = try Config.builder().clock { 1_735_689_600_000 }.build()  // 2025-01-01T00:00:00Z
-let verifier = Verifier(config: config)
+let config = Config(clock: { 1_735_689_600_000 })  // 2025-01-01T00:00:00Z
+let verifier = try Verifier(config: config)
 ```
 
-`Config.defaults()` uses Apple's three published roots and the system clock.
-The roots are compiled into `aprv.wasm` and pinned there, so
-`Config.defaults().roots` is `nil`: "the module's built-in roots".
-`Config.builder().roots(...)` replaces them with your own certificates, as
-DER or PEM bytes (the module tells them apart; a PEM bundle of several
-certificates is one entry), which tests use; it hands them to a fresh module
-instance at once, so a
-certificate the module refuses throws `ConfigError` there, at startup, and
-never on a call. `build()` throws `ConfigError` for an empty root set, since
-a verifier with no roots would answer `.untrustedChain` to everything and
-nobody would notice until production.
+`Config(roots:clock:)` is the one way to build a `Config`, and `nil` for
+either argument means its default. It never throws: it stores what it is
+given, and `Verifier(config:)` checks it. `Config()` uses Apple's three
+published roots and the system clock. The roots are compiled into
+`aprv.wasm` and pinned there, so `Config().roots` is `nil`: "the module's
+built-in roots". `Config(roots: ...)` replaces them with your own
+certificates, as DER or PEM bytes (the module tells them apart; a PEM bundle
+of several certificates is one entry), which tests use. `Verifier(config:)`
+hands them to a fresh module instance at once, so a certificate the module
+refuses throws `ConfigError` there, at startup, and never on a call. It also
+throws `ConfigError` for an empty root set, since a verifier with no roots
+would answer `.untrustedChain` to everything and nobody would notice until
+production. With the default roots it never throws.
 
 The clock is read once per call, before the input is looked at, and passed
 to the module. The module uses it for exactly two things: the
@@ -301,12 +303,12 @@ conformance vectors:
 
 ## Trust anchors
 
-`Config.defaults()` trusts Apple's three published roots (Apple Inc. Root
+`Config()` trusts Apple's three published roots (Apple Inc. Root
 CA, Apple Root CA - G2, Apple Root CA - G3), compiled into `aprv.wasm`. The
 module cannot read the operating system's trust store, a distribution CA
 bundle, or anything downloaded: it has no file or network access at all. The
 only anchors are the built-in ones, or the ones a caller supplies through
-`Config.builder().roots(...)`. The package carries no certificate file of its
+`Config(roots: ...)`. The package carries no certificate file of its
 own; the repository's `certs/` is the reviewable source of the compiled-in
 roots.
 
@@ -382,14 +384,21 @@ shared by every `Verifier` of the process; nothing needs closing.
 
 ## Upgrading from 0.7
 
-The API is 0.7's, and so are the answers: every port runs the same module
-against the same `fixtures/cases.json`. What changed:
+The answers are 0.7's: every port runs the same module against the same
+`fixtures/cases.json`. What changed:
 
 - **Floors**: Swift 6.3, macOS 15, iOS 18 (were 6.1 and macOS 13).
 - **`Config.roots`** is `[[UInt8]]?`, DER or PEM bytes, where it was
   `[Certificate]` from swift-certificates: `nil` means Apple's roots built
-  into the module. `ConfigBuilder.roots(_:)` takes DER as before, and PEM
-  bytes too.
+  into the module. `Config(roots:)` takes DER, and PEM bytes too.
+- **One way to build a `Config`**: `Config(roots:clock:)`, both arguments
+  defaulted to `nil`, which means Apple's roots and the system clock. It
+  never throws. `Config.defaults()` becomes `Config()`, and
+  `Config.builder().roots(r).clock(c).build()` becomes
+  `Config(roots: r, clock: c)`; `ConfigBuilder` is gone.
+- **`Verifier(config:)` throws `ConfigError`** where `ConfigBuilder`'s
+  `roots(_:)` and `build()` did: for an empty root set, and for a root the
+  module refuses. Write `try Verifier(config: config)`.
 - **Dependencies**: swift-certificates and swift-asn1 are gone. WasmKit
   runs the module, and swift-crypto stays, for one SHA-256: the bundled
   module against its pin. 0.7 asked for swift-crypto 4.5.1 or newer, which
@@ -431,7 +440,7 @@ gone. The library returns the data, and you compare it yourself (see
 | `VerificationError` (thrown) | `Failure` (returned inside `VerificationResult`, never thrown) |
 | `VerifyReceiptEndpoint(trustedRoots:environment:clock:)` | `Verifier(config:)`, pass `environment` per call |
 | `.verifyReceiptResult(_:)` / `.verifyReceiptJSON(_:)` | `verifier.verifyReceiptEndpoint(environment:requestJson:)` |
-| `appleReceiptRoots()` / `appleJwsRoots()` | `Config.defaults()` (one root set for both) |
+| `appleReceiptRoots()` / `appleJwsRoots()` | `Config.defaults()` (one root set for both; `Config()` in 0.8) |
 
 | 0.6 `VerificationError.Reason` | 0.7 `Reason` |
 |---|---|

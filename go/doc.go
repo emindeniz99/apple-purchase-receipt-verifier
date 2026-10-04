@@ -34,8 +34,8 @@
 // # Trust model
 //
 // Verification is entirely offline and anchored only to the certificates
-// in the [Config] — in production, the three published Apple roots that
-// [DefaultConfig] uses, compiled into the verification module. The
+// in the [Config] — in production, the three published Apple roots that a
+// [NewConfig] with no Roots uses, compiled into the verification module. The
 // operating system trust store is never read. There is no
 // OCSP, no CRL, no AIA fetch and no runtime root download: the module
 // imports neither net nor net/http, and CI greps for the symbols that
@@ -91,7 +91,7 @@
 //
 // # Example
 //
-//	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
+//	verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{}))
 //	if err != nil {
 //		return err
 //	}

@@ -14,11 +14,11 @@ struct Smoke {
         // Apple's three roots are compiled into aprv.wasm, so the defaults
         // name none of their own (nil means the module's); a tag that lost
         // the module resource fails below, on the genuine receipt.
-        let config = try Config.builder().build()
+        let config = Config()
         guard config.roots == nil else {
             fatalError("expected the module's built-in roots (nil), got \(config.roots?.count ?? 0)")
         }
-        let verifier = Verifier(config: config)
+        let verifier = try Verifier(config: config)
 
         // A real Apple-signed receipt against the real pinned root: exercises
         // the packaged certs, the DER reader, the chain build and the signature.

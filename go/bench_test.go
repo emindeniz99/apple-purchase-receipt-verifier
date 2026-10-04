@@ -22,7 +22,7 @@ func BenchmarkNewVerifier(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := applereceipt.NewVerifier(applereceipt.DefaultConfig()); err != nil {
+		if _, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{})); err != nil {
 			b.Fatal(err)
 		}
 	}

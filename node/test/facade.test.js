@@ -51,16 +51,16 @@ test('a root the module refuses fails createVerifier, not a later call', () => {
 });
 
 test('the environment is one of the two values, or a TypeError', async () => {
-  const verifier = node.createVerifier(node.defaultConfig());
+  const verifier = node.createVerifier(node.createConfig());
   for (const bad of [null, undefined, 'production', 'Xcode', 0, 1, 2, 2 ** 32 + 1, 1n]) {
     assert.throws(() => verifier.verifyReceiptEndpoint(bad, G5_REQUEST), TypeError, String(bad));
   }
-  const webVerifier = web.createVerifier(await web.defaultConfig());
+  const webVerifier = web.createVerifier(await web.createConfig());
   await assert.rejects(webVerifier.verifyReceiptEndpoint(2, G5_REQUEST), TypeError);
 });
 
 test('PRODUCTION and SANDBOX reach the module as the two endpoints', () => {
-  const verifier = node.createVerifier(node.defaultConfig());
+  const verifier = node.createVerifier(node.createConfig());
   // A sandbox receipt: 21007 on the production URL, 0 on the sandbox one.
   assert.equal(
     status(verifier.verifyReceiptEndpoint(node.Environment.PRODUCTION, G5_REQUEST)),
@@ -150,7 +150,7 @@ test('a clock that answers no epoch milliseconds is INTERNAL_ERROR, never a wrap
 // --- input bytes -------------------------------------------------------------
 
 test('the input reaches the module as its UTF-8 bytes, and only a string does', () => {
-  const verifier = node.createVerifier(node.defaultConfig());
+  const verifier = node.createVerifier(node.createConfig());
   const sandbox = node.Environment.SANDBOX;
   assert.equal(status(verifier.verifyReceiptEndpoint(sandbox, G5_REQUEST)), 0);
   // Not a string: the caller's value never reaches the bindings (jco would
@@ -175,7 +175,7 @@ test('the input reaches the module as its UTF-8 bytes, and only a string does', 
 test('each Verifier holds its own instance, initialised with its own roots', () => {
   const apple = node.createVerifier(node.createConfig({ roots: APPLE_ROOTS }));
   const other = node.createVerifier(node.createConfig({ roots: [JWS_ROOT] }));
-  const defaults = node.createVerifier(node.defaultConfig());
+  const defaults = node.createVerifier(node.createConfig());
   const sandbox = node.Environment.SANDBOX;
   assert.equal(status(apple.verifyReceiptEndpoint(sandbox, G5_REQUEST)), 0);
   assert.equal(status(other.verifyReceiptEndpoint(sandbox, G5_REQUEST)), 21003);

@@ -27,9 +27,9 @@ enum TestFixtures {
     /// A verifier anchored on the DER fixtures at `roots`, reading a fixed
     /// clock when one is given.
     static func verifier(roots: [String], clock: Int64? = nil) throws -> ApplePurchaseReceiptVerifier.Verifier {
-        var builder = try Config.builder().roots(roots.map { try bytes($0) })
-        if let clock { builder = builder.clock { clock } }
-        return ApplePurchaseReceiptVerifier.Verifier(config: try builder.build())
+        var fixed: (@Sendable () -> Int64)?
+        if let clock { fixed = { clock } }
+        return try ApplePurchaseReceiptVerifier.Verifier(config: Config(roots: roots.map { try bytes($0) }, clock: fixed))
     }
 
     /// The generated 0.7 receipt and the root that anchors it.

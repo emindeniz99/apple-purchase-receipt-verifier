@@ -19,9 +19,9 @@ async function child() {
   const t0 = performance.now();
   const api = await import('../dist/index.js');
   const t1 = performance.now();
-  const verifier = api.createVerifier(api.defaultConfig());
+  const verifier = api.createVerifier(api.createConfig());
   const t2 = performance.now();
-  api.createVerifier(api.defaultConfig());
+  api.createVerifier(api.createConfig());
   const t3 = performance.now();
   const first = verifier.verifyReceipt(g5);
   const t4 = performance.now();

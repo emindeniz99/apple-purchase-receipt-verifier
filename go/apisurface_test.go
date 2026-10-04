@@ -164,7 +164,6 @@ func TestModuleDependsOnlyOnWazero(t *testing.T) {
 func TestPublicAPIShape(t *testing.T) {
 	var (
 		_ func(*applereceipt.Config) (*applereceipt.Verifier, error) = applereceipt.NewVerifier
-		_ func() *applereceipt.Config                                = applereceipt.DefaultConfig
 		_ func(applereceipt.ConfigOptions) *applereceipt.Config      = applereceipt.NewConfig
 		_ func(error) (applereceipt.Reason, bool)                    = applereceipt.ReasonOf
 		_ func() []applereceipt.Reason                               = applereceipt.AllReasons

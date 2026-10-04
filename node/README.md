@@ -101,7 +101,8 @@ WebAssembly.
 
 - **Read the operating system's trust store.** The anchors are the roots
   you pass to `createConfig`, or Apple's three published roots, which
-  `defaultConfig()` selects and which are compiled into the module.
+  `createConfig()` selects when you pass none and which are compiled into
+  the module.
 - **Touch the network.** No OCSP, no CRL, no AIA fetch, no root download.
   Revocation checking is out of scope.
 - **Return anything partial.** A failed result carries a `failure` and no
@@ -115,18 +116,21 @@ Node loader, `node:fs`, or names a crypto, TLS or network API.
 
 ## The API
 
-### `createConfig` / `defaultConfig`: the roots and the clock
+### `createConfig`: the roots and the clock
 
 ```js
-import { createConfig, defaultConfig } from 'apple-purchase-receipt-verifier';
+import { createConfig } from 'apple-purchase-receipt-verifier';
 
-const config = defaultConfig(); // Apple's three roots, the system clock
+const config = createConfig(); // Apple's three roots, the system clock
 
 const pinned = createConfig({
   roots: [rootBytes],            // DER or PEM as a Uint8Array; replaces the defaults
   clock: () => 1_735_689_600_000, // epoch milliseconds; replaces Date.now
 });
 ```
+
+`createConfig` is the one way to build a config, and an option left out
+takes its default.
 
 A root is the certificate's bytes, DER or PEM, as a `Uint8Array` (a `Buffer`
 is one). The module reads both and tells them apart by the bytes, so a file
@@ -398,7 +402,8 @@ The API is 0.7's, with these differences:
 
 | 0.7 | Now |
 |---|---|
-| `defaultConfig().roots`: three parsed certificates | `null`: Apple's roots live in the module |
+| `defaultConfig()` | `createConfig()`: the one way to build a config; with no options it is Apple's roots and the system clock, on both entry points |
+| `defaultConfig().roots`: three parsed certificates | `createConfig().roots` is `null`: Apple's roots live in the module |
 | `config.roots`: parsed certificates | the bytes of each root, as given |
 | a root as DER or a PEM string | DER or PEM bytes: a string is a `TypeError`; pass `new TextEncoder().encode(pem)` |
 | an unreadable root throws from `createConfig` | it throws a `TypeError` from `createVerifier` |

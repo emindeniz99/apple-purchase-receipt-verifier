@@ -72,6 +72,13 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
      `new Config(roots: ..., clock: ...)` with both arguments defaulted;
      `Config.Defaults()`, `Config.CreateBuilder()` and `Config.Builder`
      are removed.
+   - Decided 2026-10-04 (DECISIONS.md R41, amended; the owner's Q26): Go,
+     Swift and Node build a `Config` one way too. Go's `DefaultConfig()`
+     is removed for `NewConfig(ConfigOptions{})`, Swift's
+     `Config.defaults()`, `Config.builder()` and `ConfigBuilder` for
+     `Config(roots:clock:)`, which cannot fail (Swift's
+     `Verifier(config:)` now throws the builder's `ConfigError`s), and
+     Node's `defaultConfig()` for `createConfig()`.
    - Decided 2026-10-01 (DECISIONS.md R39, amended the same day): the
      core reads a root as DER or PEM, told apart by the bytes, through
      OpenSSL's PEM reader; wrappers pass bytes and read neither format.

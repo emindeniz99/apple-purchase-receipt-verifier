@@ -19,7 +19,8 @@ owner's decisions of 2026-10-01 added R38 to R41 and rows to R20, and
 those of 2026-10-02 amended R17, R25, R31, R34, R39, R40 and R41 and
 added R42 and R43 (recorded 2026-10-03);
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
-client change, and amended R41 for .NET's `Config`.
+client change, and amended R41 for .NET's `Config`; on 2026-10-04 the
+owner amended R41 for Go's, Swift's and Node's `Config`.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1435,9 +1436,9 @@ configuration themselves, so only a hand-made one carries two faults.
 
 ## R41. The public API in 0.8: internals hidden, one way to build a Config, two Java artifactIds
 
-**Status: accepted** (owner, 2026-10-01; amended 2026-10-02 and
-2026-10-03). Settles the API items R36 left open in ROADMAP.md (item 5)
-and the Java artifact naming (item 11).
+**Status: accepted** (owner, 2026-10-01; amended 2026-10-02,
+2026-10-03 and 2026-10-04). Settles the API items R36 left open in
+ROADMAP.md (item 5) and the Java artifact naming (item 11).
 
 0.8.0 is the first release of the Wasm-backed packages. A public name
 removed now breaks no one who has built on those packages; removed after
@@ -1479,6 +1480,19 @@ the release, it is a breaking change for every caller. So the audit of
     means its default, and the constructor refuses what `Build()`
     refused. `Config.Defaults()`, `Config.CreateBuilder()` and
     `Config.Builder` go (owner decision Q21, 2026-10-03).
+  - Go, Swift and Node followed on 2026-10-04 (owner decision Q26).
+    Go: `NewConfig(ConfigOptions{...})`, where the zero `ConfigOptions`
+    is the defaults; `DefaultConfig()` goes, and an explicitly empty,
+    non-nil `Roots` is still refused by `NewVerifier`. Swift:
+    `Config(roots:clock:)`, both arguments defaulted to `nil`, which
+    cannot fail and stores what it is given; `Config.defaults()`,
+    `Config.builder()` and `ConfigBuilder` go, and `Verifier(config:)`
+    now throws the `ConfigError`s `roots(_:)` and `build()` threw (an
+    empty root set; a root the module refuses, found by initialising a
+    fresh instance with it), as Go's `NewVerifier` and .NET's
+    `Verifier.Create` refuse them. Node: `createConfig()`,
+    an option left out taking its default; `defaultConfig()` goes from
+    both entry points.
   - Rust: `Config::default()`. `Config::defaults()` goes.
     `Config::builder()` stays: it is the fallible build, and the one
     place a bundled root that did not load is a `ConfigError`.

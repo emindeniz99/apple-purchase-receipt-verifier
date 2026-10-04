@@ -26,16 +26,13 @@ final class PublicApiTests: XCTestCase {
     }
 
     /// Setup, the three methods and the result shape, from outside the
-    /// module: a `Config` from the builder with the caller's own roots and
-    /// clock, one `Verifier`, and a result that carries exactly one of a
+    /// module: a `Config` from its initializer with the caller's own roots
+    /// and clock, one `Verifier`, and a result that carries exactly one of a
     /// payload and a failure.
     func testTheThreeMethodsAndTheirResultsFromOutsideTheModule() throws {
-        let config = try Config.builder()
-            .roots([try fixture("generated-0.7/receipt-root.der")])
-            .clock { 1_735_689_600_000 }
-            .build()
+        let config = Config(roots: [try fixture("generated-0.7/receipt-root.der")], clock: { 1_735_689_600_000 })
         XCTAssertEqual(config.roots?.count, 1)
-        let verifier = Verifier(config: config)
+        let verifier = try Verifier(config: config)
         let base64 = Data(try fixture("generated-0.7/receipt.der")).base64EncodedString()
 
         let receipt: VerificationResult<ReceiptPayload> = verifier.verifyReceipt(base64: base64)
@@ -61,13 +58,16 @@ final class PublicApiTests: XCTestCase {
     /// A verifier with no roots would answer UNTRUSTED_CHAIN to everything
     /// and nobody would notice until production, so it is refused once, at
     /// startup, and a certificate the verification module does not accept is
-    /// refused the same way. `Config.defaults()` never throws, and its roots
-    /// are the module's built-in Apple roots, which `nil` names.
-    func testConfigRefusesMisconfigurationAtStartup() {
-        XCTAssertThrowsError(try Config.builder().roots([]).build()) { XCTAssertTrue($0 is ConfigError) }
-        XCTAssertThrowsError(try Config.builder().roots([[0x30, 0x00]])) { XCTAssertTrue($0 is ConfigError) }
-        XCTAssertNil(Config.defaults().roots)
-        XCTAssertNil(try Config.builder().build().roots)
+    /// refused the same way. `Config` stores what it is given and the
+    /// `Verifier` refuses it; the defaults never throw, and their roots are
+    /// the module's built-in Apple roots, which `nil` names.
+    func testVerifierRefusesMisconfigurationAtStartup() {
+        XCTAssertThrowsError(try Verifier(config: Config(roots: []))) { XCTAssertTrue($0 is ConfigError) }
+        XCTAssertThrowsError(try Verifier(config: Config(roots: [[0x30, 0x00]]))) { XCTAssertTrue($0 is ConfigError) }
+        XCTAssertNoThrow(try Verifier(config: Config()))
+        XCTAssertNil(Config().roots)
+        XCTAssertNil(Config(roots: nil, clock: nil).roots)
+        XCTAssertEqual(Config(roots: []).roots?.count, 0)
     }
 
     /// The closed set of reasons, in the design's spelling. Adding a value
