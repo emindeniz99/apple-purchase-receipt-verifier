@@ -9,8 +9,9 @@ the module into `apple_purchase_receipt_verifier/aprv.wasm` before the tests run
 sets `APRV_WASM` for them (only `tests/_support.py`, `tests/corpus_rows.py` and
 `tools/build_dist.py` read it; the package never does, and a test greps for that).
 A missing or mismatched file is an error at the first `Verifier`.
-The file to copy is the release build's `aprv.wasm` (SHA-256 in `aprv.wasm.sha256`). The package has one runtime dependency,
-`wasmtime>=49`; the `dev` extra adds ruff, mypy and setuptools (the
+The file to copy is the release build's `aprv.wasm` (SHA-256 in `aprv.wasm.sha256`). The package has two runtime dependencies,
+`wasmtime>=49` and `platformdirs>=4.12.0` (the compile cache's default
+directory); the `dev` extra adds ruff, mypy and setuptools (the
 install-failure test builds this source tree with it).
 
 ## 1. Test matrix (job `python`, replaces the current one)
@@ -40,8 +41,11 @@ uv run --locked --extra dev python -m unittest discover -s tests
   run unless every case id ran; `test_abi.py`, `test_facade.py`,
   `test_concurrency.py`, `test_fuzz_targets.py`, `test_trust_isolation.py`,
   `test_api_shape.py`, `test_cache.py` and `test_install_failure.py`.
-- `HOME` (and `LOCALAPPDATA` on Windows) must be writable: `test_cache.py`
-  points the cache at temporary directories but starts fresh interpreters.
+- `HOME` (the Local AppData folder on Windows) should be writable, or the
+  other test files run with the cache off. `test_cache.py` points the cache
+  at temporary directories, and moves the default one there through `HOME`,
+  `XDG_CACHE_HOME` and, on Windows, platformdirs'
+  `WIN_PD_OVERRIDE_LOCAL_APPDATA`, before it starts fresh interpreters.
 - Leave `APRV_WASM_CACHE_DIR` unset; the tests set it where they need it.
 - The suite takes about 1 to 2 minutes on 4 CPUs (103 s on a busy shared
   runner); the cold compile is 1 to 3 s idle and about 5 s of CPU busy, and
@@ -101,8 +105,9 @@ sh tools/check-install.sh dist                # pip, platform faked as linux-i68
 sh tools/check-install.sh dist linux-s390x    # and as another unsupported one
 ```
 
-`check-install.sh` needs network for wasmtime's and setuptools's wheels only;
-the package under test comes from `dist/`. It proves, at the level of pip:
+`check-install.sh` needs network for wasmtime's, platformdirs's and
+setuptools's wheels only; the package under test comes from `dist/`. It
+proves, at the level of pip:
 
 - on a faked unsupported platform pip picks the sdist, the build stops, and the
   output names `aprv-server` and the C ABI; and

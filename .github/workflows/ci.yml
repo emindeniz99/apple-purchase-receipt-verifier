@@ -512,8 +512,8 @@ jobs:
   # Every Python line on every platform wasmtime-py ships a wheel for
   # (python/CI-NOTES.md): glibc x86_64 and aarch64, macOS arm64 and x86_64,
   # Windows amd64 and arm64 here, musl in python-musl below. The package's
-  # one runtime dependency is wasmtime, so the platform list is its wheel
-  # list, and a floor nothing runs is a claim.
+  # one native dependency is wasmtime (platformdirs is pure Python), so the
+  # platform list is its wheel list, and a floor nothing runs is a claim.
   python:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.python == 'true'

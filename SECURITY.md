@@ -34,7 +34,10 @@ A package's runtime dependency is, at most, the WebAssembly runtime that
 runs the module (wasmtime-py, the `wasmtime` gem, Wasmtime .NET, wazero,
 WasmKit; PORTS.md). Swift has one more, swift-crypto, for the SHA-256 that
 checks the bundled module against its pin (CryptoKit on Apple platforms);
-no input reaches it. The Java main artifact keeps BouncyCastle and
+no input reaches it. Python has one more, platformdirs, pure Python with no
+dependencies of its own, which names the compile cache's default directory;
+the checks on that directory stay the package's own (THREAT-MODEL.md §10).
+The Java main artifact keeps BouncyCastle and
 `jackson-core`, the `-wasm` artifact Endive's runtime and `jackson-core`,
 and PHP `psr/clock` and `symfony/process` (which starts the `aprv` binary;
 its floors, 6.4.33 and 7.4.5, are the first releases outside

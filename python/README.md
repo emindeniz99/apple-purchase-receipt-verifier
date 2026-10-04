@@ -131,11 +131,14 @@ of CPU on a busy one; `docs/evidence/2026-09-29-python-g1.md`). The cache holds 
 code that the next process runs, so anyone who can write its directory can plant
 code. The rules:
 
-1. The default is your own user cache directory:
-   `~/.cache/apple-purchase-receipt-verifier/wasmtime` on Linux (or under
-   `$XDG_CACHE_HOME`), `~/Library/Caches/apple-purchase-receipt-verifier/wasmtime`
-   on macOS, `%LOCALAPPDATA%\apple-purchase-receipt-verifier\wasmtime` on
-   Windows. It is created private (mode 0700).
+1. The default is your own user cache directory, as
+   [platformdirs](https://pypi.org/project/platformdirs/) names it:
+   `~/.cache/apple-purchase-receipt-verifier/wasmtime` on Linux,
+   `~/Library/Caches/apple-purchase-receipt-verifier/wasmtime` on macOS (on
+   both, under `$XDG_CACHE_HOME` when that is an absolute path), and
+   `%LOCALAPPDATA%\apple-purchase-receipt-verifier\wasmtime` on Windows. It is
+   created private (mode 0700). With no home directory to put it in, the
+   cache is off.
 2. `APRV_WASM_CACHE_DIR` names another absolute path. Set it empty for no cache.
 3. The cache is off, silently, when the directory is read-only or cannot be
    created, is not owned by you, or is writable by group or others, or when
@@ -368,8 +371,9 @@ otherwise is what sits under it.
 - **`default_roots()` is gone, and `Config().roots` is `None`.**
   Apple's three roots are compiled into the module, which trusts them when no
   roots are given; the package no longer ships a copy to return.
-- **The dependencies are `wasmtime` alone.** `cryptography` and `asn1crypto`
-  are no longer installed by this package.
+- **The dependencies are `wasmtime` and `platformdirs`.** `cryptography` and
+  `asn1crypto` are no longer installed by this package; `platformdirs` names
+  the compile cache's directory.
 - **The first `Verifier` compiles a module** (see the top of this file).
 - **`Failure.cause` is set only for an `INTERNAL_ERROR` this package raised**
   (a trap, a failing clock). It is `None` for `UNREADABLE_PAYLOAD`: the message
