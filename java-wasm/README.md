@@ -31,7 +31,7 @@ classpath, and a Gradle build that asks for both fails at resolution.
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier-wasm</artifactId>
-  <version>0.8.0</version> <!-- x-release-please-version -->
+  <version>0.8.1</version> <!-- x-release-please-version -->
 </dependency>
 ```
 
@@ -146,7 +146,7 @@ or by `Transfer-Encoding: chunked` alone, and refuses any other.
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier-wasm</artifactId>
-  <version>0.8.0</version> <!-- x-release-please-version -->
+  <version>0.8.1</version> <!-- x-release-please-version -->
   <classifier>linux-x86_64</classifier> <!-- or linux-aarch64 -->
 </dependency>
 ```

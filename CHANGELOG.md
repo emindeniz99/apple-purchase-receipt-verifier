@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.8.0...v0.8.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **node:** keep the build's log off stdout so npm pack --json parses ([8dcfbcb](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8dcfbcba40086ff4f4bbc735a962c0870bc2c06d))
+
 ## [0.8.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.7.0...v0.8.0) (2026-10-04)
 
 
