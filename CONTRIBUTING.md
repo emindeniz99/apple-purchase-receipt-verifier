@@ -358,8 +358,9 @@ behind the expectations. Read it before adding a case.
    `expected: {"oneOf": [...]}` lists every outcome an implementation may
    give (at the endpoint, every `/status` the body may carry). Add a `clock` if — and only if — the answer depends on the
    current time; see below.
-3. Run `node tools/lint-cases.mjs` (after `npm ci --prefix tools`, which
-   installs the ajv it validates with). It validates the file against
+3. Run `node tools/lint-cases.mjs` (after
+   `npm ci --ignore-scripts --prefix tools`, which installs the ajv it
+   validates with). It validates the file against
    `fixtures/cases.schema.json`, re-hashes every registered fixture, and
    fails on a fixture file no case registers or an `input` fixture no case
    uses. CI runs the same command in the `conformance` job.
