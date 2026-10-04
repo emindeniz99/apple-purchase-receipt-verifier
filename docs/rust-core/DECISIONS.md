@@ -1437,8 +1437,8 @@ configuration themselves, so only a hand-made one carries two faults.
 ## R41. The public API in 0.8: internals hidden, one way to build a Config, two Java artifactIds
 
 **Status: accepted** (owner, 2026-10-01; amended 2026-10-02,
-2026-10-03 and 2026-10-04). Settles the API items R36 left open in ROADMAP.md (item 5)
-and the Java artifact naming (item 11).
+2026-10-03 and 2026-10-04). Settles the API items R36 left open in
+ROADMAP.md (item 5) and the Java artifact naming (item 11).
 
 0.8.0 is the first release of the Wasm-backed packages. A public name
 removed now breaks no one who has built on those packages; removed after

@@ -53,7 +53,7 @@ Notes:
   native code in the caller's process, which is the caller's choice; no
   package does that by default.
 - **Roots.** "The module's roots" are Apple's three published roots,
-  compiled into `aprv.wasm`; `Config.defaults()` (or its spelling) selects
+  compiled into `aprv.wasm`; a `Config` that names no roots selects
   them. An explicitly empty root list is refused at `Verifier` creation in
   every package but PHP, where it means the module's roots: a verifier
   that trusts nothing would reject everything silently. A root the module
