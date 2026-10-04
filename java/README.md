@@ -516,9 +516,9 @@ state, none of which a signature can express.
 
 Every cryptographic lookup in this library, certificate parsing, chain
 building and validation, the CMS and ES256 signature checks, and every
-digest, names a private `BouncyCastleProvider` instance that is never
-registered with `Security`. `jdk.certpath.disabledAlgorithms` and the host's
-provider order never change a verdict.
+digest, names a private `BouncyCastleProvider` instance that this library
+never registers with `Security`. `jdk.certpath.disabledAlgorithms` and the
+host's provider order never change a verdict.
 
 Why it matters: the genuine legacy Apple receipt chain is SHA-1 end to end
 (the leaf and the WWDR intermediate are both `sha1WithRSAEncryption`). RHEL
@@ -534,16 +534,37 @@ jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024
 ```
 
 The trade-off is deliberate: an administrator cannot restrict what this
-library accepts through `java.security` either. What it accepts is fixed by
-the library and the roots the caller passes, the same on every JVM, with
-one exception: the ASN.1 nesting bound is BouncyCastle's own, which
-`java.security` or a system property can move (see [Resource
-bounds](#resource-bounds)).
+library accepts through `jdk.certpath.disabledAlgorithms` or the provider
+order. BouncyCastle does read its own `org.bouncycastle.*` settings, from
+`java.security`, a thread-local override or a system property, in that
+order. None of them can make a forged signature verify. Some refuse more,
+some accept odd encodings of signed content, some move resource bounds.
+Keep them unset in production. `Verifier.create` refuses a nesting bound
+too low for a genuine receipt, and the [startup
+self-test](#running-in-production) catches any setting that refuses
+genuine input, including one changed after create.
+
+The settings BouncyCastle 1.86 reads on this library's paths (it names
+about 50 in all; those for TLS, PGP, PKCS#12 and the rest are never
+reached):
+
+| Setting | Default | Effect when a host sets it | Can a forged signature verify? |
+|---|---|---|---|
+| `org.bouncycastle.asn1.max_cons_depth` | 64 | Lower refuses deeper input; below 9 it refuses every genuine receipt, so `Verifier.create` throws (see [Resource bounds](#resource-bounds)). Much higher lets the parser recurse deeper, up to a `StackOverflowError`, which is an `Error` and escapes the call | No |
+| `org.bouncycastle.asn1.max_limit` | sized from the input | Lower can only refuse input | No |
+| `org.bouncycastle.asn1.allow_unsafe_integer` | off | On accepts INTEGERs that are not minimally encoded. A padded integer in a signed payload then fills a typed field instead of staying raw. This loosens parsing, but only of content a valid signature covers | No |
+| `org.bouncycastle.x509.allow_non-der_tbscert` | unset: a certificate is verified as received | `false` re-encodes it as DER first, so a genuinely signed certificate in another encoding fails. Stricter | No |
+| `org.bouncycastle.x509.allow_empty_issuer_cert`, `org.bouncycastle.asn1.allow_zoneless_utctime`, `org.bouncycastle.asn1.allow_wrong_oid_enc` | off | On loosens certificate and time parsing. The certificate must still chain to a pinned root and verify | No |
+| `org.bouncycastle.pkcs1.strict_digestinfo` | off: the receipt's RSA check accepts a DigestInfo without its NULL parameters | On refuses that form. Stricter | No |
+| `org.bouncycastle.rsa.max_size` (16384 bits), `org.bouncycastle.rsa.allow_unsafe_mod`, `org.bouncycastle.rsa.max_mr_tests`, `org.bouncycastle.ec.fp_max_size`, `org.bouncycastle.ec.max_f2m_field_size` | BouncyCastle's | Move the key size and key validation bounds, or refuse keys. A key is decoded only after a pinned root has vouched for its certificate | No |
+| `org.bouncycastle.x509.max_cert_path_build_nodes` | 262,144 | Lower can only refuse a chain build. A receipt's build sees at most 10 certificates, each already authenticated | No |
+| A provider registered with `Security` as `"BC"` | none | BouncyCastle's PKIX builder and validator run their internal checks on that instance instead of their own. It is the same code; only in-process code that changes that instance could matter | No |
 
 ## Resource bounds
 
 Fixed constants, not configurable, except the ASN.1 nesting bound (below
-the table). The three size caps are checked before anything is decoded;
+the table) and BouncyCastle's other settings ([listed
+above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The three size caps are checked before anything is decoded;
 the others as the structure they bound is read:
 
 | Bound | Value | `Reason` |
@@ -562,7 +583,8 @@ the others as the structure they bound is read:
 The ASN.1 nesting bound is BouncyCastle's
 `org.bouncycastle.asn1.max_cons_depth`, 64 unless the host sets it. It is
 read each time BouncyCastle opens an ASN.1 stream, from `java.security`
-first and then from the system property of that name. Its count depends
+first, then a thread-local override, then the system property of that
+name. Its count depends
 on the shape by one: 65 nested SETs parse
 when the innermost is empty and are refused when it holds a value. The
 Rust core, which every other package runs, keeps its own bound of 32, so
