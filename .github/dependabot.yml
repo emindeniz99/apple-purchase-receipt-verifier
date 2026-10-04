@@ -133,11 +133,13 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # The same OpenSSL pins as /rust, whose entry says why.
+      # The same openssl-sys, openssl-src and foreign-types pins as /rust,
+      # whose entry says why.
       - dependency-name: openssl-sys
       - dependency-name: openssl-src
         update-types: ["version-update:semver-major"]
       - dependency-name: foreign-types
+        versions: [">=0.4.0"]
   - package-ecosystem: swift
     directory: /swift/fuzz
     schedule:
@@ -215,8 +217,10 @@ updates:
       # types implement the traits of the foreign-types the openssl crate
       # itself depends on (0.3 for openssl 0.10). A newer foreign-types is a
       # different pair of traits that nothing implements, so the crate stops
-      # compiling (#197). It moves only together with the openssl crate.
+      # compiling (#197). It moves only together with the openssl crate; a
+      # 0.3.x patch would still be the same traits and may arrive.
       - dependency-name: foreign-types
+        versions: [">=0.4.0"]
       # wit-bindgen's generated glue is part of the released module's bytes,
       # so its exact pin moves only together with the wit-bindgen CLI in
       # tools/wasm-toolchain.sh (rust/bindings/CI-NOTES.md).
