@@ -173,7 +173,7 @@ function endpointAnswer(text: string): string {
 
 function initRoots(config: Config): Uint8Array {
   if (config.roots === null) {
-    return initConfig([]);
+    return initConfig();
   }
   if (!Array.isArray(config.roots) || config.roots.length === 0) {
     throw new TypeError('config.roots must not be empty');
