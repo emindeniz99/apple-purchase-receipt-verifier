@@ -115,7 +115,7 @@ everything, and nobody would notice until production, and a caller
 switching on `Reason` must never see a misconfiguration. So is a trust anchor
 the module refuses (one that is not a certificate). `NewConfig` is the one
 way to build a `Config`, and a field left unset is the default: with no
-`Roots` it sends the module an empty list, which means the three Apple roots
+`Roots` it sends the module `{}`, which means the three Apple roots
 compiled into it. The package carries no copy of those roots, so the
 `Roots()` of that `Config` is nil; `Roots()` returns certificates
 only when you passed your own. An explicitly empty, non-nil `Roots` slice is
