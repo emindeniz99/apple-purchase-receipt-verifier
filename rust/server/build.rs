@@ -117,8 +117,11 @@ fn bundle_openapi(dir: &Path) -> String {
         let path = dir.join(SCHEMA_DIR).join(file);
         println!("cargo:rerun-if-changed={}", path.display());
         let schema = match fs::read_to_string(&path) {
-            Ok(s) => serde_json::from_str(&s)
-                .unwrap_or_else(|e| fail(format!("{}: {e}", path.display()))),
+            Ok(s) => embed_schema(
+                serde_json::from_str(&s)
+                    .unwrap_or_else(|e| fail(format!("{}: {e}", path.display()))),
+                name,
+            ),
             Err(_) => {
                 missing.push(file.to_owned());
                 // Present at build time or not, the served document stays
@@ -133,6 +136,48 @@ fn bundle_openapi(dir: &Path) -> String {
         println!("cargo:warning=openapi.json: {SCHEMA_DIR}{m} is missing; the served document carries a placeholder");
     }
     serde_json::to_string(&doc).unwrap()
+}
+
+/// A wire schema as the served document carries it, at
+/// `#/components/schemas/{name}`. On its own the file is a resource of its
+/// own (`$id`), and its `#/$defs/...` references resolve against that
+/// resource. Embedded, a resolver that does not treat the `$id` as a new
+/// base resolves them against the OpenAPI document, where they lead
+/// nowhere (Schemathesis 4.28 skipped the four responses that use them).
+/// So the embedded copy drops `$id` and `$schema` (`$schema` may stand
+/// only at a resource root, which the embedded copy no longer is) and
+/// points each local reference at its place in the document, which every
+/// resolver follows the same way. A reference in any other form would be
+/// re-anchored wrongly, so the build refuses it.
+fn embed_schema(mut schema: Value, name: &str) -> Value {
+    if let Value::Object(m) = &mut schema {
+        m.remove("$id");
+        m.remove("$schema");
+    }
+    anchor_local_refs(&mut schema, &format!("#/components/schemas/{name}"));
+    schema
+}
+
+fn anchor_local_refs(v: &mut Value, base: &str) {
+    match v {
+        Value::Object(m) => {
+            for (k, x) in m.iter_mut() {
+                match x {
+                    Value::String(s) if k == "$ref" && s.starts_with("#/") => {
+                        *s = format!("{base}{}", &s[1..]);
+                    }
+                    Value::String(s) if k == "$ref" => {
+                        panic!(
+                            "{base}: a $ref of the form {s:?} cannot be embedded; only #/... is"
+                        );
+                    }
+                    _ => anchor_local_refs(x, base),
+                }
+            }
+        }
+        Value::Array(a) => a.iter_mut().for_each(|x| anchor_local_refs(x, base)),
+        _ => {}
+    }
 }
 
 fn collect_refs(v: &Value, out: &mut Vec<String>) {

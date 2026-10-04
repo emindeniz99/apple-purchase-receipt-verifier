@@ -398,6 +398,67 @@ async fn over_a_connection_the_drain_keeps_it_and_past_the_drain_it_closes() {
     .unwrap();
 }
 
+/// Over a real connection, spaces and tabs around the `X-Aprv-Now-Ms` value
+/// are the optional whitespace RFC 9110 §5.5 puts around every field value:
+/// the HTTP parser strips them, so `6\t\t` is the clock 6, and openapi.yaml's
+/// pattern admits them (Schemathesis sent `6\t\t` as a pattern violation,
+/// got the 200 this test pins, and failed the contract job). Whitespace
+/// inside the digits is part of the value and stays a 400.
+#[tokio::test(flavor = "multi_thread")]
+async fn over_a_connection_whitespace_around_the_clock_is_not_part_of_it() {
+    use std::io::{BufReader, Write};
+    let doc: Value = serde_json::from_str(http::OPENAPI_JSON).unwrap();
+    let pattern = doc["components"]["parameters"]["NowMs"]["schema"]["pattern"]
+        .as_str()
+        .unwrap();
+    assert!(
+        pattern.starts_with(r"^[ \t]*(?:") && pattern.ends_with(r")[ \t]*$"),
+        "the documented pattern admits what the server accepts: {pattern}"
+    );
+    let v = real();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let r = app(v.clone(), None);
+    tokio::spawn(async move { axum::serve(listener, r).await.unwrap() });
+    let body = format!(
+        r#"{{"receipt-data":"{}"}}"#,
+        String::from_utf8(g5()).unwrap()
+    );
+    let answer = |now_ms| module_answer(&v, Op::Endpoint { env: 1, now_ms }, body.as_bytes());
+    let want = answer(NOW);
+    assert_ne!(want, answer(NOW + 1000), "the answer moves with the clock");
+    tokio::task::spawn_blocking(move || {
+        let post = |clock: &str| {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            s.set_read_timeout(Some(std::time::Duration::from_secs(60))).unwrap();
+            write!(
+                s,
+                "POST /v1/verify-receipt/sandbox HTTP/1.1\r\nHost: aprv\r\nX-Aprv-Now-Ms:{clock}\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            read_response(&mut BufReader::new(s))
+        };
+        for clock in [
+            format!("{NOW}"),
+            format!(" {NOW}"),
+            format!("{NOW}\t\t"),
+            format!(" \t{NOW} \t "),
+        ] {
+            let (status, _, got) = post(&clock);
+            assert!(status.starts_with("HTTP/1.1 200"), "{clock:?}: {status}");
+            assert_eq!(String::from_utf8(got).unwrap(), want, "{clock:?}");
+        }
+        let digits = NOW.to_string();
+        let (status, headers, got) = post(&format!(" {} {}", &digits[..6], &digits[6..]));
+        assert!(status.starts_with("HTTP/1.1 400"), "{status}");
+        let ct = &headers.iter().find(|(k, _)| k == "content-type").unwrap().1;
+        assert_eq!(problem(ct, &got)["code"], "BAD_REQUEST");
+    })
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn the_token_guards_every_v1_route_and_nothing_else() {
     let r = app(real(), Some("0123456789abcdef0123456789abcdef"));
@@ -452,6 +513,9 @@ async fn the_token_guards_every_v1_route_and_nothing_else() {
 #[tokio::test]
 async fn a_bad_clock_header_404_and_405_are_problems() {
     let r = app(real(), None);
+    // " 1" reaches the handler only here, where nothing parsed HTTP; over a
+    // connection hyper strips the padding first
+    // (over_a_connection_whitespace_around_the_clock_is_not_part_of_it).
     for bad in ["", "-1", "1.5", "18446744073709551616", "0x10", " 1"] {
         let (s, ct, body) = send(
             &r,
@@ -540,6 +604,44 @@ async fn the_openapi_document_lists_exactly_the_routes_the_server_answers() {
 #[tokio::test]
 async fn the_wire_schemas_are_bundled() {
     assert!(!http::OPENAPI_JSON.contains("not present when this binary was built"));
+}
+
+/// Every `$ref` in the served document is a pointer into the document
+/// itself. The wire schemas' own `#/$defs/...` references are rewritten to
+/// their bundled place: left as they were, they resolved only for a reader
+/// that takes the embedded `$id` as a new base, and Schemathesis, which
+/// does not, skipped the 200 and 413 responses of the two verify routes.
+#[test]
+fn every_reference_in_the_served_document_resolves_in_it() {
+    fn refs<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
+        match v {
+            Value::Object(m) => {
+                for (k, x) in m {
+                    match x {
+                        Value::String(s) if k == "$ref" => out.push(s),
+                        _ => refs(x, out),
+                    }
+                }
+            }
+            Value::Array(a) => a.iter().for_each(|x| refs(x, out)),
+            _ => {}
+        }
+    }
+    let doc: Value = serde_json::from_str(http::OPENAPI_JSON).unwrap();
+    let mut found = Vec::new();
+    refs(&doc, &mut found);
+    assert!(found.iter().any(|r| r.contains("/$defs/")), "{found:?}");
+    for r in found {
+        assert!(r.starts_with("#/"), "{r} is not a local JSON pointer");
+        let target = r.strip_prefix('#').and_then(|p| doc.pointer(p));
+        assert!(
+            target.is_some(),
+            "{r} does not resolve in the served document"
+        );
+    }
+    for (name, schema) in doc["components"]["schemas"].as_object().unwrap() {
+        assert!(schema.get("$id").is_none(), "{name} keeps its $id");
+    }
 }
 
 #[test]
