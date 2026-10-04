@@ -91,11 +91,13 @@ function facadeConfig(?array $roots, ClockInterface $clock): Config
 /** @return array{Verifier, Recorder}|string a verifier, or the module's refusal text of the roots */
 function open(string $mode, string $aprv, string $config, int $now, array &$servers, string $tmp): array|string
 {
-    // "" is the module's built-in roots; a listed set (even an empty one) is the caller's.
+    // "" and {} are the module's built-in roots; a listed set (even an empty
+    // one, which Verifier::create refuses as the module does) is the caller's.
     $roots = null;
-    if ($config !== '') {
+    $listed = $config === '' ? null : json_decode($config, true, 8, JSON_THROW_ON_ERROR)['roots'] ?? null;
+    if ($listed !== null) {
         $roots = [];
-        foreach (json_decode($config, true, 8, JSON_THROW_ON_ERROR)['roots'] as $b64) {
+        foreach ($listed as $b64) {
             $roots[] = (string) base64_decode($b64, true);
         }
     }
