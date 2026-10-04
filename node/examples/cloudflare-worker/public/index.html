@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>apple-purchase-receipt-verifier demo</title>
+    <!--
+      The package without a bundler: its entry point and its internal
+      loader import are mapped to the copy under /vendor/ (README,
+      "Runtimes"). From 0.8 the loader fetches the .wasm core modules that
+      sit next to it.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "apple-purchase-receipt-verifier/web": "/vendor/aprv/dist/web/index.js",
+          "#aprv-load": "/vendor/aprv/dist/load/fetch.js"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fafaf9;
+        --fg: #1c1917;
+        --muted: #57534e;
+        --line: #d6d3d1;
+        --panel: #ffffff;
+        --accent: #0b6bcb;
+        --ok: #15803d;
+        --bad: #b91c1c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1917;
+          --fg: #f5f5f4;
+          --muted: #a8a29e;
+          --line: #44403c;
+          --panel: #292524;
+          --accent: #60a5fa;
+          --ok: #4ade80;
+          --bad: #f87171;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin: 0 0 4px;
+      }
+      p {
+        color: var(--muted);
+        margin: 0 0 16px;
+      }
+      a {
+        color: var(--accent);
+      }
+      fieldset {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        margin: 0 0 16px;
+        padding: 8px 12px 12px;
+        background: var(--panel);
+      }
+      legend {
+        font-weight: 600;
+        padding: 0 4px;
+      }
+      fieldset label {
+        display: block;
+        padding: 4px 0;
+      }
+      fieldset small {
+        color: var(--muted);
+        display: block;
+        margin-left: 24px;
+      }
+      textarea,
+      pre,
+      code {
+        font:
+          13px/1.45 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      textarea {
+        width: 100%;
+        height: 160px;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--fg);
+        resize: vertical;
+        word-break: break-all;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0 16px;
+      }
+      button {
+        font: inherit;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--bg);
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #meta {
+        font-weight: 600;
+        min-height: 1.5em;
+      }
+      #meta.ok {
+        color: var(--ok);
+      }
+      #meta.bad {
+        color: var(--bad);
+      }
+      pre {
+        margin: 8px 0 0;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        overflow-x: auto;
+        max-height: 480px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>apple-purchase-receipt-verifier</h1>
+      <p>
+        Verify an App Store receipt or a StoreKit 2 JWS with the same npm package, either in this
+        browser or on a Cloudflare Worker. No call goes to Apple either way.
+        <a href="https://github.com/emindeniz99/apple-purchase-receipt-verifier">Source</a>
+      </p>
+
+      <fieldset>
+        <legend>Where it runs</legend>
+        <label>
+          <input type="radio" name="where" value="browser" checked /> In this browser
+          <small>The package is loaded into the page. The input never leaves your device.</small>
+        </label>
+        <label>
+          <input type="radio" name="where" value="worker" /> On the Worker
+          <small>
+            The input is sent to this site's <code>/v1/</code> routes. It is not logged or stored;
+            still, paste test data only.
+          </small>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>What to verify</legend>
+        <label>
+          <input type="radio" name="route" value="/v1/receipt/verify" checked />
+          A receipt <small>the base64 <code>receipt-data</code> string</small>
+        </label>
+        <label>
+          <input type="radio" name="route" value="/v1/signed-data/verify" />
+          Signed data <small>a compact JWS: a transaction, renewal info, a notification</small>
+        </label>
+        <label>
+          <input type="radio" name="route" value="/v1/verify-receipt/sandbox" />
+          verifyReceipt, sandbox
+          <small>a request JSON, <code>{"receipt-data":"..."}</code>; Apple's response shape</small>
+        </label>
+        <label>
+          <input type="radio" name="route" value="/v1/verify-receipt/production" />
+          verifyReceipt, production <small>the same, as the production endpoint answers</small>
+        </label>
+      </fieldset>
+
+      <textarea id="input" spellcheck="false" placeholder="Paste the input here"></textarea>
+      <div class="row">
+        <button id="run" class="primary">Verify</button>
+        <button id="sample">Load a sample sandbox receipt</button>
+        <button id="tamper">Flip one character</button>
+      </div>
+
+      <div id="meta" role="status"></div>
+      <pre id="output" hidden></pre>
+    </main>
+
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const checked = (name) => document.querySelector(`input[name="${name}"]:checked`).value;
+      const isEndpoint = (route) => route.startsWith('/v1/verify-receipt/');
+
+      // The package and one Verifier, loaded by the first browser run.
+      let local = null;
+      function loadLocal() {
+        local ??= (async () => {
+          const [aprv, wire, pkg] = await Promise.all([
+            import('apple-purchase-receipt-verifier/web'),
+            import('/vendor/wire.mjs'),
+            fetch('/vendor/aprv/package.json').then((r) => r.json()),
+          ]);
+          return {
+            verifier: aprv.createVerifier(await aprv.createConfig()),
+            operations: wire.operations(aprv.Environment),
+            version: pkg.version,
+          };
+        })();
+        return local;
+      }
+
+      async function inBrowser(route, body) {
+        const { verifier, operations, version } = await loadLocal();
+        return { text: await operations.get(route)(verifier, body), version, status: null };
+      }
+
+      async function onWorker(route, body) {
+        const response = await fetch(route, { method: 'POST', body });
+        return {
+          text: await response.text(),
+          version: response.headers.get('x-aprv-version'),
+          status: response.status,
+        };
+      }
+
+      /** Whether the answer says the input verified, or `null` when it is not a verdict. */
+      function verdict(text) {
+        try {
+          const doc = JSON.parse(text);
+          if (typeof doc.verified === 'boolean') {
+            return doc.verified;
+          }
+          return typeof doc.status === 'number' && !('code' in doc) ? doc.status === 0 : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function pretty(text) {
+        try {
+          return JSON.stringify(JSON.parse(text), null, 2);
+        } catch {
+          return text;
+        }
+      }
+
+      async function run() {
+        const where = checked('where');
+        const route = checked('route');
+        const body = $('input').value.trim();
+        const meta = $('meta');
+        const output = $('output');
+        $('run').disabled = true;
+        meta.className = '';
+        meta.textContent = 'Verifying…';
+        const started = performance.now();
+        try {
+          const result = await (where === 'browser' ? inBrowser : onWorker)(route, body);
+          const ms = Math.round(performance.now() - started);
+          const ok = verdict(result.text);
+          const place = where === 'browser' ? 'in this browser' : `on the Worker (POST ${route})`;
+          const http = result.status === null ? '' : `, HTTP ${result.status}`;
+          const word = ok === null ? 'No verdict' : ok ? 'Verified' : 'Not verified';
+          meta.className = ok ? 'ok' : 'bad';
+          meta.textContent = `${word} ${place}, package ${result.version ?? 'unknown'}${http}, ${ms} ms`;
+          output.textContent = pretty(result.text);
+        } catch (error) {
+          meta.className = 'bad';
+          meta.textContent = `Could not run ${where === 'browser' ? 'in this browser' : 'on the Worker'}`;
+          output.textContent = String(error);
+        }
+        output.hidden = false;
+        $('run').disabled = false;
+      }
+
+      async function loadSample() {
+        const response = await fetch('/vendor/sample-receipt.b64');
+        if (!response.ok) {
+          $('meta').className = 'bad';
+          $('meta').textContent = 'This deployment has no sample receipt';
+          return;
+        }
+        const receipt = (await response.text()).trim();
+        $('input').value = isEndpoint(checked('route'))
+          ? JSON.stringify({ 'receipt-data': receipt })
+          : receipt;
+      }
+
+      // Changes one base64 character near the end of the input, where a
+      // receipt's signature sits, so the verdict turns.
+      function tamper() {
+        const input = $('input');
+        const text = input.value;
+        for (let i = text.length - 40; i >= 0; i--) {
+          if (/[B-Yb-y]/.test(text[i])) {
+            const flipped = String.fromCharCode(text.charCodeAt(i) + 1);
+            input.value = text.slice(0, i) + flipped + text.slice(i + 1);
+            return;
+          }
+        }
+      }
+
+      $('run').addEventListener('click', run);
+      $('sample').addEventListener('click', loadSample);
+      $('tamper').addEventListener('click', tamper);
+    </script>
+  </body>
+</html>

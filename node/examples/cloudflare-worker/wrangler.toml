@@ -1,0 +1,23 @@
+name = "aprv-example"
+main = "src/worker.mjs"
+compatibility_date = "2026-09-22"
+# No compatibility_flags: the package uses no Node API on workerd.
+
+# The log line is method, path, status and duration; never a body.
+[observability]
+enabled = true
+
+# Per client IP, in the Cloudflare location that serves the request.
+# `period` is 10 or 60 seconds; `namespace_id` is any integer unique in
+# the account.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
+# The demo page at /. Paths that are not a file here reach the Worker.
+[assets]
+directory = "./public"
+
+[build]
+command = "node scripts/copy-assets.mjs"

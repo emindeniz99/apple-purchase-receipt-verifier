@@ -1,0 +1,16 @@
+{
+  "name": "aprv-cloudflare-worker-example",
+  "private": true,
+  "type": "module",
+  "description": "aprv-server's HTTP routes on Cloudflare Workers, over the apple-purchase-receipt-verifier npm package",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "apple-purchase-receipt-verifier": "^0.7.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
+  }
+}
