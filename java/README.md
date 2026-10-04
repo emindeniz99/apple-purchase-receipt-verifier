@@ -615,9 +615,9 @@ FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
 `IllegalStateException`, so the deploy fails instead of the first request
 answering `INTERNAL_ERROR`. `Config.builder().runtimeProbe(false)` turns the
 probe off; the bcprov version check and the nesting check stay on, since
-neither asks the provider for an engine. The only use we can name is a test setup that stands in a double
-for the crypto provider; with the probe off, a broken runtime shows up as
-`INTERNAL_ERROR` on the first call instead. The probe does not replace the
+neither asks the provider for an engine. The only use we can name is a test
+setup that stands in a double for the crypto provider; with the probe off, a
+broken runtime shows up as `INTERNAL_ERROR` on the first call instead. The probe does not replace the
 self-test above: it proves the engines exist, not that a real receipt parses.
 
 **Bound body size and concurrency at the edge.** Reject bodies above
@@ -857,7 +857,9 @@ BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
 `Verifier.create` throws `IllegalStateException` naming the bcprov it
 found. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws
 `StackOverflowError` out of `verifyReceipt` on a deeply nested receipt), and
-1.85 fixed CVE-2026-13506 and CVE-2026-12860 on paths this library uses.
+1.85 fixed CVE-2026-12860, in the RSA PKCS#1 signature check the receipt
+path uses. 1.85 also fixed CVE-2026-13506, in a lazy-parse path that only
+CRL code reaches; this library has none.
 The pom declares all three jars, so Maven's nearest-wins rule no longer
 lets another library's older bcprov replace them unnoticed; a BOM or your
 own `dependencyManagement` still can, and the check at create is what

@@ -50,9 +50,14 @@
          to be fixed, not current; bump it with a release when convenient. -->
     <project.build.outputTimestamp>2026-09-21T00:00:00Z</project.build.outputTimestamp>
     <!-- Floor: BouncyCastle 1.86, the pinned version. 1.84 added the ASN.1
-         nesting bound and 1.85 fixed CVE-2026-13506 and CVE-2026-12860 on
-         paths this library uses, so Verifier.create refuses an older
-         bcprov. One property moves all three jars together. -->
+         nesting bound and 1.85 fixed CVE-2026-12860 in the RSA PKCS#1
+         check the receipt path uses (and CVE-2026-13506, in CRL code this
+         library does not reach), so Verifier.create refuses an older
+         bcprov. One property moves all three jars together.
+         Revisit: floor = pin = 1.86, so the CI jobs that run the pin test
+         the floor. When Dependabot moves the pin past 1.86, add a CI leg
+         running the suite with -Dbouncycastle.version=1.86 (floors are
+         tested claims). -->
     <bouncycastle.version>1.86</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsCore and Endpoint set
          StreamReadConstraints through BoundedJson rather than relying on
