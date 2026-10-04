@@ -87,22 +87,40 @@ function lintSchema(schema, doc) {
   const ajv = new Ajv2020({
     strict: true, strictTypes: false, strictRequired: false, allErrors: true, verbose: true,
   });
-  const validate = ajv.compile(schema);
-  // A failed oneOf is explained by validating against each branch, found by
-  // the oneOf's place in the schema. Ajv's errors carry a copy of the
-  // schema value, not the object, so the lookup is by content.
-  const pointers = new Map();
-  (function walk(node, pointer) {
-    if (node === null || typeof node !== 'object') return;
-    if (!pointers.has(JSON.stringify(node))) pointers.set(JSON.stringify(node), pointer);
-    for (const [key, child] of Object.entries(node)) {
-      walk(child, `${pointer}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`);
-    }
-  })(schema, '');
-  const branch = (oneOf, i) =>
-    ajv.getSchema(`${schema.$id}#${pointers.get(JSON.stringify(oneOf))}/${i}`);
+  // A oneOf branch compiled on its own, with the root's $defs for its $refs.
+  const branches = new Map();
+  const branch = (sub) => {
+    const key = JSON.stringify(sub);
+    if (!branches.has(key)) branches.set(key, ajv.compile({ ...sub, $defs: schema.$defs }));
+    return branches.get(key);
+  };
 
-  for (const error of explain(validate, doc, '', branch)) {
+  // Ajv's errors for data, with instance paths under `at`. A oneOf that
+  // matched nothing carries every branch's errors; it is replaced by the
+  // errors of its closest branch (the one with the fewest), so a case
+  // reports what is wrong with the shape it was meant to have, not how it
+  // differs from every other shape. Ajv reports a oneOf after the oneOfs
+  // inside its branches, so the outermost is the one no later one encloses.
+  // The errors of if and propertyNames only restate the inner one beside
+  // them.
+  function explain(validate, data, at) {
+    if (validate(data)) return [];
+    const errors = validate.errors
+      .map((e) => ({ ...e, instancePath: at + e.instancePath }))
+      .filter((e) => e.keyword !== 'if' && e.keyword !== 'propertyNames');
+    const inside = (e, o) =>
+      e.instancePath === o.instancePath || e.instancePath.startsWith(`${o.instancePath}/`);
+    const outer = errors.filter((e, i) => e.keyword === 'oneOf'
+      && !errors.some((o, j) => j > i && o.keyword === 'oneOf' && inside(e, o)));
+    return errors.flatMap((e) => {
+      if (!outer.includes(e)) return outer.some((o) => inside(e, o)) ? [] : [e];
+      if (e.params.passingSchemas !== null) return [e];
+      return e.schema.map((sub) => explain(branch(sub), e.data, e.instancePath))
+        .reduce((a, b) => (b.length < a.length ? b : a));
+    });
+  }
+
+  for (const error of explain(ajv.compile(schema), doc, '')) {
     const index = /^\/cases\/(\d+)(\/|$)/.exec(error.instancePath)?.[1];
     const id = index === undefined ? undefined : doc.cases[index]?.id;
     const where = index === undefined ? 'cases.json'
@@ -111,58 +129,23 @@ function lintSchema(schema, doc) {
   }
 }
 
-// Ajv's errors for data, with instance paths under `at`, one per problem.
-// A oneOf that matched nothing carries every branch's errors; it is
-// replaced by the errors of its closest branch (the one with the fewest),
-// so a case reports what is wrong with the shape it was meant to have, not
-// how it differs from every other shape. The errors of if and
-// propertyNames only restate the inner error beside them, so they go.
-function explain(validate, data, at, branch) {
-  if (validate(data)) return [];
-  const errors = validate.errors
-    .map((e) => ({ ...e, instancePath: at + e.instancePath }))
-    .filter((e) => e.keyword !== 'if' && e.keyword !== 'propertyNames');
-  const isOneOf = (e) => e.keyword === 'oneOf';
-  const inside = (e, o) =>
-    e.instancePath === o.instancePath || e.instancePath.startsWith(`${o.instancePath}/`);
-  // Ajv reports a oneOf after the oneOfs inside its branches, so a oneOf is
-  // outermost when no later one encloses its data.
-  const outer = errors.filter((e, i) =>
-    isOneOf(e) && !errors.some((o, j) => j > i && isOneOf(o) && inside(e, o)));
-  const result = [];
-  for (const e of errors) {
-    if (outer.includes(e) && e.params.passingSchemas !== null) {
-      result.push(e);
-    } else if (outer.includes(e)) {
-      const explained = e.schema.map((_, i) =>
-        explain(branch(e.schema, i), e.data, e.instancePath, branch));
-      result.push(...explained.reduce((a, b) => (b.length < a.length ? b : a)));
-    } else if (!outer.some((o) => inside(e, o))) {
-      result.push(e);
-    }
-  }
-  return result;
-}
-
-function describe(error) {
-  const { params } = error;
-  if (error.keyword === 'oneOf') {
+// Ajv's message, plus what it leaves out: the offending property or value,
+// and the allowed ones.
+function describe({ keyword, params, propertyName, message, data }) {
+  if (keyword === 'oneOf') {
     return `matches ${params.passingSchemas.length} allowed shapes at once `
       + `(oneOf branches ${params.passingSchemas.join(', ')})`;
   }
-  const subject = error.propertyName === undefined
-    ? '' : `property name ${JSON.stringify(error.propertyName)} `;
-  let detail = '';
-  if (params.additionalProperty !== undefined) {
-    detail = `: ${JSON.stringify(params.additionalProperty)}`;
-  } else if (params.allowedValue !== undefined) {
-    detail = ` ${JSON.stringify(params.allowedValue)}`;
-  } else if (params.allowedValues !== undefined) {
-    detail = ` ${params.allowedValues.map((v) => JSON.stringify(v)).join(', ')}`;
-  }
-  const got = ['type', 'const', 'enum', 'pattern'].includes(error.keyword)
-    && error.propertyName === undefined ? `, got ${JSON.stringify(error.data)}` : '';
-  return `${subject}${error.message}${detail}${got}`;
+  const subject = propertyName === undefined
+    ? '' : `property name ${JSON.stringify(propertyName)} `;
+  const allowed = params.allowedValues
+    ?? (params.allowedValue === undefined ? undefined : [params.allowedValue]);
+  const detail = params.additionalProperty !== undefined
+    ? `: ${JSON.stringify(params.additionalProperty)}`
+    : allowed !== undefined ? ` ${allowed.map((v) => JSON.stringify(v)).join(', ')}` : '';
+  const got = ['type', 'const', 'enum', 'pattern'].includes(keyword) && propertyName === undefined
+    ? `, got ${JSON.stringify(data)}` : '';
+  return `${subject}${message}${detail}${got}`;
 }
 
 function readJson(path) {
