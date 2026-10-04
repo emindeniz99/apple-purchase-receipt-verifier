@@ -446,8 +446,15 @@ final class InstallerTest extends TestCase
         self::assertSame(2, $code);
         self::assertStringContainsString('HttpTransport', $err);
 
-        [$code] = $this->script(['--bogus']);
-        self::assertSame(2, $code);
+        // An unknown option is refused before anything is read or installed:
+        // getopt() alone drops it, and the script would then install from
+        // the package's own SHA256SUMS into the package's bin directory.
+        foreach ([['--bogus'], ['--dir', $this->installDirectory, '--bogus=1'], ['stray'], ['--sums=' . $this->sums([]), '--force', '--bogus']] as $arguments) {
+            [$code, , $err] = $this->script($arguments);
+            self::assertSame(2, $code, implode(' ', $arguments));
+            self::assertStringContainsString('unknown argument ' . end($arguments), $err);
+            self::assertStringNotContainsString('SHA256SUMS', $err);
+        }
         [$code] = $this->script(['--help']);
         self::assertSame(0, $code);
         self::assertSame([], $this->installed());

@@ -22,11 +22,24 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Install\InstallException;
 require_once dirname(__DIR__) . '/src/Install/InstallException.php';
 require_once dirname(__DIR__) . '/src/Install/Installer.php';
 
-$options = getopt('', ['force', 'dir:', 'sums:', 'target:', 'base-url:', 'help'], $rest);
-if (isset($options['help']) || $rest < $argc) {
-    $unknown = array_slice($argv, $rest);
+// true: the option takes a value, as `--name VALUE` or `--name=VALUE`.
+$known = ['force' => false, 'dir' => true, 'sums' => true, 'target' => true, 'base-url' => true, 'help' => false];
+$options = getopt('', ['force', 'dir:', 'sums:', 'target:', 'base-url:', 'help']);
+// getopt() drops an option it does not know without a word, so the
+// arguments are walked once more: anything that is not a known option, or
+// the value of one, is refused instead of running an install.
+$unknown = null;
+for ($i = 1; $i < $argc && $unknown === null; $i++) {
+    $name = str_starts_with($argv[$i], '--') ? strtok(substr($argv[$i], 2), '=') : false;
+    if ($name === false || !array_key_exists($name, $known)) {
+        $unknown = $argv[$i];
+    } elseif ($known[$name] && !str_contains($argv[$i], '=')) {
+        $i++;
+    }
+}
+if (isset($options['help']) || $unknown !== null) {
     if (!isset($options['help'])) {
-        fwrite(STDERR, 'aprv-install: unknown argument ' . ($unknown[0] ?? '') . "\n");
+        fwrite(STDERR, 'aprv-install: unknown argument ' . $unknown . "\n");
     }
     fwrite(STDERR, "usage: aprv-install [--force] [--dir DIR] [--sums FILE] [--target TARGET] [--base-url URL]\n");
     exit(isset($options['help']) ? 0 : 2);
