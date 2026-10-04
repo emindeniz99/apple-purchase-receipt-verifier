@@ -125,10 +125,12 @@ not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
 notice until production. `Verifier.create` also builds the bounded Jackson
-readers, touches the BouncyCastle provider and a bcpkix class, and probes
-the crypto runtime (see [Running in production](#running-in-production)),
-so a jackson-core below 2.16 or a missing BouncyCastle jar throws
-`IllegalStateException` there rather than on the first call.
+readers, touches the BouncyCastle provider and a bcpkix class, checks that
+bcprov is 1.86 or later and that BouncyCastle's ASN.1 nesting bound admits a
+genuine receipt, and probes the crypto runtime (see [Running in
+production](#running-in-production)), so a jackson-core below 2.16, a
+missing BouncyCastle jar, a bcprov below 1.86 or a nesting bound below 9
+throws `IllegalStateException` there rather than on the first call.
 
 ## Which method to call
 
@@ -234,8 +236,9 @@ the same for both:
   `webOrderLineItemId`) are `Long`, not `int`: genuine receipts carry
   18-digit `downloadId` values.
 
-`ReceiptPayload.toJson()` renders the payload as JSON for logging and
-storage, written by jackson-core's generator. Every one of the nine ports of
+`ReceiptPayload.toJson()` renders the payload as JSON, written by
+jackson-core's generator. It holds the full purchase data; the caller
+decides what to write where. Every one of the nine ports of
 this library produces the same JSON value, not the same bytes: key order,
 whitespace and escaping style are free. The 64-bit ids above are JSON
 strings (dates stay numbers: epoch milliseconds do not exceed 2^53 until
@@ -564,8 +567,12 @@ on the shape by one: 65 nested SETs parse
 when the innermost is empty and are refused when it holds a value. The
 Rust core, which every other package runs, keeps its own bound of 32, so
 the shared cases nested 33 deep allow both answers (DECISIONS.md R20). A
-genuine Apple receipt nests 9 deep: a host that sets the property below
-9 refuses every genuine receipt as `MALFORMED`.
+genuine Apple receipt nests 9 deep
+([measured](../docs/evidence/2026-10-04-java-bc-floor.md)): a host that
+sets the property below 9 would refuse every genuine receipt as
+`MALFORMED`, so `Verifier.create` parses a value nested 9 deep and throws
+`IllegalStateException` if BouncyCastle refuses it. A host that lowers the property after create is
+not caught.
 
 Apple's own endpoint answers a request body of exactly 3,145,728 bytes and
 sends HTTP 413 for 3,145,729 (measured 2026-09-23 against both of Apple's
@@ -608,9 +615,10 @@ step fails, as on a stripped JRE, a
 FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
 `IllegalStateException`, so the deploy fails instead of the first request
 answering `INTERNAL_ERROR`. `Config.builder().runtimeProbe(false)` turns the
-probe off. The only use we can name is a test setup that stands in a double
-for the crypto provider; with the probe off, a broken runtime shows up as
-`INTERNAL_ERROR` on the first call instead. The probe does not replace the
+probe off; the bcprov version check and the nesting check stay on, since
+neither asks the provider for an engine. The only use we can name is a test
+setup that stands in a double for the crypto provider; with the probe off, a
+broken runtime shows up as `INTERNAL_ERROR` on the first call instead. The probe does not replace the
 self-test above: it proves the engines exist, not that a real receipt parses.
 
 **Bound body size and concurrency at the edge.** Reject bodies above
@@ -620,9 +628,15 @@ large receipts. Put a `Semaphore` (or a bounded executor) of about twice the
 core count around the verify call. Why: memory, not CPU, is the limit. A
 1 MB genuine receipt costs about 30 ms and about 30 MB of allocation per
 call, a cap-sized one about 70 ms and 75 MB (approximate), so 100 such calls
-at once exhaust a normal heap. Hostile input is cheap to reject, a 1 MB
-forgery about 5 ms, because nothing expensive runs before the chain is
-trusted.
+at once exhaust a normal heap. Hostile input is not cheap to reject
+either. Before the chain is trusted, the library decodes the payload's
+whole attribute SET to find the receipt's creation date, the instant the
+chain is judged at, and BouncyCastle builds the full tree to do it. A
+cap-sized forgery built from many tiny attributes costs on the order of
+100 to 200 ms and about 140 MB of allocation per call (approximate;
+[measured](../docs/evidence/2026-10-04-java-bc-floor.md)). The body cap and
+the concurrency limit are what bound that, and they are the deployment's
+job.
 
 **Warm up before taking traffic.** Build the `Verifier` at startup, not
 lazily on the first request. `Verifier.create` takes about 450 ms cold, the
@@ -842,8 +856,19 @@ to carry with it:
 **Dependency floors.** `jackson-core` 2.16 or later: the JSON readers set
 `StreamReadConstraints` (`maxDocumentLength` and `maxNameLength` are 2.16
 API), and below it `Verifier.create` throws `IllegalStateException`.
-BouncyCastle `bcprov` and `bcpkix` 1.86, the version the code was checked
-against.
+BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
+`Verifier.create` throws `IllegalStateException` naming the bcprov it
+found. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws
+`StackOverflowError` out of `verifyReceipt` on a deeply nested receipt;
+[measured](../docs/evidence/2026-10-04-java-bc-floor.md)), and
+1.85 fixed CVE-2026-12860, in the RSA PKCS#1 signature check the receipt
+path uses. 1.85 also fixed CVE-2026-13506, in a lazy-parse path that only
+CRL code reaches; this library has none.
+The pom declares all three jars, so Maven's nearest-wins rule no longer
+lets another library's older bcprov replace them unnoticed; a BOM or your
+own `dependencyManagement` still can, and the check at create is what
+catches that. The check reads bcprov's version only; keep `bcutil` and
+`bcpkix` at the same release.
 
 **What to re-check on a BouncyCastle upgrade.** The code relies on a few
 BouncyCastle behaviours that are not API contracts. Thread safety is not
@@ -858,7 +883,9 @@ keeps stream state between calls) and every `Signature`.
   ASN.1 nesting bound, for the envelope, the payload, each x5c entry and
   every value BouncyCastle decodes inside them (an extension value inside
   a certificate, for example), so it must still exist, and still throw an
-  `IOException`, after an upgrade.
+  `IOException`, after an upgrade. `Verifier.create` checks only that the
+  bound admits 9 levels, what a genuine receipt needs; that it exists at
+  all rests on the 1.86 floor.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
   `ReceiptCertificates.decode`).

@@ -75,11 +75,12 @@ final readonly class ReceiptPayload
     }
 
     /**
-     * This payload as JSON, for logging and storage
-     * (docs/design/0.7-api.md, "Our JSON"). Every port writes the same
-     * value; the bytes may differ. snake_case names, dates as numbers with
-     * a `_ms` suffix, 64-bit ids (`app_item_id`, `download_id`,
-     * `version_external_identifier`, `web_order_line_item_id`) as strings,
+     * This payload as JSON (docs/design/0.7-api.md, "Our JSON"). It holds
+     * the full purchase data; the caller decides what to write where.
+     * Every port writes the same value; the bytes may differ. snake_case
+     * names, dates as numbers with a `_ms` suffix, 64-bit ids
+     * (`app_item_id`, `download_id`, `version_external_identifier`,
+     * `web_order_line_item_id`) as strings,
      * bytes as padded standard base64 and `null` for a missing value.
      *
      * @throws \JsonException when a string field is not valid UTF-8, which a

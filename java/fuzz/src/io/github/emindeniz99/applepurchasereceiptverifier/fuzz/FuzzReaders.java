@@ -17,9 +17,8 @@ import java.nio.charset.StandardCharsets;
  *       decode, the in-app sub-walk, the date and integer bounds.
  *   <li>{@code StrictBase64.decode}: the base64 dialect Apple's clients
  *       actually send.
- *   <li>{@code JwsCore.Header.read}, {@code JwsCore.signedDate} and
- *       {@code JwsCore.requireJsonObject}: the streaming reads of a decoded
- *       JWS header and payload.
+ *   <li>{@code JwsCore.Header.read} and {@code JwsCore.readPayload}: the
+ *       streaming reads of a decoded JWS header and payload.
  * </ul>
  *
  * <p>Reflection rather than an exported test hook: the implementation is
@@ -34,8 +33,7 @@ import java.nio.charset.StandardCharsets;
  * not a finding, while an {@code Error} (a {@code StackOverflowError} from
  * nesting, an {@code OutOfMemoryError} from a length prefix) escapes that
  * catch and is. The others contain everything themselves: only the
- * package's own {@code VerificationException} may come out, and
- * {@code signedDate} lets nothing out at all.
+ * package's own {@code VerificationException} may come out.
  */
 public final class FuzzReaders {
 
@@ -47,16 +45,14 @@ public final class FuzzReaders {
     private static final Method DECODE_BASE64 =
             method("StrictBase64", "decode", String.class, Reason.class, String.class);
     private static final Method READ_HEADER = method("JwsCore$Header", "read", byte[].class);
-    private static final Method SIGNED_DATE = method("JwsCore", "signedDate", byte[].class);
-    private static final Method REQUIRE_OBJECT = method("JwsCore", "requireJsonObject", byte[].class);
+    private static final Method READ_PAYLOAD = method("JwsCore", "readPayload", byte[].class);
 
     public static void fuzzerTestOneInput(byte[] data) {
         String text = new String(data, StandardCharsets.ISO_8859_1);
         call("ReceiptDecoder.parse", PARSE_PAYLOAD, true, (Object) data);
         call("StrictBase64.decode", DECODE_BASE64, false, text, Reason.MALFORMED, "receipt");
         call("JwsCore.Header.read", READ_HEADER, false, (Object) data);
-        call("JwsCore.signedDate", SIGNED_DATE, false, (Object) data);
-        call("JwsCore.requireJsonObject", REQUIRE_OBJECT, false, (Object) data);
+        call("JwsCore.readPayload", READ_PAYLOAD, false, (Object) data);
     }
 
     /**

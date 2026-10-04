@@ -49,6 +49,16 @@
          can rebuild the Central artifact and compare. The value only has
          to be fixed, not current; bump it with a release when convenient. -->
     <project.build.outputTimestamp>2026-09-21T00:00:00Z</project.build.outputTimestamp>
+    <!-- Floor: BouncyCastle 1.86, the pinned version. 1.84 added the ASN.1
+         nesting bound and 1.85 fixed CVE-2026-12860 in the RSA PKCS#1
+         check the receipt path uses (and CVE-2026-13506, in CRL code this
+         library does not reach), so Verifier.create refuses an older
+         bcprov (docs/evidence/2026-10-04-java-bc-floor.md). One property
+         moves all three jars together.
+         Revisit: floor = pin = 1.86, so the CI jobs that run the pin test
+         the floor. When Dependabot moves the pin past 1.86, add a CI leg
+         running the suite with -Dbouncycastle.version=1.86 (floors are
+         tested claims). -->
     <bouncycastle.version>1.86</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsCore and Endpoint set
          StreamReadConstraints through BoundedJson rather than relying on
@@ -67,6 +77,22 @@
   </properties>
 
   <dependencies>
+    <!-- All three BouncyCastle jars are declared, not only bcpkix, so they
+         sit at depth 2 in a consumer's tree: with bcprov and bcutil arriving
+         through bcpkix alone (depth 3 and 4), Maven's nearest-wins let any
+         other library that depends on an older bcprov replace it silently.
+         Verifier.create refuses a bcprov below 1.86 (DefaultVerifier), which
+         is what catches an override a BOM or dependencyManagement makes. -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcutil-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+    </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk18on</artifactId>

@@ -130,10 +130,11 @@ namespace ApplePurchaseReceiptVerifier
         public AppleEnvironment? Environment { get; }
 
         /// <summary>
-        /// This payload as JSON, for logging and storage: 64-bit ids as
-        /// strings, dates as epoch milliseconds, bytes as standard base64,
-        /// <c>null</c> for a missing field. Every port writes the same value;
-        /// the bytes may differ (docs/design/0.7-api.md, "Our JSON").
+        /// This payload as JSON: 64-bit ids as strings, dates as epoch
+        /// milliseconds, bytes as standard base64, <c>null</c> for a missing
+        /// field. It holds the full purchase data; the caller decides what to
+        /// write where. Every port writes the same value; the bytes may
+        /// differ (docs/design/0.7-api.md, "Our JSON").
         /// </summary>
         public string ToJson() => Json.Write(WriteTo);
 

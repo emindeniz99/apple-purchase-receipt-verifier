@@ -60,7 +60,10 @@ export interface ReceiptPayload {
    * {@link toJson}.
    */
   readonly environment: Environment | null;
-  /** This payload as JSON, for logging and storage: docs/design/0.7-api.md "Our JSON". */
+  /**
+   * This payload as JSON: docs/design/0.7-api.md "Our JSON". It holds the
+   * full purchase data; the caller decides what to write where.
+   */
   toJson(): string;
 }
 

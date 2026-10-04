@@ -600,7 +600,8 @@ class VerifierApiTest {
      * link against that is missing from an older jar (ASN1UTF8String and
      * ASN1IA5String arrived in bcprov 1.70) would throw a LinkageError out of
      * verifyReceipt, which must not throw. Verifier.create loads each of them
-     * first, so the old jar fails there instead.
+     * first, so the old jar fails there instead. A jar that links but is
+     * older than 1.86 is refused by version (BouncyCastleFloorTest).
      */
     @Test
     void theStaticStateLoadsEveryBouncyCastleClassTheDecodersName() throws Exception {

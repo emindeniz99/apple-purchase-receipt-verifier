@@ -201,12 +201,13 @@ public final class ReceiptPayload {
             JsonFactory.builder().enable(JsonWriteFeature.ESCAPE_NON_ASCII).build();
 
     /**
-     * This payload as JSON, for logging and storage (docs/design/0.7-api.md,
-     * "Our JSON"): snake_case names, dates as numbers with a {@code _ms}
-     * suffix, 64-bit ids ({@code app_item_id}, {@code download_id},
+     * This payload as JSON (docs/design/0.7-api.md, "Our JSON"): snake_case
+     * names, dates as numbers with a {@code _ms} suffix, 64-bit ids
+     * ({@code app_item_id}, {@code download_id},
      * {@code version_external_identifier}, {@code web_order_line_item_id}) as
      * strings, bytes as padded standard base64 and {@code null} for a missing
-     * value.
+     * value. It holds the full purchase data; the caller decides what to
+     * write where.
      */
     public String toJson() {
         // A size hint only; clamped, so a cap-sized receipt does not reserve
