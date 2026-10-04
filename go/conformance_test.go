@@ -505,7 +505,7 @@ func runDecodeBase64(t testing.TB, c conformanceCase) {
 	} else if c.Expected.Reason != "MALFORMED" {
 		t.Fatalf("harness error: an error group states a reason other than MALFORMED")
 	}
-	verifier := buildVerifier(t, applereceipt.DefaultConfig())
+	verifier := buildVerifier(t, applereceipt.NewConfig(applereceipt.ConfigOptions{}))
 	for _, decoderName := range c.Decoders {
 		for index, text := range c.Input.Texts {
 			at := fmt.Sprintf("%s %s texts[%d] %q", c.ID, decoderName, index, text)

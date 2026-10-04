@@ -41,7 +41,7 @@ The assertion that earns the job its place is a genuine receipt verifying
 through the embedded `aprv.wasm`, which carries the three Apple roots: if the
 module or its hash ever falls out of the module zip, the library fails there.
 That is the Go shape of the two empty npm releases that motivated the
-workflow. `DefaultConfig().Roots()` is nil, since the package carries no copy
+workflow. The default `Config`'s `Roots()` is nil, since the package carries no copy
 of the roots, and the program asserts that too.
 
 The smoke program lives outside `go/` so it never becomes part of the published

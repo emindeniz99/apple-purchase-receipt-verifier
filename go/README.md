@@ -15,7 +15,7 @@ import applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 
 // Build once, share everywhere: the module is set up once, not per call.
 // Verifier is safe for concurrent use by multiple goroutines.
-verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
+verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{}))
 
 // A legacy app receipt, as the base64 string the app sends.
 receipt, err := verifier.VerifyReceipt(receiptBase64)
@@ -76,7 +76,7 @@ These are the properties the library exists to hold, and each is asserted by
 a test rather than only documented.
 
 - **It never reads the operating system's trust store.** Anchors come from
-  the caller's `Config` or from `DefaultConfig()`, which means Apple's three
+  the caller's `Config`, and a `Config` that names none means Apple's three
   published roots, compiled into the module. The module cannot read a file,
   so nothing in the environment can add a root.
 - **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
@@ -100,7 +100,7 @@ a test rather than only documented.
 ### `Config`: the roots and the clock
 
 ```go
-config := applereceipt.DefaultConfig() // Apple's three roots, the system clock
+config := applereceipt.NewConfig(applereceipt.ConfigOptions{}) // Apple's three roots, the system clock
 
 pinned := applereceipt.NewConfig(applereceipt.ConfigOptions{
     Roots: []*x509.Certificate{myRoot}, // replaces the defaults
@@ -113,10 +113,11 @@ A nil `*Config`, or one with no trust anchors, is a plain `error` from
 `NewVerifier`, never a `*Failure`: a verifier with no roots would reject
 everything, and nobody would notice until production, and a caller
 switching on `Reason` must never see a misconfiguration. So is a trust anchor
-the module refuses (one that is not a certificate). `DefaultConfig()` and
-`NewConfig` with no `Roots` send the module an empty list, which means the
-three Apple roots compiled into it. The package carries no copy of those
-roots, so `DefaultConfig().Roots()` is nil; `Roots()` returns certificates
+the module refuses (one that is not a certificate). `NewConfig` is the one
+way to build a `Config`, and a field left unset is the default: with no
+`Roots` it sends the module an empty list, which means the three Apple roots
+compiled into it. The package carries no copy of those roots, so the
+`Roots()` of that `Config` is nil; `Roots()` returns certificates
 only when you passed your own. An explicitly empty, non-nil `Roots` slice is
 refused by `NewVerifier`.
 
@@ -384,7 +385,7 @@ the returned payload.
 | `..._WithDeviceGUID` | compute the device hash from `OpaqueValue` and `BundleIDBytes` |
 | `JWSVerifier.VerifyTransaction`, `VerifyAppTransaction`, `VerifyRaw` | `Verifier.VerifySignedData`, then read the claims from `JSON()` |
 | `VerifyReceiptEndpoint.VerifyReceiptJSON` | `Verifier.VerifyReceiptEndpoint` |
-| `AppleJWSRoots()`, `AppleReceiptRoots()` | `DefaultConfig()` (one pinned set for both paths) |
+| `AppleJWSRoots()`, `AppleReceiptRoots()` | `DefaultConfig()` (one pinned set for both paths; `NewConfig(ConfigOptions{})` in 0.8) |
 | a per-verifier `Now func() time.Time` | `ConfigOptions.Clock func() int64` (epoch milliseconds) |
 | `VerificationError` | `Failure` |
 | `AppReceipt` | `ReceiptPayload` (`*_ms` epoch milliseconds, pointer fields) |
@@ -402,10 +403,10 @@ the returned payload.
 0.8 verifies inside `aprv.wasm`, which compiles the three Apple roots in, so
 the package no longer carries its own copy of them:
 
-- `AppleRoots()` is gone. `DefaultConfig()` still trusts exactly those three
-  roots; nothing else changes for a caller who used them through it.
-- `DefaultConfig().Roots()` and the `Roots()` of a `NewConfig` without
-  `Roots` return nil instead of three certificates.
+- `AppleRoots()` is gone. A `NewConfig` without `Roots` still trusts
+  exactly those three roots.
+- The `Roots()` of a `NewConfig` without `Roots` returns nil instead of
+  three certificates.
 - A caller who passed `AppleRoots()` into `ConfigOptions.Roots` next to a
   root of their own now loads Apple's certificates themselves, from
   Apple's PKI page or the repository's `certs/` directory.
@@ -421,6 +422,7 @@ numbers:
 | `MaxJSONNestingDepth`, `MaxJSONMemberNameLength`, `MaxJSONNumberDigits` | removed: the core has no JSON nesting or length bound since 0.8 (DECISIONS.md R40); only the size caps apply |
 | `FromReceiptType(receipt.ReceiptType)`, `FromJWSEnvironment(claim)` | removed: read `receipt.Environment` or `payload.Environment()`, which the module states; a JWS's also comes from a notification's `data.environment` and `summary.environment` |
 | `NewJSONPayload(json)` | `NewJSONPayload(json, environment)`, with `nil` for none |
+| `DefaultConfig()` | `NewConfig(ConfigOptions{})`: `NewConfig` is the one way to build a `Config`, and the zero `ConfigOptions` is Apple's three roots and the system clock |
 
 The two `String()` removals do not break compilation: `fmt.Println(receipt)`, `%v` and slog's text handler keep compiling but print the struct instead of the JSON. Call `ToJSON()` or `JSON()` where the JSON was printed.
 

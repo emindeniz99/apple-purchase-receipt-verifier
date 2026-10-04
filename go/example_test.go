@@ -14,7 +14,7 @@ import (
 // comment. They are also what pkg.go.dev shows.
 
 func ExampleVerifier_VerifySignedData() {
-	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
+	verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{}))
 	if err != nil {
 		panic(err) // a configuration mistake, not a verification verdict
 	}
@@ -43,7 +43,7 @@ func ExampleVerifier_VerifySignedData() {
 }
 
 func ExampleVerifier_VerifyReceipt() {
-	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
+	verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{}))
 	if err != nil {
 		panic(err)
 	}
@@ -61,7 +61,7 @@ func ExampleVerifier_VerifyReceipt() {
 }
 
 func ExampleVerifier_VerifyReceiptEndpoint() {
-	verifier, err := applereceipt.NewVerifier(applereceipt.DefaultConfig())
+	verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(applereceipt.ConfigOptions{}))
 	if err != nil {
 		panic(err)
 	}
@@ -101,13 +101,13 @@ func Example_errorHandling() {
 }
 
 func Example_customTrustAnchors() {
-	// Anchors always come from the Config. DefaultConfig trusts the three
-	// published Apple roots compiled into the verification module, so it
-	// names none of its own: Roots() is nil. An integrator running their
-	// own root rotation pipeline passes their own certificates via
-	// ConfigOptions.Roots, and nothing in this library ever consults the
-	// operating system trust store.
-	defaults := applereceipt.DefaultConfig()
+	// Anchors always come from the Config. Left unset, Roots means the
+	// three published Apple roots compiled into the verification module,
+	// so the defaults name none of their own: Roots() is nil. An
+	// integrator running their own root rotation pipeline passes their
+	// own certificates via ConfigOptions.Roots, and nothing in this
+	// library ever consults the operating system trust store.
+	defaults := applereceipt.NewConfig(applereceipt.ConfigOptions{})
 	fmt.Println("the defaults use the module's Apple roots:", defaults.Roots() == nil)
 
 	// Output:
