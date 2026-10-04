@@ -135,7 +135,10 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
     still change before 1.0. A `-wasm` version suffix would have doubled
     the Maven Central deployments per release, and Dependabot and
     Renovate would have proposed "upgrading" Wasm consumers to the
-    BouncyCastle build.
+    BouncyCastle build. **Amended 2026-10-04:** the `-wasm` upload to
+    Central is held behind `vars.APRV_PUBLISH_JAVA_WASM` until the owner
+    judges the preview API settled (BOOTSTRAP.md, "Maven Central"); the
+    naming and version plan stand.
 12. **This record**, in one docs pull request.
 13. **CLAUDE.md** drops its section on security reviews of runtimes. The
     2026-09-27 evidence note stays as it is.

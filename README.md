@@ -137,7 +137,7 @@ version, and pin it.
 
 | Registry | Install | How you import it |
 |---|---|---|
-| [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` (the Java implementation) or `io.github.emindeniz99:apple-purchase-receipt-verifier-wasm` (the core); depend on one, never both | `import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;` |
+| [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` (the Java implementation); `io.github.emindeniz99:apple-purchase-receipt-verifier-wasm` (the core) is not yet published ([why](java-wasm/README.md)); depend on one, never both | `import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;` |
 | [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier';` |
 | [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import Config, Verifier` |
 | [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")` | `import ApplePurchaseReceiptVerifier` |

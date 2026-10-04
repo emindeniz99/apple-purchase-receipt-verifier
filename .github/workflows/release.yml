@@ -747,7 +747,12 @@ jobs:
   # build-server as the classifier jars linux-x86_64 and linux-aarch64 (R26).
   # They go up as two deployments; whether Central counts them as one
   # release event against the 7 a month is the owner's open question
-  # (MIGRATION.md, "Owner actions" 3).
+  # (BOOTSTRAP.md, "Maven Central"). The -wasm deployment is held behind
+  # the repository variable APRV_PUBLISH_JAVA_WASM (owner, 2026-10-04): the
+  # artifact is a preview whose API may still change, and a version on
+  # Central can never be withdrawn, so until the variable is `true` a
+  # release deploys the main artifact alone. The -wasm jar is still built
+  # and tested on every push; only its upload waits.
   publish-maven:
     name: publish java to Maven Central
     runs-on: ubuntu-latest
@@ -778,17 +783,24 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # The -wasm artifact ships with every release since the Java lane
-      # landed; a tree without it is an error, not a reason to deploy only
-      # the main artifact.
-      - name: Skip the -wasm artifact if it is already on Maven Central
+      # The -wasm artifact is part of every release tree; a tree without it
+      # is an error, not a reason to deploy only the main artifact. Its
+      # upload is held until the owner sets APRV_PUBLISH_JAVA_WASM to `true`
+      # (the header above); a held release prints a notice and deploys the
+      # main artifact alone.
+      - name: Skip the -wasm artifact if it is held or already on Maven Central
         id: gate-wasm
+        env:
+          PUBLISH_JAVA_WASM: ${{ vars.APRV_PUBLISH_JAVA_WASM }}
         run: |
           set -euo pipefail
           VERSION=$(cat version.txt)
           if [ ! -f java-wasm/pom.xml ]; then
             echo "::error::java-wasm/pom.xml is missing; the release ships the -wasm artifact"
             exit 1
+          elif [ "$PUBLISH_JAVA_WASM" != "true" ]; then
+            echo "::notice::APRV_PUBLISH_JAVA_WASM is not true — the -wasm artifact $VERSION is held; deploying the main artifact only."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
           elif curl -fsSL "https://repo1.maven.org/maven2/io/github/emindeniz99/apple-purchase-receipt-verifier-wasm/$VERSION/" >/dev/null 2>&1; then
             echo "Central already has the -wasm artifact $VERSION — skipping it."
             echo "publish=false" >> "$GITHUB_OUTPUT"

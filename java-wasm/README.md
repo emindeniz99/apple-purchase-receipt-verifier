@@ -12,6 +12,13 @@ This artifact is the newer engine, offered as a preview: its public API may
 still change before 1.0. The BouncyCastle artifact,
 `apple-purchase-receipt-verifier`, is the long-standing one.
 
+**Not yet on Maven Central.** Because the API is still a preview and a
+version on Central can never be withdrawn, the owner holds its first upload
+(the repository variable `APRV_PUBLISH_JAVA_WASM`, BOOTSTRAP.md). The jar
+is built and tested on every push, and the coordinates below are the ones
+it will have; until the first published version, build it from this
+repository (`java-wasm/CI-NOTES.md`).
+
 Use one artifact or the other, never both. They have the same class names;
 `Verifier.create` throws `IllegalStateException` when it finds both on the
 classpath, and a Gradle build that asks for both fails at resolution.

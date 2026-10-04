@@ -289,17 +289,33 @@ the root manifest, so Packagist will skip them.
 
 Maven Central's Usage Center caps `io.github.emindeniz99` at seven
 releases, about 80 MB and about 1,000 files per calendar month, and one tag
-publishes every language. From 0.8.0 a release deploys two artifactIds,
-the main artifact and `-wasm`, and two classifier jars of the static
-`aprv-server`, about 10.5 MB in all, so the size allowance binds close
-behind the count: seven releases would be about 74 MB. The working budget
-in CLAUDE.md is therefore five releases a month, with two kept in reserve.
+publishes every language. Once the `-wasm` artifact is published (below) a
+release deploys two artifactIds, the main artifact and `-wasm`, and two
+classifier jars of the static `aprv-server`, about 10.5 MB in all, so the
+size allowance binds close behind the count: seven releases would be about
+74 MB. The working budget in CLAUDE.md is therefore five releases a month,
+with two kept in reserve.
 
 1. Ask central-support@sonatype.com, or read the Usage Center after the
-   first 0.8.0 deployment, whether one deployment of two artifactIds with
-   classifiers counts as one release event.
+   first deployment that carries `-wasm`, whether one deployment of two
+   artifactIds with classifiers counts as one release event.
 2. Record the answer in CLAUDE.md's release budget, and confirm or change
    the five-a-month rule.
+
+**The `-wasm` artifact is held (owner, 2026-10-04).** `release.yml`'s
+`publish-maven` job deploys `apple-purchase-receipt-verifier-wasm` and its
+classifier jars only while the repository variable `APRV_PUBLISH_JAVA_WASM`
+is `true`; until then every release deploys the main artifact alone and the
+job prints a notice. The reason is the artifact's preview status
+(DECISIONS.md R41): its public API may still change before 1.0, and a
+version on Central can never be withdrawn. The jar is built and tested on
+every push, and release-please keeps its version in step, so the first
+published `-wasm` carries whatever version the release after the flip has.
+
+3. When the `-wasm` API is settled, set `APRV_PUBLISH_JAVA_WASM` to `true`
+   in the repository's variables and remove the "not yet on Maven Central"
+   notes from `java-wasm/README.md` and the root README's registry table
+   in the same release.
 
 RubyGems, crates.io, NuGet and the Go proxy have no monthly cap, so they
 add no pressure of their own — but a fix in any one of them still spends a
