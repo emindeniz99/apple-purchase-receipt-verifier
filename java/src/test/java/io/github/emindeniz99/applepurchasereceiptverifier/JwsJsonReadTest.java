@@ -107,14 +107,12 @@ class JwsJsonReadTest {
     /** A payload with anything after its object is not the object: carried to the signature as unreadable. */
     @Test
     void aPayloadWithTextAfterItsObjectOrAByteOrderMarkIsUnreadable() throws Exception {
-        assertEquals(Long.valueOf(1), JwsCore.signedDate(utf8("{\"signedDate\":1} \n")));
+        assertEquals(Long.valueOf(1), JwsCore.readPayload(utf8("{\"signedDate\":1} \n")).signedDate);
         for (byte[] bytes : new byte[][] {
             utf8("{\"signedDate\":1} x"), utf8("{\"signedDate\":1}{}"), utf8("\uFEFF{\"signedDate\":1}"),
         }) {
-            VerificationException thrown =
-                    assertThrows(VerificationException.class, () -> JwsCore.requireJsonObject(bytes));
-            assertEquals(Reason.UNREADABLE_PAYLOAD, thrown.reason());
-            assertNull(JwsCore.signedDate(bytes), new String(bytes, StandardCharsets.UTF_8));
+            VerificationException thrown = assertThrows(VerificationException.class, () -> JwsCore.readPayload(bytes));
+            assertEquals(Reason.UNREADABLE_PAYLOAD, thrown.reason(), new String(bytes, StandardCharsets.UTF_8));
         }
     }
 
@@ -124,7 +122,7 @@ class JwsJsonReadTest {
      * (rust/src/jws.rs, DECISIONS.md R42), so the two read it alike.
      */
     @Test
-    void theEnvironmentIsReadFromTheFirstOfThreePlaces() {
+    void theEnvironmentIsReadFromTheFirstOfThreePlaces() throws Exception {
         Environment production = Environment.PRODUCTION;
         Environment sandbox = Environment.SANDBOX;
         Object[][] table = {
@@ -155,9 +153,11 @@ class JwsJsonReadTest {
         };
         for (Object[] row : table) {
             String json = (String) row[0];
-            assertEquals(row[1], JwsCore.environment(utf8(json)), json);
+            assertEquals(row[1], JwsCore.readPayload(utf8(json)).environment(), json);
         }
-        assertNull(JwsCore.environment(utf8("not json")));
+        VerificationException unreadable =
+                assertThrows(VerificationException.class, () -> JwsCore.readPayload(utf8("not json")));
+        assertEquals(Reason.UNREADABLE_PAYLOAD, unreadable.reason());
     }
 
     /** The reader bounds are stated, not inherited from whichever Jackson the host resolved. */
@@ -268,13 +268,13 @@ class JwsJsonReadTest {
     }
 
     private static String streamingPayload(byte[] bytes) throws Exception {
+        JwsCore.Payload read;
         try {
-            JwsCore.requireJsonObject(bytes);
+            read = JwsCore.readPayload(bytes);
         } catch (VerificationException e) {
-            assertNull(JwsCore.signedDate(bytes));
             return "unreadable";
         }
-        return "object signedDate=" + JwsCore.signedDate(bytes);
+        return "object signedDate=" + read.signedDate;
     }
 
     /**

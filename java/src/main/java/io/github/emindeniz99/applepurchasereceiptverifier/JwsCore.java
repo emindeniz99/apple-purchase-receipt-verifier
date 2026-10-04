@@ -160,30 +160,6 @@ final class JwsCore {
         }
     }
 
-    /**
-     * The payload's last top-level {@code signedDate} as epoch milliseconds,
-     * or null when it is absent, not a representable instant, or the payload
-     * does not read. Never throws: nothing is trusted yet.
-     */
-    static @Nullable Long signedDate(byte[] payload) {
-        Payload read = readOrNull(payload);
-        return read != null ? read.signedDate : null;
-    }
-
-    /**
-     * The environment the payload names ({@link JsonPayload#environment()}),
-     * or null when the payload does not read. Never throws.
-     */
-    static @Nullable Environment environment(byte[] payload) {
-        Payload read = readOrNull(payload);
-        return read != null ? read.environment() : null;
-    }
-
-    /** Refuses, as UNREADABLE_PAYLOAD, a signed payload that is not one JSON object in strict UTF-8. */
-    static void requireJsonObject(byte[] payload) throws VerificationException {
-        readPayload(payload);
-    }
-
     private static @Nullable Payload readOrNull(byte[] payload) {
         try {
             return readPayload(payload);
@@ -192,8 +168,12 @@ final class JwsCore {
         }
     }
 
-    /** Reads the payload as one JSON object with nothing after it, once, for everything this class needs of it. */
-    private static Payload readPayload(byte[] payload) throws VerificationException {
+    /**
+     * Reads the payload as one JSON object with nothing after it, once, for
+     * everything this class needs of it. Package-private for the tests and
+     * the fuzz harness, which drive it directly.
+     */
+    static Payload readPayload(byte[] payload) throws VerificationException {
         Payload read = new Payload();
         readObject(payload, Reason.UNREADABLE_PAYLOAD, "signed payload", (name, value, parser) -> {
             if ("signedDate".equals(name)) {

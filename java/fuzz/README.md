@@ -22,7 +22,7 @@ and the harness; nothing else needs installing beyond a JDK and Maven.
 | `receipt-base64` | `Verifier.verifyReceipt` on the string a client sends, so the size cap and `StrictBase64` in front of all of the above | the same anchor-set invariant, through the string |
 | `jws` | `Verifier.verifySignedData`: strict base64url, the streaming header and payload reads, x5c decode, marker OIDs, chain, ES256 | a JWS accepted under the fixture root is refused under Apple's production roots |
 | `endpoint-json` | `Verifier.verifyReceiptEndpoint` on a raw request body, on both environments | the answer is always one JSON object led by a numeric `status`, never 21009 |
-| `readers` | `ReceiptDecoder.parse`, `StrictBase64.decode`, `JwsCore.Header.read`, `JwsCore.signedDate` and `JwsCore.requireJsonObject` called directly, with no CMS parse or chain build in front of them | see "Two containment invariants" below |
+| `readers` | `ReceiptDecoder.parse`, `StrictBase64.decode`, `JwsCore.Header.read` and `JwsCore.readPayload` called directly, with no CMS parse or chain build in front of them | see "Two containment invariants" below |
 
 Every accepted result is then taken apart. `Harness.touch` reads every accessor
 `ReceiptPayload` and `InAppPurchase` declare, and the text of every accepted
@@ -60,10 +60,9 @@ leaks that are contained by design one frame up:
   BouncyCastle here is therefore contained and is *not* a finding, but an
   `Error` walks straight through that `catch`, so a `StackOverflowError` from a
   deeply nested SET or an `OutOfMemoryError` from a length prefix **is** one.
-* **`StrictBase64.decode`**, **`JwsCore.Header.read`**,
-  **`JwsCore.signedDate`** and **`JwsCore.requireJsonObject`** contain
-  everything themselves, so for them the invariant is the strict one: only the
-  package's `VerificationException`.
+* **`StrictBase64.decode`**, **`JwsCore.Header.read`** and
+  **`JwsCore.readPayload`** contain everything themselves, so for them the
+  invariant is the strict one: only the package's `VerificationException`.
 
 ## The anchor-set invariants
 
