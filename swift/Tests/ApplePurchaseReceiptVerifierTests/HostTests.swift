@@ -17,7 +17,7 @@ final class AbiTests: XCTestCase {
 
     func g5() throws -> [UInt8] { Array(try TestFixtures.text(TestFixtures.g5).utf8) }
 
-    func initialized(_ config: [UInt8] = Config.initJson([])) throws -> Guest {
+    func initialized(_ config: [UInt8] = Config.initJson(nil)) throws -> Guest {
         let guest = try Guest(module())
         try guest.start(config)
         return guest
@@ -72,10 +72,15 @@ final class AbiTests: XCTestCase {
 
     func testInitWithNoRootsAcceptsAndASecondInitTraps() throws {
         let guest = try Guest(module())
-        assertAccepts(try guest.initialize(Config.initJson([])), "no roots")
-        assertTraps({ try guest.initialize(Config.initJson([])) }, "a second init")
+        assertAccepts(try guest.initialize(Config.initJson(nil)), "no roots")
+        assertTraps({ try guest.initialize(Config.initJson(nil)) }, "a second init")
         let empty = try Guest(module())
         assertAccepts(try empty.initialize([]), "an empty configuration is the built-in roots too")
+    }
+
+    func testInitRefusesAnEmptyRootList() throws {
+        let guest = try Guest(module())
+        XCTAssertEqual(try guest.initialize(Config.initJson([])), #"{"ok":false,"message":"roots must not be empty"}"#)
     }
 
     /// A started instance holds the input length its own init answer stated;
@@ -83,7 +88,7 @@ final class AbiTests: XCTestCase {
     func testAStartedInstanceHoldsTheInputLengthItsInitStated() throws {
         let raw = try Guest(module())
         XCTAssertNil(raw.maxInputBytes)
-        let answer = try raw.initialize(Config.initJson([]))
+        let answer = try raw.initialize(Config.initJson(nil))
         let reply = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(answer.utf8)) as? [String: Any])
         let stated = try XCTUnwrap(reply["max_input_bytes"] as? Int)
         XCTAssertNil(raw.maxInputBytes, "initialize(_:) only calls the export")
@@ -99,15 +104,17 @@ final class AbiTests: XCTestCase {
         let guest = try Guest(module())
         let refused = try guest.initialize(Array("{not json".utf8))
         XCTAssertTrue(refused.contains(#""ok":false"#), refused)
-        assertAccepts(try guest.initialize(Config.initJson([])), "after a refusal")
+        assertAccepts(try guest.initialize(Config.initJson(nil)), "after a refusal")
     }
 
     /// init's argument, byte for byte, as the other ports write it: padded
     /// standard base64 with `/` unescaped, an empty root as `""`, no
-    /// whitespace. `JSONEncoder` chooses these bytes, so this pins them.
+    /// whitespace, and `{}` for the built-in roots. `JSONEncoder` chooses
+    /// these bytes, so this pins them.
     func testTheConfigurationIsWrittenAsTheOtherPortsWriteIt() {
         XCTAssertEqual(Config.initJson([[0xFB, 0xFF], []]), Array(#"{"roots":["+/8=",""]}"#.utf8))
         XCTAssertEqual(Config.initJson([]), Array(#"{"roots":[]}"#.utf8))
+        XCTAssertEqual(Config.initJson(nil), Array("{}".utf8))
     }
 
     func testTheFourOperationsAnswer() throws {

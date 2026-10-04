@@ -147,7 +147,7 @@ final class MeasurementTests: XCTestCase {
         let t2 = Date()
         let guest = try Guest(module)
         let t3 = Date()
-        try guest.start(Config.initJson([]))
+        try guest.start(Config.initJson(nil))
         let t4 = Date()
         _ = try guest.verifyReceipt(now: UInt64(systemMillis()), g5)
         let t5 = Date()
