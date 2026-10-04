@@ -79,8 +79,9 @@ extension ReceiptPayload {
     /// The payload as JSON, written by Foundation's `JSONSerialization`: the
     /// keys docs/design/0.7-api.md "Our JSON" lists, `null` for a missing
     /// field, 64-bit ids as strings, bytes as padded standard base64 and
-    /// `unknown_attributes` keyed by decimal type. Ports agree on its value,
-    /// not its bytes, so key order and escaping are Foundation's.
+    /// `unknown_attributes` keyed by decimal type. It holds the full purchase
+    /// data; the caller decides what to write where. Ports agree on its
+    /// value, not its bytes, so key order and escaping are Foundation's.
     public func toJson() -> String {
         jsonText([
             "receipt_type": nullable(receiptType),
