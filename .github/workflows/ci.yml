@@ -2945,8 +2945,8 @@ jobs:
 
   # fixtures/cases.json is the normative cross-language contract: every
   # suite reads it, so a malformed vector file or an unregistered fixture
-  # breaks every language at once. The linter is dependency-free, so this job
-  # installs nothing.
+  # breaks every language at once. The linter validates the schema with
+  # ajv, pinned in tools/package-lock.json, as validate-wire does.
   conformance:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -2958,6 +2958,7 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
+      - run: npm ci --prefix tools --ignore-scripts --no-audit --no-fund
       - run: node tools/lint-cases.mjs
       # The core compiles the three pinned Apple roots in from rust/certs,
       # the one copy of certs/ left since the wrappers' copies went in
