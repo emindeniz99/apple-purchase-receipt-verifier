@@ -1,5 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.Provider;
@@ -46,6 +47,10 @@ final class DefaultVerifier implements Verifier {
         Objects.requireNonNull(config, "config");
         ClasspathGuard.check(DefaultVerifier.class.getClassLoader());
         initialise(DefaultVerifier::buildStaticState);
+        // Not behind runtimeProbe: neither looks at the provider's engines,
+        // which is what a test double stands in for.
+        requireBouncyCastle(BouncyCastle.PROVIDER);
+        requireReceiptNesting();
         // A bad config (an empty root set) fails before the probe's cost.
         this.trustAnchors = AppleTrust.anchors(config.roots());
         if (config.runtimeProbe()) {
@@ -59,7 +64,7 @@ final class DefaultVerifier implements Verifier {
     /**
      * Runs {@code buildStaticState}, turning a {@link LinkageError} into an
      * {@link IllegalStateException} that names the error and the floors, so a
-     * Jackson below 2.16, a broken BouncyCastle or a time-zone database
+     * Jackson below 2.16, a missing or pre-1.70 BouncyCastle or a time-zone database
      * without America/Los_Angeles fails {@link Verifier#create} rather than a
      * verify call, which must not throw.
      */
@@ -72,7 +77,7 @@ final class DefaultVerifier implements Verifier {
             String error = e.getCause() != null ? e + ", caused by " + e.getCause() : e.toString();
             throw new IllegalStateException(
                     "the verifier could not initialise (" + error + "); it needs jackson-core 2.16 or later,"
-                            + " BouncyCastle (bcprov, bcpkix) 1.86 or a compatible release, and a time-zone"
+                            + " BouncyCastle (bcprov, bcutil, bcpkix) 1.86 or later, and a time-zone"
                             + " database that has America/Los_Angeles",
                     e);
         }
@@ -84,7 +89,8 @@ final class DefaultVerifier implements Verifier {
      * class are touched here to load both jars before the first verify, and
      * so is every BouncyCastle class ReceiptDecoder names: ASN1UTF8String and
      * ASN1IA5String arrived in bcprov 1.70, and an older jar would otherwise
-     * throw out of the first verifyReceipt.
+     * throw out of the first verifyReceipt. A jar from 1.70 on links, and
+     * {@link #requireBouncyCastle} refuses it below 1.86.
      * EndpointResponse's initialiser loads the Pacific time zone, which a JRE
      * with a truncated tzdb would fail on the first endpoint call otherwise.
      */
@@ -103,6 +109,75 @@ final class DefaultVerifier implements Verifier {
         Objects.requireNonNull(ASN1Set.class);
         Objects.requireNonNull(ASN1String.class);
         Objects.requireNonNull(ASN1UTF8String.class);
+    }
+
+    /** The oldest bcprov {@link #requireBouncyCastle} accepts. */
+    static final double BOUNCY_CASTLE_FLOOR = 1.86;
+
+    /**
+     * How deep a genuine Apple receipt nests constructed ASN.1 values, as
+     * BouncyCastle's bound counts them: the public sandbox receipts parse
+     * with {@code org.bouncycastle.asn1.max_cons_depth} at 9 and fail at 8,
+     * the same as {@link #RECEIPT_NESTING} SEQUENCEs around an INTEGER.
+     */
+    static final int RECEIPT_NESTING = 9;
+
+    /**
+     * Refuses a bcprov older than 1.86. The version is the one the provider
+     * instance this library holds reports (BouncyCastle passes its release to
+     * {@link Provider}'s constructor, 1.86 as {@code 1.86d}), so nothing is
+     * registered with {@code Security}. {@code getVersion} is the Java 8
+     * accessor; {@code getVersionStr} is Java 9 API. 1.84 added the ASN.1
+     * nesting bound (bcprov 1.81 throws {@code StackOverflowError} out of
+     * {@code verifyReceipt} on a deeply nested receipt), and 1.85 fixed
+     * CVE-2026-13506 (a lazily forced sequence reset the nesting guard) and
+     * CVE-2026-12860 (RSA PKCS#1 verification skipped two hash bytes), on
+     * paths this library uses. Every bcprov from 1.70 links, so the class
+     * loading in {@link #buildStaticState} cannot tell these apart.
+     *
+     * @throws IllegalStateException naming the version found
+     */
+    @SuppressWarnings("deprecation")
+    static void requireBouncyCastle(Provider provider) {
+        double version = provider.getVersion();
+        if (version < BOUNCY_CASTLE_FLOOR) {
+            throw new IllegalStateException("BouncyCastle bcprov " + version
+                    + " is on the classpath; the verifier needs 1.86 or later: 1.84 added the ASN.1"
+                    + " nesting bound that keeps a deeply nested receipt from overflowing the stack,"
+                    + " and 1.85 fixed CVE-2026-13506 and CVE-2026-12860 on paths the verifier uses."
+                    + " Resolve bcprov, bcutil and bcpkix to 1.86 or later");
+        }
+    }
+
+    /**
+     * Parses {@link #RECEIPT_NESTING} nested SEQUENCEs around an INTEGER, as
+     * deep as a genuine Apple receipt nests, so a host that set
+     * {@code org.bouncycastle.asn1.max_cons_depth} below that fails
+     * {@link Verifier#create} instead of answering {@link Reason#MALFORMED}
+     * to every genuine receipt. BouncyCastle reads the setting each time it
+     * opens a stream, so this sees it as it stands at create.
+     *
+     * @throws IllegalStateException if BouncyCastle refuses the nesting
+     */
+    static void requireReceiptNesting() {
+        byte[] der = {0x02, 0x01, 0x00};
+        for (int i = 0; i < RECEIPT_NESTING; i++) {
+            byte[] outer = new byte[der.length + 2];
+            outer[0] = 0x30;
+            outer[1] = (byte) der.length;
+            System.arraycopy(der, 0, outer, 2, der.length);
+            der = outer;
+        }
+        try {
+            ASN1Primitive.fromByteArray(der);
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException(
+                    "BouncyCastle refuses ASN.1 nested " + RECEIPT_NESTING + " deep, which every genuine Apple"
+                            + " receipt reaches, so each would fail as MALFORMED;"
+                            + " org.bouncycastle.asn1.max_cons_depth is set below " + RECEIPT_NESTING
+                            + " (java.security or a system property): " + e.getMessage(),
+                    e);
+        }
     }
 
     /**

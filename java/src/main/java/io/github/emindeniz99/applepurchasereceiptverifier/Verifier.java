@@ -47,7 +47,10 @@ public interface Verifier {
      *                                  or a time-zone database without
      *                                  America/Los_Angeles (the endpoint
      *                                  stand-in renders Pacific-time dates);
-     *                                  or, unless
+     *                                  if bcprov is older than 1.86; if
+     *                                  {@code org.bouncycastle.asn1.max_cons_depth}
+     *                                  is set below 9, which refuses every
+     *                                  genuine receipt; or, unless
      *                                  {@link Config#runtimeProbe()} is off,
      *                                  if this runtime cannot verify Apple
      *                                  signatures

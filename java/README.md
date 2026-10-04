@@ -125,10 +125,12 @@ not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
 notice until production. `Verifier.create` also builds the bounded Jackson
-readers, touches the BouncyCastle provider and a bcpkix class, and probes
-the crypto runtime (see [Running in production](#running-in-production)),
-so a jackson-core below 2.16 or a missing BouncyCastle jar throws
-`IllegalStateException` there rather than on the first call.
+readers, touches the BouncyCastle provider and a bcpkix class, checks that
+bcprov is 1.86 or later and that BouncyCastle's ASN.1 nesting bound admits a
+genuine receipt, and probes the crypto runtime (see [Running in
+production](#running-in-production)), so a jackson-core below 2.16, a
+missing BouncyCastle jar, a bcprov below 1.86 or a nesting bound below 9
+throws `IllegalStateException` there rather than on the first call.
 
 ## Which method to call
 
@@ -565,7 +567,10 @@ when the innermost is empty and are refused when it holds a value. The
 Rust core, which every other package runs, keeps its own bound of 32, so
 the shared cases nested 33 deep allow both answers (DECISIONS.md R20). A
 genuine Apple receipt nests 9 deep: a host that sets the property below
-9 refuses every genuine receipt as `MALFORMED`.
+9 would refuse every genuine receipt as `MALFORMED`, so `Verifier.create`
+parses a value nested 9 deep and throws `IllegalStateException` if
+BouncyCastle refuses it. A host that lowers the property after create is
+not caught.
 
 Apple's own endpoint answers a request body of exactly 3,145,728 bytes and
 sends HTTP 413 for 3,145,729 (measured 2026-09-23 against both of Apple's
@@ -608,7 +613,8 @@ step fails, as on a stripped JRE, a
 FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
 `IllegalStateException`, so the deploy fails instead of the first request
 answering `INTERNAL_ERROR`. `Config.builder().runtimeProbe(false)` turns the
-probe off. The only use we can name is a test setup that stands in a double
+probe off; the bcprov version check and the nesting check stay on, since
+neither asks the provider for an engine. The only use we can name is a test setup that stands in a double
 for the crypto provider; with the probe off, a broken runtime shows up as
 `INTERNAL_ERROR` on the first call instead. The probe does not replace the
 self-test above: it proves the engines exist, not that a real receipt parses.
@@ -842,8 +848,16 @@ to carry with it:
 **Dependency floors.** `jackson-core` 2.16 or later: the JSON readers set
 `StreamReadConstraints` (`maxDocumentLength` and `maxNameLength` are 2.16
 API), and below it `Verifier.create` throws `IllegalStateException`.
-BouncyCastle `bcprov` and `bcpkix` 1.86, the version the code was checked
-against.
+BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
+`Verifier.create` throws `IllegalStateException` naming the bcprov it
+found. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws
+`StackOverflowError` out of `verifyReceipt` on a deeply nested receipt), and
+1.85 fixed CVE-2026-13506 and CVE-2026-12860 on paths this library uses.
+The pom declares all three jars, so Maven's nearest-wins rule no longer
+lets another library's older bcprov replace them unnoticed; a BOM or your
+own `dependencyManagement` still can, and the check at create is what
+catches that. The check reads bcprov's version only; keep `bcutil` and
+`bcpkix` at the same release.
 
 **What to re-check on a BouncyCastle upgrade.** The code relies on a few
 BouncyCastle behaviours that are not API contracts. Thread safety is not
@@ -858,7 +872,9 @@ keeps stream state between calls) and every `Signature`.
   ASN.1 nesting bound, for the envelope, the payload, each x5c entry and
   every value BouncyCastle decodes inside them (an extension value inside
   a certificate, for example), so it must still exist, and still throw an
-  `IOException`, after an upgrade.
+  `IOException`, after an upgrade. `Verifier.create` checks only that the
+  bound admits 9 levels, what a genuine receipt needs; that it exists at
+  all rests on the 1.86 floor.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`JwsCore.decodeChain`,
   `ReceiptCertificates.decode`).
