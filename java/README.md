@@ -567,10 +567,11 @@ on the shape by one: 65 nested SETs parse
 when the innermost is empty and are refused when it holds a value. The
 Rust core, which every other package runs, keeps its own bound of 32, so
 the shared cases nested 33 deep allow both answers (DECISIONS.md R20). A
-genuine Apple receipt nests 9 deep: a host that sets the property below
-9 would refuse every genuine receipt as `MALFORMED`, so `Verifier.create`
-parses a value nested 9 deep and throws `IllegalStateException` if
-BouncyCastle refuses it. A host that lowers the property after create is
+genuine Apple receipt nests 9 deep
+([measured](../docs/evidence/2026-10-04-java-bc-floor.md)): a host that
+sets the property below 9 would refuse every genuine receipt as
+`MALFORMED`, so `Verifier.create` parses a value nested 9 deep and throws
+`IllegalStateException` if BouncyCastle refuses it. A host that lowers the property after create is
 not caught.
 
 Apple's own endpoint answers a request body of exactly 3,145,728 bytes and
@@ -631,9 +632,11 @@ at once exhaust a normal heap. Hostile input is not cheap to reject
 either. Before the chain is trusted, the library decodes the payload's
 whole attribute SET to find the receipt's creation date, the instant the
 chain is judged at, and BouncyCastle builds the full tree to do it. A
-cap-sized forgery built from many tiny attributes costs about 130 to 180 ms
-and 130 MB of allocation per call (approximate). The body cap and the
-concurrency limit are what bound that, and they are the deployment's job.
+cap-sized forgery built from many tiny attributes costs on the order of
+100 to 200 ms and about 140 MB of allocation per call (approximate;
+[measured](../docs/evidence/2026-10-04-java-bc-floor.md)). The body cap and
+the concurrency limit are what bound that, and they are the deployment's
+job.
 
 **Warm up before taking traffic.** Build the `Verifier` at startup, not
 lazily on the first request. `Verifier.create` takes about 450 ms cold, the
@@ -856,7 +859,8 @@ API), and below it `Verifier.create` throws `IllegalStateException`.
 BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
 `Verifier.create` throws `IllegalStateException` naming the bcprov it
 found. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws
-`StackOverflowError` out of `verifyReceipt` on a deeply nested receipt), and
+`StackOverflowError` out of `verifyReceipt` on a deeply nested receipt;
+[measured](../docs/evidence/2026-10-04-java-bc-floor.md)), and
 1.85 fixed CVE-2026-12860, in the RSA PKCS#1 signature check the receipt
 path uses. 1.85 also fixed CVE-2026-13506, in a lazy-parse path that only
 CRL code reaches; this library has none.

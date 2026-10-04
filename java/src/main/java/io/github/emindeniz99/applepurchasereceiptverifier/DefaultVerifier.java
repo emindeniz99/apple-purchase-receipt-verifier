@@ -120,7 +120,8 @@ final class DefaultVerifier implements Verifier {
      * How deep a genuine Apple receipt nests constructed ASN.1 values, as
      * BouncyCastle's bound counts them: the public sandbox receipts parse
      * with {@code org.bouncycastle.asn1.max_cons_depth} at 9 and fail at 8,
-     * the same as {@link #RECEIPT_NESTING} SEQUENCEs around an INTEGER.
+     * the same as {@link #RECEIPT_NESTING} SEQUENCEs around an INTEGER
+     * (docs/evidence/2026-10-04-java-bc-floor.md).
      */
     static final int RECEIPT_NESTING = 9;
 
@@ -136,7 +137,7 @@ final class DefaultVerifier implements Verifier {
      * CVE-2026-12860 (RSA PKCS#1 verification skipped two hash bytes), which
      * the receipt signature check reaches, and CVE-2026-13506. Every bcprov
      * from 1.70 links, so the class loading in {@link #buildStaticState}
-     * cannot tell these apart.
+     * cannot tell these apart (docs/evidence/2026-10-04-java-bc-floor.md).
      *
      * @throws IllegalStateException naming the release found
      */

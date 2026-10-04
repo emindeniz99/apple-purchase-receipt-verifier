@@ -53,7 +53,8 @@
          nesting bound and 1.85 fixed CVE-2026-12860 in the RSA PKCS#1
          check the receipt path uses (and CVE-2026-13506, in CRL code this
          library does not reach), so Verifier.create refuses an older
-         bcprov. One property moves all three jars together.
+         bcprov (docs/evidence/2026-10-04-java-bc-floor.md). One property
+         moves all three jars together.
          Revisit: floor = pin = 1.86, so the CI jobs that run the pin test
          the floor. When Dependabot moves the pin past 1.86, add a CI leg
          running the suite with -Dbouncycastle.version=1.86 (floors are
