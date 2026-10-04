@@ -22,17 +22,37 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Install\InstallException;
 require_once dirname(__DIR__) . '/src/Install/InstallException.php';
 require_once dirname(__DIR__) . '/src/Install/Installer.php';
 
-$options = getopt('', ['force', 'dir:', 'sums:', 'target:', 'base-url:', 'help'], $rest);
-if (isset($options['help']) || $rest < $argc) {
-    $unknown = array_slice($argv, $rest);
-    if (!isset($options['help'])) {
-        fwrite(STDERR, 'aprv-install: unknown argument ' . ($unknown[0] ?? '') . "\n");
+// true: the option takes a value, as `--name VALUE` or `--name=VALUE`.
+$known = ['force' => false, 'dir' => true, 'sums' => true, 'target' => true, 'base-url' => true, 'help' => false];
+$options = getopt('', array_map(static fn (string $name): string => $name . ($known[$name] ? ':' : ''), array_keys($known)));
+// getopt() drops, without a word, an option it does not know, a value option
+// given no value, and it makes a repeated one an array. The arguments are
+// walked once more so each of those is refused instead of running an
+// install from the package's own SHA256SUMS.
+$refused = null;
+for ($i = 1; $i < $argc && $refused === null; $i++) {
+    $argument = $argv[$i];
+    $name = str_starts_with($argument, '--') ? explode('=', substr($argument, 2), 2)[0] : '';
+    if (!array_key_exists($name, $known)) {
+        $refused = 'unknown argument ' . $argument;
+    } elseif ($known[$name]) {
+        if (!str_contains($argument, '=')) {
+            $i++;
+        }
+        if (!is_string($options[$name] ?? null) || $options[$name] === '') {
+            $refused = "--{$name} needs one value";
+        }
+    }
+}
+if ($refused !== null || isset($options['help'])) {
+    if ($refused !== null) {
+        fwrite(STDERR, 'aprv-install: ' . $refused . "\n");
     }
     fwrite(STDERR, "usage: aprv-install [--force] [--dir DIR] [--sums FILE] [--target TARGET] [--base-url URL]\n");
-    exit(isset($options['help']) ? 0 : 2);
+    exit($refused !== null ? 2 : 0);
 }
 
-$string = static fn (string $name): ?string => isset($options[$name]) && is_string($options[$name]) ? $options[$name] : null;
+$string = static fn (string $name): ?string => $options[$name] ?? null;
 
 try {
     $message = Installer::install(
