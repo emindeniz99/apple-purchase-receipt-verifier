@@ -1,0 +1,9 @@
+# zizmor's self-repository audit asks for GitHub's `$/` form in place of
+# `./` for actions in this repository. `$/` loads the action from the
+# repository archive, and .gitattributes export-ignores everything outside
+# the PHP package, .github/ included, so the archive has no action.yml and
+# every job using the action fails at "Set up job" (#245, run
+# 37184611615). `./` reads the checkout, which every caller does first.
+rules:
+  self-repository:
+    disable: true

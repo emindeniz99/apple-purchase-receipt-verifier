@@ -28,10 +28,16 @@ the same run.
   `::warning::`, not an error: pins lag the core between releases, and
   `release-please.yml` rewrites them on the release branch.
 - The ci.yml host jobs take both steps from one composite action,
-  `uses: $/.github/actions/place-module` with `host:`, after their
+  `uses: ./.github/actions/place-module` with `host:`, after their
   checkout: it downloads `aprv-wasm` to `$RUNNER_TEMP/aprv` and runs
   `place-module.sh` for that host. The two java-wasm jobs that also need
-  the server binary still download and place in their own steps.
+  the server binary still download and place in their own steps. The call
+  is the `./` path form on purpose: GitHub's `$/` self-repository form
+  loads the action from the repository archive, which `.gitattributes`
+  (`* export-ignore`, the PHP package allowlist) leaves without `.github/`,
+  so every job failed at "Set up job" with "Can't find action.yml" (#245,
+  run 37184611615). zizmor's `self-repository` audit, which asks for `$/`,
+  is disabled in `.github/zizmor.yml` for that reason.
 - `aprv-server-linux` builds the static x86_64 musl `aprv` around the
   run's component (`rust/server/scripts/build-static.sh`, which needs
   `musl-tools` for the C that Wasmtime compiles) and uploads it as

@@ -6,8 +6,11 @@ description: >-
   runs .github/scripts/place-module.sh, which checks every file against
   SHA256SUMS, copies the module into the host package (Node takes the
   component) and rewrites that host's tracked pin in the checkout. Jobs
-  call it as `uses: $/.github/actions/place-module`, after their checkout:
-  the script runs from the checkout, because it writes into that tree.
+  call it as `uses: ./.github/actions/place-module`, after their checkout:
+  the script runs from the checkout, because it writes into that tree. The
+  path form, not GitHub's `$/` self-repository form: `$/` loads the action
+  from the repository archive, and .gitattributes export-ignores
+  everything outside the PHP package, .github/ included (.github/zizmor.yml).
   It caches nothing, and the run step always uses bash, also on Windows
   and in container jobs.
 
