@@ -239,8 +239,9 @@ updates:
     cooldown:
       default-days: 7
   # The root composer.json is the manifest Packagist reads (BOOTSTRAP.md,
-  # layout A). It has no lockfile and one runtime requirement, psr/clock;
-  # this entry keeps that constraint watched like php/'s.
+  # layout A). It has no lockfile and two runtime requirements, psr/clock
+  # and symfony/process; this entry keeps those constraints watched like
+  # php/'s.
   - package-ecosystem: composer
     directory: /
     schedule:

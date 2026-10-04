@@ -30,7 +30,7 @@ final class NoVerificationLogicTest extends TestCase
             /** @var array{require: array<string, string>} $composer */
             $composer = json_decode((string) file_get_contents(__DIR__ . $manifest), true, 16, JSON_THROW_ON_ERROR);
             self::assertArrayNotHasKey('ext-openssl', $composer['require'], $manifest);
-            self::assertSame(['php', 'ext-json', 'psr/clock'], array_keys($composer['require']), $manifest);
+            self::assertSame(['php', 'ext-json', 'psr/clock', 'symfony/process'], array_keys($composer['require']), $manifest);
         }
     }
 

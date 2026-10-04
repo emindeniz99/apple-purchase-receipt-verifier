@@ -215,10 +215,26 @@ directory can plant code the next Python process runs
 
 ## 9. PHP
 
-- The default transport runs the `aprv` binary once per call with
-  `proc_open` and an argv array, so no shell parses anything
-  ([aprv-server §7][server]). The process boundary is class D and ends
-  with the call.
+- The default transport runs the `aprv` binary once per call through
+  `symfony/process`, from an argv array that holds only the subcommand,
+  the clock and the roots file's path. The input goes on stdin, so
+  nothing a caller or a receipt contains reaches a command line
+  ([aprv-server §7][server]). How the binary starts depends on the
+  release and the platform. On Unix, 7.4 starts it directly and uses
+  `/bin/sh -c 'exec …'` only on a PHP built with `--enable-sigchild` or
+  when the direct start fails; 6.4 always uses `/bin/sh -c 'exec …'`.
+  On Windows it goes through `cmd.exe`. Every argument is quoted for the
+  shell that reads it.
+- The child's environment holds `PATH` and nothing else (on Windows also
+  `SystemRoot` and `ComSpec`, which `cmd.exe` needs), so nothing an
+  application loaded into `$_ENV` reaches it. On Unix the answer stays
+  in the transport's memory and never touches disk. On Windows
+  `symfony/process` routes the child's stdout and stderr through
+  `sf_proc_NN` files in the temp directory (its workaround for PHP bug
+  #51800), so there the answer, purchase data included, is written to
+  disk. Symfony truncates those files when the call ends and does not
+  delete them.
+- The process boundary is class D and ends with the call.
 - `aprv install` downloads the binary from GitHub Releases and checks it
   against the SHA-256 pinned in the Composer package before it installs
   it. Nothing downloads at request time.

@@ -63,11 +63,14 @@ repository pointing at the repository root:
 }
 ```
 
-Requires **PHP 8.2+** (64-bit) and `ext-json`. One runtime dependency:
-`psr/clock`, the PSR-20 clock interface, a single interface with no code and
-no transitive dependencies. No `ext-openssl`: nothing in PHP touches a
-certificate. `ext-curl` is needed for the server transport and for the
-installer's download.
+Requires **PHP 8.2+** (64-bit) and `ext-json`. Two runtime dependencies,
+neither with dependencies of its own: `psr/clock`, the PSR-20 clock
+interface, a single interface with no code; and `symfony/process`
+(`^6.4.33 || ^7.4.5`), which runs the `aprv` binary for the default
+transport. Symfony 8 is not covered yet: an application that has moved
+`symfony/process` to 8.x cannot install this package until it is. No
+`ext-openssl`: nothing in PHP touches a certificate. `ext-curl` is
+needed for the server transport and for the installer's download.
 
 ## Quick start
 
@@ -126,13 +129,18 @@ status table.
 
 **By default, one `aprv` process per call.** `Verifier::create()` starts
 nothing; each call starts `aprv verify-receipt` (or `verify-signed-data`,
-`verify-receipt-endpoint production|sandbox`) with an argv array, so no shell
-parses anything, writes the input to its stdin, reads the JSON from its
-stdout and waits for it to exit. The process lives about 12 ms and ends with
-the call, so a hostile input reaches nothing that outlives it. The exit status
-carries the outcome: 0 is a result (verified or not), 3 an input over the
-size cap, 70 a trap or a load failure, and 2 a configuration the module
-refuses (which `create` has already checked).
+`verify-receipt-endpoint production|sandbox`) through `symfony/process`,
+writes the input to its stdin, reads the JSON from its stdout and waits for it
+to exit. The argv array holds only the subcommand, the clock and the roots
+file's path, so nothing a caller or a receipt contains is on a command line.
+Where a shell starts the binary (always with `symfony/process` 6.4, and on
+Windows), every argument is quoted for it. The child's environment is `PATH`
+alone (on Windows also `SystemRoot` and `ComSpec`), so nothing your
+application loaded into `$_ENV` reaches it. The process lives about 12 ms and
+ends with the call, so a hostile input reaches nothing that outlives it. The
+exit status carries the outcome: 0 is a result (verified or not), 3 an input
+over the size cap, 70 a trap or a load failure, and 2 a configuration the
+module refuses (which `create` has already checked).
 
 **Or a server you run.** For a busy worker, run `aprv serve` beside PHP and
 pass a transport; one keep-alive curl handle then carries every call
@@ -606,11 +614,17 @@ should use the server transport.
 - **No binary, no verifier.** Without an `aprv` binary or a server the package
   cannot verify anything, and says so at `create()`. Where the installer has
   no binary for your platform it names the server option.
-- **`proc_open` must be allowed.** The default transport needs it (a hardened
-  `disable_functions` list often removes it); use `HttpTransport` there.
-- **The CLI transport on Windows** writes the whole input before it reads the
-  answer (Windows pipes cannot be polled), which `aprv` allows because it
-  reads its whole input first. It has not been exercised in CI yet.
+- **`proc_open` must be allowed.** The default transport needs `proc_open`,
+  `proc_get_status`, `proc_terminate` and `proc_close` (a hardened
+  `disable_functions` list often removes them), and `create()` names any
+  that are missing; use `HttpTransport` there.
+- **The CLI transport on Windows** starts `aprv` through `cmd.exe`, which is
+  how `symfony/process` starts any process there. Each argument is escaped,
+  and none of them carries caller input: the input goes on stdin.
+  `symfony/process` also routes the child's output through `sf_proc_NN`
+  files in the temp directory there, so the answer (purchase data included)
+  is written to disk; on Unix it stays in memory. It has not been exercised
+  in CI yet.
 - **PHP-FPM and long-running workers** keep the `Verifier` (and so its roots
   file) for their lifetime; the file is deleted when the object is destroyed
   or the process ends normally.

@@ -40,7 +40,7 @@ final class FakeCli
         file_put_contents($this->directory . '/mode.json', json_encode($mode, JSON_THROW_ON_ERROR));
     }
 
-    /** @return list<array{argv: list<string>, stdin_length: int, stdin_sha256: string, roots_file: string|null, roots_file_mode: string|null, roots_file_content: string|null}> */
+    /** @return list<array{argv: list<string>, stdin_length: int, stdin_sha256: string, roots_file: string|null, roots_file_mode: string|null, roots_file_content: string|null, env_names: list<string>}> */
     public function log(): array
     {
         $entries = [];
@@ -49,7 +49,7 @@ final class FakeCli
             return $entries; // the fake never ran
         }
         foreach (file($log, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
-            /** @var array{argv: list<string>, stdin_length: int, stdin_sha256: string, roots_file: string|null, roots_file_mode: string|null, roots_file_content: string|null} $entry */
+            /** @var array{argv: list<string>, stdin_length: int, stdin_sha256: string, roots_file: string|null, roots_file_mode: string|null, roots_file_content: string|null, env_names: list<string>} $entry */
             $entry = json_decode($line, true, 8, JSON_THROW_ON_ERROR);
             $entries[] = $entry;
         }
