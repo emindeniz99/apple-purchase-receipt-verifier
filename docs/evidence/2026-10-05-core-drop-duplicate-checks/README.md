@@ -4,6 +4,7 @@
 |---|---|
 | `Probe.java` | Does BouncyCastle 1.86 parse a constructed `OCTET STRING` whose chunk is a `UTF8String`, the shape of an eContent re-chunked with a foreign tag? |
 | `without-content-type-match.patch` | Does OpenSSL refuse a signed `contentType` attribute that differs from the eContentType on the core's path, once the core's own comparison is gone? |
+| `openssl-attribute-diagnostic.rs` | Which OpenSSL rule refuses each signed-attribute fault the Rust tests build: the attribute rules, or a signature that does not hold? |
 
 Reproduce the BouncyCastle probe (any JDK 8 or later; the jar is
 `org.bouncycastle:bcprov-jdk18on:1.86` from Maven Central,
@@ -40,3 +41,25 @@ git -C "$REPO" apply -R docs/evidence/2026-10-05-core-drop-duplicate-checks/with
 Expected: `conformance` 389 passed, 1 failed
 (`receipt/reject-a-content-type-attribute-that-differs-from-the-econtent-type`);
 `receipt_negative` 40 passed.
+
+Reproduce the attribute diagnostic (it uses the helpers of
+`rust/tests/receipt_signer_algorithms.rs`; revert the file afterwards):
+
+```sh
+cat "$REPO/docs/evidence/2026-10-05-core-drop-duplicate-checks/openssl-attribute-diagnostic.rs" \
+  >> "$REPO/rust/tests/receipt_signer_algorithms.rs"
+CARGO_TARGET_DIR="$SCRATCH/target" cargo test --locked --all-features \
+  --manifest-path "$REPO/rust/Cargo.toml" -p apple-purchase-receipt-verifier \
+  --test receipt_signer_algorithms openssl_attribute_diagnostic -- --nocapture
+git -C "$REPO" checkout -- rust/tests/receipt_signer_algorithms.rs
+```
+
+Expected:
+
+```
+DIAG control: Ok(())
+DIAG ct twice: Err(["attribute error"])
+DIAG ct two values: Err(["attribute error"])
+DIAG md two values: Err(["attribute error"])
+DIAG empty: Err(["error reading messagedigest attribute", "content verify error"])
+```

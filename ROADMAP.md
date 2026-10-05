@@ -110,10 +110,11 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    encodings, and Apple never sends them. Their removal and the eight
    cases that become port-defined land in their own pull request.
    Examined and kept: `keyless_target_path` in `rust/src/path.rs` (it
-   reports path problems at the depths `X509_verify_cert` would), and
-   `signature_names_digest` in `rust/openssl/src/cms.rs` (continuity
-   with the 0.7 core's `INVALID_SIGNATURE`, not a security boundary; its
-   case is already `oneOf`).
+   reports path problems at the depths `X509_verify_cert` would).
+   `signature_names_digest` in `rust/openssl/src/cms.rs` was kept then
+   for continuity with the 0.7 core's `INVALID_SIGNATURE`, and dropped
+   on 2026-10-05: the core leaves the label to OpenSSL, it was not a
+   security boundary, and its case is `oneOf` (DECISIONS.md R20).
 7. **Fuzz findings and supply chain.** Apply to OSS-Fuzz with the six
    existing targets; every fuzz job encrypts any finding to the owner's
    public key and sends a notice through a Telegram bot, with only the
