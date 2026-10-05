@@ -6,3 +6,4 @@
    2  'jws is empty' -> 'expected 3 dot-separated segments, got 1'
    2  'chain exceeds the maximum length' -> 'signer certificate is not issued under a pinned Apple root'
    1  'an intermediate is not a CA' -> 'signer certificate is not issued under a pinned Apple root'
+ 573  rows differ in all

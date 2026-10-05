@@ -100,8 +100,11 @@ Through the public API the answer was already decided before the path.
 
 **The same replay across the whole branch.** Against the branch's base
 (352f0d1, `results/branch-before-collapse.txt` and
-`results/branch-message-changes.txt`), the branch's commits change no
-verdict. 568 rows change their message only. Five change their reason,
+`results/branch-message-changes.txt`, from `message-changes.py`), the
+branch's commits change no verdict in the corpus; among the shared cases,
+`receipt/reject-eleven-embedded-crls` moves from `MALFORMED` to `ok`
+within its `oneOf` (the ten-CRL cap went). 573 corpus rows differ: 568
+change their message only, and five change their reason,
 all the same input: the corpus's copy of
 `receipt/reject-signer-on-an-unimplemented-curve` and four fuzz
 mutations of it, generated before that fixture's intermediate carried the

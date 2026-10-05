@@ -6,6 +6,7 @@
 | `corpus_replay.rs` | What does the native twin of `aprv.wasm` answer for every call of a corpus call file, at the checked-out tree? (A test of `rust/ffi`, so it builds in the workspace's target directory.) |
 | `replay.sh` | Runs `corpus_replay.rs` over the five pinned call files of the corpus archive. |
 | `classify.py` | Which rows of two answer sets for the same calls differ, and how: verdict, reason, payload or message? |
+| `message-changes.py` | Over the five corpora, which `'old' -> 'new'` messages do the differing rows show, and how many rows differ in all? |
 | `path_cost.rs` | How many signatures does the core check itself, and how long does a verification take, for the shared receipt and transaction? |
 | `renewed_intermediate.rs` | Does a genuine receipt still verify when its bag holds an expired certificate for the intermediate's key ahead of the renewal? |
 | `results/` | The outputs the note quotes. |
@@ -39,10 +40,27 @@ for c in cases hostile algorithms substrate fuzz; do
 done
 ```
 
-Expected: `results/collapse.txt`, every row the same. Replaying 352f0d1's
-`rust/` (`git -C "$REPO" checkout 352f0d1 -- rust`, then
-`git -C "$REPO" checkout HEAD -- rust`) against `rows-without` gives
-`results/branch-before-collapse.txt`.
+Expected: `results/collapse.txt`, every row the same.
+
+The whole branch against its base, 352f0d1 (on a clean tree: the second
+checkout puts `rust/` back as committed):
+
+```sh
+git -C "$REPO" checkout 352f0d1 -- rust
+REPO="$REPO" sh "$E/replay.sh" "$SCRATCH/corpus" "$SCRATCH/rows-base"
+git -C "$REPO" checkout HEAD -- rust
+for c in cases hostile algorithms substrate fuzz; do
+  printf '%s: ' "$c"
+  python3 "$E/classify.py" "$SCRATCH/rows-base/$c.jsonl" "$SCRATCH/rows-without/$c.jsonl" --list \
+    | grep -v '^    '
+done
+python3 "$E/message-changes.py" "$SCRATCH/rows-base" "$SCRATCH/rows-without"
+```
+
+Expected: `results/branch-before-collapse.txt` from the loop (no verdict,
+five reason rows listed by id) and `results/branch-message-changes.txt`
+from the script, whose last line counts the 573 rows that differ: 568 in
+their message only, 5 in their reason.
 
 The two probes, without and with the patch (each prints `COST` or
 `RENEWAL` lines; remove the copies afterwards):
