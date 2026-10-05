@@ -400,7 +400,7 @@ and `-second`.
 | Python | endpoint 21002 for an empty body | a body that cannot be read | added: `endpoint/empty-body-answers-21002` |
 | Python | endpoint 21002 for invalid JSON | as above | added: `endpoint/body-that-is-not-json-answers-21002` |
 | Python | endpoint 21002 for a truncated object | as above | added: `endpoint/truncated-object-answers-21002` |
-| Python | endpoint 21002 for a body nested 100,000 deep | depth and cost | covered: `endpoint/request-body-nested-65-deep-answers-21002`; the 100,000-deep cost is a Rust test (a 200 KB input, R20's rule) |
+| Python | endpoint 21002 for a body nested 100,000 deep | depth and cost | covered in part: `endpoint/request-body-nested-65-deep-answers-21002` crosses no bound since 2026-10-05, when Java's became Jackson's default, 1,000 (the core has none); the bound stays with Java: `InputSizeBoundsTest`; the 100,000-deep cost is a Rust test (a 200 KB input, R20's rule) |
 | Python | brackets inside a string are not nesting | JSON depth counts structure, not characters | added: `endpoint/brackets-inside-a-string-are-not-nesting-answers-0` |
 | Python | intro-offer flag is the string "false" | Apple's rendering of flags | added: `endpoint/intro-offer-and-trial-flags-are-the-strings-true-and-false` |
 | Python | fresh creation date under an expired chain, clock inside the window | the clock never replaces a readable creation date | added: `receipt/pinned-clock-does-not-rescue-a-fresh-creation-date`, `endpoint/pinned-clock-does-not-rescue-a-fresh-creation-date-answers-21003` |
