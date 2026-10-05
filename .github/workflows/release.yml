@@ -75,8 +75,8 @@
 # so the files can be inspected. A gate that would skip a version the
 # registry already carries reports it and builds anyway, so a rehearsal
 # on main after a release still builds every package. Maven runs under
-# the maven-central-dry-run environment, which holds no secrets and asks
-# no reviewer, and skips signing: the bundle is built unsigned.
+# the maven-central-dry-run environment, which asks no reviewer and is
+# handed no key (the credentials live on maven-central), and skips signing.
 #
 # Security: every action pinned to a commit SHA; no dependency cache in
 # publish or build jobs (a poisoned restore would become the shipped
@@ -809,7 +809,7 @@ jobs:
           python3 tools/build_dist.py --check dist
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ inputs.dry_run }}
+        if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
         with:
           name: dry-run-pypi
           path: python/dist/
@@ -864,12 +864,14 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
+          published=false
           if npm view "apple-purchase-receipt-verifier@$VERSION" version >/dev/null 2>&1; then
             if [ "$DRY_RUN" != "true" ]; then
               echo "npm already has $VERSION — skipping publish."
               exit 0
             fi
             echo "npm already has $VERSION; a dry run builds it anyway."
+            published=true
           fi
           npm ci --ignore-scripts
           npm run build
@@ -878,8 +880,12 @@ jobs:
           # says why; ci.yml's smoke-npm runs the same check).
           npm pack --dry-run --json | node scripts/check-pack.mjs
           if [ "$DRY_RUN" = "true" ]; then
-            npm publish --dry-run
-            # The tarball itself, for the dry-run-npm artifact.
+            # npm 11.3 and later refuse `publish --dry-run` over a version the
+            # registry already serves, so the registry step is left out then.
+            if [ "$published" != true ]; then npm publish --dry-run; fi
+            # The tarball itself, for the dry-run-npm artifact; npm pack does
+            # not create the destination.
+            mkdir -p "$RUNNER_TEMP/npm-pack"
             npm pack --pack-destination "$RUNNER_TEMP/npm-pack" > /dev/null
           else
             npm publish
@@ -915,9 +921,9 @@ jobs:
     # The one publish job that holds long-lived secrets (Maven Central has no
     # OIDC path). The environment scopes them to this job alone once the four
     # secrets live on the environment rather than the repository. A dry run
-    # names an environment that holds nothing and protects nothing (GitHub
-    # creates it on first use), so the rehearsal needs no reviewer and no
-    # branch allowance, and the secrets below resolve empty.
+    # names an environment that protects nothing and holds none of them
+    # (GitHub creates it on first use), so the rehearsal needs no reviewer
+    # and no branch allowance, and signing is skipped below in any case.
     environment: ${{ inputs.dry_run && 'maven-central-dry-run' || 'maven-central' }}
     permissions:
       contents: read
@@ -1003,9 +1009,10 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          # A dry run builds, tests and bundles, unsigned (its environment
-          # has no key); skipPublishing is the central-publishing-maven-plugin's
-          # switch that stops before the upload.
+          # A dry run builds and tests, unsigned (gpg.skip; the environment
+          # hands it no key). skipPublishing is the central-publishing-maven-
+          # plugin's switch that stages nothing, so no bundle is written and
+          # nothing reaches the portal.
           if [ "$DRY_RUN" = "true" ]; then
             mvn -B -P central deploy -DskipPublishing=true -Dgpg.skip=true
           else
@@ -1070,15 +1077,15 @@ jobs:
         with:
           subject-path: java-wasm/target/apple-purchase-receipt-verifier-wasm-*.jar
 
-      # The bundles central-publishing-maven-plugin would have uploaded; the
-      # -wasm one only when its gate let it build.
+      # The jars Central would have received (the -wasm ones only when its
+      # gate let them build), unsigned: skipPublishing writes no bundle.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ inputs.dry_run }}
+        if: ${{ inputs.dry_run && (steps.gate.outputs.publish == 'true' || steps.gate-wasm.outputs.publish == 'true') }}
         with:
           name: dry-run-maven
           path: |
-            java/target/central-publishing/
-            java-wasm/target/central-publishing/
+            java/target/*.jar
+            java-wasm/target/*.jar
           if-no-files-found: error
           retention-days: 30
 
@@ -1238,7 +1245,7 @@ jobs:
             puts "gem carries #{files.size} files, entry points and module included"'
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ inputs.dry_run }}
+        if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
         with:
           name: dry-run-rubygems
           path: ruby/apple-purchase-receipt-verifier-*.gem
@@ -1369,7 +1376,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ inputs.dry_run }}
+        if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
         with:
           name: dry-run-crates
           path: rust/target/package/*.crate
@@ -1478,7 +1485,7 @@ jobs:
           done
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ inputs.dry_run }}
+        if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
         with:
           name: dry-run-nuget
           path: ${{ runner.temp }}/nupkg/
