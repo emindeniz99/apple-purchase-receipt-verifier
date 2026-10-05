@@ -34,13 +34,20 @@ that way took longer than decoding it. `Endpoint.receiptData` hands Jackson
 Apple has no status for a body that is not JSON; 21002 is the closest, and
 it is what a JSON object without usable `receipt-data` gets anyway.
 
-## JSON reader constraints are stated, not inherited
+## JSON reader constraints are Jackson's defaults
 
-Jackson 2.15 and later default the nesting depth to 1000, but a host BOM that
-pins an older Jackson 2 links cleanly and silently loses that guard. So
-`BoundedJson` states every bound it relies on, the two Jackson defaults
-included, and the 2.16 API it needs makes an older Jackson fail at
-`Verifier.create` instead of running with guards it believes it set.
+The readers use a plain `JsonFactory`, so Jackson's default
+`StreamReadConstraints` apply: nesting 1,000, member names 50,000
+characters, numbers 1,000 characters. The size caps run before the parse
+and sit below Jackson's string and document limits, so they bound a
+document's length. Jackson keeps the nesting context on the heap and the
+readers skip what they do not read with `skipChildren`, so depth costs no
+stack; until 2026-10-05 `BoundedJson` set a depth of 64 and restated the
+other two, which bought nothing over these defaults. The cost of
+inheriting them: a host BOM that pins a Jackson below 2.16 links cleanly
+and reads with fewer bounds (2.15 has no name bound, 2.14 none at all),
+and a host that calls `overrideDefaultStreamReadConstraints` moves them.
+The 2.16 floor is the pom's, and the host's build enforces it.
 
 ## Why the receipt caps what it does before decoding
 

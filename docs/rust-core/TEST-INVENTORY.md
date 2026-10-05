@@ -396,7 +396,7 @@ and `-second`.
 | Python | signed-data NaN and Infinity signed dates | an unrepresentable signedDate falls back to the clock | covered in part: `transaction/signed-date-out-of-range-falls-back-to-the-clock`; NaN and Infinity are not JSON, so a JWS carrying them is MALFORMED: to add |
 | Python | x5c entries that are numbers | x5c holds three strings | added: `signed-data/reject-x5c-of-numbers` |
 | Python | x5c entries that are containers and null | as above | added: `signed-data/reject-x5c-with-null-and-a-list` |
-| Python | header and payload nested 20,000 deep | JSON depth bound | covered: `signed-data/reject-a-header-nested-65-deep`, `signed-data/unreadable-payload-nested-65-deep` (the bound is 64) |
+| Python | header and payload nested 20,000 deep | JSON depth bound | covered: `signed-data/reject-a-header-nested-65-deep`, `signed-data/unreadable-payload-nested-65-deep` (the bound was Java's 64; since 2026-10-05 Java's is Jackson's default, 1,000, and the core has none) |
 | Python | endpoint 21002 for an empty body | a body that cannot be read | added: `endpoint/empty-body-answers-21002` |
 | Python | endpoint 21002 for invalid JSON | as above | added: `endpoint/body-that-is-not-json-answers-21002` |
 | Python | endpoint 21002 for a truncated object | as above | added: `endpoint/truncated-object-answers-21002` |

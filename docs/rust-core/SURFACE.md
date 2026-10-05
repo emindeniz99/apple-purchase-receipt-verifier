@@ -136,7 +136,7 @@ none is configurable: the receipt's base64 and the endpoint body at
 embedded certificates, six certificates below the anchor, 4 SignerInfos.
 JSON has no bound of its own in the core since 2026-10-01: a value nobody
 reads is skipped, not built, within the size caps (DECISIONS.md R40);
-Java keeps its three JSON bounds. Wrappers add none, and keep no copy of
+Java reads JSON under Jackson's default bounds. Wrappers add none, and keep no copy of
 a cap: `init` answers `{"ok":true,"max_input_bytes":N}`, `N` one over the
 largest cap (3,145,729), and a host cuts an input to `N` bytes before it
 enters the module, so the module still sees one over its cap and answers
