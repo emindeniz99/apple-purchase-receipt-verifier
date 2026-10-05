@@ -520,16 +520,16 @@ Every cryptographic lookup in this library, certificate parsing, chain
 building and validation, the CMS and ES256 signature checks, and every
 digest, names a private `BouncyCastleProvider` instance that this library
 never registers with `Security`. `jdk.certpath.disabledAlgorithms` and the
-host's provider order never change which certificates, chains and
-signatures are accepted. One thing does reach BouncyCastle from the JVM:
-when it first decodes an RSA public key it draws from the JVM's default
-`SecureRandom` (a primality check; the draw happens once per key, then
-BouncyCastle caches the result). A default `SecureRandom` that throws,
-as a misconfigured FIPS provider can, makes that decode fail, and the
+host's provider order can never make BouncyCastle accept a certificate,
+chain or signature it would otherwise refuse. One JVM service can make it
+refuse a genuine one: when BouncyCastle first decodes an RSA public key
+it draws from the JVM's default `SecureRandom` for a primality check
+(recent keys are cached, so a warm process draws nothing). A default
+`SecureRandom` whose provider throws makes that decode fail, and the
 genuine receipt then answers `UNTRUSTED_CHAIN`, not `INTERNAL_ERROR`,
 because the failure surfaces as "no pinned root vouches for the
-signer". The runtime probe in `Verifier.create` runs that decode first,
-so on such a JVM `create` throws instead
+signer". The runtime probe in `Verifier.create` decodes the bundled RSA
+roots' keys first, so on such a JVM `create` throws instead
 ([measured](../docs/evidence/2026-10-05-java-bc-round3.md)).
 
 Why it matters: the genuine legacy Apple receipt chain is SHA-1 end to end
@@ -602,11 +602,12 @@ nested up to the bound needs stack: on OpenJDK 21 a SignerInfo
 160 KB, and a genuine receipt, a JWS and an endpoint call all complete on
 64 KB ([measured](../docs/evidence/2026-10-05-java-bc-round3.md)). The
 JVM's default is 1 MB. A host that gives its worker threads a small
-`-Xss` or `Thread` stack size should keep it at 256 KB or more; below
-that a hostile input ends the call with a `StackOverflowError`, which is
-an `Error`, not a `Failure`. Frame sizes differ between the interpreter
-and the JIT and between HotSpot and OpenJ9, so the numbers are a floor,
-not a guarantee.
+`-Xss` or `Thread` stack size should keep it at 256 KB or more, plus
+what its own framework's frames use; below that a hostile input ends
+the call with a `StackOverflowError`, which is an `Error`, not a
+`Failure`. The figures were measured on one JVM and one input shape;
+frame sizes differ between the interpreter and the JIT and between
+HotSpot and OpenJ9, so another JVM may need more.
 
 The ASN.1 nesting bound is BouncyCastle's
 `org.bouncycastle.asn1.max_cons_depth`, 64 unless the host sets it. It is

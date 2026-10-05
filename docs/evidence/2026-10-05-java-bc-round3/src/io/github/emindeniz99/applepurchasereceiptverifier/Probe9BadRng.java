@@ -24,6 +24,6 @@ public class Probe9BadRng {
         Verifier v = Verifier.create(Config.builder().runtimeProbe(false).build());
         VerificationResult<ReceiptPayload> r = v.verifyReceipt(src);
         System.out.println("genuine receipt, probe off: " + (r.verified() ? "ok" : r.failure().reason() + " / " + r.failure().message()));
-        System.out.println("endpoint: " + v.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + src + "\"}").substring(0, 20));
+        System.out.println("endpoint: " + v.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + src + "\"}").replaceAll("^(.{20}).*$", "$1"));
     }
 }

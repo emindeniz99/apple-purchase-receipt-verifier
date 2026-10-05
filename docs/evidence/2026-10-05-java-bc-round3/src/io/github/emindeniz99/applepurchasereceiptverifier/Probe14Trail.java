@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
-/** Probe14: JWS x5c entries with bytes after the certificate's DER; second certificate appended; leading bytes. */
+/** Probe14: JWS x5c entries with bytes after the certificate's DER (leaf, intermediate, root); a second certificate appended; a root slot holding leaf and root. */
 public class Probe14Trail {
     static String b64(byte[] b) { return Base64.getEncoder().encodeToString(b); }
     static byte[] cat(byte[]... p) { int n = 0; for (byte[] x : p) n += x.length; byte[] r = new byte[n]; int o = 0; for (byte[] x : p) { System.arraycopy(x, 0, r, o, x.length); o += x.length; } return r; }

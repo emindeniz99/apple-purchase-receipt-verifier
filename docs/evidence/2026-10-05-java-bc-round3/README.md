@@ -11,7 +11,7 @@ the Maven build.
 | File | Question it answered |
 |---|---|
 | `Probe1Envelope.java` | J1. With the Apple-signed sandbox receipt's unsigned envelope fields altered one at a time (outer content type OID, the SignedData and SignerInfo versions, `digestAlgorithms`, the encapsulated content type, and the signature algorithm label), which edits does Java still verify? |
-| `Probe14Trail.java` | J2. What does Java answer for a JWS whose `x5c` leaf has a zero byte, garbage or a second certificate after the DER, or bytes in front of it? |
+| `Probe14Trail.java` | J2. What does Java answer for a JWS whose `x5c` entries carry bytes after their DER (a zero byte, garbage, 5,000 bytes, a second certificate), on the leaf, the intermediate or the root, or whose root slot holds leaf and root? |
 | `Probe15Pem.java` | J2. What does Java answer when an `x5c` entry is PEM text, or a PKCS#7 certs-only bundle, instead of one DER certificate? |
 | `Probe18Profile.java` | J3. Which certificate profile variants on the JWS chain, all genuinely signed by the test chain (AuthorityKeyIdentifier that does not match the intermediate's SubjectKeyIdentifier, basicConstraints and keyUsage changes, policies and `policyConstraints`, extended key usage, name constraints, critical unknown extensions), does Java accept? |
 | `Probe17Curve.java` | J4. Does Java accept an ES256 JWS whose leaf key is not on P-256 (secp256k1, brainpoolP256r1, P-384) with a 64-byte raw signature? |

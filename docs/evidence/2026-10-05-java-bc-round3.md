@@ -11,7 +11,8 @@ look for.
 **Method.** The code is `java/` at 8ff4085 (library 0.8.1, BouncyCastle
 1.86), run on OpenJDK 21.0.10 on one 4 vCPU Linux x86_64 machine. The
 core's verdict for the same bytes comes from `corediff`, a Go program
-over wazero and the committed `go/internal/wasm/aprv.wasm` (0.8.1).
+(Go 1.25.0, wazero 1.12.0) over the committed `go/internal/wasm/aprv.wasm`
+(0.8.1).
 Every input is a public sandbox fixture under `fixtures/` or a
 re-signing of one under a key the probe generates; no production
 receipt. The probes and the harness are in
@@ -31,7 +32,7 @@ code to either implementation.
 | # | Input | Java | Core | Probe, output line |
 |---|---|---|---|---|
 | J1 | Genuine receipt, outer `ContentInfo.contentType` set to `id-data` or `1.2.3.4` | ok | `MALFORMED` | `Probe1Envelope`: `m1-outer-oid-data: ok`, `m1b-outer-oid-bogus: ok` |
-| J2 | `x5c` leaf followed by a zero byte, by garbage, by a second certificate; the leaf as PEM text; the leaf inside a PKCS#7 certs-only bundle (header re-signed) | ok | `INVALID_CERTIFICATE` | `Probe14Trail`: `t1`, `t2`, `t5`, `t7` ok; `Probe15Pem`: `u1-leaf-as-pem: ok`, `u2-leaf-as-pkcs7-certs-only: ok` |
+| J2 | An `x5c` entry, any of the three, followed by a zero byte, by garbage, by 5,000 bytes or by a second certificate; a root slot holding leaf and root; the leaf as PEM text; the leaf inside a PKCS#7 certs-only bundle (header re-signed each time) | ok | `INVALID_CERTIFICATE` | `Probe14Trail`: `t1` to `t7` ok; `Probe15Pem`: `u1-leaf-as-pem: ok`, `u2-leaf-as-pkcs7-certs-only: ok` |
 | J3 | Leaf whose AuthorityKeyIdentifier differs from the intermediate's SubjectKeyIdentifier, names and signature valid | ok | `UNTRUSTED_CHAIN` | `Probe18Profile`: `p3-inter-has-skid-leaf-akid-other: ok` |
 | J4 | ES256 with a secp256k1 or brainpoolP256r1 leaf (64-byte signature) | ok | `INVALID_SIGNATURE` | `Probe17Curve`: `curve-secp256k1 (sig 64 bytes): ok`, `curve-brainpoolP256r1: ok`; the P-384 leaf is `INVALID_SIGNATURE` in both |
 
@@ -45,8 +46,9 @@ code to either implementation.
 ### Nothing found
 
 - **Fuzz against the core.** `Probe3Fuzz`: 6,000 mutations of the public
-  receipts; 51 "Java ok, core `MALFORMED`", all at the outer OID (J1) or
-  the `digestAlgorithms` tag. `Probe10JwsFuzz`: 8,000 header and payload
+  receipts; 51 "Java ok, core `MALFORMED`", all at the outer OID or the
+  `digestAlgorithms` tag, the two unsigned envelope fields of J1's R20
+  row. `Probe10JwsFuzz`: 8,000 header and payload
   edits, re-signed. No exception escaped; every other mismatch is a
   recorded R20 class (lone surrogate escape, unknown digest OID, the
   `allow_non-der_tbscert` re-encode).
