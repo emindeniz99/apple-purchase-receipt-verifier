@@ -302,12 +302,28 @@ In the Rust core OpenSSL decodes, and a walk over the headers alone
 before anything is decoded, it applies the depth bound to constructed
 values of every class, the value budget, and the primitive rules OpenSSL's
 own decoder would apply. Only then does a shallow decode count the
-certificates, CRLs and SignerInfos, and only then does
+certificates and SignerInfos, and only then does
 `d2i_CMS_ContentInfo` build any certificate's key; no envelope reaches
 either decode over a bound. The caps are the core's alone: a wrapper
 copies at most one byte more than the cap into the module, so an oversized
 input costs the module no memory, and adds no cap of its own. Failures
 surface as the library's own result, never as a language-level crash.
+
+*Residual risk: work inside one extension value.* The value budget counts
+an `extnValue` OCTET STRING as one value, but OpenSSL decodes some
+extension values before any signature is checked: a CRL's
+AuthorityKeyIdentifier, issuing distribution point and entry
+certificateIssuer while `d2i_CMS_ContentInfo` builds it (`crl_cb`), and a
+bag certificate's extensions, subjectAltName included, the first time
+the core compares it with an anchor (`X509_cmp` caches them). Only the
+receipt's 3 MiB cap bounds that work. Measured in the test profile
+(docs/evidence/2026-10-05-core-drop-redundant-bounds.md): one CRL whose
+AuthorityKeyIdentifier holds 1,000,000 empty names (2 MB) costs about
+0.6 s and 100 MiB of peak memory, and so does one bag certificate with a
+2 MB subjectAltName; the receipt still verifies. Both fit under the
+bounds the core had before the ten-CRL cap went, so the cost is not new.
+The most CRLs the budget lets through, 11,092 minimal ones, cost about
+0.1 s and 10 MiB.
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
 in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header

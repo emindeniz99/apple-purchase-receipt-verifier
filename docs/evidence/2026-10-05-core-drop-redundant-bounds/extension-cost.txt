@@ -1,0 +1,16 @@
+crl-extension-cost.rs, three runs each on the branch (refactor(rust): drop
+bounds and re-checks openssl already makes and later), one test per process:
+
+COST control: 3376 bytes of DER, 3.06 ms / 4.51 ms / 3.61 ms, peak RSS 4 MiB before and 7 MiB after
+COST akid: 185 values in the envelope
+COST crl-akid-1000000-names: 2003502 bytes of DER, 691.7 ms / 580.1 ms / 616.0 ms, peak RSS 23 MiB before and 121 MiB after
+COST flood: 50 bytes and 9 values a CRL, 11092 CRLs
+COST minimal-crl-flood: 557984 bytes of DER, 100.5 ms / 116.3 ms / 131.9 ms, peak RSS 9 MiB before and 17 MiB after
+COST bag-certificate-san-1000000-names: 2003645 bytes of DER, 587.4 ms / 567.1 ms / 571.9 ms, peak RSS 27 MiB before and 118 MiB after
+COST bag-certificate-san-1000000-names-issuer-nobody: 2003632 bytes of DER, 556.0 ms / 526.9 ms / 535.5 ms, peak RSS 27 MiB before and 118 MiB after
+
+At the branch's base, 352f0d1 (ten-CRL cap in place), one run:
+
+COST crl-akid-1000000-names: 2003502 bytes of DER, 527.2 ms, peak RSS 23 MiB before and 121 MiB after
+COST bag-certificate-san-1000000-names: 2003645 bytes of DER, 527.0 ms, peak RSS 27 MiB before and 118 MiB after
+minimal-crl-flood: refused (MALFORMED, 11092 CRLs over the cap), so the test's verdict assertion fails

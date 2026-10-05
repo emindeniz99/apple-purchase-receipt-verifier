@@ -492,14 +492,23 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   one still fails; an ECDSA signature binds none, so one made over the
   digestAlgorithm's hash verifies whatever hash the label names.
   The core's own ten-CRL cap went the same day (owner, 2026-10-05).
-  OpenSSL's CRL decode costs what the CRL's size costs (`crl_cb` in
-  `crypto/x509/x_crl.c`), so the envelope's value budget and the size
-  cap already bound a CRL flood before the full decode: the largest one
-  the budget lets through, 6,655 minimal CRLs, cost about 1.6 times what
-  99,831 NULLs filling the same budget cost
-  ([redundant bounds][redundant]). Eleven CRLs now verify in all three
-  implementations, and `receipt/reject-eleven-embedded-crls` still
-  allows both answers.
+  The envelope's value budget bounds how many CRLs there are: the most
+  it lets through, 11,092 minimal ones, cost about 0.1 s and 10 MiB in
+  the test profile. It does not bound the work inside one: `crl_cb`
+  decodes each CRL's extensions eagerly (the AuthorityKeyIdentifier's
+  GeneralNames, the issuing distribution point, each entry's
+  certificateIssuer; `crypto/x509/x_crl.c:247-316`, 80-163), and an
+  `extnValue` is one value to the walk. Only the receipt's size cap
+  bounds that: one CRL whose AuthorityKeyIdentifier holds 1,000,000
+  empty names (2 MB) costs about 0.6 s and 100 MiB. That is not new,
+  since one CRL always fit under the cap (527 ms at 352f0d1), and an
+  embedded certificate with a 2 MB subjectAltName costs the same: the
+  core's `same_as` (`X509_cmp`) caches every bag certificate's
+  extensions before any signature is checked ([redundant
+  bounds][redundant]; THREAT-MODEL.md §3.7). Eleven CRLs now verify in
+  the core, as in 0.7 and Java, and
+  `receipt/reject-eleven-embedded-crls` moves from `MALFORMED` to `ok`
+  within its `oneOf`.
   On 2026-10-05 the owner also replaced `keyless_target_path` with
   Java's order. A target a pinned anchor vouched for whose key OpenSSL
   cannot build is `INVALID_CERTIFICATE` before its path is built: the
