@@ -1,0 +1,6 @@
+security.provider.1=SunPKCS11
+security.provider.2=SunJCE
+security.provider.3=SUN
+security.provider.4=SunRsaSign
+securerandom.source=file:/dev/urandom
+securerandom.strongAlgorithms=NativePRNGBlocking:SUN

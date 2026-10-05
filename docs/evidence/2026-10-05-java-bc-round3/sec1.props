@@ -1,0 +1,3 @@
+jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, SHA256, RSA, EC, DSA, ECDSA
+jdk.jar.disabledAlgorithms=SHA1
+jdk.security.legacyAlgorithms=SHA1, RSA
