@@ -93,8 +93,9 @@ one. An unexpected runtime exception inside the library is reported by where
 it happened: before a signature has verified it is `Reason.MALFORMED` (input
 nobody vouched for must not be able to raise the internal-error alarm at
 will), while the signed receipt content is decoded `Reason.UNREADABLE_PAYLOAD`,
-and anywhere else `Reason.INTERNAL_ERROR`. Only a JVM error such as
-`OutOfMemoryError` escapes.
+and anywhere else `Reason.INTERNAL_ERROR`. Only a JVM error escapes:
+`OutOfMemoryError`, or `StackOverflowError` on a thread whose stack is
+smaller than about 160 KB ([Resource bounds](#resource-bounds)).
 The one exception: a `null` `Environment` or `Config` is a programming
 mistake, not something a receipt can cause, and throws
 `NullPointerException`.
@@ -519,7 +520,17 @@ Every cryptographic lookup in this library, certificate parsing, chain
 building and validation, the CMS and ES256 signature checks, and every
 digest, names a private `BouncyCastleProvider` instance that this library
 never registers with `Security`. `jdk.certpath.disabledAlgorithms` and the
-host's provider order never change a verdict.
+host's provider order can never make BouncyCastle accept a certificate,
+chain or signature it would otherwise refuse. One JVM service can make it
+refuse a genuine one: when BouncyCastle first decodes an RSA public key
+it draws from the JVM's default `SecureRandom` for a primality check
+(recent keys are cached, so a warm process draws nothing). A default
+`SecureRandom` whose provider throws makes that decode fail, and the
+genuine receipt then answers `UNTRUSTED_CHAIN`, not `INTERNAL_ERROR`,
+because the failure surfaces as "no pinned root vouches for the
+signer". The runtime probe in `Verifier.create` decodes the bundled RSA
+roots' keys first, so on such a JVM `create` throws instead
+([measured](../docs/evidence/2026-10-05-java-bc-round3.md)).
 
 Why it matters: the genuine legacy Apple receipt chain is SHA-1 end to end
 (the leaf and the WWDR intermediate are both `sha1WithRSAEncryption`). RHEL
@@ -590,6 +601,19 @@ structure they bound is read:
 | Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
+**Thread stack.** BouncyCastle's ASN.1 parser recurses, so a legal input
+nested up to the bound needs stack: on OpenJDK 21 a SignerInfo
+`digestAlgorithm` nested 55 deep overflows a 152 KB stack and parses on
+160 KB, and a genuine receipt, a JWS and an endpoint call all complete on
+64 KB ([measured](../docs/evidence/2026-10-05-java-bc-round3.md)). The
+JVM's default is 1 MB. A host that gives its worker threads a small
+`-Xss` or `Thread` stack size should keep it at 256 KB or more, plus
+what its own framework's frames use; below that a hostile input ends
+the call with a `StackOverflowError`, which is an `Error`, not a
+`Failure`. The figures were measured on one JVM and one input shape;
+frame sizes differ between the interpreter and the JIT and between
+HotSpot and OpenJ9, so another JVM may need more.
+
 The ASN.1 nesting bound is BouncyCastle's
 `org.bouncycastle.asn1.max_cons_depth`, 64 unless the host sets it. It is
 read each time BouncyCastle opens an ASN.1 stream, from `java.security`
@@ -658,7 +682,9 @@ probe off; the bcprov version check and the nesting check stay on, since
 neither asks the provider for an engine. The only use we can name is a test
 setup that stands in a double for the crypto provider; with the probe off, a
 broken runtime shows up on the first call instead, as `INTERNAL_ERROR` or a
-refusal (see the self-test above). The probe does not replace the
+refusal (see the self-test above), or as `UNTRUSTED_CHAIN` when what is
+broken is the default `SecureRandom`
+([above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The probe does not replace the
 self-test above: it proves the engines exist, not that a real receipt parses.
 
 **Bound body size and concurrency at the edge.** Reject bodies above
