@@ -128,9 +128,6 @@ pub(crate) fn verify(
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<JsonPayload, Failure> {
-    if jws.is_empty() {
-        return Err(malformed("jws is empty"));
-    }
     if jws.len() > MAX_JWS_BYTES {
         return Err(Failure::new(
             Reason::TooLarge,
@@ -190,11 +187,6 @@ pub(crate) fn verify(
         return Err(Failure::new(
             Reason::InvalidCertificatePurpose,
             format!("intermediate certificate lacks Apple marker OID {WWDR_INTERMEDIATE_OID}"),
-        ));
-    }
-    if !leaf.has_usable_key() {
-        return Err(invalid_certificate(
-            "x5c entry has a public key this library cannot use",
         ));
     }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
@@ -282,18 +274,12 @@ fn verify_signature(
     payload_b64: &[u8],
     signature: &[u8],
 ) -> Result<(), Failure> {
-    if signature.len() != 64 {
-        return Err(Failure::new(
-            Reason::InvalidSignature,
-            format!("ES256 signature must be 64 bytes, got {}", signature.len()),
-        ));
-    }
     let mut signing_input = Vec::with_capacity(header_b64.len() + 1 + payload_b64.len());
     signing_input.extend_from_slice(header_b64);
     signing_input.push(b'.');
     signing_input.extend_from_slice(payload_b64);
-    // False for a key that is not EC on P-256 as well as for a signature
-    // that does not match.
+    // False for a key that is not EC on P-256, and for a signature that is
+    // not 64 bytes, as well as for one that does not match.
     if verify_es256(leaf, signature, &signing_input) {
         Ok(())
     } else {
@@ -314,8 +300,8 @@ pub(crate) fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, Failure> {
 
 /// Only whether the entry IS a certificate: one that OpenSSL parses whole
 /// and a strict reader decodes. Its key is judged when it is about to be
-/// used, once a pinned anchor has vouched for it: the intermediate's in
-/// [`validate_pair`], the leaf's before ES256, and the third entry's never.
+/// used, once a pinned anchor has vouched for it: the intermediate's and
+/// the leaf's in [`validate_pair`], and the third entry's never.
 fn parse_x5c_certificate(entry: &str) -> Result<Certificate, Failure> {
     let der = decode_x5c_entry(entry)?;
     Certificate::from_der(&der)

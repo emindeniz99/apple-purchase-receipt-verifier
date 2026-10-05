@@ -45,15 +45,10 @@ pub enum CmsError {
     /// More embedded certificates than [`EnvelopeLimits::certificates`]:
     /// how many.
     TooManyCertificates(usize),
-    /// More CRLs than [`EnvelopeLimits::crls`]: how many.
-    TooManyCrls(usize),
     /// No encapsulated content (a detached signature).
     NoContent,
     /// No `SignerInfo`.
     NoSignerInfo,
-    /// A constructed string, the encapsulated content's or one kept whole
-    /// inside another value, nests more levels than OpenSSL decodes (six).
-    StringTooDeep,
 }
 
 impl core::fmt::Display for CmsError {
@@ -66,12 +61,8 @@ impl core::fmt::Display for CmsError {
             CmsError::NotSignedData => f.write_str("not a CMS SignedData"),
             CmsError::TooManySignerInfos(count) => write!(f, "{count} SignerInfos"),
             CmsError::TooManyCertificates(count) => write!(f, "{count} embedded certificates"),
-            CmsError::TooManyCrls(count) => write!(f, "{count} embedded CRLs"),
             CmsError::NoContent => f.write_str("no encapsulated payload"),
             CmsError::NoSignerInfo => f.write_str("no signer info"),
-            CmsError::StringTooDeep => {
-                f.write_str("a constructed string nests deeper than OpenSSL decodes")
-            }
         }
     }
 }
@@ -91,8 +82,6 @@ pub struct EnvelopeLimits {
     pub signer_infos: usize,
     /// The most entries of the `certificates` set.
     pub certificates: usize,
-    /// The most entries of the `crls` set.
-    pub crls: usize,
 }
 
 std::thread_local! {
@@ -172,7 +161,6 @@ impl SignedData {
                 WalkError::Trailing => CmsError::Trailing,
                 WalkError::TooDeep => CmsError::TooDeep,
                 WalkError::TooManyNodes => CmsError::TooManyNodes,
-                WalkError::StringTooDeep => CmsError::StringTooDeep,
             },
         )?;
         let envelope = Envelope::decode(der).map_err(|shallow| match shallow {
@@ -194,9 +182,6 @@ impl SignedData {
         let cms = unsafe { CmsContentInfo::from_ptr(raw) };
         if !whole {
             return Err(CmsError::Trailing);
-        }
-        if content_type_nid(&cms) != ffi::NID_pkcs7_signed {
-            return Err(CmsError::NotSignedData);
         }
         let content = encapsulated_content(&cms).ok_or(CmsError::NoContent)?;
         let parsed = SignedData { cms, content };
@@ -366,16 +351,7 @@ fn within(members: EnvelopeMembers, limits: &EnvelopeLimits) -> Result<(), CmsEr
     if members.certificates > limits.certificates {
         return Err(CmsError::TooManyCertificates(members.certificates));
     }
-    if members.crls > limits.crls {
-        return Err(CmsError::TooManyCrls(members.crls));
-    }
     Ok(())
-}
-
-fn content_type_nid(cms: &CmsContentInfo) -> c_int {
-    // SAFETY: reads the content type of a live structure; OBJ_obj2nid
-    // accepts null and answers NID_undef.
-    unsafe { ffi::OBJ_obj2nid(sys::CMS_get0_type(cms.as_ptr())) }
 }
 
 /// The eContent octets of a `signedData`, or `None` when there are none.

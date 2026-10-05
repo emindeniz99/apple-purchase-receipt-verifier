@@ -324,16 +324,19 @@ fn the_envelope_holds_at_most_100000_values() {
 }
 
 #[test]
-fn at_most_ten_crls_are_embedded() {
+fn embedded_crls_are_bounded_by_the_node_budget_alone() {
     // C-F5: the crls field was neither counted nor bounded, so a genuine
     // receipt padded with 39,121 junk CRLs verified after 319 ms of CRL
-    // decoding. Apple's receipts carry none; the certificate bound applies.
-    let ten = der(tag::CONTEXT_1, &crl(&der(0x05, &[])).repeat(10));
+    // decoding. The node budget refuses such a flood (here 10,000 CRLs of
+    // about 15 values each) before the full decode; under it, decoding a
+    // CRL costs what its size costs, so a count of their own bounds nothing
+    // more (DECISIONS.md R20, 2026-10-05). Apple's receipts carry none, and
+    // eleven verify, as in 0.7 and Java.
     let mut envelope = Envelope::shared();
-    envelope.crls = Some(ten);
-    assert_verifies(&envelope.build());
     envelope.crls = Some(der(tag::CONTEXT_1, &crl(&der(0x05, &[])).repeat(11)));
-    assert_refused_early(&envelope.build(), "embeds 11 CRLs");
+    assert_verifies(&envelope.build());
+    envelope.crls = Some(der(tag::CONTEXT_1, &crl(&der(0x05, &[])).repeat(10_000)));
+    assert_refused_early(&envelope.build(), "more than 100000 ASN.1 values");
 }
 
 /// The shared receipt with its eContent re-chunked into `levels`
@@ -361,11 +364,9 @@ fn econtent_rechunked_into_six_constructed_levels_verifies() {
         let (result, _) = verify(&rechunked(levels, tag::OCTET_STRING));
         assert!(result.is_ok(), "{levels} levels: {result:?}");
     }
-    // The walk refuses the seventh level before any decode, and names it.
-    assert_refused_early(
-        &rechunked(7, tag::OCTET_STRING),
-        "a constructed string nests deeper than OpenSSL decodes",
-    );
+    // The walk hands the whole string to OpenSSL's `ANY` decoder, whose
+    // `asn1_collect` refuses the seventh level, before the full decode.
+    assert_refused_early(&rechunked(7, tag::OCTET_STRING), "not a CMS ContentInfo");
     // A chunk of another tag, or of another class, is joined as OpenSSL
     // joins it: `asn1_collect` runs with tag -1, so neither the tag nor the
     // class of a chunk is checked. The signature covers the joined octets,
@@ -439,7 +440,6 @@ fn a_million_tiny_set_entries_are_refused_by_the_node_budget_first() {
         &tiny_entry_flood("certificates", 20),
         "embeds 23 certificates",
     );
-    assert_refused_early(&tiny_entry_flood("crls", 11), "embeds 11 CRLs");
     assert_refused_early(&tiny_entry_flood("signerInfos", 4), "carries 5 SignerInfos");
 }
 
@@ -519,10 +519,7 @@ fn what_openssl_refuses_on_its_own_is_refused_in_the_envelope_at_every_depth() {
         (vec![0x25, 0x02, 0x05, 0x00], "not a CMS ContentInfo"),
         (vec![0x26, 0x03, 0x06, 0x01, 0x2a], "not a CMS ContentInfo"),
         (vec![0x10, 0x00], "not a CMS ContentInfo"),
-        (
-            seven_levels,
-            "a constructed string nests deeper than OpenSSL decodes",
-        ),
+        (seven_levels, "not a CMS ContentInfo"),
     ];
     for (value, message) in &refused {
         for placed in [value.clone(), der_seq(std::slice::from_ref(value))] {

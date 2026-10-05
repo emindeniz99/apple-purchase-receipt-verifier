@@ -152,7 +152,7 @@ Java:
    content, no `SignerInfo` or more than four, more than ten embedded
    certificates, and an envelope over the nesting bound (§3.7: the core's
    32, BouncyCastle's 64 in Java) are `MALFORMED`. The core alone also
-   refuses more than ten CRLs and an envelope over its value budget.
+   refuses an envelope over its value budget.
 2. Read the receipt creation date, attribute 12, and nothing else: walk the
    top-level attribute SET under the depth and value bounds, read each
    entry's type, decode only the value of the first type 12. No usable
@@ -288,7 +288,7 @@ nesting, member names and numbers with jackson-core's defaults, built into
 its own reader factories so a host's process-wide override does not reach
 them, and refuses a Jackson below 2.16 at `Verifier.create`; the core's `serde_json` reader skips a value nobody reads with no bound
 of its own, within the input caps (DECISIONS.md R40). The core also bounds
-ASN.1 nesting at 32, CRLs at 10, the envelope and each attribute SET at
+ASN.1 nesting at 32, the envelope and each attribute SET at
 100,000 values, and constructed strings at six levels. Java's ASN.1
 nesting bound is BouncyCastle's, 64 by default, which counts chunk
 levels too; it never decodes a CRL (DECISIONS.md R20). Readers refuse bytes after
@@ -303,12 +303,28 @@ In the Rust core OpenSSL decodes, and a walk over the headers alone
 before anything is decoded, it applies the depth bound to constructed
 values of every class, the value budget, and the primitive rules OpenSSL's
 own decoder would apply. Only then does a shallow decode count the
-certificates, CRLs and SignerInfos, and only then does
+certificates and SignerInfos, and only then does
 `d2i_CMS_ContentInfo` build any certificate's key; no envelope reaches
 either decode over a bound. The caps are the core's alone: a wrapper
 copies at most one byte more than the cap into the module, so an oversized
 input costs the module no memory, and adds no cap of its own. Failures
 surface as the library's own result, never as a language-level crash.
+
+*Residual risk: work inside one extension value.* The value budget counts
+an `extnValue` OCTET STRING as one value, but OpenSSL decodes some
+extension values before any signature is checked: a CRL's
+AuthorityKeyIdentifier, issuing distribution point and entry
+certificateIssuer while `d2i_CMS_ContentInfo` builds it (`crl_cb`), and a
+bag certificate's extensions, subjectAltName included, the first time
+the core compares it with an anchor (`X509_cmp` caches them). Only the
+receipt's 3 MiB cap bounds that work. Measured in the test profile
+(docs/evidence/2026-10-05-core-drop-redundant-bounds.md): one CRL whose
+AuthorityKeyIdentifier holds 1,000,000 empty names (2 MB) costs about
+0.6 s and 100 MiB of peak memory, and so does one bag certificate with a
+2 MB subjectAltName; the receipt still verifies. Both fit under the
+bounds the core had before the ten-CRL cap went, so the cost is not new.
+The most CRLs the budget lets through, 11,092 minimal ones, cost about
+0.1 s and 10 MiB.
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
 in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header
@@ -334,13 +350,13 @@ them; DECISIONS.md R20):
 `receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep`
 and `receipt/unreadable-signed-content-nested-33-deep-in-context-tags`;
 in Java, BouncyCastle's bound is reached and mapped, not thrown, by
-`ReceiptDecoderTest` (100 deep). Constructed strings and
-CRLs, bounds of the core's decoder that the shared vectors leave
-port-defined (Java, whose nesting bound counts chunk levels and which
-never decodes a CRL, verifies them; DECISIONS.md R20):
-`receipt/reject-econtent-rechunked-into-7-constructed-levels`,
-`receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`
-and `receipt/reject-eleven-embedded-crls`. Malformed structure, as shared
+`ReceiptDecoderTest` (100 deep). Constructed strings, a bound
+of the core's decoder that the shared vectors leave
+port-defined (Java, whose nesting bound counts chunk levels, verifies
+them; DECISIONS.md R20):
+`receipt/reject-econtent-rechunked-into-7-constructed-levels` and
+`receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`.
+Malformed structure, as shared
 vectors: `receipt/reject-attribute-type-above-int32-max`,
 `receipt/reject-attribute-type-that-truncates-to-a-modelled-type`,
 `transaction/reject-x5c-leaf-that-is-not-a-certificate`,

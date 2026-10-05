@@ -106,6 +106,11 @@ fn seconds(at_millis: i64) -> (i64, i64) {
 
 /// Asks OpenSSL for the path from `target` through `untrusted` to one of
 /// `anchors` at `at_millis`, and adds the millisecond `notAfter` check.
+///
+/// The caller has judged the target's key first, as Java does: OpenSSL
+/// stops on a target whose public key it cannot build before it judges
+/// anything else (`X509_get_pubkey_parameters` over the whole path), so
+/// such a target never reaches this function.
 fn checked_path(
     target: &Certificate,
     untrusted: &[Certificate],
@@ -113,9 +118,6 @@ fn checked_path(
     at_millis: i64,
     max_intermediates: usize,
 ) -> PathOutcome {
-    if !target.has_usable_key() {
-        return keyless_target_path(target, untrusted, anchors, at_millis, max_intermediates);
-    }
     let (second, rounded_up) = seconds(at_millis);
     let mut outcome = verify_path(
         target,
@@ -144,99 +146,6 @@ fn checked_path(
     outcome
 }
 
-/// The path of a target whose public key OpenSSL cannot build.
-///
-/// `X509_verify_cert` stops on such a target before it judges anything
-/// else (it copies key parameters along the whole path first), so the
-/// path is judged in two parts instead: the target's issuer, found by the
-/// issuer's signature over the target (the target's own key is never
-/// used), is validated by OpenSSL as a target of its own; the target's
-/// window and critical extensions, and the issuer's right to issue, are
-/// judged here the way OpenSSL judges them. The problems come back at the
-/// depths they would have had on the whole path.
-fn keyless_target_path(
-    target: &Certificate,
-    untrusted: &[Certificate],
-    anchors: &[TrustAnchor],
-    at_millis: i64,
-    max_intermediates: usize,
-) -> PathOutcome {
-    let (second, rounded_up) = seconds(at_millis);
-    let mut problems = Vec::new();
-    if !target.not_before_at_most(second) {
-        problems.push(PathProblem {
-            depth: 0,
-            kind: PathProblemKind::NotYetValid,
-        });
-    }
-    if !target.not_after_at_least(rounded_up) {
-        problems.push(PathProblem {
-            depth: 0,
-            kind: PathProblemKind::Expired,
-        });
-    }
-    if target.has_unhandled_critical_extension() {
-        problems.push(PathProblem {
-            depth: 0,
-            kind: PathProblemKind::UnhandledCriticalExtension,
-        });
-    }
-    if let Some(anchor) = anchors
-        .iter()
-        .map(TrustAnchor::certificate)
-        .find(|anchor| target.issued_by(anchor))
-    {
-        return PathOutcome {
-            chain: vec![target.clone(), anchor.clone()],
-            anchored: true,
-            problems,
-        };
-    }
-    let Some(issuer) = untrusted
-        .iter()
-        .find(|candidate| target.issued_by(candidate))
-    else {
-        problems.push(PathProblem {
-            depth: 0,
-            kind: PathProblemKind::NoIssuer,
-        });
-        return PathOutcome {
-            chain: vec![target.clone()],
-            anchored: false,
-            problems,
-        };
-    };
-    let Some(above) = max_intermediates.checked_sub(1) else {
-        problems.push(PathProblem {
-            depth: 1,
-            kind: PathProblemKind::TooLong,
-        });
-        return PathOutcome {
-            chain: vec![target.clone()],
-            anchored: false,
-            problems,
-        };
-    };
-    if !issuer.may_issue_certificates() {
-        problems.push(PathProblem {
-            depth: 1,
-            kind: PathProblemKind::NotCa,
-        });
-    }
-    let upper = checked_path(issuer, untrusted, anchors, at_millis, above);
-    problems.extend(upper.problems.into_iter().map(|problem| PathProblem {
-        depth: problem.depth.saturating_add(1),
-        kind: problem.kind,
-    }));
-    let mut chain = vec![target.clone()];
-    chain.extend(upper.chain);
-    PathOutcome {
-        chain,
-        anchored: upper.anchored,
-        problems,
-    }
-}
-
 /// A problem that means no path reaches a pinned anchor, or that a link on
 /// it is broken.
 fn is_structural(kind: PathProblemKind) -> bool {
@@ -258,7 +167,8 @@ fn structural_failure(kind: PathProblemKind) -> Failure {
 
 /// Builds and validates the path of a legacy receipt's signer, whose
 /// intermediates are embedded in the CMS blob. `authenticated` is what
-/// [`authenticated_top_down`] accepted.
+/// [`authenticated_top_down`] accepted, the signer among it, and the
+/// signer's key is one OpenSSL can build.
 ///
 /// Returns the path below the anchor, signer first.
 ///
@@ -316,7 +226,7 @@ pub fn receipt_path(
 /// a certificate that marks critical an extension OpenSSL does not
 /// process, or a path other than leaf, intermediate, anchor;
 /// `INVALID_CERTIFICATE` for a certificate outside its validity window, or
-/// a vouched-for intermediate whose key OpenSSL cannot build.
+/// a vouched-for intermediate or leaf whose key OpenSSL cannot build.
 pub fn validate_pair(
     leaf: &Certificate,
     intermediate: &Certificate,
@@ -339,6 +249,14 @@ pub fn validate_pair(
     }
     if !leaf.issued_by(intermediate) {
         return Err(untrusted("leaf is not issued by the intermediate"));
+    }
+    // Vouched for, and its key is about to check the JWS signature; judged
+    // before the path, as Java judges it (`JwsCore.authenticateTopDown`).
+    if !leaf.has_usable_key() {
+        return Err(Failure::new(
+            Reason::InvalidCertificate,
+            "x5c entry has a public key this library cannot use",
+        ));
     }
     let outcome = checked_path(
         leaf,

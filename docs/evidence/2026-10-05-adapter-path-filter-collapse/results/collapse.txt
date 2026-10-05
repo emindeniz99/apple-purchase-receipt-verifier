@@ -1,0 +1,5 @@
+cases: 153 rows: same 153
+hostile: 811 rows: same 811
+algorithms: 22 rows: same 22
+substrate: 193 rows: same 193
+fuzz: 5000 rows: same 5000

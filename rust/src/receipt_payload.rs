@@ -940,8 +940,9 @@ mod tests {
     fn seven_constructed_levels_are_refused_wherever_openssl_decodes_a_string() {
         // N1, N2: OpenSSL joins six constructed levels of a string and no
         // more, wherever it decodes one: the value, the version field, the
-        // Xcode wrap. Six read; seven are unreadable, and the detail names
-        // the nesting, not a chunk's type.
+        // Xcode wrap. Six read; seven are unreadable, refused by OpenSSL's
+        // own decoder when the walk hands it the whole string, so the
+        // detail does not blame a chunk's type.
         let bundle = der(0x0c, b"com.example.app");
         let version = |levels| {
             set(&[der(
@@ -966,7 +967,7 @@ mod tests {
             assert!(parse_receipt_payload(&build(6)).is_ok());
             let refused = parse_receipt_payload(&build(7)).unwrap_err().to_string();
             assert!(
-                refused.contains("nested deeper than OpenSSL decodes"),
+                refused.contains("payload is not one well-formed value"),
                 "{refused}"
             );
         }

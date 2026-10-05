@@ -109,8 +109,10 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    and the `ConstructedStrings` rewriter. OpenSSL refuses those BER
    encodings, and Apple never sends them. Their removal and the eight
    cases that become port-defined land in their own pull request.
-   Examined and kept: `keyless_target_path` in `rust/src/path.rs` (it
-   reports path problems at the depths `X509_verify_cert` would).
+   Examined and kept then: `keyless_target_path` in `rust/src/path.rs`
+   (it reported path problems at the depths `X509_verify_cert` would);
+   replaced on 2026-10-05 by Java's order, which judges a vouched-for
+   target's key before its path (DECISIONS.md R20).
    `signature_names_digest` in `rust/openssl/src/cms.rs` was kept then
    for continuity with the 0.7 core's `INVALID_SIGNATURE`, and dropped
    on 2026-10-05: the core leaves the label to OpenSSL, it was not a

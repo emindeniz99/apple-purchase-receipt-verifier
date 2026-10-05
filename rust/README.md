@@ -247,8 +247,8 @@ the pinned roots **before** the leaf is checked against the intermediate →
 OID** `1.2.840.113635.100.6.2.1` → ES256 signature. As on the receipt path,
 a chain that does not reach a pinned root is `UNTRUSTED_CHAIN` whatever
 markers it carries. A key OpenSSL cannot use is
-`INVALID_CERTIFICATE`, judged only once it has been vouched for and is
-about to be used. The payload is read before the chain, for `signedDate`, but a
+`INVALID_CERTIFICATE`, judged as soon as its certificate has been vouched
+for, before the chain's dates and the markers, in Java's order. The payload is read before the chain, for `signedDate`, but a
 payload that does not parse (text after the object included) is
 reported only after the signature: `UNREADABLE_PAYLOAD` if the signature
 holds, `INVALID_SIGNATURE` if not, so nothing unsigned decides which a
@@ -258,10 +258,10 @@ caller sees.
 every `SignerInfo`'s `signedAttrs`, whatever its position → at most four
 `SignerInfo`s and ten embedded certificates → the creation date alone
 (nothing else in the payload is read yet) → for each `SignerInfo`: the
-signer's certificate → the chain, top-down from the pinned roots, at the
+signer's certificate → a pinned root vouches for it, top-down → the
+signer's key, which OpenSSL must be able to use → the chain at the
 creation date or the clock → **signer marker OID** → **WWDR marker OID on the
-intermediate** → the signer's key, which OpenSSL must be able to use → the
-CMS signature. One `SignerInfo` passing is enough; when
+intermediate** → the CMS signature. One `SignerInfo` passing is enough; when
 none does, the first one's failure is the verdict. Then the full payload
 parse, where any failure is `UNREADABLE_PAYLOAD`.
 
@@ -346,7 +346,7 @@ In the payload, the chunks of a constructed `OCTET STRING` (an attribute
 value, the Xcode wrap) must be `OCTET STRING`s, and a tag in
 high-tag-number form and a length of more than four octets are refused,
 as 0.7's reader refused them. Trailing bytes are
-refused. At most 10 embedded certificates, 10 CRLs and 4 SignerInfos,
+refused. At most 10 embedded certificates and 4 SignerInfos,
 counted on a shallow decode after the envelope's header walk and before
 any certificate is decoded. JSON: strict RFC 8259 grammar, read by
 `serde_json` with no nesting or length bound of its own; a value nobody

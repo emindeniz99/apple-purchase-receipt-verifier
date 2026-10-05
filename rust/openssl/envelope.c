@@ -1,8 +1,7 @@
 /*
  * A shallow view of a CMS ContentInfo and SignedData as OpenSSL ASN.1
  * templates, used to name the content type and count the embedded
- * certificates, CRLs and SignerInfos before the envelope is decoded for
- * real.
+ * certificates and SignerInfos before the envelope is decoded for real.
  *
  * d2i_CMS_ContentInfo decodes every embedded certificate in full, public
  * key included, before the caller can see how many there are, so a receipt

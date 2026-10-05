@@ -704,6 +704,145 @@ fn a_same_named_intermediate_placed_first_in_the_bag_does_not_decide_the_path() 
     }
 }
 
+/// A renewed intermediate beside the expired certificate it replaced, for
+/// the same subject and key, both issued by the pinned root, as Apple
+/// renews an intermediate. Either one's key verifies the signer, and the
+/// receipt verifies whichever the bag lists first: OpenSSL's issuer lookup
+/// takes the candidate valid at the chain instant
+/// (`get0_best_issuer_sk`, `crypto/x509/x509_vfy.c:414-445`). A path fixed
+/// to the first certificate the bag offers fails (2026-10-05 path-filter
+/// evidence). Key identifiers as Apple's certificates carry them.
+#[test]
+fn a_renewed_intermediate_verifies_beside_its_expired_twin_in_either_order() {
+    use common::{der, der_int, der_oid, der_seq, mint};
+    let (root_key, intermediate_key, signer_key) = (mint::key(81), mint::key(82), mint::key(83));
+    let key_id = |key: &mint::SigningKey| openssl::sha::sha1(&key.public_point()).to_vec();
+    let algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
+    let utc = |text: &[u8]| der(0x17, text);
+    let generalized = |text: &[u8]| der(0x18, text);
+    let mint_certificate = |subject: &str,
+                            subject_key: &mint::SigningKey,
+                            issuer: &str,
+                            issuer_key: &mint::SigningKey,
+                            serial: u64,
+                            validity: [Vec<u8>; 2],
+                            marker: Option<&str>| {
+        let mut extensions = vec![der_seq(&[
+            der_oid("2.5.29.14"),
+            der(0x04, &der(0x04, &key_id(subject_key))),
+        ])];
+        if subject != issuer {
+            extensions.push(der_seq(&[
+                der_oid("2.5.29.35"),
+                der(0x04, &der_seq(&[der(0x80, &key_id(issuer_key))])),
+            ]));
+        }
+        if marker != Some(mint::RECEIPT_SIGNER_MARKER) {
+            extensions.push(der_seq(&[
+                der_oid("2.5.29.19"),
+                der(0x01, &[0xFF]),
+                der(0x04, &der_seq(&[der(0x01, &[0xFF])])),
+            ]));
+        }
+        if let Some(oid) = marker {
+            extensions.push(der_seq(&[der_oid(oid), der(0x04, &[0x05, 0x00])]));
+        }
+        let tbs = der_seq(&[
+            der(0xA0, &der_int(2)),
+            der_int(serial),
+            algorithm.clone(),
+            mint::name(issuer),
+            der_seq(&validity),
+            mint::name(subject),
+            mint::spki(subject_key),
+            der(0xA3, &der_seq(&extensions)),
+        ]);
+        mint::assemble(tbs.clone(), algorithm.clone(), &issuer_key.sign_der(&tbs))
+    };
+    let always = || [utc(b"100101000000Z"), generalized(b"20991231000000Z")];
+    let root = mint_certificate(
+        "Renewal Root",
+        &root_key,
+        "Renewal Root",
+        &root_key,
+        1,
+        always(),
+        None,
+    );
+    let renewed = mint_certificate(
+        "Renewal WWDR",
+        &intermediate_key,
+        "Renewal Root",
+        &root_key,
+        2,
+        [utc(b"200101000000Z"), generalized(b"20991231000000Z")],
+        Some(mint::WWDR_MARKER),
+    );
+    let expired = mint_certificate(
+        "Renewal WWDR",
+        &intermediate_key,
+        "Renewal Root",
+        &root_key,
+        4,
+        [utc(b"100101000000Z"), utc(b"150101000000Z")],
+        Some(mint::WWDR_MARKER),
+    );
+    let signer = mint_certificate(
+        "Renewal Signer",
+        &signer_key,
+        "Renewal WWDR",
+        &intermediate_key,
+        3,
+        always(),
+        Some(mint::RECEIPT_SIGNER_MARKER),
+    );
+    let receipt = |bag: Vec<Vec<u8>>, created: &str| {
+        let content = common::der_set(&[
+            der_seq(&[
+                der_int(2),
+                der_int(1),
+                der(0x04, &der(0x0c, b"com.example.app")),
+            ]),
+            der_seq(&[
+                der_int(12),
+                der_int(1),
+                der(0x04, &der(0x16, created.as_bytes())),
+            ]),
+        ]);
+        let mut builder = common::CmsBuilder::from_shared();
+        builder.certificates = bag;
+        builder.signer_issuer = mint::name("Renewal WWDR");
+        builder.signer_serial = vec![3];
+        builder.signed_attrs = None;
+        builder.signature_algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
+        builder.signature = signer_key.sign_der(&content);
+        builder.content = Some(content);
+        builder.build()
+    };
+    let verifier = common::verifier([TrustAnchor::from_der(&root).unwrap()]);
+    let orders = [
+        vec![renewed.clone(), expired.clone(), signer.clone()],
+        vec![expired.clone(), renewed.clone(), signer.clone()],
+    ];
+    // Created in 2025, inside the renewal's window only, and in 2012,
+    // inside the expired certificate's window only: each order verifies.
+    for created in ["2025-01-01T00:00:00Z", "2012-06-01T00:00:00Z"] {
+        for bag in &orders {
+            let payload = common::verify_der(&verifier, &receipt(bag.clone(), created))
+                .unwrap_or_else(|failure| panic!("{created}: {failure}"));
+            assert_eq!(payload.bundle_id.as_deref(), Some("com.example.app"));
+        }
+    }
+    // The control: the expired certificate alone fails at 2025, so the
+    // receipts above verify through the renewal.
+    let failure = common::verify_der(
+        &verifier,
+        &receipt(vec![expired, signer], "2025-01-01T00:00:00Z"),
+    )
+    .unwrap_err();
+    assert_eq!(failure.reason(), Reason::InvalidCertificate, "{failure}");
+}
+
 /// The bag is narrowed by signature alone, not by `keyUsage`: an
 /// intermediate whose `keyUsage` lacks `keyCertSign` still signed the leaf,
 /// so OpenSSL still builds the path through it and reports it as not a CA,

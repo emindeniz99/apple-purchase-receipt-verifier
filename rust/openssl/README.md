@@ -45,20 +45,19 @@ values: DER in, certificates, facts and booleans out.
   it is self-signed), `set_time` (the chain instant), `set_depth` (the
   path length bound) and a verify callback that records every problem and
   lets verification continue, so the core can apply 0.7's order. Anchors are trusted by fiat: their own validity,
-  CA flag and path length problems are waived, as is an expiry reported at
-  exactly the `notAfter` second (RFC 5280 includes it; OpenSSL checks
-  whole seconds and the core adds the millisecond check). No purpose,
+  CA flag and path length problems are waived. OpenSSL 4.0 counts the
+  `notAfter` second as valid, as RFC 5280 does; it checks whole seconds
+  and the core adds the millisecond check. No purpose,
   policy, revocation or host check is asked for.
 - **Certificates**: `X509_check_issued`, `X509_verify`, `X509_check_ca`,
-  `X509_get_extension_flags` (`EXFLAG_CRITICAL`: an unhandled critical
-  extension), `X509_get_ext_d2i`, `ASN1_BIT_STRING_get_length` (4.0 API:
+  `X509_get_ext_d2i`, `ASN1_BIT_STRING_get_length` (4.0 API:
   the signature's unused bits).
 - **Templates**: `ASN1_item_d2i` with items declared in C, the way OpenSSL
   declares its own. `payload.c` is the receipt payload (a SET OF
   attributes, each a `SEQUENCE OF ANY` whose first three fields the adapter
   types; the contract accepts a fourth field). `envelope.c` is a shallow
   `ContentInfo` and `SignedData` whose members stay raw `ANY` values: it
-  names the content type and gives the certificate, CRL and `SignerInfo`
+  names the content type and gives the certificate and `SignerInfo`
   counts before `d2i_CMS_ContentInfo` builds every embedded certificate's
   public key. Both declare their items' prototypes, and `envelope.c`
   asserts the layout `src/sys.rs` mirrors (`_Static_assert` there, `const`

@@ -773,6 +773,36 @@ fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
     let pinned = common::verifier([TrustAnchor::from_der(&root).unwrap()]);
     assert!(pinned.verify_signed_data(&minted).is_ok());
 
+    // A P-521 leaf the minted intermediate vouches for, without the leaf
+    // marker: its key is judged right after its signature, before the path
+    // and the markers, as Java judges it (JwsCore.authenticateTopDown), so
+    // the answer is the key's and not the missing marker's.
+    let keyless_leaf = common::mint::certificate_for_spki(
+        "JWS Leaf P-521",
+        p521_spki(),
+        "JWS WWDR",
+        &intermediate_key,
+        4,
+        false,
+        None,
+    );
+    let header = format!(
+        r#"{{"alg":"ES256","x5c":["{}","{}","{}"]}}"#,
+        base64_encode(&keyless_leaf),
+        base64_encode(&intermediate),
+        base64_encode(&root)
+    );
+    let keyless = format!(
+        "{}.{}.{}",
+        common::base64url(header.as_bytes()),
+        common::base64url(br#"{"signedDate":1735689600000}"#),
+        common::base64url(&[1; 64])
+    );
+    assert_eq!(
+        pinned.verify_signed_data(&keyless).unwrap_err().reason(),
+        Reason::InvalidCertificate
+    );
+
     // The shared transaction with an unvouched P-521 intermediate.
     let jws = common::transaction_jws();
     let mut header = common::jws_header(&jws);

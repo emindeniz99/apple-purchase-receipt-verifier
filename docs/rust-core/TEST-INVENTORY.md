@@ -52,9 +52,9 @@ differential run compares it with the core over the corpora and the cases
 | PHP | 22 | 4 | 6 | 11 | 1 |
 | Node | 6 | 1 | 2 | 0 | 3 |
 | .NET | 2 | 0 | 0 | 0 | 2 |
-| Rust | 313 | 43 | 0 | 0 | 270 |
+| Rust | 315 | 43 | 0 | 0 | 272 |
 | Java | 201 | 11 | 0 | 0 | 190 |
-| All | 862 | 201 | 31 | 78 | 552 |
+| All | 864 | 201 | 31 | 78 | 554 |
 
 ## The cases this lane added
 
@@ -571,7 +571,7 @@ and `-second`.
 | Rust | `rust/tests/envelope_bounds.rs` `a_certificate_flood_behind_a_broken_envelope_never_reaches_the_full_decode` | input built in code: stays with the Rust |
 | Rust | `rust/tests/envelope_bounds.rs` `the_depth_bound_counts_every_constructed_value_of_the_envelope` | input built in code: stays with the Rust |
 | Rust | `rust/tests/envelope_bounds.rs` `the_envelope_holds_at_most_100000_values` | input built in code: stays with the Rust |
-| Rust | `rust/tests/envelope_bounds.rs` `at_most_ten_crls_are_embedded` | input built in code: stays with the Rust |
+| Rust | `rust/tests/envelope_bounds.rs` `embedded_crls_are_bounded_by_the_node_budget_alone` | input built in code: stays with the Rust |
 | Rust | `rust/tests/envelope_bounds.rs` `econtent_rechunked_into_six_constructed_levels_verifies` | input built in code: stays with the Rust |
 | Rust | `rust/tests/envelope_bounds.rs` `values_kept_whole_in_the_envelope_are_valid_asn1` | input built in code: stays with the Rust |
 | Rust | `rust/tests/hostile.rs` `eleven_characters_of_base64_do_not_escape_the_contract` | input built in code: stays with the Rust |
@@ -693,6 +693,7 @@ and `-second`.
 | Rust | `rust/tests/receipt_negative.rs` `signed_attrs_without_content_type_or_message_digest_are_refused` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_broken_signed_attrs_set_is_malformed_in_either_signer_position` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `an_unvouched_signer_on_an_unimplemented_curve_is_an_untrusted_chain` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_negative.rs` `a_vouched_signer_on_an_unimplemented_curve_is_judged_on_its_key_first` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_dateless_receipt_is_judged_at_the_clock_to_the_millisecond` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `the_control_an_ec_signer_under_the_pinned_root_verifies` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `a_digest_apple_does_not_use_today_verifies_when_the_signature_holds` | input built in code: stays with the Rust |
@@ -722,6 +723,7 @@ and `-second`.
 | Rust | `rust/tests/trust_pinning.rs` `a_trust_anchors_own_expiry_is_not_checked` | same fixture as `receipt/accept-historical-creation-date-under-expired-chain` |
 | Rust | `rust/tests/trust_pinning.rs` `a_root_verifies_beside_another_root_with_the_same_subject_in_either_order` | same fixture as `endpoint/ids-absent-are-omitted`, `endpoint/request-date-is-the-verification-clock`, `endpoint/sandbox-receipt-on-production-answers-21007` and 9 more |
 | Rust | `rust/tests/trust_pinning.rs` `a_root_verifies_when_a_same_named_root_vouches_for_a_stranger_in_the_bag` | same fixture as `receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-first`, `receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-second`, `receipt/verify-with-a-stranger-whose-key-is-unreadable` |
+| Rust | `rust/tests/trust_pinning.rs` `a_renewed_intermediate_verifies_beside_its_expired_twin_in_either_order` | input built in code: stays with the Rust |
 | Rust | `rust/tests/unauthenticated_key_cost.rs` `a_genuine_receipt_padded_with_stranger_keys_verifies_quickly` | input built in code: stays with the Rust |
 | Rust | `rust/tests/unauthenticated_key_cost.rs` `a_receipt_whose_only_issuers_have_expensive_keys_is_refused_quickly` | input built in code: stays with the Rust |
 | Rust | `rust/tests/unauthenticated_key_cost.rs` `a_jws_whose_certificates_have_expensive_keys_is_refused_quickly` | input built in code: stays with the Rust |

@@ -19,11 +19,6 @@ pub(crate) const MAX_EMBEDDED_CERTIFICATES: usize = 10;
 /// signature is checked.
 pub(crate) const MAX_SIGNER_INFOS: usize = 4;
 
-/// How many CRLs a receipt may embed. Apple's receipts carry none; like the
-/// certificates, each one is decoded in full before anything is verified,
-/// so the count is bounded before a single one is.
-pub(crate) const MAX_EMBEDDED_CRLS: usize = 10;
-
 /// The bounds the adapter enforces on an envelope, in its order, before
 /// the full decode builds any certificate (0.7 bounds table).
 const ENVELOPE_LIMITS: EnvelopeLimits = EnvelopeLimits {
@@ -31,7 +26,6 @@ const ENVELOPE_LIMITS: EnvelopeLimits = EnvelopeLimits {
     nodes: MAX_ASN1_NODES,
     signer_infos: MAX_SIGNER_INFOS,
     certificates: MAX_EMBEDDED_CERTIFICATES,
-    crls: MAX_EMBEDDED_CRLS,
 };
 
 /// The largest receipt string, in UTF-8 bytes: 3 MiB, Apple's own request
@@ -60,9 +54,6 @@ pub(crate) fn verify(
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<ReceiptPayload, Failure> {
-    if base64.is_empty() {
-        return Err(malformed("receipt is empty"));
-    }
     // Before the decode, which would otherwise allocate the bytes it decodes
     // to.
     if base64.len() > MAX_RECEIPT_BYTES {
@@ -107,9 +98,6 @@ fn envelope_failure(err: CmsError) -> Failure {
     match err {
         CmsError::TooManySignerInfos(count) => too_many_signer_infos(count),
         CmsError::TooManyCertificates(count) => too_many_certificates(count),
-        CmsError::TooManyCrls(count) => malformed(format!(
-            "receipt embeds {count} CRLs, more than the maximum of {MAX_EMBEDDED_CRLS}"
-        )),
         CmsError::TooDeep => malformed(format!(
             "malformed CMS structure: nested deeper than {MAX_ASN1_DEPTH} constructed values"
         )),
@@ -130,8 +118,8 @@ fn verify_signature(
     // The adapter bounds the envelope before its full decode, which builds
     // each embedded certificate's public key: first a header walk under the
     // depth and node bounds, which allocates nothing, then a shallow decode
-    // that keeps every member raw and is counted against the SignerInfo,
-    // certificate and CRL bounds. The walk comes first because the shallow
+    // that keeps every member raw and is counted against the SignerInfo
+    // and certificate bounds. The walk comes first because the shallow
     // decode allocates per member, so a set of a million tiny entries is
     // refused by the node budget before any of them is built. An
     // unverified receipt cannot make the caller pay for a thousand keys
@@ -219,6 +207,28 @@ fn verify_signer(
     anchors: &[TrustAnchor],
     at_millis: i64,
 ) -> Result<(), Failure> {
+    // Java's order (`ReceiptCore.validateChain`): a signer no pinned anchor
+    // vouched for is judged no further, and a vouched-for signer's key is
+    // judged before its path. Its key is used to check the CMS signature,
+    // so a key OpenSSL cannot build is a defect of the certificate rather
+    // than of the signature it carries, the reading the JWS path applies to
+    // x5c; and OpenSSL builds no path for a target whose key it cannot
+    // build.
+    if !authenticated
+        .iter()
+        .any(|certificate| certificate.same_as(signer))
+    {
+        return Err(Failure::new(
+            Reason::UntrustedChain,
+            "signer certificate is not issued under a pinned Apple root",
+        ));
+    }
+    if !signer.has_usable_key() {
+        return Err(Failure::new(
+            Reason::InvalidCertificate,
+            "receipt signer certificate has a public key this library cannot use",
+        ));
+    }
     let path = receipt_path(signer, authenticated, anchors, at_millis)?;
     // Checked after the chain, so a foreign chain still reports
     // UNTRUSTED_CHAIN rather than INVALID_CERTIFICATE_PURPOSE.
@@ -237,16 +247,6 @@ fn verify_signer(
         return Err(Failure::new(
             Reason::InvalidCertificatePurpose,
             format!("receipt intermediate certificate lacks Apple WWDR marker OID {WWDR_INTERMEDIATE_OID}"),
-        ));
-    }
-    // The signer's key is used to check the CMS signature, so a key OpenSSL
-    // cannot build is a defect of the certificate rather than of the
-    // signature it carries, the reading the JWS path applies to x5c. Judged
-    // only once the chain has vouched for the certificate.
-    if !signer.has_usable_key() {
-        return Err(Failure::new(
-            Reason::InvalidCertificate,
-            "receipt signer certificate has a public key this library cannot use",
         ));
     }
     // The chain is checked BEFORE the signature on purpose: checking the

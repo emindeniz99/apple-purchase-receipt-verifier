@@ -12156,7 +12156,7 @@
     },
     {
       "id": "receipt/reject-eleven-embedded-crls",
-      "description": "The same receipt with eleven CRLs. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING): the core decodes each CRL in full before anything is verified and bounds the count at ten, like the certificates, so it answers MALFORMED; Java never decodes a CRL, its receipt size cap and nesting bound already limit the field, so it verifies. Apple's receipts carry no CRL. DECISIONS.md R20.",
+      "description": "The same receipt with eleven CRLs. Port-defined (owner, 2026-09-30, by the rule OD-17 applied to the two-chunk signature BIT STRING). Until 2026-10-05 the core bounded the count at ten and answered MALFORMED; that cap went because the envelope's value budget bounds how many CRLs the core decodes and the receipt size cap bounds the work inside them, so the core now verifies, as Java does, which never decodes a CRL. Apple's receipts carry no CRL. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "core-review-receipt-eleven-crls"

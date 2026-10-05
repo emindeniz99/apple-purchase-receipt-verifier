@@ -1,0 +1,9 @@
+ 421  'chain does not reach a pinned root' -> 'signer certificate is not issued under a pinned Apple root'
+ 131  'ES256 signature must be 64 bytes, got N' -> 'ES256 signature does not match the leaf key'
+   8  'receipt is empty' -> 'receipt is not valid base64'
+   5  'receipt intermediate certificate lacks Apple WWDR marker OID 1.2.840.113635.100.6.2.1' -> 'receipt signer certificate has a public key this library cannot use'
+   3  'malformed CMS structure: a constructed string nests deeper than OpenSSL decodes' -> 'malformed CMS structure: not a CMS ContentInfo'
+   2  'jws is empty' -> 'expected 3 dot-separated segments, got 1'
+   2  'chain exceeds the maximum length' -> 'signer certificate is not issued under a pinned Apple root'
+   1  'an intermediate is not a CA' -> 'signer certificate is not issued under a pinned Apple root'
+ 573  rows differ in all

@@ -12,13 +12,12 @@ use crate::certificate::{same_x509, Certificate};
 use crate::{drain_errors, init, sys};
 use foreign_types::ForeignTypeRef;
 use libc::c_int;
-use openssl::asn1::Asn1Time;
 use openssl::stack::Stack;
 use openssl::x509::store::X509StoreBuilder;
 use openssl::x509::verify::{X509VerifyFlags, X509VerifyParam};
 use openssl::x509::{X509StoreContext, X509StoreContextRef, X509VerifyResult, X509};
 use openssl_sys as ffi;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 
 /// What kind of problem a path has, grouped the way the core judges them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,11 +94,10 @@ impl PathOutcome {
 }
 
 std::thread_local! {
-    /// The anchors and the check time of the verification running on this
-    /// thread, for the verify callback, which is a plain C function with no
-    /// user data; and the problems it has recorded.
+    /// The anchors of the verification running on this thread, for the
+    /// verify callback, which is a plain C function with no user data; and
+    /// the problems it has recorded.
     static ANCHORS: RefCell<Vec<X509>> = const { RefCell::new(Vec::new()) };
-    static CHECK_TIME: Cell<i64> = const { Cell::new(0) };
     static PROBLEMS: RefCell<Vec<PathProblem>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -111,8 +109,7 @@ std::thread_local! {
 /// `X509_V_FLAG_PARTIAL_CHAIN` makes it a trust anchor whether or not it is
 /// self-signed, as a pinned anchor is. No purpose, policy, revocation or host check is asked
 /// for. An anchor is trusted by fiat: its own validity window, CA flag and
-/// path length constraint are not judged. An expiry reported at exactly the
-/// `notAfter` second is waived, since RFC 5280 includes that second.
+/// path length constraint are not judged.
 ///
 /// Every problem is recorded and verification continues, so OpenSSL goes on
 /// to check each link of the path it built with the keys of `untrusted`:
@@ -299,7 +296,6 @@ fn run_with(
         chain.push(certificate.x509().to_owned()).ok()?;
     }
     ANCHORS.with(|slot| slot.replace(anchors.iter().map(|a| a.x509().to_owned()).collect()));
-    CHECK_TIME.with(|slot| slot.set(at_secs));
     PROBLEMS.with(|slot| slot.replace(Vec::new()));
     let mut context = X509StoreContext::new().ok()?;
     let verified = context
@@ -345,8 +341,8 @@ fn install_callback(ctx: &mut X509StoreContextRef) {
 }
 
 /// The verify callback: records each problem OpenSSL reports and lets it
-/// continue, except the ones [`waived`] says an anchor or the notAfter
-/// second may have. Returns 1, so every problem is seen, unless a problem
+/// continue, except the ones [`waived`] says an anchor may have. Returns 1,
+/// so every problem is seen, unless a problem
 /// cannot be recorded; the verdict is taken from the record, never from
 /// OpenSSL's return value alone.
 unsafe extern "C" fn record_problem(ok: c_int, ctx: *mut ffi::X509_STORE_CTX) -> c_int {
@@ -377,15 +373,10 @@ unsafe extern "C" fn record_problem(ok: c_int, ctx: *mut ffi::X509_STORE_CTX) ->
 
 /// A trust anchor is trusted by fiat, as a PKIX trust anchor is: its own
 /// validity window, CA flag and path length constraint are not judged,
-/// which OpenSSL does for a certificate in the store. An expiry reported at
-/// exactly the check second is waived for every certificate, because
-/// RFC 5280 section 4.1.2.5 includes the `notAfter` second, as OpenSSL 4.0
-/// does and OpenSSL 1.1.1 to 3.6 do not. On OpenSSL 4.0, which `build.rs`
-/// requires, that report never comes (it expires a certificate only after
-/// the second); the waiver stays as a guard should a later OpenSSL change
-/// back, and the millisecond tests pin the boundary either way.
+/// which OpenSSL does for a certificate in the store. No other problem is
+/// waived: OpenSSL 4.0, which `build.rs` requires, already counts the
+/// `notAfter` second as valid, as RFC 5280 section 4.1.2.5 does.
 fn waived(ctx: &X509StoreContextRef, error: X509VerifyResult) -> bool {
-    let raw = error.as_raw();
     let Some(current) = ctx.current_cert() else {
         return false;
     };
@@ -395,23 +386,11 @@ fn waived(ctx: &X509StoreContextRef, error: X509VerifyResult) -> bool {
         ffi::X509_V_ERR_INVALID_CA,
         ffi::X509_V_ERR_PATH_LENGTH_EXCEEDED,
     ];
-    if anchor_errors.contains(&raw)
+    anchor_errors.contains(&error.as_raw())
         && ANCHORS.with(|slot| {
             slot.try_borrow()
                 .is_ok_and(|anchors| anchors.iter().any(|anchor| same_x509(anchor, current)))
         })
-    {
-        return true;
-    }
-    raw == ffi::X509_V_ERR_CERT_HAS_EXPIRED && {
-        let at = CHECK_TIME.with(Cell::get);
-        let at_notafter = libc::time_t::try_from(at)
-            .ok()
-            .and_then(|at| Asn1Time::from_unix(at).ok())
-            .is_some_and(|at| current.not_after() == at);
-        drain_errors();
-        at_notafter
-    }
 }
 
 fn kind_of(code: c_int) -> PathProblemKind {

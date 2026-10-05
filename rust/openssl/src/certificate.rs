@@ -216,30 +216,6 @@ impl Certificate {
         verified
     }
 
-    /// Whether `notBefore` is at or before `secs` (Unix seconds).
-    #[must_use]
-    pub fn not_before_at_most(&self, secs: i64) -> bool {
-        let at_most = libc::time_t::try_from(secs)
-            .ok()
-            .and_then(|secs| Asn1Time::from_unix(secs).ok())
-            .is_some_and(|at| self.0.not_before() <= at);
-        drain_errors();
-        at_most
-    }
-
-    /// Whether the certificate marks critical an extension OpenSSL does not
-    /// process: the flag `X509_verify_cert` reports as
-    /// `X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION`.
-    #[must_use]
-    pub fn has_unhandled_critical_extension(&self) -> bool {
-        init();
-        // SAFETY: X509_get_extension_flags reads the live certificate,
-        // caching its decoded extensions inside it under OpenSSL's own lock.
-        let flags = unsafe { ffi::X509_get_extension_flags(self.0.as_ptr()) };
-        drain_errors();
-        flags & ffi::EXFLAG_CRITICAL != 0
-    }
-
     /// Whether the certificate may issue certificates, as `X509_verify_cert`
     /// judges a certificate above the target (`X509_check_ca` non-zero).
     #[must_use]
