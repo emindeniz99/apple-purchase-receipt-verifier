@@ -30,8 +30,9 @@ on the classpath.
 **On Spring Boot**, Boot's BOM decides your Jackson version, not this
 library. The floor is jackson-core 2.16 (see
 [Dependency floors](#vendoring)). Spring Boot 3.0 to 3.2 manage an older
-jackson-core, 2.14 or 2.15, and there `Verifier.create` throws
-`IllegalStateException`. On Boot 3.x, set Boot's `jackson-bom.version`
+jackson-core, 2.14 or 2.15, and there the JSON readers run with fewer
+bounds (2.15 has no member-name bound, 2.14 none at all); nothing checks
+the version at runtime. On Boot 3.x, set Boot's `jackson-bom.version`
 property to 2.16.2 or newer. It moves every Jackson artifact together.
 Maven:
 
@@ -125,11 +126,11 @@ decides whether a certificate is expired when the input states a date; see
 not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
-notice until production. `Verifier.create` also builds the bounded Jackson
+notice until production. `Verifier.create` also builds the Jackson
 readers, touches the BouncyCastle provider and a bcpkix class, checks that
 bcprov is 1.86 or later and that BouncyCastle's ASN.1 nesting bound admits a
 genuine receipt, and probes the crypto runtime (see [Running in
-production](#running-in-production)), so a jackson-core below 2.16, a
+production](#running-in-production)), so a
 missing BouncyCastle jar, a bcprov below 1.86 or a nesting bound below 9
 throws `IllegalStateException` there rather than on the first call.
 
@@ -469,7 +470,7 @@ never by `ordinal()`.
 
 | `Reason` | Meaning |
 |---|---|
-| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, ASN.1 nesting past BouncyCastle's bound, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check. When BouncyCastle or Jackson threw an unchecked exception, the message is `unexpected <class>` and `Failure.cause()` carries that exception, for debugging. The cause's message is BouncyCastle's and may quote fragments of the unverified input (tag numbers, lengths, a DN), so treat it like the receipt bytes when logging |
+| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past Jackson's 1,000, ASN.1 nesting past BouncyCastle's bound, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check. When BouncyCastle or Jackson threw an unchecked exception, the message is `unexpected <class>` and `Failure.cause()` carries that exception, for debugging. The cause's message is BouncyCastle's and may quote fragments of the unverified input (tag numbers, lengths, a DN), so treat it like the receipt bytes when logging |
 | `TOO_LARGE` | Over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt or an endpoint request body, 262,144 for a JWS. Decided before anything is decoded |
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
 | `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or has more than six certificates below the anchor |
@@ -567,19 +568,23 @@ and the rest are never reached):
 ## Resource bounds
 
 Fixed constants, not configurable, except the ASN.1 nesting bound (below
-the table) and BouncyCastle's other settings ([listed
-above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The three
+the table), BouncyCastle's other settings ([listed
+above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)) and the three
+JSON bounds, which are jackson-core's default `StreamReadConstraints`
+(a host's `StreamReadConstraints.overrideDefaultStreamReadConstraints`
+changes them for the whole process). The three
 size caps are checked before anything is decoded; the others as the
-structure they bound is read:
+structure they bound is read. Jackson's own string and document limits are
+above the size caps, so the caps are what bound a JSON document's length:
 
 | Bound | Value | `Reason` |
 |---|---|---|
 | Receipt base64, UTF-8 bytes | 3,145,728 | `TOO_LARGE` |
 | Endpoint request body, UTF-8 bytes | 3,145,728 | `TOO_LARGE` (status 21002) |
 | JWS, UTF-8 bytes | 262,144 | `TOO_LARGE` |
-| JSON nesting depth, the outer object included | 64 | `MALFORMED` (JWS header, request body); a JWS payload is carried to the signature: `UNREADABLE_PAYLOAD` if it verifies |
-| JSON member name, characters | 50,000 | as nesting depth |
-| JSON number, characters | 1,000 | as nesting depth |
+| JSON nesting depth, the outer object included | 1,000 (Jackson's default) | `MALFORMED` (JWS header, request body); a JWS payload is carried to the signature: `UNREADABLE_PAYLOAD` if it verifies |
+| JSON member name, characters | 50,000 (Jackson's default) | as nesting depth |
+| JSON number, characters | 1,000 (Jackson's default) | as nesting depth |
 | ASN.1 nesting, constructed values | BouncyCastle's, 64 by default | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
@@ -883,9 +888,10 @@ directory holds the config, result and payload classes the `-wasm`
 artifact compiles too; both are the same package. What a vendored copy has
 to carry with it:
 
-**Dependency floors.** `jackson-core` 2.16 or later: the JSON readers set
-`StreamReadConstraints` (`maxDocumentLength` and `maxNameLength` are 2.16
-API), and below it `Verifier.create` throws `IllegalStateException`.
+**Dependency floors.** `jackson-core` 2.16 or later: the JSON readers rely
+on its default `StreamReadConstraints` (the member-name bound arrived in
+2.16, the others in 2.15). Nothing checks the version at runtime, so
+enforce it in the build ([Running in production](#running-in-production)).
 BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
 `Verifier.create` throws `IllegalStateException` naming the bcprov it
 found. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws

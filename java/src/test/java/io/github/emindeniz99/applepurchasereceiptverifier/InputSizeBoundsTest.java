@@ -87,9 +87,9 @@ class InputSizeBoundsTest {
     }
 
     /**
-     * The nesting bound is this library's, not Jackson's: 200 is far below
-     * Jackson's own default of 1000, so a port that inherited the default
-     * would parse this header and answer about its missing {@code alg}.
+     * The nesting bound is Jackson's default, 1000 containers: this header
+     * is one past it, so a Jackson without the bound would parse it and
+     * answer about its missing {@code alg}.
      */
     @Test
     void jwsHeaderNestedDeeperThanTheLimitIsRefusedAsMalformed() throws Exception {
@@ -98,7 +98,7 @@ class InputSizeBoundsTest {
                 // JwsCore directly: the public Failure keeps no cause for
                 // MALFORMED, and the cause is what this test is about.
                 () -> JwsCore.verify(
-                        headerJws(nestedJson(200)),
+                        headerJws(nestedJson(1000)),
                         AppleTrust.anchors(Collections.singleton(root("jws-root.der"))),
                         System.currentTimeMillis()));
         assertEquals(Reason.MALFORMED, thrown.reason());
@@ -107,11 +107,11 @@ class InputSizeBoundsTest {
                 "the refusal did not come from the reader constraints: " + thrown.getCause());
     }
 
-    /** Just under the configured 64: the same shape has to get past the reader. */
+    /** At the limit of 1000: the same shape has to get past the reader. */
     @Test
     void jwsHeaderNestedJustUnderTheLimitReachesTheAlgorithmCheck() throws Exception {
         VerificationException thrown =
-                assertThrows(VerificationException.class, () -> verifyJws(headerJws(nestedJson(60))));
+                assertThrows(VerificationException.class, () -> verifyJws(headerJws(nestedJson(999))));
         assertEquals(Reason.MALFORMED, thrown.reason());
         assertTrue(thrown.getMessage().contains("alg is not ES256"), thrown.getMessage());
     }
@@ -220,14 +220,14 @@ class InputSizeBoundsTest {
     /** Nesting in the body is bounded for the same reason it is in a JWS header. */
     @Test
     void requestBodyNestedDeeperThanTheLimitAnswers21002() throws Exception {
-        String body = requestJson(null).replace("}", ",\"deep\":" + nestedArray(200) + "}");
+        String body = requestJson(null).replace("}", ",\"deep\":" + nestedArray(1000) + "}");
         assertEquals("{\"status\":21002}", endpoint(body));
     }
 
-    /** One level under the limit, the same shape is read through and the receipt verifies. */
+    /** One level under, at the limit of 1000, the same shape is read through and the receipt verifies. */
     @Test
     void requestBodyNestedJustUnderTheLimitVerifies() throws Exception {
-        String body = requestJson(null).replace("}", ",\"deep\":" + nestedArray(60) + "}");
+        String body = requestJson(null).replace("}", ",\"deep\":" + nestedArray(999) + "}");
         assertTrue(endpoint(body).startsWith("{\"status\":0,"), endpoint(body));
     }
 

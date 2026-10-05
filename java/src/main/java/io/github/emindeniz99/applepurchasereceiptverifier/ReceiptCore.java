@@ -291,24 +291,12 @@ final class ReceiptCore {
      * The CMS verifier for {@code signerCert}, from a builder made per call
      * so no BouncyCastle object is shared between threads.
      */
-    static SignerInformationVerifier signerVerifier(X509Certificate signerCert)
-            throws VerificationException, OperatorCreationException {
-        return signerVerifiers().build(signerCert);
-    }
-
-    /**
-     * Apart from {@link #signerVerifier}'s build, so a runtime that cannot
-     * make the digest provider is INTERNAL_ERROR, not a signature verdict.
-     */
-    private static JcaSignerInfoVerifierBuilder signerVerifiers() throws VerificationException {
-        DigestCalculatorProvider digests;
-        try {
-            digests = new JcaDigestCalculatorProviderBuilder()
-                    .setProvider(BouncyCastle.PROVIDER)
-                    .build();
-        } catch (OperatorCreationException e) {
-            throw new VerificationException(Reason.INTERNAL_ERROR, "CMS verifier could not be constructed", e);
-        }
-        return new JcaSignerInfoVerifierBuilder(digests).setProvider(BouncyCastle.PROVIDER);
+    static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
+        DigestCalculatorProvider digests = new JcaDigestCalculatorProviderBuilder()
+                .setProvider(BouncyCastle.PROVIDER)
+                .build();
+        return new JcaSignerInfoVerifierBuilder(digests)
+                .setProvider(BouncyCastle.PROVIDER)
+                .build(signerCert);
     }
 }

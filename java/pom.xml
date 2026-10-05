@@ -60,15 +60,12 @@
          running the suite with -Dbouncycastle.version=1.86 (floors are
          tested claims). -->
     <bouncycastle.version>1.86</bouncycastle.version>
-    <!-- Floor: Jackson 2.16. JwsCore and Endpoint set
-         StreamReadConstraints through BoundedJson rather than relying on
-         Jackson's defaults, because the JWS header is parsed before any
-         signature check and a host BOM pinning an older Jackson 2 would
-         otherwise link cleanly and silently lose the nesting guard.
-         StreamReadConstraints arrived in 2.15, maxDocumentLength and
-         maxNameLength in 2.16, so below 2.16 Verifier.create throws
-         IllegalStateException (it initialises every class that builds a
-         reader) instead of the first call failing. -->
+    <!-- Floor: Jackson 2.16. JwsCore and Endpoint read unsigned JSON
+         under Jackson's default StreamReadConstraints (nesting 1,000,
+         names 50,000, numbers 1,000), which arrived in 2.15, the name
+         bound in 2.16. Nothing checks the version at runtime: a host BOM
+         pinning an older Jackson 2 links cleanly and reads with fewer
+         bounds, so the host's build has to enforce the floor. -->
     <jackson.version>2.22.3</jackson.version>
     <!-- Annotations only, and only at compile time: see the <optional>
          dependency below. -->

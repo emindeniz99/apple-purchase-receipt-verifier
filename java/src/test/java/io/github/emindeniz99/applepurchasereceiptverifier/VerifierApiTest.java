@@ -576,7 +576,7 @@ class VerifierApiTest {
     }
 
     /**
-     * Static state built on first use (the bounded Jackson factories, the
+     * Static state built on first use (the Jackson factories, the
      * BouncyCastle provider) is built by Verifier.create, so a dependency
      * below its floor fails there and not inside a verify method documented
      * never to throw.
@@ -651,7 +651,7 @@ class VerifierApiTest {
 
     /**
      * A runtime that cannot verify must fail at create, where a deployment
-     * sees it, and not answer INTERNAL_ERROR on the first request.
+     * sees it, and not fail the first request.
      */
     @Test
     void aProviderWithoutTheEnginesFailsTheProbe() {

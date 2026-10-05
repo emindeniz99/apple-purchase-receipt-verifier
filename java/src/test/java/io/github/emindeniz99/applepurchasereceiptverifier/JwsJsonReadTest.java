@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.exc.StreamConstraintsException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,8 +24,8 @@ import org.junit.jupiter.api.Test;
  * {@code alg} and {@code x5c}, whether the payload is a JSON object, and its
  * top-level {@code signedDate} under the tree's number conversions (a
  * fraction truncated, a number no long holds refused). Checked here against
- * databind itself, still on the test classpath, over the same bounded
- * factory.
+ * databind itself, still on the test classpath, over a factory with the same
+ * Jackson defaults.
  */
 class JwsJsonReadTest {
 
@@ -32,13 +33,13 @@ class JwsJsonReadTest {
     private static final int CASES = 20_000;
 
     /**
-     * The 0.6 read: databind over the same bounded factory, with the one
-     * rule 0.7 added: nothing but whitespace after the object. Without it
-     * {@code {"alg":"ES256"} x} is a header, and a payload with text after
-     * its object returns verified with that text in it.
+     * The 0.6 read: databind over a factory with the same Jackson defaults,
+     * with the one rule 0.7 added: nothing but whitespace after the object.
+     * Without it {@code {"alg":"ES256"} x} is a header, and a payload with
+     * text after its object returns verified with that text in it.
      */
-    private static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(JwsCore.MAX_JWS_BYTES))
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+    private static final ObjectMapper MAPPER =
+            new ObjectMapper(new JsonFactory()).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     @Test
     void readsEveryHeaderAsTheDatabindTreeDid() {
@@ -160,11 +161,14 @@ class JwsJsonReadTest {
         assertEquals(Reason.UNREADABLE_PAYLOAD, unreadable.reason());
     }
 
-    /** The reader bounds are stated, not inherited from whichever Jackson the host resolved. */
+    /**
+     * The reader bounds are Jackson's defaults, which the README and
+     * DECISIONS.md R20 state: a Jackson upgrade that moves them fails here.
+     */
     @Test
-    void memberNamesAndNumbersAreBounded() throws Exception {
-        String longestName = repeat('n', BoundedJson.MAX_NAME_LENGTH);
-        String longestNumber = repeat('1', BoundedJson.MAX_NUMBER_LENGTH);
+    void memberNamesAndNumbersAreBoundedByJacksonsDefaults() throws Exception {
+        String longestName = repeat('n', 50_000);
+        String longestNumber = repeat('1', 1000);
         assertNull(JwsCore.Header.read(utf8("{\"" + longestName + "\":1}")).alg);
         assertNull(JwsCore.Header.read(utf8("{\"n\":" + longestNumber + "}")).alg);
         for (String header : new String[] {"{\"" + longestName + "n\":1}", "{\"n\":" + longestNumber + "1}"}) {
@@ -290,7 +294,7 @@ class JwsJsonReadTest {
                 out.append(value(random, 0));
                 break;
             case 1:
-                out.append(nested(random.nextBoolean() ? 63 : 65));
+                out.append(nested(random.nextBoolean() ? 1000 : 1001)); // Jackson's default allows 1000
                 break;
             default:
                 out.append('{');

@@ -42,7 +42,7 @@ public interface Verifier {
      *                                  has the same class names, is on the
      *                                  classpath too; if a dependency does
      *                                  not load: a
-     *                                  jackson-core below 2.16, a
+     *                                  jackson-core or a
      *                                  BouncyCastle that fails to initialise,
      *                                  or a time-zone database without
      *                                  America/Los_Angeles (the endpoint

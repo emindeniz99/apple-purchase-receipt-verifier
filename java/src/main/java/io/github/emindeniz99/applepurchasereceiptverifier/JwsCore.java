@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
-import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertPath;
@@ -37,7 +36,7 @@ final class JwsCore {
     /** In UTF-8 bytes, checked before the split; genuine JWS run from a few KB to roughly 15 KB. */
     static final int MAX_JWS_BYTES = 262144;
 
-    static final JsonFactory JSON = BoundedJson.factory(MAX_JWS_BYTES);
+    static final JsonFactory JSON = new JsonFactory();
 
     // Raw r || s (RFC 7515), as PLAIN-ECDSA takes it; the JDK's P1363 name is Java 9+.
     static final String ES256_ALGORITHM = "SHA256withPLAIN-ECDSA";
@@ -324,8 +323,8 @@ final class JwsCore {
 
     private static List<X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
         List<X509Certificate> chain = new ArrayList<>(3);
-        CertificateFactory cf = x509Factory();
         try {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
             for (String entry : x5c) {
                 byte[] der = StrictBase64.decode(entry, Reason.INVALID_CERTIFICATE, "x5c entry");
                 X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
@@ -370,14 +369,14 @@ final class JwsCore {
     private static void validateChain(
             X509Certificate leaf, X509Certificate intermediate, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        CertificateFactory cf = x509Factory();
-        CertPathValidator validator = pkixValidator("PKIX");
         try {
-            CertPath path = cf.generateCertPath(Arrays.asList(leaf, intermediate));
+            CertPath path = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER)
+                    .generateCertPath(Arrays.asList(leaf, intermediate));
             PKIXParameters params = new PKIXParameters(trustAnchors);
             params.setRevocationEnabled(false);
             params.setDate(at);
-            validator.validate(path, params);
+            // Per call, so no BouncyCastle object is shared between threads.
+            CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER).validate(path, params);
         } catch (CertPathValidatorException e) {
             throw AppleTrust.chainFailure(e, "x5c", "certificate chain", at);
         } catch (InvalidAlgorithmParameterException e) {
@@ -394,52 +393,11 @@ final class JwsCore {
         }
     }
 
-    /**
-     * Built outside the decode and validate blocks: getInstance reports a
-     * runtime without the X.509 engine as a CertificateException, the same
-     * type a malformed x5c entry raises, and only the latter is a verdict.
-     */
-    private static CertificateFactory x509Factory() throws VerificationException {
-        try {
-            return CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
-        } catch (CertificateException e) {
-            throw new VerificationException(Reason.INTERNAL_ERROR, "certificate decoder could not be constructed", e);
-        }
-    }
-
-    /**
-     * Per call, so no BouncyCastle object is shared between threads; built
-     * outside the validate block for the reason {@link #x509Factory} is. Takes
-     * the engine name so a test can stand in for a runtime that lacks it.
-     */
-    static CertPathValidator pkixValidator(String algorithm) throws VerificationException {
-        try {
-            return CertPathValidator.getInstance(algorithm, BouncyCastle.PROVIDER);
-        } catch (NoSuchAlgorithmException e) {
-            throw new VerificationException(Reason.INTERNAL_ERROR, "chain validator could not be constructed", e);
-        }
-    }
-
+    /** PLAIN-ECDSA refuses a signature of any length but 64 bytes, with a SignatureException. */
     private static void verifyEs256(X509Certificate leaf, String signingInput, byte[] signature)
             throws VerificationException {
-        verifyEs256(leaf, signingInput, signature, ES256_ALGORITHM);
-    }
-
-    /** Takes the engine name so a test can stand in for a runtime that lacks it. */
-    static void verifyEs256(X509Certificate leaf, String signingInput, byte[] signature, String algorithm)
-            throws VerificationException {
-        if (signature.length != 64) {
-            throw new VerificationException(
-                    Reason.INVALID_SIGNATURE, "ES256 signature must be 64 bytes, got " + signature.length);
-        }
-        Signature verifier;
         try {
-            verifier = Signature.getInstance(algorithm, BouncyCastle.PROVIDER);
-        } catch (NoSuchAlgorithmException e) {
-            // The runtime lacks the engine, which says nothing about the JWS.
-            throw new VerificationException(Reason.INTERNAL_ERROR, "ES256 verifier could not be constructed", e);
-        }
-        try {
+            Signature verifier = Signature.getInstance(ES256_ALGORITHM, BouncyCastle.PROVIDER);
             verifier.initVerify(leaf.getPublicKey());
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
             if (!verifier.verify(signature)) {
