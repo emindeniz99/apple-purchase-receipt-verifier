@@ -486,7 +486,7 @@ fn line_wrapped_base64_is_refused() {
 // What the verifier does with a parser failure under a trusted signer is
 // pinned above and by the `receipt/*` UNREADABLE_PAYLOAD vectors.
 
-// --- CMS re-encoding: one signature, one accepted spelling ---------------
+// --- CMS re-encoding: one signature, its eContent chunks joined ----------
 
 /// The eContent of a genuine, correctly signed receipt re-encoded as a
 /// constructed `OCTET STRING` whose children are a `UTF8String` and an
@@ -495,7 +495,8 @@ fn line_wrapped_base64_is_refused() {
 /// `SignerInfo` and signature are the genuine ones.
 ///
 /// X.690 §8.7.3 allows only `OCTET STRING`s inside a constructed
-/// `OCTET STRING`, but OpenSSL joins the chunks whatever their tags, and
+/// `OCTET STRING`, but OpenSSL joins the chunks whatever their tag or
+/// class (`envelope_bounds.rs` pins a context-class chunk too), and
 /// the joined octets are both what the signature covers and what the
 /// payload is read from. So the receipt verifies, as with legal
 /// `OCTET STRING` children. Java refuses the foreign chunks as `MALFORMED`

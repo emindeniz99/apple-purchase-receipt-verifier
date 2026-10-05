@@ -366,6 +366,14 @@ fn econtent_rechunked_into_six_constructed_levels_verifies() {
         &rechunked(7, tag::OCTET_STRING),
         "a constructed string nests deeper than OpenSSL decodes",
     );
+    // A chunk of another tag, or of another class, is joined as OpenSSL
+    // joins it: `asn1_collect` runs with tag -1, so neither the tag nor the
+    // class of a chunk is checked. The signature covers the joined octets,
+    // which do not change (DECISIONS.md R20).
+    for leaf in [tag::UTF8_STRING, 0x80] {
+        let (result, _) = verify(&rechunked(6, leaf));
+        assert!(result.is_ok(), "leaf {leaf:#04x}: {result:?}");
+    }
 }
 
 #[test]

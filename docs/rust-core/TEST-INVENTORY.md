@@ -52,9 +52,9 @@ differential run compares it with the core over the corpora and the cases
 | PHP | 22 | 4 | 6 | 11 | 1 |
 | Node | 6 | 1 | 2 | 0 | 3 |
 | .NET | 2 | 0 | 0 | 0 | 2 |
-| Rust | 309 | 43 | 0 | 0 | 266 |
+| Rust | 313 | 43 | 0 | 0 | 270 |
 | Java | 201 | 11 | 0 | 0 | 190 |
-| All | 858 | 201 | 31 | 78 | 548 |
+| All | 862 | 201 | 31 | 78 | 552 |
 
 ## The cases this lane added
 
@@ -688,8 +688,7 @@ and `-second`.
 | Rust | `rust/tests/receipt_negative.rs` `ids_a_receipt_does_not_carry_are_absent_rather_than_zero` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `the_receipt_size_bound_rejects_before_decoding` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `line_wrapped_base64_is_refused` | input built in code: stays with the Rust |
-| Rust | `rust/tests/receipt_negative.rs` `a_constructed_octet_string_with_foreign_children_is_not_a_payload` | input built in code: stays with the Rust |
-| Rust | `rust/tests/receipt_negative.rs` `a_foreign_tag_nested_inside_a_constructed_octet_string_is_refused` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_negative.rs` `a_constructed_octet_string_with_foreign_children_is_joined` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `signed_attrs_forged_from_the_payload_set_are_refused` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `signed_attrs_without_content_type_or_message_digest_are_refused` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_broken_signed_attrs_set_is_malformed_in_either_signer_position` | input built in code: stays with the Rust |
@@ -700,7 +699,12 @@ and `-second`.
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `a_signature_that_does_not_hold_as_labelled_is_an_invalid_signature` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `an_md5_digest_under_the_pinned_root_verifies` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `a_digest_openssl_does_not_implement_is_an_invalid_signature` | input built in code: stays with the Rust |
-| Rust | `rust/tests/receipt_signer_algorithms.rs` `a_signature_algorithm_that_names_another_hash_than_the_digest_is_an_invalid_signature` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_signer_algorithms.rs` `an_ecdsa_signature_verifies_under_its_digest_whatever_the_label_names` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_signer_algorithms.rs` `the_control_signed_attributes_built_here_verify` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_signer_algorithms.rs` `a_content_type_attribute_twice_is_an_invalid_signature` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_signer_algorithms.rs` `a_content_type_attribute_with_two_values_is_an_invalid_signature` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_signer_algorithms.rs` `a_message_digest_attribute_with_two_values_is_an_invalid_signature` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_signer_algorithms.rs` `an_empty_signed_attrs_set_is_an_invalid_signature` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `an_rsa_pss_signer_under_the_pinned_root_verifies` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `an_rsa_pss_signature_over_other_content_or_parameters_is_an_invalid_signature` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `every_certificate_signature_algorithm_openssl_verifies_is_accepted` | input built in code: stays with the Rust |
