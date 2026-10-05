@@ -80,9 +80,6 @@ pub(crate) enum WalkError {
     TooDeep,
     /// More values than [`Budget::nodes`].
     TooManyNodes,
-    /// A constructed string nests more constructed levels than OpenSSL
-    /// joins ([`MAX_STRING_NEST`]).
-    StringTooDeep,
 }
 
 /// One TLV header, as `ASN1_get_object` reads it.
@@ -161,9 +158,10 @@ pub(crate) fn header(input: &[u8]) -> Option<Header> {
 /// constructed value other than a SEQUENCE or a SET (a string OpenSSL
 /// joins) at its outermost level, and applies OpenSSL's rules on
 /// constructed values itself: no constructed form of a
-/// [`PRIMITIVE_ONLY_TAGS`] type, at most
-/// [`MAX_STRING_NEST`] + 1 constructed levels in a string, and no
-/// end-of-contents in a value of definite length.
+/// [`PRIMITIVE_ONLY_TAGS`] type, and no end-of-contents in a value of
+/// definite length. A string of more constructed levels than OpenSSL joins
+/// is refused by the check of its outermost level, which `asn1_collect`
+/// runs.
 pub(crate) fn walk_exact(
     input: &[u8],
     budget: Budget,
@@ -243,9 +241,6 @@ impl Walker {
         } else {
             0
         };
-        if level > MAX_STRING_NEST + 1 {
-            return Err(WalkError::StringTooDeep);
-        }
         let mut at = header.head;
         let size = if header.indefinite {
             loop {
@@ -321,29 +316,21 @@ pub(crate) fn children(input: &[u8]) -> Option<Vec<&[u8]>> {
     (!outer.indefinite).then_some(found)
 }
 
-/// OpenSSL's nesting bound for the chunks of a constructed string
-/// (`ASN1_MAX_STRING_NEST`, `tasn_dec.c`): its `asn1_collect` reads the
-/// outer string at level 0 and refuses a constructed chunk found at level
-/// 5, so six constructed levels decode and a seventh does not.
-pub(crate) const MAX_STRING_NEST: usize = 5;
-
 /// Why the chunks of a constructed `OCTET STRING` are refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChunkError {
     /// A chunk, at some depth, is not a universal `OCTET STRING`, or the
     /// value is not one.
     Foreign,
-    /// Constructed chunks nest past what OpenSSL decodes.
-    TooDeep,
     /// Not one well-formed value.
     Malformed,
 }
 
 /// Whether the value that is all of `input` is an `OCTET STRING` whose
-/// chunks, at every depth, are `OCTET STRING`s, within OpenSSL's own
-/// nesting bound.
+/// chunks, at every depth, are `OCTET STRING`s. Meant for input a walk has
+/// accepted, whose depth budget bounds the recursion.
 pub(crate) fn octet_string_exact(input: &[u8]) -> Result<(), ChunkError> {
-    let size = octet_string(input, 0)?;
+    let size = octet_string(input)?;
     if size == input.len() {
         Ok(())
     } else {
@@ -352,20 +339,16 @@ pub(crate) fn octet_string_exact(input: &[u8]) -> Result<(), ChunkError> {
 }
 
 /// The encoded size of the `OCTET STRING` at the start of `input`, when its
-/// chunks at every depth are `OCTET STRING`s. `level` counts the constructed
-/// strings around this one. Every chunk consumes at least two octets, so
-/// the walk is bounded by the input's length, and its depth by
-/// [`MAX_STRING_NEST`].
-pub(crate) fn octet_string(input: &[u8], level: usize) -> Result<usize, ChunkError> {
+/// chunks at every depth are `OCTET STRING`s. Every chunk consumes at least
+/// two octets, so the walk is bounded by the input's length, and its depth
+/// by the walk that accepted the input.
+pub(crate) fn octet_string(input: &[u8]) -> Result<usize, ChunkError> {
     let string = header(input).ok_or(ChunkError::Malformed)?;
     if string.tag != ffi::V_ASN1_OCTET_STRING || string.class != sys::V_ASN1_UNIVERSAL {
         return Err(ChunkError::Foreign);
     }
     if !string.constructed {
         return Ok(string.definite_size());
-    }
-    if level > MAX_STRING_NEST {
-        return Err(ChunkError::TooDeep);
     }
     let mut at = string.head;
     if string.indefinite {
@@ -374,12 +357,12 @@ pub(crate) fn octet_string(input: &[u8], level: usize) -> Result<usize, ChunkErr
             if rest.starts_with(&[0, 0]) {
                 return Ok(at + 2);
             }
-            at += octet_string(rest, level + 1)?;
+            at += octet_string(rest)?;
         }
     }
     let end = string.definite_size();
     while at < end {
-        at += octet_string(input.get(at..end).ok_or(ChunkError::Malformed)?, level + 1)?;
+        at += octet_string(input.get(at..end).ok_or(ChunkError::Malformed)?)?;
     }
     Ok(end)
 }

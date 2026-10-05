@@ -128,9 +128,6 @@ pub(crate) fn verify(
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
 ) -> Result<JsonPayload, Failure> {
-    if jws.is_empty() {
-        return Err(malformed("jws is empty"));
-    }
     if jws.len() > MAX_JWS_BYTES {
         return Err(Failure::new(
             Reason::TooLarge,
@@ -282,18 +279,12 @@ fn verify_signature(
     payload_b64: &[u8],
     signature: &[u8],
 ) -> Result<(), Failure> {
-    if signature.len() != 64 {
-        return Err(Failure::new(
-            Reason::InvalidSignature,
-            format!("ES256 signature must be 64 bytes, got {}", signature.len()),
-        ));
-    }
     let mut signing_input = Vec::with_capacity(header_b64.len() + 1 + payload_b64.len());
     signing_input.extend_from_slice(header_b64);
     signing_input.push(b'.');
     signing_input.extend_from_slice(payload_b64);
-    // False for a key that is not EC on P-256 as well as for a signature
-    // that does not match.
+    // False for a key that is not EC on P-256, and for a signature that is
+    // not 64 bytes, as well as for one that does not match.
     if verify_es256(leaf, signature, &signing_input) {
         Ok(())
     } else {

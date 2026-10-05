@@ -87,7 +87,6 @@ fn child() {
         nodes: 100_000,
         signer_infos: 4,
         certificates: 10,
-        crls: 10,
     };
     let mut cms = SignedData::parse(&fixture("receipt.der"), &limits).expect("fixture receipt");
     let (leaf, intermediate) = chain(&cms);

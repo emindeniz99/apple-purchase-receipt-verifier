@@ -45,9 +45,9 @@ values: DER in, certificates, facts and booleans out.
   it is self-signed), `set_time` (the chain instant), `set_depth` (the
   path length bound) and a verify callback that records every problem and
   lets verification continue, so the core can apply 0.7's order. Anchors are trusted by fiat: their own validity,
-  CA flag and path length problems are waived, as is an expiry reported at
-  exactly the `notAfter` second (RFC 5280 includes it; OpenSSL checks
-  whole seconds and the core adds the millisecond check). No purpose,
+  CA flag and path length problems are waived. OpenSSL 4.0 counts the
+  `notAfter` second as valid, as RFC 5280 does; it checks whole seconds
+  and the core adds the millisecond check. No purpose,
   policy, revocation or host check is asked for.
 - **Certificates**: `X509_check_issued`, `X509_verify`, `X509_check_ca`,
   `X509_get_extension_flags` (`EXFLAG_CRITICAL`: an unhandled critical

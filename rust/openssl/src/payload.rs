@@ -72,16 +72,12 @@ fn walk_error(err: WalkError) -> PayloadError {
     match err {
         WalkError::TooDeep => "payload nests deeper than the ASN.1 depth bound",
         WalkError::TooManyNodes => "payload holds more values than the ASN.1 node budget",
-        WalkError::StringTooDeep => {
-            "payload has a constructed string nested deeper than OpenSSL decodes"
-        }
         WalkError::Malformed | WalkError::Trailing => "payload is not one well-formed value",
     }
 }
 
 /// Whether every attribute's `value`, when it is a constructed
-/// `OCTET STRING`, has only `OCTET STRING` chunks, within OpenSSL's nesting
-/// bound. A SET entry or a field of another shape is left to the template
+/// `OCTET STRING`, has only `OCTET STRING` chunks. A SET entry or a field of another shape is left to the template
 /// decode to refuse.
 fn values_are_octet_strings(set: &[u8]) -> Result<(), ChunkError> {
     let Some(entries) = walk::children(set) else {
@@ -107,12 +103,8 @@ fn values_are_octet_strings(set: &[u8]) -> Result<(), ChunkError> {
 /// The attributes of a payload SET, in encoding order.
 fn attribute_set(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, PayloadError> {
     walk::walk_exact(der, budget, Headers::Short, Some(decodes_as_any)).map_err(walk_error)?;
-    values_are_octet_strings(der).map_err(|err| match err {
-        ChunkError::TooDeep => "an attribute value nests deeper than OpenSSL decodes",
-        ChunkError::Foreign | ChunkError::Malformed => {
-            "an attribute value has a chunk that is not an OCTET STRING"
-        }
-    })?;
+    values_are_octet_strings(der)
+        .map_err(|_| "an attribute value has a chunk that is not an OCTET STRING")?;
     // SAFETY: an item getter payload.c defines; it returns a static.
     let set = decode_exact(der, unsafe { sys::APRV_RECEIPT_PAYLOAD_it() })
         .ok_or("payload is not a SET OF ReceiptAttribute")?;
@@ -149,7 +141,7 @@ pub fn receipt_attributes(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, 
     walk::walk_exact(der, budget, Headers::Short, Some(decodes_as_any)).map_err(walk_error)?;
     walk::octet_string_exact(der).map_err(|err| match err {
         ChunkError::Foreign => "double-wrapped payload has a chunk that is not an OCTET STRING",
-        ChunkError::TooDeep | ChunkError::Malformed => "double-wrapped payload does not decode",
+        ChunkError::Malformed => "double-wrapped payload does not decode",
     })?;
     // SAFETY: a libcrypto item getter; it returns a static.
     let wrapped = decode_exact(der, unsafe { sys::ASN1_OCTET_STRING_it() })

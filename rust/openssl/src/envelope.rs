@@ -1,23 +1,20 @@
 //! A shallow decode of a CMS `ContentInfo` and its `SignedData`
 //! (`envelope.c`), for what OpenSSL's full decode cannot tell the core in
-//! time: the content type, and how many certificates, CRLs and
-//! `SignerInfo`s there are, before `d2i_CMS_ContentInfo` builds every
-//! embedded certificate's public key.
+//! time: the content type, and how many certificates and `SignerInfo`s
+//! there are, before `d2i_CMS_ContentInfo` builds every embedded
+//! certificate's public key.
 
 use crate::item::{decode_exact, typed, Decoded};
 use crate::{drain_errors, sys};
 use openssl_sys as ffi;
 
-/// How many members an envelope's `certificates`, `crls` and `signerInfos`
-/// sets hold, counted without decoding a single member.
+/// How many members an envelope's `certificates` and `signerInfos` sets
+/// hold, counted without decoding a single member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EnvelopeMembers {
     /// Entries of the `certificates` set, of every `CertificateChoices`
     /// alternative; 0 when the set is absent.
     pub certificates: usize,
-    /// Entries of the `crls` set, of every `RevocationInfoChoice`
-    /// alternative; 0 when the set is absent.
-    pub crls: usize,
     /// Entries of the `signerInfos` set.
     pub signer_infos: usize,
 }
@@ -61,12 +58,8 @@ impl Envelope {
         if content_type != ffi::NID_pkcs7_signed {
             return Err(ShallowError::NotSignedData);
         }
-        // `content` is not optional in the template, so a decoded value
-        // always has one; the check costs nothing.
-        if content.is_null() {
-            return Err(ShallowError::Malformed);
-        }
-        // A SEQUENCE inside ANY is kept as its whole encoding.
+        // A SEQUENCE inside ANY is kept as its whole encoding. `content` is
+        // not optional in the template, so a decoded value always has one.
         let (kind, encoding) = typed(content);
         if kind != ffi::V_ASN1_SEQUENCE {
             return Err(ShallowError::Malformed);
@@ -90,16 +83,10 @@ impl Envelope {
         let signed = self.signed();
         // SAFETY: `signed` is the live APRV_SIGNED_DATA `self` owns, laid
         // out as sys::APRV_SIGNED_DATA mirrors it.
-        let (certificates, crls, signer_infos) = unsafe {
-            (
-                (*signed).certificates,
-                (*signed).crls,
-                (*signed).signer_infos,
-            )
-        };
+        let (certificates, signer_infos) =
+            unsafe { ((*signed).certificates, (*signed).signer_infos) };
         EnvelopeMembers {
             certificates: count(certificates),
-            crls: count(crls),
             signer_infos: count(signer_infos),
         }
     }

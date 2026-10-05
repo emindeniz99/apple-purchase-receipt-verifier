@@ -346,7 +346,7 @@ In the payload, the chunks of a constructed `OCTET STRING` (an attribute
 value, the Xcode wrap) must be `OCTET STRING`s, and a tag in
 high-tag-number form and a length of more than four octets are refused,
 as 0.7's reader refused them. Trailing bytes are
-refused. At most 10 embedded certificates, 10 CRLs and 4 SignerInfos,
+refused. At most 10 embedded certificates and 4 SignerInfos,
 counted on a shallow decode after the envelope's header walk and before
 any certificate is decoded. JSON: strict RFC 8259 grammar, read by
 `serde_json` with no nesting or length bound of its own; a value nobody
