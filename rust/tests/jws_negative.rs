@@ -314,6 +314,22 @@ fn an_x5c_certificate_repeating_any_extension_is_invalid_certificate() {
 }
 
 #[test]
+fn an_x5c_version_past_32_bits_is_invalid_certificate() {
+    // OpenSSL reads the version as a C long and never checks it; the core
+    // compares that long. Truncated to 32 bits, 2^32 + 2 would read as 2
+    // (v3) on a 64-bit build and verify, where wasm32's 32-bit long
+    // already refused it.
+    let (root, jws) = minted_jws(&[], &[], &[0x01, 0x00, 0x00, 0x00, 0x02]);
+    assert_eq!(
+        common::verifier([root])
+            .verify_signed_data(&jws)
+            .unwrap_err()
+            .reason(),
+        Reason::InvalidCertificate
+    );
+}
+
+#[test]
 fn the_third_x5c_entry_is_never_trusted_but_must_be_a_certificate() {
     // Swapping x5c[2] for another PKI's root must change nothing: the chain
     // terminates at a pinned anchor, not at a certificate the payload

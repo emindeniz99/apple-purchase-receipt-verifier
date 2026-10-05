@@ -124,7 +124,11 @@ impl Certificate {
     /// The key is not judged here: see [`Certificate::has_usable_key`].
     #[must_use]
     pub fn is_readable(&self) -> bool {
-        if !(0..=2).contains(&self.0.version()) || !signature_is_octet_aligned(&self.0) {
+        // SAFETY: reads the version of a live certificate. Compared as the
+        // `c_long` OpenSSL returns: rust-openssl's `version()` truncates it
+        // to 32 bits, so a version of 2^32 + 2 would read as 2.
+        let version = unsafe { ffi::X509_get_version(self.0.as_ptr()) };
+        if !(0..=2).contains(&version) || !signature_is_octet_aligned(&self.0) {
             return false;
         }
         let Some(mut oids) = extension_oids(&self.0) else {
