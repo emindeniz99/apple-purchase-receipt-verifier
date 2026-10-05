@@ -9,9 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.Signature;
+import java.security.cert.X509Certificate;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -124,6 +130,47 @@ class SignedDataTest {
     void rejectsChainFromForeignRoot() throws Exception {
         TestPki foreign = TestPki.jws();
         assertEquals(Reason.UNTRUSTED_CHAIN, failure(pki, foreign.signJws(transactionClaims("Sandbox"))));
+    }
+
+    @Test
+    void anEs256SignatureIsSixtyFourBytesEvenWhereALargerCurveVerifies() throws Exception {
+        // ES256 is P-256 with a 64-byte r || s (RFC 7518 3.4). PLAIN-ECDSA
+        // alone takes twice the leaf curve's order, so a P-384 leaf under the
+        // pinned chain verifies a 96-byte signature; the core refuses it too.
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC", BouncyCastle.PROVIDER);
+        generator.initialize(new ECGenParameterSpec("secp384r1"));
+        KeyPair leafKeys = generator.generateKeyPair();
+        long now = System.currentTimeMillis();
+        X509Certificate leaf = TestPki.cert(
+                "CN=Fake App Store Signing",
+                leafKeys,
+                "CN=Fake Apple WWDR CA",
+                pki.intermediateKey,
+                false,
+                "1.2.840.113635.100.6.11.1",
+                new Date(now - 86_400_000L),
+                new Date(now + 86_400_000L),
+                "SHA256withECDSA");
+        Map<String, Object> header = new LinkedHashMap<String, Object>();
+        header.put("alg", "ES256");
+        header.put(
+                "x5c",
+                Arrays.asList(
+                        TestPki.b64(leaf.getEncoded()),
+                        TestPki.b64(pki.intermediate.getEncoded()),
+                        TestPki.b64(pki.root.getEncoded())));
+        String input = TestPki.b64url(MAPPER.writeValueAsBytes(header)) + "."
+                + TestPki.b64url(MAPPER.writeValueAsBytes(transactionClaims("Sandbox")));
+        Signature signer = Signature.getInstance(JwsCore.ES256_ALGORITHM, BouncyCastle.PROVIDER);
+        signer.initSign(leafKeys.getPrivate());
+        signer.update(input.getBytes(StandardCharsets.US_ASCII));
+        byte[] signature = signer.sign();
+        assertEquals(96, signature.length);
+        Signature plain = Signature.getInstance(JwsCore.ES256_ALGORITHM, BouncyCastle.PROVIDER);
+        plain.initVerify(leaf.getPublicKey());
+        plain.update(input.getBytes(StandardCharsets.US_ASCII));
+        assertTrue(plain.verify(signature), "PLAIN-ECDSA alone accepts the 96-byte signature");
+        assertEquals(Reason.INVALID_SIGNATURE, failure(pki, input + "." + TestPki.b64url(signature)));
     }
 
     @Test

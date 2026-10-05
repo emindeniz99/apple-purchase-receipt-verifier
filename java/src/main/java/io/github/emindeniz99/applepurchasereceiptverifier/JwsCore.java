@@ -393,9 +393,17 @@ final class JwsCore {
         }
     }
 
-    /** PLAIN-ECDSA refuses a signature of any length but 64 bytes, with a SignatureException. */
+    /**
+     * ES256 is P-256 with a 64-byte r || s (RFC 7518 3.4). PLAIN-ECDSA alone
+     * takes twice the leaf curve's order, so without the length check a
+     * P-384 leaf would verify a 96-byte signature.
+     */
     private static void verifyEs256(X509Certificate leaf, String signingInput, byte[] signature)
             throws VerificationException {
+        if (signature.length != 64) {
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE, "ES256 signature must be 64 bytes, got " + signature.length);
+        }
         try {
             Signature verifier = Signature.getInstance(ES256_ALGORITHM, BouncyCastle.PROVIDER);
             verifier.initVerify(leaf.getPublicKey());
