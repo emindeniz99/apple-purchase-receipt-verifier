@@ -628,10 +628,13 @@ two receipts `receipt-sandbox-legacy.b64` and `receipt-sandbox-g5.b64` under
 Apple roots and keep verifying, because validity is judged at their own
 signing date. The repository has no JWS signed by a real Apple root (the
 vendored Apple JWS fixtures are signed by a test CA), so keep one from your
-own sandbox, such as a transaction you bought there. Why: a runtime that
-cannot construct a crypto engine answers `INTERNAL_ERROR`, but an unchecked
-exception BouncyCastle throws while parsing is reported as a verdict on the
-input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
+own sandbox, such as a transaction you bought there. Why: the crypto
+engines come from the library's own BouncyCastle instance, so a missing one
+is not expected; if one were missing, the receipt path would answer
+`INTERNAL_ERROR` for the PKIX path builder and the JWS path a refusal
+(`INVALID_CERTIFICATE`, `UNTRUSTED_CHAIN` or `INVALID_SIGNATURE`). And an
+unchecked exception BouncyCastle throws while parsing is reported as a
+verdict on the input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
 is by design, so hostile input cannot page you. It also means a broken host
 and an attack wave look alike in the counters. `Failure.cause()` carries the
 exception, which explains one call but does not separate the two in
@@ -647,12 +650,13 @@ so a deployment with custom roots whose runtime lacks their signature
 algorithm still answers `INTERNAL_ERROR` on the first call. If any
 step fails, as on a stripped JRE, a
 FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
-`IllegalStateException`, so the deploy fails instead of the first request
-answering `INTERNAL_ERROR`. `Config.builder().runtimeProbe(false)` turns the
+`IllegalStateException`, so the deploy fails instead of the first
+request. `Config.builder().runtimeProbe(false)` turns the
 probe off; the bcprov version check and the nesting check stay on, since
 neither asks the provider for an engine. The only use we can name is a test
 setup that stands in a double for the crypto provider; with the probe off, a
-broken runtime shows up as `INTERNAL_ERROR` on the first call instead. The probe does not replace the
+broken runtime shows up on the first call instead, as `INTERNAL_ERROR` or a
+refusal (see the self-test above). The probe does not replace the
 self-test above: it proves the engines exist, not that a real receipt parses.
 
 **Bound body size and concurrency at the edge.** Reject bodies above
