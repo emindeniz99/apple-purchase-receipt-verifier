@@ -1574,10 +1574,12 @@ jobs:
           # bootstrap, so the leg is left out; any other answer keeps it in,
           # so an outage is reported by the leg rather than read as "never
           # submitted".
-          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+          # Bounded well inside the job's 5 minutes: a stalled answer must
+          # not keep every other leg from being dispatched. A timeout is 000.
+          code=$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' \
             https://repo.packagist.org/p2/emindeniz99/apple-purchase-receipt-verifier.json || true)
           if [ "$code" = "404" ]; then
-            echo "::notice::Packagist has no package emindeniz99/apple-purchase-receipt-verifier, so the repository has not been submitted yet. Skipping the php smoke leg; see BOOTSTRAP.md, section \"Packagist (PHP)\"."
+            echo "::notice::Packagist has no package emindeniz99/apple-purchase-receipt-verifier. Skipping the php smoke leg; see BOOTSTRAP.md, section \"Packagist (PHP)\"."
           else
             REGISTRIES="$REGISTRIES,php"
           fi

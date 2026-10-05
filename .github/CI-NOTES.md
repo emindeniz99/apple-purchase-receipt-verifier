@@ -201,9 +201,11 @@ workspace and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
 
 - `post-publish-smoke.yml`: a `packagist` leg installs the published PHP
   package, runs `vendor/bin/aprv-install`, and runs
-  `.github/smoke/packagist-smoke.php`. `release.yml` dispatches it only
-  when Packagist knows the package (any answer but a 404), so the leg is
-  skipped until the repository is submitted there (BOOTSTRAP.md).
+  `.github/smoke/packagist-smoke.php`. `release.yml` names `php` in the
+  `registries` it dispatches only when Packagist knows the package (any
+  answer but a 404), so the leg is skipped until the repository is
+  submitted there (BOOTSTRAP.md). A manual dispatch with the default
+  `registries` still runs it.
 - `benchmark.yml` (manual): a `module` job builds the module and a
   `server` job the static binary. Every host benchmark places the module
   as ci.yml does, and PHP benchmarks both transports over the binary.
