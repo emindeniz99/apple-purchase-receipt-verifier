@@ -70,19 +70,27 @@ impl TrustAnchor {
     /// Parses a DER certificate as an anchor.
     ///
     /// # Errors
-    /// [`ConfigError`] when the bytes are not a certificate. A bad anchor is
+    /// [`ConfigError`] when the bytes are not a certificate, or are one
+    /// whose extensions OpenSSL marks invalid. A bad anchor is
     /// a configuration mistake, not a verification verdict.
     pub fn from_der(der: &[u8]) -> Result<TrustAnchor, ConfigError> {
-        // One whole certificate that OpenSSL parses, with an X.509 version
-        // and a whole-octet signature: the same bar as a certificate a
-        // receipt or a JWS carries.
-        match Certificate::from_der(der) {
-            Some(certificate) if certificate.is_readable() => Ok(TrustAnchor(Arc::new(Anchor {
-                der: der.to_vec(),
-                certificate,
-            }))),
-            _ => Err(not_a_certificate()),
+        // One whole certificate that a strict reader decodes: the same bar
+        // as a certificate a receipt or a JWS carries.
+        let Some(certificate) = Certificate::from_der(der).filter(Certificate::is_readable) else {
+            return Err(not_a_certificate());
+        };
+        // An anchor whose extensions OpenSSL marks invalid would vouch for
+        // nothing, so every input would be UNTRUSTED_CHAIN.
+        if certificate.has_invalid_extensions() {
+            return Err(ConfigError::new(
+                "trust anchor has an extension that does not decode: OpenSSL marks it invalid, \
+                 so it could vouch for no certificate",
+            ));
         }
+        Ok(TrustAnchor(Arc::new(Anchor {
+            der: der.to_vec(),
+            certificate,
+        })))
     }
 
     /// Parses a PEM certificate as an anchor: the first certificate OpenSSL's
@@ -117,8 +125,8 @@ impl TrustAnchor {
     ///
     /// # Errors
     /// [`ConfigError`] when the bytes are neither, when PEM holds no
-    /// certificate, or when any certificate in them is not one
-    /// [`TrustAnchor::from_der`] accepts.
+    /// certificate, or when any certificate in them is not one the strict
+    /// reader of [`TrustAnchor::from_der`] accepts.
     pub fn from_der_or_pem(bytes: &[u8]) -> Result<Vec<TrustAnchor>, ConfigError> {
         if bytes.first() == Some(&0x30) {
             return TrustAnchor::from_der(bytes).map(|anchor| vec![anchor]);

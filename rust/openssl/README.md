@@ -12,7 +12,7 @@ values: DER in, certificates, facts and booleans out.
 
 | Item | What it does |
 |---|---|
-| `Certificate` | one X.509 certificate (`d2i_X509`, whole input): comparison, issuance (`X509_check_issued` then `X509_verify`), key usability, extensions, validity at a second, CA capability, the two rules OpenSSL does not judge (a version of 1 to 3, an octet-aligned signature) |
+| `Certificate` | one X.509 certificate (`d2i_X509`, whole input): comparison, issuance (`X509_check_issued` then `X509_verify`), key usability, extensions, validity at a second, CA capability, the readability rules OpenSSL does not apply (version, octet-aligned signature, no duplicate extension), whether OpenSSL marks its extensions invalid |
 | `verify_path` | builds and validates a path to the caller's anchors at a given second, and reports every problem with its depth |
 | `SignedData` | a CMS `SignedData`: `parse` bounds the envelope (`EnvelopeLimits`) before `d2i_CMS_ContentInfo`; then content, embedded certificates, per-`SignerInfo` signer matching, signed-attribute facts and the signature check |
 | `payload::*` | the receipt payload through the templates in `payload.c`, after the header walk, within a `Budget` |
@@ -50,7 +50,8 @@ values: DER in, certificates, facts and booleans out.
   and the core adds the millisecond check. No purpose,
   policy, revocation or host check is asked for.
 - **Certificates**: `X509_check_issued`, `X509_verify`, `X509_check_ca`,
-  `ASN1_BIT_STRING_get_length` (4.0 API: the signature's unused bits).
+  `X509_get_extension_flags`, `ASN1_BIT_STRING_get_length` (4.0 API:
+  the signature's unused bits).
 - **Templates**: `ASN1_item_d2i` with items declared in C, the way OpenSSL
   declares its own. `payload.c` is the receipt payload (a SET OF
   attributes, each a `SEQUENCE OF ANY` whose first three fields the adapter

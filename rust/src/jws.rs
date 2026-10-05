@@ -298,9 +298,8 @@ pub(crate) fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, Failure> {
         .ok_or_else(|| invalid_certificate("x5c entry is not valid base64"))
 }
 
-/// Only whether the entry IS a certificate: one that OpenSSL parses whole,
-/// with an X.509 version and a whole-octet signature
-/// ([`Certificate::is_readable`]). Its key is judged when it is about to be
+/// Only whether the entry IS a certificate: one that OpenSSL parses whole
+/// and a strict reader decodes. Its key is judged when it is about to be
 /// used, once a pinned anchor has vouched for it: the intermediate's and
 /// the leaf's in [`validate_pair`], and the third entry's never.
 fn parse_x5c_certificate(entry: &str) -> Result<Certificate, Failure> {

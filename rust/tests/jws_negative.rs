@@ -176,13 +176,14 @@ fn an_x5c_entry_that_is_not_base64_is_invalid_certificate() {
 }
 
 #[test]
-fn an_x5c_leaf_carrying_one_extension_twice_is_not_issued_by_its_intermediate() {
-    // RFC 5280 4.2 forbids a second instance of any extension. OpenSSL parses
-    // such a certificate, so the library reads it as one. A repeated
-    // basicConstraints (or keyUsage) makes OpenSSL mark the certificate's
-    // extensions invalid (`EXFLAG_INVALID`, crypto/x509/v3_purp.c), and it
-    // then takes no certificate as its issuer: the leaf is outside every
-    // path, whatever its signature says, so the chain is untrusted.
+fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
+    // RFC 5280 4.2 forbids a second instance of any extension. The parser
+    // used to keep the first copy and drop the rest, which is a choice about
+    // what the certificate means rather than a reading of it, so the same
+    // bytes could answer "is this a CA" one way here and another way in a
+    // port that kept the last copy. Both levels are pinned: the parser
+    // refuses the certificate, and the verifier reports it as a defect of
+    // the certificate rather than of the chain it sits on.
     let jws = common::read_text_fixture("generated/transaction-x5c-duplicate-extension.jws");
     let header = common::jws_header(&jws);
     let leaf = header.get("x5c").unwrap().as_array().unwrap()[0]
@@ -190,12 +191,125 @@ fn an_x5c_leaf_carrying_one_extension_twice_is_not_issued_by_its_intermediate() 
         .unwrap();
     let der = common::decode_base64(leaf);
     // TrustAnchor::from_der is the library's certificate reader, public.
-    assert!(TrustAnchor::from_der(&der).is_ok());
+    assert!(TrustAnchor::from_der(&der).is_err());
 
     let verifier = common::verifier([common::anchor("generated/hostile-jws-root.der")]);
     assert_eq!(
         verifier.verify_signed_data(&jws).unwrap_err().reason(),
-        Reason::UntrustedChain
+        Reason::InvalidCertificate
+    );
+}
+
+/// The minted chain of `common::mint::signed_jws`, with extensions added
+/// to the intermediate and the leaf, and the leaf's version INTEGER content
+/// given, each certificate signed as it stands; and the root to pin.
+fn minted_jws(
+    intermediate_extra: &[Vec<u8>],
+    leaf_extra: &[Vec<u8>],
+    leaf_version: &[u8],
+) -> (TrustAnchor, String) {
+    use common::mint::{
+        certificate, key, name, spki, ECDSA_WITH_SHA256, RECEIPT_SIGNER_MARKER, WWDR_MARKER,
+    };
+    use common::{der, der_int, der_oid, der_seq, tag};
+    let algorithm = der_seq(&[der_oid(ECDSA_WITH_SHA256)]);
+    let marker = |oid| der_seq(&[der_oid(oid), der(tag::OCTET_STRING, &[0x05, 0x00])]);
+    let issue = |subject: &str,
+                 subject_key: &common::mint::SigningKey,
+                 issuer: &str,
+                 issuer_key: &common::mint::SigningKey,
+                 serial: u64,
+                 version: &[u8],
+                 extensions: Vec<Vec<u8>>| {
+        let tbs = der_seq(&[
+            der(tag::CONTEXT_0, &der(tag::INTEGER, version)),
+            der_int(serial),
+            algorithm.clone(),
+            name(issuer),
+            der_seq(&[der(0x17, b"200101000000Z"), der(0x18, b"20991231000000Z")]),
+            name(subject),
+            spki(subject_key),
+            der(0xA3, &der_seq(&extensions)),
+        ]);
+        let signature = issuer_key.sign_der(&tbs);
+        common::mint::assemble(tbs, algorithm.clone(), &signature)
+    };
+    let basic_ca = der_seq(&[
+        der_oid("2.5.29.19"),
+        der(0x01, &[0xFF]),
+        der(tag::OCTET_STRING, &der_seq(&[der(0x01, &[0xFF])])),
+    ]);
+    let (root_key, intermediate_key, leaf_key) = (key(11), key(12), key(13));
+    let root = certificate("JWS Root", &root_key, "JWS Root", &root_key, 1, true, None);
+    let mut extensions = vec![basic_ca, marker(WWDR_MARKER)];
+    extensions.extend_from_slice(intermediate_extra);
+    let intermediate = issue(
+        "JWS WWDR",
+        &intermediate_key,
+        "JWS Root",
+        &root_key,
+        2,
+        &[2],
+        extensions,
+    );
+    let mut extensions = vec![marker(RECEIPT_SIGNER_MARKER)];
+    extensions.extend_from_slice(leaf_extra);
+    let leaf = issue(
+        "JWS Leaf",
+        &leaf_key,
+        "JWS WWDR",
+        &intermediate_key,
+        3,
+        leaf_version,
+        extensions,
+    );
+    let header = format!(
+        r#"{{"alg":"ES256","x5c":["{}","{}","{}"]}}"#,
+        base64_encode(&leaf),
+        base64_encode(&intermediate),
+        base64_encode(&root)
+    );
+    let signing_input = format!(
+        "{}.{}",
+        common::base64url(header.as_bytes()),
+        common::base64url(br#"{"signedDate":1735689600000}"#)
+    );
+    let signature = leaf_key.sign_raw(signing_input.as_bytes());
+    let jws = format!("{signing_input}.{}", common::base64url(&signature));
+    (TrustAnchor::from_der(&root).unwrap(), jws)
+}
+
+#[test]
+fn an_x5c_certificate_repeating_any_extension_is_invalid_certificate() {
+    // OpenSSL judges a repeated extension only among the dozen it caches
+    // (basicConstraints, keyUsage, ...), so the core refuses any other one
+    // repeated itself: a second Apple marker, or an OID nobody assigned,
+    // would otherwise verify. Each certificate is signed as it stands.
+    use common::mint::{RECEIPT_SIGNER_MARKER, WWDR_MARKER};
+    use common::{der, der_oid, der_seq, tag};
+    let extension = |oid| der_seq(&[der_oid(oid), der(tag::OCTET_STRING, &[0x05, 0x00])]);
+    let reason = |intermediate: &[Vec<u8>], leaf: &[Vec<u8>]| {
+        let (root, jws) = minted_jws(intermediate, leaf, &[2]);
+        common::verifier([root])
+            .verify_signed_data(&jws)
+            .map(|_| ())
+            .map_err(|failure| failure.reason())
+    };
+    assert_eq!(reason(&[], &[]), Ok(()));
+    assert_eq!(
+        reason(&[], &[extension(RECEIPT_SIGNER_MARKER)]),
+        Err(Reason::InvalidCertificate),
+        "the leaf marker twice"
+    );
+    assert_eq!(
+        reason(&[], &[extension("1.2.3.4"), extension("1.2.3.4")]),
+        Err(Reason::InvalidCertificate),
+        "an unassigned OID twice on the leaf"
+    );
+    assert_eq!(
+        reason(&[extension(WWDR_MARKER)], &[]),
+        Err(Reason::InvalidCertificate),
+        "the WWDR marker twice on x5c[1]"
     );
 }
 

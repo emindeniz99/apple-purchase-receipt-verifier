@@ -175,6 +175,36 @@ fn a_copy_of_the_signer_identity_ahead_of_the_signer_does_not_decide_the_verdict
 }
 
 #[test]
+fn a_copy_of_the_signer_identity_whose_basic_constraints_does_not_decode_is_passed_over() {
+    // The copy parses, and OpenSSL marks its extensions invalid, so no
+    // pinned root vouches for it: it is one more SignerInfo match that
+    // fails, and the genuine signer behind it verifies.
+    let mut builder = common::CmsBuilder::from_shared();
+    let signer = builder
+        .certificates
+        .iter()
+        .position(|raw| {
+            common::certificate_identity(raw)
+                == Some((builder.signer_serial.clone(), builder.signer_issuer.clone()))
+        })
+        .expect("the shared receipt embeds its signer");
+    let mut copy = builder.certificates[signer].clone();
+    // basicConstraints, critical, its extnValue one SEQUENCE: left claiming
+    // 127 content octets, so the OCTET STRING around it still parses.
+    let oid = [0x06, 0x03, 0x55, 0x1d, 0x13, 0x01, 0x01, 0xff, 0x04];
+    let at = copy
+        .windows(oid.len())
+        .position(|window| window == oid)
+        .expect("the signer carries a critical basicConstraints")
+        + oid.len();
+    assert_eq!(copy[at + 1], 0x30, "the extnValue holds a SEQUENCE");
+    copy[at + 2] = 0x7f;
+    assert!(TrustAnchor::from_der(&copy).is_err());
+    builder.certificates.insert(0, copy);
+    assert!(verifier().verify(&builder.build()).is_ok());
+}
+
+#[test]
 fn an_unparseable_embedded_certificate_is_rejected() {
     let mut builder = common::CmsBuilder::from_shared();
     builder
@@ -183,30 +213,44 @@ fn an_unparseable_embedded_certificate_is_rejected() {
     assert_eq!(reason_of(&builder.build()), Reason::Malformed);
 }
 
-#[test]
-fn a_stranger_whose_basic_constraints_repeats_is_ignored() {
-    // OpenSSL parses a certificate whose basicConstraints repeats and judges
-    // it only on a path, where it takes no certificate as its issuer. A
-    // stranger no pinned root vouches for never reaches the path, so a
-    // genuine receipt carrying one in its unsigned bag verifies, as with a
-    // stranger whose key is unreadable. The same certificate as the signer
-    // is UNTRUSTED_CHAIN (receipt/reject-signer-carrying-one-extension-twice).
+/// The signer certificate of `receipt/reject-signer-with-a-corrupt-extension`:
+/// its basicConstraints does not decode, which OpenSSL parses and marks
+/// invalid (`EXFLAG_INVALID`).
+fn certificate_with_a_corrupt_basic_constraints() -> Vec<u8> {
     let fixture = parse_cms(&common::read_fixture(
-        "generated-0.7/receipt-signer-duplicate-extension.der",
+        "generated-0.7/receipt-signer-corrupt-extension.der",
     ))
     .unwrap();
     let named = &fixture.signer_infos[0];
     let identity = Some((named.serial_contents.clone(), named.issuer_raw.clone()));
-    let twice = fixture
+    fixture
         .certificates
-        .iter()
+        .into_iter()
         .find(|raw| common::certificate_identity(raw) == identity)
         .expect("the fixture embeds its signer")
-        .clone();
-    assert!(TrustAnchor::from_der(&twice).is_ok());
+}
+
+#[test]
+fn a_stranger_whose_basic_constraints_does_not_decode_is_ignored() {
+    // OpenSSL judges an extension that does not decode only on a path,
+    // where it takes no certificate as the issuer of one. A stranger no
+    // pinned root vouches for never reaches the path, so a genuine receipt
+    // carrying one in its unsigned bag verifies, as with a stranger whose
+    // key is unreadable. As the signer it is UNTRUSTED_CHAIN
+    // (receipt/reject-signer-with-a-corrupt-extension).
     let mut builder = common::CmsBuilder::from_shared();
-    builder.certificates.push(twice);
+    builder
+        .certificates
+        .push(certificate_with_a_corrupt_basic_constraints());
     assert!(verifier().verify(&builder.build()).is_ok());
+}
+
+#[test]
+fn an_anchor_whose_basic_constraints_does_not_decode_is_refused() {
+    // Such an anchor would vouch for nothing, so every input would be
+    // UNTRUSTED_CHAIN; it is a configuration mistake, refused when read.
+    let err = TrustAnchor::from_der(&certificate_with_a_corrupt_basic_constraints()).unwrap_err();
+    assert!(err.to_string().contains("does not decode"), "{err}");
 }
 
 #[test]

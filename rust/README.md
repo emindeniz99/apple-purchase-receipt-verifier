@@ -311,13 +311,14 @@ that differs from the eContentType, is `INVALID_SIGNATURE`.
 
 An embedded certificate whose structure does not decode is fatal. One
 OpenSSL's decoder refuses makes the whole envelope `MALFORMED`. One it
-decodes with a version above 3 or a signature with unused bits, neither of
-which OpenSSL judges, is `INVALID_CERTIFICATE` when it is the **signer**
-and `MALFORMED` for any other entry, because the certificate bag is
-unsigned. A repeated or undecodable basicConstraints or keyUsage is
-OpenSSL's to judge: it takes no certificate as the issuer of one, so a
-signer carrying it is `UNTRUSTED_CHAIN` and a stranger carrying it is
-ignored. A key the library cannot use is not a structural failure: a certificate's key
+decodes but the 0.7 structure rules refuse (a version above 3, a signature
+with unused bits, a repeated extension) is `INVALID_CERTIFICATE` when it is
+the **signer** and `MALFORMED` for any other entry, because the certificate
+bag is unsigned. An extension OpenSSL caches that does not decode, such as
+basicConstraints or keyUsage, is OpenSSL's to judge: it takes no
+certificate as the issuer of one, so a signer carrying it is
+`UNTRUSTED_CHAIN` and a stranger carrying it is ignored. A
+key the library cannot use is not a structural failure: a certificate's key
 is used only once a pinned root vouches for it, so a stranger carrying a
 key on an unimplemented curve is ignored and the receipt verifies (shared
 case `receipt/verify-with-a-stranger-whose-key-is-unreadable`).

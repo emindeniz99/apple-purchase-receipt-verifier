@@ -111,18 +111,41 @@ impl Certificate {
         same_x509(&self.0, &other.0)
     }
 
-    /// Whether the certificate claims an X.509 version, 1 to 3, and carries
-    /// a `signatureValue` of whole octets (every signature algorithm
-    /// produces whole octets). OpenSSL parses both without complaint and
-    /// judges neither: a certificate of version 11 verifies on a path, and
-    /// an unaligned signature on a certificate the path never uses is never
-    /// read at all. Everything else about a certificate is OpenSSL's to
-    /// judge, at parse or on the path.
+    /// Whether the certificate claims an X.509 version, 1 to 3, carries a
+    /// `signatureValue` of whole octets (every signature algorithm produces
+    /// whole octets) and carries no extension twice. OpenSSL parses all
+    /// three without complaint: a certificate of version 11 verifies on a
+    /// path, a stranger's signature is never read, and a repeated extension
+    /// is judged only among the dozen extensions OpenSSL caches. One of
+    /// those that does not decode is left to OpenSSL, which marks the
+    /// certificate's extensions invalid: see
+    /// [`Certificate::has_invalid_extensions`].
     ///
     /// The key is not judged here: see [`Certificate::has_usable_key`].
     #[must_use]
     pub fn is_readable(&self) -> bool {
-        (0..=2).contains(&self.0.version()) && signature_is_octet_aligned(&self.0)
+        if !(0..=2).contains(&self.0.version()) || !signature_is_octet_aligned(&self.0) {
+            return false;
+        }
+        let Some(mut oids) = extension_oids(&self.0) else {
+            return false;
+        };
+        oids.sort_unstable();
+        !oids.windows(2).any(|pair| pair.first() == pair.get(1))
+    }
+
+    /// Whether OpenSSL marks the certificate's extensions invalid
+    /// (`EXFLAG_INVALID`): an extension it caches, such as basicConstraints
+    /// or keyUsage, does not decode. OpenSSL then takes no certificate as
+    /// its issuer and it issues none, so on a path it fails the path.
+    #[must_use]
+    pub fn has_invalid_extensions(&self) -> bool {
+        init();
+        // SAFETY: X509_get_extension_flags reads the live certificate,
+        // caching its decoded extensions inside it under OpenSSL's own lock.
+        let flags = unsafe { ffi::X509_get_extension_flags(self.0.as_ptr()) };
+        drain_errors();
+        flags & ffi::EXFLAG_INVALID != 0
     }
 
     /// Whether OpenSSL can build a public key from the certificate's
@@ -257,6 +280,51 @@ pub(crate) fn same_x509(a: &X509Ref, b: &X509Ref) -> bool {
     // SAFETY: both pointers are live certificates borrowed for the call;
     // X509_cmp only reads them.
     unsafe { ffi::X509_cmp(a.as_ptr(), b.as_ptr()) == 0 }
+}
+
+/// The DER content octets of every extension's OID, in order, or `None`
+/// when an extension has no readable OID.
+fn extension_oids(x509: &X509Ref) -> Option<Vec<Vec<u8>>> {
+    // SAFETY: reads the extension count of a live certificate.
+    let count = unsafe { ffi::X509_get_ext_count(x509.as_ptr()) };
+    (0..count)
+        .map(|index| extension_object(x509, index).map(object_octets))
+        .collect()
+}
+
+/// The content octets of an OID's encoding, copied.
+fn object_octets(object: &Asn1ObjectRef) -> Vec<u8> {
+    // SAFETY: both calls only read the live object: OBJ_length is the
+    // length of the encoding OBJ_get0_data points at, both owned by it.
+    unsafe {
+        let length = ffi::OBJ_length(object.as_ptr());
+        let data = ffi::OBJ_get0_data(object.as_ptr());
+        if data.is_null() || length == 0 {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(data, length).to_vec()
+        }
+    }
+}
+
+/// The OID of extension `index`, borrowed from the certificate.
+fn extension_object(x509: &X509Ref, index: c_int) -> Option<&Asn1ObjectRef> {
+    // SAFETY: `index` is below the certificate's extension count (the only
+    // caller iterates that range); X509_get_ext returns a pointer owned by
+    // the certificate, and X509_EXTENSION_get_object one owned by the
+    // extension, both valid while `x509` is borrowed.
+    unsafe {
+        let extension = ffi::X509_get_ext(x509.as_ptr(), index);
+        if extension.is_null() {
+            return None;
+        }
+        let object = ffi::X509_EXTENSION_get_object(extension);
+        if object.is_null() {
+            None
+        } else {
+            Some(Asn1ObjectRef::from_ptr(object))
+        }
+    }
 }
 
 /// The index of the first extension with this OID.
