@@ -9,9 +9,10 @@ class Reason(enum.Enum):
     an ordinal: the set may grow between 0.x releases."""
 
     #: The base64, ASN.1, CMS or JWS structure is broken, or a structural
-    #: bound was exceeded (JSON nesting deeper than 64, more than 10 embedded
-    #: certificates, more than 4 SignerInfos). Decided before any signature
-    #: is checked.
+    #: bound was exceeded (ASN.1 nesting deeper than 32, more than 10
+    #: embedded certificates, more than 4 SignerInfos; JSON has no depth bound
+    #: of its own, only the size caps). Decided before any signature is
+    #: checked.
     MALFORMED = "MALFORMED"
     #: The input is over a fixed size cap: 3,145,728 UTF-8 bytes for a
     #: receipt or an endpoint request body, 262,144 for a JWS. Decided before
