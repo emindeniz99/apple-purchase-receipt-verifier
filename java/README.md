@@ -647,7 +647,9 @@ validator and builder and the Collection cert store, and checks the signature
 of each of the three bundled Apple roots, the SHA-1 one included. It needs no
 receipt or JWS. It checks the bundled roots, not the roots in your `Config`,
 so a deployment with custom roots whose runtime lacks their signature
-algorithm still answers `INTERNAL_ERROR` on the first call. If any
+algorithm passes the probe and then answers `UNTRUSTED_CHAIN` to every
+input that reaches the chain check: no signature by such a root verifies,
+so nothing chains to it. If any
 step fails, as on a stripped JRE, a
 FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
 `IllegalStateException`, so the deploy fails instead of the first
