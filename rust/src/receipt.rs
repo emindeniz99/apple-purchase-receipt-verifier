@@ -306,9 +306,10 @@ fn invalid_signature(detail: &'static str) -> Failure {
 /// `messageDigest` mandatory, each once and single-valued, and section 11.1
 /// makes `contentType` name the content the signature covers. A set that
 /// breaks either cannot be checked, so it fails as a signature. OpenSSL
-/// enforces the first rule inside `CMS_SignerInfo_verify`; it does not
-/// compare the `contentType` with the eContentType, so that is checked
-/// here. The separation is a real control: genuine receipts carry no
+/// enforces the first rule: `CMS_SignerInfo_verify` refuses a non-empty
+/// set that breaks it, and `CMS_SignerInfo_verify_content` an empty one,
+/// which has no `messageDigest`. It does not compare the `contentType`
+/// with the eContentType, so that is checked here. The separation is a real control: genuine receipts carry no
 /// signed attributes, so their signature covers the payload SET itself,
 /// and a forger who re-labelled that SET as signed attributes would reuse
 /// Apple's signature over content of their own; that SET has neither

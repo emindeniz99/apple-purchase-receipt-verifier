@@ -30,8 +30,10 @@ values: DER in, certificates, facts and booleans out.
   chain by each `SignerInfo`'s own `digestAlgorithm`. Never `CMS_verify`:
   it builds a store, may consult default trust, and decides which signer
   counts; the core does all three itself. `CMS_SignerInfo_verify_content`
-  takes the hash from `digestAlgorithm` alone and does not compare it with
-  a hash `signatureAlgorithm` names, except for RSASSA-PSS.
+  takes the hash from `digestAlgorithm` alone. For an RSA key OpenSSL
+  reads `signatureAlgorithm` only to choose PKCS#1 v1.5 or RSASSA-PSS and
+  compares a hash only in the PSS parameters; for an ECDSA key it does not
+  read `signatureAlgorithm` at all.
 - **Paths**: `X509_verify_cert` over an `X509_STORE` holding one of the
   caller's anchors and nothing else, run once per anchor that may end the
   path, with the untrusted certificates narrowed first to those that sign

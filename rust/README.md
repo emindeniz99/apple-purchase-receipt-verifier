@@ -271,9 +271,13 @@ P-384 and P-521 included), over MD5, SHA-1, the SHA-2 family or SHA-3. A signer 
 marker is trusted whatever it signs with, so a change on Apple's side does
 not reject genuine receipts. The same goes for certificate signatures in the
 chain. The signature is checked under the `SignerInfo`'s
-`digestAlgorithm`, as OpenSSL checks it; a hash the `signatureAlgorithm`
-names (`sha256WithRSAEncryption`, `ecdsa-with-SHA384`) is not compared
-with it, except in the RSA-PSS parameters, which OpenSSL checks itself.
+`digestAlgorithm`, as OpenSSL checks it, and a hash the
+`signatureAlgorithm` names (`sha256WithRSAEncryption`,
+`ecdsa-with-SHA384`) is not compared with it. For an RSA signer OpenSSL
+reads the `signatureAlgorithm` only to choose PKCS#1 v1.5 or RSA-PSS and
+checks a hash only in the PSS parameters; an RSA PKCS#1 v1.5 signature
+binds its hash anyway. For an ECDSA signer it does not read the
+`signatureAlgorithm` at all.
 
 The bundled roots are checked against their published SHA-256 fingerprints
 when they load, all three or none; `Config::builder().build()` refuses an

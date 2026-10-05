@@ -261,10 +261,11 @@ impl SignedData {
 
     /// Whether `SignerInfo` `index`'s first `contentType` signed attribute
     /// names the `eContentType` (RFC 5652 section 11.1). True when there
-    /// are no signed attributes or no `contentType` among them: OpenSSL's
-    /// own attribute rules, run inside `CMS_SignerInfo_verify`, refuse a
-    /// missing, repeated or multi-valued `contentType`, but never compare
-    /// it with the `eContentType`.
+    /// are no signed attributes or no `contentType` among them. OpenSSL
+    /// refuses a missing, repeated or multi-valued `contentType` itself:
+    /// `CMS_SignerInfo_verify` in a non-empty set, and
+    /// `CMS_SignerInfo_verify_content` an empty one, which has no
+    /// `messageDigest`. It never compares it with the `eContentType`.
     #[must_use]
     pub fn content_type_attribute_matches(&self, index: usize) -> bool {
         let Some(si) = self.signer_info(index) else {
@@ -291,9 +292,10 @@ impl SignedData {
     /// against the content; without, the signature over the content. The
     /// content is digested with the `SignerInfo`'s own `digestAlgorithm`.
     /// No chain, no store: the core has already judged the certificate.
-    /// OpenSSL takes the hash from `digestAlgorithm` alone and does not
-    /// compare it with a hash the `signatureAlgorithm` names, except for
-    /// RSASSA-PSS, whose parameters it checks itself.
+    /// OpenSSL takes the hash from `digestAlgorithm` alone. For an RSA key
+    /// it reads `signatureAlgorithm` only to choose PKCS#1 v1.5 or
+    /// RSASSA-PSS, and compares a hash only in the PSS parameters; for an
+    /// ECDSA key it does not read `signatureAlgorithm` at all.
     #[must_use]
     pub fn verify_signer(&mut self, index: usize, signer: &Certificate) -> bool {
         init();
