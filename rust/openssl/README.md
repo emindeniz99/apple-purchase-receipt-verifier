@@ -30,9 +30,8 @@ values: DER in, certificates, facts and booleans out.
   chain by each `SignerInfo`'s own `digestAlgorithm`. Never `CMS_verify`:
   it builds a store, may consult default trust, and decides which signer
   counts; the core does all three itself. `CMS_SignerInfo_verify_content`
-  takes the hash from `digestAlgorithm` alone, so `verify_signer` first
-  requires a hash named by `signatureAlgorithm` (`OBJ_find_sigid_algs`) to
-  be that digest, as 0.7 did.
+  takes the hash from `digestAlgorithm` alone and does not compare it with
+  a hash `signatureAlgorithm` names, except for RSASSA-PSS.
 - **Paths**: `X509_verify_cert` over an `X509_STORE` holding one of the
   caller's anchors and nothing else, run once per anchor that may end the
   path, with the untrusted certificates narrowed first to those that sign
@@ -73,7 +72,7 @@ values: DER in, certificates, facts and booleans out.
     (the core's depth bound, 32) and the number of values (its node
     budget, 100,000), so the budget also bounds the entries the shallow
     decode builds;
-  - the chunks of a constructed `OCTET STRING` (the `eContent`, a payload
+  - the chunks of a constructed `OCTET STRING` in the payload (an
     attribute value, the Xcode wrap) must be `OCTET STRING`s, as X.690
     section 8.7.3 says; OpenSSL joins any tag. Six constructed levels
     pass, as OpenSSL decodes six (`ASN1_MAX_STRING_NEST`). Elsewhere a

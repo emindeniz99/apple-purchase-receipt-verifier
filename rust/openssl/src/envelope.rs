@@ -2,11 +2,9 @@
 //! (`envelope.c`), for what OpenSSL's full decode cannot tell the core in
 //! time: the content type, and how many certificates, CRLs and
 //! `SignerInfo`s there are, before `d2i_CMS_ContentInfo` builds every
-//! embedded certificate's public key; and whether the encapsulated
-//! content's chunks are all `OCTET STRING`s.
+//! embedded certificate's public key.
 
 use crate::item::{decode_exact, typed, Decoded};
-use crate::walk::{self, ChunkError};
 use crate::{drain_errors, sys};
 use openssl_sys as ffi;
 
@@ -105,24 +103,6 @@ impl Envelope {
             signer_infos: count(signer_infos),
         }
     }
-
-    /// Whether the encapsulated content, when it is a constructed
-    /// `OCTET STRING`, holds only `OCTET STRING`s at every depth, and nests
-    /// no deeper than OpenSSL decodes. OpenSSL joins the chunks of a
-    /// constructed string whatever their tag, so the content OpenSSL hands
-    /// over cannot tell; this walks the raw `EncapsulatedContentInfo` the
-    /// shallow decode kept. Absent content passes: the full decode refuses
-    /// that on its own.
-    pub(crate) fn content_chunks(&self) -> Result<(), ChunkError> {
-        // SAFETY: `signed()` is live while `self` is; the ASN1_TYPE it
-        // holds is whatever the template's ANY found.
-        let encapsulated = unsafe { (*self.signed()).encapsulated_content };
-        let (kind, string) = typed(encapsulated);
-        if kind != ffi::V_ASN1_SEQUENCE {
-            return Err(ChunkError::Malformed);
-        }
-        econtent_chunks(&crate::cms::string_octets(string))
-    }
 }
 
 /// The number of elements of a stack a live `Envelope` owns; 0 for an
@@ -133,20 +113,4 @@ fn count(stack: *const ffi::OPENSSL_STACK) -> usize {
     }
     // SAFETY: a live stack the caller's `Envelope` owns.
     usize::try_from(unsafe { ffi::OPENSSL_sk_num(stack) }).unwrap_or(0)
-}
-
-/// Whether the `eContent` of the `EncapsulatedContentInfo` encoded in
-/// `encapsulated` is an `OCTET STRING` whose chunks at every depth are
-/// `OCTET STRING`s. Passes when there is no `eContent`.
-fn econtent_chunks(encapsulated: &[u8]) -> Result<(), ChunkError> {
-    let fields = walk::children(encapsulated).ok_or(ChunkError::Malformed)?;
-    let Some(explicit) = fields.get(1) else {
-        return Ok(());
-    };
-    // `[0] EXPLICIT`: its one child is the eContent.
-    let inner = walk::children(explicit).ok_or(ChunkError::Malformed)?;
-    match inner.as_slice() {
-        [econtent] => walk::octet_string_exact(econtent),
-        _ => Err(ChunkError::Malformed),
-    }
 }

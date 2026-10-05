@@ -89,17 +89,6 @@ pub(crate) fn verify(
     payload
 }
 
-/// The `SignerInfo` and embedded-certificate bounds.
-fn within_member_bounds(signer_infos: usize, certificates: usize) -> Result<(), Failure> {
-    if signer_infos > MAX_SIGNER_INFOS {
-        return Err(too_many_signer_infos(signer_infos));
-    }
-    if certificates > MAX_EMBEDDED_CERTIFICATES {
-        return Err(too_many_certificates(certificates));
-    }
-    Ok(())
-}
-
 fn too_many_signer_infos(count: usize) -> Failure {
     malformed(format!(
         "receipt carries {count} SignerInfos, more than the maximum of {MAX_SIGNER_INFOS}"
@@ -151,7 +140,6 @@ fn verify_signature(
     let mut cms = SignedData::parse(der, &ENVELOPE_LIMITS).map_err(envelope_failure)?;
     let signer_count = cms.signer_count();
     let certificates = cms.certificates();
-    within_member_bounds(signer_count, certificates.len())?;
 
     // Only the creation date is read before trust is established, because
     // chain validity is anchored at signing time; nothing else in the payload
@@ -328,9 +316,6 @@ fn verify_cms_signature(
     index: usize,
     signer: &Certificate,
 ) -> Result<(), Failure> {
-    if !cms.signer_digest_known(index) {
-        return Err(invalid_signature("unsupported digest algorithm"));
-    }
     let attributes = cms.signed_attributes(index);
     if attributes.present {
         if attributes.content_type_count != 1

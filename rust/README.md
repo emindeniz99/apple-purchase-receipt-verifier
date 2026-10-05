@@ -270,10 +270,10 @@ verifies: RSA PKCS#1 v1.5, RSA-PSS or ECDSA on its named curves (P-256,
 P-384 and P-521 included), over MD5, SHA-1, the SHA-2 family or SHA-3. A signer that chains to a pinned root and carries Apple's
 marker is trusted whatever it signs with, so a change on Apple's side does
 not reject genuine receipts. The same goes for certificate signatures in the
-chain. A `signatureAlgorithm` that names a hash (`sha256WithRSAEncryption`,
-`ecdsa-with-SHA384`, the RSA-PSS parameters) must name the `SignerInfo`'s
-`digestAlgorithm`, or the signature is `INVALID_SIGNATURE`;
-`rsaEncryption` and `id-ecPublicKey` name none and take the digest.
+chain. The signature is checked under the `SignerInfo`'s
+`digestAlgorithm`, as OpenSSL checks it; a hash the `signatureAlgorithm`
+names (`sha256WithRSAEncryption`, `ecdsa-with-SHA384`) is not compared
+with it, except in the RSA-PSS parameters, which OpenSSL checks itself.
 
 The bundled roots are checked against their published SHA-256 fingerprints
 when they load, all three or none; `Config::builder().build()` refuses an
@@ -337,10 +337,11 @@ constructed values). Before it, a walk over the headers alone
 (`ASN1_get_object`) bounds each value parsed on its own, the CMS envelope
 and each attribute SET: at most 32 nested constructed values of any class,
 counted as BouncyCastle counts them, and at most 100,000 values; the
-primitive values OpenSSL would keep whole are handed to its own decoder,
-and the chunks of a constructed `OCTET STRING` must be `OCTET STRING`s. In
-the payload, a tag in high-tag-number form and a length of more than four
-octets are refused, as 0.7's reader refused them. Trailing bytes are
+primitive values OpenSSL would keep whole are handed to its own decoder.
+In the payload, the chunks of a constructed `OCTET STRING` (an attribute
+value, the Xcode wrap) must be `OCTET STRING`s, and a tag in
+high-tag-number form and a length of more than four octets are refused,
+as 0.7's reader refused them. Trailing bytes are
 refused. At most 10 embedded certificates, 10 CRLs and 4 SignerInfos,
 counted on a shallow decode after the envelope's header walk and before
 any certificate is decoded. JSON: strict RFC 8259 grammar, read by

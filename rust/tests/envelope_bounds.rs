@@ -366,14 +366,6 @@ fn econtent_rechunked_into_six_constructed_levels_verifies() {
         &rechunked(7, tag::OCTET_STRING),
         "a constructed string nests deeper than OpenSSL decodes",
     );
-    // A chunk of another type is still named as such.
-    let (result, _) = verify(&rechunked(6, tag::UTF8_STRING));
-    let failure = result.unwrap_err();
-    assert_eq!(failure.reason(), Reason::Malformed);
-    assert!(
-        failure.to_string().contains("not an OCTET STRING"),
-        "{failure}"
-    );
 }
 
 #[test]

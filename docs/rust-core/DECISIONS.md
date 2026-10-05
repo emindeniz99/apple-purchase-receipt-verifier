@@ -478,10 +478,17 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   eight cases that become port-defined, and the rewritten rows below land
   in their own pull request. The audit examined two core rules and kept
   them on their own grounds: `keyless_target_path` reports path problems
-  at the depths `X509_verify_cert` would; `signature_names_digest` keeps
+  at the depths `X509_verify_cert` would; `signature_names_digest` kept
   the 0.7 core's `INVALID_SIGNATURE` for a signatureAlgorithm whose hash
   differs from the digestAlgorithm, which is continuity and not a
-  security boundary, and its case is already `oneOf`.
+  security boundary, and its case is already `oneOf`. The owner dropped
+  that comparison from the core on 2026-10-05: the core now leaves the
+  label to OpenSSL, which checks the signature under the digestAlgorithm
+  and compares a hash the signatureAlgorithm names only for RSASSA-PSS,
+  as Java leaves it to BouncyCastle, which refuses a mismatch. An RSA
+  PKCS#1 v1.5 signature binds its hash in the DigestInfo, so a relabelled
+  one still fails; an ECDSA signature binds none, so one made over the
+  digestAlgorithm's hash verifies whatever hash the label names.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one
@@ -523,8 +530,9 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
   | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":21002}` | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
   | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
-| A SignerInfo whose digestAlgorithm names an OID BouncyCastle has no digest for (`1.2.3.4`, or SHAKE256 `2.16.840.1.101.3.4.2.12`), over an otherwise genuine chain | not measured | `MALFORMED` (`unexpected java.lang.IllegalArgumentException` from `DefaultSignatureAlgorithmIdentifierFinder`, status 21002; recorded 2026-10-04) | `INVALID_SIGNATURE` (`unsupported digest algorithm`, status 21003) | The core asks OpenSSL for the digest before it checks the signature and names the refusal; BouncyCastle throws an unchecked exception while building the verifier, which Java files as `MALFORMED` with the cause kept. Both refuse, the input is not Apple-signed, and no shared case pins it; a digest BouncyCastle does know but Apple never used (MD5) is `INVALID_SIGNATURE` in both | none: measured by a review probe, not a case |
+| A SignerInfo whose digestAlgorithm names an OID BouncyCastle has no digest for (`1.2.3.4`, or SHAKE256 `2.16.840.1.101.3.4.2.12`), over an otherwise genuine chain | not measured | `MALFORMED` (`unexpected java.lang.IllegalArgumentException` from `DefaultSignatureAlgorithmIdentifierFinder`, status 21002; recorded 2026-10-04) | `INVALID_SIGNATURE` (status 21003) | The core's signature check fails under that digestAlgorithm; BouncyCastle throws an unchecked exception while building the verifier, which Java files as `MALFORMED` with the cause kept. Both refuse, the input is not Apple-signed, and no shared case pins it; a digest BouncyCastle does know but Apple never used (MD5) is `INVALID_SIGNATURE` in both | none: measured by a review probe, not a case |
 | A lone surrogate escape in a member name inside `data` or `summary` of a genuinely signed JWS payload | not measured (the 0.7 answers carry no environment) | reads on: Jackson keeps the name, and the container's `environment` is read | ok, without that container's environment (port-defined 2026-10-03) | The core reads `data` and `summary` for the environment alone, and `serde_json` refuses the name (R40), so the container states none; the payload and the signature are unchanged. Apple's documents are ASCII | none: no case pins it; R42 |
+  | A genuine receipt whose eContent is re-encoded as a constructed `OCTET STRING` with a chunk of another tag (a `UTF8String`, an `INTEGER`), the joined octets unchanged | `MALFORMED` | `MALFORMED` (BouncyCastle 1.86: "unknown object encountered in constructed OCTET STRING"; measured 2026-10-05) | ok (owner, 2026-10-05) | X.690 8.7.3 allows only `OCTET STRING` chunks, but OpenSSL joins chunks of any tag, and the joined octets are both what the signature covers and what the payload is read from, so nothing unsigned is accepted. The core dropped its own chunk check on the eContent; payload attribute values and the Xcode wrap keep theirs (`UNREADABLE_PAYLOAD`). Apple's receipts are DER and never chunk a string | none: no case pins it; `rust/tests/receipt_negative.rs` |
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.

@@ -220,21 +220,17 @@ fn a_digest_openssl_does_not_implement_is_an_invalid_signature() {
 }
 
 #[test]
-fn a_signature_algorithm_that_names_another_hash_than_the_digest_is_an_invalid_signature() {
+fn a_signature_algorithm_that_names_the_digest_or_no_hash_verifies() {
     // One genuine signature over SHA-256. Labelled with the hash it was made
-    // with, or with a key-type OID that names none, it verifies; labelled
-    // with any other hash it is not the signature the label describes, even
-    // though the key would verify it over the SignerInfo's digest.
+    // with, or with a key-type OID that names none, it verifies. A label
+    // naming another hash is not compared with the digest: OpenSSL checks
+    // the signature under the SignerInfo's digestAlgorithm (DECISIONS.md
+    // R20).
     let pki = pki();
     let signature = pki.signer_key.sign_der(&content());
     for label in [ECDSA_WITH_SHA256, ID_EC_PUBLIC_KEY] {
         let der = receipt(&pki, SHA256, label, &signature);
         assert!(common::verify_der(&pki.verifier, &der).is_ok(), "{label}");
-    }
-    for label in [ECDSA_WITH_SHA224, ECDSA_WITH_SHA384, ECDSA_WITH_SHA512] {
-        let der = receipt(&pki, SHA256, label, &signature);
-        let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
-        assert_eq!(failure.reason(), Reason::InvalidSignature, "{label}");
     }
 }
 
