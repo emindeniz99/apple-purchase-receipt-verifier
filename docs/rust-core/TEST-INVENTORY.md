@@ -52,9 +52,9 @@ differential run compares it with the core over the corpora and the cases
 | PHP | 22 | 4 | 6 | 11 | 1 |
 | Node | 6 | 1 | 2 | 0 | 3 |
 | .NET | 2 | 0 | 0 | 0 | 2 |
-| Rust | 316 | 43 | 0 | 0 | 273 |
+| Rust | 320 | 43 | 0 | 0 | 277 |
 | Java | 201 | 11 | 0 | 0 | 190 |
-| All | 865 | 201 | 31 | 78 | 555 |
+| All | 869 | 201 | 31 | 78 | 559 |
 
 ## The cases this lane added
 
@@ -620,7 +620,9 @@ and `-second`.
 | Rust | `rust/tests/jws_negative.rs` `x5c_must_be_an_array_of_strings` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `an_x5c_entry_that_is_not_a_certificate_is_invalid_certificate` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `an_x5c_entry_that_is_not_base64_is_invalid_certificate` | input built in code: stays with the Rust |
-| Rust | `rust/tests/jws_negative.rs` `an_x5c_leaf_carrying_one_extension_twice_is_not_issued_by_its_intermediate` | same fixture as `transaction/reject-x5c-duplicate-extension` |
+| Rust | `rust/tests/jws_negative.rs` `an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate` | same fixture as `transaction/reject-x5c-duplicate-extension` |
+| Rust | `rust/tests/jws_negative.rs` `an_x5c_certificate_repeating_any_extension_is_invalid_certificate` | input built in code: stays with the Rust |
+| Rust | `rust/tests/jws_negative.rs` `an_x5c_version_past_32_bits_is_invalid_certificate` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `the_third_x5c_entry_is_never_trusted_but_must_be_a_certificate` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `a_payload_that_is_not_a_json_object_is_carried_to_the_signature_check` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `a_signed_payload_that_is_not_a_json_object_is_unreadable` | same fixture as `signed-data/unreadable-empty-payload`, `signed-data/unreadable-json-array-payload` |
@@ -669,8 +671,10 @@ and `-second`.
 | Rust | `rust/tests/receipt_negative.rs` `a_relabelled_digest_algorithm_fails_as_a_signature` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `more_than_ten_embedded_certificates_is_malformed` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_copy_of_the_signer_identity_ahead_of_the_signer_does_not_decide_the_verdict` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_negative.rs` `a_copy_of_the_signer_identity_whose_basic_constraints_does_not_decode_is_passed_over` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `an_unparseable_embedded_certificate_is_rejected` | input built in code: stays with the Rust |
-| Rust | `rust/tests/receipt_negative.rs` `a_stranger_whose_basic_constraints_repeats_is_ignored` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_negative.rs` `a_stranger_whose_basic_constraints_does_not_decode_is_ignored` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_negative.rs` `an_anchor_whose_basic_constraints_does_not_decode_is_refused` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_message_digest_that_does_not_match_the_content_is_an_invalid_signature` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_tampered_signature_is_an_invalid_signature` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_signature_of_the_wrong_length_is_an_invalid_signature` | input built in code: stays with the Rust |

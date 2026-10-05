@@ -531,31 +531,32 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   vouched for without a signature check (an embedded copy of an anchor
   is the anchor), so the core now answers `INVALID_CERTIFICATE`; the
   core before and Java answer `UNTRUSTED_CHAIN`. No case pins it.
-  The same day the owner dropped the core's own X.509 reader
-  (`Certificate::is_readable`), which read certificate fields before
-  OpenSSL judged them. Its rules on extensions went: no extension
-  carried twice, and a basicConstraints and a keyUsage that decode.
-  OpenSSL parses such a certificate, and refuses no repeated extension
-  of an arbitrary OID, but a basicConstraints or keyUsage that repeats or
-  does not decode sets `EXFLAG_INVALID` (`crypto/x509/v3_purp.c:514`,
-  `550`), so `ossl_x509v3_cache_extensions` fails (`:727-730`): no
-  certificate issues it (`ossl_x509_likely_issued`, `:1068`) and it
-  issues none (`X509_check_ca` answers 0, `:788`). On a path that is
-  `UNTRUSTED_CHAIN`; a stranger in the bag never reaches a path, so its
-  extensions are never judged. BouncyCastle refuses all of these at
-  parse, so Java is unchanged; the two rows below record what moved.
-  Two rules stay, because OpenSSL judges neither and dropping them made
-  three refusals verify on the shared cases: a version other than 1 to
-  3 (`transaction/reject-x5c-certificate-version-11`,
-  `receipt/reject-signer-certificate-version-11`; OpenSSL does not check
-  the version, and the test PKI re-signs the certificate, so its path
-  holds), and a signature `BIT STRING` with unused bits on a stranger
-  (`receipt/reject-a-stranger-whose-signature-bit-string-is-unaligned`;
-  OpenSSL never reads a stranger's signature). They stay until the owner
-  decides on them. The same day the core stopped checking for bytes
-  after the receipt's DER three times: the header walk, which runs
-  before any decode, is the one check, and the answer is still
-  `MALFORMED`.
+  The same day the owner narrowed the core's own X.509 reader
+  (`Certificate::is_readable`), which reads certificate fields before
+  OpenSSL judges them. Its decode check on basicConstraints and keyUsage
+  went. OpenSSL decodes every extension it caches (basicConstraints,
+  keyUsage, extKeyUsage, subjectAltName, the two key identifiers,
+  nameConstraints, cRLDistributionPoints, proxyCertInfo, nsCertType and
+  the RFC 3779 pair) and sets `EXFLAG_INVALID` when one does not decode
+  or repeats (`crypto/x509/v3_purp.c:514`, `550`). Then
+  `ossl_x509v3_cache_extensions` fails (`:727-730`): no certificate
+  issues it (`ossl_x509_likely_issued`, `:1068`) and it issues none
+  (`X509_check_ca` answers 0, `:788`). On a path that is
+  `UNTRUSTED_CHAIN`; a stranger in the bag never reaches a path and is
+  ignored. The owner kept the three rules OpenSSL never applies
+  (2026-10-05): a version other than 1 to 3 (OpenSSL does not check it,
+  and a re-signed version-11 certificate verifies on its path), a
+  signature `BIT STRING` with unused bits (OpenSSL never reads a
+  stranger's signature), and an extension OID carried twice (OpenSSL
+  judges a repeat only among the extensions it caches, so a second
+  Apple marker, or an OID nobody assigned, would verify). The version
+  is now compared as the `c_long` OpenSSL returns: read through
+  rust-openssl's 32-bit `version()`, 2^32 + 2 was v3 on a 64-bit build
+  and verified, where wasm32's 32-bit `long` already refused it. A trust
+  anchor whose extensions OpenSSL marks invalid is refused as a
+  configuration error, since it could vouch for nothing. The rows below
+  record what moved and two divergences the review of that change
+  found.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one
@@ -603,8 +604,10 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   | An `x5c` entry that decodes to a certificate followed by more bytes: trailing octets, a second certificate, PEM text or a PKCS#7 certs-only bundle holding the leaf | not measured | ok: `CertificateFactory.generateCertificate` reads one certificate from a stream and stops | `INVALID_CERTIFICATE` | The header is signed, so an Apple-signed JWS never carries one, and a foreign one still chains to no pinned root. `transaction/reject-x5c-leaf-with-line-breaks` is refused by both for its base64, before the bytes are read (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
   | A leaf whose AuthorityKeyIdentifier names a key other than the issuing intermediate's SubjectKeyIdentifier, in a JWS `x5c` chain that otherwise verifies | not measured | ok: BouncyCastle's PKIX validator matches issuer by name and signature, not by key identifier | `UNTRUSTED_CHAIN` (OpenSSL checks the identifiers) | The signature still has to verify under the intermediate's real key, and Apple's chains carry matching identifiers (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
   | An ES256 JWS whose leaf key is on a curve other than P-256 with a 32-byte order (secp256k1, brainpoolP256r1) | not measured | ok: the 64-byte signature verifies under whatever curve the leaf names | `INVALID_SIGNATURE` | RFC 7518 ties ES256 to P-256. Apple's leaves are P-256 and a foreign leaf chains to no pinned root; a P-384 leaf is `INVALID_SIGNATURE` in both (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
-  | A certificate on the path whose basicConstraints or keyUsage repeats or does not decode (an extension twice, a corrupt extension, an empty cA BOOLEAN, a keyUsage BIT STRING shorter than it claims), otherwise genuine: the JWS leaf or intermediate, or the receipt's signer or intermediate | `INVALID_CERTIFICATE` for an `x5c` entry or the signer, `MALFORMED` for another bag entry | `INVALID_CERTIFICATE` for an `x5c` entry ("x5c[0] does not decode"); `MALFORMED` for a bag entry, since Java refuses an embedded certificate it cannot read as a defect of the envelope (BouncyCastle: "repeated extension found") | `UNTRUSTED_CHAIN` (owner, 2026-10-05) | OpenSSL marks the extensions invalid, so the certificate issues none and none issues it (above). A certificate altered after its issuer signed it cannot sit in a genuine Apple chain, and nothing unsigned is accepted. The JWS leaf case lists both answers, the receipt-signer cases the core's former `INVALID_CERTIFICATE` too; the four intermediate cases already listed `UNTRUSTED_CHAIN` and `ok` | `transaction/reject-x5c-duplicate-extension`, `receipt/reject-signer-carrying-one-extension-twice`, `receipt/reject-signer-with-a-corrupt-extension`, `{receipt,signed-data}/intermediate-with-a-malformed-key-usage-does-not-crash`, `{receipt,signed-data}/intermediate-with-an-empty-ca-boolean-does-not-crash` |
-  | Such a certificate as a stranger in a receipt's unsigned bag, beside a genuine chain | `MALFORMED` | `MALFORMED` | ok (owner, 2026-10-05) | No pinned root vouches for it, so it never reaches a path and OpenSSL never judges its extensions, as the core never builds a stranger's key. The signature and the chain are judged as without it | none: no case pins it; `rust/tests/receipt_negative.rs` |
+  | A certificate on the path whose basicConstraints or keyUsage does not decode (a corrupt basicConstraints, an empty cA BOOLEAN, a keyUsage BIT STRING shorter than it claims), otherwise genuine: the receipt's signer or intermediate, or the JWS intermediate | `INVALID_CERTIFICATE` for the signer or an `x5c` entry, `MALFORMED` for another bag entry | `MALFORMED` for a bag entry, `INVALID_CERTIFICATE` for an `x5c` entry ("x5c[1] does not decode"): BouncyCastle cannot construct the BasicConstraints or the KeyUsage | `UNTRUSTED_CHAIN` (owner, 2026-10-05) | OpenSSL marks the extensions invalid, so the certificate issues none and none issues it (above). A certificate altered after its issuer signed it cannot sit in a genuine Apple chain, and nothing unsigned is accepted. The signer case lists the three answers; the four intermediate cases already listed `UNTRUSTED_CHAIN` and ok | `receipt/reject-signer-with-a-corrupt-extension`, `{receipt,signed-data}/intermediate-with-a-malformed-key-usage-does-not-crash`, `{receipt,signed-data}/intermediate-with-an-empty-ca-boolean-does-not-crash` |
+  | Such a certificate (`EXFLAG_INVALID`) as a stranger in a receipt's unsigned bag, or as a copy of the signer's identity ahead of the genuine signer | `MALFORMED` for a stranger, `INVALID_CERTIFICATE` for the copy | `MALFORMED` | ok (owner, 2026-10-05) | No pinned root vouches for it, so it never reaches a path: the copy is one more SignerInfo match that fails and the genuine signer verifies. The core never builds a stranger's key either. A stranger or copy carrying an extension twice is still refused, as before | none: no case pins it; `rust/tests/receipt_negative.rs` |
+  | A version 1 or 2 certificate that carries extensions, on the path | not measured | refused (BouncyCastle: "version 1 certificate contains extra data") | ok | OpenSSL and the core accept any version from 1 to 3 and read the extensions whatever it says. Apple's certificates are v3, and the path is signed either way (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
+  | An authorityInfoAccess or certificatePolicies extension whose value does not decode, on a certificate on the path | not measured | refused: BouncyCastle decodes both at parse | ok | OpenSSL does not cache either, and the core asks for no policy check, so nothing decodes them. The certificate is still signed by its issuer, and Apple's decode (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
 
   The four rows recorded on 2026-10-05 came out of the Java round-3
   review ([probes][javabc3]): Java accepts four shapes the core

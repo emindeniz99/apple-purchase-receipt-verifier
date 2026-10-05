@@ -494,13 +494,13 @@ Not defended against here, by decision rather than omission.
   signature is checked, the signer that does not decode as
   `INVALID_CERTIFICATE` or `MALFORMED` (implementations may choose between
   them, docs/design/0.7-api.md), and the key on an unimplemented curve as
-  `INVALID_CERTIFICATE`. The core leaves the two extension defects to
-  OpenSSL, which takes no certificate as the issuer of one, so they are
-  `UNTRUSTED_CHAIN` there, and their cases list it too (DECISIONS.md R20).
-  An embedded certificate that is not the signer is a defect of the
-  receipt (`MALFORMED`), not of a certificate, when its version or its
-  signature encoding is wrong; one whose only defect is an extension is
-  ignored, as it never reaches a path. A public key
+  `INVALID_CERTIFICATE`. The core leaves an extension value that stops
+  decoding to OpenSSL, which takes no certificate as the issuer of one,
+  so it answers `UNTRUSTED_CHAIN` there; that case lists it too
+  (DECISIONS.md R20). An embedded certificate that is not the signer is
+  a defect of the receipt (`MALFORMED`), not of a certificate, unless its
+  only defect is such an extension value: then it never reaches a path
+  and is ignored. A public key
   is decoded only once a pinned root vouches for its certificate, so a
   stranger whose only defect is its key is never read and the receipt is
   judged without it (`receipt/verify-with-a-stranger-whose-key-is-unreadable`);
