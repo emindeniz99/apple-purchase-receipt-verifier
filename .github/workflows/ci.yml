@@ -132,6 +132,59 @@ jobs:
       - run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=${JAVA_HOME_8_X64}/bin/java"
         working-directory: java
 
+  # The same suite on every other JDK vendor setup-java installs. The java
+  # job covers the version lines on Temurin; this one covers the builds a
+  # consumer actually runs on: another vendor's crypto providers, default
+  # java.security, and on Semeru a different JVM (OpenJ9). The port pins
+  # its own BouncyCastle instance and never asks the JCA for a provider by
+  # name, so a vendor difference should not reach a verdict; this job is
+  # what makes that a tested claim. Each vendor runs on 21 and 25 and, where
+  # it still ships one, on the Java 8 floor. Maven runs on Temurin 25 and
+  # surefire forks the vendor's JVM (the jdk8-runtime profile's `jvm`
+  # override), so javac and the build are the same for every leg and only
+  # the runtime varies. Which vendor ships which line was measured, not
+  # assumed: docs/evidence/2026-10-05-java-jdk-vendors.md.
+  java-vendors:
+    name: java on ${{ matrix.vendor }} ${{ matrix.jdk }}
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor: [corretto, dragonwell, graalvm, jetbrains, kona, liberica,
+                 microsoft, oracle, redhat, sapmachine, semeru, zulu]
+        jdk: ["8", "21", "25"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The JVM under test first; its path comes from the step output, since
+      # JAVA_HOME_25_X64 is overwritten when the vendor line is also 25.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        id: jut
+        with:
+          distribution: ${{ matrix.vendor }}
+          java-version: ${{ matrix.jdk }}
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: the JVM under test
+        env:
+          JUT: ${{ steps.jut.outputs.path }}
+        run: |
+          set -euo pipefail
+          "$JUT/bin/java" -XshowSettings:properties -version 2>&1 \
+            | grep -E '^ +(java\.(vendor|version|vm\.name|vm\.version|runtime\.version)) ='
+      - name: the suite on that JVM
+        working-directory: java
+        env:
+          JUT: ${{ steps.jut.outputs.path }}
+        run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java"
+
   # The genuine legacy receipt chain is SHA-1 end to end. The JDK's own PKIX
   # code obeys jdk.certpath.disabledAlgorithms, so a hardened java.security
   # that disables SHA-1 outright (RHEL crypto policies, many enterprise
