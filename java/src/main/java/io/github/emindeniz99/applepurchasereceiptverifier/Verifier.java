@@ -67,8 +67,9 @@ public interface Verifier {
      * chain from a SignerInfo's certificate to a pinned root with its
      * validity (at the receipt's creation date, the clock when it states
      * none), Apple's marker OIDs on the signer and on the intermediate that
-     * issued it, and the CMS signature. A receipt with several SignerInfos
-     * verifies when at least one of them does.</p>
+     * issued it, and the CMS signature. Up to four SignerInfos are tried in
+     * order: the first that verifies decides, and when none does the first
+     * one's failure is the verdict. More than four is {@code MALFORMED}.</p>
      */
     VerificationResult<ReceiptPayload> verifyReceipt(@Nullable String base64);
 

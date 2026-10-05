@@ -56,6 +56,21 @@
 # gem that exists is a real authentication failure. Either way the smoke
 # workflow is told which registries it may test.
 #
+# Completing a half-published release (0.8.0, 2026-10-04: two jobs failed
+# on this file's first run and six registries were left without the
+# version): the tag's commit cannot be changed, so the fix lands on main and
+# `gh workflow run release.yml --ref main -f tag=vX.Y.Z` runs this file from
+# there. ci-passed refuses a tag that is not `v` + version.txt at the
+# dispatched commit or that does not exist. The publish jobs then skip the
+# registries that already carry the version and publish the rest; the
+# tag-keyed jobs (release assets, image, Go tag, PHP pins, smoke) read the
+# tag from the input. The attestations and the image's revision name the
+# dispatched commit, which is what built the files. A dry run
+# (`-f dry_run=true`) rehearses the same path with nothing submitted:
+# everything is built, checked and reproduced; uploads, pushes, the Go tag,
+# the release assets, the attestations and the smoke dispatch are skipped
+# (npm, crates.io and Maven run their own dry-run modes).
+#
 # Security: every action pinned to a commit SHA; no dependency cache in
 # publish or build jobs (a poisoned restore would become the shipped
 # artifact), the wasm toolchain included; checkouts never push, so
@@ -66,7 +81,21 @@ name: release
 on:
   push:
     tags: ['v*']
+  # A dispatch from a branch completes or rehearses a release (the header):
+  # `tag` names the vX.Y.Z whose registries are still missing (the branch
+  # must carry that version in version.txt); `dry_run` runs every job and
+  # submits nothing. A branch dispatch must do one or the other.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "The vX.Y.Z tag to complete: publish what its run left unpublished, from this ref"
+        required: false
+        type: string
+      dry_run:
+        description: "Run every job but submit nothing: no upload, push, tag, release asset or attestation"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -81,6 +110,55 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # A branch dispatch either completes a named tag or is a dry run; a
+      # bare one would tag go/<branch> and push an image named <branch>.
+      - name: the dispatch names a tag this tree carries, or is a dry run
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          if [ -z "$TAG" ]; then
+            if [ "$REF_TYPE" = "tag" ]; then
+              # Another tag (go/vX.Y.Z, corpus-*) names no release.
+              if ! [[ "$REF_NAME" =~ $semver ]]; then
+                echo "::error::'$REF_NAME' is not a vX.Y.Z release tag"
+                exit 1
+              fi
+            elif [ "$DRY_RUN" != "true" ]; then
+              echo "::error::a dispatch from a branch must name the tag it completes (tag=vX.Y.Z) or be a dry run (dry_run=true)"
+              exit 1
+            fi
+            exit 0
+          fi
+          if ! [[ "$TAG" =~ $semver ]]; then
+            echo "::error::tag '$TAG' is not vX.Y.Z"
+            exit 1
+          fi
+          version=$(gh api "repos/$GITHUB_REPOSITORY/contents/version.txt?ref=$GITHUB_SHA" --jq .content | base64 -d | tr -d '[:space:]')
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::version.txt at $GITHUB_SHA is $version, not ${TAG#v}; a completion publishes the tree's own version only"
+            exit 1
+          fi
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::tag $TAG does not exist; a completion finishes a release that release-please already tagged"
+            exit 1
+          fi
+          # A completion publishes this tree, not the tag's. The packages
+          # that already carry the version were built at the tag, so every
+          # package file changed since is named for the operator to judge.
+          changed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/compare/$TAG...$GITHUB_SHA" --jq '.files[].filename' \
+            | grep -E '^(java|java-wasm|node|python|ruby|dotnet|rust|go|swift|php)/|^composer\.json$' || true)
+          if [ -n "$changed" ]; then
+            echo "::warning::completing $TAG from $GITHUB_SHA, whose package files differ from the tag's:"
+            while IFS= read -r f; do echo "::warning::  $f"; done <<<"$changed"
+          fi
+          echo "completing $TAG from $GITHUB_SHA"
       - name: poll the ci workflow run for this commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -184,10 +262,12 @@ jobs:
       - name: the build reproduces in a fresh clone
         env:
           EXPECTED: ${{ steps.build.outputs.wasm-sha256 }}
+          APRV_EXPECTED_COMPONENT_SHA256: ${{ steps.build.outputs.component-sha256 }}
         run: |
           APRV_REPO_URL="file://$GITHUB_WORKSPACE" APRV_TOOLCHAIN_DIR="$RUNNER_TEMP/wasm-toolchain" \
             tools/reproduce-wasm.sh "$GITHUB_SHA" "$EXPECTED"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         id: provenance
         with:
           subject-path: |
@@ -195,6 +275,7 @@ jobs:
             ${{ runner.temp }}/aprv/aprv.component.wasm
             ${{ runner.temp }}/aprv/aprv.wit
       - name: keep the provenance bundle with the files
+        if: ${{ !inputs.dry_run }}
         env:
           BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
         run: cp "$BUNDLE" "$RUNNER_TEMP/aprv/aprv-wasm.provenance.sigstore.json"
@@ -289,18 +370,26 @@ jobs:
           bin="$RUNNER_TEMP/server/aprv-$TARGET"
           if readelf -lW "$bin" | grep -q INTERP; then echo "::error::$bin has a program interpreter"; exit 1; fi
           if readelf -dW "$bin" | grep -q NEEDED; then echo "::error::$bin needs a shared library"; exit 1; fi
+      # On x86_64 the fresh clone rebuilds the component too. The wasm
+      # toolchain's pinned archives are x86_64 only (tools/wasm-toolchain.sh),
+      # so the aarch64 leg hands the script build-wasm's component, which that
+      # job already rebuilt in a fresh clone, and reproduces the server stage
+      # (0.8.0's first run, 2026-10-04, failed here for want of this).
       - name: the Linux build reproduces in a fresh clone
         if: endsWith(matrix.target, '-linux-musl')
         env:
           TARGET: ${{ matrix.target }}
           EXPECTED: ${{ steps.build.outputs.sha256 }}
           APRV_EXPECTED_COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+          APRV_COMPONENT: ${{ startsWith(matrix.target, 'aarch64-') && format('{0}/aprv/aprv.component.wasm', runner.temp) || '' }}
         run: APRV_REPO_URL="file://$GITHUB_WORKSPACE" tools/reproduce-server.sh "$GITHUB_SHA" "$TARGET" "$EXPECTED"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         id: provenance
         with:
           subject-path: ${{ runner.temp }}/server/aprv-${{ matrix.target }}${{ matrix.exe }}
       - name: keep the provenance bundle with the binary
+        if: ${{ !inputs.dry_run }}
         shell: bash
         env:
           BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
@@ -369,36 +458,44 @@ jobs:
           done
           ls -l "$out"
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-path: ${{ runner.temp }}/in/aprv-wasm-release/aprv.wasm
           sbom-path: ${{ runner.temp }}/sbom/aprv.wasm.cdx.json
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-path: ${{ runner.temp }}/in/aprv-wasm-release/aprv.component.wasm
           sbom-path: ${{ runner.temp }}/sbom/aprv.component.wasm.cdx.json
       # One attestation per binary: attest takes one SBOM per call, and a
       # matrix here would rebuild cargo-cyclonedx six times.
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-path: ${{ runner.temp }}/in/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl
           sbom-path: ${{ runner.temp }}/sbom/aprv-x86_64-unknown-linux-musl.cdx.json
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-path: ${{ runner.temp }}/in/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl
           sbom-path: ${{ runner.temp }}/sbom/aprv-aarch64-unknown-linux-musl.cdx.json
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-path: ${{ runner.temp }}/in/aprv-server-x86_64-apple-darwin/aprv-x86_64-apple-darwin
           sbom-path: ${{ runner.temp }}/sbom/aprv-x86_64-apple-darwin.cdx.json
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-path: ${{ runner.temp }}/in/aprv-server-aarch64-apple-darwin/aprv-aarch64-apple-darwin
           sbom-path: ${{ runner.temp }}/sbom/aprv-aarch64-apple-darwin.cdx.json
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-path: ${{ runner.temp }}/in/aprv-server-x86_64-pc-windows-msvc/aprv-x86_64-pc-windows-msvc.exe
           sbom-path: ${{ runner.temp }}/sbom/aprv-x86_64-pc-windows-msvc.exe.cdx.json
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-path: ${{ runner.temp }}/in/aprv-server-aarch64-pc-windows-msvc/aprv-aarch64-pc-windows-msvc.exe
           sbom-path: ${{ runner.temp }}/sbom/aprv-aarch64-pc-windows-msvc.exe.cdx.json
@@ -440,7 +537,9 @@ jobs:
           mkdir -p "$a"
           w="$RUNNER_TEMP/in/aprv-wasm-release"
           echo "$WASM_SHA256  $w/aprv.wasm" | sha256sum -c -
-          cp "$w/aprv.wasm" "$w/aprv.component.wasm" "$w/aprv.wit" "$w/aprv-wasm.provenance.sigstore.json" "$a/"
+          cp "$w/aprv.wasm" "$w/aprv.component.wasm" "$w/aprv.wit" "$a/"
+          # Absent in a dry run, which attests nothing.
+          if [ -f "$w/aprv-wasm.provenance.sigstore.json" ]; then cp "$w/aprv-wasm.provenance.sigstore.json" "$a/"; fi
           for dir in "$RUNNER_TEMP"/in/aprv-server-*; do
             find "$dir" -maxdepth 1 -type f -name 'aprv-*' -exec cp {} "$a/" \;
           done
@@ -450,9 +549,10 @@ jobs:
           (cd "$a" && sha256sum -- * > SHA256SUMS)
           cat "$a/SHA256SUMS"
       - name: upload, never replacing an asset
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           a="$RUNNER_TEMP/assets"
@@ -508,9 +608,13 @@ jobs:
         id: push
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
+          # A dry run from a branch has no tag: the image is named after the
+          # tree's version (a branch name is not a valid image tag anyway).
+          if [ "$DRY_RUN" = "true" ] && [[ "$TAG" != v[0-9]* ]]; then TAG="v$(cat version.txt)"; fi
           version="${TAG#v}"
           owner=$(tr '[:upper:]' '[:lower:]' <<<"$GITHUB_REPOSITORY_OWNER")
           image="ghcr.io/$owner/aprv-server"
@@ -518,13 +622,24 @@ jobs:
           mkdir -p "$ctx"
           install -m 0755 "$RUNNER_TEMP/in/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl" "$ctx/aprv-amd64"
           install -m 0755 "$RUNNER_TEMP/in/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl" "$ctx/aprv-arm64"
-          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker buildx create --use --name aprv
           ann=()
           for kv in "source=https://github.com/$GITHUB_REPOSITORY" "revision=$GITHUB_SHA" "version=$version" \
                     "licenses=MIT" "description=aprv-server: Apple receipt and JWS verification over HTTP, running aprv.wasm"; do
             ann+=(--annotation "index,manifest:org.opencontainers.image.$kv" --label "org.opencontainers.image.$kv")
           done
+          if [ "$DRY_RUN" = "true" ]; then
+            # The same build into a local OCI layout: nothing is pushed, so
+            # there is no registry digest to inspect or attest.
+            docker buildx build --platform linux/amd64,linux/arm64 --target prebuilt \
+              -f rust/server/Dockerfile "${ann[@]}" \
+              --provenance=false --sbom=false \
+              --tag "$image:$version" --output "type=oci,dest=$RUNNER_TEMP/aprv-server-image.tar" \
+              --metadata-file "$RUNNER_TEMP/metadata.json" "$ctx"
+            echo "dry run: built $image:$version into $RUNNER_TEMP/aprv-server-image.tar, $(wc -c < "$RUNNER_TEMP/aprv-server-image.tar") bytes; not pushed"
+            exit 0
+          fi
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker buildx build --platform linux/amd64,linux/arm64 --target prebuilt \
             -f rust/server/Dockerfile "${ann[@]}" \
             --provenance=false --sbom=false \
@@ -539,17 +654,20 @@ jobs:
           echo "arm64=$(awk '$1 == "arm64" { print $2 }' "$RUNNER_TEMP/platforms.txt")" >> "$GITHUB_OUTPUT"
           echo "pushed $image:$version at $digest"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-name: ${{ steps.push.outputs.image }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-name: ${{ steps.push.outputs.image }}
           subject-digest: ${{ steps.push.outputs.amd64 }}
           sbom-path: ${{ runner.temp }}/sbom/aprv-x86_64-unknown-linux-musl.cdx.json
           push-to-registry: true
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: ${{ !inputs.dry_run }}
         with:
           subject-name: ${{ steps.push.outputs.image }}
           subject-digest: ${{ steps.push.outputs.arm64 }}
@@ -584,7 +702,7 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
       - name: copy the index by digest
-        if: steps.hub.outputs.enabled == 'true'
+        if: ${{ steps.hub.outputs.enabled == 'true' && !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -592,7 +710,7 @@ jobs:
           DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
           IMAGE: ${{ needs.publish-image.outputs.image }}
           DIGEST: ${{ needs.publish-image.outputs.digest }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -663,7 +781,7 @@ jobs:
           python3 tools/build_dist.py --check dist
 
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-        if: steps.gate.outputs.publish == 'true'
+        if: ${{ steps.gate.outputs.publish == 'true' && !inputs.dry_run }}
         with:
           packages-dir: python/dist/
 
@@ -706,6 +824,8 @@ jobs:
 
       - name: Publish unless this version is already on npm
         working-directory: node
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
@@ -714,30 +834,15 @@ jobs:
           else
             npm ci --ignore-scripts
             npm run build
-            # 0.1.1 and 0.2.0 shipped with no JavaScript at all: "files" lists
-            # dist/, but nothing here built it, and a fresh checkout has no dist/.
-            # npm packs what is on disk, so the tarball was LICENSE + certs +
-            # README and every install failed on ERR_MODULE_NOT_FOUND. Prove the
-            # entry point, the module jco extracted, its glue and the licence
-            # texts of the code in that module are in the tarball before it
-            # reaches the registry.
-            # shellcheck disable=SC2016 # the ${...} are JavaScript's
-            npm pack --dry-run --json | node -e '
-              let raw = ""
-              process.stdin.on("data", (d) => { raw += d }).on("end", () => {
-                const packed = JSON.parse(raw)[0].files.map((f) => f.path)
-                const licences = require("node:fs").readdirSync("licenses").map((f) => `licenses/${f}`)
-                const want = ["dist/index.js", "dist/index.d.ts", "dist/generated/aprv.core.wasm", "dist/generated/aprv.js", ...licences]
-                const missing = want.filter((f) => !packed.includes(f))
-                if (missing.length > 0) {
-                  console.error(`refusing to publish: tarball is missing ${missing.join(", ")}`)
-                  console.error(`packed instead: ${packed.join(", ")}`)
-                  process.exit(1)
-                }
-                console.log(`tarball carries ${packed.length} files, entry point, module and licences included`)
-              })
-            '
-            npm publish
+            # The tarball must carry the entry point, the module and the
+            # licence texts before it reaches the registry (scripts/check-pack.mjs
+            # says why; ci.yml's smoke-npm runs the same check).
+            npm pack --dry-run --json | node scripts/check-pack.mjs
+            if [ "$DRY_RUN" = "true" ]; then
+              npm publish --dry-run
+            else
+              npm publish
+            fi
           fi
 
   # Two artifactIds (R25, ARCHITECTURE.md §7.8): the main
@@ -831,7 +936,16 @@ jobs:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: mvn -B -P central deploy
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # A dry run builds, tests, signs and bundles; skipPublishing is the
+          # central-publishing-maven-plugin's switch that stops before the upload.
+          if [ "$DRY_RUN" = "true" ]; then
+            mvn -B -P central deploy -DskipPublishing=true
+          else
+            mvn -B -P central deploy
+          fi
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: steps.gate-wasm.outputs.publish == 'true'
@@ -875,15 +989,19 @@ jobs:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          mvn -B -P central deploy \
+          set -euo pipefail
+          skip=()
+          if [ "$DRY_RUN" = "true" ]; then skip=(-DskipPublishing=true); fi
+          mvn -B -P central deploy "${skip[@]}" \
             "-Daprv.wasm=$RUNNER_TEMP/aprv/aprv.wasm" \
             "-Daprv.server.linux-x86_64=$RUNNER_TEMP/dist/aprv-x86_64-unknown-linux-musl" \
             "-Daprv.server.linux-aarch64=$RUNNER_TEMP/dist/aprv-aarch64-unknown-linux-musl" \
             "-Daprv.server.sha256sums=$RUNNER_TEMP/dist/SHA256SUMS"
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        if: steps.gate-wasm.outputs.publish == 'true'
+        if: ${{ steps.gate-wasm.outputs.publish == 'true' && !inputs.dry_run }}
         with:
           subject-path: java-wasm/target/apple-purchase-receipt-verifier-wasm-*.jar
 
@@ -959,6 +1077,7 @@ jobs:
       # fails the job, and this step's own post-action still revokes the
       # short-lived token.
       - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+        if: ${{ !inputs.dry_run }}
         id: auth
         continue-on-error: true
 
@@ -969,9 +1088,13 @@ jobs:
         env:
           AUTH_OUTCOME: ${{ steps.auth.outcome }}
           GEM_EXISTS: ${{ steps.bootstrap.outputs.exists }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          if [ "$AUTH_OUTCOME" = "success" ]; then
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "dry run: no credentials were requested; building the gem without pushing it"
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          elif [ "$AUTH_OUTCOME" = "success" ]; then
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           elif [ "$GEM_EXISTS" = "false" ]; then
             echo "::notice::RubyGems has no gem named apple-purchase-receipt-verifier and no trusted publisher would authorize this workflow, so the bootstrap has not happened yet. Skipping the Ruby publish; see BOOTSTRAP.md, section \"RubyGems\"."
@@ -1031,7 +1154,7 @@ jobs:
             puts "gem carries #{files.size} files, entry points and module included"'
 
       - name: gem push
-        if: steps.gate.outputs.publish == 'true'
+        if: ${{ steps.gate.outputs.publish == 'true' && !inputs.dry_run }}
         working-directory: ruby
         run: gem push apple-purchase-receipt-verifier-*.gem
 
@@ -1127,17 +1250,24 @@ jobs:
       # Exchanges the GitHub OIDC token for a short-lived crates.io token and
       # revokes it in a post step, so no registry token lives in this repo.
       - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
-        if: steps.gate.outputs.publish == 'true'
+        if: ${{ steps.gate.outputs.publish == 'true' && !inputs.dry_run }}
         id: auth
 
       # --locked: publish the dependency graph CI tested, and fail if
       # rust/Cargo.lock is stale rather than resolving something new at the
       # one moment that cannot be undone (a crates.io version is forever).
-      - run: cargo publish --locked
+      - run: |
+          set -euo pipefail
+          if [ "$DRY_RUN" = "true" ]; then
+            cargo publish --locked --dry-run
+          else
+            cargo publish --locked
+          fi
         if: steps.gate.outputs.publish == 'true'
         working-directory: rust
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
 
   publish-nuget:
     name: publish dotnet to NuGet
@@ -1234,13 +1364,13 @@ jobs:
           done
 
       - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
-        if: steps.gate.outputs.publish == 'true'
+        if: ${{ steps.gate.outputs.publish == 'true' && !inputs.dry_run }}
         id: nuget-login
         with:
           user: emindeniz99
 
       - name: Push
-        if: steps.gate.outputs.publish == 'true'
+        if: ${{ steps.gate.outputs.publish == 'true' && !inputs.dry_run }}
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
@@ -1268,21 +1398,27 @@ jobs:
     steps:
       # No checkout: the ref is created through the API, so no credential is
       # ever written to disk and persist-credentials never applies.
-      - name: create go/vX.Y.Z and warm the proxy
+      # //go:embed needs the module in the tree the tag names (R14:
+      # go/internal/wasm/aprv.wasm is committed, and build-wasm proved it
+      # is this release's). A tag without it would be a module nobody
+      # can build, forever, so this refuses before the tag exists.
+      - name: the tree carries the committed module and its pin
         env:
           GH_TOKEN: ${{ github.token }}
-          REF: ${{ github.ref_name }}          # vX.Y.Z
         run: |
           set -euo pipefail
-          TAG="go/${REF}"
-          # //go:embed needs the module in the tree the tag names (R14:
-          # go/internal/wasm/aprv.wasm is committed, and build-wasm proved it
-          # is this release's). A tag without it would be a module nobody
-          # can build, forever, so this refuses before the tag exists.
           for f in go/internal/wasm/aprv.wasm go/internal/wasm/aprv.wasm.sha256; do
             gh api "repos/$GITHUB_REPOSITORY/contents/$f?ref=$GITHUB_SHA" --jq .path >/dev/null \
               || { echo "::error::$f is not committed at $GITHUB_SHA; not tagging the Go module"; exit 1; }
           done
+      - name: create go/vX.Y.Z and warm the proxy
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.tag || github.ref_name }}          # vX.Y.Z
+        run: |
+          set -euo pipefail
+          TAG="go/${REF}"
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
             echo "$TAG already exists — skipping (re-runs are safe)."
           else
@@ -1341,9 +1477,13 @@ jobs:
           pattern: aprv-server-*
           path: ${{ runner.temp }}/in
       - env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
+          # A dry run from a branch has no tag; the pinned lines name the
+          # tree's version, so lay the binaries out under it.
+          if [ "$DRY_RUN" = "true" ] && [[ "$TAG" != v[0-9]* ]]; then TAG="v$(cat version.txt)"; fi
           sums="$PWD/php/SHA256SUMS"
           if [ ! -s "$sums" ]; then
             echo "::error file=php/SHA256SUMS::php/SHA256SUMS is empty: this release pins no aprv binary"
@@ -1392,6 +1532,7 @@ jobs:
             publish-image, php-binaries]
     if: >-
       !cancelled()
+      && !inputs.dry_run
       && needs.release-assets.result == 'success'
       && needs.php-binaries.result == 'success'
       && needs.publish-image.result == 'success'
@@ -1417,7 +1558,7 @@ jobs:
       - name: dispatch post-publish-smoke for this version
         env:
           GH_TOKEN: ${{ github.token }}
-          REF: ${{ github.ref_name }}
+          REF: ${{ inputs.tag || github.ref_name }}
           RUBYGEMS_AVAILABLE: ${{ needs.publish-rubygems.outputs.available }}
           CRATES_AVAILABLE: ${{ needs.publish-crates.outputs.available }}
           NUGET_AVAILABLE: ${{ needs.publish-nuget.outputs.available }}

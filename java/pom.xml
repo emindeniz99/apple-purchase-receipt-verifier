@@ -4,7 +4,7 @@
 
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.8.0</version>
+  <version>0.8.1</version>
   <packaging>jar</packaging>
 
   <name>apple-purchase-receipt-verifier</name>
@@ -341,8 +341,9 @@
             </executions>
           </plugin>
           <!-- CycloneDX SBOM, attached as <artifact>-<version>-cyclonedx.json
-               so it is signed and uploaded with the jars: runtime scope only,
-               which is the three BouncyCastle jars and jackson-core. -->
+               so it is signed and uploaded with the jars: the three
+               BouncyCastle jars and jackson-core as required, jspecify as
+               optional, nothing from test scope. -->
           <plugin>
             <groupId>org.cyclonedx</groupId>
             <artifactId>cyclonedx-maven-plugin</artifactId>

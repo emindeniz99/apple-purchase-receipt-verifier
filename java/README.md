@@ -14,7 +14,7 @@ product id, device binding, refunds, idempotency, is yours; see
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.8.0</version> <!-- x-release-please-version -->
+  <version>0.8.1</version> <!-- x-release-please-version -->
 </dependency>
 ```
 
@@ -555,7 +555,7 @@ and the rest are never reached):
 | `org.bouncycastle.asn1.max_cons_depth` | 64 | Lower refuses deeper input; below 9 it refuses every genuine receipt, so `Verifier.create` throws (see [Resource bounds](#resource-bounds)). Much higher lets the parser recurse deeper, up to a `StackOverflowError`, which is an `Error` and escapes the call | No |
 | `org.bouncycastle.asn1.max_limit` | sized from the input | Lower can only refuse input | No |
 | `org.bouncycastle.asn1.allow_unsafe_integer` | off | On accepts INTEGERs that are not minimally encoded. A padded integer in a signed payload then fills a typed field instead of staying raw. This loosens parsing, but only of content a valid signature covers | No |
-| `org.bouncycastle.x509.allow_non-der_tbscert` | unset: a certificate is verified as received | `false` re-encodes it as DER first, so a genuinely signed certificate in another encoding fails. Stricter | No |
+| `org.bouncycastle.x509.allow_non-der_tbscert` | unset: a certificate is verified as received | `false` re-encodes the TBSCertificate as DER before verifying it, so a genuinely signed certificate in another encoding fails. Stricter, and only on a JWS `x5c` entry: a receipt's embedded certificates are re-encoded as DER before BouncyCastle reads them (`ReceiptCertificates`), so there it changes nothing | No |
 | `org.bouncycastle.asn1.allow_non_der_time` | on: a UTCTime or GeneralizedTime not in DER form is written out as received | `false` throws where such a time must be written as DER, so input that carries one can be refused. Stricter | No |
 | `org.bouncycastle.x509.allow_empty_issuer_cert`, `org.bouncycastle.x509.ignore_repeated_extensions`, `org.bouncycastle.x509.allow_absent_equiv_NULL`, `org.bouncycastle.asn1.allow_zoneless_utctime`, `org.bouncycastle.asn1.allow_wrong_oid_enc` | off | On loosens certificate and time parsing: an empty issuer, a repeated extension (read on every certificate decode), absent and NULL algorithm parameters taken as equal. The certificate must still chain to a pinned root and verify | No |
 | `org.bouncycastle.pkcs1.strict_digestinfo` | off: the receipt's RSA check accepts a DigestInfo without its NULL parameters | On refuses that form. Stricter | No |
@@ -661,9 +661,10 @@ at once exhaust a normal heap. Hostile input is not cheap to reject
 either. Before the chain is trusted, the library decodes the payload's
 whole attribute SET to find the receipt's creation date, the instant the
 chain is judged at, and BouncyCastle builds the full tree to do it. A
-cap-sized forgery built from many tiny attributes costs on the order of
-100 to 200 ms and about 140 MB of allocation per call (approximate;
-[measured](../docs/evidence/2026-10-04-java-bc-floor.md)). The body cap and
+cap-sized forgery built from many tiny attributes costs a few hundred
+milliseconds and 150 to 200 MB of allocation per call on one 4 vCPU
+machine ([measured](../docs/evidence/2026-10-04-java-bc-floor.md)); the
+CPU time scales with the host, the allocation less so. The body cap and
 the concurrency limit are what bound that, and they are the deployment's
 job.
 
@@ -759,7 +760,7 @@ at test scope to build and sign certificates with:
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.8.0</version> <!-- x-release-please-version -->
+  <version>0.8.1</version> <!-- x-release-please-version -->
   <classifier>tests</classifier>
   <type>test-jar</type>
   <scope>test</scope>
