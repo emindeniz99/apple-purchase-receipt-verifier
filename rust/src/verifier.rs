@@ -23,8 +23,10 @@ use std::sync::Arc;
 /// must not be able to raise an internal-error alert at will; while the
 /// signed receipt payload is read it is [`Reason::UnreadablePayload`]; after
 /// that, or a clock that panics, it is [`Reason::InternalError`]. The
-/// endpoint answers each with its status. Containment needs unwinding: under
-/// `panic = "abort"` a panic ends the process.
+/// endpoint answers each with its status. Containment needs unwinding, so it
+/// holds in native builds only: `aprv.wasm` is built with the `wasm`
+/// profile's `panic = "abort"` (`rust/Cargo.toml`), where a panic traps the
+/// module instead of returning a verdict.
 ///
 /// The clock is read only when a verdict needs it, so input that fails its
 /// own checks never reaches it.
