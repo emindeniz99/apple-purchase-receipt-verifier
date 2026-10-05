@@ -1,0 +1,6 @@
+with collapse.patch, three runs:
+COST receipt: 3 signature checks by the core, 939.804µs / 925.886µs / 854.747µs a verification
+COST transaction: 3 signature checks by the core, 798.315µs / 993.519µs / 1.126435ms a verification
+without it, three runs:
+COST receipt: 5 signature checks by the core, 821.568µs / 818.298µs / 794.77µs a verification
+COST transaction: 4 signature checks by the core, 943.751µs / 853.444µs / 842.95µs a verification

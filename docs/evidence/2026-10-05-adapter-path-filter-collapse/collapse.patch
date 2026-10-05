@@ -1,0 +1,627 @@
+diff --git a/rust/openssl/README.md b/rust/openssl/README.md
+index 857a882..41285d9 100644
+--- a/rust/openssl/README.md
++++ b/rust/openssl/README.md
+@@ -34,14 +34,12 @@ values: DER in, certificates, facts and booleans out.
+   reads `signatureAlgorithm` only to choose PKCS#1 v1.5 or RSASSA-PSS and
+   compares a hash only in the PSS parameters; for an ECDSA key it does not
+   read `signatureAlgorithm` at all.
+-- **Paths**: `X509_verify_cert` over an `X509_STORE` holding one of the
+-  caller's anchors and nothing else, run once per anchor that may end the
+-  path, with the untrusted certificates narrowed first to those that sign
+-  the target or one another by signature: OpenSSL's issuer lookup takes
+-  the first name match, in the store and in the untrusted list, and never
+-  tries another, so neither the anchors' order nor a same-named
+-  certificate placed first decides the path. Each run sets
+-  `X509_V_FLAG_PARTIAL_CHAIN` (a pinned anchor is an anchor whether or not
++- **Paths**: `X509_verify_cert` over an `X509_STORE` holding the
++  caller's anchors and nothing else. OpenSSL's issuer lookup takes the
++  first name match, in the store and in the untrusted list, and never
++  tries another, so the core passes one path: the anchor that vouched for
++  it alone, and exactly the certificates between it and the target. The
++  run sets `X509_V_FLAG_PARTIAL_CHAIN` (a pinned anchor is an anchor whether or not
+   it is self-signed), `set_time` (the chain instant), `set_depth` (the
+   path length bound) and a verify callback that records every problem and
+   lets verification continue, so the core can apply 0.7's order. Anchors are trusted by fiat: their own validity,
+diff --git a/rust/openssl/src/certificate.rs b/rust/openssl/src/certificate.rs
+index d746c35..5beeb79 100644
+--- a/rust/openssl/src/certificate.rs
++++ b/rust/openssl/src/certificate.rs
+@@ -186,36 +186,6 @@ impl Certificate {
+         verified
+     }
+ 
+-    /// Whether this certificate names `issuer`'s subject as its issuer
+-    /// (`X509_NAME_cmp`, as OpenSSL's issuer lookup compares them) and
+-    /// `issuer`'s key verifies its signature (`X509_verify`): the link a
+-    /// path follows, whether or not the path is valid. Unlike
+-    /// [`Certificate::issued_by`], the issuer's `keyUsage` and the key
+-    /// identifiers are not judged here; OpenSSL judges them on the path it
+-    /// builds and reports what fails. The issuer's key is built only once
+-    /// the names match.
+-    #[must_use]
+-    pub(crate) fn signed_by(&self, issuer: &Certificate) -> bool {
+-        init();
+-        let named = issuer
+-            .0
+-            .subject_name()
+-            .try_cmp(self.0.issuer_name())
+-            .is_ok_and(|order| order == core::cmp::Ordering::Equal);
+-        if !named {
+-            drain_errors();
+-            return false;
+-        }
+-        let Ok(key) = issuer.0.public_key() else {
+-            drain_errors();
+-            return false;
+-        };
+-        keys::record(&key);
+-        let verified = self.0.verify(&key).unwrap_or(false);
+-        drain_errors();
+-        verified
+-    }
+-
+     /// Whether the certificate may issue certificates, as `X509_verify_cert`
+     /// judges a certificate above the target (`X509_check_ca` non-zero).
+     #[must_use]
+diff --git a/rust/openssl/src/path.rs b/rust/openssl/src/path.rs
+index bd8755a..588ea7b 100644
+--- a/rust/openssl/src/path.rs
++++ b/rust/openssl/src/path.rs
+@@ -72,18 +72,6 @@ impl PathOutcome {
+         self.anchored && self.problems.is_empty()
+     }
+ 
+-    /// Whether every link of the path holds: no certificate lacks an
+-    /// issuer and no signature fails. Other problems may remain.
+-    fn links_hold(&self) -> bool {
+-        self.anchored
+-            && !self.problems.iter().any(|problem| {
+-                matches!(
+-                    problem.kind,
+-                    PathProblemKind::NoIssuer | PathProblemKind::BadSignature
+-                )
+-            })
+-    }
+-
+     fn failed(kind: PathProblemKind) -> PathOutcome {
+         PathOutcome {
+             chain: Vec::new(),
+@@ -105,17 +93,24 @@ std::thread_local! {
+ /// `anchors`, at `at_secs` (Unix seconds), with at most `max_intermediates`
+ /// certificates between the target and the anchor.
+ ///
+-/// Each run's store holds one of `anchors` and nothing else (see [`run`]).
+-/// `X509_V_FLAG_PARTIAL_CHAIN` makes it a trust anchor whether or not it is
+-/// self-signed, as a pinned anchor is. No purpose, policy, revocation or host check is asked
+-/// for. An anchor is trusted by fiat: its own validity window, CA flag and
+-/// path length constraint are not judged.
++/// The store holds `anchors` and nothing else. `X509_V_FLAG_PARTIAL_CHAIN`
++/// makes each a trust anchor whether or not it is self-signed, as a pinned
++/// anchor is. No purpose, policy, revocation or host check is asked for.
++/// An anchor is trusted by fiat: its own validity window, CA flag and path
++/// length constraint are not judged.
+ ///
+ /// Every problem is recorded and verification continues, so OpenSSL goes on
+ /// to check each link of the path it built with the keys of `untrusted`:
+ /// the caller passes only certificates a pinned anchor already vouched for
+ /// (the core's `authenticated_top_down` and `validate_pair`), never raw
+ /// bag or `x5c` entries, or an attacker's key would be used.
++///
++/// OpenSSL's issuer lookup takes the first certificate whose subject name
++/// matches (and whose key identifier and `keyUsage` allow it), in the store
++/// and in `untrusted`, and does not try another when the signature then
++/// fails. The core therefore passes exactly one path: the certificates
++/// between the target and the anchor that vouched for it, and that anchor
++/// alone, so OpenSSL has nothing to choose among.
+ #[must_use]
+ pub fn verify_path(
+     target: &Certificate,
+@@ -133,156 +128,17 @@ pub fn verify_path(
+     outcome
+ }
+ 
+-/// Runs the validation once per anchor that may have issued the target or
+-/// a certificate of `untrusted`, each time with a store holding that anchor
+-/// alone, and keeps the first path that passes.
+-///
+-/// OpenSSL's issuer lookup takes the first store certificate whose subject
+-/// name matches (and whose key identifier and `keyUsage` allow it), and
+-/// does not try another when the signature then fails. With every anchor
+-/// in one store, the order of the caller's list, or an anchor that merely
+-/// carries an intermediate's name, would decide whether a path verifies. A
+-/// store of one anchor leaves OpenSSL nothing to choose among anchors. The
+-/// same lookup runs over `untrusted`, where it also takes the first match
+-/// and never backtracks, so `untrusted` is first narrowed to the
+-/// certificates that sign the target or one another up the path
+-/// ([`linked_above`]): a same-named certificate that signed nothing on the
+-/// path is never offered to OpenSSL, whatever its place. The candidates are
+-/// the anchors `X509_check_issued` pairs with the target or a certificate
+-/// of `untrusted` (name, key identifiers, `keyUsage`; no key is used to
+-/// pick them), plus an anchor that is one of those certificates: at most
+-/// one run per anchor.
+-///
+-/// When no run passes, the problems reported are those of the first run
+-/// whose links all hold (no missing issuer and no failed signature), since
+-/// that anchor is the one the path really leads to; failing that, those of
+-/// the first run. When no anchor is a candidate, one run over every anchor
+-/// reports why nothing leads to one.
++/// One `X509_verify_cert` run over a store holding `anchors` and nothing
++/// else.
+ fn run(
+     target: &Certificate,
+     untrusted: &[Certificate],
+     anchors: &[Certificate],
+     at_secs: i64,
+     max_intermediates: u32,
+-) -> Option<PathOutcome> {
+-    let linked = linked_above(target, untrusted, max_intermediates);
+-    let untrusted: &[Certificate] = &linked;
+-    let candidates: Vec<&Certificate> = anchors
+-        .iter()
+-        .filter(|anchor| {
+-            std::iter::once(target).chain(untrusted).any(|certificate| {
+-                may_have_issued(anchor, certificate) || anchor.same_as(certificate)
+-            })
+-        })
+-        .collect();
+-    if candidates.is_empty() {
+-        let every: Vec<&Certificate> = anchors.iter().collect();
+-        return run_with(
+-            target,
+-            untrusted,
+-            anchors,
+-            &every,
+-            at_secs,
+-            max_intermediates,
+-        );
+-    }
+-    let mut first_linked: Option<PathOutcome> = None;
+-    let mut first: Option<PathOutcome> = None;
+-    for anchor in candidates {
+-        let outcome = run_with(
+-            target,
+-            untrusted,
+-            anchors,
+-            &[anchor],
+-            at_secs,
+-            max_intermediates,
+-        )?;
+-        if outcome.passed() {
+-            return Some(outcome);
+-        }
+-        if first_linked.is_none() && outcome.links_hold() {
+-            first_linked = Some(outcome);
+-        } else if first.is_none() {
+-            first = Some(outcome);
+-        }
+-    }
+-    first_linked.or(first)
+-}
+-
+-/// The certificates of `untrusted` that signed the target, or signed a
+-/// certificate already linked this way, under the name it names as its
+-/// issuer ([`Certificate::signed_by`]), found in at most
+-/// `max_intermediates` + 1 rounds and returned in their order in
+-/// `untrusted`. An issuer's `keyUsage` is not judged here: OpenSSL's lookup
+-/// does not judge it either, and reports it on the path (not a CA).
+-///
+-/// OpenSSL's `find_issuer` takes the first certificate of `untrusted` that
+-/// `X509_check_issued` pairs with the current one, and does not try another
+-/// when that signature then fails. Among certificates without key
+-/// identifiers, a same-named certificate placed first, from another pinned
+-/// root's tree or from the same one, would decide the path; narrowed to the
+-/// certificates that really sign the path, the bag's order no longer does.
+-/// A key certified under two names stays: the per-anchor runs of [`run`]
+-/// settle that.
+-///
+-/// Only keys of `untrusted` are used, which the caller has authenticated
+-/// top-down. Each linked certificate is checked once against the
+-/// certificates not yet linked, so the work is at most n × (n + 1) name
+-/// comparisons, each followed by a signature check only on a name match,
+-/// for the n certificates of `untrusted`, which the certificate cap bounds
+-/// (10 for a receipt, 1 for a JWS).
+-fn linked_above(
+-    target: &Certificate,
+-    untrusted: &[Certificate],
+-    max_intermediates: u32,
+-) -> Vec<Certificate> {
+-    let mut linked: Vec<&Certificate> = Vec::new();
+-    let mut frontier: Vec<&Certificate> = vec![target];
+-    for _ in 0..=max_intermediates {
+-        let next: Vec<&Certificate> = untrusted
+-            .iter()
+-            .filter(|candidate| !linked.iter().any(|seen| seen.same_as(candidate)))
+-            .filter(|candidate| {
+-                frontier
+-                    .iter()
+-                    .any(|below| !below.same_as(candidate) && below.signed_by(candidate))
+-            })
+-            .collect();
+-        if next.is_empty() {
+-            break;
+-        }
+-        linked.extend(next.iter().copied());
+-        frontier = next;
+-    }
+-    untrusted
+-        .iter()
+-        .filter(|candidate| linked.iter().any(|seen| seen.same_as(candidate)))
+-        .cloned()
+-        .collect()
+-}
+-
+-/// Whether OpenSSL's issuer lookup would pair `issuer` with `certificate`
+-/// (`X509_check_issued`: names, key identifiers, `keyUsage`). No signature
+-/// is checked.
+-fn may_have_issued(issuer: &Certificate, certificate: &Certificate) -> bool {
+-    let paired = issuer.x509().issued(certificate.x509()) == X509VerifyResult::OK;
+-    drain_errors();
+-    paired
+-}
+-
+-/// One `X509_verify_cert` run over a store holding `store` and nothing
+-/// else. `anchors` is the caller's whole list, for the anchor waivers and
+-/// for [`PathOutcome::anchored`].
+-fn run_with(
+-    target: &Certificate,
+-    untrusted: &[Certificate],
+-    anchors: &[Certificate],
+-    store: &[&Certificate],
+-    at_secs: i64,
+-    max_intermediates: u32,
+ ) -> Option<PathOutcome> {
+     let mut builder = X509StoreBuilder::new().ok()?;
+-    for anchor in store {
++    for anchor in anchors {
+         builder.add_cert(anchor.x509().to_owned()).ok()?;
+     }
+     let mut param = X509VerifyParam::new().ok()?;
+diff --git a/rust/src/path.rs b/rust/src/path.rs
+index 4bac1b0..e2a827d 100644
+--- a/rust/src/path.rs
++++ b/rust/src/path.rs
+@@ -8,8 +8,10 @@
+ //!
+ //! - **Top-down first.** Only certificates a pinned anchor vouched for,
+ //!   directly or through a certificate it vouched for, are handed to
+-//!   OpenSSL, so no key an anchor did not vouch for is ever used, and a bag
+-//!   padded with look-alike issuers cannot steer the path builder.
++//!   OpenSSL, so no key an anchor did not vouch for is ever used. The walk
++//!   records what vouched for each, and OpenSSL gets that one path and its
++//!   one anchor, so a bag padded with look-alike issuers, or the order of
++//!   the anchors, cannot steer the path builder.
+ //! - **Found first, judged second.** A path that reaches no pinned anchor
+ //!   is `UNTRUSTED_CHAIN` whatever its dates say; only a path that does
+ //!   reach one has its validity windows judged, where a certificate outside
+@@ -42,61 +44,121 @@ fn unprocessed_critical_extension() -> Failure {
+     untrusted("a certificate on the path has an unsupported critical extension")
+ }
+ 
+-fn anchor_certificates(anchors: &[TrustAnchor]) -> Vec<Certificate> {
+-    anchors
+-        .iter()
+-        .map(|anchor| anchor.certificate().clone())
+-        .collect()
++/// An embedded certificate a pinned anchor vouched for, and what vouched
++/// for it: the first issuer whose signature over it verified, in the round
++/// that first reached it.
++#[derive(Debug, Clone)]
++pub struct Vouched {
++    certificate: Certificate,
++    by: VouchedBy,
++}
++
++#[derive(Debug, Clone, Copy)]
++enum VouchedBy {
++    /// It is an embedded copy of the anchor at this index.
++    IsAnchor(usize),
++    /// The anchor at this index.
++    Anchor(usize),
++    /// The vouched-for certificate at this index of the list.
++    Certificate(usize),
++}
++
++impl Vouched {
++    /// The certificate.
++    #[must_use]
++    pub fn certificate(&self) -> &Certificate {
++        &self.certificate
++    }
+ }
+ 
+ /// The embedded certificates a pinned anchor vouched for, directly or
+ /// through a certificate accepted this way, walking down from the anchors
+-/// in at most [`MAX_PATH_LENGTH`] rounds. An embedded copy of an anchor is
+-/// the anchor, and is accepted without a signature check.
++/// in at most [`MAX_PATH_LENGTH`] rounds, each with what vouched for it.
++/// An embedded copy of an anchor is the anchor, and is accepted without a
++/// signature check.
+ ///
+ /// Walking down means the only keys used are ones an anchor vouched for: a
+ /// certificate carrying the attacker's own key (their choice of size and
+ /// exponent) costs a name comparison per issuer, and is simply left out.
+ #[must_use]
+-pub fn authenticated_top_down(
+-    embedded: &[Certificate],
+-    anchors: &[TrustAnchor],
+-) -> Vec<Certificate> {
+-    let mut accepted: Vec<Certificate> = Vec::new();
++pub fn authenticated_top_down(embedded: &[Certificate], anchors: &[TrustAnchor]) -> Vec<Vouched> {
++    let mut accepted: Vec<Vouched> = Vec::new();
+     let mut pending: Vec<&Certificate> = Vec::new();
+     for certificate in embedded {
+-        if anchors
++        match anchors
+             .iter()
+-            .any(|anchor| anchor.certificate().same_as(certificate))
++            .position(|anchor| anchor.certificate().same_as(certificate))
+         {
+-            accepted.push(certificate.clone());
+-        } else {
+-            pending.push(certificate);
++            Some(index) => accepted.push(Vouched {
++                certificate: certificate.clone(),
++                by: VouchedBy::IsAnchor(index),
++            }),
++            None => pending.push(certificate),
+         }
+     }
+-    let mut issuers: Vec<Certificate> = anchor_certificates(anchors);
+-    issuers.extend(accepted.iter().cloned());
++    let mut issuers: Vec<(VouchedBy, Certificate)> = anchors
++        .iter()
++        .enumerate()
++        .map(|(index, anchor)| (VouchedBy::Anchor(index), anchor.certificate().clone()))
++        .collect();
+     for _ in 0..MAX_PATH_LENGTH {
+         if pending.is_empty() {
+             break;
+         }
+-        let mut this_round: Vec<Certificate> = Vec::new();
++        let first = accepted.len();
+         pending.retain(|candidate| {
+-            let vouched = issuers.iter().any(|issuer| candidate.issued_by(issuer));
+-            if vouched {
+-                this_round.push((*candidate).clone());
+-            }
+-            !vouched
++            let Some((by, _)) = issuers
++                .iter()
++                .find(|(_, issuer)| candidate.issued_by(issuer))
++            else {
++                return true;
++            };
++            accepted.push(Vouched {
++                certificate: (*candidate).clone(),
++                by: *by,
++            });
++            false
+         });
+-        if this_round.is_empty() {
++        if accepted.len() == first {
+             break;
+         }
+-        accepted.extend(this_round.iter().cloned());
+-        issuers = this_round;
++        issuers = accepted
++            .iter()
++            .enumerate()
++            .skip(first)
++            .map(|(index, vouched)| (VouchedBy::Certificate(index), vouched.certificate.clone()))
++            .collect();
+     }
+     accepted
+ }
+ 
++/// The certificates between `target` and the anchor that vouched for it,
++/// the target's issuer first, and that anchor: the path
++/// [`authenticated_top_down`] recorded. `None` when no anchor vouched for
++/// `target`.
++fn vouched_path<'a>(
++    target: &Certificate,
++    authenticated: &[Vouched],
++    anchors: &'a [TrustAnchor],
++) -> Option<(Vec<Certificate>, &'a Certificate)> {
++    let mut at = authenticated
++        .iter()
++        .position(|vouched| vouched.certificate.same_as(target))?;
++    let mut between = Vec::new();
++    // Each step goes to a certificate accepted in an earlier round.
++    loop {
++        match authenticated.get(at)?.by {
++            VouchedBy::Certificate(issuer) => {
++                between.push(authenticated.get(issuer)?.certificate.clone());
++                at = issuer;
++            }
++            VouchedBy::Anchor(index) | VouchedBy::IsAnchor(index) => {
++                return Some((between, anchors.get(index)?.certificate()));
++            }
++        }
++    }
++}
++
+ /// The second an instant falls in, and that instant rounded up to a second.
+ fn seconds(at_millis: i64) -> (i64, i64) {
+     let second = at_millis.div_euclid(1000);
+@@ -104,8 +166,10 @@ fn seconds(at_millis: i64) -> (i64, i64) {
+     (second, rounded_up)
+ }
+ 
+-/// Asks OpenSSL for the path from `target` through `untrusted` to one of
+-/// `anchors` at `at_millis`, and adds the millisecond `notAfter` check.
++/// Asks OpenSSL for the path from `target` through `untrusted` to
++/// `anchor` at `at_millis`, and adds the millisecond `notAfter` check.
++/// `untrusted` and `anchor` are exactly the path a pinned anchor vouched
++/// for, so OpenSSL has no certificate to choose among.
+ ///
+ /// The caller has judged the target's key first, as Java does: OpenSSL
+ /// stops on a target whose public key it cannot build before it judges
+@@ -114,7 +178,7 @@ fn seconds(at_millis: i64) -> (i64, i64) {
+ fn checked_path(
+     target: &Certificate,
+     untrusted: &[Certificate],
+-    anchors: &[TrustAnchor],
++    anchor: &Certificate,
+     at_millis: i64,
+     max_intermediates: usize,
+ ) -> PathOutcome {
+@@ -122,7 +186,7 @@ fn checked_path(
+     let mut outcome = verify_path(
+         target,
+         untrusted,
+-        &anchor_certificates(anchors),
++        std::slice::from_ref(anchor),
+         second,
+         u32::try_from(max_intermediates).unwrap_or(0),
+     );
+@@ -168,7 +232,8 @@ fn structural_failure(kind: PathProblemKind) -> Failure {
+ /// Builds and validates the path of a legacy receipt's signer, whose
+ /// intermediates are embedded in the CMS blob. `authenticated` is what
+ /// [`authenticated_top_down`] accepted, the signer among it, and the
+-/// signer's key is one OpenSSL can build.
++/// signer's key is one OpenSSL can build. OpenSSL validates the one path
++/// [`authenticated_top_down`] recorded for the signer.
+ ///
+ /// Returns the path below the anchor, signer first.
+ ///
+@@ -180,14 +245,17 @@ fn structural_failure(kind: PathProblemKind) -> Failure {
+ /// critical an extension OpenSSL does not process.
+ pub fn receipt_path(
+     signer: &Certificate,
+-    authenticated: &[Certificate],
++    authenticated: &[Vouched],
+     anchors: &[TrustAnchor],
+     at_millis: i64,
+ ) -> Result<Vec<Certificate>, Failure> {
++    let Some((between, anchor)) = vouched_path(signer, authenticated, anchors) else {
++        return Err(untrusted("chain does not reach a pinned root"));
++    };
+     let outcome = checked_path(
+         signer,
+-        authenticated,
+-        anchors,
++        &between,
++        anchor,
+         at_millis,
+         MAX_PATH_LENGTH.saturating_sub(1),
+     );
+@@ -233,12 +301,13 @@ pub fn validate_pair(
+     anchors: &[TrustAnchor],
+     at_millis: i64,
+ ) -> Result<(), Failure> {
+-    if !anchors
++    let Some(anchor) = anchors
+         .iter()
+-        .any(|anchor| intermediate.issued_by(anchor.certificate()))
+-    {
++        .map(TrustAnchor::certificate)
++        .find(|anchor| intermediate.issued_by(anchor))
++    else {
+         return Err(untrusted("intermediate is not issued by a pinned root"));
+-    }
++    };
+     // Vouched for, and its key is about to check the leaf: a key OpenSSL
+     // cannot build is the certificate's defect.
+     if !intermediate.has_usable_key() {
+@@ -261,7 +330,7 @@ pub fn validate_pair(
+     let outcome = checked_path(
+         leaf,
+         std::slice::from_ref(intermediate),
+-        anchors,
++        anchor,
+         at_millis,
+         1,
+     );
+diff --git a/rust/src/receipt.rs b/rust/src/receipt.rs
+index 3f36fb5..aa10884 100644
+--- a/rust/src/receipt.rs
++++ b/rust/src/receipt.rs
+@@ -2,7 +2,7 @@
+ //! PKCS#7 app receipts, verified offline.
+ 
+ use crate::error::{malformed, Failure, Reason};
+-use crate::path::{authenticated_top_down, receipt_path};
++use crate::path::{authenticated_top_down, receipt_path, Vouched};
+ use crate::receipt_payload::{
+     parse_receipt_payload, read_creation_date, ReceiptPayload, MAX_ASN1_DEPTH, MAX_ASN1_NODES,
+ };
+@@ -141,7 +141,7 @@ fn verify_signature(
+     let embedded = Embedded::sort(certificates);
+     // Signer-independent, so walked once for all SignerInfos, and only once
+     // one of them has named an embedded certificate that decodes.
+-    let mut authenticated: Option<Vec<Certificate>> = None;
++    let mut authenticated: Option<Vec<Vouched>> = None;
+     let mut first_failure: Option<Failure> = None;
+     for index in 0..signer_count {
+         let verdict = signer_certificates(&cms, index, &embedded).and_then(|matches| {
+@@ -203,7 +203,7 @@ fn verify_signer(
+     cms: &mut SignedData,
+     index: usize,
+     signer: &Certificate,
+-    authenticated: &[Certificate],
++    authenticated: &[Vouched],
+     anchors: &[TrustAnchor],
+     at_millis: i64,
+ ) -> Result<(), Failure> {
+@@ -216,7 +216,7 @@ fn verify_signer(
+     // build.
+     if !authenticated
+         .iter()
+-        .any(|certificate| certificate.same_as(signer))
++        .any(|vouched| vouched.certificate().same_as(signer))
+     {
+         return Err(Failure::new(
+             Reason::UntrustedChain,
+diff --git a/rust/tests/trust_pinning.rs b/rust/tests/trust_pinning.rs
+index 4776422..5774a6b 100644
+--- a/rust/tests/trust_pinning.rs
++++ b/rust/tests/trust_pinning.rs
+@@ -704,14 +704,15 @@ fn a_same_named_intermediate_placed_first_in_the_bag_does_not_decide_the_path()
+     }
+ }
+ 
+-/// The bag is narrowed by signature alone, not by `keyUsage`: an
+-/// intermediate whose `keyUsage` lacks `keyCertSign` still signed the leaf,
+-/// so OpenSSL still builds the path through it and reports it as not a CA,
+-/// as before the narrowing. A narrowing through `X509_check_issued`, which
+-/// judges `keyUsage`, dropped it and reported no path at all (seven corpus
+-/// rows' messages, round 3).
++/// An intermediate whose `keyUsage` lacks `keyCertSign` vouches for
++/// nothing: the top-down walk pairs an issuer through `X509_check_issued`,
++/// which judges `keyUsage`, so the leaf it signed is never authenticated,
++/// and the path the core hands OpenSSL does not exist. Until 2026-10-05 the
++/// adapter narrowed the bag again by signature alone and OpenSSL reported
++/// the intermediate as not a CA; the reason, `UNTRUSTED_CHAIN`, is the
++/// same.
+ #[test]
+-fn an_intermediate_without_key_cert_sign_is_still_reported_as_not_a_ca() {
++fn a_leaf_under_an_intermediate_without_key_cert_sign_is_not_vouched_for() {
+     use common::{der, der_int, der_oid, der_seq, mint};
+     let (root_key, intermediate_key, leaf_key) = (mint::key(71), mint::key(72), mint::key(73));
+     let root = TrustAnchor::from_der(&mint::certificate(
+@@ -757,9 +758,10 @@ fn an_intermediate_without_key_cert_sign_is_still_reported_as_not_a_ca() {
+     .unwrap();
+     let roots = [root];
+     let authenticated = path::authenticated_top_down(&[leaf.clone(), intermediate], &roots);
++    assert_eq!(authenticated.len(), 1, "the intermediate alone");
+     let failure = path::receipt_path(&leaf, &authenticated, &roots, now_millis()).unwrap_err();
+     assert_eq!(
+         failure.to_string(),
+-        "UNTRUSTED_CHAIN: an intermediate is not a CA"
++        "UNTRUSTED_CHAIN: chain does not reach a pinned root"
+     );
+ }
+diff --git a/rust/tests/unauthenticated_key_cost.rs b/rust/tests/unauthenticated_key_cost.rs
+index c836075..d414931 100644
+--- a/rust/tests/unauthenticated_key_cost.rs
++++ b/rust/tests/unauthenticated_key_cost.rs
+@@ -344,7 +344,7 @@ fn only_certificates_a_root_vouched_for_reach_the_path_builder() {
+     assert_eq!(authenticated.len(), 2);
+     assert!(authenticated
+         .iter()
+-        .all(|certificate| !certificate.same_as(&embedded[0])));
++        .all(|vouched| !vouched.certificate().same_as(&embedded[0])));
+     assert_no_stranger_key_used(&used);
+ }
+ 

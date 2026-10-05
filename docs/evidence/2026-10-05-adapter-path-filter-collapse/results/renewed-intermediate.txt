@@ -1,0 +1,9 @@
+with collapse.patch:
+RENEWAL renewed first: ok
+RENEWAL expired first: INVALID_CERTIFICATE: certificate is outside its validity window at the chain instant
+without it (the branch at docs(docs): record java's key-before-path order for keyless targets):
+RENEWAL renewed first: ok
+RENEWAL expired first: ok
+at the branch's base, 352f0d1:
+RENEWAL renewed first: ok
+RENEWAL expired first: ok

@@ -1,0 +1,10 @@
+cases: 153 rows: message 7, reason 1, same 145
+  reason receipt/reject-signer-on-an-unimplemented-curve
+hostile: 811 rows: message 58, same 753
+algorithms: 22 rows: same 22
+substrate: 193 rows: message 5, same 188
+fuzz: 5000 rows: message 498, reason 4, same 4498
+  reason fuzz/464/receipt/reject-signer-on-an-unimplemented-curve
+  reason fuzz/952/receipt/reject-signer-on-an-unimplemented-curve
+  reason fuzz/3248/receipt/reject-signer-on-an-unimplemented-curve
+  reason fuzz/3597/receipt/reject-signer-on-an-unimplemented-curve
