@@ -18,15 +18,15 @@ import org.junit.jupiter.api.Test;
  * databind is safe only if the streaming read accepts, refuses and returns
  * {@code receipt-data} for every body exactly as the databind read did. That
  * is checked here against databind itself (still on the test classpath) over
- * the same bounded factory, on short and long bodies (long enough to cross
- * Jackson's Reader chunks), with escapes, broken surrogates, trailing garbage,
- * truncation, duplicate keys, non-string values, and nesting on both sides of
- * the depth limit.
+ * the readers' factory, on short and long bodies (long
+ * enough to cross Jackson's Reader chunks), with escapes, broken surrogates,
+ * trailing garbage, truncation, duplicate keys, non-string values, and
+ * nesting on both sides of Jackson's depth limit.
  */
 class EndpointJsonReadTest {
 
-    /** The 0.6 read: databind over the same bounded factory. */
-    private static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(Endpoint.MAX_REQUEST_BYTES));
+    /** The 0.6 read: databind over the readers' factory. */
+    private static final ObjectMapper MAPPER = new ObjectMapper(JsonFields.factory());
 
     private static final long SEED = 0x7501_5EEDL;
     private static final int CASES = 3_000;
@@ -110,7 +110,7 @@ class EndpointJsonReadTest {
                 body = "{\"receipt-data\":" + (random.nextBoolean() ? "null" : "[\"" + value + "\"]") + "}";
                 break;
             case 1:
-                int depth = random.nextBoolean() ? 63 : 65; // the endpoint allows 64
+                int depth = random.nextBoolean() ? 1000 : 1001; // Jackson's default allows 1000
                 body = nested(depth) + "\"" + value + "\"" + closing(depth);
                 break;
             case 2:

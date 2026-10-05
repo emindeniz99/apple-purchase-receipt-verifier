@@ -284,8 +284,9 @@ Both implementations apply the same bounds (docs/design/0.7-api.md,
 Bounds): at most 10 certificates embedded in a receipt and
 4 SignerInfos; and fixed input caps of 3,145,728 UTF-8 bytes for receipt
 base64 and request bodies and 262,144 for a JWS. Java also bounds JSON
-nesting at 64, member names at 50,000 characters and numbers at 1,000;
-the core's `serde_json` reader skips a value nobody reads with no bound
+nesting, member names and numbers with jackson-core's defaults, built into
+its own reader factories so a host's process-wide override does not reach
+them, and refuses a Jackson below 2.16 at `Verifier.create`; the core's `serde_json` reader skips a value nobody reads with no bound
 of its own, within the input caps (DECISIONS.md R40). The core also bounds
 ASN.1 nesting at 32, the envelope and each attribute SET at
 100,000 values, and constructed strings at six levels. Java's ASN.1
@@ -336,9 +337,8 @@ behind a trailing byte or a broken envelope too, never reaches
 `rust/tests/input_size_caps.rs`,
 `rust/tests/unauthenticated_key_cost.rs`, and in Java
 `java/src/test/.../HostileReceiptInputTest.java`. JSON depth, Java's
-bound, which the shared vectors leave port-defined (the core reads the
-input; DECISIONS.md R20, R40):
-`signed-data/unreadable-payload-nested-65-deep`. ASN.1 depth,
+bound (the core reads the input; DECISIONS.md R20, R40):
+`java/src/test/.../InputSizeBoundsTest.java`. ASN.1 depth,
 the core's bound of 32, which the shared vectors leave port-defined
 (Java, whose nesting bound is BouncyCastle's, 64 by default, verifies
 them; DECISIONS.md R20):
