@@ -156,6 +156,16 @@ jobs:
         vendor: [corretto, dragonwell, graalvm, jetbrains, kona, liberica,
                  microsoft, oracle, redhat, sapmachine, semeru, zulu]
         jdk: ["8", "21", "25"]
+        # Lines the vendor does not ship through setup-java (measured on
+        # 2026-10-05; the evidence note has each refusal). Drop an entry
+        # when the vendor starts shipping the line.
+        exclude:
+          - {vendor: graalvm, jdk: "8"}
+          - {vendor: jetbrains, jdk: "8"}
+          - {vendor: microsoft, jdk: "8"}
+          - {vendor: oracle, jdk: "8"}
+          - {vendor: sapmachine, jdk: "8"}
+          - {vendor: redhat, jdk: "25"}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
