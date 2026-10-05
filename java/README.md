@@ -612,7 +612,12 @@ what its own framework's frames use; below that a hostile input ends
 the call with a `StackOverflowError`, which is an `Error`, not a
 `Failure`. The figures were measured on one JVM and one input shape;
 frame sizes differ between the interpreter and the JIT and between
-HotSpot and OpenJ9, so another JVM may need more.
+HotSpot and OpenJ9, so another JVM may need more. The same failure comes
+from the other side: a host that raises
+`org.bouncycastle.asn1.max_cons_depth` far above its default of 64 lets
+a deeply nested input recurse past whatever stack the thread has, and
+the `StackOverflowError` is an `Error` the library does not catch, so
+leave the property at its default.
 
 The ASN.1 nesting bound is BouncyCastle's
 `org.bouncycastle.asn1.max_cons_depth`, 64 unless the host sets it. It is
