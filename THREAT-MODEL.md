@@ -153,25 +153,19 @@ Java:
    certificates, and an envelope over the nesting bound (§3.7: the core's
    32, BouncyCastle's 64 in Java) are `MALFORMED`. The core alone also
    refuses an envelope over its value budget.
-2. Read the receipt creation date, attribute 12: walk the top-level
-   attribute SET under the depth and value bounds, read each entry's type,
-   decode only the value of the first type 12. No usable date means the
-   chain is judged at the `Config` clock. This step never rejects. The
-   Rust core takes it only once a `SignerInfo` names an embedded
-   certificate, since only a chain needs the date. Java has no value bound
-   here, and this walk is its one parse of the payload: it decodes every
-   top-level attribute into its type and octets, within the input cap,
-   and keeps them for step 5, but reads only attribute 12 before the
-   signature.
+2. Read the receipt creation date, attribute 12, and nothing else: walk the
+   top-level attribute SET under the depth and value bounds, read each
+   entry's type, decode only the value of the first type 12. No usable
+   date means the chain is judged at the `Config` clock. This step never
+   rejects. The Rust core takes it only once a `SignerInfo` names an
+   embedded certificate, since only a chain needs the date.
 3. Build the chain top-down from the pinned roots at that instant, with each
    certificate's validity window, then check the marker OIDs on the signer
    and the WWDR intermediate (`UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`,
    `INVALID_CERTIFICATE_PURPOSE`).
 4. Check the CMS signature with the now-trusted signer key
    (`INVALID_SIGNATURE`); at least one `SignerInfo` must verify.
-5. Parse the whole payload; Java decodes the attributes step 2 kept and
-   does not read the SET again. A failure here, a SET step 2 could not
-   read included, is `UNREADABLE_PAYLOAD`.
+5. Parse the whole payload. A failure here is `UNREADABLE_PAYLOAD`.
 
 Nothing is trusted before steps 3 and 4, so step 2 reads as little as it
 can and blames no one: an unreadable date only moves the chain instant to

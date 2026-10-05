@@ -158,7 +158,7 @@ class ReceiptDecoderTest {
             ReceiptPayload receipt = ReceiptDecoder.parse(payload);
             assertNull(receipt.receiptCreationDateMs(), text);
             assertArrayEquals(value, receipt.unknownAttributes().get(12).get(0));
-            assertNull(ReceiptDecoder.readTopLevel(payload).creationDate(), text);
+            assertNull(ReceiptDecoder.readCreationDate(payload), text);
         }
     }
 
@@ -193,7 +193,7 @@ class ReceiptDecoderTest {
         assertNull(receipt.appItemId());
         assertArrayEquals(tooDeep, receipt.unknownAttributes().get(3).get(0));
         assertArrayEquals(tooDeep, receipt.unknownAttributes().get(1).get(0));
-        assertNull(ReceiptDecoder.readTopLevel(set(attribute(12, tooDeep))).creationDate());
+        assertNull(ReceiptDecoder.readCreationDate(set(attribute(12, tooDeep))));
     }
 
     /** {@code levels} SETs inside one another, the innermost empty. */

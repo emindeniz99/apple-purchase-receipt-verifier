@@ -29,9 +29,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * The receipt payload, the attribute SET inside the CMS envelope, as a
  * {@link ReceiptPayload}, by the decode rules of docs/design/0.7-api.md.
- * The top-level SET is read once, before the signature, where only its
- * {@link Attributes#creationDate} is used; every failure of {@link #parse}
- * is {@link Reason#UNREADABLE_PAYLOAD}.
+ * Before the signature only {@link #readCreationDate} runs; every failure of
+ * {@link #parse} is {@link Reason#UNREADABLE_PAYLOAD}.
  */
 final class ReceiptDecoder {
 
@@ -97,29 +96,22 @@ final class ReceiptDecoder {
     private ReceiptDecoder() {}
 
     /**
-     * The top-level attributes, read once, before the signature. Never
-     * throws: what stops the read is kept for {@link #parse(Attributes)}.
+     * The first attribute 12, or null ("judge the chain at the clock") when
+     * it is missing or does not decode, or when any entry does not read,
+     * since that entry might have been the first 12. Never throws.
      */
-    static Attributes readTopLevel(byte[] payload) {
+    static @Nullable Long readCreationDate(byte[] payload) {
         try {
-            return readAttributes(payload, "receipt payload", TOP_LEVEL);
+            byte[] date =
+                    readAttributes(payload, "receipt payload", TOP_LEVEL).firsts.get(ATTR_CREATION_DATE);
+            return date != null ? decodeDate(date) : null;
         } catch (VerificationException | RuntimeException e) {
-            Attributes unread = new Attributes();
-            unread.failure = e;
-            return unread;
+            return null;
         }
     }
 
     static ReceiptPayload parse(byte[] payload) throws VerificationException {
-        return parse(readTopLevel(payload));
-    }
-
-    static ReceiptPayload parse(Attributes attributes) throws VerificationException {
-        if (attributes.failure instanceof VerificationException) {
-            throw (VerificationException) attributes.failure;
-        } else if (attributes.failure != null) {
-            throw (RuntimeException) attributes.failure;
-        }
+        Attributes attributes = readAttributes(payload, "receipt payload", TOP_LEVEL);
         // 17 is not in TOP_LEVEL: every copy is one purchase, and one that
         // does not parse is kept raw.
         List<InAppPurchase> purchases = new ArrayList<>();
@@ -234,27 +226,9 @@ final class ReceiptDecoder {
         return attributes;
     }
 
-    static final class Attributes {
+    private static final class Attributes {
         final Map<Integer, byte[]> firsts = new HashMap<>();
         final Map<Integer, List<byte[]>> unknown = new TreeMap<>();
-        /** What stopped {@link #readTopLevel}, or null. */
-        @Nullable
-        Exception failure;
-
-        /**
-         * The first attribute 12, or null ("judge the chain at the clock") when
-         * it is missing or does not decode, or when any entry does not read,
-         * since that entry might have been the first 12. Never throws.
-         */
-        @Nullable
-        Long creationDate() {
-            byte[] date = firsts.get(ATTR_CREATION_DATE);
-            try {
-                return date != null ? decodeDate(date) : null;
-            } catch (VerificationException | RuntimeException e) {
-                return null;
-            }
-        }
 
         @Nullable
         String string(int type) {
