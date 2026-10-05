@@ -52,9 +52,9 @@ differential run compares it with the core over the corpora and the cases
 | PHP | 22 | 4 | 6 | 11 | 1 |
 | Node | 6 | 1 | 2 | 0 | 3 |
 | .NET | 2 | 0 | 0 | 0 | 2 |
-| Rust | 314 | 43 | 0 | 0 | 271 |
+| Rust | 315 | 43 | 0 | 0 | 272 |
 | Java | 201 | 11 | 0 | 0 | 190 |
-| All | 863 | 201 | 31 | 78 | 553 |
+| All | 864 | 201 | 31 | 78 | 554 |
 
 ## The cases this lane added
 
@@ -723,6 +723,7 @@ and `-second`.
 | Rust | `rust/tests/trust_pinning.rs` `a_trust_anchors_own_expiry_is_not_checked` | same fixture as `receipt/accept-historical-creation-date-under-expired-chain` |
 | Rust | `rust/tests/trust_pinning.rs` `a_root_verifies_beside_another_root_with_the_same_subject_in_either_order` | same fixture as `endpoint/ids-absent-are-omitted`, `endpoint/request-date-is-the-verification-clock`, `endpoint/sandbox-receipt-on-production-answers-21007` and 9 more |
 | Rust | `rust/tests/trust_pinning.rs` `a_root_verifies_when_a_same_named_root_vouches_for_a_stranger_in_the_bag` | same fixture as `receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-first`, `receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-second`, `receipt/verify-with-a-stranger-whose-key-is-unreadable` |
+| Rust | `rust/tests/trust_pinning.rs` `a_renewed_intermediate_verifies_beside_its_expired_twin_in_either_order` | input built in code: stays with the Rust |
 | Rust | `rust/tests/unauthenticated_key_cost.rs` `a_genuine_receipt_padded_with_stranger_keys_verifies_quickly` | input built in code: stays with the Rust |
 | Rust | `rust/tests/unauthenticated_key_cost.rs` `a_receipt_whose_only_issuers_have_expensive_keys_is_refused_quickly` | input built in code: stays with the Rust |
 | Rust | `rust/tests/unauthenticated_key_cost.rs` `a_jws_whose_certificates_have_expensive_keys_is_refused_quickly` | input built in code: stays with the Rust |
