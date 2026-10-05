@@ -7,9 +7,10 @@ decides whether the `java-vendors` job in `.github/workflows/ci.yml` is
 worth keeping, and which vendor and line pairs it runs.
 
 **Method.** One CI run, 37260913345, on 2026-10-05, on PR #263 at the
-library version 0.8.1. Twelve vendors were each asked for Java 8, 21 and
-25 through `actions/setup-java` v6.0.1 on `ubuntu-latest` (x86_64).
-Maven ran on Temurin 25 and surefire forked the vendor's JVM through the
+library version 0.8.1 with BouncyCastle 1.86. Twelve vendors were each
+asked for Java 8, 21 and 25 through `actions/setup-java` v6.0.1 on the
+`ubuntu-24.04` runner image 20260927.320.1 (x86_64). Maven ran on
+Temurin 25.0.4+1, and surefire 3.6.0 forked the vendor's JVM through the
 `jdk8-runtime` profile, so only the runtime varied. Each leg printed
 `java -XshowSettings:properties` from the JVM under test, then ran the
 whole suite: 599 tests, all 388 cases of `fixtures/cases.json`
@@ -18,9 +19,9 @@ included. Temurin is not in the table; the `java` job already covers it.
 ## Results
 
 Tests are run/failures/errors/skipped. The skip is
-`FixtureGeneratorTest` in every leg. Every passing leg also printed
-"conformance: 388 cases in fixtures/cases.json, 49 with a pinned clock,
-0 skipped".
+`FixtureGeneratorTest` in every leg. Among the 599 is
+`ConformanceCasesTest`'s last test, which fails when any case in
+`fixtures/cases.json` did not run, so every passing leg ran all 388.
 
 | vendor | line | tests | java.runtime.version | java.vm.name | setup-java refusal |
 |---|---|---|---|---|---|
@@ -67,14 +68,15 @@ Tests are run/failures/errors/skipped. The skip is
   three lines. GraalVM and Oracle run HotSpot under Oracle's name; the
   rest run OpenJDK HotSpot builds.
 - **Six legs never started.** setup-java has no build for them, and its
-  message is quoted in the last column. The job excludes those six, so a
-  red leg there means a failing suite, not a missing download.
+  message is quoted in the last column. The job now excludes those six.
 
 ## Where this stops holding
 
 - Linux x86_64 only. No vendor was tried on arm64, macOS or Windows.
 - One run, on each vendor's build of that day. A vendor update can
-  change the result, which is why the job keeps running.
+  change the result. The job runs on every pull request that touches the
+  Java port, not on pushes to main, so a vendor regression shows up on
+  the next such pull request rather than on the day it ships.
 - The default `java.security` of each vendor build. A FIPS mode, a
   hardened policy (the `java-hardened-policy` job covers one) or a
   replaced default `SecureRandom` was not tried. The round-3 review of

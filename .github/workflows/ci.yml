@@ -143,11 +143,13 @@ jobs:
   # surefire forks the vendor's JVM (the jdk8-runtime profile's `jvm`
   # override), so javac and the build are the same for every leg and only
   # the runtime varies. Which vendor ships which line was measured, not
-  # assumed: docs/evidence/2026-10-05-java-jdk-vendors.md.
+  # assumed: docs/evidence/2026-10-05-java-jdk-vendors.md. Pull requests
+  # only: a push to main is release.yml's ci-passed gate, and a vendor's
+  # download outage must not hold a release that Temurin already tested.
   java-vendors:
     name: java on ${{ matrix.vendor }} ${{ matrix.jdk }}
     needs: changes
-    if: needs.changes.outputs.java == 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
