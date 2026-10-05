@@ -30,9 +30,8 @@ on the classpath.
 **On Spring Boot**, Boot's BOM decides your Jackson version, not this
 library. The floor is jackson-core 2.16 (see
 [Dependency floors](#vendoring)). Spring Boot 3.0 to 3.2 manage an older
-jackson-core, 2.14 or 2.15, and there the JSON readers run with fewer
-bounds (2.15 has no member-name bound, 2.14 none at all); nothing checks
-the version at runtime. On Boot 3.x, set Boot's `jackson-bom.version`
+jackson-core, 2.14 or 2.15, and there `Verifier.create` throws
+`IllegalStateException`. On Boot 3.x, set Boot's `jackson-bom.version`
 property to 2.16.2 or newer. It moves every Jackson artifact together.
 Maven:
 
@@ -130,7 +129,7 @@ notice until production. `Verifier.create` also builds the Jackson
 readers, touches the BouncyCastle provider and a bcpkix class, checks that
 bcprov is 1.86 or later and that BouncyCastle's ASN.1 nesting bound admits a
 genuine receipt, and probes the crypto runtime (see [Running in
-production](#running-in-production)), so a
+production](#running-in-production)), so a jackson-core below 2.16, a
 missing BouncyCastle jar, a bcprov below 1.86 or a nesting bound below 9
 throws `IllegalStateException` there rather than on the first call.
 
@@ -568,14 +567,15 @@ and the rest are never reached):
 ## Resource bounds
 
 Fixed constants, not configurable, except the ASN.1 nesting bound (below
-the table), BouncyCastle's other settings ([listed
-above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)) and the three
-JSON bounds, which are jackson-core's default `StreamReadConstraints`
-(a host's `StreamReadConstraints.overrideDefaultStreamReadConstraints`
-changes them for the whole process). The three
+the table) and BouncyCastle's other settings ([listed
+above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The three
+JSON bounds are jackson-core's default `StreamReadConstraints`, built into
+the library's own reader factories, so a process-wide
+`StreamReadConstraints.overrideDefaultStreamReadConstraints` does not
+reach them; Jackson's string and document limits are above the size caps,
+so the caps are what bound a JSON document's length. The three
 size caps are checked before anything is decoded; the others as the
-structure they bound is read. Jackson's own string and document limits are
-above the size caps, so the caps are what bound a JSON document's length:
+structure they bound is read:
 
 | Bound | Value | `Reason` |
 |---|---|---|
@@ -888,10 +888,10 @@ directory holds the config, result and payload classes the `-wasm`
 artifact compiles too; both are the same package. What a vendored copy has
 to carry with it:
 
-**Dependency floors.** `jackson-core` 2.16 or later: the JSON readers rely
-on its default `StreamReadConstraints` (the member-name bound arrived in
-2.16, the others in 2.15). Nothing checks the version at runtime, so
-enforce it in the build ([Running in production](#running-in-production)).
+**Dependency floors.** `jackson-core` 2.16 or later: the JSON readers use
+its default `StreamReadConstraints` (the member-name bound arrived in 2.16,
+the others in 2.15), and below it `Verifier.create` throws
+`IllegalStateException`.
 BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
 `Verifier.create` throws `IllegalStateException` naming the bcprov it
 found. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws

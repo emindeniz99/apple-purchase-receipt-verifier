@@ -66,7 +66,7 @@ final class DefaultVerifier implements Verifier {
     /**
      * Runs {@code buildStaticState}, turning a {@link LinkageError} into an
      * {@link IllegalStateException} that names the error and the floors, so a
-     * Jackson that does not load, a missing or pre-1.70 BouncyCastle or a time-zone database
+     * Jackson below 2.16, a missing or pre-1.70 BouncyCastle or a time-zone database
      * without America/Los_Angeles fails {@link Verifier#create} rather than a
      * verify call, which must not throw.
      */
@@ -95,10 +95,13 @@ final class DefaultVerifier implements Verifier {
      * {@link #requireBouncyCastle} refuses it below 1.86.
      * EndpointResponse's initialiser loads the Pacific time zone, which a JRE
      * with a truncated tzdb would fail on the first endpoint call otherwise.
+     * The readers' factories need jackson-core 2.15, and the name bound read
+     * here is 2.16 API, so a Jackson below the floor fails here.
      */
     private static void buildStaticState() {
         Objects.requireNonNull(JwsCore.JSON);
         Objects.requireNonNull(Endpoint.JSON);
+        JwsCore.JSON.streamReadConstraints().getMaxNameLength();
         Objects.requireNonNull(EndpointResponse.JSON);
         Objects.requireNonNull(BouncyCastle.PROVIDER);
         Objects.requireNonNull(JcaSignerInfoVerifierBuilder.class);

@@ -61,11 +61,12 @@
          tested claims). -->
     <bouncycastle.version>1.86</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsCore and Endpoint read unsigned JSON
-         under Jackson's default StreamReadConstraints (nesting 1,000,
-         names 50,000, numbers 1,000), which arrived in 2.15, the name
-         bound in 2.16. Nothing checks the version at runtime: a host BOM
-         pinning an older Jackson 2 links cleanly and reads with fewer
-         bounds, so the host's build has to enforce the floor. -->
+         under Jackson's default StreamReadConstraints, built into their
+         own factories (JsonFields.factory) so a process-wide override
+         does not reach them. The constraints arrived in 2.15 and the name
+         bound in 2.16; a host BOM pinning an older Jackson 2 would link
+         and read with fewer bounds or none, so Verifier.create reads the
+         2.16 name bound and throws IllegalStateException below it. -->
     <jackson.version>2.22.3</jackson.version>
     <!-- Annotations only, and only at compile time: see the <optional>
          dependency below. -->

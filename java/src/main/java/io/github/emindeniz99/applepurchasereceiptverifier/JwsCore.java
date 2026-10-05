@@ -36,7 +36,7 @@ final class JwsCore {
     /** In UTF-8 bytes, checked before the split; genuine JWS run from a few KB to roughly 15 KB. */
     static final int MAX_JWS_BYTES = 262144;
 
-    static final JsonFactory JSON = new JsonFactory();
+    static final JsonFactory JSON = JsonFields.factory();
 
     // Raw r || s (RFC 7515), as PLAIN-ECDSA takes it; the JDK's P1363 name is Java 9+.
     static final String ES256_ALGORITHM = "SHA256withPLAIN-ECDSA";
