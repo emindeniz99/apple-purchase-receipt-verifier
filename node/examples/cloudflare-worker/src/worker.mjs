@@ -31,9 +31,14 @@ let requestNowMs = null;
 let verifierPromise = null;
 
 function verifier() {
-  verifierPromise ??= createConfig({ clock: () => requestNowMs ?? Date.now() }).then(
-    createVerifier,
-  );
+  // A failed start is forgotten, so the next request (or /readyz) tries
+  // again instead of failing for the rest of the isolate's life.
+  verifierPromise ??= createConfig({ clock: () => requestNowMs ?? Date.now() })
+    .then(createVerifier)
+    .catch((error) => {
+      verifierPromise = null;
+      throw error;
+    });
   return verifierPromise;
 }
 
@@ -103,9 +108,20 @@ async function verify(request, operation) {
   } catch {
     return problem(400, 'BAD_REQUEST', 'Bad Request', 'the body could not be read', 'bad-request');
   }
+  let v;
+  try {
+    v = await verifier();
+  } catch {
+    return problem(
+      500,
+      'INTERNAL_ERROR',
+      'Internal Server Error',
+      'the verifier could not be created',
+      'internal-error',
+    );
+  }
   let answer;
   try {
-    const v = await verifier();
     requestNowMs = nowMs;
     const pending = operation(v, body.text);
     requestNowMs = null;
@@ -116,7 +132,7 @@ async function verify(request, operation) {
       500,
       'INTERNAL_ERROR',
       'Internal Server Error',
-      'the verifier could not be created',
+      'the verifier threw instead of answering',
       'internal-error',
     );
   }

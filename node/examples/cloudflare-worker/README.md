@@ -96,7 +96,17 @@ aprv-server does not send this header.
 - **The body is decoded as UTF-8 before the package sees it**, because the
   package takes strings. A body that is not UTF-8 reaches the module with
   U+FFFD in place of the bad bytes, where aprv-server passes the bytes
-  as they came.
+  as they came. A leading UTF-8 byte order mark is dropped. A body under
+  the cap can grow past it as bad bytes become three-byte U+FFFD, so the
+  module then answers `TOO_LARGE` while the Worker's status is 200.
+- **A failure inside the package is an answer, not a 500.** When the
+  module traps or the clock fails, the package returns `INTERNAL_ERROR`
+  (or `{"status":21009}` on the endpoint routes) and the Worker passes it
+  on with 200; aprv-server answers 500 with `WASM_TRAP` or `ABI_ERROR`.
+  The Worker answers 500 only when the package cannot be started or
+  throws.
+- **`HEAD` is a 405.** aprv-server answers `HEAD` on its `GET` routes; this
+  Worker routes `GET` only.
 - **No `X-Aprv-Token` and no `/openapi.json`.** This is a public demo. A
   private deployment would require a token on `/v1/` routes as aprv-server
   does, stored with `wrangler secret put`.
