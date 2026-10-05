@@ -4,7 +4,7 @@
 //! there are, before `d2i_CMS_ContentInfo` builds every embedded
 //! certificate's public key.
 
-use crate::item::{self, decode_exact, typed, Decoded};
+use crate::item::{decode_exact, typed, Decoded};
 use crate::{drain_errors, sys};
 use openssl_sys as ffi;
 
@@ -36,13 +36,12 @@ pub(crate) struct Envelope {
 }
 
 impl Envelope {
-    /// The shallow decode of the `ContentInfo` at the start of `der`. Bytes
-    /// after it are the header walk's to refuse, which runs first. It costs
-    /// two copies of the input, where the full decode builds every
+    /// The shallow decode of `der`, which must be one whole `ContentInfo`.
+    /// It costs two copies of the input, where the full decode builds every
     /// certificate's public key.
     pub(crate) fn decode(der: &[u8]) -> Result<Envelope, ShallowError> {
         // SAFETY: an item getter envelope.c defines; it returns a static.
-        let Some((info, _)) = item::decode(der, unsafe { sys::APRV_CONTENT_INFO_it() }) else {
+        let Some(info) = decode_exact(der, unsafe { sys::APRV_CONTENT_INFO_it() }) else {
             drain_errors();
             return Err(ShallowError::Malformed);
         };

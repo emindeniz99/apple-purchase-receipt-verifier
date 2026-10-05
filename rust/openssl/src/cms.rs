@@ -134,7 +134,7 @@ impl SignedData {
     ///    `limits.nodes`, which decodes no value and allocates nothing;
     /// 2. the shallow decode: one `ContentInfo` of type `signedData` whose
     ///    `SignedData` has the shape, every member kept as its raw
-    ///    encoding;
+    ///    encoding, and nothing after it;
     /// 3. the member bounds, on the shallow decode's counts;
     /// 4. the full decode (`d2i_CMS_ContentInfo`, which builds every
     ///    embedded certificate's key).
@@ -168,9 +168,7 @@ impl SignedData {
             ShallowError::NotSignedData => CmsError::NotSignedData,
         })?;
         within(envelope.members(), limits)?;
-        // Bytes after the ContentInfo were refused by the walk, the one
-        // check for them.
-        let (raw, _) = d2i_whole(der, |cursor, len| {
+        let (raw, whole) = d2i_whole(der, |cursor, len| {
             FULL_DECODES.with(|count| count.set(count.get().map(|n| n.saturating_add(1))));
             // SAFETY: `cursor` points at `len` readable bytes of `der`;
             // d2i_CMS_ContentInfo reads at most `len` of them, advances the
@@ -182,6 +180,9 @@ impl SignedData {
         // SAFETY: `raw` is a freshly allocated CMS_ContentInfo nothing else
         // owns; `CmsContentInfo` takes that ownership and frees it once.
         let cms = unsafe { CmsContentInfo::from_ptr(raw) };
+        if !whole {
+            return Err(CmsError::Trailing);
+        }
         let content = encapsulated_content(&cms).ok_or(CmsError::NoContent)?;
         let parsed = SignedData { cms, content };
         if parsed.signer_count() == 0 {
