@@ -57,7 +57,7 @@ values: DER in, certificates, facts and booleans out.
   attributes, each a `SEQUENCE OF ANY` whose first three fields the adapter
   types; the contract accepts a fourth field). `envelope.c` is a shallow
   `ContentInfo` and `SignedData` whose members stay raw `ANY` values: it
-  names the content type and gives the certificate, CRL and `SignerInfo`
+  names the content type and gives the certificate and `SignerInfo`
   counts before `d2i_CMS_ContentInfo` builds every embedded certificate's
   public key. Both declare their items' prototypes, and `envelope.c`
   asserts the layout `src/sys.rs` mirrors (`_Static_assert` there, `const`
