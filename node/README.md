@@ -90,6 +90,11 @@ package imports its three core modules statically under the `workerd`
 condition. Bundle with that condition and keep the `.wasm` imports as
 Wasm modules, as wrangler does.
 
+[`examples/cloudflare-worker/`](examples/cloudflare-worker/) is a Worker
+you can deploy: it installs this package from the registry and serves
+[aprv-server's routes](../rust/server/README.md#the-wire-contract) with
+wrangler's defaults, rate limited per client address.
+
 **Browsers** without a bundler must map the package's internal import
 `#aprv-load` to `dist/load/fetch.js` in an import map, the way
 `runtime-smoke/browser.mjs` does.

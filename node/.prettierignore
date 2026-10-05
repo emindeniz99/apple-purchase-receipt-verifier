@@ -14,3 +14,8 @@ fuzz/seeds/
 fuzz/.seeds-generated/
 fuzz/corpus/
 fuzz/artifacts/
+
+# wrangler dev output in examples/ (the Worker example).
+.wrangler/
+# The demo page's copy of the installed package (the Worker example).
+examples/*/public/vendor/

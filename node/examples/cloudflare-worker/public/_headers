@@ -1,0 +1,10 @@
+# Cloudflare serves these with every file under public/ (the demo page and
+# the package files the build copies into vendor/). The page loads nothing
+# from another origin and writes every answer with textContent; these stop
+# it being framed or sniffed. No script-src policy: the page's import map
+# and module script are inline, and its WebAssembly needs compiling.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  Referrer-Policy: no-referrer

@@ -296,6 +296,17 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # The Cloudflare Worker example: wrangler and the published package it
+  # deploys. One weekly PR, so a release does not open one per package.
+  - package-ecosystem: npm
+    directory: /node/examples/cloudflare-worker
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      cloudflare-worker-example:
+        patterns: ["*"]
   # The clean room tools/reproduce-wasm.sh --container builds: its Debian
   # base is pinned by digest, and a pin without updates rots.
   - package-ecosystem: docker

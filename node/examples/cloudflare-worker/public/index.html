@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>apple-purchase-receipt-verifier demo</title>
+    <meta
+      name="description"
+      content="Verify an App Store receipt or a StoreKit 2 JWS in your browser or on a Cloudflare Worker, with the same npm package and no call to Apple."
+    />
+    <!--
+      The package without a bundler: its entry point and its internal
+      loader import are mapped to the copy under /vendor/ (README,
+      "Runtimes"). From 0.8 the loader fetches the .wasm core modules that
+      sit next to it.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "apple-purchase-receipt-verifier/web": "/vendor/aprv/dist/web/index.js",
+          "#aprv-load": "/vendor/aprv/dist/load/fetch.js"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f5f2;
+        --fg: #1b1a17;
+        --muted: #6b6860;
+        --line: #dedbd3;
+        --panel: #ffffff;
+        --sunken: #efede8;
+        --accent: #1f5fd1;
+        --on-accent: #ffffff;
+        --ok: #14783c;
+        --ok-bg: #e3f4e8;
+        --bad: #b3261e;
+        --bad-bg: #fbe9e7;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #151412;
+          --fg: #f1efea;
+          --muted: #a19d93;
+          --line: #35322d;
+          --panel: #1f1d1a;
+          --sunken: #191815;
+          --accent: #7aa7ff;
+          --on-accent: #0d1626;
+          --ok: #6ddc93;
+          --ok-bg: #16301f;
+          --bad: #ff8a80;
+          --bad-bg: #3a1a17;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.55 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        max-width: 780px;
+        margin: 0 auto;
+        padding: 48px 16px 72px;
+      }
+      header {
+        margin-bottom: 28px;
+      }
+      h1 {
+        font-size: clamp(1.4rem, 4.5vw, 1.9rem);
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+        margin: 0 0 10px;
+        text-wrap: balance;
+      }
+      header p {
+        color: var(--muted);
+        margin: 0 0 14px;
+        max-width: 62ch;
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 0.875rem;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+        color: var(--muted);
+        text-decoration: none;
+        font-variant-numeric: tabular-nums;
+      }
+      a.chip:hover {
+        color: var(--fg);
+        border-color: var(--muted);
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 20px;
+      }
+      .card + .card {
+        margin-top: 16px;
+      }
+      .step {
+        border: 0;
+        margin: 0 0 20px;
+        padding: 0;
+        min-width: 0;
+      }
+      .step legend {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 8px;
+        padding: 0;
+      }
+      .segments {
+        display: grid;
+        grid-template-columns: repeat(var(--n), 1fr);
+        gap: 4px;
+        padding: 4px;
+        background: var(--sunken);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .segments input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .segments label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        line-height: 1.25;
+        text-align: center;
+        padding: 7px 8px;
+        border-radius: 7px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--muted);
+        cursor: pointer;
+        user-select: none;
+      }
+      .segments label:hover {
+        color: var(--fg);
+      }
+      .segments input:checked + label {
+        background: var(--panel);
+        color: var(--fg);
+        box-shadow: 0 0 0 1px var(--line);
+      }
+      .segments input:focus-visible + label {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      @media (max-width: 560px) {
+        .segments {
+          grid-template-columns: repeat(min(var(--n), 2), 1fr);
+        }
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 0.875rem;
+        margin: 8px 2px 0;
+        min-height: 1.4em;
+      }
+      code {
+        font: 0.9em var(--mono);
+      }
+      textarea {
+        display: block;
+        width: 100%;
+        height: 150px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--sunken);
+        color: var(--fg);
+        font: 12.5px/1.5 var(--mono);
+        resize: vertical;
+        word-break: break-all;
+      }
+      textarea:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-top: 12px;
+      }
+      .actions .spacer {
+        flex: 1;
+      }
+      button {
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 8px 14px;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--muted);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--on-accent);
+        font-weight: 600;
+        padding-inline: 22px;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      #result[hidden] {
+        display: none;
+      }
+      #result {
+        border-left-width: 4px;
+      }
+      #result.ok {
+        border-left-color: var(--ok);
+      }
+      #result.bad {
+        border-left-color: var(--bad);
+      }
+      .verdict {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      #badge {
+        font-weight: 650;
+        padding: 3px 12px;
+        border-radius: 999px;
+        background: var(--sunken);
+      }
+      .ok #badge {
+        color: var(--ok);
+        background: var(--ok-bg);
+      }
+      .bad #badge {
+        color: var(--bad);
+        background: var(--bad-bg);
+      }
+      #meta {
+        color: var(--muted);
+        font-size: 0.875rem;
+        margin: 10px 0 0;
+        font-variant-numeric: tabular-nums;
+      }
+      pre {
+        margin: 14px 0 0;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--sunken);
+        font: 12.5px/1.5 var(--mono);
+        overflow: auto;
+        max-height: 460px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      footer {
+        color: var(--muted);
+        font-size: 0.8125rem;
+        margin-top: 24px;
+        text-align: center;
+      }
+      footer a {
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Did Apple sign this? Check it here, without asking Apple.</h1>
+        <p>
+          Paste an App Store receipt or a StoreKit 2 JWS. The same npm package verifies it in this
+          browser or on a Cloudflare Worker, against Apple's pinned root certificates.
+        </p>
+        <div class="links">
+          <span class="chip" id="version">apple-purchase-receipt-verifier</span>
+          <a class="chip" href="https://github.com/emindeniz99/apple-purchase-receipt-verifier"
+            >GitHub</a
+          >
+          <a class="chip" href="https://www.npmjs.com/package/apple-purchase-receipt-verifier"
+            >npm</a
+          >
+        </div>
+      </header>
+
+      <section class="card">
+        <fieldset class="step">
+          <legend>Where it runs</legend>
+          <div class="segments" style="--n: 3">
+            <input type="radio" name="where" id="where-browser" value="browser" checked />
+            <label for="where-browser">In this browser</label>
+            <input type="radio" name="where" id="where-worker" value="worker" />
+            <label for="where-worker">On the Worker</label>
+            <input type="radio" name="where" id="where-both" value="both" />
+            <label for="where-both">Both, compared</label>
+          </div>
+          <p class="hint" id="where-hint"></p>
+        </fieldset>
+
+        <fieldset class="step">
+          <legend>What to verify</legend>
+          <div class="segments" style="--n: 4">
+            <input
+              type="radio"
+              name="route"
+              id="route-receipt"
+              value="/v1/receipt/verify"
+              checked
+            />
+            <label for="route-receipt">Receipt</label>
+            <input type="radio" name="route" id="route-jws" value="/v1/signed-data/verify" />
+            <label for="route-jws">Signed data</label>
+            <input
+              type="radio"
+              name="route"
+              id="route-sandbox"
+              value="/v1/verify-receipt/sandbox"
+            />
+            <label for="route-sandbox">verifyReceipt sandbox</label>
+            <input
+              type="radio"
+              name="route"
+              id="route-production"
+              value="/v1/verify-receipt/production"
+            />
+            <label for="route-production">verifyReceipt production</label>
+          </div>
+          <p class="hint" id="route-hint"></p>
+        </fieldset>
+
+        <textarea
+          id="input"
+          spellcheck="false"
+          aria-label="Input to verify"
+          placeholder="Paste the input here, or load the sample"
+        ></textarea>
+        <div class="actions">
+          <button id="sample">Load sample receipt</button>
+          <button id="tamper">Flip one character</button>
+          <span class="spacer"></span>
+          <button id="run" class="primary">Verify</button>
+        </div>
+      </section>
+
+      <section class="card" id="result" hidden aria-live="polite">
+        <div class="verdict"><span id="badge"></span></div>
+        <p id="meta"></p>
+        <pre id="output"></pre>
+      </section>
+
+      <footer>
+        The Worker logs the method, path and status of a request, never its body.
+        <a
+          href="https://github.com/emindeniz99/apple-purchase-receipt-verifier/tree/main/node/examples/cloudflare-worker"
+          >Source of this demo</a
+        >
+      </footer>
+    </main>
+
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const checked = (name) => document.querySelector(`input[name="${name}"]:checked`).value;
+      const isEndpoint = (route) => route.startsWith('/v1/verify-receipt/');
+
+      const WHERE_HINTS = {
+        browser: 'The package is loaded into this page. The input never leaves your device.',
+        worker:
+          "The input is posted to this site's /v1/ routes. It is not logged or stored; still, paste test data only.",
+        both: 'Runs in the page and on the Worker, then says whether the two answers are the same.',
+      };
+      const ROUTE_HINTS = {
+        '/v1/receipt/verify': 'The base64 receipt-data string an app sends.',
+        '/v1/signed-data/verify': 'A compact JWS: a transaction, renewal info or a notification.',
+        '/v1/verify-receipt/sandbox':
+          'A request JSON, {"receipt-data":"..."}. The answer has the shape of Apple\'s sandbox verifyReceipt.',
+        '/v1/verify-receipt/production':
+          "The same request, answered as Apple's production verifyReceipt would.",
+      };
+      function showHints() {
+        $('where-hint').textContent = WHERE_HINTS[checked('where')];
+        $('route-hint').textContent = ROUTE_HINTS[checked('route')];
+      }
+
+      // The package and one Verifier, loaded by the first browser run.
+      let local = null;
+      function loadLocal() {
+        local ??= (async () => {
+          const [aprv, wire, pkg] = await Promise.all([
+            import('apple-purchase-receipt-verifier/web'),
+            import('/vendor/wire.mjs'),
+            fetch('/vendor/aprv/package.json').then((r) => r.json()),
+          ]);
+          return {
+            verifier: aprv.createVerifier(await aprv.createConfig()),
+            operations: wire.operations(aprv.Environment),
+            version: pkg.version,
+          };
+        })();
+        return local;
+      }
+
+      async function timed(run) {
+        const started = performance.now();
+        const answer = await run();
+        return { ...answer, ms: Math.round(performance.now() - started) };
+      }
+
+      function inBrowser(route, body) {
+        return timed(async () => {
+          const { verifier, operations, version } = await loadLocal();
+          return { text: await operations.get(route)(verifier, body), version };
+        });
+      }
+
+      function onWorker(route, body) {
+        return timed(async () => {
+          const response = await fetch(route, { method: 'POST', body });
+          return {
+            text: await response.text(),
+            version: response.headers.get('x-aprv-version'),
+            status: response.status,
+          };
+        });
+      }
+
+      /** Whether the answer says the input verified, or `null` when it is not a verdict. */
+      function verdict(text) {
+        try {
+          const doc = JSON.parse(text);
+          if (typeof doc.verified === 'boolean') {
+            return doc.verified;
+          }
+          return typeof doc.status === 'number' && !('code' in doc) ? doc.status === 0 : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function pretty(text) {
+        try {
+          return JSON.stringify(JSON.parse(text), null, 2);
+        } catch {
+          return text;
+        }
+      }
+
+      // The endpoint's request_date is the clock of whoever answered, so it
+      // is the one member two honest answers differ in.
+      const comparable = (text) => text.replace(/"request_date[a-z_]*":"[^"]*",?/g, '');
+
+      const describe = {
+        browser: (r) => `In this browser: package ${r.version}, ${r.ms} ms`,
+        worker: (r) =>
+          `On the Worker: package ${r.version ?? 'unknown'}, HTTP ${r.status}, ${r.ms} ms`,
+      };
+
+      function show(ok, badge, meta, output) {
+        $('result').className = `card ${ok ? 'ok' : 'bad'}`;
+        $('result').hidden = false;
+        $('badge').textContent = badge;
+        $('meta').textContent = meta;
+        $('output').textContent = output;
+      }
+
+      async function run() {
+        const where = checked('where');
+        const route = checked('route');
+        const body = $('input').value.trim();
+        $('run').disabled = true;
+        $('run').textContent = 'Verifying…';
+        try {
+          if (where === 'both') {
+            const [browser, worker] = await Promise.all([
+              inBrowser(route, body),
+              onWorker(route, body),
+            ]);
+            const same = comparable(browser.text) === comparable(worker.text);
+            const ok = verdict(worker.text);
+            const word = ok === null ? 'No verdict' : ok ? 'Verified' : 'Not verified';
+            show(
+              same && ok === true,
+              same ? `${word}, and both answers are the same` : 'The two answers differ',
+              `${describe.browser(browser)} · ${describe.worker(worker)}`,
+              same
+                ? pretty(worker.text)
+                : `In this browser:\n${pretty(browser.text)}\n\nOn the Worker:\n${pretty(worker.text)}`,
+            );
+          } else {
+            const result = await (where === 'browser' ? inBrowser : onWorker)(route, body);
+            const ok = verdict(result.text);
+            const word = ok === null ? 'No verdict' : ok ? 'Verified' : 'Not verified';
+            show(ok === true, word, describe[where](result), pretty(result.text));
+          }
+        } catch (error) {
+          show(false, 'Could not run', String(error), '');
+        }
+        $('run').disabled = false;
+        $('run').textContent = 'Verify';
+      }
+
+      async function loadSample() {
+        const response = await fetch('/vendor/sample-receipt.b64');
+        if (!response.ok) {
+          show(false, 'No sample', 'This deployment has no sample receipt.', '');
+          return;
+        }
+        const receipt = (await response.text()).trim();
+        if (checked('route') === '/v1/signed-data/verify') {
+          $('route-receipt').checked = true;
+          showHints();
+        }
+        $('input').value = isEndpoint(checked('route'))
+          ? JSON.stringify({ 'receipt-data': receipt })
+          : receipt;
+      }
+
+      // Changes one base64 character near the end of the input, where a
+      // receipt's signature sits, so the verdict turns.
+      function tamper() {
+        const input = $('input');
+        const text = input.value;
+        for (let i = text.length - 40; i >= 0; i--) {
+          if (/[B-Yb-y]/.test(text[i])) {
+            const flipped = String.fromCharCode(text.charCodeAt(i) + 1);
+            input.value = text.slice(0, i) + flipped + text.slice(i + 1);
+            return;
+          }
+        }
+      }
+
+      for (const radio of document.querySelectorAll('input[type="radio"]')) {
+        radio.addEventListener('change', showHints);
+      }
+      $('run').addEventListener('click', run);
+      $('sample').addEventListener('click', loadSample);
+      $('tamper').addEventListener('click', tamper);
+      showHints();
+      fetch('/vendor/aprv/package.json')
+        .then((r) => r.json())
+        .then((pkg) => {
+          $('version').textContent = `${pkg.name} ${pkg.version}`;
+        })
+        .catch(() => {});
+    </script>
+  </body>
+</html>
