@@ -58,8 +58,10 @@ impl Envelope {
         if content_type != ffi::NID_pkcs7_signed {
             return Err(ShallowError::NotSignedData);
         }
-        // A SEQUENCE inside ANY is kept as its whole encoding. `content` is
-        // not optional in the template, so a decoded value always has one.
+        // `content` is the template's last field and not OPTIONAL, so a
+        // decoded value always has one (tasn_dec.c:440-441, 480-492).
+        debug_assert!(!content.is_null());
+        // A SEQUENCE inside ANY is kept as its whole encoding.
         let (kind, encoding) = typed(content);
         if kind != ffi::V_ASN1_SEQUENCE {
             return Err(ShallowError::Malformed);
