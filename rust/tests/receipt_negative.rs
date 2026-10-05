@@ -663,6 +663,62 @@ fn an_unvouched_signer_on_an_unimplemented_curve_is_an_untrusted_chain() {
     assert_eq!(reason_of(&builder.build()), Reason::UntrustedChain);
 }
 
+/// A signer on a curve this crate does not implement, vouched for by a
+/// pinned root through its WWDR certificate, is judged on its key before its
+/// path and its markers, as Java judges it (`ReceiptCore.validateChain`):
+/// without the receipt-signing marker it is still `INVALID_CERTIFICATE`,
+/// not `INVALID_CERTIFICATE_PURPOSE`.
+#[test]
+fn a_vouched_signer_on_an_unimplemented_curve_is_judged_on_its_key_first() {
+    use common::mint::{certificate, certificate_for_spki, key, name, WWDR_MARKER};
+    let mut bits = vec![0x00, 0x04];
+    bits.extend_from_slice(&[0x11; 132]);
+    let p521_spki = common::der_seq(&[
+        common::der_seq(&[
+            common::der_oid("1.2.840.10045.2.1"),
+            common::der_oid("1.3.132.0.35"),
+        ]),
+        common::der(tag::BIT_STRING, &bits),
+    ]);
+    let (root_key, intermediate_key) = (key(1), key(2));
+    let root = certificate(
+        "Test Root",
+        &root_key,
+        "Test Root",
+        &root_key,
+        1,
+        true,
+        None,
+    );
+    let intermediate = certificate(
+        "Test WWDR",
+        &intermediate_key,
+        "Test Root",
+        &root_key,
+        2,
+        true,
+        Some(WWDR_MARKER),
+    );
+    let signer = certificate_for_spki(
+        "Test Signer P-521",
+        p521_spki,
+        "Test WWDR",
+        &intermediate_key,
+        3,
+        false,
+        None,
+    );
+    let mut builder = common::CmsBuilder::from_shared();
+    builder.certificates = vec![signer, intermediate];
+    builder.signer_issuer = name("Test WWDR");
+    builder.signer_serial = vec![3];
+    let pinned = verifier_with(TrustAnchor::from_der(&root).unwrap());
+    assert_eq!(
+        pinned.verify(&builder.build()).unwrap_err().reason(),
+        Reason::InvalidCertificate
+    );
+}
+
 /// Policy-F8, the receipt twin: a receipt without a creation date is
 /// judged at the clock, which has milliseconds. The minted chain is valid
 /// until 2099-12-31T00:00:00Z, that instant included.

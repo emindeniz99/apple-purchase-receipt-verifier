@@ -207,6 +207,28 @@ fn verify_signer(
     anchors: &[TrustAnchor],
     at_millis: i64,
 ) -> Result<(), Failure> {
+    // Java's order (`ReceiptCore.validateChain`): a signer no pinned anchor
+    // vouched for is judged no further, and a vouched-for signer's key is
+    // judged before its path. Its key is used to check the CMS signature,
+    // so a key OpenSSL cannot build is a defect of the certificate rather
+    // than of the signature it carries, the reading the JWS path applies to
+    // x5c; and OpenSSL builds no path for a target whose key it cannot
+    // build.
+    if !authenticated
+        .iter()
+        .any(|certificate| certificate.same_as(signer))
+    {
+        return Err(Failure::new(
+            Reason::UntrustedChain,
+            "signer certificate is not issued under a pinned Apple root",
+        ));
+    }
+    if !signer.has_usable_key() {
+        return Err(Failure::new(
+            Reason::InvalidCertificate,
+            "receipt signer certificate has a public key this library cannot use",
+        ));
+    }
     let path = receipt_path(signer, authenticated, anchors, at_millis)?;
     // Checked after the chain, so a foreign chain still reports
     // UNTRUSTED_CHAIN rather than INVALID_CERTIFICATE_PURPOSE.
@@ -225,16 +247,6 @@ fn verify_signer(
         return Err(Failure::new(
             Reason::InvalidCertificatePurpose,
             format!("receipt intermediate certificate lacks Apple WWDR marker OID {WWDR_INTERMEDIATE_OID}"),
-        ));
-    }
-    // The signer's key is used to check the CMS signature, so a key OpenSSL
-    // cannot build is a defect of the certificate rather than of the
-    // signature it carries, the reading the JWS path applies to x5c. Judged
-    // only once the chain has vouched for the certificate.
-    if !signer.has_usable_key() {
-        return Err(Failure::new(
-            Reason::InvalidCertificate,
-            "receipt signer certificate has a public key this library cannot use",
         ));
     }
     // The chain is checked BEFORE the signature on purpose: checking the

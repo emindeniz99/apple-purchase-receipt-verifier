@@ -189,11 +189,6 @@ pub(crate) fn verify(
             format!("intermediate certificate lacks Apple marker OID {WWDR_INTERMEDIATE_OID}"),
         ));
     }
-    if !leaf.has_usable_key() {
-        return Err(invalid_certificate(
-            "x5c entry has a public key this library cannot use",
-        ));
-    }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
     verifier::enter(Stage::AfterSignature);
     match payload {
@@ -305,8 +300,8 @@ pub(crate) fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, Failure> {
 
 /// Only whether the entry IS a certificate: one that OpenSSL parses whole
 /// and a strict reader decodes. Its key is judged when it is about to be
-/// used, once a pinned anchor has vouched for it: the intermediate's in
-/// [`validate_pair`], the leaf's before ES256, and the third entry's never.
+/// used, once a pinned anchor has vouched for it: the intermediate's and
+/// the leaf's in [`validate_pair`], and the third entry's never.
 fn parse_x5c_certificate(entry: &str) -> Result<Certificate, Failure> {
     let der = decode_x5c_entry(entry)?;
     Certificate::from_der(&der)

@@ -50,8 +50,7 @@ values: DER in, certificates, facts and booleans out.
   and the core adds the millisecond check. No purpose,
   policy, revocation or host check is asked for.
 - **Certificates**: `X509_check_issued`, `X509_verify`, `X509_check_ca`,
-  `X509_get_extension_flags` (`EXFLAG_CRITICAL`: an unhandled critical
-  extension), `X509_get_ext_d2i`, `ASN1_BIT_STRING_get_length` (4.0 API:
+  `X509_get_ext_d2i`, `ASN1_BIT_STRING_get_length` (4.0 API:
   the signature's unused bits).
 - **Templates**: `ASN1_item_d2i` with items declared in C, the way OpenSSL
   declares its own. `payload.c` is the receipt payload (a SET OF
