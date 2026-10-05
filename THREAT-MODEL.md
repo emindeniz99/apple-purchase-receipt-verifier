@@ -152,7 +152,7 @@ Java:
    content, no `SignerInfo` or more than four, more than ten embedded
    certificates, and an envelope over the nesting bound (§3.7: the core's
    32, BouncyCastle's 64 in Java) are `MALFORMED`. The core alone also
-   refuses more than ten CRLs and an envelope over its value budget.
+   refuses an envelope over its value budget.
 2. Read the receipt creation date, attribute 12, and nothing else: walk the
    top-level attribute SET under the depth and value bounds, read each
    entry's type, decode only the value of the first type 12. No usable
@@ -287,7 +287,7 @@ base64 and request bodies and 262,144 for a JWS. Java also bounds JSON
 nesting at 64, member names at 50,000 characters and numbers at 1,000;
 the core's `serde_json` reader skips a value nobody reads with no bound
 of its own, within the input caps (DECISIONS.md R40). The core also bounds
-ASN.1 nesting at 32, CRLs at 10, the envelope and each attribute SET at
+ASN.1 nesting at 32, the envelope and each attribute SET at
 100,000 values, and constructed strings at six levels. Java's ASN.1
 nesting bound is BouncyCastle's, 64 by default, which counts chunk
 levels too; it never decodes a CRL (DECISIONS.md R20). Readers refuse bytes after
@@ -334,13 +334,13 @@ them; DECISIONS.md R20):
 `receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep`
 and `receipt/unreadable-signed-content-nested-33-deep-in-context-tags`;
 in Java, BouncyCastle's bound is reached and mapped, not thrown, by
-`ReceiptDecoderTest` (100 deep). Constructed strings and
-CRLs, bounds of the core's decoder that the shared vectors leave
-port-defined (Java, whose nesting bound counts chunk levels and which
-never decodes a CRL, verifies them; DECISIONS.md R20):
-`receipt/reject-econtent-rechunked-into-7-constructed-levels`,
-`receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`
-and `receipt/reject-eleven-embedded-crls`. Malformed structure, as shared
+`ReceiptDecoderTest` (100 deep). Constructed strings, a bound
+of the core's decoder that the shared vectors leave
+port-defined (Java, whose nesting bound counts chunk levels, verifies
+them; DECISIONS.md R20):
+`receipt/reject-econtent-rechunked-into-7-constructed-levels` and
+`receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`.
+Malformed structure, as shared
 vectors: `receipt/reject-attribute-type-above-int32-max`,
 `receipt/reject-attribute-type-that-truncates-to-a-modelled-type`,
 `transaction/reject-x5c-leaf-that-is-not-a-certificate`,

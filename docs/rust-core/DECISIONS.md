@@ -491,6 +491,15 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   PKCS#1 v1.5 signature binds its hash in the DigestInfo, so a relabelled
   one still fails; an ECDSA signature binds none, so one made over the
   digestAlgorithm's hash verifies whatever hash the label names.
+  The core's own ten-CRL cap went the same day (owner, 2026-10-05).
+  OpenSSL's CRL decode costs what the CRL's size costs (`crl_cb` in
+  `crypto/x509/x_crl.c`), so the envelope's value budget and the size
+  cap already bound a CRL flood before the full decode: the largest one
+  the budget lets through, 6,655 minimal CRLs, cost about 1.6 times what
+  99,831 NULLs filling the same budget cost
+  ([redundant bounds][redundant]). Eleven CRLs now verify in all three
+  implementations, and `receipt/reject-eleven-embedded-crls` still
+  allows both answers.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one
@@ -518,7 +527,6 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   | eContent as an `OCTET STRING` of 7 or more constructed levels | ok | ok (port-defined 2026-09-30; BouncyCastle joins the chunks within its own nesting bound) | `MALFORMED` | OpenSSL decodes six (`ASN1_MAX_STRING_NEST`); changing it means patching OpenSSL. Substrate divergence, fails closed. Apple's receipts are DER and never chunk a string, and the chain is judged either way, so the case allows both (the rule OD-17 applied) | `receipt/reject-econtent-rechunked-into-7-constructed-levels` |
   | A payload attribute value of 7 or more constructed levels | ok | ok (port-defined 2026-09-30) | `UNREADABLE_PAYLOAD` | The same bound, under a verified signature. It holds wherever OpenSSL decodes a string: the value, the version field, a later field, the Xcode wrap (`UNREADABLE_PAYLOAD`), and an unsigned attribute value in the envelope (`MALFORMED`), all read by 0.7. Both cases allow ok | `receipt/unreadable-attribute-value-rechunked-into-7-constructed-levels`, `receipt/unreadable-double-wrap-rechunked-into-7-constructed-levels` |
   | More than 100,000 values in the envelope, or in one attribute SET | `MALFORMED` / `UNREADABLE_PAYLOAD` | ok | as 0.7 | 0.7's node budget, restored: without it a 3 MiB receipt cost 0.3 to 0.7 s before any signature. Inputs are 200 KB or more, so Rust tests pin it, not a shared case | `rust/tests/envelope_bounds.rs`, `receipt_payload.rs` unit tests |
-  | More than 10 CRLs | ok | ok (port-defined 2026-09-30; BouncyCastle never decodes a CRL, so Java has no cost to bound) | `MALFORMED` | Each CRL is decoded in full before anything is verified; bounded like the certificates. The 0.7 contract is silent; this fails closed. Apple sends none, and the case allows both | `receipt/reject-eleven-embedded-crls` |
   | A payload string whose length takes more than four octets | kept raw | read (port-defined 2026-09-30; BouncyCastle reads the length) | kept raw | The payload is DER; 0.7's header rules restored. Both verify, and the case pins only the raw octets, which both keep | `receipt/bundle-id-with-a-five-octet-length-is-kept-raw` |
   | A fourth attribute field that is, or holds, an invalid primitive (BOOLEAN of two octets, padded INTEGER, UTCTime under 13 or GeneralizedTime under 15 octets, a constructed INTEGER, a primitive SEQUENCE, an end-of-contents in a definite length) | ok | `UNREADABLE_PAYLOAD` | as Java | Not valid ASN.1 in BER either (X.690 8.1.5, 8.2, 8.3, 8.9.1; a time that short names no time). OpenSSL's `ANY` decoder refuses each as the field itself and keeps a SEQUENCE around it whole, so the header walk applies the same rules at every depth (round-2 review F3): the primitives OpenSSL checks, constructed BOOLEAN, INTEGER, NULL, OID and ENUMERATED, strings of seven levels, and each outermost constructed string handed to OpenSSL whole. The chunks inside a constructed string are joined unchecked, as `asn1_collect` joins them, and not judged one by one (round-3 review F2) | `receipt/unreadable-fourth-field-boolean-of-two-octets`, `receipt/unreadable-fourth-field-sequence-holding-a-padded-integer`, `receipt/unreadable-fourth-field-sequence-holding-{a-short-utctime,a-short-generalizedtime,a-constructed-integer,a-primitive-sequence,an-end-of-contents}` |
   | An invalid primitive inside an unsigned envelope value | ok | `MALFORMED` for a short UTCTime one SEQUENCE deep; others not measured | `MALFORMED` | As above, over the envelope | `receipt/reject-an-unsigned-value-sequence-holding-a-short-utctime`, `rust/tests/envelope_bounds.rs` |
@@ -548,7 +556,7 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   differential campaign (MIGRATION step 1.13) to measure and case: a
   five-octet length on a SET, SEQUENCE or field header inside the payload
   (the core answers `UNREADABLE_PAYLOAD`, Java reads it); a `crls` entry
-  that is not a CRL, ten or fewer (the core `MALFORMED`, Java verifies
+  that is not a CRL (the core `MALFORMED`, Java verifies
   because it never decodes CRLs); constructed strings of more than six
   levels elsewhere in the envelope (a messageDigest value, a signature,
   an extension value); and a receipt whose path to the eContent uses a
@@ -1861,3 +1869,4 @@ One table for everything the plan measured or considered and rejected.
 [httpopt]: ../evidence/2026-10-02-java-http-options.md
 [asn1rs]: ../evidence/2026-10-03-rust-tests-asn1-rs.md
 [dupchecks]: ../evidence/2026-10-05-core-drop-duplicate-checks.md
+[redundant]: ../evidence/2026-10-05-core-drop-redundant-bounds.md

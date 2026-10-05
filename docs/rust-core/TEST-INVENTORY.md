@@ -571,7 +571,7 @@ and `-second`.
 | Rust | `rust/tests/envelope_bounds.rs` `a_certificate_flood_behind_a_broken_envelope_never_reaches_the_full_decode` | input built in code: stays with the Rust |
 | Rust | `rust/tests/envelope_bounds.rs` `the_depth_bound_counts_every_constructed_value_of_the_envelope` | input built in code: stays with the Rust |
 | Rust | `rust/tests/envelope_bounds.rs` `the_envelope_holds_at_most_100000_values` | input built in code: stays with the Rust |
-| Rust | `rust/tests/envelope_bounds.rs` `at_most_ten_crls_are_embedded` | input built in code: stays with the Rust |
+| Rust | `rust/tests/envelope_bounds.rs` `embedded_crls_are_bounded_by_the_node_budget_alone` | input built in code: stays with the Rust |
 | Rust | `rust/tests/envelope_bounds.rs` `econtent_rechunked_into_six_constructed_levels_verifies` | input built in code: stays with the Rust |
 | Rust | `rust/tests/envelope_bounds.rs` `values_kept_whole_in_the_envelope_are_valid_asn1` | input built in code: stays with the Rust |
 | Rust | `rust/tests/hostile.rs` `eleven_characters_of_base64_do_not_escape_the_contract` | input built in code: stays with the Rust |

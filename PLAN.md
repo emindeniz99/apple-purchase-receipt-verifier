@@ -280,7 +280,7 @@ rejected alternatives with their measured reasons.
   order) under `#![forbid(unsafe_code)]`, and `unsafe` lives only in the
   adapter (`rust/openssl`), the ABI crate, the C ABI and the server. One
   header walk (`rust/openssl/src/walk.rs`) applies 0.7's depth, value,
-  certificate, SignerInfo and CRL bounds before OpenSSL decodes anything
+  certificate and SignerInfo bounds before OpenSSL decodes anything
   (the review, THREAT-MODEL.md §11). OpenSSL loads no configuration and no
   default trust path. The core's own `asn1`, `x509`, `cms`, `chain` and
   `crypto` modules and the RustCrypto dependencies are gone, and
