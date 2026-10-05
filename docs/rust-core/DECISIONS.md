@@ -525,7 +525,12 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   now the key's, as in Java. `receipt/reject-signer-on-an-unimplemented-curve`
   and `transaction/reject-x5c-unimplemented-curve` keep
   `INVALID_CERTIFICATE`, and `rust/tests` pins the new order on both
-  paths with a signer and a leaf that lack their marker.
+  paths with a signer and a leaf that lack their marker. One input
+  moves the other way, failing closed either way: a custom anchor whose
+  key OpenSSL cannot build, embedded as the receipt's signer, is
+  vouched for without a signature check (an embedded copy of an anchor
+  is the anchor), so the core now answers `INVALID_CERTIFICATE`; the
+  core before and Java answer `UNTRUSTED_CHAIN`. No case pins it.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one
