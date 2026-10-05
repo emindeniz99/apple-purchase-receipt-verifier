@@ -486,7 +486,7 @@ fn line_wrapped_base64_is_refused() {
 // What the verifier does with a parser failure under a trusted signer is
 // pinned above and by the `receipt/*` UNREADABLE_PAYLOAD vectors.
 
-// --- CMS re-encoding: one signature, one accepted spelling ---------------
+// --- CMS re-encoding: one signature, its eContent chunks joined ----------
 
 /// The eContent of a genuine, correctly signed receipt re-encoded as a
 /// constructed `OCTET STRING` whose children are a `UTF8String` and an
@@ -494,61 +494,33 @@ fn line_wrapped_base64_is_refused() {
 /// signature still covers exactly the same bytes, and the certificates,
 /// `SignerInfo` and signature are the genuine ones.
 ///
-/// This verified before the reader started checking the children's tags:
-/// X.690 §8.21 allows only `OCTET STRING`s inside a constructed
-/// `OCTET STRING`, so joining anything else is reading a structure the
-/// parser cannot represent instead of refusing it.
+/// X.690 §8.7.3 allows only `OCTET STRING`s inside a constructed
+/// `OCTET STRING`, but OpenSSL joins the chunks whatever their tag or
+/// class (`envelope_bounds.rs` pins a context-class chunk too), and
+/// the joined octets are both what the signature covers and what the
+/// payload is read from. So the receipt verifies, as with legal
+/// `OCTET STRING` children. Java refuses the foreign chunks as `MALFORMED`
+/// (DECISIONS.md R20).
 #[test]
-fn a_constructed_octet_string_with_foreign_children_is_not_a_payload() {
+fn a_constructed_octet_string_with_foreign_children_is_joined() {
     let parts = common::receipt_parts();
     let half = parts.content.len() / 2;
-    let mut builder = common::CmsBuilder::from_shared();
-    builder.content_tlv = Some(common::der(
-        tag::OCTET_STRING_CONSTRUCTED,
-        &[
-            common::der(tag::UTF8_STRING, &parts.content[..half]),
-            common::der(tag::INTEGER, &parts.content[half..]),
-        ]
-        .concat(),
-    ));
-    let blob = builder.build();
-    assert_eq!(reason_of(&blob), Reason::Malformed);
-
-    // The control: the same construction with legal OCTET STRING children is
-    // ordinary BER and still verifies, so the rejection above is about the
-    // tags and not about the chunking.
-    let mut legal = common::CmsBuilder::from_shared();
-    legal.content_tlv = Some(common::der(
-        tag::OCTET_STRING_CONSTRUCTED,
-        &[
-            common::der(tag::OCTET_STRING, &parts.content[..half]),
-            common::der(tag::OCTET_STRING, &parts.content[half..]),
-        ]
-        .concat(),
-    ));
-    let receipt = verifier().verify(&legal.build()).unwrap();
-    assert_eq!(receipt.bundle_id.as_deref(), Some("com.example.app"));
-}
-
-/// A nested constructed `OCTET STRING` is legal BER, but a foreign tag at
-/// any depth is not — the tag check has to recurse with the join.
-#[test]
-fn a_foreign_tag_nested_inside_a_constructed_octet_string_is_refused() {
-    let parts = common::receipt_parts();
-    let half = parts.content.len() / 2;
-    let mut builder = common::CmsBuilder::from_shared();
-    builder.content_tlv = Some(common::der(
-        tag::OCTET_STRING_CONSTRUCTED,
-        &[
-            common::der(tag::OCTET_STRING, &parts.content[..half]),
-            common::der(
-                tag::OCTET_STRING_CONSTRUCTED,
-                &common::der(tag::IA5_STRING, &parts.content[half..]),
-            ),
-        ]
-        .concat(),
-    ));
-    assert_eq!(reason_of(&builder.build()), Reason::Malformed);
+    for (first, second) in [
+        (tag::UTF8_STRING, tag::INTEGER),
+        (tag::OCTET_STRING, tag::OCTET_STRING),
+    ] {
+        let mut builder = common::CmsBuilder::from_shared();
+        builder.content_tlv = Some(common::der(
+            tag::OCTET_STRING_CONSTRUCTED,
+            &[
+                common::der(first, &parts.content[..half]),
+                common::der(second, &parts.content[half..]),
+            ]
+            .concat(),
+        ));
+        let receipt = verifier().verify(&builder.build()).unwrap();
+        assert_eq!(receipt.bundle_id.as_deref(), Some("com.example.app"));
+    }
 }
 
 // --- the two SignerInfo branches stay separated -------------------------

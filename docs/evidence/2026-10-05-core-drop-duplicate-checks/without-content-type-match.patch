@@ -1,0 +1,16 @@
+diff --git a/rust/src/receipt.rs b/rust/src/receipt.rs
+index dd2eea6..8a178d7 100644
+--- a/rust/src/receipt.rs
++++ b/rust/src/receipt.rs
+@@ -318,11 +318,6 @@ fn verify_cms_signature(
+     index: usize,
+     signer: &Certificate,
+ ) -> Result<(), Failure> {
+-    if !cms.content_type_attribute_matches(index) {
+-        return Err(invalid_signature(
+-            "contentType attribute differs from the eContentType",
+-        ));
+-    }
+     if cms.verify_signer(index, signer) {
+         Ok(())
+     } else {

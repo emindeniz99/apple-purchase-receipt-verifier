@@ -187,7 +187,8 @@ fn a_digest_apple_does_not_use_today_verifies_when_the_signature_holds() {
 #[test]
 fn a_signature_that_does_not_hold_as_labelled_is_an_invalid_signature() {
     let pki = pki();
-    // Signed over SHA-512, labelled SHA-1: the label is what is checked.
+    // Signed over SHA-512, digestAlgorithm SHA-1: the digestAlgorithm is
+    // what is checked.
     let signature = sign_prehash(
         &pki.signer_key,
         &digest(MessageDigest::sha512(), &content()),
@@ -220,22 +221,125 @@ fn a_digest_openssl_does_not_implement_is_an_invalid_signature() {
 }
 
 #[test]
-fn a_signature_algorithm_that_names_another_hash_than_the_digest_is_an_invalid_signature() {
-    // One genuine signature over SHA-256. Labelled with the hash it was made
-    // with, or with a key-type OID that names none, it verifies; labelled
-    // with any other hash it is not the signature the label describes, even
-    // though the key would verify it over the SignerInfo's digest.
+fn an_ecdsa_signature_verifies_under_its_digest_whatever_the_label_names() {
+    // One genuine signature over SHA-256, the SignerInfo's digestAlgorithm.
+    // OpenSSL checks it under that digest and, for an ECDSA key, does not
+    // read the signatureAlgorithm, so a label naming another hash verifies
+    // too. An ECDSA signature binds no hash, so the label is not a security
+    // boundary; the shared case allows both answers (DECISIONS.md R20).
     let pki = pki();
     let signature = pki.signer_key.sign_der(&content());
-    for label in [ECDSA_WITH_SHA256, ID_EC_PUBLIC_KEY] {
+    for label in [
+        ECDSA_WITH_SHA256,
+        ID_EC_PUBLIC_KEY,
+        ECDSA_WITH_SHA224,
+        ECDSA_WITH_SHA384,
+        ECDSA_WITH_SHA512,
+    ] {
         let der = receipt(&pki, SHA256, label, &signature);
         assert!(common::verify_der(&pki.verifier, &der).is_ok(), "{label}");
     }
-    for label in [ECDSA_WITH_SHA224, ECDSA_WITH_SHA384, ECDSA_WITH_SHA512] {
-        let der = receipt(&pki, SHA256, label, &signature);
-        let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
-        assert_eq!(failure.reason(), Reason::InvalidSignature, "{label}");
-    }
+}
+
+// --- signed attributes: the rules OpenSSL enforces ---------------------------
+
+const CONTENT_TYPE: &str = "1.2.840.113549.1.9.3";
+const MESSAGE_DIGEST: &str = "1.2.840.113549.1.9.4";
+const ID_DATA: &str = "1.2.840.113549.1.7.1";
+const ID_SIGNED_DATA: &str = "1.2.840.113549.1.7.2";
+
+/// One `Attribute`, its values written in the order given. Callers give
+/// them in DER order, as OpenSSL re-encodes them before it verifies.
+fn attribute(oid: &str, values: &[Vec<u8>]) -> Vec<u8> {
+    der_seq(&[der_oid(oid), der(0x31, &values.concat())])
+}
+
+fn content_type(values: &[&str]) -> Vec<u8> {
+    let values: Vec<Vec<u8>> = values.iter().map(|oid| der_oid(oid)).collect();
+    attribute(CONTENT_TYPE, &values)
+}
+
+fn message_digest(copies: usize) -> Vec<u8> {
+    let value = der(0x04, &digest(MessageDigest::sha256(), &content()));
+    attribute(MESSAGE_DIGEST, &vec![value; copies])
+}
+
+/// The shared content under `pki`'s signer with `attributes` as its
+/// signedAttrs, in that order, and a genuine signature over exactly them:
+/// OpenSSL verifies over the attributes in the order received. A refusal
+/// is then the attribute rules' doing, not a signature that does not hold.
+fn receipt_with_signed_attrs(pki: &Pki, attributes: &[Vec<u8>]) -> Vec<u8> {
+    let body = attributes.concat();
+    let mut builder = CmsBuilder::from_shared();
+    builder.certificates = pki.certificates.clone();
+    builder.signer_issuer = name("Test WWDR");
+    builder.signer_serial = vec![3];
+    builder.signed_attrs = Some(der(0xa0, &body));
+    builder.digest_oid = SHA256.to_owned();
+    builder.signature_algorithm = der_seq(&[der_oid(ECDSA_WITH_SHA256)]);
+    builder.signature = pki.signer_key.sign_der(&der(0x31, &body));
+    builder.build()
+}
+
+fn assert_invalid_signature(pki: &Pki, attributes: &[Vec<u8>]) {
+    let der = receipt_with_signed_attrs(pki, attributes);
+    let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
+    assert_eq!(failure.reason(), Reason::InvalidSignature, "{failure}");
+}
+
+#[test]
+fn the_control_signed_attributes_built_here_verify() {
+    // One contentType naming the eContentType and one messageDigest of the
+    // content: the helpers above sign what OpenSSL checks.
+    let pki = pki();
+    let der = receipt_with_signed_attrs(&pki, &[content_type(&[ID_DATA]), message_digest(1)]);
+    assert!(common::verify_der(&pki.verifier, &der).is_ok());
+}
+
+/// RFC 5652 section 5.3 allows one `contentType` attribute. The core does
+/// not count them: `CMS_SignerInfo_verify` refuses the set in
+/// `ossl_cms_si_check_attributes` before it checks the signature.
+#[test]
+fn a_content_type_attribute_twice_is_an_invalid_signature() {
+    let pki = pki();
+    let content_type = content_type(&[ID_DATA]);
+    assert_invalid_signature(
+        &pki,
+        &[content_type.clone(), content_type, message_digest(1)],
+    );
+}
+
+/// A `contentType` attribute holds exactly one value; the first one here
+/// names the eContentType, so the core's own comparison passes and the
+/// refusal is OpenSSL's (`ossl_cms_si_check_attributes`).
+#[test]
+fn a_content_type_attribute_with_two_values_is_an_invalid_signature() {
+    let pki = pki();
+    assert_invalid_signature(
+        &pki,
+        &[content_type(&[ID_DATA, ID_SIGNED_DATA]), message_digest(1)],
+    );
+}
+
+/// A `messageDigest` attribute holds exactly one value, even when both are
+/// the content's digest (`ossl_cms_si_check_attributes`).
+#[test]
+fn a_message_digest_attribute_with_two_values_is_an_invalid_signature() {
+    let pki = pki();
+    assert_invalid_signature(&pki, &[content_type(&[ID_DATA]), message_digest(2)]);
+}
+
+/// An empty signedAttrs (`A0 00`), genuinely signed. OpenSSL's attribute
+/// rules require `contentType` and `messageDigest` only when the set has
+/// at least one attribute (`ossl_cms_si_check_attributes` in
+/// `crypto/cms/cms_att.c`), so `CMS_SignerInfo_verify` accepts the
+/// signature over the empty set. The refusal comes after it:
+/// `CMS_SignerInfo_verify_content` looks for the `messageDigest` whenever
+/// the field is present and fails without one (`crypto/cms/cms_sd.c`).
+#[test]
+fn an_empty_signed_attrs_set_is_an_invalid_signature() {
+    let pki = pki();
+    assert_invalid_signature(&pki, &[]);
 }
 
 // --- RSASSA-PSS ------------------------------------------------------------

@@ -35,9 +35,8 @@ pub(crate) enum CMS_SignerInfo {}
 pub(crate) enum stack_st_CMS_SignerInfo {}
 
 /// `APRV_SIGNED_DATA` as `envelope.c` declares it: six pointers, in
-/// declaration order. Only the encapsulated content and the three stacks
-/// are read. The assertions below and `envelope.c`'s own pin the layout
-/// both sides assume.
+/// declaration order. Only the three stacks are read. The assertions below
+/// and `envelope.c`'s own pin the layout both sides assume.
 #[repr(C)]
 pub(crate) struct APRV_SIGNED_DATA {
     pub(crate) version: *mut ffi::ASN1_TYPE,

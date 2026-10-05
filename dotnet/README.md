@@ -318,11 +318,13 @@ PKCS#1 v1.5, RSA-PSS or ECDSA over the hashes it supports. A signer that
 chains to a pinned root and carries Apple's marker is trusted whatever it
 signs with, so a change on Apple's side does not reject genuine receipts.
 The same goes for certificate signatures in the chain: no fixed allowlist
-(owner decision, 2026-09-27). A `signatureAlgorithm` that names a
-hash (`sha256WithRSAEncryption`, `ecdsa-with-SHA384`, the RSA-PSS
-parameters) must name the `SignerInfo`'s `digestAlgorithm`, or the signature
-is `InvalidSignature`; `rsaEncryption` and `id-ecPublicKey` name none and
-take the digest.
+(owner decision, 2026-09-27). The signature is checked under the
+`SignerInfo`'s `digestAlgorithm`, and a hash the `signatureAlgorithm`
+names (`sha256WithRSAEncryption`, `ecdsa-with-SHA384`) is not compared
+with it. For an RSA signer the module reads the `signatureAlgorithm` only
+to choose PKCS#1 v1.5 or RSA-PSS and checks a hash only in the PSS
+parameters; an RSA PKCS#1 v1.5 signature binds its hash anyway. For an
+ECDSA signer it does not read the `signatureAlgorithm` at all.
 
 The three roots are pinned inside the module, and the repository's `certs/`
 holds the canonical copy; the assembly's SHA-256 check of its embedded

@@ -89,17 +89,6 @@ pub(crate) fn verify(
     payload
 }
 
-/// The `SignerInfo` and embedded-certificate bounds.
-fn within_member_bounds(signer_infos: usize, certificates: usize) -> Result<(), Failure> {
-    if signer_infos > MAX_SIGNER_INFOS {
-        return Err(too_many_signer_infos(signer_infos));
-    }
-    if certificates > MAX_EMBEDDED_CERTIFICATES {
-        return Err(too_many_certificates(certificates));
-    }
-    Ok(())
-}
-
 fn too_many_signer_infos(count: usize) -> Failure {
     malformed(format!(
         "receipt carries {count} SignerInfos, more than the maximum of {MAX_SIGNER_INFOS}"
@@ -151,7 +140,6 @@ fn verify_signature(
     let mut cms = SignedData::parse(der, &ENVELOPE_LIMITS).map_err(envelope_failure)?;
     let signer_count = cms.signer_count();
     let certificates = cms.certificates();
-    within_member_bounds(signer_count, certificates.len())?;
 
     // Only the creation date is read before trust is established, because
     // chain validity is anchored at signing time; nothing else in the payload
@@ -317,10 +305,13 @@ fn invalid_signature(detail: &'static str) -> Failure {
 /// With signed attributes, RFC 5652 section 5.3 makes `contentType` and
 /// `messageDigest` mandatory, each once and single-valued, and section 11.1
 /// makes `contentType` name the content the signature covers. A set that
-/// breaks either cannot be checked, so it fails as a signature. The
-/// separation is a real control: genuine receipts carry no signed
-/// attributes, so their signature covers the payload SET itself, and a
-/// forger who re-labelled that SET as signed attributes would reuse
+/// breaks either cannot be checked, so it fails as a signature. OpenSSL
+/// enforces the first rule: `CMS_SignerInfo_verify` refuses a non-empty
+/// set that breaks it, and `CMS_SignerInfo_verify_content` an empty one,
+/// which has no `messageDigest`. It does not compare the `contentType`
+/// with the eContentType, so that is checked here. The separation is a real control: genuine receipts carry no
+/// signed attributes, so their signature covers the payload SET itself,
+/// and a forger who re-labelled that SET as signed attributes would reuse
 /// Apple's signature over content of their own; that SET has neither
 /// attribute.
 fn verify_cms_signature(
@@ -328,25 +319,10 @@ fn verify_cms_signature(
     index: usize,
     signer: &Certificate,
 ) -> Result<(), Failure> {
-    if !cms.signer_digest_known(index) {
-        return Err(invalid_signature("unsupported digest algorithm"));
-    }
-    let attributes = cms.signed_attributes(index);
-    if attributes.present {
-        if attributes.content_type_count != 1
-            || attributes.content_type_values != 1
-            || attributes.message_digest_count != 1
-            || attributes.message_digest_values != 1
-        {
-            return Err(invalid_signature(
-                "signedAttrs lack a contentType or messageDigest attribute, or carry one twice",
-            ));
-        }
-        if !attributes.content_type_matches {
-            return Err(invalid_signature(
-                "contentType attribute differs from the eContentType",
-            ));
-        }
+    if !cms.content_type_attribute_matches(index) {
+        return Err(invalid_signature(
+            "contentType attribute differs from the eContentType",
+        ));
     }
     if cms.verify_signer(index, signer) {
         Ok(())

@@ -13,7 +13,7 @@ use crate::certificate::Certificate;
 use crate::envelope::{Envelope, EnvelopeMembers, ShallowError};
 use crate::item::decodes_as_any;
 use crate::sys::{self, CMS_SignerInfo};
-use crate::walk::{self, Budget, ChunkError, Headers, WalkError};
+use crate::walk::{self, Budget, Headers, WalkError};
 use crate::{d2i_whole, drain_errors, init, keys};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use libc::c_int;
@@ -51,10 +51,6 @@ pub enum CmsError {
     NoContent,
     /// No `SignerInfo`.
     NoSignerInfo,
-    /// The encapsulated content is a constructed `OCTET STRING` with a
-    /// chunk, at some depth, that is not an `OCTET STRING`. X.690 section
-    /// 8.7.3 allows no other; OpenSSL joins any universal chunk.
-    ForeignContentChunk,
     /// A constructed string, the encapsulated content's or one kept whole
     /// inside another value, nests more levels than OpenSSL decodes (six).
     StringTooDeep,
@@ -73,9 +69,6 @@ impl core::fmt::Display for CmsError {
             CmsError::TooManyCrls(count) => write!(f, "{count} embedded CRLs"),
             CmsError::NoContent => f.write_str("no encapsulated payload"),
             CmsError::NoSignerInfo => f.write_str("no signer info"),
-            CmsError::ForeignContentChunk => {
-                f.write_str("encapsulated payload has a chunk that is not an OCTET STRING")
-            }
             CmsError::StringTooDeep => {
                 f.write_str("a constructed string nests deeper than OpenSSL decodes")
             }
@@ -128,24 +121,6 @@ pub fn full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
     (result, counted.unwrap_or(0))
 }
 
-/// What a `SignerInfo`'s signed attributes hold, for the RFC 5652 section
-/// 5.3 and 11 rules the core applies.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SignedAttributes {
-    /// Whether the `signedAttrs [0]` field is present at all.
-    pub present: bool,
-    /// How many `contentType` attributes there are.
-    pub content_type_count: usize,
-    /// How many values the first `contentType` attribute holds.
-    pub content_type_values: usize,
-    /// Whether the first `contentType` value is the `eContentType`.
-    pub content_type_matches: bool,
-    /// How many `messageDigest` attributes there are.
-    pub message_digest_count: usize,
-    /// How many values the first `messageDigest` attribute holds.
-    pub message_digest_values: usize,
-}
-
 /// A parsed CMS `SignedData` with attached content and at least one
 /// `SignerInfo`.
 pub struct SignedData {
@@ -173,8 +148,7 @@ impl SignedData {
     ///    encoding, and nothing after it;
     /// 3. the member bounds, on the shallow decode's counts;
     /// 4. the full decode (`d2i_CMS_ContentInfo`, which builds every
-    ///    embedded certificate's key), then the chunks of the encapsulated
-    ///    content.
+    ///    embedded certificate's key).
     ///
     /// The walk comes first because the shallow decode allocates a value
     /// for every entry of the `certificates`, `crls` and `signerInfos`
@@ -229,10 +203,6 @@ impl SignedData {
         if parsed.signer_count() == 0 {
             return Err(CmsError::NoSignerInfo);
         }
-        envelope.content_chunks().map_err(|err| match err {
-            ChunkError::TooDeep => CmsError::StringTooDeep,
-            ChunkError::Foreign | ChunkError::Malformed => CmsError::ForeignContentChunk,
-        })?;
         Ok(parsed)
     }
 
@@ -289,50 +259,32 @@ impl SignedData {
         names
     }
 
-    /// Whether `SignerInfo` `index`'s `digestAlgorithm` names a digest
-    /// OpenSSL implements.
+    /// Whether `SignerInfo` `index`'s first `contentType` signed attribute
+    /// names the `eContentType` (RFC 5652 section 11.1). True when there
+    /// are no signed attributes or no `contentType` among them. OpenSSL
+    /// refuses a missing, repeated or multi-valued `contentType` itself:
+    /// `CMS_SignerInfo_verify` in a non-empty set, and
+    /// `CMS_SignerInfo_verify_content` an empty one, which has no
+    /// `messageDigest`. It never compares it with the `eContentType`.
     #[must_use]
-    pub fn signer_digest_known(&self, index: usize) -> bool {
-        self.signer_info(index)
-            .is_some_and(|si| !signer_md(si).is_null())
-    }
-
-    /// The facts about `SignerInfo` `index`'s signed attributes.
-    #[must_use]
-    pub fn signed_attributes(&self, index: usize) -> SignedAttributes {
-        let mut facts = SignedAttributes::default();
+    pub fn content_type_attribute_matches(&self, index: usize) -> bool {
         let Some(si) = self.signer_info(index) else {
-            return facts;
+            return true;
         };
         // SAFETY: reads the signed attribute count of a live SignerInfo;
         // -1 means the field is absent.
         let count = unsafe { sys::CMS_signed_get_attr_count(si) };
         if count < 0 {
             drain_errors();
-            return facts;
+            return true;
         }
-        facts.present = true;
-        let econtent_type = self.econtent_type();
-        for position in 0..count {
-            let Some(attribute) = signed_attribute(si, position) else {
-                continue;
-            };
-            let nid = attribute_nid(attribute);
-            if nid == ffi::NID_pkcs9_contentType {
-                facts.content_type_count = facts.content_type_count.saturating_add(1);
-                if facts.content_type_count == 1 {
-                    facts.content_type_values = attribute_value_count(attribute);
-                    facts.content_type_matches = econtent_type
-                        .is_some_and(|wanted| first_value_is_object(attribute, wanted));
-                }
-            } else if nid == ffi::NID_pkcs9_messageDigest {
-                facts.message_digest_count = facts.message_digest_count.saturating_add(1);
-                if facts.message_digest_count == 1 {
-                    facts.message_digest_values = attribute_value_count(attribute);
-                }
-            }
-        }
-        facts
+        (0..count)
+            .filter_map(|position| signed_attribute(si, position))
+            .find(|&attribute| attribute_nid(attribute) == ffi::NID_pkcs9_contentType)
+            .is_none_or(|attribute| {
+                self.econtent_type()
+                    .is_some_and(|wanted| first_value_is_object(attribute, wanted))
+            })
     }
 
     /// Verifies `SignerInfo` `index` under `signer`'s key: with signed
@@ -340,15 +292,10 @@ impl SignedData {
     /// against the content; without, the signature over the content. The
     /// content is digested with the `SignerInfo`'s own `digestAlgorithm`.
     /// No chain, no store: the core has already judged the certificate.
-    ///
-    /// A `signatureAlgorithm` that names a hash (`sha256WithRSAEncryption`,
-    /// `ecdsa-with-SHA384`) must name that digest, or the answer is `false`
-    /// before the key is touched: a label that disagrees with what was
-    /// hashed is not one signature under two names. OpenSSL takes the hash
-    /// from `digestAlgorithm` alone and never compares the two, except for
-    /// RSASSA-PSS, whose parameters it checks itself. Key-type OIDs
-    /// (`rsaEncryption`, `id-ecPublicKey`) and OIDs OpenSSL does not know
-    /// name no hash.
+    /// OpenSSL takes the hash from `digestAlgorithm` alone. For an RSA key
+    /// it reads `signatureAlgorithm` only to choose PKCS#1 v1.5 or
+    /// RSASSA-PSS, and compares a hash only in the PSS parameters; for an
+    /// ECDSA key it does not read `signatureAlgorithm` at all.
     #[must_use]
     pub fn verify_signer(&mut self, index: usize, signer: &Certificate) -> bool {
         init();
@@ -356,7 +303,7 @@ impl SignedData {
             return false;
         };
         let md = signer_md(si);
-        if md.is_null() || !signature_names_digest(si, md) {
+        if md.is_null() {
             drain_errors();
             return false;
         }
@@ -506,28 +453,6 @@ fn signer_md(si: *mut CMS_SignerInfo) -> *const ffi::EVP_MD {
     unsafe { ffi::EVP_get_digestbynid(nid) }
 }
 
-/// Whether `si`'s `signatureAlgorithm` names no hash, or names `md`'s.
-fn signature_names_digest(si: *mut CMS_SignerInfo, md: *const ffi::EVP_MD) -> bool {
-    let (_, signature) = algorithms(si);
-    if signature.is_null() {
-        return false;
-    }
-    let mut object: *const ffi::ASN1_OBJECT = ptr::null();
-    // SAFETY: `signature` is borrowed from the live SignerInfo; the call
-    // stores a borrowed pointer to its OID.
-    unsafe { ffi::X509_ALGOR_get0(&raw mut object, ptr::null_mut(), ptr::null_mut(), signature) };
-    // SAFETY: OBJ_obj2nid accepts null.
-    let nid = unsafe { ffi::OBJ_obj2nid(object) };
-    let (mut digest_nid, mut key_nid) = (ffi::NID_undef, ffi::NID_undef);
-    // SAFETY: a table lookup writing through two valid out-pointers; it
-    // answers 0 for a NID that is no signature algorithm (NID_undef too).
-    let names_one = unsafe { ffi::OBJ_find_sigid_algs(nid, &raw mut digest_nid, &raw mut key_nid) };
-    // SAFETY: `md` is a live method table (checked non-null by the caller).
-    names_one != 1
-        || digest_nid == ffi::NID_undef
-        || digest_nid == unsafe { ffi::EVP_MD_get_type(md) }
-}
-
 /// Signed attribute `position` of `si`, borrowed from it.
 fn signed_attribute(si: *mut CMS_SignerInfo, position: c_int) -> Option<*mut ffi::X509_ATTRIBUTE> {
     // SAFETY: `position` is below the SignerInfo's signed attribute count
@@ -540,11 +465,6 @@ fn attribute_nid(attribute: *mut ffi::X509_ATTRIBUTE) -> c_int {
     // SAFETY: `attribute` is live and owned by its SignerInfo; both calls
     // only read (OBJ_obj2nid accepts null).
     unsafe { ffi::OBJ_obj2nid(ffi::X509_ATTRIBUTE_get0_object(attribute)) }
-}
-
-fn attribute_value_count(attribute: *mut ffi::X509_ATTRIBUTE) -> usize {
-    // SAFETY: reads the value count of a live attribute.
-    usize::try_from(unsafe { ffi::X509_ATTRIBUTE_count(attribute) }).unwrap_or(0)
 }
 
 /// Whether the attribute's first value is an OBJECT IDENTIFIER equal to

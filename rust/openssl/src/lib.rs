@@ -55,7 +55,7 @@ mod sys;
 mod walk;
 
 pub use certificate::Certificate;
-pub use cms::{full_decodes_during, CmsError, EnvelopeLimits, SignedAttributes, SignedData};
+pub use cms::{full_decodes_during, CmsError, EnvelopeLimits, SignedData};
 pub use keys::keys_used_during;
 pub use path::{verify_path, PathOutcome, PathProblem, PathProblemKind};
 pub use signature::{sha256, verify_es256};
