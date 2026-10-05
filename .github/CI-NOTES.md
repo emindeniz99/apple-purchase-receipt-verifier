@@ -176,9 +176,18 @@ crates.io and NuGet credential exchanges and pushes, the PyPI upload, and
 the smoke dispatch. npm runs `npm publish --dry-run`, crates.io
 `cargo publish --dry-run`, Maven `deploy -DskipPublishing=true` (the
 central-publishing-maven-plugin builds, tests, signs and bundles, then
-stops). A registry that already carries the version is skipped as in a
-release, so a rehearsal on a published version exercises the gates, not
-the package builds behind them. Without a `tag`, the image name and the
+stops, and the bundle is built unsigned: the job runs under the
+`maven-central-dry-run` environment, which GitHub creates on first use
+with no secrets and no reviewer, so a rehearsal from `main` needs no
+approval and no branch allowance on `maven-central`). A registry that
+already carries the version reports it and builds anyway, so a rehearsal
+on main after a release still builds every package; in a release the same
+gate skips. What each job would have uploaded is a workflow artifact on
+the run, kept 30 days: `dry-run-pypi`, `dry-run-npm`, `dry-run-maven`
+(the central-publishing bundles), `dry-run-rubygems`, `dry-run-crates`,
+`dry-run-nuget`, `dry-run-image` (the OCI layout) and
+`dry-run-release-assets` (the files and `SHA256SUMS` the GitHub Release
+would carry). Without a `tag`, the image name and the
 PHP pin layout use `v` + `version.txt`; `-f tag=vX.Y.Z -f dry_run=true`
 rehearses a completion. A rehearsal needs the committed module copies and
 pins to equal the build, as every run does, so between a release and the
