@@ -121,24 +121,6 @@ pub fn full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
     (result, counted.unwrap_or(0))
 }
 
-/// What a `SignerInfo`'s signed attributes hold, for the RFC 5652 section
-/// 5.3 and 11 rules the core applies.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SignedAttributes {
-    /// Whether the `signedAttrs [0]` field is present at all.
-    pub present: bool,
-    /// How many `contentType` attributes there are.
-    pub content_type_count: usize,
-    /// How many values the first `contentType` attribute holds.
-    pub content_type_values: usize,
-    /// Whether the first `contentType` value is the `eContentType`.
-    pub content_type_matches: bool,
-    /// How many `messageDigest` attributes there are.
-    pub message_digest_count: usize,
-    /// How many values the first `messageDigest` attribute holds.
-    pub message_digest_values: usize,
-}
-
 /// A parsed CMS `SignedData` with attached content and at least one
 /// `SignerInfo`.
 pub struct SignedData {
@@ -277,42 +259,31 @@ impl SignedData {
         names
     }
 
-    /// The facts about `SignerInfo` `index`'s signed attributes.
+    /// Whether `SignerInfo` `index`'s first `contentType` signed attribute
+    /// names the `eContentType` (RFC 5652 section 11.1). True when there
+    /// are no signed attributes or no `contentType` among them: OpenSSL's
+    /// own attribute rules, run inside `CMS_SignerInfo_verify`, refuse a
+    /// missing, repeated or multi-valued `contentType`, but never compare
+    /// it with the `eContentType`.
     #[must_use]
-    pub fn signed_attributes(&self, index: usize) -> SignedAttributes {
-        let mut facts = SignedAttributes::default();
+    pub fn content_type_attribute_matches(&self, index: usize) -> bool {
         let Some(si) = self.signer_info(index) else {
-            return facts;
+            return true;
         };
         // SAFETY: reads the signed attribute count of a live SignerInfo;
         // -1 means the field is absent.
         let count = unsafe { sys::CMS_signed_get_attr_count(si) };
         if count < 0 {
             drain_errors();
-            return facts;
+            return true;
         }
-        facts.present = true;
-        let econtent_type = self.econtent_type();
-        for position in 0..count {
-            let Some(attribute) = signed_attribute(si, position) else {
-                continue;
-            };
-            let nid = attribute_nid(attribute);
-            if nid == ffi::NID_pkcs9_contentType {
-                facts.content_type_count = facts.content_type_count.saturating_add(1);
-                if facts.content_type_count == 1 {
-                    facts.content_type_values = attribute_value_count(attribute);
-                    facts.content_type_matches = econtent_type
-                        .is_some_and(|wanted| first_value_is_object(attribute, wanted));
-                }
-            } else if nid == ffi::NID_pkcs9_messageDigest {
-                facts.message_digest_count = facts.message_digest_count.saturating_add(1);
-                if facts.message_digest_count == 1 {
-                    facts.message_digest_values = attribute_value_count(attribute);
-                }
-            }
-        }
-        facts
+        (0..count)
+            .filter_map(|position| signed_attribute(si, position))
+            .find(|&attribute| attribute_nid(attribute) == ffi::NID_pkcs9_contentType)
+            .is_none_or(|attribute| {
+                self.econtent_type()
+                    .is_some_and(|wanted| first_value_is_object(attribute, wanted))
+            })
     }
 
     /// Verifies `SignerInfo` `index` under `signer`'s key: with signed
@@ -492,11 +463,6 @@ fn attribute_nid(attribute: *mut ffi::X509_ATTRIBUTE) -> c_int {
     // SAFETY: `attribute` is live and owned by its SignerInfo; both calls
     // only read (OBJ_obj2nid accepts null).
     unsafe { ffi::OBJ_obj2nid(ffi::X509_ATTRIBUTE_get0_object(attribute)) }
-}
-
-fn attribute_value_count(attribute: *mut ffi::X509_ATTRIBUTE) -> usize {
-    // SAFETY: reads the value count of a live attribute.
-    usize::try_from(unsafe { ffi::X509_ATTRIBUTE_count(attribute) }).unwrap_or(0)
 }
 
 /// Whether the attribute's first value is an OBJECT IDENTIFIER equal to
