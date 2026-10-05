@@ -72,19 +72,19 @@ final class ReceiptCore {
     /** {@link #verify} after the base64 step. */
     static ReceiptPayload verifyDer(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
-        byte[] payload;
+        ReceiptDecoder.Attributes topLevel;
         try {
-            payload = verifySignature(receiptDer, trustAnchors, now);
+            topLevel = verifySignature(receiptDer, trustAnchors, now);
         } catch (RuntimeException e) {
             // BouncyCastle reports hostile input with undocumented unchecked
             // exceptions.
             throw VerificationException.unexpected(e);
         }
-        return parseSignedPayload(payload);
+        return parseSignedPayload(topLevel);
     }
 
-    /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
-    private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
+    /** Every check up to and including a signature; returns the signed payload's attributes, read once. */
+    private static ReceiptDecoder.Attributes verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         ASN1Primitive parsed;
         try {
@@ -116,12 +116,13 @@ final class ReceiptCore {
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
-        // The one payload read before trust: the sender's own creation date
-        // picks the instant the chain must be valid at. That only moves the
-        // validity window; the signature and the chain to a pinned root are
-        // still required, as in Apple's own rule. A date that does not parse
-        // moves the instant to the clock.
-        Long creationDate = ReceiptDecoder.readCreationDate(payload);
+        // The payload's one read, kept for after trust; before it only the
+        // sender's own creation date is used, to pick the chain's instant.
+        // That only moves the validity window; the signature and the chain to
+        // a pinned root are still required, as in Apple's own rule. A date
+        // that does not parse moves the instant to the clock.
+        ReceiptDecoder.Attributes topLevel = ReceiptDecoder.readTopLevel(payload);
+        Long creationDate = topLevel.creationDate();
         Date at = new Date(creationDate != null ? creationDate : now);
 
         ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
@@ -139,7 +140,7 @@ final class ReceiptCore {
                 // first would run the attacker's own key before anything
                 // about it is trusted.
                 verifyCmsSignature(signer, signerCert);
-                return payload;
+                return topLevel;
             } catch (VerificationException e) {
                 if (first == null) {
                     first = e;
@@ -150,9 +151,9 @@ final class ReceiptCore {
     }
 
     /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
-    private static ReceiptPayload parseSignedPayload(byte[] payload) throws VerificationException {
+    private static ReceiptPayload parseSignedPayload(ReceiptDecoder.Attributes topLevel) throws VerificationException {
         try {
-            return ReceiptDecoder.parse(payload);
+            return ReceiptDecoder.parse(topLevel);
         } catch (RuntimeException e) {
             throw new VerificationException(
                     Reason.UNREADABLE_PAYLOAD,
