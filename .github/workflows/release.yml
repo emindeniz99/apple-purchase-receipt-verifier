@@ -1549,12 +1549,13 @@ jobs:
       contents: read
       actions: write
     steps:
-      # npm, PyPI, Maven Central, SwiftPM, the Go proxy and Packagist are
-      # unconditional: their jobs must have succeeded for this one to run at
-      # all (Packagist's is php-binaries; it imports the tag itself). The
-      # three bootstrap-gated registries are named only when they actually
-      # carry the version, so the smoke workflow skips their legs instead of
-      # failing on an install that cannot work.
+      # npm, PyPI, Maven Central, SwiftPM and the Go proxy are unconditional:
+      # their jobs must have succeeded for this one to run at all. The three
+      # bootstrap-gated registries are named only when they actually carry
+      # the version, so the smoke workflow skips their legs instead of
+      # failing on an install that cannot work. Packagist is the fourth:
+      # it has no publish job (php-binaries pins the binaries; Packagist
+      # imports the tag itself), so the question is asked here.
       - name: dispatch post-publish-smoke for this version
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1564,9 +1565,22 @@ jobs:
           NUGET_AVAILABLE: ${{ needs.publish-nuget.outputs.available }}
         run: |
           set -euo pipefail
+          REGISTRIES="npm,pypi,maven,swiftpm,go"
           # Packagist has no publish job: the tag is the release, and the
-          # php leg waits for Packagist to import it.
-          REGISTRIES="npm,pypi,maven,swiftpm,go,php"
+          # php leg waits for Packagist to import it. That wait only makes
+          # sense once the owner has submitted the repository (BOOTSTRAP.md,
+          # "Packagist (PHP)"): before that the package does not exist and
+          # the leg failed after 20 minutes (0.8.1). A 404 is that unfinished
+          # bootstrap, so the leg is left out; any other answer keeps it in,
+          # so an outage is reported by the leg rather than read as "never
+          # submitted".
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            https://repo.packagist.org/p2/emindeniz99/apple-purchase-receipt-verifier.json || true)
+          if [ "$code" = "404" ]; then
+            echo "::notice::Packagist has no package emindeniz99/apple-purchase-receipt-verifier, so the repository has not been submitted yet. Skipping the php smoke leg; see BOOTSTRAP.md, section \"Packagist (PHP)\"."
+          else
+            REGISTRIES="$REGISTRIES,php"
+          fi
           if [ "${RUBYGEMS_AVAILABLE:-}" = "true" ]; then
             REGISTRIES="$REGISTRIES,rubygems"
           fi

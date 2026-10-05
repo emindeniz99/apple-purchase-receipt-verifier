@@ -27,6 +27,8 @@
 # its installer downloads the release's aprv binary and checks it against the
 # hashes the tag's php/SHA256SUMS pins. The packagist leg waits for the
 # import and runs that path end to end (php/RELEASE.md, acceptance test 8).
+# Until the owner submits the repository to Packagist (BOOTSTRAP.md),
+# release.yml leaves php out of `registries` like an unbootstrapped registry.
 name: post-publish-smoke
 
 # zizmor flags workflow_run as fundamentally dangerous, and normally it is: it
