@@ -59,16 +59,20 @@ class ServerSourcesTest {
 
     /**
      * github() alone either installs exactly the binary this jar pins or
-     * fails with its reason and installs nothing. Which one happens depends
-     * on the release, not on this tree: it fails while this version has no
-     * release, once the server has changed since the release (the asset no
-     * longer hashes to this tree's pin), and on a closed network; it
-     * installs when the release is out and the server is unchanged, since
-     * the builds are reproducible. An earlier version asserted the failure
-     * only and went red the moment 0.8.1 was published.
+     * fails with its reason and leaves nothing in the cache but its lock.
+     * Which one happens depends on the release, not on this tree: it fails
+     * while this version has no release, once the server has changed since
+     * the release (the asset no longer hashes to this tree's pin), and on a
+     * closed network; it installs when the release is out and the server is
+     * unchanged, since the builds are reproducible. Because a wrong URL would
+     * also land in the failure branch, the URL is pinned here first.
      */
     @Test
     void githubAloneInstallsThePinnedBinaryOrFailsWithItsReason() throws Exception {
+        assertEquals(
+                URI.create("https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases/download/v"
+                        + Version.CURRENT + "/aprv-x86_64-unknown-linux-musl"),
+                ServerBinary.githubAsset("x86_64-unknown-linux-musl"));
         Path cache = temp.resolve("cache");
         ServerVerifier verifier;
         try {
@@ -84,8 +88,10 @@ class ServerSourcesTest {
         }
         String pin = ServerBinary.pin("x86_64-unknown-linux-musl");
         System.out.println("github() here: installed the release asset that hashes to the pin " + pin);
-        assertEquals(pin, ServerBinary.sha256(cache.resolve("aprv-" + pin)));
+        // assertUses closes the verifier, so it runs first: a failed hash
+        // check below must not leave the managed child running.
         assertUses(verifier, ServerSource.github());
+        assertEquals(pin, ServerBinary.sha256(cache.resolve("aprv-" + pin)));
     }
 
     @Test
