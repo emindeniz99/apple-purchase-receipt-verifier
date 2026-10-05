@@ -71,7 +71,8 @@ values: DER in, certificates, facts and booleans out.
     and the full decode: nesting of constructed values of every class
     (the core's depth bound, 32) and the number of values (its node
     budget, 100,000), so the budget also bounds the entries the shallow
-    decode builds;
+    decode builds, and bytes after the `ContentInfo`, the one check for
+    them (`CmsError::Trailing`; neither decode after it checks again);
   - the chunks of a constructed `OCTET STRING` in the payload (an
     attribute value, the Xcode wrap) must be `OCTET STRING`s, as X.690
     section 8.7.3 says; OpenSSL joins any tag. Six constructed levels

@@ -27,9 +27,10 @@ impl Drop for Decoded {
     }
 }
 
-/// Exactly one value of `item` from `der`: `None` when OpenSSL refuses it
-/// or a byte is left over. `item` is one of the static item getters' results.
-pub(crate) fn decode_exact(der: &[u8], item: *const sys::ASN1_ITEM) -> Option<Decoded> {
+/// One value of `item` from the start of `der`, and whether it took every
+/// byte: `None` when OpenSSL refuses it. `item` is one of the static item
+/// getters' results.
+pub(crate) fn decode(der: &[u8], item: *const sys::ASN1_ITEM) -> Option<(Decoded, bool)> {
     init();
     let (value, whole) = d2i_whole(der, |cursor, len: c_long| {
         // SAFETY: `cursor` points at `len` readable bytes of `der`;
@@ -38,8 +39,13 @@ pub(crate) fn decode_exact(der: &[u8], item: *const sys::ASN1_ITEM) -> Option<De
         // null. `item` is a static ASN1_ITEM.
         unsafe { sys::ASN1_item_d2i(ptr::null_mut(), cursor, len, item) }
     })?;
-    let decoded = Decoded { value, item };
-    whole.then_some(decoded)
+    Some((Decoded { value, item }, whole))
+}
+
+/// Exactly one value of `item` from `der`: `None` when OpenSSL refuses it
+/// or a byte is left over.
+pub(crate) fn decode_exact(der: &[u8], item: *const sys::ASN1_ITEM) -> Option<Decoded> {
+    decode(der, item).and_then(|(decoded, whole)| whole.then_some(decoded))
 }
 
 /// The elements of a decoded `STACK_OF(T)`, borrowed from its owner.
