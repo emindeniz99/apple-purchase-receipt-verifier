@@ -4779,7 +4779,7 @@
     {
       "id": "transaction/reject-x5c-duplicate-extension",
       "legacyId": "transaction/reject-x5c-duplicate-extension",
-      "description": "x5c[0] carries its basicConstraints extension twice; a byte-identical second copy appended to the extension list; and its TBS is re-signed by the intermediate so the certificate is genuine in every other respect: the marker OID is there, the validity window covers the signing date, the key is the one that signed the JWS, and the intermediate really did issue it. RFC 5280 4.2 says a certificate MUST NOT include more than one instance of a particular extension, and a parser that allows one has to pick a copy, so two ports reading the same bytes can disagree about whether the certificate is a CA, what it may be used for, or whether it carries a marker OID at all. INVALID_CERTIFICATE for the same reason as transaction/reject-x5c-corrupt-extension: the entry is present, is a string, and decodes, but what comes out is not a certificate this library can be said to have read. It is not INVALID_CERTIFICATE_PURPOSE, which would say the extensions were read and the marker OID was missing. The duplicated extension is basicConstraints rather than the marker OID because it is the one every port reaches: a port that scans for 1.2.840.113635.100.6.11.1 and never decodes the rest of the block accepts this JWS. It sits on the leaf because that is the certificate whose extensions every port touches first, and Python's fuzzer found it there; cryptography raises DuplicateExtension, which derives from Exception rather than ValueError and so passed every except in the JWS path and reached the caller as a crash.",
+      "description": "x5c[0] carries its basicConstraints extension twice; a byte-identical second copy appended to the extension list; and its TBS is re-signed by the intermediate so the certificate is genuine in every other respect: the marker OID is there, the validity window covers the signing date, the key is the one that signed the JWS, and the intermediate really did issue it. RFC 5280 4.2 says a certificate MUST NOT include more than one instance of a particular extension, and a parser that allows one has to pick a copy, so two ports reading the same bytes can disagree about whether the certificate is a CA, what it may be used for, or whether it carries a marker OID at all. Port-defined (owner, 2026-10-05): BouncyCastle refuses the certificate at parse (\"repeated extension found\"), so Java answers INVALID_CERTIFICATE; OpenSSL parses it, marks its extensions invalid because basicConstraints repeats (EXFLAG_INVALID, crypto/x509/v3_purp.c) and then takes no certificate as its issuer, so the core answers UNTRUSTED_CHAIN. Both refuse, and neither as INVALID_CERTIFICATE_PURPOSE, which would say the extensions were read and the marker OID was missing. The duplicated extension is basicConstraints rather than the marker OID because it is the one every port reaches: a port that scans for 1.2.840.113635.100.6.11.1 and never decodes the rest of the block accepts this JWS. It sits on the leaf because that is the certificate whose extensions every port touches first, and Python's fuzzer found it there; cryptography raises DuplicateExtension, which derives from Exception rather than ValueError and so passed every except in the JWS path and reached the caller as a crash. DECISIONS.md R20.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "transaction-x5c-duplicate-extension"
@@ -4793,11 +4793,14 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "INVALID_CERTIFICATE"
+        "oneOf": [
+          "INVALID_CERTIFICATE",
+          "UNTRUSTED_CHAIN"
+        ]
       },
       "fault": "x5c-certificate-carries-basic-constraints-twice",
       "tags": [
+        "port-defined",
         "jws",
         "transaction",
         "negative",
@@ -5052,7 +5055,7 @@
     {
       "id": "receipt/reject-signer-carrying-one-extension-twice",
       "legacyId": "receipt/reject-signer-carrying-one-extension-twice",
-      "description": "The signer certificate carries its basicConstraints extension twice; a byte-identical second copy appended to the extension list; and its TBS is re-signed by the intermediate. The receipt is genuine in every other respect; the signer really did sign it, the intermediate really did issue the signer, the chain terminates at the root shipped with the fixture, the marker OID is there and the validity window covers the creation date; so the certificate is the only thing a port can object to. RFC 5280 4.2 forbids a second instance of any extension, and a reader that allows one has to pick which copy the certificate means, so the same bytes stop having one answer to \"is this a CA\", \"what may it be used for\" and \"does it carry the receipt-signing marker OID\"; the last of which this path asks. INVALID_CERTIFICATE rather than INVALID_CERTIFICATE_PURPOSE, which would say the extensions were read and the marker OID was missing. The duplicated extension is basicConstraints rather than the marker OID for the same reason as in the JWS twin: it is the one a port reaches even if it only scans for 1.2.840.113635.100.6.11.1. Either INVALID_CERTIFICATE or MALFORMED is accepted: a port that decodes the unsigned certificate bag as a whole refuses this entry as a malformed bag before it reaches the signer (lead, 2026-09-27).",
+      "description": "The signer certificate carries its basicConstraints extension twice; a byte-identical second copy appended to the extension list; and its TBS is re-signed by the intermediate. The receipt is genuine in every other respect; the signer really did sign it, the intermediate really did issue the signer, the chain terminates at the root shipped with the fixture, the marker OID is there and the validity window covers the creation date; so the certificate is the only thing a port can object to. RFC 5280 4.2 forbids a second instance of any extension, and a reader that allows one has to pick which copy the certificate means, so the same bytes stop having one answer to \"is this a CA\", \"what may it be used for\" and \"does it carry the receipt-signing marker OID\"; the last of which this path asks. Not INVALID_CERTIFICATE_PURPOSE, which would say the extensions were read and the marker OID was missing. The duplicated extension is basicConstraints rather than the marker OID for the same reason as in the JWS twin: it is the one a port reaches even if it only scans for 1.2.840.113635.100.6.11.1. Port-defined: BouncyCastle refuses the certificate while it reads the unsigned certificate bag (\"repeated extension found\"), so Java answers MALFORMED for the bag (lead, 2026-09-27); OpenSSL parses it, marks its extensions invalid because basicConstraints repeats (EXFLAG_INVALID, crypto/x509/v3_purp.c) and then takes no certificate as its issuer, so the core answers UNTRUSTED_CHAIN (owner, 2026-10-05). The core answered INVALID_CERTIFICATE from a reader of its own until then, which the list keeps. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "receipt-signer-duplicate-extension"
@@ -5068,11 +5071,13 @@
       "expected": {
         "oneOf": [
           "INVALID_CERTIFICATE",
-          "MALFORMED"
+          "MALFORMED",
+          "UNTRUSTED_CHAIN"
         ]
       },
       "fault": "receipt-signer-carries-basic-constraints-twice",
       "tags": [
+        "port-defined",
         "receipt",
         "pkcs7",
         "negative",
@@ -5114,7 +5119,7 @@
     {
       "id": "receipt/reject-signer-with-a-corrupt-extension",
       "legacyId": "receipt/reject-signer-with-a-corrupt-extension",
-      "description": "One byte of the signer certificate is changed, and it is one byte further in than the JWS twin changes. transaction/reject-x5c-corrupt-extension rewrites the extnValue OCTET STRING's own length, which breaks the DER of everything that contains it; harmless in a JWS header, where the certificate is a base64 string of its own, and wrong inside a CMS, where it would break the receipt's DER and make every port that walks the whole blob answer about the receipt instead of about the certificate. So the corruption sits INSIDE the OCTET STRING: the BasicConstraints SEQUENCE it holds is left claiming 127 content bytes in a two-byte value. A reader walking generic ASN.1 sees a well-formed primitive of the length it declares and never looks in, so the receipt parses, the chain validates, the payload is intact and the CMS signature is real; only a reader that DECODES the signer's extension block finds the defect, and that is precisely what this vector observes. The certificate has no TBS left to re-sign and no verifier can reach its signature to notice. INVALID_CERTIFICATE: the signer is embedded and is the certificate the SignerInfo names, but what comes out is not a certificate all the way down. The corruption sits past the marker OID a port looks for, so an implementation that walks the DER only far enough to answer \"does it carry 1.2.840.113635.100.6.11.1\" accepts the whole receipt. Either INVALID_CERTIFICATE or MALFORMED is accepted: a port that decodes the unsigned certificate bag as a whole refuses this entry as a malformed bag before it reaches the signer (lead, 2026-09-27).",
+      "description": "One byte of the signer certificate is changed, and it is one byte further in than the JWS twin changes. transaction/reject-x5c-corrupt-extension rewrites the extnValue OCTET STRING's own length, which breaks the DER of everything that contains it; harmless in a JWS header, where the certificate is a base64 string of its own, and wrong inside a CMS, where it would break the receipt's DER and make every port that walks the whole blob answer about the receipt instead of about the certificate. So the corruption sits INSIDE the OCTET STRING: the BasicConstraints SEQUENCE it holds is left claiming 127 content bytes in a two-byte value. A reader walking generic ASN.1 sees a well-formed primitive of the length it declares and never looks in, so the receipt parses, the chain validates, the payload is intact and the CMS signature is real; only a reader that DECODES the signer's extension block finds the defect, and that is precisely what this vector observes. The certificate has no TBS left to re-sign and no verifier can reach its signature to notice. The signer is embedded and is the certificate the SignerInfo names, but what comes out is not a certificate all the way down. The corruption sits past the marker OID a port looks for, so an implementation that walks the DER only far enough to answer \"does it carry 1.2.840.113635.100.6.11.1\" accepts the whole receipt. Port-defined: Java refuses the certificate while it reads the unsigned certificate bag, so it answers MALFORMED for the bag (lead, 2026-09-27); OpenSSL parses it, marks its extensions invalid because basicConstraints does not decode (EXFLAG_INVALID, crypto/x509/v3_purp.c) and then takes no certificate as its issuer, so the core answers UNTRUSTED_CHAIN (owner, 2026-10-05). The core answered INVALID_CERTIFICATE from a reader of its own until then, which the list keeps. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "receipt-signer-corrupt-extension"
@@ -5130,11 +5135,13 @@
       "expected": {
         "oneOf": [
           "INVALID_CERTIFICATE",
-          "MALFORMED"
+          "MALFORMED",
+          "UNTRUSTED_CHAIN"
         ]
       },
       "fault": "receipt-signer-has-a-corrupt-extension",
       "tags": [
+        "port-defined",
         "receipt",
         "pkcs7",
         "negative",

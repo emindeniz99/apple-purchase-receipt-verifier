@@ -1,7 +1,8 @@
 {
   "comment": "Rows of fixtures/cases.json on which the core (aprv.wasm) and the 0.7 Java implementation answer differently, as DECISIONS.md R20 records them. A row is {class, group}: class is what tools/differential/compare.mjs finds (reason, payload, verdict), group names the R20 row that explains it (groups below). A row that compare.mjs reports stale answers alike again; remove it here.",
   "groups": {
-    "signer-certificate-refusal-stage": "The SignerInfo's own certificate is one a strict X.509 reader refuses (version 11, an extension twice, a corrupt extension). The core reads it as the signer's defect (INVALID_CERTIFICATE); Java refuses every undecodable embedded certificate as a defect of the envelope (MALFORMED). The case allows both.",
+    "signer-certificate-refusal-stage": "The SignerInfo's own certificate claims X.509 version 11. OpenSSL never checks the version, so the core checks it itself and reads it as the signer's defect (INVALID_CERTIFICATE); BouncyCastle refuses it at parse, and Java refuses every undecodable embedded certificate as a defect of the envelope (MALFORMED). The case allows both.",
+    "repeated-or-corrupt-extension": "A certificate whose basicConstraints repeats or does not decode, re-signed so it is genuine in every other respect: the JWS leaf, or the receipt's signer. BouncyCastle refuses it at parse (Java: INVALID_CERTIFICATE for an x5c entry, MALFORMED for the receipt's bag). OpenSSL parses it and marks its extensions invalid (EXFLAG_INVALID, crypto/x509/v3_purp.c), so no certificate issues it and the core answers UNTRUSTED_CHAIN (owner, 2026-10-05: the core's own X.509 reader went). The cases allow both.",
     "tolerant-envelope-decoding": "A genuinely signed envelope that is not valid DER elsewhere (the certificates field twice, an extensions field twice, malformed signed attributes in a second SignerInfo). OpenSSL decodes the whole ContentInfo (and each x5c certificate) with its templates and refuses; BouncyCastle reads only what it needs and verifies. The case allows both; the core fails closed.",
     "signer-identity-twin": "The unsigned bag carries a self-signed twin of the signer's identity ahead of the genuine leaf. The core tries every certificate the SignerInfo names and verifies; Java takes the first match and refuses. The case allows both; neither uses the twin's key.",
     "certificate-signature-in-chunks": "An embedded certificate's outer signature BIT STRING, outside the signed TBS, in two chunks whose second has no initial octet of its own. OpenSSL joins the chunks' contents and verifies the same signature; BouncyCastle reads it as X.690 8.6.4 does, as a BIT STRING claiming 150 unused bits, and answers MALFORMED. The case allows both; the chain is judged either way.",
@@ -11,8 +12,9 @@
   },
   "rows": {
     "receipt/reject-signer-certificate-version-11": { "class": "reason", "group": "signer-certificate-refusal-stage" },
-    "receipt/reject-signer-carrying-one-extension-twice": { "class": "reason", "group": "signer-certificate-refusal-stage" },
-    "receipt/reject-signer-with-a-corrupt-extension": { "class": "reason", "group": "signer-certificate-refusal-stage" },
+    "receipt/reject-signer-carrying-one-extension-twice": { "class": "reason", "group": "repeated-or-corrupt-extension" },
+    "receipt/reject-signer-with-a-corrupt-extension": { "class": "reason", "group": "repeated-or-corrupt-extension" },
+    "transaction/reject-x5c-duplicate-extension": { "class": "reason", "group": "repeated-or-corrupt-extension" },
     "receipt/malformed-signed-attrs-in-the-second-signer-does-not-crash": { "class": "verdict", "group": "tolerant-envelope-decoding" },
     "receipt/certificates-field-twice-does-not-crash": { "class": "verdict", "group": "tolerant-envelope-decoding" },
     "receipt/intermediate-with-the-extensions-field-twice-does-not-crash": { "class": "verdict", "group": "tolerant-envelope-decoding" },
