@@ -58,18 +58,34 @@ class ServerSourcesTest {
     }
 
     /**
-     * github() alone: this version has no release yet (or the network is
-     * closed), so it fails with the reason, and nothing is installed.
+     * github() alone either installs exactly the binary this jar pins or
+     * fails with its reason and installs nothing. Which one happens depends
+     * on the release, not on this tree: it fails while this version has no
+     * release, once the server has changed since the release (the asset no
+     * longer hashes to this tree's pin), and on a closed network; it
+     * installs when the release is out and the server is unchanged, since
+     * the builds are reproducible. An earlier version asserted the failure
+     * only and went red the moment 0.8.1 was published.
      */
     @Test
-    void githubAloneFailsWithItsReasonWhileThisVersionIsUnreleased() throws Exception {
-        IllegalStateException e =
-                assertThrows(IllegalStateException.class, () -> create(Engine.server(ServerSource.github())));
-        assertTrue(e.getMessage().startsWith("no aprv-server source worked: ServerSource.github(): "), e.getMessage());
-        System.out.println("github() here: " + e.getMessage());
+    void githubAloneInstallsThePinnedBinaryOrFailsWithItsReason() throws Exception {
         Path cache = temp.resolve("cache");
-        assertTrue(!Files.exists(cache)
-                || Files.list(cache).allMatch(p -> p.getFileName().toString().equals(".lock")));
+        ServerVerifier verifier;
+        try {
+            verifier = create(Engine.server(ServerSource.github()));
+        } catch (IllegalStateException e) {
+            assertTrue(
+                    e.getMessage().startsWith("no aprv-server source worked: ServerSource.github(): "), e.getMessage());
+            System.out.println("github() here: " + e.getMessage());
+            assertTrue(!Files.exists(cache)
+                    || Files.list(cache)
+                            .allMatch(p -> p.getFileName().toString().equals(".lock")));
+            return;
+        }
+        String pin = ServerBinary.pin("x86_64-unknown-linux-musl");
+        System.out.println("github() here: installed the release asset that hashes to the pin " + pin);
+        assertEquals(pin, ServerBinary.sha256(cache.resolve("aprv-" + pin)));
+        assertUses(verifier, ServerSource.github());
     }
 
     @Test
