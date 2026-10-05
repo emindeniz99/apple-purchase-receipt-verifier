@@ -284,7 +284,10 @@ of the push. There is no OIDC to configure and no token to rotate, and no
 publish job is added to `release.yml` — which is why the PHP port is the one
 registry with nothing in it. **The first Packagist version is the first tag
 cut after this lands**; earlier tags are importable but their archives predate
-the root manifest, so Packagist will skip them.
+the root manifest, so Packagist will skip them. Until the submission,
+`release.yml` finds no package on Packagist and leaves `php` out of the
+registries it hands the post-publish smoke test, the way it does for an unbootstrapped RubyGems
+or NuGet; the first release after it runs the leg.
 
 ## Maven Central — the release count, an owner decision
 
