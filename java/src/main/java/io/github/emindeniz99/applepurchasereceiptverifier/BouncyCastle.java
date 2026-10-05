@@ -6,7 +6,12 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
  * The one BouncyCastle provider instance this library names. Every
  * certificate decode, chain build or validation, signature check and digest
  * asks this instance, never the JVM's provider list, so neither the provider
- * order nor {@code jdk.certpath.disabledAlgorithms} can change a verdict.
+ * order nor {@code jdk.certpath.disabledAlgorithms} decides which
+ * certificates, chains and signatures are accepted. The one JVM service
+ * BouncyCastle does use is the default {@code SecureRandom}, drawn from
+ * when an RSA public key is first decoded; a default that throws makes a
+ * genuine receipt answer {@code UNTRUSTED_CHAIN} ({@code java/README.md},
+ * "One platform caveat").
  *
  * <p>BouncyCastle still reads settings of its own. Some
  * {@code org.bouncycastle.*} properties are looked up in
