@@ -111,28 +111,18 @@ impl Certificate {
         same_x509(&self.0, &other.0)
     }
 
-    /// Whether the certificate is one a strict X.509 reader decodes: version
-    /// 1 to 3, a `signatureValue` of whole octets (every signature
-    /// algorithm produces whole octets), no extension carried twice, and a
-    /// `basicConstraints` and a `keyUsage` that decode when present.
-    /// OpenSSL parses all of these without complaint and judges them only
-    /// later, if at all.
+    /// Whether the certificate claims an X.509 version, 1 to 3, and carries
+    /// a `signatureValue` of whole octets (every signature algorithm
+    /// produces whole octets). OpenSSL parses both without complaint and
+    /// judges neither: a certificate of version 11 verifies on a path, and
+    /// an unaligned signature on a certificate the path never uses is never
+    /// read at all. Everything else about a certificate is OpenSSL's to
+    /// judge, at parse or on the path.
     ///
     /// The key is not judged here: see [`Certificate::has_usable_key`].
     #[must_use]
     pub fn is_readable(&self) -> bool {
-        if !(0..=2).contains(&self.0.version()) || !signature_is_octet_aligned(&self.0) {
-            return false;
-        }
-        let Some(mut oids) = extension_oids(&self.0) else {
-            return false;
-        };
-        oids.sort_unstable();
-        if oids.windows(2).any(|pair| pair.first() == pair.get(1)) {
-            return false;
-        }
-        decodes_if_present(&self.0, ffi::NID_basic_constraints)
-            && decodes_if_present(&self.0, ffi::NID_key_usage)
+        (0..=2).contains(&self.0.version()) && signature_is_octet_aligned(&self.0)
     }
 
     /// Whether OpenSSL can build a public key from the certificate's
@@ -269,86 +259,11 @@ pub(crate) fn same_x509(a: &X509Ref, b: &X509Ref) -> bool {
     unsafe { ffi::X509_cmp(a.as_ptr(), b.as_ptr()) == 0 }
 }
 
-/// The DER content octets of every extension's OID, in order, or `None`
-/// when an extension has no readable OID.
-fn extension_oids(x509: &X509Ref) -> Option<Vec<Vec<u8>>> {
-    // SAFETY: reads the extension count of a live certificate.
-    let count = unsafe { ffi::X509_get_ext_count(x509.as_ptr()) };
-    (0..count)
-        .map(|index| extension_object(x509, index).map(object_octets))
-        .collect()
-}
-
-/// The content octets of an OID's encoding, copied.
-fn object_octets(object: &Asn1ObjectRef) -> Vec<u8> {
-    // SAFETY: both calls only read the live object: OBJ_length is the
-    // length of the encoding OBJ_get0_data points at, both owned by it.
-    unsafe {
-        let length = ffi::OBJ_length(object.as_ptr());
-        let data = ffi::OBJ_get0_data(object.as_ptr());
-        if data.is_null() || length == 0 {
-            Vec::new()
-        } else {
-            std::slice::from_raw_parts(data, length).to_vec()
-        }
-    }
-}
-
-/// The OID of extension `index`, borrowed from the certificate.
-fn extension_object(x509: &X509Ref, index: c_int) -> Option<&Asn1ObjectRef> {
-    // SAFETY: `index` is below the certificate's extension count (the only
-    // caller iterates that range); X509_get_ext returns a pointer owned by
-    // the certificate, and X509_EXTENSION_get_object one owned by the
-    // extension, both valid while `x509` is borrowed.
-    unsafe {
-        let extension = ffi::X509_get_ext(x509.as_ptr(), index);
-        if extension.is_null() {
-            return None;
-        }
-        let object = ffi::X509_EXTENSION_get_object(extension);
-        if object.is_null() {
-            None
-        } else {
-            Some(Asn1ObjectRef::from_ptr(object))
-        }
-    }
-}
-
 /// The index of the first extension with this OID.
 fn extension_position(x509: &X509Ref, object: &Asn1ObjectRef) -> Option<c_int> {
     // SAFETY: both pointers are live for the call; the lookup only reads.
     let position = unsafe { ffi::X509_get_ext_by_OBJ(x509.as_ptr(), object.as_ptr(), -1) };
     (position >= 0).then_some(position)
-}
-
-/// Whether the extension `nid`, if the certificate carries it, decodes as
-/// its type. A duplicate reads as not decoding.
-fn decodes_if_present(x509: &X509Ref, nid: c_int) -> bool {
-    let mut critical: c_int = 0;
-    // SAFETY: X509_get_ext_d2i decodes the extension into a new object the
-    // caller owns (freed below with that type's own free function), or
-    // returns null and sets `critical` to -1 when the extension is absent
-    // and to -2 when it occurs more than once.
-    let decoded =
-        unsafe { ffi::X509_get_ext_d2i(x509.as_ptr(), nid, &raw mut critical, ptr::null_mut()) };
-    if decoded.is_null() {
-        drain_errors();
-        return critical == -1;
-    }
-    free_extension_value(nid, decoded);
-    true
-}
-
-fn free_extension_value(nid: c_int, value: *mut libc::c_void) {
-    // SAFETY: `value` is the object X509_get_ext_d2i allocated for `nid`,
-    // owned by the caller and freed exactly once, with that NID's type.
-    unsafe {
-        if nid == ffi::NID_basic_constraints {
-            crate::sys::BASIC_CONSTRAINTS_free(value);
-        } else {
-            ffi::ASN1_BIT_STRING_free(value.cast());
-        }
-    }
 }
 
 /// The password callback for [`Certificate::all_from_pem`]: no password,

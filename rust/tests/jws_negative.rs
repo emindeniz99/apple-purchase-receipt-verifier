@@ -176,14 +176,13 @@ fn an_x5c_entry_that_is_not_base64_is_invalid_certificate() {
 }
 
 #[test]
-fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
-    // RFC 5280 4.2 forbids a second instance of any extension. The parser
-    // used to keep the first copy and drop the rest, which is a choice about
-    // what the certificate means rather than a reading of it, so the same
-    // bytes could answer "is this a CA" one way here and another way in a
-    // port that kept the last copy. Both levels are pinned: the parser
-    // refuses the certificate, and the verifier reports it as a defect of
-    // the certificate rather than of the chain it sits on.
+fn an_x5c_leaf_carrying_one_extension_twice_is_not_issued_by_its_intermediate() {
+    // RFC 5280 4.2 forbids a second instance of any extension. OpenSSL parses
+    // such a certificate, so the library reads it as one. A repeated
+    // basicConstraints (or keyUsage) makes OpenSSL mark the certificate's
+    // extensions invalid (`EXFLAG_INVALID`, crypto/x509/v3_purp.c), and it
+    // then takes no certificate as its issuer: the leaf is outside every
+    // path, whatever its signature says, so the chain is untrusted.
     let jws = common::read_text_fixture("generated/transaction-x5c-duplicate-extension.jws");
     let header = common::jws_header(&jws);
     let leaf = header.get("x5c").unwrap().as_array().unwrap()[0]
@@ -191,12 +190,12 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
         .unwrap();
     let der = common::decode_base64(leaf);
     // TrustAnchor::from_der is the library's certificate reader, public.
-    assert!(TrustAnchor::from_der(&der).is_err());
+    assert!(TrustAnchor::from_der(&der).is_ok());
 
     let verifier = common::verifier([common::anchor("generated/hostile-jws-root.der")]);
     assert_eq!(
         verifier.verify_signed_data(&jws).unwrap_err().reason(),
-        Reason::InvalidCertificate
+        Reason::UntrustedChain
     );
 }
 

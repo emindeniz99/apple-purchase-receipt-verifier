@@ -182,8 +182,9 @@ fn verify_signature(
 }
 
 /// The embedded certificates, judged once for every `SignerInfo`: the ones
-/// a strict reader decodes, and the ones it does not. OpenSSL has parsed
-/// all of them, or the envelope would not have parsed.
+/// with an X.509 version and a whole-octet signature
+/// ([`Certificate::is_readable`]), and the others. OpenSSL has parsed all
+/// of them, or the envelope would not have parsed.
 struct Embedded {
     readable: Vec<Certificate>,
     unreadable: Vec<Certificate>,

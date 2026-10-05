@@ -184,6 +184,32 @@ fn an_unparseable_embedded_certificate_is_rejected() {
 }
 
 #[test]
+fn a_stranger_whose_basic_constraints_repeats_is_ignored() {
+    // OpenSSL parses a certificate whose basicConstraints repeats and judges
+    // it only on a path, where it takes no certificate as its issuer. A
+    // stranger no pinned root vouches for never reaches the path, so a
+    // genuine receipt carrying one in its unsigned bag verifies, as with a
+    // stranger whose key is unreadable. The same certificate as the signer
+    // is UNTRUSTED_CHAIN (receipt/reject-signer-carrying-one-extension-twice).
+    let fixture = parse_cms(&common::read_fixture(
+        "generated-0.7/receipt-signer-duplicate-extension.der",
+    ))
+    .unwrap();
+    let named = &fixture.signer_infos[0];
+    let identity = Some((named.serial_contents.clone(), named.issuer_raw.clone()));
+    let twice = fixture
+        .certificates
+        .iter()
+        .find(|raw| common::certificate_identity(raw) == identity)
+        .expect("the fixture embeds its signer")
+        .clone();
+    assert!(TrustAnchor::from_der(&twice).is_ok());
+    let mut builder = common::CmsBuilder::from_shared();
+    builder.certificates.push(twice);
+    assert!(verifier().verify(&builder.build()).is_ok());
+}
+
+#[test]
 fn a_message_digest_that_does_not_match_the_content_is_an_invalid_signature() {
     let mut builder = common::CmsBuilder::from_shared();
     assert!(
