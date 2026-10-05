@@ -52,9 +52,9 @@ differential run compares it with the core over the corpora and the cases
 | PHP | 22 | 4 | 6 | 11 | 1 |
 | Node | 6 | 1 | 2 | 0 | 3 |
 | .NET | 2 | 0 | 0 | 0 | 2 |
-| Rust | 313 | 43 | 0 | 0 | 270 |
+| Rust | 314 | 43 | 0 | 0 | 271 |
 | Java | 201 | 11 | 0 | 0 | 190 |
-| All | 862 | 201 | 31 | 78 | 552 |
+| All | 863 | 201 | 31 | 78 | 553 |
 
 ## The cases this lane added
 
@@ -693,6 +693,7 @@ and `-second`.
 | Rust | `rust/tests/receipt_negative.rs` `signed_attrs_without_content_type_or_message_digest_are_refused` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_broken_signed_attrs_set_is_malformed_in_either_signer_position` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `an_unvouched_signer_on_an_unimplemented_curve_is_an_untrusted_chain` | input built in code: stays with the Rust |
+| Rust | `rust/tests/receipt_negative.rs` `a_vouched_signer_on_an_unimplemented_curve_is_judged_on_its_key_first` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_negative.rs` `a_dateless_receipt_is_judged_at_the_clock_to_the_millisecond` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `the_control_an_ec_signer_under_the_pinned_root_verifies` | input built in code: stays with the Rust |
 | Rust | `rust/tests/receipt_signer_algorithms.rs` `a_digest_apple_does_not_use_today_verifies_when_the_signature_holds` | input built in code: stays with the Rust |

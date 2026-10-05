@@ -500,6 +500,23 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   ([redundant bounds][redundant]). Eleven CRLs now verify in all three
   implementations, and `receipt/reject-eleven-embedded-crls` still
   allows both answers.
+  On 2026-10-05 the owner also replaced `keyless_target_path` with
+  Java's order. A target a pinned anchor vouched for whose key OpenSSL
+  cannot build is `INVALID_CERTIFICATE` before its path is built: the
+  receipt signer once `authenticated_top_down` holds it
+  (`ReceiptCore.validateChain` checks `authenticated.contains` and then
+  the key), the JWS leaf right after the intermediate's signature over
+  it (`JwsCore.authenticateTopDown`). A target nobody pinned vouched for
+  is `UNTRUSTED_CHAIN` before its key is looked at, as before. The
+  removed code was a hand-written half of `X509_verify_cert`, which
+  stops on such a target in `X509_get_pubkey_parameters`
+  (`crypto/x509/x509_vfy.c:264`, `2531-2535`) before it judges anything
+  else. The answer moves only for a vouched-for keyless target that
+  also has a validity, CA, critical-extension or marker defect: it is
+  now the key's, as in Java. `receipt/reject-signer-on-an-unimplemented-curve`
+  and `transaction/reject-x5c-unimplemented-curve` keep
+  `INVALID_CERTIFICATE`, and `rust/tests` pins the new order on both
+  paths with a signer and a leaf that lack their marker.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one
