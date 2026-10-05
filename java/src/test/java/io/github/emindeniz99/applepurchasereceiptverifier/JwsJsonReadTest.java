@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.exc.StreamConstraintsException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,7 +25,7 @@ import org.junit.jupiter.api.Test;
  * {@code alg} and {@code x5c}, whether the payload is a JSON object, and its
  * top-level {@code signedDate} under the tree's number conversions (a
  * fraction truncated, a number no long holds refused). Checked here against
- * databind itself, still on the test classpath, over the same bounded
+ * databind itself, still on the test classpath, over the readers'
  * factory.
  */
 class JwsJsonReadTest {
@@ -32,13 +34,13 @@ class JwsJsonReadTest {
     private static final int CASES = 20_000;
 
     /**
-     * The 0.6 read: databind over the same bounded factory, with the one
-     * rule 0.7 added: nothing but whitespace after the object. Without it
-     * {@code {"alg":"ES256"} x} is a header, and a payload with text after
-     * its object returns verified with that text in it.
+     * The 0.6 read: databind over the readers' factory,
+     * with the one rule 0.7 added: nothing but whitespace after the object.
+     * Without it {@code {"alg":"ES256"} x} is a header, and a payload with
+     * text after its object returns verified with that text in it.
      */
-    private static final ObjectMapper MAPPER = new ObjectMapper(BoundedJson.factory(JwsCore.MAX_JWS_BYTES))
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+    private static final ObjectMapper MAPPER =
+            new ObjectMapper(JsonFields.factory()).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     @Test
     void readsEveryHeaderAsTheDatabindTreeDid() {
@@ -160,17 +162,37 @@ class JwsJsonReadTest {
         assertEquals(Reason.UNREADABLE_PAYLOAD, unreadable.reason());
     }
 
-    /** The reader bounds are stated, not inherited from whichever Jackson the host resolved. */
+    /**
+     * The reader bounds are Jackson's defaults, which the README and
+     * DECISIONS.md R20 state: a Jackson upgrade that moves them fails here.
+     */
     @Test
-    void memberNamesAndNumbersAreBounded() throws Exception {
-        String longestName = repeat('n', BoundedJson.MAX_NAME_LENGTH);
-        String longestNumber = repeat('1', BoundedJson.MAX_NUMBER_LENGTH);
+    void memberNamesAndNumbersAreBoundedByJacksonsDefaults() throws Exception {
+        String longestName = repeat('n', 50_000);
+        String longestNumber = repeat('1', 1000);
         assertNull(JwsCore.Header.read(utf8("{\"" + longestName + "\":1}")).alg);
         assertNull(JwsCore.Header.read(utf8("{\"n\":" + longestNumber + "}")).alg);
         for (String header : new String[] {"{\"" + longestName + "n\":1}", "{\"n\":" + longestNumber + "1}"}) {
             VerificationException thrown =
                     assertThrows(VerificationException.class, () -> JwsCore.Header.read(utf8(header)));
             assertTrue(thrown.getCause() instanceof StreamConstraintsException, String.valueOf(thrown.getCause()));
+        }
+    }
+
+    /**
+     * A host's process-wide override of Jackson's defaults does not reach the
+     * readers' factory, so a host that tightens a limit for its own JSON
+     * cannot turn a genuine input into a refusal.
+     */
+    @Test
+    void aProcessWideOverrideDoesNotReachTheReadersFactory() {
+        StreamReadConstraints.overrideDefaultStreamReadConstraints(
+                StreamReadConstraints.builder().maxNameLength(10).build());
+        try {
+            assertEquals(10, new JsonFactory().streamReadConstraints().getMaxNameLength());
+            assertEquals(50_000, JsonFields.factory().streamReadConstraints().getMaxNameLength());
+        } finally {
+            StreamReadConstraints.overrideDefaultStreamReadConstraints(null);
         }
     }
 
@@ -290,7 +312,7 @@ class JwsJsonReadTest {
                 out.append(value(random, 0));
                 break;
             case 1:
-                out.append(nested(random.nextBoolean() ? 63 : 65));
+                out.append(nested(random.nextBoolean() ? 1000 : 1001)); // Jackson's default allows 1000
                 break;
             default:
                 out.append('{');

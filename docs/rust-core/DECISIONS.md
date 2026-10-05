@@ -450,7 +450,7 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 
 **Status: accepted** (owner, 2026-09-26; restated 2026-09-28; the rule
 amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
-2026-10-01).
+2026-10-01; Java's JSON bounds, 2026-10-05).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
   schema v2, 388 cases, is the contract. The Java implementation is a
@@ -519,9 +519,9 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   | Signed content nested 33 deep, with SEQUENCEs or `[0]` context tags | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01; BouncyCastle's bound, 64 by default) | `UNREADABLE_PAYLOAD` | The core's depth bound is 32 (owner, 2026-09-27), counting constructed values of every class. Apple's receipts nest 9 deep, so the case allows both | `receipt/unreadable-signed-content-nested-33-deep`, `receipt/unreadable-signed-content-nested-33-deep-in-context-tags` |
   | An envelope nested 33 deep: in an unsigned attribute value (SEQUENCEs or `[0]` context tags), the digestAlgorithms parameters, a `crls` entry, an embedded certificate's parameters | `MALFORMED` | ok (port-defined 2026-10-01; BouncyCastle's bound, 64 by default) | `MALFORMED` | The same bound over the whole envelope, before any decode. None of these values is signed or Apple's, so the cases allow both | `receipt/reject-an-envelope-nested-33-deep`, `receipt/reject-an-envelope-nested-33-deep-in-context-tags`, `receipt/reject-digest-algorithm-parameters-nested-33-deep`, `receipt/reject-a-crls-entry-nested-33-deep`, `receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep` |
   | A clock past 9999-12-31T23:59:59.999Z, or before -9999-01-02T01:59:59Z, at the endpoint | rendered, a five-digit year with no sign (`10000-01-01 00:00:00 Etc/GMT`) | rendered, with a `+` sign past 9999 (`uuuu`) | `{"status":21009}` (port-defined 2026-10-01) | Such a clock is broken, answered like one that panics; jiff's calendar ends at 9999 and every receipt date the grammar accepts renders (R38) | none: no case pins a clock out there; `rust/tests/endpoint.rs` |
-  | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` (`BoundedJson`: nesting 64, names 50,000, numbers 1,000) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
-  | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
-  | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":21002}` | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
+  | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
+  | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
+  | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":0}` since 2026-10-05 (Jackson's default depth, 1,000; 21002 before) | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
   | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
   | A SignerInfo whose digestAlgorithm names an OID BouncyCastle has no digest for (`1.2.3.4`, or SHAKE256 `2.16.840.1.101.3.4.2.12`), over an otherwise genuine chain | not measured | `MALFORMED` (`unexpected java.lang.IllegalArgumentException` from `DefaultSignatureAlgorithmIdentifierFinder`, status 21002; recorded 2026-10-04) | `INVALID_SIGNATURE` (`unsupported digest algorithm`, status 21003) | The core asks OpenSSL for the digest before it checks the signature and names the refusal; BouncyCastle throws an unchecked exception while building the verifier, which Java files as `MALFORMED` with the cause kept. Both refuse, the input is not Apple-signed, and no shared case pins it; a digest BouncyCastle does know but Apple never used (MD5) is `INVALID_SIGNATURE` in both | none: measured by a review probe, not a case |
   | A lone surrogate escape in a member name inside `data` or `summary` of a genuinely signed JWS payload | not measured (the 0.7 answers carry no environment) | reads on: Jackson keeps the name, and the container's `environment` is read | ok, without that container's environment (port-defined 2026-10-03) | The core reads `data` and `summary` for the environment alone, and `serde_json` refuses the name (R40), so the container states none; the payload and the signature are unchanged. Apple's documents are ASCII | none: no case pins it; R42 |
@@ -595,12 +595,16 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   `nesting-between-33-and-bouncycastle`.
 
   The same day the core's JSON reader became `serde_json` (R40) and the
-  core lost its three JSON bounds, which Java's `BoundedJson` keeps. The
+  core lost its three JSON bounds, which Java's `BoundedJson` kept. The
   rule above applies in the other direction: none of the five inputs is
   Apple's, each is genuinely signed, and the core accepts nothing
   unsigned, so the cases list both answers and
   `tools/differential/recorded.json` names them under the group
-  `json-bounds-java-only`.
+  `json-bounds-java-only`. On 2026-10-05 Java dropped `BoundedJson` for
+  Jackson's default constraints (depth 1,000, names 50,000, numbers
+  1,000), which the size caps make sufficient. The three inputs nested
+  65 deep now read in both, so the group names only the member name and
+  the integer.
 
 ---
 
@@ -1458,10 +1462,10 @@ amended 2026-10-02).
   core's (R20 rows of 2026-10-01). An endpoint case lists `/status` values
   with `oneOf`, a schema form added for it; every runner that evaluates
   endpoint cases reads it.
-- Java keeps `BoundedJson` and its three bounds. The R20 rule forbids
-  code in either implementation written to imitate the other, and Java's
-  bounds guard Jackson's defaults, which a host BOM can change
-  (docs/design/java-notes.md).
+- Java kept `BoundedJson` and its three bounds until 2026-10-05; it now
+  reads under Jackson's default constraints and the same size caps
+  (docs/design/java-notes.md). The R20 rule forbids code in either
+  implementation written to imitate the other.
 - Rejected: variant A, `Map<String, Value>`, which builds a tree of
   unsigned input at up to 126 times its size (396 MB for one 3 MiB
   request; a pooled Wasm instance keeps the memory it grows).

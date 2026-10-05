@@ -18,7 +18,7 @@ type Reason string
 // string(reason) is the canonical wire form.
 const (
 	// ReasonMalformed: the base64, ASN.1, CMS or JWS structure is broken,
-	// or a structural bound (JSON depth, embedded certificates,
+	// or a structural bound (ASN.1 depth, embedded certificates,
 	// SignerInfos) is exceeded.
 	ReasonMalformed Reason = "MALFORMED"
 	// ReasonTooLarge: the input is over one of the fixed size caps.

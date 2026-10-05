@@ -1,7 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -17,6 +19,18 @@ import org.jspecify.annotations.Nullable;
 final class JsonFields {
 
     private JsonFields() {}
+
+    /**
+     * A reader factory with Jackson's own default constraints, built rather
+     * than inherited so a host's process-wide
+     * {@code StreamReadConstraints.overrideDefaultStreamReadConstraints}
+     * cannot change a verdict.
+     */
+    static JsonFactory factory() {
+        return JsonFactory.builder()
+                .streamReadConstraints(StreamReadConstraints.builder().build())
+                .build();
+    }
 
     /** Called with each member's name and first value token; may consume the value. */
     interface Visitor {

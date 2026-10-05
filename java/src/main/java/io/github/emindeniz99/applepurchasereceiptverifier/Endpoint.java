@@ -17,7 +17,7 @@ final class Endpoint {
     /** Apple's own limit, in UTF-8 bytes (it answers HTTP 413 above it); this answers 21002. */
     static final int MAX_REQUEST_BYTES = 3145728;
 
-    static final JsonFactory JSON = BoundedJson.factory(MAX_REQUEST_BYTES);
+    static final JsonFactory JSON = JsonFields.factory();
 
     private Endpoint() {}
 

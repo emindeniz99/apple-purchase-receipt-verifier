@@ -4,7 +4,7 @@
 /// one is a breaking change.
 public enum Reason: String, Sendable, CaseIterable {
     /// The base64, ASN.1, CMS or JWS structure is broken, or a structural
-    /// bound (JSON depth, embedded certificates, SignerInfos) is exceeded.
+    /// bound (ASN.1 depth, embedded certificates, SignerInfos) is exceeded.
     case malformed = "MALFORMED"
     /// The input is over one of the fixed size caps.
     case tooLarge = "TOO_LARGE"

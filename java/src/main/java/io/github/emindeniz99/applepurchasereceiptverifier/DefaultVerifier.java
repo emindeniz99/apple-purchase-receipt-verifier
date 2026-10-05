@@ -95,10 +95,13 @@ final class DefaultVerifier implements Verifier {
      * {@link #requireBouncyCastle} refuses it below 1.86.
      * EndpointResponse's initialiser loads the Pacific time zone, which a JRE
      * with a truncated tzdb would fail on the first endpoint call otherwise.
+     * The readers' factories need jackson-core 2.15, and the name bound read
+     * here is 2.16 API, so a Jackson below the floor fails here.
      */
     private static void buildStaticState() {
         Objects.requireNonNull(JwsCore.JSON);
         Objects.requireNonNull(Endpoint.JSON);
+        JwsCore.JSON.streamReadConstraints().getMaxNameLength();
         Objects.requireNonNull(EndpointResponse.JSON);
         Objects.requireNonNull(BouncyCastle.PROVIDER);
         Objects.requireNonNull(JcaSignerInfoVerifierBuilder.class);
@@ -194,8 +197,7 @@ final class DefaultVerifier implements Verifier {
      * Collection cert store, and checks each of {@code roots} (the bundled
      * Apple roots) against its own signature with it, so a runtime that
      * cannot verify (a stripped JRE, a FIPS-mode JDK that refuses the
-     * provider) fails {@link Verifier#create} instead of answering
-     * {@link Reason#INTERNAL_ERROR} on the first call. It needs no receipt or
+     * provider) fails {@link Verifier#create} instead of the first call. It needs no receipt or
      * JWS fixture. The SHA-1 RSA root stays in: BouncyCastle ignores the
      * JDK's disabled-algorithm lists, and the receipt path needs SHA-1 RSA.
      * The RSA engines behind the CMS signer verifier are not asked for by

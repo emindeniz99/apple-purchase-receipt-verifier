@@ -126,7 +126,7 @@ decides whether a certificate is expired when the input states a date; see
 not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
-notice until production. `Verifier.create` also builds the bounded Jackson
+notice until production. `Verifier.create` also builds the Jackson
 readers, touches the BouncyCastle provider and a bcpkix class, checks that
 bcprov is 1.86 or later and that BouncyCastle's ASN.1 nesting bound admits a
 genuine receipt, and probes the crypto runtime (see [Running in
@@ -470,7 +470,7 @@ never by `ordinal()`.
 
 | `Reason` | Meaning |
 |---|---|
-| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past 64, ASN.1 nesting past BouncyCastle's bound, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check. When BouncyCastle or Jackson threw an unchecked exception, the message is `unexpected <class>` and `Failure.cause()` carries that exception, for debugging. The cause's message is BouncyCastle's and may quote fragments of the unverified input (tag numbers, lengths, a DN), so treat it like the receipt bytes when logging |
+| `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past Jackson's 1,000, ASN.1 nesting past BouncyCastle's bound, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check. When BouncyCastle or Jackson threw an unchecked exception, the message is `unexpected <class>` and `Failure.cause()` carries that exception, for debugging. The cause's message is BouncyCastle's and may quote fragments of the unverified input (tag numbers, lengths, a DN), so treat it like the receipt bytes when logging |
 | `TOO_LARGE` | Over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt or an endpoint request body, 262,144 for a JWS. Decided before anything is decoded |
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
 | `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or has more than six certificates below the anchor |
@@ -580,6 +580,11 @@ and the rest are never reached):
 Fixed constants, not configurable, except the ASN.1 nesting bound (below
 the table) and BouncyCastle's other settings ([listed
 above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The three
+JSON bounds are jackson-core's default `StreamReadConstraints`, built into
+the library's own reader factories, so a process-wide
+`StreamReadConstraints.overrideDefaultStreamReadConstraints` does not
+reach them; Jackson's string and document limits are above the size caps,
+so the caps are what bound a JSON document's length. The three
 size caps are checked before anything is decoded; the others as the
 structure they bound is read:
 
@@ -588,9 +593,9 @@ structure they bound is read:
 | Receipt base64, UTF-8 bytes | 3,145,728 | `TOO_LARGE` |
 | Endpoint request body, UTF-8 bytes | 3,145,728 | `TOO_LARGE` (status 21002) |
 | JWS, UTF-8 bytes | 262,144 | `TOO_LARGE` |
-| JSON nesting depth, the outer object included | 64 | `MALFORMED` (JWS header, request body); a JWS payload is carried to the signature: `UNREADABLE_PAYLOAD` if it verifies |
-| JSON member name, characters | 50,000 | as nesting depth |
-| JSON number, characters | 1,000 | as nesting depth |
+| JSON nesting depth, the outer object included | 1,000 (Jackson's default) | `MALFORMED` (JWS header, request body); a JWS payload is carried to the signature: `UNREADABLE_PAYLOAD` if it verifies |
+| JSON member name, characters | 50,000 (Jackson's default) | as nesting depth |
+| JSON number, characters | 1,000 (Jackson's default) | as nesting depth |
 | ASN.1 nesting, constructed values | BouncyCastle's, 64 by default | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
@@ -647,10 +652,13 @@ two receipts `receipt-sandbox-legacy.b64` and `receipt-sandbox-g5.b64` under
 Apple roots and keep verifying, because validity is judged at their own
 signing date. The repository has no JWS signed by a real Apple root (the
 vendored Apple JWS fixtures are signed by a test CA), so keep one from your
-own sandbox, such as a transaction you bought there. Why: a runtime that
-cannot construct a crypto engine answers `INTERNAL_ERROR`, but an unchecked
-exception BouncyCastle throws while parsing is reported as a verdict on the
-input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
+own sandbox, such as a transaction you bought there. Why: the crypto
+engines come from the library's own BouncyCastle instance, so a missing one
+is not expected; if one were missing, the receipt path would answer
+`INTERNAL_ERROR` for the PKIX path builder and the JWS path a refusal
+(`INVALID_CERTIFICATE`, `UNTRUSTED_CHAIN` or `INVALID_SIGNATURE`). And an
+unchecked exception BouncyCastle throws while parsing is reported as a
+verdict on the input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
 is by design, so hostile input cannot page you. It also means a broken host
 and an attack wave look alike in the counters. `Failure.cause()` carries the
 exception, which explains one call but does not separate the two in
@@ -663,16 +671,19 @@ validator and builder and the Collection cert store, and checks the signature
 of each of the three bundled Apple roots, the SHA-1 one included. It needs no
 receipt or JWS. It checks the bundled roots, not the roots in your `Config`,
 so a deployment with custom roots whose runtime lacks their signature
-algorithm still answers `INTERNAL_ERROR` on the first call. If any
+algorithm passes the probe and then answers `UNTRUSTED_CHAIN` to every
+input that reaches the chain check: no signature by such a root verifies,
+so nothing chains to it. If any
 step fails, as on a stripped JRE, a
 FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
-`IllegalStateException`, so the deploy fails instead of the first request
-answering `INTERNAL_ERROR`. `Config.builder().runtimeProbe(false)` turns the
+`IllegalStateException`, so the deploy fails instead of the first
+request. `Config.builder().runtimeProbe(false)` turns the
 probe off; the bcprov version check and the nesting check stay on, since
 neither asks the provider for an engine. The only use we can name is a test
 setup that stands in a double for the crypto provider; with the probe off, a
-broken runtime shows up on the first call instead, as `INTERNAL_ERROR`,
-or as `UNTRUSTED_CHAIN` when what is broken is the default `SecureRandom`
+broken runtime shows up on the first call instead, as `INTERNAL_ERROR` or a
+refusal (see the self-test above), or as `UNTRUSTED_CHAIN` when what is
+broken is the default `SecureRandom`
 ([above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The probe does not replace the
 self-test above: it proves the engines exist, not that a real receipt parses.
 
@@ -909,9 +920,10 @@ directory holds the config, result and payload classes the `-wasm`
 artifact compiles too; both are the same package. What a vendored copy has
 to carry with it:
 
-**Dependency floors.** `jackson-core` 2.16 or later: the JSON readers set
-`StreamReadConstraints` (`maxDocumentLength` and `maxNameLength` are 2.16
-API), and below it `Verifier.create` throws `IllegalStateException`.
+**Dependency floors.** `jackson-core` 2.16 or later: the JSON readers use
+its default `StreamReadConstraints` (the member-name bound arrived in 2.16,
+the others in 2.15), and below it `Verifier.create` throws
+`IllegalStateException`.
 BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
 `Verifier.create` throws `IllegalStateException` naming the bcprov it
 found. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws

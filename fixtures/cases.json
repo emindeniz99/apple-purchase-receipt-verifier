@@ -7361,7 +7361,7 @@
     {
       "id": "endpoint/request-body-nested-65-deep-answers-21002",
       "legacyId": "endpoint/request-body-nested-65-deep-answers-21002",
-      "description": "The same body with one more array, 65 containers deep. Port-defined (owner, 2026-10-01; no client of Apple's endpoint nests a body this deep): the core reads JSON with serde_json, which skips a value nobody reads with no nesting bound, so receipt-data is read and the genuine receipt verifies: status 0. Java's reader (BoundedJson over Jackson) bounds nesting at 64 and answers 21002, MALFORMED. DECISIONS.md R20, R40.",
+      "description": "The same body with one more array, 65 containers deep. Port-defined (owner, 2026-10-01; no client of Apple's endpoint nests a body this deep): the core reads JSON with serde_json, which skips a value nobody reads with no nesting bound, so receipt-data is read and the genuine receipt verifies: status 0. Java's reader (Jackson, whose default depth of 1,000 replaced BoundedJson's 64 on 2026-10-05) reads it too: status 0. The oneOf keeps 21002, MALFORMED, for ports built on 0.7, whose bound was 64. DECISIONS.md R20, R40.",
       "operation": "verifyReceiptEndpoint",
       "input": {
         "requestBody": "limit-body-nested-65"
@@ -9756,7 +9756,7 @@
     },
     {
       "id": "signed-data/reject-a-header-nested-65-deep",
-      "description": "The same header nested 65 deep. Port-defined (owner, 2026-10-01; an Apple header carries alg and x5c, two levels deep): the core reads JSON with serde_json, which skips a value nobody reads with no nesting bound, so the header is read and the genuinely signed JWS verifies: ok. Java's reader (BoundedJson over Jackson) bounds nesting at 64 and answers MALFORMED. DECISIONS.md R20, R40.",
+      "description": "The same header nested 65 deep. Port-defined (owner, 2026-10-01; an Apple header carries alg and x5c, two levels deep): the core reads JSON with serde_json, which skips a value nobody reads with no nesting bound, so the header is read and the genuinely signed JWS verifies: ok. Java's reader (Jackson, whose default depth of 1,000 replaced BoundedJson's 64 on 2026-10-05) reads it too: ok. The oneOf keeps MALFORMED for ports built on 0.7, whose bound was 64. DECISIONS.md R20, R40.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "review-jws-header-nested-65"
@@ -9818,7 +9818,7 @@
     },
     {
       "id": "signed-data/unreadable-payload-nested-65-deep",
-      "description": "A genuinely signed payload nested 65 deep. Port-defined (owner, 2026-10-01): the core reads JSON with serde_json, which skips a value nobody reads with no nesting bound, so the payload is read and the JWS verifies: ok. Java's reader (BoundedJson over Jackson) bounds nesting at 64, so the payload does not parse; it is carried past the chain (judged at the config clock) and the signature, which verifies: UNREADABLE_PAYLOAD. DECISIONS.md R20, R40.",
+      "description": "A genuinely signed payload nested 65 deep. Port-defined (owner, 2026-10-01): the core reads JSON with serde_json, which skips a value nobody reads with no nesting bound, so the payload is read and the JWS verifies: ok. Java's reader (Jackson, whose default depth of 1,000 replaced BoundedJson's 64 on 2026-10-05) reads it too: ok. The oneOf keeps UNREADABLE_PAYLOAD for ports built on 0.7, whose bound was 64: there the payload does not parse and is carried past the chain (judged at the config clock) and the signature, which verifies. DECISIONS.md R20, R40.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "review-jws-payload-nested-65-signed"

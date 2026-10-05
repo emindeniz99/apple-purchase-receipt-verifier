@@ -32,8 +32,10 @@ public interface Verifier {
      * Collection cert store engines and checks each bundled Apple root's own
      * signature. It checks the bundled roots, not the roots in
      * {@code config}, so with custom roots a runtime that lacks their
-     * signature algorithm still answers {@link Reason#INTERNAL_ERROR} on the
-     * first call.</p>
+     * signature algorithm passes the probe and then answers
+     * {@link Reason#UNTRUSTED_CHAIN} to every input that reaches the chain
+     * check: no signature by such a root verifies, so nothing chains to
+     * it.</p>
      *
      * @throws NullPointerException     if {@code config} is null
      * @throws IllegalArgumentException if {@code config} has no roots, since

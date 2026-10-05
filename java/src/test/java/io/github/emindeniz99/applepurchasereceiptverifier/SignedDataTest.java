@@ -9,9 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.Signature;
+import java.security.cert.X509Certificate;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -127,29 +133,44 @@ class SignedDataTest {
     }
 
     @Test
-    void aVerifierTheRuntimeCannotBuildIsAnInternalErrorNotASignatureVerdict() {
-        // INVALID_SIGNATURE tells the caller the JWS is forged; a runtime that
-        // cannot even construct the ES256 engine has judged nothing, so that
-        // verdict would turn a host fault into a refusal of a genuine
-        // transaction. The receipt path answers INTERNAL_ERROR for the same
-        // fault. The fault is simulated by naming an engine no provider has,
-        // which is what Signature.getInstance meets on such a runtime.
-        VerificationException e = assertThrows(
-                VerificationException.class,
-                () -> JwsCore.verifyEs256(pki.leaf, "e30.e30", new byte[64], "SHA256withNO-SUCH-ENGINE"));
-        assertEquals(Reason.INTERNAL_ERROR, e.reason());
-        assertEquals("ES256 verifier could not be constructed", e.getMessage());
-    }
-
-    @Test
-    void aValidatorTheRuntimeCannotBuildIsAnInternalErrorNotAChainVerdict() {
-        // The same host fault for the PKIX validator, which is built per
-        // call: UNTRUSTED_CHAIN would refuse a genuine transaction for it.
-        // Simulated by naming an engine no provider has.
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> JwsCore.pkixValidator("NO-SUCH-PKIX"));
-        assertEquals(Reason.INTERNAL_ERROR, e.reason());
-        assertEquals("chain validator could not be constructed", e.getMessage());
+    void anEs256SignatureIsSixtyFourBytesEvenWhereALargerCurveVerifies() throws Exception {
+        // ES256 is P-256 with a 64-byte r || s (RFC 7518 3.4). PLAIN-ECDSA
+        // alone takes twice the leaf curve's order, so a P-384 leaf under the
+        // pinned chain verifies a 96-byte signature; the core refuses it too.
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC", BouncyCastle.PROVIDER);
+        generator.initialize(new ECGenParameterSpec("secp384r1"));
+        KeyPair leafKeys = generator.generateKeyPair();
+        long now = System.currentTimeMillis();
+        X509Certificate leaf = TestPki.cert(
+                "CN=Fake App Store Signing",
+                leafKeys,
+                "CN=Fake Apple WWDR CA",
+                pki.intermediateKey,
+                false,
+                "1.2.840.113635.100.6.11.1",
+                new Date(now - 86_400_000L),
+                new Date(now + 86_400_000L),
+                "SHA256withECDSA");
+        Map<String, Object> header = new LinkedHashMap<String, Object>();
+        header.put("alg", "ES256");
+        header.put(
+                "x5c",
+                Arrays.asList(
+                        TestPki.b64(leaf.getEncoded()),
+                        TestPki.b64(pki.intermediate.getEncoded()),
+                        TestPki.b64(pki.root.getEncoded())));
+        String input = TestPki.b64url(MAPPER.writeValueAsBytes(header)) + "."
+                + TestPki.b64url(MAPPER.writeValueAsBytes(transactionClaims("Sandbox")));
+        Signature signer = Signature.getInstance(JwsCore.ES256_ALGORITHM, BouncyCastle.PROVIDER);
+        signer.initSign(leafKeys.getPrivate());
+        signer.update(input.getBytes(StandardCharsets.US_ASCII));
+        byte[] signature = signer.sign();
+        assertEquals(96, signature.length);
+        Signature plain = Signature.getInstance(JwsCore.ES256_ALGORITHM, BouncyCastle.PROVIDER);
+        plain.initVerify(leaf.getPublicKey());
+        plain.update(input.getBytes(StandardCharsets.US_ASCII));
+        assertTrue(plain.verify(signature), "PLAIN-ECDSA alone accepts the 96-byte signature");
+        assertEquals(Reason.INVALID_SIGNATURE, failure(pki, input + "." + TestPki.b64url(signature)));
     }
 
     @Test
