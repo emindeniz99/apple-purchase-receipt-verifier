@@ -54,9 +54,9 @@ default = ["vendored"]
 # turns this off.
 vendored = ["aprv-openssl/vendored"]
 # The adapter's test seams, re-exported under `__internal`: the key-use
-# record and the full-decode counter. Only this crate's own tests turn it
-# on, through the dev-dependency on itself below, so aprv.wasm, the C ABI
-# and aprv-server never carry them.
+# record and the full-decode counter. Internal and unstable. Only this
+# crate's own tests turn it on, through the dev-dependency on itself
+# below, so aprv.wasm, the C ABI and aprv-server never carry them.
 test-seams = ["aprv-openssl/test-seams"]
 
 [dev-dependencies]
@@ -83,7 +83,9 @@ name = "conformance"
 harness = false
 
 # The cross-port benchmark (BENCHMARKS.md). It reads ../fixtures, like the
-# tests, so it is excluded from the package above.
+# tests, so it is excluded from the package above. As an example it gets
+# the dev-dependencies, so it carries the test seams: one thread-local
+# read per signature check, which the shipped builds do not pay.
 [[example]]
 name = "bench"
 
