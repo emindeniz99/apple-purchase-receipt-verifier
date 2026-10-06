@@ -139,14 +139,16 @@ purchase history. Keep it that way if you extend it.
 
 ## Deployed
 
-https://aprv-example.emindeniz99.workers.dev, deployed on 2026-10-05 with
-wrangler 4.147.0 and package 0.8.1, the WebAssembly core (every response
-says which release in `X-Aprv-Version`). The Worker upload is 2,895 KiB,
-958 KiB gzipped, and starts in 1 ms.
+https://aprv-example.emindeniz99.workers.dev, deployed on 2026-10-07 with
+wrangler 4.147.0 and package 0.9.0, the WebAssembly core (every response
+says which release in `X-Aprv-Version`). The Worker upload is 2,887 KiB,
+955 KiB gzipped, and starts in 2 ms.
 
 Checked against that URL: the public sandbox receipt verifies with
 `"environment":"Sandbox"` on the Worker and in the browser, where the page
-fetches the three `.wasm` core modules; a receipt with one character
-flipped is refused; `/v1/verify-receipt/sandbox` answers `"status":0` and
-`/production` `21007`; `X-Aprv-Now-Ms` sets `request_date_ms`; a body of
-3,145,729 bytes is a 413 with `TOO_LARGE`.
+fetches the three `.wasm` core modules, and the two answers are the same;
+a receipt with one character flipped is refused; `/v1/verify-receipt/sandbox`
+answers `"status":0` and `/production` `21007`; `X-Aprv-Now-Ms` sets
+`request_date_ms`; a body of 3,145,729 bytes is a 413 with `TOO_LARGE`.
+A redeploy takes a few seconds to reach every location: the first requests
+after one can still be answered by the previous version.
