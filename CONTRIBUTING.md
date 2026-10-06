@@ -513,7 +513,7 @@ may be is the caller's decision, so no case pins one.
 ## Apple PKI watch
 
 `.github/workflows/apple-pki-watch.yml` runs `tools/apple-pki-watch.mjs`
-every Monday and compares what Apple publishes against
+every day and compares what Apple publishes against
 `tools/apple-pki-watch.json`:
 
 - every `.cer` linked from <https://www.apple.com/certificateauthority/>,

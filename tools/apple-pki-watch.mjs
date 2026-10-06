@@ -175,7 +175,7 @@ function compare(before, after) {
       out.push(`libraries: apple/${repo} ${a ? 'no longer watched' : 'newly watched'}`);
       continue;
     }
-    if (a.tag !== b.tag) out.push(`libraries: apple/${repo} released ${b.tag} (was ${a.tag})`);
+    // A release alone is not a change: only the watched lines are.
     for (const path of new Set([...Object.keys(a.files), ...Object.keys(b.files)])) {
       const was = a.files[path];
       const now = b.files[path];

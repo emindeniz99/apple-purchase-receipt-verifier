@@ -16,7 +16,7 @@ name: apple-pki-watch
 
 on:
   schedule:
-    - cron: "23 6 * * 1" # weekly, Monday 06:23 UTC
+    - cron: "23 6 * * *" # daily, 06:23 UTC
   workflow_dispatch:
 
 permissions: {}
@@ -68,18 +68,26 @@ jobs:
         run: |
           set -euo pipefail
           body="$RUNNER_TEMP/issue.md"
+          # One comment per distinct change: the run is daily, and the same
+          # difference stays until someone refreshes the snapshot.
+          marker="<!-- apple-pki-watch $(sha256sum "$RUNNER_TEMP/apple-pki-watch.txt" | cut -c1-64) -->"
           {
+            echo "$marker"
             echo "tools/apple-pki-watch.mjs found a change since tools/apple-pki-watch.json ($RUN_URL)."
             echo
-            echo '~~~text'
-            cat "$RUNNER_TEMP/apple-pki-watch.txt"
-            echo '~~~'
+            # Indented, so no fetched line can close the code block.
+            sed 's/^/    /' "$RUNNER_TEMP/apple-pki-watch.txt"
             echo
             echo 'What to do: CONTRIBUTING.md, "Apple PKI watch". Refresh the snapshot with node tools/apple-pki-watch.mjs --write, then close this issue.'
           } > "$body"
           number=$(gh issue list --state open --limit 200 --json number,title \
             --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)
           if [ -n "$number" ]; then
+            if gh issue view "$number" --json body,comments \
+              --jq '[.body, .comments[].body] | join("\n")' | grep -qF -- "$marker"; then
+              echo "already reported on #$number"
+              exit 0
+            fi
             gh issue comment "$number" --body-file "$body"
           else
             gh issue create --title "$TITLE" --body-file "$body"

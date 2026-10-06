@@ -266,7 +266,7 @@ workspace and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   `tools/support-matrix.mjs --check`, writes the vendor statuses to the
   job summary, and fails when a line SUPPORT-MATRIX.md lists as tested,
   and not as a floor or kept, is past its end of life.
-- `apple-pki-watch.yml`: weekly (Monday) and on demand, runs
+- `apple-pki-watch.yml`: daily and on demand, runs
   `tools/apple-pki-watch.mjs` against `tools/apple-pki-watch.json` and,
   on a change, opens or comments on one issue; a network failure fails
   the run instead. It reports only. What it watches and what to do on
