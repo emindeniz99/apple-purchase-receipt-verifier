@@ -1,0 +1,193 @@
+== walk-kept
+PROBE case | receipt/unreadable-attribute-value-with-a-utf8string-chunk | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-double-wrap-with-a-foreign-chunk | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-attribute-type-in-high-tag-form | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/app-item-id-in-high-tag-form-is-kept-raw | ok bundle_id=Some("com.example.app") app_item_id=None unknown={1: [[31, 2, 1, 5]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/bundle-id-with-a-five-octet-length-is-kept-raw | ok bundle_id=None app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-boolean-of-two-octets | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-padded-integer | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-short-utctime | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-short-generalizedtime | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-constructed-integer | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-primitive-sequence | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-an-end-of-contents | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/reject-an-unsigned-value-sequence-holding-a-short-utctime | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | control: shared receipt | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | SignerInfo version a constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo version in high-tag form (1F 02) | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | SignerInfo with an EOC before its sid | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo with an EOC after its signature | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo signatureAlgorithm parameters SEQUENCE{padded INTEGER} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | signerInfos SET with an EOC after the SignerInfo | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | eContent a constructed OCTET STRING with a UTF8String chunk | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: short UTCTime | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a short UTCTime | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: padded INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a padded INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: BOOLEAN of two octets | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a BOOLEAN of two octets | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: end-of-contents | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a end-of-contents | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: primitive SEQUENCE | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a primitive SEQUENCE | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | control: minted signer | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{short UTCTime} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{padded INTEGER} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{end-of-contents} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{constructed INTEGER} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer extension whose critical flag is a constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE payload | control | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | attribute type INTEGER in high-tag form (1F 02) | UnreadablePayload (full decodes: 1)
+PROBE payload | app item id value INTEGER in high-tag form | ok bundle_id=Some("com.example.app") app_item_id=None unknown={1: [[31, 2, 1, 5]]} (full decodes: 1)
+PROBE payload | bundle id UTF8String with a five-octet length | ok bundle_id=None app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | payload SET in high-tag form (3F 11) | UnreadablePayload (full decodes: 1)
+PROBE payload | payload SET with a five-octet length | UnreadablePayload (full decodes: 1)
+PROBE payload | bundle id value a constructed OCTET STRING with a UTF8String chunk | UnreadablePayload (full decodes: 1)
+PROBE payload | bundle id value a constructed OCTET STRING with an EOC in its definite length | UnreadablePayload (full decodes: 1)
+PROBE payload | Xcode wrap with an INTEGER chunk | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field BOOLEAN of two octets | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding a BOOLEAN of two octets | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding an OID with a padded arc | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding a constructed BOOLEAN | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding an end-of-contents | UnreadablePayload (full decodes: 1)
+conformance:
+test result: ok. 390 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+== walk-counter
+PROBE case | receipt/unreadable-attribute-value-with-a-utf8string-chunk | ok bundle_id=Some("com.example.app") app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-double-wrap-with-a-foreign-chunk | ok bundle_id=Some("com.example.app") app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-attribute-type-in-high-tag-form | ok bundle_id=Some("com.example.app") app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/app-item-id-in-high-tag-form-is-kept-raw | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/bundle-id-with-a-five-octet-length-is-kept-raw | ok bundle_id=Some("com.example.app") app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-boolean-of-two-octets | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-padded-integer | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9000: [[2, 1, 1]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-short-utctime | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9000: [[2, 1, 1]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-short-generalizedtime | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9000: [[2, 1, 1]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-constructed-integer | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-primitive-sequence | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9000: [[2, 1, 1]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-an-end-of-contents | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9000: [[2, 1, 1]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/reject-an-unsigned-value-sequence-holding-a-short-utctime | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | control: shared receipt | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | SignerInfo version a constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo version in high-tag form (1F 02) | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | SignerInfo with an EOC before its sid | Malformed (full decodes: 1) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo with an EOC after its signature | Malformed (full decodes: 1) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo signatureAlgorithm parameters SEQUENCE{padded INTEGER} | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | signerInfos SET with an EOC after the SignerInfo | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | eContent a constructed OCTET STRING with a UTF8String chunk | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: short UTCTime | Malformed (full decodes: 1) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a short UTCTime | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: padded INTEGER | Malformed (full decodes: 1) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a padded INTEGER | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: BOOLEAN of two octets | Malformed (full decodes: 1) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a BOOLEAN of two octets | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: end-of-contents | Malformed (full decodes: 1) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a end-of-contents | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: primitive SEQUENCE | Malformed (full decodes: 1) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a primitive SEQUENCE | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | control: minted signer | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{short UTCTime} | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{padded INTEGER} | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{end-of-contents} | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{constructed INTEGER} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer extension whose critical flag is a constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE payload | control | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | attribute type INTEGER in high-tag form (1F 02) | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | app item id value INTEGER in high-tag form | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | bundle id UTF8String with a five-octet length | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | payload SET in high-tag form (3F 11) | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | payload SET with a five-octet length | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | bundle id value a constructed OCTET STRING with a UTF8String chunk | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | bundle id value a constructed OCTET STRING with an EOC in its definite length | UnreadablePayload (full decodes: 1)
+PROBE payload | Xcode wrap with an INTEGER chunk | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | fourth field BOOLEAN of two octets | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding a BOOLEAN of two octets | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9000: [[1]]} (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding an OID with a padded arc | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9000: [[1]]} (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding a constructed BOOLEAN | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding an end-of-contents | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9000: [[1]]} (full decodes: 1)
+conformance:
+receipt/unreadable-double-wrap-with-a-foreign-chunk: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/unreadable-attribute-value-with-a-utf8string-chunk: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/unreadable-attribute-type-in-high-tag-form: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/app-item-id-in-high-tag-form-is-kept-raw /app_item_id: expected null but got "5"
+receipt/app-item-id-in-high-tag-form-is-kept-raw /unknown_attributes/1/0: expected "HwIBBQ==" but got absent
+receipt/unreadable-fourth-field-sequence-holding-a-padded-integer: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/unreadable-fourth-field-sequence-holding-a-short-utctime: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/unreadable-fourth-field-sequence-holding-a-short-generalizedtime: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/unreadable-fourth-field-sequence-holding-a-primitive-sequence: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/unreadable-fourth-field-sequence-holding-an-end-of-contents: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/reject-an-unsigned-value-sequence-holding-a-short-utctime: expected MALFORMED but the operation verified
+test result: FAILED. 380 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out
+== walk-middle
+PROBE case | receipt/unreadable-attribute-value-with-a-utf8string-chunk | ok bundle_id=Some("com.example.app") app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-double-wrap-with-a-foreign-chunk | ok bundle_id=Some("com.example.app") app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-attribute-type-in-high-tag-form | ok bundle_id=Some("com.example.app") app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/app-item-id-in-high-tag-form-is-kept-raw | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/bundle-id-with-a-five-octet-length-is-kept-raw | ok bundle_id=Some("com.example.app") app_item_id=None unknown={} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-boolean-of-two-octets | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-padded-integer | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-short-utctime | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-short-generalizedtime | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-constructed-integer | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-primitive-sequence | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-an-end-of-contents | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/unreadable-fourth-field-sequence-holding-a-7-level-octet-string | UnreadablePayload (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE case | receipt/reject-an-unsigned-value-sequence-holding-a-short-utctime | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | control: shared receipt | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | SignerInfo version a constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo version in high-tag form (1F 02) | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | SignerInfo with an EOC before its sid | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo with an EOC after its signature | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | SignerInfo signatureAlgorithm parameters SEQUENCE{padded INTEGER} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | signerInfos SET with an EOC after the SignerInfo | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | eContent a constructed OCTET STRING with a UTF8String chunk | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a constructed INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: short UTCTime | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a short UTCTime | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: padded INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a padded INTEGER | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: BOOLEAN of two octets | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a BOOLEAN of two octets | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: end-of-contents | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a end-of-contents | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | unsigned attribute value: primitive SEQUENCE | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE envelope | unsigned attribute value: SEQUENCE holding a primitive SEQUENCE | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | control: minted signer | ok bundle_id=Some("com.example.app") app_item_id=None unknown={9999: [[1, 2, 3]]} (full decodes: 1) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{short UTCTime} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{padded INTEGER} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{end-of-contents} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer Name value SEQUENCE{constructed INTEGER} | Malformed (full decodes: 0) | d2i_CMS_ContentInfo decodes
+PROBE envelope | minted signer extension whose critical flag is a constructed BOOLEAN | Malformed (full decodes: 0) | d2i_CMS_ContentInfo refuses
+PROBE payload | control | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | attribute type INTEGER in high-tag form (1F 02) | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | app item id value INTEGER in high-tag form | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | bundle id UTF8String with a five-octet length | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | payload SET in high-tag form (3F 11) | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | payload SET with a five-octet length | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | bundle id value a constructed OCTET STRING with a UTF8String chunk | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | bundle id value a constructed OCTET STRING with an EOC in its definite length | UnreadablePayload (full decodes: 1)
+PROBE payload | Xcode wrap with an INTEGER chunk | ok bundle_id=Some("com.example.app") app_item_id=Some(5) unknown={} (full decodes: 1)
+PROBE payload | fourth field BOOLEAN of two octets | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding a BOOLEAN of two octets | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding an OID with a padded arc | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding a constructed BOOLEAN | UnreadablePayload (full decodes: 1)
+PROBE payload | fourth field SEQUENCE holding an end-of-contents | UnreadablePayload (full decodes: 1)
+conformance:
+receipt/unreadable-attribute-value-with-a-utf8string-chunk: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/unreadable-double-wrap-with-a-foreign-chunk: expected UNREADABLE_PAYLOAD but the operation verified
+receipt/app-item-id-in-high-tag-form-is-kept-raw /app_item_id: expected null but got "5"
+receipt/app-item-id-in-high-tag-form-is-kept-raw /unknown_attributes/1/0: expected "HwIBBQ==" but got absent
+receipt/unreadable-attribute-type-in-high-tag-form: expected UNREADABLE_PAYLOAD but the operation verified
+test result: FAILED. 386 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out

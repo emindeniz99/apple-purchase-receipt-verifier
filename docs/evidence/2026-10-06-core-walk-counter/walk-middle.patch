@@ -1,0 +1,48 @@
+diff --git a/rust/openssl/src/walk.rs b/rust/openssl/src/walk.rs
+index 1f253a8..bae3c01 100644
+--- a/rust/openssl/src/walk.rs
++++ b/rust/openssl/src/walk.rs
+@@ -98,6 +98,14 @@ pub(crate) fn header(input: &[u8]) -> Option<Header> {
+     })
+ }
+ 
++/// The universal types whose primitive content OpenSSL's `ANY` decoder
++/// checks (`asn1_ex_c2i` in `tasn_dec.c`): BOOLEAN, INTEGER, BIT STRING,
++/// NULL, OBJECT IDENTIFIER, ENUMERATED, `UTCTime`, `GeneralizedTime`,
++/// `UniversalString`, `BMPString`, and a SEQUENCE or SET, which must not be
++/// primitive. Handed to it outside a string, so a value OpenSSL keeps whole
++/// inside a SEQUENCE is judged as OpenSSL judges it standing alone.
++const CHECKED_TAGS: [c_int; 12] = [1, 2, 3, 5, 6, 10, 16, 17, 23, 24, 28, 30];
++
+ /// A constructed value the walk is inside.
+ struct Open {
+     /// Where its encoding starts.
+@@ -127,6 +135,11 @@ pub(crate) fn walk_exact(input: &[u8], budget: Budget) -> Result<(), WalkError>
+         nodes += 1;
+         let reach = open.last().map_or(input.len(), |outer| outer.reach);
+         let rest = input.get(at..reach).ok_or(WalkError::Malformed)?;
++        // OpenSSL refuses an end-of-contents outside a value of indefinite
++        // length wherever it decodes one.
++        if open.last().is_some_and(|outer| outer.end.is_some()) && rest.starts_with(&[0, 0]) {
++            return Err(WalkError::Malformed);
++        }
+         let header = header(rest).ok_or(WalkError::Malformed)?;
+         if header.constructed {
+             if open.len() >= budget.depth {
+@@ -149,7 +162,15 @@ pub(crate) fn walk_exact(input: &[u8], budget: Budget) -> Result<(), WalkError>
+             });
+             at += header.head;
+         } else {
+-            at += header.head + header.content;
++            let size = header.head + header.content;
++            if !open.last().is_some_and(|outer| outer.in_string)
++                && header.class == sys::V_ASN1_UNIVERSAL
++                && CHECKED_TAGS.contains(&header.tag)
++                && !decodes_as_any(rest.get(..size).ok_or(WalkError::Malformed)?)
++            {
++                return Err(WalkError::Malformed);
++            }
++            at += size;
+         }
+         // Close every value that ends here: a definite length at its end,
+         // an indefinite one at its end-of-contents.
