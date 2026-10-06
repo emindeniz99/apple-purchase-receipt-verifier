@@ -34,20 +34,9 @@ with certificates, ASN.1 or Apple receipts.
   the public API types (`Config`, `Reason`, `ReceiptPayload`, ...), compiled
   into both Java artifacts.
 
-**Two implementations, one contract.** The repository holds two
-independent verifiers. The Rust core (`rust/`, over OpenSSL) is compiled to
-`aprv.wasm`, which eight packages run: Node, Go, Python, Ruby, Swift, .NET,
-the Java `-wasm` artifact and PHP. This one, `java/`, is a separate
-implementation over BouncyCastle. Both must answer every case in
-`fixtures/cases.json` the same way, or record why not. This review covers
-`java/` only.
-
-**Reading the references.** "Qnn" (Q65, Q71, ...) is a numbered decision
-by the repository owner; there is no separate list, so search
-docs/rust-core/DECISIONS.md and docs/design/0.7-api.md for the number to
-find it with its reasoning. "Rnn" (R20, R44, ...) is a record in
-docs/rust-core/DECISIONS.md; R20 lists the known differences between the
-Rust core and Java. "PLAN.md Dnn" is an earlier decision in PLAN.md.
+**Scope.** The repository also holds `rust/`, a separate Rust
+implementation that the other language packages run; it is out of scope.
+This review covers `java/` only.
 
 ## 1. What problem this solves
 
@@ -71,8 +60,8 @@ certificate chain ending at an Apple root certificate we pinned in advance.
 If so, the library returns what Apple signed. It runs offline and never
 calls Apple.
 
-What a verified result does not mean (THREAT-MODEL.md §4; java/README.md,
-"What to check after verification"):
+What a verified result does not mean (java/README.md, "What to check
+after verification"):
 
 | Not checked | Why | Whose job |
 |---|---|---|
@@ -162,9 +151,8 @@ intermediate needs no change here if it chains to a pinned root and carries
 the WWDR marker (§2.7). A payload signed under a new **root** fails until
 that root is in the anchor set, through a library release or
 `Config.builder().roots(...)`. Adding one means its `.cer` in `certs/`, a
-constant in `AppleRootCerts` and its fingerprint in `AppleRootCertsTest`
-(java/README.md, "Vendoring"; CLAUDE.md lists the Rust-side copies). The
-weekly `apple-root-watch` workflow fails when Apple's published roots
+constant in `AppleRootCerts` and its fingerprint in `AppleRootCertsTest`.
+The weekly `apple-root-watch` workflow fails when Apple's published roots
 change.
 
 ### 2.5 Validity, and at which instant
@@ -194,9 +182,9 @@ a non-critical one it may ignore.
 |---|---|---|
 | basicConstraints | `CA: true` lets the key sign certificates | A leaf (`CA: false`) cannot act as an intermediate; PKIX enforces it |
 | keyUsage | Bit flags such as keyCertSign | An intermediate without keyCertSign is `UNTRUSTED_CHAIN` (`receipt/reject-intermediate-whose-key-usage-lacks-key-cert-sign`) |
-| extendedKeyUsage (EKU) | Purposes as OIDs | BouncyCastle's PKIX handles a critical EKU only on the leaf and would reject one on a CA as unrecognised. `AppleTrust.HANDLED_CRITICAL_EXTENSIONS`, a `PKIXCertPathChecker`, removes it from PKIX's list of unhandled critical extensions ("marks it processed") and asks the CA no purpose (Q69). Any other unrecognised critical extension is still refused |
+| extendedKeyUsage (EKU) | Purposes as OIDs | BouncyCastle's PKIX handles a critical EKU only on the leaf and would reject one on a CA as unrecognised. `AppleTrust.HANDLED_CRITICAL_EXTENSIONS`, a `PKIXCertPathChecker`, removes it from PKIX's list of unhandled critical extensions ("marks it processed") and asks the CA no purpose. Any other unrecognised critical extension is still refused |
 | subjectKeyIdentifier (SKI), authorityKeyIdentifier (AKI) | Short ids of this certificate's key and of its issuer's key | A CMS SignerInfo may name its signer by SKI (§4.1) |
-| cRLDistributionPoints | Where a revocation list lives | No revocation check here; the same checker marks a critical one processed (Q72) |
+| cRLDistributionPoints | Where a revocation list lives | No revocation check here; the same checker marks a critical one processed |
 
 ### 2.7 Apple's marker OIDs
 
@@ -214,8 +202,7 @@ the library requires them:
 
 `1.2.840.113635` is Apple's OID arc. A missing marker is
 `INVALID_CERTIFICATE_PURPOSE`. Apple's published receipt procedure does not
-ask for these; here the library is stricter than Apple (RECEIPT-FIELDS.md,
-"Chain of trust").
+ask for these; here the library is stricter than Apple.
 
 ## 3. Encodings in five minutes
 
@@ -347,8 +334,7 @@ breaking it. Hence:
   receipt as `INVALID_CERTIFICATE`; the code tries each (case
   `receipt/accept-a-renewed-signer-behind-its-expired-copy`).
 - The bag can hold hostile certificates built to burn CPU: decoding a
-  16384-bit RSA key costs seconds in BouncyCastle
-  ([#161](https://github.com/emindeniz99/apple-purchase-receipt-verifier/issues/161)).
+  16384-bit RSA key costs seconds in BouncyCastle.
 
 §5 shows how the code answers each.
 
@@ -369,7 +355,7 @@ id), 1703 (transaction id), 1704 (purchase date), 1708 (expiry). The
 [appendix](#appendix-receipt-attribute-tables) lists all modelled types
 with their getters; skim it.
 
-Decode rules (docs/design/0.7-api.md): missing is `null`, never invented.
+Decode rules: missing is `null`, never invented.
 Dates are epoch milliseconds UTC, parsed as RFC 3339
 (`ReceiptDecoder.parseDate`); an empty date string means "not set". A value
 that does not decode is `null`, its octets kept in `unknownAttributes()`,
@@ -386,8 +372,8 @@ Both genuine receipts in the repository chain to **Apple Inc. Root CA**
 | `receipt-sandbox-legacy` | 2020-05-06 | Mac App Store and iTunes Store Receipt Signing | WWDR (G1), expired 2023-02-07 | SHA-1 with RSA throughout: both certificates and the CMS digest |
 | `receipt-sandbox-g5` | 2025-12-26 | same subject, expired 2026-08-23 | WWDR G5 | SHA-256 with RSA |
 
-The anchor set holds all three published Apple roots by decision (PLAN.md
-D15): Apple Inc. Root CA (legacy receipts today), Apple Root CA - G2 (neither
+The anchor set deliberately holds all three published Apple roots, as
+Apple advises trusting every root it publishes: Apple Inc. Root CA (legacy receipts today), Apple Root CA - G2 (neither
 path today) and Apple Root CA - G3 (ECDSA P-384; JWS today). Any of the
 three can anchor either path.
 
@@ -412,8 +398,8 @@ The checks, in the order Java runs them:
 | 9 | CMS signature, with the now-trusted signer key | Tampered content | `INVALID_SIGNATURE` |
 | 10 | Decode the payload | Nothing: Apple signed it | `UNREADABLE_PAYLOAD` |
 
-The Rust core counts the bag inside step 3, before the date (THREAT-MODEL.md
-§3.3); step 4 never rejects, so both give the same verdict.
+The Rust core counts the bag inside step 3, before the date; step 4 never
+rejects, so both give the same verdict.
 
 **Why reading the creation date before trust is safe.** Step 4 reads bytes
 nobody has vouched for and uses them only to choose the instant at which
@@ -421,15 +407,13 @@ validity is judged. That cannot make a foreign chain trusted or a bad
 signature good: steps 7 to 9 still demand a chain to a pinned root and a
 valid signature, so a chosen date only picks a moment when Apple's
 certificates were valid, and they sign only what Apple's keys signed.
-Apple's own procedure uses this date (RECEIPT-FIELDS.md, step 2c). A
+Apple's own validation guide uses this date. A
 missing, empty or unparseable attribute 12, or any top-level entry that
 fails to read, leaves the instant to the clock. The accepted residual risk:
 if a historical Apple leaf key ever leaked, a payload back-dated into its
-validity would verify, as with Apple's own libraries (THREAT-MODEL.md §4).
+validity would verify, as with Apple's own libraries.
 
-**Why top-down
-([#161](https://github.com/emindeniz99/apple-purchase-receipt-verifier/issues/161)).**
-The naive way decodes every bag certificate's key and lets PKIX search. But
+**Why top-down.** The naive way decodes every bag certificate's key and lets PKIX search. But
 BouncyCastle validates an RSA key while decoding it, which takes seconds
 for a 16384-bit modulus the attacker chose. So the code never decodes a key
 no pinned root has vouched for. It starts from the roots and accepts a bag
@@ -447,12 +431,12 @@ chain whose signer also lacks a marker answers `INVALID_CERTIFICATE`.
 is enough. Up to four are tried in order; the first that verifies decides,
 and when none does, the first one's failure is the verdict. A SignerInfo
 whose algorithm BouncyCastle does not implement counts as not verifying,
-and the next is tried, as RFC 4853 asks (Q65). Genuine receipts have one;
+and the next is tried, as RFC 4853 asks. Genuine receipts have one;
 the rule keeps a future dual-signed receipt working.
 
 **Several certificates with the signer's identity.** Every certificate a
-SignerInfo's `sid` matches is tried in bag order with the same rule (Q69,
-Q74); §4.2 has the renewal example this protects.
+SignerInfo's `sid` matches is tried in bag order with the same rule; §4.2 has
+the renewal example this protects.
 
 **What each `Reason` means** (endpoint statuses in §6.4):
 
@@ -545,10 +529,7 @@ flowchart TD
 The table follows the diagram on `fixtures/public-receipts/receipt-sandbox-g5.b64`,
 a genuine Apple sandbox receipt (case
 `receipt/verify-genuine-sandbox-g5-against-apple-roots`), traced on
-2026-10-06 with OpenJDK 21 and BouncyCastle 1.86. The trace's code, commands
-and full output are in
-[docs/evidence/2026-10-06-walkthrough-trace.md](../docs/evidence/2026-10-06-walkthrough-trace.md).
-Numbers in brackets are positions in `ReceiptCore.java` (§6.2).
+2026-10-06 with OpenJDK 21 and BouncyCastle 1.86. Numbers in brackets are positions in `ReceiptCore.java` (§6.2).
 
 | Step | Method | What happens on g5 | Reason on failure |
 |---|---|---|---|
@@ -560,7 +541,7 @@ Numbers in brackets are positions in `ReceiptCore.java` (§6.2).
 | 6 | `authenticatedTopDown` (8), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf. DNs are compared before any issuer key is decoded | none: a stranger is left out |
 | 7 | `verifySigner` (4), `validateChain` (7) | Signer is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
 | 8 | `requireMarkers` (6) | The leaf carries `...6.11.1`; `path.get(1)`, WWDR G5, carries `...6.2.1` | `INVALID_CERTIFICATE_PURPOSE`, also for a signer issued directly by a root |
-| 9 | `verifyCmsSignature` (9), `signerVerifier` (10) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist ([#160](https://github.com/emindeniz99/apple-purchase-receipt-verifier/issues/160)). Valid | `INVALID_SIGNATURE` |
+| 9 | `verifyCmsSignature` (9), `signerVerifier` (10) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist, so a change on Apple's side cannot break genuine receipts. Valid | `INVALID_SIGNATURE` |
 | 10 | `parseSignedPayload` (5), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
 
 Steps 7 to 9 run per (SignerInfo, certificate) pair. One constant,
@@ -595,7 +576,7 @@ endpoint would (`PRODUCTION` or `SANDBOX`), offline. It runs
 | 21003 | `INVALID_SIGNATURE`, `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE` |
 | 21007 | Verified on `PRODUCTION`, but `receipt_type` is not `Production` or `ProductionVPP` (sandbox, Xcode and missing all count) |
 | 21008 | Verified on `SANDBOX`, receipt is production |
-| 21009 | `UNREADABLE_PAYLOAD`, `INTERNAL_ERROR`, an unexpected exception or a throwing clock; and, checked after 21007 and 21008, a verified receipt with an in-app purchase that did not decode (Q71) |
+| 21009 | `UNREADABLE_PAYLOAD`, `INTERNAL_ERROR`, an unexpected exception or a throwing clock; and, checked after 21007 and 21008, a verified receipt with an in-app purchase that did not decode, so a 0 never silently drops a purchase |
 
 21009 is deterministic: alert, do not retry. The response body and the
 remaining rules are in java/README.md, "The verifyReceipt-compatible
@@ -657,9 +638,10 @@ Differences from the receipt path:
   `verifySignedData` again.
 - The 64-byte check stops a P-384 leaf verifying a 96-byte signature. A
   leaf on another 256-bit curve passes in Java where the Rust core refuses
-  it (R20); such a leaf chains to no pinned root anyway.
+  it, a recorded difference; such a leaf chains to no pinned root anyway.
 
-Two deliberate rules looser than the RFCs (R44):
+Two deliberate rules looser than the RFCs, both to avoid refusing genuine
+Apple-signed data:
 
 - **`crit` is ignored.** The header is inside the signing input, so only
   Apple can set `crit` on a JWS that verifies; refusing it could only refuse
@@ -686,7 +668,7 @@ Fixed bounds (java/README.md, "Resource bounds"):
 | Chain below the anchor | 6 certificates | Bounds path building | `UNTRUSTED_CHAIN` |
 | JSON depth, name, number | 1,000, 50,000, 1,000 (Jackson defaults, in the library's own factories so a host-wide override cannot move them) | Bounded parsing | `MALFORMED`; `UNREADABLE_PAYLOAD` in a signed payload |
 
-Two costs to know (THREAT-MODEL.md §3.7; Q62):
+Two costs to know:
 
 - **Parse before trust.** To find attribute 12, Java decodes the whole
   top-level SET of an unverified payload. A 3 MiB forgery of about 195,000
@@ -751,14 +733,13 @@ settings still apply; none can make a forged signature verify
    case as its own test, named by its id. A behaviour change touches the
    core, Java and the fixtures in one PR. Never edit a case to make an
    implementation pass.
-8. **Divergences are recorded.** Known differences from the Rust core are in
-   R20. One that changes the verdict on an Apple-signed input, or accepts
+8. **Divergences are recorded.** Every known difference from the Rust core
+   is written down with its reason. One that changes the verdict on an Apple-signed input, or accepts
    anything unsigned, is a bug.
 9. **Know the accepted risks.** No revocation; a back-dated payload under a
    leaked historical key; the pre-trust parse cost; SHA-1; no
-   signer-algorithm allowlist
-   ([#160](https://github.com/emindeniz99/apple-purchase-receipt-verifier/issues/160));
-   `crit` and high-S (R44). Each has a recorded reason.
+   signer-algorithm allowlist; `crit` and high-S. Each has a recorded
+   reason.
 
 Tests are in `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/`
 and read `fixtures/` next to `java/`:
@@ -769,7 +750,7 @@ mvn -f java/pom.xml test -Dtest=ConformanceCasesTest  # only the shared cases
 ```
 
 Classes named `*Fixture` or `*Fixtures` regenerate fixtures only with
-`-Dfixtures.generate=true`. Jazzer fuzzing is in `java/fuzz/README.md`.
+`-Dfixtures.generate=true`. Jazzer fuzz targets live in `java/fuzz/`.
 
 ## 10. Glossary
 
@@ -802,7 +783,7 @@ Classes named `*Fixture` or `*Fixtures` regenerate fixtures only with
 ## Appendix: receipt attribute tables
 
 Skim these; they are the reference behind §4.3. Constants are in
-`ReceiptDecoder`, meanings from RECEIPT-FIELDS.md.
+`ReceiptDecoder`.
 
 App-level attributes:
 
