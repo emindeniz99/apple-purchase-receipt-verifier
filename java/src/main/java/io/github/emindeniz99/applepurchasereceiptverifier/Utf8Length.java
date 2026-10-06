@@ -3,8 +3,8 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 import java.nio.charset.StandardCharsets;
 
 /**
- * A {@link String}'s length in UTF-8 bytes, as Apple counts its limits; see
- * docs/design/java-notes.md.
+ * A {@link String}'s length in UTF-8 bytes, as Apple counts its limits. A
+ * lone surrogate counts the one {@code ?} that {@code getBytes} writes for it.
  */
 final class Utf8Length {
 

@@ -435,8 +435,8 @@ and the next is tried, as RFC 4853 asks. Genuine receipts have one;
 the rule keeps a future dual-signed receipt working.
 
 **Several certificates with the signer's identity.** Every certificate a
-SignerInfo's `sid` matches is tried in bag order with the same rule; §4.2 has
-the renewal example this protects.
+SignerInfo's `sid` matches is tried in bag order with the same rule, and a
+byte-identical copy only once; §4.2 has the renewal example this protects.
 
 **What each `Reason` means** (endpoint statuses in §6.4):
 
@@ -485,7 +485,7 @@ if (result.verified()) {
 |---|---|
 | `DefaultVerifier` | The only `Verifier`: startup checks; reads the clock once per call; maps `VerificationException` to `Failure`, any other `RuntimeException` to `INTERNAL_ERROR` |
 | `ReceiptCore` | The legacy algorithm (§6.3) |
-| `ReceiptCertificates` | `decode` reads the bag (cap 10) without keys; `signers` lists the certificates a `sid` matches |
+| `ReceiptCertificates` | `decode` reads the bag (cap 10) without keys; `signers` lists the certificates a `sid` matches, each byte-identical copy once |
 | `AppleTrust` | Shared trust material: marker OIDs, anchors, `signedByAny`, `HANDLED_CRITICAL_EXTENSIONS`, `chainFailure` |
 | `AppleRootCerts` | The three roots as base64 constants |
 | `ReceiptDecoder` | Payload grammar: `readCreationDate`, `parse`, `parseDate`, environment mapping |
@@ -571,7 +571,7 @@ endpoint would (`PRODUCTION` or `SANDBOX`), offline. It runs
 
 | Status | When |
 |---|---|
-| 0 | Verified, environment matches, every in-app purchase decoded |
+| 0 | Verified, environment matches, every in-app purchase parsed (one with an unreadable field is listed with that field `null`) |
 | 21002 | `MALFORMED`, `TOO_LARGE`, including a body over 3,145,728 bytes, not a JSON object, or without a string `receipt-data` |
 | 21003 | `INVALID_SIGNATURE`, `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE` |
 | 21007 | Verified on `PRODUCTION`, but `receipt_type` is not `Production` or `ProductionVPP` (sandbox, Xcode and missing all count) |
@@ -734,8 +734,9 @@ settings still apply; none can make a forged signature verify
    core, Java and the fixtures in one PR. Never edit a case to make an
    implementation pass.
 8. **Divergences are recorded.** Every known difference from the Rust core
-   is written down with its reason. One that changes the verdict on an Apple-signed input, or accepts
-   anything unsigned, is a bug.
+   is written down with its reason, outside `java/`, in the repository's
+   decision log (`docs/rust-core/DECISIONS.md`). One that changes the
+   verdict on an Apple-signed input, or accepts anything unsigned, is a bug.
 9. **Know the accepted risks.** No revocation; a back-dated payload under a
    leaked historical key; the pre-trust parse cost; SHA-1; no
    signer-algorithm allowlist; `crit` and high-S. Each has a recorded
