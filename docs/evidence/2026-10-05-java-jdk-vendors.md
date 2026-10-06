@@ -70,6 +70,16 @@ Tests are run/failures/errors/skipped. The skip is
 - **Six legs never started.** setup-java has no build for them, and its
   message is quoted in the last column. The job now excludes those six.
 
+**Update, 2026-10-06.** The Red Hat 21 leg stopped starting:
+setup-java, which looks Red Hat builds up in the Foojay Disco API
+(`api.foojay.io/disco/v3.0/packages?distro=redhat`), got no Red Hat 21
+from it. That query answered "No package(s) found" for Red Hat on every
+version, and Foojay's distribution list for Red Hat named 17, 11 and 8
+only. The leg had passed earlier that day, on 21.0.8 where every other
+vendor shipped 21.0.12, so Foojay's Red Hat data was already behind.
+The job excludes Red Hat 21 until Foojay lists it again; Java 21 still
+runs on Temurin and on ten other vendors.
+
 ## Where this stops holding
 
 - Linux x86_64 only. No vendor was tried on arm64, macOS or Windows.
