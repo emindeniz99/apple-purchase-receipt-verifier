@@ -281,15 +281,13 @@ class ReceiptVerificationTest {
     }
 
     @Test
-    void aCopyOfTheSignerIdentityAheadOfTheGenuineLeafFailsClosed() throws Exception {
+    void aCopyOfTheSignerIdentityAheadOfTheGenuineLeafIsPassedOver() throws Exception {
         // The certificate bag is unsigned, so anyone relaying a receipt can put
         // a certificate with the signer's issuer and serial on another key in
-        // front of the genuine leaf. The first match is the one used; its
-        // chain fails before its key is touched, so the relayed receipt is
-        // refused, never accepted on the twin's key.
+        // front of the genuine leaf. Every match is tried; the copy's chain
+        // fails before its key is touched, and the genuine leaf verifies.
         byte[] relayed = pki.signReceiptWithTwinAheadOfSigner(payload(BUNDLE, creationDate.toString()));
-        VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, relayed));
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
+        assertEquals(BUNDLE, verify(pki, relayed).bundleId());
     }
 
     @Test
@@ -585,9 +583,8 @@ class ReceiptVerificationTest {
         ReceiptPayload current = verify(pki, pki.signReceipt(datelessPayload));
         assertNull(current.receiptCreationDateMs(), "the fixture must carry no creation date");
 
-        // Signed inside the chain's window: BouncyCastle also checks the signer
-        // against a CMS signingTime attribute when there is one (Apple's
-        // receipts carry none), and this one must not be what rejects it.
+        // Signed inside the chain's window, as a genuine receipt of that age
+        // would be, so only the creation date or the clock can reject it.
         Date signedAt = new Date(notBefore.getTime() + 86_400_000L);
         byte[] stale = expired.signReceipt(datelessPayload, signedAt);
         VerificationException e = assertThrows(VerificationException.class, () -> verify(expired, stale));
