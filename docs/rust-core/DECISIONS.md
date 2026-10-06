@@ -21,7 +21,8 @@ added R42 and R43 (recorded 2026-10-03);
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
 client change, and amended R41 for .NET's `Config`; on 2026-10-04 the
 owner amended R41 for Go's, Swift's and Node's `Config`, and R23 for the
-form of `init`'s configuration (Q30).
+form of `init`'s configuration (Q30); on 2026-10-06 the owner's
+decision Q70 added R44.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1899,6 +1900,46 @@ the Java implementation goes.
   tests: raw FFI with no safe Rust API over it, `unsafe` code in the tests
   for a job a safe crate does. C) Keep the hand-written reader: the
   parser this decision removes.
+
+---
+
+## R44. Two JWS rules kept looser than the RFCs: `crit` and high-S
+
+**Status: accepted** (owner, 2026-10-06, decision Q70 for `crit`).
+
+Both are deliberate deviations, and the core and Java agree on each, so
+neither is an R20 divergence.
+
+- **`crit` is ignored.** RFC 7515 §4.1.11 says a recipient MUST reject a
+  JWS whose `crit` header lists an extension it does not understand. Both
+  implementations read `alg` and `x5c` and nothing else from the header
+  (R40), so `crit` is never looked at. Apple's App Store Server Library
+  ignores it too.
+  - Why: the header is inside the signing input, so only Apple can set
+    `crit` on a JWS that verifies. Rejecting it could only ever refuse
+    Apple-signed data, and the goal is never to refuse Apple-signed data
+    by mistake.
+  - What it cannot open: a `b64: false` JWS (RFC 7797), the one
+    registered extension that changes how a JWS is read. Both
+    implementations base64url-decode the payload segment and read the
+    result as JSON, so an unencoded payload is refused as malformed or
+    unreadable, whatever `crit` says.
+- **High-S ES256 signatures are accepted.** For an ECDSA signature
+  (r, s), the pair (r, n − s) also verifies. Anyone holding a JWS can
+  rewrite its third segment without a key, and the header and payload
+  stay byte-identical. Apple does not normalise to low-S, so refusing
+  high-S would refuse genuine JWS. Both implementations accept both
+  forms.
+  - Consequence: strict base64url (`rust/src/base64.rs`) leaves a JWS
+    two spellings, not one. Callers dedupe on a field of the verified
+    payload, `transactionId` (or `originalTransactionId`) for a
+    transaction and `notificationUUID` for a server notification, never
+    on the JWS string or its hash (INTEGRATION.md, README.md).
+- **Rejected:** A) honour `crit` and refuse unknown extensions: risks
+  refusing Apple-signed data and protects against nothing Apple did not
+  sign. B) refuse high-S: refuses genuine Apple JWS. C) normalise high-S
+  to low-S before handing the JWS back: the library returns the payload,
+  not the JWS, so there is nothing to normalise for the caller.
 
 ---
 
