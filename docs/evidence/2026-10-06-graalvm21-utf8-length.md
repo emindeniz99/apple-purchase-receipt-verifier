@@ -66,19 +66,27 @@ exit counted 3,145,730 bytes every time.
 **Reading, revised.** Graal's JIT in Oracle GraalVM 21.0.12 miscompiles
 `Utf8Length.exceeds` after the test suite's earlier calls have profiled
 it. C2 compiles the same bytecode correctly. None of the three loop
-optimizations tried is the cause. The code is correct, so no change was
-made (owner, Q83 b, 2026-10-06). The `java on graalvm 21` leg stays in
-the matrix and fails some runs; it is not a required check.
+optimizations tried is the cause. The code was correct, so at first no
+change was made (owner, Q83 b, 2026-10-06).
 
-**What it can change.** A receipt or a JWS is base64, so an undercount
-there only turns `TOO_LARGE` into `MALFORMED`. The endpoint's request JSON
+**What it could change.** A receipt or a JWS is base64, so an undercount
+there only turned `TOO_LARGE` into `MALFORMED`. The endpoint's request JSON
 can carry non-ASCII text, and on this JVM a body over 3,145,728 UTF-8
-bytes but under that many characters can be read instead of refused.
-Neither accepts anything unsigned.
+bytes but under that many characters could be read instead of refused.
+Neither accepted anything unsigned.
 
-**Where this stops holding.** Reopen if it fails on another JVM or a later
-GraalVM 21 update, or if a different method gives a wrong answer on
-GraalVM. Reconsider the code if a team runs the endpoint on GraalVM 21.
-One simpler form exists, `text.getBytes(UTF_8).length > limit` for the
-long strings only; it allocates up to three times the input, and nobody
-has shown that Graal compiles it correctly.
+## Update, 2026-10-06 night: the walk is gone
+
+The owner then chose the simplest form over the walk (Q84):
+`text.length() > limit || text.getBytes(UTF_8).length > limit`. The units
+test still refuses an over-long string before anything is copied. A lone
+surrogate now counts the one `?` that `getBytes` writes, which is what the
+`-wasm` artifact already sends the core; no shared case carries one.
+
+Round 3 (`runner-probe-round3.yml`) ran the two test classes that had
+reproduced the miscount under Graal's JIT, on that form: 0 wrong answers
+in 48 runs, on AMD EPYC 7763, 9V45 and 9V74 and on Intel Xeon Platinum
+8573C. The same classes had failed 16 of 72 runs on the walk.
+
+**Where this stops holding.** Reopen if the `java on graalvm 21` leg fails
+again on this test, or if another method gives a wrong answer on GraalVM.
