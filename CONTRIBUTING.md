@@ -309,7 +309,7 @@ format.
 the Java implementation, and every package answers it: one
 language-neutral case per semantic fact, each naming a registered fixture,
 the `Config` to build the verifier from, and either the payload fields the
-call must return or the reason it must fail with. 406 cases today. Each
+call must return or the reason it must fail with. 409 cases today. Each
 package reads the file through a thin adapter that knows nothing about
 any individual case — `rust/tests/conformance.rs`,
 `java/src/test/.../ConformanceCasesTest.java`,
@@ -501,12 +501,12 @@ and passes the value to the module as `now-ms`.
 
 The clock matters in two places: the certificate-validity instant when the
 input states no usable date (a receipt whose first attribute 12 is missing
-or does not parse, a JWS whose `signedDate` is missing or not a
-representable instant), and `request_date` at the endpoint. Pin a clock on
-any case whose verdict or asserted fields could move with it: the dateless
-and unreadable-date cases pin 2025-01-01 unless the case is about the clock
-itself, and two endpoint cases pin that the clock does move the verdict of
-a dateless receipt. A payload that states its own date is judged at that
+or does not parse, a JWS whose `signedDate` and `receiptCreationDate` are
+each missing or not a representable instant), and `request_date` at the
+endpoint. Pin a clock on any case whose verdict or asserted fields could
+move with it: the dateless and unreadable-date cases pin 2025-01-01 unless
+the case is about the clock itself, and two endpoint cases pin that the
+clock does move the verdict of a dateless receipt. A payload that states its own date is judged at that
 date, so the expired-chain cases need no clock. How old a signed payload
 may be is the caller's decision, so no case pins one.
 

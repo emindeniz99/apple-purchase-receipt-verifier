@@ -411,10 +411,11 @@ class SignedDataTest {
     }
 
     /**
-     * A payload without {@code signedDate} is judged at the config clock: an
-     * expired chain fails under the system clock and passes under a clock set
-     * inside its window. {@code receiptCreationDate} does not stand in for
-     * {@code signedDate} in 0.7.
+     * A payload without {@code signedDate} or {@code receiptCreationDate} is
+     * judged at the config clock: an expired chain fails under the system
+     * clock and passes under a clock set inside its window. An app
+     * transaction's {@code receiptCreationDate} stands in for a missing
+     * {@code signedDate}, as in Apple's library (owner Q67, 2026-10-06).
      */
     @Test
     void aDatelessPayloadIsJudgedAtTheConfigClock() throws Exception {
@@ -424,7 +425,6 @@ class SignedDataTest {
         TestPki expired = TestPki.jws(true, true, notBefore, notAfter);
         Map<String, Object> dateless = transactionClaims("Sandbox");
         dateless.remove("signedDate");
-        dateless.put("receiptCreationDate", now - 547L * 86_400_000L);
         String expiredJws = expired.signJws(dateless);
         assertEquals(Reason.INVALID_CERTIFICATE, failure(expired, expiredJws));
         assertEquals(BUNDLE, verify(pki, pki.signJws(dateless)).get("bundleId").asText());
@@ -432,6 +432,23 @@ class SignedDataTest {
         Clock insideTheWindow = Clock.fixed(Instant.ofEpochMilli(notBefore.getTime() + 86_400_000L), ZoneOffset.UTC);
         JsonPayload payload = Checks.signedData(Checks.verifier(insideTheWindow, expired.root), expiredJws);
         assertTrue(payload.json().contains(BUNDLE));
+
+        dateless.put("receiptCreationDate", now - 547L * 86_400_000L);
+        assertEquals(
+                BUNDLE,
+                verify(expired, expired.signJws(dateless)).get("bundleId").asText());
+
+        // A signedDate that is not a representable instant falls through to
+        // receiptCreationDate, not to the clock.
+        dateless.put("signedDate", Double.valueOf(1e300));
+        assertEquals(
+                BUNDLE,
+                verify(expired, expired.signJws(dateless)).get("bundleId").asText());
+
+        // A receiptCreationDate that is not a number counts as absent: the clock decides.
+        dateless.remove("signedDate");
+        dateless.put("receiptCreationDate", "2024-01-01");
+        assertEquals(Reason.INVALID_CERTIFICATE, failure(expired, expired.signJws(dateless)));
     }
 
     private static String headerJson() throws Exception {

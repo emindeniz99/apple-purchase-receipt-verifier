@@ -467,8 +467,8 @@ field-by-field fidelity table, including what `latest_receipt_info` and
 Certificate validity is judged at the instant Apple signed, not now — so a
 payload signed with a since-rotated certificate keeps verifying. The instant
 is the receipt's creation-date attribute (legacy path) or the JWS
-`signedDate` claim, and, when that is missing or is not a representable
-instant (such as `1e300`), the **configured clock** stands in.
+`signedDate` claim, else its `receiptCreationDate` claim. When neither is a
+representable instant (such as `1e300`), the **configured clock** stands in.
 
 `clock:` on `Config` is read once per call, before the input is looked at, and
 its value is handed to the module. The module uses it for exactly two things:

@@ -407,7 +407,8 @@ own `password` and `exclude-old-transactions` fields are read and ignored,
 as in 0.6.
 Duplicate member names are last-wins: where this request body repeats
 `receipt-data`, a JWS header repeats `alg` or `x5c`, or a JWS payload
-repeats `signedDate`, the last occurrence is the value used.
+repeats `signedDate` or `receiptCreationDate`, the last occurrence is the
+value used.
 
 `environment` picks which of Apple's two URLs this call imitates and drives
 the 21007/21008 routing below; `request_date` in the response comes from the
@@ -495,8 +496,9 @@ the day Apple re-anchored a path. `AppleRootCertsTest` pins the three to
 Apple's published SHA-256 fingerprints and to the repository's `certs/`.
 
 Certificate validity is judged at the payload's own signing instant (a
-receipt's creation date, or a JWS's `signedDate`), not at verification time,
-so a payload signed before a root expires keeps verifying after it:
+receipt's creation date, or a JWS's `signedDate`, else an app transaction's
+`receiptCreationDate`), not at verification time, so a payload signed before
+a root expires keeps verifying after it:
 
 | Root | Expires (UTC) | Anchors today |
 |---|---|---|

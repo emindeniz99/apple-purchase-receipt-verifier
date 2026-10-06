@@ -190,16 +190,16 @@ format Apple added, not a defect of the client's request. It is therefore
 whose 21002 would tell an app server to deny a paying user. An integrator
 should alert and escalate on it, not deny.
 
-A JWS follows the same rule. Before the signature only `signedDate` is read,
-to pick the chain instant. A payload that is not a JSON object is carried
-past the chain and signature checks: `INVALID_SIGNATURE` if the signature
-fails, `UNREADABLE_PAYLOAD` if it verifies. After that nothing is read:
-`verifySignedData` returns the payload JSON as signed, so a claim of an
-unexpected type is a question for the caller's parser, not a verdict. A
-runtime that lacks an algorithm no input chooses (a PKIX implementation) is
-`INTERNAL_ERROR`. A key or signature algorithm the certificate names keeps
-its input reason, because a missing algorithm and a hostile certificate
-cannot be told apart there.
+A JWS follows the same rule. Before the signature only `signedDate` (else an
+app transaction's `receiptCreationDate`) is read, to pick the chain instant.
+A payload that is not a JSON object is carried past the chain and signature
+checks: `INVALID_SIGNATURE` if the signature fails, `UNREADABLE_PAYLOAD` if
+it verifies. After that nothing is read: `verifySignedData` returns the
+payload JSON as signed, so a claim of an unexpected type is a question for
+the caller's parser, not a verdict. A runtime that lacks an algorithm no
+input chooses (a PKIX implementation) is `INTERNAL_ERROR`. A key or
+signature algorithm the certificate names keeps its input reason, because a
+missing algorithm and a hostile certificate cannot be told apart there.
 
 *Proof.* Tampering: `transaction/reject-tampered-payload` and
 `receipt/reject-tampered-payload`, both `INVALID_SIGNATURE`. Order:
@@ -237,19 +237,20 @@ including `endpoint/vpp-sandbox-receipt-on-production-answers-21007`,
 
 Apple's signing certificates rotate, so a receipt signed under a since-expired
 certificate is still genuine. The validity window is checked at the payload's
-`signedDate` or the receipt's creation date, falling back to the `Config`
-clock when the input carries neither (docs/design/0.7-api.md, Setup). For a
-receipt, a creation date that is empty, not an RFC 3339 `date-time`
-(owner, Q68, 2026-10-06), or sits beside a top-level entry the walk
-cannot read counts as carried by nothing, and the chain is judged at the
-clock; a repeated attribute 12 uses its first copy. A JWS `signedDate` that
-is not a representable instant falls back to the clock the same way. No
-verifier judges how old a genuinely signed payload may be: that limit
-depends on the endpoint (Apple retries a server notification for days, and
-a device may present an old but genuine payload), so the caller applies it
-to `signedDate` or the receipt creation date, as Apple's own App Store
-Server Libraries leave it to their callers (PLAN.md D5). A freshness limit
-would not be replay protection either.
+`signedDate` (else an app transaction's `receiptCreationDate`, which is where
+Apple's App Store Server Library judges one; owner Q67, 2026-10-06) or the
+receipt's creation date, falling back to the `Config` clock when the input
+carries none (docs/design/0.7-api.md, Setup). For a receipt, a creation date
+that is empty, not an RFC 3339 `date-time` (owner, Q68, 2026-10-06), or sits
+beside a top-level entry the walk cannot read counts as carried by nothing,
+and the chain is judged at the clock; a repeated attribute 12 uses its first
+copy. A JWS date that is not a representable instant counts as not carried the
+same way. No verifier judges how old a genuinely signed payload may be: that
+limit depends on the endpoint (Apple retries a server notification for days,
+and a device may present an old but genuine payload), so the caller applies it
+to `signedDate` or the receipt creation date, as Apple's own App Store Server
+Libraries leave it to their callers (PLAN.md D5). A freshness limit would not
+be replay protection either.
 
 The module has no clock of its own. A wrapper reads the `Config` clock once
 per call, before it looks at the input, and passes the value as `now-ms`;

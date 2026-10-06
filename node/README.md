@@ -317,8 +317,9 @@ and the module uses the value for two things:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
-  does not parse, a JWS without a representable `signedDate`. Otherwise the
-  module judges the chain at the date the input states.
+  does not parse, a JWS with neither a representable `signedDate` nor a
+  representable `receiptCreationDate`. Otherwise the module judges the chain
+  at the date the input states.
 - **`request_date`** in the endpoint's response.
 
 A clock that throws, or answers anything but epoch milliseconds between 0

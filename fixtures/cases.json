@@ -159,6 +159,30 @@
       "codec": "raw",
       "contentSha256": "0df1f72bbf5d433791a8372b53e50b892a6a9d1d6f96568ddb3ad3f9020724a1"
     },
+    "creation-date-jws-root": {
+      "path": "generated-0.7/creation-date-jws-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "b40f3d94764842d34b431bf313f9a9e4b2739d4076c11bd311393d3962cc2cbf"
+    },
+    "creation-date-inside-the-chain": {
+      "path": "generated-0.7/creation-date-inside-the-chain.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "50a7679714b0a9e50c49bb7760e3dbadfb255cd9574feae8c34dda1656d51851"
+    },
+    "creation-date-outside-the-chain": {
+      "path": "generated-0.7/creation-date-outside-the-chain.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "07845ae4c459149bf1bd8f48cdcf81839d78c56a87b81dab3c3012faeec9b3c4"
+    },
+    "creation-date-signed-date-wins": {
+      "path": "generated-0.7/creation-date-signed-date-wins.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "bb2c614deb215197d3e7fad2872c3839c08a40d03d4f57786e30d7af671aa83d"
+    },
     "divergence-jws-expired-root": {
       "path": "generated/divergence-jws-expired-root.der",
       "role": "trust-anchor",
@@ -3986,6 +4010,106 @@
       "tags": [
         "jws",
         "transaction",
+        "positive",
+        "validity-window",
+        "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/verify-at-the-receipt-creation-date-without-a-signed-date",
+      "description": "An app transaction that states receiptCreationDate (2020-06-01) and no signedDate, genuinely signed under a pinned chain valid only from 2020-01-01 to 2021-01-01. The chain is judged at receiptCreationDate, as Apple's App Store Server Library does for an app transaction (owner Q67, 2026-10-06), so the JWS verifies although the config clock, 2025-01-01, is past the chain's end. Before Q67 both implementations judged it at the clock: INVALID_CERTIFICATE.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "creation-date-inside-the-chain"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "creation-date-jws-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": null,
+        "fields": {
+          "/receiptCreationDate": 1590969600000,
+          "/signedDate": null
+        }
+      },
+      "tags": [
+        "jws",
+        "app-transaction",
+        "positive",
+        "validity-window",
+        "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/reject-a-receipt-creation-date-outside-the-chain",
+      "description": "The same app transaction with receiptCreationDate 2024-08-06, outside the chain's 2020 window, and no signedDate. receiptCreationDate only moves the instant the chain is judged at; a chain not valid then is INVALID_CERTIFICATE (owner Q67, 2026-10-06).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "creation-date-outside-the-chain"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "creation-date-jws-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE"
+      },
+      "fault": "receipt-creation-date-outside-the-chain",
+      "tags": [
+        "jws",
+        "app-transaction",
+        "negative",
+        "chain",
+        "validity-window",
+        "generated"
+      ]
+    },
+    {
+      "id": "app-transaction/signed-date-wins-over-the-receipt-creation-date",
+      "description": "An app transaction stating both: signedDate 2020-06-01, inside the chain's 2020 window, and receiptCreationDate 2024-08-06, outside it. signedDate is the moment Apple signed, so it decides and the JWS verifies (owner Q67, 2026-10-06).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "creation-date-signed-date-wins"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "creation-date-jws-root"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": null,
+        "fields": {
+          "/signedDate": 1590969600000,
+          "/receiptCreationDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "app-transaction",
         "positive",
         "validity-window",
         "generated"
