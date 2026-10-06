@@ -1,0 +1,53 @@
+== reader-kept
+PROBE baseline: version 2 (v3): ok
+PROBE leaf version 10 (v11): InvalidCertificate
+PROBE leaf version 2^32 + 2: InvalidCertificate
+PROBE leaf receipt-signing marker twice: InvalidCertificate
+PROBE leaf 1.2.3.4 twice: InvalidCertificate
+PROBE intermediate WWDR marker twice: InvalidCertificate
+PROBE leaf basicConstraints undecodable: InvalidCertificate
+PROBE x5c[2] basicConstraints undecodable: InvalidCertificate
+PROBE receipt/intermediate-with-a-malformed-key-usage-does-not-crash: Malformed
+PROBE receipt/intermediate-with-an-empty-ca-boolean-does-not-crash: Malformed
+PROBE signed-data/intermediate-with-a-malformed-key-usage-does-not-crash: InvalidCertificate
+PROBE signed-data/intermediate-with-an-empty-ca-boolean-does-not-crash: InvalidCertificate
+conformance:
+test result: ok. 390 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
+== reader-removed
+PROBE baseline: version 2 (v3): ok
+PROBE leaf version 10 (v11): ok
+PROBE leaf version 2^32 + 2: ok
+PROBE leaf receipt-signing marker twice: ok
+PROBE leaf 1.2.3.4 twice: ok
+PROBE intermediate WWDR marker twice: ok
+PROBE leaf basicConstraints undecodable: UntrustedChain
+PROBE x5c[2] basicConstraints undecodable: ok
+PROBE receipt/intermediate-with-a-malformed-key-usage-does-not-crash: UntrustedChain
+PROBE receipt/intermediate-with-an-empty-ca-boolean-does-not-crash: UntrustedChain
+PROBE signed-data/intermediate-with-a-malformed-key-usage-does-not-crash: UntrustedChain
+PROBE signed-data/intermediate-with-an-empty-ca-boolean-does-not-crash: UntrustedChain
+conformance:
+transaction/reject-x5c-certificate-version-11: expected INVALID_CERTIFICATE but the operation verified
+transaction/reject-x5c-duplicate-extension: expected INVALID_CERTIFICATE but got UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+receipt/reject-signer-certificate-version-11: answered ok, want one of [String("INVALID_CERTIFICATE"), String("MALFORMED")]
+receipt/reject-signer-carrying-one-extension-twice: answered UNTRUSTED_CHAIN, want one of [String("INVALID_CERTIFICATE"), String("MALFORMED")]
+receipt/reject-signer-with-a-corrupt-extension: answered UNTRUSTED_CHAIN, want one of [String("INVALID_CERTIFICATE"), String("MALFORMED")]
+receipt/reject-a-stranger-whose-signature-bit-string-is-unaligned: expected MALFORMED but the operation verified
+signed-data/reject-an-x5c-leaf-with-an-unaligned-signature: expected INVALID_CERTIFICATE but got UNTRUSTED_CHAIN: leaf is not issued by the intermediate
+test result: FAILED. 383 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out;
+== reader-narrowed
+PROBE baseline: version 2 (v3): ok
+PROBE leaf version 10 (v11): InvalidCertificate
+PROBE leaf version 2^32 + 2: InvalidCertificate
+PROBE leaf receipt-signing marker twice: InvalidCertificate
+PROBE leaf 1.2.3.4 twice: InvalidCertificate
+PROBE intermediate WWDR marker twice: InvalidCertificate
+PROBE leaf basicConstraints undecodable: UntrustedChain
+PROBE x5c[2] basicConstraints undecodable: ok
+PROBE receipt/intermediate-with-a-malformed-key-usage-does-not-crash: UntrustedChain
+PROBE receipt/intermediate-with-an-empty-ca-boolean-does-not-crash: UntrustedChain
+PROBE signed-data/intermediate-with-a-malformed-key-usage-does-not-crash: UntrustedChain
+PROBE signed-data/intermediate-with-an-empty-ca-boolean-does-not-crash: UntrustedChain
+conformance:
+receipt/reject-signer-with-a-corrupt-extension: answered UNTRUSTED_CHAIN, want one of [String("INVALID_CERTIFICATE"), String("MALFORMED")]
+test result: FAILED. 389 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out;

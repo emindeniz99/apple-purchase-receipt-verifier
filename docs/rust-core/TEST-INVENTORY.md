@@ -52,9 +52,9 @@ differential run compares it with the core over the corpora and the cases
 | PHP | 22 | 4 | 6 | 11 | 1 |
 | Node | 6 | 1 | 2 | 0 | 3 |
 | .NET | 2 | 0 | 0 | 0 | 2 |
-| Rust | 315 | 43 | 0 | 0 | 272 |
+| Rust | 316 | 43 | 0 | 0 | 273 |
 | Java | 201 | 11 | 0 | 0 | 190 |
-| All | 864 | 201 | 31 | 78 | 554 |
+| All | 865 | 201 | 31 | 78 | 555 |
 
 ## The cases this lane added
 
@@ -621,6 +621,7 @@ and `-second`.
 | Rust | `rust/tests/jws_negative.rs` `an_x5c_entry_that_is_not_a_certificate_is_invalid_certificate` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `an_x5c_entry_that_is_not_base64_is_invalid_certificate` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate` | same fixture as `transaction/reject-x5c-duplicate-extension` |
+| Rust | `rust/tests/jws_negative.rs` `an_x5c_version_past_32_bits_is_invalid_certificate` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `the_third_x5c_entry_is_never_trusted_but_must_be_a_certificate` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `a_payload_that_is_not_a_json_object_is_carried_to_the_signature_check` | input built in code: stays with the Rust |
 | Rust | `rust/tests/jws_negative.rs` `a_signed_payload_that_is_not_a_json_object_is_unreadable` | same fixture as `signed-data/unreadable-empty-payload`, `signed-data/unreadable-json-array-payload` |
