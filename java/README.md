@@ -612,7 +612,11 @@ what its own framework's frames use; below that a hostile input ends
 the call with a `StackOverflowError`, which is an `Error`, not a
 `Failure`. The figures were measured on one JVM and one input shape;
 frame sizes differ between the interpreter and the JIT and between
-HotSpot and OpenJ9, so another JVM may need more.
+HotSpot and OpenJ9, so another JVM may need more. The same failure comes
+from the other side: a host that raises
+`org.bouncycastle.asn1.max_cons_depth` far above its default of 64 lets
+a deeply nested input recurse past whatever stack the thread has, with
+the same uncaught `StackOverflowError`, so do not raise it.
 
 The ASN.1 nesting bound is BouncyCastle's
 `org.bouncycastle.asn1.max_cons_depth`, 64 unless the host sets it. It is
@@ -701,9 +705,13 @@ chain is judged at, and BouncyCastle builds the full tree to do it. A
 cap-sized forgery built from many tiny attributes costs a few hundred
 milliseconds and 150 to 200 MB of allocation per call on one 4 vCPU
 machine ([measured](../docs/evidence/2026-10-04-java-bc-floor.md)); the
-CPU time scales with the host, the allocation less so. The body cap and
-the concurrency limit are what bound that, and they are the deployment's
-job.
+CPU time scales with the host, the allocation less so. Size the heap
+against the concurrency limit: such a receipt adds about 66 MiB of peak
+heap per call in flight
+([measured](../docs/evidence/2026-10-05-java-presignature-parse-cost.md)),
+so a semaphore of 8 needs about 530 MiB of headroom above what the
+application itself uses. The body cap and the concurrency limit are what
+bound that, and they are the deployment's job.
 
 **Warm up before taking traffic.** Build the `Verifier` at startup, not
 lazily on the first request. `Verifier.create` takes about 450 ms cold, the

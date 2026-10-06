@@ -1,0 +1,12 @@
+== baseline, roots: root.der
+smallest -Xmx -XX:+UseSerialGC, MiB: 13 13 13
+== baseline, roots: default
+smallest -Xmx -XX:+UseSerialGC, MiB: 11 11 11
+== tiny-attributes, roots: root.der
+smallest -Xmx -XX:+UseSerialGC, MiB: 79 79 79
+== tiny-attributes, roots: default
+smallest -Xmx -XX:+UseSerialGC, MiB: 79 79 79
+== unsigned-attribute, roots: root.der
+smallest -Xmx -XX:+UseSerialGC, MiB: 27 27 27
+== unsigned-attribute, roots: default
+smallest -Xmx -XX:+UseSerialGC, MiB: 27 27 27
