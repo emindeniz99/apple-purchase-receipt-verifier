@@ -689,11 +689,12 @@ cRLDistributionPoints, 2026-10-06).
     ahead of it refused the receipt, by bag order. The
     `signer-identity-twin` group of `tools/differential/recorded.json`
     is gone: `receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash`
-    now verifies in both, within its `oneOf`. One shape stays apart,
-    with no case: when a bag certificate has no subjectKeyIdentifier,
-    BouncyCastle's `SignerId.match` compares the SignerInfo's key id
-    with a SHA-1 over the certificate's whole SubjectPublicKeyInfo,
-    where OpenSSL's `CMS_SignerInfo_cert_cmp` counts no match. A probe
+    now verifies in both and expects `ok` alone (owner Q74). One shape
+    stays apart, with no case: when a bag certificate has no
+    subjectKeyIdentifier, BouncyCastle's `SignerId.match` compares the
+    SignerInfo's key id with a SHA-1 over the certificate's whole
+    SubjectPublicKeyInfo, where OpenSSL's `CMS_SignerInfo_cert_cmp`
+    counts no match. A probe
     (`docs/evidence/2026-10-06-cms-ski-fallback.md`) reproduced it: a
     SignerInfo named by that SHA-1, an expired copy carrying it as its
     subjectKeyIdentifier, then a valid renewal on the same key with no

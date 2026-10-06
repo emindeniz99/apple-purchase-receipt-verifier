@@ -9196,7 +9196,7 @@
     },
     {
       "id": "receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash",
-      "description": "A genuine receipt signed by the genuine leaf, whose unsigned certificate bag carries a certificate with the leaf's issuer, serial and subject on another key, self-signed, ahead of the leaf. Which embedded certificate a SignerInfo's identity selects is port-defined: a port that tries every match verifies, one that takes the first match meets the twin, whose chain does not reach the pinned root (UNTRUSTED_CHAIN). Either way the twin's key is never used before its chain has passed.",
+      "description": "A genuine receipt signed by the genuine leaf, whose unsigned certificate bag carries a certificate with the leaf's issuer, serial and subject on another key, self-signed, ahead of the leaf. Every certificate a SignerInfo's identity selects is tried and the first whose chain, markers and signature pass decides, so the twin, whose chain does not reach the pinned root, does not refuse the receipt the genuine leaf signed; the twin's key is never used before its chain has passed (owner Q74, 2026-10-06, after Q69 made both implementations try every match).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "lookup-receipt-twin-ahead-of-signer"
@@ -9210,10 +9210,12 @@
         }
       },
       "expected": {
-        "oneOf": [
-          "ok",
-          "UNTRUSTED_CHAIN"
-        ]
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundle_id": "com.example.app",
+          "/receipt_creation_date_ms": 1722945600000
+        }
       },
       "fault": "certificate-bag-carries-a-copy-of-the-signer-identity",
       "maxMillis": 2000,
@@ -9222,6 +9224,7 @@
         "pkcs7",
         "tolerant",
         "chain",
+        "owner-decision",
         "new-in-0-7"
       ]
     },
