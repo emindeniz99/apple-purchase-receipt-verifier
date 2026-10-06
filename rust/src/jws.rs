@@ -4,7 +4,8 @@
 //! Server Notifications V2), verified offline.
 //!
 //! ES256 only, exactly three `x5c` certificates, the chain to a pinned root
-//! at the payload's `signedDate` (the clock when it states none), Apple's
+//! at the payload's `signedDate` (else its `receiptCreationDate`, as Apple's
+//! App Store Server Library reads an app transaction, else the clock), Apple's
 //! marker OIDs on leaf and intermediate, then the signature. The
 //! order of the checks is observable: an input that fails an early check
 //! reports that check's reason, and the shared cases pin it.
@@ -27,7 +28,8 @@ pub(crate) const MAX_JWS_BYTES: usize = 262_144;
 
 /// A verified JWS payload: the JSON object Apple signed, unchanged.
 ///
-/// The library reads only `signedDate` and the environment from it. Parse
+/// The library reads only `signedDate`, `receiptCreationDate` and the
+/// environment from it. Parse
 /// [`json`](JsonPayload::json) with the JSON library of your choice, into a
 /// struct declaring the claims you use; Apple's claims are epoch
 /// milliseconds already.
@@ -166,7 +168,7 @@ pub(crate) fn verify(
     // reading it decides only whether it IS a certificate.
     parse_x5c_certificate(root_entry)?;
     let payload = read_payload(&payload_bytes);
-    // Chain validity is judged at the payload's signing date, so a payload
+    // Chain validity is judged at the payload's own date, so a payload
     // signed with a since-rotated certificate keeps verifying.
     let signed_date = payload.as_ref().ok().and_then(|read| read.signed_date);
     let at_millis = match signed_date {
@@ -220,24 +222,27 @@ fn read_header(bytes: &[u8]) -> Result<(Option<String>, Option<Vec<String>>), Fa
 #[derive(Debug)]
 struct ReadPayload {
     json: String,
-    /// The last top-level `signedDate`.
+    /// The last top-level `signedDate`, else the last top-level
+    /// `receiptCreationDate`: an app transaction may state no `signedDate`,
+    /// and Apple's library then judges its chain at the creation date.
     signed_date: Option<i64>,
     /// [`JsonPayload::environment`].
     environment: Option<Environment>,
 }
 
-/// The payload text, its last top-level `signedDate` and its environment,
+/// The payload text, the date its chain is judged at and its environment,
 /// or why it is not a JSON object in UTF-8. Reading it never fails
 /// verification by itself.
 ///
-/// A `signedDate` that is not a number, or is a number no instant can hold
-/// (`1e300`), counts as not stated: the clock stands in for it.
+/// A date that is not a number, or is a number no instant can hold
+/// (`1e300`), counts as not stated: the next one, or the clock, stands in.
 fn read_payload(bytes: &[u8]) -> Result<ReadPayload, Unreadable> {
     let text = core::str::from_utf8(bytes).map_err(Unreadable::NotUtf8)?;
     let members = whole_object_members(text).map_err(Unreadable::NotAnObject)?;
     Ok(ReadPayload {
         json: text.to_owned(),
-        signed_date: instant(&members, "signedDate"),
+        signed_date: instant(&members, "signedDate")
+            .or_else(|| instant(&members, "receiptCreationDate")),
         environment: environment(&members),
     })
 }
@@ -400,5 +405,21 @@ mod tests {
             read_payload(b"{\"signedDate\":1} {}"),
             Err(Unreadable::NotAnObject(_))
         ));
+    }
+
+    #[test]
+    fn receipt_creation_date_stands_in_for_a_missing_signed_date() {
+        for (json, expected) in [
+            (r#"{"receiptCreationDate":7}"#, Some(7)),
+            (r#"{"receiptCreationDate":7,"signedDate":9}"#, Some(9)),
+            (r#"{"receiptCreationDate":7,"signedDate":1e300}"#, Some(7)),
+            (r#"{"receiptCreationDate":"7"}"#, None),
+        ] {
+            assert_eq!(
+                read_payload(json.as_bytes()).unwrap().signed_date,
+                expected,
+                "{json}"
+            );
+        }
     }
 }

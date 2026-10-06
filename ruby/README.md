@@ -303,8 +303,9 @@ encodes them first: `verifier.verify_receipt([der].pack("m0"))`.
 - Field names are Apple's own words from the verifyReceipt response
   (`application_version`, `in_app`), each spelled in Ruby's `snake_case`.
 - A missing attribute decodes to `nil`. The library invents no values.
-- Dates are epoch milliseconds, UTC, with an `_ms` suffix. Receipt dates carry
-  whole seconds, so the last three digits are always `000`.
+- Dates are epoch milliseconds, UTC, with an `_ms` suffix. A date written with
+  a fraction keeps its milliseconds; the receipts seen so far carry whole
+  seconds.
 - The trial and intro flags (`is_trial_period`, `is_in_intro_offer_period`)
   are booleans: `0` is `false`, any other value is `true`.
 - `bundle_id_bytes`, `opaque_value` and `sha1_hash` are the attribute value
@@ -317,8 +318,9 @@ encodes them first: `verifier.verify_receipt([der].pack("m0"))`.
   library does not model, the second and later copies of a known attribute,
   and a known attribute whose value does not parse (whose typed field is then
   `nil`).
-- A date attribute parses only in the exact form `YYYY-MM-DDTHH:MM:SSZ` — a
-  real calendar date, no fraction, no offset. An empty date string means "not
+- A date attribute parses as an RFC 3339 `date-time` — a real calendar date,
+  `T` and `Z` in either case, a fraction truncated to the millisecond, `Z` or
+  an offset `±hh:mm` converted to UTC. An empty date string means "not
   set" (the field is `nil`, nothing kept raw); any other non-empty string
   that does not parse is `nil` and kept raw in `unknown_attributes`. A
   creation-date attribute that does not parse leaves the chain instant to the
@@ -466,8 +468,8 @@ field-by-field fidelity table, including what `latest_receipt_info` and
 Certificate validity is judged at the instant Apple signed, not now — so a
 payload signed with a since-rotated certificate keeps verifying. The instant
 is the receipt's creation-date attribute (legacy path) or the JWS
-`signedDate` claim, and, when that is missing or is not a representable
-instant (such as `1e300`), the **configured clock** stands in.
+`signedDate` claim, else its `receiptCreationDate` claim. When neither is a
+representable instant (such as `1e300`), the **configured clock** stands in.
 
 `clock:` on `Config` is read once per call, before the input is looked at, and
 its value is handed to the module. The module uses it for exactly two things:
@@ -489,7 +491,7 @@ APRV::Config.new(clock: -> { (Time.now.to_r * 1000).to_i })
 Do not reach for `Timecop` or `ActiveSupport::Testing::TimeHelpers` to test
 this library's behaviour: hand `Config.new` a clock instead.
 
-Receipt dates parse only in the exact form `YYYY-MM-DDTHH:MM:SSZ` — see
+Receipt dates parse as RFC 3339 `date-time` strings — see
 [Decode rules](#decode-rules). JWS `signedDate` and other epoch-millisecond
 claims are read as sent, JSON number and all: a fractional one still drives
 the chain instant. `claims` is the payload's own JSON, unmodelled, so a claim

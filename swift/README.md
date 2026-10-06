@@ -280,9 +280,10 @@ package reads its JSON into these structs. Rules, pinned by the shared
 conformance vectors:
 
 - A missing attribute decodes to `nil`. The library invents no values.
-- Dates are `Int64` epoch milliseconds, UTC. A receipt date parses only in
-  the exact form `YYYY-MM-DDTHH:MM:SSZ`; anything else is `nil` and the raw
-  bytes are kept in `unknownAttributes`.
+- Dates are `Int64` epoch milliseconds, UTC. A receipt date parses as an
+  RFC 3339 `date-time` (a fraction truncated to the millisecond, an offset
+  converted to UTC); anything else is `nil` and the raw bytes are kept in
+  `unknownAttributes`.
 - The trial and intro-offer flags are `Bool`: `0` is `false`, any other
   value `true`.
 - `bundleIdBytes`, `opaqueValue` and `sha1Hash` are the attribute value

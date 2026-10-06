@@ -315,7 +315,7 @@ fn a_planted_wrong_type_fails_every_rule() {
             "\"unknown_attributes\":{\"13\":[\"AA==\"]",
             "\"unknown_attributes\":{\"13\":\"AA==\"",
         ),
-        ("\"purchase_date_ms\":1000", "\"purchase_date_ms\":1001"),
+        ("\"purchase_date_ms\":1000", "\"purchase_date_ms\":1000.5"),
         (
             "\"unknown_attributes\":{\"13\":",
             "\"unknown_attributes\":{\"4294967296\":",

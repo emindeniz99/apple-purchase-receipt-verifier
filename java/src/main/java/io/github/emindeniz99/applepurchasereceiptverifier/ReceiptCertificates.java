@@ -6,7 +6,11 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -31,10 +35,13 @@ final class ReceiptCertificates {
     }
 
     /**
-     * Decodes every entry of the raw {@code certificates [0] IMPLICIT SET},
-     * after counting the set against {@link #MAX_EMBEDDED_CERTIFICATES}. The
-     * bag is unsigned, so an entry that does not decode is a defect of the
-     * receipt: MALFORMED, whichever certificate it was meant to be.
+     * Decodes every Certificate entry of the raw {@code certificates [0]
+     * IMPLICIT SET}, after counting the set against
+     * {@link #MAX_EMBEDDED_CERTIFICATES}. The other CertificateChoices
+     * (RFC 5652 10.2.2: {@code [0]} to {@code [3]}, each a SEQUENCE) name no
+     * signer and are skipped. The bag is unsigned, so an entry that does not
+     * decode is a defect of the receipt: MALFORMED, whichever certificate it
+     * was meant to be.
      */
     static ReceiptCertificates decode(CMSSignedData cms) throws VerificationException {
         ASN1Set certificateSet =
@@ -52,9 +59,18 @@ final class ReceiptCertificates {
             return certificates;
         }
         for (int i = 0; i < certificateSet.size(); i++) {
+            ASN1Encodable entry = certificateSet.getObjectAt(i);
             try {
-                X509CertificateHolder holder = new X509CertificateHolder(
-                        certificateSet.getObjectAt(i).toASN1Primitive().getEncoded("DER"));
+                if (entry instanceof ASN1TaggedObject
+                        && ((ASN1TaggedObject) entry).getTagClass() == BERTags.CONTEXT_SPECIFIC
+                        && ((ASN1TaggedObject) entry).getTagNo() <= 3) {
+                    // Only checks that the entry is a SEQUENCE; one that is
+                    // not throws and is MALFORMED below.
+                    ASN1Sequence.getInstance((ASN1TaggedObject) entry, false);
+                    continue;
+                }
+                X509CertificateHolder holder =
+                        new X509CertificateHolder(entry.toASN1Primitive().getEncoded("DER"));
                 X509Certificate certificate = converter.getCertificate(holder);
                 // Forces BouncyCastle's lazy signature decode here, not inside
                 // the path builder. The key is not read: see
@@ -71,16 +87,24 @@ final class ReceiptCertificates {
     }
 
     /**
-     * The first embedded certificate that {@code signer}'s SignerId matches,
-     * by issuer and serial number or by subjectKeyIdentifier.
+     * Every embedded certificate that {@code signer}'s SignerId matches, by
+     * issuer and serial number or by subjectKeyIdentifier, in receipt order.
+     * More than one can: a renewed certificate keeps its key and so its
+     * subjectKeyIdentifier, and anyone relaying a receipt can add a copy of
+     * the signer's identity to the bag. Equal certificates are returned once.
      */
-    X509Certificate signer(SignerInformation signer) throws VerificationException {
+    List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();
+        List<X509Certificate> matches = new ArrayList<>();
         for (int i = 0; i < holders.size(); i++) {
-            if (sid.match(holders.get(i))) {
-                return all.get(i);
+            // A byte-identical copy gets the same verdict, so it is tried once.
+            if (sid.match(holders.get(i)) && !matches.contains(all.get(i))) {
+                matches.add(all.get(i));
             }
         }
-        throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
+        if (matches.isEmpty()) {
+            throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
+        }
+        return matches;
     }
 }

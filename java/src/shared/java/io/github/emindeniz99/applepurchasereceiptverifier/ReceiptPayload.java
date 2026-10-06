@@ -266,7 +266,11 @@ public final class ReceiptPayload {
         json.writeEndObject();
     }
 
-    /** Equal when {@link #toJson()} and {@link #environment()} are. */
+    /**
+     * Equal when {@link #toJson()} and {@link #environment()} are. This and
+     * {@link #hashCode()} render the JSON on every call, so a receipt is a
+     * costly map key: key on its transaction ids instead.
+     */
     @Override
     public boolean equals(@Nullable Object other) {
         return other instanceof ReceiptPayload
@@ -279,7 +283,10 @@ public final class ReceiptPayload {
         return 31 * toJson().hashCode() + Objects.hashCode(environment);
     }
 
-    /** {@link #toJson()}. */
+    /**
+     * {@link #toJson()}: the customer's purchase history, transaction ids,
+     * opaque value and hash included. Logging a payload logs all of it.
+     */
     @Override
     public String toString() {
         return toJson();

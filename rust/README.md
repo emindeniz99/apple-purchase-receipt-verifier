@@ -225,8 +225,9 @@ needs it, after the input has passed every check that comes before:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
-  does not parse, a JWS without a representable `signedDate`. Otherwise the
-  chain is judged at the date the input states.
+  does not parse, a JWS with neither a representable `signedDate` nor a
+  representable `receiptCreationDate`. Otherwise the chain is judged at the
+  date the input states.
 - **`request_date`** in the endpoint's response.
 
 A certificate outside its validity window at that instant is
@@ -241,10 +242,11 @@ early check reports that check's reason, not a later one.
 **JWS.** Size cap → three segments, each strict base64url → header JSON
 (strict UTF-8, no byte order mark, nothing but whitespace after the object),
 `alg` ES256 and exactly three `x5c` entries → the certificates decode →
-the chain at `signedDate` (or the clock), the intermediate checked against
-the pinned roots **before** the leaf is checked against the intermediate →
-**leaf marker OID** `1.2.840.113635.100.6.11.1` → **intermediate marker
-OID** `1.2.840.113635.100.6.2.1` → ES256 signature. As on the receipt path,
+the chain at `signedDate` (else `receiptCreationDate`, else the clock), the
+intermediate checked against the pinned roots **before** the leaf is
+checked against the intermediate → **leaf marker OID**
+`1.2.840.113635.100.6.11.1` → **intermediate marker OID**
+`1.2.840.113635.100.6.2.1` → ES256 signature. As on the receipt path,
 a chain that does not reach a pinned root is `UNTRUSTED_CHAIN` whatever
 markers it carries. A key OpenSSL cannot use is
 `INVALID_CERTIFICATE`, judged as soon as its certificate has been vouched

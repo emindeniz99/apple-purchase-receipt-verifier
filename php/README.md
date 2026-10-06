@@ -415,11 +415,11 @@ every port:
   decides the field; later copies are kept raw in `unknownAttributes`. This
   applies to the receipt creation date too, since it anchors the
   certificate-validity check.
-- **Dates** are `YYYY-MM-DDTHH:MM:SSZ` exactly (RFC 3339, UTC, no fractional
-  seconds, no offset); anything else leaves the field `null` rather than
-  failing the receipt, and a non-empty string that does not parse is kept
-  raw. An empty date string means "not set". Decoded dates are epoch
-  milliseconds (always ending in `000`, since receipts carry whole seconds).
+- **Dates** are RFC 3339 `date-time` strings: `T` and `Z` in either case, a
+  fraction truncated to the millisecond, `Z` or an offset `±hh:mm` converted
+  to UTC. Anything else leaves the field `null` rather than failing the
+  receipt, and a non-empty string that does not parse is kept raw. An empty
+  date string means "not set". Decoded dates are epoch milliseconds, UTC.
 - **Strings** are `UTF8String` or `IA5String` only; `IA5String` bytes ≥ 0x80
   fail to decode (7-bit ASCII, by definition). A string that fails to decode
   leaves the field `null` (or, for `bundleId`, only `bundleIdBytes` is set,
@@ -537,8 +537,9 @@ installed. It reaches exactly two things in the module:
 - **`request_date`** in `verifyReceiptEndpoint()`'s response.
 - **The chain-validity instant**, but only when the receipt or JWS states no
   signing time of its own: a receipt with no attribute 12, or a JWS payload
-  with no `signedDate` (or one that does not parse). When the input states a
-  time, the chain is judged at that time regardless of what the clock reads.
+  with neither a `signedDate` nor a `receiptCreationDate` that parses. When
+  the input states a time, the chain is judged at that time regardless of
+  what the clock reads.
 
 The clock is read once per call and crosses to `aprv` as epoch milliseconds,
 so a test can pin "now" for a dateless input without a process-wide time mock.

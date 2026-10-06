@@ -336,11 +336,11 @@ every port:
   decides the field; later copies are kept raw in `unknown_attributes`.
   This applies to the receipt creation date too, since it anchors the
   certificate-validity check.
-- **Dates** are `YYYY-MM-DDTHH:MM:SSZ` exactly (RFC 3339, UTC, no fractional
-  seconds); anything else leaves the field `None` rather than raising, and
-  a non-empty string that does not parse is kept raw. An empty date string
-  means "not set". Decoded dates are epoch milliseconds (always ending in
-  `000`, since receipts carry whole seconds).
+- **Dates** are RFC 3339 `date-time` strings: `T` and `Z` in either case, a
+  fraction truncated to the millisecond, `Z` or an offset `±hh:mm` converted
+  to UTC. Anything else leaves the field `None` rather than raising, and a
+  non-empty string that does not parse is kept raw. An empty date string
+  means "not set". Decoded dates are epoch milliseconds, UTC.
 - **Strings** are `UTF8String` or `IA5String` only; `IA5String` bytes ≥ 0x80
   fail to decode (7-bit ASCII, by definition). A string that fails to decode
   leaves the field `None` (or, for `bundle_id`, only `bundle_id_bytes` is

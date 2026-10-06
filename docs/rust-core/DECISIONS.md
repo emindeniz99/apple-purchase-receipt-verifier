@@ -21,8 +21,8 @@ added R42 and R43 (recorded 2026-10-03);
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
 client change, and amended R41 for .NET's `Config`; on 2026-10-04 the
 owner amended R41 for Go's, Swift's and Node's `Config`, and R23 for the
-form of `init`'s configuration (Q30); on 2026-10-06 the owner added R45
-(Q71).
+form of `init`'s configuration (Q30); on 2026-10-06 the owner's
+decision Q70 added R44, and the owner added R45 (Q71).
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -451,8 +451,9 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 
 **Status: accepted** (owner, 2026-09-26; restated 2026-09-28; the rule
 amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
-2026-10-01; Java's JSON bounds, 2026-10-05; the core's header walk and
-Java's parse before trust, 2026-10-06).
+2026-10-01; Java's JSON bounds, 2026-10-05; the core's header walk,
+Java's parse before trust, four standard-allowed shapes and a critical
+cRLDistributionPoints, 2026-10-06).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
   schema v2, 388 cases, is the contract. The Java implementation is a
@@ -571,6 +572,7 @@ Java's parse before trust, 2026-10-06).
   | A clock past 9999-12-31T23:59:59.999Z, or before -9999-01-02T01:59:59Z, at the endpoint | rendered, a five-digit year with no sign (`10000-01-01 00:00:00 Etc/GMT`) | rendered, with a `+` sign past 9999 (`uuuu`) | `{"status":21009}` (port-defined 2026-10-01) | Such a clock is broken, answered like one that panics; jiff's calendar ends at 9999 and every receipt date the grammar accepts renders (R38) | none: no case pins a clock out there; `rust/tests/endpoint.rs` |
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
+  | A JWS payload whose `signedDate` is a number of more than 1,000 digits, beside a `receiptCreationDate` | not measured | the chain at the clock: Jackson's `maxNumberLength` (1,000) fails the whole read, so no date is read, and a payload whose signature verifies ends at `UNREADABLE_PAYLOAD` | the chain at `receiptCreationDate` | A number past `i64` is no instant, so the core skips `signedDate` and takes its stand-in (Q67). Apple never emits such a number, so a JWS that carries one is forged; there each implementation still fails, and only the reason can differ | none: no case pins it |
   | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":0}` since 2026-10-05 (Jackson's default depth, 1,000; 21002 before) | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
   | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
   | A lone surrogate escape in a member name inside `data` or `summary` of a genuinely signed JWS payload | not measured (the 0.7 answers carry no environment) | reads on: Jackson keeps the name, and the container's `environment` is read | ok, without that container's environment (port-defined 2026-10-03) | The core reads `data` and `summary` for the environment alone, and `serde_json` refuses the name (R40), so the container states none; the payload and the signature are unchanged. Apple's documents are ASCII | none: no case pins it; R42 |
@@ -675,6 +677,110 @@ Java's parse before trust, 2026-10-06).
   over the returned content under a chain to a pinned root. Reopen if
   Apple publishes a rule on SignerInfos or ships a receipt with more
   than one.
+
+  Java aligned on four standard-allowed shapes (owner, Q69,
+  2026-10-06). An audit found four places where Java refused
+  Apple-signed data the standards allow and the core accepted. Each is
+  fixed in Java with a BouncyCastle or JDK facility; the core needs no
+  change.
+  - **Every certificate a SignerInfo names is tried,** as the
+    SignerInfos are: the first whose chain, markers and signature pass
+    decides, else the first one's failure. Java took the first match,
+    so with a signer named by subjectKeyIdentifier (RFC 5652 §5.3) an
+    expired predecessor on the renewed leaf's key (RFC 5280 §4.2.1.2)
+    ahead of it refused the receipt, by bag order. The
+    `signer-identity-twin` group of `tools/differential/recorded.json`
+    is gone: `receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash`
+    now verifies in both and expects `ok` alone (owner Q74). One shape
+    stays apart, with no case: when a bag certificate has no
+    subjectKeyIdentifier, BouncyCastle's `SignerId.match` compares the
+    SignerInfo's key id with a SHA-1 over the certificate's whole
+    SubjectPublicKeyInfo, where OpenSSL's `CMS_SignerInfo_cert_cmp`
+    counts no match. A probe
+    (`docs/evidence/2026-10-06-cms-ski-fallback.md`) reproduced it: a
+    SignerInfo named by that SHA-1, an expired copy carrying it as its
+    subjectKeyIdentifier, then a valid renewal on the same key with no
+    subjectKeyIdentifier. Java answers ok, the core
+    `INVALID_CERTIFICATE`. A key id made by RFC 5280's method 1 matches
+    no certificate without the extension in either, so both refuse.
+    Both certificates are Apple-chained, so nothing unsigned is
+    accepted.
+  - **The bag's other CertificateChoices are skipped** (RFC 5652
+    §10.2.2, `[0]` to `[3]`), as BouncyCastle's own certificate store
+    skips them; each must still be a SEQUENCE. One shape stays apart,
+    with no case: an other `[3]` entry whose SEQUENCE does not start
+    with an OID is `MALFORMED` in the core, whose OpenSSL template reads
+    `OtherCertificateFormat`, and skipped by Java. It is unsigned
+    packaging, and the signer is verified either way.
+  - **A critical extendedKeyUsage on a CA is accepted** (RFC 5280
+    §4.2.1.12). BouncyCastle's PKIX processes it on the end entity
+    only; a `PKIXCertPathChecker` now marks that one extension
+    processed, asking no purpose of a CA, as the JDK's PKIX and OpenSSL
+    ask none. Every other critical extension BouncyCastle does not
+    process is still refused.
+  - **A critical cRLDistributionPoints on a CA is accepted** (owner,
+    Q72, 2026-10-06; RFC 5280 §4.2.1.13). BouncyCastle's PKIX refused
+    it as an unknown critical extension, with `UNTRUSTED_CHAIN`, where
+    the core accepts it. The same checker now marks it processed too.
+    OpenSSL recognises both extensions, and the core asks for no
+    revocation check, so a critical cRLDistributionPoints is acted on
+    in neither implementation; neither extension is a trust decision.
+    Apple's intermediates carry it non-critical today.
+  - **A signingTime decides nothing** (RFC 5652 §11.3). The CMS
+    verifier is built from the signer's key, so BouncyCastle no longer
+    judges the certificate at that time; the chain is judged at the
+    creation date, as before.
+
+  The cases: `receipt/accept-a-renewed-signer-behind-its-expired-copy`,
+  `receipt/accept-attribute-and-other-certificates-in-the-bag`,
+  `receipt/accept-an-intermediate-with-a-critical-extended-key-usage`,
+  `signed-data/accept-an-intermediate-with-a-critical-extended-key-usage`,
+  `receipt/accept-an-intermediate-with-a-critical-crl-distribution-points`,
+  `signed-data/accept-an-intermediate-with-a-critical-crl-distribution-points`,
+  `receipt/accept-a-signing-time-before-the-signers-validity` and
+  `receipt/reject-a-bad-signature-beside-a-signing-time-before-the-signer`.
+
+  A receipt date is an RFC 3339 `date-time` (owner, Q68, 2026-10-06),
+  widening the 2026-09-27 rule that accepted `YYYY-MM-DDTHH:MM:SSZ` and
+  nothing else. Apple's Receipt Fields page documents types 12, 21,
+  1704, 1706, 1708 and 1712 as an "IA5STRING, interpreted as an RFC
+  3339 date" ([Receipt Fields][receiptfields]), and in October 2020 a
+  developer reported Mac App Store receipt dates gaining milliseconds
+  (`2020-10-03T07:12:34.567Z`), which Apple never confirmed
+  ([forum thread][fracforum]). No receipt is known to carry an offset,
+  and all 571 date strings in this repository's genuine and Xcode
+  receipts are `YYYY-MM-DDTHH:MM:SSZ`. The narrow rule refused nothing
+  outright, but a creation date it could not read left the chain to the
+  clock, so a genuine receipt with a fractional creation date failed
+  `INVALID_CERTIFICATE` once its signing certificate expired. Both
+  implementations now read §5.6 exactly: `T` and `Z` in either case
+  (§5.6 NOTE), a fraction of any length truncated to the millisecond
+  (the digits after the third are dropped, which floors the instant
+  before 1970 too), `Z` or `±hh:mm` with hours 00 to 23 converted to
+  UTC, and second 60 read as 59 with its fraction kept, as jiff's parser
+  reads a leap second (`java.time`'s `LocalTime` refuses it, so Java
+  clamps first). The instant must lie in 0000-01-01T00:00:00Z to
+  9999-12-31T23:59:59.999Z, so every date still renders at the
+  endpoint. What is not §5.6 still does not parse: a space for `T`, a
+  comma fraction, `+0300`, `+03`, an offset with seconds, omitted
+  seconds. The shape stays written out in both (a byte check in
+  `rust/src/datetime.rs`, a regular expression in `ReceiptDecoder`):
+  jiff's Temporal parser and `java.time`'s ISO formatters each accept a
+  different superset (jiff a space separator, omitted seconds, hour-only
+  offsets and bracketed annotations; `java.time` omitted seconds and
+  offsets with seconds), both stop at nine fraction digits, `java.time`
+  refuses offsets past 18 hours, and jiff's `Timestamp` ends 26 hours
+  before 9999-12-31T23:59:59Z, so neither parser alone keeps the two
+  implementations on one language. The libraries still decide the
+  calendar and do the arithmetic. Nine shared cases pin it, among them
+  `receipt/rfc3339-date-forms`, `endpoint/rfc3339-dates-render`,
+  `receipt/creation-date-with-a-fraction-sets-the-chain-instant` and
+  `receipt/creation-date-a-millisecond-past-not-after-is-refused`.
+  `receipt/date-grammar` now reads its lowercase `t` and `z`, `.5`,
+  `+03:00` and second-60 vectors, and the lowercase-`t` creation date
+  that used to leave the chain to the clock is now the chain instant
+  (`receipt/creation-date-with-a-lowercase-t-sets-the-chain-instant`,
+  renamed from `...-outside-the-grammar-leaves-the-chain-to-the-clock`).
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -1436,7 +1542,8 @@ BOOTSTRAP.md lists the three owner actions.
   renders, so only `request_date` can reach that answer.
 - What stays in `rust/src/datetime.rs`: the receipt-date grammar, checked
   byte by byte, since it is the contract with Java and `jiff`'s parsers
-  accept more. Within the range above the renderings are byte-identical to
+  accept more. Since Q68 (2026-10-06) that grammar is RFC 3339's
+  `date-time` (R20). Within the range above the renderings are byte-identical to
   the hand-written code from 1883-11-18 on: 0 disagreements at 182,918,657
   instants (`rust/tests/datetime.rs`).
 - The civil fields are printed with `format!`, as jiff's own
@@ -1578,13 +1685,14 @@ amended 2026-10-02).
   commas, leading zeros, `+`, `NaN`, unescaped control characters, escapes
   RFC 8259 does not define, a byte order mark, bytes that are not UTF-8,
   and anything but whitespace after a JWS object. A duplicate name keeps
-  its last value. `signedDate` keeps the reference conversion from its
-  raw text: an integer must fit an `i64`, a number with a fraction or an
-  exponent is truncated within that range, and anything else, an integer
-  past `i64` included, is no instant, so the clock stands in. One reading
-  changed beside the bounds: a lone surrogate escape is refused in a name
-  or in a value the core reads, where the old reader made it U+FFFD and
-  Jackson keeps it (R20 row). No shared case reaches it.
+  its last value. `signedDate` (and `receiptCreationDate`, its stand-in
+  since Q67) keeps the reference conversion from its raw text: an
+  integer must fit an `i64`, a number with a fraction or an exponent is
+  truncated within that range, and anything else, an integer past `i64`
+  included, is no instant, so the next date or the clock stands in. One
+  reading changed beside the bounds: a lone surrogate escape is refused
+  in a name or in a value the core reads, where the old reader made it
+  U+FFFD and Jackson keeps it (R20 row). No shared case reaches it.
 - The bounds the core no longer has, and why that is acceptable: the
   input caps (3,145,728 bytes for a body, 262,144 for a JWS) already bound
   the work, and the three bounds prevented no blow-up. Measured natively
@@ -1903,6 +2011,48 @@ the Java implementation goes.
 
 ---
 
+## R44. Two JWS rules kept looser than the RFCs: `crit` and high-S
+
+**Status: accepted** (owner, 2026-10-06, decision Q70 for `crit`).
+
+Both are deliberate deviations, and the core and Java agree on each, so
+neither is an R20 divergence.
+
+- **`crit` is ignored.** RFC 7515 §4.1.11 says a recipient MUST reject a
+  JWS whose `crit` header lists an extension it does not understand. Both
+  implementations read `alg` and `x5c` and nothing else from the header
+  (R40), so `crit` is never looked at. Whether Apple's App Store Server
+  Library honours `crit` was not checked; the decision rests on the
+  argument below alone.
+  - Why: the header is inside the signing input, so only Apple can set
+    `crit` on a JWS that verifies. Rejecting it could only ever refuse
+    Apple-signed data, and the goal is never to refuse Apple-signed data
+    by mistake.
+  - What it cannot open: a `b64: false` JWS (RFC 7797), the one
+    registered extension that changes how a JWS is read. Both
+    implementations base64url-decode the payload segment and read the
+    result as JSON, so an unencoded payload is refused as malformed or
+    unreadable, whatever `crit` says.
+- **High-S ES256 signatures are accepted.** For an ECDSA signature
+  (r, s), the pair (r, n − s) also verifies. Anyone holding a JWS can
+  rewrite its third segment without a key, and the header and payload
+  stay byte-identical. Apple documents no low-S rule, and the one
+  genuine Apple JWS in the corpus proves nothing about the others, so
+  refusing high-S could refuse genuine JWS. Both implementations accept both
+  forms.
+  - Consequence: strict base64url (`rust/src/base64.rs`) leaves a JWS
+    two spellings, not one. Callers dedupe on a field of the verified
+    payload, `transactionId` (or `originalTransactionId`) for a
+    transaction and `notificationUUID` for a server notification, never
+    on the JWS string or its hash (INTEGRATION.md, README.md).
+- **Rejected:** A) honour `crit` and refuse unknown extensions: risks
+  refusing Apple-signed data and protects against nothing Apple did not
+  sign. B) refuse high-S: refuses genuine Apple JWS. C) normalise high-S
+  to low-S before handing the JWS back: the library returns the payload,
+  not the JWS, so there is nothing to normalise for the caller.
+
+---
+
 ## R45. The endpoint answers 21009 for an in-app purchase it cannot read
 
 **Status: accepted** (owner, 2026-10-06, decision Q71).
@@ -2046,5 +2196,7 @@ One table for everything the plan measured or considered and rejected.
 [redundant]: ../evidence/2026-10-05-core-drop-redundant-bounds.md
 [reader]: ../evidence/2026-10-05-x509-reader-kept.md
 [walk]: ../evidence/2026-10-06-core-walk-counter.md
+[receiptfields]: https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html
+[fracforum]: https://developer.apple.com/forums/thread/663119
 [javaparse]: ../evidence/2026-10-05-java-presignature-parse-cost.md
 [twosigners]: ../evidence/2026-10-06-verifyreceipt-two-signerinfos.md

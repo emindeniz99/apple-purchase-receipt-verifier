@@ -190,7 +190,7 @@ human-facing version; where they overlap, they agree.
 ## Behavior changes
 
 The Rust core and the Java implementation are the two implementations of
-one product, and `fixtures/cases.json` (394 cases) is the contract between
+one product, and `fixtures/cases.json` (412 cases) is the contract between
 them. A verification behavior change touches the Rust core, the Java
 implementation and `fixtures/` in the same PR, with the shared cases
 proving the two still agree. Every package runs all the cases, one test

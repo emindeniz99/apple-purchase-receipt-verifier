@@ -455,8 +455,8 @@ G3 among them) and a clock.
    **not** trusted or byte-compared — only the intermediate being signed by
    one of our pinned anchors counts, so an attacker swapping in their own
    `x5c[2]` changes nothing.
-   - Validity is checked at the payload's `signedDate` (the `Config` clock
-     when it is missing or not a representable instant), so historical payloads
+   - Validity is checked at the payload's `signedDate`, else its
+     `receiptCreationDate`, else the `Config` clock, so historical payloads
      signed with since-rotated certs still verify — same model as Apple's
      official libraries in offline mode.
 5. Verify the ES256 signature over `ASCII(header + "." + payload)` with the

@@ -367,8 +367,7 @@ class VerifyReceiptEndpointTest {
         // date", which is the only way to reach the clock fallback at all.
         byte[] payload = TestPki.receiptPayload(
                 "com.example.app", "1.2.3", OPAQUE, new byte[20], "", Collections.<byte[]>emptyList());
-        // Signed inside the window, since BouncyCastle also checks the signer
-        // against the CMS signingTime (Apple's receipts carry none).
+        // Signed inside the window, as a genuine receipt of that age would be.
         String body = request(expired.signReceipt(payload, new Date(notBefore.getTime() + 86_400_000L)));
 
         assertEquals(

@@ -82,7 +82,10 @@ chains with its own pinned BouncyCastle instance and never with the JDK's
 PKIX or trust store. The order of the anchors does not matter, even
 between two that share a subject name, and neither does the order of the
 unsigned certificates bag: a certificate that carries an intermediate's
-name but signed nothing on the path is never offered to the path builder.
+name but signed nothing on the path is never offered to the path builder,
+and every certificate a SignerInfo names is tried, so a copy of the
+signer's identity ahead of it, or the expired predecessor of a renewed
+signer on the same key, does not decide.
 
 *Proof.* `transaction/reject-foreign-root`, `receipt/reject-foreign-root`
 (both `UNTRUSTED_CHAIN`), `endpoint/foreign-root-answers-21003`, and Apple's own
@@ -102,7 +105,9 @@ gate (§6). Anchor order:
 `transaction/verify-under-the-second-of-two-roots-sharing-a-subject`. Bag
 order:
 `receipt/verify-with-another-roots-same-named-intermediate-before-the-real-one-own-root-{first,second}`
-and `receipt/verify-with-a-same-named-sibling-intermediate-before-the-real-one`.
+and `receipt/verify-with-a-same-named-sibling-intermediate-before-the-real-one`;
+signer copies: `receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash`
+and `receipt/accept-a-renewed-signer-behind-its-expired-copy`.
 
 ### 3.2 Marker OIDs stop the wrong-purpose certificate
 
@@ -188,16 +193,16 @@ should alert and escalate on it, not deny. The endpoint answers the same
 (attribute 17) does not decode, rather than a 0 with that purchase left
 out of `in_app` (owner Q71, 2026-10-06; docs/rust-core/DECISIONS.md R45).
 
-A JWS follows the same rule. Before the signature only `signedDate` is read,
-to pick the chain instant. A payload that is not a JSON object is carried
-past the chain and signature checks: `INVALID_SIGNATURE` if the signature
-fails, `UNREADABLE_PAYLOAD` if it verifies. After that nothing is read:
-`verifySignedData` returns the payload JSON as signed, so a claim of an
-unexpected type is a question for the caller's parser, not a verdict. A
-runtime that lacks an algorithm no input chooses (a PKIX implementation) is
-`INTERNAL_ERROR`. A key or signature algorithm the certificate names keeps
-its input reason, because a missing algorithm and a hostile certificate
-cannot be told apart there.
+A JWS follows the same rule. Before the signature only `signedDate` (else an
+app transaction's `receiptCreationDate`) is read, to pick the chain instant.
+A payload that is not a JSON object is carried past the chain and signature
+checks: `INVALID_SIGNATURE` if the signature fails, `UNREADABLE_PAYLOAD` if
+it verifies. After that nothing is read: `verifySignedData` returns the
+payload JSON as signed, so a claim of an unexpected type is a question for
+the caller's parser, not a verdict. A runtime that lacks an algorithm no
+input chooses (a PKIX implementation) is `INTERNAL_ERROR`. A key or
+signature algorithm the certificate names keeps its input reason, because a
+missing algorithm and a hostile certificate cannot be told apart there.
 
 *Proof.* Tampering: `transaction/reject-tampered-payload` and
 `receipt/reject-tampered-payload`, both `INVALID_SIGNATURE`. Order:
@@ -236,19 +241,20 @@ including `endpoint/vpp-sandbox-receipt-on-production-answers-21007`,
 
 Apple's signing certificates rotate, so a receipt signed under a since-expired
 certificate is still genuine. The validity window is checked at the payload's
-`signedDate` or the receipt's creation date, falling back to the `Config`
-clock when the input carries neither (docs/design/0.7-api.md, Setup). For a
-receipt, a creation date that is empty, outside the exact
-`YYYY-MM-DDTHH:MM:SSZ` grammar, or sits beside a top-level entry the walk
-cannot read counts as carried by nothing, and the chain is judged at the
-clock; a repeated attribute 12 uses its first copy. A JWS `signedDate` that
-is not a representable instant falls back to the clock the same way. No
-verifier judges how old a genuinely signed payload may be: that limit
-depends on the endpoint (Apple retries a server notification for days, and
-a device may present an old but genuine payload), so the caller applies it
-to `signedDate` or the receipt creation date, as Apple's own App Store
-Server Libraries leave it to their callers (PLAN.md D5). A freshness limit
-would not be replay protection either.
+`signedDate` (else an app transaction's `receiptCreationDate`, which is where
+Apple's App Store Server Library judges one; owner Q67, 2026-10-06) or the
+receipt's creation date, falling back to the `Config` clock when the input
+carries none (docs/design/0.7-api.md, Setup). For a receipt, a creation date
+that is empty, not an RFC 3339 `date-time` (owner, Q68, 2026-10-06), or sits
+beside a top-level entry the walk cannot read counts as carried by nothing,
+and the chain is judged at the clock; a repeated attribute 12 uses its first
+copy. A JWS date that is not a representable instant counts as not carried the
+same way. No verifier judges how old a genuinely signed payload may be: that
+limit depends on the endpoint (Apple retries a server notification for days,
+and a device may present an old but genuine payload), so the caller applies it
+to `signedDate` or the receipt creation date, as Apple's own App Store Server
+Libraries leave it to their callers (PLAN.md D5). A freshness limit would not
+be replay protection either.
 
 The module has no clock of its own. A wrapper reads the `Config` clock once
 per call, before it looks at the input, and passes the value as `now-ms`;
@@ -263,7 +269,6 @@ that throws, or answers a time before 1970, is `INTERNAL_ERROR`.
 `receipt/reject-fresh-creation-date-under-expired-chain`. An unusable
 creation date judged at the clock: `receipt/accept-missing-creation-date`,
 `receipt/unreadable-creation-date-decodes-to-null`,
-`receipt/creation-date-outside-the-grammar-leaves-the-chain-to-the-clock`,
 `receipt/reject-unreadable-creation-date-under-an-expired-chain` and
 `receipt/reject-unreadable-entry-under-an-expired-chain`; the trusted test
 PKI they use is valid 2024-01-01 to 2050-01-01 and the expired one 2020-01-01
@@ -275,7 +280,9 @@ payload judged at the clock, both directions:
 `transaction/signed-date-out-of-range-falls-back-to-the-clock`. The clock
 moves the verdict of a dateless receipt, both directions:
 `endpoint/clock-inside-the-window-verifies-a-dateless-receipt`,
-`endpoint/clock-past-the-window-rejects-a-dateless-receipt`.
+`endpoint/clock-past-the-window-rejects-a-dateless-receipt`. A CMS
+`signingTime` attribute moves nothing (RFC 5652 §11.3):
+`receipt/accept-a-signing-time-before-the-signers-validity`.
 
 ### 3.6 Device binding, when the caller has the device id
 
