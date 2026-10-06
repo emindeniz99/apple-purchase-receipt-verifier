@@ -1,0 +1,166 @@
+diff --git a/java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCore.java b/java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCore.java
+index f38e7f7..c3a2e50 100644
+--- a/java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCore.java
++++ b/java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCore.java
+@@ -37,8 +37,8 @@ import org.jspecify.annotations.Nullable;
+  */
+ final class ReceiptCore {
+ 
+-    /** Genuine receipts carry one; each SignerInfo costs a chain build and a signature check. */
+-    static final int MAX_SIGNER_INFOS = 4;
++    /** Apple signs a receipt once, and its verifyReceipt refuses a second SignerInfo in either order. */
++    static final int MAX_SIGNER_INFOS = 1;
+ 
+     /**
+      * Certificates below the anchor, leaf included. PKIX's own limit counts
+@@ -125,28 +125,15 @@ final class ReceiptCore {
+         Date at = new Date(creationDate != null ? creationDate : now);
+ 
+         ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
+-        // Signer-independent, so walked once for every SignerInfo.
+         List<X509Certificate> authenticated = authenticatedTopDown(certificates.all(), trustAnchors);
+-        // Every SignerInfo signs the same content, so one passing is enough;
+-        // when none does, the first one's failure is the verdict.
+-        VerificationException first = null;
+-        for (SignerInformation signer : signers) {
+-            try {
+-                X509Certificate signerCert = certificates.signer(signer);
+-                List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
+-                requireMarkers(signerCert, path);
+-                // The chain before the signature: checking the signature
+-                // first would run the attacker's own key before anything
+-                // about it is trusted.
+-                verifyCmsSignature(signer, signerCert);
+-                return payload;
+-            } catch (VerificationException e) {
+-                if (first == null) {
+-                    first = e;
+-                }
+-            }
+-        }
+-        throw first;
++        SignerInformation signer = signers.get(0);
++        X509Certificate signerCert = certificates.signer(signer);
++        List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
++        requireMarkers(signerCert, path);
++        // The chain before the signature: checking the signature first would
++        // run the attacker's own key before anything about it is trusted.
++        verifyCmsSignature(signer, signerCert);
++        return payload;
+     }
+ 
+     /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
+diff --git a/rust/src/receipt.rs b/rust/src/receipt.rs
+index fb945bb..f6ef05c 100644
+--- a/rust/src/receipt.rs
++++ b/rust/src/receipt.rs
+@@ -16,9 +16,11 @@ use aprv_openssl::{Certificate, CmsError, EnvelopeLimits, SignedData};
+ /// verified, so the bound is enforced before a single one is decoded.
+ pub(crate) const MAX_EMBEDDED_CERTIFICATES: usize = 10;
+ 
+-/// How many `SignerInfo`s a receipt may carry. A fifth is refused before any
+-/// signature is checked.
+-pub(crate) const MAX_SIGNER_INFOS: usize = 4;
++/// How many `SignerInfo`s a receipt may carry: Apple signs a receipt once,
++/// and its `verifyReceipt` refuses a second `SignerInfo` in either order
++/// (docs/evidence/2026-10-06-verifyreceipt-two-signerinfos.md). A second is
++/// refused before any signature is checked.
++pub(crate) const MAX_SIGNER_INFOS: usize = 1;
+ 
+ /// The bounds the adapter enforces on an envelope, in its order, before
+ /// the full decode builds any certificate (0.7 bounds table).
+@@ -128,61 +130,37 @@ fn verify_signature(
+     // before a single one is judged or tried as an issuer, and an envelope
+     // the walk or the shallow decode refuses never reaches the full decode.
+     let mut cms = SignedData::parse(der, &ENVELOPE_LIMITS).map_err(envelope_failure)?;
+-    let signer_count = cms.signer_count();
+-    let certificates = cms.certificates();
++    let embedded = Embedded::sort(cms.certificates());
++    let matches = signer_certificates(&cms, 0, &embedded)?;
+ 
+     // Only the creation date is interpreted before trust is established,
+     // because chain validity is anchored at signing time: the attribute SET
+     // is parsed into types and raw values, and the rest is interpreted from
+-    // that same parse once the chain and a signature have passed. It is
+-    // parsed once a SignerInfo has named an embedded certificate, since only
+-    // a chain needs the date. A SET that does not parse, or a date that is
+-    // missing or unreadable, cannot blame anyone yet, so it only moves the
++    // that same parse once the chain and the signature have passed. It is
++    // parsed once the SignerInfo has named an embedded certificate, since
++    // only a chain needs the date. A SET that does not parse, or a date that
++    // is missing or unreadable, cannot blame anyone yet, so it only moves the
+     // chain instant to the clock and never rejects by itself.
+-    let mut payload: Option<Result<Vec<Attribute>, PayloadError>> = None;
+-
+-    let embedded = Embedded::sort(certificates);
+-    // Signer-independent, so walked once for all SignerInfos, and only once
+-    // one of them has named an embedded certificate that decodes.
+-    let mut authenticated: Option<Vec<Certificate>> = None;
++    let attributes = parse_payload_attributes(cms.content());
++    let at_millis = match attributes.as_deref().ok().and_then(creation_date) {
++        Some(millis) => millis,
++        None => clock.now()?,
++    };
++    let authenticated = authenticated_top_down(&embedded.readable, anchors);
++    // The bag is unsigned, so a certificate carrying the signer's identity on
++    // another key can sit ahead of the genuine one. Each match is tried: one
++    // passing is enough, and only when none does is the first one's failure
++    // the verdict. No match's key is used before its chain has passed.
+     let mut first_failure: Option<Failure> = None;
+-    for index in 0..signer_count {
+-        let verdict = signer_certificates(&cms, index, &embedded).and_then(|matches| {
+-            let attributes = payload.get_or_insert_with(|| parse_payload_attributes(cms.content()));
+-            let at_millis = match attributes.as_deref().ok().and_then(creation_date) {
+-                Some(millis) => millis,
+-                None => clock.now()?,
+-            };
+-            let authenticated = authenticated
+-                .get_or_insert_with(|| authenticated_top_down(&embedded.readable, anchors));
+-            // The bag is unsigned, so a certificate carrying the signer's
+-            // identity on another key can sit ahead of the genuine one. Each
+-            // match is tried as the SignerInfos are: one passing is enough,
+-            // and only when none does is the first one's failure the verdict.
+-            // No match's key is used before its chain has passed.
+-            let mut first_match_failure: Option<Failure> = None;
+-            for signer in matches {
+-                match verify_signer(&mut cms, index, &signer, authenticated, anchors, at_millis) {
+-                    Ok(()) => return Ok(()),
+-                    Err(failure) => {
+-                        first_match_failure.get_or_insert(failure);
+-                    }
+-                }
+-            }
+-            Err(first_match_failure.unwrap_or_else(|| malformed("signer certificate not embedded")))
+-        });
+-        match verdict {
+-            // A passing signer was matched, so the payload is parsed already.
+-            Ok(()) => return Ok(payload.unwrap_or_else(|| parse_payload_attributes(cms.content()))),
+-            // Every SignerInfo signs the same content, so another one
+-            // passing proves the same bytes; only when none does is the
+-            // first one's failure the verdict.
++    for signer in matches {
++        match verify_signer(&mut cms, 0, &signer, &authenticated, anchors, at_millis) {
++            Ok(()) => return Ok(attributes),
+             Err(failure) => {
+                 first_failure.get_or_insert(failure);
+             }
+         }
+     }
+-    Err(first_failure.unwrap_or_else(|| malformed("no signer info")))
++    Err(first_failure.unwrap_or_else(|| malformed("signer certificate not embedded")))
+ }
+ 
+ /// The embedded certificates, judged once for every `SignerInfo`: the ones
+diff --git a/rust/tests/unauthenticated_key_cost.rs b/rust/tests/unauthenticated_key_cost.rs
+index c836075..6c67346 100644
+--- a/rust/tests/unauthenticated_key_cost.rs
++++ b/rust/tests/unauthenticated_key_cost.rs
+@@ -273,7 +273,7 @@ fn a_receipt_whose_only_issuers_have_expensive_keys_is_refused_quickly() {
+     builder.certificates = certificates;
+     builder.signer_issuer = intermediate_name;
+     builder.signer_serial = vec![99];
+-    builder.signer_info_copies = 4;
++    builder.signer_info_copies = 1;
+     let receipt = builder.build();
+ 
+     let verifier = common::receipt_verifier();

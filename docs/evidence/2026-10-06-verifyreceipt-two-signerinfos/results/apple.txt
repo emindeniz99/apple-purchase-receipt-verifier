@@ -1,0 +1,88 @@
+== receipt-sandbox-g5 @ sandbox (run 1)
+c0-original	21004
+c2-payload-byte-flipped	21002
+c3-signature-bit-flipped	21002
+c4-unknown-digest-alone	21002
+c5-certificates-in-der-order	21002
+v1-unknown-digest-then-genuine	21002
+v2-genuine-then-unknown-digest	21002
+v3-genuine-twice	21002
+v4-bad-signature-then-genuine	21002
+v5-genuine-then-bad-signature	21002
+== receipt-sandbox-g5 @ buy (run 1)
+c0-original	21007
+c2-payload-byte-flipped	21002
+c3-signature-bit-flipped	21002
+c4-unknown-digest-alone	21002
+c5-certificates-in-der-order	21002
+v1-unknown-digest-then-genuine	21002
+v2-genuine-then-unknown-digest	21002
+v3-genuine-twice	21002
+v4-bad-signature-then-genuine	21002
+v5-genuine-then-bad-signature	21002
+== receipt-sandbox-legacy @ sandbox (run 1)
+c0-original	21004
+c2-payload-byte-flipped	21002
+c3-signature-bit-flipped	21002
+c4-unknown-digest-alone	21002
+c5-certificates-in-der-order	21002
+v1-unknown-digest-then-genuine	21002
+v2-genuine-then-unknown-digest	21002
+v3-genuine-twice	21002
+v4-bad-signature-then-genuine	21002
+v5-genuine-then-bad-signature	21002
+== receipt-sandbox-legacy @ buy (run 1)
+c0-original	21007
+c2-payload-byte-flipped	21002
+c3-signature-bit-flipped	21002
+c4-unknown-digest-alone	21002
+c5-certificates-in-der-order	21002
+v1-unknown-digest-then-genuine	21002
+v2-genuine-then-unknown-digest	21002
+v3-genuine-twice	21002
+v4-bad-signature-then-genuine	21002
+v5-genuine-then-bad-signature	21002
+== receipt-sandbox-g5 @ sandbox (run 2)
+c0-original	21004
+c2-payload-byte-flipped	21002
+c3-signature-bit-flipped	21002
+c4-unknown-digest-alone	21002
+c5-certificates-in-der-order	21002
+v1-unknown-digest-then-genuine	21002
+v2-genuine-then-unknown-digest	21002
+v3-genuine-twice	21002
+v4-bad-signature-then-genuine	21002
+v5-genuine-then-bad-signature	21002
+== receipt-sandbox-g5 @ buy (run 2)
+c0-original	21007
+c2-payload-byte-flipped	21002
+c3-signature-bit-flipped	21002
+c4-unknown-digest-alone	21002
+c5-certificates-in-der-order	21002
+v1-unknown-digest-then-genuine	21002
+v2-genuine-then-unknown-digest	21002
+v3-genuine-twice	21002
+v4-bad-signature-then-genuine	21002
+v5-genuine-then-bad-signature	21002
+== receipt-sandbox-legacy @ sandbox (run 2)
+c0-original	21004
+c2-payload-byte-flipped	21002
+c3-signature-bit-flipped	21002
+c4-unknown-digest-alone	21002
+c5-certificates-in-der-order	21002
+v1-unknown-digest-then-genuine	21002
+v2-genuine-then-unknown-digest	21002
+v3-genuine-twice	21002
+v4-bad-signature-then-genuine	21002
+v5-genuine-then-bad-signature	21002
+== receipt-sandbox-legacy @ buy (run 2)
+c0-original	21007
+c2-payload-byte-flipped	21002
+c3-signature-bit-flipped	21002
+c4-unknown-digest-alone	21002
+c5-certificates-in-der-order	21002
+v1-unknown-digest-then-genuine	21002
+v2-genuine-then-unknown-digest	21002
+v3-genuine-twice	21002
+v4-bad-signature-then-genuine	21002
+v5-genuine-then-bad-signature	21002

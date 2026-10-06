@@ -1,0 +1,22 @@
+== core receipt-sandbox-g5
+c0-original	ok
+c2-payload-byte-flipped	INVALID_SIGNATURE
+c3-signature-bit-flipped	INVALID_SIGNATURE
+c4-unknown-digest-alone	INVALID_SIGNATURE
+c5-certificates-in-der-order	ok
+v1-unknown-digest-then-genuine	ok
+v2-genuine-then-unknown-digest	ok
+v3-genuine-twice	ok
+v4-bad-signature-then-genuine	ok
+v5-genuine-then-bad-signature	ok
+== core receipt-sandbox-legacy
+c0-original	ok
+c2-payload-byte-flipped	INVALID_SIGNATURE
+c3-signature-bit-flipped	INVALID_SIGNATURE
+c4-unknown-digest-alone	INVALID_SIGNATURE
+c5-certificates-in-der-order	ok
+v1-unknown-digest-then-genuine	ok
+v2-genuine-then-unknown-digest	ok
+v3-genuine-twice	ok
+v4-bad-signature-then-genuine	ok
+v5-genuine-then-bad-signature	ok

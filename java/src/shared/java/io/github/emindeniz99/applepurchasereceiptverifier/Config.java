@@ -108,7 +108,7 @@ public final class Config {
          * what the probe checks. Turned off, {@code create} skips the check,
          * and a runtime that cannot verify answers
          * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint), or on the
-         * BouncyCastle artifact's JWS path a refusal, when it is called
+         * BouncyCastle artifact a refusal, on either path, when it is called
          * instead. Leaving it unset means on.
          */
         public Builder runtimeProbe(boolean runtimeProbe) {
