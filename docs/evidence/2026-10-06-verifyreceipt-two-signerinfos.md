@@ -72,12 +72,14 @@ gracefully handle unimplemented signature algorithms". The security floor is
 unchanged: the SignerInfo that decides is verified over the content that is
 returned, under a chain to a pinned root.
 
-So the Java implementation now treats a SignerInfo BouncyCastle has no
-verifier for as one that does not verify, and tries the next. It reads every
-SignerInfo's signed attributes first, so a SignerInfo that is malformed is
+So the Java implementation now treats a SignerInfo BouncyCastle cannot verify
+as one that does not verify, and tries the next. It reads every SignerInfo's
+signed and unsigned attributes first, so a SignerInfo that is malformed is
 still `MALFORMED` whatever its position, as in the core. On the variants above
 Java now answers as the core does on every row
-(`results/java-after-fix.txt`). The core needed no change.
+(`results/java-after-fix.txt`). The core needed no change. Three shared cases
+built from the G5 receipt the same way (`tools/generate-signer-info-fixtures.mjs`)
+pin the agreement.
 
 The rejected alternative, accept exactly one SignerInfo in both
 implementations, is kept as `one-signer-info.patch`: 35 fewer lines, and five

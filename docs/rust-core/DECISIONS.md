@@ -653,13 +653,22 @@ Java's parse before trust, 2026-10-06).
   implement is one that does not verify ("MUST gracefully handle
   unimplemented signature algorithms"). Java used to stop there with
   `MALFORMED`, so an unknown digest placed ahead of Apple's SignerInfo
-  refused a receipt the core accepted; it now tries the next one, and
-  reads every SignerInfo's signed attributes first so a malformed one is
-  `MALFORMED` at any position, as in the core. The row that recorded the
-  unknown digest as a divergence is gone: both answer
-  `INVALID_SIGNATURE` for it alone and ok ahead of a genuine one. Apple's
-  verifyReceipt refuses any receipt with two SignerInfos
-  ([two SignerInfos][twosigners]), but that rule is unpublished, and
+  refused a receipt the core accepted; it now tries the next one. It
+  also reads every SignerInfo's signed and unsigned attributes before
+  trying any, so a malformed one is `MALFORMED` at any position, as in
+  the core; malformed signedAttrs in a second SignerInfo, which Java
+  used to accept, are now `MALFORMED` in both. The row that recorded the
+  unknown digest as a divergence is gone, and three shared cases pin the
+  agreement: `receipt/reject-a-signer-info-in-an-unimplemented-digest`,
+  `receipt/accept-a-genuine-signer-info-behind-one-in-an-unimplemented-digest`
+  and `receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info`.
+  A review probe found the same change closes three shapes no row
+  listed: an unknown signatureAlgorithm OID, RSASSA-PSS with parameters
+  that do not decode and a CMSAlgorithmProtection attribute that does
+  not decode are `INVALID_SIGNATURE` alone and ok ahead of a genuine
+  SignerInfo in both. Apple's verifyReceipt refused every receipt with
+  two SignerInfos it was sent ([two SignerInfos][twosigners]; two
+  receipts, one family of variants), but the rule is unpublished, and
   accepting exactly one would refuse a genuine receipt the day Apple
   adds a second signature. The SignerInfo that decides is still verified
   over the returned content under a chain to a pinned root. Reopen if
