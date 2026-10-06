@@ -1,0 +1,87 @@
+# Watches what Apple publishes about the certificates and rules the
+# verifier depends on: every certificate on the PKI page, the WWDR CPS
+# version, the marker OIDs and the effective-date rule in Apple's App Store
+# Server Libraries, and Apple developer news about receipts or
+# certificates. tools/apple-pki-watch.mjs compares them against
+# tools/apple-pki-watch.json; on a difference this job opens an issue, or
+# comments on the open one. It only reports: the verifier never changes on
+# its own (CONTRIBUTING.md, "Apple PKI watch"). A network failure fails
+# the run and files nothing.
+#
+# apple-root-watch.yml stays: it checks the bytes of the three pinned
+# roots against certs/ itself.
+#
+# Scheduled runs happen on the default branch only.
+name: apple-pki-watch
+
+on:
+  schedule:
+    - cron: "23 6 * * 1" # weekly, Monday 06:23 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+# Two runs at once (a dispatch during the scheduled one) could each open
+# an issue.
+concurrency:
+  group: apple-pki-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout
+      issues: write # open or comment on the change issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: compare Apple's sources against the snapshot
+        id: watch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node tools/apple-pki-watch.mjs > "$RUNNER_TEMP/apple-pki-watch.txt" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/apple-pki-watch.txt"
+          if [ "$status" -eq 2 ]; then
+            echo "::error::apple-pki-watch could not read Apple's sources; no issue filed"
+            exit 2
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [ "$status" -le 1 ]
+      - name: open or update the issue
+        if: steps.watch.outputs.status == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: Apple PKI or verifier rules changed
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/issue.md"
+          {
+            echo "tools/apple-pki-watch.mjs found a change since tools/apple-pki-watch.json ($RUN_URL)."
+            echo
+            echo '~~~text'
+            cat "$RUNNER_TEMP/apple-pki-watch.txt"
+            echo '~~~'
+            echo
+            echo 'What to do: CONTRIBUTING.md, "Apple PKI watch". Refresh the snapshot with node tools/apple-pki-watch.mjs --write, then close this issue.'
+          } > "$body"
+          number=$(gh issue list --state open --limit 200 --json number,title \
+            --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file "$body"
+          else
+            gh issue create --title "$TITLE" --body-file "$body"
+          fi
+          cat "$body" >> "$GITHUB_STEP_SUMMARY"
