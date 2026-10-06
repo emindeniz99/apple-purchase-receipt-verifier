@@ -1,6 +1,12 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import java.security.cert.X509Certificate;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -42,5 +48,28 @@ class StandardShapesTest {
     @Test
     void attributeAndOtherCertificatesInTheBagAreSkipped() throws Exception {
         Checks.receipt(receipts, fixtures.attributeAndOtherCertificatesInTheBag());
+    }
+
+    /** RFC 5280 4.2.1.12 lets extendedKeyUsage be critical on any certificate, a CA's included. */
+    @Test
+    void aCriticalExtendedKeyUsageOnTheIntermediateVerifies() throws Exception {
+        Checks.receipt(receipts, fixtures.receiptUnderIntermediateWith(StandardShapeFixtures.criticalEku()));
+        Checks.signedData(jws, fixtures.jwsUnderIntermediateWith(StandardShapeFixtures.criticalEku()));
+    }
+
+    /** Only extendedKeyUsage is marked processed: an unknown critical extension still refuses the chain. */
+    @Test
+    void anUnknownCriticalExtensionOnTheIntermediateIsStillRefused() throws Exception {
+        Extension unknown = new Extension(new ASN1ObjectIdentifier("2.999.3"), true, DERNull.INSTANCE.getEncoded());
+        byte[] receipt = fixtures.receiptUnderIntermediateWith(unknown);
+        String token = fixtures.jwsUnderIntermediateWith(unknown);
+        assertEquals(
+                Reason.UNTRUSTED_CHAIN,
+                assertThrows(VerificationException.class, () -> Checks.receipt(receipts, receipt))
+                        .reason());
+        assertEquals(
+                Reason.UNTRUSTED_CHAIN,
+                assertThrows(VerificationException.class, () -> Checks.signedData(jws, token))
+                        .reason());
     }
 }

@@ -2,15 +2,20 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.security.GeneralSecurityException;
 import java.security.cert.CertPathValidatorException;
+import java.security.cert.Certificate;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
+import java.security.cert.PKIXCertPathChecker;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.bouncycastle.asn1.x509.Extension;
 
 /**
  * Trust material both paths share, and their rule for it: no key a pinned
@@ -29,6 +34,34 @@ final class AppleTrust {
 
     /** Apple marker OID: Worldwide Developer Relations intermediate CA. */
     static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
+
+    /**
+     * Marks a critical extendedKeyUsage processed on every certificate of a
+     * path. RFC 5280 4.2.1.12 lets it be critical on any certificate;
+     * BouncyCastle's PKIX processes it on the end entity only and refuses it
+     * on a CA as an unknown critical extension, where the JDK's PKIX and
+     * OpenSSL accept it. Like them it asks no purpose of a CA. Every other
+     * critical extension BouncyCastle does not process is still refused.
+     */
+    static final PKIXCertPathChecker CRITICAL_EXTENDED_KEY_USAGE = new PKIXCertPathChecker() {
+        @Override
+        public void init(boolean forward) {}
+
+        @Override
+        public boolean isForwardCheckingSupported() {
+            return true;
+        }
+
+        @Override
+        public Set<String> getSupportedExtensions() {
+            return Collections.singleton(Extension.extendedKeyUsage.getId());
+        }
+
+        @Override
+        public void check(Certificate certificate, Collection<String> unresolvedCriticalExtensions) {
+            unresolvedCriticalExtensions.remove(Extension.extendedKeyUsage.getId());
+        }
+    };
 
     private AppleTrust() {}
 
