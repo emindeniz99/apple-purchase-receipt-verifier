@@ -1,0 +1,14 @@
+diff --git a/rust/openssl/src/certificate.rs b/rust/openssl/src/certificate.rs
+index 2a3b037..0d1029f 100644
+--- a/rust/openssl/src/certificate.rs
++++ b/rust/openssl/src/certificate.rs
+@@ -135,8 +135,7 @@ impl Certificate {
+         if oids.windows(2).any(|pair| pair.first() == pair.get(1)) {
+             return false;
+         }
+-        decodes_if_present(&self.0, ffi::NID_basic_constraints)
+-            && decodes_if_present(&self.0, ffi::NID_key_usage)
++        true
+     }
+ 
+     /// Whether OpenSSL can build a public key from the certificate's

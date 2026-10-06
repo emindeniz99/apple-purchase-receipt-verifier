@@ -578,12 +578,28 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   | An `x5c` entry that decodes to a certificate followed by more bytes: trailing octets, a second certificate, PEM text or a PKCS#7 certs-only bundle holding the leaf | not measured | ok: `CertificateFactory.generateCertificate` reads one certificate from a stream and stops | `INVALID_CERTIFICATE` | The header is signed, so an Apple-signed JWS never carries one, and a foreign one still chains to no pinned root. `transaction/reject-x5c-leaf-with-line-breaks` is refused by both for its base64, before the bytes are read (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
   | A leaf whose AuthorityKeyIdentifier names a key other than the issuing intermediate's SubjectKeyIdentifier, in a JWS `x5c` chain that otherwise verifies | not measured | ok: BouncyCastle's PKIX validator matches issuer by name and signature, not by key identifier | `UNTRUSTED_CHAIN` (OpenSSL checks the identifiers) | The signature still has to verify under the intermediate's real key, and Apple's chains carry matching identifiers (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
   | An ES256 JWS whose leaf key is on a curve other than P-256 with a 32-byte order (secp256k1, brainpoolP256r1) | not measured | ok: the 64-byte signature verifies under whatever curve the leaf names | `INVALID_SIGNATURE` | RFC 7518 ties ES256 to P-256. Apple's leaves are P-256 and a foreign leaf chains to no pinned root; a P-384 leaf is `INVALID_SIGNATURE` in both (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
+  | A version 1 or 2 certificate that carries extensions, on the path | not measured | refused at parse (BouncyCastle: "version 1 certificate contains extra data") | ok | OpenSSL and the core accept any version from 1 to 3 and read the extensions whatever it says. Apple's certificates are v3, and the path is signed either way (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
+  | An authorityInfoAccess or certificatePolicies extension whose value does not decode, on a certificate on the path | not measured | refused at parse: BouncyCastle decodes both | ok | OpenSSL does not cache either (`crypto/x509/v3_purp.c:443-733`) and the core asks for no policy check, so nothing decodes them. The certificate is still signed by its issuer, and Apple's certificates carry extensions that decode (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
 
-  The four rows recorded on 2026-10-05 came out of the Java round-3
-  review ([probes][javabc3]): Java accepts four shapes the core
-  refuses, none of them in a signed field or producible by Apple. The
-  owner chose to record them rather than write code in either
-  implementation to match the other, the rule above.
+  The four rows recorded on 2026-10-05 above the last two came out of
+  the Java round-3 review ([probes][javabc3]): Java accepts four
+  shapes the core refuses, none of them in a signed field or producible
+  by Apple. The owner chose to record them rather than write code in
+  either implementation to match the other, the rule above.
+
+  The core's own X.509 reader (`Certificate::is_readable`: version 1 to
+  3, signature bits in whole octets, no extension OID twice, a
+  basicConstraints and a keyUsage that decode) was examined on
+  2026-10-05 and kept (owner, Q57, revised on that evidence). Under the
+  adapter's verify flags OpenSSL checks no version (`x509_vfy.c:700`
+  reads it only under `X509_V_FLAG_X509_STRICT`), judges a repeat or a
+  decode failure only among the extensions it caches, and reads a
+  signature's bits only when it verifies that signature; removing the
+  reader made refusals verify, and removing only its decode check moved
+  four cases where the core and Java agreed into divergences ([reader
+  kept][reader]). Its version is now compared as OpenSSL's `long`, as
+  every build reads it. The last two rows of the table came out of that
+  review.
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -1916,3 +1932,4 @@ One table for everything the plan measured or considered and rejected.
 [asn1rs]: ../evidence/2026-10-03-rust-tests-asn1-rs.md
 [dupchecks]: ../evidence/2026-10-05-core-drop-duplicate-checks.md
 [redundant]: ../evidence/2026-10-05-core-drop-redundant-bounds.md
+[reader]: ../evidence/2026-10-05-x509-reader-kept.md

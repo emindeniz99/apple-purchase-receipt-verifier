@@ -200,6 +200,77 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
     );
 }
 
+/// The chain of `common::mint::signed_jws`, its leaf minted with the
+/// version INTEGER content given and signed as it stands; and the root to
+/// pin.
+fn minted_jws(leaf_version: &[u8]) -> (TrustAnchor, String) {
+    use common::mint::{
+        certificate, key, name, spki, ECDSA_WITH_SHA256, RECEIPT_SIGNER_MARKER, WWDR_MARKER,
+    };
+    use common::{der, der_int, der_oid, der_seq, tag};
+    let (root_key, intermediate_key, leaf_key) = (key(11), key(12), key(13));
+    let root = certificate("JWS Root", &root_key, "JWS Root", &root_key, 1, true, None);
+    let intermediate = certificate(
+        "JWS WWDR",
+        &intermediate_key,
+        "JWS Root",
+        &root_key,
+        2,
+        true,
+        Some(WWDR_MARKER),
+    );
+    // `common::mint::tbs` for the leaf, but with the version given.
+    let algorithm = der_seq(&[der_oid(ECDSA_WITH_SHA256)]);
+    let marker = der_seq(&[
+        der_oid(RECEIPT_SIGNER_MARKER),
+        der(tag::OCTET_STRING, &[0x05, 0x00]),
+    ]);
+    let tbs = der_seq(&[
+        der(tag::CONTEXT_0, &der(tag::INTEGER, leaf_version)),
+        der_int(3),
+        algorithm.clone(),
+        name("JWS WWDR"),
+        der_seq(&[der(0x17, b"200101000000Z"), der(0x18, b"20991231000000Z")]),
+        name("JWS Leaf"),
+        spki(&leaf_key),
+        der(0xA3, &der_seq(&[marker])),
+    ]);
+    let signature = intermediate_key.sign_der(&tbs);
+    let leaf = common::mint::assemble(tbs, algorithm, &signature);
+    let header = format!(
+        r#"{{"alg":"ES256","x5c":["{}","{}","{}"]}}"#,
+        base64_encode(&leaf),
+        base64_encode(&intermediate),
+        base64_encode(&root)
+    );
+    let signing_input = format!(
+        "{}.{}",
+        common::base64url(header.as_bytes()),
+        common::base64url(br#"{"signedDate":1735689600000}"#)
+    );
+    let signature = leaf_key.sign_raw(signing_input.as_bytes());
+    let jws = format!("{signing_input}.{}", common::base64url(&signature));
+    (TrustAnchor::from_der(&root).unwrap(), jws)
+}
+
+#[test]
+fn an_x5c_version_past_32_bits_is_invalid_certificate() {
+    // OpenSSL reads the version as a C long and never checks it; the core
+    // compares that long. Truncated to 32 bits, 2^32 + 2 would read as 2
+    // (v3) on a 64-bit build and verify, where wasm32's 32-bit long
+    // already refused it. Version 2 itself verifies: the mint is sound.
+    let (root, jws) = minted_jws(&[2]);
+    assert!(common::verifier([root]).verify_signed_data(&jws).is_ok());
+    let (root, jws) = minted_jws(&[0x01, 0x00, 0x00, 0x00, 0x02]);
+    assert_eq!(
+        common::verifier([root])
+            .verify_signed_data(&jws)
+            .unwrap_err()
+            .reason(),
+        Reason::InvalidCertificate
+    );
+}
+
 #[test]
 fn the_third_x5c_entry_is_never_trusted_but_must_be_a_certificate() {
     // Swapping x5c[2] for another PKI's root must change nothing: the chain
