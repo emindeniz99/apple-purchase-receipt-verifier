@@ -193,10 +193,27 @@ would carry). A registry that is not bootstrapped (BOOTSTRAP.md) builds
 nothing and uploads nothing, in a dry run as in a release. Without a
 `tag`, the image name and the
 PHP pin layout use `v` + `version.txt`; `-f tag=vX.Y.Z -f dry_run=true`
-rehearses a completion. A rehearsal needs the committed module copies and
-pins to equal the build, as every run does, so between a release and the
-next core change it runs from main; after a core change it runs only from
-a release branch, where release-please.yml has refreshed the pins.
+rehearses a completion.
+
+A rehearsal from main mid-cycle has no release branch, so after a core
+or server change the committed module copies, every `aprv.wasm.sha256`,
+Node's component pin and `php/SHA256SUMS` still name the last release
+(run 37390260059 stopped at build-wasm's pin check for that). In a dry
+run, each job that reads them writes them first in its own checkout, the
+way `release-please.yml`'s `refresh-wasm-copies` would on the release
+branch, from this run's files: `build-wasm` runs
+`tools/refresh-wasm-pins.sh` before its pin check and reports the files
+that would change as a notice, `publish-maven` (the -wasm build) and
+`publish-rubygems` run the same script before their builds, and
+`php-binaries` writes `php/SHA256SUMS` from this run's two Linux
+binaries before its checks, which then prove the file's grammar and
+layout but compare the binaries with themselves. Nothing is committed or
+pushed, and a tag run never takes these steps, so there the pin check
+still refuses a tree the release branch did not refresh. PyPI, npm and
+NuGet need no refresh: their builds take the module from `APRV_WASM` /
+`APRV_COMPONENT` and write or skip the pin themselves. `tag-go-module`
+only checks that the Go copy and its pin are committed, and pushes
+nothing in a dry run.
 
 ## release-please.yml
 
