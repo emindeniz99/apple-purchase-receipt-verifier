@@ -1,8 +1,7 @@
 # The core's X.509 reader: probes
 
-The full record of the experiment is the branch
-`refactor/core-drop-x509-reader` on origin, commits 768e8f5 through
-bd1120c (not merged): the reader's rules removed and partly restored, the
+The full record of the experiment is the closed, unmerged
+[#293](https://github.com/emindeniz99/apple-purchase-receipt-verifier/pull/293), commits 768e8f5 through bd1120c: the reader's rules removed and partly restored, the
 shared cases made port-defined and back, the differential run's
 `recorded.json`, and the review that found the two no-code divergences.
 This folder keeps what reruns on main.

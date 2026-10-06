@@ -31,7 +31,7 @@ for avx in 3 2 1 0; do
 done
 ```
 
-The two workflows ran from the branch `spike/graalvm21-runner-probe`
-(round 1 at `5976bf6`, round 2 at `27b0f80` and round 3 at `0cdcc0c`,
-the last two with the patch applied to `java/`), each as `.github/workflows/graalvm21-probe.yml`. A push to that
-branch runs it.
+The workflows ran from the branch `spike/graalvm21-runner-probe`, each as
+`.github/workflows/graalvm21-probe.yml`: round 1 at `5976bf6`, round 2 at
+`27b0f80` and round 3 at `0cdcc0c`, the last two with the patch applied to
+`java/`. Its commits are kept in the closed, unmerged [#295](https://github.com/emindeniz99/apple-purchase-receipt-verifier/pull/295).

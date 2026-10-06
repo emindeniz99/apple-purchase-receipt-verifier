@@ -1,7 +1,7 @@
 # The header walk reduced to a counter: probes
 
 The spike's code is the commit `refactor(rust): walk headers as an
-iterative counter` on the branch `spike/core-walk-counter` (not merged).
+iterative counter`, kept in the closed, unmerged [#294](https://github.com/emindeniz99/apple-purchase-receipt-verifier/pull/294).
 This folder keeps what reruns from it.
 
 | File | Question |

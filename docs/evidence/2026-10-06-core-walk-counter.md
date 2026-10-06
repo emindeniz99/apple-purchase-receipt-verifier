@@ -16,7 +16,8 @@ The answer decides whether the walk is narrowed.
 400.0.1+4.0.2; source locations below are paths in that tarball. Rust
 1.98.1, the test profile, on one Linux x86-64 container; the fuzz runs
 used nightly 1.101.0 (2026-10-05) and cargo-fuzz 0.13.2. Run on
-2026-10-06 on the branch `spike/core-walk-counter`, from main at 400acbd.
+2026-10-06 on the branch `spike/core-walk-counter`, from main at 400acbd;
+its commits are kept in the closed, unmerged [#294](https://github.com/emindeniz99/apple-purchase-receipt-verifier/pull/294).
 
 **Method.** Each rule was read against the OpenSSL decode that follows the
 walk. The rules were then removed in one commit, the counter
