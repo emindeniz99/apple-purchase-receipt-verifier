@@ -77,6 +77,16 @@
 # on main after a release still builds every package. Maven runs under
 # the maven-central-dry-run environment, which asks no reviewer and is
 # handed no key (the credentials live on maven-central), and skips signing.
+# A dry run without a tag (from main mid-cycle) has no release branch, so
+# the committed module copies and pins (and php/SHA256SUMS) still name the
+# last release while the core has moved on: each job that reads them
+# (build-wasm, the -wasm Maven build, the gem, php-binaries) first writes
+# them in its own checkout as release-please.yml would on the release
+# branch, from this run's files, and build-wasm and php-binaries warn about
+# each file that would change. Nothing is committed or pushed. Such a run
+# proves nothing about the pins. A dry run with a tag rehearses a
+# completion and refreshes nothing, so it checks the pins exactly as the
+# real completion will; a tag run never takes the refresh either.
 #
 # Security: every action pinned to a commit SHA; no dependency cache in
 # publish or build jobs (a poisoned restore would become the shipped
@@ -251,6 +261,26 @@ jobs:
       # the Java build and the gem check the module against its pin, so a
       # stale one fails a consumer or a publish job. release-please.yml
       # rewrites them all on the release branch.
+      #
+      # A dry run without a tag (a rehearsal from main after a core change)
+      # has no release branch to take them from, so it first writes them
+      # here the way release-please would (tools/refresh-wasm-pins.sh), in
+      # this checkout only and never committed, and the check below then
+      # holds the refreshed tree. Each publish job that reads a pin does the
+      # same in its own checkout. A file it changes is a warning: from a
+      # release branch it means release-please did not refresh it. A dry
+      # run with a tag rehearses a completion, whose real run refreshes
+      # nothing, so it checks the committed pins exactly as that run will.
+      - name: "dry run: refresh the copies and pins in this checkout, as release-please would"
+        if: ${{ inputs.dry_run && !inputs.tag }}
+        run: |
+          set -euo pipefail
+          changed="$(tools/refresh-wasm-pins.sh "$RUNNER_TEMP/aprv/aprv.wasm" "$RUNNER_TEMP/aprv/aprv.component.wasm")"
+          if [ -n "$changed" ]; then
+            echo "::warning::dry run: $(wc -l <<<"$changed") copies and pins would be refreshed by release-please (written in this checkout only, not committed): $(tr '\n' ' ' <<<"$changed")"
+          else
+            echo "dry run: the committed copies and pins already name this build"
+          fi
       - name: the committed copies and pins are this build
         env:
           BUILT: ${{ steps.build.outputs.wasm-sha256 }}
@@ -1049,11 +1079,25 @@ jobs:
           (cd "$d" && sha256sum aprv-x86_64-unknown-linux-musl aprv-aarch64-unknown-linux-musl > SHA256SUMS)
           cat "$d/SHA256SUMS"
 
+      # A dry run without a tag: the pin is written here as release-please
+      # would write it, from the component and module checked against
+      # build-wasm's hashes, in this checkout only (build-wasm's dry-run
+      # step says why and reports what changed).
+      - name: "dry run: refresh the pins in this checkout, as release-please would"
+        if: ${{ inputs.dry_run && !inputs.tag && steps.gate-wasm.outputs.publish == 'true' }}
+        env:
+          COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+          tools/refresh-wasm-pins.sh "$RUNNER_TEMP/aprv/aprv.wasm" "$RUNNER_TEMP/aprv/aprv.component.wasm"
+
       # The property names are the -wasm build's (java-wasm/CI-NOTES.md): the
       # module Endive compiles, the two binaries attached as classifiers, and
       # the SHA256SUMS that pins them. The validate phase also refuses a
       # module whose hash differs from java-wasm/src/main/wasm/aprv.wasm.sha256,
-      # which release-please.yml rewrote on the release branch.
+      # which release-please.yml rewrote on the release branch (in a dry run,
+      # the step above).
       - name: Deploy the -wasm artifact and its classifier jars to Central
         if: steps.gate-wasm.outputs.publish == 'true'
         working-directory: java-wasm
@@ -1208,9 +1252,17 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # A dry run without a tag: the pin is written here as release-please
+      # would write it, in this checkout only (build-wasm's dry-run step
+      # says why and reports what changed).
+      - name: "dry run: refresh the pins in this checkout, as release-please would"
+        if: ${{ inputs.dry_run && !inputs.tag && steps.gate.outputs.publish == 'true' }}
+        run: tools/refresh-wasm-pins.sh "$RUNNER_TEMP/aprv/aprv.wasm" "$RUNNER_TEMP/aprv/aprv.component.wasm"
+
       # The gemspec and the library read no environment variable, so the
       # release module is copied to where the gem packs it, with its pin
-      # (release-please.yml already rewrote the tracked one to this hash).
+      # (release-please.yml already rewrote the tracked one to this hash;
+      # in a dry run, the step above did).
       - name: Build the gem around build-wasm's module
         if: steps.gate.outputs.publish == 'true'
         working-directory: ruby
@@ -1604,6 +1656,31 @@ jobs:
         with:
           pattern: aprv-server-*
           path: ${{ runner.temp }}/in
+      # A dry run without a tag has no release branch, and after a core or
+      # server change the committed file pins another build. It is written
+      # here from this run's binaries the way release-please.yml's
+      # refresh-wasm-copies writes it, in this checkout only and never
+      # committed, so the step below still proves the file's grammar and
+      # the <tag>/<asset> layout (its hash check is then this run's
+      # binaries against themselves). A change is a warning, as in
+      # build-wasm; a dry run with a tag checks the committed file.
+      - name: "dry run: write php/SHA256SUMS in this checkout, as release-please would"
+        if: ${{ inputs.dry_run && !inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="$(cat version.txt)"
+          mkdir -p "$RUNNER_TEMP/php-sums/v$version"
+          cp "$RUNNER_TEMP/in/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl" \
+            "$RUNNER_TEMP/in/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl" \
+            "$RUNNER_TEMP/php-sums/v$version/"
+          (cd "$RUNNER_TEMP/php-sums" && sha256sum "v$version"/*) > "$RUNNER_TEMP/SHA256SUMS"
+          if cmp -s "$RUNNER_TEMP/SHA256SUMS" php/SHA256SUMS; then
+            echo "dry run: php/SHA256SUMS already pins this run's binaries"
+          else
+            cp "$RUNNER_TEMP/SHA256SUMS" php/SHA256SUMS
+            echo "::warning::dry run: php/SHA256SUMS would be refreshed by release-please (written in this checkout only, not committed)"
+          fi
+          cat php/SHA256SUMS
       - env:
           TAG: ${{ inputs.tag || github.ref_name }}
           DRY_RUN: ${{ inputs.dry_run }}
