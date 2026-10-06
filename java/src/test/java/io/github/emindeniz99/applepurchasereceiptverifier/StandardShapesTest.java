@@ -37,4 +37,10 @@ class StandardShapesTest {
     void aRenewedSignerBehindItsExpiredCopyVerifies() throws Exception {
         Checks.receipt(receipts, fixtures.renewedSignerBehindItsExpiredCopy());
     }
+
+    /** RFC 5652 10.2.2: the bag may carry attribute and other certificates, which name no signer. */
+    @Test
+    void attributeAndOtherCertificatesInTheBagAreSkipped() throws Exception {
+        Checks.receipt(receipts, fixtures.attributeAndOtherCertificatesInTheBag());
+    }
 }
