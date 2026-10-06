@@ -4,6 +4,23 @@
 > step traced through the code, is [WALKTHROUGH.md](WALKTHROUGH.md)
 > (about an hour).
 
+## In 100 seconds
+
+- **One question:** did Apple sign these exact bytes? If yes, you get the
+  data back. Bundle id, environment, replay and refunds are your checks.
+- **Trust comes only from Apple's roots compiled into the code.** The
+  certificates inside a receipt are unsigned and prove nothing on their own.
+- **Order:** size and format → chain to a pinned root → Apple's marker OIDs
+  → signature → only then read the payload.
+- **The chain is judged at the receipt's own signing date,** so an old
+  receipt under an expired Apple certificate still verifies.
+- **Every failure has a `Reason`.** Bad input → deny. `UNREADABLE_PAYLOAD`
+  or `INTERNAL_ERROR` → Apple signed it or we broke: alert.
+- **JWS (StoreKit 2):** the same idea, with an ES256 signature and a
+  3-certificate `x5c` chain. Deduplicate on `transactionId`.
+- **Proof:** 412 shared cases that the Rust core and this Java code must
+  answer identically.
+
 ## 1. One question
 
 **The library answers one question: did Apple sign these exact bytes?** If
