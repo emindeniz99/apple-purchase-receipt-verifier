@@ -7095,12 +7095,12 @@
       ],
       "input": {
         "texts": [
-          "QUJ\u00e9",
-          "QU\u00a0D",
-          "\ufeffQUJD",
-          "QU\u3000D",
-          "\uff31\uff35\uff2a\uff24",
-          "QU\ud83d\ude00"
+          "QUJé",
+          "QU D",
+          "﻿QUJD",
+          "QU　D",
+          "ＱＵＪＤ",
+          "QU😀"
         ]
       },
       "expected": {
@@ -7128,7 +7128,7 @@
           "\u0000QUJD",
           "QUJD\u0000\u0000\u0000\u0000",
           "QU\u001bD",
-          "QU\u007fD"
+          "QUD"
         ]
       },
       "expected": {
@@ -8201,9 +8201,9 @@
         "status": "ok",
         "environment": "Sandbox",
         "fields": {
-          "/in_app/0/product_id": "com.example.app.caf\u00e9/\u20ac/\ud834\udd1e"
+          "/in_app/0/product_id": "com.example.app.café/€/𝄞"
         },
-        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.caf\u00e9/\u20ac/\ud834\udd1e\",\"transaction_id\":\"70000000000041\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000041\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
+        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.café/€/𝄞\",\"transaction_id\":\"70000000000041\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000041\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
       },
       "tags": [
         "receipt",
@@ -8447,7 +8447,7 @@
         "fields": {
           "/in_app/0/transaction_id": "70000000000051"
         },
-        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.esc\\\"\\\\\\b\\f\\n\\r\\t\\u001f\u2028end\",\"transaction_id\":\"70000000000051\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000051\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
+        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.esc\\\"\\\\\\b\\f\\n\\r\\t\\u001f end\",\"transaction_id\":\"70000000000051\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000051\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
       },
       "tags": [
         "receipt",
@@ -9814,7 +9814,7 @@
         "fields": {
           "/in_app/0/transaction_id": "70000000000091"
         },
-        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.<>&\u007f\\u0000\u2029end\",\"transaction_id\":\"70000000000091\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000091\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
+        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.<>&\\u0000 end\",\"transaction_id\":\"70000000000091\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000091\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
       },
       "tags": [
         "receipt",
@@ -10128,8 +10128,8 @@
         "status": "ok",
         "environment": "Sandbox",
         "fields": {
-          "/productId": "com.example.app.\u00e9\u20ac\u4e2d",
-          "/offerIdentifier": "\u00fcber-\u20ac-\u4e2d\u6587-\ud83d\ude00"
+          "/productId": "com.example.app.é€中",
+          "/offerIdentifier": "über-€-中文-😀"
         }
       },
       "tags": [
