@@ -14,11 +14,17 @@
 //! with it, because there leniency is not convenience but malleability: a
 //! lenient decoder lets an attacker who holds one Apple-signed
 //! `jwsRepresentation` mint unboundedly many byte-distinct strings that all
-//! verify to the same transaction, which defeats any integrator who dedupes
-//! notifications or one-shot redemptions on the JWS string or its hash. The
-//! signature segment is the exposed one — the header and payload segments
-//! are covered by the signing input — and it is not covered by the
-//! signature at all.
+//! verify to the same transaction. The signature segment is the exposed
+//! one — the header and payload segments are covered by the signing input —
+//! and it is not covered by the signature at all.
+//!
+//! Strict decoding bounds that to two spellings, not one. An ES256
+//! signature (r, s) also verifies as (r, n − s), so anyone holding a JWS
+//! can rewrite its signature segment without a key. Apple does not
+//! normalise to low-S, so refusing high-S would refuse genuine JWS; the
+//! core and the Java implementation accept both forms. A JWS string or its hash is therefore never a dedupe key;
+//! callers dedupe on `transactionId` or `notificationUUID` inside the
+//! verified payload (INTEGRATION.md).
 //!
 //! Strictness here goes one step past common platform decoders, which
 //! accept a final character whose
@@ -84,8 +90,10 @@ const JWS_SEGMENT_ENGINE: ::base64::engine::GeneralPurpose = ::base64::engine::G
 /// Decodes unpadded base64url — RFC 4648 §5 as RFC 7515 §2 requires it —
 /// or `None`.
 ///
-/// One byte sequence has exactly one encoding under this function, which is
-/// the property the JWS path needs. Refused, where a lenient decoder would
+/// One byte sequence has exactly one encoding under this function. That
+/// makes each segment's text unique for its bytes; it does not make a JWS
+/// unique, since the signature's bytes have two valid values (high and
+/// low S, see the module docs). Refused, where a lenient decoder would
 /// accept:
 ///
 /// - any byte outside `A-Z a-z 0-9 - _`, the standard alphabet's `+` and `/`
