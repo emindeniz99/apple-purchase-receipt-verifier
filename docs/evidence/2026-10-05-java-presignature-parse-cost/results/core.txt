@@ -1,0 +1,6 @@
+roots root.der: baseline.b64: ok (1396 ms for the process, module compile included)
+roots default: baseline.b64: UNTRUSTED_CHAIN (1376 ms for the process, module compile included)
+roots root.der: tiny-attributes.b64: UNREADABLE_PAYLOAD (1867 ms for the process, module compile included)
+roots default: tiny-attributes.b64: UNTRUSTED_CHAIN (1741 ms for the process, module compile included)
+roots root.der: unsigned-attribute.b64: MALFORMED (1568 ms for the process, module compile included)
+roots default: unsigned-attribute.b64: MALFORMED (1496 ms for the process, module compile included)

@@ -12,6 +12,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Collections;
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -78,15 +80,18 @@ public final class PresignatureCost {
     private static void make(Path dir) throws Exception {
         TestPki pki = TestPki.receipt();
         Files.write(dir.resolve("root.der"), pki.root.getEncoded());
+        // The chain is valid from a day ago; the creation date must fall
+        // inside it, or the trusted run ends at INVALID_CERTIFICATE.
+        String now = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString();
         byte[] payload = TestPki.receiptPayload(
                 "com.example.app",
                 "1.0",
                 new byte[] {1, 2, 3, 4},
                 new byte[] {5, 6, 7, 8},
-                "2026-10-05T00:00:00Z",
+                now,
                 Collections.<byte[]>singletonList(TestPki.inAppPurchase(
                         1, "com.example.product", "1000000000000001", "1000000000000001",
-                        "2026-10-05T00:00:00Z", null)));
+                        now, null)));
         byte[] baseline = pki.signReceipt(payload);
         write(dir, "baseline.b64", baseline, payload.length);
 
