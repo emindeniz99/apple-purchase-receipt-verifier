@@ -451,7 +451,8 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 **Status: accepted** (owner, 2026-09-26; restated 2026-09-28; the rule
 amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
 2026-10-01; Java's JSON bounds, 2026-10-05; the core's header walk,
-Java's parse before trust and four standard-allowed shapes, 2026-10-06).
+Java's parse before trust, four standard-allowed shapes and a critical
+cRLDistributionPoints, 2026-10-06).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
   schema v2, 388 cases, is the contract. The Java implementation is a
@@ -688,7 +689,19 @@ Java's parse before trust and four standard-allowed shapes, 2026-10-06).
     ahead of it refused the receipt, by bag order. The
     `signer-identity-twin` group of `tools/differential/recorded.json`
     is gone: `receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash`
-    now verifies in both, within its `oneOf`.
+    now verifies in both, within its `oneOf`. One shape stays apart,
+    with no case: when a bag certificate has no subjectKeyIdentifier,
+    BouncyCastle's `SignerId.match` compares the SignerInfo's key id
+    with a SHA-1 over the certificate's whole SubjectPublicKeyInfo,
+    where OpenSSL's `CMS_SignerInfo_cert_cmp` counts no match. A probe
+    (`docs/evidence/2026-10-06-cms-ski-fallback.md`) reproduced it: a
+    SignerInfo named by that SHA-1, an expired copy carrying it as its
+    subjectKeyIdentifier, then a valid renewal on the same key with no
+    subjectKeyIdentifier. Java answers ok, the core
+    `INVALID_CERTIFICATE`. A key id made by RFC 5280's method 1 matches
+    no certificate without the extension in either, so both refuse.
+    Both certificates are Apple-chained, so nothing unsigned is
+    accepted.
   - **The bag's other CertificateChoices are skipped** (RFC 5652
     §10.2.2, `[0]` to `[3]`), as BouncyCastle's own certificate store
     skips them; each must still be a SEQUENCE. One shape stays apart,
@@ -702,6 +715,14 @@ Java's parse before trust and four standard-allowed shapes, 2026-10-06).
     processed, asking no purpose of a CA, as the JDK's PKIX and OpenSSL
     ask none. Every other critical extension BouncyCastle does not
     process is still refused.
+  - **A critical cRLDistributionPoints on a CA is accepted** (owner,
+    Q72, 2026-10-06; RFC 5280 §4.2.1.13). BouncyCastle's PKIX refused
+    it as an unknown critical extension, with `UNTRUSTED_CHAIN`, where
+    the core accepts it. The same checker now marks it processed too.
+    OpenSSL recognises both extensions, and the core asks for no
+    revocation check, so a critical cRLDistributionPoints is acted on
+    in neither implementation; neither extension is a trust decision.
+    Apple's intermediates carry it non-critical today.
   - **A signingTime decides nothing** (RFC 5652 §11.3). The CMS
     verifier is built from the signer's key, so BouncyCastle no longer
     judges the certificate at that time; the chain is judged at the
@@ -711,6 +732,8 @@ Java's parse before trust and four standard-allowed shapes, 2026-10-06).
   `receipt/accept-attribute-and-other-certificates-in-the-bag`,
   `receipt/accept-an-intermediate-with-a-critical-extended-key-usage`,
   `signed-data/accept-an-intermediate-with-a-critical-extended-key-usage`,
+  `receipt/accept-an-intermediate-with-a-critical-crl-distribution-points`,
+  `signed-data/accept-an-intermediate-with-a-critical-crl-distribution-points`,
   `receipt/accept-a-signing-time-before-the-signers-validity` and
   `receipt/reject-a-bad-signature-beside-a-signing-time-before-the-signer`.
 
