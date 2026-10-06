@@ -186,7 +186,7 @@ whose 21002 would tell an app server to deny a paying user. An integrator
 should alert and escalate on it, not deny. The endpoint answers the same
 21009 when the receipt verifies but one of its in-app purchases
 (attribute 17) does not decode, rather than a 0 with that purchase left
-out of `in_app` (owner Q71, 2026-10-06; docs/rust-core/DECISIONS.md R44).
+out of `in_app` (owner Q71, 2026-10-06; docs/rust-core/DECISIONS.md R45).
 
 A JWS follows the same rule. Before the signature only `signedDate` is read,
 to pick the chain instant. A payload that is not a JSON object is carried

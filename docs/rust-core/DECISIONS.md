@@ -21,7 +21,7 @@ added R42 and R43 (recorded 2026-10-03);
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
 client change, and amended R41 for .NET's `Config`; on 2026-10-04 the
 owner amended R41 for Go's, Swift's and Node's `Config`, and R23 for the
-form of `init`'s configuration (Q30); on 2026-10-06 the owner added R44
+form of `init`'s configuration (Q30); on 2026-10-06 the owner added R45
 (Q71).
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
@@ -1903,7 +1903,7 @@ the Java implementation goes.
 
 ---
 
-## R44. The endpoint answers 21009 for an in-app purchase it cannot read
+## R45. The endpoint answers 21009 for an in-app purchase it cannot read
 
 **Status: accepted** (owner, 2026-10-06, decision Q71).
 
