@@ -9436,7 +9436,7 @@
     },
     {
       "id": "receipt/accept-a-genuine-signer-info-behind-one-in-an-unimplemented-digest",
-      "description": "The same SignerInfo with the 1.2.3.4 digestAlgorithm, then Apple's own, unchanged. The first does not verify and the next one is tried; Apple's verifies over the same content under the default pinned roots, so the receipt verifies (RFC 4853; owner Q65, 2026-10-06). Apple's own verifyReceipt refuses any receipt with two SignerInfos, a rule it does not publish (docs/evidence/2026-10-06-verifyreceipt-two-signerinfos.md).",
+      "description": "The same SignerInfo with the 1.2.3.4 digestAlgorithm, then Apple's own, unchanged. The first does not verify and the next one is tried; Apple's verifies over the same content under the default pinned roots, so the receipt verifies (RFC 4853; owner Q65, 2026-10-06). Apple's own verifyReceipt refused every receipt with two SignerInfos it was sent, a rule it does not publish (two receipts, one family of variants; docs/evidence/2026-10-06-verifyreceipt-two-signerinfos.md).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "public-receipt-sandbox-g5-signer-infos-unknown-digest-then-genuine"
