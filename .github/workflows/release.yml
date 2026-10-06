@@ -1024,10 +1024,10 @@ jobs:
           distribution: temurin
           java-version: '21'
           server-id: central
-          server-username: CENTRAL_USERNAME
-          server-password: CENTRAL_PASSWORD
+          server-username-env-var: CENTRAL_USERNAME
+          server-password-env-var: CENTRAL_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+          gpg-passphrase-env-var: MAVEN_GPG_PASSPHRASE
 
       - name: Deploy to Central (tests, sources, javadoc, GPG, upload)
         if: steps.gate.outputs.publish == 'true'
