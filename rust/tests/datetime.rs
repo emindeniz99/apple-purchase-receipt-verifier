@@ -1,4 +1,4 @@
-//! Dates: the grammar a receipt date attribute must obey, and the two
+//! Dates: the RFC 3339 form a receipt date attribute must take, and the two
 //! renderings Apple's `verifyReceipt` response uses.
 //!
 //! The US-Pacific vectors below were generated from Python's `zoneinfo`
@@ -140,22 +140,34 @@ fn system_time_round_trips_through_epoch_millis() {
     }
 }
 
-/// The receipt date grammar (owner, 2026-09-27, Q20a): exactly
-/// `YYYY-MM-DDTHH:MM:SSZ`, at every edge of it.
+/// A receipt date is an RFC 3339 `date-time` (owner, Q68, 2026-10-06,
+/// widening the 2026-09-27 grammar), at every edge of it.
 #[test]
-fn a_receipt_date_is_exactly_the_one_form() {
-    assert_eq!(
-        parse_receipt_date("2024-08-06T12:00:00Z"),
-        Some(1_722_945_600_000)
-    );
-    assert_eq!(
-        parse_receipt_date("0000-01-01T00:00:00Z"),
-        Some(-62_167_219_200_000)
-    );
-    assert_eq!(
-        parse_receipt_date("9999-12-31T23:59:59Z"),
-        Some(253_402_300_799_000)
-    );
+fn a_receipt_date_is_an_rfc_3339_date_time() {
+    const NOON: i64 = 1_722_945_600_000; // 2024-08-06T12:00:00Z
+    for (text, millis) in [
+        ("2024-08-06T12:00:00Z", NOON),
+        ("0000-01-01T00:00:00Z", -62_167_219_200_000),
+        ("9999-12-31T23:59:59Z", 253_402_300_799_000),
+        ("9999-12-31T23:59:59.999999Z", 253_402_300_799_999),
+        ("2024-08-06t12:00:00z", NOON),
+        ("2024-08-06T12:00:00.000Z", NOON),
+        ("2024-08-06T12:00:00.5Z", NOON + 500),
+        ("2024-08-06T12:00:00.123456789012Z", NOON + 123),
+        ("2024-08-06T12:00:00.9999Z", NOON + 999),
+        ("2024-08-06T12:00:00+00:00", NOON),
+        ("2024-08-06T12:00:00-00:00", NOON),
+        ("2024-08-06T05:00:00-07:00", NOON),
+        ("2024-08-06T17:30:00+05:30", NOON),
+        ("2024-08-07T11:59:00+23:59", NOON),
+        ("2016-12-31T23:59:60Z", 1_483_228_799_000),
+        ("2016-12-31T15:59:60.5-08:00", 1_483_228_799_500),
+        ("0000-01-01T00:00:00.5Z", -62_167_219_199_500),
+        ("0000-01-01T01:00:00+01:00", -62_167_219_200_000),
+        ("1969-12-31T23:59:59.999Z", -1),
+    ] {
+        assert_eq!(parse_receipt_date(text), Some(millis), "{text:?}");
+    }
     assert!(parse_receipt_date("2024-02-29T00:00:00Z").is_some());
     assert!(parse_receipt_date("2000-02-29T00:00:00Z").is_some());
     assert!(
@@ -163,16 +175,23 @@ fn a_receipt_date_is_exactly_the_one_form() {
         "0000 is a leap year"
     );
     for text in [
-        "2024-08-06t12:00:00Z",
-        "2024-08-06T12:00:00z",
-        "2024-08-06T12:00:00.000Z",
-        "2024-08-06T12:00:00.5Z",
-        "2024-08-06T12:00:00+00:00",
-        "2024-08-06T12:00:00-07:00",
         "2024-08-06T12:00:00",
-        "2024-08-06T12:00:60Z",
+        "2024-08-06T12:00Z",
+        "2024-08-06T12:00:00.Z",
+        "2024-08-06T12:00:00,5Z",
+        "2024-08-06T12:00:00.5",
+        "2024-08-06T12:00:00ZZ",
+        "2024-08-06T12:00:00+24:00",
+        "2024-08-06T12:00:00+03:60",
+        "2024-08-06T12:00:00+0300",
+        "2024-08-06T12:00:00+03",
+        "2024-08-06T12:00:00+03:00:00",
+        "2024-08-06T12:00:00\u{2212}03:00",
+        "2024-08-06T12:00:61Z",
         "2024-08-06T12:60:00Z",
         "2024-08-06T24:00:00Z",
+        "9999-12-31T23:59:59-00:01",
+        "0000-01-01T00:00:00+00:01",
         "2023-02-29T00:00:00Z",
         "1900-02-29T00:00:00Z",
         "2024-04-31T00:00:00Z",
@@ -186,6 +205,8 @@ fn a_receipt_date_is_exactly_the_one_form() {
         " 2024-08-06T12:00:00Z",
         "2024-08-06T12:00:00Z ",
         "2024-8-06T12:00:00Z",
+        "2024-08-06T12:00:0\u{661}Z",
+        "2024-08-06T12:00:00.\u{661}Z",
         "",
     ] {
         assert!(
@@ -547,14 +568,28 @@ fn the_pacific_rendering_matches_the_hand_written_rules_at_a_sample() {
 /// The receipt-date grammar, old against new: every month 00-13 and day
 /// 00-32 of years at the edges of the leap rules, hours, minutes and
 /// seconds either side of their limits, every printable byte at every
-/// position of one valid date, and the lengths either side of 20.
+/// position of one valid date, and the lengths either side of 20. The old
+/// grammar was `YYYY-MM-DDTHH:MM:SSZ` alone; on these inputs RFC 3339 adds
+/// only a lowercase `t` or `z` and second 60, read as 59 (owner, Q68,
+/// 2026-10-06), so the new code must answer what the old one answers for
+/// the input with those three written the old way.
 #[test]
-fn the_receipt_date_grammar_is_unchanged() {
+fn the_receipt_date_grammar_widens_only_as_rfc_3339_does() {
     let mut checked = 0u64;
     let mut check = |text: &str| {
+        let mut old_form = text.as_bytes().to_vec();
+        if old_form.len() == 20 {
+            old_form[10] = old_form[10].to_ascii_uppercase();
+            old_form[19] = old_form[19].to_ascii_uppercase();
+            if &old_form[17..19] == b"60" {
+                old_form[18] = b'9';
+                old_form[17] = b'5';
+            }
+        }
+        let old_form = std::str::from_utf8(&old_form).unwrap();
         assert_eq!(
             parse_receipt_date(text),
-            old::parse_receipt_date(text),
+            old::parse_receipt_date(old_form),
             "{text:?}"
         );
         checked += 1;

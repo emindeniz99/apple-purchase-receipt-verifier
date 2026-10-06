@@ -5,8 +5,6 @@ import java.math.BigInteger;
 import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -15,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -90,8 +90,12 @@ final class ReceiptDecoder {
             IAP_IS_TRIAL_PERIOD,
             IAP_IS_IN_INTRO_OFFER_PERIOD));
 
-    private static final DateTimeFormatter RECEIPT_DATE =
-            DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss'Z'").withResolverStyle(ResolverStyle.STRICT);
+    /** RFC 3339 §5.6 {@code date-time}, T and Z in either case; {@code \d} is ASCII only. */
+    private static final Pattern RECEIPT_DATE = Pattern.compile(
+            "(\\d{4})-(\\d{2})-(\\d{2})[Tt](\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d++))?(?:[Zz]|([+-])(\\d{2}):(\\d{2}))");
+
+    private static final long FIRST_MILLIS = -62_167_219_200_000L; // 0000-01-01T00:00:00Z
+    private static final long LAST_MILLIS = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z
 
     private ReceiptDecoder() {}
 
@@ -351,28 +355,51 @@ final class ReceiptDecoder {
         }
         Long millis = parseDate(text);
         if (millis == null) {
-            throw new VerificationException(
-                    Reason.UNREADABLE_PAYLOAD, "attribute value is not a YYYY-MM-DDTHH:MM:SSZ date");
+            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not an RFC 3339 date-time");
         }
         return millis;
     }
 
     /**
-     * Exactly {@code YYYY-MM-DDTHH:MM:SSZ}: a year from 0000 to 9999, a real
-     * calendar date, hours 00 to 23, minutes and seconds 00 to 59, uppercase
-     * {@code T} and {@code Z}, nothing else. Null when {@code text} is not in
-     * that form.
+     * An RFC 3339 {@code date-time} (owner, Q68, 2026-10-06), as the core
+     * reads it: a year 0000 to 9999 and a real calendar date, hours 00 to
+     * 23, minutes 00 to 59, seconds 00 to 60 with 60 read as 59, {@code T}
+     * and {@code Z} in either case, a fraction of any length truncated to
+     * the millisecond, and {@code Z} or an offset {@code ±hh:mm} (hours 00
+     * to 23) converted to UTC. Null when {@code text} is not in that form or
+     * names an instant outside 0000-01-01T00:00:00Z to
+     * 9999-12-31T23:59:59.999Z.
      */
     static @Nullable Long parseDate(String text) {
-        // uuuu also reads a signed or five-digit year; the accepted form is 20 characters.
-        if (text.length() != 20) {
+        Matcher m = RECEIPT_DATE.matcher(text);
+        if (!m.matches()) {
             return null;
         }
+        int second = Integer.parseInt(m.group(6));
+        int offsetHours = m.group(8) == null ? 0 : Integer.parseInt(m.group(9));
+        int offsetMinutes = m.group(8) == null ? 0 : Integer.parseInt(m.group(10));
+        if (second > 60 || offsetHours > 23 || offsetMinutes > 59) {
+            return null;
+        }
+        long local;
         try {
-            return LocalDateTime.parse(text, RECEIPT_DATE).toEpochSecond(ZoneOffset.UTC) * 1000;
+            local = LocalDateTime.of(
+                            Integer.parseInt(m.group(1)),
+                            Integer.parseInt(m.group(2)),
+                            Integer.parseInt(m.group(3)),
+                            Integer.parseInt(m.group(4)),
+                            Integer.parseInt(m.group(5)),
+                            Math.min(second, 59))
+                    .toEpochSecond(ZoneOffset.UTC);
         } catch (DateTimeException e) {
             return null;
         }
+        String fraction = m.group(7) == null ? "" : m.group(7);
+        int millis = Integer.parseInt(
+                fraction.length() > 3 ? fraction.substring(0, 3) : fraction + "000".substring(fraction.length()));
+        int offset = (offsetHours * 60 + offsetMinutes) * ("-".equals(m.group(8)) ? -1 : 1);
+        long instant = (local - offset * 60L) * 1000 + millis;
+        return instant >= FIRST_MILLIS && instant <= LAST_MILLIS ? instant : null;
     }
 
     /** The bundle id string, or {@code null} when it does not decode; its octets are kept either way. */
