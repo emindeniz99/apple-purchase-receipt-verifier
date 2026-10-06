@@ -183,3 +183,11 @@ answer a stale payload by asking for a fresh one.
 so one correctly signed receipt has several byte spellings; the id is the
 identifier (PLAN.md D4). For a subscription keep `originalTransactionId`
 beside it, since that is what ties renewals to one purchase.
+
+A JWS has two spellings too. An ES256 signature (r, s) also verifies as
+(r, n − s), so anyone holding a JWS can rewrite its third segment without
+a key, and the header and payload stay byte-identical. Apple does not
+normalise to one form, so the verifier accepts both. Dedupe on a field
+inside the verified payload: `transactionId` (or `originalTransactionId`)
+for a transaction, `notificationUUID` for a server notification. Never
+dedupe on the JWS string or its hash.

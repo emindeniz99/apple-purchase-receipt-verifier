@@ -245,7 +245,10 @@ decision, made on the payload. In short:
    App Store Server API or the client when it is too old. This optional
    step is the only one that talks to Apple.
 5. **Dedupe on the transaction id**, never on the bytes, and keep
-   `originalTransactionId` for subscriptions.
+   `originalTransactionId` for subscriptions. A notification dedupes on
+   its `notificationUUID`. Never key on the JWS string or its hash: an
+   ES256 signature has two valid spellings, and anyone can produce the
+   second.
 6. **Refunds after the grant** arrive as App Store Server Notifications V2,
    which this library verifies like any other JWS.
 
