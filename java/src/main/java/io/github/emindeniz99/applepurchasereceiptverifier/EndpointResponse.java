@@ -46,6 +46,13 @@ final class EndpointResponse {
         if (status != AppleStatus.OK || receipt == null) {
             return status(status);
         }
+        // An in-app purchase Apple signed that does not decode (it went to
+        // unknownAttributes[17]) answers 21009, as UNREADABLE_PAYLOAD does,
+        // rather than a 0 whose in_app silently lacks it (owner Q71,
+        // 2026-10-06).
+        if (receipt.unknownAttributes().containsKey(17)) {
+            return status(AppleStatus.INTERNAL_DATA_ACCESS_ERROR);
+        }
         // A size hint only; clamped, so a cap-sized receipt does not reserve
         // tens of megabytes up front or overflow the multiplication.
         StringWriter out =
