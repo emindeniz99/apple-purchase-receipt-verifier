@@ -189,6 +189,11 @@ public final class ReceiptPayload {
         return RawAttributes.copy(unknownAttributes);
     }
 
+    /** Whether attribute {@code type} went to {@link #unknownAttributes()}, without copying them. */
+    boolean hasUnknownAttribute(int type) {
+        return unknownAttributes.containsKey(type);
+    }
+
     /**
      * The environment {@link #receiptType()} names, as the verifier read it:
      * {@code Production} and {@code ProductionVPP} are

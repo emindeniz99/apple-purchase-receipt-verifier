@@ -427,6 +427,7 @@ library:
 | Verified, receipt's environment matches this endpoint's | 0 |
 | Verified, a sandbox receipt answered by a `PRODUCTION` endpoint | 21007 |
 | Verified, a production receipt answered by a `SANDBOX` endpoint | 21008 |
+| Verified, but an in-app purchase (attribute 17) does not decode | 21009 |
 | `Reason.MALFORMED`, `Reason.TOO_LARGE` | 21002 |
 | `Reason.INVALID_SIGNATURE`, `Reason.UNTRUSTED_CHAIN`, `Reason.INVALID_CERTIFICATE`, `Reason.INVALID_CERTIFICATE_PURPOSE` | 21003 |
 | `Reason.UNREADABLE_PAYLOAD`, `Reason.INTERNAL_ERROR` | 21009 |

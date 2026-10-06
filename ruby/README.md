@@ -447,8 +447,9 @@ Status codes it can produce:
 | `MALFORMED`, `TOO_LARGE` | 21002 |
 | `INVALID_SIGNATURE`, `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE` | 21003 |
 | `UNREADABLE_PAYLOAD`, `INTERNAL_ERROR` | 21009 |
+| verified, environment matches, but an in-app purchase does not decode | 21009 |
 
-Both 21009 cases are deterministic for the same input: alert and escalate,
+Every 21009 case is deterministic for the same input: alert and escalate,
 never retry. Apple's 21005 and 21100-21199 mean Apple's own servers failed
 and invite a retry; this local endpoint never returns them, since it never
 calls Apple. `APRV::AppleStatus` names every status Apple documents, so a

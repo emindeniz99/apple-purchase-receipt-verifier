@@ -253,8 +253,9 @@ the `status` field inside the body:
 | `.malformed`, `.tooLarge` | 21002 |
 | `.invalidSignature`, `.untrustedChain`, `.invalidCertificate`, `.invalidCertificatePurpose` | 21003 |
 | `.unreadablePayload`, `.internalError` | 21009 |
+| verified, environment matches, but an in-app purchase does not decode | 21009 |
 
-Both 21009 cases are deterministic for the same input: alert on 21009,
+Every 21009 case is deterministic for the same input: alert on 21009,
 never retry it. `AppleStatus` names every status code Apple documents, so
 callers do not write `21007` by hand.
 
