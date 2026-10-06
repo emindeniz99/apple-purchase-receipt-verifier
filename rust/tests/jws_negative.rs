@@ -200,61 +200,43 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
     );
 }
 
-/// The minted chain of `common::mint::signed_jws`, the leaf's version
-/// INTEGER content given and each certificate signed as it stands; and the
-/// root to pin.
+/// The chain of `common::mint::signed_jws`, its leaf minted with the
+/// version INTEGER content given and signed as it stands; and the root to
+/// pin.
 fn minted_jws(leaf_version: &[u8]) -> (TrustAnchor, String) {
     use common::mint::{
         certificate, key, name, spki, ECDSA_WITH_SHA256, RECEIPT_SIGNER_MARKER, WWDR_MARKER,
     };
     use common::{der, der_int, der_oid, der_seq, tag};
-    let algorithm = der_seq(&[der_oid(ECDSA_WITH_SHA256)]);
-    let marker = |oid| der_seq(&[der_oid(oid), der(tag::OCTET_STRING, &[0x05, 0x00])]);
-    let issue = |subject: &str,
-                 subject_key: &common::mint::SigningKey,
-                 issuer: &str,
-                 issuer_key: &common::mint::SigningKey,
-                 serial: u64,
-                 version: &[u8],
-                 extensions: Vec<Vec<u8>>| {
-        let tbs = der_seq(&[
-            der(tag::CONTEXT_0, &der(tag::INTEGER, version)),
-            der_int(serial),
-            algorithm.clone(),
-            name(issuer),
-            der_seq(&[der(0x17, b"200101000000Z"), der(0x18, b"20991231000000Z")]),
-            name(subject),
-            spki(subject_key),
-            der(0xA3, &der_seq(&extensions)),
-        ]);
-        let signature = issuer_key.sign_der(&tbs);
-        common::mint::assemble(tbs, algorithm.clone(), &signature)
-    };
-    let basic_ca = der_seq(&[
-        der_oid("2.5.29.19"),
-        der(0x01, &[0xFF]),
-        der(tag::OCTET_STRING, &der_seq(&[der(0x01, &[0xFF])])),
-    ]);
     let (root_key, intermediate_key, leaf_key) = (key(11), key(12), key(13));
     let root = certificate("JWS Root", &root_key, "JWS Root", &root_key, 1, true, None);
-    let intermediate = issue(
+    let intermediate = certificate(
         "JWS WWDR",
         &intermediate_key,
         "JWS Root",
         &root_key,
         2,
-        &[2],
-        vec![basic_ca, marker(WWDR_MARKER)],
+        true,
+        Some(WWDR_MARKER),
     );
-    let leaf = issue(
-        "JWS Leaf",
-        &leaf_key,
-        "JWS WWDR",
-        &intermediate_key,
-        3,
-        leaf_version,
-        vec![marker(RECEIPT_SIGNER_MARKER)],
-    );
+    // `common::mint::tbs` for the leaf, but with the version given.
+    let algorithm = der_seq(&[der_oid(ECDSA_WITH_SHA256)]);
+    let marker = der_seq(&[
+        der_oid(RECEIPT_SIGNER_MARKER),
+        der(tag::OCTET_STRING, &[0x05, 0x00]),
+    ]);
+    let tbs = der_seq(&[
+        der(tag::CONTEXT_0, &der(tag::INTEGER, leaf_version)),
+        der_int(3),
+        algorithm.clone(),
+        name("JWS WWDR"),
+        der_seq(&[der(0x17, b"200101000000Z"), der(0x18, b"20991231000000Z")]),
+        name("JWS Leaf"),
+        spki(&leaf_key),
+        der(0xA3, &der_seq(&[marker])),
+    ]);
+    let signature = intermediate_key.sign_der(&tbs);
+    let leaf = common::mint::assemble(tbs, algorithm, &signature);
     let header = format!(
         r#"{{"alg":"ES256","x5c":["{}","{}","{}"]}}"#,
         base64_encode(&leaf),
