@@ -14,7 +14,7 @@ use crate::envelope::{Envelope, EnvelopeMembers, ShallowError};
 use crate::item::decodes_as_any;
 use crate::sys::{self, CMS_SignerInfo};
 use crate::walk::{self, Budget, Headers, WalkError};
-use crate::{d2i_whole, drain_errors, init, keys};
+use crate::{d2i_whole, drain_errors, init};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use libc::c_int;
 use openssl::asn1::Asn1ObjectRef;
@@ -22,6 +22,7 @@ use openssl::cms::CmsContentInfo;
 use openssl::stack::Stack;
 use openssl::x509::X509;
 use openssl_sys as ffi;
+#[cfg(feature = "test-seams")]
 use std::cell::Cell;
 use std::ptr;
 
@@ -84,6 +85,7 @@ pub struct EnvelopeLimits {
     pub certificates: usize,
 }
 
+#[cfg(feature = "test-seams")]
 std::thread_local! {
     /// How many times this thread ran `d2i_CMS_ContentInfo` while
     /// [`full_decodes_during`] counts; `None` otherwise.
@@ -94,6 +96,7 @@ std::thread_local! {
 /// ran the full CMS decode (`d2i_CMS_ContentInfo`, which builds every
 /// embedded certificate's key) on this thread meanwhile: the tests' seam
 /// for "refused before the full decode".
+#[cfg(feature = "test-seams")]
 pub fn full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
     /// Puts the previous count back when dropped, so a panic in `body`
     /// that is caught does not leave this thread counting.
@@ -169,6 +172,7 @@ impl SignedData {
         })?;
         within(envelope.members(), limits)?;
         let (raw, whole) = d2i_whole(der, |cursor, len| {
+            #[cfg(feature = "test-seams")]
             FULL_DECODES.with(|count| count.set(count.get().map(|n| n.saturating_add(1))));
             // SAFETY: `cursor` points at `len` readable bytes of `der`;
             // d2i_CMS_ContentInfo reads at most `len` of them, advances the
@@ -292,11 +296,15 @@ impl SignedData {
             drain_errors();
             return false;
         }
+        // Built even where no seam records it: a signer whose key OpenSSL
+        // cannot build fails here.
+        #[cfg_attr(not(feature = "test-seams"), allow(unused_variables))]
         let Ok(key) = signer.x509().public_key() else {
             drain_errors();
             return false;
         };
-        keys::record(&key);
+        #[cfg(feature = "test-seams")]
+        crate::keys::record(&key);
         // SAFETY: `si` is owned by `self.cms`, which `&mut self` borrows
         // exclusively; the call takes its own reference to the certificate
         // and its key.

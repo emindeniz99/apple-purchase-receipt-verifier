@@ -114,11 +114,12 @@ const fn larger(a: usize, b: usize) -> usize {
 ///
 /// The internals this crate's own tests, fuzz targets and benchmark reach
 /// directly: the date reader, the path policy, the key-use and full-decode
-/// seams, the input length the bindings hand over, and the two base64
-/// decoders the shared decodeBase64 cases call. The shared cases name them
-/// as an internal hook; 0.7 exposes no decoder. The workspace's
-/// `aprv-surface` reads the configuration's base64 roots with the
-/// `receipt-data` decoder, so it moves with this crate in lockstep.
+/// seams (under the `test-seams` feature), the input length the bindings
+/// hand over, and the two base64 decoders the shared decodeBase64 cases
+/// call. The shared cases name them as an internal hook; 0.7 exposes no
+/// decoder. The workspace's `aprv-surface` reads the configuration's
+/// base64 roots with the `receipt-data` decoder, so it moves with this
+/// crate in lockstep.
 #[doc(hidden)]
 pub mod __internal {
     /// Calendar arithmetic and Apple's date renderings.
@@ -138,6 +139,7 @@ pub mod __internal {
     /// Runs `body` and returns, beside its result, the
     /// `SubjectPublicKeyInfo` DER of every key the OpenSSL adapter used to
     /// check a signature on this thread meanwhile.
+    #[cfg(feature = "test-seams")]
     pub fn keys_used_during<R>(body: impl FnOnce() -> R) -> (R, Vec<Vec<u8>>) {
         aprv_openssl::keys_used_during(body)
     }
@@ -145,6 +147,7 @@ pub mod __internal {
     /// Runs `body` and returns, beside its result, how many times the
     /// OpenSSL adapter ran its full CMS decode (the one that builds every
     /// embedded certificate's key) on this thread meanwhile.
+    #[cfg(feature = "test-seams")]
     pub fn cms_full_decodes_during<R>(body: impl FnOnce() -> R) -> (R, usize) {
         aprv_openssl::full_decodes_during(body)
     }

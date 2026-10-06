@@ -165,18 +165,16 @@ fn unreadable(what: &str, err: impl core::fmt::Display) -> PayloadError {
 /// then kept raw.
 struct Undecodable;
 
-struct Attribute {
+/// One entry of an attribute SET: its type, and its value still raw.
+pub(crate) struct Attribute {
     attribute_type: u32,
     value: Vec<u8>,
 }
 
-/// Decodes a receipt payload that a trusted signer has signed.
-///
-/// # Errors
-/// [`PayloadError`] when the attribute SET, or one of its attributes, does
-/// not parse. A value that does not decode is not an error: it is kept raw.
-pub(crate) fn parse_receipt_payload(content: &[u8]) -> Result<ReceiptPayload, PayloadError> {
-    let attributes = parse_attribute_set(content, "receipt payload")?;
+/// Decodes the attributes of a receipt payload that a trusted signer has
+/// signed, as [`parse_payload_attributes`] parsed them. A value that does
+/// not decode is not an error: it is kept raw.
+pub(crate) fn parse_receipt_payload(attributes: Vec<Attribute>) -> ReceiptPayload {
     let mut receipt = ReceiptPayload::default();
     let mut seen: Vec<u32> = Vec::new();
     for attribute in attributes {
@@ -238,7 +236,7 @@ pub(crate) fn parse_receipt_payload(content: &[u8]) -> Result<ReceiptPayload, Pa
             keep_raw(&mut receipt.unknown_attributes, attribute);
         }
     }
-    Ok(receipt)
+    receipt
 }
 
 /// An in-app purchase. Anything that stops it from parsing, its attribute
@@ -317,19 +315,21 @@ fn keep_raw(unknown: &mut UnknownAttributes, attribute: Attribute) {
         .push(attribute.value);
 }
 
-/// The receipt creation date (attribute 12), read the only way anything in
-/// a payload is read before its signer is trusted: the top-level attribute
-/// SET is walked under the depth and node bounds, each entry's type is
-/// read, and only the value of the first type 12 is decoded. The node bound
-/// caps the work at 100,000 values whatever the input.
-///
-/// `None` means "judge the chain at the clock": no attribute 12, a first one
-/// that is empty or does not decode, or a walk that fails anywhere. An entry
-/// the walk cannot read fails it as a whole rather than being skipped, since
-/// that entry might have been the first attribute 12. Never an error:
+/// A payload's top-level attribute SET, parsed the only way anything in a
+/// payload is parsed before its signer is trusted: walked under the depth
+/// and node bounds, which cap the work at 100,000 values whatever the
+/// input, into each entry's type and raw value. An entry the walk cannot
+/// read fails the parse as a whole rather than being skipped, since it
+/// might have been the first attribute 12.
+pub(crate) fn parse_payload_attributes(content: &[u8]) -> Result<Vec<Attribute>, PayloadError> {
+    parse_attribute_set(content, "receipt payload")
+}
+
+/// The receipt creation date, the one value read before the signer is
+/// trusted. `None` means "judge the chain at the clock": no attribute 12,
+/// or a first one that is empty or does not decode. Never an error:
 /// nothing is trusted yet, so nothing here can blame anyone.
-pub(crate) fn read_creation_date(content: &[u8]) -> Option<i64> {
-    let attributes = parse_attribute_set(content, "receipt payload").ok()?;
+pub(crate) fn creation_date(attributes: &[Attribute]) -> Option<i64> {
     let first = attributes
         .iter()
         .find(|attribute| attribute.attribute_type == ATTR_CREATION_DATE)?;
@@ -510,10 +510,26 @@ impl InAppPurchase {
 #[allow(clippy::unwrap_used)]
 mod tests {
     //! The payload grammar, tested against the decoder itself. Through the
-    //! verifier these payloads would need a trusted signer, because the full
-    //! parse runs only after the chain and the signature have passed.
+    //! verifier these payloads would need a trusted signer, because nothing
+    //! but the creation date is decoded until the chain and the signature
+    //! have passed.
 
-    use super::{parse_receipt_payload, read_creation_date, InAppPurchase};
+    use super::{
+        creation_date, parse_payload_attributes, InAppPurchase, PayloadError, ReceiptPayload,
+    };
+
+    /// The verifier's two readings of one payload's single parse: all of
+    /// it once the signature has passed, and the creation date before.
+    fn parse_receipt_payload(content: &[u8]) -> Result<ReceiptPayload, PayloadError> {
+        parse_payload_attributes(content).map(super::parse_receipt_payload)
+    }
+
+    fn read_creation_date(content: &[u8]) -> Option<i64> {
+        parse_payload_attributes(content)
+            .ok()
+            .as_deref()
+            .and_then(creation_date)
+    }
 
     /// The universal tags these tests write.
     mod tag {

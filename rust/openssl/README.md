@@ -20,6 +20,10 @@ values: DER in, certificates, facts and booleans out.
 | `verify_es256`, `sha256` | the JWS signature and the digest |
 | `keys_used_during` | the SPKI of every key used while a closure runs (the tests' key-use seam) |
 
+The two seams, and the recording behind them, compile only under the
+`test-seams` feature, which the core's own tests turn on; `aprv.wasm`, the
+C ABI and `aprv-server` are built without them.
+
 ## The OpenSSL APIs, and why these
 
 - **CMS**: `d2i_CMS_ContentInfo`, `CMS_get0_SignerInfos`,

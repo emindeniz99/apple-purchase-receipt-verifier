@@ -4,7 +4,8 @@
 use crate::error::{malformed, Failure, Reason};
 use crate::path::{authenticated_top_down, receipt_path};
 use crate::receipt_payload::{
-    parse_receipt_payload, read_creation_date, ReceiptPayload, MAX_ASN1_DEPTH, MAX_ASN1_NODES,
+    creation_date, parse_payload_attributes, parse_receipt_payload, Attribute, PayloadError,
+    ReceiptPayload, MAX_ASN1_DEPTH, MAX_ASN1_NODES,
 };
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::{self, Clock, Stage};
@@ -63,13 +64,13 @@ pub(crate) fn verify(
         ));
     }
     let der = decode_receipt_data(base64)?;
-    let content = verify_signature(&der, anchors, clock)?;
+    let attributes = verify_signature(&der, anchors, clock)?;
     verifier::enter(Stage::PayloadParse);
     // A trusted signer signed these bytes, so a payload this crate cannot
     // read is the library's failure or a format Apple added, not the
     // client's: UNREADABLE_PAYLOAD, never MALFORMED, which the endpoint
     // answers as 21002 and an app server reads as "deny".
-    let payload = parse_receipt_payload(&content).map_err(|err| {
+    let payload = attributes.map(parse_receipt_payload).map_err(|err| {
         Failure::new(
             Reason::UnreadablePayload,
             "signed receipt content could not be read",
@@ -108,13 +109,14 @@ fn envelope_failure(err: CmsError) -> Failure {
     }
 }
 
-/// Every check up to and including a signature; returns the signed payload,
-/// not yet decoded.
+/// Every check up to and including a signature; returns the signed
+/// payload's top-level attribute SET as parsed before the signature, its
+/// values not yet interpreted.
 fn verify_signature(
     der: &[u8],
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
-) -> Result<Vec<u8>, Failure> {
+) -> Result<Result<Vec<Attribute>, PayloadError>, Failure> {
     // The adapter bounds the envelope before its full decode, which builds
     // each embedded certificate's public key: first a header walk under the
     // depth and node bounds, which allocates nothing, then a shallow decode
@@ -129,14 +131,15 @@ fn verify_signature(
     let signer_count = cms.signer_count();
     let certificates = cms.certificates();
 
-    // Only the creation date is read before trust is established, because
-    // chain validity is anchored at signing time; nothing else in the payload
-    // is decoded until the chain and a signature have passed. It is read
-    // once a SignerInfo has named an embedded certificate, since only a
-    // chain needs it. A date that is missing or unreadable cannot blame
-    // anyone yet, so it only moves the chain instant to the clock and never
-    // rejects by itself.
-    let mut creation_date: Option<Option<i64>> = None;
+    // Only the creation date is interpreted before trust is established,
+    // because chain validity is anchored at signing time: the attribute SET
+    // is parsed into types and raw values, and the rest is interpreted from
+    // that same parse once the chain and a signature have passed. It is
+    // parsed once a SignerInfo has named an embedded certificate, since only
+    // a chain needs the date. A SET that does not parse, or a date that is
+    // missing or unreadable, cannot blame anyone yet, so it only moves the
+    // chain instant to the clock and never rejects by itself.
+    let mut payload: Option<Result<Vec<Attribute>, PayloadError>> = None;
 
     let embedded = Embedded::sort(certificates);
     // Signer-independent, so walked once for all SignerInfos, and only once
@@ -145,8 +148,8 @@ fn verify_signature(
     let mut first_failure: Option<Failure> = None;
     for index in 0..signer_count {
         let verdict = signer_certificates(&cms, index, &embedded).and_then(|matches| {
-            let date = *creation_date.get_or_insert_with(|| read_creation_date(cms.content()));
-            let at_millis = match date {
+            let attributes = payload.get_or_insert_with(|| parse_payload_attributes(cms.content()));
+            let at_millis = match attributes.as_deref().ok().and_then(creation_date) {
                 Some(millis) => millis,
                 None => clock.now()?,
             };
@@ -169,7 +172,8 @@ fn verify_signature(
             Err(first_match_failure.unwrap_or_else(|| malformed("signer certificate not embedded")))
         });
         match verdict {
-            Ok(()) => return Ok(cms.content().to_vec()),
+            // A passing signer was matched, so the payload is parsed already.
+            Ok(()) => return Ok(payload.unwrap_or_else(|| parse_payload_attributes(cms.content()))),
             // Every SignerInfo signs the same content, so another one
             // passing proves the same bytes; only when none does is the
             // first one's failure the verdict.

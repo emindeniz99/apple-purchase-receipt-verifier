@@ -256,14 +256,15 @@ caller sees.
 
 **Receipt.** Size cap → strict base64 → CMS parse, including the syntax of
 every `SignerInfo`'s `signedAttrs`, whatever its position → at most four
-`SignerInfo`s and ten embedded certificates → the creation date alone
-(nothing else in the payload is read yet) → for each `SignerInfo`: the
+`SignerInfo`s and ten embedded certificates → the payload's attribute SET
+parsed under its bounds, and the creation date read from it (nothing else
+in the payload is interpreted yet) → for each `SignerInfo`: the
 signer's certificate → a pinned root vouches for it, top-down → the
 signer's key, which OpenSSL must be able to use → the chain at the
 creation date or the clock → **signer marker OID** → **WWDR marker OID on the
 intermediate** → the CMS signature. One `SignerInfo` passing is enough; when
-none does, the first one's failure is the verdict. Then the full payload
-parse, where any failure is `UNREADABLE_PAYLOAD`.
+none does, the first one's failure is the verdict. Then the rest of that
+one parse is interpreted, where any failure is `UNREADABLE_PAYLOAD`.
 
 The receipt signer may use any algorithm OpenSSL's default provider
 verifies: RSA PKCS#1 v1.5, RSA-PSS or ECDSA on its named curves (P-256,
@@ -329,7 +330,9 @@ and its key is never used, so a genuine receipt padded with such
 certificates still verifies. The walk starts at the roots, so a stranger
 costs its decoding and a name comparison, however large or broken its key. The shared
 denial-of-service cases pin this with a time budget, and the tests assert it
-directly through a seam that records every key used.
+directly through a seam that records every key used. The seam compiles only
+under the `test-seams` feature, which the crate's own tests turn on through
+a dev-dependency on the crate itself, so a plain `cargo test` runs them.
 
 ## Defensive parsing
 

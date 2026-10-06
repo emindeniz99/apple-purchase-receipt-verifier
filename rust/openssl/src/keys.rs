@@ -20,7 +20,6 @@ pub(crate) fn record(key: &PKeyRef<Public>) {
             }
         }
     });
-    crate::drain_errors();
 }
 
 /// Runs `body` and returns, beside its result, the `SubjectPublicKeyInfo`

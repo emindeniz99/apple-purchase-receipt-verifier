@@ -1,6 +1,6 @@
 //! One X.509 certificate, parsed by OpenSSL.
 
-use crate::{d2i_whole, drain_errors, init, keys};
+use crate::{d2i_whole, drain_errors, init};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use libc::c_int;
 use openssl::asn1::{Asn1Object, Asn1ObjectRef, Asn1Time};
@@ -184,7 +184,8 @@ impl Certificate {
             drain_errors();
             return false;
         };
-        keys::record(&key);
+        #[cfg(feature = "test-seams")]
+        crate::keys::record(&key);
         let verified = self.0.verify(&key).unwrap_or(false);
         drain_errors();
         verified
@@ -214,7 +215,8 @@ impl Certificate {
             drain_errors();
             return false;
         };
-        keys::record(&key);
+        #[cfg(feature = "test-seams")]
+        crate::keys::record(&key);
         let verified = self.0.verify(&key).unwrap_or(false);
         drain_errors();
         verified
