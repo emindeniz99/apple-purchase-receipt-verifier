@@ -103,26 +103,59 @@ class ReceiptDecoderTest {
         assertArrayEquals(refused, receipt.unknownAttributes().get(17).get(0));
     }
 
-    /** The receipt date grammar (owner, 2026-09-27, Q20a), at every edge of it. */
+    /**
+     * A receipt date is an RFC 3339 date-time (owner, Q68, 2026-10-06,
+     * widening the 2026-09-27 grammar), at every edge of it; the same
+     * vectors as the core's {@code rust/tests/datetime.rs}.
+     */
     @Test
-    void aReceiptDateIsExactlyTheOneForm() {
-        assertEquals(Long.valueOf(1_722_945_600_000L), ReceiptDecoder.parseDate("2024-08-06T12:00:00Z"));
-        assertEquals(Long.valueOf(-62_167_219_200_000L), ReceiptDecoder.parseDate("0000-01-01T00:00:00Z"));
-        assertEquals(Long.valueOf(253_402_300_799_000L), ReceiptDecoder.parseDate("9999-12-31T23:59:59Z"));
+    void aReceiptDateIsAnRfc3339DateTime() {
+        long noon = 1_722_945_600_000L; // 2024-08-06T12:00:00Z
+        Object[][] accepted = {
+            {"2024-08-06T12:00:00Z", noon},
+            {"0000-01-01T00:00:00Z", -62_167_219_200_000L},
+            {"9999-12-31T23:59:59Z", 253_402_300_799_000L},
+            {"9999-12-31T23:59:59.999999Z", 253_402_300_799_999L},
+            {"2024-08-06t12:00:00z", noon},
+            {"2024-08-06T12:00:00.000Z", noon},
+            {"2024-08-06T12:00:00.5Z", noon + 500},
+            {"2024-08-06T12:00:00.123456789012Z", noon + 123},
+            {"2024-08-06T12:00:00.9999Z", noon + 999},
+            {"2024-08-06T12:00:00+00:00", noon},
+            {"2024-08-06T12:00:00-00:00", noon},
+            {"2024-08-06T05:00:00-07:00", noon},
+            {"2024-08-06T17:30:00+05:30", noon},
+            {"2024-08-07T11:59:00+23:59", noon},
+            {"2016-12-31T23:59:60Z", 1_483_228_799_000L},
+            {"2016-12-31T15:59:60.5-08:00", 1_483_228_799_500L},
+            {"0000-01-01T00:00:00.5Z", -62_167_219_199_500L},
+            {"0000-01-01T01:00:00+01:00", -62_167_219_200_000L},
+            {"1969-12-31T23:59:59.999Z", -1L},
+        };
+        for (Object[] vector : accepted) {
+            assertEquals(vector[1], ReceiptDecoder.parseDate((String) vector[0]), (String) vector[0]);
+        }
         assertNotNull(ReceiptDecoder.parseDate("2024-02-29T00:00:00Z"));
         assertNotNull(ReceiptDecoder.parseDate("2000-02-29T00:00:00Z"));
         assertNotNull(ReceiptDecoder.parseDate("0000-02-29T00:00:00Z"), "0000 is a leap year");
         String[] refused = {
-            "2024-08-06t12:00:00Z",
-            "2024-08-06T12:00:00z",
-            "2024-08-06T12:00:00.000Z",
-            "2024-08-06T12:00:00.5Z",
-            "2024-08-06T12:00:00+00:00",
-            "2024-08-06T12:00:00-07:00",
             "2024-08-06T12:00:00",
-            "2024-08-06T12:00:60Z",
+            "2024-08-06T12:00Z",
+            "2024-08-06T12:00:00.Z",
+            "2024-08-06T12:00:00,5Z",
+            "2024-08-06T12:00:00.5",
+            "2024-08-06T12:00:00ZZ",
+            "2024-08-06T12:00:00+24:00",
+            "2024-08-06T12:00:00+03:60",
+            "2024-08-06T12:00:00+0300",
+            "2024-08-06T12:00:00+03",
+            "2024-08-06T12:00:00+03:00:00",
+            "2024-08-06T12:00:00\u221203:00",
+            "2024-08-06T12:00:61Z",
             "2024-08-06T12:60:00Z",
             "2024-08-06T24:00:00Z",
+            "9999-12-31T23:59:59-00:01",
+            "0000-01-01T00:00:00+00:01",
             "2023-02-29T00:00:00Z",
             "1900-02-29T00:00:00Z",
             "2024-04-31T00:00:00Z",
@@ -138,6 +171,7 @@ class ReceiptDecoderTest {
             "2024-08-06T12:00:00Z ",
             "2024-8-06T12:00:00Z",
             "2024-08-06T12:00:0\u0661Z",
+            "2024-08-06T12:00:00.\u0661Z",
             "",
         };
         for (String text : refused) {
@@ -148,11 +182,12 @@ class ReceiptDecoderTest {
     /** A date in any other form is kept raw, and does not set the chain instant either. */
     @Test
     void aDateInAnyOtherFormIsKeptRawAndDoesNotSetTheChainInstant() throws Exception {
-        byte[] exact = new DERIA5String("2024-08-06T12:00:00Z").getEncoded();
+        byte[] rfc3339 = new DERIA5String("2024-08-06t15:00:00.123+03:00").getEncoded();
         assertEquals(
-                Long.valueOf(1_722_945_600_000L),
-                ReceiptDecoder.parse(set(attribute(12, exact))).receiptCreationDateMs());
-        for (String text : new String[] {"2024-08-06T12:00:00.000Z", "2024-08-06T12:00:00+00:00"}) {
+                Long.valueOf(1_722_945_600_123L),
+                ReceiptDecoder.parse(set(attribute(12, rfc3339))).receiptCreationDateMs());
+        assertEquals(Long.valueOf(1_722_945_600_123L), ReceiptDecoder.readCreationDate(set(attribute(12, rfc3339))));
+        for (String text : new String[] {"2024-08-06 12:00:00Z", "2024-08-06T12:00:00+0300", "2024-08-06T12:00Z"}) {
             byte[] value = new DERIA5String(text).getEncoded();
             byte[] payload = set(attribute(12, value));
             ReceiptPayload receipt = ReceiptDecoder.parse(payload);

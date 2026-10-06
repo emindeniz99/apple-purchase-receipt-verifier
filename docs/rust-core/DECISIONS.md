@@ -738,6 +738,48 @@ cRLDistributionPoints, 2026-10-06).
   `receipt/accept-a-signing-time-before-the-signers-validity` and
   `receipt/reject-a-bad-signature-beside-a-signing-time-before-the-signer`.
 
+  A receipt date is an RFC 3339 `date-time` (owner, Q68, 2026-10-06),
+  widening the 2026-09-27 rule that accepted `YYYY-MM-DDTHH:MM:SSZ` and
+  nothing else. Apple's Receipt Fields page documents types 12, 21,
+  1704, 1706, 1708 and 1712 as an "IA5STRING, interpreted as an RFC
+  3339 date" ([Receipt Fields][receiptfields]), and in October 2020 a
+  developer reported Mac App Store receipt dates gaining milliseconds
+  (`2020-10-03T07:12:34.567Z`), which Apple never confirmed
+  ([forum thread][fracforum]). No receipt is known to carry an offset,
+  and all 571 date strings in this repository's genuine and Xcode
+  receipts are `YYYY-MM-DDTHH:MM:SSZ`. The narrow rule refused nothing
+  outright, but a creation date it could not read left the chain to the
+  clock, so a genuine receipt with a fractional creation date failed
+  `INVALID_CERTIFICATE` once its signing certificate expired. Both
+  implementations now read §5.6 exactly: `T` and `Z` in either case
+  (§5.6 NOTE), a fraction of any length truncated to the millisecond
+  (the digits after the third are dropped, which floors the instant
+  before 1970 too), `Z` or `±hh:mm` with hours 00 to 23 converted to
+  UTC, and second 60 read as 59 with its fraction kept, as jiff's parser
+  reads a leap second (`java.time`'s `LocalTime` refuses it, so Java
+  clamps first). The instant must lie in 0000-01-01T00:00:00Z to
+  9999-12-31T23:59:59.999Z, so every date still renders at the
+  endpoint. What is not §5.6 still does not parse: a space for `T`, a
+  comma fraction, `+0300`, `+03`, an offset with seconds, omitted
+  seconds. The shape stays written out in both (a byte check in
+  `rust/src/datetime.rs`, a regular expression in `ReceiptDecoder`):
+  jiff's Temporal parser and `java.time`'s ISO formatters each accept a
+  different superset (jiff a space separator, omitted seconds, hour-only
+  offsets and bracketed annotations; `java.time` omitted seconds and
+  offsets with seconds), both stop at nine fraction digits, `java.time`
+  refuses offsets past 18 hours, and jiff's `Timestamp` ends 26 hours
+  before 9999-12-31T23:59:59Z, so neither parser alone keeps the two
+  implementations on one language. The libraries still decide the
+  calendar and do the arithmetic. Nine shared cases pin it, among them
+  `receipt/rfc3339-date-forms`, `endpoint/rfc3339-dates-render`,
+  `receipt/creation-date-with-a-fraction-sets-the-chain-instant` and
+  `receipt/creation-date-a-millisecond-past-not-after-is-refused`.
+  `receipt/date-grammar` now reads its lowercase `t` and `z`, `.5`,
+  `+03:00` and second-60 vectors, and the lowercase-`t` creation date
+  that used to leave the chain to the clock is now the chain instant
+  (`receipt/creation-date-with-a-lowercase-t-sets-the-chain-instant`,
+  renamed from `...-outside-the-grammar-leaves-the-chain-to-the-clock`).
+
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
   On 2026-09-30 the owner applied the rule above to that code: each
@@ -1498,7 +1540,8 @@ BOOTSTRAP.md lists the three owner actions.
   renders, so only `request_date` can reach that answer.
 - What stays in `rust/src/datetime.rs`: the receipt-date grammar, checked
   byte by byte, since it is the contract with Java and `jiff`'s parsers
-  accept more. Within the range above the renderings are byte-identical to
+  accept more. Since Q68 (2026-10-06) that grammar is RFC 3339's
+  `date-time` (R20). Within the range above the renderings are byte-identical to
   the hand-written code from 1883-11-18 on: 0 disagreements at 182,918,657
   instants (`rust/tests/datetime.rs`).
 - The civil fields are printed with `format!`, as jiff's own
@@ -2071,5 +2114,7 @@ One table for everything the plan measured or considered and rejected.
 [redundant]: ../evidence/2026-10-05-core-drop-redundant-bounds.md
 [reader]: ../evidence/2026-10-05-x509-reader-kept.md
 [walk]: ../evidence/2026-10-06-core-walk-counter.md
+[receiptfields]: https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html
+[fracforum]: https://developer.apple.com/forums/thread/663119
 [javaparse]: ../evidence/2026-10-05-java-presignature-parse-cost.md
 [twosigners]: ../evidence/2026-10-06-verifyreceipt-two-signerinfos.md

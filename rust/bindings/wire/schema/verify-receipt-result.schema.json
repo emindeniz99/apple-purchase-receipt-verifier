@@ -404,9 +404,8 @@
       "maximum": 9223372036854775807
     },
     "epochMillis": {
-      "description": "An instant in milliseconds since 1970-01-01T00:00:00Z, UTC. Receipt dates carry whole seconds, so the last three digits are 000.",
+      "description": "An instant in milliseconds since 1970-01-01T00:00:00Z, UTC. A receipt date is an RFC 3339 date-time with any fraction truncated to the millisecond (owner, Q68, 2026-10-06), so the last three digits are 000 only for a date written in whole seconds.",
       "type": "integer",
-      "multipleOf": 1000,
       "minimum": -9223372036854775808,
       "maximum": 9223372036854775807
     },
