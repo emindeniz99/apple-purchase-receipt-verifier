@@ -1,0 +1,64 @@
+# Spike, not CI: runs the GraalVM 21 UTF-8 length probe on GitHub's hosted
+# runners, the only place the failure has been seen
+# (docs/evidence/2026-10-06-graalvm21-utf8-length.md). Runs only on its own
+# branch.
+name: graalvm21-probe
+
+on:
+  push:
+    branches: [spike/graalvm21-runner-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        id: jut
+        with:
+          distribution: graalvm
+          java-version: '21'
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: runner
+        run: |
+          lscpu | grep -E '^(Model name|Vendor ID|CPU\(s\)|Flags)' | cut -c1-400
+          grep -m1 -o 'avx512[a-z]*' /proc/cpuinfo || echo 'no avx512'
+      - name: the probe and the suite
+        env:
+          JUT: ${{ steps.jut.outputs.path }}
+        run: |
+          set -uo pipefail
+          "$JUT/bin/java" -version 2>&1
+          E=docs/evidence/2026-10-06-graalvm21-utf8-length
+          "$JUT/bin/javac" -d probe "$E/Probe.java" "$E/Probe2.java"
+          echo "== Probe, one JVM, 300 calls"
+          "$JUT/bin/java" -cp probe Probe 300
+          echo "== Probe, 50 fresh JVMs"
+          for i in $(seq 50); do "$JUT/bin/java" -cp probe Probe 1; done | grep -c 'wrong 0'
+          echo "== Probe2 warm-ups"
+          for w in 0 1 3 10 100; do "$JUT/bin/java" -cp probe Probe2 "$w"; done
+          suite() {
+            mvn -B -q -f java/pom.xml test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java" "$@" \
+              > suite.log 2>&1 && echo pass || { echo FAIL; grep -m3 'expected:' suite.log; }
+          }
+          echo "== two test classes, 8 runs, Graal JIT (default)"
+          for i in $(seq 8); do suite -Dtest=VerifierApiTest,InputSizeBoundsTest; done
+          echo "== two test classes, 8 runs, C2 (-XX:-UseJVMCICompiler)"
+          for i in $(seq 8); do suite -Dtest=VerifierApiTest,InputSizeBoundsTest "-DargLine=-XX:-UseJVMCICompiler"; done
+          echo "== full suite, 2 runs, Graal JIT"
+          for i in 1 2; do suite; done
