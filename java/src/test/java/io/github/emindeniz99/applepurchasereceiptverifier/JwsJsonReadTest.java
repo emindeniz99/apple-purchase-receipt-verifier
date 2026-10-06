@@ -1,6 +1,7 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -203,11 +204,15 @@ class JwsJsonReadTest {
      */
     @Test
     void aProcessWideOverrideDoesNotReachTheWritersFactory() {
+        // EndpointResponse.JSON may have been built before this test runs, so
+        // it is checked to hold its own constraints rather than the shared
+        // default instance a new JsonFactory() takes.
+        assertNotSame(StreamWriteConstraints.defaults(), EndpointResponse.JSON.streamWriteConstraints());
         StreamWriteConstraints.overrideDefaultStreamWriteConstraints(
                 StreamWriteConstraints.builder().maxNestingDepth(1).build());
         try {
             assertEquals(1, new JsonFactory().streamWriteConstraints().getMaxNestingDepth());
-            assertEquals(1_000, EndpointResponse.JSON.streamWriteConstraints().getMaxNestingDepth());
+            assertEquals(1_000, JsonFields.factory().streamWriteConstraints().getMaxNestingDepth());
         } finally {
             StreamWriteConstraints.overrideDefaultStreamWriteConstraints(null);
         }
