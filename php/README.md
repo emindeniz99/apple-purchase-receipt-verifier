@@ -537,8 +537,9 @@ installed. It reaches exactly two things in the module:
 - **`request_date`** in `verifyReceiptEndpoint()`'s response.
 - **The chain-validity instant**, but only when the receipt or JWS states no
   signing time of its own: a receipt with no attribute 12, or a JWS payload
-  with no `signedDate` (or one that does not parse). When the input states a
-  time, the chain is judged at that time regardless of what the clock reads.
+  with neither a `signedDate` nor a `receiptCreationDate` that parses. When
+  the input states a time, the chain is judged at that time regardless of
+  what the clock reads.
 
 The clock is read once per call and crosses to `aprv` as epoch milliseconds,
 so a test can pin "now" for a dateless input without a process-wide time mock.

@@ -406,7 +406,8 @@ own `password` and `exclude-old-transactions` fields are read and ignored,
 as in 0.6.
 Duplicate member names are last-wins: where this request body repeats
 `receipt-data`, a JWS header repeats `alg` or `x5c`, or a JWS payload
-repeats `signedDate`, the last occurrence is the value used.
+repeats `signedDate` or `receiptCreationDate`, the last occurrence is the
+value used.
 
 `environment` picks which of Apple's two URLs this call imitates and drives
 the 21007/21008 routing below; `request_date` in the response comes from the

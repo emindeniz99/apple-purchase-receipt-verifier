@@ -570,6 +570,7 @@ Java's parse before trust, 2026-10-06).
   | A clock past 9999-12-31T23:59:59.999Z, or before -9999-01-02T01:59:59Z, at the endpoint | rendered, a five-digit year with no sign (`10000-01-01 00:00:00 Etc/GMT`) | rendered, with a `+` sign past 9999 (`uuuu`) | `{"status":21009}` (port-defined 2026-10-01) | Such a clock is broken, answered like one that panics; jiff's calendar ends at 9999 and every receipt date the grammar accepts renders (R38) | none: no case pins a clock out there; `rust/tests/endpoint.rs` |
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
+  | A JWS payload whose `signedDate` is a number of more than 1,000 digits, beside a `receiptCreationDate` | not measured | the chain at the clock: Jackson's `maxNumberLength` (1,000) fails the whole read, so no date is read, and a payload whose signature verifies ends at `UNREADABLE_PAYLOAD` | the chain at `receiptCreationDate` | A number past `i64` is no instant, so the core skips `signedDate` and takes its stand-in (Q67). Apple never emits such a number, so a JWS that carries one is forged; there each implementation still fails, and only the reason can differ | none: no case pins it |
   | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":0}` since 2026-10-05 (Jackson's default depth, 1,000; 21002 before) | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
   | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
   | A lone surrogate escape in a member name inside `data` or `summary` of a genuinely signed JWS payload | not measured (the 0.7 answers carry no environment) | reads on: Jackson keeps the name, and the container's `environment` is read | ok, without that container's environment (port-defined 2026-10-03) | The core reads `data` and `summary` for the environment alone, and `serde_json` refuses the name (R40), so the container states none; the payload and the signature are unchanged. Apple's documents are ASCII | none: no case pins it; R42 |
@@ -1578,13 +1579,13 @@ amended 2026-10-02).
   RFC 8259 does not define, a byte order mark, bytes that are not UTF-8,
   and anything but whitespace after a JWS object. A duplicate name keeps
   its last value. `signedDate` (and `receiptCreationDate`, its stand-in
-  since Q67) keeps the reference conversion from its
-  raw text: an integer must fit an `i64`, a number with a fraction or an
-  exponent is truncated within that range, and anything else, an integer
-  past `i64` included, is no instant, so the clock stands in. One reading
-  changed beside the bounds: a lone surrogate escape is refused in a name
-  or in a value the core reads, where the old reader made it U+FFFD and
-  Jackson keeps it (R20 row). No shared case reaches it.
+  since Q67) keeps the reference conversion from its raw text: an
+  integer must fit an `i64`, a number with a fraction or an exponent is
+  truncated within that range, and anything else, an integer past `i64`
+  included, is no instant, so the next date or the clock stands in. One
+  reading changed beside the bounds: a lone surrogate escape is refused
+  in a name or in a value the core reads, where the old reader made it
+  U+FFFD and Jackson keeps it (R20 row). No shared case reaches it.
 - The bounds the core no longer has, and why that is acceptable: the
   input caps (3,145,728 bytes for a body, 262,144 for a JWS) already bound
   the work, and the three bounds prevented no blow-up. Measured natively

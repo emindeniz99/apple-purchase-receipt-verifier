@@ -252,8 +252,9 @@ in two places:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
-  does not parse, a JWS without a representable `signedDate`. Otherwise the
-  chain is judged at the date the input states.
+  does not parse, a JWS with neither a representable `signedDate` nor a
+  representable `receiptCreationDate`. Otherwise the chain is judged at the
+  date the input states.
 - **`request_date`** in the endpoint's response.
 
 A certificate outside its validity window at that instant is
@@ -270,11 +271,12 @@ is where they are written down; the shared cases in `fixtures/cases.json`
 pin them, and this package's conformance test runs every one.
 
 **JWS (`VerifySignedData`).** Size cap, three strict base64url segments, the
-header (`alg` `ES256`, the `x5c` chain), the chain at `signedDate` (or the
-clock), Apple's marker OIDs on the leaf and the intermediate, and last the
-signature. A chain that does not reach a pinned root is `UNTRUSTED_CHAIN`
-whatever markers it carries. A payload that does not parse is reported only
-after the signature, so nothing unsigned decides which reason a caller sees.
+header (`alg` `ES256`, the `x5c` chain), the chain at `signedDate` (else
+`receiptCreationDate`, else the clock), Apple's marker OIDs on the leaf and
+the intermediate, and last the signature. A chain that does not reach a
+pinned root is `UNTRUSTED_CHAIN` whatever markers it carries. A payload
+that does not parse is reported only after the signature, so nothing
+unsigned decides which reason a caller sees.
 
 **Receipt (`VerifyReceipt`).** Size cap, strict base64, the PKCS#7 structure,
 the signer's chain at the receipt's creation date (or the clock), the signer
