@@ -199,21 +199,29 @@ A rehearsal from main mid-cycle has no release branch, so after a core
 or server change the committed module copies, every `aprv.wasm.sha256`,
 Node's component pin and `php/SHA256SUMS` still name the last release
 (run 37390260059 stopped at build-wasm's pin check for that). In a dry
-run, each job that reads them writes them first in its own checkout, the
-way `release-please.yml`'s `refresh-wasm-copies` would on the release
-branch, from this run's files: `build-wasm` runs
-`tools/refresh-wasm-pins.sh` before its pin check and reports the files
-that would change as a notice, `publish-maven` (the -wasm build) and
-`publish-rubygems` run the same script before their builds, and
-`php-binaries` writes `php/SHA256SUMS` from this run's two Linux
-binaries before its checks, which then prove the file's grammar and
-layout but compare the binaries with themselves. Nothing is committed or
-pushed, and a tag run never takes these steps, so there the pin check
-still refuses a tree the release branch did not refresh. PyPI, npm and
-NuGet need no refresh: their builds take the module from `APRV_WASM` /
-`APRV_COMPONENT` and write or skip the pin themselves. `tag-go-module`
-only checks that the Go copy and its pin are committed, and pushes
-nothing in a dry run.
+run without a `tag`, each job that reads them writes them first in its
+own checkout, the way `release-please.yml`'s `refresh-wasm-copies` would
+on the release branch, from this run's files: `build-wasm` runs
+`tools/refresh-wasm-pins.sh` before its pin check and prints a warning
+naming the files that would change, `publish-maven` (the -wasm build,
+after checking the component's hash) and `publish-rubygems` run the same
+script before their builds, and `php-binaries` writes `php/SHA256SUMS`
+from this run's two Linux binaries before its checks, warning if it
+changed, which then prove the file's grammar and layout but compare the
+binaries with themselves. Nothing is committed or pushed. Such a dry run
+proves nothing about the pins, since it refreshes them; from a release
+branch, a warning there means release-please did not refresh a file.
+
+A dry run with a `tag` rehearses a completion, and the real completion
+refreshes nothing, so it skips these steps and checks the committed pins
+exactly as that run will: stale pins fail the rehearsal as they would
+fail the completion. A tag run never takes them either, so there the pin
+check still refuses a tree the release branch did not refresh.
+
+PyPI, npm and NuGet need no refresh: their builds take the module from
+`APRV_WASM` / `APRV_COMPONENT` and write or skip the pin themselves.
+`tag-go-module` only checks that the Go copy and its pin are committed,
+and pushes nothing in a dry run.
 
 ## release-please.yml
 
