@@ -10,6 +10,10 @@ environment or product. Every policy decision, bundle id, environment,
 product id, device binding, refunds, idempotency, is yours; see
 [What to check after verification](#what-to-check-after-verification).
 
+New to certificates, receipts or this code?
+[WALKTHROUGH.md](WALKTHROUGH.md) explains them from scratch and follows a
+real receipt through the code, in under an hour.
+
 ```xml
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
