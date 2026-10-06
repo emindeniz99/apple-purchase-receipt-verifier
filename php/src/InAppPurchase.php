@@ -7,8 +7,8 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier;
 /**
  * One in-app purchase from a verified legacy app receipt (attribute 17).
  *
- * Dates are epoch milliseconds, UTC, with an `Ms` suffix — receipt dates
- * carry whole seconds, so the last three digits are always `000`
+ * Dates are epoch milliseconds, UTC, with an `Ms` suffix — a receipt date
+ * is an RFC 3339 date-time, its fraction truncated to the millisecond
  * (docs/design/0.7-api.md, "Decode rules"). `null` means the attribute was
  * absent, or a date attribute that was present did not parse; the library
  * invents no values.

@@ -49,8 +49,8 @@ type InAppPurchase struct {
 // byte slice is a fresh copy, never a view into the caller's input
 // buffer.
 //
-// Dates are epoch milliseconds, UTC, with an Ms suffix; receipt dates
-// carry whole seconds, so the last three digits are always 000. The
+// Dates are epoch milliseconds, UTC, with an Ms suffix; a receipt date
+// is an RFC 3339 date-time, its fraction truncated to the millisecond. The
 // 64-bit ids are int64: an ASN.1 INTEGER in hostile input can be
 // negative, and the decoder reports what is there.
 type ReceiptPayload struct {

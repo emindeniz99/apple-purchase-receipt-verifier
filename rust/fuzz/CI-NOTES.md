@@ -34,7 +34,7 @@ here.
    ```
 
    `rust/fuzz/abi/` is a package of its own (own `[workspace]` and
-   `Cargo.lock`) so that Wasmtime 49.0.1 stays out of the other targets'
+   `Cargo.lock`) so that Wasmtime 49.0.2 stays out of the other targets'
    graph; its cold build took 20 minutes here with two jobs. Its target
    directory may be cached in this job (it is not a publish job). The
    first input of 13 bytes or more compiles the module (Cranelift inside

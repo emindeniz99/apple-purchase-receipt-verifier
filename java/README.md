@@ -218,8 +218,9 @@ models, plus `unknownAttributes()` for everything it does not. The rules,
 the same for both:
 
 - A missing attribute decodes to `null`. The library invents no values.
-- Dates are epoch milliseconds, UTC, with an `Ms` suffix. Receipts carry
-  whole seconds, so the value always ends in `000`. An **empty** date string
+- Dates are epoch milliseconds, UTC, with an `Ms` suffix. A receipt date
+  is an RFC 3339 `date-time`; a fraction is truncated to the millisecond
+  and an offset converted to UTC. An **empty** date string
   means "not set" and decodes to `null` with nothing kept raw. A
   **non-empty** date string that does not parse also decodes to `null`, but
   its raw bytes are kept in `unknownAttributes`.

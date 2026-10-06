@@ -236,7 +236,7 @@ certificate is still genuine. The validity window is checked at the payload's
 Apple's App Store Server Library judges one; owner Q67, 2026-10-06) or the
 receipt's creation date, falling back to the `Config` clock when the input
 carries none (docs/design/0.7-api.md, Setup). For a receipt, a creation date
-that is empty, outside the exact `YYYY-MM-DDTHH:MM:SSZ` grammar, or sits
+that is empty, not an RFC 3339 `date-time` (owner, Q68, 2026-10-06), or sits
 beside a top-level entry the walk cannot read counts as carried by nothing,
 and the chain is judged at the clock; a repeated attribute 12 uses its first
 copy. A JWS date that is not a representable instant counts as not carried the
@@ -260,7 +260,6 @@ that throws, or answers a time before 1970, is `INTERNAL_ERROR`.
 `receipt/reject-fresh-creation-date-under-expired-chain`. An unusable
 creation date judged at the clock: `receipt/accept-missing-creation-date`,
 `receipt/unreadable-creation-date-decodes-to-null`,
-`receipt/creation-date-outside-the-grammar-leaves-the-chain-to-the-clock`,
 `receipt/reject-unreadable-creation-date-under-an-expired-chain` and
 `receipt/reject-unreadable-entry-under-an-expired-chain`; the trusted test
 PKI they use is valid 2024-01-01 to 2050-01-01 and the expired one 2020-01-01

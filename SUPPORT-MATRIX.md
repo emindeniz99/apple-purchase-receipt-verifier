@@ -56,7 +56,7 @@ does not track Swift.
 | .NET | netstandard2.0, tested on .NET 8 and later | netstandard2.0, net8.0 | the `Wasmtime` package |
 | PHP | 8.2, 64-bit | 8.2 | unchanged |
 | Rust crate and C ABI | Rust 1.85.0 | 1.85.0 | the workspace's `rust-version`; `aprv.wasm` itself is built with the pinned 1.98.1 |
-| `aprv-server` | none for its users | new | a binary; its build pins `wasmtime` 49.0.1 |
+| `aprv-server` | none for its users | new | a binary; its build pins `wasmtime` 49.0.2 |
 
 Go's floor moved from 1.22 to 1.25, because wazero 1.12 needs it (owner,
 2026-09-30; docs/rust-core/DECISIONS.md R30). Every other floor in the

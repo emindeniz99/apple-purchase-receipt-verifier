@@ -6,8 +6,8 @@ Names are the keys of Apple's verifyReceipt response, so these classes,
 :meth:`ReceiptPayload.to_json` and Apple's documentation share one
 vocabulary. Each attribute's docstring names its receipt attribute type.
 ``None`` means the attribute was absent (or, for a date, did not parse); the
-library invents no values. Dates are epoch milliseconds, UTC; receipts carry
-whole seconds, so they end in ``000``.
+library invents no values. Dates are epoch milliseconds, UTC; a receipt date
+is an RFC 3339 date-time, its fraction truncated to the millisecond.
 
 Nothing here has been checked against anything: the bundle id, environment
 and purchases are whatever Apple signed, and deciding whether to accept them
