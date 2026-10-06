@@ -22,7 +22,8 @@
 //! signature (r, s) also verifies as (r, n − s), so anyone holding a JWS
 //! can rewrite its signature segment without a key. Apple does not
 //! normalise to low-S, so refusing high-S would refuse genuine JWS; the
-//! core and the Java implementation accept both forms. A JWS string or its hash is therefore never a dedupe key;
+//! core and the Java implementation accept both forms. A JWS string or
+//! its hash is therefore never a dedupe key;
 //! callers dedupe on `transactionId` or `notificationUUID` inside the
 //! verified payload (INTEGRATION.md).
 //!

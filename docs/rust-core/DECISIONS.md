@@ -1913,8 +1913,9 @@ neither is an R20 divergence.
 - **`crit` is ignored.** RFC 7515 §4.1.11 says a recipient MUST reject a
   JWS whose `crit` header lists an extension it does not understand. Both
   implementations read `alg` and `x5c` and nothing else from the header
-  (R40), so `crit` is never looked at. Apple's App Store Server Library
-  ignores it too.
+  (R40), so `crit` is never looked at. Whether Apple's App Store Server
+  Library honours `crit` was not checked; the decision rests on the
+  argument below alone.
   - Why: the header is inside the signing input, so only Apple can set
     `crit` on a JWS that verifies. Rejecting it could only ever refuse
     Apple-signed data, and the goal is never to refuse Apple-signed data
@@ -1927,8 +1928,9 @@ neither is an R20 divergence.
 - **High-S ES256 signatures are accepted.** For an ECDSA signature
   (r, s), the pair (r, n − s) also verifies. Anyone holding a JWS can
   rewrite its third segment without a key, and the header and payload
-  stay byte-identical. Apple does not normalise to low-S, so refusing
-  high-S would refuse genuine JWS. Both implementations accept both
+  stay byte-identical. Apple documents no low-S rule, and the one
+  genuine Apple JWS in the corpus proves nothing about the others, so
+  refusing high-S could refuse genuine JWS. Both implementations accept both
   forms.
   - Consequence: strict base64url (`rust/src/base64.rs`) leaves a JWS
     two spellings, not one. Callers dedupe on a field of the verified
