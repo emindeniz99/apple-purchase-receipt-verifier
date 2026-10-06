@@ -450,7 +450,8 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 
 **Status: accepted** (owner, 2026-09-26; restated 2026-09-28; the rule
 amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
-2026-10-01; Java's JSON bounds, 2026-10-05).
+2026-10-01; Java's JSON bounds, 2026-10-05; the core's header walk and
+Java's parse before trust, 2026-10-06).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
   schema v2, 388 cases, is the contract. The Java implementation is a
@@ -600,6 +601,52 @@ amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
   kept][reader]). Its version is now compared as OpenSSL's `long`, as
   every build reads it. The last two rows of the table came out of that
   review.
+
+  The core's ASN.1 header walk (`rust/openssl/src/walk.rs`) was examined
+  on 2026-10-06 and kept (owner, Q63). It carries the bounds, 32 levels
+  and 100,000 values, nothing after the outermost value, each
+  constructed string handed to OpenSSL at its outermost level, and
+  0.7's grammar rules: a primitive of a constrained type must decode
+  wherever it stands, no end-of-contents inside a definite length, no
+  high-tag-form header or five-octet length in a payload, only OCTET
+  STRING chunks in a constructed OCTET STRING. OpenSSL applies none of
+  those rules inside a SEQUENCE it keeps whole (an unsigned attribute,
+  algorithm parameters, a Name value, the fields after a receipt
+  attribute's value), reads a high-tag form for any tag number and joins
+  chunks of any type, so the rules duplicate nothing ([walk
+  counter][walk]). Reduced to a counter the walk would move ten pinned
+  cases, one of them a refusal before the signature, to port-defined; a
+  middle shape keeping the envelope rules would move four pinned
+  payload cases where the core, 0.7 and BouncyCastle agree today, and
+  reverse the 2026-09-30 choice above, for 214 lines and no other gain.
+  Reopen only on new evidence: an OpenSSL release that decodes inside a
+  kept SEQUENCE or refuses high-tag forms or foreign chunks itself
+  (rerun the note's probe through `aprv.wasm`, since it ran on a 64-bit
+  native build and `asn1_lib.c` reads lengths up to `sizeof(long)`),
+  Apple observed emitting one of those forms, or Java's answer on those
+  four cases changing.
+
+  Java's parse before trust was measured on 2026-10-05 and accepted as
+  it is (owner, Q62, 2026-10-06). Java reads every top-level attribute
+  of the payload into its type and octets before any signer is matched,
+  with no value budget; the 3 MiB cap bounds it. At the cap, 195,562
+  tiny attributes cost about 0.2 s, 144 MiB of allocation and about
+  66 MiB more peak heap than a genuine receipt, roughly twice what a
+  genuine receipt of that size allocates; one unsigned attribute of a
+  million empty values, which BouncyCastle's own CMS parse builds,
+  costs about 0.19 s and 14 MiB ([parse cost][javaparse];
+  THREAT-MODEL.md §3.7; java/README.md sizes the heap by the
+  concurrency limit, an estimate from that first-call figure). A value
+  budget or a streaming date reader in Java was rejected: each is a
+  second ASN.1 reader beside BouncyCastle, the kind removed on
+  2026-10-01, and neither reaches the unsigned-attribute cost. Reading
+  the date only after the signature would remove the pre-trust read in
+  both implementations, but it reorders §3.3 and changes which failure
+  a receipt that is both unsigned and expired reports, in the core,
+  Java and the fixtures together; it was not measured. Reopen only if a
+  shape is measured well above that cost at the cap, the input cap
+  rises, a BouncyCastle release changes the tree it builds, or §3.3 is
+  reordered.
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -1933,3 +1980,5 @@ One table for everything the plan measured or considered and rejected.
 [dupchecks]: ../evidence/2026-10-05-core-drop-duplicate-checks.md
 [redundant]: ../evidence/2026-10-05-core-drop-redundant-bounds.md
 [reader]: ../evidence/2026-10-05-x509-reader-kept.md
+[walk]: ../evidence/2026-10-06-core-walk-counter.md
+[javaparse]: ../evidence/2026-10-05-java-presignature-parse-cost.md
