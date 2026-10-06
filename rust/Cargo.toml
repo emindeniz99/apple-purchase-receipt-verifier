@@ -53,8 +53,17 @@ default = ["vendored"]
 # wasm32-wasip1 build must, sets OPENSSL_NO_VENDOR=1 with OPENSSL_DIR, or
 # turns this off.
 vendored = ["aprv-openssl/vendored"]
+# The adapter's test seams, re-exported under `__internal`: the key-use
+# record and the full-decode counter. Only this crate's own tests turn it
+# on, through the dev-dependency on itself below, so aprv.wasm, the C ABI
+# and aprv-server never carry them.
+test-seams = ["aprv-openssl/test-seams"]
 
 [dev-dependencies]
+# This crate with its test seams, so a plain `cargo test` builds them and
+# no test that reads one is ever skipped. Path-only, so `cargo package`
+# drops it from the published manifest.
+apple-purchase-receipt-verifier = { path = ".", default-features = false, features = ["test-seams"] }
 # The tests read the fixtures they take apart and rebuild (BER: Apple's and
 # Xcode's receipts use indefinite lengths) and write DER with asn1-rs
 # (tests/common/; docs/rust-core/DECISIONS.md R43). Tests only: the library

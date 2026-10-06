@@ -1,7 +1,7 @@
 //! Digests and the JWS signature, through rust-openssl's safe EVP and
 //! ECDSA wrappers.
 
-use crate::{drain_errors, init, keys, Certificate};
+use crate::{drain_errors, init, Certificate};
 use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
 use openssl::nid::Nid;
@@ -27,7 +27,8 @@ pub fn verify_es256(leaf: &Certificate, raw_signature: &[u8], message: &[u8]) ->
             BigNum::from_slice(s).ok()?,
         )
         .ok()?;
-        keys::record(&key);
+        #[cfg(feature = "test-seams")]
+        crate::keys::record(&key);
         let digest = openssl::sha::sha256(message);
         signature.verify(&digest, &ec).ok()
     })();

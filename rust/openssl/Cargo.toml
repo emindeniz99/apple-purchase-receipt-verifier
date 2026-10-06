@@ -28,6 +28,10 @@ default = ["vendored"]
 # OpenSSL built from source by openssl-src. OPENSSL_NO_VENDOR=1 overrides it
 # at build time without changing features.
 vendored = ["openssl/vendored"]
+# The tests' seams, `keys_used_during` and `full_decodes_during`, and the
+# recording behind them. No shipped build turns it on; the core's own tests
+# do (../Cargo.toml).
+test-seams = []
 
 [dependencies]
 openssl = "0.10.81"

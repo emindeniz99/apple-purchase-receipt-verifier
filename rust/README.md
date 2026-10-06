@@ -329,7 +329,9 @@ and its key is never used, so a genuine receipt padded with such
 certificates still verifies. The walk starts at the roots, so a stranger
 costs its decoding and a name comparison, however large or broken its key. The shared
 denial-of-service cases pin this with a time budget, and the tests assert it
-directly through a seam that records every key used.
+directly through a seam that records every key used. The seam compiles only
+under the `test-seams` feature, which the crate's own tests turn on through
+a dev-dependency on the crate itself, so a plain `cargo test` runs them.
 
 ## Defensive parsing
 
