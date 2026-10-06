@@ -21,7 +21,8 @@ added R42 and R43 (recorded 2026-10-03);
 on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
 client change, and amended R41 for .NET's `Config`; on 2026-10-04 the
 owner amended R41 for Go's, Swift's and Node's `Config`, and R23 for the
-form of `init`'s configuration (Q30).
+form of `init`'s configuration (Q30); on 2026-10-06 the owner added R44
+(Q71).
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1899,6 +1900,36 @@ the Java implementation goes.
   tests: raw FFI with no safe Rust API over it, `unsafe` code in the tests
   for a job a safe crate does. C) Keep the hand-written reader: the
   parser this decision removes.
+
+---
+
+## R44. The endpoint answers 21009 for an in-app purchase it cannot read
+
+**Status: accepted** (owner, 2026-10-06, decision Q71).
+
+- **Decision:** when a receipt verifies but one of its attribute 17
+  values does not decode into an in-app purchase, the
+  `verifyReceipt`-compatible endpoint answers `{"status":21009}` with no
+  receipt. Both implementations test the same thing: the payload's
+  `unknown_attributes` holds a key 17 (`rust/src/endpoint.rs`,
+  `EndpointResponse.render` in Java).
+- **What "does not decode" means:** the value is not an attribute SET
+  the walk can read: not a SET at all, over the depth or node bound, or
+  an entry whose type is out of range. Each such value goes whole to
+  `unknown_attributes[17]` (the owner's rule of 2026-09-27). A purchase
+  whose SET reads but one of whose fields does not decode is still a
+  purchase: it stays in `in_app` without that field and the answer is 0,
+  as for a top-level field that does not decode.
+- **Why:** before Q71 the endpoint answered 0 and left the purchase out of
+  `in_app`. Apple signed that purchase, so an app server reading the 0
+  could deny a customer who paid. 21009 is what the endpoint already
+  answers for `UNREADABLE_PAYLOAD`, which THREAT-MODEL.md tells an
+  integrator to alert and escalate on rather than deny.
+- **Scope:** the endpoint only. `verifyReceipt` and `toJson` still return
+  the receipt with the raw value under `unknown_attributes["17"]`.
+- **Cases:** `endpoint/unparseable-in-app-purchase-answers-21009` (its
+  receipt answered 0 with an empty `in_app` before Q71) and
+  `endpoint/in-app-purchase-with-unreadable-fields-answers-0`.
 
 ---
 

@@ -183,7 +183,10 @@ signer signed content this library cannot read: a gap in the library or a
 format Apple added, not a defect of the client's request. It is therefore
 `UNREADABLE_PAYLOAD`, status 21009 at the endpoint, and never `MALFORMED`,
 whose 21002 would tell an app server to deny a paying user. An integrator
-should alert and escalate on it, not deny.
+should alert and escalate on it, not deny. The endpoint answers the same
+21009 when the receipt verifies but one of its in-app purchases
+(attribute 17) does not decode, rather than a 0 with that purchase left
+out of `in_app` (owner Q71, 2026-10-06; docs/rust-core/DECISIONS.md R44).
 
 A JWS follows the same rule. Before the signature only `signedDate` is read,
 to pick the chain instant. A payload that is not a JSON object is carried
@@ -205,7 +208,8 @@ answers, not the payload), `receipt/unreadable-creation-date-decodes-to-null`,
 `receipt/unreadable-payload-under-a-valid-signature` and the two
 attribute-type ceilings (all `UNREADABLE_PAYLOAD`),
 `receipt/unreadable-payload-under-a-broken-signature` (`INVALID_SIGNATURE`),
-and `endpoint/unreadable-payload-answers-21009`. JWS:
+`endpoint/unreadable-payload-answers-21009` and
+`endpoint/unparseable-in-app-purchase-answers-21009`. JWS:
 `signed-data/unreadable-json-array-payload` and
 `signed-data/unreadable-empty-payload`, and the six claim-type cases such as
 `transaction/return-bundle-id-claim-as-a-number`, which verify and return
