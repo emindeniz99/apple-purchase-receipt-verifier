@@ -188,7 +188,8 @@ final class PortBehaviourTests: XCTestCase {
             switch (environment, production) {
             case (.production, false): return 21007
             case (.sandbox, true): return 21008
-            default: return 0
+            // An in-app purchase that does not decode answers 21009 (owner Q71).
+            default: return payload.unknownAttributes[17] == nil ? 0 : 21009
             }
         }
         switch result.failure!.reason {
