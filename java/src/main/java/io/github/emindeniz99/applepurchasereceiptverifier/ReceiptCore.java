@@ -245,7 +245,7 @@ final class ReceiptCore {
             params.setRevocationEnabled(false);
             params.setDate(at);
             params.setMaxPathLength(MAX_PATH_LENGTH - 1);
-            params.addCertPathChecker(AppleTrust.CRITICAL_EXTENDED_KEY_USAGE);
+            params.addCertPathChecker(AppleTrust.HANDLED_CRITICAL_EXTENSIONS);
             // Per call: BouncyCastle's builder keeps state for the build it runs.
             CertPathBuilderResult result =
                     CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);

@@ -33,8 +33,13 @@ import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.cms.Time;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.CRLDistPoint;
+import org.bouncycastle.asn1.x509.DistributionPoint;
+import org.bouncycastle.asn1.x509.DistributionPointName;
 import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
 import org.bouncycastle.asn1.x509.KeyPurposeId;
 import org.bouncycastle.cert.AttributeCertificateHolder;
 import org.bouncycastle.cert.AttributeCertificateIssuer;
@@ -52,8 +57,8 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 
 /**
- * Writes the inputs of the shared cases on four shapes the standards allow
- * in an Apple-signed input (owner, Q69, 2026-10-06) into the directory given
+ * Writes the inputs of the shared cases on shapes the standards allow in
+ * an Apple-signed input (owner, Q69 and Q72, 2026-10-06) into the directory given
  * as the first argument (default {@code fixtures/generated-0.7}). Every file
  * is prefixed {@code standard-}.
  *
@@ -70,6 +75,11 @@ import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
  *       {@code standard-jws-intermediate-with-a-critical-eku.jws}: the
  *       intermediate carries a critical extendedKeyUsage (RFC 5280
  *       4.2.1.12).</li>
+ *   <li>{@code standard-receipt-intermediate-with-a-critical-crldp.der} and
+ *       {@code standard-jws-intermediate-with-a-critical-crldp.jws}: the
+ *       intermediate carries a critical cRLDistributionPoints (RFC 5280
+ *       4.2.1.13), which the core reads and Java now accepts too (owner,
+ *       Q72, 2026-10-06).</li>
  *   <li>{@code standard-receipt-signing-time-before-the-signer.der}: the
  *       signed attributes carry a signingTime before the signer's notBefore
  *       (RFC 5652 11.3 ties it to no validity check), and
@@ -146,6 +156,14 @@ public final class StandardShapeFixtures {
                 out,
                 "standard-jws-intermediate-with-a-critical-eku.jws",
                 f.jwsUnderIntermediateWith(criticalEku()).getBytes(StandardCharsets.US_ASCII));
+        write(
+                out,
+                "standard-receipt-intermediate-with-a-critical-crldp.der",
+                f.receiptUnderIntermediateWith(criticalCrlDistributionPoints()));
+        write(
+                out,
+                "standard-jws-intermediate-with-a-critical-crldp.jws",
+                f.jwsUnderIntermediateWith(criticalCrlDistributionPoints()).getBytes(StandardCharsets.US_ASCII));
         write(out, "standard-receipt-signing-time-before-the-signer.der", signingTime);
         write(
                 out,
@@ -160,6 +178,17 @@ public final class StandardShapeFixtures {
                 true,
                 new ExtendedKeyUsage(new KeyPurposeId[] {KeyPurposeId.id_kp_codeSigning, KeyPurposeId.id_kp_clientAuth})
                         .getEncoded());
+    }
+
+    /** A critical cRLDistributionPoints naming one CRL by URI (RFC 5280 4.2.1.13). */
+    static Extension criticalCrlDistributionPoints() throws Exception {
+        DistributionPoint point = new DistributionPoint(
+                new DistributionPointName(new GeneralNames(
+                        new GeneralName(GeneralName.uniformResourceIdentifier, "http://crl.example.com/wwdr.crl"))),
+                null,
+                null);
+        return new Extension(
+                Extension.cRLDistributionPoints, true, new CRLDistPoint(new DistributionPoint[] {point}).getEncoded());
     }
 
     /** A leaf signed by its subjectKeyIdentifier, its expired predecessor on the same key ahead of it. */

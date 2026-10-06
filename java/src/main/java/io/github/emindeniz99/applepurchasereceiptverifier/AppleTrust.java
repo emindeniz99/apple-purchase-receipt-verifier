@@ -9,6 +9,7 @@ import java.security.cert.PKIXCertPathChecker;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -35,15 +36,31 @@ final class AppleTrust {
     /** Apple marker OID: Worldwide Developer Relations intermediate CA. */
     static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
 
+    /** The critical extensions {@link #HANDLED_CRITICAL_EXTENSIONS} marks processed. */
+    private static final Set<String> HANDLED = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList(Extension.extendedKeyUsage.getId(), Extension.cRLDistributionPoints.getId())));
+
     /**
-     * Marks a critical extendedKeyUsage processed on every certificate of a
-     * path. RFC 5280 4.2.1.12 lets it be critical on any certificate;
-     * BouncyCastle's PKIX processes it on the end entity only and refuses it
-     * on a CA as an unknown critical extension, where the JDK's PKIX and
-     * OpenSSL accept it. Like them it asks no purpose of a CA. Every other
-     * critical extension BouncyCastle does not process is still refused.
+     * Marks two critical extensions processed on every certificate of a
+     * path, which BouncyCastle's PKIX would otherwise refuse as unknown.
+     * OpenSSL, under the core, recognises both, and neither is a trust
+     * decision here.
+     *
+     * <ul>
+     *   <li>extendedKeyUsage (2.5.29.37): RFC 5280 4.2.1.12 lets it be
+     *       critical on any certificate. BouncyCastle processes it on the end
+     *       entity only, where the JDK's PKIX and OpenSSL accept it on a CA
+     *       too. Like them it asks no purpose of a CA (owner, Q69).</li>
+     *   <li>cRLDistributionPoints (2.5.29.31): it only says where a CRL is.
+     *       Apple's intermediates carry it non-critical today. The core asks
+     *       for no revocation check, so a critical one is acted on in neither
+     *       implementation (owner, Q72).</li>
+     * </ul>
+     *
+     * <p>Every other critical extension BouncyCastle does not process is
+     * still refused.</p>
      */
-    static final PKIXCertPathChecker CRITICAL_EXTENDED_KEY_USAGE = new PKIXCertPathChecker() {
+    static final PKIXCertPathChecker HANDLED_CRITICAL_EXTENSIONS = new PKIXCertPathChecker() {
         @Override
         public void init(boolean forward) {}
 
@@ -54,12 +71,12 @@ final class AppleTrust {
 
         @Override
         public Set<String> getSupportedExtensions() {
-            return Collections.singleton(Extension.extendedKeyUsage.getId());
+            return HANDLED;
         }
 
         @Override
         public void check(Certificate certificate, Collection<String> unresolvedCriticalExtensions) {
-            unresolvedCriticalExtensions.remove(Extension.extendedKeyUsage.getId());
+            unresolvedCriticalExtensions.removeAll(HANDLED);
         }
     };
 
