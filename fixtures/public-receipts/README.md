@@ -10,6 +10,7 @@ These are **real Apple-signed bytes** — the strongest fixture tier:
 | `receipt-sandbox-g5.b64` | Genuine sandbox receipt (newer G5 signing chain) verifies |
 | `receipt-sandbox-legacy.b64` | Genuine legacy receipt with a full SHA-1 chain and **187 in-app purchases** verifies (stress test; exposed a Python SHA-1 chain-helper gap now fixed) |
 | `receipt-xcode-with-purchases.b64` | Xcode-signed receipt is REJECTED (UNTRUSTED_CHAIN) against real Apple roots |
+| `signer-infos/*.der` | `receipt-sandbox-g5` with one more SignerInfo spliced in beside Apple's, every other byte as Apple wrote it (`tools/generate-signer-info-fixtures.mjs`): how several SignerInfos are judged on Apple-signed bytes |
 
 ## Why there is no production receipt here
 

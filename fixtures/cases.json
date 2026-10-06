@@ -247,7 +247,7 @@
       "path": "public-receipts/README.md",
       "role": "support",
       "codec": "raw",
-      "contentSha256": "e713766984adf757ec6490385510510c3dfdf164528acc213f85361c62bd25db"
+      "contentSha256": "ccd330ad8d449b5e61373f21f3b7f7fc1a50afef3bcb880f2df554c87e1090b7"
     },
     "public-receipts-license": {
       "path": "public-receipts/LICENSE-upstream",
@@ -266,6 +266,24 @@
       "role": "input",
       "codec": "base64",
       "contentSha256": "ec62c6bd4a34bd8e56b11e675bf5a28319ce69b71d050e73344bab22f46799a8"
+    },
+    "public-receipt-sandbox-g5-signer-infos-unknown-digest-alone": {
+      "path": "public-receipts/signer-infos/unknown-digest-alone.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "fd1d65fea90012cc7bce68ca004c3ba46a4f88a04093952557701d8070bcde72"
+    },
+    "public-receipt-sandbox-g5-signer-infos-unknown-digest-then-genuine": {
+      "path": "public-receipts/signer-infos/unknown-digest-then-genuine.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "965c244d44125e54a1947521d900363ea216ddcb55ab62fb46d00088b060c1d0"
+    },
+    "public-receipt-sandbox-g5-signer-infos-malformed-unsigned-attrs-then-genuine": {
+      "path": "public-receipts/signer-infos/malformed-unsigned-attrs-then-genuine.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "78c31641c7d3e9b30d8b332fa02121b9e57d5ade70debe5c9a2f36c9ecb32d7e"
     },
     "public-receipt-xcode-with-purchases": {
       "path": "public-receipts/receipt-xcode-with-purchases.b64",
@@ -7077,12 +7095,12 @@
       ],
       "input": {
         "texts": [
-          "QUJé",
-          "QU D",
-          "﻿QUJD",
-          "QU　D",
-          "ＱＵＪＤ",
-          "QU😀"
+          "QUJ\u00e9",
+          "QU\u00a0D",
+          "\ufeffQUJD",
+          "QU\u3000D",
+          "\uff31\uff35\uff2a\uff24",
+          "QU\ud83d\ude00"
         ]
       },
       "expected": {
@@ -7110,7 +7128,7 @@
           "\u0000QUJD",
           "QUJD\u0000\u0000\u0000\u0000",
           "QU\u001bD",
-          "QUD"
+          "QU\u007fD"
         ]
       },
       "expected": {
@@ -8183,9 +8201,9 @@
         "status": "ok",
         "environment": "Sandbox",
         "fields": {
-          "/in_app/0/product_id": "com.example.app.café/€/𝄞"
+          "/in_app/0/product_id": "com.example.app.caf\u00e9/\u20ac/\ud834\udd1e"
         },
-        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.café/€/𝄞\",\"transaction_id\":\"70000000000041\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000041\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
+        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.caf\u00e9/\u20ac/\ud834\udd1e\",\"transaction_id\":\"70000000000041\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000041\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
       },
       "tags": [
         "receipt",
@@ -8429,7 +8447,7 @@
         "fields": {
           "/in_app/0/transaction_id": "70000000000051"
         },
-        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.esc\\\"\\\\\\b\\f\\n\\r\\t\\u001f end\",\"transaction_id\":\"70000000000051\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000051\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
+        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.esc\\\"\\\\\\b\\f\\n\\r\\t\\u001f\u2028end\",\"transaction_id\":\"70000000000051\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000051\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
       },
       "tags": [
         "receipt",
@@ -9390,6 +9408,89 @@
       ]
     },
     {
+      "id": "receipt/reject-a-signer-info-in-an-unimplemented-digest",
+      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its digestAlgorithm set to 1.2.3.4, an OID nobody implements, and every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). A SignerInfo whose algorithm the port cannot run is one that does not verify (RFC 4853: implementations must handle unimplemented algorithms gracefully), and no other SignerInfo is there: INVALID_SIGNATURE, not MALFORMED, since the syntax is valid (owner Q65, 2026-10-06).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-signer-infos-unknown-digest-alone"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "no-signer-info-signature-verifies",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "signers",
+        "negative",
+        "signer-algorithm",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-a-genuine-signer-info-behind-one-in-an-unimplemented-digest",
+      "description": "The same SignerInfo with the 1.2.3.4 digestAlgorithm, then Apple's own, unchanged. The first does not verify and the next one is tried; Apple's verifies over the same content under the default pinned roots, so the receipt verifies (RFC 4853; owner Q65, 2026-10-06). Apple's own verifyReceipt refuses any receipt with two SignerInfos, a rule it does not publish (docs/evidence/2026-10-06-verifyreceipt-two-signerinfos.md).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-signer-infos-unknown-digest-then-genuine"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/receipt_type": "ProductionSandbox"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "signers",
+        "positive",
+        "signer-algorithm",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info",
+      "description": "Apple's SignerInfo with an unsignedAttrs field [1] { INTEGER 5 } appended, where Attributes belong, then Apple's own, unchanged. A SignerInfo whose syntax is broken makes the SignedData malformed whatever its position, before any SignerInfo is tried, even though the second would verify: MALFORMED (owner Q65, 2026-10-06; receipt/reject-malformed-signed-attrs-in-the-first-signer is the signedAttrs twin).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-signer-infos-malformed-unsigned-attrs-then-genuine"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "unsigned-attrs-not-attributes",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "signers",
+        "negative",
+        "format",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
       "id": "receipt/verify-with-a-stranger-whose-key-is-unreadable",
       "description": "A genuine receipt whose bag also holds certificates from another receipt, one with a key on an unimplemented curve. No pinned root vouches for them, so the key is never decoded and the receipt verifies.",
       "operation": "verifyReceipt",
@@ -9713,7 +9814,7 @@
         "fields": {
           "/in_app/0/transaction_id": "70000000000091"
         },
-        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.<>&\\u0000 end\",\"transaction_id\":\"70000000000091\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000091\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
+        "toJson": "{\"receipt_type\":\"ProductionSandbox\",\"app_item_id\":null,\"bundle_id\":\"com.example.app\",\"bundle_id_bytes\":\"DA9jb20uZXhhbXBsZS5hcHA=\",\"application_version\":\"1.2.3\",\"opaque_value\":\"AQIDBAUGBwg=\",\"sha1_hash\":\"o3ACutffcB0wrmAevzxMLcI6CcA=\",\"receipt_creation_date_ms\":1722945600000,\"download_id\":null,\"version_external_identifier\":null,\"in_app\":[{\"quantity\":1,\"product_id\":\"com.example.app.<>&\u007f\\u0000\u2029end\",\"transaction_id\":\"70000000000091\",\"purchase_date_ms\":1705320000000,\"original_transaction_id\":\"70000000000091\",\"original_purchase_date_ms\":1705320000000,\"expires_date_ms\":null,\"web_order_line_item_id\":\"42\",\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":null,\"unknown_attributes\":{\"9999\":[\"AQID\"]}}"
       },
       "tags": [
         "receipt",
@@ -10027,8 +10128,8 @@
         "status": "ok",
         "environment": "Sandbox",
         "fields": {
-          "/productId": "com.example.app.é€中",
-          "/offerIdentifier": "über-€-中文-😀"
+          "/productId": "com.example.app.\u00e9\u20ac\u4e2d",
+          "/offerIdentifier": "\u00fcber-\u20ac-\u4e2d\u6587-\ud83d\ude00"
         }
       },
       "tags": [
