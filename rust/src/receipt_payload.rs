@@ -398,7 +398,7 @@ fn decode_integer(der: &[u8]) -> Result<i64, Undecodable> {
 
 /// A date in an `IA5String` or `UTF8String`, as epoch milliseconds. An
 /// empty string is `Ok(None)`: Apple writes an unset date that way, so it is
-/// not kept raw. Anything else must be exactly `YYYY-MM-DDTHH:MM:SSZ`; see
+/// not kept raw. Anything else must be an RFC 3339 `date-time`; see
 /// [`parse_receipt_date`].
 fn date(der: &[u8]) -> Result<Option<i64>, Undecodable> {
     let text = decode_string(der)?;
@@ -662,13 +662,20 @@ mod tests {
 
     #[test]
     fn a_date_in_any_other_form_is_kept_raw_and_does_not_set_the_chain_instant() {
-        // Exactly YYYY-MM-DDTHH:MM:SSZ.
-        let exact = parse_receipt_payload(&set(&[date("2024-08-06T12:00:00Z")])).unwrap();
-        assert_eq!(exact.receipt_creation_date_ms, Some(1_722_945_600_000));
+        // Any RFC 3339 date-time (owner, Q68, 2026-10-06).
+        for (text, millis) in [
+            ("2024-08-06T12:00:00Z", 1_722_945_600_000),
+            ("2024-08-06t15:00:00.123+03:00", 1_722_945_600_123),
+        ] {
+            let receipt = parse_receipt_payload(&set(&[date(text)])).unwrap();
+            assert_eq!(receipt.receipt_creation_date_ms, Some(millis), "{text}");
+            assert!(receipt.unknown_attributes.is_empty(), "{text}");
+            assert_eq!(read_creation_date(&set(&[date(text)])), Some(millis));
+        }
         for text in [
-            "2024-08-06T12:00:00.000Z",
-            "2024-08-06T12:00:00+00:00",
-            "2024-08-06t12:00:00Z",
+            "2024-08-06 12:00:00Z",
+            "2024-08-06T12:00:00+0300",
+            "2024-08-06T12:00Z",
         ] {
             let receipt = parse_receipt_payload(&set(&[date(text)])).unwrap();
             assert_eq!(receipt.receipt_creation_date_ms, None, "{text}");
