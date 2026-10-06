@@ -4,6 +4,9 @@
 |---|---|
 | `Probe.java` | Does `Utf8Length.exceeds`, copied verbatim, ever answer `false` for 1,572,865 `é` characters (3,145,730 UTF-8 bytes) against the 3,145,728-byte cap? Runs it N times in one JVM. |
 | `Probe2.java` | Same call after warming the loop with an all-ASCII string of the cap's length, so the JIT compiles it with an ASCII-only profile first. |
+| `runner-probe-round1.yml` | On six GitHub-hosted runners: the two probes, then `VerifierApiTest` and `InputSizeBoundsTest` together under Graal's JIT and under C2, then the full suite. |
+| `runner-probe-round2.yml` | The two test classes with single Graal loop optimizations turned off, and with Graal off (`-XX:TieredStopAtLevel=3`). |
+| `runner-probe-instrumentation.patch` | What round 2 added to `InputSizeBoundsTest`: after a wrong answer, call `Utf8Length.exceeds` 20 more times and count the bytes with a copy of its loop. |
 
 Oracle GraalVM for JDK 21 is downloaded to `$SCRATCH`; it is not kept here.
 
@@ -26,3 +29,8 @@ for avx in 3 2 1 0; do
     "-DargLine=-XX:UseAVX=$avx" -Dtest=VerifierApiTest,InputSizeBoundsTest
 done
 ```
+
+The two workflows ran from the branch `spike/graalvm21-runner-probe`
+(round 1 at `5976bf6`, round 2 at `27b0f80` with the patch applied to
+`java/`), each as `.github/workflows/graalvm21-probe.yml`. A push to that
+branch runs it.
