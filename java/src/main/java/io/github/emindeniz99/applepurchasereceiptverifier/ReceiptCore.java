@@ -116,12 +116,13 @@ final class ReceiptCore {
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
-        // Every SignerInfo's signedAttrs are read before any is tried: a
+        // Every SignerInfo's attributes are read before any is tried: a
         // SignerInfo whose syntax is broken makes the whole SignedData
         // malformed, whatever its position. BouncyCastle reads them lazily
         // and throws from here, which verifyDer reports as MALFORMED.
         for (SignerInformation signer : signers) {
             signer.getSignedAttributes();
+            signer.getUnsignedAttributes();
         }
         // The one payload read before trust: the sender's own creation date
         // picks the instant the chain must be valid at. That only moves the
@@ -277,7 +278,8 @@ final class ReceiptCore {
         // Apple root and carries Apple's marker, so any algorithm
         // BouncyCastle can verify is accepted. One it has no verifier for is
         // refused below as INVALID_SIGNATURE, so a genuine receipt signed
-        // with such an algorithm is rejected until BouncyCastle supports it.
+        // with such an algorithm is rejected unless another SignerInfo
+        // verifies.
         // An RSA signature binds its hash in the DigestInfo, so the
         // signatureAlgorithm label is not trusted.
         try {
@@ -292,11 +294,12 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "no CMS verifier for the signer certificate's key", e);
         } catch (IllegalArgumentException e) {
-            // An algorithm BouncyCastle does not implement: this SignerInfo
-            // fails and the next one is tried (RFC 4853: implementations
-            // MUST gracefully handle unimplemented signature algorithms).
-            throw new VerificationException(
-                    Reason.INVALID_SIGNATURE, "no CMS verifier for the SignerInfo's algorithms", e);
+            // An algorithm BouncyCastle does not implement, or a value it
+            // reads only while verifying (the CMSAlgorithmProtection
+            // attribute): this SignerInfo fails and the next one is tried
+            // (RFC 4853: implementations MUST gracefully handle
+            // unimplemented signature algorithms).
+            throw new VerificationException(Reason.INVALID_SIGNATURE, "BouncyCastle cannot verify the SignerInfo", e);
         }
     }
 
