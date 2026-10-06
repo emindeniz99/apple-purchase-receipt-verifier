@@ -12,7 +12,8 @@ product id, device binding, refunds, idempotency, is yours; see
 
 New to certificates, receipts or this code?
 [WALKTHROUGH.md](WALKTHROUGH.md) explains them from scratch and follows a
-real receipt through the code, in under an hour.
+real receipt through the code, in under an hour;
+[WALKTHROUGH-QUICK.md](WALKTHROUGH-QUICK.md) is the 10-minute version.
 
 ```xml
 <dependency>
