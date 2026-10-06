@@ -105,6 +105,10 @@
       "section": "Performance"
     },
     {
+      "type": "refactor",
+      "section": "Code Refactoring"
+    },
+    {
       "type": "build",
       "section": "Build & Dependencies"
     },
