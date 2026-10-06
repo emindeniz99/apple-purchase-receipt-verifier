@@ -106,10 +106,11 @@ public final class Config {
          * proves that this runtime can verify before it returns, and throws as
          * its documentation states if it cannot; that documentation also says
          * what the probe checks. Turned off, {@code create} skips the check,
-         * and a runtime that cannot verify answers
-         * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint), or on the
-         * BouncyCastle artifact a refusal, on either path, when it is called
-         * instead. Leaving it unset means on.
+         * and a runtime that cannot verify shows it on the first call
+         * instead: the {@code -wasm} artifact answers
+         * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint), and the
+         * BouncyCastle artifact answers {@code INTERNAL_ERROR} or refuses the
+         * input, depending on what is missing. Leaving it unset means on.
          */
         public Builder runtimeProbe(boolean runtimeProbe) {
             this.runtimeProbe = runtimeProbe;
