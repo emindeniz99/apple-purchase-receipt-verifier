@@ -309,7 +309,7 @@ format.
 the Java implementation, and every package answers it: one
 language-neutral case per semantic fact, each naming a registered fixture,
 the `Config` to build the verifier from, and either the payload fields the
-call must return or the reason it must fail with. 391 cases today. Each
+call must return or the reason it must fail with. 397 cases today. Each
 package reads the file through a thin adapter that knows nothing about
 any individual case — `rust/tests/conformance.rs`,
 `java/src/test/.../ConformanceCasesTest.java`,
