@@ -71,16 +71,23 @@ final class ReceiptCertificates {
     }
 
     /**
-     * The first embedded certificate that {@code signer}'s SignerId matches,
-     * by issuer and serial number or by subjectKeyIdentifier.
+     * Every embedded certificate that {@code signer}'s SignerId matches, by
+     * issuer and serial number or by subjectKeyIdentifier, in receipt order.
+     * More than one can: a renewed certificate keeps its key and so its
+     * subjectKeyIdentifier, and anyone relaying a receipt can add a copy of
+     * the signer's identity to the bag.
      */
-    X509Certificate signer(SignerInformation signer) throws VerificationException {
+    List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();
+        List<X509Certificate> matches = new ArrayList<>();
         for (int i = 0; i < holders.size(); i++) {
             if (sid.match(holders.get(i))) {
-                return all.get(i);
+                matches.add(all.get(i));
             }
         }
-        throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
+        if (matches.isEmpty()) {
+            throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
+        }
+        return matches;
     }
 }

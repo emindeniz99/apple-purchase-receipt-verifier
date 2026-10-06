@@ -140,14 +140,39 @@ final class ReceiptCore {
         VerificationException first = null;
         for (SignerInformation signer : signers) {
             try {
-                X509Certificate signerCert = certificates.signer(signer);
+                verifySigner(signer, certificates.signers(signer), authenticated, at, trustAnchors);
+                return payload;
+            } catch (VerificationException e) {
+                if (first == null) {
+                    first = e;
+                }
+            }
+        }
+        throw first;
+    }
+
+    /**
+     * Tries every certificate {@code signer} names, as the SignerInfos are
+     * tried: one passing is enough, and when none does the first one's
+     * failure is the verdict.
+     */
+    private static void verifySigner(
+            SignerInformation signer,
+            List<X509Certificate> matches,
+            List<X509Certificate> authenticated,
+            Date at,
+            Set<TrustAnchor> trustAnchors)
+            throws VerificationException {
+        VerificationException first = null;
+        for (X509Certificate signerCert : matches) {
+            try {
                 List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
                 requireMarkers(signerCert, path);
                 // The chain before the signature: checking the signature
                 // first would run the attacker's own key before anything
                 // about it is trusted.
                 verifyCmsSignature(signer, signerCert);
-                return payload;
+                return;
             } catch (VerificationException e) {
                 if (first == null) {
                     first = e;
