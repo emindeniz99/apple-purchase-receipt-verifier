@@ -434,7 +434,9 @@ class SignedDataTest {
         assertTrue(payload.json().contains(BUNDLE));
 
         dateless.put("receiptCreationDate", now - 547L * 86_400_000L);
-        assertEquals(BUNDLE, verify(expired, expired.signJws(dateless)).get("bundleId").asText());
+        assertEquals(
+                BUNDLE,
+                verify(expired, expired.signJws(dateless)).get("bundleId").asText());
     }
 
     private static String headerJson() throws Exception {
