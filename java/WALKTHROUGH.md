@@ -1,5 +1,7 @@
 # The Java verifier, walked through
 
+Short on time? [WALKTHROUGH-QUICK.md](WALKTHROUGH-QUICK.md) is the same story in 10 minutes.
+
 A guide to `java/`, the BouncyCastle implementation of this library, for a
 review before production. It assumes you program well and have never worked
 with certificates, ASN.1 or Apple receipts.
