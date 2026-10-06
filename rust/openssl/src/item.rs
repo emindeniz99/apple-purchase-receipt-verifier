@@ -70,11 +70,9 @@ pub(crate) fn typed(value: *const ffi::ASN1_TYPE) -> (c_int, *const ffi::ASN1_ST
 }
 
 /// Whether `tlv` is exactly one value OpenSSL's `ANY` decoder
-/// (`d2i_ASN1_TYPE`) accepts: for a primitive of a universal type, that its
-/// content keeps the type's rules (a BOOLEAN of one octet, a minimal
-/// INTEGER, an empty NULL, a well-formed OBJECT IDENTIFIER, ...). The
-/// header walk hands it the primitive values OpenSSL would otherwise keep
-/// whole, unchecked, inside another `ANY`.
+/// (`d2i_ASN1_TYPE`) accepts. The header walk hands it each constructed
+/// string at its outermost level, which OpenSSL would otherwise keep whole,
+/// unchecked, inside a SEQUENCE held as an `ANY`.
 pub(crate) fn decodes_as_any(tlv: &[u8]) -> bool {
     init();
     let Some((value, whole)) = d2i_whole(tlv, |cursor, len: c_long| {

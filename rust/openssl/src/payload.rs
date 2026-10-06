@@ -9,17 +9,13 @@
 //!
 //! One `ASN1_item_d2i` call decodes every tag and length of it, BER
 //! (indefinite lengths, constructed strings) included. Before it, the header
-//! walk (`walk.rs`) bounds the input and restores what 0.7's reader refused
-//! and OpenSSL reads: a tag in high-tag-number form, a length of more than
-//! four octets, and a constructed `OCTET STRING` value (or Xcode wrap) with
-//! a chunk that is not an `OCTET STRING`. This module checks the types
-//! OpenSSL reports for the three known fields and copies them out. What the
-//! fields mean (which types exist, which value is a date) is the core's
-//! business.
+//! walk (`walk.rs`) bounds the input. This module checks the types OpenSSL
+//! reports for the three known fields and copies them out. What the fields
+//! mean (which types exist, which value is a date) is the core's business.
 
 use crate::cms::string_octets;
-use crate::item::{decode_exact, decodes_as_any, elements, typed};
-use crate::walk::{self, Budget, ChunkError, Headers, WalkError};
+use crate::item::{decode_exact, elements, typed};
+use crate::walk::{self, Budget, WalkError};
 use crate::{drain_errors, sys};
 use libc::c_int;
 use openssl_sys as ffi;
@@ -76,35 +72,9 @@ fn walk_error(err: WalkError) -> PayloadError {
     }
 }
 
-/// Whether every attribute's `value`, when it is a constructed
-/// `OCTET STRING`, has only `OCTET STRING` chunks. A SET entry or a field of another shape is left to the template
-/// decode to refuse.
-fn values_are_octet_strings(set: &[u8]) -> Result<(), ChunkError> {
-    let Some(entries) = walk::children(set) else {
-        return Ok(());
-    };
-    entries.into_iter().try_for_each(|entry| {
-        let Some(value) = walk::children(entry).and_then(|fields| fields.get(2).copied()) else {
-            return Ok(());
-        };
-        match walk::header(value) {
-            Some(header)
-                if header.constructed
-                    && header.class == sys::V_ASN1_UNIVERSAL
-                    && header.tag == ffi::V_ASN1_OCTET_STRING =>
-            {
-                walk::octet_string_exact(value)
-            }
-            _ => Ok(()),
-        }
-    })
-}
-
 /// The attributes of a payload SET, in encoding order.
 fn attribute_set(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, PayloadError> {
-    walk::walk_exact(der, budget, Headers::Short, Some(decodes_as_any)).map_err(walk_error)?;
-    values_are_octet_strings(der)
-        .map_err(|_| "an attribute value has a chunk that is not an OCTET STRING")?;
+    walk::walk_exact(der, budget).map_err(walk_error)?;
     // SAFETY: an item getter payload.c defines; it returns a static.
     let set = decode_exact(der, unsafe { sys::APRV_RECEIPT_PAYLOAD_it() })
         .ok_or("payload is not a SET OF ReceiptAttribute")?;
@@ -126,9 +96,8 @@ fn attribute_set(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, PayloadEr
 /// be the SET, read within a budget of its own.
 ///
 /// # Errors
-/// When the input is neither shape, is over the budget, uses a header form
-/// 0.7 refused, has a constructed `OCTET STRING` value or wrap with a
-/// chunk that is not an `OCTET STRING`, a byte is left over, an
+/// When the input is neither shape, is over the budget, a byte is left
+/// over, an
 /// attribute's fields are not INTEGER, anything, OCTET STRING, or its type
 /// does not fit in 64 signed bits.
 pub fn receipt_attributes(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, PayloadError> {
@@ -138,11 +107,7 @@ pub fn receipt_attributes(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, 
     if !is_octet_string {
         return attribute_set(der, budget);
     }
-    walk::walk_exact(der, budget, Headers::Short, Some(decodes_as_any)).map_err(walk_error)?;
-    walk::octet_string_exact(der).map_err(|err| match err {
-        ChunkError::Foreign => "double-wrapped payload has a chunk that is not an OCTET STRING",
-        ChunkError::Malformed => "double-wrapped payload does not decode",
-    })?;
+    walk::walk_exact(der, budget).map_err(walk_error)?;
     // SAFETY: a libcrypto item getter; it returns a static.
     let wrapped = decode_exact(der, unsafe { sys::ASN1_OCTET_STRING_it() })
         .ok_or("double-wrapped payload does not decode")?;
@@ -151,24 +116,14 @@ pub fn receipt_attributes(der: &[u8], budget: Budget) -> Result<Vec<Attribute>, 
         .map_err(|_| "double-wrapped payload is not a SET OF ReceiptAttribute")
 }
 
-/// The header of a value, when it is one 0.7's reader read: no
-/// high-tag-number form and no length of more than four octets.
-fn short_header(der: &[u8]) -> Option<walk::Header> {
-    walk::header(der).filter(|header| !header.is_long_form())
-}
-
 /// An attribute value that must be exactly one INTEGER that fits in 64
 /// signed bits. OpenSSL refuses an INTEGER that is empty, constructed or
-/// not minimally encoded; a tag in high-tag-number form or a length of more
-/// than four octets is refused before it, as 0.7 did.
+/// not minimally encoded.
 ///
 /// # Errors
 /// When it is not.
 pub fn attribute_integer(der: &[u8]) -> Result<i64, PayloadError> {
     const NOT: PayloadError = "attribute value is not an INTEGER within 64 bits";
-    if short_header(der).is_none() {
-        return Err(NOT);
-    }
     // SAFETY: a libcrypto item getter; it returns a static.
     decode_exact(der, unsafe { sys::ASN1_INTEGER_it() })
         .and_then(|integer| int64(integer.value().cast_const().cast()))
@@ -187,13 +142,12 @@ pub enum StringKind {
 /// An attribute value that must be exactly one primitive `UTF8String` or
 /// `IA5String`: its type and its content octets, not validated as text
 /// (the core does that). A constructed string, which OpenSSL would join
-/// whatever its chunks, a tag in high-tag-number form and a length of more
-/// than four octets are refused, as 0.7 did.
+/// whatever its chunks, is refused, as 0.7 did.
 ///
 /// # Errors
 /// When it is anything else.
 pub fn attribute_string(der: &[u8]) -> Result<(StringKind, Vec<u8>), PayloadError> {
-    if short_header(der).is_none_or(|header| header.constructed) {
+    if walk::header(der).is_none_or(|header| header.constructed) {
         return Err("attribute value is not a primitive string");
     }
     // DISPLAYTEXT is libcrypto's CHOICE of IA5String, VisibleString,
