@@ -168,6 +168,12 @@ jobs:
           - {vendor: oracle, jdk: "8"}
           - {vendor: sapmachine, jdk: "8"}
           - {vendor: redhat, jdk: "25"}
+          # setup-java finds Red Hat builds through the Foojay Disco API,
+          # which stopped listing Red Hat 21 on 2026-10-06 (its packages
+          # query for Red Hat answers "No package(s) found"); the leg
+          # failed before any test ran. Drop this entry when Foojay lists
+          # Red Hat 21 again.
+          - {vendor: redhat, jdk: "21"}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
