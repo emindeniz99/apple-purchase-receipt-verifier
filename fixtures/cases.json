@@ -10978,7 +10978,7 @@
     },
     {
       "id": "signed-data/reject-a-header-member-name-of-50001-characters",
-      "description": "The same header with a 50001-character member name. Port-defined (owner, 2026-10-01): the core reads JSON with serde_json, which has no member name length bound and reads a name in linear time, so the header is read and the genuinely signed JWS verifies: ok. Java's reader (BoundedJson over Jackson) bounds a name at 50,000 characters and answers MALFORMED. DECISIONS.md R20, R40.",
+      "description": "The same header with a 50001-character member name. Port-defined (owner, 2026-10-01): the core reads JSON with serde_json, which has no member name length bound and reads a name in linear time, so the header is read and the genuinely signed JWS verifies: ok. Java reads JSON with Jackson, whose default bounds a name at 50,000 characters, and answers MALFORMED. DECISIONS.md R20, R40.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "owner-jws-header-name-50001"
@@ -11040,7 +11040,7 @@
     },
     {
       "id": "signed-data/reject-a-header-number-of-1001-digits",
-      "description": "The same header with an integer of 1001 digits. Port-defined (owner, 2026-10-01): the core reads JSON with serde_json, which has no number length bound and skips a number nobody reads, so the header is read and the genuinely signed JWS verifies: ok. Java's reader (BoundedJson over Jackson) bounds a number at 1,000 characters and answers MALFORMED. DECISIONS.md R20, R40.",
+      "description": "The same header with an integer of 1001 digits. Port-defined (owner, 2026-10-01): the core reads JSON with serde_json, which has no number length bound and skips a number nobody reads, so the header is read and the genuinely signed JWS verifies: ok. Java reads JSON with Jackson, whose default bounds a number at 1,000 characters, and answers MALFORMED. DECISIONS.md R20, R40.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "owner-jws-header-number-1001"
