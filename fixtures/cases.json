@@ -1435,49 +1435,61 @@
       "path": "generated-0.7/standard-receipt-root.der",
       "role": "trust-anchor",
       "codec": "raw",
-      "contentSha256": "fbe2101d4aab4104fcb12d7ac43082e9789d6be58f8256fe0fb058543cd1e51b"
+      "contentSha256": "ca6d9fa011fd24313c91ac59113dbfc0f3da3affe0f7cdcbf5ca6d061f07a71f"
     },
     "standard-jws-root": {
       "path": "generated-0.7/standard-jws-root.der",
       "role": "trust-anchor",
       "codec": "raw",
-      "contentSha256": "a66fab2bbfd943a4ac33f608c516aec61856ea8393a82b40b508744a1fc4e268"
+      "contentSha256": "474f1d88e18b8defe02026accda63c76b06a4a16c55bf6cbb68e4ee8d490b595"
     },
     "standard-receipt-renewed-signer-behind-its-expired-copy": {
       "path": "generated-0.7/standard-receipt-renewed-signer-behind-its-expired-copy.der",
       "role": "input",
       "codec": "raw",
-      "contentSha256": "2ecb0074e53c477029ba5dcc4964f1fec296c43ae271547ecf6c65e553d92442"
+      "contentSha256": "e35a11c7cab5d8b65726639126994d08e92bcff67d9d9d7fc3059fa42c30925a"
     },
     "standard-receipt-attribute-and-other-certificates-in-the-bag": {
       "path": "generated-0.7/standard-receipt-attribute-and-other-certificates-in-the-bag.der",
       "role": "input",
       "codec": "raw",
-      "contentSha256": "14245dccc310ba657469e317f7e6339c8758d65b5344a8d003ddc81d687353b9"
+      "contentSha256": "aa0460da9bd6806894caf3f88d1bd823ca343eed839f1c37a88c12abcd9a504c"
     },
     "standard-receipt-intermediate-with-a-critical-eku": {
       "path": "generated-0.7/standard-receipt-intermediate-with-a-critical-eku.der",
       "role": "input",
       "codec": "raw",
-      "contentSha256": "8e81d51992ba3dca4b27ef67ed04f6f11fa159e1557e38bfb99d99470f4aaa55"
+      "contentSha256": "99de8fd6236e1cd742b9932877faef5475429e002af644f287c770cc37f3429d"
     },
     "standard-jws-intermediate-with-a-critical-eku": {
       "path": "generated-0.7/standard-jws-intermediate-with-a-critical-eku.jws",
       "role": "input",
       "codec": "utf8",
-      "contentSha256": "0bc5f7f90d75b25aba3e02ca91a86383307b90b2f56b9cbb0d2fe5e7ecf3d10b"
+      "contentSha256": "9183d64ff49d6df9edaa545404a976890cc0b5e80d0bbefd1d5d62dcf3be8eab"
+    },
+    "standard-receipt-intermediate-with-a-critical-crldp": {
+      "path": "generated-0.7/standard-receipt-intermediate-with-a-critical-crldp.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "e5625a7a34459f3db5837a9e5f854b912e5ccb806c3f0b908d757d83699fa96b"
+    },
+    "standard-jws-intermediate-with-a-critical-crldp": {
+      "path": "generated-0.7/standard-jws-intermediate-with-a-critical-crldp.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "990721e79aa60a6b0550da9e356b120f773b5ae1b995cb5d0873fdeffd99edc7"
     },
     "standard-receipt-signing-time-before-the-signer": {
       "path": "generated-0.7/standard-receipt-signing-time-before-the-signer.der",
       "role": "input",
       "codec": "raw",
-      "contentSha256": "2016dc3a4a7a2bba83614e34fe344f8b1b0953be7b13f2ea1108f2fc58b87edd"
+      "contentSha256": "dbf98f52c7b6c4f1776debc6dd4de8935356bbb6fd856e578856379f4cbfeeac"
     },
     "standard-receipt-signing-time-before-the-signer-bad-signature": {
       "path": "generated-0.7/standard-receipt-signing-time-before-the-signer-bad-signature.der",
       "role": "input",
       "codec": "raw",
-      "contentSha256": "1da0d6a3e980629cbe561c8e44022f40f22ec4b2686d17fa6408aa77920bb5df"
+      "contentSha256": "2d2d6eee02a1134d6719fc1e6e3fbf129f58a7258c54245b8b517b718d6219af"
     },
     "lookup-receipt-twin-ahead-of-signer": {
       "path": "generated-0.7/lookup-receipt-twin-ahead-of-signer.der",
@@ -11569,6 +11581,71 @@
       "operation": "verifySignedData",
       "input": {
         "fixture": "standard-jws-intermediate-with-a-critical-eku"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "standard-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "positive",
+        "chain",
+        "certificate",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-an-intermediate-with-a-critical-crl-distribution-points",
+      "description": "The receipt's intermediate carries a critical cRLDistributionPoints (one URI) beside its marker, and is otherwise genuine. RFC 5280 4.2.1.13 lets the extension be critical. It only says where a CRL is and no revocation check is asked, so the chain validates; receipt/reject-intermediate-with-an-unknown-critical-extension still fails (owner Q72, 2026-10-06).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "standard-receipt-intermediate-with-a-critical-crldp"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "standard-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundle_id": "com.example.app",
+          "/receipt_creation_date_ms": 1722945600000
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "chain",
+        "certificate",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/accept-an-intermediate-with-a-critical-crl-distribution-points",
+      "description": "x5c[1] carries a critical cRLDistributionPoints (one URI) beside its marker, and is otherwise genuine. RFC 5280 4.2.1.13 lets the extension be critical. It only says where a CRL is and no revocation check is asked, so the chain validates; signed-data/reject-intermediate-with-an-unknown-critical-extension still fails (owner Q72, 2026-10-06).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "standard-jws-intermediate-with-a-critical-crldp"
       },
       "config": {
         "trustedRoots": {
