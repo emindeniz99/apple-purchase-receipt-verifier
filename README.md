@@ -29,7 +29,7 @@ same module as an HTTP server, a Docker image or a one-shot CLI for any
 other language (or as a Cloudflare Worker over the Node package, see
 [node/examples/cloudflare-worker](node/examples/cloudflare-worker/)), and **C and C++** can link the core through a C ABI, which
 any FFI-capable runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load. The
-core and the Java implementation answer the same 391 cases of
+core and the Java implementation answer the same 394 cases of
 [`fixtures/cases.json`](./fixtures/cases.json), and every package runs all
 of them. [PORTS.md](PORTS.md) shows what each package runs on, and
 [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the

@@ -185,8 +185,8 @@ format Apple added, not a defect of the client's request. It is therefore
 whose 21002 would tell an app server to deny a paying user. An integrator
 should alert and escalate on it, not deny.
 
-A JWS follows the same rule. Before the signature only `signedDate` is read,
-to pick the chain instant. A payload that is not a JSON object is carried
+A JWS follows the same rule. Before the signature only `signedDate` (else an
+app transaction's `receiptCreationDate`) is read, to pick the chain instant. A payload that is not a JSON object is carried
 past the chain and signature checks: `INVALID_SIGNATURE` if the signature
 fails, `UNREADABLE_PAYLOAD` if it verifies. After that nothing is read:
 `verifySignedData` returns the payload JSON as signed, so a claim of an
@@ -232,13 +232,15 @@ including `endpoint/vpp-sandbox-receipt-on-production-answers-21007`,
 
 Apple's signing certificates rotate, so a receipt signed under a since-expired
 certificate is still genuine. The validity window is checked at the payload's
-`signedDate` or the receipt's creation date, falling back to the `Config`
-clock when the input carries neither (docs/design/0.7-api.md, Setup). For a
+`signedDate` (else an app transaction's `receiptCreationDate`, which is
+where Apple's App Store Server Library judges one; owner Q67, 2026-10-06)
+or the receipt's creation date, falling back to the `Config` clock when the
+input carries none (docs/design/0.7-api.md, Setup). For a
 receipt, a creation date that is empty, outside the exact
 `YYYY-MM-DDTHH:MM:SSZ` grammar, or sits beside a top-level entry the walk
 cannot read counts as carried by nothing, and the chain is judged at the
-clock; a repeated attribute 12 uses its first copy. A JWS `signedDate` that
-is not a representable instant falls back to the clock the same way. No
+clock; a repeated attribute 12 uses its first copy. A JWS date that is not a
+representable instant counts as not carried the same way. No
 verifier judges how old a genuinely signed payload may be: that limit
 depends on the endpoint (Apple retries a server notification for days, and
 a device may present an old but genuine payload), so the caller applies it

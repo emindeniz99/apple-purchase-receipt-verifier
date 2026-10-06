@@ -93,9 +93,10 @@ final class JwsCore {
         // The sender's signedDate picks the instant the chain must be valid at,
         // before anything is trusted. That only moves the validity window; the
         // signature and the chain to a pinned root are still required, as in
-        // Apple's own rule. Absent or unreadable, the clock stands in.
+        // Apple's own rule. Absent or unreadable, the receiptCreationDate an app
+        // transaction carries stands in, as in Apple's library, then the clock.
         Payload read = readOrNull(payloadBytes);
-        Long signedDate = read != null ? read.signedDate : null;
+        Long signedDate = read == null ? null : read.signedDate != null ? read.signedDate : read.receiptCreationDate;
         authenticateTopDown(leaf, intermediate, trustAnchors);
         validateChain(leaf, intermediate, new Date(signedDate != null ? signedDate : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
@@ -176,6 +177,8 @@ final class JwsCore {
         readObject(payload, Reason.UNREADABLE_PAYLOAD, "signed payload", (name, value, parser) -> {
             if ("signedDate".equals(name)) {
                 read.signedDate = JsonFields.instant(parser, value);
+            } else if ("receiptCreationDate".equals(name)) {
+                read.receiptCreationDate = JsonFields.instant(parser, value);
             } else if ("environment".equals(name)) {
                 read.topLevel.state(value, parser);
             } else if ("data".equals(name)) {
@@ -189,13 +192,17 @@ final class JwsCore {
 
     /**
      * What one read of a signed payload yields: its last top-level
-     * {@code signedDate}, and the three places Apple documents for its
+     * {@code signedDate} and {@code receiptCreationDate}, and the three places Apple documents for its
      * environment. A repeated name keeps its last value, a repeated
      * {@code data} or {@code summary} included, as everywhere in a payload.
      */
     static final class Payload {
         @Nullable
         Long signedDate;
+
+        /** The last top-level {@code receiptCreationDate}: an app transaction's. */
+        @Nullable
+        Long receiptCreationDate;
 
         /** The top-level {@code environment}: a transaction, renewal info. */
         final Place topLevel = new Place();

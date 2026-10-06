@@ -293,7 +293,7 @@ an early check reports that check's reason, not a later one.
 (strict UTF-8, no byte order mark, nothing but whitespace after the object),
 `alg` ES256 and exactly three `x5c` entries → the certificates decode and
 are structurally sound (X.509 version 1–3, no duplicate extension, no
-undecodable extension) → the chain at `signedDate` (or the clock), the
+undecodable extension) → the chain at `signedDate` (else `receiptCreationDate`, else the clock), the
 intermediate checked against the pinned roots **before** the leaf is
 checked against the intermediate → **leaf marker OID**
 `1.2.840.113635.100.6.11.1` → **intermediate marker OID**

@@ -466,8 +466,9 @@ impl Verifier {
     ///
     /// The order of checks (0.7-api.md §2): the size cap and the compact
     /// structure, `alg` equal to `ES256`, the `x5c` chain to a pinned root
-    /// with every certificate valid at the payload's `signedDate` (`now_ms`
-    /// when it is missing or not a representable instant), the marker OIDs,
+    /// with every certificate valid at the payload's `signedDate` (else its
+    /// `receiptCreationDate`, then `now_ms`, when it is missing or not a
+    /// representable instant), the marker OIDs,
     /// then the signature.
     ///
     /// # Errors

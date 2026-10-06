@@ -1577,7 +1577,8 @@ amended 2026-10-02).
   commas, leading zeros, `+`, `NaN`, unescaped control characters, escapes
   RFC 8259 does not define, a byte order mark, bytes that are not UTF-8,
   and anything but whitespace after a JWS object. A duplicate name keeps
-  its last value. `signedDate` keeps the reference conversion from its
+  its last value. `signedDate` (and `receiptCreationDate`, its stand-in
+  since Q67) keeps the reference conversion from its
   raw text: an integer must fit an `i64`, a number with a fraction or an
   exponent is truncated within that range, and anything else, an integer
   past `i64` included, is no instant, so the clock stands in. One reading
