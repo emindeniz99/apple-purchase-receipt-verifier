@@ -56,7 +56,7 @@ Add to the job, after the build:
      cargo test --locked --manifest-path rust/bindings/abi/tests/Cargo.toml
    ```
 
-   It builds Wasmtime 49.0.1 with Cranelift (about 4 minutes on two cores
+   It builds Wasmtime 49.0.2 with Cranelift (about 4 minutes on two cores
    cold); cache its target directory in this test job only.
 
 ## `rust` (tests, lints, the floor)
