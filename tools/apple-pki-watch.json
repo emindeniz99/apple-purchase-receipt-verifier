@@ -1,0 +1,155 @@
+{
+  "pki": [
+    {
+      "url": "https://www.apple.com/appleca/AppleIncRootCertificate.cer",
+      "sha256": "b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleAAI2CA.cer",
+      "sha256": "d3496f4b73cd67aab9f2fcb1d5aa41f8dc457769c455c792b70ddb19e92023d6"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleAAICA.cer",
+      "sha256": "2528ba7d9348d6cbc83b169b24860ae7a87a6359c0e5274626edfe8f6c04e2b8"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleAAICAG3.cer",
+      "sha256": "a64b099dbd73ebb036b4204e1675e8aa821637d09b84980899104ad59d664a3b"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleApplicationIntegrationCA5G1.cer",
+      "sha256": "c0d8efbea821079d1b8a98e1198bfcc669331fa7a9c14f09b969f0af08ce4a43"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleApplicationIntegrationCA7G1.cer",
+      "sha256": "928265664dcb4f3e2ec82d93598f0782615e541d975e2254a27d0aa98724502e"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleISTCA2G1.cer",
+      "sha256": "b0d40aa5f024f98e7adc0b10f19764f71030cfaf3dcc4ddc6600869499c9baaa"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleISTCA8G1.cer",
+      "sha256": "63ed1030fe1001060589f4e8ac955768fc0880bcc42be7d906d590e327a57142"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/ApplePlatformEncryptionECCCA1G1.cer",
+      "sha256": "4cf68eeaff7a7833d825ed3230e6b958706ebc1b88f089a26fb44e86f546c0f7"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/ApplePlatformSigningECCCA1G1.cer",
+      "sha256": "96039909bc312a54224f43f5b17428bf346bf2ba0ecd9aa8138eaaca1f1941f4"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleRootCA-G2.cer",
+      "sha256": "c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleRootCA-G3.cer",
+      "sha256": "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleSoftwareUpdateCertificationAuthority.cer",
+      "sha256": "1299e9bfe776a29ff452f8c4f5e55f3b4dfd2934349dd1850b8274f35c71745c"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleTimestampCA.cer",
+      "sha256": "5eb2b6f76a173e6876ccaca696817bf1a0575e8d5f2a81653e1ddf8dafb751fc"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleTimestampCA2.cer",
+      "sha256": "e2bccabb4c1c37b34702d16aaaca60e86a92af2145a1ba9769500ab908e2bef2"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleWWDRCAG2.cer",
+      "sha256": "9ed4b3b88c6a339cf1387895bda9ca6ea31a6b5ce9edf7511845923b0c8ac94c"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer",
+      "sha256": "dcf21878c77f4198e4b4614f03d696d89c66c66008d4244e1b99161aac91601f"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleWWDRCAG4.cer",
+      "sha256": "ea4757885538dd8cb59ff4556f676087d83c85e70902c122e42c0808b5bce14c"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleWWDRCAG5.cer",
+      "sha256": "53fd008278e5a595fe1e908ae9c5e5675f26243264a5a6438c023e3ce2870760"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleWWDRCAG6.cer",
+      "sha256": "bdd4ed6e74691f0c2bfd01be0296197af1379e0418e2d300efa9c3bef642ca30"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/AppleWWDRMPCA1G1.cer",
+      "sha256": "128a8d3fd58a44f516041bb00a0ab9781badec974b11c907b2027f2cc4cfbe1f"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/DevAuthCA.cer",
+      "sha256": "341ff0b1753889eb5f36921a7386129f302ce4ff603fabaebf06e01fdb236860"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/DeveloperIDCA.cer",
+      "sha256": "7afc9d01a62f03a2de9637936d4afe68090d2de18d03f29c88cfb0b1ba63587f"
+    },
+    {
+      "url": "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer",
+      "sha256": "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a"
+    }
+  ],
+  "cps": "https://images.apple.com/certificateauthority/pdf/Apple_WWDR_CPS_v3.0.pdf",
+  "libraries": {
+    "app-store-server-library-python": {
+      "tag": "v3.1.2",
+      "files": {
+        "appstoreserverlibrary/signed_data_verifier.py": [
+          "signed_date = decoded_jwt.get('signedDate') if decoded_jwt.get('signedDate') is not None else decoded_jwt.get('receiptCreationDate')",
+          "effective_date = time.time() if self._enable_online_checks or signed_date is None else int(signed_date) // 1000",
+          "self.check_oid(trusted_chain[0].to_cryptography(), \"1.2.840.113635.100.6.11.1\")",
+          "self.check_oid(trusted_chain[1].to_cryptography(), \"1.2.840.113635.100.6.2.1\")"
+        ]
+      }
+    },
+    "app-store-server-library-java": {
+      "tag": "v5.2.0",
+      "files": {
+        "src/main/java/com/apple/itunes/storekit/verification/AppleExtensionCertPathChecker.java": [
+          "private static final String WWDR_INTERMEDIATE_OID = \"1.2.840.113635.100.6.2.1\";",
+          "private static final String RECEIPT_SIGNER_OID = \"1.2.840.113635.100.6.11.1\";"
+        ],
+        "src/main/java/com/apple/itunes/storekit/verification/SignedDataVerifier.java": [
+          "Date effectiveDate = this.enableOnlineChecks || decodedData.getSignedDate() == null ? new Date() : new Date(decodedData.getSignedDate());"
+        ]
+      }
+    },
+    "app-store-server-library-node": {
+      "tag": "v3.1.0",
+      "files": {
+        "jws_verification.ts": [
+          "const decodedAppTransaction: AppTransaction = await this.verifyJWT(signedAppTransaction, this.appTransactionValidator, t => t.receiptCreationDate === undefined ? new Date() : new Date(t.receiptCreationDate));",
+          "const effectiveDate = this.enableOnlineChecks ? new Date() : signedDateExtractor(decodedJWT)",
+          "validity = validity && jsrsassignX509Leaf.getExtInfo(\"1.2.840.113635.100.6.11.1\") !== undefined",
+          "validity = validity && jsrassignX509Intermediate.getExtInfo(\"1.2.840.113635.100.6.2.1\") !== undefined",
+          "return decodedJWT.signedDate === undefined ? new Date() : new Date(decodedJWT.signedDate)"
+        ]
+      }
+    },
+    "app-store-server-library-swift": {
+      "tag": "v6.0.0",
+      "files": {
+        "Sources/AppStoreServerLibrary/ChainVerifier.swift": [
+          "let validationTime = !onlineVerification && decodedBody.signedDateOptional != nil ? decodedBody.signedDateOptional! : currentTime",
+          "private static let WWDR_INTERMEDIATE_OID: ASN1ObjectIdentifier = [1, 2, 840, 113635, 100, 6, 2, 1]",
+          "private static let RECEIPT_SIGNER_OID: ASN1ObjectIdentifier = [1, 2, 840, 113635, 100, 6, 11, 1]"
+        ]
+      }
+    }
+  },
+  "news": [
+    {
+      "date": "2026-10-01",
+      "title": "Upcoming expiration of Developer ID Certification Authority (Sub-CA)",
+      "link": "https://developer.apple.com/news/?id=w4atic4c"
+    }
+  ]
+}
