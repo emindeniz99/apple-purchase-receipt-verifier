@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.fasterxml.jackson.core.StreamWriteConstraints;
 import com.fasterxml.jackson.core.exc.StreamConstraintsException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -193,6 +194,22 @@ class JwsJsonReadTest {
             assertEquals(50_000, JsonFields.factory().streamReadConstraints().getMaxNameLength());
         } finally {
             StreamReadConstraints.overrideDefaultStreamReadConstraints(null);
+        }
+    }
+
+    /**
+     * The same for the writer: a host that tightens Jackson's write depth for
+     * its own JSON cannot make the endpoint fail to render a response.
+     */
+    @Test
+    void aProcessWideOverrideDoesNotReachTheWritersFactory() {
+        StreamWriteConstraints.overrideDefaultStreamWriteConstraints(
+                StreamWriteConstraints.builder().maxNestingDepth(1).build());
+        try {
+            assertEquals(1, new JsonFactory().streamWriteConstraints().getMaxNestingDepth());
+            assertEquals(1_000, EndpointResponse.JSON.streamWriteConstraints().getMaxNestingDepth());
+        } finally {
+            StreamWriteConstraints.overrideDefaultStreamWriteConstraints(null);
         }
     }
 

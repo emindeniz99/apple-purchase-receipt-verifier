@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.fasterxml.jackson.core.StreamWriteConstraints;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -21,14 +22,16 @@ final class JsonFields {
     private JsonFields() {}
 
     /**
-     * A reader factory with Jackson's own default constraints, built rather
-     * than inherited so a host's process-wide
-     * {@code StreamReadConstraints.overrideDefaultStreamReadConstraints}
-     * cannot change a verdict.
+     * A factory with Jackson's own default constraints, built rather than
+     * inherited so a host's process-wide
+     * {@code StreamReadConstraints.overrideDefaultStreamReadConstraints} (or
+     * its {@code StreamWriteConstraints} twin) cannot change a verdict or
+     * fail a response.
      */
     static JsonFactory factory() {
         return JsonFactory.builder()
                 .streamReadConstraints(StreamReadConstraints.builder().build())
+                .streamWriteConstraints(StreamWriteConstraints.builder().build())
                 .build();
     }
 

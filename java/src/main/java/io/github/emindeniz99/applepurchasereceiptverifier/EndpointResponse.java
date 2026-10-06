@@ -28,7 +28,7 @@ final class EndpointResponse {
 
     // Jackson's own generator defaults: short escapes for \n and the like,
     // "/" and non-ASCII unescaped, as Apple's endpoint writes them.
-    static final JsonFactory JSON = new JsonFactory();
+    static final JsonFactory JSON = JsonFields.factory();
 
     private EndpointResponse() {}
 
