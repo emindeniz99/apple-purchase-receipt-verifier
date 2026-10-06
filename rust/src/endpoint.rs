@@ -87,7 +87,13 @@ pub(crate) fn respond(
                 Environment::Sandbox if production => AppleStatus::PRODUCTION_RECEIPT_ON_SANDBOX,
                 _ => AppleStatus::OK,
             };
-            if status == AppleStatus::OK {
+            // An in-app purchase Apple signed that does not decode (it went
+            // to unknown_attributes[17]) answers 21009, as UNREADABLE_PAYLOAD
+            // does, rather than a 0 whose in_app silently lacks it (owner
+            // Q71, 2026-10-06).
+            if status == AppleStatus::OK && payload.unknown_attributes.contains_key(&17) {
+                status_only(AppleStatus::INTERNAL_DATA_ACCESS_ERROR)
+            } else if status == AppleStatus::OK {
                 match clock.now() {
                     // A clock outside the instants the dates render
                     // (datetime::renders) is broken, like one that panics:
