@@ -1928,6 +1928,12 @@ the Java implementation goes.
   integrator to alert and escalate on rather than deny.
 - **Scope:** the endpoint only. `verifyReceipt` and `toJson` still return
   the receipt with the raw value under `unknown_attributes["17"]`.
+- **A field that does not decode stays a 0** (owner, Q73, 2026-10-06).
+  Answering 21009 when a decodable purchase's product, transaction or
+  date field does not decode was considered and declined: Apple has
+  never signed such a field, the endpoint cannot mark it in Apple's
+  shape, and `verifyReceipt` already hands the caller the raw value to
+  decide on.
 - **Cases:** `endpoint/unparseable-in-app-purchase-answers-21009` (its
   receipt answered 0 with an empty `in_app` before Q71) and
   `endpoint/in-app-purchase-with-unreadable-fields-answers-0`.
