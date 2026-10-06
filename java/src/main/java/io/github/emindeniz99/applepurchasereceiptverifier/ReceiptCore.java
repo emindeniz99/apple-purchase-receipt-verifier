@@ -154,7 +154,8 @@ final class ReceiptCore {
     /**
      * Tries every certificate {@code signer} names, as the SignerInfos are
      * tried: one passing is enough, and when none does the first one's
-     * failure is the verdict.
+     * failure is the verdict. Together the two loops are one loop over
+     * (SignerInfo, certificate) pairs in receipt order.
      */
     private static void verifySigner(
             SignerInformation signer,
@@ -319,12 +320,12 @@ final class ReceiptCore {
         } catch (OperatorCreationException e) {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "no CMS verifier for the signer certificate's key", e);
-        } catch (IllegalArgumentException e) {
+        } catch (RuntimeException e) {
             // An algorithm BouncyCastle does not implement, or a value it
             // reads only while verifying (the CMSAlgorithmProtection
-            // attribute): this SignerInfo fails and the next one is tried
-            // (RFC 4853: implementations MUST gracefully handle
-            // unimplemented signature algorithms).
+            // attribute), surfaces as an unchecked exception: this SignerInfo
+            // fails and the next one is tried (RFC 4853: implementations MUST
+            // gracefully handle unimplemented signature algorithms).
             throw new VerificationException(Reason.INVALID_SIGNATURE, "BouncyCastle cannot verify the SignerInfo", e);
         }
     }

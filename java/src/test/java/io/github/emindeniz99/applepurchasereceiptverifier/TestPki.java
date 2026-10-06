@@ -469,6 +469,17 @@ public final class TestPki {
         return sign(payload, new Date(), leafKey, leaf, Arrays.asList(twin, leaf, intermediate, root));
     }
 
+    /** A genuine receipt whose bag carries the leaf {@code copies} times, byte for byte. */
+    byte[] signReceiptWithLeafCopies(byte[] payload, int copies) throws Exception {
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+        for (int i = 0; i < copies; i++) {
+            embedded.add(leaf);
+        }
+        embedded.add(intermediate);
+        embedded.add(root);
+        return sign(payload, new Date(), leafKey, leaf, embedded);
+    }
+
     /** A certificate with the leaf's issuer, serial and subject on {@code keys}, signed by {@code keys}. */
     private X509Certificate twinOfLeaf(KeyPair keys) throws Exception {
         X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(

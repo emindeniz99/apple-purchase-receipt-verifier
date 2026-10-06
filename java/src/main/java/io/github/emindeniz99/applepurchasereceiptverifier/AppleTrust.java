@@ -19,7 +19,9 @@ import java.util.Set;
 import org.bouncycastle.asn1.x509.Extension;
 
 /**
- * Trust material both paths share, and their rule for it: no key a pinned
+ * Trust material both paths share (the marker OIDs, the anchors and the
+ * checker for the critical extensions PKIX leaves unresolved), and their
+ * rule for it: no key a pinned
  * root has not vouched for is ever decoded or used, so certificates are
  * checked top-down from the roots (#161). BouncyCastle validates an RSA key
  * as it decodes it, which costs seconds for a 16384-bit modulus.

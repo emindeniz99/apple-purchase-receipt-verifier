@@ -64,6 +64,8 @@ final class ReceiptCertificates {
                 if (entry instanceof ASN1TaggedObject
                         && ((ASN1TaggedObject) entry).getTagClass() == BERTags.CONTEXT_SPECIFIC
                         && ((ASN1TaggedObject) entry).getTagNo() <= 3) {
+                    // Only checks that the entry is a SEQUENCE; one that is
+                    // not throws and is MALFORMED below.
                     ASN1Sequence.getInstance((ASN1TaggedObject) entry, false);
                     continue;
                 }
@@ -89,13 +91,14 @@ final class ReceiptCertificates {
      * issuer and serial number or by subjectKeyIdentifier, in receipt order.
      * More than one can: a renewed certificate keeps its key and so its
      * subjectKeyIdentifier, and anyone relaying a receipt can add a copy of
-     * the signer's identity to the bag.
+     * the signer's identity to the bag. Equal certificates are returned once.
      */
     List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();
         List<X509Certificate> matches = new ArrayList<>();
         for (int i = 0; i < holders.size(); i++) {
-            if (sid.match(holders.get(i))) {
+            // A byte-identical copy gets the same verdict, so it is tried once.
+            if (sid.match(holders.get(i)) && !matches.contains(all.get(i))) {
                 matches.add(all.get(i));
             }
         }
