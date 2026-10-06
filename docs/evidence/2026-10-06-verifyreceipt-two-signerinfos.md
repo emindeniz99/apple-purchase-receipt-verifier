@@ -60,6 +60,29 @@ gave identical rows.
   certificates SET; Apple refused even the one-SignerInfo control, so that
   run measured c5 ten times over (`results/apple-bouncycastle-reencoded.txt`).
 
+## Decision (owner, Q65, 2026-10-06)
+
+Both implementations keep trying up to four SignerInfos, and the first that
+verifies decides. Apple's one-SignerInfo rule is unpublished and could change
+(a second signature in another algorithm is the case RFC 4853 was written
+for), and a verifier that tracked it would refuse a genuine receipt the day it
+did. RFC 5652 §5.1 allows any number of signers, and RFC 4853 says that one
+signature that verifies is a success and that an implementation "MUST
+gracefully handle unimplemented signature algorithms". The security floor is
+unchanged: the SignerInfo that decides is verified over the content that is
+returned, under a chain to a pinned root.
+
+So the Java implementation now treats a SignerInfo BouncyCastle has no
+verifier for as one that does not verify, and tries the next. It reads every
+SignerInfo's signed attributes first, so a SignerInfo that is malformed is
+still `MALFORMED` whatever its position, as in the core. On the variants above
+Java now answers as the core does on every row
+(`results/java-after-fix.txt`). The core needed no change.
+
+The rejected alternative, accept exactly one SignerInfo in both
+implementations, is kept as `one-signer-info.patch`: 35 fewer lines, and five
+shared cases would have changed their verdict.
+
 ## Where this stops holding
 
 Two receipts, one family of SignerInfo changes, one day. Apple may treat a

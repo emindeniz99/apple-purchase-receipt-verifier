@@ -116,6 +116,13 @@ final class ReceiptCore {
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
+        // Every SignerInfo's signedAttrs are read before any is tried: a
+        // SignerInfo whose syntax is broken makes the whole SignedData
+        // malformed, whatever its position. BouncyCastle reads them lazily
+        // and throws from here, which verifyDer reports as MALFORMED.
+        for (SignerInformation signer : signers) {
+            signer.getSignedAttributes();
+        }
         // The one payload read before trust: the sender's own creation date
         // picks the instant the chain must be valid at. That only moves the
         // validity window; the signature and the chain to a pinned root are
@@ -284,6 +291,12 @@ final class ReceiptCore {
         } catch (OperatorCreationException e) {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "no CMS verifier for the signer certificate's key", e);
+        } catch (IllegalArgumentException e) {
+            // An algorithm BouncyCastle does not implement: this SignerInfo
+            // fails and the next one is tried (RFC 4853: implementations
+            // MUST gracefully handle unimplemented signature algorithms).
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE, "no CMS verifier for the SignerInfo's algorithms", e);
         }
     }
 

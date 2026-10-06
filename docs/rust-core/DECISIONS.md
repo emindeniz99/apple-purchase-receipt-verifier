@@ -572,7 +572,6 @@ Java's parse before trust, 2026-10-06).
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
   | A `verifyReceipt` request body nested 65 deep around a genuine receipt | `{"status":21002}` | `{"status":0}` since 2026-10-05 (Jackson's default depth, 1,000; 21002 before) | `{"status":0}` (port-defined 2026-10-01) | The same reader over the body: `receipt-data` is read and the receipt verifies. An endpoint case lists the `/status` values it allows with `oneOf` since 2026-10-01 | `endpoint/request-body-nested-65-deep-answers-21002` |
   | A lone surrogate escape (`\ud800` with no low surrogate) in a JWS header or payload member name, in `alg`, in an `x5c` entry or in `receipt-data` | read as U+FFFD, so an unknown name is ignored and a value fails later (an `x5c` entry as `INVALID_CERTIFICATE`) | reads on: Jackson keeps the lone surrogate in the `String` | `MALFORMED` for a header or a request body, `UNREADABLE_PAYLOAD` for a signed payload (port-defined 2026-10-01) | `serde_json` refuses a lone surrogate escape in a name or in a string it decodes (R40); the document is then not the object that was signed for, and nothing unsigned is accepted. Apple's documents are ASCII | none: no case pins it |
-  | A SignerInfo whose digestAlgorithm names an OID BouncyCastle has no digest for (`1.2.3.4`, or SHAKE256 `2.16.840.1.101.3.4.2.12`), over an otherwise genuine chain | not measured | `MALFORMED` (`unexpected java.lang.IllegalArgumentException` from `DefaultSignatureAlgorithmIdentifierFinder`, status 21002; recorded 2026-10-04) | `INVALID_SIGNATURE` (status 21003) | The core's signature check fails under that digestAlgorithm; BouncyCastle throws an unchecked exception while building the verifier, which Java files as `MALFORMED` with the cause kept. Both refuse, the input is not Apple-signed, and no shared case pins it; a digest BouncyCastle does know but Apple never used (MD5) is `INVALID_SIGNATURE` in both | none: measured by a review probe, not a case |
   | A lone surrogate escape in a member name inside `data` or `summary` of a genuinely signed JWS payload | not measured (the 0.7 answers carry no environment) | reads on: Jackson keeps the name, and the container's `environment` is read | ok, without that container's environment (port-defined 2026-10-03) | The core reads `data` and `summary` for the environment alone, and `serde_json` refuses the name (R40), so the container states none; the payload and the signature are unchanged. Apple's documents are ASCII | none: no case pins it; R42 |
   | A genuine receipt whose eContent is re-encoded as a constructed `OCTET STRING` with a chunk of another tag (a `UTF8String`, an `INTEGER`), the joined octets unchanged | `MALFORMED` | `MALFORMED` (BouncyCastle 1.86's parser refuses it, "unknown object encountered in constructed OCTET STRING", measured 2026-10-05; the verdict is read from `ReceiptCore.verifySignature`, which maps that `IOException` to `MALFORMED`, not run; [duplicate checks][dupchecks]) | ok (owner, 2026-10-05) | X.690 8.7.3 allows only `OCTET STRING` chunks, but OpenSSL joins chunks of any tag or class, and the joined octets are both what the signature covers and what the payload is read from, so nothing unsigned is accepted. The core dropped its own chunk check on the eContent; payload attribute values and the Xcode wrap keep theirs (`UNREADABLE_PAYLOAD`). Apple's receipts are DER and never chunk a string | none: no case pins it; `rust/tests/receipt_negative.rs` |
   | A receipt whose outer `ContentInfo.contentType` is not `signedData` (`id-data`, or an OID nobody assigned) around a genuine SignedData, or whose `digestAlgorithms` SET carries another tag byte (`0x58` for `0x30`) | not measured | ok: BouncyCastle decodes the content as SignedData without reading the OID, and reads the SET whatever its tag | `MALFORMED` (`not a CMS SignedData`; the tag, from the envelope walk) | Neither field is under the signature. The core reads the OID so that OpenSSL's SignedData accessors are only called on a SignedData; Java needs no such guard. Apple sends `signedData`, and nothing unsigned is accepted either way (recorded 2026-10-05, owner: no code in either implementation) | none: measured by a review probe, not a case |
@@ -647,6 +646,25 @@ Java's parse before trust, 2026-10-06).
   shape is measured well above that cost at the cap, the input cap
   rises, a BouncyCastle release changes the tree it builds, or §3.3 is
   reordered.
+
+  Several SignerInfos follow RFC 4853 (owner, Q65, 2026-10-06). Both
+  implementations try up to four in order and the first that verifies
+  decides, and a SignerInfo whose algorithms the library does not
+  implement is one that does not verify ("MUST gracefully handle
+  unimplemented signature algorithms"). Java used to stop there with
+  `MALFORMED`, so an unknown digest placed ahead of Apple's SignerInfo
+  refused a receipt the core accepted; it now tries the next one, and
+  reads every SignerInfo's signed attributes first so a malformed one is
+  `MALFORMED` at any position, as in the core. The row that recorded the
+  unknown digest as a divergence is gone: both answer
+  `INVALID_SIGNATURE` for it alone and ok ahead of a genuine one. Apple's
+  verifyReceipt refuses any receipt with two SignerInfos
+  ([two SignerInfos][twosigners]), but that rule is unpublished, and
+  accepting exactly one would refuse a genuine receipt the day Apple
+  adds a second signature. The SignerInfo that decides is still verified
+  over the returned content under a chain to a pinned root. Reopen if
+  Apple publishes a rule on SignerInfos or ships a receipt with more
+  than one.
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.
@@ -1982,3 +2000,4 @@ One table for everything the plan measured or considered and rejected.
 [reader]: ../evidence/2026-10-05-x509-reader-kept.md
 [walk]: ../evidence/2026-10-06-core-walk-counter.md
 [javaparse]: ../evidence/2026-10-05-java-presignature-parse-cost.md
+[twosigners]: ../evidence/2026-10-06-verifyreceipt-two-signerinfos.md

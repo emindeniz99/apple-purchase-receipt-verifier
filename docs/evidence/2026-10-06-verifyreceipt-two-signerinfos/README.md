@@ -9,6 +9,8 @@
 | `MakeVariants.java` | The first attempt, which rebuilt the envelope with BouncyCastle; Apple refused even its one-genuine-SignerInfo control, because BouncyCastle sorts the certificates SET (`results/apple-bouncycastle-reencoded.txt`) |
 | `results/apple.txt` | Apple's statuses, both receipts, both endpoints, two runs |
 | `results/java.txt`, `results/core.txt` | Our two implementations on the same variants |
+| `results/java-after-fix.txt` | The Java implementation once it skips a SignerInfo it has no verifier for (Q65); identical to `results/core.txt` |
+| `one-signer-info.patch` | The rejected alternative: both implementations accept exactly one SignerInfo |
 
 Reproduce, with `$REPO` the repository root and `$SCRATCH` any directory outside it:
 

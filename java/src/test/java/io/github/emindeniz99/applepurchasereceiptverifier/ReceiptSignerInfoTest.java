@@ -18,6 +18,7 @@ import java.util.List;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
@@ -198,6 +199,36 @@ class ReceiptSignerInfoTest {
                 VerificationException.class,
                 () -> verify(withSignerInfosInOrder(brokenGenuine, fromStranger, stranger)));
         assertEquals(Reason.INVALID_SIGNATURE, genuineFirst.reason(), genuineFirst.getMessage());
+    }
+
+    /**
+     * A SignerInfo whose algorithm BouncyCastle does not implement fails on
+     * its own, and the next one is tried: RFC 4853 has every implementation
+     * handle an unimplemented algorithm gracefully, so a second signature in
+     * an algorithm we lack cannot reject a receipt the other one proves.
+     * Alone, it is an invalid signature, not a malformed receipt.
+     */
+    @Test
+    void aSignerInfoInAnUnimplementedAlgorithmIsSkipped() throws Exception {
+        KeyPair signerKey = rsaKeyPair();
+        X509Certificate signer = signerUnderTheIntermediate(signerKey);
+        SignedData signedData = signedData(signAs(signerKey, "SHA256withRSA", signer));
+        SignerInfo genuine = SignerInfo.getInstance(signedData.getSignerInfos().getObjectAt(0));
+        SignerInfo unknownDigest = new SignerInfo(
+                genuine.getSID(),
+                new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.2.3.4")),
+                genuine.getAuthenticatedAttributes(),
+                genuine.getDigestEncryptionAlgorithm(),
+                genuine.getEncryptedDigest(),
+                genuine.getUnauthenticatedAttributes());
+
+        assertEquals(
+                BUNDLE,
+                verify(withSignerInfos(signedData, new DLSet(new ASN1Encodable[] {unknownDigest, genuine})))
+                        .bundleId());
+        VerificationException alone = assertThrows(
+                VerificationException.class, () -> verify(withSignerInfos(signedData, new DLSet(unknownDigest))));
+        assertEquals(Reason.INVALID_SIGNATURE, alone.reason(), alone.getMessage());
     }
 
     private static X509Certificate stranger(KeyPair strangerKey) throws Exception {
