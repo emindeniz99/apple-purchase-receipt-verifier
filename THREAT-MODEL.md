@@ -154,22 +154,24 @@ Java:
    so the verdict is the same), and an envelope over the nesting bound
    (§3.7: the core's 32, BouncyCastle's 64 in Java) are `MALFORMED`. The
    core alone also refuses an envelope over its value budget.
-2. Read the receipt creation date, attribute 12: walk the top-level
-   attribute SET under the depth and value bounds, read each entry's type,
-   decode only the value of the first type 12. No usable date means the
-   chain is judged at the `Config` clock. This step never rejects. The
-   Rust core takes it only once a `SignerInfo` names an embedded
-   certificate, since only a chain needs the date. Java has no value bound
-   here: it decodes every top-level attribute into its type and octets,
-   within the input cap, and reads only attribute 12.
+2. Read the receipt creation date, attribute 12: parse the top-level
+   attribute SET under the depth and value bounds into each entry's type
+   and raw value, and decode only the value of the first type 12. No
+   usable date means the chain is judged at the `Config` clock. This step
+   never rejects. The Rust core takes it only once a `SignerInfo` names an
+   embedded certificate, since only a chain needs the date, and keeps the
+   parse for step 5. Java has no value bound here: it decodes every
+   top-level attribute into its type and octets, within the input cap,
+   and reads only attribute 12.
 3. Build the chain top-down from the pinned roots at that instant, with each
    certificate's validity window, then check the marker OIDs on the signer
    and the WWDR intermediate (`UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`,
    `INVALID_CERTIFICATE_PURPOSE`).
 4. Check the CMS signature with the now-trusted signer key
    (`INVALID_SIGNATURE`); at least one `SignerInfo` must verify.
-5. Parse the whole payload; Java decodes the top-level SET a second time
-   here. A failure here is `UNREADABLE_PAYLOAD`.
+5. Parse the whole payload: the core interprets the attributes step 2
+   parsed, Java decodes the top-level SET a second time. A failure here is
+   `UNREADABLE_PAYLOAD`.
 
 Nothing is trusted before steps 3 and 4, so step 2 uses nothing but the
 date and blames no one: an unreadable date only moves the chain instant to
@@ -297,9 +299,10 @@ ASN.1 nesting at 32, the envelope and each attribute SET at
 nesting bound is BouncyCastle's, 64 by default, which counts chunk
 levels too; it never decodes a CRL (DECISIONS.md R20). Readers refuse bytes after
 the outermost value. Before the signer is trusted only attribute 12 of the
-payload is used (§3.3): the core walks the top-level SET under its value
-budget, and Java decodes every top-level attribute into its type and
-octets with no value bound, within the input cap (residual risk below).
+payload is used (§3.3): the core parses the top-level SET once, under its
+value budget, into types and raw values, and Java decodes every top-level
+attribute into its type and octets with no value bound, within the input
+cap (residual risk below).
 The attacker's bytes reach the rest of the payload grammar, the attribute
 values and the in-app purchases, only under a trusted signature; a bound
 hit there is `UNREADABLE_PAYLOAD`, since only a trusted signer could have
