@@ -369,7 +369,7 @@ Apple's own endpoint, it checks no bundle id: compare
 | 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired or wrong-purpose certificate). |
 | 21007 | A sandbox receipt was sent to `Environment::Production`. |
 | 21008 | A production receipt was sent to `Environment::Sandbox`. |
-| 21009 | Internal data access error: the receipt authenticated but its signed content does not parse, or the library itself failed. Deterministic; alert, don't retry. |
+| 21009 | Internal data access error: the receipt authenticated but its signed content, or one of its in-app purchases, does not parse, or the library itself failed. Deterministic; alert, don't retry. |
 
 No other `verifyReceipt` status (21000, 21001, 21004, 21005, 21006, 21010,
 21100-21199) is ever returned: those describe HTTP-method, shared-secret and

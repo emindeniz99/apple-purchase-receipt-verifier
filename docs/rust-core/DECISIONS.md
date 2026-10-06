@@ -1914,8 +1914,9 @@ the Java implementation goes.
   `unknown_attributes` holds a key 17 (`rust/src/endpoint.rs`,
   `EndpointResponse.render` in Java).
 - **What "does not decode" means:** the value is not an attribute SET
-  the walk can read: not a SET at all, over the depth or node bound, or
-  an entry whose type is out of range. Each such value goes whole to
+  the walk can read: not a SET at all, over the depth or node bound, an
+  entry of fewer than three fields or whose value is not an OCTET STRING,
+  or an entry whose type is out of range. Each such value goes whole to
   `unknown_attributes[17]` (the owner's rule of 2026-09-27). A purchase
   whose SET reads but one of whose fields does not decode is still a
   purchase: it stays in `in_app` without that field and the answer is 0,
