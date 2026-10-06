@@ -6,6 +6,7 @@
 | `Probe2.java` | Same call after warming the loop with an all-ASCII string of the cap's length, so the JIT compiles it with an ASCII-only profile first. |
 | `runner-probe-round1.yml` | On six GitHub-hosted runners: the two probes, then `VerifierApiTest` and `InputSizeBoundsTest` together under Graal's JIT and under C2, then the full suite. |
 | `runner-probe-round2.yml` | The two test classes with single Graal loop optimizations turned off, and with Graal off (`-XX:TieredStopAtLevel=3`). |
+| `runner-probe-round3.yml` | The two test classes, 48 runs under Graal's JIT, on `Utf8Length` rewritten as `text.getBytes(UTF_8).length`. |
 | `runner-probe-instrumentation.patch` | What round 2 added to `InputSizeBoundsTest`: after a wrong answer, call `Utf8Length.exceeds` 20 more times and count the bytes with a copy of its loop. |
 
 Oracle GraalVM for JDK 21 is downloaded to `$SCRATCH`; it is not kept here.
@@ -30,7 +31,7 @@ for avx in 3 2 1 0; do
 done
 ```
 
-The two workflows ran from the branch `spike/graalvm21-runner-probe`
-(round 1 at `5976bf6`, round 2 at `27b0f80` with the patch applied to
-`java/`), each as `.github/workflows/graalvm21-probe.yml`. A push to that
-branch runs it.
+The workflows ran from the branch `spike/graalvm21-runner-probe`, each as
+`.github/workflows/graalvm21-probe.yml`: round 1 at `5976bf6`, round 2 at
+`27b0f80` and round 3 at `0cdcc0c`, the last two with the patch applied to
+`java/`. Its commits are kept in the closed, unmerged [#295](https://github.com/emindeniz99/apple-purchase-receipt-verifier/pull/295).

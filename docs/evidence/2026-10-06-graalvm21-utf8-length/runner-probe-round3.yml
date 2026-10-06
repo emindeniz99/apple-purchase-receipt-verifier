@@ -1,0 +1,61 @@
+# Spike, not CI: narrows the GraalVM 21 UTF-8 length miscount on GitHub's
+# hosted runners, the only place it has been seen
+# (docs/evidence/2026-10-06-graalvm21-utf8-length.md). Round 1 showed it
+# under Graal's JIT and never under C2. Round 2 turns single Graal
+# optimizations off to find the one that miscompiles. Round 3 runs the
+# getBytes form of Utf8Length under Graal's JIT, 48 times. Runs only on its
+# own branch.
+name: graalvm21-probe
+
+on:
+  push:
+    branches: [spike/graalvm21-runner-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe ${{ matrix.flags.name }} ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+        flags:
+          - {name: default, arg: ""}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        id: jut
+        with:
+          distribution: graalvm
+          java-version: '21'
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: runner and the Graal options this build knows
+        env:
+          JUT: ${{ steps.jut.outputs.path }}
+        run: |
+          lscpu | grep -E '^Model name'
+          "$JUT/bin/java" -XX:+UnlockExperimentalVMOptions -XX:+JVMCIPrintProperties 2>/dev/null \
+            | grep -E '^ *graal\.(VectorizeLoops|PartialUnroll|LoopPeeling|OptimizeStringIntrinsics|FullUnroll|LoopUnswitch) ' \
+            || echo 'none of the listed options found'
+      - name: two test classes, 12 runs
+        env:
+          JUT: ${{ steps.jut.outputs.path }}
+          ARG: ${{ matrix.flags.arg }}
+        run: |
+          set -uo pipefail
+          for i in $(seq 12); do
+            mvn -B -q -f java/pom.xml test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java" \
+              -Dtest=VerifierApiTest,InputSizeBoundsTest "-DargLine=$ARG" > suite.log 2>&1 \
+              && r=pass || r=FAIL
+            echo "$r $(grep -m1 -o 'PROBE .*' suite.log || grep -m1 -E 'Error|Unrecognized|Could not' suite.log)"
+          done

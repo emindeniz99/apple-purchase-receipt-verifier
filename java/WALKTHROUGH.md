@@ -489,7 +489,7 @@ if (result.verified()) {
 | `AppleTrust` | Shared trust material: marker OIDs, anchors, `signedByAny`, `HANDLED_CRITICAL_EXTENSIONS`, `chainFailure` |
 | `AppleRootCerts` | The three roots as base64 constants |
 | `ReceiptDecoder` | Payload grammar: `readCreationDate`, `parse`, `parseDate`, environment mapping |
-| `StrictBase64`, `Utf8Length` | Canonical padded base64 only; UTF-8 byte length without encoding, for the caps |
+| `StrictBase64`, `Utf8Length` | Canonical padded base64 only; UTF-8 byte length, for the caps |
 | `BouncyCastle` | `PROVIDER`, the one `BouncyCastleProvider` instance, never registered with `Security` |
 | `VerificationException` | Internal exception carrying a `Reason`; `unexpected`, `toFailure` |
 | `JsonFields` | The one streaming JSON object reader (JWS header and payload, endpoint body); a repeated name keeps its last value |

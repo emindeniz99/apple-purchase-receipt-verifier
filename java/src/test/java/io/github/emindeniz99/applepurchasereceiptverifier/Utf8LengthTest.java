@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -14,8 +13,8 @@ import org.junit.jupiter.api.Test;
  * {@code String} counts UTF-16 units, so {@link Utf8Length} is what makes the
  * Java limit Apple's limit. Each test here pins one way a units-based or
  * approximate count would move the boundary: two-byte characters,
- * three-byte characters, surrogate pairs (two units, four bytes), and both
- * shortcuts that skip the walk.
+ * three-byte characters, surrogate pairs (two units, four bytes), and the
+ * units test that runs before anything is encoded.
  */
 class Utf8LengthTest {
 
@@ -69,44 +68,25 @@ class Utf8LengthTest {
         assertTrue(Utf8Length.exceeds(EMOJI, 3));
     }
 
-    /** The documented choice: a lone surrogate counts three bytes, never the one '?' getBytes writes. */
+    /**
+     * A lone surrogate counts the one '?' getBytes writes for it, which is
+     * also what the -wasm artifact sends the core. No wire input carries one.
+     */
     @Test
-    void aLoneSurrogateCountsThreeBytes() {
-        assertFalse(Utf8Length.exceeds("\ud83d", 3));
-        assertTrue(Utf8Length.exceeds("\ud83d", 2));
-        assertFalse(Utf8Length.exceeds("\ude00", 3));
-        assertTrue(Utf8Length.exceeds("\ude00", 2));
-        assertTrue(Utf8Length.exceeds("\ud83da", 3), "high surrogate then ASCII is 3 + 1");
-        assertTrue(Utf8Length.exceeds("\ude00\ud83d", 5), "reversed pair is two lone surrogates");
+    void aLoneSurrogateCountsOneByte() {
+        assertFalse(Utf8Length.exceeds("\ud83d", 1));
+        assertTrue(Utf8Length.exceeds("\ud83d", 0));
+        assertFalse(Utf8Length.exceeds("\ude00\ud83d", 2), "reversed pair is two lone surrogates");
     }
 
-    /** Both shortcuts, at their edges: units over the limit, and three times the units within it. */
+    /** More units than the limit is over it, before anything is encoded. */
     @Test
-    void theShortcutsAgreeWithTheWalkAtTheirEdges() {
+    void unitsOverTheLimitAreOverIt() {
         assertTrue(Utf8Length.exceeds(repeat("a", 11), 10));
         assertFalse(Utf8Length.exceeds(repeat(EURO, 3), 9));
         assertTrue(Utf8Length.exceeds(repeat(EURO, 4), 11));
         assertFalse(Utf8Length.exceeds("", 0));
         assertTrue(Utf8Length.exceeds("a", 0));
-    }
-
-    /** For well-formed text the answer is exactly what encoding and measuring would give. */
-    @Test
-    void agreesWithEncodingOnGeneratedWellFormedText() {
-        String[] alphabet = {"a", "~", E_ACUTE, "߿", "ࠀ", EURO, "￿", EMOJI, "􏿿"};
-        Random random = new Random(0x0C0FFEE);
-        for (int i = 0; i < 5000; i++) {
-            StringBuilder text = new StringBuilder();
-            int length = random.nextInt(40);
-            for (int j = 0; j < length; j++) {
-                text.append(alphabet[random.nextInt(alphabet.length)]);
-            }
-            String s = text.toString();
-            int bytes = s.getBytes(StandardCharsets.UTF_8).length;
-            for (int limit = Math.max(0, bytes - 4); limit <= bytes + 4; limit++) {
-                assertEquals(bytes > limit, Utf8Length.exceeds(s, limit), s + " at limit " + limit);
-            }
-        }
     }
 
     /** Java 8 has no {@code String.repeat}, and the artifact's floor is 8. */

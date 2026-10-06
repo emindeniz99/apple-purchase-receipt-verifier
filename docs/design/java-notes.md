@@ -7,20 +7,20 @@ BouncyCastle behaviours to re-check on an upgrade are in `java/README.md`.
 ## Measuring input in UTF-8 bytes (`Utf8Length`)
 
 Apple counts its limits in bytes on the wire. A Java `String` holds UTF-16
-code units, so `length()` under-counts any character above U+007F, and
-`getBytes(UTF_8)` would copy up to three bytes per character of an input
-that is being refused for its size.
+code units, so `length()` under-counts any character above U+007F.
+`Utf8Length` checks the units first: every unit is at least one byte, so
+more units than the limit is over it, and nothing is copied. Otherwise it
+encodes with `getBytes(UTF_8)` and compares, a copy of at most three times
+the limit.
 
-Two shortcuts decide almost every call: every UTF-16 unit costs at least one
-byte, so more units than the limit is over it; every unit costs at most
-three bytes (a surrogate pair is two units and four bytes), so three times
-the units within the limit is within it. Only a string between the two is
-walked, and the walk stops once the count passes the limit.
+Until 2026-10-06 it walked the string instead of encoding it, to save that
+copy. Graal's JIT in Oracle GraalVM 21 miscompiled the walk
+(docs/evidence/2026-10-06-graalvm21-utf8-length.md), and the owner chose
+the simpler form (Q84).
 
-A lone surrogate counts as three bytes: what it takes in CESU-8 and WTF-8,
-and never less than any encoder emits for it (`getBytes(UTF_8)` writes one
-`?`). It cannot arrive from the wire, where a decoder turns invalid bytes
-into U+FFFD, itself three bytes.
+A lone surrogate counts the one `?` that `getBytes` writes, which is what
+the `-wasm` artifact sends the core. It cannot arrive from the wire, where
+a decoder turns invalid bytes into U+FFFD.
 
 ## The endpoint body is read from one char array
 
