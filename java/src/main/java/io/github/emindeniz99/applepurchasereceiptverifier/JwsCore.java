@@ -45,8 +45,8 @@ final class JwsCore {
 
     /**
      * Verifies {@code jws} and returns its payload. A payload that is not a
-     * JSON object is judged only after the signature (docs/design/0.7-api.md,
-     * "Which failure a parse problem gets").
+     * JSON object is judged only after the signature, as {@link Reason#UNREADABLE_PAYLOAD}: a
+     * parse problem in something Apple signed is never {@code MALFORMED}.
      */
     static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
@@ -223,7 +223,7 @@ final class JwsCore {
          * The first of the three places that is present decides, whatever
          * its value: {@code Production} and {@code Sandbox} map, anything
          * else is null, as is a payload with none of them. The core states
-         * the same rule (rust/src/jws.rs; DECISIONS.md R42).
+         * the same rule.
          */
         @Nullable
         Environment environment() {

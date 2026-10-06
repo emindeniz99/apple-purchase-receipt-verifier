@@ -28,13 +28,15 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The receipt payload, the attribute SET inside the CMS envelope, as a
- * {@link ReceiptPayload}, by the decode rules of docs/design/0.7-api.md.
+ * {@link ReceiptPayload}, by the decode rules in java/README.md, "Decoding a
+ * receipt".
  * Before the signature only {@link #readCreationDate} runs; every failure of
  * {@link #parse} is {@link Reason#UNREADABLE_PAYLOAD}.
  */
 final class ReceiptDecoder {
 
-    // Where each type comes from, 0, 1, 15, 16, 18 and 1713 included, is in RECEIPT-FIELDS.md.
+    // Apple documents most of these types. It does not document 0, 1, 15, 16, 18
+    // and 1713; they are named from genuine receipts and community references.
     private static final int ATTR_RECEIPT_TYPE = 0;
     private static final int ATTR_APP_ITEM_ID = 1;
     private static final int ATTR_BUNDLE_ID = 2;
@@ -161,7 +163,7 @@ final class ReceiptDecoder {
      * {@link Environment#PRODUCTION}, {@code ProductionSandbox} and
      * {@code ProductionVPPSandbox} are {@link Environment#SANDBOX}, anything
      * else ({@code Xcode}, a missing value) is {@code null}. The core states
-     * the same rule (rust/src/environment.rs; DECISIONS.md R42), and the
+     * the same rule, and the
      * endpoint routes 21007 and 21008 on it.
      */
     static @Nullable Environment environment(@Nullable String receiptType) {
@@ -366,7 +368,7 @@ final class ReceiptDecoder {
     }
 
     /**
-     * An RFC 3339 {@code date-time} (owner, Q68, 2026-10-06), as the core
+     * An RFC 3339 {@code date-time}, as the core
      * reads it: a year 0000 to 9999 and a real calendar date, hours 00 to
      * 23, minutes 00 to 59, seconds 00 to 60 with 60 read as 59, {@code T}
      * and {@code Z} in either case, a fraction of any length truncated to
