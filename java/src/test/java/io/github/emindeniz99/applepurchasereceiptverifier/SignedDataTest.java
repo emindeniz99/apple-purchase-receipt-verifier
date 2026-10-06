@@ -437,6 +437,18 @@ class SignedDataTest {
         assertEquals(
                 BUNDLE,
                 verify(expired, expired.signJws(dateless)).get("bundleId").asText());
+
+        // A signedDate that is not a representable instant falls through to
+        // receiptCreationDate, not to the clock.
+        dateless.put("signedDate", Double.valueOf(1e300));
+        assertEquals(
+                BUNDLE,
+                verify(expired, expired.signJws(dateless)).get("bundleId").asText());
+
+        // A receiptCreationDate that is not a number counts as absent: the clock decides.
+        dateless.remove("signedDate");
+        dateless.put("receiptCreationDate", "2024-01-01");
+        assertEquals(Reason.INVALID_CERTIFICATE, failure(expired, expired.signJws(dateless)));
     }
 
     private static String headerJson() throws Exception {

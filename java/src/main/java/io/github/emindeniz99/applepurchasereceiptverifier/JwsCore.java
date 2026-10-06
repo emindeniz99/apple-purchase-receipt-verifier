@@ -96,9 +96,9 @@ final class JwsCore {
         // Apple's own rule. Absent or unreadable, the receiptCreationDate an app
         // transaction carries stands in, as in Apple's library, then the clock.
         Payload read = readOrNull(payloadBytes);
-        Long signedDate = read == null ? null : read.signedDate != null ? read.signedDate : read.receiptCreationDate;
+        Long carried = read == null ? null : read.chainInstant();
         authenticateTopDown(leaf, intermediate, trustAnchors);
-        validateChain(leaf, intermediate, new Date(signedDate != null ? signedDate : now), trustAnchors);
+        validateChain(leaf, intermediate, new Date(carried != null ? carried : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
         if (leaf.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
             throw new VerificationException(
@@ -203,6 +203,12 @@ final class JwsCore {
         /** The last top-level {@code receiptCreationDate}: an app transaction's. */
         @Nullable
         Long receiptCreationDate;
+
+        /** The instant the chain is judged at: {@code signedDate}, else {@code receiptCreationDate}. */
+        @Nullable
+        Long chainInstant() {
+            return signedDate != null ? signedDate : receiptCreationDate;
+        }
 
         /** The top-level {@code environment}: a transaction, renewal info. */
         final Place topLevel = new Place();

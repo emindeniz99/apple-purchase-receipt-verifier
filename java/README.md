@@ -496,8 +496,9 @@ the day Apple re-anchored a path. `AppleRootCertsTest` pins the three to
 Apple's published SHA-256 fingerprints and to the repository's `certs/`.
 
 Certificate validity is judged at the payload's own signing instant (a
-receipt's creation date, or a JWS's `signedDate`), not at verification time,
-so a payload signed before a root expires keeps verifying after it:
+receipt's creation date, or a JWS's `signedDate`, else an app transaction's
+`receiptCreationDate`), not at verification time, so a payload signed before
+a root expires keeps verifying after it:
 
 | Root | Expires (UTC) | Anchors today |
 |---|---|---|
