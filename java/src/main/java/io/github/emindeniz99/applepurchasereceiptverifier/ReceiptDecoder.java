@@ -44,7 +44,7 @@ final class ReceiptDecoder {
     private static final int ATTR_CREATION_DATE = 12;
     private static final int ATTR_DOWNLOAD_ID = 15;
     private static final int ATTR_VERSION_EXTERNAL_IDENTIFIER = 16;
-    private static final int ATTR_IN_APP = 17;
+    static final int ATTR_IN_APP = 17;
     private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_ORIGINAL_APP_VERSION = 19;
     private static final int ATTR_EXPIRATION_DATE = 21;

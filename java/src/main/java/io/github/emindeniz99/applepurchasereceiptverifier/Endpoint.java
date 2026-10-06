@@ -59,6 +59,12 @@ final class Endpoint {
         if (environment == Environment.SANDBOX && productionReceipt) {
             return AppleStatus.PRODUCTION_RECEIPT_ON_SANDBOX;
         }
+        // An in-app purchase Apple signed that does not decode answers 21009,
+        // as UNREADABLE_PAYLOAD does, rather than a 0 whose in_app silently
+        // lacks it (owner Q71, 2026-10-06).
+        if (receipt.hasUnknownAttribute(ReceiptDecoder.ATTR_IN_APP)) {
+            return AppleStatus.INTERNAL_DATA_ACCESS_ERROR;
+        }
         return AppleStatus.OK;
     }
 
