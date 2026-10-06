@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.9.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.8.1...v0.9.0) (2026-10-06)
+
+
+### Features
+
+* **node:** give the Worker demo page a compare mode and a clearer layout ([b1b3c57](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b1b3c5744b768acbf87d025b6ed9d79128cd1ebc))
+* **node:** run the Cloudflare Worker example on 0.8.1's wasm core ([495d679](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/495d67928b6d651cf44fd9918e25d8f385470e1c))
+
+
+### Bug Fixes
+
+* **java:** accept a critical crldistributionpoints on an intermediate ([77f2477](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/77f2477135db0ed53bbeeaf0be8e0645efb0c494))
+* **java:** accept a critical extendedkeyusage on an intermediate ([904cfb7](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/904cfb7ab5349037d4eb3a3acdab66376c27f232))
+* **java:** answer 21009 when an in-app purchase does not decode ([dfc8bda](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/dfc8bdac7f0489882d4be04ba31a94891e21e125))
+* **java:** build the endpoint writer with jackson's own defaults ([e5460a6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e5460a63fe1ec305b875dada3f19ec1e3152f54e))
+* **java:** keep the json floor fail-closed and immune to overrides ([4301cb8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4301cb8afdeb2a86e9b7cce182f8ddc393d99e5b))
+* **java:** measure utf-8 length with getbytes, not a hand walk ([7fb492a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7fb492a622159bb33feeb81be24420d9c85a6285))
+* **java:** read every signerinfo's unsigned attributes up front ([a0ee9c3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a0ee9c357663125e6c1a54151e85eb36593ce97d))
+* **java:** skip the bag's attribute and other certificates ([bc6b59f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bc6b59fdd16eb914f527fe83f79daf9c213572d3))
+* **java:** try a copied signer once and any signerinfo failure alone ([919e676](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/919e676b8034cc0752df5a9fafe3de9939723790))
+* **java:** try every certificate a signerinfo names ([5a54118](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5a54118f660072ea210997f4493c24eafdfb1e57))
+* **java:** try the next signerinfo when one uses an unknown algorithm ([9f23bac](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9f23bac8b54c411280cafa97e8769ee8c5065fe3))
+* **java:** verify the cms signature with the signer's key ([e34e80e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e34e80e0e4d2083a7442abeb07df0a36a841dede))
+* **rust:** answer 21009 when an in-app purchase does not decode ([ddd8e2a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ddd8e2a2e95c83991a967132dbef6485be585d21))
+* **rust:** compare the certificate version as openssl's long ([654888a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/654888a9e663f4ce5daab8f3a6a3429b75e0cc43))
+* **rust:** judge an app transaction's chain at its creation date ([282b735](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/282b7358c771daf9bb911c5b6a72432e08c263db))
+* **rust:** read receipt dates as rfc 3339 date-times ([4d8afe5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4d8afe52d76cb8e605b1d450e92e8b9c216bf945))
+
+
+### Code Refactoring
+
+* **java:** decide q71's 21009 with the other endpoint statuses ([638dea3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/638dea32ec701c52c42b4b46688d9fc0fb32b698))
+* **java:** drop checks bouncycastle and jackson already make ([5f1013a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5f1013a2a8c51f08530366e03bfdf5ad9ac7165f))
+* **java:** keep the es256 64-byte signature length check ([3a80a24](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3a80a24a0e5c2e4e941d234232be38556f6a67f0))
+* **java:** name the jws chain instant and pin its fall-through ([a717fad](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a717fadaf7ca803c8a7c3cfabcc02b99e6aa7187))
+* **java:** parse the receipt payload once ([4254101](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/42541011a5e1d9c4959f8f172588a7f1b30e0a0e))
+* **rust:** compile the test seams only for tests ([81646be](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/81646be3b95b38c421acc4577d027dcb5286284b))
+* **rust:** debug-assert the shallow decode's non-null content ([1c979a5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1c979a5b61b14ccf34c3f3ce64c7384e1d28bc43))
+* **rust:** drop bounds and re-checks openssl already makes ([58eaea9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/58eaea921b01e1de85617d7101de60e1b32369fb))
+* **rust:** drop four duplicate checks from the receipt path ([2e77bcb](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2e77bcbf453b6da33a8cb06a7b40790334c9948b))
+* **rust:** drop the seam's own error drain ([5d93d14](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5d93d14c9c01b12a1fc3e4d9b8f33c2c1a1735e1))
+* **rust:** judge a vouched-for target's key before its path ([a49bccc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a49bccc2dc36f6594ce0d9c4f044c14035f9950f))
+* **rust:** keep only the contentType match of the attribute check ([2abe810](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2abe81000bec4c91b3fb1aec19fea57d7ed60d31))
+* **rust:** parse the receipt payload once ([16ef78d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/16ef78d94d247766e8cbc710084bb1baf3964c1d))
+
+
+### Build & Dependencies
+
+* **node:** lock the worker example for every platform with hashes ([b93629c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b93629cb18cdb4f4357a7c826fe1537f71a9c405))
+* **rust:** bump wasmtime to 49.0.2 for three advisories ([cc058fd](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/cc058fd95e05f3105640bcd276b4a1a297916b68))
+
+
+### Reverts
+
+* **java:** restore the two payload parses ([28c31de](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/28c31de085a4b696c73c173f1c54458fbe605bb9))
+
 ## [0.8.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.8.0...v0.8.1) (2026-10-04)
 
 

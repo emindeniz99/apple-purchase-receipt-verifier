@@ -18,7 +18,7 @@ real receipt through the code, in under an hour.
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.8.1</version> <!-- x-release-please-version -->
+  <version>0.9.0</version> <!-- x-release-please-version -->
 </dependency>
 ```
 
@@ -817,7 +817,7 @@ at test scope to build and sign certificates with:
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.8.1</version> <!-- x-release-please-version -->
+  <version>0.9.0</version> <!-- x-release-please-version -->
   <classifier>tests</classifier>
   <type>test-jar</type>
   <scope>test</scope>
