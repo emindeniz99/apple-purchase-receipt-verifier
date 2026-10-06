@@ -2,8 +2,9 @@
 # hosted runners, the only place it has been seen
 # (docs/evidence/2026-10-06-graalvm21-utf8-length.md). Round 1 showed it
 # under Graal's JIT and never under C2. Round 2 turns single Graal
-# optimizations off to find the one that miscompiles. Runs only on its own
-# branch.
+# optimizations off to find the one that miscompiles. Round 3 runs the
+# getBytes form of Utf8Length under Graal's JIT, 48 times. Runs only on its
+# own branch.
 name: graalvm21-probe
 
 on:
@@ -22,14 +23,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
         flags:
           - {name: default, arg: ""}
-          - {name: c1-only, arg: "-XX:TieredStopAtLevel=3"}
-          - {name: no-vectorize, arg: "-Dgraal.VectorizeLoops=false"}
-          - {name: no-partial-unroll, arg: "-Dgraal.PartialUnroll=false"}
-          - {name: no-loop-peeling, arg: "-Dgraal.LoopPeeling=false"}
-          - {name: no-string-intrinsics, arg: "-Dgraal.OptimizeStringIntrinsics=false"}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
