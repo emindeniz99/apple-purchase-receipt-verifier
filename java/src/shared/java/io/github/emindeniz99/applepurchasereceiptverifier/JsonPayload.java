@@ -57,6 +57,10 @@ public final class JsonPayload {
         return 31 * json.hashCode() + Objects.hashCode(environment);
     }
 
+    /**
+     * {@link #json()}: the whole signed payload, the customer's transaction
+     * ids included. Logging a payload logs all of it.
+     */
     @Override
     public String toString() {
         return json;

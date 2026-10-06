@@ -230,6 +230,11 @@ final class ReceiptDecoder {
         return attributes;
     }
 
+    /**
+     * {@link #string}, {@link #integer} and {@link #date} move a value that
+     * does not decode into {@link #unknown}, so they run before the payload
+     * that copies {@code unknown} is built.
+     */
     private static final class Attributes {
         final Map<Integer, byte[]> firsts = new HashMap<>();
         final Map<Integer, List<byte[]>> unknown = new TreeMap<>();
