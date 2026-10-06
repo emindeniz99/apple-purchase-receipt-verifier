@@ -6001,7 +6001,7 @@
     {
       "id": "receipt/unparseable-in-app-purchase-is-kept-raw",
       "legacyId": "receipt/reject-garbage-in-app-purchase-under-a-trusted-chain",
-      "description": "An in-app purchase (attribute 17) whose value is an OCTET STRING rather than an attribute SET. Attribute 17 is a known attribute whose value does not parse, so under the owner's 2026-09-27 rule it becomes no in_app entry and its raw octets go to unknown_attributes[\"17\"]; the receipt verifies. 0.6 answered INTERNAL_ERROR, and the first 0.7 draft UNREADABLE_PAYLOAD. Flagged for review because it is the rule applied to the one composite attribute.",
+      "description": "An in-app purchase (attribute 17) whose value is an OCTET STRING rather than an attribute SET. Attribute 17 is a known attribute whose value does not parse, so under the owner's 2026-09-27 rule it becomes no in_app entry and its raw octets go to unknown_attributes[\"17\"]; the receipt verifies. 0.6 answered INTERNAL_ERROR, and the first 0.7 draft UNREADABLE_PAYLOAD. Flagged for review because it is the rule applied to the one composite attribute. The endpoint answers 21009 for this receipt (endpoint/unparseable-in-app-purchase-answers-21009, owner Q71, 2026-10-06).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "receipt-garbage-in-app-purchase"
@@ -6036,6 +6036,78 @@
         "generated",
         "positive",
         "owner-review"
+      ]
+    },
+    {
+      "id": "endpoint/unparseable-in-app-purchase-answers-21009",
+      "description": "The receipt of receipt/unparseable-in-app-purchase-is-kept-raw at the endpoint: it authenticates, but its attribute 17 is an OCTET STRING rather than an attribute SET, so no in-app record decodes from it. The endpoint answers 21009 with no receipt, as it does for UNREADABLE_PAYLOAD, rather than 0 with a purchase Apple signed silently missing from in_app (owner Q71, 2026-10-06). Before Q71 this answered 0 with in_app [].",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-garbage-in-app-purchase"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "verification-order-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "clock": {
+        "now": "2025-01-01T00:00:00Z"
+      },
+      "expected": {
+        "fields": {
+          "/status": 21009,
+          "/receipt": null,
+          "/environment": null
+        }
+      },
+      "fault": "in-app-purchase-not-an-attribute-set",
+      "tags": [
+        "endpoint",
+        "receipt",
+        "negative",
+        "payload",
+        "generated",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "endpoint/in-app-purchase-with-unreadable-fields-answers-0",
+      "description": "The receipt of receipt/in-app-unparseable-fields-are-kept-raw at the endpoint: the purchase's attribute SET decodes, and only its quantity (1701) and purchase date (1704) do not. The purchase is an in-app record, so Q71's 21009 does not apply: the answer is 0, the purchase is in in_app, and the two fields are left out as an unreadable top-level field is (owner Q71, 2026-10-06).",
+      "operation": "verifyReceiptEndpoint",
+      "input": {
+        "fixture": "receipt-in-app-oddities"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "api-receipt-root"
+          ]
+        },
+        "environment": "SANDBOX"
+      },
+      "expected": {
+        "fields": {
+          "/status": 0,
+          "/environment": "Sandbox",
+          "/receipt/in_app/[transaction_id=70000000000062]/quantity": null,
+          "/receipt/in_app/[transaction_id=70000000000062]/purchase_date_ms": null,
+          "/receipt/in_app/[transaction_id=70000000000062]/original_purchase_date_ms": "1705320000000"
+        }
+      },
+      "tags": [
+        "endpoint",
+        "receipt",
+        "positive",
+        "unparseable-attribute",
+        "generated",
+        "owner-decision",
+        "new-in-0-7"
       ]
     },
     {
