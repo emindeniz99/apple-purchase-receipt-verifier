@@ -21,7 +21,8 @@ import org.junit.jupiter.api.Test;
  * signature is the check that makes a receipt Apple's, so its verifier has
  * to reach the same verdict as the simple builder's on every receipt: genuine,
  * generated, and corrupted in the signature, the signed content or anywhere
- * else a parse still survives.
+ * else a parse still survives. Both are built from the signer's key, so
+ * neither judges the certificate at a signingTime (StandardShapesTest).
  */
 class ReceiptSignerVerifierTest {
 
@@ -64,7 +65,7 @@ class ReceiptSignerVerifierTest {
                             builder
                                     ? new JcaSimpleSignerInfoVerifierBuilder()
                                             .setProvider(PROVIDER)
-                                            .build(certificate)
+                                            .build(certificate.getPublicKey())
                                     : ReceiptCore.signerVerifier(certificate));
         } catch (Exception e) {
             return e.getClass().getName() + ": " + e.getMessage();

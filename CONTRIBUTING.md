@@ -309,7 +309,7 @@ format.
 the Java implementation, and every package answers it: one
 language-neutral case per semantic fact, each naming a registered fixture,
 the `Config` to build the verifier from, and either the payload fields the
-call must return or the reason it must fail with. 401 cases today. Each
+call must return or the reason it must fail with. 409 cases today. Each
 package reads the file through a thin adapter that knows nothing about
 any individual case — `rust/tests/conformance.rs`,
 `java/src/test/.../ConformanceCasesTest.java`,
@@ -509,6 +509,53 @@ the case is about the clock itself, and two endpoint cases pin that the
 clock does move the verdict of a dateless receipt. A payload that states its own date is judged at that
 date, so the expired-chain cases need no clock. How old a signed payload
 may be is the caller's decision, so no case pins one.
+
+## Apple PKI watch
+
+`.github/workflows/apple-pki-watch.yml` runs `tools/apple-pki-watch.mjs`
+every day and compares what Apple publishes against
+`tools/apple-pki-watch.json`:
+
+- every `.cer` linked from <https://www.apple.com/certificateauthority/>,
+  with the SHA-256 of the file;
+- the PDF the WWDR CPS link resolves to, whose name carries the version
+  (v3.0 of 2026-03-23 at the first snapshot);
+- the latest release tag of Apple's App Store Server Library for Python,
+  Java, Node and Swift, and the lines of its verifier that name a marker
+  OID or choose the date the chain is checked at;
+- Apple developer news titles about certificates, receipts or StoreKit.
+
+On a change the job opens the issue "Apple PKI or verifier rules
+changed", or comments on it if it is open, with the diff. It changes
+nothing else: the verifier's roots and rules move only by a reviewed
+commit. A network failure fails the run and files no issue.
+
+On an alert:
+
+1. Read Apple's change itself: the certificate, the CPS, the library
+   commit or the news item. A new library release with no line changed
+   needs nothing more than step 4.
+2. A new root means a `certs/` change, in its own PR, done the way
+   CLAUDE.md lists it (`certs/`, `rust/certs/`, the fingerprints in
+   `rust/src/roots.rs` and the server, both Java `AppleRootCerts`, then a
+   rebuilt module).
+3. A new or changed marker OID in Apple's library means mirroring it in
+   the Rust core (`rust/src/roots.rs`), in Java (`AppleTrust`) and in a
+   case in `fixtures/cases.json`, in one PR, as for any behaviour change.
+   The same goes for the effective-date rule.
+4. Refresh the snapshot with `node tools/apple-pki-watch.mjs --write`,
+   commit it, and close the issue.
+
+What the first snapshot (2026-10-06) records: all four libraries require
+leaf OID 1.2.840.113635.100.6.11.1 and intermediate OID
+1.2.840.113635.100.6.2.1, unchanged since 2023-06-05, as both
+implementations here do. The PKI page also lists "Apple WWDR MP CA 1 -
+G1", under Apple Root CA - G2, whose marker is 1.2.840.113635.100.6.2.32,
+not 6.2.1. It was added in WWDR CPS v1.32 (2024-02-22) with the App
+License Delivery certificates and is probably for alternative-marketplace
+app licences rather than App Store signing, but Apple does not say so. A
+chain through it fails the intermediate check here and in Apple's
+libraries alike.
 
 ## Spikes and evidence
 

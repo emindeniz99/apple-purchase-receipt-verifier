@@ -388,6 +388,7 @@ final class JwsCore {
             PKIXParameters params = new PKIXParameters(trustAnchors);
             params.setRevocationEnabled(false);
             params.setDate(at);
+            params.addCertPathChecker(AppleTrust.HANDLED_CRITICAL_EXTENSIONS);
             // Per call, so no BouncyCastle object is shared between threads.
             CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER).validate(path, params);
         } catch (CertPathValidatorException e) {

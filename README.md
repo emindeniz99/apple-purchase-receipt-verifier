@@ -29,7 +29,7 @@ same module as an HTTP server, a Docker image or a one-shot CLI for any
 other language (or as a Cloudflare Worker over the Node package, see
 [node/examples/cloudflare-worker](node/examples/cloudflare-worker/)), and **C and C++** can link the core through a C ABI, which
 any FFI-capable runtime (Elixir NIFs, Lua, ctypes, P/Invoke) can load. The
-core and the Java implementation answer the same 401 cases of
+core and the Java implementation answer the same 409 cases of
 [`fixtures/cases.json`](./fixtures/cases.json), and every package runs all
 of them. [PORTS.md](PORTS.md) shows what each package runs on, and
 [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) lists every line CI runs and the
@@ -245,7 +245,11 @@ decision, made on the payload. In short:
    App Store Server API or the client when it is too old. This optional
    step is the only one that talks to Apple.
 5. **Dedupe on the transaction id**, never on the bytes, and keep
-   `originalTransactionId` for subscriptions.
+   `originalTransactionId` for subscriptions. A notification dedupes on
+   its `notificationUUID`, so a refund for a granted `transactionId`
+   still gets through. Never key on the JWS string or its hash: an
+   ES256 signature has two valid spellings, and anyone can produce the
+   second.
 6. **Refunds after the grant** arrive as App Store Server Notifications V2,
    which this library verifies like any other JWS.
 
