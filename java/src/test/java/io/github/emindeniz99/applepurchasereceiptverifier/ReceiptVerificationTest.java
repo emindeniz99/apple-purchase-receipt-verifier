@@ -583,9 +583,8 @@ class ReceiptVerificationTest {
         ReceiptPayload current = verify(pki, pki.signReceipt(datelessPayload));
         assertNull(current.receiptCreationDateMs(), "the fixture must carry no creation date");
 
-        // Signed inside the chain's window: BouncyCastle also checks the signer
-        // against a CMS signingTime attribute when there is one (Apple's
-        // receipts carry none), and this one must not be what rejects it.
+        // Signed inside the chain's window, as a genuine receipt of that age
+        // would be, so only the creation date or the clock can reject it.
         Date signedAt = new Date(notBefore.getTime() + 86_400_000L);
         byte[] stale = expired.signReceipt(datelessPayload, signedAt);
         VerificationException e = assertThrows(VerificationException.class, () -> verify(expired, stale));

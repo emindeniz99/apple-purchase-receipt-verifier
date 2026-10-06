@@ -72,4 +72,20 @@ class StandardShapesTest {
                 assertThrows(VerificationException.class, () -> Checks.signedData(jws, token))
                         .reason());
     }
+
+    /**
+     * RFC 5652 11.3 ties signingTime to no validity check; the chain is
+     * judged at the creation date. The signature is still checked: one bit
+     * flipped is INVALID_SIGNATURE.
+     */
+    @Test
+    void aSigningTimeOutsideTheSignersValidityDoesNotDecide() throws Exception {
+        byte[] receipt = fixtures.signingTimeBeforeTheSigner();
+        Checks.receipt(receipts, receipt);
+        byte[] tampered = TestPki.corruptSignatures(receipt, 1);
+        assertEquals(
+                Reason.INVALID_SIGNATURE,
+                assertThrows(VerificationException.class, () -> Checks.receipt(receipts, tampered))
+                        .reason());
+    }
 }

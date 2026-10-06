@@ -330,8 +330,12 @@ final class ReceiptCore {
     }
 
     /**
-     * The CMS verifier for {@code signerCert}, from a builder made per call
-     * so no BouncyCastle object is shared between threads.
+     * The CMS verifier for {@code signerCert}'s key, from a builder made per
+     * call so no BouncyCastle object is shared between threads. Built from
+     * the key, not the certificate: with a certificate BouncyCastle also
+     * refuses a signer outside its validity at a signed signingTime, which
+     * RFC 5652 11.3 does not ask, and the chain is judged at the creation
+     * date already.
      */
     static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
         DigestCalculatorProvider digests = new JcaDigestCalculatorProviderBuilder()
@@ -339,6 +343,6 @@ final class ReceiptCore {
                 .build();
         return new JcaSignerInfoVerifierBuilder(digests)
                 .setProvider(BouncyCastle.PROVIDER)
-                .build(signerCert);
+                .build(signerCert.getPublicKey());
     }
 }
