@@ -150,7 +150,12 @@ public final class ReceiptPayload {
         return versionExternalIdentifier;
     }
 
-    /** Attribute 17, one entry per purchase, in receipt order; unmodifiable. */
+    /**
+     * Attribute 17, one entry per purchase that decodes, in receipt order;
+     * unmodifiable. A purchase that does not decode is not in this list: its
+     * raw bytes are in {@code unknownAttributes().get(17)}, so a caller that
+     * needs every purchase checks that key too.
+     */
     public List<InAppPurchase> inApp() {
         return inApp;
     }

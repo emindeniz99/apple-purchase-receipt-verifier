@@ -235,6 +235,9 @@ the same for both:
   attribute, and a known attribute whose value does not parse (whose typed
   field is then `null`), keyed by attribute type, in receipt order. A fresh
   defensive copy on every call.
+- So `inApp()` lists the purchases that decode. A purchase that does not
+  is kept raw under key 17 of the receipt's `unknownAttributes()`; a caller
+  that needs every purchase checks that key as well.
 - 64-bit ids (`appItemId`, `downloadId`, `versionExternalIdentifier`,
   `webOrderLineItemId`) are `Long`, not `int`: genuine receipts carry
   18-digit `downloadId` values.
@@ -775,9 +778,10 @@ comes from `ReceiptBenchmark` (the same settings, two forks).
 | For scale: `verifyReceiptEndpoint` on the same receipt | 4.0 ms | 4.4 ms |
 
 No hostile input in the shared suite costs more than an ordinary large
-receipt: the cost of a call follows the size of the input, which the caps in
-[Resource bounds](#resource-bounds) limit, not the structure an attacker
-chooses. These are warm-JVM figures; see
+receipt. For these cases the cost of a call follows the size of the input,
+which the caps in [Resource bounds](#resource-bounds) limit; that is a
+measurement over this suite, not a proof for every structure an attacker
+can build. These are warm-JVM figures; see
 [Running in production](#running-in-production) for the cold start. The
 machine was shared with other work, so treat them as an order of magnitude.
 For numbers on your own hardware, build as in
@@ -927,9 +931,18 @@ The library is one package with no generated code, so copying
 `src/main/java` and `src/shared/java` into another build works. The second
 directory holds the config, result and payload classes the `-wasm`
 artifact compiles too; both are the same package. What a vendored copy has
-to carry with it:
+to carry with it, in short:
 
-**Dependency floors.** `jackson-core` 2.16 or later: the JSON readers use
+1. Copy both source directories into one source root.
+2. Declare `jackson-core` 2.16+, `bcprov`, `bcutil` and `bcpkix` at one
+   1.86+ release, and `org.jspecify:jspecify` (compile time only).
+3. To run the tests, copy `src/test/java` (JUnit 5), and the repository's
+   `fixtures/` and `certs/` as siblings (below).
+4. On every BouncyCastle upgrade, re-check the behaviours listed below.
+
+**Dependency floors.** `jspecify` carries the `@Nullable` annotations; the
+pom declares it `optional`, since nothing reads it at run time, but the
+sources do not compile without it. `jackson-core` 2.16 or later: the JSON readers use
 its default `StreamReadConstraints` (the member-name bound arrived in 2.16,
 the others in 2.15), and below it `Verifier.create` throws
 `IllegalStateException`.
@@ -980,9 +993,13 @@ pins the set against both.
 `java/`, or the directory `-Daprv.fixtures.dir=...` names. The subset they
 use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 `public-receipts/` and `apple-official/`; `cases.schema.json` is not
-read. Two tests also read the build itself: `VerifierApiTest` compares
-`Version.CURRENT` with `pom.xml`, and `TrustStoreIsolationTest` scans
-`src/main/java` and `src/shared/java`.
+read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
+fixtures directory. Four tests read the build itself, relative to the
+working directory, and need adapting to another layout: `VerifierApiTest`
+compares `Version.CURRENT` with `pom.xml` and reads `DefaultVerifier.java`
+under `src/main/java`, `BouncyCastleFloorTest` reads the
+`bouncycastle.version` pin in `pom.xml`, and `TrustStoreIsolationTest`
+scans `src/main/java` and `src/shared/java`.
 
 **Generators are tests that write nothing by default.**
 `FixtureGeneratorTest` and the classes named `*Fixture` or `*Fixtures`

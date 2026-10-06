@@ -40,22 +40,27 @@ public interface Verifier {
      * @throws NullPointerException     if {@code config} is null
      * @throws IllegalArgumentException if {@code config} has no roots, since
      *                                  such a verifier would reject everything
-     * @throws IllegalStateException    if the {@code -wasm} artifact, which
+     * @throws IllegalStateException    if this runtime cannot run the
+     *                                  library. Each of these throws:
+     *                                  <ul>
+     *                                  <li>the {@code -wasm} artifact, which
      *                                  has the same class names, is on the
-     *                                  classpath too; if a dependency does
-     *                                  not load: a
-     *                                  jackson-core below 2.16, a
-     *                                  BouncyCastle that fails to initialise,
-     *                                  or a time-zone database without
-     *                                  America/Los_Angeles (the endpoint
-     *                                  stand-in renders Pacific-time dates);
-     *                                  if bcprov is older than 1.86; if
-     *                                  {@code org.bouncycastle.asn1.max_cons_depth}
+     *                                  classpath too;</li>
+     *                                  <li>jackson-core is below 2.16;</li>
+     *                                  <li>bcprov is below 1.86, or
+     *                                  BouncyCastle fails to initialise;</li>
+     *                                  <li>{@code org.bouncycastle.asn1.max_cons_depth}
      *                                  is set below 9, which refuses every
-     *                                  genuine receipt; or, unless
-     *                                  {@link Config#runtimeProbe()} is off,
-     *                                  if this runtime cannot verify Apple
-     *                                  signatures
+     *                                  genuine receipt;</li>
+     *                                  <li>the time-zone database lacks
+     *                                  America/Los_Angeles (the endpoint
+     *                                  stand-in renders Pacific-time
+     *                                  dates);</li>
+     *                                  <li>the runtime probe is on (see
+     *                                  {@link Config#runtimeProbe()}) and this
+     *                                  runtime cannot verify Apple
+     *                                  signatures.</li>
+     *                                  </ul>
      */
     static Verifier create(Config config) {
         return new DefaultVerifier(config);
