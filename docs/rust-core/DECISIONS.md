@@ -450,8 +450,8 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
 
 **Status: accepted** (owner, 2026-09-26; restated 2026-09-28; the rule
 amended 2026-09-30; Java's nesting bound and the core's JSON bounds,
-2026-10-01; Java's JSON bounds, 2026-10-05; the core's header walk and
-Java's parse before trust, 2026-10-06).
+2026-10-01; Java's JSON bounds, 2026-10-05; the core's header walk,
+Java's parse before trust and four standard-allowed shapes, 2026-10-06).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
   schema v2, 388 cases, is the contract. The Java implementation is a
@@ -674,6 +674,45 @@ Java's parse before trust, 2026-10-06).
   over the returned content under a chain to a pinned root. Reopen if
   Apple publishes a rule on SignerInfos or ships a receipt with more
   than one.
+
+  Java aligned on four standard-allowed shapes (owner, Q69,
+  2026-10-06). An audit found four places where Java refused
+  Apple-signed data the standards allow and the core accepted. Each is
+  fixed in Java with a BouncyCastle or JDK facility; the core needs no
+  change.
+  - **Every certificate a SignerInfo names is tried,** as the
+    SignerInfos are: the first whose chain, markers and signature pass
+    decides, else the first one's failure. Java took the first match,
+    so with a signer named by subjectKeyIdentifier (RFC 5652 §5.3) an
+    expired predecessor on the renewed leaf's key (RFC 5280 §4.2.1.2)
+    ahead of it refused the receipt, by bag order. The
+    `signer-identity-twin` group of `tools/differential/recorded.json`
+    is gone: `receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash`
+    now verifies in both, within its `oneOf`.
+  - **The bag's other CertificateChoices are skipped** (RFC 5652
+    §10.2.2, `[0]` to `[3]`), as BouncyCastle's own certificate store
+    skips them; each must still be a SEQUENCE. One shape stays apart,
+    with no case: an other `[3]` entry whose SEQUENCE does not start
+    with an OID is `MALFORMED` in the core, whose OpenSSL template reads
+    `OtherCertificateFormat`, and skipped by Java. It is unsigned
+    packaging, and the signer is verified either way.
+  - **A critical extendedKeyUsage on a CA is accepted** (RFC 5280
+    §4.2.1.12). BouncyCastle's PKIX processes it on the end entity
+    only; a `PKIXCertPathChecker` now marks that one extension
+    processed, asking no purpose of a CA, as the JDK's PKIX and OpenSSL
+    ask none. Every other critical extension BouncyCastle does not
+    process is still refused.
+  - **A signingTime decides nothing** (RFC 5652 §11.3). The CMS
+    verifier is built from the signer's key, so BouncyCastle no longer
+    judges the certificate at that time; the chain is judged at the
+    creation date, as before.
+
+  The cases: `receipt/accept-a-renewed-signer-behind-its-expired-copy`,
+  `receipt/accept-attribute-and-other-certificates-in-the-bag`,
+  `receipt/accept-an-intermediate-with-a-critical-extended-key-usage`,
+  `signed-data/accept-an-intermediate-with-a-critical-extended-key-usage`,
+  `receipt/accept-a-signing-time-before-the-signers-validity` and
+  `receipt/reject-a-bad-signature-beside-a-signing-time-before-the-signer`.
 
   Lane J-align (2026-09-29) had aligned Java on the four rows marked
   port-defined above, and its round 2 on two more, in Java's own code.

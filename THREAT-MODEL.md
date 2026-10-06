@@ -82,7 +82,10 @@ chains with its own pinned BouncyCastle instance and never with the JDK's
 PKIX or trust store. The order of the anchors does not matter, even
 between two that share a subject name, and neither does the order of the
 unsigned certificates bag: a certificate that carries an intermediate's
-name but signed nothing on the path is never offered to the path builder.
+name but signed nothing on the path is never offered to the path builder,
+and every certificate a SignerInfo names is tried, so a copy of the
+signer's identity ahead of it, or the expired predecessor of a renewed
+signer on the same key, does not decide.
 
 *Proof.* `transaction/reject-foreign-root`, `receipt/reject-foreign-root`
 (both `UNTRUSTED_CHAIN`), `endpoint/foreign-root-answers-21003`, and Apple's own
@@ -102,7 +105,9 @@ gate (§6). Anchor order:
 `transaction/verify-under-the-second-of-two-roots-sharing-a-subject`. Bag
 order:
 `receipt/verify-with-another-roots-same-named-intermediate-before-the-real-one-own-root-{first,second}`
-and `receipt/verify-with-a-same-named-sibling-intermediate-before-the-real-one`.
+and `receipt/verify-with-a-same-named-sibling-intermediate-before-the-real-one`;
+signer copies: `receipt/genuine-signer-behind-a-copy-of-its-identity-does-not-crash`
+and `receipt/accept-a-renewed-signer-behind-its-expired-copy`.
 
 ### 3.2 Marker OIDs stop the wrong-purpose certificate
 
@@ -271,7 +276,9 @@ payload judged at the clock, both directions:
 `transaction/signed-date-out-of-range-falls-back-to-the-clock`. The clock
 moves the verdict of a dateless receipt, both directions:
 `endpoint/clock-inside-the-window-verifies-a-dateless-receipt`,
-`endpoint/clock-past-the-window-rejects-a-dateless-receipt`.
+`endpoint/clock-past-the-window-rejects-a-dateless-receipt`. A CMS
+`signingTime` attribute moves nothing (RFC 5652 §11.3):
+`receipt/accept-a-signing-time-before-the-signers-validity`.
 
 ### 3.6 Device binding, when the caller has the device id
 
