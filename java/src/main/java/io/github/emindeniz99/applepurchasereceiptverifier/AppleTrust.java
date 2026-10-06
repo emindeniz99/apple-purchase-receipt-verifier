@@ -23,12 +23,12 @@ import org.bouncycastle.asn1.x509.Extension;
  * checker for the critical extensions PKIX leaves unresolved), and their
  * rule for it: no key a pinned
  * root has not vouched for is ever decoded or used, so certificates are
- * checked top-down from the roots (#161). BouncyCastle validates an RSA key
+ * checked top-down from the roots. BouncyCastle validates an RSA key
  * as it decodes it, which costs seconds for a 16384-bit modulus.
  * {@code UnauthenticatedKeyCostTest} pins the rule. PKIX then verifies the
  * same signatures again; that duplicate (about 0.1 ms per receipt, about
- * 0.2 ms per JWS; docs/evidence/2026-10-04-java-bc-floor.md) is the price of
- * never decoding an unvouched key (#161).
+ * 0.2 ms per JWS, measured) is the price of never decoding an unvouched
+ * key.
  */
 final class AppleTrust {
 
@@ -52,11 +52,12 @@ final class AppleTrust {
      *   <li>extendedKeyUsage (2.5.29.37): RFC 5280 4.2.1.12 lets it be
      *       critical on any certificate. BouncyCastle processes it on the end
      *       entity only, where the JDK's PKIX and OpenSSL accept it on a CA
-     *       too. Like them it asks no purpose of a CA (owner, Q69).</li>
+     *       too. Like them it asks no purpose of a CA, so no genuine chain is
+     *       refused for it.</li>
      *   <li>cRLDistributionPoints (2.5.29.31): it only says where a CRL is.
      *       Apple's intermediates carry it non-critical today. The core asks
      *       for no revocation check, so a critical one is acted on in neither
-     *       implementation (owner, Q72).</li>
+     *       implementation.</li>
      * </ul>
      *
      * <p>Every other critical extension BouncyCastle does not process is

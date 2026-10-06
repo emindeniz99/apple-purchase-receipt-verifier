@@ -95,8 +95,8 @@ final class DefaultVerifier implements Verifier {
      * {@link #requireBouncyCastle} refuses it below 1.86.
      * EndpointResponse's initialiser loads the Pacific time zone, which a JRE
      * with a truncated tzdb would fail on the first endpoint call otherwise.
-     * The readers' factories need jackson-core 2.15, and the name bound read
-     * here is 2.16 API, so a Jackson below the floor fails here.
+     * The readers' factories and the name bound read here are jackson-core
+     * 2.16 API, so a Jackson below the floor fails here.
      */
     private static void buildStaticState() {
         Objects.requireNonNull(JwsCore.JSON);
@@ -123,8 +123,7 @@ final class DefaultVerifier implements Verifier {
      * How deep a genuine Apple receipt nests constructed ASN.1 values, as
      * BouncyCastle's bound counts them: the public sandbox receipts parse
      * with {@code org.bouncycastle.asn1.max_cons_depth} at 9 and fail at 8,
-     * the same as {@link #RECEIPT_NESTING} SEQUENCEs around an INTEGER
-     * (docs/evidence/2026-10-04-java-bc-floor.md).
+     * the same as {@link #RECEIPT_NESTING} SEQUENCEs around an INTEGER.
      */
     static final int RECEIPT_NESTING = 9;
 
@@ -140,7 +139,7 @@ final class DefaultVerifier implements Verifier {
      * CVE-2026-12860 (RSA PKCS#1 verification skipped two hash bytes), which
      * the receipt signature check reaches, and CVE-2026-13506. Every bcprov
      * from 1.70 links, so the class loading in {@link #buildStaticState}
-     * cannot tell these apart (docs/evidence/2026-10-04-java-bc-floor.md).
+     * cannot tell these apart.
      *
      * @throws IllegalStateException naming the release found
      */

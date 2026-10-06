@@ -56,7 +56,7 @@ final class ReceiptCore {
 
     private ReceiptCore() {}
 
-    /** Verifies a base64 receipt and decodes it; the order of checks is docs/design/0.7-api.md's. */
+    /** Verifies a base64 receipt and decodes it: the size cap, then base64, then the signature, then the payload. */
     static ReceiptPayload verify(@Nullable String base64, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
         if (base64 == null || base64.isEmpty()) {

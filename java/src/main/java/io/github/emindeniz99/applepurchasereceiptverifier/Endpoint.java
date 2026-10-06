@@ -10,7 +10,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * {@link Verifier#verifyReceiptEndpoint}: Apple's verifyReceipt request and
- * response, verified offline. The status table is docs/design/0.7-api.md's.
+ * response, verified offline. java/README.md lists the statuses it answers.
  */
 final class Endpoint {
 
@@ -61,7 +61,7 @@ final class Endpoint {
         }
         // An in-app purchase Apple signed that does not decode answers 21009,
         // as UNREADABLE_PAYLOAD does, rather than a 0 whose in_app silently
-        // lacks it (owner Q71, 2026-10-06).
+        // lacks it.
         if (receipt.hasUnknownAttribute(ReceiptDecoder.ATTR_IN_APP)) {
             return AppleStatus.INTERNAL_DATA_ACCESS_ERROR;
         }
