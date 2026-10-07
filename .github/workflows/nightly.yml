@@ -385,6 +385,14 @@ jobs:
           rustup toolchain install "$channel" --profile minimal --target x86_64-unknown-linux-musl
           echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
           sudo apt-get update && sudo apt-get install -y musl-tools
+      # check-component.sh's hostile step assembles tests/hostile.wat with
+      # wasm-tools, from the release archive ci.yml installs it from.
+      - name: wasm-tools
+        if: matrix.host == 'server-php'
+        run: |
+          set -euo pipefail
+          .github/scripts/install-wasm-tools.sh "$RUNNER_TEMP/wasm-tools"
+          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
       - name: server
         if: matrix.host == 'server-php'
         run: |
