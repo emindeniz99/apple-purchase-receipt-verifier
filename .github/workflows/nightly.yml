@@ -402,3 +402,33 @@ jobs:
           set -euo pipefail
           composer install --working-dir=php --no-scripts --no-progress --no-interaction
           sh php/tools/rerun.sh "$RUNNER_TEMP/out/aprv-x86_64-unknown-linux-musl" "$G1"
+
+  # A scheduled run that fails opens one issue, or comments on the one
+  # still open, so a red nightly reaches the owner's inbox instead of
+  # waiting for someone to look (it was red from 2026-10-03 to 2026-10-07
+  # unseen). A manual run reports to whoever started it, so it is left
+  # out. Closing the issue once nightly is green again is the owner's.
+  report-failure:
+    needs: [rust-fuzz-openssl, java-differential, java-wasm-s390x, corpus]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: open or update the nightly-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Nightly is failing"
+          body="The scheduled nightly run failed on $(date -u +%F): $RUN_URL"
+          number=$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\")) | first | .number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
