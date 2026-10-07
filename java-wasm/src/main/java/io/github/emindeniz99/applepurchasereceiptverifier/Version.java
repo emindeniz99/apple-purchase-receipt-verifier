@@ -11,7 +11,7 @@ public final class Version {
     public static final String CURRENT = current();
 
     private static String current() {
-        return "0.9.0"; // x-release-please-version
+        return "0.10.0"; // x-release-please-version
     }
 
     private Version() {}
