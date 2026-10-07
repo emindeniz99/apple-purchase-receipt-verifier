@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.cert.TrustAnchor;
 import java.util.Collections;
 import org.bouncycastle.asn1.ASN1Encodable;
@@ -24,6 +26,8 @@ import org.junit.jupiter.api.Test;
  * still sees every purchase Apple signed.
  */
 class ReceiptDecoderTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** A UTF8String whose content is not UTF-8: a lead byte, then no continuation. */
     private static final byte[] NOT_UTF8 = {0x0C, 0x02, (byte) 0xC3, 0x28};
@@ -195,6 +199,39 @@ class ReceiptDecoderTest {
             assertArrayEquals(value, receipt.unknownAttributes().get(12).get(0));
             assertNull(ReceiptDecoder.readCreationDate(payload), text);
         }
+    }
+
+    /**
+     * Attribute 32 is the pre-order date: the same grammar and the same
+     * failure behaviour as the other receipt-level dates. A date fills the
+     * field, an empty string is "not set", anything else and every later
+     * copy are kept raw.
+     */
+    @Test
+    void attribute32IsThePreorderDateAndReadsLikeAttributes12And18() throws Exception {
+        ReceiptPayload receipt =
+                ReceiptDecoder.parse(set(attribute(32, new DERIA5String("2024-07-02T09:45:20Z").getEncoded())));
+        assertEquals(Long.valueOf(1_719_913_520_000L), receipt.preorderDateMs());
+        assertNull(receipt.unknownAttributes().get(32));
+        assertEquals(
+                1_719_913_520_000L,
+                MAPPER.readTree(receipt.toJson()).get("preorder_date_ms").asLong());
+
+        receipt = ReceiptDecoder.parse(set(attribute(32, new DERIA5String("").getEncoded())));
+        assertNull(receipt.preorderDateMs());
+        assertNull(receipt.unknownAttributes().get(32));
+
+        byte[] notRfc3339 = new DERIA5String("2024-07-02 09:45:20Z").getEncoded();
+        receipt = ReceiptDecoder.parse(set(attribute(32, notRfc3339)));
+        assertNull(receipt.preorderDateMs());
+        assertArrayEquals(notRfc3339, receipt.unknownAttributes().get(32).get(0));
+        assertTrue(MAPPER.readTree(receipt.toJson()).get("preorder_date_ms").isNull());
+
+        byte[] later = new DERIA5String("2024-07-03T09:45:20Z").getEncoded();
+        receipt = ReceiptDecoder.parse(
+                set(attribute(32, new DERIA5String("2024-07-02T09:45:20Z").getEncoded()), attribute(32, later)));
+        assertEquals(Long.valueOf(1_719_913_520_000L), receipt.preorderDateMs());
+        assertArrayEquals(later, receipt.unknownAttributes().get(32).get(0));
     }
 
     /**

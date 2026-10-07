@@ -249,7 +249,7 @@ class VerifierApiTest {
                         + "\"application_version\":null,\"opaque_value\":null,\"sha1_hash\":null,"
                         + "\"receipt_creation_date_ms\":null,\"download_id\":null,"
                         + "\"version_external_identifier\":null,\"in_app\":[],\"original_purchase_date_ms\":null,"
-                        + "\"original_application_version\":null,\"expiration_date_ms\":null,"
+                        + "\"preorder_date_ms\":null,\"original_application_version\":null,\"expiration_date_ms\":null,"
                         + "\"unknown_attributes\":{}}",
                 empty.toJson());
     }
@@ -292,6 +292,7 @@ class VerifierApiTest {
                 -1L,
                 Arrays.asList(purchase),
                 1722945600000L,
+                1719913520000L,
                 "1.0",
                 null,
                 unknown,
@@ -308,7 +309,8 @@ class VerifierApiTest {
                         + "\"expires_date_ms\":null,\"web_order_line_item_id\":\"123456789012345678\","
                         + "\"cancellation_date_ms\":null,\"is_trial_period\":true,\"is_in_intro_offer_period\":false,"
                         + "\"unknown_attributes\":{\"1720\":[\"AA==\"]}}],"
-                        + "\"original_purchase_date_ms\":1722945600000,\"original_application_version\":\"1.0\","
+                        + "\"original_purchase_date_ms\":1722945600000,\"preorder_date_ms\":1719913520000,"
+                        + "\"original_application_version\":\"1.0\","
                         + "\"expiration_date_ms\":null,\"unknown_attributes\":{\"9\":[],\"13\":[\"AQ==\",\"+/8=\"]}}",
                 payload.toJson());
         assertEquals(payload.toJson(), payload.toString());
@@ -407,6 +409,7 @@ class VerifierApiTest {
                         "version_external_identifier",
                         "in_app",
                         "original_purchase_date_ms",
+                        "preorder_date_ms",
                         "original_application_version",
                         "expiration_date_ms",
                         "unknown_attributes"),
@@ -491,6 +494,7 @@ class VerifierApiTest {
                 first.versionExternalIdentifier(),
                 first.inApp(),
                 first.originalPurchaseDateMs(),
+                first.preorderDateMs(),
                 first.originalApplicationVersion(),
                 first.expirationDateMs(),
                 first.unknownAttributes(),
@@ -512,6 +516,7 @@ class VerifierApiTest {
                 first.versionExternalIdentifier(),
                 first.inApp(),
                 first.originalPurchaseDateMs(),
+                first.preorderDateMs(),
                 first.originalApplicationVersion(),
                 first.expirationDateMs(),
                 first.unknownAttributes(),

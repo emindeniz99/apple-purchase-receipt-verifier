@@ -74,12 +74,20 @@ final class EndpointResponse {
         number(json, "app_item_id", receipt.appItemId());
         string(json, "bundle_id", receipt.bundleId());
         string(json, "application_version", receipt.applicationVersion());
-        number(json, "download_id", receipt.downloadId());
+        // Apple answers "download_id": null when the receipt has no attribute
+        // 15, where every other absent field is omitted.
+        Long downloadId = receipt.downloadId();
+        if (downloadId == null) {
+            json.writeNullField("download_id");
+        } else {
+            json.writeNumberField("download_id", downloadId);
+        }
         number(json, "version_external_identifier", receipt.versionExternalIdentifier());
         string(json, "original_application_version", receipt.originalApplicationVersion());
         appleDates(json, "receipt_creation_date", receipt.receiptCreationDateMs());
         appleDates(json, "request_date", requestDateMillis);
         appleDates(json, "original_purchase_date", receipt.originalPurchaseDateMs());
+        appleDates(json, "preorder_date", receipt.preorderDateMs());
         appleDates(json, "expiration_date", receipt.expirationDateMs());
         json.writeArrayFieldStart("in_app");
         for (InAppPurchase purchase : receipt.inApp()) {

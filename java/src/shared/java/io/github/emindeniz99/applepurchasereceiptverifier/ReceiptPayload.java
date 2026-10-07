@@ -51,10 +51,53 @@ public final class ReceiptPayload {
     private final @Nullable Long versionExternalIdentifier;
     private final List<InAppPurchase> inApp;
     private final @Nullable Long originalPurchaseDateMs;
+    private final @Nullable Long preorderDateMs;
     private final @Nullable String originalApplicationVersion;
     private final @Nullable Long expirationDateMs;
     private final Map<Integer, List<byte[]>> unknownAttributes;
     private final @Nullable Environment environment;
+
+    /**
+     * As the constructor below, with no pre-order date ({@link #preorderDateMs()}
+     * is {@code null}). Kept so code that builds payloads by hand keeps
+     * compiling.
+     */
+    public ReceiptPayload(
+            @Nullable String receiptType,
+            @Nullable Long appItemId,
+            @Nullable String bundleId,
+            byte @Nullable [] bundleIdBytes,
+            @Nullable String applicationVersion,
+            byte @Nullable [] opaqueValue,
+            byte @Nullable [] sha1Hash,
+            @Nullable Long receiptCreationDateMs,
+            @Nullable Long downloadId,
+            @Nullable Long versionExternalIdentifier,
+            List<InAppPurchase> inApp,
+            @Nullable Long originalPurchaseDateMs,
+            @Nullable String originalApplicationVersion,
+            @Nullable Long expirationDateMs,
+            Map<Integer, List<byte[]>> unknownAttributes,
+            @Nullable Environment environment) {
+        this(
+                receiptType,
+                appItemId,
+                bundleId,
+                bundleIdBytes,
+                applicationVersion,
+                opaqueValue,
+                sha1Hash,
+                receiptCreationDateMs,
+                downloadId,
+                versionExternalIdentifier,
+                inApp,
+                originalPurchaseDateMs,
+                null,
+                originalApplicationVersion,
+                expirationDateMs,
+                unknownAttributes,
+                environment);
+    }
 
     /**
      * Public so callers can build payloads by hand in their tests. The
@@ -74,6 +117,7 @@ public final class ReceiptPayload {
             @Nullable Long versionExternalIdentifier,
             List<InAppPurchase> inApp,
             @Nullable Long originalPurchaseDateMs,
+            @Nullable Long preorderDateMs,
             @Nullable String originalApplicationVersion,
             @Nullable Long expirationDateMs,
             Map<Integer, List<byte[]>> unknownAttributes,
@@ -94,6 +138,7 @@ public final class ReceiptPayload {
         }
         this.inApp = Collections.unmodifiableList(purchases);
         this.originalPurchaseDateMs = originalPurchaseDateMs;
+        this.preorderDateMs = preorderDateMs;
         this.originalApplicationVersion = originalApplicationVersion;
         this.expirationDateMs = expirationDateMs;
         this.unknownAttributes = RawAttributes.copy(Objects.requireNonNull(unknownAttributes, "unknownAttributes"));
@@ -164,6 +209,14 @@ public final class ReceiptPayload {
     /** Attribute 18. */
     public @Nullable Long originalPurchaseDateMs() {
         return originalPurchaseDateMs;
+    }
+
+    /**
+     * Attribute 32, the pre-order date: when the user pre-ordered the app.
+     * Present on receipts for apps that were pre-ordered.
+     */
+    public @Nullable Long preorderDateMs() {
+        return preorderDateMs;
     }
 
     /** Attribute 19, the version the user originally purchased. */
@@ -244,6 +297,7 @@ public final class ReceiptPayload {
             }
             json.writeEndArray();
             json.writeObjectField("original_purchase_date_ms", originalPurchaseDateMs);
+            json.writeObjectField("preorder_date_ms", preorderDateMs);
             json.writeObjectField("original_application_version", originalApplicationVersion);
             json.writeObjectField("expiration_date_ms", expirationDateMs);
             writeAttributes(json, unknownAttributes);
