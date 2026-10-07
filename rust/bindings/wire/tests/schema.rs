@@ -282,7 +282,7 @@ fn every_expected_value_in_the_shared_cases_fits_the_schemas() {
             );
         }
     }
-    assert_eq!(payloads, 10, "the ten toJson vectors");
+    assert_eq!(payloads, 11, "the eleven toJson vectors");
 }
 
 #[test]
