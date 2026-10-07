@@ -3,7 +3,7 @@
 What each package runs the verification on, where it runs, and how to
 check it. Every package exposes the same API (one `Verifier`, built from a
 `Config` of roots and a clock, with `verifyReceipt`, `verifySignedData` and
-`verifyReceiptEndpoint`) and answers the same 412 cases of
+`verifyReceiptEndpoint`) and answers the same 418 cases of
 `fixtures/cases.json`, one test each. The verdicts come from two places
 only: the Rust core, which every package but the Java main artifact runs
 as `aprv.wasm`, and the Java implementation. No wrapper holds a parser, a

@@ -141,7 +141,7 @@ impl Serialize for Receipt<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let receipt = self.0;
         let in_app: Vec<Purchase<'_>> = receipt.in_app.iter().map(Purchase).collect();
-        let mut object = serializer.serialize_struct("ReceiptPayload", 15)?;
+        let mut object = serializer.serialize_struct("ReceiptPayload", 16)?;
         object.serialize_field("receipt_type", &receipt.receipt_type)?;
         object.serialize_field("app_item_id", &receipt.app_item_id.map(Id))?;
         object.serialize_field("bundle_id", &receipt.bundle_id)?;
@@ -166,6 +166,7 @@ impl Serialize for Receipt<'_> {
             "original_purchase_date_ms",
             &receipt.original_purchase_date_ms,
         )?;
+        object.serialize_field("preorder_date_ms", &receipt.preorder_date_ms)?;
         object.serialize_field(
             "original_application_version",
             &receipt.original_application_version,
@@ -402,7 +403,8 @@ mod tests {
                 r#"{"receipt_type":null,"app_item_id":null,"bundle_id":null,"bundle_id_bytes":null,"#,
                 r#""application_version":null,"opaque_value":null,"sha1_hash":null,"#,
                 r#""receipt_creation_date_ms":null,"download_id":null,"version_external_identifier":null,"#,
-                r#""in_app":[],"original_purchase_date_ms":null,"original_application_version":null,"#,
+                r#""in_app":[],"original_purchase_date_ms":null,"preorder_date_ms":null,"#,
+                r#""original_application_version":null,"#,
                 r#""expiration_date_ms":null,"unknown_attributes":{}}"#
             )
         );
@@ -457,6 +459,7 @@ mod tests {
                 },
             ],
             original_purchase_date_ms: Some(1_375_340_400_000),
+            preorder_date_ms: Some(1_719_913_520_000),
             original_application_version: Some("\u{1e}\u{1b}\u{e000}".to_owned()),
             expiration_date_ms: Some(-62_135_596_800_000),
             unknown_attributes: vec![
@@ -510,6 +513,7 @@ mod tests {
                 r#","is_trial_period":false,"is_in_intro_offer_period":true"#,
                 r#","unknown_attributes":{}}]"#,
                 r#","original_purchase_date_ms":1375340400000"#,
+                r#","preorder_date_ms":1719913520000"#,
                 r#","original_application_version":"\u001e\u001b"#,
                 "\u{e000}",
                 r#"","expiration_date_ms":-62135596800000"#,

@@ -43,7 +43,7 @@ final class FacadeTest extends TestCase
           "bundle_id_bytes":"Y29tLmV4YW1wbGUuYXBw","application_version":"1.0","opaque_value":"AQIDBA==",
           "sha1_hash":"BQYHCA==","receipt_creation_date_ms":1722945600000,"download_id":"9223372036854775807",
           "version_external_identifier":"-5","original_purchase_date_ms":1722945600000,
-          "original_application_version":"1.0","expiration_date_ms":null,
+          "preorder_date_ms":1719913520000,"original_application_version":"1.0","expiration_date_ms":null,
           "in_app":[{"quantity":1,"product_id":"p1","transaction_id":"t1","purchase_date_ms":1722945600000,
             "original_transaction_id":"t0","original_purchase_date_ms":1722945600000,"expires_date_ms":null,
             "web_order_line_item_id":"1000000123456789","cancellation_date_ms":null,"is_trial_period":false,
@@ -72,6 +72,7 @@ final class FacadeTest extends TestCase
         self::assertSame(PHP_INT_MAX, $receipt->downloadId, 'a 64-bit id survives as an int');
         self::assertSame(-5, $receipt->versionExternalIdentifier, 'a hostile negative id is reported as it is');
         self::assertNull($receipt->expirationDateMs);
+        self::assertSame(1719913520000, $receipt->preorderDateMs);
         self::assertSame([7 => ["\x02"], 13 => ["\0", "\x01"]], $receipt->unknownAttributes, 'order within a type is kept');
         self::assertCount(1, $receipt->inApp);
         $purchase = $receipt->inApp[0];
@@ -80,6 +81,16 @@ final class FacadeTest extends TestCase
         self::assertTrue($purchase->isInIntroOfferPeriod);
         self::assertSame([1799 => ["\xff"]], $purchase->unknownAttributes);
         self::assertSame(Environment::Sandbox, $receipt->environment, 'the member beside the payload');
+    }
+
+    public function testAPayloadBuiltWithoutAPreorderDateWritesItAsNull(): void
+    {
+        /** @var array<string, mixed> $written */
+        $written = json_decode((new ReceiptPayload())->toJson(), true, 32, JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('preorder_date_ms', $written);
+        self::assertNull($written['preorder_date_ms']);
+        $keys = array_keys($written);
+        self::assertSame(array_search('original_purchase_date_ms', $keys, true) + 1, array_search('preorder_date_ms', $keys, true));
     }
 
     public function testToJsonRoundTripsTheWireValue(): void

@@ -189,7 +189,12 @@ fn receipt_json(receipt: &ReceiptPayload, request_date_millis: i64) -> Option<Js
         "application_version",
         receipt.application_version.as_deref(),
     );
-    present_number(&mut json, "download_id", receipt.download_id);
+    // Apple answers `"download_id": null` when the receipt has no attribute
+    // 15, where every other absent field is omitted.
+    json.insert(
+        "download_id".to_owned(),
+        receipt.download_id.map_or(JsonValue::Null, JsonValue::from),
+    );
     present_number(
         &mut json,
         "version_external_identifier",
@@ -211,6 +216,7 @@ fn receipt_json(receipt: &ReceiptPayload, request_date_millis: i64) -> Option<Js
         "original_purchase_date",
         receipt.original_purchase_date_ms,
     )?;
+    apple_dates(&mut json, "preorder_date", receipt.preorder_date_ms)?;
     apple_dates(&mut json, "expiration_date", receipt.expiration_date_ms)?;
     json.insert(
         "in_app".to_owned(),

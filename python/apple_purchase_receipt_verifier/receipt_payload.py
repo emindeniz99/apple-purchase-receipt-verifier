@@ -131,6 +131,9 @@ class ReceiptPayload:
     in_app: "Sequence[InAppPurchase]" = field(default_factory=tuple)
     #: Attribute 18.
     original_purchase_date_ms: "int | None" = None
+    #: Attribute 32, the pre-order date. Keyword-only, so a payload built
+    #: with positional arguments keeps meaning what it meant.
+    preorder_date_ms: "int | None" = field(default=None, kw_only=True)
     #: Attribute 19, the version the user originally purchased.
     original_application_version: "str | None" = None
     #: Attribute 21, set only on receipts that expire (volume purchase).
@@ -176,6 +179,7 @@ class ReceiptPayload:
             "version_external_identifier": _id(self.version_external_identifier),
             "in_app": [p._json_value() for p in self.in_app],
             "original_purchase_date_ms": self.original_purchase_date_ms,
+            "preorder_date_ms": self.preorder_date_ms,
             "original_application_version": self.original_application_version,
             "expiration_date_ms": self.expiration_date_ms,
             "unknown_attributes": _attributes_json(self.unknown_attributes),

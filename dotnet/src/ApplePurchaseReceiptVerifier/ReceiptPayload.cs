@@ -40,6 +40,7 @@ namespace ApplePurchaseReceiptVerifier
             long? versionExternalIdentifier,
             IReadOnlyList<InAppPurchase> inApp,
             long? originalPurchaseDateMs,
+            long? preorderDateMs,
             string? originalApplicationVersion,
             long? expirationDateMs,
             IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknownAttributes,
@@ -57,6 +58,7 @@ namespace ApplePurchaseReceiptVerifier
             VersionExternalIdentifier = versionExternalIdentifier;
             InApp = CopyInApp(inApp);
             OriginalPurchaseDateMs = originalPurchaseDateMs;
+            PreorderDateMs = preorderDateMs;
             OriginalApplicationVersion = originalApplicationVersion;
             ExpirationDateMs = expirationDateMs;
             _unknownAttributes = ByteOps.CopyAttributes(unknownAttributes, nameof(unknownAttributes));
@@ -102,6 +104,9 @@ namespace ApplePurchaseReceiptVerifier
 
         /// <summary>Attribute 18, epoch milliseconds UTC.</summary>
         public long? OriginalPurchaseDateMs { get; }
+
+        /// <summary>Attribute 32, epoch milliseconds UTC — the pre-order date.</summary>
+        public long? PreorderDateMs { get; }
 
         /// <summary>Attribute 19 — the version the user originally purchased.</summary>
         public string? OriginalApplicationVersion { get; }
@@ -159,6 +164,7 @@ namespace ApplePurchaseReceiptVerifier
 
             json.WriteEndArray();
             Json.WriteNumberOrNull(json, "original_purchase_date_ms", OriginalPurchaseDateMs);
+            Json.WriteNumberOrNull(json, "preorder_date_ms", PreorderDateMs);
             json.WriteString("original_application_version", OriginalApplicationVersion);
             Json.WriteNumberOrNull(json, "expiration_date_ms", ExpirationDateMs);
             WriteUnknownAttributes(json, _unknownAttributes);

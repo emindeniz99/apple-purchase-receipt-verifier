@@ -254,7 +254,8 @@ final class FacadeTests: XCTestCase {
         + #""original_purchase_date_ms":2000,"expires_date_ms":null,"web_order_line_item_id":"4","#
         + #""cancellation_date_ms":null,"is_trial_period":false,"is_in_intro_offer_period":true,"#
         + #""unknown_attributes":{"1720":["AQ=="]}}],"original_purchase_date_ms":9000,"#
-        + #""original_application_version":"0","expiration_date_ms":null,"unknown_attributes":{"13":["Aw==","BA=="]}}"#
+        + #""preorder_date_ms":9500,"original_application_version":"0","expiration_date_ms":null,"#
+        + #""unknown_attributes":{"13":["Aw==","BA=="]}}"#
 
     // MARK: the six outcomes (ARCHITECTURE.md §4)
 
@@ -265,6 +266,7 @@ final class FacadeTests: XCTestCase {
         XCTAssertEqual(payload.environment, .sandbox)
         XCTAssertEqual(payload.appItemId, 123_456_789_012_345_678)
         XCTAssertEqual(payload.downloadId, -7)
+        XCTAssertEqual(payload.preorderDateMs, 9_500)
         XCTAssertEqual(payload.bundleIdBytes, [0x0C, 0x01, 0x62])
         XCTAssertNil(payload.opaqueValue)
         XCTAssertEqual(payload.inApp.first?.isInIntroOfferPeriod, true)

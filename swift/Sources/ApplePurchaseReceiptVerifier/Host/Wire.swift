@@ -128,7 +128,7 @@ extension ReceiptPayload: Decodable {
         case bundleIdBytes = "bundle_id_bytes", applicationVersion = "application_version"
         case opaqueValue = "opaque_value", sha1Hash = "sha1_hash", receiptCreationDateMs = "receipt_creation_date_ms"
         case downloadId = "download_id", versionExternalIdentifier = "version_external_identifier", inApp = "in_app"
-        case originalPurchaseDateMs = "original_purchase_date_ms"
+        case originalPurchaseDateMs = "original_purchase_date_ms", preorderDateMs = "preorder_date_ms"
         case originalApplicationVersion = "original_application_version", expirationDateMs = "expiration_date_ms"
         case unknownAttributes = "unknown_attributes"
     }
@@ -149,6 +149,7 @@ extension ReceiptPayload: Decodable {
         versionExternalIdentifier = try c.id(.versionExternalIdentifier)
         inApp = try c.decodeIfPresent([InAppPurchase].self, forKey: .inApp) ?? []
         originalPurchaseDateMs = try c.decodeIfPresent(Int64.self, forKey: .originalPurchaseDateMs)
+        preorderDateMs = try c.decodeIfPresent(Int64.self, forKey: .preorderDateMs)
         originalApplicationVersion = try c.decodeIfPresent(String.self, forKey: .originalApplicationVersion)
         expirationDateMs = try c.decodeIfPresent(Int64.self, forKey: .expirationDateMs)
         unknownAttributes = try c.attributes(.unknownAttributes)

@@ -148,6 +148,7 @@ final class PublicApiTests: XCTestCase {
         receipt.versionExternalIdentifier = 8
         receipt.inApp = [purchase]
         receipt.originalPurchaseDateMs = 9_000
+        receipt.preorderDateMs = 9_500
         receipt.originalApplicationVersion = "0"
         receipt.expirationDateMs = nil
         receipt.unknownAttributes = [13: [[0x03]]]
@@ -161,7 +162,8 @@ final class PublicApiTests: XCTestCase {
             + #""original_purchase_date_ms":2000,"expires_date_ms":3000,"web_order_line_item_id":"4","#
             + #""cancellation_date_ms":null,"is_trial_period":false,"is_in_intro_offer_period":true,"#
             + #""unknown_attributes":{"1720":["AQ=="]}}],"original_purchase_date_ms":9000,"#
-            + #""original_application_version":"0","expiration_date_ms":null,"unknown_attributes":{"13":["Aw=="]}}"#
+            + #""preorder_date_ms":9500,"original_application_version":"0","expiration_date_ms":null,"#
+            + #""unknown_attributes":{"13":["Aw=="]}}"#
         // The same value, not the same bytes (docs/design/0.7-api.md "Our JSON").
         XCTAssertTrue(
             sameJsonValue(

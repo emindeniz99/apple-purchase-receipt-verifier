@@ -49,6 +49,8 @@ export interface ReceiptPayload {
   readonly versionExternalIdentifier: string | null;
   readonly inApp: readonly InAppPurchase[];
   readonly originalPurchaseDateMs: number | null;
+  /** Attribute 32, the pre-order date. */
+  readonly preorderDateMs: number | null;
   readonly originalApplicationVersion: string | null;
   readonly expirationDateMs: number | null;
   readonly unknownAttributes: RawAttributes;
@@ -164,6 +166,7 @@ function toJson(receipt: ReceiptPayload): string {
     version_external_identifier: receipt.versionExternalIdentifier,
     in_app: receipt.inApp.map(inAppJson),
     original_purchase_date_ms: receipt.originalPurchaseDateMs,
+    preorder_date_ms: receipt.preorderDateMs,
     original_application_version: receipt.originalApplicationVersion,
     expiration_date_ms: receipt.expirationDateMs,
     unknown_attributes: unknownAttributesJson(receipt.unknownAttributes),
@@ -211,6 +214,7 @@ export function createReceiptPayload(
       downloadId: fields.downloadId ?? null,
       versionExternalIdentifier: fields.versionExternalIdentifier ?? null,
       originalPurchaseDateMs: fields.originalPurchaseDateMs ?? null,
+      preorderDateMs: fields.preorderDateMs ?? null,
       originalApplicationVersion: fields.originalApplicationVersion ?? null,
       expirationDateMs: fields.expirationDateMs ?? null,
       environment: fields.environment ?? null,
@@ -343,6 +347,7 @@ export function receiptPayloadFromWire(
       downloadId: str(obj, 'download_id'),
       versionExternalIdentifier: str(obj, 'version_external_identifier'),
       originalPurchaseDateMs: num(obj, 'original_purchase_date_ms'),
+      preorderDateMs: num(obj, 'preorder_date_ms'),
       originalApplicationVersion: str(obj, 'original_application_version'),
       expirationDateMs: num(obj, 'expiration_date_ms'),
       environment,

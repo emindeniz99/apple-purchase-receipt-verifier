@@ -526,7 +526,8 @@ produced. 64-bit ids (`adam_id`/`app_item_id`/`download_id`/
 Apple's own endpoint does, even though `ReceiptPayload.ToJson()` renders
 them as decimal strings; `*_ms` date fields are JSON strings. A field the
 receipt does not carry is left out of the response entirely, never sent as
-JSON `null`. See
+JSON `null`, with one exception: a receipt without attribute 15 answers
+`"download_id": null`, as Apple's does. See
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
 for the field-by-field fidelity account.
 

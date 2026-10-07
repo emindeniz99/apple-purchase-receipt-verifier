@@ -56,6 +56,8 @@ public struct ReceiptPayload: Sendable, Equatable {
     public var inApp: [InAppPurchase] = []
     /// Attribute 18.
     public var originalPurchaseDateMs: Int64?
+    /// Attribute 32, the pre-order date.
+    public var preorderDateMs: Int64?
     /// Attribute 19.
     public var originalApplicationVersion: String?
     /// Attribute 21.
@@ -96,6 +98,7 @@ extension ReceiptPayload {
             "version_external_identifier": nullable(versionExternalIdentifier.map(String.init)),
             "in_app": inApp.map(\.jsonObject),
             "original_purchase_date_ms": nullable(originalPurchaseDateMs),
+            "preorder_date_ms": nullable(preorderDateMs),
             "original_application_version": nullable(originalApplicationVersion),
             "expiration_date_ms": nullable(expirationDateMs),
             "unknown_attributes": attributesObject(unknownAttributes),

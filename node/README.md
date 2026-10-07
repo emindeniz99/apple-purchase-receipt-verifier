@@ -184,6 +184,7 @@ payload.receiptType;               // 'Production', 'ProductionSandbox', ...
 payload.bundleId;                  // decoded attribute 2
 payload.bundleIdBytes;             // its raw octets: the device-hash input
 payload.receiptCreationDateMs;
+payload.preorderDateMs;            // attribute 32, the pre-order date
 payload.inApp[0].productId;
 payload.inApp[0].expiresDateMs;
 payload.unknownAttributes;         // Map<number, Uint8Array[]>, by attribute type

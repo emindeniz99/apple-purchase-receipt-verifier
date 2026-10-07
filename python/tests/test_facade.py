@@ -6,6 +6,7 @@ verdicts are the module's own business (test_conformance.py, test_abi.py)."""
 
 import contextlib
 import gc
+import inspect
 import json
 import os
 import re
@@ -78,6 +79,7 @@ class VerifiedTest(unittest.TestCase):
             version_external_identifier=0,
             in_app=(purchase, InAppPurchase()),
             original_purchase_date_ms=None,
+            preorder_date_ms=1_719_913_520_000,
             original_application_version="1.0",
             expiration_date_ms=None,
             unknown_attributes={99: (b"x",)},
@@ -88,6 +90,19 @@ class VerifiedTest(unittest.TestCase):
         self.assertTrue(result.verified, result.failure)
         self.assertEqual(payload, result.payload)
         self.assertEqual(payload.to_json(), result.payload.to_json() if result.payload else None)
+
+    def test_the_preorder_date_sits_next_to_the_original_purchase_date_in_the_json(self) -> None:
+        payload = ReceiptPayload(preorder_date_ms=1_719_913_520_000)
+        written = json.loads(payload.to_json())
+        self.assertEqual(1_719_913_520_000, written["preorder_date_ms"])
+        self.assertIsNone(json.loads(ReceiptPayload().to_json())["preorder_date_ms"])
+        keys = list(written)
+        self.assertEqual(
+            keys.index("original_purchase_date_ms") + 1, keys.index("preorder_date_ms")
+        )
+        # Keyword-only: the positional order of the other fields is unchanged.
+        parameter = inspect.signature(ReceiptPayload).parameters["preorder_date_ms"]
+        self.assertIs(inspect.Parameter.KEYWORD_ONLY, parameter.kind)
 
     def test_an_absent_optional_field_is_none_and_an_empty_payload_is_all_none(self) -> None:
         result = double_verifier().verify_receipt(

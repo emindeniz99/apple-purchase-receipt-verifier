@@ -133,6 +133,7 @@ module ApplePurchaseReceiptVerifier
     attr_reader version_external_identifier: Integer?
     attr_reader in_app: Array[InAppPurchase]
     attr_reader original_purchase_date_ms: Integer?
+    attr_reader preorder_date_ms: Integer?
     attr_reader original_application_version: String?
     attr_reader expiration_date_ms: Integer?
     attr_reader unknown_attributes: Hash[Integer, Array[String]]
@@ -142,9 +143,9 @@ module ApplePurchaseReceiptVerifier
                      bundle_id_bytes: String?, application_version: String?, opaque_value: String?,
                      sha1_hash: String?, receipt_creation_date_ms: Integer?, download_id: Integer?,
                      version_external_identifier: Integer?, in_app: Array[InAppPurchase],
-                     original_purchase_date_ms: Integer?, original_application_version: String?,
-                     expiration_date_ms: Integer?, unknown_attributes: Hash[Integer, Array[String]],
-                     environment: String?) -> void
+                     original_purchase_date_ms: Integer?, ?preorder_date_ms: Integer?,
+                     original_application_version: String?, expiration_date_ms: Integer?,
+                     unknown_attributes: Hash[Integer, Array[String]], environment: String?) -> void
     def to_json: (*untyped) -> String
   end
 end

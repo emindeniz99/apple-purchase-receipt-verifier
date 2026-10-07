@@ -154,9 +154,13 @@ test('createReceiptPayload and friends build what a caller mocks with', () => {
     bundleId: 'b',
     bundleIdBytes: new Uint8Array([1, 2]),
     inApp: [purchase],
+    preorderDateMs: 1719913520000,
     unknownAttributes: new Map([[13, [new Uint8Array([255])]]]),
   });
   assert.equal(payload.receiptType, null);
+  assert.equal(payload.preorderDateMs, 1719913520000);
+  assert.equal(JSON.parse(payload.toJson()).preorder_date_ms, 1719913520000);
+  assert.equal(node.createReceiptPayload({}).preorderDateMs, null);
   assert.equal(payload.inApp[0].quantity, null);
   assert.deepEqual(JSON.parse(payload.toJson()).bundle_id_bytes, 'AQI=');
   assert.deepEqual(JSON.parse(payload.toJson()).unknown_attributes, { 13: ['/w=='] });
