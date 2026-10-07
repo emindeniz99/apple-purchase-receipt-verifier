@@ -36,7 +36,7 @@ internal static class SyntheticAnswers
         return new ReceiptPayload(
             "ProductionSandbox", 1234567890123456789L, "com.example.app", new byte[] { 0x0c, 0x0f, 0x63 },
             "1.2.3", new byte[] { 1, 2, 3, 4 }, new byte[] { 0xff, 0x00, 0x80 }, 1722945600000L,
-            -42L, 9007199254740993L, inApp, 1705320000000L, "1.0", 1893456000000L, topUnknown,
+            -42L, 9007199254740993L, inApp, 1705320000000L, 1719913520000L, "1.0", 1893456000000L, topUnknown,
             AppleEnvironment.Sandbox);
     }
 

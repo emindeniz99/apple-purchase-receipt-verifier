@@ -153,7 +153,7 @@ public class JsonTests
             + "{\"quantity\":null,\"product_id\":\"caf\u00e9 \\uD83D\\uDE00 \\\"quoted\\\" \\\\ back\",\"transaction_id\":null,\"purchase_date_ms\":null,"
             + "\"original_transaction_id\":null,\"original_purchase_date_ms\":null,\"expires_date_ms\":null,\"web_order_line_item_id\":null,"
             + "\"cancellation_date_ms\":null,\"is_trial_period\":null,\"is_in_intro_offer_period\":null,\"unknown_attributes\":{}}],"
-            + "\"original_purchase_date_ms\":1705320000000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":1893456000000,"
+            + "\"original_purchase_date_ms\":1705320000000,\"preorder_date_ms\":1719913520000,\"original_application_version\":\"1.0\",\"expiration_date_ms\":1893456000000,"
             + "\"unknown_attributes\":{\"9999\":[\"AQID\",\"BAU=\"],\"31337\":[\"CQ==\"]}}",
             SyntheticAnswers.Receipt().ToJson());
     }

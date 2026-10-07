@@ -21,6 +21,7 @@ public class ModuleAnswersTests
         Assert.Equal(written.DownloadId, read.DownloadId);
         Assert.Equal(-42L, read.DownloadId);
         Assert.Equal(9007199254740993L, read.VersionExternalIdentifier);
+        Assert.Equal(1719913520000L, read.PreorderDateMs);
         Assert.Equal(written.BundleIdBytes, read.BundleIdBytes);
         Assert.Equal(2, read.InApp.Count);
         Assert.Equal("café 😀 \"quoted\" \\ back", read.InApp[1].ProductId);
@@ -29,6 +30,21 @@ public class ModuleAnswersTests
         Assert.Equal(2, read.UnknownAttributes.Count);
         Assert.Equal(AppleEnvironment.Sandbox, read.Environment);
         Assert.Equal(written.Environment, read.Environment);
+    }
+
+    /// <summary>The pre-order date is a member the module always writes: a payload without it is not the wire's.</summary>
+    [Fact]
+    public void ThePreorderDateIsARequiredMemberThatMayBeNull()
+    {
+        string json = SyntheticAnswers.Receipt().ToJson();
+        string nulled = json.Replace("\"preorder_date_ms\":1719913520000", "\"preorder_date_ms\":null", StringComparison.Ordinal);
+        Assert.NotEqual(json, nulled);
+        Assert.Null(ModuleAnswers.ReadReceipt(
+            "{\"verified\":true,\"payload\":" + nulled + ",\"environment\":null}").Payload!.PreorderDateMs);
+        string without = json.Replace(",\"preorder_date_ms\":1719913520000", string.Empty, StringComparison.Ordinal);
+        Assert.NotEqual(json, without);
+        Assert.Throws<ModuleAnswers.AnswerException>(
+            () => ModuleAnswers.ReadReceipt("{\"verified\":true,\"payload\":" + without + ",\"environment\":null}"));
     }
 
     /// <summary>
@@ -90,7 +106,7 @@ public class ModuleAnswersTests
     {
         ReceiptPayload empty = new(
             null, null, null, null, null, null, null, null, null, null,
-            new List<InAppPurchase>(), null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(), null);
+            new List<InAppPurchase>(), null, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(), null);
 
         ReceiptPayload read = ModuleAnswers.ReadReceipt(SyntheticAnswers.Verified(empty)).Payload!;
 
@@ -112,7 +128,7 @@ public class ModuleAnswersTests
         }
 
         ReceiptPayload big = new(
-            null, null, "big", null, null, null, null, null, null, null, many, null, null, null,
+            null, null, "big", null, null, null, null, null, null, null, many, null, null, null, null,
             new Dictionary<int, IReadOnlyList<byte[]>>(), null);
         string answer = SyntheticAnswers.Verified(big);
         Assert.True(answer.Length > 8 * 1024 * 1024, "the answer must be big enough to matter: " + answer.Length);
