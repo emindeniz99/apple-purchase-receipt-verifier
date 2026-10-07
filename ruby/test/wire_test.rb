@@ -15,13 +15,31 @@ class WireTest < Minitest::Test
       "bundle_id_bytes" => "AQI=", "application_version" => "3", "opaque_value" => "",
       "sha1_hash" => "AAAA", "receipt_creation_date_ms" => 1000, "download_id" => "0",
       "version_external_identifier" => "0", "in_app" => [], "original_purchase_date_ms" => nil,
-      "original_application_version" => nil, "expiration_date_ms" => nil, "unknown_attributes" => {}
+      "preorder_date_ms" => nil, "original_application_version" => nil, "expiration_date_ms" => nil,
+      "unknown_attributes" => {}
     }.merge(overrides.transform_keys(&:to_s))
     JSON.generate("verified" => true, "payload" => payload, "environment" => environment)
   end
 
   def refused(text)
     assert_raises(APRV::TrapError) { yield text }
+  end
+
+  def test_the_preorder_date_is_an_integer_or_null_and_sits_next_to_the_original_purchase_date
+    payload = WIRE.receipt_result(receipt_json(preorder_date_ms: 1_719_913_520_000)).payload
+    assert_equal 1_719_913_520_000, payload.preorder_date_ms
+    keys = JSON.parse(payload.to_json).keys
+    assert_equal keys.index("original_purchase_date_ms") + 1, keys.index("preorder_date_ms")
+    assert_nil WIRE.receipt_result(receipt_json).payload.preorder_date_ms
+    refused(receipt_json(preorder_date_ms: "1719913520000")) { |text| WIRE.receipt_result(text) }
+  end
+
+  def test_a_payload_built_by_hand_without_a_preorder_date_has_none
+    payload = WIRE.receipt_result(receipt_json).payload
+    members = payload.to_h.except(:preorder_date_ms)
+    rebuilt = APRV::ReceiptPayload.new(**members)
+    assert_nil rebuilt.preorder_date_ms
+    assert_equal payload, rebuilt
   end
 
   def test_ids_are_decimal_strings_and_keep_every_bit

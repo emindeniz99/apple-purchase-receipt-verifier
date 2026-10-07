@@ -46,7 +46,8 @@ module FakeModule
           "is_trial_period" => false, "is_in_intro_offer_period" => true,
           "unknown_attributes" => { "1799" => ["AQID"] }
         }],
-        "original_purchase_date_ms" => nil, "original_application_version" => "1.0",
+        "original_purchase_date_ms" => nil, "preorder_date_ms" => nil,
+        "original_application_version" => "1.0",
         "expiration_date_ms" => nil, "unknown_attributes" => { "13" => ["BAU=", "Bg=="] }
       },
       "environment" => "Sandbox"
