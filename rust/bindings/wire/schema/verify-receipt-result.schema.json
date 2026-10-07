@@ -52,6 +52,7 @@
         "version_external_identifier",
         "in_app",
         "original_purchase_date_ms",
+        "preorder_date_ms",
         "original_application_version",
         "expiration_date_ms",
         "unknown_attributes"
@@ -176,6 +177,17 @@
         },
         "original_purchase_date_ms": {
           "description": "Attribute 18.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochMillis"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preorder_date_ms": {
+          "description": "Attribute 32, the pre-order date.",
           "anyOf": [
             {
               "$ref": "#/$defs/epochMillis"

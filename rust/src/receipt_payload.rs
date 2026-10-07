@@ -20,6 +20,11 @@
 //! 1713  is trial period (in-app)  -> is_trial_period
 //! ```
 //!
+//! Type 32, the pre-order date, was established the same way, by comparing
+//! production receipts with Apple's `verifyReceipt` answers on 2026-10-07
+//! (the receipts are not committed). It is an `IA5String` holding an RFC 3339
+//! date, like types 12 and 18, and the answer carries it as `preorder_date`.
+//!
 //! Decode rules: a missing attribute is `None`; the first copy of a known attribute fills its
 //! field; every attribute that does not end up in a field (an unmodelled
 //! type, a later copy, a value that does not parse) is kept raw in
@@ -53,6 +58,7 @@ const ATTR_IN_APP: u32 = 17;
 const ATTR_ORIGINAL_PURCHASE_DATE: u32 = 18;
 const ATTR_ORIGINAL_APP_VERSION: u32 = 19;
 const ATTR_EXPIRATION_DATE: u32 = 21;
+const ATTR_PREORDER_DATE: u32 = 32;
 
 // In-app purchase attribute types.
 const IAP_QUANTITY: u32 = 1701;
@@ -107,6 +113,8 @@ pub struct ReceiptPayload {
     pub in_app: Vec<InAppPurchase>,
     /// Attribute 18.
     pub original_purchase_date_ms: Option<i64>,
+    /// Attribute 32, the pre-order date.
+    pub preorder_date_ms: Option<i64>,
     /// Attribute 19.
     pub original_application_version: Option<String>,
     /// Attribute 21.
@@ -193,6 +201,7 @@ pub(crate) fn parse_receipt_payload(attributes: Vec<Attribute>) -> ReceiptPayloa
                 | ATTR_ORIGINAL_PURCHASE_DATE
                 | ATTR_ORIGINAL_APP_VERSION
                 | ATTR_EXPIRATION_DATE
+                | ATTR_PREORDER_DATE
         );
         if known && is_later_copy(&mut seen, attribute.attribute_type) {
             keep_raw(&mut receipt.unknown_attributes, attribute);
@@ -230,6 +239,7 @@ pub(crate) fn parse_receipt_payload(attributes: Vec<Attribute>) -> ReceiptPayloa
                 decode_string(value).map(|v| receipt.original_application_version = Some(v))
             }
             ATTR_EXPIRATION_DATE => date(value).map(|v| receipt.expiration_date_ms = v),
+            ATTR_PREORDER_DATE => date(value).map(|v| receipt.preorder_date_ms = v),
             _ => Err(Undecodable),
         };
         if decoded.is_err() {
@@ -462,8 +472,8 @@ impl ReceiptPayload {
     /// `application_version`, `opaque_value`, `sha1_hash`,
     /// `receipt_creation_date_ms`, `download_id`,
     /// `version_external_identifier`, `in_app`, `original_purchase_date_ms`,
-    /// `original_application_version`, `expiration_date_ms`,
-    /// `unknown_attributes`.
+    /// `preorder_date_ms`, `original_application_version`,
+    /// `expiration_date_ms`, `unknown_attributes`.
     #[must_use]
     pub fn to_json(&self) -> String {
         json!({
@@ -479,6 +489,7 @@ impl ReceiptPayload {
             "version_external_identifier": id_json(self.version_external_identifier),
             "in_app": self.in_app.iter().map(InAppPurchase::json_value).collect::<Vec<_>>(),
             "original_purchase_date_ms": self.original_purchase_date_ms,
+            "preorder_date_ms": self.preorder_date_ms,
             "original_application_version": self.original_application_version,
             "expiration_date_ms": self.expiration_date_ms,
             "unknown_attributes": attributes_json(&self.unknown_attributes),
@@ -682,6 +693,44 @@ mod tests {
             assert_eq!(receipt.unknown_attributes.get(&12), Some(&vec![ia5(text)]));
             assert_eq!(read_creation_date(&set(&[date(text)])), None, "{text}");
         }
+    }
+
+    #[test]
+    fn attribute_32_is_the_preorder_date_and_reads_like_attributes_12_and_18() {
+        // Same grammar and same failure behaviour as the other receipt-level
+        // dates: an RFC 3339 date-time fills the field, an empty string means
+        // "not set", anything else (and a later copy) is kept raw.
+        let attribute_32 = |text: &str| attribute(&[32], &ia5(text));
+        let receipt = parse_receipt_payload(&set(&[attribute_32("2024-07-02T09:45:20Z")])).unwrap();
+        assert_eq!(receipt.preorder_date_ms, Some(1_719_913_520_000));
+        assert!(receipt.unknown_attributes.is_empty());
+        let written: serde_json::Value = serde_json::from_str(&receipt.to_json()).unwrap();
+        assert_eq!(
+            written.get("preorder_date_ms"),
+            Some(&serde_json::json!(1_719_913_520_000_i64))
+        );
+
+        let receipt = parse_receipt_payload(&set(&[attribute_32("")])).unwrap();
+        assert_eq!(receipt.preorder_date_ms, None);
+        assert!(receipt.unknown_attributes.is_empty());
+
+        let receipt = parse_receipt_payload(&set(&[attribute_32("2024-07-02 09:45:20Z")])).unwrap();
+        assert_eq!(receipt.preorder_date_ms, None);
+        assert_eq!(
+            receipt.unknown_attributes.get(&32),
+            Some(&vec![ia5("2024-07-02 09:45:20Z")])
+        );
+
+        let receipt = parse_receipt_payload(&set(&[
+            attribute_32("2024-07-02T09:45:20Z"),
+            attribute_32("2024-07-03T09:45:20Z"),
+        ]))
+        .unwrap();
+        assert_eq!(receipt.preorder_date_ms, Some(1_719_913_520_000));
+        assert_eq!(
+            receipt.unknown_attributes.get(&32),
+            Some(&vec![ia5("2024-07-03T09:45:20Z")])
+        );
     }
 
     #[test]
