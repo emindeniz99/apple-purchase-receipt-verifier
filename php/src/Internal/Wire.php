@@ -152,6 +152,7 @@ final class Wire
             versionExternalIdentifier: self::id($v['version_external_identifier'] ?? null),
             inApp: array_map(self::inApp(...), array_values($inApp ?? [])),
             originalPurchaseDateMs: self::int($v['original_purchase_date_ms'] ?? null),
+            preorderDateMs: self::int($v['preorder_date_ms'] ?? null),
             originalApplicationVersion: self::string($v['original_application_version'] ?? null),
             expirationDateMs: self::int($v['expiration_date_ms'] ?? null),
             unknownAttributes: self::unknown($v['unknown_attributes'] ?? null),

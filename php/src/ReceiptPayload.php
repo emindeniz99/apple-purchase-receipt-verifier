@@ -41,6 +41,7 @@ final readonly class ReceiptPayload
      * @param int|null $versionExternalIdentifier attribute 16
      * @param list<InAppPurchase> $inApp attribute 17, one entry per purchase, in receipt order
      * @param int|null $originalPurchaseDateMs attribute 18
+     * @param int|null $preorderDateMs attribute 32, the pre-order date
      * @param string|null $originalApplicationVersion attribute 19, the version the user originally purchased
      * @param int|null $expirationDateMs attribute 21, set only on receipts that expire (volume purchase)
      * @param array<int, list<string>> $unknownAttributes raw value octets of
@@ -67,6 +68,7 @@ final readonly class ReceiptPayload
         public ?int $versionExternalIdentifier = null,
         public array $inApp = [],
         public ?int $originalPurchaseDateMs = null,
+        public ?int $preorderDateMs = null,
         public ?string $originalApplicationVersion = null,
         public ?int $expirationDateMs = null,
         public array $unknownAttributes = [],
@@ -101,6 +103,7 @@ final readonly class ReceiptPayload
             'version_external_identifier' => PayloadJson::id($this->versionExternalIdentifier),
             'in_app' => array_map(PayloadJson::inApp(...), $this->inApp),
             'original_purchase_date_ms' => $this->originalPurchaseDateMs,
+            'preorder_date_ms' => $this->preorderDateMs,
             'original_application_version' => $this->originalApplicationVersion,
             'expiration_date_ms' => $this->expirationDateMs,
             'unknown_attributes' => PayloadJson::attributes($this->unknownAttributes),
