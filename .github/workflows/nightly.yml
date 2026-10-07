@@ -228,11 +228,13 @@ jobs:
       # Surefire starts the test JVM with absolute paths into the checkout,
       # ~/.m2 and the runner's temporary directory, and talks to it over
       # stdin and stdout, so the container mounts those paths unchanged and
-      # keeps stdin open.
+      # keeps stdin open. Surefire 3.6 refuses a test.jvm whose file name
+      # is not `java`, so the wrapper sits in a bin/ of its own.
       - name: a java that runs on s390x
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/java-s390x" <<'SH'
+          mkdir -p "$RUNNER_TEMP/java-s390x/bin"
+          cat > "$RUNNER_TEMP/java-s390x/bin/java" <<'SH'
           #!/bin/sh
           exec docker run --rm -i --platform linux/s390x \
             --user "$(id -u):$(id -g)" -e HOME="$HOME" \
@@ -241,10 +243,10 @@ jobs:
             eclipse-temurin:21-jre-noble@sha256:0c324fbe2e1455c3159184717440f3b52906ef82a39c4a6efc9edb401d31971a \
             java "$@"
           SH
-          chmod +x "$RUNNER_TEMP/java-s390x"
+          chmod +x "$RUNNER_TEMP/java-s390x/bin/java"
       - name: the Endive cases and ABI tests on s390x
         run: |
-          mvn -B -f java-wasm verify "-Dtest.jvm=$RUNNER_TEMP/java-s390x" \
+          mvn -B -f java-wasm verify "-Dtest.jvm=$RUNNER_TEMP/java-s390x/bin/java" \
             -Dtest='ConformanceCasesTest,EndiveAbiTest' -Dsurefire.failIfNoSpecifiedTests=false
 
   # OD-05. The archive is a .tar.gz with the G1 layout at its top level:
