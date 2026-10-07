@@ -69,6 +69,7 @@ type ReceiptPayload struct {
 	VersionExternalIdentifier  *int64          // 16
 	InApp                      []InAppPurchase // 17, one entry per copy
 	OriginalPurchaseDateMs     *int64          // 18
+	PreorderDateMs             *int64          // 32
 	OriginalApplicationVersion *string         // 19
 	ExpirationDateMs           *int64          // 21
 	// UnknownAttributes holds every attribute that did not end up in a
@@ -100,6 +101,7 @@ type receiptJSON struct {
 	VersionExternalIdentifier  *string             `json:"version_external_identifier"`
 	InApp                      []inAppJSON         `json:"in_app"`
 	OriginalPurchaseDateMs     *int64              `json:"original_purchase_date_ms"`
+	PreorderDateMs             *int64              `json:"preorder_date_ms"`
 	OriginalApplicationVersion *string             `json:"original_application_version"`
 	ExpirationDateMs           *int64              `json:"expiration_date_ms"`
 	UnknownAttributes          map[string][]string `json:"unknown_attributes"`
@@ -153,7 +155,7 @@ func attributesJSON(attrs UnknownAttributes) map[string][]string {
 // receipt_type, app_item_id, bundle_id, bundle_id_bytes,
 // application_version, opaque_value, sha1_hash, receipt_creation_date_ms,
 // download_id, version_external_identifier, in_app,
-// original_purchase_date_ms, original_application_version,
+// original_purchase_date_ms, preorder_date_ms, original_application_version,
 // expiration_date_ms, unknown_attributes.
 func (r *ReceiptPayload) ToJSON() string {
 	inApp := make([]inAppJSON, len(r.InApp))
@@ -175,6 +177,7 @@ func (r *ReceiptPayload) ToJSON() string {
 		VersionExternalIdentifier:  idJSON(r.VersionExternalIdentifier),
 		InApp:                      inApp,
 		OriginalPurchaseDateMs:     r.OriginalPurchaseDateMs,
+		PreorderDateMs:             r.PreorderDateMs,
 		OriginalApplicationVersion: r.OriginalApplicationVersion,
 		ExpirationDateMs:           r.ExpirationDateMs,
 		UnknownAttributes:          attributesJSON(r.UnknownAttributes),
@@ -222,6 +225,7 @@ func receiptFromJSON(raw []byte, environment *Environment) (*ReceiptPayload, err
 		SHA1Hash:                   wire.SHA1Hash,
 		ReceiptCreationDateMs:      wire.ReceiptCreationDateMs,
 		OriginalPurchaseDateMs:     wire.OriginalPurchaseDateMs,
+		PreorderDateMs:             wire.PreorderDateMs,
 		OriginalApplicationVersion: wire.OriginalApplicationVersion,
 		ExpirationDateMs:           wire.ExpirationDateMs,
 		Environment:                environment,

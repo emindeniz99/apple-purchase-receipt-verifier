@@ -59,7 +59,7 @@ const fullReceiptPayload = `{
    "web_order_line_item_id":"9223372036854775807","cancellation_date_ms":null,
    "is_trial_period":true,"is_in_intro_offer_period":false,
    "unknown_attributes":{"9999":["AQ=="]}}],
- "original_purchase_date_ms":3,"original_application_version":"1.0",
+ "original_purchase_date_ms":3,"preorder_date_ms":4,"original_application_version":"1.0",
  "expiration_date_ms":null,
  "unknown_attributes":{"13":["AQI=","Aw=="],"2147483647":[]}}`
 
@@ -94,6 +94,7 @@ func TestAVerifiedReceiptIsReadIntoTheGoTypes(t *testing.T) {
 			UnknownAttributes:      applereceipt.UnknownAttributes{9999: {{1}}},
 		}},
 		OriginalPurchaseDateMs:     ptr(int64(3)),
+		PreorderDateMs:             ptr(int64(4)),
 		OriginalApplicationVersion: ptr("1.0"),
 		UnknownAttributes:          applereceipt.UnknownAttributes{13: {{1, 2}, {3}}, 2147483647: {}},
 		Environment:                ptr(applereceipt.EnvironmentSandbox),
