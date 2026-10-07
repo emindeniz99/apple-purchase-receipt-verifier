@@ -3,4 +3,4 @@ release-please-config.json's ``extra-files``; release-please bumps the
 marked line below, so it stays at the last released version until then and
 is never edited by hand otherwise."""
 
-CURRENT = "0.9.0"  # x-release-please-version
+CURRENT = "0.10.0"  # x-release-please-version

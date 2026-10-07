@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.10.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.9.0...v0.10.0) (2026-10-07)
+
+
+### Features
+
+* **dotnet:** map the pre-order date into the receipt payload ([300db06](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/300db065bc4bf7f675d28dee3bff8649056adb95))
+* **fixtures:** pin the pre-order date and download_id null ([389a623](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/389a623483a90171496cdf1cd09e67fe476b4fdf))
+* **go:** map the pre-order date into the receipt payload ([63f7f9c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/63f7f9cdd88749dff52a2baa00a218535ca2d8a1))
+* **java:** map the pre-order date into the -wasm receipt payload ([1b9969f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1b9969ff02a3806c3c3faebdb9a7f877e637cec7))
+* **java:** read the pre-order date and answer download_id null ([4b7f547](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4b7f547473da4098e38c5115f4db943282b92596))
+* **node:** map the pre-order date into the receipt payload ([efac2f3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/efac2f3f63a724ab93fed49961981a46941a86c2))
+* **php:** map the pre-order date into the receipt payload ([5f1d34f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5f1d34ff3fb2cc1e989c55cb7df00d51f4228132))
+* **python:** map the pre-order date into the receipt payload ([4f9d545](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4f9d545da7f79bc42235cef0b57ab6fc4bfb65c4))
+* **ruby:** map the pre-order date into the receipt payload ([b382030](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b382030050d82303d351fbcbf949b8839f14d0e5))
+* **rust:** read the pre-order date and answer download_id null ([0699685](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0699685bb8886e5c07640d242cca87e8111dcec1))
+* **rust:** read the pre-order date and answer download_id null ([b0526a1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b0526a1a2283044bc8c1155d70c58b026ac93cb1))
+* **swift:** map the pre-order date into the receipt payload ([9701f22](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9701f2285eff406c767b78252f8171ee666c4162))
+
 ## [0.9.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.8.1...v0.9.0) (2026-10-06)
 
 
