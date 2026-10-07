@@ -92,9 +92,10 @@ documents and does not appear to emit.
 `receipt.receipt_type`, `bundle_id`, `application_version`,
 `original_application_version`, `receipt_creation_date` (+`_ms`, `_pst`),
 `request_date` (+`_ms`, `_pst`), `original_purchase_date` (+`_ms`, `_pst`),
-`expiration_date` (VPP receipts), `adam_id` / `app_item_id`, `download_id`,
-`version_external_identifier` (all three JSON numbers, the first two
-echoing the same value under both keys), and per-purchase `in_app` entries:
+`preorder_date` (+`_ms`, `_pst`; attribute 32, only when the receipt carries
+one), `expiration_date` (VPP receipts), `adam_id` / `app_item_id`,
+`download_id`, `version_external_identifier` (all three JSON numbers, the
+first two echoing the same value under both keys), and per-purchase `in_app` entries:
 `quantity`, `product_id`, `transaction_id`, `original_transaction_id`,
 `purchase_date` / `original_purchase_date` / `expires_date` /
 `cancellation_date` (each +`_ms`, `_pst`), `web_order_line_item_id`,
@@ -121,13 +122,26 @@ carry no `environment` at all.
   [RECEIPT-FIELDS.md](./RECEIPT-FIELDS.md)). Where a package exposes unmodelled
   attributes (Java: `InAppPurchase.unknownAttributes()`), a receipt that does
   carry 1721 has its raw value there.
-- `preorder_date`, and other offer fields introduced after the receipt
-  format froze.
+- Offer fields introduced after the receipt format froze. (`preorder_date` is
+  no longer one of them: it is attribute 32, and the endpoint writes it.)
 
 Measured against a genuine production receipt (not committed) and Apple's
 own `verifyReceipt` answer for it, 2026-09-21: the endpoint now matches
 Apple on 30 of the 31 fields Apple returned for that receipt, the lone gap
 being `in_app_ownership_type`.
+
+Compared against production receipts and Apple's `verifyReceipt` answers on
+2026-10-07 (receipts not committed), two more differences closed. Attribute 32
+is the pre-order date, and the endpoint now writes `preorder_date`,
+`preorder_date_ms` and `preorder_date_pst` in the same triplet format as
+`original_purchase_date`, omitting all three when the receipt has none (or
+when its value is not an RFC 3339 date, which stays raw in
+`unknownAttributes()`). And for a receipt without attribute 15, Apple answers
+`"download_id": null`; the endpoint writes that null too, where it used to
+omit the key. `download_id` is the one key written as `null`: every other
+absent field is omitted, as in Apple's answer. Because the shared cases read a
+`null` and an absent key alike, the key's presence is pinned by each
+implementation's own endpoint test, not by `fixtures/cases.json`.
 
 For a purchase whose attribute 1711 is 0 (every consumable checked, in
 production and sandbox), Apple omits `web_order_line_item_id`, and since
