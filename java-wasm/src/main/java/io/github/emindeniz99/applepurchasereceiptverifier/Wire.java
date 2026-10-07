@@ -172,6 +172,7 @@ final class Wire {
         "version_external_identifier",
         "in_app",
         "original_purchase_date_ms",
+        "preorder_date_ms",
         "original_application_version",
         "expiration_date_ms",
         "unknown_attributes"
@@ -215,6 +216,7 @@ final class Wire {
                 id(m, "version_external_identifier"),
                 inApp,
                 number(m, "original_purchase_date_ms"),
+                number(m, "preorder_date_ms"),
                 string(m, "original_application_version"),
                 number(m, "expiration_date_ms"),
                 attributes(m),
