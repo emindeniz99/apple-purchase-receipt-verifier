@@ -11,6 +11,7 @@ public struct InAppPurchase: Sendable, Equatable {
     public var expiresDateMs: Int64?
     public var webOrderLineItemId: Int64?
     public var cancellationDateMs: Int64?
+    public var cancellationReason: String?
     /// 0 is `false`, any other value `true`.
     public var isTrialPeriod: Bool?
     /// 0 is `false`, any other value `true`.
@@ -108,7 +109,7 @@ extension ReceiptPayload {
 
 extension InAppPurchase {
     fileprivate var jsonObject: [String: Any] {
-        [
+        var object: [String: Any] = [
             "quantity": nullable(quantity),
             "product_id": nullable(productId),
             "transaction_id": nullable(transactionId),
@@ -124,6 +125,8 @@ extension InAppPurchase {
             "is_in_intro_offer_period": nullable(isInIntroOfferPeriod),
             "unknown_attributes": attributesObject(unknownAttributes),
         ]
+        if let cancellationReason { object["cancellation_reason"] = cancellationReason }
+        return object
     }
 }
 
