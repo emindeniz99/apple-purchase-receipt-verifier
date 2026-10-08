@@ -72,6 +72,7 @@ const IAP_WEB_ORDER_LINE_ITEM_ID: u32 = 1711;
 const IAP_CANCELLATION_DATE: u32 = 1712;
 const IAP_IS_TRIAL_PERIOD: u32 = 1713;
 const IAP_IS_IN_INTRO_OFFER_PERIOD: u32 = 1719;
+const IAP_CANCELLATION_REASON: u32 = 1720;
 
 /// The raw attributes that did not end up in a typed field, by attribute
 /// type, each type's values in receipt order.
@@ -148,6 +149,8 @@ pub struct InAppPurchase {
     pub is_trial_period: Option<bool>,
     /// 1719: 0 is `false`, any other value `true`.
     pub is_in_intro_offer_period: Option<bool>,
+    /// 1720, decoded as a decimal string.
+    pub cancellation_reason: Option<String>,
     /// Every attribute of this purchase that did not end up in a field.
     pub unknown_attributes: UnknownAttributes,
 }
@@ -271,6 +274,7 @@ fn parse_in_app(value: &[u8]) -> Result<InAppPurchase, Undecodable> {
                 | IAP_CANCELLATION_DATE
                 | IAP_IS_TRIAL_PERIOD
                 | IAP_IS_IN_INTRO_OFFER_PERIOD
+                | IAP_CANCELLATION_REASON
         );
         if known && is_later_copy(&mut seen, attribute.attribute_type) {
             keep_raw(&mut purchase.unknown_attributes, attribute);
@@ -290,6 +294,9 @@ fn parse_in_app(value: &[u8]) -> Result<InAppPurchase, Undecodable> {
             IAP_EXPIRES_DATE => date(value).map(|v| purchase.expires_date_ms = v),
             IAP_WEB_ORDER_LINE_ITEM_ID => {
                 decode_integer(value).map(|v| purchase.web_order_line_item_id = Some(v))
+            }
+            IAP_CANCELLATION_REASON => {
+                decode_integer(value).map(|v| purchase.cancellation_reason = Some(v.to_string()))
             }
             IAP_CANCELLATION_DATE => date(value).map(|v| purchase.cancellation_date_ms = v),
             IAP_IS_TRIAL_PERIOD => {
@@ -466,7 +473,8 @@ impl ReceiptPayload {
     /// full purchase data; the caller decides what to write where. Every port
     /// writes the same value; the bytes may differ.
     /// `null` for a missing field, 64-bit ids as strings, bytes as padded
-    /// standard base64, dates as epoch-millisecond numbers.
+    /// standard base64, dates as epoch-millisecond numbers. An absent
+    /// `cancellation_reason` is omitted from an in-app purchase.
     ///
     /// `receipt_type`, `app_item_id`, `bundle_id`, `bundle_id_bytes`,
     /// `application_version`, `opaque_value`, `sha1_hash`,
@@ -500,7 +508,7 @@ impl ReceiptPayload {
 
 impl InAppPurchase {
     fn json_value(&self) -> Value {
-        json!({
+        let mut value = json!({
             "quantity": self.quantity,
             "product_id": self.product_id,
             "transaction_id": self.transaction_id,
@@ -513,7 +521,14 @@ impl InAppPurchase {
             "is_trial_period": self.is_trial_period,
             "is_in_intro_offer_period": self.is_in_intro_offer_period,
             "unknown_attributes": attributes_json(&self.unknown_attributes),
-        })
+        });
+        if let (Some(reason), Some(object)) = (&self.cancellation_reason, value.as_object_mut()) {
+            object.insert(
+                "cancellation_reason".to_owned(),
+                Value::String(reason.clone()),
+            );
+        }
+        value
     }
 }
 
@@ -1103,8 +1118,8 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_purchase_writes_every_key_as_null() {
-        // A missing field is null, never omitted.
+    fn an_empty_purchase_omits_the_reason_and_writes_other_fields_as_null() {
+        // cancellation_reason is omitted; other missing fields are null.
         let json = InAppPurchase::default().json_value();
         assert_eq!(
             json,

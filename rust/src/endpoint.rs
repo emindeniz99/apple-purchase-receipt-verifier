@@ -259,6 +259,11 @@ fn purchase_json(purchase: &InAppPurchase) -> Option<JsonValue> {
         "cancellation_date",
         purchase.cancellation_date_ms,
     )?;
+    present_string(
+        &mut json,
+        "cancellation_reason",
+        purchase.cancellation_reason.as_deref(),
+    );
     // Apple omits the key when attribute 1711 is 0, as it is for
     // consumables.
     if let Some(id) = purchase.web_order_line_item_id.filter(|id| *id != 0) {

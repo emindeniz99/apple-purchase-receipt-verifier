@@ -331,6 +331,10 @@
             }
           ]
         },
+        "cancellation_reason": {
+          "description": "1720, decimal string; omitted when absent",
+          "type": "string"
+        },
         "cancellation_date_ms": {
           "description": "1712",
           "anyOf": [

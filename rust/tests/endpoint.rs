@@ -388,3 +388,29 @@ fn the_receipt_date_grammar_s_two_ends_render() {
         "-001-12-31 16:07:02 America/Los_Angeles"
     );
 }
+
+#[test]
+fn cancellation_reason_is_a_string_and_absent_keys_are_omitted() {
+    for (shape, expected) in [
+        ("zero", Some("0")),
+        ("one", Some("1")),
+        ("absent", None),
+        ("malformed", None),
+        ("duplicate", Some("1")),
+    ] {
+        let (_, response) = respond_with(
+            common::anchor("generated-0.7/cancellation-reason-root.der"),
+            Environment::Sandbox,
+            NOW,
+            &format!("generated-0.7/cancellation-reason-{shape}.der"),
+        );
+        assert_eq!(response["status"], 0);
+        let purchase = &response["receipt"]["in_app"][0];
+        assert_eq!(
+            purchase.get("cancellation_reason"),
+            expected
+                .map(|value| Value::String(value.to_owned()))
+                .as_ref()
+        );
+    }
+}
