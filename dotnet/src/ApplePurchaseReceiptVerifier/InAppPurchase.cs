@@ -33,7 +33,29 @@ namespace ApplePurchaseReceiptVerifier
             bool? isTrialPeriod,
             bool? isInIntroOfferPeriod,
             IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknownAttributes)
+            : this(quantity, productId, transactionId, purchaseDateMs, originalTransactionId,
+                originalPurchaseDateMs, expiresDateMs, webOrderLineItemId, cancellationDateMs,
+                isTrialPeriod, isInIntroOfferPeriod, unknownAttributes, null)
         {
+        }
+
+        /// <summary>Builds a purchase with an optional attribute 1720 cancellation reason.</summary>
+        public InAppPurchase(
+            long? quantity,
+            string? productId,
+            string? transactionId,
+            long? purchaseDateMs,
+            string? originalTransactionId,
+            long? originalPurchaseDateMs,
+            long? expiresDateMs,
+            long? webOrderLineItemId,
+            long? cancellationDateMs,
+            bool? isTrialPeriod,
+            bool? isInIntroOfferPeriod,
+            IReadOnlyDictionary<int, IReadOnlyList<byte[]>> unknownAttributes,
+            string? cancellationReason)
+        {
+            CancellationReason = cancellationReason;
             Quantity = quantity;
             ProductId = productId;
             TransactionId = transactionId;
@@ -75,6 +97,9 @@ namespace ApplePurchaseReceiptVerifier
         /// <summary>Attribute 1712, epoch milliseconds UTC — set when Apple customer support cancelled or refunded.</summary>
         public long? CancellationDateMs { get; }
 
+        /// <summary>Attribute 1720, as a decimal string.</summary>
+        public string? CancellationReason { get; }
+
         /// <summary>Attribute 1713 — 0 is <see langword="false"/>, any other value is <see langword="true"/>.</summary>
         public bool? IsTrialPeriod { get; }
 
@@ -102,6 +127,7 @@ namespace ApplePurchaseReceiptVerifier
             Json.WriteNumberOrNull(json, "expires_date_ms", ExpiresDateMs);
             json.WriteString("web_order_line_item_id", ReceiptPayload.IdString(WebOrderLineItemId));
             Json.WriteNumberOrNull(json, "cancellation_date_ms", CancellationDateMs);
+            if (CancellationReason != null) json.WriteString("cancellation_reason", CancellationReason);
             Json.WriteBooleanOrNull(json, "is_trial_period", IsTrialPeriod);
             Json.WriteBooleanOrNull(json, "is_in_intro_offer_period", IsInIntroOfferPeriod);
             ReceiptPayload.WriteUnknownAttributes(json, _unknownAttributes);

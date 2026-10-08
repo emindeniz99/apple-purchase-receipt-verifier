@@ -231,7 +231,8 @@ public class ApiShapeTests
 
         Assert.NotNull(typeof(JsonPayload).GetMethod("Create", BindingFlags.Public | BindingFlags.Static));
         Assert.Single(typeof(ReceiptPayload).GetConstructors());
-        Assert.Single(typeof(InAppPurchase).GetConstructors());
+        // Retain the original constructor alongside the attribute 1720 overload.
+        Assert.Equal(2, typeof(InAppPurchase).GetConstructors().Length);
     }
 
     /// <summary>

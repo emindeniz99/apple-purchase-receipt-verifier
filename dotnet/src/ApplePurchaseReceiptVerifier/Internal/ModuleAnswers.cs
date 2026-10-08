@@ -199,7 +199,9 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         private static InAppPurchase Purchase(Dictionary<string, JsonElement> json)
         {
-            RequireKeys(json, PurchaseKeys, "an in_app entry");
+            var required = new Dictionary<string, JsonElement>(json);
+            required.Remove("cancellation_reason");
+            RequireKeys(required, PurchaseKeys, "an in_app entry");
             return new InAppPurchase(
                 OptLong(json, "quantity"),
                 OptStr(json, "product_id"),
@@ -212,7 +214,8 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 OptLong(json, "cancellation_date_ms"),
                 OptBool(json, "is_trial_period"),
                 OptBool(json, "is_in_intro_offer_period"),
-                Unknown(json));
+                Unknown(json),
+                json.ContainsKey("cancellation_reason") ? OptStr(json, "cancellation_reason") : null);
         }
 
         private static IReadOnlyDictionary<int, IReadOnlyList<byte[]>> Unknown(Dictionary<string, JsonElement> json)
