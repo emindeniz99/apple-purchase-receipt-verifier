@@ -6,7 +6,8 @@
  * verified it and decoded every field; this file moves the values it
  * reports into JavaScript types: bytes arrive as padded standard base64
  * and become `Uint8Array`s, 64-bit ids stay decimal strings, dates stay
- * epoch-millisecond numbers, and a missing field is `null`
+ * epoch-millisecond numbers, and a missing field is `null`; `toJson()`
+ * omits an absent in-app `cancellation_reason`
  * (docs/design/0.7-api.md "Our JSON"). A value of the wrong type means the
  * module and this package disagree about the wire, which the caller sees
  * as `INTERNAL_ERROR`.

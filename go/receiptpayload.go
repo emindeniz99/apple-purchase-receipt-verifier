@@ -87,8 +87,8 @@ type ReceiptPayload struct {
 // --- JSON ------------------------------------------------------------------
 
 // receiptJSON and inAppJSON are the shapes ToJSON hands to encoding/json.
-// A nil pointer is written as null, never omitted; []byte is written as
-// padded standard base64.
+// A nil pointer is written as null, except an absent CancellationReason
+// is omitted; []byte is written as padded standard base64.
 type receiptJSON struct {
 	ReceiptType                *string             `json:"receipt_type"`
 	AppItemID                  *string             `json:"app_item_id"`
