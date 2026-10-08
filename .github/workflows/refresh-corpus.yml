@@ -1,0 +1,129 @@
+# R35: rows belong to a module. Refresh the public test corpus after a
+# release, then change fixtures/corpus.json in a separate reviewed PR.
+name: refresh parity corpus
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published module release (vX.Y.Z)
+        required: true
+        type: string
+      corpus_date:
+        description: New corpus date (YYYY-MM-DD)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-corpus
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      source_sha: ${{ steps.archive.outputs.source_sha }}
+    steps:
+      - name: validate inputs
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CORPUS_DATE: ${{ inputs.corpus_date }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$CORPUS_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          [[ "$(date -u -d "$CORPUS_DATE" +%F)" = "$CORPUS_DATE" ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: regenerate rows from public test inputs
+        id: archive
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CORPUS_DATE: ${{ inputs.corpus_date }}
+        run: |
+          set -euo pipefail
+          g1="$RUNNER_TEMP/g1"
+          out="$RUNNER_TEMP/corpus-release"
+          mkdir -p "$g1" "$out"
+          url="$(jq -er '.url | select(startswith("https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases/download/corpus-"))' fixtures/corpus.json)"
+          hash="$(jq -er '.sha256 | select(test("^[0-9a-f]{64}$"))' fixtures/corpus.json)"
+          curl -fsSL --retry 3 "$url" -o "$RUNNER_TEMP/previous.tar.gz"
+          echo "$hash  $RUNNER_TEMP/previous.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/previous.tar.gz" -C "$g1"
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
+          for file in aprv.wasm aprv.component.wasm aprv.wit; do
+            curl -fsSL --retry 3 "$base/$file" -o "$g1/$file"
+          done
+          cp rust/bindings/abi/wit/aprv.wit "$RUNNER_TEMP/expected.wit"
+          cmp "$RUNNER_TEMP/expected.wit" "$g1/aprv.wit"
+          cat go/internal/wasm/aprv.wasm.sha256 node/wasm/aprv.component.wasm.sha256 > "$g1/SHA256SUMS"
+          (cd "$g1" && sha256sum -c SHA256SUMS && sha256sum aprv.wit >> SHA256SUMS)
+          for corpus in cases hostile algorithms substrate fuzz; do
+            rows="$g1/rows/module-$corpus.jsonl"
+            node tools/wasm-trap-host.mjs calls "$g1/aprv.wasm" "$g1/calls/$corpus.pinned.jsonl" > "$rows"
+            node tools/wasm-trap-host.mjs calls "$g1/aprv.wasm" "$g1/calls/$corpus.pinned.jsonl" > "$RUNNER_TEMP/repeat.jsonl"
+            cmp "$rows" "$RUNNER_TEMP/repeat.jsonl"
+          done
+          source_sha="$(git rev-parse HEAD)"
+          {
+            echo "# corpus-$CORPUS_DATE: $RELEASE_TAG"
+            echo
+            echo "Source commit: $source_sha."
+            echo "Calls and clocks are unchanged from the previous pinned corpus."
+            echo "Reference rows were generated twice by tools/wasm-trap-host.mjs: identical, no traps or unexpected imports."
+            echo "Only public repository fixtures and test keys; no production receipt."
+            echo
+            cat "$g1/SHA256SUMS"
+          } > "$g1/README.md"
+          archive="corpus-$CORPUS_DATE.tar.gz"
+          tar --sort=name --mtime="$CORPUS_DATE 00:00:00Z" --owner=0 --group=0 --numeric-owner -C "$g1" -cf - . | gzip -n > "$out/$archive"
+          (cd "$out" && sha256sum "$archive" > "$archive.sha256")
+          cp "$g1/README.md" "$out/README.md"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: corpus-release
+          path: ${{ runner.temp }}/corpus-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # No checkout or execution of the corpus with a write token.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: corpus-release
+          path: ${{ runner.temp }}/corpus-release/
+      - name: publish a new corpus prerelease
+        working-directory: ${{ runner.temp }}/corpus-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CORPUS_DATE: ${{ inputs.corpus_date }}
+          SOURCE_SHA: ${{ needs.generate.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          archive="corpus-$CORPUS_DATE.tar.gz"
+          sha256sum -c "$archive.sha256"
+          # No --clobber: an existing corpus tag or asset is immutable.
+          gh release create "corpus-$CORPUS_DATE" "$archive" "$archive.sha256" \
+            --target "$SOURCE_SHA" --prerelease --latest=false \
+            --title "parity corpus $CORPUS_DATE" --notes-file README.md
+          hash="$(cut -c1-64 "$archive.sha256")"
+          jq -n --arg url "https://github.com/$GH_REPO/releases/download/corpus-$CORPUS_DATE/$archive" \
+            --arg sha256 "$hash" --arg generated "$CORPUS_DATE" \
+            '{url: $url, sha256: $sha256, generated: $generated}' >> "$GITHUB_STEP_SUMMARY"
