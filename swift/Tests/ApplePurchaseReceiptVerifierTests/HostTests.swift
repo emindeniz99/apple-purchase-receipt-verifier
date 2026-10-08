@@ -259,6 +259,27 @@ final class FacadeTests: XCTestCase {
 
     // MARK: the six outcomes (ARCHITECTURE.md §4)
 
+    func testCancellationReasonSurvivesTheWireAsAnOptionalString() throws {
+        for reason in ["0", "1"] {
+            let json = Self.receiptJson.replacingOccurrences(
+                of: #""cancellation_date_ms":null,"#,
+                with: #""cancellation_date_ms":null,"cancellation_reason":"\#(reason)","#)
+            let result = try verifier().verifyReceipt(
+                base64: #"{"verified":true,"payload":\#(json),"environment":"Sandbox"}"#)
+            let payload = try XCTUnwrap(result.payload)
+            XCTAssertEqual(payload.inApp[0].cancellationReason, reason)
+            let written = try JSONSerialization.jsonObject(with: Data(payload.toJson().utf8))
+            XCTAssertTrue(sameJsonValue(written, try JSONSerialization.jsonObject(with: Data(json.utf8))))
+        }
+        let result = try verifier().verifyReceipt(
+            base64: #"{"verified":true,"payload":\#(Self.receiptJson),"environment":"Sandbox"}"#)
+        let payload = try XCTUnwrap(result.payload)
+        XCTAssertNil(payload.inApp[0].cancellationReason)
+        let written = try JSONSerialization.jsonObject(with: Data(payload.toJson().utf8)) as! [String: Any]
+        let purchases = written["in_app"] as! [[String: Any]]
+        XCTAssertNil(purchases[0]["cancellation_reason"])
+    }
+
     func testVerifiedIsThePayload() throws {
         let result = try verifier().verifyReceipt(
             base64: #"{"verified":true,"payload":\#(Self.receiptJson),"environment":"Sandbox"}"#)

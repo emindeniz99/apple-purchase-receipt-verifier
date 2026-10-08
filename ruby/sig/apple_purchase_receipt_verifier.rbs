@@ -107,6 +107,7 @@ module ApplePurchaseReceiptVerifier
     attr_reader expires_date_ms: Integer?
     attr_reader web_order_line_item_id: Integer?
     attr_reader cancellation_date_ms: Integer?
+    attr_reader cancellation_reason: String?
     attr_reader is_trial_period: bool?
     attr_reader is_in_intro_offer_period: bool?
     attr_reader unknown_attributes: Hash[Integer, Array[String]]
@@ -114,7 +115,7 @@ module ApplePurchaseReceiptVerifier
     def initialize: (quantity: Integer?, product_id: String?, transaction_id: String?,
                      purchase_date_ms: Integer?, original_transaction_id: String?,
                      original_purchase_date_ms: Integer?, expires_date_ms: Integer?,
-                     web_order_line_item_id: Integer?, cancellation_date_ms: Integer?,
+                     web_order_line_item_id: Integer?, cancellation_date_ms: Integer?, ?cancellation_reason: String?,
                      is_trial_period: bool?, is_in_intro_offer_period: bool?,
                      unknown_attributes: Hash[Integer, Array[String]]) -> void
     def json_value: () -> Hash[String, untyped]

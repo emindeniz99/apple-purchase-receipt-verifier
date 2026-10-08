@@ -24,7 +24,8 @@
 //!   with no other member;
 //! - 64-bit ids are JSON strings holding a decimal `i64`; dates are
 //!   epoch-millisecond numbers; bytes are padded standard base64; a missing
-//!   field is `null`, never omitted; booleans are JSON booleans;
+//!   field is `null`, except an absent in-app `cancellation_reason` is
+//!   omitted; booleans are JSON booleans;
 //! - `unknown_attributes` is an object keyed by the decimal attribute type,
 //!   in ascending order, each value a list of base64 strings in receipt
 //!   order;
@@ -106,7 +107,10 @@ struct Purchase<'a>(&'a InAppPurchase);
 impl Serialize for Purchase<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let purchase = self.0;
-        let mut object = serializer.serialize_struct("InAppPurchase", 12)?;
+        let mut object = serializer.serialize_struct(
+            "InAppPurchase",
+            12 + usize::from(purchase.cancellation_reason.is_some()),
+        )?;
         object.serialize_field("quantity", &purchase.quantity)?;
         object.serialize_field("product_id", &purchase.product_id)?;
         object.serialize_field("transaction_id", &purchase.transaction_id)?;
@@ -122,6 +126,9 @@ impl Serialize for Purchase<'_> {
             &purchase.web_order_line_item_id.map(Id),
         )?;
         object.serialize_field("cancellation_date_ms", &purchase.cancellation_date_ms)?;
+        if let Some(reason) = &purchase.cancellation_reason {
+            object.serialize_field("cancellation_reason", reason)?;
+        }
         object.serialize_field("is_trial_period", &purchase.is_trial_period)?;
         object.serialize_field(
             "is_in_intro_offer_period",
@@ -434,6 +441,7 @@ mod tests {
                     original_purchase_date_ms: Some(0),
                     expires_date_ms: Some(i64::MAX),
                     web_order_line_item_id: Some(i64::MIN),
+                    cancellation_reason: None,
                     cancellation_date_ms: Some(i64::MIN),
                     is_trial_period: Some(true),
                     is_in_intro_offer_period: Some(false),
@@ -452,6 +460,7 @@ mod tests {
                     original_purchase_date_ms: Some(1_375_340_400_000),
                     expires_date_ms: Some(1_375_344_000_000),
                     web_order_line_item_id: Some(0),
+                    cancellation_reason: None,
                     cancellation_date_ms: Some(1_375_341_000_000),
                     is_trial_period: Some(false),
                     is_in_intro_offer_period: Some(true),

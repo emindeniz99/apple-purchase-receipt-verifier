@@ -161,6 +161,7 @@ extension InAppPurchase: Decodable {
         case quantity, productId = "product_id", transactionId = "transaction_id", purchaseDateMs = "purchase_date_ms"
         case originalTransactionId = "original_transaction_id", originalPurchaseDateMs = "original_purchase_date_ms"
         case expiresDateMs = "expires_date_ms", webOrderLineItemId = "web_order_line_item_id"
+        case cancellationReason = "cancellation_reason"
         case cancellationDateMs = "cancellation_date_ms", isTrialPeriod = "is_trial_period"
         case isInIntroOfferPeriod = "is_in_intro_offer_period", unknownAttributes = "unknown_attributes"
     }
@@ -178,6 +179,7 @@ extension InAppPurchase: Decodable {
         expiresDateMs = try c.decodeIfPresent(Int64.self, forKey: .expiresDateMs)
         webOrderLineItemId = try c.id(.webOrderLineItemId)
         cancellationDateMs = try c.decodeIfPresent(Int64.self, forKey: .cancellationDateMs)
+        cancellationReason = try c.decodeIfPresent(String.self, forKey: .cancellationReason)
         isTrialPeriod = try c.decodeIfPresent(Bool.self, forKey: .isTrialPeriod)
         isInIntroOfferPeriod = try c.decodeIfPresent(Bool.self, forKey: .isInIntroOfferPeriod)
         unknownAttributes = try c.attributes(.unknownAttributes)

@@ -110,6 +110,7 @@ final class EndpointResponse {
         appleDates(json, "original_purchase_date", purchase.originalPurchaseDateMs());
         appleDates(json, "expires_date", purchase.expiresDateMs());
         appleDates(json, "cancellation_date", purchase.cancellationDateMs());
+        string(json, "cancellation_reason", purchase.cancellationReason());
         // Apple omits the key when attribute 1711 is 0, as it is for
         // consumables.
         Long webOrderLineItemId = purchase.webOrderLineItemId();

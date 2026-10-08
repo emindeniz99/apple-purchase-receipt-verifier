@@ -81,6 +81,9 @@ class InAppPurchase:
         default_factory=lambda: MappingProxyType({})
     )
 
+    #: Attribute 1720, as a decimal string.
+    cancellation_reason: "str | None" = None
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "unknown_attributes", _frozen_attributes(self.unknown_attributes))
 
@@ -95,6 +98,11 @@ class InAppPurchase:
             "expires_date_ms": self.expires_date_ms,
             "web_order_line_item_id": _id(self.web_order_line_item_id),
             "cancellation_date_ms": self.cancellation_date_ms,
+            **(
+                {}
+                if self.cancellation_reason is None
+                else {"cancellation_reason": self.cancellation_reason}
+            ),
             "is_trial_period": self.is_trial_period,
             "is_in_intro_offer_period": self.is_in_intro_offer_period,
             "unknown_attributes": _attributes_json(self.unknown_attributes),

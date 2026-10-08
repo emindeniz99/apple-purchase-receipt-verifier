@@ -290,6 +290,8 @@ pub struct InAppPurchase {
     pub is_trial_period: Option<bool>,
     /// 1719: 0 is `false`, any other value `true`.
     pub is_in_intro_offer_period: Option<bool>,
+    /// 1720, as a decimal string.
+    pub cancellation_reason: Option<String>,
     /// Every attribute of this purchase that did not end up in a field.
     pub unknown_attributes: UnknownAttributes,
 }
@@ -328,6 +330,7 @@ impl From<core_api::InAppPurchase> for InAppPurchase {
             expires_date_ms: purchase.expires_date_ms,
             web_order_line_item_id: purchase.web_order_line_item_id,
             cancellation_date_ms: purchase.cancellation_date_ms,
+            cancellation_reason: purchase.cancellation_reason,
             is_trial_period: purchase.is_trial_period,
             is_in_intro_offer_period: purchase.is_in_intro_offer_period,
             unknown_attributes: unknown_attributes(purchase.unknown_attributes),

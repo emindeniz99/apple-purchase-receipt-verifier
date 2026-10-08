@@ -224,7 +224,9 @@ final class Wire {
     }
 
     private static InAppPurchase purchase(Map<String, Object> m) {
-        keys(m, "in_app element", PURCHASE_KEYS);
+        Map<String, Object> required = new java.util.LinkedHashMap<>(m);
+        required.remove("cancellation_reason");
+        keys(required, "in_app element", PURCHASE_KEYS);
         return new InAppPurchase(
                 number(m, "quantity"),
                 string(m, "product_id"),
@@ -237,6 +239,7 @@ final class Wire {
                 number(m, "cancellation_date_ms"),
                 bool(m, "is_trial_period"),
                 bool(m, "is_in_intro_offer_period"),
+                m.containsKey("cancellation_reason") ? string(m, "cancellation_reason") : null,
                 attributes(m));
     }
 

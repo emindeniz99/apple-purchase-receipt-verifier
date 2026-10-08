@@ -83,7 +83,7 @@ class WireTest < Minitest::Test
     payload = WIRE.receipt_result(receipt_json(in_app: [purchase])).payload
     item = payload.in_app.fetch(0)
     assert_equal [2, "p", "t", 5, "o", 4, 9, 18_446_744_073_709_551, nil, true, false,
-                  { 1799 => ["\x01".b] }], item.to_h.values
+                  { 1799 => ["\x01".b] }, nil], item.to_h.values
     assert_equal purchase, JSON.parse(payload.to_json)["in_app"].fetch(0)
   end
 
