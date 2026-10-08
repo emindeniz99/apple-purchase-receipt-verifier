@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.11.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.10.0...v0.11.0) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **repo:** native cancellation reasons are nullable integers. Receipt JSON and aprv-wire include a null cancellation_reason when absent. Hand-built payload constructors use the new field order; Ruby callers must supply every Data member.
+
+### Bug Fixes
+
+* **dotnet:** retain the in-app cancellation reason ([87d5919](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/87d59194727cf2434ced5ce175b28bd71bbfd2f3))
+* **go:** retain the in-app cancellation reason ([7f3c520](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7f3c52060ae8354ea879a2b74b9abeb2c7935200))
+* **java:** decode the in-app cancellation reason ([3237096](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/32370967bd466f9ae0db9aefedde83ebcdd6a7c6))
+* **java:** retain the cancellation reason in the wasm host ([882c030](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/882c030aa69a30f67a385b89d867db71b4c74705))
+* **node:** retain the in-app cancellation reason ([7519d70](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7519d70afd6376423ad601f4ccd36adb90a27389))
+* **php:** retain the in-app cancellation reason ([e18a222](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e18a222170e364a2ee9ce41f7ec69a9104d5a861))
+* **python:** retain the in-app cancellation reason ([b4b152e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b4b152e1dfb6694bbb33c07b77b795273f58b41e))
+* **repo:** include in-app cancellation reasons across packages ([1f19aae](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1f19aaeb193f3262567169829a0a4e86a6d9a9ca))
+* **ruby:** retain the in-app cancellation reason ([a08eadf](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a08eadf8ab11b3b9b9e00a98b87bdfc55c0b4ed8))
+* **rust:** decode the in-app cancellation reason ([7b544ac](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7b544ac96a8acf73c89f2a33cc075fd9d665fb2a))
+* **swift:** retain the in-app cancellation reason ([1714f46](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1714f46284d2e8c9c52d50cf32c37a1c1c85a927))
+
+
+### Code Refactoring
+
+* **java:** share endpoint number writers ([44f2681](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/44f2681c3c135f25bdb127a9b0c4baf756880c64))
+* **repo:** unify nullable receipt fields across packages ([4fbf9f3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4fbf9f3e24fd370c8af95a426994486703b5e1af))
+* **rust:** share endpoint number writers ([99e667a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/99e667a8ea18b0403b9870848be54d77b01ab5a4))
+
 ## [0.10.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.9.0...v0.10.0) (2026-10-07)
 
 

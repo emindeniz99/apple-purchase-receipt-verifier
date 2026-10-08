@@ -18,6 +18,6 @@ namespace ApplePurchaseReceiptVerifier
     public static class LibraryVersion
     {
         /// <summary>The current released version, e.g. <c>"0.7.0"</c>.</summary>
-        public const string Current = "0.10.0"; // x-release-please-version
+        public const string Current = "0.11.0"; // x-release-please-version
     }
 }
