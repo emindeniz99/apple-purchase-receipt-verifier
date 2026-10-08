@@ -3,13 +3,17 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -34,6 +38,24 @@ import org.junit.jupiter.api.Test;
  * {@code ConformanceCasesTest}.
  */
 class VerifyReceiptEndpointTest {
+
+    @Test
+    void cancellationReasonIsAStringOnlyWhenDecoded() throws Exception {
+        X509Certificate root = (X509Certificate) CertificateFactory.getInstance("X.509")
+                .generateCertificate(new ByteArrayInputStream(
+                        Files.readAllBytes(TestFixtures.root().resolve("generated-0.7/cancellation-reason-root.der"))));
+        for (String shape : Arrays.asList("zero", "one", "absent", "malformed", "duplicate")) {
+            byte[] der = Files.readAllBytes(
+                    TestFixtures.root().resolve("generated-0.7/cancellation-reason-" + shape + ".der"));
+            JsonNode answer =
+                    MAPPER.readTree(Checks.verifier(root).verifyReceiptEndpoint(Environment.SANDBOX, request(der)));
+            assertEquals(0, answer.get("status").asInt());
+            JsonNode reason = answer.get("receipt").get("in_app").get(0).get("cancellation_reason");
+            if ("zero".equals(shape)) assertEquals(MAPPER.readTree("\"0\""), reason);
+            else if ("one".equals(shape) || "duplicate".equals(shape)) assertEquals(MAPPER.readTree("\"1\""), reason);
+            else assertNull(reason);
+        }
+    }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final byte[] OPAQUE = {1, 2, 3, 4, 5, 6, 7, 8};

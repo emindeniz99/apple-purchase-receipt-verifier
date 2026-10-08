@@ -63,6 +63,7 @@ final class ReceiptDecoder {
     private static final int IAP_CANCELLATION_DATE = 1712;
     private static final int IAP_IS_TRIAL_PERIOD = 1713;
     private static final int IAP_IS_IN_INTRO_OFFER_PERIOD = 1719;
+    private static final int IAP_CANCELLATION_REASON = 1720;
 
     /** The top-level types that fill a typed field. */
     private static final Set<Integer> TOP_LEVEL = new HashSet<>(Arrays.asList(
@@ -92,7 +93,8 @@ final class ReceiptDecoder {
             IAP_WEB_ORDER_LINE_ITEM_ID,
             IAP_CANCELLATION_DATE,
             IAP_IS_TRIAL_PERIOD,
-            IAP_IS_IN_INTRO_OFFER_PERIOD));
+            IAP_IS_IN_INTRO_OFFER_PERIOD,
+            IAP_CANCELLATION_REASON));
 
     /** RFC 3339 §5.6 {@code date-time}, T and Z in either case; {@code \d} is ASCII only. */
     private static final Pattern RECEIPT_DATE = Pattern.compile(
@@ -179,6 +181,10 @@ final class ReceiptDecoder {
         return null;
     }
 
+    private static @Nullable String decimal(@Nullable Long value) {
+        return value == null ? null : value.toString();
+    }
+
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
         Attributes attributes = readAttributes(inAppSet, "in-app purchase attribute", IN_APP);
         return new InAppPurchase(
@@ -193,6 +199,7 @@ final class ReceiptDecoder {
                 attributes.date(IAP_CANCELLATION_DATE),
                 attributes.flag(IAP_IS_TRIAL_PERIOD),
                 attributes.flag(IAP_IS_IN_INTRO_OFFER_PERIOD),
+                decimal(attributes.integer(IAP_CANCELLATION_REASON)),
                 attributes.unknown);
     }
 
