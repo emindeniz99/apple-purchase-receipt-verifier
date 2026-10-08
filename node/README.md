@@ -187,10 +187,17 @@ payload.receiptCreationDateMs;
 payload.preorderDateMs;            // attribute 32, the pre-order date
 payload.inApp[0].productId;
 payload.inApp[0].expiresDateMs;
+payload.inApp[0].cancellationReason; // number or null, attribute 1720
 payload.unknownAttributes;         // Map<number, Uint8Array[]>, by attribute type
 payload.environment;               // Environment.PRODUCTION, Environment.SANDBOX or null
 payload.toJson();                  // JSON with the same value in every port
 ```
+
+`cancellationReason` is a required nullable property on `InAppPurchase`,
+like its other fields; `createInAppPurchase` supplies `null` when omitted.
+Receipt JSON writes a nullable integer reason, like quantity. The
+Apple-compatible endpoint writes a present reason as a decimal string
+and omits an absent reason.
 
 `environment` is the environment `receiptType` names, as the module states
 it: `Production` and `ProductionVPP` are `Environment.PRODUCTION`,

@@ -43,7 +43,7 @@ public class ReceiptTests
         byte[] raw = { 5, 6 };
         List<byte[]> rawValues = new() { raw };
         Dictionary<int, IReadOnlyList<byte[]>> purchaseUnknown = new() { [1799] = rawValues };
-        InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, purchaseUnknown);
+        InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, null, purchaseUnknown);
         List<InAppPurchase> inApp = new() { purchase };
         Dictionary<int, IReadOnlyList<byte[]>> unknown = new() { [9999] = new List<byte[]> { raw } };
         ReceiptPayload payload = new(
@@ -95,7 +95,7 @@ public class ReceiptTests
     public void EditingWhatAGetterReturnedDoesNotChangeTheNextRead()
     {
         Dictionary<int, IReadOnlyList<byte[]>> Attributes() => new() { [9999] = new List<byte[]> { new byte[] { 5, 6 } } };
-        InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, Attributes());
+        InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, null, Attributes());
         ReceiptPayload payload = new(
             "Production", null, "a", new byte[] { 0x0c, 0x01, 0x61 }, null, new byte[] { 1, 2 }, new byte[] { 3, 4 },
             null, null, null, new List<InAppPurchase> { purchase }, null, null, null, null, Attributes(), AppleEnvironment.Production);
@@ -119,7 +119,7 @@ public class ReceiptTests
     public void AHandBuiltPayloadRefusesNullCollections()
     {
         Assert.Throws<System.ArgumentNullException>(() => new InAppPurchase(
-            null, null, null, null, null, null, null, null, null, null, null, null!));
+            null, null, null, null, null, null, null, null, null, null, null, null, null!));
         Assert.Throws<System.ArgumentNullException>(() => new ReceiptPayload(
             null, null, null, null, null, null, null, null, null, null,
             null!, null, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(), null));

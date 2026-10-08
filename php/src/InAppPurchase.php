@@ -25,7 +25,7 @@ final readonly class InAppPurchase
      * @param int|null $expiresDateMs attribute 1708, set for subscriptions
      * @param int|null $webOrderLineItemId attribute 1711
      * @param int|null $cancellationDateMs attribute 1712, set when Apple support refunded the purchase
-     * @param string|null $cancellationReason attribute 1720, as a decimal string
+     * @param int|null $cancellationReason attribute 1720, an INTEGER
      * @param bool|null $isTrialPeriod attribute 1713: 0 is `false`, any other value `true`
      * @param bool|null $isInIntroOfferPeriod attribute 1719: 0 is `false`, any other value `true`
      * @param array<int, list<string>> $unknownAttributes raw value octets of the
@@ -42,10 +42,10 @@ final readonly class InAppPurchase
         public ?int $expiresDateMs = null,
         public ?int $webOrderLineItemId = null,
         public ?int $cancellationDateMs = null,
+        public ?int $cancellationReason = null,
         public ?bool $isTrialPeriod = null,
         public ?bool $isInIntroOfferPeriod = null,
         public array $unknownAttributes = [],
-        public ?string $cancellationReason = null,
     ) {
     }
 }

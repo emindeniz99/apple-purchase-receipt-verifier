@@ -299,9 +299,9 @@ conformance vectors:
 - `receipt.toJson()` writes the payload with Foundation's
   `JSONSerialization`: `null` for a missing field, 64-bit ids as JSON
   strings (a `downloadId` can run to 18 digits, above `2^53`), bytes as
-  padded standard base64. The shared conformance vectors compare its parsed
-  value, not its bytes, so key order and escaping are not part of the
-  contract.
+  padded standard base64. Cancellation reasons are nullable integers,
+  like quantity. The shared conformance vectors compare its parsed value,
+  not its bytes, so key order and escaping are not part of the contract.
 
 ## Trust anchors
 

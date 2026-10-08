@@ -11,7 +11,7 @@ public struct InAppPurchase: Sendable, Equatable {
     public var expiresDateMs: Int64?
     public var webOrderLineItemId: Int64?
     public var cancellationDateMs: Int64?
-    public var cancellationReason: String?
+    public var cancellationReason: Int64?
     /// 0 is `false`, any other value `true`.
     public var isTrialPeriod: Bool?
     /// 0 is `false`, any other value `true`.
@@ -109,7 +109,7 @@ extension ReceiptPayload {
 
 extension InAppPurchase {
     fileprivate var jsonObject: [String: Any] {
-        var object: [String: Any] = [
+        [
             "quantity": nullable(quantity),
             "product_id": nullable(productId),
             "transaction_id": nullable(transactionId),
@@ -121,12 +121,11 @@ extension InAppPurchase {
             // the endpoint's own (Apple's verifyReceipt), not this form's.
             "web_order_line_item_id": nullable(webOrderLineItemId.map(String.init)),
             "cancellation_date_ms": nullable(cancellationDateMs),
+            "cancellation_reason": nullable(cancellationReason),
             "is_trial_period": nullable(isTrialPeriod),
             "is_in_intro_offer_period": nullable(isInIntroOfferPeriod),
             "unknown_attributes": attributesObject(unknownAttributes),
         ]
-        if let cancellationReason { object["cancellation_reason"] = cancellationReason }
-        return object
     }
 }
 

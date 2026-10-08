@@ -179,7 +179,7 @@ extension InAppPurchase: Decodable {
         expiresDateMs = try c.decodeIfPresent(Int64.self, forKey: .expiresDateMs)
         webOrderLineItemId = try c.id(.webOrderLineItemId)
         cancellationDateMs = try c.decodeIfPresent(Int64.self, forKey: .cancellationDateMs)
-        cancellationReason = try c.decodeIfPresent(String.self, forKey: .cancellationReason)
+        cancellationReason = try c.decodeIfPresent(Int64.self, forKey: .cancellationReason)
         isTrialPeriod = try c.decodeIfPresent(Bool.self, forKey: .isTrialPeriod)
         isInIntroOfferPeriod = try c.decodeIfPresent(Bool.self, forKey: .isInIntroOfferPeriod)
         unknownAttributes = try c.attributes(.unknownAttributes)

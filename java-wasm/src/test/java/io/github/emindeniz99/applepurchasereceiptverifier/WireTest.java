@@ -219,6 +219,62 @@ class WireTest {
     }
 
     @Test
+    void cancellationReasonIsAnIntegerInTheModelAndOnTheWire() throws Exception {
+        String payload = Cases.byId("receipt/missing-preorder-date-and-download-id-are-null")
+                .get("expected")
+                .get("toJson")
+                .asText();
+        ObjectNode good = (ObjectNode) Cases.MAPPER.readTree(payload);
+        ObjectNode purchase = (ObjectNode) good.get("in_app").get(0);
+        for (long value : new long[] {0, 1, Long.MIN_VALUE, Long.MAX_VALUE}) {
+            purchase.put("cancellation_reason", value);
+            ReceiptPayload decoded = Wire.receiptAnswer(
+                            "{\"verified\":true,\"payload\":" + good + ",\"environment\":\"Sandbox\"}")
+                    .payload();
+            assertEquals(Long.valueOf(value), decoded.inApp().get(0).cancellationReason());
+            assertEquals(Cases.MAPPER.readTree(good.toString()), Cases.MAPPER.readTree(decoded.toJson()));
+        }
+        for (String bad : new String[] {"\"0\"", "0.5", "9223372036854775808", "true", "\"not an integer\""}) {
+            purchase.set("cancellation_reason", Cases.MAPPER.readTree(bad));
+            assertThrows(
+                    GuestFailure.class,
+                    () -> Wire.receiptAnswer(
+                            "{\"verified\":true,\"payload\":" + good + ",\"environment\":\"Sandbox\"}"));
+        }
+        purchase.putNull("cancellation_reason");
+        ReceiptPayload decoded = Wire.receiptAnswer(
+                        "{\"verified\":true,\"payload\":" + good + ",\"environment\":\"Sandbox\"}")
+                .payload();
+        assertNull(decoded.inApp().get(0).cancellationReason());
+        assertEquals(Cases.MAPPER.readTree(good.toString()), Cases.MAPPER.readTree(decoded.toJson()));
+        purchase.remove("cancellation_reason");
+        assertThrows(
+                GuestFailure.class,
+                () -> Wire.receiptAnswer("{\"verified\":true,\"payload\":" + good + ",\"environment\":null}"));
+    }
+
+    @Test
+    void nullableReasonDoesNotRelaxTheRequiredPurchaseMembers() throws Exception {
+        String payload = Cases.byId("receipt/missing-preorder-date-and-download-id-are-null")
+                .get("expected")
+                .get("toJson")
+                .asText();
+        for (boolean withReason : new boolean[] {false, true}) {
+            for (boolean missingMember : new boolean[] {false, true}) {
+                ObjectNode changed = (ObjectNode) Cases.MAPPER.readTree(payload);
+                ObjectNode purchase = (ObjectNode) changed.get("in_app").get(0);
+                if (withReason) purchase.put("cancellation_reason", 0);
+                if (missingMember) purchase.remove("product_id");
+                else purchase.put("unexpected", 0);
+                assertThrows(
+                        GuestFailure.class,
+                        () -> Wire.receiptAnswer(
+                                "{\"verified\":true,\"payload\":" + changed + ",\"environment\":null}"));
+            }
+        }
+    }
+
+    @Test
     void unknownAttributesKeepTheirOrderAndBytes() {
         String answer = "{\"verified\":true,\"payload\":{\"receipt_type\":null,\"app_item_id\":\"-1\","
                 + "\"bundle_id\":null,\"bundle_id_bytes\":null,\"application_version\":null,\"opaque_value\":null,"

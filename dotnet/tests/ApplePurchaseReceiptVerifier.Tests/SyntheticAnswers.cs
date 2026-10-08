@@ -28,9 +28,9 @@ internal static class SyntheticAnswers
         {
             new InAppPurchase(
                 2, "com.example.coins", "1000000123456789", 1705320000000L, "1000000123456789", 1705320000000L,
-                1705323600000L, 9223372036854775807L, 1705330000000L, true, false, purchaseUnknown),
+                1705323600000L, 9223372036854775807L, 1705330000000L, null, true, false, purchaseUnknown),
             new InAppPurchase(
-                null, "café 😀 \"quoted\" \\ back", null, null, null, null, null, null, null, null, null,
+                null, "café 😀 \"quoted\" \\ back", null, null, null, null, null, null, null, null, null, null,
                 new Dictionary<int, IReadOnlyList<byte[]>>()),
         };
         return new ReceiptPayload(

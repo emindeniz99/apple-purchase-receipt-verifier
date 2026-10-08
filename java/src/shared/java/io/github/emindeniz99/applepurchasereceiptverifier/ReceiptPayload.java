@@ -58,48 +58,6 @@ public final class ReceiptPayload {
     private final @Nullable Environment environment;
 
     /**
-     * As the constructor below, with no pre-order date ({@link #preorderDateMs()}
-     * is {@code null}). Kept so code that builds payloads by hand keeps
-     * compiling.
-     */
-    public ReceiptPayload(
-            @Nullable String receiptType,
-            @Nullable Long appItemId,
-            @Nullable String bundleId,
-            byte @Nullable [] bundleIdBytes,
-            @Nullable String applicationVersion,
-            byte @Nullable [] opaqueValue,
-            byte @Nullable [] sha1Hash,
-            @Nullable Long receiptCreationDateMs,
-            @Nullable Long downloadId,
-            @Nullable Long versionExternalIdentifier,
-            List<InAppPurchase> inApp,
-            @Nullable Long originalPurchaseDateMs,
-            @Nullable String originalApplicationVersion,
-            @Nullable Long expirationDateMs,
-            Map<Integer, List<byte[]>> unknownAttributes,
-            @Nullable Environment environment) {
-        this(
-                receiptType,
-                appItemId,
-                bundleId,
-                bundleIdBytes,
-                applicationVersion,
-                opaqueValue,
-                sha1Hash,
-                receiptCreationDateMs,
-                downloadId,
-                versionExternalIdentifier,
-                inApp,
-                originalPurchaseDateMs,
-                null,
-                originalApplicationVersion,
-                expirationDateMs,
-                unknownAttributes,
-                environment);
-    }
-
-    /**
      * Public so callers can build payloads by hand in their tests. The
      * verifier passes the {@code environment} {@code receiptType} names
      * ({@link #environment()}); a hand-built payload states its own.
@@ -270,7 +228,7 @@ public final class ReceiptPayload {
      * ({@code app_item_id}, {@code download_id},
      * {@code version_external_identifier}, {@code web_order_line_item_id}) as
      * strings, bytes as padded standard base64 and {@code null} for a missing
-     * value, except an absent in-app {@code cancellation_reason} is omitted.
+     * value.
      * It holds the full purchase data; the caller decides what to
      * write where.
      */

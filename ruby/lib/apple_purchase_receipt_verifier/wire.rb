@@ -147,7 +147,7 @@ module ApplePurchaseReceiptVerifier
           expires_date_ms: integer(purchase, "expires_date_ms"),
           web_order_line_item_id: id(purchase, "web_order_line_item_id"),
           cancellation_date_ms: integer(purchase, "cancellation_date_ms"),
-          cancellation_reason: string(purchase, "cancellation_reason"),
+          cancellation_reason: integer(purchase, "cancellation_reason"),
           is_trial_period: boolean(purchase, "is_trial_period"),
           is_in_intro_offer_period: boolean(purchase, "is_in_intro_offer_period"),
           unknown_attributes: unknown_attributes(purchase)

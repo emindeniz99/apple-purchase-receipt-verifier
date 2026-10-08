@@ -64,7 +64,7 @@ final class PayloadJson
             'expires_date_ms' => $purchase->expiresDateMs,
             'web_order_line_item_id' => self::id($purchase->webOrderLineItemId),
             'cancellation_date_ms' => $purchase->cancellationDateMs,
-            ...($purchase->cancellationReason === null ? [] : ['cancellation_reason' => $purchase->cancellationReason]),
+            'cancellation_reason' => $purchase->cancellationReason,
             'is_trial_period' => $purchase->isTrialPeriod,
             'is_in_intro_offer_period' => $purchase->isInIntroOfferPeriod,
             'unknown_attributes' => self::attributes($purchase->unknownAttributes),

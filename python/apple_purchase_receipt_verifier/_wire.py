@@ -150,7 +150,7 @@ def _in_app(value: object) -> InAppPurchase:
         expires_date_ms=_number(value.get("expires_date_ms")),
         web_order_line_item_id=_id(value.get("web_order_line_item_id")),
         cancellation_date_ms=_number(value.get("cancellation_date_ms")),
-        cancellation_reason=_string(value.get("cancellation_reason")),
+        cancellation_reason=_number(value.get("cancellation_reason")),
         is_trial_period=_flag(value.get("is_trial_period")),
         is_in_intro_offer_period=_flag(value.get("is_in_intro_offer_period")),
         unknown_attributes=_unknown(value.get("unknown_attributes")),

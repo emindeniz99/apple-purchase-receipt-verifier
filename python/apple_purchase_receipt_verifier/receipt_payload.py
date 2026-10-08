@@ -71,6 +71,8 @@ class InAppPurchase:
     web_order_line_item_id: "int | None" = None
     #: Attribute 1712, set when Apple support refunded the purchase.
     cancellation_date_ms: "int | None" = None
+    #: Attribute 1720, an INTEGER.
+    cancellation_reason: "int | None" = None
     #: Attribute 1713: 0 is ``False``, any other value ``True``.
     is_trial_period: "bool | None" = None
     #: Attribute 1719: 0 is ``False``, any other value ``True``.
@@ -80,9 +82,6 @@ class InAppPurchase:
     unknown_attributes: "Mapping[int, Sequence[bytes]]" = field(
         default_factory=lambda: MappingProxyType({})
     )
-
-    #: Attribute 1720, as a decimal string.
-    cancellation_reason: "str | None" = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "unknown_attributes", _frozen_attributes(self.unknown_attributes))
@@ -98,11 +97,7 @@ class InAppPurchase:
             "expires_date_ms": self.expires_date_ms,
             "web_order_line_item_id": _id(self.web_order_line_item_id),
             "cancellation_date_ms": self.cancellation_date_ms,
-            **(
-                {}
-                if self.cancellation_reason is None
-                else {"cancellation_reason": self.cancellation_reason}
-            ),
+            "cancellation_reason": self.cancellation_reason,
             "is_trial_period": self.is_trial_period,
             "is_in_intro_offer_period": self.is_in_intro_offer_period,
             "unknown_attributes": _attributes_json(self.unknown_attributes),
@@ -139,9 +134,8 @@ class ReceiptPayload:
     in_app: "Sequence[InAppPurchase]" = field(default_factory=tuple)
     #: Attribute 18.
     original_purchase_date_ms: "int | None" = None
-    #: Attribute 32, the pre-order date. Keyword-only, so a payload built
-    #: with positional arguments keeps meaning what it meant.
-    preorder_date_ms: "int | None" = field(default=None, kw_only=True)
+    #: Attribute 32, the pre-order date.
+    preorder_date_ms: "int | None" = None
     #: Attribute 19, the version the user originally purchased.
     original_application_version: "str | None" = None
     #: Attribute 21, set only on receipts that expire (volume purchase).

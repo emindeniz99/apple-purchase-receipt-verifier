@@ -140,6 +140,13 @@ Dates are epoch milliseconds (`*Ms`, `long?`); 64-bit ids (`AppItemId`,
 `WebOrderLineItemId`) stay `long?` on this payload but render as decimal
 **strings** in `ToJson()`, the same JSON value every port writes.
 
+Each payload model has one public constructor containing all its fields.
+`preorderDateMs` follows `originalPurchaseDateMs`; `cancellationReason`
+follows `cancellationDateMs`. Pass `null` when an attribute is absent,
+as for `Quantity`. Receipt JSON writes a nullable integer reason; the
+Apple-compatible endpoint writes a present reason as a decimal string
+and omits an absent reason.
+
 ```csharp
 payload.ReceiptType;               // "Production", "ProductionSandbox", ...
 payload.BundleId;                  // decoded attribute 2
@@ -578,7 +585,7 @@ what runs under it is not.
 | any platform .NET runs on | the platforms Wasmtime ships a native library for; no Alpine, no 32-bit |
 | SHA-224 receipts could not be verified | the module decides which algorithms verify |
 | `AppleEnvironments.FromReceiptType(payload.ReceiptType)` and `AppleEnvironments.FromJwsEnvironment(claim)` | `payload.Environment` on a `ReceiptPayload` or a `JsonPayload`, which the verifier states; `AppleEnvironments` is gone |
-| `new ReceiptPayload(..., unknownAttributes)` and `JsonPayload.Create(json)` | each takes the environment as its last argument: `new ReceiptPayload(..., unknownAttributes, environment)`, `JsonPayload.Create(json, environment)` |
+| `new ReceiptPayload(..., unknownAttributes)` and `JsonPayload.Create(json)` | both accept the environment: `new ReceiptPayload(..., unknownAttributes, environment)`, `JsonPayload.Create(json, environment)` |
 
 ## Upgrading from 0.6
 

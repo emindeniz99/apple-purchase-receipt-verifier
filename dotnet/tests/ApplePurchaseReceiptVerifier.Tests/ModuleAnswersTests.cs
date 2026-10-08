@@ -9,6 +9,22 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 /// <summary>Reading the module's JSON into the public types: the round trip, and the members it insists on.</summary>
 public class ModuleAnswersTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void ANullableReasonDoesNotRelaxTheRequiredPurchaseMembers(bool withReason, bool missingMember)
+    {
+        JsonObject payload = JsonNode.Parse(SyntheticAnswers.Receipt().ToJson())!.AsObject();
+        JsonObject purchase = payload["in_app"]![0]!.AsObject();
+        if (withReason) purchase["cancellation_reason"] = 0;
+        if (missingMember) purchase.Remove("product_id");
+        else purchase["unexpected"] = 0;
+        Assert.Throws<ModuleAnswers.AnswerException>(() => ModuleAnswers.ReadReceipt(
+            "{\"verified\":true,\"payload\":" + payload.ToJsonString() + ",\"environment\":null}"));
+    }
+
     [Fact]
     public void AnAnswerReadBackIsThePayloadThatWasWritten()
     {
@@ -123,7 +139,7 @@ public class ModuleAnswersTests
         for (int i = 0; i < 40_000; i++)
         {
             many.Add(new InAppPurchase(
-                1, "com.example.product." + i, "100000000" + i, 1705320000000L, null, null, null, null, null, null, null,
+                1, "com.example.product." + i, "100000000" + i, 1705320000000L, null, null, null, null, null, null, null, null,
                 new Dictionary<int, IReadOnlyList<byte[]>>()));
         }
 

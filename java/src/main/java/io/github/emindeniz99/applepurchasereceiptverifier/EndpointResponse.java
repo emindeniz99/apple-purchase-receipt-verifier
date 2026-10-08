@@ -76,12 +76,7 @@ final class EndpointResponse {
         string(json, "application_version", receipt.applicationVersion());
         // Apple answers "download_id": null when the receipt has no attribute
         // 15, where every other absent field is omitted.
-        Long downloadId = receipt.downloadId();
-        if (downloadId == null) {
-            json.writeNullField("download_id");
-        } else {
-            json.writeNumberField("download_id", downloadId);
-        }
+        json.writeObjectField("download_id", receipt.downloadId());
         number(json, "version_external_identifier", receipt.versionExternalIdentifier());
         string(json, "original_application_version", receipt.originalApplicationVersion());
         appleDates(json, "receipt_creation_date", receipt.receiptCreationDateMs());
@@ -110,7 +105,10 @@ final class EndpointResponse {
         appleDates(json, "original_purchase_date", purchase.originalPurchaseDateMs());
         appleDates(json, "expires_date", purchase.expiresDateMs());
         appleDates(json, "cancellation_date", purchase.cancellationDateMs());
-        string(json, "cancellation_reason", purchase.cancellationReason());
+        Long cancellationReason = purchase.cancellationReason();
+        if (cancellationReason != null) {
+            json.writeStringField("cancellation_reason", cancellationReason.toString());
+        }
         // Apple omits the key when attribute 1711 is 0, as it is for
         // consumables.
         Long webOrderLineItemId = purchase.webOrderLineItemId();

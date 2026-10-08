@@ -34,14 +34,6 @@ class WireTest < Minitest::Test
     refused(receipt_json(preorder_date_ms: "1719913520000")) { |text| WIRE.receipt_result(text) }
   end
 
-  def test_a_payload_built_by_hand_without_a_preorder_date_has_none
-    payload = WIRE.receipt_result(receipt_json).payload
-    members = payload.to_h.except(:preorder_date_ms)
-    rebuilt = APRV::ReceiptPayload.new(**members)
-    assert_nil rebuilt.preorder_date_ms
-    assert_equal payload, rebuilt
-  end
-
   def test_ids_are_decimal_strings_and_keep_every_bit
     payload = WIRE.receipt_result(receipt_json(app_item_id: "9223372036854775807",
                                                download_id: "-5")).payload
@@ -78,12 +70,12 @@ class WireTest < Minitest::Test
     purchase = { "quantity" => 2, "product_id" => "p", "transaction_id" => "t", "purchase_date_ms" => 5,
                  "original_transaction_id" => "o", "original_purchase_date_ms" => 4,
                  "expires_date_ms" => 9, "web_order_line_item_id" => "18446744073709551",
-                 "cancellation_date_ms" => nil, "is_trial_period" => true,
+                 "cancellation_date_ms" => nil, "cancellation_reason" => nil, "is_trial_period" => true,
                  "is_in_intro_offer_period" => false, "unknown_attributes" => { "1799" => ["AQ=="] } }
     payload = WIRE.receipt_result(receipt_json(in_app: [purchase])).payload
     item = payload.in_app.fetch(0)
-    assert_equal [2, "p", "t", 5, "o", 4, 9, 18_446_744_073_709_551, nil, true, false,
-                  { 1799 => ["\x01".b] }, nil], item.to_h.values
+    assert_equal [2, "p", "t", 5, "o", 4, 9, 18_446_744_073_709_551, nil, nil, true, false,
+                  { 1799 => ["\x01".b] }], item.to_h.values
     assert_equal purchase, JSON.parse(payload.to_json)["in_app"].fetch(0)
   end
 
@@ -185,7 +177,8 @@ class WireTest < Minitest::Test
     purchase = {
       "quantity" => 1, "product_id" => "p", "transaction_id" => "t", "purchase_date_ms" => 1,
       "original_transaction_id" => "o", "original_purchase_date_ms" => 1, "expires_date_ms" => nil,
-      "web_order_line_item_id" => nil, "cancellation_date_ms" => nil, "is_trial_period" => false,
+      "web_order_line_item_id" => nil, "cancellation_date_ms" => nil, "cancellation_reason" => nil,
+      "is_trial_period" => false,
       "is_in_intro_offer_period" => false, "unknown_attributes" => {}
     }
     [{ "is_trial_period" => "false" }, { "quantity" => "1" }, { "web_order_line_item_id" => 5 },

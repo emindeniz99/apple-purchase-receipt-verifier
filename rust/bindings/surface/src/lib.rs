@@ -286,12 +286,12 @@ pub struct InAppPurchase {
     pub web_order_line_item_id: Option<i64>,
     /// 1712
     pub cancellation_date_ms: Option<i64>,
+    /// 1720, an INTEGER.
+    pub cancellation_reason: Option<i64>,
     /// 1713: 0 is `false`, any other value `true`.
     pub is_trial_period: Option<bool>,
     /// 1719: 0 is `false`, any other value `true`.
     pub is_in_intro_offer_period: Option<bool>,
-    /// 1720, as a decimal string.
-    pub cancellation_reason: Option<String>,
     /// Every attribute of this purchase that did not end up in a field.
     pub unknown_attributes: UnknownAttributes,
 }

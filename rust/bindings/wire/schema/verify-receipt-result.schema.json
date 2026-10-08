@@ -238,6 +238,7 @@
         "expires_date_ms",
         "web_order_line_item_id",
         "cancellation_date_ms",
+        "cancellation_reason",
         "is_trial_period",
         "is_in_intro_offer_period",
         "unknown_attributes"
@@ -332,8 +333,15 @@
           ]
         },
         "cancellation_reason": {
-          "description": "1720, decimal string; omitted when absent",
-          "type": "string"
+          "description": "1720, an INTEGER.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/int64"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "cancellation_date_ms": {
           "description": "1712",

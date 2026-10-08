@@ -40,20 +40,30 @@ import org.junit.jupiter.api.Test;
 class VerifyReceiptEndpointTest {
 
     @Test
-    void cancellationReasonIsAStringOnlyWhenDecoded() throws Exception {
+    void cancellationReasonIsAnIntegerExceptInTheEndpointJson() throws Exception {
         X509Certificate root = (X509Certificate) CertificateFactory.getInstance("X.509")
                 .generateCertificate(new ByteArrayInputStream(
                         Files.readAllBytes(TestFixtures.root().resolve("generated-0.7/cancellation-reason-root.der"))));
+        Verifier verifier = Checks.verifier(root);
         for (String shape : Arrays.asList("zero", "one", "absent", "malformed", "duplicate")) {
             byte[] der = Files.readAllBytes(
                     TestFixtures.root().resolve("generated-0.7/cancellation-reason-" + shape + ".der"));
-            JsonNode answer =
-                    MAPPER.readTree(Checks.verifier(root).verifyReceiptEndpoint(Environment.SANDBOX, request(der)));
+            ReceiptPayload payload = verifier.verifyReceipt(Base64.getEncoder().encodeToString(der))
+                    .payload();
+            assertNotNull(payload);
+            Long expected = null;
+            if ("zero".equals(shape)) expected = 0L;
+            else if ("one".equals(shape) || "duplicate".equals(shape)) expected = 1L;
+            assertEquals(expected, payload.inApp().get(0).cancellationReason());
+            JsonNode answer = MAPPER.readTree(verifier.verifyReceiptEndpoint(Environment.SANDBOX, request(der)));
             assertEquals(0, answer.get("status").asInt());
             JsonNode reason = answer.get("receipt").get("in_app").get(0).get("cancellation_reason");
             if ("zero".equals(shape)) assertEquals(MAPPER.readTree("\"0\""), reason);
             else if ("one".equals(shape) || "duplicate".equals(shape)) assertEquals(MAPPER.readTree("\"1\""), reason);
             else assertNull(reason);
+            assertEquals(
+                    MAPPER.readTree(expected == null ? "null" : expected.toString()),
+                    MAPPER.readTree(payload.toJson()).get("in_app").get(0).get("cancellation_reason"));
         }
     }
 

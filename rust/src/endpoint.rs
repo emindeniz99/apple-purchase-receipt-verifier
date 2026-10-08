@@ -262,7 +262,10 @@ fn purchase_json(purchase: &InAppPurchase) -> Option<JsonValue> {
     present_string(
         &mut json,
         "cancellation_reason",
-        purchase.cancellation_reason.as_deref(),
+        purchase
+            .cancellation_reason
+            .map(|reason| reason.to_string())
+            .as_deref(),
     );
     // Apple omits the key when attribute 1711 is 0, as it is for
     // consumables.

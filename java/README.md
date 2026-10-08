@@ -246,6 +246,9 @@ the same for both:
 - 64-bit ids (`appItemId`, `downloadId`, `versionExternalIdentifier`,
   `webOrderLineItemId`) are `Long`, not `int`: genuine receipts carry
   18-digit `downloadId` values.
+- `cancellationReason()` (attribute 1720) is a nullable `Long`, matching
+  its ASN.1 INTEGER. `toJson()` renders it as a number; the Apple-compatible
+  endpoint renders it as a decimal string.
 
 `ReceiptPayload.toJson()` renders the payload as JSON, written by
 jackson-core's generator. It holds the full purchase data; the caller
@@ -254,7 +257,7 @@ this library produces the same JSON value, not the same bytes: key order,
 whitespace and escaping style are free. The 64-bit ids above are JSON
 strings (dates stay numbers: epoch milliseconds do not exceed 2^53 until
 roughly the year 287,000), bytes are padded standard base64, a missing value
-is `null` rather than an omitted key, and `unknown_attributes` is an object
+is `null` rather than an omitted key. `unknown_attributes` is an object
 keyed by the decimal attribute type. Parse it and compare values, never the
 string.
 
@@ -807,6 +810,13 @@ java -jar java-bench/target/benchmarks.jar 'ReceiptBenchmark.(verifyReceipt|endp
 Your own logic and wiring tests need none of this: mock `Verifier` and build
 a `ReceiptPayload` by hand, or replay a sandbox receipt from your own app
 (see [What to check after verification](#what-to-check-after-verification)).
+
+Each payload type has one constructor containing all its fields. In
+`ReceiptPayload`, pass `preorderDateMs` after `originalPurchaseDateMs`; in
+`InAppPurchase`, pass `cancellationReason` after `cancellationDateMs`.
+Use `null` when the value is absent. The older constructor signatures
+without these fields have been removed: update hand-built payload calls
+and recompile code that uses them.
 
 For an end-to-end test, one that signs its own fake receipt or JWS and feeds
 it through a real `Verifier`, add the `tests` test-jar classifier this

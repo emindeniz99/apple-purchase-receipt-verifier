@@ -43,7 +43,7 @@ module FakeModule
           "purchase_date_ms" => 1_722_945_600_000, "original_transaction_id" => "70000000000001",
           "original_purchase_date_ms" => 1_722_945_600_000, "expires_date_ms" => nil,
           "web_order_line_item_id" => "9000000000000000001", "cancellation_date_ms" => nil,
-          "is_trial_period" => false, "is_in_intro_offer_period" => true,
+          "cancellation_reason" => nil, "is_trial_period" => false, "is_in_intro_offer_period" => true,
           "unknown_attributes" => { "1799" => ["AQID"] }
         }],
         "original_purchase_date_ms" => nil, "preorder_date_ms" => nil,

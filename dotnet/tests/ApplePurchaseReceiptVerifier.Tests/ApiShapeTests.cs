@@ -104,7 +104,7 @@ public class ApiShapeTests
     /// (DECISIONS.md R42): <c>AppleEnvironments</c> and its two helpers, which
     /// repeated the rule in the wrapper, are gone, and each payload carries
     /// an <see cref="AppleEnvironment"/>, <see langword="null"/> when Apple's
-    /// value names neither, given last to the hand-built payload's constructor.
+    /// value names neither, passed to the hand-built payload's constructor.
     /// </summary>
     [Fact]
     public void TheEnvironmentIsOnThePayloadsAndTheHelpersAreGone()
@@ -114,9 +114,9 @@ public class ApiShapeTests
         Assert.Equal(typeof(AppleEnvironment?), typeof(ReceiptPayload).GetProperty("Environment")!.PropertyType);
         Assert.Equal(typeof(AppleEnvironment?), typeof(JsonPayload).GetProperty("Environment")!.PropertyType);
 
-        ParameterInfo last = typeof(ReceiptPayload).GetConstructors().Single().GetParameters().Last();
-        Assert.Equal("environment", last.Name);
-        Assert.Equal(typeof(AppleEnvironment?), last.ParameterType);
+        ParameterInfo[] parameters = Assert.Single(typeof(ReceiptPayload).GetConstructors()).GetParameters();
+        Assert.Equal("environment", parameters[16].Name);
+        Assert.Equal(typeof(AppleEnvironment?), parameters[16].ParameterType);
         MethodInfo create = typeof(JsonPayload).GetMethod("Create", BindingFlags.Public | BindingFlags.Static)!;
         Assert.Equal(new[] { typeof(string), typeof(AppleEnvironment?) }, create.GetParameters().Select(p => p.ParameterType));
     }
@@ -231,8 +231,7 @@ public class ApiShapeTests
 
         Assert.NotNull(typeof(JsonPayload).GetMethod("Create", BindingFlags.Public | BindingFlags.Static));
         Assert.Single(typeof(ReceiptPayload).GetConstructors());
-        // Retain the original constructor alongside the attribute 1720 overload.
-        Assert.Equal(2, typeof(InAppPurchase).GetConstructors().Length);
+        Assert.Single(typeof(InAppPurchase).GetConstructors());
     }
 
     /// <summary>

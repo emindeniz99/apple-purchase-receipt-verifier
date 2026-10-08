@@ -175,7 +175,7 @@ final class Wire
             expiresDateMs: self::int($v['expires_date_ms'] ?? null),
             webOrderLineItemId: self::id($v['web_order_line_item_id'] ?? null),
             cancellationDateMs: self::int($v['cancellation_date_ms'] ?? null),
-            cancellationReason: self::string($v['cancellation_reason'] ?? null),
+            cancellationReason: self::int($v['cancellation_reason'] ?? null),
             isTrialPeriod: self::flag($v['is_trial_period'] ?? null),
             isInIntroOfferPeriod: self::flag($v['is_in_intro_offer_period'] ?? null),
             unknownAttributes: self::unknown($v['unknown_attributes'] ?? null),
