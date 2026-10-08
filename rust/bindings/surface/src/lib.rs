@@ -249,6 +249,8 @@ pub struct ReceiptPayload {
     pub in_app: Vec<InAppPurchase>,
     /// Attribute 18.
     pub original_purchase_date_ms: Option<i64>,
+    /// Attribute 32, the pre-order date.
+    pub preorder_date_ms: Option<i64>,
     /// Attribute 19.
     pub original_application_version: Option<String>,
     /// Attribute 21.
@@ -353,6 +355,7 @@ impl From<core_api::ReceiptPayload> for ReceiptPayload {
                 .map(InAppPurchase::from)
                 .collect(),
             original_purchase_date_ms: receipt.original_purchase_date_ms,
+            preorder_date_ms: receipt.preorder_date_ms,
             original_application_version: receipt.original_application_version,
             expiration_date_ms: receipt.expiration_date_ms,
             unknown_attributes: unknown_attributes(receipt.unknown_attributes),

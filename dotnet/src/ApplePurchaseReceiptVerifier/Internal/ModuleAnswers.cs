@@ -35,7 +35,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
         {
             "receipt_type", "app_item_id", "bundle_id", "bundle_id_bytes", "application_version",
             "opaque_value", "sha1_hash", "receipt_creation_date_ms", "download_id",
-            "version_external_identifier", "in_app", "original_purchase_date_ms",
+            "version_external_identifier", "in_app", "original_purchase_date_ms", "preorder_date_ms",
             "original_application_version", "expiration_date_ms", "unknown_attributes",
         };
 
@@ -190,6 +190,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 OptId(json, "version_external_identifier"),
                 inApp,
                 OptLong(json, "original_purchase_date_ms"),
+                OptLong(json, "preorder_date_ms"),
                 OptStr(json, "original_application_version"),
                 OptLong(json, "expiration_date_ms"),
                 Unknown(json),

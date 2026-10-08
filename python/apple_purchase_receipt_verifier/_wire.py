@@ -175,6 +175,7 @@ def _receipt_payload(value: object, environment: "Environment | None") -> Receip
         version_external_identifier=_id(value.get("version_external_identifier")),
         in_app=tuple(_in_app(p) for p in in_app or ()),
         original_purchase_date_ms=_number(value.get("original_purchase_date_ms")),
+        preorder_date_ms=_number(value.get("preorder_date_ms")),
         original_application_version=_string(value.get("original_application_version")),
         expiration_date_ms=_number(value.get("expiration_date_ms")),
         unknown_attributes=_unknown(value.get("unknown_attributes")),

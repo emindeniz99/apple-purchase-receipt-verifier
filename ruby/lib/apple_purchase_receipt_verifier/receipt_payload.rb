@@ -52,9 +52,15 @@ module ApplePurchaseReceiptVerifier
   ReceiptPayload = Data.define(
     :receipt_type, :app_item_id, :bundle_id, :bundle_id_bytes, :application_version,
     :opaque_value, :sha1_hash, :receipt_creation_date_ms, :download_id,
-    :version_external_identifier, :in_app, :original_purchase_date_ms,
+    :version_external_identifier, :in_app, :original_purchase_date_ms, :preorder_date_ms,
     :original_application_version, :expiration_date_ms, :unknown_attributes, :environment
   ) do
+    # `preorder_date_ms` (attribute 32) defaults to `nil`, so a payload built
+    # by hand with the keywords it had before keeps working.
+    def initialize(preorder_date_ms: nil, **members) # steep:ignore UndeclaredMethodDefinition
+      super
+    end
+
     # This payload as JSON (docs/design/0.7-api.md, "Our JSON"). It holds the
     # full purchase data; the caller decides what to write where. Every port
     # writes the same value; the bytes may differ.
@@ -78,6 +84,7 @@ module ApplePurchaseReceiptVerifier
         "version_external_identifier" => version_external_identifier&.to_s,
         "in_app" => in_app.map(&:json_value),
         "original_purchase_date_ms" => original_purchase_date_ms,
+        "preorder_date_ms" => preorder_date_ms,
         "original_application_version" => original_application_version,
         "expiration_date_ms" => expiration_date_ms,
         "unknown_attributes" => PayloadJson.unknown_attributes(unknown_attributes)

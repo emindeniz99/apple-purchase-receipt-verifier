@@ -805,6 +805,7 @@ App-level attributes:
 | 18 | original purchase date | IA5String | `originalPurchaseDateMs()` | |
 | 19 | original app version | UTF8String | `originalApplicationVersion()` | |
 | 21 | receipt expiration date | IA5String | `expirationDateMs()` | Volume Purchase Program only; never compared with a clock |
+| 32 | pre-order date | IA5String, RFC 3339 | `preorderDateMs()` | Present when the app was pre-ordered |
 
 In-app attributes, inside each 17:
 

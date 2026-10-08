@@ -163,6 +163,8 @@ class WireTest {
             {"receipt_creation_date_ms", "\"1\""}, // a date is a number
             {"receipt_creation_date_ms", "1.5"},
             {"receipt_creation_date_ms", "18446744073709551616"},
+            {"preorder_date_ms", "\"1\""},
+            {"preorder_date_ms", "1.5"},
             {"bundle_id_bytes", "\"not base64!\""},
             {"bundle_id_bytes", "\"QQ\""}, // padded
             {"in_app", "{}"},
@@ -192,13 +194,37 @@ class WireTest {
         assertThrows(GuestFailure.class, () -> Wire.receiptAnswer("{\"verified\":true,\"payload\":" + good + "}"));
     }
 
+    /** Attribute 32 arrives as {@code preorder_date_ms}, a number or null, and is the module's to name. */
+    @Test
+    void thePreorderDateIsReadAsANumberOrNull() throws Exception {
+        String payload = Cases.byId("receipt/missing-preorder-date-and-download-id-are-null")
+                .get("expected")
+                .get("toJson")
+                .asText();
+        ObjectNode good = (ObjectNode) Cases.MAPPER.readTree(payload);
+        assertNull(Wire.receiptAnswer("{\"verified\":true,\"payload\":" + good + ",\"environment\":\"Sandbox\"}")
+                .payload()
+                .preorderDateMs());
+        good.put("preorder_date_ms", 1_719_913_520_000L);
+        ReceiptPayload read = Wire.receiptAnswer(
+                        "{\"verified\":true,\"payload\":" + good + ",\"environment\":\"Sandbox\"}")
+                .payload();
+        assertEquals(Long.valueOf(1_719_913_520_000L), read.preorderDateMs());
+        assertEquals(Cases.MAPPER.readTree(good.toString()), Cases.MAPPER.readTree(read.toJson()));
+        // The key is part of the shape: a payload without it is not the 0.7 wire.
+        good.remove("preorder_date_ms");
+        assertThrows(
+                GuestFailure.class,
+                () -> Wire.receiptAnswer("{\"verified\":true,\"payload\":" + good + ",\"environment\":\"Sandbox\"}"));
+    }
+
     @Test
     void unknownAttributesKeepTheirOrderAndBytes() {
         String answer = "{\"verified\":true,\"payload\":{\"receipt_type\":null,\"app_item_id\":\"-1\","
                 + "\"bundle_id\":null,\"bundle_id_bytes\":null,\"application_version\":null,\"opaque_value\":null,"
                 + "\"sha1_hash\":null,\"receipt_creation_date_ms\":null,\"download_id\":null,"
                 + "\"version_external_identifier\":null,\"in_app\":[],\"original_purchase_date_ms\":null,"
-                + "\"original_application_version\":null,\"expiration_date_ms\":null,"
+                + "\"preorder_date_ms\":null,\"original_application_version\":null,\"expiration_date_ms\":null,"
                 + "\"unknown_attributes\":{\"13\":[\"AQ==\",\"Ag==\"],\"-5\":[\"\"]}},\"environment\":null}";
         ReceiptPayload payload = Wire.receiptAnswer(answer).payload();
         assertEquals(Long.valueOf(-1), payload.appItemId());

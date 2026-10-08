@@ -16,7 +16,7 @@ public class ReceiptTests
     {
         ReceiptPayload receipt = new(
             "Production", null, "a", new byte[] { 0x0c, 0x01, 0x61 }, null, new byte[] { 1, 2 }, new byte[] { 3, 4 },
-            null, null, null, new List<InAppPurchase>(), null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(),
+            null, null, null, new List<InAppPurchase>(), null, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(),
             AppleEnvironment.Production);
 
         foreach (System.Func<byte[]?> field in new System.Func<byte[]?>[]
@@ -48,7 +48,7 @@ public class ReceiptTests
         Dictionary<int, IReadOnlyList<byte[]>> unknown = new() { [9999] = new List<byte[]> { raw } };
         ReceiptPayload payload = new(
             "Production", null, "a", bundleIdBytes, null, opaque, sha1, null, null, null,
-            inApp, null, null, null, unknown, AppleEnvironment.Production);
+            inApp, null, null, null, null, unknown, AppleEnvironment.Production);
         string before = payload.ToJson();
 
         bundleIdBytes[0] = 0xff;
@@ -77,7 +77,7 @@ public class ReceiptTests
     {
         ReceiptPayload payload = new(
             null, null, null, null, null, null, null, null, null, null,
-            new List<InAppPurchase>(), null, null, null,
+            new List<InAppPurchase>(), null, null, null, null,
             new Dictionary<int, IReadOnlyList<byte[]>> { [9999] = new List<byte[]> { new byte[] { 1 } } }, null);
 
         Assert.False(payload.InApp is List<InAppPurchase> || payload.InApp is InAppPurchase[]);
@@ -98,7 +98,7 @@ public class ReceiptTests
         InAppPurchase purchase = new(1, "p", "t", null, null, null, null, null, null, null, null, Attributes());
         ReceiptPayload payload = new(
             "Production", null, "a", new byte[] { 0x0c, 0x01, 0x61 }, null, new byte[] { 1, 2 }, new byte[] { 3, 4 },
-            null, null, null, new List<InAppPurchase> { purchase }, null, null, null, Attributes(), AppleEnvironment.Production);
+            null, null, null, new List<InAppPurchase> { purchase }, null, null, null, null, Attributes(), AppleEnvironment.Production);
         string before = payload.ToJson();
 
         payload.BundleIdBytes![0] = 0xff;
@@ -122,9 +122,9 @@ public class ReceiptTests
             null, null, null, null, null, null, null, null, null, null, null, null!));
         Assert.Throws<System.ArgumentNullException>(() => new ReceiptPayload(
             null, null, null, null, null, null, null, null, null, null,
-            null!, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(), null));
+            null!, null, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(), null));
         Assert.Throws<System.ArgumentNullException>(() => new ReceiptPayload(
             null, null, null, null, null, null, null, null, null, null,
-            new List<InAppPurchase> { null! }, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(), null));
+            new List<InAppPurchase> { null! }, null, null, null, null, new Dictionary<int, IReadOnlyList<byte[]>>(), null));
     }
 }

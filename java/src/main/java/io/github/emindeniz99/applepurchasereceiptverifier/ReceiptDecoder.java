@@ -35,8 +35,8 @@ import org.jspecify.annotations.Nullable;
  */
 final class ReceiptDecoder {
 
-    // Apple documents most of these types. It does not document 0, 1, 15, 16, 18
-    // and 1713; they are named from genuine receipts and community references.
+    // Apple documents most of these types. It does not document 0, 1, 15, 16, 18,
+    // 32 and 1713; they are named from genuine receipts and community references.
     private static final int ATTR_RECEIPT_TYPE = 0;
     private static final int ATTR_APP_ITEM_ID = 1;
     private static final int ATTR_BUNDLE_ID = 2;
@@ -50,6 +50,7 @@ final class ReceiptDecoder {
     private static final int ATTR_ORIGINAL_PURCHASE_DATE = 18;
     private static final int ATTR_ORIGINAL_APP_VERSION = 19;
     private static final int ATTR_EXPIRATION_DATE = 21;
+    private static final int ATTR_PREORDER_DATE = 32;
 
     private static final int IAP_QUANTITY = 1701;
     private static final int IAP_PRODUCT_ID = 1702;
@@ -76,7 +77,8 @@ final class ReceiptDecoder {
             ATTR_VERSION_EXTERNAL_IDENTIFIER,
             ATTR_ORIGINAL_PURCHASE_DATE,
             ATTR_ORIGINAL_APP_VERSION,
-            ATTR_EXPIRATION_DATE));
+            ATTR_EXPIRATION_DATE,
+            ATTR_PREORDER_DATE));
 
     /** The in-app types that fill a typed field of {@link InAppPurchase}. */
     private static final Set<Integer> IN_APP = new HashSet<>(Arrays.asList(
@@ -151,6 +153,7 @@ final class ReceiptDecoder {
                 attributes.integer(ATTR_VERSION_EXTERNAL_IDENTIFIER),
                 purchases,
                 attributes.date(ATTR_ORIGINAL_PURCHASE_DATE),
+                attributes.date(ATTR_PREORDER_DATE),
                 attributes.string(ATTR_ORIGINAL_APP_VERSION),
                 attributes.date(ATTR_EXPIRATION_DATE),
                 attributes.unknown,

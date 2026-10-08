@@ -560,8 +560,8 @@ fn payloads_can_be_built_by_hand_and_write_their_json_value() {
                 "cancellation_date_ms": null, "is_trial_period": false,
                 "is_in_intro_offer_period": null, "unknown_attributes": {}
             }],
-            "original_purchase_date_ms": null, "original_application_version": null,
-            "expiration_date_ms": null,
+            "original_purchase_date_ms": null, "preorder_date_ms": null,
+            "original_application_version": null, "expiration_date_ms": null,
             "unknown_attributes": {"9": ["YQ==", "Yg=="], "13": ["AQID"]}
         })
     );

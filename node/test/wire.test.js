@@ -52,6 +52,7 @@ for (const kase of WITH_TO_JSON) {
     ]) {
       assert.equal(payload[field], wire[key], field);
     }
+    assert.equal(payload.preorderDateMs, wire.preorder_date_ms, 'preorderDateMs');
     assert.ok(payload.unknownAttributes instanceof Map);
     for (const [type, values] of payload.unknownAttributes) {
       assert.equal(typeof type, 'number');

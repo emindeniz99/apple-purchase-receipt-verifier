@@ -126,6 +126,7 @@ module ApplePurchaseReceiptVerifier
           version_external_identifier: id(payload, "version_external_identifier"),
           in_app: list(payload, "in_app") { |purchase| in_app_purchase(purchase) }.freeze,
           original_purchase_date_ms: integer(payload, "original_purchase_date_ms"),
+          preorder_date_ms: integer(payload, "preorder_date_ms"),
           original_application_version: string(payload, "original_application_version"),
           expiration_date_ms: integer(payload, "expiration_date_ms"),
           unknown_attributes: unknown_attributes(payload),

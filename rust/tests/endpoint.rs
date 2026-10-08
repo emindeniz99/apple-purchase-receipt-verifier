@@ -135,26 +135,29 @@ fn is_trial_period_is_a_string_like_is_in_intro_offer_period() {
 }
 
 #[test]
-fn ids_a_receipt_does_not_carry_are_omitted_never_null() {
+fn ids_a_receipt_does_not_carry_are_omitted_except_download_id_which_is_null() {
     let receipt = shared_receipt(Environment::Sandbox, NOW);
-    for key in [
-        "adam_id",
-        "app_item_id",
-        "download_id",
-        "version_external_identifier",
-    ] {
+    for key in ["adam_id", "app_item_id", "version_external_identifier"] {
         assert!(
             !receipt.contains_key(key),
             "{key} must be absent, not null, when the receipt does not carry it"
         );
     }
+    // Apple answers `"download_id": null` for a receipt without attribute 15.
+    assert_eq!(receipt.get("download_id"), Some(&Value::Null));
     for entry in receipt["in_app"].as_array().unwrap() {
         assert!(entry.get("is_trial_period").is_none());
     }
-    // Absence is the key being gone, which is only meaningful if `null`
-    // never appears in the body at all.
-    let text = serde_json::to_string(&Value::Object(receipt)).unwrap();
-    assert!(!text.contains("null"), "{text}");
+    // download_id is the one null in the body: every other absent field is
+    // a key that is gone.
+    let nulls: Vec<&String> = receipt
+        .iter()
+        .filter(|(_, value)| value.is_null())
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(nulls, ["download_id"]);
+    let in_app = serde_json::to_string(&receipt["in_app"]).unwrap();
+    assert!(!in_app.contains("null"), "{in_app}");
 }
 
 #[test]

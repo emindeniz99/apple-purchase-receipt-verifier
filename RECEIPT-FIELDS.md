@@ -82,8 +82,11 @@ their own casing); blank means the value is reachable only through
 | 20 | unknown | UTF8String | no | genuine only | | Empty string in both fixture receipts. TPInAppReceipt: "reserved for future use". Confirmed empty in a genuine production receipt too (2026-09-21, not committed). Also empty in all three receipts examined on 2026-09-22 (not committed). |
 | 21 | receipt expiration date | IA5String, RFC 3339 | **yes** | Xcode only | `expirationDateMs()` | `"4001-01-01T00:00:00Z"` in the Xcode receipts. Apple says this is for Volume Purchase Program receipts; neither genuine sandbox receipt carries it. |
 | 25 | unknown | INTEGER | no | genuine only | | `3` in both fixture receipts. TPInAppReceipt: "reserved for future use". Confirmed the same value in a genuine production receipt too (2026-09-21, not committed). Also 3 in all three receipts examined on 2026-09-22 (not committed). It is 3 in all six receipts examined. |
+| 32 | pre-order date | IA5String, RFC 3339 | no | generated only | `preorderDateMs()` | Present when the user pre-ordered the app. Established by comparing production receipts with Apple's `verifyReceipt` answers for them (2026-10-07, receipts not committed): the value is an IA5String holding an RFC 3339 date, like types 12 and 18, and the answer carries it as `preorder_date`, `preorder_date_ms` and `preorder_date_pst`, in the same triplet format as `original_purchase_date`. Decoded like types 12 and 18: an empty string means "not set", a value that is not an RFC 3339 date-time stays raw in `unknownAttributes()`. No genuine fixture carries it; the synthetic `preorder-receipt-with-date.der` (generator `PreorderDateFixtures`, its own root `preorder-receipt-root.der`) and `preorder-receipt-bad-date.der` do. |
 
-Types 22, 23 and 24 appear in no source and in no fixture.
+Types 22, 23 and 24 appear in no source and in no fixture. Type 32 appears in no
+fixture that Apple signed, and in no source other than the 2026-10-07 comparison
+under its row.
 
 ## In-app attribute types (inside type 17)
 
@@ -148,7 +151,10 @@ run directly against a genuine production receipt and Apple's own
 types 1 (`adam_id`/`app_item_id`), 15 (`download_id`), 16
 (`version_external_identifier`) and 1713 (`is_trial_period`): the
 `verifyReceipt`-compatible endpoint has to emit all of them, and
-`receipt_type` additionally routes 21007/21008.
+`receipt_type` additionally routes 21007/21008. The same comparison on
+2026-10-07 (receipts not committed) added type 32 (`preorder_date`) and found
+that Apple answers `"download_id": null` for a receipt that has no type 15,
+which the endpoint now does too.
 
 Apple has published no new receipt attribute type since the 2017-12-11
 revision. Everything added to in-app purchasing after that date (offer codes,
@@ -244,9 +250,13 @@ for type 0.
 
 ### Ruled out
 
-- **Type 20 is not `preorderDate`.** Type 20 is tagged UTF8String. Every date
-  attribute in this format is IA5String, and type 8 shows that an empty date
-  keeps its IA5String tag.
+- **Type 20 is not `preorderDate`; type 32 is.** Type 20 is tagged UTF8String.
+  Every date attribute in this format is IA5String, and type 8 shows that an
+  empty date keeps its IA5String tag. The pre-order date is type 32, an
+  IA5String holding an RFC 3339 date (production receipts compared with Apple's
+  `verifyReceipt` answers on 2026-10-07, receipts not committed), and the
+  library decodes it. Type 20 stays unnamed: an empty string in every receipt
+  examined, "reserved for future use" by TPInAppReceipt.
 - **Types 6 and 7 are not a device digest.** Their length varies from
   receipt to receipt, and a digest has a fixed length.
 - **Type 1710 is neither `subscriptionGroupIdentifier` nor `storefrontId`.**

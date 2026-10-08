@@ -189,14 +189,47 @@ class VerifyReceiptEndpointTest {
     }
 
     @Test
-    void omitsTheLegacyIdKeysWhenTheReceiptCarriesNone() {
+    void omitsTheLegacyIdKeysWhenTheReceiptCarriesNoneExceptDownloadIdWhichIsNull() throws Exception {
         // Absent, not JSON null: the shared sandbox receipt carries none of
-        // the four, so none of their keys is in the answer at all.
+        // the four, so three of their keys are not in the answer at all.
         String body = respond(Environment.SANDBOX, request());
-        for (String key : Arrays.asList(
-                "adam_id", "app_item_id", "download_id", "version_external_identifier", "is_trial_period")) {
+        for (String key : Arrays.asList("adam_id", "app_item_id", "version_external_identifier", "is_trial_period")) {
             assertFalse(body.contains("\"" + key + "\""), key + " is present in " + body);
         }
+        // Apple answers "download_id": null for a receipt without attribute
+        // 15, the one key it writes as null instead of omitting.
+        JsonNode receipt = MAPPER.readTree(body).get("receipt");
+        assertTrue(receipt.has("download_id"), body);
+        assertTrue(receipt.get("download_id").isNull(), body);
+        assertTrue(body.contains("\"download_id\":null"), body);
+    }
+
+    /** Attribute 32 answers as Apple's date triplet {@code preorder_date}, and is absent when the receipt has none. */
+    @Test
+    void writesThePreorderDateTripletWhenTheReceiptCarriesOne() throws Exception {
+        TestPki pki = SyntheticReceipts.pki();
+        byte[] receipt = pki.signReceipt(TestPki.receiptPayload(
+                "ProductionSandbox",
+                "com.example.app",
+                "1.2.3",
+                OPAQUE,
+                new byte[20],
+                "2024-08-06T12:00:00Z",
+                Collections.<byte[]>emptyList(),
+                true,
+                null,
+                new byte[] {1, 2, 3},
+                Arrays.asList(TestPki.attribute(32, new DERIA5String("2024-07-02T09:45:20Z").getEncoded()))));
+        JsonNode answer =
+                MAPPER.readTree(respond(Environment.SANDBOX, request(receipt))).get("receipt");
+        assertEquals("2024-07-02 09:45:20 Etc/GMT", answer.get("preorder_date").asText());
+        assertEquals("1719913520000", answer.get("preorder_date_ms").asText());
+        assertEquals(
+                "2024-07-02 02:45:20 America/Los_Angeles",
+                answer.get("preorder_date_pst").asText());
+        assertFalse(MAPPER.readTree(respond(Environment.SANDBOX, request()))
+                .get("receipt")
+                .has("preorder_date"));
     }
 
     /** Apple omits web_order_line_item_id for consumables, where attribute 1711 is 0. */

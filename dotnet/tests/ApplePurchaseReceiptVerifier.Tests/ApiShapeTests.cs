@@ -288,6 +288,7 @@ public class ApiShapeTests
     [Theory]
     [InlineData(typeof(ReceiptPayload), "ReceiptCreationDateMs")]
     [InlineData(typeof(ReceiptPayload), "OriginalPurchaseDateMs")]
+    [InlineData(typeof(ReceiptPayload), "PreorderDateMs")]
     [InlineData(typeof(ReceiptPayload), "ExpirationDateMs")]
     [InlineData(typeof(InAppPurchase), "PurchaseDateMs")]
     [InlineData(typeof(InAppPurchase), "OriginalPurchaseDateMs")]

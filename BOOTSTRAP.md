@@ -351,7 +351,7 @@ current archive is a release asset of this repository
 
 | Tag | File | Size | SHA-256 |
 |---|---|---:|---|
-| `corpus-2026-09-29` | `corpus-2026-09-29.tar.gz` | 28,591,520 B | `89b599c52f0448dae22298972db5841a795991edf52df520bea7c545774b956d` |
+| `corpus-2026-10-07` | `corpus-2026-10-07.tar.gz` | 28,522,411 B | `43bbbc164b7d71d413650f6f560a417cb2afcd7bd4fbc5a43df8fd275bffc95a` |
 
 It was generated from `fixtures/` and the test keys only, and holds no
 production receipt. The repository variables `APRV_CORPUS_URL` and
