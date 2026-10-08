@@ -76,7 +76,7 @@ final class EndpointResponse {
         string(json, "application_version", receipt.applicationVersion());
         // Apple answers "download_id": null when the receipt has no attribute
         // 15, where every other absent field is omitted.
-        json.writeObjectField("download_id", receipt.downloadId());
+        numberOrNull(json, "download_id", receipt.downloadId());
         number(json, "version_external_identifier", receipt.versionExternalIdentifier());
         string(json, "original_application_version", receipt.originalApplicationVersion());
         appleDates(json, "receipt_creation_date", receipt.receiptCreationDateMs());
@@ -94,10 +94,7 @@ final class EndpointResponse {
 
     private static void writePurchase(JsonGenerator json, InAppPurchase purchase) throws IOException {
         json.writeStartObject();
-        Long quantity = purchase.quantity();
-        if (quantity != null) {
-            json.writeStringField("quantity", quantity.toString());
-        }
+        numberAsString(json, "quantity", purchase.quantity());
         string(json, "product_id", purchase.productId());
         string(json, "transaction_id", purchase.transactionId());
         string(json, "original_transaction_id", purchase.originalTransactionId());
@@ -105,15 +102,12 @@ final class EndpointResponse {
         appleDates(json, "original_purchase_date", purchase.originalPurchaseDateMs());
         appleDates(json, "expires_date", purchase.expiresDateMs());
         appleDates(json, "cancellation_date", purchase.cancellationDateMs());
-        Long cancellationReason = purchase.cancellationReason();
-        if (cancellationReason != null) {
-            json.writeStringField("cancellation_reason", cancellationReason.toString());
-        }
+        numberAsString(json, "cancellation_reason", purchase.cancellationReason());
         // Apple omits the key when attribute 1711 is 0, as it is for
         // consumables.
         Long webOrderLineItemId = purchase.webOrderLineItemId();
         if (webOrderLineItemId != null && webOrderLineItemId != 0) {
-            json.writeStringField("web_order_line_item_id", webOrderLineItemId.toString());
+            numberAsString(json, "web_order_line_item_id", webOrderLineItemId);
         }
         if (purchase.isTrialPeriod() != null) {
             json.writeStringField("is_trial_period", purchase.isTrialPeriod().toString());
@@ -137,6 +131,14 @@ final class EndpointResponse {
         }
     }
 
+    private static void numberOrNull(JsonGenerator json, String key, @Nullable Long value) throws IOException {
+        json.writeObjectField(key, value);
+    }
+
+    private static void numberAsString(JsonGenerator json, String key, @Nullable Long value) throws IOException {
+        string(json, key, value == null ? null : value.toString());
+    }
+
     /** Apple's three date renderings: {@code x} (GMT), {@code x_ms}, {@code x_pst}. */
     private static void appleDates(JsonGenerator json, String prefix, @Nullable Long epochMillis) throws IOException {
         if (epochMillis == null) {
@@ -144,7 +146,7 @@ final class EndpointResponse {
         }
         Instant instant = Instant.ofEpochMilli(epochMillis);
         json.writeStringField(prefix, FORMAT.format(instant.atZone(ZoneOffset.UTC)) + " Etc/GMT");
-        json.writeStringField(prefix + "_ms", epochMillis.toString());
+        numberAsString(json, prefix + "_ms", epochMillis);
         json.writeStringField(prefix + "_pst", FORMAT.format(instant.atZone(PACIFIC)) + " America/Los_Angeles");
     }
 }
