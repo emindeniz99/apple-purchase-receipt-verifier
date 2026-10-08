@@ -585,7 +585,7 @@ what runs under it is not.
 | any platform .NET runs on | the platforms Wasmtime ships a native library for; no Alpine, no 32-bit |
 | SHA-224 receipts could not be verified | the module decides which algorithms verify |
 | `AppleEnvironments.FromReceiptType(payload.ReceiptType)` and `AppleEnvironments.FromJwsEnvironment(claim)` | `payload.Environment` on a `ReceiptPayload` or a `JsonPayload`, which the verifier states; `AppleEnvironments` is gone |
-| `new ReceiptPayload(..., unknownAttributes)` and `JsonPayload.Create(json)` | both accept the environment: `new ReceiptPayload(..., unknownAttributes, environment)`, `JsonPayload.Create(json, environment)` |
+| `new ReceiptPayload(..., unknownAttributes)` and `JsonPayload.Create(json)` | each takes the environment as its last argument: `new ReceiptPayload(..., unknownAttributes, environment)`, `JsonPayload.Create(json, environment)` |
 
 ## Upgrading from 0.6
 
