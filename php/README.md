@@ -434,8 +434,18 @@ every port:
 - **64-bit ids** (`appItemId`, `downloadId`, `versionExternalIdentifier`,
   `webOrderLineItemId`) are plain PHP `int`; `ReceiptPayload::toJson()`
   renders them as JSON strings (JSON numbers lose precision above 2^53) and
-  everything else as JSON numbers, through `json_encode()`: the same value
+  dates, quantities and cancellation reasons as JSON numbers, with flags
+  as booleans and text as strings, through `json_encode()`: the same value
   every other port writes, though the bytes may differ.
+
+## Receipt model changes
+
+Each receipt model has one constructor. `preorderDateMs` follows
+`originalPurchaseDateMs`; `cancellationReason` follows `cancellationDateMs`.
+Both use the same nullable defaults as the other scalar fields.
+Cancellation reasons are nullable integers in receipt JSON, like quantity.
+The Apple-compatible endpoint writes present reasons as strings and omits
+absent reasons.
 
 ## Upgrading from 0.7
 

@@ -557,7 +557,8 @@ fn payloads_can_be_built_by_hand_and_write_their_json_value() {
                 "transaction_id": null, "purchase_date_ms": null,
                 "original_transaction_id": null, "original_purchase_date_ms": null,
                 "expires_date_ms": null, "web_order_line_item_id": "42",
-                "cancellation_date_ms": null, "is_trial_period": false,
+                "cancellation_date_ms": null, "cancellation_reason": null,
+                "is_trial_period": false,
                 "is_in_intro_offer_period": null, "unknown_attributes": {}
             }],
             "original_purchase_date_ms": null, "preorder_date_ms": null,

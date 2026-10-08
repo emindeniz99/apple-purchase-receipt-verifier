@@ -252,18 +252,18 @@ final class FacadeTests: XCTestCase {
         + #""download_id":"-7","version_external_identifier":null,"in_app":[{"quantity":1,"product_id":"p","#
         + #""transaction_id":"t","purchase_date_ms":1000,"original_transaction_id":"o","#
         + #""original_purchase_date_ms":2000,"expires_date_ms":null,"web_order_line_item_id":"4","#
-        + #""cancellation_date_ms":null,"is_trial_period":false,"is_in_intro_offer_period":true,"#
+        + #""cancellation_date_ms":null,"cancellation_reason":null,"is_trial_period":false,"is_in_intro_offer_period":true,"#
         + #""unknown_attributes":{"1720":["AQ=="]}}],"original_purchase_date_ms":9000,"#
         + #""preorder_date_ms":9500,"original_application_version":"0","expiration_date_ms":null,"#
         + #""unknown_attributes":{"13":["Aw==","BA=="]}}"#
 
     // MARK: the six outcomes (ARCHITECTURE.md §4)
 
-    func testCancellationReasonSurvivesTheWireAsAnOptionalString() throws {
-        for reason in ["0", "1"] {
+    func testCancellationReasonSurvivesTheWireAsAnOptionalInteger() throws {
+        for reason in [Int64(0), 1] {
             let json = Self.receiptJson.replacingOccurrences(
-                of: #""cancellation_date_ms":null,"#,
-                with: #""cancellation_date_ms":null,"cancellation_reason":"\#(reason)","#)
+                of: #""cancellation_reason":null,"#,
+                with: #""cancellation_reason":\#(reason),"#)
             let result = try verifier().verifyReceipt(
                 base64: #"{"verified":true,"payload":\#(json),"environment":"Sandbox"}"#)
             let payload = try XCTUnwrap(result.payload)
@@ -277,7 +277,7 @@ final class FacadeTests: XCTestCase {
         XCTAssertNil(payload.inApp[0].cancellationReason)
         let written = try JSONSerialization.jsonObject(with: Data(payload.toJson().utf8)) as! [String: Any]
         let purchases = written["in_app"] as! [[String: Any]]
-        XCTAssertNil(purchases[0]["cancellation_reason"])
+        XCTAssertTrue(purchases[0]["cancellation_reason"] is NSNull)
     }
 
     func testVerifiedIsThePayload() throws {

@@ -13,13 +13,8 @@ module ApplePurchaseReceiptVerifier
   InAppPurchase = Data.define(
     :quantity, :product_id, :transaction_id, :purchase_date_ms, :original_transaction_id,
     :original_purchase_date_ms, :expires_date_ms, :web_order_line_item_id, :cancellation_date_ms,
-    :is_trial_period, :is_in_intro_offer_period, :unknown_attributes, :cancellation_reason
+    :cancellation_reason, :is_trial_period, :is_in_intro_offer_period, :unknown_attributes
   ) do
-    # Steep treats methods in a Data.define block as belonging to the enclosing module.
-    def initialize(cancellation_reason: nil, **fields) # steep:ignore UndeclaredMethodDefinition
-      super(**fields, cancellation_reason: cancellation_reason)
-    end
-
     # @api private
     def json_value # steep:ignore UndeclaredMethodDefinition
       # @type self: InAppPurchase
@@ -33,7 +28,7 @@ module ApplePurchaseReceiptVerifier
         "expires_date_ms" => expires_date_ms,
         "web_order_line_item_id" => web_order_line_item_id&.to_s,
         "cancellation_date_ms" => cancellation_date_ms,
-        **(cancellation_reason.nil? ? {} : { "cancellation_reason" => cancellation_reason }),
+        "cancellation_reason" => cancellation_reason,
         "is_trial_period" => is_trial_period,
         "is_in_intro_offer_period" => is_in_intro_offer_period,
         "unknown_attributes" => PayloadJson.unknown_attributes(unknown_attributes)
@@ -61,12 +56,6 @@ module ApplePurchaseReceiptVerifier
     :version_external_identifier, :in_app, :original_purchase_date_ms, :preorder_date_ms,
     :original_application_version, :expiration_date_ms, :unknown_attributes, :environment
   ) do
-    # `preorder_date_ms` (attribute 32) defaults to `nil`, so a payload built
-    # by hand with the keywords it had before keeps working.
-    def initialize(preorder_date_ms: nil, **members) # steep:ignore UndeclaredMethodDefinition
-      super
-    end
-
     # This payload as JSON (docs/design/0.7-api.md, "Our JSON"). It holds the
     # full purchase data; the caller decides what to write where. Every port
     # writes the same value; the bytes may differ.

@@ -98,7 +98,8 @@ one), `expiration_date` (VPP receipts), `adam_id` / `app_item_id`,
 first two echoing the same value under both keys), and per-purchase `in_app` entries:
 `quantity`, `product_id`, `transaction_id`, `original_transaction_id`,
 `purchase_date` / `original_purchase_date` / `expires_date` /
-`cancellation_date` (each +`_ms`, `_pst`), `web_order_line_item_id`,
+`cancellation_date` (each +`_ms`, `_pst`), `cancellation_reason` (attribute
+1720, a decimal string when present), `web_order_line_item_id`,
 `is_in_intro_offer_period`, `is_trial_period` (JSON string `"true"`/`"false"`,
 like `is_in_intro_offer_period`). Number-as-string and date-triplet
 formatting match Apple's (`"1"`, `"2024-08-06 12:00:00 Etc/GMT"`).
@@ -113,9 +114,6 @@ carry no `environment` at all.
 
 - `in_app_ownership_type`: family-sharing state that no receipt, sandbox or
   production, carries, so it cannot be derived locally.
-- `cancellation_reason`: Apple documents no ASN.1 attribute for it. The
-  refund reason is `revocationReason` on the signed transaction the App
-  Store Server API returns.
 - `promotional_offer_id`: Apple documents no ASN.1 attribute for it either.
   TPInAppReceipt names in-app attribute 1721 as the promotional offer
   identifier; no fixture here carries it (see

@@ -114,7 +114,7 @@ public class ApiShapeTests
         Assert.Equal(typeof(AppleEnvironment?), typeof(ReceiptPayload).GetProperty("Environment")!.PropertyType);
         Assert.Equal(typeof(AppleEnvironment?), typeof(JsonPayload).GetProperty("Environment")!.PropertyType);
 
-        ParameterInfo last = typeof(ReceiptPayload).GetConstructors().Single().GetParameters().Last();
+        ParameterInfo last = Assert.Single(typeof(ReceiptPayload).GetConstructors()).GetParameters().Last();
         Assert.Equal("environment", last.Name);
         Assert.Equal(typeof(AppleEnvironment?), last.ParameterType);
         MethodInfo create = typeof(JsonPayload).GetMethod("Create", BindingFlags.Public | BindingFlags.Static)!;
@@ -231,8 +231,7 @@ public class ApiShapeTests
 
         Assert.NotNull(typeof(JsonPayload).GetMethod("Create", BindingFlags.Public | BindingFlags.Static));
         Assert.Single(typeof(ReceiptPayload).GetConstructors());
-        // Retain the original constructor alongside the attribute 1720 overload.
-        Assert.Equal(2, typeof(InAppPurchase).GetConstructors().Length);
+        Assert.Single(typeof(InAppPurchase).GetConstructors());
     }
 
     /// <summary>

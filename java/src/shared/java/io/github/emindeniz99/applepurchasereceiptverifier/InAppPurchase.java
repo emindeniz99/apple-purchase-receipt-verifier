@@ -28,9 +28,9 @@ public final class InAppPurchase {
     private final @Nullable Long expiresDateMs;
     private final @Nullable Long webOrderLineItemId;
     private final @Nullable Long cancellationDateMs;
+    private final @Nullable Long cancellationReason;
     private final @Nullable Boolean isTrialPeriod;
     private final @Nullable Boolean isInIntroOfferPeriod;
-    private final @Nullable String cancellationReason;
     private final Map<Integer, List<byte[]>> unknownAttributes;
 
     /** Public so callers can build purchases by hand in their tests. */
@@ -44,41 +44,10 @@ public final class InAppPurchase {
             @Nullable Long expiresDateMs,
             @Nullable Long webOrderLineItemId,
             @Nullable Long cancellationDateMs,
+            @Nullable Long cancellationReason,
             @Nullable Boolean isTrialPeriod,
             @Nullable Boolean isInIntroOfferPeriod,
             Map<Integer, List<byte[]>> unknownAttributes) {
-        this(
-                quantity,
-                productId,
-                transactionId,
-                purchaseDateMs,
-                originalTransactionId,
-                originalPurchaseDateMs,
-                expiresDateMs,
-                webOrderLineItemId,
-                cancellationDateMs,
-                isTrialPeriod,
-                isInIntroOfferPeriod,
-                null,
-                unknownAttributes);
-    }
-
-    /** Public so callers can build purchases by hand in their tests. */
-    public InAppPurchase(
-            @Nullable Long quantity,
-            @Nullable String productId,
-            @Nullable String transactionId,
-            @Nullable Long purchaseDateMs,
-            @Nullable String originalTransactionId,
-            @Nullable Long originalPurchaseDateMs,
-            @Nullable Long expiresDateMs,
-            @Nullable Long webOrderLineItemId,
-            @Nullable Long cancellationDateMs,
-            @Nullable Boolean isTrialPeriod,
-            @Nullable Boolean isInIntroOfferPeriod,
-            @Nullable String cancellationReason,
-            Map<Integer, List<byte[]>> unknownAttributes) {
-        this.cancellationReason = cancellationReason;
         this.quantity = quantity;
         this.productId = productId;
         this.transactionId = transactionId;
@@ -88,6 +57,7 @@ public final class InAppPurchase {
         this.expiresDateMs = expiresDateMs;
         this.webOrderLineItemId = webOrderLineItemId;
         this.cancellationDateMs = cancellationDateMs;
+        this.cancellationReason = cancellationReason;
         this.isTrialPeriod = isTrialPeriod;
         this.isInIntroOfferPeriod = isInIntroOfferPeriod;
         this.unknownAttributes = RawAttributes.copy(Objects.requireNonNull(unknownAttributes, "unknownAttributes"));
@@ -138,8 +108,8 @@ public final class InAppPurchase {
         return cancellationDateMs;
     }
 
-    /** Attribute 1720, as a decimal string; absent when not carried. */
-    public @Nullable String cancellationReason() {
+    /** Attribute 1720, an INTEGER; absent when not carried or undecodable. */
+    public @Nullable Long cancellationReason() {
         return cancellationReason;
     }
 
@@ -177,9 +147,7 @@ public final class InAppPurchase {
         json.writeObjectField(
                 "web_order_line_item_id", webOrderLineItemId == null ? null : webOrderLineItemId.toString());
         json.writeObjectField("cancellation_date_ms", cancellationDateMs);
-        if (cancellationReason != null) {
-            json.writeStringField("cancellation_reason", cancellationReason);
-        }
+        json.writeObjectField("cancellation_reason", cancellationReason);
         json.writeObjectField("is_trial_period", isTrialPeriod);
         json.writeObjectField("is_in_intro_offer_period", isInIntroOfferPeriod);
         ReceiptPayload.writeAttributes(json, unknownAttributes);

@@ -191,10 +191,7 @@ fn receipt_json(receipt: &ReceiptPayload, request_date_millis: i64) -> Option<Js
     );
     // Apple answers `"download_id": null` when the receipt has no attribute
     // 15, where every other absent field is omitted.
-    json.insert(
-        "download_id".to_owned(),
-        receipt.download_id.map_or(JsonValue::Null, JsonValue::from),
-    );
+    number_or_null(&mut json, "download_id", receipt.download_id);
     present_number(
         &mut json,
         "version_external_identifier",
@@ -231,11 +228,7 @@ fn receipt_json(receipt: &ReceiptPayload, request_date_millis: i64) -> Option<Js
 
 fn purchase_json(purchase: &InAppPurchase) -> Option<JsonValue> {
     let mut json = Map::new();
-    present_string(
-        &mut json,
-        "quantity",
-        purchase.quantity.map(|q| q.to_string()).as_deref(),
-    );
+    present_number_as_string(&mut json, "quantity", purchase.quantity);
     present_string(&mut json, "product_id", purchase.product_id.as_deref());
     present_string(
         &mut json,
@@ -259,15 +252,15 @@ fn purchase_json(purchase: &InAppPurchase) -> Option<JsonValue> {
         "cancellation_date",
         purchase.cancellation_date_ms,
     )?;
-    present_string(
+    present_number_as_string(
         &mut json,
         "cancellation_reason",
-        purchase.cancellation_reason.as_deref(),
+        purchase.cancellation_reason,
     );
     // Apple omits the key when attribute 1711 is 0, as it is for
     // consumables.
     if let Some(id) = purchase.web_order_line_item_id.filter(|id| *id != 0) {
-        present_string(&mut json, "web_order_line_item_id", Some(&id.to_string()));
+        present_number_as_string(&mut json, "web_order_line_item_id", Some(id));
     }
     present_string(
         &mut json,
@@ -300,6 +293,19 @@ fn present_number(json: &mut Map<String, JsonValue>, key: &str, value: Option<i6
     }
 }
 
+fn number_or_null(json: &mut Map<String, JsonValue>, key: &str, value: Option<i64>) {
+    json.insert(
+        key.to_owned(),
+        value.map_or(JsonValue::Null, JsonValue::from),
+    );
+}
+
+fn present_number_as_string(json: &mut Map<String, JsonValue>, key: &str, value: Option<i64>) {
+    if let Some(value) = value {
+        present_string(json, key, Some(&value.to_string()));
+    }
+}
+
 /// Apple's three renderings of every date: `x` in GMT, `x_ms` in epoch
 /// milliseconds (as a string), and `x_pst` in US Pacific time. `None` when
 /// the instant does not render (`datetime::renders`).
@@ -308,7 +314,7 @@ fn apple_dates(json: &mut Map<String, JsonValue>, prefix: &str, millis: Option<i
         return Some(());
     };
     present_string(json, prefix, Some(&format_etc_gmt(millis)?));
-    present_string(json, &format!("{prefix}_ms"), Some(&millis.to_string()));
+    present_number_as_string(json, &format!("{prefix}_ms"), Some(millis));
     present_string(
         json,
         &format!("{prefix}_pst"),

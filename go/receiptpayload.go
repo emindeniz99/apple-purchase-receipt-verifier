@@ -32,7 +32,7 @@ type InAppPurchase struct {
 	ExpiresDateMs          *int64  // 1708
 	WebOrderLineItemID     *int64  // 1711
 	CancellationDateMs     *int64  // 1712
-	CancellationReason     *string // 1720
+	CancellationReason     *int64  // 1720
 	// IsTrialPeriod is attribute 1713: 0 is false, any other value true.
 	IsTrialPeriod *bool
 	// IsInIntroOfferPeriod is attribute 1719: 0 is false, any other value
@@ -87,8 +87,7 @@ type ReceiptPayload struct {
 // --- JSON ------------------------------------------------------------------
 
 // receiptJSON and inAppJSON are the shapes ToJSON hands to encoding/json.
-// A nil pointer is written as null, except an absent CancellationReason
-// is omitted; []byte is written as padded standard base64.
+// A nil pointer is written as null; []byte is written as padded standard base64.
 type receiptJSON struct {
 	ReceiptType                *string             `json:"receipt_type"`
 	AppItemID                  *string             `json:"app_item_id"`
@@ -118,7 +117,7 @@ type inAppJSON struct {
 	ExpiresDateMs          *int64              `json:"expires_date_ms"`
 	WebOrderLineItemID     *string             `json:"web_order_line_item_id"`
 	CancellationDateMs     *int64              `json:"cancellation_date_ms"`
-	CancellationReason     *string             `json:"cancellation_reason,omitempty"`
+	CancellationReason     *int64              `json:"cancellation_reason"`
 	IsTrialPeriod          *bool               `json:"is_trial_period"`
 	IsInIntroOfferPeriod   *bool               `json:"is_in_intro_offer_period"`
 	UnknownAttributes      map[string][]string `json:"unknown_attributes"`

@@ -24,8 +24,7 @@
 //!   with no other member;
 //! - 64-bit ids are JSON strings holding a decimal `i64`; dates are
 //!   epoch-millisecond numbers; bytes are padded standard base64; a missing
-//!   field is `null`, except an absent in-app `cancellation_reason` is
-//!   omitted; booleans are JSON booleans;
+//!   field is `null`; booleans are JSON booleans;
 //! - `unknown_attributes` is an object keyed by the decimal attribute type,
 //!   in ascending order, each value a list of base64 strings in receipt
 //!   order;
@@ -107,10 +106,7 @@ struct Purchase<'a>(&'a InAppPurchase);
 impl Serialize for Purchase<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let purchase = self.0;
-        let mut object = serializer.serialize_struct(
-            "InAppPurchase",
-            12 + usize::from(purchase.cancellation_reason.is_some()),
-        )?;
+        let mut object = serializer.serialize_struct("InAppPurchase", 13)?;
         object.serialize_field("quantity", &purchase.quantity)?;
         object.serialize_field("product_id", &purchase.product_id)?;
         object.serialize_field("transaction_id", &purchase.transaction_id)?;
@@ -126,9 +122,7 @@ impl Serialize for Purchase<'_> {
             &purchase.web_order_line_item_id.map(Id),
         )?;
         object.serialize_field("cancellation_date_ms", &purchase.cancellation_date_ms)?;
-        if let Some(reason) = &purchase.cancellation_reason {
-            object.serialize_field("cancellation_reason", reason)?;
-        }
+        object.serialize_field("cancellation_reason", &purchase.cancellation_reason)?;
         object.serialize_field("is_trial_period", &purchase.is_trial_period)?;
         object.serialize_field(
             "is_in_intro_offer_period",
@@ -489,9 +483,9 @@ mod tests {
     /// private use, outside the BMP), negative and repeated attribute keys,
     /// `i64` extremes and empty byte strings. The expected text was produced
     /// by the hand-written writer that the `serde_json` one replaced, run on
-    /// this same receipt, so a failure here is a change of 0.7's bytes. The
-    /// one deliberate change since is the `environment` member after the
-    /// payload (DECISIONS.md R42); the payload's own bytes are 0.7's.
+    /// this same receipt. It includes the environment member after the
+    /// payload (DECISIONS.md R42), pre-order date and nullable cancellation
+    /// reason; changes to its byte form must be deliberate.
     #[test]
     fn a_full_receipt_answer_keeps_the_bytes_of_the_hand_written_writer() {
         assert_eq!(
@@ -511,7 +505,7 @@ mod tests {
                 r#","original_purchase_date_ms":0,"expires_date_ms":9223372036854775807"#,
                 r#","web_order_line_item_id":"-9223372036854775808""#,
                 r#","cancellation_date_ms":-9223372036854775808"#,
-                r#","is_trial_period":true,"is_in_intro_offer_period":false"#,
+                r#","cancellation_reason":null,"is_trial_period":true,"is_in_intro_offer_period":false"#,
                 r#","unknown_attributes":{"-1":[""],"1714":["AQID",""],"1714":["/w=="]}}"#,
                 r#",{"quantity":1,"product_id":""#,
                 "\u{80}\u{9f}\u{fffd}\u{10ffff}",
@@ -519,7 +513,7 @@ mod tests {
                 r#","original_transaction_id":"1000000000000000""#,
                 r#","original_purchase_date_ms":1375340400000,"expires_date_ms":1375344000000"#,
                 r#","web_order_line_item_id":"0","cancellation_date_ms":1375341000000"#,
-                r#","is_trial_period":false,"is_in_intro_offer_period":true"#,
+                r#","cancellation_reason":null,"is_trial_period":false,"is_in_intro_offer_period":true"#,
                 r#","unknown_attributes":{}}]"#,
                 r#","original_purchase_date_ms":1375340400000"#,
                 r#","preorder_date_ms":1719913520000"#,

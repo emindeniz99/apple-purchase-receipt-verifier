@@ -46,7 +46,7 @@ final class FacadeTest extends TestCase
           "preorder_date_ms":1719913520000,"original_application_version":"1.0","expiration_date_ms":null,
           "in_app":[{"quantity":1,"product_id":"p1","transaction_id":"t1","purchase_date_ms":1722945600000,
             "original_transaction_id":"t0","original_purchase_date_ms":1722945600000,"expires_date_ms":null,
-            "web_order_line_item_id":"1000000123456789","cancellation_date_ms":null,"is_trial_period":false,
+            "web_order_line_item_id":"1000000123456789","cancellation_date_ms":null,"cancellation_reason":null,"is_trial_period":false,
             "is_in_intro_offer_period":true,"unknown_attributes":{"1799":["/w=="]}}],
           "unknown_attributes":{"7":["Ag=="],"13":["AA==","AQ=="]}},"environment":"Sandbox"}
         JSON;

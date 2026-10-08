@@ -114,13 +114,13 @@ reachable only through `InAppPurchase.unknownAttributes()`.
 | 1717 | unknown | UTF8String | no | genuine | | Empty string throughout. TPInAppReceipt names it `unknown_1717`. |
 | 1718 | unknown | UTF8String | no | genuine | | Empty string throughout. TPInAppReceipt names it `unknown_1718`. |
 | 1719 | is_in_intro_offer_period | INTEGER | **yes** | all | `isInIntroOfferPeriod()` | `1` in the Xcode receipts, `0` in the genuine ones. |
+| 1720 | cancellation reason | INTEGER | no | generated only | `cancellationReason()` | Compared with Apple's `verifyReceipt` answer on 2026-10-07 using a private receipt (not committed): attribute 1720 held INTEGER 1 on a refunded purchase, and Apple returned `"cancellation_reason": "1"`. The model and receipt JSON keep an integer; the Apple-compatible endpoint writes a decimal string, only when the attribute decodes. Apple documents reason codes 0 and 1 without an ASN.1 number. Generated fixtures cover 0, 1, absence, a malformed value and a duplicate; value 0 still awaits confirmation in an Apple-signed refund. |
 | 1721 | promotional offer identifier | UTF8String | no | **no** | | Named by TPInAppReceipt. Absent from every fixture, so this repository has no evidence for it either way. The Apple Developer Forums thread asking for the ASN.1 number of `offer_code_ref_name` (thread 730612) went unanswered. |
 | 1722 | unknown | INTEGER | no | g5 only | | `0` on both g5 entries, absent from the 2020 legacy receipt, so it is a type Apple added between 2020 and 2025 — the newest attribute in the corpus. TPInAppReceipt names it `unknown_1722`. Also 0 in all three receipts examined on 2026-09-22 (not committed), present in every one, which confirms it is a current attribute. It is present and 0 in every receipt created from 2024 on and absent from the 2020 one, which narrows when Apple added it. |
 
-Type 1720 appears in no source and in no fixture. The list of candidate
-types this audit was asked to check also included 1720 and 1721 at the in-app
-level and nothing above 25 at the app level; 1720 could not be corroborated
-anywhere.
+Type 1720 was absent from the original fixture audit. The later comparison
+described above establishes its mapping for value 1; the generated fixtures
+exercise decoding without storing the private receipt.
 
 ## Why 0 and 18 are undocumented
 

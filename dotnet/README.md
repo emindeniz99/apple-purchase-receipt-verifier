@@ -140,6 +140,13 @@ Dates are epoch milliseconds (`*Ms`, `long?`); 64-bit ids (`AppItemId`,
 `WebOrderLineItemId`) stay `long?` on this payload but render as decimal
 **strings** in `ToJson()`, the same JSON value every port writes.
 
+Each payload model has one public constructor containing all its fields.
+`preorderDateMs` follows `originalPurchaseDateMs`; `cancellationReason`
+follows `cancellationDateMs`. Pass `null` when an attribute is absent,
+as for `Quantity`. Receipt JSON writes a nullable integer reason; the
+Apple-compatible endpoint writes a present reason as a decimal string
+and omits an absent reason.
+
 ```csharp
 payload.ReceiptType;               // "Production", "ProductionSandbox", ...
 payload.BundleId;                  // decoded attribute 2

@@ -56,7 +56,7 @@ const fullReceiptPayload = `{
  "in_app":[{"quantity":1,"product_id":"pro","transaction_id":"1000000000000001",
    "purchase_date_ms":1,"original_transaction_id":"1000000000000000",
    "original_purchase_date_ms":2,"expires_date_ms":null,
-   "web_order_line_item_id":"9223372036854775807","cancellation_date_ms":null,
+   "web_order_line_item_id":"9223372036854775807","cancellation_date_ms":null,"cancellation_reason":null,
    "is_trial_period":true,"is_in_intro_offer_period":false,
    "unknown_attributes":{"9999":["AQ=="]}}],
  "original_purchase_date_ms":3,"preorder_date_ms":4,"original_application_version":"1.0",

@@ -36,7 +36,7 @@ import org.jspecify.annotations.Nullable;
 final class ReceiptDecoder {
 
     // Apple documents most of these types. It does not document 0, 1, 15, 16, 18,
-    // 32 and 1713; they are named from genuine receipts and community references.
+    // 32, 1713 and 1720; they are named from genuine receipts and community references.
     private static final int ATTR_RECEIPT_TYPE = 0;
     private static final int ATTR_APP_ITEM_ID = 1;
     private static final int ATTR_BUNDLE_ID = 2;
@@ -181,10 +181,6 @@ final class ReceiptDecoder {
         return null;
     }
 
-    private static @Nullable String decimal(@Nullable Long value) {
-        return value == null ? null : value.toString();
-    }
-
     private static InAppPurchase parseInApp(byte[] inAppSet) throws VerificationException {
         Attributes attributes = readAttributes(inAppSet, "in-app purchase attribute", IN_APP);
         return new InAppPurchase(
@@ -197,9 +193,9 @@ final class ReceiptDecoder {
                 attributes.date(IAP_EXPIRES_DATE),
                 attributes.integer(IAP_WEB_ORDER_LINE_ITEM_ID),
                 attributes.date(IAP_CANCELLATION_DATE),
+                attributes.integer(IAP_CANCELLATION_REASON),
                 attributes.flag(IAP_IS_TRIAL_PERIOD),
                 attributes.flag(IAP_IS_IN_INTRO_OFFER_PERIOD),
-                decimal(attributes.integer(IAP_CANCELLATION_REASON)),
                 attributes.unknown);
     }
 

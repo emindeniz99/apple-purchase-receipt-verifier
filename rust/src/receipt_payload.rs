@@ -145,12 +145,12 @@ pub struct InAppPurchase {
     pub web_order_line_item_id: Option<i64>,
     /// 1712
     pub cancellation_date_ms: Option<i64>,
+    /// 1720, an INTEGER.
+    pub cancellation_reason: Option<i64>,
     /// 1713: 0 is `false`, any other value `true`.
     pub is_trial_period: Option<bool>,
     /// 1719: 0 is `false`, any other value `true`.
     pub is_in_intro_offer_period: Option<bool>,
-    /// 1720, decoded as a decimal string.
-    pub cancellation_reason: Option<String>,
     /// Every attribute of this purchase that did not end up in a field.
     pub unknown_attributes: UnknownAttributes,
 }
@@ -296,7 +296,7 @@ fn parse_in_app(value: &[u8]) -> Result<InAppPurchase, Undecodable> {
                 decode_integer(value).map(|v| purchase.web_order_line_item_id = Some(v))
             }
             IAP_CANCELLATION_REASON => {
-                decode_integer(value).map(|v| purchase.cancellation_reason = Some(v.to_string()))
+                decode_integer(value).map(|v| purchase.cancellation_reason = Some(v))
             }
             IAP_CANCELLATION_DATE => date(value).map(|v| purchase.cancellation_date_ms = v),
             IAP_IS_TRIAL_PERIOD => {
@@ -473,8 +473,7 @@ impl ReceiptPayload {
     /// full purchase data; the caller decides what to write where. Every port
     /// writes the same value; the bytes may differ.
     /// `null` for a missing field, 64-bit ids as strings, bytes as padded
-    /// standard base64, dates as epoch-millisecond numbers. An absent
-    /// `cancellation_reason` is omitted from an in-app purchase.
+    /// standard base64, dates as epoch-millisecond numbers.
     ///
     /// `receipt_type`, `app_item_id`, `bundle_id`, `bundle_id_bytes`,
     /// `application_version`, `opaque_value`, `sha1_hash`,
@@ -508,7 +507,7 @@ impl ReceiptPayload {
 
 impl InAppPurchase {
     fn json_value(&self) -> Value {
-        let mut value = json!({
+        json!({
             "quantity": self.quantity,
             "product_id": self.product_id,
             "transaction_id": self.transaction_id,
@@ -518,17 +517,11 @@ impl InAppPurchase {
             "expires_date_ms": self.expires_date_ms,
             "web_order_line_item_id": id_json(self.web_order_line_item_id),
             "cancellation_date_ms": self.cancellation_date_ms,
+            "cancellation_reason": self.cancellation_reason,
             "is_trial_period": self.is_trial_period,
             "is_in_intro_offer_period": self.is_in_intro_offer_period,
             "unknown_attributes": attributes_json(&self.unknown_attributes),
-        });
-        if let (Some(reason), Some(object)) = (&self.cancellation_reason, value.as_object_mut()) {
-            object.insert(
-                "cancellation_reason".to_owned(),
-                Value::String(reason.clone()),
-            );
-        }
-        value
+        })
     }
 }
 
@@ -1118,8 +1111,8 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_purchase_omits_the_reason_and_writes_other_fields_as_null() {
-        // cancellation_reason is omitted; other missing fields are null.
+    fn an_empty_purchase_writes_missing_fields_as_null() {
+        // Missing attributes have the same nullable representation.
         let json = InAppPurchase::default().json_value();
         assert_eq!(
             json,
@@ -1128,6 +1121,7 @@ mod tests {
                 "purchase_date_ms": null, "original_transaction_id": null,
                 "original_purchase_date_ms": null, "expires_date_ms": null,
                 "web_order_line_item_id": null, "cancellation_date_ms": null,
+                "cancellation_reason": null,
                 "is_trial_period": null, "is_in_intro_offer_period": null,
                 "unknown_attributes": {}
             })

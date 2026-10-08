@@ -6,7 +6,6 @@ verdicts are the module's own business (test_conformance.py, test_abi.py)."""
 
 import contextlib
 import gc
-import inspect
 import json
 import os
 import re
@@ -100,9 +99,6 @@ class VerifiedTest(unittest.TestCase):
         self.assertEqual(
             keys.index("original_purchase_date_ms") + 1, keys.index("preorder_date_ms")
         )
-        # Keyword-only: the positional order of the other fields is unchanged.
-        parameter = inspect.signature(ReceiptPayload).parameters["preorder_date_ms"]
-        self.assertIs(inspect.Parameter.KEYWORD_ONLY, parameter.kind)
 
     def test_an_absent_optional_field_is_none_and_an_empty_payload_is_all_none(self) -> None:
         result = double_verifier().verify_receipt(

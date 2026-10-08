@@ -221,6 +221,7 @@ class VerifierApiTest {
                 null,
                 null,
                 null,
+                null,
                 unknown,
                 null);
     }
@@ -239,6 +240,7 @@ class VerifierApiTest {
                 null,
                 null,
                 Collections.<InAppPurchase>emptyList(),
+                null,
                 null,
                 null,
                 null,
@@ -276,6 +278,7 @@ class VerifierApiTest {
                 null,
                 123456789012345678L,
                 null,
+                null,
                 Boolean.TRUE,
                 Boolean.FALSE,
                 purchaseUnknown);
@@ -307,7 +310,7 @@ class VerifierApiTest {
                         + "\"transaction_id\":\"2000000000000001\",\"purchase_date_ms\":1705320000000,"
                         + "\"original_transaction_id\":\"2000000000000001\",\"original_purchase_date_ms\":1705320000000,"
                         + "\"expires_date_ms\":null,\"web_order_line_item_id\":\"123456789012345678\","
-                        + "\"cancellation_date_ms\":null,\"is_trial_period\":true,\"is_in_intro_offer_period\":false,"
+                        + "\"cancellation_date_ms\":null,\"cancellation_reason\":null,\"is_trial_period\":true,\"is_in_intro_offer_period\":false,"
                         + "\"unknown_attributes\":{\"1720\":[\"AA==\"]}}],"
                         + "\"original_purchase_date_ms\":1722945600000,\"preorder_date_ms\":1719913520000,"
                         + "\"original_application_version\":\"1.0\","
@@ -333,6 +336,7 @@ class VerifierApiTest {
                 null,
                 null,
                 null,
+                null,
                 Collections.<Integer, List<byte[]>>emptyMap());
         ReceiptPayload payload = new ReceiptPayload(
                 null,
@@ -346,6 +350,7 @@ class VerifierApiTest {
                 null,
                 null,
                 Arrays.asList(purchase),
+                null,
                 null,
                 null,
                 null,
@@ -388,6 +393,8 @@ class VerifierApiTest {
     /** The JSON of a verified receipt parses back to the getters, key for key. */
     @Test
     void toJsonOfAVerifiedReceiptMatchesItsGetters() throws Exception {
+        assertEquals(1, ReceiptPayload.class.getConstructors().length);
+        assertEquals(1, InAppPurchase.class.getConstructors().length);
         ReceiptPayload payload =
                 verifier().verifyReceipt(SyntheticReceipts.base64()).payload();
         JsonNode json = MAPPER.readTree(payload.toJson());
@@ -448,6 +455,7 @@ class VerifierApiTest {
                 null,
                 null,
                 Collections.<InAppPurchase>emptyList(),
+                null,
                 null,
                 null,
                 null,

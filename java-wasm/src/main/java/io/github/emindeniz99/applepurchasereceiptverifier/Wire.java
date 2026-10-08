@@ -188,6 +188,7 @@ final class Wire {
         "expires_date_ms",
         "web_order_line_item_id",
         "cancellation_date_ms",
+        "cancellation_reason",
         "is_trial_period",
         "is_in_intro_offer_period",
         "unknown_attributes"
@@ -224,9 +225,7 @@ final class Wire {
     }
 
     private static InAppPurchase purchase(Map<String, Object> m) {
-        Map<String, Object> required = new java.util.LinkedHashMap<>(m);
-        required.remove("cancellation_reason");
-        keys(required, "in_app element", PURCHASE_KEYS);
+        keys(m, "in_app element", PURCHASE_KEYS);
         return new InAppPurchase(
                 number(m, "quantity"),
                 string(m, "product_id"),
@@ -237,9 +236,9 @@ final class Wire {
                 number(m, "expires_date_ms"),
                 id(m, "web_order_line_item_id"),
                 number(m, "cancellation_date_ms"),
+                number(m, "cancellation_reason"),
                 bool(m, "is_trial_period"),
                 bool(m, "is_in_intro_offer_period"),
-                m.containsKey("cancellation_reason") ? string(m, "cancellation_reason") : null,
                 attributes(m));
     }
 
@@ -282,7 +281,7 @@ final class Wire {
         return (String) value;
     }
 
-    /** A 64-bit id, which the wire writes as a decimal string. */
+    /** A 64-bit id written as a decimal string on the wire. */
     private static @Nullable Long id(Map<String, Object> m, String key) {
         String text = string(m, key);
         if (text == null) {
@@ -299,7 +298,7 @@ final class Wire {
         }
     }
 
-    /** A JSON integer that fits a long: dates in epoch milliseconds, the quantity. */
+    /** A JSON integer that fits a long: dates in epoch milliseconds, quantity, cancellation reason. */
     private static @Nullable Long number(Map<String, Object> m, String key) {
         Object value = m.get(key);
         if (value == NULL) {
@@ -339,7 +338,7 @@ final class Wire {
         }
     }
 
-    /** Exactly {@code expected}, no more and no fewer: the wire writes a missing value as null. */
+    /** Exactly the expected members; a missing value is written as null. */
     private static void keys(Map<String, Object> object, String what, String... expected) {
         if (object.size() != expected.length) {
             throw malformed(what + " (keys)");

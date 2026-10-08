@@ -21,6 +21,30 @@ test('cases.json pins toJson for some verified receipts', () => {
   assert.ok(WITH_TO_JSON.length >= 10, `${WITH_TO_JSON.length}`);
 });
 
+test('receipt numeric fields require integers, including the nullable cancellation reason', () => {
+  const receipt = JSON.parse(
+    WITH_TO_JSON.find((c) => JSON.parse(c.expected.toJson).in_app.length > 0).expected.toJson,
+  );
+  const read = () =>
+    receiptAnswer(JSON.stringify({ verified: true, payload: receipt, environment: null }));
+  const purchase = receipt.in_app[0];
+  for (const value of [0, 1]) {
+    purchase.cancellation_reason = value;
+    assert.equal(read().payload.inApp[0].cancellationReason, value);
+  }
+  for (const value of [0.5, '1', true]) {
+    purchase.cancellation_reason = value;
+    assert.throws(read);
+  }
+  purchase.cancellation_reason = null;
+  assert.equal(read().payload.inApp[0].cancellationReason, null);
+  delete purchase.cancellation_reason;
+  assert.throws(read);
+  purchase.cancellation_reason = null;
+  receipt.preorder_date_ms = 0.5;
+  assert.throws(read);
+});
+
 for (const kase of WITH_TO_JSON) {
   test(`${kase.id}: the module's payload JSON becomes a ReceiptPayload with the same toJson`, () => {
     const environment = JSON.stringify(kase.expected.environment);
