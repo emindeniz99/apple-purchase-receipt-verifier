@@ -27,6 +27,7 @@ export interface InAppPurchase {
   /** 64-bit id, as a decimal string (Node cannot hold an 18-digit id in a number). */
   readonly webOrderLineItemId: string | null;
   readonly cancellationDateMs: number | null;
+  readonly cancellationReason?: string | null;
   readonly isTrialPeriod: boolean | null;
   readonly isInIntroOfferPeriod: boolean | null;
   readonly unknownAttributes: RawAttributes;
@@ -146,6 +147,9 @@ function inAppJson(purchase: InAppPurchase): Record<string, unknown> {
     expires_date_ms: purchase.expiresDateMs,
     web_order_line_item_id: purchase.webOrderLineItemId,
     cancellation_date_ms: purchase.cancellationDateMs,
+    ...(purchase.cancellationReason == null
+      ? {}
+      : { cancellation_reason: purchase.cancellationReason }),
     is_trial_period: purchase.isTrialPeriod,
     is_in_intro_offer_period: purchase.isInIntroOfferPeriod,
     unknown_attributes: unknownAttributesJson(purchase.unknownAttributes),
@@ -236,6 +240,7 @@ export function createInAppPurchase(fields: Partial<InAppPurchase>): InAppPurcha
     expiresDateMs: fields.expiresDateMs ?? null,
     webOrderLineItemId: fields.webOrderLineItemId ?? null,
     cancellationDateMs: fields.cancellationDateMs ?? null,
+    cancellationReason: fields.cancellationReason ?? null,
     isTrialPeriod: fields.isTrialPeriod ?? null,
     isInIntroOfferPeriod: fields.isInIntroOfferPeriod ?? null,
     unknownAttributes: copyUnknownAttributes(fields.unknownAttributes),
@@ -315,6 +320,8 @@ function inAppFromWire(value: unknown): InAppPurchase {
     expiresDateMs: num(obj, 'expires_date_ms'),
     webOrderLineItemId: str(obj, 'web_order_line_item_id'),
     cancellationDateMs: num(obj, 'cancellation_date_ms'),
+    cancellationReason:
+      obj.cancellation_reason === undefined ? null : str(obj, 'cancellation_reason'),
     isTrialPeriod: bool(obj, 'is_trial_period'),
     isInIntroOfferPeriod: bool(obj, 'is_in_intro_offer_period'),
     unknownAttributes: unknownAttributesField(obj),
