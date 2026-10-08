@@ -40,7 +40,7 @@
          (JDK 21 in this environment). -->
     <jvm.target>17</jvm.target>
 
-    <library.version>0.10.0</library.version> <!-- x-release-please-version -->
+    <library.version>0.11.0</library.version> <!-- x-release-please-version -->
     <!-- The artifact under test: the main one, or its alternative
          apple-purchase-receipt-verifier-wasm (same packages and API). -->
     <verifier.artifactId>apple-purchase-receipt-verifier</verifier.artifactId>

@@ -13,7 +13,7 @@
 #     prebuilt OpenSSL instead, as the wasm32-wasip1 build must.
 [package]
 name = "aprv-openssl"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 rust-version = "1.85.0"
 description = "OpenSSL adapter for apple-purchase-receipt-verifier: CMS, X.509 path validation over pinned anchors, EVP signatures and the receipt payload's ASN.1 templates."
