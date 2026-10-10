@@ -447,6 +447,19 @@ Cancellation reasons are nullable integers in receipt JSON, like quantity.
 The Apple-compatible endpoint writes present reasons as strings and omits
 absent reasons.
 
+## Upgrading to 0.11.0
+
+`InAppPurchase` gained `cancellationReason` (attribute 1720, `?int`)
+right after `cancellationDateMs`. `ReceiptPayload::$preorderDateMs`
+keeps its 0.10 position.
+
+- A positional `new InAppPurchase(...)` written against 0.10 binds to
+  the wrong field without an error (a `bool` passed for `isTrialPeriod`
+  now lands in `cancellationReason`, unless `strict_types` is on). Use
+  named arguments.
+- Attribute 1720 is a typed field. It no longer appears in
+  `unknownAttributes`.
+
 ## Upgrading from 0.7
 
 The public API is 0.7's: `Verifier::create`, the three verify methods,

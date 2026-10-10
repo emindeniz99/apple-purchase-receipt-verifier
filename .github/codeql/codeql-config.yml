@@ -134,7 +134,7 @@ paths-ignore:
   # ---- evidence spikes and measurements ---------------------------------
   # docs/evidence/ keeps the code of every spike and measurement, including
   # the ones that answered "no", because a result nobody can rerun is a
-  # claim rather than evidence (the evidence rule in CLAUDE.md). None of it
+  # claim rather than evidence (the evidence rule in AGENTS.md). None of it
   # ships: throwaway key generators, C hosts that time a runtime, browser
   # pages that load a local build. Their inputs are files committed beside
   # them or arguments the person rerunning the spike types, so the alerts

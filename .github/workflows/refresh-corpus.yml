@@ -22,7 +22,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Runs only from main: the workflow file of the dispatched ref is the code
+  # that builds and publishes the corpus, so a branch copy must not run it.
+  # On any other ref both jobs are skipped.
   generate:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -45,20 +49,20 @@ jobs:
         with:
           node-version: '24'
       - name: regenerate rows from public test inputs
-        id: archive
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
-          CORPUS_DATE: ${{ inputs.corpus_date }}
         run: |
           set -euo pipefail
           g1="$RUNNER_TEMP/g1"
-          out="$RUNNER_TEMP/corpus-release"
-          mkdir -p "$g1" "$out"
+          mkdir -p "$g1"
           url="$(jq -er '.url | select(startswith("https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases/download/corpus-"))' fixtures/corpus.json)"
           hash="$(jq -er '.sha256 | select(test("^[0-9a-f]{64}$"))' fixtures/corpus.json)"
           curl -fsSL --retry 3 "$url" -o "$RUNNER_TEMP/previous.tar.gz"
           echo "$hash  $RUNNER_TEMP/previous.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/previous.tar.gz" -C "$g1"
+          # The previous rows are the baseline of the next step. Keep them
+          # before the loop below overwrites them in place.
+          cp -r "$g1/rows" "$RUNNER_TEMP/previous-rows"
           base="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
           for file in aprv.wasm aprv.component.wasm aprv.wit; do
             curl -fsSL --retry 3 "$base/$file" -o "$g1/$file"
@@ -67,19 +71,115 @@ jobs:
           cmp "$RUNNER_TEMP/expected.wit" "$g1/aprv.wit"
           cat go/internal/wasm/aprv.wasm.sha256 node/wasm/aprv.component.wasm.sha256 > "$g1/SHA256SUMS"
           (cd "$g1" && sha256sum -c SHA256SUMS && sha256sum aprv.wit >> SHA256SUMS)
+          # The .err files hold the host's summary of the run that wrote the
+          # rows beside them. Drop the previous archive's, so none ships
+          # describing another module.
+          rm -f "$g1"/rows/module-*.err
           for corpus in cases hostile algorithms substrate fuzz; do
             rows="$g1/rows/module-$corpus.jsonl"
-            node tools/wasm-trap-host.mjs calls "$g1/aprv.wasm" "$g1/calls/$corpus.pinned.jsonl" > "$rows"
+            err="$g1/rows/module-$corpus.err"
+            if ! node tools/wasm-trap-host.mjs calls "$g1/aprv.wasm" "$g1/calls/$corpus.pinned.jsonl" > "$rows" 2> "$err"; then
+              cat "$err" >&2
+              echo "::error::the trap host failed on the $corpus corpus (a trap, or an import other than random-get)"
+              exit 1
+            fi
+            cat "$err"
             node tools/wasm-trap-host.mjs calls "$g1/aprv.wasm" "$g1/calls/$corpus.pinned.jsonl" > "$RUNNER_TEMP/repeat.jsonl"
             cmp "$rows" "$RUNNER_TEMP/repeat.jsonl"
           done
+      # The archive's own same.py counts rows and exits 1 on any difference,
+      # which a new module's richer payload legitimately causes. This step
+      # tells a payload change from a changed verdict instead: a row whose
+      # `verified` (verify-receipt, verify-signed-data) or `status`
+      # (verify-receipt-endpoint) differs from the previous archive's fails
+      # the run, and the counts go into the archive's README.
+      - name: compare the new rows with the previous archive's
+        run: |
+          set -euo pipefail
+          python3 -I - "$RUNNER_TEMP/previous-rows" "$RUNNER_TEMP/g1/rows" "$RUNNER_TEMP/compare.txt" cases hostile algorithms substrate fuzz <<'PY'
+          import json
+          import sys
+
+          previous_dir, new_dir, summary_path = sys.argv[1:4]
+          corpora = sys.argv[4:]
+
+
+          def load(path):
+              with open(path, encoding="utf-8") as f:
+                  return [json.loads(line) for line in f if line.strip()]
+
+
+          def verdict(row):
+              out = row.get("out")
+              if not isinstance(out, str):
+                  return (None, None)
+              try:
+                  answer = json.loads(out)
+              except ValueError:
+                  return (None, None)
+              if not isinstance(answer, dict):
+                  return (None, None)
+              return (answer.get("verified"), answer.get("status"))
+
+
+          def same(a, b):
+              return (a.get("out"), a.get("trap"), a.get("map")) == (b.get("out"), b.get("trap"), b.get("map"))
+
+
+          lines = []
+          totals = [0, 0, 0, 0]
+          flipped = []
+          for corpus in corpora:
+              old = load(f"{previous_dir}/module-{corpus}.jsonl")
+              new = load(f"{new_dir}/module-{corpus}.jsonl")
+              if [r["id"] for r in old] != [r["id"] for r in new]:
+                  print(f"::error::{corpus}: the rows are not the previous archive's calls in the same order")
+                  sys.exit(1)
+              identical = differing = flips = 0
+              for a, b in zip(old, new):
+                  if verdict(a) != verdict(b):
+                      flips += 1
+                      flipped.append(f"{corpus} {a['id']}: {verdict(a)} -> {verdict(b)}")
+                  elif same(a, b):
+                      identical += 1
+                  else:
+                      differing += 1
+              lines.append(f"{corpus}: {len(new)} rows: {identical} identical, {differing} differ, {flips} flipped")
+              for i, n in enumerate((len(new), identical, differing, flips)):
+                  totals[i] += n
+          lines.append(f"all: {totals[0]} rows: {totals[1]} identical, {totals[2]} differ, {totals[3]} flipped")
+          text = "\n".join(lines)
+          print(text)
+          with open(summary_path, "w", encoding="utf-8") as f:
+              f.write(text + "\n")
+          if flipped:
+              print("rows whose verified or status changed (first 20):")
+              for entry in flipped[:20]:
+                  print(f"  {entry}")
+              print("::error::a row's verified or status differs from the previous archive: this is a behavior change, not a refresh")
+              sys.exit(1)
+          PY
+      - name: build the archive
+        id: archive
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CORPUS_DATE: ${{ inputs.corpus_date }}
+        run: |
+          set -euo pipefail
+          g1="$RUNNER_TEMP/g1"
+          out="$RUNNER_TEMP/corpus-release"
+          mkdir -p "$out"
           source_sha="$(git rev-parse HEAD)"
           {
             echo "# corpus-$CORPUS_DATE: $RELEASE_TAG"
             echo
             echo "Source commit: $source_sha."
             echo "Calls and clocks are unchanged from the previous pinned corpus."
-            echo "Reference rows were generated twice by tools/wasm-trap-host.mjs: identical, no traps or unexpected imports."
+            echo "Reference rows and their .err summaries were regenerated by tools/wasm-trap-host.mjs, twice for the rows: identical, no traps or unexpected imports."
+            echo "Compared row by row with the previous pinned corpus (a flipped row has a different verified or status; none is allowed):"
+            echo
+            sed 's/^/- /' "$RUNNER_TEMP/compare.txt"
+            echo
             echo "Only public repository fixtures and test keys; no production receipt."
             echo
             cat "$g1/SHA256SUMS"
@@ -97,6 +197,7 @@ jobs:
           retention-days: 7
 
   publish:
+    if: github.ref == 'refs/heads/main'
     needs: generate
     runs-on: ubuntu-latest
     timeout-minutes: 10

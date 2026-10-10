@@ -2790,7 +2790,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The 8.0.5 floor the constraint claims (CLAUDE.md: floors are
+        # The 8.0.5 floor the constraint claims (AGENTS.md: floors are
         # tested claims) and the newest 8.x release that has cleared the
         # seven-day cooldown, pinned exactly so this leg never runs a
         # release the cooldown has not looked at (SECURITY.md); bump it by

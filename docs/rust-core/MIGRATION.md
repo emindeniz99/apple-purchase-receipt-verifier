@@ -27,7 +27,7 @@ Rules for every phase:
   parallel; the estimates are bounded by the work itself and by CI time,
   not by a review calendar.
 - **The Maven Central budget.** 7 releases, about 80 MB and about 1,000
-  files per calendar month (CLAUDE.md); keep 2 releases in reserve.
+  files per calendar month (AGENTS.md); keep 2 releases in reserve.
 - Version numbers below show the sequence; release-please picks the real
   ones from the commits.
 
@@ -56,7 +56,7 @@ review.
 | 1.6 | **Node as the first host.** jco (pinned) transpiles the component; a prototype of the npm façade over the generated bindings runs all 311 cases, one test each, and the corpus. | 311/311; the corpus byte-identical to native; the glue's `JCO_DEBUG` read and its coercion of a string where the WIT says `list<u8>` are handled in the façade ([canonical ABI final][cabifinal], findings 2 and 6) |
 | 1.7 | **`init` cost.** Measure `init` against one g5 and one JWS call, in Node and through Wasmtime. The spike's fresh lifecycle cost about 1.6 ms more per receipt than the pool ([aprv-server §3][server]). | The numbers are recorded in an evidence note. If `init` exceeds 10% of a call, `aprv-server`'s default becomes `--lifecycle pool` (R23) |
 | 1.8 | **Differential campaign (R33).** The corpus and every port's fuzz corpus (Jazzer, atheris, go-fuzz, Jazzer.js, libFuzzer Swift, ruzzy, SharpFuzz, PHP) through the core and the 0.7 Java implementation. Compare verdicts and reasons. | Every divergence is in R20 with its reason; none changes an Apple-signed verdict or accepts something unsigned |
-| 1.9 | **Private-receipt drift check** (owner, 2026-09-26). A local script reads receipts from a folder outside the repository and prints only verdicts and unknown attribute type numbers. Production receipts never enter the repository, its history, CI, issues or PRs (CLAUDE.md). A new type becomes a test built from a generated receipt of the same shape. | The script runs on a folder of generated receipts; its output holds no values |
+| 1.9 | **Private-receipt drift check** (owner, 2026-09-26). A local script reads receipts from a folder outside the repository and prints only verdicts and unknown attribute type numbers. Production receipts never enter the repository, its history, CI, issues or PRs (AGENTS.md). A new type becomes a test built from a generated receipt of the same shape. | The script runs on a folder of generated receipts; its output holds no values |
 | 1.10 | **Adversarial review of the core,** module by module, by review agents that did not write it (a separate session per module, or a review workflow): the adapter's `unsafe`, `payload.c`, the link-time C file and `aprv-abi`. The checklist maps each root THREAT-MODEL §3 mitigation to its code and test. The log lives in `docs/rust-core/REVIEW-LOG.md` and is written for the owner's one read at the final pull request. | Every module signed off by a reviewer other than its author; every finding fixed or recorded with its reason |
 | 1.11 | **Test inventory.** Every behaviour test that exists in one port's suite only, deduplicated against `cases.json`. Tests of a host's own API shape, pooling or packaging stay with the host. | Committed; every entry names its target case or says "stays with the host" |
 | 1.12 | **Fuzzing.** Keep `verify-receipt`, `verify-receipt-base64`, `verify-transaction` and `endpoint-json`, drop `parse-der`, `parse-certificate` and `parse-cms` with their modules, add a target that enters through the ABI. A scheduled job fuzzes over an OpenSSL build instrumented with ASan and libFuzzer, as the evidence campaigns did ([follow-up §4][followup], [CMS everywhere §4][cms]). | The job runs on schedule; a finding opens an issue with a reproducer built from test keys only |
@@ -335,7 +335,7 @@ afterwards.
 | Wasmtime .NET releases irregularly (three in 12 months) and ships no musl library ([.NET][dotnet]) | certain | low to medium | Alpine users take `aprv-server`; the floor tracks the package |
 | Temurin 8 builds end in late 2026 | certain | medium for the Java 8 leg | Move the leg to Zulu or Corretto 8 (owner action) |
 | Maven Central counts 0.8.0 as more than one release event | unknown | medium | The owner asks Sonatype or reads the Usage Center before 0.8.0 |
-| An OpenSSL advisory | certain over time | high | One `aprv.wasm` and the server binaries rebuild; a security bump of a shipped dependency is release-worthy under CLAUDE.md's budget, and 2 releases stay in reserve |
+| An OpenSSL advisory | certain over time | high | One `aprv.wasm` and the server binaries rebuild; a security bump of a shipped dependency is release-worthy under AGENTS.md's budget, and 2 releases stay in reserve |
 | A Wasmtime major bump in the server | certain (monthly majors) | low | The server's `.cwasm` is rebuilt with the binary; hosts' runtime floors move independently |
 | ARM64 speed unknown | unknown | medium | The ARM64 spike branch above |
 | The Go floor has to rise for wazero | medium | low | Step 4.7; a minor-version bump before 1.0 (root SUPPORT-MATRIX rule 2) |
@@ -354,7 +354,7 @@ afterwards.
 3. **Sonatype release count:** ask central-support@sonatype.com, or read
    the Usage Center after a test deployment, whether one deployment of two
    artifactIds with classifiers counts as one release event; record the
-   answer in CLAUDE.md's release budget.
+   answer in AGENTS.md's release budget.
 4. **Wasmi upstream follow-up:** track the issue reported privately on
    2026-09-27 until upstream publishes a fix.
 5. **Java 8 CI distribution:** choose Zulu 8 or Corretto 8 for the

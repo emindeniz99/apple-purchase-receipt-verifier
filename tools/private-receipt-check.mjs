@@ -11,7 +11,7 @@
 // The module is APRV_WASM unless --module names one (build it with
 // rust/bindings/abi/build.sh <out>). Production receipts never enter the
 // repository, its history, CI, an issue or a PR, and neither does this
-// script's output when it ran on them (CLAUDE.md, "Fixtures and privacy");
+// script's output when it ran on them (AGENTS.md, "Fixtures and privacy");
 // a new attribute type becomes a test built from a generated receipt of
 // the same shape.
 //

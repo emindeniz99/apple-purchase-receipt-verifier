@@ -253,7 +253,7 @@ final class FacadeTests: XCTestCase {
         + #""transaction_id":"t","purchase_date_ms":1000,"original_transaction_id":"o","#
         + #""original_purchase_date_ms":2000,"expires_date_ms":null,"web_order_line_item_id":"4","#
         + #""cancellation_date_ms":null,"cancellation_reason":null,"is_trial_period":false,"is_in_intro_offer_period":true,"#
-        + #""unknown_attributes":{"1720":["AQ=="]}}],"original_purchase_date_ms":9000,"#
+        + #""unknown_attributes":{"1799":["AQ=="]}}],"original_purchase_date_ms":9000,"#
         + #""preorder_date_ms":9500,"original_application_version":"0","expiration_date_ms":null,"#
         + #""unknown_attributes":{"13":["Aw==","BA=="]}}"#
 
@@ -291,7 +291,7 @@ final class FacadeTests: XCTestCase {
         XCTAssertEqual(payload.bundleIdBytes, [0x0C, 0x01, 0x62])
         XCTAssertNil(payload.opaqueValue)
         XCTAssertEqual(payload.inApp.first?.isInIntroOfferPeriod, true)
-        XCTAssertEqual(payload.inApp.first?.unknownAttributes, [1720: [[0x01]]])
+        XCTAssertEqual(payload.inApp.first?.unknownAttributes, [1799: [[0x01]]])
         XCTAssertEqual(payload.unknownAttributes, [13: [[0x03], [0x04]]])
         let same = try JSONSerialization.jsonObject(with: Data(payload.toJson().utf8))
         XCTAssertTrue(sameJsonValue(same, try JSONSerialization.jsonObject(with: Data(Self.receiptJson.utf8))), payload.toJson())

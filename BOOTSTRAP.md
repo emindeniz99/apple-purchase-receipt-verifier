@@ -297,13 +297,13 @@ publishes every language. Once the `-wasm` artifact is published (below) a
 release deploys two artifactIds, the main artifact and `-wasm`, and two
 classifier jars of the static `aprv-server`, about 10.5 MB in all, so the
 size allowance binds close behind the count: seven releases would be about
-74 MB. The working budget in CLAUDE.md is therefore five releases a month,
+74 MB. The working budget in AGENTS.md is therefore five releases a month,
 with two kept in reserve.
 
 1. Ask central-support@sonatype.com, or read the Usage Center after the
    first deployment that carries `-wasm`, whether one deployment of two
    artifactIds with classifiers counts as one release event.
-2. Record the answer in CLAUDE.md's release budget, and confirm or change
+2. Record the answer in AGENTS.md's release budget, and confirm or change
    the five-a-month rule.
 
 **The `-wasm` artifact is held (owner, 2026-10-04).** `release.yml`'s
