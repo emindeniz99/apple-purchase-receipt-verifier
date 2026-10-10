@@ -400,6 +400,17 @@ the returned payload.
 | `ReasonInternalError` for signed content that does not parse | `ReasonUnreadablePayload` |
 | `ReasonWrongBundleID`, `ReasonWrongEnvironment`, `ReasonWrongAppAppleID`, a device-hash mismatch | gone: the caller's checks |
 
+## Upgrading to 0.11.0
+
+`InAppPurchase` gained `CancellationReason` (attribute 1720, `*int64`)
+right after `CancellationDateMs`.
+
+- An unkeyed `InAppPurchase{...}` literal no longer compiles (too few
+  values). Use a keyed literal, which is also safe against the next
+  field.
+- Attribute 1720 is a typed field. It no longer appears in
+  `UnknownAttributes`.
+
 ## Upgrading from 0.7
 
 0.8 verifies inside `aprv.wasm`, which compiles the three Apple roots in, so

@@ -563,6 +563,17 @@ for the full picture and
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
 for how it differs from Apple's official libraries.
 
+## Upgrading to 0.11.0
+
+The `InAppPurchase` constructor gained a `long? cancellationReason`
+parameter (attribute 1720) right after `cancellationDateMs`. There is no
+overload without it, so a 0.10 call fails to compile; add the argument
+(`null` when absent) or pass named arguments. `PreorderDateMs` keeps its
+0.10 position in `ReceiptPayload`.
+
+Attribute 1720 is now `InAppPurchase.CancellationReason` and no longer
+appears in `UnknownAttributes`.
+
 ## Upgrading from 0.7
 
 The API is unchanged but for `AppleRootCertificates` and

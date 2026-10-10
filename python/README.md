@@ -358,6 +358,20 @@ every port:
   everything else as JSON numbers, the same value every other port
   writes (the bytes may differ).
 
+## Upgrading to 0.11.0
+
+`InAppPurchase` gained `cancellation_reason` (attribute 1720, `int | None`)
+right after `cancellation_date_ms`. `ReceiptPayload.preorder_date_ms` was
+keyword-only in 0.10; it now sits right after `original_purchase_date_ms`
+in the positional order.
+
+- A positional call written against 0.10 binds silently to the wrong
+  field: `is_trial_period` lands in `cancellation_reason`, and
+  `original_application_version` in `preorder_date_ms`. Build both
+  classes with keyword arguments.
+- Attribute 1720 is a typed field. It no longer appears in
+  `unknown_attributes`.
+
 ## Upgrading from 0.7
 
 The API is the 0.7 API, with one way to build a `Config`. What changed
