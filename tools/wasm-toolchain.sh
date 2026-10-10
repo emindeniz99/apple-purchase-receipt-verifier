@@ -8,7 +8,7 @@
 #
 #   <dir>/wasi-sdk       wasi-sdk 34.0 (clang, wasi-libc, the wasip1 sysroot)
 #   <dir>/openssl-wasm   OpenSSL 4.0.3, static libcrypto/libssl for wasm32-wasip1
-#   <dir>/bin            wasm-tools 1.259.0 and wit-bindgen 0.62.0
+#   <dir>/bin            wasm-tools 1.261.0 and wit-bindgen 0.62.0
 #
 # Prints the environment rust/bindings/abi/build.sh reads, as `export` lines
 # on stdout; everything else goes to stderr. Linux x86_64 only: the release
@@ -50,9 +50,9 @@ esac
 WASI_SDK_VERSION=34.0
 WASI_SDK_URL=https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz
 WASI_SDK_SHA256=b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4
-WASM_TOOLS_VERSION=1.259.0
-WASM_TOOLS_URL=https://github.com/bytecodealliance/wasm-tools/releases/download/v1.259.0/wasm-tools-1.259.0-x86_64-linux.tar.gz
-WASM_TOOLS_SHA256=3e9b374b4c7715b771b69bf0d65a337990ed4546ec5e97e01c0ff587dfc52160
+WASM_TOOLS_VERSION=1.261.0
+WASM_TOOLS_URL=https://github.com/bytecodealliance/wasm-tools/releases/download/v1.261.0/wasm-tools-1.261.0-x86_64-linux.tar.gz
+WASM_TOOLS_SHA256=ad62b2176037e93e1348cb65d6212d128ca9f097b63d155569f25215818ff7b1
 WIT_BINDGEN_VERSION=0.62.0
 WIT_BINDGEN_URL=https://github.com/bytecodealliance/wit-bindgen/releases/download/v0.62.0/wit-bindgen-0.62.0-x86_64-linux.tar.gz
 WIT_BINDGEN_SHA256=3e81cc6523729f7532b4aa7968648a04abf0c711b7d1677150e9121f4e6458fe

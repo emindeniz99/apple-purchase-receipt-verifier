@@ -1075,7 +1075,7 @@ mod tests {
     fn an_in_app_purchase_that_does_not_parse_is_kept_raw_under_17() {
         let broken = set(&[der(tag::SEQUENCE, &int(&[7]))]);
         let receipt = parse_receipt_payload(&set(&[attribute(&[17], &broken)])).unwrap();
-        assert!(receipt.in_app.is_empty());
+        assert_eq!(receipt.in_app, Vec::new());
         assert_eq!(receipt.unknown_attributes.get(&17), Some(&vec![broken]));
     }
 

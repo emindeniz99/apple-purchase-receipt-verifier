@@ -73,7 +73,7 @@ Add to the job, after the build:
 8. **The 1.85.0 floor leg must exclude `aprv-abi`**: wit-bindgen 0.62's
    generator crates (wit-parser, wasm-encoder, wasmparser 0.259) declare
    Rust 1.88, and `aprv-abi` says so (`rust-version = "1.88.0"`). The
-   module is built with the pinned 1.98.1 only. Use
+   module is built with the pinned 1.99.0 only. Use
    `cargo +1.85.0 test --locked --workspace --exclude aprv-abi`. Not run in
    this lane (no 1.85 toolchain here), as A1 noted for the core.
 9. **The layering check** (MIGRATION.md step 1.3): `node
