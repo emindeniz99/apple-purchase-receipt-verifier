@@ -217,10 +217,23 @@ receipt carries a real user's purchase history. This rule has bitten before.
 
 The owner sometimes hands an agent production receipts to check that the
 verifier still reads what Apple sends. Keep them in a scratch folder outside
-the repository, and report only verdicts and unknown attribute type numbers
-(`tools/private-receipt-check.mjs` prints nothing else). They never go into
-the repo, its history, CI, an issue or a PR, and neither does any output
-carrying their values. A new attribute type becomes a test built from a
+the repository. They never go into the repo, its history, CI, an issue or a
+PR, and neither does anything else that identifies a user or a purchase.
+
+What identifies someone is never recorded, in any file, commit message,
+issue, PR, note or log: the receipt itself (whole or in part), transaction
+ids, original transaction ids, web order line item ids, download ids,
+device or bundle identifiers of the owner's apps, and exact purchase or
+creation timestamps.
+
+What identifies no one may be quoted as evidence: attribute type numbers,
+an enum or reason code (for example `cancellation_reason` `"1"`), a
+field's format or type, and verdicts with their reasons. When in doubt
+whether a value could single out a user, an app or a purchase, leave it
+out.
+
+`tools/private-receipt-check.mjs` prints only verdicts and unknown
+attribute type numbers. A new attribute type becomes a test built from a
 generated receipt of the same shape.
 
 ## Spikes and evidence
