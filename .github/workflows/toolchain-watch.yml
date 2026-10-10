@@ -1,0 +1,92 @@
+# Watches the build toolchain pins dependabot cannot read: wasi-sdk,
+# wasm-tools, wit-bindgen and the OpenSSL source in tools/wasm-toolchain.sh.
+# tools/toolchain-watch.mjs compares each against upstream (a release counts
+# once it is seven days old, as dependabot's cooldown does); when one is
+# behind, this job opens an issue, or comments on the open one. It only
+# reports: moving a pin changes its SHA-256 and the module's bytes, so it is
+# a reviewed commit. A network failure fails the run and files nothing.
+#
+# rust/rust-toolchain.toml and the Dockerfiles are dependabot's
+# (.github/dependabot.yml).
+#
+# Scheduled runs happen on the default branch only.
+name: toolchain-watch
+
+on:
+  schedule:
+    - cron: "41 6 * * 1" # weekly, Monday 06:41 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+# Two runs at once (a dispatch during the scheduled one) could each open
+# an issue.
+concurrency:
+  group: toolchain-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout
+      issues: write # open or comment on the issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: compare the pins against upstream
+        id: watch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node tools/toolchain-watch.mjs > "$RUNNER_TEMP/toolchain-watch.txt" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/toolchain-watch.txt"
+          if [ "$status" -eq 2 ]; then
+            echo "::error::toolchain-watch could not read upstream; no issue filed"
+            exit 2
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [ "$status" -le 1 ]
+      - name: open or update the issue
+        if: steps.watch.outputs.status == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: Build toolchain pins are behind upstream
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/issue.md"
+          # One comment per distinct finding: the same pin stays behind
+          # every week until someone moves it.
+          marker="<!-- toolchain-watch $(sha256sum "$RUNNER_TEMP/toolchain-watch.txt" | cut -c1-64) -->"
+          {
+            echo "$marker"
+            echo "tools/toolchain-watch.mjs found pins in tools/wasm-toolchain.sh behind upstream ($RUN_URL)."
+            echo
+            sed 's/^/    /' "$RUNNER_TEMP/toolchain-watch.txt"
+            echo
+            echo 'Move each pin with its SHA-256 in one commit (CONTRIBUTING.md, "Adding or bumping a dependency by hand"), then close this issue.'
+          } > "$body"
+          number=$(gh issue list --state open --limit 200 --json number,title \
+            --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)
+          if [ -n "$number" ]; then
+            if gh issue view "$number" --json body,comments \
+              --jq '[.body, .comments[].body] | join("\n")' | grep -qF -- "$marker"; then
+              echo "already reported on #$number"
+              exit 0
+            fi
+            gh issue comment "$number" --body-file "$body"
+          else
+            gh issue create --title "$TITLE" --body-file "$body"
+          fi
+          cat "$body" >> "$GITHUB_STEP_SUMMARY"

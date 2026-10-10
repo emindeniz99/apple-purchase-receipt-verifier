@@ -244,6 +244,17 @@ updates:
         patterns:
           - "wasmtime"
           - "wasmtime-*"
+  # The one pinned compiler (rust/rust-toolchain.toml) that builds
+  # aprv.wasm and aprv-server. A bump changes the module's bytes, so it
+  # passes the full cross-host run like any toolchain bump (CONTRIBUTING.md).
+  # The pins in tools/wasm-toolchain.sh have no updater here;
+  # toolchain-watch.yml reports them.
+  - package-ecosystem: rust-toolchain
+    directory: /rust
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   # The server image's two bases (rust slim for the build, distroless
   # static for the runtime) are pinned by digest.
   - package-ecosystem: docker

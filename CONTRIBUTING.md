@@ -276,7 +276,11 @@ wasm-tools, wit-bindgen, OpenSSL) changes the module's bytes, and a bump
 of a runtime a wrapper depends on (wazero, wasmtime-py, the `wasmtime` gem,
 Wasmtime .NET, WasmKit, jco, Endive, the server's `wasmtime`) changes how
 it runs. Either passes the full cross-host run before it merges
-(docs/rust-core/DECISIONS.md R14).
+(docs/rust-core/DECISIONS.md R14). Dependabot moves the Rust compiler
+(`rust/rust-toolchain.toml`) and the Dockerfile bases. It cannot read
+`tools/wasm-toolchain.sh`, so `toolchain-watch.yml` compares that file's
+four pins with upstream every week and opens an issue when one is behind;
+move the version and its SHA-256 together.
 
 Every ecosystem that has a lockfile commits it, and CI installs from it
 strictly, so a bump reaches CI only as a committed change to a lockfile
