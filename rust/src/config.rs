@@ -37,6 +37,7 @@ impl Config {
     }
 
     /// The clock, as epoch milliseconds.
+    #[must_use]
     pub fn clock(&self) -> &(dyn Fn() -> i64 + Send + Sync) {
         &*self.clock
     }
