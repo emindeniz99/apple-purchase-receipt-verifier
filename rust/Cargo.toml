@@ -48,7 +48,7 @@ serde_json = { version = "1", features = ["raw_value"] }
 
 [features]
 default = ["vendored"]
-# OpenSSL 4.0.2 built from source inside the build (openssl-src, through
+# OpenSSL 4.0.3 built from source inside the build (openssl-src, through
 # the adapter). A build that links a prebuilt OpenSSL instead, as the
 # wasm32-wasip1 build must, sets OPENSSL_NO_VENDOR=1 with OPENSSL_DIR, or
 # turns this off.
@@ -127,7 +127,7 @@ panic = "abort"
 
 # openssl-sys 0.9.117 takes only openssl-src 300.x (OpenSSL 3.x). This copy
 # differs from the crates.io release in one manifest line, which lets its
-# `vendored` feature build OpenSSL 4.0.2 from openssl-src 400.0.1+4.0.2;
+# `vendored` feature build OpenSSL 4.0.3 from openssl-src 400.0.2+4.0.3;
 # vendor/refresh-openssl-sys.sh rebuilds it from the release and checks
 # that. A patch applies only inside this workspace: a crates.io user of the
 # core gets openssl-src 300.x until openssl-sys widens its requirement.

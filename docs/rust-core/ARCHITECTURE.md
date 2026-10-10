@@ -20,7 +20,7 @@ the Wasm-first basis** (R22). The decisions it rests on are in
 │                ASN.1 template APIs; payload.c. The only unsafe      │
 │                crate below the boundary crates.                     │
 │   │ static link                                                     │
-│ OpenSSL 4.0.2, upstream C in the trusted base                       │
+│ OpenSSL 4.0.3, upstream C in the trusted base                       │
 └───┬─────────────────────────────────────────────────────────────────┘
     │ plain Rust API
 ┌───▼──────────────────────────┐    ┌──────────────────────────────┐
@@ -106,7 +106,7 @@ Package.swift, swift/         the Swift wrapper over WasmKit
 ## 3. `aprv.wasm`
 
 **Build.** `aprv-abi` for `wasm32-wasip1`, linked with wasi-sdk's libc,
-over OpenSSL 4.0.2 compiled by wasi-sdk with `no-asm` and passed through
+over OpenSSL 4.0.3 compiled by wasi-sdk with `no-asm` and passed through
 `OPENSSL_DIR` (`openssl-src` maps `wasm32-wasi` but not `wasm32-wasip1`).
 The two WASIp1 link fixes (`crt1-reactor.o`, wasi-libc's emulation
 libraries) come from the substrate and wasm bake-offs

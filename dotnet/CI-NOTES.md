@@ -38,7 +38,7 @@ runs the whole re-check for a new module as one command.
   committed here.
 - **Licence texts.** `dotnet/licenses/` (OpenSSL, wasi-libc with its
   Apache-LLVM, Apache and MIT texts, Rust std, musl) is packed into the
-  nupkg under `licenses/`. They are copies of `node/licenses/`; OpenSSL 4.0.2
+  nupkg under `licenses/`. They are copies of `node/licenses/`; OpenSSL 4.0.3
   ships no NOTICE file. Refresh them with the toolchain's pins.
 
 ## Jobs in `ci.yml`

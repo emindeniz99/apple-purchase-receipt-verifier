@@ -5,8 +5,8 @@ lib/apple_purchase_receipt_verifier/aprv.wasm is a WebAssembly module built
 from this repository's Rust core, and it contains third-party code, whose
 licences ship here:
 
-  OpenSSL 4.0.2        Apache License 2.0    licenses/openssl/LICENSE.txt
-                       OpenSSL 4.0.2 ships no separate NOTICE file; its
+  OpenSSL 4.0.3        Apache License 2.0    licenses/openssl/LICENSE.txt
+                       OpenSSL 4.0.3 ships no separate NOTICE file; its
                        licence text is the complete notice.
   wasi-libc            Apache-2.0 WITH LLVM-exception, Apache-2.0 and MIT,
   (from wasi-sdk 34.0) plus the licences of the third-party parts it

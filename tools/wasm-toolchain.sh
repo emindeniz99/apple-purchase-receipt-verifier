@@ -7,7 +7,7 @@
 # below, and builds OpenSSL for wasm32-wasip1 with wasi-sdk's clang:
 #
 #   <dir>/wasi-sdk       wasi-sdk 34.0 (clang, wasi-libc, the wasip1 sysroot)
-#   <dir>/openssl-wasm   OpenSSL 4.0.2, static libcrypto/libssl for wasm32-wasip1
+#   <dir>/openssl-wasm   OpenSSL 4.0.3, static libcrypto/libssl for wasm32-wasip1
 #   <dir>/bin            wasm-tools 1.259.0 and wit-bindgen 0.62.0
 #
 # Prints the environment rust/bindings/abi/build.sh reads, as `export` lines
@@ -56,9 +56,9 @@ WASM_TOOLS_SHA256=3e9b374b4c7715b771b69bf0d65a337990ed4546ec5e97e01c0ff587dfc521
 WIT_BINDGEN_VERSION=0.62.0
 WIT_BINDGEN_URL=https://github.com/bytecodealliance/wit-bindgen/releases/download/v0.62.0/wit-bindgen-0.62.0-x86_64-linux.tar.gz
 WIT_BINDGEN_SHA256=3e81cc6523729f7532b4aa7968648a04abf0c711b7d1677150e9121f4e6458fe
-OPENSSL_VERSION=4.0.2
-OPENSSL_URL=https://github.com/openssl/openssl/releases/download/openssl-4.0.2/openssl-4.0.2.tar.gz
-OPENSSL_SHA256=736b467530f916737b7031310ccb21d8218c6229e61e8e160cd1d3458cd543a8
+OPENSSL_VERSION=4.0.3
+OPENSSL_URL=https://github.com/openssl/openssl/releases/download/openssl-4.0.3/openssl-4.0.3.tar.gz
+OPENSSL_SHA256=325b5c806167c13b40b1ffeadfe0248197c00eccc4cf123ec1e28d2d2fd216d9
 # 2026-09-29T00:00:00Z, the day these pins were recorded: OpenSSL's
 # buildinf date, fixed so the library is the same bytes on every run.
 OPENSSL_SOURCE_DATE_EPOCH=1790640000

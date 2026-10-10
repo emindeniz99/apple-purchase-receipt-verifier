@@ -1266,7 +1266,7 @@ jobs:
   # The toolchains come from the rustup already on the runner. The whole
   # workspace: the core, the aprv-openssl adapter, aprv-surface, aprv-wire,
   # the C ABI and a native build of aprv-abi. The default build compiles
-  # OpenSSL 4.0.2 from source (openssl-src), so target/ is cached: this is a
+  # OpenSSL 4.0.3 from source (openssl-src), so target/ is cached: this is a
   # test job, and publish jobs never restore it.
   rust:
     needs: changes
@@ -1315,7 +1315,7 @@ jobs:
           TOOLCHAIN: ${{ matrix.toolchain }}
         run: cargo "+$TOOLCHAIN" test --locked --workspace --all-features
       # The prebuilt-OpenSSL leg: the same tests linked against an OpenSSL
-      # 4.0.2 built outside cargo from the one pinned tarball, as a
+      # 4.0.3 built outside cargo from the one pinned tarball, as a
       # distribution or a source build with OPENSSL_DIR links it.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: matrix.toolchain != '1.85.0'

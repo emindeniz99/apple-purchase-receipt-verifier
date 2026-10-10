@@ -91,7 +91,7 @@ fn drain_errors() {
     let _ = openssl::error::ErrorStack::get();
 }
 
-/// The linked OpenSSL, as it reports itself (`OpenSSL 4.0.2 ...`).
+/// The linked OpenSSL, as it reports itself (`OpenSSL 4.0.3 ...`).
 #[must_use]
 pub fn library_version() -> &'static str {
     init();

@@ -171,7 +171,7 @@ no-autoload-config --openssldir=/nonexistent/aprv-openssl`
 The vendored and the prebuilt build answer all 6,179 corpus rows
 identically (`docs/evidence/2026-09-29-openssl-core-parity.md`).
 
-**wasm32-wasip1.** The same core builds against an OpenSSL 4.0.2 built
+**wasm32-wasip1.** The same core builds against an OpenSSL 4.0.3 built
 with wasi-sdk 34 (`linux-generic32 no-asm no-threads no-sock
 no-ui-console` and the wasi-libc emulation macros;
 `docs/evidence/2026-09-26-security-substrate-bakeoff/scripts/build-wasm-libs.sh`):

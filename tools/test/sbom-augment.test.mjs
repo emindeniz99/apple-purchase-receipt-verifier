@@ -58,7 +58,7 @@ test('check fails when a pinned version is missing or different', () => {
   writeFileSync(bad, JSON.stringify(sbom));
   const r = run(['check', '--kind', 'wasm', bad]);
   assert.equal(r.code, 1);
-  assert.match(r.err, /OpenSSL is 3\.5\.0, the pin is 4\.0\.2/);
+  assert.ok(r.err.includes(`OpenSSL is 3.5.0, the pin is ${pin('OPENSSL_VERSION')}`), r.err);
   assert.match(r.err, /names no wit-bindgen-cli/);
 });
 
