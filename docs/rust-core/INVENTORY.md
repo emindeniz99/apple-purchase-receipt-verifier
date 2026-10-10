@@ -98,7 +98,7 @@ stay; what they call changes.
 - `post-publish-smoke.yml` installs from each real registry and verifies
   the genuine g5 receipt.
 - Maven Central allows 7 releases, about 80 MB and about 1,000 files per
-  calendar month (CLAUDE.md).
+  calendar month (AGENTS.md).
 
 ## Decisions on record that the migration touches
 
@@ -107,9 +107,9 @@ stay; what they call changes.
 | PLAN.md D2 and the 0.7 floors | Java 8, Node 20, Python 3.10, Swift 6.1, Ruby 3.3, PHP 8.2, netstandard2.0 | Keeps them all except Swift, which rises to 6.3, macOS 15 and iOS 18 (R30) |
 | PLAN.md D8, D16 | Minimal dependencies; hand-written readers per port on each ecosystem's crypto | Superseded for the eight non-Java ports: one Rust policy over OpenSSL (R21); the Java implementation keeps BouncyCastle |
 | PLAN.md D15 | Three pinned Apple roots | Unchanged; pruning them is rejected (DECISIONS.md, rejected table) |
-| CLAUDE.md "Behavior changes" | Nine implementations are one product | A behaviour change touches the Rust core, the Java implementation and `fixtures/` in one PR (R33) |
-| CLAUDE.md certs copies | Seven ports keep a copy of `certs/`; Node, Ruby, PHP, .NET and Java inline the roots | `rust/certs` and Java's constants remain |
-| CLAUDE.md "one version, many files" | Every manifest and version constant | Gains the new wrappers' constants and loses the deleted ones |
+| AGENTS.md "Behavior changes" | Nine implementations are one product | A behaviour change touches the Rust core, the Java implementation and `fixtures/` in one PR (R33) |
+| AGENTS.md certs copies | Seven ports keep a copy of `certs/`; Node, Ruby, PHP, .NET and Java inline the roots | `rust/certs` and Java's constants remain |
+| AGENTS.md "one version, many files" | Every manifest and version constant | Gains the new wrappers' constants and loses the deleted ones |
 | ROADMAP.md "A shared Rust core compiled to WebAssembly" | A future idea | This plan, for 0.8.0 |
 | ROADMAP.md "C ABI phase 2" | Prebuilt binaries undecided | Unchanged: the C ABI ships as source; the prebuilt native artifacts are `aprv-server`'s |
 | Root THREAT-MODEL.md §5 | `asn1crypto`, Java ignoring host policy, the C ABI's `unsafe` | The first closes with the Python port; the others stay; the Wasm boundaries are in this folder's THREAT-MODEL.md |

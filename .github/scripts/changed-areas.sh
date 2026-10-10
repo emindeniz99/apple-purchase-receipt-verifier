@@ -67,7 +67,7 @@ classify() {
     # case patterns let `*` cross `/`, so anything nested that got this far
     # is outside every folder above: fixtures/, certs/, tools/, ...
     */*) echo all ;;
-    *.md | LICENSE) echo docs ;;  # root level only, CLAUDE.md included
+    *.md | LICENSE) echo docs ;;  # root level only, AGENTS.md and CLAUDE.md included
     *) echo all ;;
   esac
 }

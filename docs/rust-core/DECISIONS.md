@@ -935,7 +935,7 @@ Wasm: OpenSSL compiled by wasi-sdk, through `OPENSSL_DIR`.
 **Maintenance.** OpenSSL's advisories join RustSec. A fix in OpenSSL
 means rebuilding one `aprv.wasm` and the server binaries, the full
 cross-host run, and a release; that is a security bump of a shipped
-dependency, which CLAUDE.md's release budget counts as release-worthy.
+dependency, which AGENTS.md's release budget counts as release-worthy.
 
 ---
 
@@ -1176,7 +1176,7 @@ each engine's runtime probe checks moved to its own `Verifier.create`.
   8.8 MB per release, before the main artifact's own jars (not
   re-measured).
 - **Budget:** Maven Central allows 7 releases, about 80 MB and about 1,000
-  files per calendar month (CLAUDE.md). At about 9 MB per release the
+  files per calendar month (AGENTS.md). At about 9 MB per release the
   release count binds first. The 2026-09-26 server note found that six
   platforms in the jar would cost about 21.5 MB per release and allow 3 a
   month ([aprv-server §10][server]); two Linux classifiers stay well
@@ -1336,7 +1336,7 @@ classes and classifies every host.
   maintained. CI runs it and the Rust core over the 388 cases on every
   change, and the differential job runs the full corpus through both
   nightly. Its differences go to R20.
-- **The one-product rule, restated for the plan** (CLAUDE.md's "Behavior
+- **The one-product rule, restated for the plan** (AGENTS.md's "Behavior
   changes" section changes to this text in Phase 7): a verification
   behaviour change touches the Rust core, the Java implementation and
   `fixtures/` in the same PR. The 388 cases keep them in step, and every

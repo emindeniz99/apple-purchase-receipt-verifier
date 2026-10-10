@@ -536,7 +536,7 @@ On an alert:
    commit or the news item. A new library release with no line changed
    needs nothing more than step 4.
 2. A new root means a `certs/` change, in its own PR, done the way
-   CLAUDE.md lists it (`certs/`, `rust/certs/`, the fingerprints in
+   AGENTS.md lists it (`certs/`, `rust/certs/`, the fingerprints in
    `rust/src/roots.rs` and the server, both Java `AppleRootCerts`, then a
    rebuilt module).
 3. A new or changed marker OID in Apple's library means mirroring it in
