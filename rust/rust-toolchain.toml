@@ -9,7 +9,7 @@
 # legs name their toolchain (`cargo +1.85.0`), which overrides this file, and
 # so do the fuzz jobs (`cargo +nightly`).
 [toolchain]
-channel = "1.98.1"
+channel = "1.99.0"
 profile = "minimal"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-wasip1"]

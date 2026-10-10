@@ -55,7 +55,7 @@ does not track Swift.
 | Swift | Swift 6.3, macOS 15, iOS 18 | Swift 6.1, macOS 13 | WasmKit 0.4.1 declares tools 6.3 and those platforms |
 | .NET | netstandard2.0, tested on .NET 8 and later | netstandard2.0, net8.0 | the `Wasmtime` package |
 | PHP | 8.2, 64-bit | 8.2 | unchanged |
-| Rust crate and C ABI | Rust 1.85.0 | 1.85.0 | the workspace's `rust-version`; `aprv.wasm` itself is built with the pinned 1.98.1 |
+| Rust crate and C ABI | Rust 1.85.0 | 1.85.0 | the workspace's `rust-version`; `aprv.wasm` itself is built with the pinned 1.99.0 |
 | `aprv-server` | none for its users | new | a binary; its build pins `wasmtime` 49.0.2 |
 
 Go's floor moved from 1.22 to 1.25, because wazero 1.12 needs it (owner,
@@ -186,7 +186,7 @@ Rust supports the current stable only.
 | Line | Status | CI |
 |---|---|---|
 | 1.85.0 | floor (`rust-version`) | `rust` |
-| 1.98.1 | the pinned toolchain that builds `aprv.wasm` and `aprv-server` (`rust/rust-toolchain.toml`) | `rust-wasm`, `rust-wasm-checks`, `aprv-server` |
+| 1.99.0 | the pinned toolchain that builds `aprv.wasm` and `aprv-server` (`rust/rust-toolchain.toml`) | `rust-wasm`, `rust-wasm-checks`, `aprv-server` |
 | stable | active | `rust`, `rust-lint`, `rust-supply-chain`, `rust-fuzz` (nightly), `smoke-crates` (held with crates.io) |
 | beta | next stable | `rust` |
 
