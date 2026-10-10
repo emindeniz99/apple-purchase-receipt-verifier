@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module ApplePurchaseReceiptVerifier
-  VERSION = "0.11.0" # x-release-please-version
+  VERSION = "0.11.1" # x-release-please-version
 
   # `Version.CURRENT` in docs/design/0.7-api.md, spelled the Ruby way: a
   # module method rather than a second constant, so there is exactly one

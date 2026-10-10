@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.11.0...v0.11.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **rust:** build the core on openssl 4.0.3 ([bdefa05](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bdefa05ebe95e4eaf5f908d89a4719f46f408212))
+
 ## [0.11.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.10.0...v0.11.0) (2026-10-08)
 
 
