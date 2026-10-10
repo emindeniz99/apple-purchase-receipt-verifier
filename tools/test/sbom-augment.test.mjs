@@ -16,6 +16,11 @@ const fx = (p) => fileURLToPath(new URL(`fixtures/sbom/${p}`, import.meta.url));
 const pins = readFileSync(fileURLToPath(new URL('../wasm-toolchain.sh', import.meta.url)), 'utf8');
 const pin = (name) => new RegExp(`^${name}=(\\S+)$`, 'm').exec(pins)[1];
 const tmp = mkdtempSync(join(tmpdir(), 'sbom-augment-'));
+// rustc -vV as the pinned toolchain prints it, so a toolchain bump needs no
+// fixture edit.
+const channel = /^channel = "(.+)"$/m.exec(readFileSync(fileURLToPath(new URL('../../rust/rust-toolchain.toml', import.meta.url)), 'utf8'))[1];
+const rustcVv = join(tmp, 'rustc-vv.txt');
+writeFileSync(rustcVv, `release: ${channel}\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\n`);
 
 function run(args, env = {}) {
   const r = spawnSync(process.execPath, [tool, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
@@ -25,7 +30,7 @@ function run(args, env = {}) {
 test('wasm: adds OpenSSL, wasi-libc, wasi-sdk, rustc, wit-bindgen and wasm-tools from the pins', () => {
   const out = join(tmp, 'wasm.cdx.json');
   const r = run(['augment', '--kind', 'wasm', '--in', fx('cargo.cdx.json'), '--out', out,
-    '--artifact', fx('artifact.bin'), '--wasi-sdk-dir', fx('wasi-sdk'), '--rustc-vv', fx('rustc-vv.txt')]);
+    '--artifact', fx('artifact.bin'), '--wasi-sdk-dir', fx('wasi-sdk'), '--rustc-vv', rustcVv]);
   assert.equal(r.code, 0, r.err);
   const sbom = JSON.parse(readFileSync(out, 'utf8'));
   const by = (name) => sbom.components.find((c) => c.name === name);
@@ -72,7 +77,7 @@ test('a rustc that is not the pinned release is refused', () => {
   const r = run(['augment', '--kind', 'wasm', '--in', fx('cargo.cdx.json'), '--out', join(tmp, 'x.json'),
     '--artifact', fx('artifact.bin'), '--wasi-sdk-dir', fx('wasi-sdk'), '--rustc-vv', fx('rustc-vv-wrong.txt')]);
   assert.equal(r.code, 1);
-  assert.match(r.err, /release 1\.97\.0, rust\/rust-toolchain\.toml pins 1\.98\.1/);
+  assert.ok(r.err.includes(`release 1.97.0, rust/rust-toolchain.toml pins ${channel}`), r.err);
 });
 
 test('server: adds wasmtime from Cargo.lock, musl, rustc and the embedded component by hash', () => {

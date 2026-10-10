@@ -1,2 +1,0 @@
-release: 1.98.1
-commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
