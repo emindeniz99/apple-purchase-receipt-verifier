@@ -58,7 +58,7 @@ here.
 ## The 2026-09-29 run
 
 Ten minutes per target on a shared four-core machine (other lanes'
-builds running), nightly Rust, cargo-fuzz 0.13.2, OpenSSL 4.0.2 built by
+builds running), nightly Rust, cargo-fuzz 0.13.2, OpenSSL 4.0.3 built by
 `tools/openssl-asan.sh`, `abi-call` over the name-stripped module of
 `rust/bindings/abi/build.sh`:
 

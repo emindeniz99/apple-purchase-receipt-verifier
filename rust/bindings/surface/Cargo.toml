@@ -18,7 +18,7 @@ default-features = false
 
 [features]
 default = ["vendored"]
-# OpenSSL 4.0.2 built from source (the core's feature). aprv.wasm turns it
+# OpenSSL 4.0.3 built from source (the core's feature). aprv.wasm turns it
 # off and links the wasi-sdk build of OpenSSL through OPENSSL_DIR.
 vendored = ["apple-purchase-receipt-verifier/vendored"]
 

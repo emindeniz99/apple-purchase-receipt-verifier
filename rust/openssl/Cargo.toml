@@ -5,7 +5,7 @@
 # Wasm; the core calls it and keeps Apple's policy.
 #
 # Which OpenSSL is linked is openssl-sys's decision at build time:
-#   - by default, OpenSSL 4.0.2 built from source by openssl-src 400.x
+#   - by default, OpenSSL 4.0.3 built from source by openssl-src 400.x
 #     (the `vendored` feature; the workspace's [patch.crates-io] points
 #     openssl-sys at ../vendor/openssl-sys, whose one changed manifest
 #     line lets it take openssl-src 400.x; see README.md);

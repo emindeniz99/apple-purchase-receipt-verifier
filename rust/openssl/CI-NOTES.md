@@ -9,7 +9,7 @@ here; the workflow files belong to the integration of this branch.
    rust`** (or `rust/ffi`, `rust/fuzz`), as the jobs do today.
    `rust/.cargo/config.toml` sets `OPENSSL_CONFIG_DIR`, and Cargo reads it
    by working directory only.
-2. **The default build compiles OpenSSL 4.0.2 from source** (openssl-src,
+2. **The default build compiles OpenSSL 4.0.3 from source** (openssl-src,
    about 5 to 7 minutes on two cores, once per cache key). It needs `perl`,
    `make` and a C compiler, all on the GitHub Linux and macOS images. Test
    jobs keep caching `target/` (publish jobs still never cache).
@@ -114,7 +114,7 @@ here; the workflow files belong to the integration of this branch.
 ## wasm32-wasip1 (lane A2)
 
 16. The core builds for wasm32-wasip1 against the wasi-sdk 34 OpenSSL
-    4.0.2 with `CC_wasm32_wasip1`, `CFLAGS_wasm32_wasip1="--target=wasm32-wasip1
+    4.0.3 with `CC_wasm32_wasip1`, `CFLAGS_wasm32_wasip1="--target=wasm32-wasip1
     --sysroot=<wasi-sdk>/share/wasi-sysroot"`, `AR_wasm32_wasip1`,
     `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<prefix> OPENSSL_STATIC=1` (see
     `openssl/README.md`). Linking a wasip1 binary also needs the wasi-sdk

@@ -54,7 +54,7 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   the endpoint request body) is read by `serde_json`, each document as a
   map of raw member values so that nothing the core does not read is
   built (docs/rust-core/DECISIONS.md R40).
-- **OpenSSL 4.0 or later.** By default the adapter builds OpenSSL 4.0.2
+- **OpenSSL 4.0 or later.** By default the adapter builds OpenSSL 4.0.3
   from source (openssl-src). That needs this repository's workspace patch
   of openssl-sys; a crates.io build of this crate links a prebuilt
   OpenSSL 4 instead (`OPENSSL_NO_VENDOR=1 OPENSSL_DIR=...`). See

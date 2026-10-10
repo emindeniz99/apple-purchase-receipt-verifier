@@ -14,7 +14,7 @@ one.
 
 ## What OSS-Fuzz builds
 
-OpenSSL 4.0.2 comes from `openssl-src` (the default `vendored` feature),
+OpenSSL 4.0.3 comes from `openssl-src` (the default `vendored` feature),
 built inside the cargo build with OSS-Fuzz's `CC` and `CFLAGS`, so it
 carries the sanitizer and coverage flags and libFuzzer is guided into its
 CMS, X.509 and ASN.1 code, as `rust/fuzz/asan-openssl.sh` arranges in the

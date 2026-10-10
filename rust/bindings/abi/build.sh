@@ -19,7 +19,7 @@
 # Reads, as tools/wasm-toolchain.sh prints them:
 #
 #   WASI_SDK_DIR       wasi-sdk 34.0 (clang, the wasip1 sysroot)
-#   OPENSSL_WASM_DIR   OpenSSL 4.0.2 built for wasm32-wasip1 (lib/, include/)
+#   OPENSSL_WASM_DIR   OpenSSL 4.0.3 built for wasm32-wasip1 (lib/, include/)
 #   PATH               wasm-tools 1.259.0 and wit-bindgen 0.62.0, and the
 #                      cargo and rustc of rust/rust-toolchain.toml with the
 #                      wasm32-wasip1 target
@@ -54,7 +54,7 @@ mkdir -p "$1"
 OUT="$(cd "$1" && pwd)"
 rm -f "$OUT/aprv.wasm" "$OUT/aprv.component.wasm" "$OUT/aprv.wit" "$OUT/SHA256SUMS"
 : "${WASI_SDK_DIR:?set WASI_SDK_DIR to wasi-sdk 34.0 (tools/wasm-toolchain.sh)}"
-: "${OPENSSL_WASM_DIR:?set OPENSSL_WASM_DIR to OpenSSL 4.0.2 for wasm32-wasip1 (tools/wasm-toolchain.sh)}"
+: "${OPENSSL_WASM_DIR:?set OPENSSL_WASM_DIR to OpenSSL 4.0.3 for wasm32-wasip1 (tools/wasm-toolchain.sh)}"
 for tool in cargo rustc wasm-tools wit-bindgen sha256sum; do
   command -v "$tool" > /dev/null || { echo "build.sh: $tool is not on PATH" >&2; exit 1; }
 done
