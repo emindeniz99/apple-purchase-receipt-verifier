@@ -1013,7 +1013,9 @@ pins the set against both.
 use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 `public-receipts/` and `apple-official/`; `cases.schema.json` is not
 read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
-fixtures directory. Four tests read the build itself, relative to the
+fixtures directory. If either directory is missing, the tests that read it
+fail with one message that names the path expected and points here; they do
+not skip. Four tests read the build itself, relative to the
 working directory, and need adapting to another layout: `VerifierApiTest`
 compares `Version.CURRENT` with `pom.xml` and reads sources under
 `src/main/java`, `BouncyCastleFloorTest` reads the
@@ -1033,9 +1035,23 @@ the `contentSha256` recorded in `cases.json`, so every port's suite fails
 until `node tools/lint-cases.mjs` re-hashes it. The one test among them,
 `FixtureGeneratorTest`, writes `fixtures/generated/` only with
 `-Dfixtures.generate=true`; without it the test is skipped, which is the
-one skip every `mvn test` reports. Keep the generators compiled: `TestPki`,
-`SyntheticReceipts` and `InputSizeBoundsTest` share helpers with several of
-them.
+one skip every `mvn test` reports. Two of the generator classes are also
+helpers that tests call, so they are not optional; the next paragraph says
+which.
+
+**Vendoring only part of the tests.** The generators can stay upstream.
+Take the `*Test.java` files, `ConformanceCasesTest` among them, and the
+helpers they share: `TestPki`, `Checks`, `TestFixtures`,
+`SyntheticReceipts` and `HostPolicyProbe` (the child JVM of
+`HostPolicyTest`), with `fixtures/` and `certs/` beside them as above.
+Two generators go with them, because a test compiles against each:
+`LargeReceiptFixture` (`InputSizeBoundsTest`) and `StandardShapeFixtures`
+(`StandardShapesTest`); both need only `TestPki` and `TestFixtures`.
+`FixtureGeneratorTest` and the other 26 `*Fixture(s)` classes can be left
+out: with them removed, the suite compiles and runs 649 tests with none
+skipped (measured on 0.11.0). `HostPolicyTest` and
+`TrustStoreIsolationTest` start a child JVM from `java.home` and skip
+where there is no `java` binary there.
 
 ## Stability
 
