@@ -29,35 +29,47 @@ import org.junit.jupiter.api.io.TempDir;
 class HostPolicyTest {
 
     private static final String HARDENED = "jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n";
+    private static final String PERMISSIVE = "jdk.certpath.disabledAlgorithms=MD2\n";
 
     /**
-     * The control for the premise the child checks: on this JVM the JDK's
-     * own PKIX code builds the legacy chain, so a refusal in the child is the
-     * policy's doing and not a wrong date or a missing certificate.
+     * The control for the premise the next test checks: with the same child,
+     * classpath and receipt but a policy that leaves SHA-1 alone, the JDK's own
+     * PKIX code builds the legacy chain. So the refusal under {@link #HARDENED}
+     * is the policy's doing and not a wrong date or a missing certificate. It
+     * runs under a policy of its own rather than this JVM's, so a host that
+     * already disables SHA-1 cannot turn it into a skip.
      */
     @Test
-    void theJdkBuildsTheLegacyChainUnderThisJvmsPolicy() throws Exception {
-        byte[] legacy = HostPolicyProbe.publicReceipt("receipt-sandbox-legacy");
-        ReceiptPayload receipt = Checks.receipt(Verifier.create(Config.defaults()), legacy);
-        Long created = receipt.receiptCreationDateMs();
-        String refusal = HostPolicyProbe.jdkRefusal(
-                legacy, created == null ? null : java.time.Instant.ofEpochMilli(created.longValue()));
-        assumeTrue(
-                refusal == null,
-                "this JVM's own policy refuses the legacy chain, so it cannot be the control: " + refusal);
+    void theJdkBuildsTheLegacyChainWhenItsPolicyAllowsSha1(@TempDir Path tmp) throws Exception {
+        String output = runProbe(tmp, PERMISSIVE);
+
+        assertTrue(output.contains(HostPolicyProbe.JDK_ACCEPTS), output);
     }
 
     /**
      * A JVM whose policy disables SHA-1 outright, as RHEL and Fedora system
-     * crypto policies do. Run in a child JVM because
-     * {@code java.security.properties} is read once, at startup.
+     * crypto policies do.
      */
     @Test
     void aHostPolicyThatDisablesSha1MovesNoVerdict(@TempDir Path tmp) throws Exception {
+        String output = runProbe(tmp, HARDENED);
+
+        assertTrue(output.contains(HostPolicyProbe.JDK_REFUSES), output);
+        assertTrue(output.contains(HostPolicyProbe.LEGACY + ": com.nutcall.alert"), output);
+        assertTrue(output.contains(HostPolicyProbe.CURRENT), output);
+        assertTrue(output.contains(HostPolicyProbe.JWS), output);
+    }
+
+    /**
+     * Runs {@link HostPolicyProbe} in a child JVM under {@code policy}, because
+     * {@code java.security.properties} is read once, at startup. Skips where
+     * there is no {@code java} binary to start; fails if the child exits non-zero.
+     */
+    private static String runProbe(Path tmp, String policyText) throws Exception {
         Path java = TrustStoreIsolationTest.javaExecutable();
         assumeTrue(java != null, "no java executable next to java.home, so no child JVM can be started");
-        Path policy = tmp.resolve("hardened.properties");
-        Files.write(policy, HARDENED.getBytes(StandardCharsets.US_ASCII));
+        Path policy = tmp.resolve("policy.properties");
+        Files.write(policy, policyText.getBytes(StandardCharsets.US_ASCII));
         List<String> command = new ArrayList<String>();
         command.add(java.toString());
         command.add("-Djava.security.properties=" + policy.toAbsolutePath());
@@ -73,11 +85,7 @@ class HostPolicyTest {
         String output = new String(readAll(child.getInputStream()), StandardCharsets.UTF_8);
         assertTrue(child.waitFor(2, TimeUnit.MINUTES), output);
         assertEquals(0, child.exitValue(), output);
-
-        assertTrue(output.contains(HostPolicyProbe.JDK_REFUSES), output);
-        assertTrue(output.contains(HostPolicyProbe.LEGACY + ": com.nutcall.alert"), output);
-        assertTrue(output.contains(HostPolicyProbe.CURRENT), output);
-        assertTrue(output.contains(HostPolicyProbe.JWS), output);
+        return output;
     }
 
     private static byte[] readAll(InputStream in) throws Exception {
