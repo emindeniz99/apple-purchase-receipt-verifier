@@ -1020,10 +1020,20 @@ compares `Version.CURRENT` with `pom.xml` and reads sources under
 `bouncycastle.version` pin in `pom.xml`, and `TrustStoreIsolationTest`
 scans `src/main/java` and `src/shared/java`.
 
-**Generators are tests that write nothing by default.**
-`FixtureGeneratorTest` and the classes named `*Fixture` or `*Fixtures`
-(other than `TestFixtures`) regenerate files under `fixtures/`, and only
-with `-Dfixtures.generate=true`. Keep them compiled: `TestPki`,
+**The generators are not tests, and `mvn test` writes nothing.** The 28
+classes named `*Fixture` or `*Fixtures` (other than `TestFixtures`) are
+`main` programs with no `@Test`, so Maven never runs them. They are what
+produced the committed files under `fixtures/`. Run one by hand and it
+has no guard: given an output directory as its first argument (the
+fixtures root, for `ReceiptBase64CapFixture`) it writes there; given none
+it overwrites the committed files in `fixtures/generated/` or
+`fixtures/generated-0.7/` (and `fixtures/limits/`, for
+`ReceiptBase64CapFixture`) with files signed by fresh keys. That changes
+the `contentSha256` recorded in `cases.json`, so every port's suite fails
+until `node tools/lint-cases.mjs` re-hashes it. The one test among them,
+`FixtureGeneratorTest`, writes `fixtures/generated/` only with
+`-Dfixtures.generate=true`; without it the test is skipped, which is the
+one skip every `mvn test` reports. Keep the generators compiled: `TestPki`,
 `SyntheticReceipts` and `InputSizeBoundsTest` share helpers with several of
 them.
 
