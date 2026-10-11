@@ -12,9 +12,17 @@ import java.util.Date;
  * characters, and the root it verifies under: {@code
  * fixtures/generated-0.7/receipt-b64-at-cap.txt} and {@code
  * fixtures/generated-0.7/receipt-b64-cap-root.der}, the pair the cases
- * read. The same string also goes to {@code
+ * read. The same run also writes the same string to {@code
  * fixtures/limits/receipt-b64-at-cap.txt}, which
  * {@code tools/generate-limit-fixtures.mjs} builds the over-cap twin from.
+ *
+ * <p>The committed tree is not the output of one run. The {@code limits/}
+ * copy is the older string from before the WWDR marker check, signed under
+ * a root that is gone, so it is a different receipt from the
+ * {@code generated-0.7/} one and does not verify under
+ * {@code receipt-b64-cap-root.der}. Its readers use only its length; only
+ * the {@code generated-0.7/} pair verifies together. The next run writes
+ * both copies from one string again.</p>
  *
  * <p>The cap counts the string a client sends, and the string must be
  * canonical base64 with nothing around it, so the only way to reach the cap
@@ -36,8 +44,8 @@ import java.util.Date;
  * node tools/lint-cases.mjs                # re-hash: every contentSha256 must be updated
  * </pre>
  *
- * <p>Each run mints fresh keys, so regenerating changes every byte of all
- * three files.</p>
+ * <p>Each run mints fresh keys, so regenerating changes every byte of the
+ * files it writes.</p>
  */
 public final class ReceiptBase64CapFixture {
 
