@@ -16,6 +16,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.cms.ContentInfo;
@@ -232,7 +233,10 @@ final class ReceiptCore {
                     Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
         }
         try {
-            signerCert.getPublicKey();
+            // BouncyCastle throws for a key that does not decode and returns
+            // null for a key algorithm it does not know; neither can check
+            // the signature.
+            Objects.requireNonNull(signerCert.getPublicKey(), "unknown public key algorithm");
         } catch (RuntimeException e) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE, "receipt signer certificate does not decode", e);
