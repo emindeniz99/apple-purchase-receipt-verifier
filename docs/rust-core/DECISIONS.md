@@ -536,12 +536,12 @@ cRLDistributionPoints, 2026-10-06).
   decode (owner, Q99). The `unknown-key-*` cases pin each position:
   `INVALID_CERTIFICATE` for those three, and `UNTRUSTED_CHAIN` for a
   receipt intermediate, whose signer no pinned root then vouches for.
-  One input
-  moves the other way, failing closed either way: a custom anchor whose
-  key OpenSSL cannot build, embedded as the receipt's signer, is
-  vouched for without a signature check (an embedded copy of an anchor
-  is the anchor), so the core now answers `INVALID_CERTIFICATE`; the
-  core before and Java answer `UNTRUSTED_CHAIN`. No case pins it.
+  One input moves the other way, failing closed either way: a custom
+  anchor whose key OpenSSL cannot build, embedded as the receipt's
+  signer, is vouched for without a signature check (an embedded copy of
+  an anchor is the anchor), so the core now answers
+  `INVALID_CERTIFICATE`; the core before and Java answer
+  `UNTRUSTED_CHAIN`. No case pins it.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one

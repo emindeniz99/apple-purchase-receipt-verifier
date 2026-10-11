@@ -677,8 +677,11 @@ class VerifierApiTest {
                 assertThrows(InvocationTargetException.class, () -> createIn(library, bcprov, bcpkix, jackson));
         Throwable e = thrown.getCause();
         assertTrue(e instanceof IllegalStateException, String.valueOf(e));
-        assertTrue(e.getMessage().contains("bcutil"), e.getMessage());
         assertTrue(e.getCause() instanceof NoClassDefFoundError, String.valueOf(e.getCause()));
+        // The missing class is BouncyCastle's, not Jackson's or the library's own.
+        assertTrue(
+                e.getCause().getMessage().startsWith("org/bouncycastle/"),
+                e.getCause().getMessage());
     }
 
     private static URL location(Class<?> type) {

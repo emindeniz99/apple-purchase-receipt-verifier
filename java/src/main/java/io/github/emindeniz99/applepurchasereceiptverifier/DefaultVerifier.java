@@ -124,7 +124,9 @@ final class DefaultVerifier implements Verifier {
     /** Runs {@code type}'s static initialiser, which a class literal alone does not. */
     private static void runInitialiser(Class<?> type) {
         try {
-            Class.forName(type.getName(), true, type.getClassLoader());
+            // This class's own loader, which needs no permission to read and
+            // resolves the same BouncyCastle class the literal did.
+            Class.forName(type.getName(), true, DefaultVerifier.class.getClassLoader());
         } catch (ClassNotFoundException e) {
             // The class literal has loaded it already.
             throw new IllegalStateException(e);
