@@ -24,8 +24,9 @@ import org.jspecify.annotations.Nullable;
  * octets are in {@link #unknownAttributes()} (for attribute 2, in
  * {@link #bundleIdBytes()} instead). A date Apple wrote as an empty string,
  * its "not set", is also {@code null}, and its octets are not kept. The
- * library invents no values. Dates are epoch milliseconds, UTC; receipts carry whole
- * seconds, so they end in {@code 000}.</p>
+ * library invents no values. Dates are epoch milliseconds, UTC. The reader accepts an
+ * RFC 3339 date-time and keeps a fraction to the millisecond, but Apple writes
+ * whole seconds, so in a genuine receipt every date ends in {@code 000}.</p>
  *
  * <p>Nothing in here has been checked against anything: the bundle id,
  * environment and purchases are whatever Apple signed, and deciding whether

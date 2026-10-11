@@ -45,7 +45,7 @@ final class AppleTrust {
     /**
      * Marks two critical extensions processed on every certificate of a
      * path, which BouncyCastle's PKIX would otherwise refuse as unknown.
-     * OpenSSL, under the core, recognises both, and neither is a trust
+     * OpenSSL, under the product's Rust implementation, recognises both, and neither is a trust
      * decision here.
      *
      * <ul>
@@ -55,7 +55,7 @@ final class AppleTrust {
      *       too. Like them it asks no purpose of a CA, so no genuine chain is
      *       refused for it.</li>
      *   <li>cRLDistributionPoints (2.5.29.31): it only says where a CRL is.
-     *       Apple's intermediates carry it non-critical today. The core asks
+     *       Apple's intermediates carry it non-critical today. The Rust implementation asks
      *       for no revocation check, so a critical one is acted on in neither
      *       implementation.</li>
      * </ul>
@@ -133,7 +133,9 @@ final class AppleTrust {
     /**
      * INVALID_CERTIFICATE when a certificate was outside its validity window
      * at {@code at}, else UNTRUSTED_CHAIN. The validator's message can quote
-     * names out of the certificates, so it stays in the cause.
+     * names out of the certificates, so it is kept out of the failure's own
+     * message and is only the exception's cause. {@code VerificationException.toFailure}
+     * then drops that cause for both reasons, so a caller never sees it.
      */
     static VerificationException chainFailure(
             GeneralSecurityException failure, String certificates, String chain, Date at) {

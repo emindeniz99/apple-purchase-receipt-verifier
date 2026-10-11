@@ -82,6 +82,8 @@ public final class Config {
          * Replaces the trusted roots, copied. Leaving them unset means Apple's
          * bundled roots. An empty collection is accepted here and refused by
          * {@link Verifier#create}.
+         *
+         * @throws NullPointerException if {@code roots} or any element is null
          */
         public Builder roots(Collection<X509Certificate> roots) {
             Set<X509Certificate> copy = new LinkedHashSet<>();
@@ -95,6 +97,8 @@ public final class Config {
         /**
          * Replaces the clock, which must be safe to call from several threads.
          * Leaving it unset means {@link Clock#systemUTC()}.
+         *
+         * @throws NullPointerException if {@code clock} is null
          */
         public Builder clock(Clock clock) {
             this.clock = Objects.requireNonNull(clock, "clock");
@@ -107,7 +111,7 @@ public final class Config {
          * its documentation states if it cannot; that documentation also says
          * what the probe checks. Turned off, {@code create} skips the check,
          * and a runtime that cannot verify shows it on the first call
-         * instead: the {@code -wasm} artifact answers
+         * instead: the sibling {@code -wasm} artifact answers
          * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint), and the
          * BouncyCastle artifact answers {@code INTERNAL_ERROR} or refuses the
          * input, depending on what is missing. Leaving it unset means on.

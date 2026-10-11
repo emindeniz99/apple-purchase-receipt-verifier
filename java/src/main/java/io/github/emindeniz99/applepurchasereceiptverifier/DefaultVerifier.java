@@ -38,7 +38,10 @@ import org.jspecify.annotations.Nullable;
  * <p>Each method reads the clock once, before any input is looked at, so
  * a clock that throws is {@link Reason#INTERNAL_ERROR} (the host's fault)
  * and never lands inside a guard that reports unexpected exceptions on
- * unverified input as {@link Reason#MALFORMED}.</p>
+ * unverified input as {@link Reason#MALFORMED}. The product's Rust
+ * implementation reads its clock only when a verdict needs the instant, so
+ * the two can answer differently on a clock that throws (docs/rust-core
+ * DECISIONS.md R20 in the source repository).</p>
  */
 final class DefaultVerifier implements Verifier {
 
@@ -66,9 +69,10 @@ final class DefaultVerifier implements Verifier {
     /**
      * Runs {@code buildStaticState}, turning a {@link LinkageError} into an
      * {@link IllegalStateException} that names the error and the floors, so a
-     * Jackson below 2.16, a missing or pre-1.70 BouncyCastle or a time-zone database
-     * without America/Los_Angeles fails {@link Verifier#create} rather than a
-     * verify call, which must not throw.
+     * Jackson below 2.16, a BouncyCastle that is missing or too old to link
+     * (before 1.70; {@link #requireBouncyCastle} holds the real floor, 1.86)
+     * or a time-zone database without America/Los_Angeles fails
+     * {@link Verifier#create} rather than a verify call, which must not throw.
      */
     static void initialise(Runnable buildStaticState) {
         try {
