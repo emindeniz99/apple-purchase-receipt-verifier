@@ -37,13 +37,16 @@ public enum Reason {
     /**
      * The signature and chain verified, so the payload bytes are Apple's, but
      * they do not parse. {@link Failure#cause()} carries the parser's
-     * exception. Deterministic for the same input: alert, do not retry.
+     * exception when a parser threw one; a payload refused on its shape (not
+     * UTF-8 JSON text, not a JSON object, an attribute that is not a SET)
+     * has none. Deterministic for the same input: alert, do not retry.
      */
     UNREADABLE_PAYLOAD,
     /**
-     * The library itself failed before it could decide, for example a
-     * runtime missing an algorithm. {@link Failure#cause()} carries the
-     * exception. Deterministic for the same input: alert, do not retry.
+     * The library itself failed before it could decide, for example a clock
+     * that threw, a runtime that cannot build the receipt signer's chain, or
+     * a PKIX validator that rejects the pinned anchors. {@link Failure#cause()}
+     * carries the exception. Deterministic for the same input: alert, do not retry.
      */
     INTERNAL_ERROR
 }

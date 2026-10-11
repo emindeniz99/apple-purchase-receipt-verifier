@@ -456,7 +456,7 @@ Java's parse before trust, four standard-allowed shapes and a critical
 cRLDistributionPoints, 2026-10-06).
 
 - **The goal:** Apple compatibility and failing closed. `fixtures/cases.json`
-  schema v2, 388 cases, is the contract. The Java implementation is a
+  schema v2, 428 cases at 0.11.0, is the contract. The Java implementation is a
   reference that is itself held to that contract (R33).
 - **Algorithm policy:** accept any signer and chain signature algorithm
   the pinned Apple chain vouches for. With OpenSSL's CMS API the core
@@ -578,6 +578,7 @@ cRLDistributionPoints, 2026-10-06).
   | Signed content nested 33 deep, with SEQUENCEs or `[0]` context tags | `UNREADABLE_PAYLOAD` | ok (port-defined 2026-10-01; BouncyCastle's bound, 64 by default) | `UNREADABLE_PAYLOAD` | The core's depth bound is 32 (owner, 2026-09-27), counting constructed values of every class. Apple's receipts nest 9 deep, so the case allows both | `receipt/unreadable-signed-content-nested-33-deep`, `receipt/unreadable-signed-content-nested-33-deep-in-context-tags` |
   | An envelope nested 33 deep: in an unsigned attribute value (SEQUENCEs or `[0]` context tags), the digestAlgorithms parameters, a `crls` entry, an embedded certificate's parameters | `MALFORMED` | ok (port-defined 2026-10-01; BouncyCastle's bound, 64 by default) | `MALFORMED` | The same bound over the whole envelope, before any decode. None of these values is signed or Apple's, so the cases allow both | `receipt/reject-an-envelope-nested-33-deep`, `receipt/reject-an-envelope-nested-33-deep-in-context-tags`, `receipt/reject-digest-algorithm-parameters-nested-33-deep`, `receipt/reject-a-crls-entry-nested-33-deep`, `receipt/reject-an-embedded-certificate-with-parameters-nested-33-deep` |
   | A clock past 9999-12-31T23:59:59.999Z, or before -9999-01-02T01:59:59Z, at the endpoint | rendered, a five-digit year with no sign (`10000-01-01 00:00:00 Etc/GMT`) | rendered, with a `+` sign past 9999 (`uuuu`) | `{"status":21009}` (port-defined 2026-10-01) | Such a clock is broken, answered like one that panics; jiff's calendar ends at 9999 and every receipt date the grammar accepts renders (R38) | none: no case pins a clock out there; `rust/tests/endpoint.rs` |
+  | A `Config` clock that throws, on a call that does not need the instant: input that fails its own checks, or a receipt or JWS that states a usable date | not measured | `INTERNAL_ERROR` on every `verifyReceipt` and `verifySignedData` call, and `{"status":21009}` on every endpoint call, whatever the input (recorded 2026-10-11): the clock is read once, before the input is looked at | the verdict the input earns: `MALFORMED` for undecodable input, `ok` for a receipt that carries a creation date, `INTERNAL_ERROR` only when the instant is needed. At the endpoint, 21009 only for a request that would otherwise answer status 0 | Java and the wrappers read the clock once per call (R24), so a host fault can never surface inside the guard that reports an unexpected exception on unverified input as `MALFORMED`. The crate reads it only when a verdict needs it (`rust/src/verifier.rs`, `receipt.rs`, `jws.rs`, `endpoint.rs`). A host fault, not an input verdict; nothing unsigned is accepted either way | none: no case injects a throwing clock; `VerifyReceiptEndpointTest.aClockThatThrowsAnswers21009` pins the Java side |
   | A receipt date of 0000-01-01T00:00:00Z at the endpoint, whose `_pst` time falls in the year -1 (2 BC) | not measured | `-0001-12-31 16:07:02 America/Los_Angeles` (`java.time`'s `uuuu`: a sign and four digits) | `-001-12-31 16:07:02 America/Los_Angeles` (jiff's `%Y`: four characters with the sign counted) | Both are the same instant and every other field agrees. No Apple receipt carries a year-0000 date, and Apple's rendering of one is unknown, so neither form is preferred (owner, 2026-10-07) | `endpoint/rfc3339-dates-render` (the case pins other purchases' dates, not this one) |
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
@@ -1138,7 +1139,7 @@ FlatBuffers as the encoding.
   ([aprv-server §6][server]).
 - **Why two artifactIds:** a classifier jar cannot replace the main jar,
   since it shares the artifact's POM and dependencies.
-- **CI:** the 388 cases against the main artifact and against both engines
+- **CI:** the shared cases against the main artifact and against both engines
   of `-wasm`; the `java-runtime-8` leg runs the server engine on real
   Temurin 8. Temurin 8 builds end in late 2026; the leg moves to Zulu or
   Corretto 8 by then.
@@ -1341,13 +1342,13 @@ classes and classifies every host.
 **Status: accepted** (owner, 2026-09-28). Supersedes R8.
 
 - **Decision:** the 0.7 Java implementation stays in the repository,
-  maintained. CI runs it and the Rust core over the 388 cases on every
-  change, and the differential job runs the full corpus through both
-  nightly. Its differences go to R20.
+  maintained. CI runs it and the Rust core over the shared cases on every
+  change to an implementation or to the cases, and the differential job
+  runs the full corpus through both nightly. Its differences go to R20.
 - **The one-product rule, restated for the plan** (AGENTS.md's "Behavior
   changes" section changes to this text in Phase 7): a verification
   behaviour change touches the Rust core, the Java implementation and
-  `fixtures/` in the same PR. The 388 cases keep them in step, and every
+  `fixtures/` in the same PR. The shared cases keep them in step, and every
   host runs all of them as one test each.
 - **Why not the frozen jar of R8:** a frozen jar answers differently
   wherever the core changes on purpose, so every intended change becomes

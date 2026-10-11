@@ -78,10 +78,12 @@ struct AprvModule: Sendable {
         } catch {
             throw .moduleUnavailable("aprv.wasm does not parse: \(error)")
         }
-        let randomGet = FunctionType(parameters: [.i32, .i32], results: [])
+        // The import's signature is not read here: WasmKit 0.4.2 made
+        // Module.types internal, and instantiation checks every import
+        // against the function Guest defines (Guest maps a mismatch to
+        // abiMismatch). Only the name and kind are checked before that.
         for entry in module.imports {
-            guard entry.module == Abi.host, entry.name == "random-get", case .function(let index) = entry.descriptor,
-                Int(index) < module.types.count, module.types[Int(index)] == randomGet
+            guard entry.module == Abi.host, entry.name == "random-get", case .function = entry.descriptor
             else {
                 throw .abiMismatch(
                     "aprv.wasm imports \(entry.module) \(entry.name); this package binds aprv:verifier@0.1.0, "

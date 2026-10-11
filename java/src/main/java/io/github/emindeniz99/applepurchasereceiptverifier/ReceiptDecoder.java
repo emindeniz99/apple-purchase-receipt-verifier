@@ -28,7 +28,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The receipt payload, the attribute SET inside the CMS envelope, as a
- * {@link ReceiptPayload}, by the decode rules in java/README.md, "Decoding a
+ * {@link ReceiptPayload}, by the decode rules in the README, "Decoding a
  * receipt".
  * Before the signature only {@link #readCreationDate} runs; every failure of
  * {@link #parse} is {@link Reason#UNREADABLE_PAYLOAD}.
@@ -167,9 +167,9 @@ final class ReceiptDecoder {
      * {@code Production} and {@code ProductionVPP} are
      * {@link Environment#PRODUCTION}, {@code ProductionSandbox} and
      * {@code ProductionVPPSandbox} are {@link Environment#SANDBOX}, anything
-     * else ({@code Xcode}, a missing value) is {@code null}. The core states
-     * the same rule, and the
-     * endpoint routes 21007 and 21008 on it.
+     * else ({@code Xcode}, a missing value) is {@code null}. The product's Rust
+     * implementation states the same rule, and the endpoint routes 21007
+     * and 21008 on it.
      */
     static @Nullable Environment environment(@Nullable String receiptType) {
         if ("Production".equals(receiptType) || "ProductionVPP".equals(receiptType)) {
@@ -374,8 +374,8 @@ final class ReceiptDecoder {
     }
 
     /**
-     * An RFC 3339 {@code date-time}, as the core
-     * reads it: a year 0000 to 9999 and a real calendar date, hours 00 to
+     * An RFC 3339 {@code date-time}, as the product's Rust
+     * implementation reads it: a year 0000 to 9999 and a real calendar date, hours 00 to
      * 23, minutes 00 to 59, seconds 00 to 60 with 60 read as 59, {@code T}
      * and {@code Z} in either case, a fraction of any length truncated to
      * the millisecond, and {@code Z} or an offset {@code ±hh:mm} (hours 00

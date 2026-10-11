@@ -43,9 +43,10 @@ public interface Verifier {
      * @throws IllegalStateException    if this runtime cannot run the
      *                                  library. Each of these throws:
      *                                  <ul>
-     *                                  <li>the {@code -wasm} artifact, which
-     *                                  has the same class names, is on the
-     *                                  classpath too;</li>
+     *                                  <li>the sibling {@code -wasm} artifact
+     *                                  (apple-purchase-receipt-verifier-wasm),
+     *                                  which has the same class names, is on
+     *                                  the classpath too;</li>
      *                                  <li>jackson-core is below 2.16;</li>
      *                                  <li>bcprov is below 1.86, or
      *                                  BouncyCastle fails to initialise,
@@ -88,6 +89,23 @@ public interface Verifier {
      * payload unchanged. A notification's nested {@code signedTransactionInfo}
      * and {@code signedRenewalInfo} are JWS of their own: pass each one here
      * again.
+     *
+     * <p>Checks, in order: the size cap, three strict base64url segments, a
+     * header whose {@code alg} is {@code ES256} and whose {@code x5c} holds
+     * exactly three certificates, the chain from the leaf through the
+     * intermediate to a pinned root with its validity, Apple's marker OIDs on
+     * the leaf and on the intermediate, the ES256 signature, and last that
+     * the payload is a JSON object. {@code x5c[2]} is decoded but not used:
+     * the pinned root stands in for it.</p>
+     *
+     * <p>The certificates' validity is judged at the payload's own
+     * {@code signedDate}, else its {@code receiptCreationDate} (an app
+     * transaction carries one), else the clock. The payload is read for that
+     * date before it is trusted, which only moves the validity window: the
+     * chain and the signature are still required. So a payload signed before
+     * an Apple certificate expired keeps verifying after it. A payload that
+     * does not read is {@link Reason#UNREADABLE_PAYLOAD}, never
+     * {@link Reason#MALFORMED}, since Apple signed it.</p>
      */
     VerificationResult<JsonPayload> verifySignedData(@Nullable String jws);
 

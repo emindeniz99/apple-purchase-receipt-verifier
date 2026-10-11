@@ -10,7 +10,8 @@ import org.jspecify.annotations.Nullable;
  * {@link Verifier#create} in either one looks for both.
  *
  * <p>Both artifacts carry this class, byte for byte the same; a test in
- * {@code java-wasm} compares the two copies.</p>
+ * the {@code java-wasm} module, which is not part of this source tree,
+ * compares the two copies.</p>
  */
 final class ClasspathGuard {
 

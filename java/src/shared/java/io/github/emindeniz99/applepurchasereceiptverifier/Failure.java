@@ -39,13 +39,16 @@ public final class Failure {
      * {@link Reason#INTERNAL_ERROR} this library raised itself (a runtime
      * failure, an answer it could not read, a clock that threw) carries one.
      * In the main artifact an {@link Reason#UNREADABLE_PAYLOAD} carries the
-     * parser's exception, and a {@link Reason#MALFORMED} whose message is
+     * parser's exception when a parser threw one (not when the payload was
+     * refused on its shape, for example a JWS payload that is not a JSON
+     * object), and a {@link Reason#MALFORMED} whose message is
      * {@code "unexpected <class>"} carries the unchecked exception
      * BouncyCastle or Jackson threw before the signature, for debugging.
      * That exception's message is theirs and may quote fragments of the
-     * unverified input, so log it as you would the input. In the
-     * {@code -wasm} artifact the core decides every reason from the input
-     * and none of them carries one. Match on {@link #reason()}, not on this.
+     * unverified input, so log it as you would the input. The
+     * sibling {@code -wasm} artifact, which runs a native module instead of
+     * BouncyCastle, decides every reason there and none of its failures
+     * carries one. Match on {@link #reason()}, not on this.
      */
     public @Nullable Throwable cause() {
         return cause;
