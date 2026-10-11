@@ -9,7 +9,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -55,10 +54,12 @@ class HostPolicyTest {
      */
     @Test
     void aHostPolicyThatDisablesSha1MovesNoVerdict(@TempDir Path tmp) throws Exception {
+        Path java = TrustStoreIsolationTest.javaExecutable();
+        assumeTrue(java != null, "no java executable next to java.home, so no child JVM can be started");
         Path policy = tmp.resolve("hardened.properties");
         Files.write(policy, HARDENED.getBytes(StandardCharsets.US_ASCII));
         List<String> command = new ArrayList<String>();
-        command.add(Paths.get(System.getProperty("java.home"), "bin", "java").toString());
+        command.add(java.toString());
         command.add("-Djava.security.properties=" + policy.toAbsolutePath());
         command.add("-D" + TestFixtures.PROPERTY + "=" + TestFixtures.root().toAbsolutePath());
         command.add("-cp");
