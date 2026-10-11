@@ -490,8 +490,8 @@ never by `ordinal()`.
 | `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or has more than six certificates below the anchor |
 | `INVALID_CERTIFICATE` | A certificate the check depends on does not decode, or is expired or not yet valid at the signing instant |
 | `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, or the intermediate lacks Apple's WWDR marker OID. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
-| `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception. Deterministic: alert, do not retry |
-| `INTERNAL_ERROR` | The library itself failed before it could decide, for example a runtime missing an algorithm the check needs. `Failure.cause()` carries the exception. Deterministic: alert, do not retry |
+| `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception when a parser threw one; a payload refused on its shape (not UTF-8 JSON text, not a JSON object, an attribute that is not a SET) has none. Deterministic: alert, do not retry |
+| `INTERNAL_ERROR` | The library itself failed before it could decide, for example a clock that threw, a runtime that cannot build the receipt signer's chain, or a PKIX validator that rejects the pinned anchors. `Failure.cause()` carries the exception. Deterministic: alert, do not retry |
 
 The set is closed by the cross-port contract: adding or removing a `Reason`
 is a change to the shared fixture file and to all nine ports at once, and is
@@ -680,7 +680,8 @@ unchecked exception BouncyCastle throws while parsing is reported as a
 verdict on the input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
 is by design, so hostile input cannot page you. It also means a broken host
 and an attack wave look alike in the counters. `Failure.cause()` carries the
-exception, which explains one call but does not separate the two in
+exception when there is one (`INTERNAL_ERROR`, and `UNREADABLE_PAYLOAD` when a
+parser threw), which explains one call but does not separate the two in
 aggregate. A known-good input that must verify is what tells them apart.
 
 **Let `Verifier.create` fail a broken runtime at deployment.** By default
@@ -951,7 +952,11 @@ directory holds the config, result and payload classes the `-wasm`
 artifact compiles too; both are the same package. What a vendored copy has
 to carry with it, in short:
 
-1. Copy both source directories into one source root.
+1. Copy both source directories into one source root, and
+   `src/main/resources` into its resources. That directory holds the
+   classpath-guard marker (`META-INF/io.github.emindeniz99/apple-purchase-receipt-verifier.marker`);
+   without it the guard against the `-wasm` jar on the same classpath is
+   silently off, and `ClasspathGuardTest` fails.
 2. Declare `jackson-core` 2.16+, `bcprov`, `bcutil` and `bcpkix` at one
    1.86+ release, and `org.jspecify:jspecify` (compile time only).
 3. To run the tests, copy `src/test/java`, add JUnit 5 and

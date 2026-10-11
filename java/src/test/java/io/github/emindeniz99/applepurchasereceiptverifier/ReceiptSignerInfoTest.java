@@ -36,10 +36,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The SignerInfo checks that run after the chain has passed: the signer's key
- * type, the digest allowlist, and which SignerInfo is looked at. Each receipt
- * here is signed by a certificate that chains to the pinned test root and
- * carries the receipt-signing marker, so the check under test is the only
- * one that can decide the verdict.
+ * type and digest (neither has an allowlist), and which SignerInfo is looked
+ * at. Each receipt here is signed by a certificate that chains to the pinned
+ * test root and carries the receipt-signing marker, so the check under test
+ * is the only one that can decide the verdict.
  */
 class ReceiptSignerInfoTest {
 
