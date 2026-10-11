@@ -1335,8 +1335,8 @@ classes and classifies every host.
 
 - **Decision:** the 0.7 Java implementation stays in the repository,
   maintained. CI runs it and the Rust core over the shared cases on every
-  change, and the differential job runs the full corpus through both
-  nightly. Its differences go to R20.
+  change to an implementation or to the cases, and the differential job
+  runs the full corpus through both nightly. Its differences go to R20.
 - **The one-product rule, restated for the plan** (AGENTS.md's "Behavior
   changes" section changes to this text in Phase 7): a verification
   behaviour change touches the Rust core, the Java implementation and
