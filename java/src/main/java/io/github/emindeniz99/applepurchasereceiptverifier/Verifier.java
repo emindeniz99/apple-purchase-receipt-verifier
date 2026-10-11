@@ -48,7 +48,9 @@ public interface Verifier {
      *                                  classpath too;</li>
      *                                  <li>jackson-core is below 2.16;</li>
      *                                  <li>bcprov is below 1.86, or
-     *                                  BouncyCastle fails to initialise;</li>
+     *                                  BouncyCastle fails to initialise,
+     *                                  as without its bcutil or bcpkix
+     *                                  jar;</li>
      *                                  <li>{@code org.bouncycastle.asn1.max_cons_depth}
      *                                  is set below 9, which refuses every
      *                                  genuine receipt;</li>

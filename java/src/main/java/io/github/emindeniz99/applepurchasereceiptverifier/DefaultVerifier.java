@@ -27,6 +27,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1UTF8String;
+import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
 import org.jspecify.annotations.Nullable;
 
@@ -97,6 +98,9 @@ final class DefaultVerifier implements Verifier {
      * with a truncated tzdb would fail on the first endpoint call otherwise.
      * The readers' factories and the name bound read here are jackson-core
      * 2.16 API, so a Jackson below the floor fails here.
+     * CMSSignedData's initialiser is where the receipt path first reaches
+     * bcutil, so it is run too: a class literal loads a class without
+     * initialising it, and without bcutil every verifyReceipt would throw.
      */
     private static void buildStaticState() {
         Objects.requireNonNull(JwsCore.JSON);
@@ -114,6 +118,17 @@ final class DefaultVerifier implements Verifier {
         Objects.requireNonNull(ASN1Set.class);
         Objects.requireNonNull(ASN1String.class);
         Objects.requireNonNull(ASN1UTF8String.class);
+        runInitialiser(CMSSignedData.class);
+    }
+
+    /** Runs {@code type}'s static initialiser, which a class literal alone does not. */
+    private static void runInitialiser(Class<?> type) {
+        try {
+            Class.forName(type.getName(), true, type.getClassLoader());
+        } catch (ClassNotFoundException e) {
+            // The class literal has loaded it already.
+            throw new IllegalStateException(e);
+        }
     }
 
     /** The release named in BouncyCastle's provider info, "BouncyCastle Security Provider v1.86". */
