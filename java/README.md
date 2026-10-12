@@ -775,8 +775,13 @@ comes from `ReceiptBenchmark` (the same settings, two forks).
 | For scale: `verifyReceipt` on the genuine 187-purchase legacy receipt | 3.1 ms | 3.4 ms |
 | For scale: `verifyReceiptEndpoint` on the same receipt | 4.0 ms | 4.4 ms |
 
-No budgeted hostile case costs more than an ordinary large receipt. For
-these cases the cost of a call follows the size of the input,
+No hostile case in the table costs more than an ordinary large receipt.
+A case added since does:
+`receipt/reject-signer-id-whose-issuer-reorders-the-certificate-rdns`, a
+78 KB receipt whose two SignerIds and only certificate carry issuer
+names of 1500 RDNs. Timed warm on 2026-10-12 with a plain loop, not JMH, on
+another machine, it took about 11 ms a call where the legacy receipt
+took 5 ms. For these cases the cost of a call follows the size of the input,
 which the caps in [Resource bounds](#resource-bounds) limit; that is a
 measurement over this suite, not a proof for every structure an attacker
 can build. These are warm-JVM figures; see

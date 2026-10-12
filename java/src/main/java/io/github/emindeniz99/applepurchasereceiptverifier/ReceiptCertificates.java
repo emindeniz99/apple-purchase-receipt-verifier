@@ -12,6 +12,7 @@ import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.x500.style.BCStrictStyle;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSSignedData;
@@ -92,13 +93,27 @@ final class ReceiptCertificates {
      * More than one can: a renewed certificate keeps its key and so its
      * subjectKeyIdentifier, and anyone relaying a receipt can add a copy of
      * the signer's identity to the bag. Equal certificates are returned once.
+     *
+     * <p>Issuers are compared with BouncyCastle's strict style, which keeps
+     * RDN order (RFC 5280 section 7.1) and is linear. {@code X500Name.equals},
+     * which {@code SignerId.match} uses, ignores RDN order and costs time
+     * quadratic in the RDN count of two names nobody has authenticated yet.
+     * So a SignerId listing the certificate's RDNs in another order names
+     * no certificate.</p>
      */
     List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();
         List<X509Certificate> matches = new ArrayList<>();
         for (int i = 0; i < holders.size(); i++) {
+            X509CertificateHolder holder = holders.get(i);
+            boolean match = sid.getSerialNumber() != null
+                    ? sid.getSerialNumber().equals(holder.getSerialNumber())
+                            && BCStrictStyle.INSTANCE.areEqual(sid.getIssuer(), holder.getIssuer())
+                    // The subjectKeyIdentifier form: BouncyCastle compares
+                    // key identifiers only, never a name.
+                    : sid.match(holder);
             // A byte-identical copy gets the same verdict, so it is tried once.
-            if (sid.match(holders.get(i)) && !matches.contains(all.get(i))) {
+            if (match && !matches.contains(all.get(i))) {
                 matches.add(all.get(i));
             }
         }

@@ -754,6 +754,18 @@ public final class TestPki {
             X509CertificateHolder signerCert,
             List<X509CertificateHolder> embedded)
             throws Exception {
+        return signReceiptAs(payload, signingTime, signingKey, sigAlg, Collections.singletonList(signerCert), embedded);
+    }
+
+    /** One SignerInfo per certificate in {@code signerCerts}, all by {@code signingKey}. */
+    static byte[] signReceiptAs(
+            byte[] payload,
+            Date signingTime,
+            PrivateKey signingKey,
+            String sigAlg,
+            List<X509CertificateHolder> signerCerts,
+            List<X509CertificateHolder> embedded)
+            throws Exception {
         ASN1EncodableVector baseAttrs = new ASN1EncodableVector();
         baseAttrs.add(
                 new org.bouncycastle.asn1.cms.Attribute(CMSAttributes.signingTime, new DERSet(new Time(signingTime))));
@@ -761,10 +773,14 @@ public final class TestPki {
         // The BouncyCastle provider so signer algorithms the JDK has no name
         // for, such as RSASSA-PSS spelled SHA256withRSAandMGF1, resolve here.
         ContentSigner cs = new JcaContentSignerBuilder(sigAlg).setProvider(BC).build(signingKey);
-        gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(
-                        new JcaDigestCalculatorProviderBuilder().setProvider(BC).build())
-                .setSignedAttributeGenerator(new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
-                .build(cs, signerCert));
+        for (X509CertificateHolder signerCert : signerCerts) {
+            gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder()
+                            .setProvider(BC)
+                            .build())
+                    .setSignedAttributeGenerator(
+                            new DefaultSignedAttributeTableGenerator(new AttributeTable(baseAttrs)))
+                    .build(cs, signerCert));
+        }
         gen.addCertificates(new CollectionStore<X509CertificateHolder>(embedded));
         return gen.generate(new CMSProcessableByteArray(payload), true).getEncoded();
     }

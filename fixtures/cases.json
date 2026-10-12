@@ -1065,6 +1065,18 @@
       "codec": "raw",
       "contentSha256": "3fcf589b8538ed7df59a9da371e9b642a84389597c9c3a66d336bb6bf4ad9603"
     },
+    "hardening-signer-id-root": {
+      "path": "generated-0.7/hardening-signer-id-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "4cb71b959d7fd6bb6485d0035b4859f6e3d38881625bac20adde22ecb30f7c49"
+    },
+    "receipt-signer-id-issuer-rdns-reordered": {
+      "path": "generated-0.7/receipt-signer-id-issuer-rdns-reordered.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "f6accadd21725c4a7d5f90cab868b80fdb5ad1d77881ddf22b6702b802355fd6"
+    },
     "receipt-signer-ecdsa-p256": {
       "path": "generated-0.7/receipt-signer-ecdsa-p256.der",
       "role": "input",
@@ -9027,6 +9039,37 @@
         "pkcs7",
         "negative",
         "chain",
+        "dos",
+        "generated",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-signer-id-whose-issuer-reorders-the-certificate-rdns",
+      "description": "A receipt with two SignerInfos that name their certificate by issuerAndSerialNumber, one serial number and an issuer of 1500 CN RDNs, in ascending order in one and descending in the other, and one embedded certificate with that serial whose issuer is the same RDNs rotated by one. Both implementations compare names RDN by RDN in order (OpenSSL's X509_NAME_cmp, the JDK's X500Principal), in linear time, so no embedded certificate is either signer's and the receipt is MALFORMED (signer certificate not embedded), within maxMillis; nothing here chains to the pinned root. BouncyCastle's X500Name.equals ignores RDN order and is quadratic in the RDN count: its SignerInformationStore compared the two SignerInfos with it, and its SignerId.match compared each with the certificate, 7 to 10 s per pair at 8000 RDNs (owner Q128 a, 2026-10-12).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-signer-id-issuer-rdns-reordered"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "hardening-signer-id-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "signer-id-issuer-reorders-the-certificate-rdns",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "signers",
         "dos",
         "generated",
         "new-in-0-7"
