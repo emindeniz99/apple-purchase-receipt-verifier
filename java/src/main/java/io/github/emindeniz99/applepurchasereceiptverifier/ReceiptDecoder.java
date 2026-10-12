@@ -1,7 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
-import java.math.BigInteger;
 import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -99,9 +98,6 @@ final class ReceiptDecoder {
     /** RFC 3339 §5.6 {@code date-time}, T and Z in either case; {@code \d} is ASCII only. */
     private static final Pattern RECEIPT_DATE = Pattern.compile(
             "(\\d{4})-(\\d{2})-(\\d{2})[Tt](\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d++))?(?:[Zz]|([+-])(\\d{2}):(\\d{2}))");
-
-    private static final long FIRST_MILLIS = -62_167_219_200_000L; // 0000-01-01T00:00:00Z
-    private static final long LAST_MILLIS = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z
 
     private ReceiptDecoder() {}
 
@@ -219,13 +215,14 @@ final class ReceiptDecoder {
                             Reason.UNREADABLE_PAYLOAD,
                             "receipt attribute has " + seq.size() + " fields, expected at least 3");
                 }
-                BigInteger rawType = ASN1Integer.getInstance(seq.getObjectAt(0)).getValue();
                 // 0 to Integer.MAX_VALUE; a wider type is refused, since narrowing would invent one.
-                if (rawType.signum() < 0 || rawType.bitLength() > 31) {
+                type = ASN1Integer.getInstance(seq.getObjectAt(0)).intValueExact();
+                if (type < 0) {
                     throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range");
                 }
-                type = rawType.intValue();
                 value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
+            } catch (ArithmeticException e) {
+                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range", e);
             } catch (IllegalArgumentException e) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "malformed receipt attribute", e);
             }
@@ -347,11 +344,9 @@ final class ReceiptDecoder {
             if (!(parsed instanceof ASN1Integer)) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not an ASN.1 integer");
             }
-            BigInteger value = ((ASN1Integer) parsed).getValue();
-            if (value.bitLength() > 63) {
-                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt integer out of range");
-            }
-            return value.longValue();
+            return ((ASN1Integer) parsed).longValueExact();
+        } catch (ArithmeticException e) {
+            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt integer out of range", e);
         } catch (IOException e) {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not valid ASN.1", e);
         } catch (RuntimeException e) {
@@ -374,14 +369,13 @@ final class ReceiptDecoder {
     }
 
     /**
-     * An RFC 3339 {@code date-time}, as the product's Rust
-     * implementation reads it: a year 0000 to 9999 and a real calendar date, hours 00 to
-     * 23, minutes 00 to 59, seconds 00 to 60 with 60 read as 59, {@code T}
-     * and {@code Z} in either case, a fraction of any length truncated to
-     * the millisecond, and {@code Z} or an offset {@code ±hh:mm} (hours 00
-     * to 23) converted to UTC. Null when {@code text} is not in that form or
-     * names an instant outside 0000-01-01T00:00:00Z to
-     * 9999-12-31T23:59:59.999Z.
+     * An RFC 3339 {@code date-time}: a year 0000 to 9999 and a real
+     * calendar date, hours 00 to 23, minutes 00 to 59, seconds 00 to 60 with
+     * 60 read as 59, {@code T} and {@code Z} in either case, a fraction of
+     * any length truncated to the millisecond, and {@code Z} or an offset
+     * {@code ±hh:mm} (hours 00 to 23) converted to UTC, which can carry the
+     * instant a day past either end of those years. Null when {@code text}
+     * is not in that form.
      */
     static @Nullable Long parseDate(String text) {
         Matcher m = RECEIPT_DATE.matcher(text);
@@ -411,8 +405,7 @@ final class ReceiptDecoder {
         int millis = Integer.parseInt(
                 fraction.length() > 3 ? fraction.substring(0, 3) : fraction + "000".substring(fraction.length()));
         int offset = (offsetHours * 60 + offsetMinutes) * ("-".equals(m.group(8)) ? -1 : 1);
-        long instant = (local - offset * 60L) * 1000 + millis;
-        return instant >= FIRST_MILLIS && instant <= LAST_MILLIS ? instant : null;
+        return (local - offset * 60L) * 1000 + millis;
     }
 
     /** The bundle id string, or {@code null} when it does not decode; its octets are kept either way. */

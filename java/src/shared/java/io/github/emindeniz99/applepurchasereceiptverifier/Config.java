@@ -40,7 +40,11 @@ public final class Config {
     /**
      * Apple's three pinned roots and {@link Clock#systemUTC()}.
      *
-     * @throws IllegalStateException if the bundled roots do not parse
+     * @throws IllegalStateException in the {@code -wasm} artifact, if the
+     *     bundled roots do not parse
+     * @throws LinkageError in the BouncyCastle artifact, which parses the
+     *     bundled roots with bcprov when they are first used, if bcprov is
+     *     missing or a root does not parse
      */
     public static Config defaults() {
         return builder().build();
@@ -113,8 +117,8 @@ public final class Config {
          * and a runtime that cannot verify shows it on the first call
          * instead: the sibling {@code -wasm} artifact answers
          * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint), and the
-         * BouncyCastle artifact answers {@code INTERNAL_ERROR} or refuses the
-         * input, depending on what is missing. Leaving it unset means on.
+         * BouncyCastle artifact refuses the input, with a reason that depends
+         * on what is missing. Leaving it unset means on.
          */
         public Builder runtimeProbe(boolean runtimeProbe) {
             this.runtimeProbe = runtimeProbe;
@@ -122,8 +126,11 @@ public final class Config {
         }
 
         /**
-         * @throws IllegalStateException if no roots were set and the bundled
-         *                               Apple roots fail to load
+         * @throws IllegalStateException in the {@code -wasm} artifact, if no
+         *     roots were set and the bundled Apple roots do not parse
+         * @throws LinkageError in the BouncyCastle artifact, if no roots were
+         *     set and the bundled Apple roots do not load (bcprov missing, or
+         *     a root that does not parse)
          */
         public Config build() {
             // roots(...) already copied, and never touches a set it handed on.

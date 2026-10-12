@@ -21,6 +21,9 @@ final class JsonFields {
 
     private JsonFields() {}
 
+    /** The one factory every reader and the endpoint writer use; immutable once built. */
+    static final JsonFactory JSON = factory();
+
     /**
      * A factory with Jackson's own default constraints, built rather than
      * inherited so a host's process-wide
@@ -78,14 +81,17 @@ final class JsonFields {
         return null;
     }
 
-    /** Strict UTF-8 with no byte order mark (RFC 8259 8.1), or null; Jackson would guess UTF-16 or UTF-32. */
+    /**
+     * Strict UTF-8, or null; Jackson reading the bytes would guess UTF-16 or
+     * UTF-32. A leading byte order mark (RFC 8259 8.1) decodes to U+FEFF,
+     * which Jackson's char parser refuses as an unexpected character.
+     */
     static @Nullable String text(byte[] bytes) {
         try {
-            String text = StandardCharsets.UTF_8
+            return StandardCharsets.UTF_8
                     .newDecoder()
                     .decode(ByteBuffer.wrap(bytes))
                     .toString();
-            return text.startsWith("\uFEFF") ? null : text;
         } catch (CharacterCodingException e) {
             return null;
         }

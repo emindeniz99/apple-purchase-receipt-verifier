@@ -109,8 +109,9 @@ class ReceiptDecoderTest {
 
     /**
      * A receipt date is an RFC 3339 date-time (owner, Q68, 2026-10-06,
-     * widening the 2026-09-27 grammar), at every edge of it; the same
-     * vectors as the core's {@code rust/tests/datetime.rs}.
+     * widening the 2026-09-27 grammar), at every edge of it. An offset may
+     * carry the instant past 9999-12-31 or before 0000-01-01, and the date
+     * still reads (owner, 2026-10-12).
      */
     @Test
     void aReceiptDateIsAnRfc3339DateTime() {
@@ -134,6 +135,8 @@ class ReceiptDecoderTest {
             {"2016-12-31T15:59:60.5-08:00", 1_483_228_799_500L},
             {"0000-01-01T00:00:00.5Z", -62_167_219_199_500L},
             {"0000-01-01T01:00:00+01:00", -62_167_219_200_000L},
+            {"9999-12-31T23:59:59-00:01", 253_402_300_859_000L},
+            {"0000-01-01T00:00:00+00:01", -62_167_219_260_000L},
             {"1969-12-31T23:59:59.999Z", -1L},
         };
         for (Object[] vector : accepted) {
@@ -158,8 +161,6 @@ class ReceiptDecoderTest {
             "2024-08-06T12:00:61Z",
             "2024-08-06T12:60:00Z",
             "2024-08-06T24:00:00Z",
-            "9999-12-31T23:59:59-00:01",
-            "0000-01-01T00:00:00+00:01",
             "2023-02-29T00:00:00Z",
             "1900-02-29T00:00:00Z",
             "2024-04-31T00:00:00Z",

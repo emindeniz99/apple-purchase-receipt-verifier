@@ -18,17 +18,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1IA5String;
-import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.ASN1String;
-import org.bouncycastle.asn1.ASN1UTF8String;
 import org.bouncycastle.cms.CMSSignedData;
-import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -51,8 +42,7 @@ final class DefaultVerifier implements Verifier {
 
     DefaultVerifier(Config config) {
         Objects.requireNonNull(config, "config");
-        ClasspathGuard.check(DefaultVerifier.class.getClassLoader());
-        initialise(DefaultVerifier::buildStaticState);
+        initialise();
         // Not behind runtimeProbe: neither looks at the provider's engines,
         // which is what a test double stands in for.
         requireBouncyCastle(BouncyCastle.PROVIDER);
@@ -68,16 +58,16 @@ final class DefaultVerifier implements Verifier {
     }
 
     /**
-     * Runs {@code buildStaticState}, turning a {@link LinkageError} into an
+     * Runs {@link #buildStaticState}, turning a {@link LinkageError} into an
      * {@link IllegalStateException} that names the error and the floors, so a
-     * Jackson below 2.16, a BouncyCastle that is missing or too old to link
-     * (before 1.70; {@link #requireBouncyCastle} holds the real floor, 1.86)
-     * or a time-zone database without America/Los_Angeles fails
-     * {@link Verifier#create} rather than a verify call, which must not throw.
+     * Jackson below 2.16, a missing BouncyCastle jar or a time-zone database
+     * without America/Los_Angeles fails {@link Verifier#create} rather than a
+     * verify call, which must not throw. {@link #requireBouncyCastle} holds
+     * the BouncyCastle release floor, 1.86.
      */
-    static void initialise(Runnable buildStaticState) {
+    private static void initialise() {
         try {
-            buildStaticState.run();
+            buildStaticState();
         } catch (LinkageError e) {
             // An ExceptionInInitializerError has no message of its own; its
             // cause says which initialiser failed and why.
@@ -91,37 +81,20 @@ final class DefaultVerifier implements Verifier {
     }
 
     /**
-     * Reading these fields runs the static initialisers that build them. The
-     * BouncyCastle helpers are built per call, so the provider and a bcpkix
-     * class are touched here to load both jars before the first verify, and
-     * so is every BouncyCastle class ReceiptDecoder names: ASN1UTF8String and
-     * ASN1IA5String arrived in bcprov 1.70, and an older jar would otherwise
-     * throw out of the first verifyReceipt. A jar from 1.70 on links, and
-     * {@link #requireBouncyCastle} refuses it below 1.86.
-     * EndpointResponse's initialiser loads the Pacific time zone, which a JRE
-     * with a truncated tzdb would fail on the first endpoint call otherwise.
-     * The readers' factories and the name bound read here are jackson-core
-     * 2.16 API, so a Jackson below the floor fails here.
-     * CMSSignedData's initialiser is where the receipt path first reaches
-     * bcutil, so it is run too: a class literal loads a class without
-     * initialising it, and without bcutil every verifyReceipt would throw.
+     * Runs the static initialisers a verify call would otherwise run first.
+     * The JSON factory and the name bound read here are jackson-core 2.16
+     * API, so a Jackson below the floor fails here. EndpointResponse's
+     * initialiser loads the Pacific time zone, which a JRE with a truncated
+     * tzdb would fail on the first endpoint call otherwise. The provider
+     * loads bcprov. CMSSignedData is bcpkix, and its initialiser is where the
+     * receipt path first reaches bcutil: a class literal loads a class
+     * without initialising it, and without bcutil every verifyReceipt would
+     * throw.
      */
     private static void buildStaticState() {
-        Objects.requireNonNull(JwsCore.JSON);
-        Objects.requireNonNull(Endpoint.JSON);
-        JwsCore.JSON.streamReadConstraints().getMaxNameLength();
-        Objects.requireNonNull(EndpointResponse.JSON);
+        JsonFields.JSON.streamReadConstraints().getMaxNameLength();
+        runInitialiser(EndpointResponse.class);
         Objects.requireNonNull(BouncyCastle.PROVIDER);
-        Objects.requireNonNull(JcaSignerInfoVerifierBuilder.class);
-        Objects.requireNonNull(ASN1Encodable.class);
-        Objects.requireNonNull(ASN1IA5String.class);
-        Objects.requireNonNull(ASN1Integer.class);
-        Objects.requireNonNull(ASN1OctetString.class);
-        Objects.requireNonNull(ASN1Primitive.class);
-        Objects.requireNonNull(ASN1Sequence.class);
-        Objects.requireNonNull(ASN1Set.class);
-        Objects.requireNonNull(ASN1String.class);
-        Objects.requireNonNull(ASN1UTF8String.class);
         runInitialiser(CMSSignedData.class);
     }
 
@@ -129,7 +102,7 @@ final class DefaultVerifier implements Verifier {
     private static void runInitialiser(Class<?> type) {
         try {
             // This class's own loader, which needs no permission to read and
-            // resolves the same BouncyCastle class the literal did.
+            // resolves the same class the literal did.
             Class.forName(type.getName(), true, DefaultVerifier.class.getClassLoader());
         } catch (ClassNotFoundException e) {
             // The class literal has loaded it already.
@@ -152,26 +125,21 @@ final class DefaultVerifier implements Verifier {
      * Refuses a bcprov older than 1.86, reading the release from the provider
      * instance this library holds, so nothing is registered with
      * {@code Security}. The info string ("BouncyCastle Security Provider
-     * v1.81.1") is compared by its parts; the double BouncyCastle passes to
-     * {@link Provider}'s constructor (1.81.1 is {@code 1.8101}) is the
-     * fallback for an info string without a release in it. 1.84 added the
+     * v1.81.1") is compared by its parts, and one without a release in it is
+     * refused. 1.84 added the
      * ASN.1 nesting bound (bcprov 1.81 throws {@code StackOverflowError} out
      * of {@code verifyReceipt} on a deeply nested receipt), and 1.85 fixed
      * CVE-2026-12860 (RSA PKCS#1 verification skipped two hash bytes), which
-     * the receipt signature check reaches, and CVE-2026-13506. Every bcprov
-     * from 1.70 links, so the class loading in {@link #buildStaticState}
+     * the receipt signature check reaches, and CVE-2026-13506. The class
+     * loading in {@link #buildStaticState} does not read the release, so it
      * cannot tell these apart.
      *
      * @throws IllegalStateException naming the release found
      */
-    @SuppressWarnings("deprecation")
     static void requireBouncyCastle(Provider provider) {
         String info = String.valueOf(provider.getInfo());
         Matcher release = BOUNCY_CASTLE_RELEASE.matcher(info);
-        boolean atFloor = release.find()
-                ? Integer.parseInt(release.group(1)) * 1000 + Integer.parseInt(release.group(2)) >= 1086
-                : provider.getVersion() >= 1.86;
-        if (!atFloor) {
+        if (!release.find() || Integer.parseInt(release.group(1)) * 1000 + Integer.parseInt(release.group(2)) < 1086) {
             throw new IllegalStateException("BouncyCastle bcprov on the classpath is \"" + info
                     + "\"; the verifier needs 1.86 or later: 1.84 added the ASN.1 nesting bound that"
                     + " keeps a deeply nested receipt from overflowing the stack, and 1.85 fixed"

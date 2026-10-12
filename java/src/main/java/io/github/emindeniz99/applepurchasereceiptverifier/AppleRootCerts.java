@@ -19,21 +19,9 @@ final class AppleRootCerts {
 
     private AppleRootCerts() {}
 
-    /**
-     * The three roots, parsed once; the set is unmodifiable.
-     *
-     * @throws IllegalStateException on every call if they did not parse
-     */
+    /** The three roots, parsed once when the class loads; the set is unmodifiable. */
     static Set<X509Certificate> roots() {
-        try {
-            return Holder.ROOTS;
-        } catch (LinkageError e) {
-            throw new IllegalStateException("the bundled Apple roots did not load", e);
-        }
-    }
-
-    private static final class Holder {
-        static final Set<X509Certificate> ROOTS = parse(APPLE_INC_ROOT, APPLE_ROOT_CA_G2, APPLE_ROOT_CA_G3);
+        return ROOTS;
     }
 
     private static Set<X509Certificate> parse(String... roots) {
@@ -113,4 +101,6 @@ final class AppleRootCerts {
                     + "pIqZ3r6966/ayySrMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMDA2gA"
                     + "MGUCMQCD6cHEFl4aXTQY2e3v9GwOAEZLuN+yRhHFD/3meoyhpmvOwgPUnPWTxnS4at+qIxUCMG1mihDK"
                     + "1A3UT82NQz60imOlM27jbdoXt2QfyFMm+YhidDkLF1vLUagM6BgD56KyKA==";
+
+    private static final Set<X509Certificate> ROOTS = parse(APPLE_INC_ROOT, APPLE_ROOT_CA_G2, APPLE_ROOT_CA_G3);
 }

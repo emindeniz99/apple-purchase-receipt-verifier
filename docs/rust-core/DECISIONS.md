@@ -581,6 +581,8 @@ cRLDistributionPoints, 2026-10-06).
   | A `Config` clock that throws, on a call that does not need the instant: input that fails its own checks, or a receipt or JWS that states a usable date | not measured | `INTERNAL_ERROR` on every `verifyReceipt` and `verifySignedData` call, and `{"status":21009}` on every endpoint call, whatever the input (recorded 2026-10-11): the clock is read once, before the input is looked at | the verdict the input earns: `MALFORMED` for undecodable input, `ok` for a receipt that carries a creation date, `INTERNAL_ERROR` only when the instant is needed. At the endpoint, 21009 only for a request that would otherwise answer status 0 | Java and the wrappers read the clock once per call (R24), so a host fault can never surface inside the guard that reports an unexpected exception on unverified input as `MALFORMED`. The crate reads it only when a verdict needs it (`rust/src/verifier.rs`, `receipt.rs`, `jws.rs`, `endpoint.rs`). A host fault, not an input verdict; nothing unsigned is accepted either way | none: no case injects a throwing clock; `VerifyReceiptEndpointTest.aClockThatThrowsAnswers21009` pins the Java side |
   | A receipt signer under a CA that is certified twice with one name and one key, once directly under a pinned root and once below five other CAs (a cross-certification or a same-key self-issued renewal) | not measured | ok, whether the copy under the root is valid at the instant or has expired (Q108 a, 2026-10-12). Earlier the same day Java refused some receipts of the valid-copy shape and every one of the expired-copy shape with "signer chain has 7 certificates, more than the maximum of 6": BouncyCastle's builder returns the seven-certificate path through the deep copy, and a post-build check refused it, by `HashSet` order when a short path also existed. The check was deleted: every certificate on that path is signed under a pinned root and validated by PKIX at the instant, so the length alone carried no security weight | ok when the copy under the root is valid: OpenSSL takes the first issuer valid at the instant with no backtracking, so the path built is the short one. `UNTRUSTED_CHAIN`, "chain exceeds the maximum length", when it has expired: the only path is seven long | Accepted by the owner (Q108 a): Java is the reference and is judged on its own. The core fails closed; Java accepts nothing unsigned, since an extra link needs a CA key a pinned root vouches for, and the same shape with a forged link, a link that is not a CA or the deep copy expired is still refused (`refusesTheSevenCertificatePathWhenOneLinkIsBroken`). Apple's chains are leaf, intermediate, root, so no receipt Apple signs has the shape ([evidence](../evidence/2026-10-12-java-path-length-bound.md)) | none: the expired-copy shape could become a case that allows both; none was added. `acceptsAnyPathTheBuilderValidatesWhateverItsLength` pins Java's ok; the evidence's Go probe measured the core's refusal |
   | A receipt date of 0000-01-01T00:00:00Z at the endpoint, whose `_pst` time falls in the year -1 (2 BC) | not measured | `-0001-12-31 16:07:02 America/Los_Angeles` (`java.time`'s `uuuu`: a sign and four digits) | `-001-12-31 16:07:02 America/Los_Angeles` (jiff's `%Y`: four characters with the sign counted) | Both are the same instant and every other field agrees. No Apple receipt carries a year-0000 date, and Apple's rendering of one is unknown, so neither form is preferred (owner, 2026-10-07) | `endpoint/rfc3339-dates-render` (the case pins other purchases' dates, not this one) |
+  | A SignerInfo whose signedAttrs or unsignedAttrs field holds something other than Attributes, first or second, beside a SignerInfo that verifies | not measured | ok (owner, 2026-10-12): BouncyCastle reads the attributes only while verifying, so the broken SignerInfo is `INVALID_SIGNATURE` and the other one decides; from Q65 until then Java read every SignerInfo's attributes first and answered `MALFORMED` | `MALFORMED` | OpenSSL decodes every SignerInfo, attributes included, when it parses the SignedData, so one that does not parse is a SignedData that does not. Java's ok still needs a SignerInfo whose signature verifies over the returned content under a pinned chain, so the cases allow both | `receipt/reject-malformed-signed-attrs-in-the-first-signer`, `receipt/malformed-signed-attrs-in-the-second-signer-does-not-crash`, `receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info` |
+  | A receipt date whose offset moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z (`9999-12-31T23:59:59-00:01`, `0000-01-01T00:00:00+00:01`) | not measured | read (owner, 2026-10-12): a `long` holds the instant and the endpoint's `uuuu` renders the year | null, kept raw | jiff's calendar ends at 9999, so the core reads only dates it can render. Before trust only the creation date is read, and such a date only moves the chain instant to where no certificate is valid (`INVALID_CERTIFICATE`); the other dates are informational | `receipt/rfc3339-date-forms` (purchases 318 and 319 are not pinned) |
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
   | A JWS payload whose `signedDate` is a number of more than 1,000 digits, beside a `receiptCreationDate` | not measured | the chain at the clock: Jackson's `maxNumberLength` (1,000) fails the whole read, so no date is read, and a payload whose signature verifies ends at `UNREADABLE_PAYLOAD` | the chain at `receiptCreationDate` | A number past `i64` is no instant, so the core skips `signedDate` and takes its stand-in (Q67). Apple never emits such a number, so a JWS that carries one is forged; there each implementation still fails, and only the reason can differ | none: no case pins it |
@@ -667,15 +669,21 @@ cRLDistributionPoints, 2026-10-06).
   implement is one that does not verify ("MUST gracefully handle
   unimplemented signature algorithms"). Java used to stop there with
   `MALFORMED`, so an unknown digest placed ahead of Apple's SignerInfo
-  refused a receipt the core accepted; it now tries the next one. It
-  also reads every SignerInfo's signed and unsigned attributes before
-  trying any, so a malformed one is `MALFORMED` at any position, as in
-  the core; malformed signedAttrs in a second SignerInfo, which Java
-  used to accept, are now `MALFORMED` in both. The row that recorded the
-  unknown digest as a divergence is gone, and three shared cases pin the
-  agreement: `receipt/reject-a-signer-info-in-an-unimplemented-digest`,
-  `receipt/accept-a-genuine-signer-info-behind-one-in-an-unimplemented-digest`
-  and `receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info`.
+  refused a receipt the core accepted; it now tries the next one. The
+  row that recorded the unknown digest as a divergence is gone, and two
+  shared cases pin the agreement:
+  `receipt/reject-a-signer-info-in-an-unimplemented-digest` and
+  `receipt/accept-a-genuine-signer-info-behind-one-in-an-unimplemented-digest`.
+  Java no longer reads every SignerInfo's signed and unsigned attributes
+  before trying any (owner, 2026-10-12; it did from Q65 until then).
+  The pre-read made a malformed SignerInfo `MALFORMED` at any position,
+  as in the core, but it guarded nothing for Java alone: BouncyCastle
+  parses the attributes while it verifies, so the broken SignerInfo
+  fails as `INVALID_SIGNATURE` and the next one is tried, like any
+  SignerInfo that does not verify, and an answer of ok still needs a
+  SignerInfo whose signature verifies over the returned content under a
+  chain to a pinned root. The divergence has a row in the table above,
+  and its three cases allow both answers.
   A review probe found the same change closes three shapes no row
   listed: an unknown signatureAlgorithm OID, RSASSA-PSS with parameters
   that do not decode and a CMSAlgorithmProtection attribute that does
@@ -770,9 +778,10 @@ cRLDistributionPoints, 2026-10-06).
   before 1970 too), `Z` or `±hh:mm` with hours 00 to 23 converted to
   UTC, and second 60 read as 59 with its fraction kept, as jiff's parser
   reads a leap second (`java.time`'s `LocalTime` refuses it, so Java
-  clamps first). The instant must lie in 0000-01-01T00:00:00Z to
-  9999-12-31T23:59:59.999Z, so every date still renders at the
-  endpoint. What is not §5.6 still does not parse: a space for `T`, a
+  clamps first). The core also requires the instant to lie in
+  0000-01-01T00:00:00Z to 9999-12-31T23:59:59.999Z, so every date it
+  reads renders at its endpoint; Java dropped that bound (owner,
+  2026-10-12; a row in the table above). What is not §5.6 still does not parse: a space for `T`, a
   comma fraction, `+0300`, `+03`, an offset with seconds, omitted
   seconds. The shape stays written out in both (a byte check in
   `rust/src/datetime.rs`, a regular expression in `ReceiptDecoder`):

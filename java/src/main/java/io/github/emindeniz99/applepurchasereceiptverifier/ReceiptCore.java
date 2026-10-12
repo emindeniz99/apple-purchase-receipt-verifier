@@ -1,10 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.NoSuchAlgorithmException;
+import java.security.GeneralSecurityException;
+import java.security.PublicKey;
 import java.security.cert.CertPathBuilder;
-import java.security.cert.CertPathBuilderException;
 import java.security.cert.CertPathBuilderResult;
 import java.security.cert.CertStore;
 import java.security.cert.Certificate;
@@ -25,10 +24,8 @@ import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.CMSTypedData;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationVerifier;
-import org.bouncycastle.cms.jcajce.JcaSignerInfoVerifierBuilder;
-import org.bouncycastle.operator.DigestCalculatorProvider;
+import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
 import org.bouncycastle.operator.OperatorCreationException;
-import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -57,7 +54,7 @@ final class ReceiptCore {
      * checked before it is decoded. The figure is Apple's limit on a whole
      * verifyReceipt body ({@link Endpoint#MAX_REQUEST_BYTES}).
      */
-    static final int MAX_RECEIPT_BYTES = 3145728;
+    static final int MAX_RECEIPT_BYTES = Endpoint.MAX_REQUEST_BYTES;
 
     private ReceiptCore() {}
 
@@ -120,14 +117,6 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
-        }
-        // Every SignerInfo's attributes are read before any is tried: a
-        // SignerInfo whose syntax is broken makes the whole SignedData
-        // malformed, whatever its position. BouncyCastle reads them lazily
-        // and throws from here, which verifyDer reports as MALFORMED.
-        for (SignerInformation signer : signers) {
-            signer.getSignedAttributes();
-            signer.getUnsignedAttributes();
         }
         // The one payload read before trust: the sender's own creation date
         // picks the instant the chain must be valid at. That only moves the
@@ -259,14 +248,8 @@ final class ReceiptCore {
             CertPathBuilderResult result =
                     CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
             return result.getCertPath().getCertificates();
-        } catch (CertPathBuilderException e) {
+        } catch (GeneralSecurityException e) {
             throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
-        } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
-            // Raised for the pinned anchors, the parameters or a missing
-            // PKIX/Collection implementation, never for a certificate: the
-            // runtime cannot build the validator, which says nothing about
-            // the receipt.
-            throw new VerificationException(Reason.INTERNAL_ERROR, "chain validator could not be constructed", e);
         } catch (RuntimeException e) {
             // BouncyCastle's unchecked exceptions for malformed certificate content.
             throw new VerificationException(
@@ -314,40 +297,33 @@ final class ReceiptCore {
         // An RSA signature binds its hash in the DigestInfo, so the
         // signatureAlgorithm label is not trusted.
         try {
-            boolean valid = signer.verify(signerVerifier(signerCert));
+            boolean valid = signer.verify(signerVerifier(signerCert.getPublicKey()));
             if (!valid) {
                 throw new VerificationException(
                         Reason.INVALID_SIGNATURE, "CMS signature does not match the signer certificate's key");
             }
-        } catch (CMSException e) {
+        } catch (CMSException | OperatorCreationException | RuntimeException e) {
+            // A digest that does not match, a key with no CMS verifier, an
+            // algorithm BouncyCastle does not implement, or a value it reads
+            // only while verifying (the CMSAlgorithmProtection attribute):
+            // this SignerInfo fails and the next one is tried (RFC 4853:
+            // implementations MUST gracefully handle unimplemented signature
+            // algorithms).
             throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info", e);
-        } catch (OperatorCreationException e) {
-            throw new VerificationException(
-                    Reason.INVALID_SIGNATURE, "no CMS verifier for the signer certificate's key", e);
-        } catch (RuntimeException e) {
-            // An algorithm BouncyCastle does not implement, or a value it
-            // reads only while verifying (the CMSAlgorithmProtection
-            // attribute), surfaces as an unchecked exception: this SignerInfo
-            // fails and the next one is tried (RFC 4853: implementations MUST
-            // gracefully handle unimplemented signature algorithms).
-            throw new VerificationException(Reason.INVALID_SIGNATURE, "BouncyCastle cannot verify the SignerInfo", e);
         }
     }
 
     /**
-     * The CMS verifier for {@code signerCert}'s key, from a builder made per
-     * call so no BouncyCastle object is shared between threads. Built from
-     * the key, not the certificate: with a certificate BouncyCastle also
-     * refuses a signer outside its validity at a signed signingTime, which
-     * RFC 5652 11.3 does not ask, and the chain is judged at the creation
-     * date already.
+     * The CMS verifier for the signer's key, from a builder made per call so
+     * no BouncyCastle object is shared between threads. Built from the key,
+     * not the certificate: with a certificate BouncyCastle also refuses a
+     * signer outside its validity at a signed signingTime, which RFC 5652
+     * 11.3 does not ask, and the chain is judged at the creation date
+     * already.
      */
-    static SignerInformationVerifier signerVerifier(X509Certificate signerCert) throws OperatorCreationException {
-        DigestCalculatorProvider digests = new JcaDigestCalculatorProviderBuilder()
+    private static SignerInformationVerifier signerVerifier(PublicKey signerKey) throws OperatorCreationException {
+        return new JcaSimpleSignerInfoVerifierBuilder()
                 .setProvider(BouncyCastle.PROVIDER)
-                .build();
-        return new JcaSignerInfoVerifierBuilder(digests)
-                .setProvider(BouncyCastle.PROVIDER)
-                .build(signerCert.getPublicKey());
+                .build(signerKey);
     }
 }

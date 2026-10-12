@@ -204,10 +204,10 @@ class JwsJsonReadTest {
      */
     @Test
     void aProcessWideOverrideDoesNotReachTheWritersFactory() {
-        // EndpointResponse.JSON may have been built before this test runs, so
-        // it is checked to hold its own constraints rather than the shared
-        // default instance a new JsonFactory() takes.
-        assertNotSame(StreamWriteConstraints.defaults(), EndpointResponse.JSON.streamWriteConstraints());
+        // JsonFields.JSON may have been built before this test runs, so it is
+        // checked to hold its own constraints rather than the shared default
+        // instance a new JsonFactory() takes.
+        assertNotSame(StreamWriteConstraints.defaults(), JsonFields.JSON.streamWriteConstraints());
         StreamWriteConstraints.overrideDefaultStreamWriteConstraints(
                 StreamWriteConstraints.builder().maxNestingDepth(1).build());
         try {

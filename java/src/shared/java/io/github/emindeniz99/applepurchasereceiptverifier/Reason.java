@@ -44,9 +44,8 @@ public enum Reason {
     UNREADABLE_PAYLOAD,
     /**
      * The library itself failed before it could decide, for example a clock
-     * that threw, a runtime that cannot build the receipt signer's chain, or
-     * a PKIX validator that rejects the pinned anchors. {@link Failure#cause()}
-     * carries the exception. Deterministic for the same input: alert, do not retry.
+     * that threw. {@link Failure#cause()} carries the exception. Deterministic
+     * for the same input: alert, do not retry.
      */
     INTERNAL_ERROR
 }

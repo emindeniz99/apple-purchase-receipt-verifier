@@ -26,9 +26,10 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * The two real jars on one classpath, in both orders: {@code Verifier.create}
- * throws the guard's {@link IllegalStateException} whichever jar's classes
- * load first. Also checks that this artifact keeps the main artifact's
+ * The two real jars on one classpath, in both orders. With this jar first,
+ * {@code Verifier.create} throws the guard's {@link IllegalStateException};
+ * with the main jar first, the main artifact's own classes answer, since it
+ * has no guard. Also checks that this artifact keeps the main artifact's
  * public API: every public type, constructor, method and field of the main
  * jar exists here with the same signature.
  *
@@ -90,22 +91,30 @@ class ClasspathGuardJarsIT {
     }
 
     @Test
-    void bothJarsOnOneClasspathFailAtCreateInEitherOrder() throws Exception {
-        Path main = mainJar();
-        Path wasm = wasmJar();
-        for (Path[] order : new Path[][] {{main, wasm}, {wasm, main}}) {
-            try (URLClassLoader loader = loader(order)) {
-                Class<?> config = loader.loadClass(PACKAGE + ".Config");
-                Class<?> verifier = loader.loadClass(PACKAGE + ".Verifier");
-                Object defaults = config.getMethod("defaults").invoke(null);
-                Method create = verifier.getMethod("create", config);
-                InvocationTargetException e =
-                        assertThrows(InvocationTargetException.class, () -> create.invoke(null, defaults));
-                Throwable cause = e.getCause();
-                assertTrue(cause instanceof IllegalStateException, String.valueOf(cause));
-                assertTrue(cause.getMessage().contains("Depend on exactly one"), cause.getMessage());
-                System.out.println("classpath guard (" + order[0].getFileName() + " first): " + cause.getMessage());
-            }
+    void bothJarsWithThisOneFirstFailAtCreate() throws Exception {
+        try (URLClassLoader loader = loader(wasmJar(), mainJar())) {
+            Class<?> config = loader.loadClass(PACKAGE + ".Config");
+            Class<?> verifier = loader.loadClass(PACKAGE + ".Verifier");
+            Object defaults = config.getMethod("defaults").invoke(null);
+            Method create = verifier.getMethod("create", config);
+            InvocationTargetException e =
+                    assertThrows(InvocationTargetException.class, () -> create.invoke(null, defaults));
+            Throwable cause = e.getCause();
+            assertTrue(cause instanceof IllegalStateException, String.valueOf(cause));
+            assertTrue(cause.getMessage().contains("Depend on exactly one"), cause.getMessage());
+            System.out.println("classpath guard (wasm jar first): " + cause.getMessage());
+        }
+    }
+
+    /** The half the guard cannot cover: the main artifact does not look for this one. */
+    @Test
+    void bothJarsWithTheMainOneFirstRunTheMainArtifact() throws Exception {
+        try (URLClassLoader loader = loader(mainJar(), wasmJar())) {
+            Class<?> config = loader.loadClass(PACKAGE + ".Config");
+            Object verifier = loader.loadClass(PACKAGE + ".Verifier")
+                    .getMethod("create", config)
+                    .invoke(null, config.getMethod("defaults").invoke(null));
+            assertEquals(PACKAGE + ".DefaultVerifier", verifier.getClass().getName());
         }
     }
 

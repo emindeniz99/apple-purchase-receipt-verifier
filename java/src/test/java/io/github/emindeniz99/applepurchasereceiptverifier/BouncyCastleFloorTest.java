@@ -59,6 +59,7 @@ class BouncyCastleFloorTest {
             release(1.85, "1.85"),
             release(1.8502, "1.85.2"),
             reporting(1.85, "no release named here"),
+            reporting(1.86, "no release named here"),
         };
         for (Provider provider : old) {
             IllegalStateException e =
@@ -80,7 +81,6 @@ class BouncyCastleFloorTest {
             release(1.87, "1.87"),
             release(1.1, "1.100"),
             release(2.0, "2.0"),
-            reporting(1.86, "no release named here"),
         };
         for (Provider provider : current) {
             DefaultVerifier.requireBouncyCastle(provider);

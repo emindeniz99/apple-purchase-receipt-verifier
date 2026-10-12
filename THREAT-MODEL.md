@@ -728,9 +728,11 @@ the core's bounds are what keep every call short (§3.7). Only
 
 - **Two Java artifacts, one class name each.** The main artifact is the
   independent implementation; `-wasm` runs the module. They expose the same
-  class names, so each ships a marker resource and fails fast when it finds
-  both on the classpath, and the Gradle metadata declares a capability
-  conflict: a consumer never runs one believing it runs the other.
+  class names. The `-wasm` artifact's `Verifier.create` fails fast when it
+  finds the main artifact's classes beside it, and the Gradle metadata
+  declares a capability conflict. The main artifact does not look, so a
+  Maven build that declares both and loads the main classes first runs
+  the main artifact; both verify against the same pinned roots.
 - **No configuration from the environment.** The Java libraries read no
   system property and no environment variable of their own, so nothing
   outside the code can switch the engine or point it at another binary.

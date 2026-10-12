@@ -4,10 +4,11 @@
 #
 #   java-wasm/scripts/classpath-guard.sh      from any directory
 #
-# 1. Maven: both real jars in one class loader, in both orders, make
-#    Verifier.create throw the guard's IllegalStateException; each alone
-#    gets past it; every public member of the main jar exists in the -wasm
-#    jar (the classpath-guard profile's ClasspathGuardJarsIT).
+# 1. Maven: both real jars in one class loader, the -wasm jar first, make
+#    Verifier.create throw the guard's IllegalStateException (with the main
+#    jar first, its own classes answer: the main artifact has no guard);
+#    each alone gets past it; every public member of the main jar exists in
+#    the -wasm jar (the classpath-guard profile's ClasspathGuardJarsIT).
 # 2. Gradle: both artifacts deployed to a file repository, and a build that
 #    asks for both must fail at resolution on their shared capability
 #    (java-wasm/src/it/gradle-capability).
@@ -40,4 +41,4 @@ if ! grep -q "apple-purchase-receipt-verifier" "$work/gradle.txt" || ! grep -qi 
   echo "classpath-guard: Gradle failed, but not on the capability conflict" >&2
   exit 1
 fi
-echo "classpath-guard: both jars on one classpath fail, and Gradle refuses both"
+echo "classpath-guard: the -wasm jar refuses the main jar beside it, and Gradle refuses both"

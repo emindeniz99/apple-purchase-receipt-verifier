@@ -32,8 +32,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -580,78 +578,6 @@ class VerifierApiTest {
         assertEquals(21199, AppleStatus.INTERNAL_DATA_ACCESS_ERROR_RANGE_LAST);
     }
 
-    /** Version.CURRENT and the pom move together (release-please bumps both). */
-    @Test
-    void theVersionConstantIsThePomVersion() throws Exception {
-        String pom = new String(Files.readAllBytes(Paths.get("pom.xml")), StandardCharsets.UTF_8);
-        Matcher version = Pattern.compile(
-                        "<artifactId>apple-purchase-receipt-verifier</artifactId>\\s*<version>([^<]+)</version>")
-                .matcher(pom);
-        assertTrue(version.find(), "no project version in pom.xml");
-        assertEquals(version.group(1), Version.CURRENT);
-    }
-
-    /**
-     * Static state built on first use (the Jackson factories and their 2.16
-     * check, the BouncyCastle provider) is built by Verifier.create, so a dependency
-     * below its floor fails there and not inside a verify method documented
-     * never to throw.
-     */
-    @Test
-    void aClassWhoseStaticStateFailsFailsConstructionWithTheDependencyFloor() {
-        Runnable broken = () -> assertEquals(0, BrokenStaticState.VALUE);
-        IllegalStateException first =
-                assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
-        assertTrue(first.getCause() instanceof ExceptionInInitializerError, String.valueOf(first.getCause()));
-        assertTrue(first.getMessage().contains("jackson-core 2.16"), first.getMessage());
-        // The floors are a guess; the real error is named, since it may be
-        // something else, such as a JRE whose tzdb lacks the Pacific zone.
-        assertTrue(first.getMessage().contains(ExceptionInInitializerError.class.getName()), first.getMessage());
-        assertTrue(first.getMessage().contains("as a missing Jackson method would"), first.getMessage());
-        // A second attempt meets the class already failed, which is a
-        // NoClassDefFoundError: reported the same way.
-        IllegalStateException second =
-                assertThrows(IllegalStateException.class, () -> DefaultVerifier.initialise(broken));
-        assertTrue(second.getCause() instanceof NoClassDefFoundError, String.valueOf(second.getCause()));
-        // The real classes initialise.
-        assertNotNull(Verifier.create(Config.defaults()));
-    }
-
-    /**
-     * The decoders catch only RuntimeException, so a BouncyCastle class they
-     * link against that is missing from an older jar (ASN1UTF8String and
-     * ASN1IA5String arrived in bcprov 1.70) would throw a LinkageError out of
-     * verifyReceipt, which must not throw. Verifier.create loads each of them
-     * first, so the old jar fails there instead. A jar that links but is
-     * older than 1.86 is refused by version (BouncyCastleFloorTest). A
-     * missing bcutil is caught by an initialiser, not a class literal:
-     * createFailsWithoutBcutil.
-     */
-    @Test
-    void theStaticStateLoadsEveryBouncyCastleClassTheDecodersName() throws Exception {
-        String dir = "src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/";
-        String verifier =
-                new String(Files.readAllBytes(Paths.get(dir, "DefaultVerifier.java")), StandardCharsets.UTF_8);
-        Matcher body =
-                Pattern.compile("void buildStaticState\\(\\) \\{([^}]*)}").matcher(verifier);
-        assertTrue(body.find(), "no buildStaticState in DefaultVerifier.java");
-        Pattern bouncyCastleImport = Pattern.compile("(?m)^import (org\\.bouncycastle\\.[\\w.]*\\.(\\w+));$");
-        int scanned = 0;
-        for (String decoder : Arrays.asList("ReceiptDecoder.java", "JwsCore.java")) {
-            String code = new String(Files.readAllBytes(Paths.get(dir, decoder)), StandardCharsets.UTF_8);
-            Matcher imported = bouncyCastleImport.matcher(code);
-            while (imported.find()) {
-                scanned++;
-                assertTrue(
-                        verifier.contains("import " + imported.group(1) + ";")
-                                && body.group(1).contains("requireNonNull(" + imported.group(2) + ".class);"),
-                        decoder + " links against " + imported.group(1)
-                                + ", which buildStaticState does not load, so an old bcprov fails a verify call");
-            }
-        }
-        assertTrue(scanned > 0, "no BouncyCastle import was found, so the check above scanned nothing");
-    }
-
     /**
      * Nothing create names lives in bcutil, so without that jar create used
      * to succeed and every verifyReceipt threw NoClassDefFoundError out of
@@ -761,15 +687,6 @@ class VerifierApiTest {
         assertNotNull(Verifier.create(off));
     }
 
-    /** Stands in for a class whose static initialiser meets a dependency below its floor. */
-    static final class BrokenStaticState {
-        static final int VALUE = fail();
-
-        private static int fail() {
-            throw new UnsupportedOperationException("as a missing Jackson method would");
-        }
-    }
-
     /**
      * Only the API types are public; the implementation is package-private.
      * The implementation side is every other top-level class compiled into
@@ -789,7 +706,6 @@ class VerifierApiTest {
                 InAppPurchase.class,
                 JsonPayload.class,
                 Environment.class,
-                Version.class,
                 AppleStatus.class);
         for (Class<?> type : api) {
             assertTrue(java.lang.reflect.Modifier.isPublic(type.getModifiers()), type.getName());

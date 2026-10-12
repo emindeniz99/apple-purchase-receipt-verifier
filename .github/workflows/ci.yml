@@ -2685,9 +2685,10 @@ jobs:
               -Dspring-boot.version="${CONSUMER#boot-}" -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
           fi
 
-  # Both Java artifacts on one classpath must fail fast, and a Gradle build
-  # that asks for both must fail at resolution (the capability conflict):
-  # java-wasm/scripts/classpath-guard.sh. Waits for java-wasm/pom.xml.
+  # The -wasm artifact's create must refuse the main jar on its classpath,
+  # and a Gradle build that asks for both must fail at resolution (the
+  # capability conflict): java-wasm/scripts/classpath-guard.sh. Waits for
+  # java-wasm/pom.xml.
   java-classpath-guard:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.java == 'true'
@@ -2711,7 +2712,7 @@ jobs:
         with:
           gradle-version: "9.7.1"
           cache-disabled: true
-      - name: both jars on one classpath fail; Gradle refuses both
+      - name: the -wasm jar refuses the main jar; Gradle refuses both
         run: java-wasm/scripts/classpath-guard.sh
 
   # The PHP package is a façade over the aprv binary (Phase 6): every PHP

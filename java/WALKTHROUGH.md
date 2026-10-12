@@ -391,7 +391,7 @@ The checks, in the order Java runs them:
 |---|---|---|---|
 | 1 | Non-empty, at most 3,145,728 UTF-8 bytes, before any decoding | Memory and CPU exhaustion | `MALFORMED`, `TOO_LARGE` |
 | 2 | Canonical padded base64 | Two decoders reading one string differently; Apple's own rule | `MALFORMED` |
-| 3 | Envelope: no trailing bytes, eContent present, 1 to 4 SignerInfos, all their attributes readable | Garbage, smuggled bytes, amplification | `MALFORMED` |
+| 3 | Envelope: no trailing bytes, eContent present, 1 to 4 SignerInfos | Garbage, smuggled bytes, amplification | `MALFORMED` |
 | 4 | Read attribute 12 from the unverified payload to pick the instant | Nothing: this never fails | none |
 | 5 | Decode the bag: at most 10 certificates, each decodes, no key read | Certificate flooding | `MALFORMED` |
 | 6 | Authenticate the bag top-down from the pinned roots (see "Why top-down" below) | Attacker keys being decoded or used | feeds step 7 |
@@ -432,8 +432,9 @@ chain whose signer also lacks a marker answers `INVALID_CERTIFICATE`.
 **Several SignerInfos.** Each signs the same content, so one that verifies
 is enough. Up to four are tried in order; the first that verifies decides,
 and when none does, the first one's failure is the verdict. A SignerInfo
-whose algorithm BouncyCastle does not implement counts as not verifying,
-and the next is tried, as RFC 4853 asks. Genuine receipts have one;
+whose algorithm BouncyCastle does not implement, or whose attributes do
+not parse, counts as not verifying, and the next is tried, as RFC 4853
+asks for an unimplemented algorithm. Genuine receipts have one;
 the rule keeps a future dual-signed receipt working.
 
 **Several certificates with the signer's identity.** Every certificate a
@@ -451,7 +452,7 @@ byte-identical copy only once; §4.2 has the renewal example this protects.
 | `INVALID_CERTIFICATE` | A certificate the check needs does not decode, or is outside its validity at the instant |
 | `INVALID_CERTIFICATE_PURPOSE` | Chains to a pinned root but lacks a marker OID |
 | `UNREADABLE_PAYLOAD` | Apple signed the payload, but it does not parse: a library gap or a new Apple format |
-| `INTERNAL_ERROR` | The library or runtime failed: a missing algorithm, a clock that throws |
+| `INTERNAL_ERROR` | The library or runtime failed, for example a clock that throws |
 
 The first six blame the input: deny. The last two do not: alert, do not
 retry (the result is deterministic), and do not deny a paying user on that
@@ -515,7 +516,7 @@ flowchart TD
     S["DefaultVerifier.verifyReceipt: read the clock once"] --> C1{"ReceiptCore.verify: empty, or over 3,145,728 bytes?"}
     C1 -->|yes| F1["MALFORMED or TOO_LARGE"]
     C1 -->|no| C2["StrictBase64.decode"]
-    C2 --> C3["verifySignature: parse envelope, eContent, 1 to 4 SignerInfos, read their attributes"]
+    C2 --> C3["verifySignature: parse envelope, eContent, 1 to 4 SignerInfos"]
     C3 --> C4["ReceiptDecoder.readCreationDate: instant is attribute 12, else the clock"]
     C4 --> C5["ReceiptCertificates.decode: at most 10, no keys read"]
     C5 --> C6["authenticatedTopDown: keep what a pinned root vouches for"]
@@ -566,8 +567,7 @@ Failures nobody anticipated:
 | Raised inside | Becomes |
 |---|---|
 | A `RuntimeException` in steps 4 to 6 (before trust) | `MALFORMED` |
-| A `RuntimeException` inside `validateChain` | `UNTRUSTED_CHAIN` |
-| A missing PKIX or CertStore implementation in `validateChain` | `INTERNAL_ERROR` |
+| A `RuntimeException` inside `validateChain`, or a missing PKIX or CertStore implementation | `UNTRUSTED_CHAIN` |
 | A `RuntimeException` inside `verifyCmsSignature` | `INVALID_SIGNATURE` |
 | A `RuntimeException` inside `parseSignedPayload` | `UNREADABLE_PAYLOAD` |
 | Any other `RuntimeException` in `verifyReceipt` | `INTERNAL_ERROR` |
@@ -690,8 +690,8 @@ Two costs to know:
   `StackOverflowError`, an `Error` outside the never-throws contract.
 
 **Startup checks.** `Verifier.create` (`DefaultVerifier`'s constructor)
-throws at deployment instead of failing per call: both Java artifacts on one
-classpath (`ClasspathGuard`), a Jackson or BouncyCastle that does not load,
+throws at deployment instead of failing per call: a Jackson or BouncyCastle
+that does not load,
 bcprov below 1.86, an ASN.1 nesting bound below 9, or an empty root set.
 Then the **runtime probe** (`probeRuntime`; off with
 `Config.builder().runtimeProbe(false)`) asks the provider for the SHA-256

@@ -137,8 +137,8 @@ where they overlap, they agree.
   `aprv-openssl` dependency line, `rust/openssl/Cargo.toml`,
   `dotnet/Directory.Build.props`, the `jvm-interop` and `java-bench` poms,
   the version in `java/README.md` and `java-wasm/README.md`) and each
-  package's version constant (Java `Version.java` in `java/` and in
-  `java-wasm/`, Python `version.py`, Ruby `version.rb`, Swift
+  package's version constant (Java `Version.java` in `java-wasm/`,
+  Python `version.py`, Ruby `version.rb`, Swift
   `Version.swift`, .NET `LibraryVersion.cs`, Go `version.go`), the generic
   ones found by their `x-release-please-version` marker. The crates that
   are never published (`aprv-surface`, `aprv-wire`, `aprv-abi`,

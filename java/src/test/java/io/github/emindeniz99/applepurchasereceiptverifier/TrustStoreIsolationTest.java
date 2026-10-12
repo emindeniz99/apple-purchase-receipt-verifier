@@ -533,10 +533,10 @@ class TrustStoreIsolationTest {
         }
         // Certificate factory, path builder, cert store, path validator,
         // ES256 signature and the root-pinning digest; the certificate
-        // converter and the CMS verifier builders.
+        // converter and the CMS verifier builder.
         assertTrue(probeGetsTheLibrarysProvider, "Verifier.create no longer probes BouncyCastle.PROVIDER");
         assertTrue(lookups >= 6, "only " + lookups + " JCA lookups were found, so the scan is not reading the code");
-        assertTrue(builders >= 3, "only " + builders + " JCA builders were found, so the scan is not reading the code");
+        assertTrue(builders >= 2, "only " + builders + " JCA builders were found, so the scan is not reading the code");
     }
 
     /** The JCA engine classes a {@code getInstance} lookup can resolve through the provider list. */
