@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
@@ -24,9 +25,11 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 /**
@@ -51,10 +54,18 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
  *       ECDSA P-256 signer, with a SHA-384 digest and with RSA-PSS; each
  *       verifies (owner Q15, change 3), and one with a flipped content byte is
  *       INVALID_SIGNATURE.</li>
+ *   <li><b>DoS under an end-entity certificate (T5).</b> A developer-style
+ *       end-entity certificate under the pinned root, whose key the attacker
+ *       holds, signs three CA certificates carrying 16384-bit moduli, and one
+ *       more certificate names them as its issuer. The end entity vouches for
+ *       nothing, so a walk that lets only a CA vouch never decodes those keys,
+ *       and the receipt fails the purpose check, its signer lacking the
+ *       receipt-signing marker (owner Q122 a).</li>
  * </ul>
  *
- * <p>Two roots are emitted: {@code hardening-jws-root.der} for T1 and
- * {@code hardening-receipt-root.der} for T2, T3 and T4.</p>
+ * <p>Three roots are emitted: {@code hardening-jws-root.der} for T1,
+ * {@code hardening-receipt-root.der} for T2, T3 and T4, and
+ * {@code hardening-developer-root.der} for T5.</p>
  *
  * <p>A {@code main} like the other generators. Regenerate with:</p>
  *
@@ -89,6 +100,13 @@ public final class HardeningParityFixtures {
 
     /** Smaller keys for the multi-certificate cases, where the verifies add up. */
     private static final int DOS_MULTI_BITS = 65536;
+
+    /**
+     * The largest modulus BouncyCastle validates rather than refuses for its
+     * size ({@code org.bouncycastle.rsa.max_size}); the primality test on it
+     * costs one to two seconds.
+     */
+    private static final int DOS_VALIDATED_BITS = 16384;
 
     private static final byte[] GUID = {
         0x11,
@@ -125,6 +143,7 @@ public final class HardeningParityFixtures {
         writeJwsDos(out);
         writeReceiptDos(out);
         writeSignerAlgorithms(out);
+        writeEndEntityDos(out);
     }
 
     // --- T1: oversized key in an untrusted x5c[1] ------------------------
@@ -150,7 +169,13 @@ public final class HardeningParityFixtures {
         // key. A top-down check verifies it against the root's key, which
         // fails, without ever touching this modulus.
         X509CertificateHolder hugeIntermediate = hugeKeyCertificate(
-                DOS_SINGLE_BITS, "CN=Hardening JWS WWDR", "CN=Hardening JWS Root", INTERMEDIATE_OID, nb, na);
+                DOS_SINGLE_BITS,
+                "CN=Hardening JWS WWDR",
+                "CN=Hardening JWS Root",
+                INTERMEDIATE_OID,
+                attacker.getPrivate(),
+                nb,
+                na);
         // x5c[0]: a normal leaf claiming that intermediate as issuer, attacker
         // signed, with the leaf marker so a broken implementation reaches the chain.
         KeyPair leafKp = ec();
@@ -229,6 +254,7 @@ public final class HardeningParityFixtures {
                     "CN=Hardening Receipt WWDR",
                     "CN=Hardening Receipt Root",
                     INTERMEDIATE_OID,
+                    attacker.getPrivate(),
                     nb,
                     na));
         }
@@ -262,6 +288,7 @@ public final class HardeningParityFixtures {
                     "CN=Hardening Receipt WWDR",
                     "CN=Hardening Receipt Root",
                     INTERMEDIATE_OID,
+                    attacker.getPrivate(),
                     nb,
                     na));
         }
@@ -334,6 +361,85 @@ public final class HardeningParityFixtures {
                 payload, new Date(SIGNED_DATE), signerKp.getPrivate(), cmsAlgorithm, signer, embedded);
     }
 
+    // --- T5: oversized keys under an end-entity certificate -------------
+
+    private void writeEndEntityDos(Path out) throws Exception {
+        Date nb = new Date(NOT_BEFORE);
+        Date na = new Date(NOT_AFTER);
+        KeyPair rootKp = rsa(2048);
+        X509Certificate root = TestPki.cert(
+                "CN=Hardening Developer Root",
+                rootKp,
+                "CN=Hardening Developer Root",
+                rootKp.getPrivate(),
+                true,
+                null,
+                nb,
+                na,
+                RSA);
+        KeyPair interKp = rsa(2048);
+        X509Certificate intermediate = TestPki.cert(
+                "CN=Hardening Developer WWDR",
+                interKp,
+                "CN=Hardening Developer Root",
+                rootKp.getPrivate(),
+                true,
+                INTERMEDIATE_OID,
+                nb,
+                na,
+                RSA);
+        write(out, "hardening-developer-root.der", root.getEncoded());
+
+        // The developer certificate: an end entity under the intermediate,
+        // with keyUsage digitalSignature as Apple's development certificates
+        // carry it, and no receipt-signing marker. Its key is the attacker's.
+        KeyPair developerKp = rsa(2048);
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                new X500Name("CN=Hardening Developer WWDR"),
+                new BigInteger(64, RANDOM),
+                nb,
+                na,
+                new X500Name("CN=Hardening Developer"),
+                developerKp.getPublic());
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+        builder.addExtension(Extension.keyUsage, true, new KeyUsage(KeyUsage.digitalSignature));
+        X509CertificateHolder developer = builder.build(new JcaContentSignerBuilder(RSA).build(interKp.getPrivate()));
+
+        List<X509CertificateHolder> embedded = new ArrayList<X509CertificateHolder>();
+        embedded.add(new X509CertificateHolder(intermediate.getEncoded()));
+        embedded.add(developer);
+        // Three CAs the developer key signs, each with a modulus BouncyCastle
+        // validates as it decodes it.
+        for (int i = 0; i < 3; i++) {
+            embedded.add(hugeKeyCertificate(
+                    DOS_VALIDATED_BITS,
+                    "CN=Hardening Attacker CA",
+                    "CN=Hardening Developer",
+                    INTERMEDIATE_OID,
+                    developerKp.getPrivate(),
+                    nb,
+                    na));
+        }
+        // One certificate naming them as its issuer: checking it against
+        // each of them would decode each oversized key.
+        embedded.add(new X509CertificateHolder(TestPki.cert(
+                        "CN=Hardening Victim",
+                        rsa(2048),
+                        "CN=Hardening Attacker CA",
+                        developerKp.getPrivate(),
+                        false,
+                        null,
+                        nb,
+                        na,
+                        RSA)
+                .getEncoded()));
+        write(
+                out,
+                "receipt-oversized-keys-under-end-entity.der",
+                TestPki.signReceiptAs(
+                        payload(), new Date(SIGNED_DATE), developerKp.getPrivate(), RSA, developer, embedded));
+    }
+
     // --- helpers ---------------------------------------------------------
 
     private byte[] payload() throws Exception {
@@ -378,7 +484,8 @@ public final class HardeningParityFixtures {
     }
 
     private X509CertificateHolder hugeKeyCertificate(
-            int bits, String subject, String issuer, String markerOid, Date nb, Date na) throws Exception {
+            int bits, String subject, String issuer, String markerOid, PrivateKey signer, Date nb, Date na)
+            throws Exception {
         BigInteger modulus;
         do {
             modulus = new BigInteger(bits, RANDOM).setBit(bits - 1).setBit(0);
@@ -390,7 +497,7 @@ public final class HardeningParityFixtures {
                 new X500Name(issuer), new BigInteger(64, RANDOM), nb, na, new X500Name(subject), key);
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
         builder.addExtension(new ASN1ObjectIdentifier(markerOid), false, DERNull.INSTANCE);
-        return builder.build(new JcaContentSignerBuilder(RSA).build(attacker.getPrivate()));
+        return builder.build(new JcaContentSignerBuilder(RSA).build(signer));
     }
 
     private static String name(X509Certificate certificate) {
