@@ -1,7 +1,7 @@
 #![no_main]
 
-//! `Verifier::verify_receipt_endpoint`, the one entry point that takes a
-//! request body rather than a receipt: JSON read, `receipt-data`
+//! `Verifier::verify_receipt_endpoint_bytes`, the one entry point that
+//! takes a request body rather than a receipt: JSON read, `receipt-data`
 //! extraction, the receipt-base64 rule, then the DER path. Its contract is
 //! that every body (any bytes at all) gets Apple's response body back, a
 //! JSON object whose first member is `status`, which is what is asserted
@@ -17,10 +17,7 @@ fn verifier() -> &'static Verifier {
 }
 
 fuzz_target!(|data: &[u8]| {
-    let Ok(body) = std::str::from_utf8(data) else {
-        return;
-    };
-    let response = verifier().verify_receipt_endpoint(Environment::Sandbox, body);
+    let response = verifier().verify_receipt_endpoint_bytes(Environment::Sandbox, data);
     assert!(
         response.starts_with("{\"status\":") && response.ends_with('}'),
         "the endpoint answers with a status: {response}"
