@@ -38,7 +38,21 @@ jobs:
           echo diag > diag.txt
           gh release create "$stamp-gh" diag.txt --target "$SHA" --prerelease --latest=false --title "$stamp gh" --notes diag; echo "exit $?"
           echo "::endgroup::"
+          echo "::group::5 gh release create targeting the v0.11.1 commit (the corpus run's target)"
+          gh release create "$stamp-old" diag.txt --target a5676485b62cc6623e434e115fc638f092cf153d --prerelease --latest=false --title "$stamp old" --notes diag; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::6 gh release create named corpus-diag-* at head"
+          gh release create "corpus-diag-$stamp" diag.txt --target "$SHA" --prerelease --latest=false --title "$stamp corpus" --notes diag; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::7 gh release create with --notes-file"
+          echo notes > README.md
+          gh release create "$stamp-nf" diag.txt --target "$SHA" --prerelease --latest=false --title "$stamp nf" --notes-file README.md; echo "exit $?"
+          echo "::endgroup::"
           echo "::group::cleanup"
+          for t in "$stamp-old" "corpus-diag-$stamp" "$stamp-nf"; do gh release delete "$t" --yes --cleanup-tag 2>&1 || true; done
+          # Leftovers of the first run, which stopped before its cleanup.
+          gh api -X DELETE "repos/$GH_REPO/releases/410955459" 2>&1 || true
+          gh api -X DELETE "repos/$GH_REPO/git/refs/tags/diag-20261012200007-ref" 2>&1 || true
           for f in draft-id.txt rel-id.txt; do id=$(cat "$f" 2>/dev/null || true); [ -n "$id" ] && gh api -X DELETE "repos/$GH_REPO/releases/$id" && echo "deleted release $id"; done
           gh release delete "$stamp-gh" --yes --cleanup-tag 2>&1 || true
           for t in "$stamp-ref" "$stamp-rel"; do gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$t" 2>&1 && echo "deleted tag $t" || true; done
