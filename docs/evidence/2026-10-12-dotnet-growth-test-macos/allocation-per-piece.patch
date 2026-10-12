@@ -1,0 +1,15 @@
+diff --git a/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs b/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
+index 15a2d485..adee7c68 100644
+--- a/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
++++ b/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
+@@ -198,6 +198,10 @@ public class PlatformTests
+ 
+         int allocatedPerCall = (int)((GC.GetAllocatedBytesForCurrentThread() - allocatedBefore) / 100);
+ 
++        long a0 = GC.GetAllocatedBytesForCurrentThread();
++        for (int i = 0; i < 1000; i++) verifier.Pool.Return(verifier.Pool.Rent());
++        long rentReturnPerCall = (GC.GetAllocatedBytesForCurrentThread() - a0) / 1000;
++        System.IO.File.AppendAllText(Environment.GetEnvironmentVariable("Q119_OBS") ?? "/dev/null", $"{System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} whole path allocates {allocatedPerCall} B per call, take and return allocates {rentReturnPerCall} B per call\n");
+         Measured alloc = Marginal(() => Churn(allocatedPerCall));
+         double control = Math.Max(alloc.BytesPerCall, 0);
+ 

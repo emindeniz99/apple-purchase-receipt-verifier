@@ -1,0 +1,24 @@
+--- a/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
++++ b/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
+@@ -130,6 +130,8 @@
+     /// </summary>
+     private const int LiveSetBudgetPerVerification = 128;
+ 
++    private static readonly List<byte[]> InjectedLeak = new();
++
+     /// <summary>The last object <see cref="Churn"/> made, so the allocations are not optimised away.</summary>
+     private static object? _churned;
+ 
+@@ -225,7 +227,11 @@
+         List<Measured> windows = new();
+         for (int window = 0; window < MeasuredWindows; window++)
+         {
+-            Measured wrapper = Marginal(() => verifier.VerifyReceipt(receipt));
++            Measured wrapper = Marginal(() =>
++            {
++                verifier.VerifyReceipt(receipt);
++                InjectedLeak.Add(new byte[232]); // a 256 B array kept per call, and its 8 B slot in the list
++            });
+             windows.Add(wrapper);
+             if (wrapper.BytesPerCall - control < LiveSetBudgetPerVerification
+                 || wrapper.MarkedBytesPerCall - markedControl < LiveSetBudgetPerVerification)

@@ -1,0 +1,8 @@
+total 0 .NET 8.0.31 window 0: 0.0 control 0.0 total-now 6614288 promoted-now 6597432
+total 0 .NET 10.0.12 window 0: 0.0 control 0.0 total-now 6591800 promoted-now 6574944
+total 256 .NET 8.0.31 window 0: 253.3 control 0.0 total-now 8599864 promoted-now 8583008
+total 256 .NET 10.0.12 window 0: 253.3 control 0.0 total-now 8575840 promoted-now 8558984
+promoted 0 .NET 8.0.31 window 0: 0.0 control 0.0 total-now 6615840 promoted-now 6598976
+promoted 0 .NET 10.0.12 window 0: 0.0 control 0.0 total-now 6591176 promoted-now 6574312
+promoted 256 .NET 8.0.31 window 0: 253.3 control 0.0 total-now 8599880 promoted-now 8583016
+promoted 256 .NET 10.0.12 window 0: 253.3 control 0.0 total-now 8576752 promoted-now 8559888
