@@ -28,7 +28,8 @@ tested with any modern JDK.
 
 Do not put this jar and `apple-purchase-receipt-verifier-wasm` on one
 classpath: they have the same class names, so whichever jar's classes load
-first answers.
+first answers. The `-wasm` jar's `Verifier.create` refuses to start when it
+sees this jar; this jar runs no such check.
 
 **On Spring Boot**, Boot's BOM decides your Jackson version, not this
 library. The floor is jackson-core 2.16 (see
@@ -1017,7 +1018,9 @@ it overwrites the committed files in `fixtures/generated/` or
 `fixtures/generated-0.7/` (and `fixtures/limits/`, for
 `ReceiptBase64CapFixture`) with files signed by fresh keys. That changes
 the `contentSha256` recorded in `cases.json`, so
-`ConformanceCasesTest` fails until those hashes are updated. The one test among them,
+`ConformanceCasesTest` fails until those hashes are updated;
+`node tools/lint-cases.mjs` names each drifted entry with its new hash
+(CONTRIBUTING.md, "Generating a fixture"). The one test among them,
 `FixtureGeneratorTest`, writes `fixtures/generated/` only with
 `-Dfixtures.generate=true`; without it the test is skipped, which is the
 one skip every `mvn test` reports. Two of the generator classes are also
