@@ -32,8 +32,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -580,17 +578,6 @@ class VerifierApiTest {
         assertEquals(21199, AppleStatus.INTERNAL_DATA_ACCESS_ERROR_RANGE_LAST);
     }
 
-    /** Version.CURRENT and the pom move together (release-please bumps both). */
-    @Test
-    void theVersionConstantIsThePomVersion() throws Exception {
-        String pom = new String(Files.readAllBytes(Paths.get("pom.xml")), StandardCharsets.UTF_8);
-        Matcher version = Pattern.compile(
-                        "<artifactId>apple-purchase-receipt-verifier</artifactId>\\s*<version>([^<]+)</version>")
-                .matcher(pom);
-        assertTrue(version.find(), "no project version in pom.xml");
-        assertEquals(version.group(1), Version.CURRENT);
-    }
-
     /**
      * Nothing create names lives in bcutil, so without that jar create used
      * to succeed and every verifyReceipt threw NoClassDefFoundError out of
@@ -719,7 +706,6 @@ class VerifierApiTest {
                 InAppPurchase.class,
                 JsonPayload.class,
                 Environment.class,
-                Version.class,
                 AppleStatus.class);
         for (Class<?> type : api) {
             assertTrue(java.lang.reflect.Modifier.isPublic(type.getModifiers()), type.getName());

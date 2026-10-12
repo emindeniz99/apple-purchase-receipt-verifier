@@ -1021,11 +1021,10 @@ use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
 fixtures directory. If either directory is missing, the tests that read it
 fail with one message that names the path expected and points here; they do
-not skip. Three tests read the build itself, relative to the
-working directory, and need adapting to another layout: `VerifierApiTest`
-compares `Version.CURRENT` with `pom.xml`, `BouncyCastleFloorTest` reads the
-`bouncycastle.version` pin in `pom.xml`, and `TrustStoreIsolationTest`
-scans `src/main/java` and `src/shared/java`.
+not skip. Two tests read the build itself, relative to the working
+directory, and need adapting to another layout: `BouncyCastleFloorTest`
+reads the `bouncycastle.version` pin in `pom.xml`, and
+`TrustStoreIsolationTest` scans `src/main/java` and `src/shared/java`.
 
 **The generators are not tests, and `mvn test` writes nothing.** The 28
 classes named `*Fixture` or `*Fixtures` (other than `TestFixtures`) are
