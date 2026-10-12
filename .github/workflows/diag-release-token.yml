@@ -48,12 +48,27 @@ jobs:
           echo notes > README.md
           gh release create "$stamp-nf" diag.txt --target "$SHA" --prerelease --latest=false --title "$stamp nf" --notes-file README.md; echo "exit $?"
           echo "::endgroup::"
+          echo "::group::8 target = the commit before v0.11.1 (no release on it)"
+          gh release create "$stamp-p8" diag.txt --target 6f415af95b65806d0d1eb695b0f52f14360fd100 --prerelease --latest=false --title "$stamp p8" --notes diag; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::9 target = corpus-2026-10-08's commit (has a prerelease)"
+          gh release create "$stamp-p9" diag.txt --target 90b498753f05ce4a3ce3c8c00c2b2d3f26a04708 --prerelease --latest=false --title "$stamp p9" --notes diag; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::10 target = main's parent commit"
+          gh release create "$stamp-p10" diag.txt --target 4171c5aaa7f695aa271e17f25a11a08fbc0bd2e5 --prerelease --latest=false --title "$stamp p10" --notes diag; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::11 target = branch name main"
+          gh release create "$stamp-p11" diag.txt --target main --prerelease --latest=false --title "$stamp p11" --notes diag; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::12 tag ref via git API at the v0.11.1 commit"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-p12" -f sha=a5676485b62cc6623e434e115fc638f092cf153d --jq '.ref'; echo "exit $?"
+          echo "::endgroup::"
           echo "::group::cleanup"
-          for t in "$stamp-old" "corpus-diag-$stamp" "$stamp-nf"; do gh release delete "$t" --yes --cleanup-tag 2>&1 || true; done
+          for t in "$stamp-old" "corpus-diag-$stamp" "$stamp-nf" "$stamp-p8" "$stamp-p9" "$stamp-p10" "$stamp-p11"; do gh release delete "$t" --yes --cleanup-tag 2>&1 || true; done
           # Leftovers of the first run, which stopped before its cleanup.
           gh api -X DELETE "repos/$GH_REPO/releases/410955459" 2>&1 || true
           gh api -X DELETE "repos/$GH_REPO/git/refs/tags/diag-20261012200007-ref" 2>&1 || true
           for f in draft-id.txt rel-id.txt; do id=$(cat "$f" 2>/dev/null || true); [ -n "$id" ] && gh api -X DELETE "repos/$GH_REPO/releases/$id" && echo "deleted release $id"; done
           gh release delete "$stamp-gh" --yes --cleanup-tag 2>&1 || true
-          for t in "$stamp-ref" "$stamp-rel"; do gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$t" 2>&1 && echo "deleted tag $t" || true; done
+          for t in "$stamp-ref" "$stamp-rel" "$stamp-p12"; do gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$t" 2>&1 && echo "deleted tag $t" || true; done
           echo "::endgroup::"
