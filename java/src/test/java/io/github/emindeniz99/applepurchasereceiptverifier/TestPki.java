@@ -245,12 +245,11 @@ public final class TestPki {
      * <em>self-issued</em> in the RFC 5280 sense, each signed by the one before
      * it under a fresh key).
      *
-     * <p>Both counts are what the path-length bound is measured in: the path
-     * below the anchor is {@code intermediates + selfIssuedTail + 1}
-     * certificates long. The self-issued tail exists because PKIX exempts
-     * exactly those certificates from {@code maxPathLength}, so it is the shape
-     * that tells whether an implementation bounds the path it actually built or only the
-     * intermediates the JDK agreed to count.</p>
+     * <p>The path below the anchor is {@code intermediates + selfIssuedTail + 1}
+     * certificates long. PKIX exempts self-issued certificates from
+     * {@code maxPathLength}, so a tail lengthens the path without counting
+     * against the builder's bound; the tests use both shapes to pin how long
+     * a path BouncyCastle's builder returns.</p>
      */
     static TestPki deepReceipt(int intermediates, int selfIssuedTail) throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
@@ -330,8 +329,8 @@ public final class TestPki {
      * accepted certificate of its issuer's name and key reaches the signer
      * through the expired copy, in two rounds. A path builder judges dates,
      * so it backtracks off that copy and returns the long path through the
-     * current one: the shape that tells whether an implementation bounds the path it
-     * built or only the rounds of its walk.</p>
+     * current one: a walk that reaches the signer early must still let the
+     * builder find the longer valid path.</p>
      */
     static TestPki crossCertifiedReceipt(int intermediates) throws Exception {
         return crossCertifiedReceipt(intermediates, CrossDefect.NONE);
@@ -990,7 +989,7 @@ public final class TestPki {
             attrs.add(attr(12, new DERIA5String(creationDate).getEncoded()));
         }
         attrs.add(attr(19, new DERUTF8String("1.0").getEncoded()));
-        attrs.add(attr(9999, new byte[] {1, 2, 3})); // unknown attr for D10 tests
+        attrs.add(attr(9999, new byte[] {1, 2, 3})); // an attribute type the decoder keeps raw
         if (extraAttributeType != null) {
             attrs.add(attr(extraAttributeType, extraAttributeValue));
         }
@@ -1077,7 +1076,7 @@ public final class TestPki {
         return new DEROctetString(payload).getEncoded();
     }
 
-    /** The device hash a genuine receipt would carry for this GUID (PLAN §2.2 step 5). */
+    /** The device hash a genuine receipt would carry for this GUID: SHA-1 of GUID, opaque value, bundle id. */
     static byte[] deviceHash(byte[] guid, byte[] opaque, String bundleId) throws Exception {
         MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
         sha1.update(guid);

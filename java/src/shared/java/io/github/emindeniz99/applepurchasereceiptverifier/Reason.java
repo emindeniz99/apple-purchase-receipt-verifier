@@ -20,7 +20,10 @@ public enum Reason {
     TOO_LARGE,
     /** The signature does not match the signed content. */
     INVALID_SIGNATURE,
-    /** The certificate chain does not reach a pinned root, or is longer than the chain-length bound. */
+    /**
+     * The certificate chain does not reach a pinned root, or reaches one only
+     * through more certificates than the verifier accepts.
+     */
     UNTRUSTED_CHAIN,
     /**
      * A certificate the check depends on does not decode, or is expired or

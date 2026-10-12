@@ -199,8 +199,7 @@ class ReceiptVerificationTest {
 
     @Test
     void returnsWhateverBundleIdAppleSignedWithoutJudgingIt() throws Exception {
-        // 0.6 took the caller's bundle id and refused any other. 0.7 takes
-        // none: a receipt for another app verifies and says which app it is
+        // The verifier takes no bundle id: a receipt for another app verifies and says which app it is
         // for, and comparing that is the caller's check.
         byte[] other = pki.signReceipt(payload("com.other.app", creationDate.toString()));
         assertEquals("com.other.app", verify(pki, other).bundleId());
@@ -288,8 +287,8 @@ class ReceiptVerificationTest {
         // ordering the tests above cannot see, since neither step decodes a
         // certificate. This bag is over the bound AND omits the signer, so the
         // guard where it is reports the bound, while a guard that runs after
-        // the lookup reports the missing signer instead. Both are MALFORMED
-        // since 0.7, so the message tells them apart.
+        // the lookup reports the missing signer instead. Both are MALFORMED,
+        // so the message tells them apart.
         byte[] flooded = pki.signReceiptOmittingSigner(payload(BUNDLE, creationDate.toString()), 11);
         VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, flooded));
         assertEquals(Reason.MALFORMED, e.reason());
@@ -332,8 +331,8 @@ class ReceiptVerificationTest {
         // Seven certificates below the anchor, each signed by the one above
         // under the pinned root and valid at the instant. The walk has no
         // round bound, and BouncyCastle 1.86 returns a path of seven, so the
-        // receipt verifies (Q120 a, 2026-10-12). The core refuses it on its
-        // own six-certificate bound (DECISIONS.md R20).
+        // receipt verifies: every link is signed under the pinned root, so
+        // the length alone refuses nothing.
         TestPki deep = TestPki.deepReceipt(6, 0);
         byte[] seven = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         assertEquals(BUNDLE, verify(deep, seven).bundleId());
@@ -344,8 +343,7 @@ class ReceiptVerificationTest {
         // The same seven certificates below the anchor, except that the last
         // CA repeats its issuer's subject name under a fresh key. The walk
         // reaches the signer in seven rounds and the builder returns the
-        // path, so the receipt verifies like the one above (Q120 a,
-        // 2026-10-12).
+        // path, so the receipt verifies like the one above.
         TestPki deep = TestPki.deepReceipt(5, 1);
         byte[] seven = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         assertEquals(BUNDLE, verify(deep, seven).bundleId());
@@ -375,7 +373,7 @@ class ReceiptVerificationTest {
         // seven certificates below the anchor, which BouncyCastle 1.86 still
         // returns under the JDK's default maxPathLength of 5. Every certificate
         // on the long path is signed under the pinned root and valid at the
-        // instant, so the length alone refuses nothing (Q108 a, 2026-10-12).
+        // instant, so the length alone refuses nothing.
         TestPki seven = TestPki.crossCertifiedReceipt(5);
         byte[] longer = seven.signReceipt(payload(BUNDLE, creationDate.toString()));
         assertEquals(BUNDLE, verify(seven, longer).bundleId());
@@ -689,7 +687,8 @@ class ReceiptVerificationTest {
     }
 
     /**
-     * Validity before the signature (owner, 2026-09-27, Q22): a receipt whose
+     * Validity is part of the chain check, which runs before the signature:
+     * a receipt whose
      * chain is outside its window at the creation date is INVALID_CERTIFICATE
      * even when its signature is also broken.
      */
@@ -762,8 +761,8 @@ class ReceiptVerificationTest {
 
     @Test
     void rejectsAnIntermediateWithoutTheWwdrMarker() throws Exception {
-        // New in 0.7: the receipt path checks the intermediate's marker as the
-        // JWS path always has. Everything else about this chain is valid.
+        // The receipt path checks the intermediate's marker as the JWS path
+        // does. Everything else about this chain is valid.
         TestPki unmarked = TestPki.receipt(
                 new Date(System.currentTimeMillis() - 86_400_000L),
                 new Date(System.currentTimeMillis() + 86_400_000L),

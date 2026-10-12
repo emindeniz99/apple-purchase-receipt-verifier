@@ -302,7 +302,7 @@ class VerifyReceiptEndpointTest {
         }
     }
 
-    /** password and exclude-old-transactions are read and ignored, as in 0.6. */
+    /** password and exclude-old-transactions are read and ignored. */
     @Test
     void ignoresPasswordAndExcludeOldTransactions() throws Exception {
         String plain = respond(Environment.SANDBOX, request());
@@ -402,11 +402,10 @@ class VerifyReceiptEndpointTest {
     }
 
     /**
-     * A receipt carrying no creation date is judged against the config clock
-     * (design 0.7: the clock is read for the chain fallback and for
-     * request_date). A clock inside the expired chain's window accepts it;
-     * the system clock does not. 0.6 deliberately ignored an injected clock
-     * here; 0.7 reverses that on purpose.
+     * A receipt carrying no creation date is judged against the config clock,
+     * which is read for the chain fallback and for request_date. A clock
+     * inside the expired chain's window accepts it; the system clock does
+     * not.
      */
     @Test
     void theConfigClockJudgesADatelessReceiptsChain() throws Exception {

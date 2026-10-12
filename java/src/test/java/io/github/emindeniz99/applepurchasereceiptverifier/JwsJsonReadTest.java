@@ -22,9 +22,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link JwsCore} reads the JWS header and payload with jackson-core's
- * streaming parser. 0.6 read both into a databind tree and asked the tree,
- * so dropping databind is safe only if the streaming read reaches the same
- * answer for every segment: whether the header is a JSON object, its last
+ * streaming parser, which must reach the answer a jackson-databind tree
+ * read reaches for every segment: whether the header is a JSON object, its last
  * {@code alg} and {@code x5c}, whether the payload is a JSON object, and its
  * top-level {@code signedDate} under the tree's number conversions (a
  * fraction truncated, a number no long holds refused). Checked here against
@@ -37,8 +36,8 @@ class JwsJsonReadTest {
     private static final int CASES = 20_000;
 
     /**
-     * The 0.6 read: databind over the readers' factory,
-     * with the one rule 0.7 added: nothing but whitespace after the object.
+     * The reference read: databind over the readers' factory, with one rule
+     * added: nothing but whitespace after the object.
      * Without it {@code {"alg":"ES256"} x} is a header, and a payload with
      * text after its object returns verified with that text in it.
      */
@@ -291,11 +290,10 @@ class JwsJsonReadTest {
     }
 
     /**
-     * 0.6's instantClaim, on signedDate alone: 0.7 dropped the
-     * receiptCreationDate fallback. One deliberate difference first: 0.7
-     * returns the payload as text, so bytes that are not UTF-8 are
-     * unreadable even where 0.6's tree never reached them (after the
-     * object's closing brace).
+     * The tree's reading of signedDate alone; the receiptCreationDate
+     * fallback is not compared here. The payload is returned as text, so
+     * bytes that are not UTF-8 are unreadable even after the object's closing
+     * brace, where a tree read never reaches them.
      */
     private static String treePayload(byte[] bytes) {
         try {

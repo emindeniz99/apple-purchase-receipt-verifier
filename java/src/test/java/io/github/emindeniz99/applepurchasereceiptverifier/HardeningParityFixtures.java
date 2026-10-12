@@ -33,14 +33,14 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 /**
- * Writes the hardening-parity inputs the 0.7 shared cases add (the
+ * Writes the hardening-parity inputs of the shared cases (the
  * denial-of-service and signer-algorithm cases of fixtures/cases.json), into the
  * directory given as the first argument. Three groups:
  *
  * <ul>
  *   <li><b>DoS (T1, T2, T3).</b> Certificates carrying an oversized RSA
  *       modulus that no pinned root vouches for. A top-down chain check
- *       (#161) never parses such a key, so T1 and T2 fail as UNTRUSTED_CHAIN
+ *       never parses such a key, so T1 and T2 fail as UNTRUSTED_CHAIN
  *       and the genuine T3 verifies, all within the shared time budget; an
  *       implementation that decodes or verifies with the key first spends
  *       seconds. The keys are fabricated moduli with no small factor, as in
@@ -52,7 +52,8 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
  *       reaches the chain step rather than stopping at the purpose check.</li>
  *   <li><b>Signer algorithms (T4).</b> Receipts the receipt PKI signs with an
  *       ECDSA P-256 signer, with a SHA-384 digest and with RSA-PSS; each
- *       verifies (owner Q15, change 3), and one with a flipped content byte is
+ *       verifies, since a pinned signer may use any algorithm BouncyCastle
+ *       can verify, and one with a flipped content byte is
  *       INVALID_SIGNATURE.</li>
  *   <li><b>DoS under an end-entity certificate (T5).</b> A developer-style
  *       end-entity certificate under the pinned root, whose key the attacker
@@ -60,7 +61,7 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
  *       more certificate names them as its issuer. The end entity vouches for
  *       nothing, so a walk that lets only a CA vouch never decodes those keys,
  *       and the receipt fails the purpose check, its signer lacking the
- *       receipt-signing marker (owner Q122 a).</li>
+ *       receipt-signing marker.</li>
  * </ul>
  *
  * <p>Three roots are emitted: {@code hardening-jws-root.der} for T1,
@@ -264,8 +265,8 @@ public final class HardeningParityFixtures {
                 TestPki.signReceiptAs(payload, new Date(SIGNED_DATE), signerKp.getPrivate(), RSA, signer, t2));
 
         // T3: a genuine chain that verifies, padded with seven oversized
-        // strangers named like the intermediate. Q16: the strangers are
-        // ignored and the receipt verifies. Ten certificates, at the cap.
+        // strangers named like the intermediate. No pinned root vouches for
+        // the strangers, so they are ignored and the receipt verifies. Ten certificates, at the cap.
         KeyPair genuineSignerKp = rsa(2048);
         X509CertificateHolder genuineSigner = new X509CertificateHolder(TestPki.cert(
                         "CN=Hardening Receipt Signing",

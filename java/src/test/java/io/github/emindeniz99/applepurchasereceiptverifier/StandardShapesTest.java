@@ -12,8 +12,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Shapes the standards allow in an Apple-signed input, which Java used to
- * refuse (owner, Q69 and Q72, 2026-10-06). Each input is
+ * Shapes the standards allow in an Apple-signed input, so refusing one could
+ * refuse a genuine receipt or JWS. Each input is
  * genuine apart from the one shape, so the shape is the only thing that can
  * refuse it. The shared cases on {@link StandardShapeFixtures}' files pin
  * the same answers.
@@ -60,7 +60,7 @@ class StandardShapesTest {
     /**
      * RFC 5280 4.2.1.13 lets cRLDistributionPoints be critical. It only says
      * where a CRL is, and no revocation check is asked, so the chain
-     * validates (owner, Q72).
+     * validates.
      */
     @Test
     void aCriticalCrlDistributionPointsOnTheIntermediateVerifies() throws Exception {

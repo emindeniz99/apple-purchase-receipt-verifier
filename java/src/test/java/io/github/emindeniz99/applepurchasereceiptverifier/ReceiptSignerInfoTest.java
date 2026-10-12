@@ -152,10 +152,10 @@ class ReceiptSignerInfoTest {
     }
 
     /**
-     * Since 0.7 any SignerInfo that verifies under a pinned chain is enough,
-     * in either position: all of them sign the same content, so an extra
-     * signer cannot change what Apple signed. 0.6 checked only the first and
-     * failed this receipt when the stranger came first.
+     * Any SignerInfo that verifies under a pinned chain is enough, in either
+     * position: all of them sign the same content, so an extra signer cannot
+     * change what Apple signed. Checking only the first would fail this
+     * receipt when the stranger came first.
      */
     @Test
     void anyVerifyingSignerInfoIsEnoughInEitherPosition() throws Exception {
@@ -178,8 +178,8 @@ class ReceiptSignerInfoTest {
 
     /**
      * When no SignerInfo verifies, the first one's failure is the verdict,
-     * so a single-signer receipt fails exactly
-     * as it did in 0.6. The DL-ordered SET makes "first" the test's choice.
+     * so a single-signer receipt fails with its
+     * one SignerInfo's reason. The DL-ordered SET makes "first" the test's choice.
      */
     @Test
     void whenNoSignerInfoVerifiesTheFirstOnesFailureIsTheVerdict() throws Exception {

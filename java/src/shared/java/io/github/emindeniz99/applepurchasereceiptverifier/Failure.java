@@ -36,8 +36,8 @@ public final class Failure {
 
     /**
      * The exception behind the failure, when there is one, for logs. An
-     * {@link Reason#INTERNAL_ERROR} this library raised itself (a runtime
-     * failure, an answer it could not read, a clock that threw) carries one.
+     * {@link Reason#INTERNAL_ERROR} this library raised itself, for example
+     * for a clock that threw, carries one.
      * An {@link Reason#UNREADABLE_PAYLOAD} carries the
      * parser's exception when a parser threw one (not when the payload was
      * refused on its shape, for example a JWS payload that is not a JSON

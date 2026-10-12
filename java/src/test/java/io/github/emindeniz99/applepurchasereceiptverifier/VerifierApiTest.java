@@ -35,7 +35,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * The public 0.7 surface as a caller meets it: the never-throw contract and
+ * The public surface as a caller meets it: the never-throw contract and
  * its one exception, the result and failure types, the parse-before-signature
  * rule, the JSON value of {@link ReceiptPayload#toJson()}, the model
  * types' copy semantics, and the helpers.

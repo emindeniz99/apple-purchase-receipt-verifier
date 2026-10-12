@@ -271,8 +271,7 @@ final class ReceiptCore {
      * reach the path builder; see {@link AppleTrust}. The walk's work is
      * bounded by {@link ReceiptCertificates#MAX_EMBEDDED_CERTIFICATES}; the
      * path's length is the builder's business (BouncyCastle 1.86 refuses an
-     * eighth certificate below the anchor;
-     * docs/evidence/2026-10-12-java-path-length-bound.md).
+     * eighth certificate below the anchor).
      */
     private static List<X509Certificate> authenticatedTopDown(
             List<X509Certificate> embedded, Set<TrustAnchor> trustAnchors) {

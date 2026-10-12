@@ -11,9 +11,9 @@ import java.util.Date;
  * signed again in this JVM under a {@link TestPki} whose intermediate carries
  * Apple's WWDR marker.
  *
- * <p>0.7 checks that marker on the receipt path, and the receipts committed
- * under {@code fixtures/generated/} were generated before it, so every one of
- * them now fails as INVALID_CERTIFICATE_PURPOSE. Unit tests that need a
+ * <p>The receipt path checks that marker, and the receipts committed under
+ * {@code fixtures/generated/} lack it, so every one of them fails as
+ * INVALID_CERTIFICATE_PURPOSE. Unit tests that need a
  * receipt that verifies take it from here instead: the same payload and dates
  * as {@code FixtureGeneratorTest} writes, fresh keys, built once per JVM.</p>
  */

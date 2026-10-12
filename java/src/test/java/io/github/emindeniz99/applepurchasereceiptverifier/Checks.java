@@ -8,15 +8,15 @@ import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
 
 /**
- * Test shorthand over the public {@link Verifier}.
+ * Test shorthand over the public {@link Verifier}, and the helpers several
+ * tests share.
  *
  * <p>{@link #unwrap} turns a failed {@link VerificationResult} back into the
  * package's {@link VerificationException}, carrying the failure's reason,
- * message and cause. That keeps the security suites written against 0.6 in
- * their {@code assertThrows(...); assertEquals(Reason.X, e.reason())} shape,
- * so each migrated assertion still says exactly what it said before; only
- * the call it wraps changed. The public contract that nothing throws is
- * pinned separately, in {@code VerifierApiTest}.</p>
+ * message and cause, so a test can state a refusal as
+ * {@code assertThrows(...); assertEquals(Reason.X, e.reason())}. The public
+ * contract that nothing throws is pinned separately, in
+ * {@code VerifierApiTest}.</p>
  */
 final class Checks {
 

@@ -102,8 +102,8 @@ class SignedDataTest {
 
     @Test
     void returnsWhateverEnvironmentAndBundleIdAppleSignedWithoutJudgingThem() throws Exception {
-        // 0.6 took an accept set and a bundle id; 0.7 takes neither. What the
-        // payload says comes back, and the result states its environment.
+        // The verifier takes no accepted environments and no bundle id. What
+        // the payload says comes back, and the result states its environment.
         Map<String, Object> claims = transactionClaims("Production");
         claims.put("bundleId", "com.other.app");
         String jws = pki.signJws(claims);
@@ -209,8 +209,8 @@ class SignedDataTest {
     }
 
     /**
-     * The chain first, then the markers, as on the receipt path (owner,
-     * 2026-09-27, Q21): a chain that does not reach a pinned root is
+     * The chain first, then the markers, as on the receipt path: a chain
+     * that does not reach a pinned root is
      * UNTRUSTED_CHAIN whatever markers it lacks.
      */
     @Test
@@ -225,7 +225,8 @@ class SignedDataTest {
     }
 
     /**
-     * Validity before the signature (owner, 2026-09-27, Q22): a payload whose
+     * Validity is part of the chain check, which runs before the signature:
+     * a payload whose
      * chain is outside its window is INVALID_CERTIFICATE even when its
      * signature is also broken.
      */
@@ -262,7 +263,7 @@ class SignedDataTest {
         assertEquals(Reason.INVALID_CERTIFICATE, failure(expired, expired.signJws(transactionClaims("Sandbox"))));
     }
 
-    /** Freshness is the caller's decision (PLAN.md D5): an old payload still verifies. */
+    /** Freshness is the caller's decision: an old payload still verifies. */
     @Test
     void neverRejectsAPayloadForItsAge() throws Exception {
         Map<String, Object> claims = transactionClaims("Sandbox");
@@ -319,9 +320,8 @@ class SignedDataTest {
 
     @Test
     void returnsClaimsOfAnyType() throws Exception {
-        // No typed model in between: what 0.6 refused as INTERNAL_ERROR for a
-        // claim of the wrong type (a string quantity, a numeric product id)
-        // is now the caller's to read.
+        // No typed model in between: a claim of an unexpected type (a string
+        // quantity, a numeric product id) is the caller's to read.
         Map<String, Object> claims = TestPki.claims(
                 "bundleId",
                 "com.other.app",
@@ -382,8 +382,7 @@ class SignedDataTest {
     // ------------------------------------------------------------------ time
 
     /**
-     * Certificate validity is judged at the payload's signedDate (PLAN.md
-     * §2.1 step 4): a payload signed inside the window of a chain that has
+     * Certificate validity is judged at the payload's signedDate: a payload signed inside the window of a chain that has
      * since expired verifies, and one signed after it expired does not.
      */
     @Test
@@ -405,7 +404,7 @@ class SignedDataTest {
      * judged at the config clock: an expired chain fails under the system
      * clock and passes under a clock set inside its window. An app
      * transaction's {@code receiptCreationDate} stands in for a missing
-     * {@code signedDate}, as in Apple's library (owner Q67, 2026-10-06).
+     * {@code signedDate}, as in Apple's library.
      */
     @Test
     void aDatelessPayloadIsJudgedAtTheConfigClock() throws Exception {

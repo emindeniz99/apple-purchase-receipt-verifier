@@ -14,12 +14,14 @@ import org.jspecify.annotations.Nullable;
  *
  * <p><strong>No method throws for any input.</strong> A {@code null} or empty
  * input string fails as {@link Reason#MALFORMED}. An unexpected runtime
- * exception inside the library is reported by where it happened: before a
- * signature has verified as {@link Reason#MALFORMED}, while the signed
- * receipt content is decoded as {@link Reason#UNREADABLE_PAYLOAD}, and
- * anywhere else as {@link Reason#INTERNAL_ERROR}. Only JVM errors such as
- * {@link OutOfMemoryError} escape. The one exception: a
- * {@code null} {@link Environment} is a programming error and throws
+ * exception inside the library is reported by where it happened: anywhere in
+ * {@link #verifySignedData}, and in {@link #verifyReceipt} before the
+ * signature has verified, as {@link Reason#MALFORMED}; while the signed
+ * receipt content is decoded, as {@link Reason#UNREADABLE_PAYLOAD}; and
+ * outside those, as from a clock that throws, as
+ * {@link Reason#INTERNAL_ERROR}. Only JVM errors such as
+ * {@link OutOfMemoryError} escape. The exceptions: a {@code null}
+ * {@link Config} or {@link Environment} is a programming error and throws
  * {@link NullPointerException}.</p>
  */
 public interface Verifier {

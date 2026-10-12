@@ -54,9 +54,6 @@ ext['jackson-bom.version'] = '2.16.2'
 Every Boot line in open-source support, 4.0 and 4.1, already manages a
 newer Jackson 2 and needs nothing.
 
-Coming from 0.6? Read [Upgrading from 0.6](#upgrading-from-06): the API is
-smaller and every method name has changed.
-
 ## Quick start
 
 ```java
@@ -94,10 +91,11 @@ String responseJson = verifier.verifyReceiptEndpoint(Environment.PRODUCTION, req
 **No method throws for any input.** A `null` or empty `base64` / `jws` /
 `requestJson` is input and fails as `Reason.MALFORMED`, the same as a garbled
 one. An unexpected runtime exception inside the library is reported by where
-it happened: before a signature has verified it is `Reason.MALFORMED` (input
-nobody vouched for must not be able to raise the internal-error alarm at
-will), while the signed receipt content is decoded `Reason.UNREADABLE_PAYLOAD`,
-and anywhere else `Reason.INTERNAL_ERROR`. Only a JVM error escapes:
+it happened: anywhere in `verifySignedData`, and in `verifyReceipt` before the
+signature has verified, it is `Reason.MALFORMED` (input nobody vouched for
+must not be able to raise the internal-error alarm at will); while the signed
+receipt content is decoded, `Reason.UNREADABLE_PAYLOAD`; and outside those, as
+from a clock that throws, `Reason.INTERNAL_ERROR`. Only a JVM error escapes:
 `OutOfMemoryError`, or `StackOverflowError` on a thread whose stack is
 smaller than about 160 KB ([Resource bounds](#resource-bounds)).
 The one exception: a `null` `Environment` or `Config` is a programming
@@ -396,8 +394,7 @@ signed; there is no "is active" helper, so read `revocationDate()` and
 
 Two things to weigh before adding it: **Apple's library brings
 `jackson-databind` 2 with it**, which this library deliberately does not
-depend on any more (see [Upgrading from 0.6](#upgrading-from-06)); that
-dependency is your choice, not this library's. And **Apple's library needs
+depend on; that dependency is your choice, not this library's. And **Apple's library needs
 Java 11**, above this library's Java 8 floor, so it is only an option where
 your own consumer already runs 11 or later. Where it is not, declare your own
 struct or class for the claims you read and deserialise into that instead.
@@ -411,8 +408,7 @@ String responseJson = verifier.verifyReceiptEndpoint(Environment.PRODUCTION, req
 Input is a `verifyReceipt` request body, `{"receipt-data": "...", ...}`.
 Output is the response JSON Apple's endpoint for that environment would
 return, as a `String`, for every input, never a thrown exception. Apple's
-own `password` and `exclude-old-transactions` fields are read and ignored,
-as in 0.6.
+own `password` and `exclude-old-transactions` fields are read and ignored.
 Duplicate member names are last-wins: where this request body repeats
 `receipt-data`, a JWS header repeats `alg` or `x5c`, or a JWS payload
 repeats `signedDate` or `receiptCreationDate`, the last occurrence is the
@@ -446,11 +442,9 @@ mean Apple's own servers failed, and there is no remote server here to fail.
 saying which ones this endpoint can actually return, so you do not have to
 write `21007` by hand.
 
-There is no separate method to re-render a result for the other
-environment without a second verification, unlike 0.6's
-`VerifyReceiptResult.toJson(Environment)`: call `verifyReceiptEndpoint`
-again with the other `Environment`, or call `verifyReceipt` once yourself
-and decide with `receipt.environment()`.
+To answer for the other environment, call `verifyReceiptEndpoint` again
+with the other `Environment`, or call `verifyReceipt` once yourself and
+decide with `receipt.environment()`.
 
 ## The error vocabulary
 
@@ -519,9 +513,8 @@ anchor set: bump this library, or pass your own set through
 Revocation is not checked: no OCSP, no CRL. Offline verification is the
 point; Apple handles a compromised signing certificate by rotating it, and
 `INVALID_CERTIFICATE` is where a future revocation check would report a
-revoked certificate. See [THREAT-MODEL.md](../THREAT-MODEL.md) section 4,
-and use the App Store Server API for refunds, revocations and subscription
-state, none of which a signature can express.
+revoked certificate. Use the App Store Server API for refunds, revocations
+and subscription state, none of which a signature can express.
 
 ES256 signatures are accepted in both of their equivalent forms (low-S and
 high-S). The alternate form is the same key signing the same bytes, not a
@@ -543,8 +536,7 @@ it draws from the JVM's default `SecureRandom` for a primality check
 genuine receipt then answers `UNTRUSTED_CHAIN`, not `INTERNAL_ERROR`,
 because the failure surfaces as "no pinned root vouches for the
 signer". The runtime probe in `Verifier.create` decodes the bundled RSA
-roots' keys first, so on such a JVM `create` throws instead
-([measured](../docs/evidence/2026-10-05-java-bc-round3.md)).
+roots' keys first, so on such a JVM `create` throws instead.
 
 Why it matters: the genuine legacy Apple receipt chain is SHA-1 end to end
 (the leaf and the WWDR intermediate are both `sha1WithRSAEncryption`). RHEL
@@ -595,7 +587,7 @@ Fixed constants, not configurable, except the ASN.1 nesting bound (below
 the table) and BouncyCastle's other settings ([listed
 above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The three
 JSON bounds are jackson-core's default `StreamReadConstraints`, built into
-the library's own reader factories, so a process-wide
+the library's own reader factory, so a process-wide
 `StreamReadConstraints.overrideDefaultStreamReadConstraints` does not
 reach them; Jackson's string and document limits are above the size caps,
 so the caps are what bound a JSON document's length. The three
@@ -619,7 +611,7 @@ structure they bound is read:
 nested up to the bound needs stack: on OpenJDK 21 a SignerInfo
 `digestAlgorithm` nested 55 deep overflows a 152 KB stack and parses on
 160 KB, and a genuine receipt, a JWS and an endpoint call all complete on
-64 KB ([measured](../docs/evidence/2026-10-05-java-bc-round3.md)). The
+64 KB. The
 JVM's default is 1 MB. A host that gives its worker threads a small
 `-Xss` or `Thread` stack size should keep it at 256 KB or more, plus
 what its own framework's frames use; below that a hostile input ends
@@ -639,8 +631,7 @@ first, then a thread-local override, then the system property of that
 name. Its count depends
 on the shape by one: 65 nested SETs parse
 when the innermost is empty and are refused when it holds a value. A
-genuine Apple receipt nests 9 deep
-([measured](../docs/evidence/2026-10-04-java-bc-floor.md)): a host that
+genuine Apple receipt nests 9 deep: a host that
 sets the property below 9 would refuse every genuine receipt as
 `MALFORMED`, so `Verifier.create` parses a value nested 9 deep and throws
 `IllegalStateException` if BouncyCastle refuses it. A host that lowers
@@ -664,7 +655,7 @@ BouncyCastle 1.86; expect yours to differ by machine.
 known-good Apple-signed receipt and a known-good Apple-signed JWS at startup,
 and fail readiness unless both are `verified()`. Repeat every minute. The
 two receipts `receipt-sandbox-legacy.b64` and `receipt-sandbox-g5.b64` under
-[`fixtures/public-receipts/`](../fixtures/public-receipts/) chain to the real
+the repository's `fixtures/public-receipts/` chain to the real
 Apple roots and keep verifying, because validity is judged at their own
 signing date. The repository has no JWS signed by a real Apple root (the
 vendored Apple JWS fixtures are signed by a test CA), so keep one from your
@@ -695,9 +686,9 @@ step fails, as on a stripped JRE, a
 FIPS-mode JDK that refuses the provider or a corrupt jar, it throws
 `IllegalStateException`, so the deploy fails instead of the first
 request. `Config.builder().runtimeProbe(false)` turns the
-probe off; the bcprov version check and the nesting check stay on, since
-neither asks the provider for an engine. The only use we can name is a test
-setup that stands in a double for the crypto provider; with the probe off, a
+probe off and saves only its share of start-up time; the bcprov version check
+and the nesting check stay on, since neither asks the provider for an engine.
+With the probe off, a
 broken runtime shows up on the first call instead, as a refusal (see the
 self-test above), or as `UNTRUSTED_CHAIN` when what is
 broken is the default `SecureRandom`
@@ -717,11 +708,10 @@ whole attribute SET to find the receipt's creation date, the instant the
 chain is judged at, and BouncyCastle builds the full tree to do it. A
 cap-sized forgery built from many tiny attributes costs a few hundred
 milliseconds and 150 to 200 MB of allocation per call on one 4 vCPU
-machine ([measured](../docs/evidence/2026-10-04-java-bc-floor.md)); the
+machine; the
 CPU time scales with the host, the allocation less so. Size the heap
 against the concurrency limit: such a receipt adds about 66 MiB of peak
-heap per call in flight
-([measured](../docs/evidence/2026-10-05-java-presignature-parse-cost.md)),
+heap per call in flight,
 so a semaphore of 8 needs about 530 MiB of headroom above what the
 application itself uses. The body cap and the concurrency limit are what
 bound that, and they are the deployment's job.
@@ -753,10 +743,9 @@ the build fail on a violation rather than relying on review. See
 **Write down the residual risk.** Revocation is not checked, and the
 validity instant is the payload's own date. A leaked historical Apple leaf
 key would therefore verify a payload back-dated into that key's validity
-window. Apple's own libraries behave the same. Watch this repository's
-weekly [`apple-root-watch`](../.github/workflows/apple-root-watch.yml)
-workflow, which fails when Apple's published roots change, and own the root
-set in service config through `Config.builder().roots(...)` so a new root is
+window. Apple's own libraries behave the same. Watch Apple's published
+roots (https://www.apple.com/certificateauthority/) for a change, and own the
+root set in service config through `Config.builder().roots(...)` so a new root is
 a config change, not a dependency bump.
 
 **Prefer Java 17 or 21.** Java 8 is supported, but there
@@ -793,15 +782,6 @@ measurement over this suite, not a proof for every structure an attacker
 can build. These are warm-JVM figures; see
 [Running in production](#running-in-production) for the cold start. The
 machine was shared with other work, so treat them as an order of magnitude.
-For numbers on your own hardware, build as in
-[java-bench/README.md](../java-bench/README.md), then run
-
-```bash
-java -cp java-bench/target/benchmarks.jar \
-    io.github.emindeniz99.applepurchasereceiptverifier.bench.WorstCaseBenchmark
-java -jar java-bench/target/benchmarks.jar 'ReceiptBenchmark.(verifyReceipt|endpointJson)$' \
-    -p fixture=receipt-sandbox-legacy
-```
 
 ## Testing with synthetic receipts
 
@@ -812,15 +792,12 @@ a `ReceiptPayload` by hand, or replay a sandbox receipt from your own app
 Each payload type has one constructor containing all its fields. In
 `ReceiptPayload`, pass `preorderDateMs` after `originalPurchaseDateMs`; in
 `InAppPurchase`, pass `cancellationReason` after `cancellationDateMs`.
-Use `null` when the value is absent. The older constructor signatures
-without these fields have been removed: update hand-built payload calls
-and recompile code that uses them.
+Use `null` when the value is absent.
 
 For an end-to-end test, one that signs its own fake receipt or JWS and feeds
 it through a real `Verifier`, add the `tests` test-jar classifier this
 library publishes alongside the main jar. It ships `TestPki`, the same
-synthetic-PKI signer this library's own suite uses, and needs BouncyCastle
-at test scope to build and sign certificates with:
+synthetic-PKI signer this library's own suite uses:
 
 ```xml
 <dependency>
@@ -831,13 +808,14 @@ at test scope to build and sign certificates with:
   <type>test-jar</type>
   <scope>test</scope>
 </dependency>
-<dependency>
-  <groupId>org.bouncycastle</groupId>
-  <artifactId>bcpkix-jdk18on</artifactId>
-  <version>1.86</version>
-  <scope>test</scope>
-</dependency>
 ```
+
+`TestPki` builds and signs certificates with the BouncyCastle jars the main
+artifact already brings at compile scope, so declare nothing more. Do not
+add `bcpkix`, `bcprov` or `bcutil` at test scope "for the tests": Maven
+gives a dependency you declare directly the scope you declare, so the jar
+drops off your runtime classpath and the service fails at start-up in
+production (`Config.defaults()` or `Verifier.create` throws).
 
 `TestPki` is a public class in
 `io.github.emindeniz99.applepurchasereceiptverifier`; import it from any
@@ -893,48 +871,6 @@ VerificationResult<ReceiptPayload> result = verifier.verifyReceipt(receiptBase64
 This example is compile-checked against the built classes in
 `ReadmeSyntheticReceiptExampleTest`, in `src/test/java`.
 
-## Upgrading from 0.6
-
-0.6's three verifier classes, one checked exception and every policy
-parameter (bundle id, environment, device GUID, app Apple id) are gone. 0.7
-answers one question, did Apple sign this, so parameters that used to
-express a policy decision have no replacement: read the corresponding field
-from the verified payload and decide yourself (see
-[What to check after verification](#what-to-check-after-verification)).
-
-### Entry points
-
-| 0.6 | 0.7 |
-|---|---|
-| `receipt.ReceiptVerifier(roots, bundleId)`, `.verify(byte[]\|String[, deviceGuid])` | `Verifier.create(config).verifyReceipt(base64)`. No bundle id at construction, no bundle-id check, no device GUID parameter; do both yourself (checklist above, [device-hash example](#the-device-hash-example)) |
-| `receipt.ReceiptVerifier.verifyReceiptCore(byte[], roots)` (static) | No direct replacement. `verifyReceipt(base64)` already does chain, signature and decode with no bundle-id check; if you hold raw DER, base64-encode it first |
-| `jws.JwsVerifier(roots, bundleId, acceptedEnvironments[, appAppleId])`, `.verifyTransaction`, `.verifyAppTransaction`, `.verifyRaw` | `Verifier.create(config).verifySignedData(jws)` for all four JWS shapes. No bundle id, accepted-environment set or app Apple id at construction; check `bundleId`, `environment` and `appAppleId` in the returned `json()` yourself |
-| `receipt.VerifyReceiptEndpoint(roots, Environment[, Clock])`, `.verifyReceiptResult(String\|Map[, Instant])`, `.verifyReceiptJson(String[, Instant])`, `.verifyReceiptData(String[, Instant])` | `Verifier.create(config).verifyReceiptEndpoint(environment, requestJson)`. One method, one input shape (the JSON request body); the clock comes from `Config`, not a per-call `Instant` |
-| `AppleRootCerts.jwsRoots()`, `.receiptRoots()` (public) | Gone as public API; `Config.defaults()` uses the same bundled, pinned roots. `Config.builder().roots(...)` for a custom set |
-
-### Results and errors
-
-| 0.6 | 0.7 |
-|---|---|
-| `receipt.AppReceipt` | `ReceiptPayload`. Same attributes; dates are now `Long` epoch milliseconds everywhere (0.6 exposed receipt dates as `Instant`, JWS claim dates as `Long`; 0.7 is `Long` on both, see [Decoding a receipt](#decoding-a-receipt)) |
-| `jws.TransactionPayload`, `jws.AppTransactionPayload` (typed claim classes) | Gone. `JsonPayload.json()` is the raw signed payload; deserialise it yourself, see [Deserialising a JWS payload into a typed model](#deserialising-a-jws-payload-into-a-typed-model) |
-| `receipt.VerifyReceiptResult` (`status()`, `receipt()`, `failureReason()`, `toResponse()`, `toJson()`, `toJson(Environment)`) | Gone. `verifyReceiptEndpoint` returns the rendered JSON `String` directly; there is no cost-free re-render for the other environment, call it again |
-| `VerificationException` (checked), `.reason()`, `.getCause()` | Gone. `VerificationResult<T>.verified()` / `.payload()` / `.failure()`; `Failure.reason()` / `.message()` / `.cause()`. No method throws for a rejected input |
-| `VerificationException.Reason` (eleven values) | `Reason` (eight values). See the mapping below |
-| `VerifyReceiptEndpoint.STATUS_*` constants | `AppleStatus` constants, with the full set Apple documents (not just the ones this library returns) |
-| `Environment.PRODUCTION`, `.SANDBOX`, `.XCODE`, `.LOCAL_TESTING`; `.fromValue(String)` | `Environment.PRODUCTION`, `.SANDBOX` only. `XCODE` and `LOCAL_TESTING` only ever named a JWS `environment` string; such a payload is never Apple-signed and always failed the chain check regardless of what `acceptedEnvironments` allowed. `fromValue` is gone: `ReceiptPayload.environment()` and `JsonPayload.environment()` state the environment the verifier read (0.8; 0.7 had the helpers `Environment.fromReceiptType(String)` and `Environment.fromJwsEnvironment(String)`) |
-
-### `Reason` mapping
-
-| 0.6 `VerificationException.Reason` | 0.7 `Reason` |
-|---|---|
-| `INVALID_CHAIN` | `UNTRUSTED_CHAIN`, except a certificate outside its validity window, which is now `INVALID_CERTIFICATE` |
-| `INVALID_RECEIPT_FORMAT`, `INVALID_JWS_FORMAT`, `MALFORMED_REQUEST` | `MALFORMED` |
-| `REQUEST_TOO_LARGE` | `TOO_LARGE` |
-| `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE`, `INVALID_SIGNATURE` | Same names, unchanged |
-| `INTERNAL_ERROR` | `INTERNAL_ERROR` when the library or runtime itself failed; `UNREADABLE_PAYLOAD` when the chain and signature verified but the payload does not parse (this reason did not distinguish the two cases in 0.6) |
-| `WRONG_BUNDLE_ID`, `WRONG_ENVIRONMENT`, `WRONG_APP_APPLE_ID`, `DEVICE_HASH_MISMATCH` | Gone. These were policy checks the library made for you; it verifies and returns the data now, so check these fields yourself (see the checklist above) |
-
 ## Vendoring
 
 The library is one package with no generated code, so copying
@@ -961,8 +897,7 @@ BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
 `Verifier.create` throws `IllegalStateException` naming the bcprov it
 found; with `bcutil` or `bcpkix` missing altogether it throws the same,
 instead of the first `verifyReceipt` throwing a `NoClassDefFoundError`. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws
-`StackOverflowError` out of `verifyReceipt` on a deeply nested receipt;
-[measured](../docs/evidence/2026-10-04-java-bc-floor.md)), and
+`StackOverflowError` out of `verifyReceipt` on a deeply nested receipt), and
 1.85 fixed CVE-2026-12860, in the RSA PKCS#1 signature check the receipt
 path uses. 1.85 also fixed CVE-2026-13506, in a lazy-parse path that only
 CRL code reaches; this library has none.
@@ -1013,7 +948,7 @@ directory, and need adapting to another layout: `BouncyCastleFloorTest`
 reads the `bouncycastle.version` pin in `pom.xml`, and
 `TrustStoreIsolationTest` scans `src/main/java` and `src/shared/java`.
 
-**The generators are not tests, and `mvn test` writes nothing.** The 28
+**The generators are not tests, and `mvn test` writes nothing.** The 29
 classes named `*Fixture` or `*Fixtures` (other than `TestFixtures`) are
 `main` programs with no `@Test`, so Maven never runs them. They are what
 produced the committed files under `fixtures/`. Run one by hand and it
@@ -1023,9 +958,8 @@ it overwrites the committed files in `fixtures/generated/` or
 `fixtures/generated-0.7/` (and `fixtures/limits/`, for
 `ReceiptBase64CapFixture`) with files signed by fresh keys. That changes
 the `contentSha256` recorded in `cases.json`, so
-`ConformanceCasesTest` fails until those hashes are updated;
-`node tools/lint-cases.mjs` names each drifted entry with its new hash
-(CONTRIBUTING.md, "Generating a fixture"). The one test among them,
+`ConformanceCasesTest` fails until those hashes are updated. The one test
+among them,
 `FixtureGeneratorTest`, writes `fixtures/generated/` only with
 `-Dfixtures.generate=true`; without it the test is skipped, which is the
 one skip every `mvn test` reports. Two of the generator classes are also
@@ -1040,7 +974,7 @@ helpers they share: `TestPki`, `Checks`, `TestFixtures`,
 Two generators go with them, because a test compiles against each:
 `LargeReceiptFixture` (`InputSizeBoundsTest`) and `StandardShapeFixtures`
 (`StandardShapesTest`); both need only `TestPki` and `TestFixtures`.
-`FixtureGeneratorTest` and the other 26 `*Fixture(s)` classes can be left
+`FixtureGeneratorTest` and the other 27 `*Fixture(s)` classes can be left
 out: with them removed, the suite compiles and runs 644 tests with none
 skipped. `HostPolicyTest` and
 `TrustStoreIsolationTest` start a child JVM from `java.home` and skip
