@@ -435,9 +435,10 @@ class ReceiptVerificationTest {
     @Test
     void refusesTheSevenCertificatePathWhenOneLinkIsBroken() throws Exception {
         // The seven-certificate shape above with one defect on the long
-        // route. Only the expired copy under the root is left, so each
-        // receipt is refused by the checks every path gets, which is what
-        // shows that a bound on the length carried no security weight.
+        // route. The copy under the root is expired, so no route is valid
+        // and the receipt is refused. What this shows is that a defective
+        // long route never yields ok: the refusal may come from the defect
+        // or from the expired copy, whichever the builder reports.
         // A CA in the middle of the chain signed by a key no pinned root
         // vouches for: the walk stops there, the current copy never reaches
         // the builder.
@@ -445,8 +446,8 @@ class ReceiptVerificationTest {
         byte[] forgedReceipt = forged.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(forged, forgedReceipt));
         assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), e.getMessage());
-        // The current copy expired at the instant as well: PKIX judges every
-        // certificate's dates, however long the path.
+        // The current copy expired at the instant as well: both copies are
+        // then out of date, and the receipt is refused on validity.
         TestPki expired = TestPki.crossCertifiedReceipt(5, TestPki.CrossDefect.DEEP_COPY_EXPIRED);
         byte[] expiredReceipt = expired.signReceipt(payload(BUNDLE, creationDate.toString()));
         e = assertThrows(VerificationException.class, () -> verify(expired, expiredReceipt));

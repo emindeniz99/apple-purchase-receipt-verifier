@@ -67,9 +67,10 @@ between receipts of one shape.
 - **The check is live and load-bearing.** `cross-expired-5` reaches it
   every time: the builder backtracks off the expired copy and returns
   the seven-certificate path through the current one. With the check
-  disabled, that receipt verifies (`ReceiptVerificationTest.
-  boundsThePathTheBuilderReturnsNotOnlyTheWalk` fails with "nothing was
-  thrown"). That test now pins it.
+  disabled, that receipt verified (the test then named
+  `boundsThePathTheBuilderReturnsNotOnlyTheWalk` failed with "nothing was
+  thrown"). The Outcome below records the deletion; the test is now
+  `acceptsAnyPathTheBuilderValidatesWhateverItsLength`.
 - **The review's shape reaches it by chance only.** Same-key
   self-issued renewals put every renewal in round 2, but a short path
   through the copy under the root always exists, and Java refuses only
