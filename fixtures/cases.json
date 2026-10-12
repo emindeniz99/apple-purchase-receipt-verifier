@@ -10444,7 +10444,7 @@
     },
     {
       "id": "signed-data/accept-a-header-nested-64-deep",
-      "description": "A genuinely signed header carrying a member nested 64 deep counting the header object: at the JSON depth limit, so it is read and the JWS verifies.",
+      "description": "A genuinely signed header carrying a member nested 64 deep counting the header object: JSON has no nesting bound of its own, so it is read and the JWS verifies.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "review-jws-header-nested-64"
