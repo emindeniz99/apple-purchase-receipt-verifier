@@ -42,9 +42,13 @@ final class ReceiptCore {
     static final int MAX_SIGNER_INFOS = 4;
 
     /**
-     * Certificates below the anchor, leaf included. PKIX's own limit counts
-     * intermediates and skips self-issued ones, so the built path is measured
-     * again.
+     * The rounds of the top-down walk, and one more than the
+     * {@code maxPathLength} handed to the builder. Neither bounds the path
+     * the builder returns: a CA certified twice under one name and key lets
+     * it return seven certificates below the anchor (BouncyCastle 1.86
+     * refuses an eighth). Such a path is accepted, since every certificate
+     * in it passes the same checks as on a short one
+     * (docs/evidence/2026-10-12-java-path-length-bound.md).
      */
     private static final int MAX_PATH_LENGTH = 6;
 
@@ -254,14 +258,7 @@ final class ReceiptCore {
             // Per call: BouncyCastle's builder keeps state for the build it runs.
             CertPathBuilderResult result =
                     CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
-            List<? extends Certificate> path = result.getCertPath().getCertificates();
-            if (path.size() > MAX_PATH_LENGTH) {
-                throw new VerificationException(
-                        Reason.UNTRUSTED_CHAIN,
-                        "signer chain has " + path.size() + " certificates, more than the maximum of "
-                                + MAX_PATH_LENGTH);
-            }
-            return path;
+            return result.getCertPath().getCertificates();
         } catch (CertPathBuilderException e) {
             throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
         } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {

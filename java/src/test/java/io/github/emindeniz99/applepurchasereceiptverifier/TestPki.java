@@ -334,6 +334,25 @@ public final class TestPki {
      * built or only the rounds of its walk.</p>
      */
     static TestPki crossCertifiedReceipt(int intermediates) throws Exception {
+        return crossCertifiedReceipt(intermediates, CrossDefect.NONE);
+    }
+
+    /** One defect in the long route of {@link #crossCertifiedReceipt(int, CrossDefect)}. */
+    enum CrossDefect {
+        NONE,
+        /** The middle CA of the chain is signed by a fresh key under its issuer's name. */
+        FORGED_LINK,
+        /** The middle CA of the chain says it is not a CA. */
+        NOT_A_CA_LINK,
+        /** The copy of the signer's CA at the bottom of the chain has expired too. */
+        DEEP_COPY_EXPIRED
+    }
+
+    /**
+     * {@link #crossCertifiedReceipt(int)} with {@code defect} in the long
+     * route; the middle CA is CA {@code (intermediates + 1) / 2}.
+     */
+    static TestPki crossCertifiedReceipt(int intermediates, CrossDefect defect) throws Exception {
         Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
         KeyPair rootKp = rsaKeyPair();
@@ -350,15 +369,19 @@ public final class TestPki {
         List<X509Certificate> cas = new ArrayList<X509Certificate>();
         String issuerName = "CN=Cross Root";
         PrivateKey issuerKey = rootKp.getPrivate();
+        Date expiredFrom = new Date(System.currentTimeMillis() - 3 * 86_400_000L);
+        Date expiredTo = new Date(System.currentTimeMillis() - 2 * 86_400_000L);
+        int middle = (intermediates + 1) / 2;
         for (int i = 1; i <= intermediates; i++) {
             String subject = "CN=Cross CA " + i;
             KeyPair kp = rsaKeyPair();
+            boolean broken = i == middle;
             cas.add(cert(
                     subject,
                     kp,
                     issuerName,
-                    issuerKey,
-                    true,
+                    broken && defect == CrossDefect.FORGED_LINK ? rsaKeyPair().getPrivate() : issuerKey,
+                    !(broken && defect == CrossDefect.NOT_A_CA_LINK),
                     "1.2.840.113635.100.6.2.1",
                     notBefore,
                     notAfter,
@@ -367,6 +390,7 @@ public final class TestPki {
             issuerKey = kp.getPrivate();
         }
         KeyPair wwdrKp = rsaKeyPair();
+        boolean deepExpired = defect == CrossDefect.DEEP_COPY_EXPIRED;
         X509Certificate current = cert(
                 "CN=Cross WWDR CA",
                 wwdrKp,
@@ -374,8 +398,8 @@ public final class TestPki {
                 issuerKey,
                 true,
                 "1.2.840.113635.100.6.2.1",
-                notBefore,
-                notAfter,
+                deepExpired ? expiredFrom : notBefore,
+                deepExpired ? expiredTo : notAfter,
                 "SHA256withRSA");
         X509Certificate expired = cert(
                 "CN=Cross WWDR CA",
@@ -384,8 +408,8 @@ public final class TestPki {
                 rootKp.getPrivate(),
                 true,
                 "1.2.840.113635.100.6.2.1",
-                new Date(System.currentTimeMillis() - 3 * 86_400_000L),
-                new Date(System.currentTimeMillis() - 2 * 86_400_000L),
+                expiredFrom,
+                expiredTo,
                 "SHA256withRSA");
         KeyPair signerKp = rsaKeyPair();
         X509Certificate signerCert = cert(
