@@ -22,6 +22,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
+          set +e
           set -uo pipefail
           stamp="diag-$(date -u +%Y%m%d%H%M%S)"
           echo "::group::1 draft release, no tag"
@@ -31,7 +32,7 @@ jobs:
           gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-ref" -f sha="$SHA" --jq '.ref'; echo "exit $?"
           echo "::endgroup::"
           echo "::group::3 release that creates its tag (the corpus shape)"
-          gh api -X POST "repos/$GH_REPO/releases" -f tag_name="$stamp-rel" -f target_commitish="$SHA" -F prerelease=true -F make_latest=false -f name="$stamp rel" --jq '.id' > rel-id.txt; echo "exit $?"
+          gh api -X POST "repos/$GH_REPO/releases" -f tag_name="$stamp-rel" -f target_commitish="$SHA" -F prerelease=true -f make_latest=false -f name="$stamp rel" --jq '.id' > rel-id.txt; echo "exit $?"
           echo "::endgroup::"
           echo "::group::4 gh release create, same shape"
           echo diag > diag.txt
