@@ -130,9 +130,7 @@ pub mod __internal {
     /// The certificate path policy, over the OpenSSL adapter's
     /// certificates.
     pub mod path {
-        pub use crate::path::{
-            authenticated_top_down, receipt_path, validate_pair, MAX_PATH_LENGTH,
-        };
+        pub use crate::path::{authenticated_top_down, receipt_path, validate_pair};
         pub use aprv_openssl::Certificate;
     }
 
