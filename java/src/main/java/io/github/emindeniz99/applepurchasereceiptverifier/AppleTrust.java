@@ -126,7 +126,7 @@ final class AppleTrust {
 
     /** The certificates of {@code trustAnchors}. */
     static List<X509Certificate> roots(Set<TrustAnchor> trustAnchors) {
-        List<X509Certificate> roots = new ArrayList<>(trustAnchors.size());
+        List<X509Certificate> roots = new ArrayList<>();
         for (TrustAnchor anchor : trustAnchors) {
             roots.add(anchor.getTrustedCert());
         }

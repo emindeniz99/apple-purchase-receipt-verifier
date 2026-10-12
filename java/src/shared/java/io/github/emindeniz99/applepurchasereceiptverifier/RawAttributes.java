@@ -16,7 +16,7 @@ final class RawAttributes {
     static Map<Integer, List<byte[]>> copy(Map<Integer, List<byte[]>> attributes) {
         Map<Integer, List<byte[]>> copy = new TreeMap<>();
         for (Map.Entry<Integer, List<byte[]>> entry : attributes.entrySet()) {
-            List<byte[]> values = new ArrayList<>(entry.getValue().size());
+            List<byte[]> values = new ArrayList<>();
             for (byte[] value : entry.getValue()) {
                 values.add(Objects.requireNonNull(value, "attribute value").clone());
             }

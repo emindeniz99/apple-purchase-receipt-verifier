@@ -54,7 +54,7 @@ public final class JsonPayload {
 
     @Override
     public int hashCode() {
-        return 31 * json.hashCode() + Objects.hashCode(environment);
+        return Objects.hash(json, environment);
     }
 
     /**

@@ -18,7 +18,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.cms.CMSSignedData;
 import org.jspecify.annotations.Nullable;
 
@@ -155,16 +158,12 @@ final class DefaultVerifier implements Verifier {
      * @throws IllegalStateException if BouncyCastle refuses the nesting
      */
     static void requireReceiptNesting() {
-        byte[] der = {0x02, 0x01, 0x00};
+        ASN1Encodable nested = new ASN1Integer(0);
         for (int i = 0; i < RECEIPT_NESTING; i++) {
-            byte[] outer = new byte[der.length + 2];
-            outer[0] = 0x30;
-            outer[1] = (byte) der.length;
-            System.arraycopy(der, 0, outer, 2, der.length);
-            der = outer;
+            nested = new DERSequence(nested);
         }
         try {
-            ASN1Primitive.fromByteArray(der);
+            ASN1Primitive.fromByteArray(nested.toASN1Primitive().getEncoded());
         } catch (IOException | RuntimeException e) {
             throw new IllegalStateException(
                     "BouncyCastle refuses ASN.1 nested " + RECEIPT_NESTING + " deep, which every genuine Apple"

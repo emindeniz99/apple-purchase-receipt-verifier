@@ -303,7 +303,7 @@ public final class ReceiptPayload {
 
     @Override
     public int hashCode() {
-        return 31 * toJson().hashCode() + Objects.hashCode(environment);
+        return Objects.hash(toJson(), environment);
     }
 
     /**

@@ -67,7 +67,7 @@ public final class Failure {
 
     @Override
     public int hashCode() {
-        return 31 * reason.hashCode() + message.hashCode();
+        return Objects.hash(reason, message);
     }
 
     @Override
