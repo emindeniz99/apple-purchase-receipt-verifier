@@ -319,6 +319,95 @@ public final class TestPki {
     }
 
     /**
+     * An RSA receipt chain whose signer's CA is certified twice under one
+     * subject name and one key: once at the bottom of a chain of
+     * {@code intermediates} further CAs, and once straight under the root,
+     * in a copy that expired before now. The signer's path through the
+     * current copy is {@code intermediates + 2} certificates below the
+     * anchor.
+     *
+     * <p>A top-down walk that accepts a certificate one round below any
+     * accepted certificate of its issuer's name and key reaches the signer
+     * through the expired copy, in two rounds. A path builder judges dates,
+     * so it backtracks off that copy and returns the long path through the
+     * current one: the shape that tells whether a port bounds the path it
+     * built or only the rounds of its walk.</p>
+     */
+    static TestPki crossCertifiedReceipt(int intermediates) throws Exception {
+        Date notBefore = new Date(System.currentTimeMillis() - 86_400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 86_400_000L);
+        KeyPair rootKp = rsaKeyPair();
+        X509Certificate rootCert = cert(
+                "CN=Cross Root",
+                rootKp,
+                "CN=Cross Root",
+                rootKp.getPrivate(),
+                true,
+                null,
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
+        List<X509Certificate> cas = new ArrayList<X509Certificate>();
+        String issuerName = "CN=Cross Root";
+        PrivateKey issuerKey = rootKp.getPrivate();
+        for (int i = 1; i <= intermediates; i++) {
+            String subject = "CN=Cross CA " + i;
+            KeyPair kp = rsaKeyPair();
+            cas.add(cert(
+                    subject,
+                    kp,
+                    issuerName,
+                    issuerKey,
+                    true,
+                    "1.2.840.113635.100.6.2.1",
+                    notBefore,
+                    notAfter,
+                    "SHA256withRSA"));
+            issuerName = subject;
+            issuerKey = kp.getPrivate();
+        }
+        KeyPair wwdrKp = rsaKeyPair();
+        X509Certificate current = cert(
+                "CN=Cross WWDR CA",
+                wwdrKp,
+                issuerName,
+                issuerKey,
+                true,
+                "1.2.840.113635.100.6.2.1",
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
+        X509Certificate expired = cert(
+                "CN=Cross WWDR CA",
+                wwdrKp,
+                "CN=Cross Root",
+                rootKp.getPrivate(),
+                true,
+                "1.2.840.113635.100.6.2.1",
+                new Date(System.currentTimeMillis() - 3 * 86_400_000L),
+                new Date(System.currentTimeMillis() - 2 * 86_400_000L),
+                "SHA256withRSA");
+        KeyPair signerKp = rsaKeyPair();
+        X509Certificate signerCert = cert(
+                "CN=Cross Receipt Signing",
+                signerKp,
+                "CN=Cross WWDR CA",
+                wwdrKp.getPrivate(),
+                false,
+                "1.2.840.113635.100.6.11.1",
+                notBefore,
+                notAfter,
+                "SHA256withRSA");
+        List<X509Certificate> embedded = new ArrayList<X509Certificate>();
+        embedded.add(signerCert);
+        embedded.add(current);
+        embedded.add(expired);
+        embedded.addAll(cas);
+        embedded.add(rootCert);
+        return new TestPki(rootCert, current, signerCert, signerKp.getPrivate(), embedded);
+    }
+
+    /**
      * Varargs {@code key, value, key, value...} claims helper (insertion
      * ordered), for building a {@link #signJws} payload. Part of the public
      * test-jar API.

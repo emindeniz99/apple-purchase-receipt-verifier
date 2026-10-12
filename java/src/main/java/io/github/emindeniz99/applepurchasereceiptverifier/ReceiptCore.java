@@ -256,7 +256,10 @@ final class ReceiptCore {
                     CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
             List<? extends Certificate> path = result.getCertPath().getCertificates();
             if (path.size() > MAX_PATH_LENGTH) {
-                throw new VerificationException(Reason.UNTRUSTED_CHAIN, "chain exceeds maximum length");
+                throw new VerificationException(
+                        Reason.UNTRUSTED_CHAIN,
+                        "signer chain has " + path.size() + " certificates, more than the maximum of "
+                                + MAX_PATH_LENGTH);
             }
             return path;
         } catch (CertPathBuilderException e) {

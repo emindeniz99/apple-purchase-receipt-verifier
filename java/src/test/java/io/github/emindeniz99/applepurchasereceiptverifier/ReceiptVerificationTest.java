@@ -414,6 +414,27 @@ class ReceiptVerificationTest {
     }
 
     @Test
+    void boundsThePathTheBuilderReturnsNotOnlyTheWalk() throws Exception {
+        // The signer's CA is certified twice under one name and key: below
+        // the root directly, in a copy that has expired, and below a chain
+        // of CAs. The walk reaches the signer through the expired copy in
+        // two rounds; the builder backtracks off that copy and returns the
+        // path through the current one. BouncyCastle's builder counts every
+        // certificate against setMaxPathLength(5) and still returns seven
+        // (it refuses an eighth), so only the bound on the returned path
+        // refuses this. Five CAs above the current copy make seven
+        // certificates below the anchor; four make the six that verify.
+        TestPki six = TestPki.crossCertifiedReceipt(4);
+        byte[] longest = six.signReceipt(payload(BUNDLE, creationDate.toString()));
+        assertEquals(BUNDLE, verify(six, longest).bundleId());
+        TestPki seven = TestPki.crossCertifiedReceipt(5);
+        byte[] tooLong = seven.signReceipt(payload(BUNDLE, creationDate.toString()));
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(seven, tooLong));
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
+        assertEquals("signer chain has 7 certificates, more than the maximum of 6", e.getMessage());
+    }
+
+    @Test
     void rejectsCorruptedSignatureBytes() throws Exception {
         // Chain, payload and message digest all stay genuine here, so the CMS
         // signature check is the only thing left that can reject this receipt —

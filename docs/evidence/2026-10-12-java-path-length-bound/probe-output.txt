@@ -1,0 +1,12 @@
+# Second run, on the fix(java) commit (the first run, before it, is in the note)
+JAVA self-6 -> {UNTRUSTED_CHAIN: signer chain has 7 certificates, more than the maximum of 6=1, ok=19}
+JAVA self-7 -> {UNTRUSTED_CHAIN: signer chain has 7 certificates, more than the maximum of 6=2, ok=18}
+JAVA cross-expired-5 -> {UNTRUSTED_CHAIN: signer chain has 7 certificates, more than the maximum of 6=20}
+JAVA cross-valid-5 -> {UNTRUSTED_CHAIN: signer chain has 7 certificates, more than the maximum of 6=8, ok=12}
+JAVA cross-expired-4 -> {ok=20}
+JAVA rerun: same answer 300, different 0
+CORE cross-expired-4 -> map[ok:20] (verdict as Java's: 20, not: 0)
+CORE cross-expired-5 -> map[UNTRUSTED_CHAIN: chain exceeds the maximum length:20] (verdict as Java's: 20, not: 0)
+CORE cross-valid-5 -> map[ok:20] (verdict as Java's: 12, not: 8)
+CORE self-6 -> map[ok:20] (verdict as Java's: 19, not: 1)
+CORE self-7 -> map[ok:20] (verdict as Java's: 18, not: 2)
