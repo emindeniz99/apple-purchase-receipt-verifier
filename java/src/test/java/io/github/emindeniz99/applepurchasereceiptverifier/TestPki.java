@@ -846,7 +846,8 @@ public final class TestPki {
         return corrupted;
     }
 
-    private static int indexOf(byte[] haystack, byte[] needle) {
+    /** Where {@code needle} first starts in {@code haystack}; throws when it does not occur. */
+    static int indexOf(byte[] haystack, byte[] needle) {
         for (int i = 0; i <= haystack.length - needle.length; i++) {
             boolean match = true;
             for (int j = 0; j < needle.length && match; j++) {

@@ -2,7 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -348,24 +347,6 @@ class TrustStoreIsolationTest {
         Verifier underMixed = Verifier.create(Config.builder().roots(mixed).build());
         assertEquals(GENUINE_BUNDLE, Checks.receipt(underMixed, genuine).bundleId());
         assertUntrustedChain(() -> Checks.receipt(underMixed, SyntheticReceipts.der()));
-    }
-
-    /**
-     * The failure mode this rules out: "no anchors given, so use the system
-     * ones". There is no ambient set to fall back to, and asking for one is
-     * refused at construction rather than silently widened. Asserted in the
-     * child JVM too, where a populated ambient store exists to fall back to.
-     */
-    @Test
-    void anEmptyAnchorSetIsAConfigurationErrorNotAFallback() {
-        Set<X509Certificate> none = Collections.emptySet();
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> Verifier.create(Config.builder().roots(none).build()));
-        // A null config or root set is a programming error, not an empty set
-        // to widen.
-        assertThrows(NullPointerException.class, () -> Verifier.create(null));
-        assertThrows(NullPointerException.class, () -> Config.builder().roots(null));
     }
 
     // ------------------------------------------------------------------

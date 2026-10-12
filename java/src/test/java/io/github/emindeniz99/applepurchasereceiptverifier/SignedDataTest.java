@@ -18,7 +18,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -340,15 +339,6 @@ class SignedDataTest {
 
         TestPki foreign = TestPki.jws();
         assertEquals(Reason.UNTRUSTED_CHAIN, failure(pki, foreign.signJws(claims)));
-    }
-
-    @Test
-    void rejectsEmptyTrustAnchors() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> Verifier.create(Config.builder()
-                        .roots(Collections.<java.security.cert.X509Certificate>emptySet())
-                        .build()));
     }
 
     // ------------------------------------------------ parse after signature

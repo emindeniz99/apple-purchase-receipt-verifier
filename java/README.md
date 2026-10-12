@@ -1041,8 +1041,8 @@ Two generators go with them, because a test compiles against each:
 `LargeReceiptFixture` (`InputSizeBoundsTest`) and `StandardShapeFixtures`
 (`StandardShapesTest`); both need only `TestPki` and `TestFixtures`.
 `FixtureGeneratorTest` and the other 26 `*Fixture(s)` classes can be left
-out: with them removed, the suite compiles and runs 649 tests with none
-skipped (measured on 0.11.0). `HostPolicyTest` and
+out: with them removed, the suite compiles and runs 644 tests with none
+skipped. `HostPolicyTest` and
 `TrustStoreIsolationTest` start a child JVM from `java.home` and skip
 where there is no `java` binary there.
 

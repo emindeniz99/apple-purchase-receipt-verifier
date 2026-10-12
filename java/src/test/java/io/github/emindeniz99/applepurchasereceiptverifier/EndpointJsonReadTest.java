@@ -111,7 +111,7 @@ class EndpointJsonReadTest {
                 break;
             case 1:
                 int depth = random.nextBoolean() ? 1000 : 1001; // Jackson's default allows 1000
-                body = nested(depth) + "\"" + value + "\"" + closing(depth);
+                body = Checks.nested(depth, "\"" + value + "\"");
                 break;
             case 2:
                 body = "[\"" + value + "\"]";
@@ -127,21 +127,5 @@ class EndpointJsonReadTest {
             body = body.substring(0, random.nextInt(body.length()));
         }
         return body;
-    }
-
-    private static String nested(int depth) {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            out.append("{\"a\":");
-        }
-        return out.toString();
-    }
-
-    private static String closing(int depth) {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            out.append('}');
-        }
-        return out.toString();
     }
 }

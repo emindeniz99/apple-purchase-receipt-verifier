@@ -4,6 +4,8 @@ import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.Base64;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Integer;
 
 /**
  * Test shorthand over the public {@link Verifier}.
@@ -60,5 +62,30 @@ final class Checks {
             throw new AssertionError("a result carries neither a payload nor a failure");
         }
         throw new VerificationException(failure.reason(), failure.message(), failure.cause());
+    }
+
+    /** {@code count} copies of {@code c}: Java 8, the artifact's floor, has no {@code String.repeat}. */
+    static String repeat(char c, int count) {
+        char[] chars = new char[count];
+        Arrays.fill(chars, c);
+        return new String(chars);
+    }
+
+    /** {@code innermost} inside {@code depth} objects, each its one member {@code "a"}. */
+    static String nested(int depth, String innermost) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < depth; i++) {
+            out.append("{\"a\":");
+        }
+        out.append(innermost);
+        for (int i = 0; i < depth; i++) {
+            out.append('}');
+        }
+        return out.toString();
+    }
+
+    /** One receipt attribute whose value is the DER of {@code value}. */
+    static ASN1Encodable integerAttribute(int type, long value) throws Exception {
+        return TestPki.attribute(type, new ASN1Integer(value).getEncoded());
     }
 }

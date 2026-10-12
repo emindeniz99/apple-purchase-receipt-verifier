@@ -170,8 +170,8 @@ class JwsJsonReadTest {
      */
     @Test
     void memberNamesAndNumbersAreBoundedByJacksonsDefaults() throws Exception {
-        String longestName = repeat('n', 50_000);
-        String longestNumber = repeat('1', 1000);
+        String longestName = Checks.repeat('n', 50_000);
+        String longestNumber = Checks.repeat('1', 1000);
         assertNull(JwsCore.Header.read(utf8("{\"" + longestName + "\":1}")).alg);
         assertNull(JwsCore.Header.read(utf8("{\"n\":" + longestNumber + "}")).alg);
         for (String header : new String[] {"{\"" + longestName + "n\":1}", "{\"n\":" + longestNumber + "1}"}) {
@@ -197,7 +197,8 @@ class JwsJsonReadTest {
         try {
             assertEquals(10, new JsonFactory().streamReadConstraints().getMaxNameLength());
             assertEquals(50_000, JsonFields.JSON.streamReadConstraints().getMaxNameLength());
-            assertEquals("ES256", JwsCore.Header.read(utf8("{\"alg\":\"ES256\",\"" + repeat('n', 11) + "\":1}")).alg);
+            assertEquals(
+                    "ES256", JwsCore.Header.read(utf8("{\"alg\":\"ES256\",\"" + Checks.repeat('n', 11) + "\":1}")).alg);
         } finally {
             StreamReadConstraints.overrideDefaultStreamReadConstraints(null);
         }
@@ -241,12 +242,6 @@ class JwsJsonReadTest {
         System.arraycopy(a, 0, out, 0, a.length);
         System.arraycopy(b, 0, out, a.length, b.length);
         return out;
-    }
-
-    private static String repeat(char c, int count) {
-        char[] chars = new char[count];
-        java.util.Arrays.fill(chars, c);
-        return new String(chars);
     }
 
     /** Whether the payload's signedDate is a number no long holds, which both reads treat as absent. */
@@ -348,7 +343,7 @@ class JwsJsonReadTest {
                 out.append(value(random, 0));
                 break;
             case 1:
-                out.append(nested(random.nextBoolean() ? 1000 : 1001)); // Jackson's default allows 1000
+                out.append(Checks.nested(random.nextBoolean() ? 1000 : 1001, "1")); // Jackson's default allows 1000
                 break;
             default:
                 out.append('{');
@@ -448,17 +443,5 @@ class JwsJsonReadTest {
             default:
                 return "{\"k\":" + value(random, depth + 1) + "}";
         }
-    }
-
-    private static String nested(int depth) {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            out.append("{\"a\":");
-        }
-        out.append('1');
-        for (int i = 0; i < depth; i++) {
-            out.append('}');
-        }
-        return out.toString();
     }
 }

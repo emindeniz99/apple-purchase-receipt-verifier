@@ -76,7 +76,7 @@ final class SyntheticReceipts {
             RECEIPT = PKI.signReceipt(payload, new Date(SIGNED_DATE));
             TAMPERED = RECEIPT.clone();
             byte[] product = (BUNDLE + ".vip").getBytes(StandardCharsets.US_ASCII);
-            TAMPERED[indexOf(TAMPERED, product) + product.length - 1] ^= 0x01;
+            TAMPERED[TestPki.indexOf(TAMPERED, product) + product.length - 1] ^= 0x01;
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
@@ -104,18 +104,5 @@ final class SyntheticReceipts {
     /** The same receipt with one payload byte changed, so its signature no longer verifies. */
     static byte[] tamperedDer() {
         return TAMPERED.clone();
-    }
-
-    private static int indexOf(byte[] haystack, byte[] needle) {
-        for (int i = 0; i <= haystack.length - needle.length; i++) {
-            boolean match = true;
-            for (int j = 0; j < needle.length && match; j++) {
-                match = haystack[i + j] == needle[j];
-            }
-            if (match) {
-                return i;
-            }
-        }
-        throw new AssertionError("needle not found");
     }
 }

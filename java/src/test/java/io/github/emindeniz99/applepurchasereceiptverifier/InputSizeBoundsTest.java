@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import org.junit.jupiter.api.Test;
@@ -54,7 +53,7 @@ class InputSizeBoundsTest {
         // the payload is parsed, and only then is the oversized signature
         // refused as INVALID_SIGNATURE for its length. With the bound nothing
         // past the length check runs.
-        String jws = genuineJws() + repeat('A', JwsCore.MAX_JWS_BYTES);
+        String jws = genuineJws() + Checks.repeat('A', JwsCore.MAX_JWS_BYTES);
         VerificationException thrown = assertThrows(VerificationException.class, () -> verifyJws(jws));
         assertEquals(Reason.TOO_LARGE, thrown.reason());
         assertTrue(thrown.getMessage().contains("exceeds the maximum accepted size"), thrown.getMessage());
@@ -63,7 +62,7 @@ class InputSizeBoundsTest {
     @Test
     void jwsAtTheSizeLimitIsNotRefusedForItsSize() throws Exception {
         String jws = genuineJws();
-        String atLimit = jws + repeat('A', JwsCore.MAX_JWS_BYTES - jws.length());
+        String atLimit = jws + Checks.repeat('A', JwsCore.MAX_JWS_BYTES - jws.length());
         assertEquals(JwsCore.MAX_JWS_BYTES, atLimit.length());
         VerificationException thrown = assertThrows(VerificationException.class, () -> verifyJws(atLimit));
         assertNotEquals(Reason.TOO_LARGE, thrown.reason());
@@ -80,7 +79,7 @@ class InputSizeBoundsTest {
     void jwsIsMeasuredInUtf8Bytes() throws Exception {
         String jws = genuineJws();
         int remaining = JwsCore.MAX_JWS_BYTES - jws.length();
-        String overInBytes = jws + repeat('\u00e9', remaining / 2 + 1);
+        String overInBytes = jws + Checks.repeat('\u00e9', remaining / 2 + 1);
         assertTrue(overInBytes.length() <= JwsCore.MAX_JWS_BYTES);
         VerificationException thrown = assertThrows(VerificationException.class, () -> verifyJws(overInBytes));
         assertEquals(Reason.TOO_LARGE, thrown.reason());
@@ -159,7 +158,7 @@ class InputSizeBoundsTest {
      */
     @Test
     void receiptStringIsMeasuredInUtf8Bytes() throws Exception {
-        String receipt = repeat('\u00e9', ReceiptCore.MAX_RECEIPT_BYTES / 2 + 1);
+        String receipt = Checks.repeat('\u00e9', ReceiptCore.MAX_RECEIPT_BYTES / 2 + 1);
         assertTrue(receipt.length() < ReceiptCore.MAX_RECEIPT_BYTES);
         VerificationException thrown = assertThrows(VerificationException.class, () -> verifyReceipt(receipt));
         assertEquals(Reason.TOO_LARGE, thrown.reason());
@@ -188,7 +187,7 @@ class InputSizeBoundsTest {
      */
     @Test
     void requestBodyOverTheSizeLimitAnswers21002WithoutParsingIt() throws Exception {
-        String body = requestJson(repeat('x', Endpoint.MAX_REQUEST_BYTES));
+        String body = requestJson(Checks.repeat('x', Endpoint.MAX_REQUEST_BYTES));
         assertTrue(body.length() > Endpoint.MAX_REQUEST_BYTES);
         assertEquals("{\"status\":21002}", endpoint(body));
         VerificationException thrown = assertThrows(VerificationException.class, () -> Endpoint.receiptData(body));
@@ -265,7 +264,7 @@ class InputSizeBoundsTest {
     /** The genuine receipt as base64, space-padded to exactly {@code length} characters. */
     private static String paddedGenuineReceipt(int length) throws Exception {
         String base64 = SyntheticReceipts.base64();
-        return base64 + repeat(' ', length - base64.length());
+        return base64 + Checks.repeat(' ', length - base64.length());
     }
 
     /** A verifying request body, optionally carrying a padding field to grow it. */
@@ -304,13 +303,6 @@ class InputSizeBoundsTest {
 
     /** Exactly {@code bytes} UTF-8 bytes of U+00E9, with one ASCII character when the count is odd. */
     private static String twoBytePadding(int bytes) {
-        return repeat('\u00e9', bytes / 2) + (bytes % 2 == 1 ? "a" : "");
-    }
-
-    /** Java 8 has no {@code String.repeat}, and the artifact's floor is 8. */
-    private static String repeat(char c, int count) {
-        char[] chars = new char[count];
-        Arrays.fill(chars, c);
-        return new String(chars);
+        return Checks.repeat('\u00e9', bytes / 2) + (bytes % 2 == 1 ? "a" : "");
     }
 }

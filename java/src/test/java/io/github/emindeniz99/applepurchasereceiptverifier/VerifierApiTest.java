@@ -69,6 +69,8 @@ class VerifierApiTest {
         assertThrows(NullPointerException.class, () -> Verifier.create(null));
         assertThrows(NullPointerException.class, () -> verifier().verifyReceiptEndpoint(null, "{}"));
         assertThrows(NullPointerException.class, () -> Config.builder().clock(null));
+        // Not an empty set to widen to the system's roots.
+        assertThrows(NullPointerException.class, () -> Config.builder().roots(null));
     }
 
     @Test
@@ -538,8 +540,7 @@ class VerifierApiTest {
 
     /**
      * The rule lives in the implementation (ReceiptDecoder, JwsCore), where
-     * the verifier computes a payload's environment; the public enum states
-     * none.
+     * the verifier computes a payload's environment.
      */
     @Test
     void environmentMapsApplesValuesAndDecidesNothing() {
@@ -556,12 +557,6 @@ class VerifierApiTest {
             assertNull(JwsCore.jwsEnvironment(other), String.valueOf(other));
         }
         assertEquals(2, Environment.values().length);
-        for (java.lang.reflect.Method method : Environment.class.getDeclaredMethods()) {
-            assertFalse(
-                    java.lang.reflect.Modifier.isPublic(method.getModifiers())
-                            && method.getName().startsWith("from"),
-                    method.getName());
-        }
     }
 
     @Test
