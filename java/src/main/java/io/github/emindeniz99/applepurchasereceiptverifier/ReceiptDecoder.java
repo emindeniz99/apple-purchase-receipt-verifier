@@ -103,8 +103,8 @@ final class ReceiptDecoder {
 
     /**
      * The first attribute 12, or null ("judge the chain at the clock") when
-     * it is missing or does not decode, or when any entry does not read,
-     * since that entry might have been the first 12. Never throws.
+     * it is missing or does not decode, or when any entry of the payload
+     * does not read, wherever it sits. Never throws.
      */
     static @Nullable Long readCreationDate(byte[] payload) {
         try {
