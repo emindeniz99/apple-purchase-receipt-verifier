@@ -10,3 +10,18 @@ CORE cross-expired-5 -> map[UNTRUSTED_CHAIN: chain exceeds the maximum length:20
 CORE cross-valid-5 -> map[ok:20] (verdict as Java's: 12, not: 8)
 CORE self-6 -> map[ok:20] (verdict as Java's: 19, not: 1)
 CORE self-7 -> map[ok:20] (verdict as Java's: 18, not: 2)
+# Third run, after the post-build check was deleted (2026-10-12, Q108 a); the core is unchanged, so its lines above still hold
+JAVA self-6 -> {ok=20}
+JAVA self-7 -> {ok=20}
+JAVA cross-expired-5 -> {ok=20}
+JAVA cross-valid-5 -> {ok=20}
+JAVA cross-expired-4 -> {ok=20}
+JAVA rerun: same answer 300, different 0
+DEFECT NONE intermediates=4 -> {ok=20}
+DEFECT NONE intermediates=5 -> {ok=20}
+DEFECT FORGED_LINK intermediates=4 -> {INVALID_CERTIFICATE: receipt certificate is outside its validity window at <instant>=20}
+DEFECT FORGED_LINK intermediates=5 -> {INVALID_CERTIFICATE: receipt certificate is outside its validity window at <instant>=20}
+DEFECT NOT_A_CA_LINK intermediates=4 -> {INVALID_CERTIFICATE: receipt certificate is outside its validity window at <instant>=11, UNTRUSTED_CHAIN: signer chain does not validate to a pinned Apple root=9}
+DEFECT NOT_A_CA_LINK intermediates=5 -> {INVALID_CERTIFICATE: receipt certificate is outside its validity window at <instant>=7, UNTRUSTED_CHAIN: signer chain does not validate to a pinned Apple root=13}
+DEFECT DEEP_COPY_EXPIRED intermediates=4 -> {INVALID_CERTIFICATE: receipt certificate is outside its validity window at <instant>=20}
+DEFECT DEEP_COPY_EXPIRED intermediates=5 -> {INVALID_CERTIFICATE: receipt certificate is outside its validity window at <instant>=20}

@@ -93,3 +93,57 @@ between receipts of one shape.
   (row of 2026-10-12).
 - `cross-expired-5` gives the same verdict in both implementations, so
   it could become a shared case. None was added.
+
+## Outcome (2026-10-12, Q108 a)
+
+The owner chose to delete the post-build check, on the condition that
+deleting it opens no hole. It was deleted the same day. The test above
+became `acceptsAnyPathTheBuilderValidatesWhateverItsLength` (the
+seven-certificate `cross-expired-5` shape now verifies), and
+`refusesTheSevenCertificatePathWhenOneLinkIsBroken` pins the same shape
+with one defect on the long route.
+
+Why the check carried no security weight. Every certificate on a path
+the builder returns, whatever its length, has passed these checks:
+
+- The walk accepted it only once a pinned root, or a certificate
+  accepted in the round before, verified its signature. Only those
+  certificates reach the builder, so the path is made of certificates
+  signed under keys a pinned root vouches for.
+- BouncyCastle's PKIX validator verifies every signature on the path
+  again, from the anchor down, and checks each certificate's validity
+  at the instant, the CA rules (`basicConstraints`, `pathLenConstraint`,
+  `keyUsage`) and every critical extension other than the two
+  `AppleTrust.HANDLED_CRITICAL_EXTENSIONS` marks processed.
+- `requireMarkers` still asks Apple's signing marker on the signer and
+  the WWDR marker on the certificate above it, and the CMS signature is
+  still checked with the signer's key.
+
+An extra link therefore needs a certificate issued under a key the
+pinned roots vouch for, valid at the instant and allowed to issue. An
+attacker without one of Apple's CA keys cannot make one; an attacker
+with one can already sign a short path. The deleted check refused only
+a length, and a length alone gave nothing.
+
+The defect probe (`CrossDefectProbeTest`, `probe-output.txt`) shows
+the long route still refused when one link is wrong: a CA signed by a
+key no root vouches for (40 of 40 refused), a CA that is not a CA (40
+of 40), the deep copy expired at the instant (40 of 40). Each is refused
+by the walk or by PKIX; the forged link and the expired copy always
+answer `INVALID_CERTIFICATE`, from the expired short copy that is all
+that is left. The not-a-CA answer is `UNTRUSTED_CHAIN` or
+`INVALID_CERTIFICATE` by `HashSet` order, never ok.
+
+Cost is unchanged: the check ran after the build. The builder's
+`setMaxPathLength(5)` still refuses an eighth certificate, the walk
+still runs six rounds, and a receipt embeds at most 10 certificates.
+
+The check also made the verdict follow BouncyCastle's `HashSet` order
+on the `self-*` and `cross-valid-5` shapes. After the deletion the
+third run of the shapes probe answers ok for all 100 receipts, and
+again for each of them in a new JVM.
+
+Java and the core now agree on every shape here but `cross-expired-5`,
+which Java accepts and the core refuses ("chain exceeds the maximum
+length"). The owner accepted that difference: Java is judged on its
+own. R20 records it (row of 2026-10-12, updated).
