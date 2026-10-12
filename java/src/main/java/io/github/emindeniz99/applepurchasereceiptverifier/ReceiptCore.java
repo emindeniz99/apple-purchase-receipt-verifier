@@ -39,17 +39,6 @@ final class ReceiptCore {
     static final int MAX_SIGNER_INFOS = 4;
 
     /**
-     * The rounds of the top-down walk, and one more than the
-     * {@code maxPathLength} handed to the builder. Neither bounds the path
-     * the builder returns: a CA certified twice under one name and key lets
-     * it return seven certificates below the anchor (BouncyCastle 1.86
-     * refuses an eighth). Such a path is accepted, since every certificate
-     * in it passes the same checks as on a short one
-     * (docs/evidence/2026-10-12-java-path-length-bound.md).
-     */
-    private static final int MAX_PATH_LENGTH = 6;
-
-    /**
      * The largest receipt accepted: the base64 text's length in UTF-8 bytes,
      * checked before it is decoded. The figure is Apple's limit on a whole
      * verifyReceipt body ({@link Endpoint#MAX_REQUEST_BYTES}).
@@ -251,7 +240,6 @@ final class ReceiptCore {
                     "Collection", new CollectionCertStoreParameters(authenticated), BouncyCastle.PROVIDER));
             params.setRevocationEnabled(false);
             params.setDate(at);
-            params.setMaxPathLength(MAX_PATH_LENGTH - 1);
             params.addCertPathChecker(AppleTrust.HANDLED_CRITICAL_EXTENSIONS);
             // Per call: BouncyCastle's builder keeps state for the build it runs.
             CertPathBuilderResult result =
@@ -271,14 +259,18 @@ final class ReceiptCore {
     /**
      * The embedded certificates a pinned root vouches for, directly or
      * through one already accepted, walking down from the roots. Only these
-     * reach the path builder; see {@link AppleTrust}.
+     * reach the path builder; see {@link AppleTrust}. The walk's work is
+     * bounded by {@link ReceiptCertificates#MAX_EMBEDDED_CERTIFICATES}; the
+     * path's length is the builder's business (BouncyCastle 1.86 refuses an
+     * eighth certificate below the anchor;
+     * docs/evidence/2026-10-12-java-path-length-bound.md).
      */
     private static List<X509Certificate> authenticatedTopDown(
             List<X509Certificate> embedded, Set<TrustAnchor> trustAnchors) {
         List<X509Certificate> issuers = AppleTrust.roots(trustAnchors);
         List<X509Certificate> accepted = new ArrayList<>();
         List<X509Certificate> pending = new ArrayList<>(embedded);
-        for (int round = 0; round < MAX_PATH_LENGTH && !pending.isEmpty(); round++) {
+        while (!pending.isEmpty()) {
             List<X509Certificate> acceptedThisRound = new ArrayList<>();
             for (X509Certificate candidate : pending) {
                 if (AppleTrust.signedByAny(candidate, issuers)) {

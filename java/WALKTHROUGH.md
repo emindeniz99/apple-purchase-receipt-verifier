@@ -443,7 +443,7 @@ byte-identical copy only once; §4.2 has the renewal example this protects.
 | `MALFORMED` | Broken structure or a structural bound exceeded, before any signature check, including an unchecked exception BouncyCastle or Jackson threw on unverified input |
 | `TOO_LARGE` | Over a size cap, before decoding |
 | `INVALID_SIGNATURE` | The signature does not match the content, or BouncyCastle cannot verify the SignerInfo |
-| `UNTRUSTED_CHAIN` | No path to a pinned root, or a receipt signer more than 6 signed steps below one |
+| `UNTRUSTED_CHAIN` | No path to a pinned root, or a receipt signer more than 7 signed steps below one, which the path builder refuses |
 | `INVALID_CERTIFICATE` | A certificate the check needs does not decode, or is outside its validity at the instant |
 | `INVALID_CERTIFICATE_PURPOSE` | Chains to a pinned root but lacks a marker OID |
 | `UNREADABLE_PAYLOAD` | Apple signed the payload, but it does not parse: a library gap or a new Apple format |
@@ -542,17 +542,18 @@ a genuine Apple sandbox receipt (case
 | 9 | `verifyCmsSignature` (12), `signerVerifier` (13) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist, so a change on Apple's side cannot break genuine receipts. Valid | `INVALID_SIGNATURE` |
 | 10 | `parseSignedPayload` (8), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
 
-Steps 7 to 9 run per (SignerInfo, certificate) pair. One constant,
-`MAX_PATH_LENGTH` (6), sets the rounds of step 6 and, less one, the
-builder's `maxPathLength` in step 7. Neither bounds the path step 7
-returns: when a CA is certified twice under one name and key, the walk
-reaches the signer through the shallow copy and BouncyCastle 1.86 can
-return a seven-certificate path through the deep one (it refuses an
-eighth). That path is accepted, because every certificate in it is
-signed under a pinned root and judged by PKIX at the instant like any
-other. A bound on its length refused nothing an attacker without Apple's
-CA keys could make, and made the verdict follow BouncyCastle's `HashSet`
-order, so it was removed on 2026-10-12
+Steps 7 to 9 run per (SignerInfo, certificate) pair. Step 6 has no
+round bound: each round accepts at least one certificate or ends the
+walk, so the ten-certificate cap of step 5 bounds its work. The path's
+length is the builder's in step 7: under the JDK's default
+`maxPathLength` of 5, BouncyCastle 1.86 returns a path of up to seven
+certificates below the anchor and refuses an eighth. A path of seven is
+accepted, because every certificate in it is signed under a pinned root
+and judged by PKIX at the instant like any other. A length bound of
+Java's own refused nothing an attacker without Apple's CA keys could
+make, and made the verdict follow BouncyCastle's `HashSet` order, so the
+post-build check went on 2026-10-12 (Q108 a) and the walk's round bound
+the same day (Q120 a)
 ([evidence](../docs/evidence/2026-10-12-java-path-length-bound.md)).
 Step 7 is §2.5 in practice: this receipt verifies only because validity is judged at its
 creation date.
@@ -670,7 +671,7 @@ Fixed bounds (java/README.md, "Resource bounds"):
 | ASN.1 nesting | BouncyCastle's `max_cons_depth`, 64 by default | The parser recurses; genuine receipts nest 9 deep, which `Verifier.create` checks | `MALFORMED` in the envelope, `UNREADABLE_PAYLOAD` in signed content, `INVALID_CERTIFICATE` in `x5c` |
 | Bag certificates | 10 | Genuine receipts embed one to three | `MALFORMED` |
 | SignerInfos | 4 | Each costs a chain build and a signature check | `MALFORMED` |
-| Receipt signer below a pinned root | 6 signed steps (walk rounds; the builder's `maxPathLength` is 5) | Bounds path building | `UNTRUSTED_CHAIN` |
+| Receipt signer below a pinned root | 7 certificates below the anchor: BouncyCastle 1.86's builder refuses an eighth (the JDK's default `maxPathLength`, 5). The walk has no round bound; the bag cap bounds its work | Bounds path building | `UNTRUSTED_CHAIN` |
 | JSON depth, name, number | 1,000, 50,000, 1,000 (Jackson defaults, in the library's own factories so a host-wide override cannot move them) | Bounded parsing | `MALFORMED`; `UNREADABLE_PAYLOAD` in a signed payload |
 
 Two costs to know:

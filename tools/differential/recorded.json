@@ -8,7 +8,8 @@
     "nesting-between-33-and-bouncycastle": "ASN.1 nested 33 deep, past the core's depth bound of 32 and within BouncyCastle's (org.bouncycastle.asn1.max_cons_depth, 64 by default): in the signed content, in an unsigned attribute value, the digestAlgorithms parameters, a crls entry or an embedded certificate's parameters, with SEQUENCEs or [0] context tags. The core refuses (UNREADABLE_PAYLOAD for the content, MALFORMED for the envelope); Java's only nesting bound is BouncyCastle's, so it verifies. Apple's receipts nest 9 deep. The cases allow both (R20, 2026-10-01).",
     "json-bounds-java-only": "JSON a bounded reader refuses and serde_json reads: a JWS header member name of 50,001 characters, a header integer of 1,001 digits. The core reads each document into a map of raw member values, so a value nobody reads is skipped with no length bound, and the genuinely signed input verifies. Java reads under Jackson's default constraints (names 50,000, numbers 1,000) and refuses (MALFORMED). Apple's headers carry no such member. The cases allow both (R20 and R40, 2026-10-01). The three inputs nested 65 deep left this group on 2026-10-05, when Java dropped BoundedJson's depth of 64 for Jackson's 1,000 and both read them.",
     "negative-year-rendering": "A receipt date of year 0000 renders its _pst time in the year -1: java.time prints -0001, jiff prints -001. The instant and every other field agree; no Apple receipt carries such a date (R20, 2026-10-07).",
-    "dates-beyond-jiffs-calendar": "A receipt date whose offset moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z. Java reads it (a long holds the instant; owner, 2026-10-12); jiff's calendar ends at 9999, so the core keeps the attribute raw. Only informational dates are read after trust; a creation date like it moves the chain instant to where no certificate is valid on both sides (R20, 2026-10-12)."
+    "dates-beyond-jiffs-calendar": "A receipt date whose offset moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z. Java reads it (a long holds the instant; owner, 2026-10-12); jiff's calendar ends at 9999, so the core keeps the attribute raw. Only informational dates are read after trust; a creation date like it moves the chain instant to where no certificate is valid on both sides (R20, 2026-10-12).",
+    "path-length-java-unbounded": "A receipt whose signer sits seven certificates below a pinned root, with distinct keys or a self-issued tail, every link signed under the root and valid at the instant. The core's top-down walk stops at six and answers UNTRUSTED_CHAIN; Java bounds no length of its own (owner, 2026-10-12, Q120 a), BouncyCastle 1.86's builder returns the path, and Java verifies. The cases allow both; Apple signs no receipt this deep (R20, 2026-10-12)."
   },
   "rows": {
     "receipt/reject-signer-certificate-version-11": { "class": "reason", "group": "signer-certificate-refusal-stage" },
@@ -38,6 +39,8 @@
     "receipt/reject-malformed-signed-attrs-in-the-first-signer": { "class": "verdict", "group": "tolerant-envelope-decoding" },
     "receipt/malformed-signed-attrs-in-the-second-signer-does-not-crash": { "class": "verdict", "group": "tolerant-envelope-decoding" },
     "receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info": { "class": "verdict", "group": "tolerant-envelope-decoding" },
-    "receipt/rfc3339-date-forms": { "class": "payload", "group": "dates-beyond-jiffs-calendar" }
+    "receipt/rfc3339-date-forms": { "class": "payload", "group": "dates-beyond-jiffs-calendar" },
+    "receipt/reject-a-path-of-seven": { "class": "verdict", "group": "path-length-java-unbounded" },
+    "receipt/reject-a-path-of-seven-with-a-self-issued-tail": { "class": "verdict", "group": "path-length-java-unbounded" }
   }
 }

@@ -334,41 +334,52 @@ class ReceiptVerificationTest {
     }
 
     @Test
-    void acceptsAPathOfExactlyTheMaximumLength() throws Exception {
-        // Six certificates below the anchor — leaf plus five intermediates —
-        // is the longest path accepted (certificates walked from the
-        // leaf, the anchor excluded). Reading the bound as "intermediates"
-        // would be off by one here and reject a chain that is within it.
+    void acceptsAPathOfSixCertificatesBelowTheAnchor() throws Exception {
+        // Six certificates below the anchor: leaf plus five intermediates,
+        // counted from the leaf with the anchor excluded. The core's bound
+        // is six; Java has none of its own, so this is a long path that
+        // both implementations accept.
         TestPki deep = TestPki.deepReceipt(5, 0);
         ReceiptPayload receipt = verify(deep, deep.signReceipt(payload(BUNDLE, creationDate.toString())));
         assertEquals(BUNDLE, receipt.bundleId());
     }
 
     @Test
-    void rejectsAPathOneHopOverTheMaximumLength() throws Exception {
-        // Seven certificates below the anchor. The walk stops after six
-        // and answers UNTRUSTED_CHAIN; the reason code is the contract, so
-        // this pins that the verdict is the chain's rather than a format or
-        // signature complaint.
+    void acceptsAPathOfSevenTheBuilderValidates() throws Exception {
+        // Seven certificates below the anchor, each signed by the one above
+        // under the pinned root and valid at the instant. The walk has no
+        // round bound, and BouncyCastle 1.86 returns a path of seven, so the
+        // receipt verifies (Q120 a, 2026-10-12). The core refuses it on its
+        // own six-certificate bound (DECISIONS.md R20).
         TestPki deep = TestPki.deepReceipt(6, 0);
-        byte[] tooLong = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
-        VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, tooLong));
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
+        byte[] seven = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
+        assertEquals(BUNDLE, verify(deep, seven).bundleId());
     }
 
     @Test
-    void countsSelfIssuedCertificatesTowardsTheMaximumLength() throws Exception {
+    void acceptsASelfIssuedTailTheBuilderValidates() throws Exception {
         // The same seven certificates below the anchor, except that the last
-        // one repeats its issuer's subject name. PKIX exempts self-issued
-        // intermediates from maxPathLength (RFC 5280 6.1.4), so the builder
-        // alone would return this path even though it is a hop too long. The
-        // top-down walk counts every hop, stops at six and never reaches the
-        // signer, so the signer is refused before the builder runs.
+        // CA repeats its issuer's subject name under a fresh key. The walk
+        // reaches the signer in seven rounds and the builder returns the
+        // path, so the receipt verifies like the one above (Q120 a,
+        // 2026-10-12).
         TestPki deep = TestPki.deepReceipt(5, 1);
-        byte[] tooLong = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
-        VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, tooLong));
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
-        assertTrue(e.getMessage().contains("not issued under a pinned Apple root"), e.getMessage());
+        byte[] seven = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
+        assertEquals(BUNDLE, verify(deep, seven).bundleId());
+    }
+
+    @Test
+    void refusesAPathOfEightTheBuilderDoesNotReturn() throws Exception {
+        // Eight certificates below the anchor, every one genuinely signed.
+        // The walk accepts them all, so the signer reaches the builder;
+        // BouncyCastle 1.86's builder refuses an eighth certificate below
+        // the anchor and finds no path. This is where Java's path length
+        // ends, and the message shows the builder refused it, not the walk.
+        TestPki deep = TestPki.deepReceipt(7, 0);
+        byte[] eight = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, eight));
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+        assertTrue(e.getMessage().contains("does not validate to a pinned Apple root"), e.getMessage());
     }
 
     @Test
@@ -379,7 +390,8 @@ class ReceiptVerificationTest {
         // two rounds; the builder backtracks off that copy and returns the
         // path through the current one. Four CAs above the current copy make
         // six certificates below the anchor, five make seven, which
-        // BouncyCastle's setMaxPathLength(5) still returns. Every certificate
+        // BouncyCastle 1.86 still returns under the JDK's default
+        // maxPathLength of 5. Every certificate
         // on the long path is signed under the pinned root and valid at the
         // instant, so the length alone refuses nothing (Q108 a, 2026-10-12).
         TestPki six = TestPki.crossCertifiedReceipt(4);

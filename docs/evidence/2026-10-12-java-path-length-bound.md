@@ -138,6 +138,9 @@ that is left. The not-a-CA answer is `UNTRUSTED_CHAIN` or
 Cost is unchanged: the check ran after the build. The builder's
 `setMaxPathLength(5)` still refuses an eighth certificate, the walk
 still runs six rounds, and a receipt embeds at most 10 certificates.
+Q120 a removed the walk's six rounds and the `setMaxPathLength(5)`
+call (the JDK's default is already 5) on 2026-10-12, so a
+seven-certificate path with distinct keys now verifies too.
 
 The check also made the verdict follow BouncyCastle's `HashSet` order
 on the `self-*` and `cross-valid-5` shapes. After the deletion the

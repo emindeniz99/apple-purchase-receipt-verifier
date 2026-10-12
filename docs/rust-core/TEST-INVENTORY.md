@@ -868,9 +868,10 @@ and `-second`.
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `countsEmbeddedCertificatesBeforeDecodingAnyOfThem` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `countsEmbeddedCertificatesBeforeResolvingTheSigner` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `rejectsCrossSignedCertificateMeshWithoutWalkingIt` | input built in code: stays with the Java |
-| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `acceptsAPathOfExactlyTheMaximumLength` | input built in code: stays with the Java |
-| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `rejectsAPathOneHopOverTheMaximumLength` | input built in code: stays with the Java |
-| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `countsSelfIssuedCertificatesTowardsTheMaximumLength` | input built in code: stays with the Java |
+| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `acceptsAPathOfSixCertificatesBelowTheAnchor` | input built in code: stays with the Java |
+| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `acceptsAPathOfSevenTheBuilderValidates` | input built in code: stays with the Java |
+| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `acceptsASelfIssuedTailTheBuilderValidates` | input built in code: stays with the Java |
+| Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `refusesAPathOfEightTheBuilderDoesNotReturn` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `rejectsCorruptedSignatureBytes` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `exposesEverythingTheDeviceHashNeeds` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptVerificationTest.java` `rejectsTrailingBytesAfterCms` | input built in code: stays with the Java |
