@@ -386,32 +386,22 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
 ## Java, after 0.7 (from the 2026-09-24 reviews)
 
 Found by the pre-0.6.0 vendor, readability and production reviews of the
-Java port and deferred by the owner. None lets a forged receipt or JWS
-through.
+Java implementation and settled on 2026-10-12, when the owner judged
+`java/` on its own terms with the rule "no unnecessary code". Done:
+`ReceiptCore.verifySignature` split into steps (#348), one base64 decoder
+(#348), the empty-body wording (#348), plugin pins and doclint back on
+(#348), the hand-written source-scan tokenizer replaced (#347). Kept, by
+decision: the `ReceiptPayload` constructor (its callers name every field),
+`equals`/`hashCode` rendering JSON, `Endpoint`'s `default:` branch (an
+unknown `Reason` answers 21009, the safe side), ES256 high-S acceptance
+(java/README.md, "Revocation is not checked"), x5c entries through
+BouncyCastle's `CertificateFactory` (Apple's x5c is clean DER; no extra
+strictness), no `module-info` (a second compile pass on the Java 8 base
+for little gain), no `AuthenticatedCertificates` wrapper type. Still open:
 
-- **A multi-release jar with a `module-info`** for Java 9 and later. 0.7
-  already made the implementation package-private in one package; a
-  `module-info` would only add hiding for modular consumers, at the cost of
-  a second compile pass.
-- **Smaller items:** ES256 accepts high-s signatures (malleable, not a
-  forgery); two strict base64 decoders.
-- **From the last-look security and quality reviews (2026-09-28)**, both
-  SHIP; nits left for after the tag:
-  - Split `ReceiptCore.verifySignature` (68 lines), and consider an
-    `AuthenticatedCertificates` wrapper type so the compiler holds the
-    trust boundary.
-  - The 15-argument positional `ReceiptPayload` constructor.
-  - `equals`/`hashCode` render JSON; owner decision: keep.
-  - JWS x5c entries tolerate trailing bytes and PEM wrapping through
-    BouncyCastle's `CertificateFactory`, while the receipt path refuses
-    trailing bytes; check against the core before changing.
-  - `Endpoint`'s `default:` branch maps any future `Reason` to 21009.
-  - `pom.xml` has no plugin pins for resources, install, deploy and
-    clean, and sets `doclint none`.
-  - Error-message consistency: the empty endpoint body wording.
-  - CI: PR wall time is dominated by 62 queued jobs and fixed-budget fuzz
-    jobs, not installs; consider fuzzing on `main` and nightly with a
-    1-minute PR smoke budget.
+- CI: PR wall time is dominated by 62 queued jobs and fixed-budget fuzz
+  jobs, not installs; consider fuzzing on `main` and nightly with a
+  1-minute PR smoke budget.
 
 ## After 0.6.0 (open items from the 2026-09-24 session)
 
