@@ -413,8 +413,7 @@ through.
   - `Endpoint`'s `default:` branch maps any future `Reason` to 21009.
   - `pom.xml` has no plugin pins for resources, install, deploy and
     clean, and sets `doclint none`.
-  - Error-message consistency: the empty endpoint body wording, and the
-    chain-length bound message omits its number.
+  - Error-message consistency: the empty endpoint body wording.
   - CI: PR wall time is dominated by 62 queued jobs and fixed-budget fuzz
     jobs, not installs; consider fuzzing on `main` and nightly with a
     1-minute PR smoke budget.
