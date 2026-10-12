@@ -26,13 +26,9 @@ real receipt through the code, in under an hour;
 Java **8** is the compiled target (`maven.compiler.release=8`), built and
 tested with any modern JDK.
 
-Depend on this artifact or on `apple-purchase-receipt-verifier-wasm` (the
-same API on the shared Rust core; not yet on Maven Central, see
-[../java-wasm/README.md](../java-wasm/README.md)), never both: they have the same class
-names, so whichever jar's classes load first answers. The `-wasm`
-artifact's `Verifier.create` throws `IllegalStateException` when it finds
-this jar on the classpath too, and a Gradle build that asks for both fails
-at resolution; this artifact does not check.
+Do not put this jar and `apple-purchase-receipt-verifier-wasm` on one
+classpath: they have the same class names, so whichever jar's classes load
+first answers.
 
 **On Spring Boot**, Boot's BOM decides your Jackson version, not this
 library. The floor is jackson-core 2.16 (see
@@ -254,9 +250,8 @@ the same for both:
 
 `ReceiptPayload.toJson()` renders the payload as JSON, written by
 jackson-core's generator. It holds the full purchase data; the caller
-decides what to write where. Every one of the nine ports of
-this library produces the same JSON value, not the same bytes: key order,
-whitespace and escaping style are free. The 64-bit ids above are JSON
+decides what to write where. The JSON value is the contract, not the
+bytes: key order, whitespace and escaping style are free. The 64-bit ids above are JSON
 strings (dates stay numbers: epoch milliseconds do not exceed 2^53 until
 roughly the year 287,000), bytes are padded standard base64, a missing value
 is `null` rather than an omitted key. `unknown_attributes` is an object
@@ -403,8 +398,7 @@ Two things to weigh before adding it: **Apple's library brings
 depend on any more (see [Upgrading from 0.6](#upgrading-from-06)); that
 dependency is your choice, not this library's. And **Apple's library needs
 Java 11**, above this library's Java 8 floor, so it is only an option where
-your own consumer already runs 11 or later. Where it is not, or in the other
-eight ports of this library, where Apple has no equivalent, declare your own
+your own consumer already runs 11 or later. Where it is not, declare your own
 struct or class for the claims you read and deserialise into that instead.
 
 ## The verifyReceipt-compatible endpoint
@@ -429,8 +423,7 @@ the 21007/21008 routing below; `request_date` in the response comes from the
 an in-app purchase entry when attribute 1711 is `0`, as Apple omits it for
 consumables.
 
-Status, from the verification outcome, the same table in every port of this
-library:
+Status, from the verification outcome:
 
 | Outcome | Status |
 |---|---|
@@ -495,9 +488,7 @@ never by `ordinal()`.
 | `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception when a parser threw one; a payload refused on its shape (not UTF-8 JSON text, not a JSON object, an attribute that is not a SET) has none. Deterministic: alert, do not retry |
 | `INTERNAL_ERROR` | The library itself failed before it could decide, for example a clock that threw. `Failure.cause()` carries the exception. Deterministic: alert, do not retry |
 
-The set is closed by the cross-port contract: adding or removing a `Reason`
-is a change to the shared fixture file and to all nine ports at once, and is
-a breaking change.
+The set is closed: adding or removing a `Reason` is a breaking change.
 
 ## Trust anchors
 
@@ -641,9 +632,7 @@ read each time BouncyCastle opens an ASN.1 stream, from `java.security`
 first, then a thread-local override, then the system property of that
 name. Its count depends
 on the shape by one: 65 nested SETs parse
-when the innermost is empty and are refused when it holds a value. The
-Rust core, which every other package runs, keeps its own bound of 32, so
-the shared cases nested 33 deep allow both answers (DECISIONS.md R20). A
+when the innermost is empty and are refused when it holds a value. A
 genuine Apple receipt nests 9 deep
 ([measured](../docs/evidence/2026-10-04-java-bc-floor.md)): a host that
 sets the property below 9 would refuse every genuine receipt as
@@ -898,12 +887,6 @@ VerificationResult<ReceiptPayload> result = verifier.verifyReceipt(receiptBase64
 This example is compile-checked against the built classes in
 `ReadmeSyntheticReceiptExampleTest`, in `src/test/java`.
 
-## Debugging a receipt by hand
-
-See ["Debugging a receipt by hand"](../README.md#debugging-a-receipt-by-hand)
-in the project README for opening a receipt with `openssl` outside this
-library.
-
 ## Upgrading from 0.6
 
 0.6's three verifier classes, one checked exception and every policy
@@ -950,8 +933,8 @@ from the verified payload and decide yourself (see
 
 The library is one package with no generated code, so copying
 `src/main/java` and `src/shared/java` into another build works. The second
-directory holds the config, result and payload classes the `-wasm`
-artifact compiles too; both are the same package. What a vendored copy has
+directory holds the config, result and payload classes; both are the same
+package. What a vendored copy has
 to carry with it, in short:
 
 1. Copy both source directories into one source root.
@@ -1033,8 +1016,8 @@ fixtures root, for `ReceiptBase64CapFixture`) it writes there; given none
 it overwrites the committed files in `fixtures/generated/` or
 `fixtures/generated-0.7/` (and `fixtures/limits/`, for
 `ReceiptBase64CapFixture`) with files signed by fresh keys. That changes
-the `contentSha256` recorded in `cases.json`, so every port's suite fails
-until `node tools/lint-cases.mjs` re-hashes it. The one test among them,
+the `contentSha256` recorded in `cases.json`, so
+`ConformanceCasesTest` fails until those hashes are updated. The one test among them,
 `FixtureGeneratorTest`, writes `fixtures/generated/` only with
 `-Dfixtures.generate=true`; without it the test is skipped, which is the
 one skip every `mvn test` reports. Two of the generator classes are also
@@ -1058,7 +1041,7 @@ where there is no `java` binary there.
 ## Stability
 
 The version is `0.x`: the API can still change between minor versions.
-Fixed by the cross-port fixture contract regardless: the endpoint's wire
+Fixed regardless, by the shared cases in `fixtures/cases.json`: the endpoint's wire
 output (statuses, fields, value types, date formatting; key order is not
 part of the contract), the `Reason` set, the size bounds, and `Long` epoch
 milliseconds for every date. Everything else, method names, exception-free

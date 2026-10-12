@@ -136,7 +136,7 @@ class SignedDataTest {
     void anEs256SignatureIsSixtyFourBytesEvenWhereALargerCurveVerifies() throws Exception {
         // ES256 is P-256 with a 64-byte r || s (RFC 7518 3.4). PLAIN-ECDSA
         // alone takes twice the leaf curve's order, so a P-384 leaf under the
-        // pinned chain verifies a 96-byte signature; the core refuses it too.
+        // pinned chain verifies a 96-byte signature, which ES256 does not allow.
         KeyPairGenerator generator = KeyPairGenerator.getInstance("EC", BouncyCastle.PROVIDER);
         generator.initialize(new ECGenParameterSpec("secp384r1"));
         KeyPair leafKeys = generator.generateKeyPair();

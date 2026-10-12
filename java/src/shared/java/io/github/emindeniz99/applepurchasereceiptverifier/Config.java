@@ -40,11 +40,8 @@ public final class Config {
     /**
      * Apple's three pinned roots and {@link Clock#systemUTC()}.
      *
-     * @throws IllegalStateException in the {@code -wasm} artifact, if the
-     *     bundled roots do not parse
-     * @throws LinkageError in the BouncyCastle artifact, which parses the
-     *     bundled roots with bcprov when they are first used, if bcprov is
-     *     missing or a root does not parse
+     * @throws LinkageError if bcprov is missing or a bundled root does not
+     *     parse; the roots are parsed with bcprov when first used
      */
     public static Config defaults() {
         return builder().build();
@@ -115,10 +112,8 @@ public final class Config {
          * its documentation states if it cannot; that documentation also says
          * what the probe checks. Turned off, {@code create} skips the check,
          * and a runtime that cannot verify shows it on the first call
-         * instead: the sibling {@code -wasm} artifact answers
-         * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint), and the
-         * BouncyCastle artifact refuses the input, with a reason that depends
-         * on what is missing. Leaving it unset means on.
+         * instead: the call refuses the input, with a reason that
+         * depends on what is missing. Leaving it unset means on.
          */
         public Builder runtimeProbe(boolean runtimeProbe) {
             this.runtimeProbe = runtimeProbe;
@@ -126,11 +121,9 @@ public final class Config {
         }
 
         /**
-         * @throws IllegalStateException in the {@code -wasm} artifact, if no
-         *     roots were set and the bundled Apple roots do not parse
-         * @throws LinkageError in the BouncyCastle artifact, if no roots were
-         *     set and the bundled Apple roots do not load (bcprov missing, or
-         *     a root that does not parse)
+         * @throws LinkageError if no roots were set and the bundled Apple
+         *     roots do not load (bcprov missing, or a root that does not
+         *     parse)
          */
         public Config build() {
             // roots(...) already copied, and never touches a set it handed on.

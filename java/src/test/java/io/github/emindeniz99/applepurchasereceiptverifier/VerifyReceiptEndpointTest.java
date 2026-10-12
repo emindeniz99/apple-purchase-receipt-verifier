@@ -84,8 +84,7 @@ class VerifyReceiptEndpointTest {
 
     /**
      * What a language-neutral vector cannot pin: {@code request_date}, which
-     * is "now", and the {@code _ms}/{@code _pst} companions of every date,
-     * the COMPARISON.md "full fidelity" field set, present in Node too.
+     * is "now", and the {@code _ms}/{@code _pst} companions of every date.
      */
     @Test
     void emitsTheRequestDateAndEveryDateCompanionField() throws Exception {
@@ -316,7 +315,7 @@ class VerifyReceiptEndpointTest {
     }
 
     /**
-     * The status table, the same in every port. 21009 is deterministic for
+     * The status table. 21009 is deterministic for
      * the same input, and 21005 and the 21100 to 21199 range, which invite a
      * retry, are never returned.
      */

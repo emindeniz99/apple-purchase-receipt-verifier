@@ -201,7 +201,7 @@ class VerifierApiTest {
 
     // ---------------------------------------------------------------- JSON
 
-    /** Ports agree on the value of toJson(), not its bytes: compare parsed trees. */
+    /** The contract is the value of toJson(), not its bytes: compare parsed trees. */
     private static void assertSameJsonValue(String expected, String actual) throws Exception {
         assertEquals(MAPPER.readTree(expected), MAPPER.readTree(actual), actual);
     }
@@ -258,7 +258,7 @@ class VerifierApiTest {
     }
 
     /**
-     * The value every port must produce: ids as strings, dates as numbers,
+     * The value toJson() must produce: ids as strings, dates as numbers,
      * padded base64, and strings that survive escaping (control characters,
      * {@code /}, non-ASCII) unchanged.
      */
@@ -539,7 +539,7 @@ class VerifierApiTest {
     /**
      * The rule lives in the implementation (ReceiptDecoder, JwsCore), where
      * the verifier computes a payload's environment; the public enum states
-     * none (DECISIONS.md R42).
+     * none.
      */
     @Test
     void environmentMapsApplesValuesAndDecidesNothing() {

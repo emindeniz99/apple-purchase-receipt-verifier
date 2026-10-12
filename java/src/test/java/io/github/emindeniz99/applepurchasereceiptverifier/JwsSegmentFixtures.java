@@ -12,9 +12,9 @@ import java.util.Map;
  * {@code fixtures/generated/}.
  *
  * <p>RFC 7515 §7.1 gives a compact JWS three base64url segments, and the first
- * two decode to JSON <em>objects</em>. Nothing in the ports' shared vectors
+ * two decode to JSON <em>objects</em>. Nothing in the shared vectors
  * said what happens when a segment is empty, or decodes to a JSON array or a
- * bare scalar — and an empty header is not a header a port can read {@code alg}
+ * bare scalar — and an empty header is not a header an implementation can read {@code alg}
  * out of, which Java's fuzzing walked out of the library as a
  * NullPointerException rather than a verdict. The four with the defect in
  * the header are {@code MALFORMED}: the input is not a compact JWS this
@@ -23,7 +23,7 @@ import java.util.Map;
  *
  * <p>Four of the six need no signing at all, since the defect is in the header
  * and the header is read first. The two that put the defect in the PAYLOAD do
- * need a genuine header, or a port would answer about the certificates in a
+ * need a genuine header, or an implementation would answer about the certificates in a
  * fake one instead — so they carry the real header and signature of a real
  * JWS over this generator's own PKI, and only the payload segment is replaced.
  * The signature is then stale, which is exactly the point: a payload that
@@ -42,7 +42,6 @@ import java.util.Map;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.JwsSegmentFixtures \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of these
@@ -96,7 +95,7 @@ public final class JwsSegmentFixtures {
         String signature = genuine[2];
 
         // --- 1. every segment empty --------------------------------------
-        // Two dots and nothing else. It splits into three segments, so a port
+        // Two dots and nothing else. It splits into three segments, so an implementation
         // that only counts them gets past that check with no header to read.
         write(out, "jws-all-segments-empty.jws", "..");
 
@@ -108,24 +107,24 @@ public final class JwsSegmentFixtures {
         write(out, "jws-header-empty.jws", "." + payload + "." + signature);
 
         // --- 3. an empty payload -----------------------------------------
-        // The genuine header, so a port reaches the payload at all.
+        // The genuine header, so an implementation reaches the payload at all.
         write(out, "jws-payload-empty.jws", header + ".." + signature);
 
         // --- 4. a header that is a JSON array ----------------------------
         // Valid base64url and valid JSON, and not an object: there is no
-        // member to read `alg` or `x5c` from, and a port indexing into it
+        // member to read `alg` or `x5c` from, and an implementation indexing into it
         // by name has to decide that on purpose rather than by accident.
         write(out, "jws-header-json-array.jws", segment("[\"ES256\",[]]") + "." + payload + "." + signature);
 
         // --- 5. a header that is a bare JSON scalar ----------------------
         // The other shape a JSON document can take. `42` is a complete JSON
-        // text under RFC 8259 §2, so a port that only asks "does this parse
+        // text under RFC 8259 §2, so an implementation that only asks "does this parse
         // as JSON" accepts it.
         write(out, "jws-header-json-scalar.jws", segment("42") + "." + payload + "." + signature);
 
         // --- 6. a payload that is a JSON array ---------------------------
         // The genuine header again, so this is a verdict about the payload.
-        // The claims a port reads by name are simply absent from an array,
+        // The claims an implementation reads by name are simply absent from an array,
         // and reading them as absent would move certificate validity onto
         // the current-time fallback, the same fail-open the out-of-range
         // signedDate vector guards.

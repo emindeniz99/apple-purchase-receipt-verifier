@@ -163,9 +163,8 @@ final class ReceiptDecoder {
      * {@code Production} and {@code ProductionVPP} are
      * {@link Environment#PRODUCTION}, {@code ProductionSandbox} and
      * {@code ProductionVPPSandbox} are {@link Environment#SANDBOX}, anything
-     * else ({@code Xcode}, a missing value) is {@code null}. The product's Rust
-     * implementation states the same rule, and the endpoint routes 21007
-     * and 21008 on it.
+     * else ({@code Xcode}, a missing value) is {@code null}. The endpoint routes
+     * 21007 and 21008 on it.
      */
     static @Nullable Environment environment(@Nullable String receiptType) {
         if ("Production".equals(receiptType) || "ProductionVPP".equals(receiptType)) {

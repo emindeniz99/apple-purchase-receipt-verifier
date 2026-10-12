@@ -28,7 +28,7 @@ import org.bouncycastle.asn1.DERSequence;
  *   <li>a foreign one with the same subjects and window, never trusted;</li>
  *   <li>a trusted one that expired: valid 2020-01-01 to 2021-01-01, emitted as
  *       {@code verification-order-expired-root.der}. Every creation date
- *       these receipts state lies inside that window, so a port that took
+ *       these receipts state lies inside that window, so an implementation that took
  *       one of them as the chain instant would accept; judged at now, the
  *       chain has expired.</li>
  * </ul>
@@ -42,7 +42,6 @@ import org.bouncycastle.asn1.DERSequence;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.VerificationOrderFixtures \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of these
@@ -127,7 +126,7 @@ public final class VerificationOrderFixtures {
 
         // (d) Attribute 12 twice, both inside the expired chain's window.
         // The first one is the chain instant, so the chain is judged inside
-        // its window and the receipt verifies. A port that treated two dates
+        // its window and the receipt verifies. An implementation that treated two dates
         // as none would judge at now and refuse the expired chain.
         write(
                 out,

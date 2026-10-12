@@ -25,10 +25,9 @@ import org.bouncycastle.asn1.DERTaggedObject;
 
 /**
  * Writes the eight hostile-JWS fixtures into {@code fixtures/generated/} —
- * the inputs Python's coverage-guided fuzzing found escaping the library as
+ * the inputs coverage-guided fuzzing found escaping the library as
  * bare exceptions (ROADMAP "Before 1.0" item 3), plus the {@code x5c[2]}
- * vector that closed the last parser differential, turned into shared
- * vectors so all nine ports have to answer them the same way.
+ * vector for the third certificate entry, turned into shared vectors.
  *
  * <p>Same technique as {@link PortDivergenceFixtures}: a fake Apple PKI from
  * {@link TestPki}, fixed epoch instants so nothing depends on generation
@@ -43,7 +42,6 @@ import org.bouncycastle.asn1.DERTaggedObject;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.HostileJwsFixtures \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Seven of the eight carry exactly ONE defect each; the remaining one
@@ -54,7 +52,7 @@ import org.bouncycastle.asn1.DERTaggedObject;
  * an attacker writes it, and the certificates are covered by their own
  * issuer's signature. So the header is signed in its hostile state, and a
  * mutated certificate is re-signed by the issuing key ({@link #resign}) so a
- * broken issuer signature can never be the thing a port objects to first. The
+ * broken issuer signature can never be the thing an implementation objects to first. The
  * one exception is the corrupt-extension fixture, whose certificate cannot be
  * decoded at all: there is no TBS left to re-sign, and no verifier can reach
  * the signature to notice.</p>
@@ -140,7 +138,7 @@ public final class HostileJwsFixtures {
 
         // --- 2. a signedDate no calendar can express ---------------------
         // 1e300 ms is about 10^289 years. NaN and Infinity reach the same
-        // place in the ports whose JSON parser accepts them, but most reject
+        // place wherever the JSON parser accepts them, but many reject
         // both outright, so the vector is the huge-but-valid JSON number.
         Map<String, Object> farFuture = new LinkedHashMap<String, Object>(transaction);
         farFuture.put("signedDate", Double.valueOf(1e300));
@@ -152,7 +150,7 @@ public final class HostileJwsFixtures {
         // --- 3. one corrupt extension in x5c[1] --------------------------
         // The intermediate's basicConstraints extnValue is left claiming 127
         // content bytes inside a 15-byte extension, so the certificate stops
-        // being decodable partway through a region a port only reaches if it
+        // being decodable partway through a region an implementation only reaches if it
         // parses the whole certificate rather than scanning it for marker
         // OIDs. Nothing else about the JWS is touched.
         byte[] corruptExtension = corruptBasicConstraintsLength(pki.intermediate.getEncoded());
@@ -162,7 +160,7 @@ public final class HostileJwsFixtures {
                 pki.signJwsWithHeader(header(replacing(pki.x5c(), 1, corruptExtension)), claimsJson)
                         .getBytes(StandardCharsets.US_ASCII));
 
-        // --- 4. an EC curve no port implements ---------------------------
+        // --- 4. an EC curve nobody implements ----------------------------
         // The intermediate's namedCurve becomes 1.2.840.10045.3.1.10, which
         // is unassigned, and the TBS is re-signed by the root so the
         // certificate is otherwise genuine. Verifying that the leaf was
@@ -176,7 +174,7 @@ public final class HostileJwsFixtures {
                         .getBytes(StandardCharsets.US_ASCII));
 
         // --- 5. a certificate claiming version 11 ------------------------
-        // X.509 defines v1, v2 and v3 only. Re-signed by the root, so a port
+        // X.509 defines v1, v2 and v3 only. Re-signed by the root, so an implementation
         // that does not check the version finds nothing else wrong with it.
         byte[] version11 = resign(version(pki.intermediate.getEncoded(), 11), pki.rootKey);
         write(
@@ -205,8 +203,8 @@ public final class HostileJwsFixtures {
         // Accepted with its date READ, and it belongs beside vector 2 because
         // it is the boundary of that one: a signedDate no instant can hold
         // does not parse, so the clock stands in for it (case
-        // transaction/signed-date-out-of-range-falls-back-to-the-clock). A
-        // port that gets there by treating every number that is not a bare
+        // transaction/signed-date-out-of-range-falls-back-to-the-clock). An
+        // implementation that gets there by treating every number that is not a bare
         // integer as unparsed passes that vector and misreads this one. JSON
         // draws no line between 1722945600000 and 1722945600000.0, and
         // reading only the integer spelling fails OPEN — the date reads as
@@ -224,12 +222,9 @@ public final class HostileJwsFixtures {
         // The third entry holds base64 of the ASCII text "not a
         // certificate" — the index twin of
         // transaction/reject-x5c-leaf-that-is-not-a-certificate, which
-        // deliberately sits on x5c[0] because the ports disagreed about
-        // x5c[2]. Java parsed all three entries and rejected this; the other
-        // eight never touched the third and verified the JWS. Pinning the
-        // majority would have made java DROP a rejection it already makes,
-        // so the vector pins java's answer and the other eight parse the
-        // entry — without trusting it, which nothing here changes.
+        // deliberately sits on x5c[0] because implementations may differ
+        // on x5c[2]. Java parses all three entries and rejects this, so the
+        // vector pins that answer.
         List<String> brokenRoot = replacing(pki.x5c(), 2, "not a certificate".getBytes(StandardCharsets.US_ASCII));
         write(
                 out,

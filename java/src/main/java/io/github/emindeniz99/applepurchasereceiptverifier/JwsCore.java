@@ -218,8 +218,7 @@ final class JwsCore {
         /**
          * The first of the three places that is present decides, whatever
          * its value: {@code Production} and {@code Sandbox} map, anything
-         * else is null, as is a payload with none of them. The product's
-         * Rust implementation states the same rule.
+         * else is null, as is a payload with none of them.
          */
         @Nullable
         Environment environment() {

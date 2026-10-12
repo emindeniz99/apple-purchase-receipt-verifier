@@ -35,14 +35,13 @@ import org.bouncycastle.cert.X509CertificateHolder;
  * identity fields, so it carries a legible issuer and serial of its own and no
  * X.509 decoder will accept it.</p>
  *
- * <p>Two independent defects, and a port that reports the wrong one is
- * guessing. Node, Swift and Go resolve the SignerInfo's issuer and serial
- * against every entry's raw DER before judging any entry, so the malformed
- * stranger cannot be mistaken for the absent signer and the verdict is
- * {@code MALFORMED} — a defect of the receipt. Python, Rust, Java, PHP and
- * Ruby used to answer {@code INVALID_CERTIFICATE} here, which says the
- * signer was found and was bad. The stranger's identity is legible
- * on purpose: a port cannot pass this by failing to read identities at all,
+ * <p>Two independent defects, and an implementation that reports the wrong one is
+ * guessing. The SignerInfo's issuer and serial are resolved against every
+ * entry's raw DER before any entry is judged, so the malformed stranger
+ * cannot be mistaken for the absent signer and the verdict is
+ * {@code MALFORMED} — a defect of the receipt. {@code INVALID_CERTIFICATE}
+ * would say the signer was found and was bad. The stranger's identity is legible
+ * on purpose: an implementation cannot pass this by failing to read identities at all,
  * only by reading them and comparing.</p>
  *
  * <p>A {@code main} rather than a {@code @Test} for the same reason as the
@@ -55,7 +54,6 @@ import org.bouncycastle.cert.X509CertificateHolder;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.AbsentSignerFixture \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of the

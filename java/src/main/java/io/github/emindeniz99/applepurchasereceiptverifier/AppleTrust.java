@@ -45,8 +45,7 @@ final class AppleTrust {
     /**
      * Marks two critical extensions processed on every certificate of a
      * path, which BouncyCastle's PKIX would otherwise refuse as unknown.
-     * OpenSSL, under the product's Rust implementation, recognises both, and neither is a trust
-     * decision here.
+     * OpenSSL recognises both, and neither is a trust decision here.
      *
      * <ul>
      *   <li>extendedKeyUsage (2.5.29.37): RFC 5280 4.2.1.12 lets it be
@@ -55,9 +54,8 @@ final class AppleTrust {
      *       too. Like them it asks no purpose of a CA, so no genuine chain is
      *       refused for it.</li>
      *   <li>cRLDistributionPoints (2.5.29.31): it only says where a CRL is.
-     *       Apple's intermediates carry it non-critical today. The Rust implementation asks
-     *       for no revocation check, so a critical one is acted on in neither
-     *       implementation.</li>
+     *       Apple's intermediates carry it non-critical today. Revocation checking is off, so
+     *       a critical one would be acted on by nothing here.</li>
      * </ul>
      *
      * <p>Every other critical extension BouncyCastle does not process is

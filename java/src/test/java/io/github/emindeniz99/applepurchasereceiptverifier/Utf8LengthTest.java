@@ -69,8 +69,8 @@ class Utf8LengthTest {
     }
 
     /**
-     * A lone surrogate counts the one '?' getBytes writes for it, which is
-     * also what the -wasm artifact sends the core. No wire input carries one.
+     * A lone surrogate counts the one '?' getBytes writes for it. No wire
+     * input carries one.
      */
     @Test
     void aLoneSurrogateCountsOneByte() {

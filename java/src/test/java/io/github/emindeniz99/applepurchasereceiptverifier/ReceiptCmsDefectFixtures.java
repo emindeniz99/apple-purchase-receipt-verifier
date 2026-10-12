@@ -41,7 +41,7 @@ import org.bouncycastle.cert.X509CertificateHolder;
  *       belongs. Every signature and every name link in the path is genuine
  *       and every window covers the receipt's creation date; the one thing
  *       wrong is that the certificate in the issuer position is an end entity
- *       rather than a CA. A port that chains on issuer names and signatures
+ *       rather than a CA. An implementation that chains on issuer names and signatures
  *       alone accepts it, which would let any receipt-signing leaf mint
  *       signers of its own.</li>
  *   <li><b>{@code receipt-missing-intermediate.der}</b> — the same genuine
@@ -51,7 +51,7 @@ import org.bouncycastle.cert.X509CertificateHolder;
  *   <li><b>{@code receipt-empty-signature.der}</b> — a genuine receipt whose
  *       SignerInfo signature is rewritten to an OCTET STRING of zero bytes.
  *       The signature is a length-prefixed string in DER, so an empty one is
- *       well-formed ASN.1: a port has to reach the verification step and get a
+ *       well-formed ASN.1: an implementation has to reach the verification step and get a
  *       negative answer from it rather than fail to parse.</li>
  *   <li><b>{@code receipt-empty-content.der}</b> — a CMS signed over zero
  *       bytes of encapsulated content. The chain, the signer purpose and the
@@ -72,7 +72,6 @@ import org.bouncycastle.cert.X509CertificateHolder;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.ReceiptCmsDefectFixtures \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of these
@@ -224,7 +223,7 @@ public final class ReceiptCmsDefectFixtures {
 
         // --- 4. zero bytes of encapsulated content -----------------------
         // Signed over the empty payload rather than patched to it, so the
-        // signature is genuine and a port cannot answer about the signature
+        // signature is genuine and an implementation cannot answer about the signature
         // instead of about the payload.
         write(
                 out,

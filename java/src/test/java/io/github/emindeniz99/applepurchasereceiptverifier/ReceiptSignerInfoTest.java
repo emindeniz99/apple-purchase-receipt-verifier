@@ -178,7 +178,7 @@ class ReceiptSignerInfoTest {
 
     /**
      * When no SignerInfo verifies, the first one's failure is the verdict,
-     * the same rule in every port, so a single-signer receipt fails exactly
+     * so a single-signer receipt fails exactly
      * as it did in 0.6. The DL-ordered SET makes "first" the test's choice.
      */
     @Test

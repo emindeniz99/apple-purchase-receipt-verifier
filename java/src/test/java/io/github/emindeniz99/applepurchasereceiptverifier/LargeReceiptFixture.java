@@ -15,13 +15,13 @@ import org.bouncycastle.asn1.ASN1Encodable;
  * 1.0" item 1). The floor
  * has two numbers — 1,048,576 bytes of DER and 20,000 nodes in any single
  * ASN.1 parse — and one receipt cannot pin both: sitting under both at once
- * leaves a port free to lower either cap to just above whatever that one
+ * leaves an implementation free to lower either cap to just above whatever that one
  * receipt happens to use. So there is one receipt per number, each within 2%
  * of the limit it pins and each well clear of the other.
  *
  * <p><b>receipt-byte-floor</b> is 2,300 in-app purchases whose product ids
  * are padded out to {@link #PRODUCT_ID_LENGTH} characters: the bytes go into
- * the value of a MODELLED attribute, so a port has to decode and return every
+ * the value of a MODELLED attribute, so an implementation has to decode and return every
  * one of them — none of this is filler a parser may skip. Its payload holds
  * about 9,200 nodes, under half the node budget, so accepting it says
  * something about bytes alone.
@@ -54,7 +54,6 @@ import org.bouncycastle.asn1.ASN1Encodable;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.LargeReceiptFixture \
  *      fixtures/generated-0.7
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  */
 public final class LargeReceiptFixture {
@@ -65,7 +64,7 @@ public final class LargeReceiptFixture {
     private static final long CHAIN_NOT_BEFORE = 1704067200000L; // 2024-01-01
     private static final long CHAIN_NOT_AFTER = 2524608000000L; // 2050-01-01
 
-    /** The floor itself: what every port must accept. */
+    /** The floor itself: what must be accepted. */
     private static final int BYTE_FLOOR = 1024 * 1024;
 
     private static final int NODE_FLOOR = 20000;
@@ -85,7 +84,7 @@ public final class LargeReceiptFixture {
 
     /**
      * The first unknown attribute type the node-floor receipt uses. Above
-     * every type any port models, and low enough that all of them encode in
+     * every type this library models, and low enough that all of them encode in
      * two INTEGER octets, so the receipt stays as small as it can be.
      */
     private static final int UNKNOWN_TYPE_BASE = 20000;
@@ -178,7 +177,7 @@ public final class LargeReceiptFixture {
     private static byte[] paddedPurchasesPayload(int idLength, int extra) throws Exception {
         List<byte[]> inApps = new ArrayList<byte[]>(BYTE_FLOOR_PURCHASES);
         for (int i = 0; i < BYTE_FLOOR_PURCHASES; i++) {
-            // Ids are unique per purchase, as a real receipt's are, so no port
+            // Ids are unique per purchase, as a real receipt's are, so nothing
             // can collapse them and report a smaller collection. The first and
             // last keep a short product id so a case can select them by it;
             // every other product id is padded, which is where the bytes are.
@@ -207,7 +206,7 @@ public final class LargeReceiptFixture {
         List<ASN1Encodable> extras = new ArrayList<ASN1Encodable>(NODE_FLOOR_ATTRIBUTES);
         for (int i = 0; i < NODE_FLOOR_ATTRIBUTES; i++) {
             // Each is four nodes — the SEQUENCE and its three children — and
-            // fourteen bytes. Distinct types, so a port keying them by type
+            // fourteen bytes. Distinct types, so an implementation keying them by type
             // records every one instead of collapsing them.
             extras.add(TestPki.attribute(UNKNOWN_TYPE_BASE + i, new byte[] {1, 2, 3}));
         }
@@ -257,9 +256,9 @@ public final class LargeReceiptFixture {
     }
 
     /**
-     * The node count the ports' budgets are spent in: one TLV per node,
-     * descending into constructed values only — which is what every port that
-     * carries a budget does, since a primitive OCTET STRING's contents are a
+     * The node count the ASN.1 budget is spent in: one TLV per node,
+     * descending into constructed values only — which is what a budget counts,
+     * since a primitive OCTET STRING's contents are a
      * separate parse with a separate budget.
      */
     private static int nodes(byte[] der) {

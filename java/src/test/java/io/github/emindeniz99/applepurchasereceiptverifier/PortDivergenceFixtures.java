@@ -15,7 +15,7 @@ import java.util.Map;
 import org.bouncycastle.asn1.DERUTF8String;
 
 /**
- * Writes the fixtures that pin the four cross-port divergences into
+ * Writes the fixtures that pin four edge cases into
  * {@code fixtures/generated/} — the receipt carrying an attribute type above
  * 2^31-1, and the dated-nothing receipts and payloads whose certificate
  * validity therefore falls back to "current time".
@@ -34,7 +34,6 @@ import org.bouncycastle.asn1.DERUTF8String;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.PortDivergenceFixtures \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of these
@@ -58,15 +57,15 @@ public final class PortDivergenceFixtures {
     private static final long OLD_SIGNED_DATE = 1590969600000L; // 2020-06-01
     private static final String OLD_CREATION_DATE = "2020-06-01T00:00:00Z";
 
-    /** 2^31 — one past the largest type any port can represent. */
+    /** 2^31 — one past the largest attribute type accepted. */
     private static final BigInteger OVERSIZED_ATTRIBUTE_TYPE = BigInteger.valueOf(2147483648L);
 
     /**
      * 2^32 + 2. The 2^31 vector pins one point of the attribute-type
-     * ceiling; a port could sit its own anywhere from there up to 2^53 and
+     * ceiling; an implementation could sit its own anywhere from there up to 2^53 and
      * no vector would notice. This value lands inside that band, and it is
      * chosen rather than picked: truncated to 32 bits it becomes 2, the
-     * bundle id attribute, so a port that wrapped instead of rejecting
+     * bundle id attribute, so an implementation that wrapped instead of rejecting
      * would read the attribute rather than refuse the receipt.
      */
     private static final BigInteger TRUNCATING_ATTRIBUTE_TYPE = BigInteger.valueOf(4294967298L);
@@ -76,7 +75,7 @@ public final class PortDivergenceFixtures {
      * type 9999 — {@code SEQUENCE { INTEGER 9999, INTEGER 1, OCTET STRING
      * 01 02 03 }}. A CMS receipt embeds its payload verbatim, so this locates
      * the one byte {@link #tamperOneByte} alters: it belongs to an attribute
-     * no port models, so altering it changes no claim, only the digest the
+     * this library does not model, so altering it changes no claim, only the digest the
      * signature covers.
      */
     private static final byte[] UNKNOWN_ATTRIBUTE_DER = {
@@ -118,7 +117,7 @@ public final class PortDivergenceFixtures {
 
         // Well-formed in every other way — signed by a trusted chain, correct
         // device hash, real bundle id — so the only thing a verifier can
-        // object to is the attribute type. Whether a port parses before or
+        // object to is the attribute type. Whether an implementation parses before or
         // after it checks the signature, the answer is the same.
         byte[] oversized = TestPki.receiptPayload(
                 "ProductionSandbox",
@@ -213,7 +212,7 @@ public final class PortDivergenceFixtures {
         write(out, "gaps-receipt-root.der", gapsReceiptPki.root.getEncoded());
 
         // Signed intact, then one byte of the signed payload flipped. The
-        // byte belongs to attribute 9999, which no port models: the receipt
+        // byte belongs to attribute 9999, which this library does not model: the receipt
         // still parses, still names the right bundle id and creation date,
         // and its chain still validates — the CMS digest is the only thing
         // that no longer matches.
@@ -260,7 +259,7 @@ public final class PortDivergenceFixtures {
         // The payload segment is replaced AFTER signing with one that differs
         // in a single character of productId. Same length, still valid
         // base64url, still valid JSON, still the right bundle id and
-        // environment and signedDate — so every check a port makes before the
+        // environment and signedDate — so every check an implementation makes before the
         // signature passes, and the ES256 check is genuinely the first thing
         // that fails.
         Map<String, Object> servedClaims = new LinkedHashMap<String, Object>(signedClaims);
@@ -273,9 +272,8 @@ public final class PortDivergenceFixtures {
         // x5c[0] holds base64 of "not a certificate". The JWS is then signed
         // over that header, so the signature is a real ES256 signature over
         // the bytes served and the unparseable leaf is the only defect. x5c[1]
-        // would do as well; x5c[2] would NOT — Java parses the third entry and
-        // the other eight ports do not, and that divergence is deliberately
-        // not something a shared vector may depend on.
+        // would do as well; x5c[2] would NOT — Java parses the third entry, and that
+        // is deliberately not something a shared vector may depend on.
         List<String> brokenX5c = new ArrayList<String>(gapsJwsPki.x5c());
         brokenX5c.set(0, TestPki.b64("not a certificate".getBytes(StandardCharsets.US_ASCII)));
         write(

@@ -50,7 +50,7 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code -Djavax.net.ssl.trustStore}, not through {@link TrustManagerFactory}'s
  * defaults, not through any platform verifier, and not off the network.
  *
- * <p>Java is the port where that is easiest to lose, because the JDK hands out
+ * <p>In Java that is easiest to lose, because the JDK hands out
  * an ambient trust store for free: {@code TrustManagerFactory.init((KeyStore)
  * null)} is one line, it silently reads {@code javax.net.ssl.trustStore} or
  * falls back to {@code $JAVA_HOME/lib/security/cacerts}, and
@@ -58,10 +58,7 @@ import org.junit.jupiter.api.io.TempDir;
  * store into anchors. Every one of those is a single edit away from the
  * {@code PKIXParameters(Set&lt;TrustAnchor&gt;)} this library actually uses.</p>
  *
- * <p>So the rule is asserted the same three ways the python, swift and go ports
- * assert it (see {@code python/tests/test_trust_isolation.py},
- * {@code swift/Tests/.../TrustStoreIsolationTests.swift},
- * {@code go/systemtrust_test.go}):</p>
+ * <p>So the rule is asserted three ways:</p>
  *
  * <ul>
  *   <li><b>environmentally</b> — a certificate authority this JVM genuinely
@@ -95,7 +92,7 @@ import org.junit.jupiter.api.io.TempDir;
 class TrustStoreIsolationTest {
 
     private static final Path FIXTURES = TestFixtures.root();
-    /** Every source root the jar compiles: its own and the one it shares with the -wasm artifact. */
+    /** Every source root the jar compiles: {@code src/main/java} and {@code src/shared/java}. */
     private static final List<Path> MAIN_SOURCES =
             Arrays.asList(Paths.get("src", "main", "java"), Paths.get("src", "shared", "java"));
 
@@ -117,8 +114,7 @@ class TrustStoreIsolationTest {
      * startup-shaped setting — a JVM that has already built a default trust
      * manager may keep it — and because the point is a process whose ambient
      * trust store is the planted one from its very first instruction, exactly
-     * as a host operator would configure it. The go port forks for the same
-     * reason.</p>
+     * as a host operator would configure it.</p>
      */
     @Test
     void aTrustStoreThisJvmGenuinelyTrustsMovesNoVerdict(@TempDir Path tmp) throws Exception {
@@ -666,7 +662,7 @@ class TrustStoreIsolationTest {
 
         private static final long serialVersionUID = 1L;
 
-        @SuppressWarnings("deprecation") // the (String, String, String) constructor is Java 9+; this is a Java 8 port.
+        @SuppressWarnings("deprecation") // the (String, String, String) constructor is Java 9+; the target is Java 8.
         public SpyProvider() {
             super(SPY_PROVIDER, 1.0d, "records every request the JVM's provider list receives");
             for (String[] engine : SHADOWED) {

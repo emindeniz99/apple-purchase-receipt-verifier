@@ -41,7 +41,6 @@ import java.util.Date;
  *      io.github.emindeniz99.applepurchasereceiptverifier.ReceiptBase64CapFixture \
  *      fixtures
  * node tools/generate-limit-fixtures.mjs   # the over-cap twin is built from this file
- * node tools/lint-cases.mjs                # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of the
@@ -52,7 +51,7 @@ public final class ReceiptBase64CapFixture {
     private static final long CHAIN_NOT_BEFORE = 1704067200000L; // 2024-01-01
     private static final long CHAIN_NOT_AFTER = 2524608000000L; // 2050-01-01
 
-    /** The receipt cap every port enforces on the base64 string. */
+    /** The receipt cap on the base64 string. */
     private static final int STRING_CAP = 3 * 1024 * 1024;
 
     private ReceiptBase64CapFixture() {}

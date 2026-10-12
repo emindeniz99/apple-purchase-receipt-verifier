@@ -13,10 +13,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Shapes the standards allow in an Apple-signed input, which Java used to
- * refuse and the core accepts (owner, Q69 and Q72, 2026-10-06). Each input is
+ * refuse (owner, Q69 and Q72, 2026-10-06). Each input is
  * genuine apart from the one shape, so the shape is the only thing that can
- * refuse it. The shared cases on {@link StandardShapeFixtures}' files hold
- * the core to the same answers.
+ * refuse it. The shared cases on {@link StandardShapeFixtures}' files pin
+ * the same answers.
  */
 class StandardShapesTest {
 
@@ -60,7 +60,7 @@ class StandardShapesTest {
     /**
      * RFC 5280 4.2.1.13 lets cRLDistributionPoints be critical. It only says
      * where a CRL is, and no revocation check is asked, so the chain
-     * validates as it does in the core (owner, Q72).
+     * validates (owner, Q72).
      */
     @Test
     void aCriticalCrlDistributionPointsOnTheIntermediateVerifies() throws Exception {
