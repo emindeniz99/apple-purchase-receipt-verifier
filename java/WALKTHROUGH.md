@@ -391,7 +391,7 @@ The checks, in the order Java runs them:
 |---|---|---|---|
 | 1 | Non-empty, at most 3,145,728 UTF-8 bytes, before any decoding | Memory and CPU exhaustion | `MALFORMED`, `TOO_LARGE` |
 | 2 | Canonical padded base64 | Two decoders reading one string differently; Apple's own rule | `MALFORMED` |
-| 3 | Envelope: no trailing bytes, eContent present, 1 to 4 SignerInfos, all their attributes readable | Garbage, smuggled bytes, amplification | `MALFORMED` |
+| 3 | Envelope: no trailing bytes, eContent present, 1 to 4 SignerInfos | Garbage, smuggled bytes, amplification | `MALFORMED` |
 | 4 | Read attribute 12 from the unverified payload to pick the instant | Nothing: this never fails | none |
 | 5 | Decode the bag: at most 10 certificates, each decodes, no key read | Certificate flooding | `MALFORMED` |
 | 6 | Authenticate the bag top-down from the pinned roots (see "Why top-down" below) | Attacker keys being decoded or used | feeds step 7 |
@@ -432,8 +432,9 @@ chain whose signer also lacks a marker answers `INVALID_CERTIFICATE`.
 **Several SignerInfos.** Each signs the same content, so one that verifies
 is enough. Up to four are tried in order; the first that verifies decides,
 and when none does, the first one's failure is the verdict. A SignerInfo
-whose algorithm BouncyCastle does not implement counts as not verifying,
-and the next is tried, as RFC 4853 asks. Genuine receipts have one;
+whose algorithm BouncyCastle does not implement, or whose attributes do
+not parse, counts as not verifying, and the next is tried, as RFC 4853
+asks for an unimplemented algorithm. Genuine receipts have one;
 the rule keeps a future dual-signed receipt working.
 
 **Several certificates with the signer's identity.** Every certificate a
@@ -515,7 +516,7 @@ flowchart TD
     S["DefaultVerifier.verifyReceipt: read the clock once"] --> C1{"ReceiptCore.verify: empty, or over 3,145,728 bytes?"}
     C1 -->|yes| F1["MALFORMED or TOO_LARGE"]
     C1 -->|no| C2["StrictBase64.decode"]
-    C2 --> C3["verifySignature: parse envelope, eContent, 1 to 4 SignerInfos, read their attributes"]
+    C2 --> C3["verifySignature: parse envelope, eContent, 1 to 4 SignerInfos"]
     C3 --> C4["ReceiptDecoder.readCreationDate: instant is attribute 12, else the clock"]
     C4 --> C5["ReceiptCertificates.decode: at most 10, no keys read"]
     C5 --> C6["authenticatedTopDown: keep what a pinned root vouches for"]

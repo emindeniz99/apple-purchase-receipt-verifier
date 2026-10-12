@@ -9903,7 +9903,7 @@
     },
     {
       "id": "receipt/reject-malformed-signed-attrs-in-the-first-signer",
-      "description": "A SignerInfo whose signedAttrs field holds an INTEGER where Attributes belong, first in receipt order, beside a signer that verifies. Malformed signedAttrs are MALFORMED before any cryptography, whichever position they are in (lead, 2026-09-27).",
+      "description": "A SignerInfo whose signedAttrs field holds an INTEGER where Attributes belong, first in receipt order, beside a signer that verifies. A port that judges every SignerInfo's syntax before any cryptography refuses it (MALFORMED, the core); one that lets the broken SignerInfo fail on its own and tries the next accepts the receipt, which the second SignerInfo's genuine signature still has to carry (Java; owner, 2026-10-12). It must not crash and must finish within maxMillis.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "review-receipt-malformed-signed-attrs-first"
@@ -9917,14 +9917,17 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "signed-attrs-not-attributes",
+      "maxMillis": 2000,
       "tags": [
         "receipt",
         "pkcs7",
-        "negative",
+        "tolerant",
         "signers",
         "format",
         "review",
@@ -10022,7 +10025,7 @@
     },
     {
       "id": "receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info",
-      "description": "Apple's SignerInfo with an unsignedAttrs field [1] { INTEGER 5 } appended, where Attributes belong, then Apple's own, unchanged. A SignerInfo whose syntax is broken makes the SignedData malformed whatever its position, before any SignerInfo is tried, even though the second would verify: MALFORMED (owner Q65, 2026-10-06; receipt/reject-malformed-signed-attrs-in-the-first-signer is the signedAttrs twin).",
+      "description": "Apple's SignerInfo with an unsignedAttrs field [1] { INTEGER 5 } appended, where Attributes belong, then Apple's own, unchanged. A port that judges every SignerInfo's syntax before any is tried refuses it (MALFORMED, the core; owner Q65, 2026-10-06); one that lets the broken SignerInfo fail on its own and tries the next accepts the receipt on Apple's own signature (Java; owner, 2026-10-12). It must not crash and must finish within maxMillis. receipt/reject-malformed-signed-attrs-in-the-first-signer is the signedAttrs twin.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "public-receipt-sandbox-g5-signer-infos-malformed-unsigned-attrs-then-genuine"
@@ -10033,15 +10036,18 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "MALFORMED"
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
       },
       "fault": "unsigned-attrs-not-attributes",
+      "maxMillis": 2000,
       "tags": [
         "receipt",
         "pkcs7",
         "signers",
-        "negative",
+        "tolerant",
         "format",
         "public-receipts",
         "new-in-0-7"
@@ -15107,7 +15113,7 @@
     },
     {
       "id": "receipt/rfc3339-date-forms",
-      "description": "Every date attribute in an RFC 3339 form (owner, Q68, 2026-10-06). Apple's Receipt Fields page documents types 12, 21, 1704, 1706, 1708 and 1712 as \"IA5STRING, interpreted as an RFC 3339 date\", and a developer reported Mac App Store receipt dates gaining milliseconds (2020-10-03T07:12:34.567Z) in October 2020 (Apple developer forums thread 663119). Top level: original purchase date \"2013-08-01t00:00:00.25-07:00\" (07:00:00.250Z) and expiration date \"4001-01-01T00:00:00+00:00\". Purchase 300: purchase \"2024-08-06T12:00:00.5+01:00\" (11:00:00.500Z), original purchase \"2024-08-01t12:00:00z\", expires \"2024-09-06T12:00:00.001-00:00\", cancellation \"2024-08-07T00:00:00+12:00\" (2024-08-06T12:00Z). Purchase dates read: 12 fraction digits and .9999, both truncated to the millisecond (…123, …999, never rounded up); +03:00 crossing to the previous day; -05:30; -00:00; a leap second with a fraction and an offset (2016-12-31T15:59:60.5-08:00 is 23:59:59.500Z); 0000-01-01T00:00:00.5Z, where truncation floors a negative instant; 9999-12-31T23:59:59.999Z. Refused, so null and kept raw: an empty fraction, a comma fraction, offset +24:00, offset +0300 without a colon, second 61, a space for T, no seconds, and an offset that moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z.",
+      "description": "Every date attribute in an RFC 3339 form (owner, Q68, 2026-10-06). Apple's Receipt Fields page documents types 12, 21, 1704, 1706, 1708 and 1712 as \"IA5STRING, interpreted as an RFC 3339 date\", and a developer reported Mac App Store receipt dates gaining milliseconds (2020-10-03T07:12:34.567Z) in October 2020 (Apple developer forums thread 663119). Top level: original purchase date \"2013-08-01t00:00:00.25-07:00\" (07:00:00.250Z) and expiration date \"4001-01-01T00:00:00+00:00\". Purchase 300: purchase \"2024-08-06T12:00:00.5+01:00\" (11:00:00.500Z), original purchase \"2024-08-01t12:00:00z\", expires \"2024-09-06T12:00:00.001-00:00\", cancellation \"2024-08-07T00:00:00+12:00\" (2024-08-06T12:00Z). Purchase dates read: 12 fraction digits and .9999, both truncated to the millisecond (…123, …999, never rounded up); +03:00 crossing to the previous day; -05:30; -00:00; a leap second with a fraction and an offset (2016-12-31T15:59:60.5-08:00 is 23:59:59.500Z); 0000-01-01T00:00:00.5Z, where truncation floors a negative instant; 9999-12-31T23:59:59.999Z. Refused, so null and kept raw: an empty fraction, a comma fraction, offset +24:00, offset +0300 without a colon, second 61, a space for T, and no seconds. Port-defined, so not pinned: purchases 318 and 319, whose offset moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z. The core refuses them (null, kept raw); Java reads them (owner, 2026-10-12).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "q68-receipt-date-forms"
@@ -15162,11 +15168,7 @@
           "/in_app/[transaction_id=70000000000316]/purchase_date_ms": null,
           "/in_app/[transaction_id=70000000000316]/unknown_attributes/1704/0": "FhQyMDI0LTA4LTA2IDEyOjAwOjAwWg==",
           "/in_app/[transaction_id=70000000000317]/purchase_date_ms": null,
-          "/in_app/[transaction_id=70000000000317]/unknown_attributes/1704/0": "FhEyMDI0LTA4LTA2VDEyOjAwWg==",
-          "/in_app/[transaction_id=70000000000318]/purchase_date_ms": null,
-          "/in_app/[transaction_id=70000000000318]/unknown_attributes/1704/0": "Fhk5OTk5LTEyLTMxVDIzOjU5OjU5LTAwOjAx",
-          "/in_app/[transaction_id=70000000000319]/purchase_date_ms": null,
-          "/in_app/[transaction_id=70000000000319]/unknown_attributes/1704/0": "FhkwMDAwLTAxLTAxVDAwOjAwOjAwKzAwOjAx"
+          "/in_app/[transaction_id=70000000000317]/unknown_attributes/1704/0": "FhEyMDI0LTA4LTA2VDEyOjAwWg=="
         },
         "lengths": {
           "/in_app": 18

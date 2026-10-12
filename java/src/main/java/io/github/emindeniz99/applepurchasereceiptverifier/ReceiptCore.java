@@ -118,14 +118,6 @@ final class ReceiptCore {
                     Reason.MALFORMED,
                     "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
-        // Every SignerInfo's attributes are read before any is tried: a
-        // SignerInfo whose syntax is broken makes the whole SignedData
-        // malformed, whatever its position. BouncyCastle reads them lazily
-        // and throws from here, which verifyDer reports as MALFORMED.
-        for (SignerInformation signer : signers) {
-            signer.getSignedAttributes();
-            signer.getUnsignedAttributes();
-        }
         // The one payload read before trust: the sender's own creation date
         // picks the instant the chain must be valid at. That only moves the
         // validity window; the signature and the chain to a pinned root are
