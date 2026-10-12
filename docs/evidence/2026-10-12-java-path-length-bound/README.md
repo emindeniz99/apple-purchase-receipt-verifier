@@ -2,7 +2,7 @@
 
 | File | Question |
 |---|---|
-| `PathLengthShapesProbeTest.java` | `probe`: for three receipt shapes, 20 fresh receipts each, what does Java answer? It writes each receipt, its root and Java's answer to `$SCRATCH/pathlen-exp`. `rerun`: in a new JVM, does Java give each of those receipts the same answer again? |
+| `PathLengthShapesProbeTest.java` | `probe`: for five shapes (`self-6`, `self-7`, `cross-valid-5`, `cross-expired-5`, `cross-expired-4`), 20 fresh receipts each, what does Java answer? It writes each receipt, its root and Java's answer to `$SCRATCH/pathlen-exp`. `rerun`: in a new JVM, does Java give each of those receipts the same answer again? |
 | `pathlen_probe_test.go` | What does the core (the Go wrapper over the committed `aprv.wasm`) answer for the same receipts, and is its verdict Java's? |
 | `probe-output.txt` | The output of both probes. |
 

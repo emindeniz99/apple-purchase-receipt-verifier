@@ -18,16 +18,20 @@ import (
 
 func TestPathLengthProbe(t *testing.T) {
 	dir := filepath.Join(os.Getenv("SCRATCH"), "pathlen-exp")
-	files, _ := filepath.Glob(filepath.Join(dir, "*.b64"))
+	files, err := filepath.Glob(filepath.Join(dir, "*.b64"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatalf("no receipts in %s; run PathLengthShapesProbeTest#probe first", dir)
+	}
 	sort.Strings(files)
 	tally := map[string]map[string]int{}
 	agree := map[string][2]int{}
 	for _, f := range files {
 		tag := strings.TrimSuffix(filepath.Base(f), ".b64")
 		shape := tag[:strings.LastIndex(tag, "-")]
-		b64, _ := os.ReadFile(f)
-		rootDer, _ := os.ReadFile(filepath.Join(dir, tag+".root.der"))
-		javaOut, _ := os.ReadFile(filepath.Join(dir, tag+".java.txt"))
+		b64, rootDer, javaOut := read(t, f), read(t, filepath.Join(dir, tag+".root.der")), read(t, filepath.Join(dir, tag+".java.txt"))
 		root, err := x509.ParseCertificate(rootDer)
 		if err != nil {
 			t.Fatal(err)
@@ -64,4 +68,12 @@ func TestPathLengthProbe(t *testing.T) {
 	for _, s := range shapes {
 		fmt.Printf("CORE %s -> %v (verdict as Java's: %d, not: %d)\n", s, tally[s], agree[s][0], agree[s][1])
 	}
+}
+
+func read(t *testing.T, path string) []byte {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
