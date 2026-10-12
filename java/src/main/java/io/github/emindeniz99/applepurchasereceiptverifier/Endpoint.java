@@ -1,6 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import java.io.IOException;
@@ -16,8 +15,6 @@ final class Endpoint {
 
     /** Apple's own limit, in UTF-8 bytes (it answers HTTP 413 above it); this answers 21002. */
     static final int MAX_REQUEST_BYTES = 3145728;
-
-    static final JsonFactory JSON = JsonFields.factory();
 
     private Endpoint() {}
 
@@ -84,7 +81,7 @@ final class Endpoint {
         }
         String[] receiptData = {null};
         // One char array: Jackson reads a long String in chunks, and a long value in them slowly.
-        try (JsonParser parser = JSON.createParser(requestJson.toCharArray())) {
+        try (JsonParser parser = JsonFields.JSON.createParser(requestJson.toCharArray())) {
             boolean object = JsonFields.read(parser, (name, value, p) -> {
                 if ("receipt-data".equals(name)) {
                     receiptData[0] = value == JsonToken.VALUE_STRING ? p.getText() : null;

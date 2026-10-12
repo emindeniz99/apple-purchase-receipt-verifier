@@ -113,8 +113,8 @@ public final class Config {
          * and a runtime that cannot verify shows it on the first call
          * instead: the sibling {@code -wasm} artifact answers
          * {@link Reason#INTERNAL_ERROR} (21009 from the endpoint), and the
-         * BouncyCastle artifact answers {@code INTERNAL_ERROR} or refuses the
-         * input, depending on what is missing. Leaving it unset means on.
+         * BouncyCastle artifact refuses the input, with a reason that depends
+         * on what is missing. Leaving it unset means on.
          */
         public Builder runtimeProbe(boolean runtimeProbe) {
             this.runtimeProbe = runtimeProbe;

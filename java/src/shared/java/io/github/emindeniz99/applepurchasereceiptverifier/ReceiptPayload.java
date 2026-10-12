@@ -234,9 +234,7 @@ public final class ReceiptPayload {
      * write where.
      */
     public String toJson() {
-        // A size hint only; clamped, so a cap-sized receipt does not reserve
-        // tens of megabytes up front or overflow the multiplication.
-        StringWriter out = new StringWriter((int) Math.min(512 + 512L * inApp.size(), 1 << 20));
+        StringWriter out = new StringWriter();
         try (JsonGenerator json = JSON.createGenerator(out)) {
             json.writeStartObject();
             json.writeObjectField("receipt_type", receiptType);

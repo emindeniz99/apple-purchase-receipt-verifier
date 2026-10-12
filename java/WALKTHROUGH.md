@@ -451,7 +451,7 @@ byte-identical copy only once; §4.2 has the renewal example this protects.
 | `INVALID_CERTIFICATE` | A certificate the check needs does not decode, or is outside its validity at the instant |
 | `INVALID_CERTIFICATE_PURPOSE` | Chains to a pinned root but lacks a marker OID |
 | `UNREADABLE_PAYLOAD` | Apple signed the payload, but it does not parse: a library gap or a new Apple format |
-| `INTERNAL_ERROR` | The library or runtime failed: a missing algorithm, a clock that throws |
+| `INTERNAL_ERROR` | The library or runtime failed, for example a clock that throws |
 
 The first six blame the input: deny. The last two do not: alert, do not
 retry (the result is deterministic), and do not deny a paying user on that
@@ -566,8 +566,7 @@ Failures nobody anticipated:
 | Raised inside | Becomes |
 |---|---|
 | A `RuntimeException` in steps 4 to 6 (before trust) | `MALFORMED` |
-| A `RuntimeException` inside `validateChain` | `UNTRUSTED_CHAIN` |
-| A missing PKIX or CertStore implementation in `validateChain` | `INTERNAL_ERROR` |
+| A `RuntimeException` inside `validateChain`, or a missing PKIX or CertStore implementation | `UNTRUSTED_CHAIN` |
 | A `RuntimeException` inside `verifyCmsSignature` | `INVALID_SIGNATURE` |
 | A `RuntimeException` inside `parseSignedPayload` | `UNREADABLE_PAYLOAD` |
 | Any other `RuntimeException` in `verifyReceipt` | `INTERNAL_ERROR` |

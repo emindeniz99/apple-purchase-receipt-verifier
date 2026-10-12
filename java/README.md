@@ -132,7 +132,7 @@ not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
 notice until production. `Verifier.create` also builds the Jackson
-readers, touches the BouncyCastle provider and a bcpkix class, checks that
+factory, touches the BouncyCastle provider and a bcpkix class, checks that
 bcprov is 1.86 or later and that BouncyCastle's ASN.1 nesting bound admits a
 genuine receipt, and probes the crypto runtime (see [Running in
 production](#running-in-production)), so a jackson-core below 2.16, a
@@ -491,7 +491,7 @@ never by `ordinal()`.
 | `INVALID_CERTIFICATE` | A certificate the check depends on does not decode, or is expired or not yet valid at the signing instant |
 | `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, or the intermediate lacks Apple's WWDR marker OID. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
 | `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception when a parser threw one; a payload refused on its shape (not UTF-8 JSON text, not a JSON object, an attribute that is not a SET) has none. Deterministic: alert, do not retry |
-| `INTERNAL_ERROR` | The library itself failed before it could decide, for example a clock that threw, a runtime that cannot build the receipt signer's chain, or a PKIX validator that rejects the pinned anchors. `Failure.cause()` carries the exception. Deterministic: alert, do not retry |
+| `INTERNAL_ERROR` | The library itself failed before it could decide, for example a clock that threw. `Failure.cause()` carries the exception. Deterministic: alert, do not retry |
 
 The set is closed by the cross-port contract: adding or removing a `Reason`
 is a change to the shared fixture file and to all nine ports at once, and is
@@ -673,9 +673,9 @@ signing date. The repository has no JWS signed by a real Apple root (the
 vendored Apple JWS fixtures are signed by a test CA), so keep one from your
 own sandbox, such as a transaction you bought there. Why: the crypto
 engines come from the library's own BouncyCastle instance, so a missing one
-is not expected; if one were missing, the receipt path would answer
-`INTERNAL_ERROR` for the PKIX path builder and the JWS path a refusal
-(`INVALID_CERTIFICATE`, `UNTRUSTED_CHAIN` or `INVALID_SIGNATURE`). And an
+is not expected; if one were missing, both paths would answer a refusal
+(`MALFORMED`, `INVALID_CERTIFICATE`, `UNTRUSTED_CHAIN` or
+`INVALID_SIGNATURE`). And an
 unchecked exception BouncyCastle throws while parsing is reported as a
 verdict on the input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
 is by design, so hostile input cannot page you. It also means a broken host
@@ -701,8 +701,8 @@ request. `Config.builder().runtimeProbe(false)` turns the
 probe off; the bcprov version check and the nesting check stay on, since
 neither asks the provider for an engine. The only use we can name is a test
 setup that stands in a double for the crypto provider; with the probe off, a
-broken runtime shows up on the first call instead, as `INTERNAL_ERROR` or a
-refusal (see the self-test above), or as `UNTRUSTED_CHAIN` when what is
+broken runtime shows up on the first call instead, as a refusal (see the
+self-test above), or as `UNTRUSTED_CHAIN` when what is
 broken is the default `SecureRandom`
 ([above](#one-platform-caveat-bouncycastle-not-the-jdks-pkix)). The probe does not replace the
 self-test above: it proves the engines exist, not that a real receipt parses.
@@ -1021,10 +1021,9 @@ use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
 fixtures directory. If either directory is missing, the tests that read it
 fail with one message that names the path expected and points here; they do
-not skip. Four tests read the build itself, relative to the
+not skip. Three tests read the build itself, relative to the
 working directory, and need adapting to another layout: `VerifierApiTest`
-compares `Version.CURRENT` with `pom.xml` and reads sources under
-`src/main/java`, `BouncyCastleFloorTest` reads the
+compares `Version.CURRENT` with `pom.xml`, `BouncyCastleFloorTest` reads the
 `bouncycastle.version` pin in `pom.xml`, and `TrustStoreIsolationTest`
 scans `src/main/java` and `src/shared/java`.
 

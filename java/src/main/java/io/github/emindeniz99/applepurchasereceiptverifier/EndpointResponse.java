@@ -1,6 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -26,10 +25,6 @@ final class EndpointResponse {
             DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withLocale(Locale.ROOT);
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
 
-    // Jackson's own generator defaults: short escapes for \n and the like,
-    // "/" and non-ASCII unescaped, as Apple's endpoint writes them.
-    static final JsonFactory JSON = JsonFields.factory();
-
     private EndpointResponse() {}
 
     /** A response carrying only {@code status}. */
@@ -46,11 +41,10 @@ final class EndpointResponse {
         if (status != AppleStatus.OK || receipt == null) {
             return status(status);
         }
-        // A size hint only; clamped, so a cap-sized receipt does not reserve
-        // tens of megabytes up front or overflow the multiplication.
-        StringWriter out =
-                new StringWriter((int) Math.min(1024 + 1024L * receipt.inApp().size(), 1 << 20));
-        try (JsonGenerator json = JSON.createGenerator(out)) {
+        StringWriter out = new StringWriter();
+        // Jackson's own generator defaults: short escapes for \n and the like,
+        // "/" and non-ASCII unescaped, as Apple's endpoint writes them.
+        try (JsonGenerator json = JsonFields.JSON.createGenerator(out)) {
             json.writeStartObject();
             json.writeNumberField("status", status);
             json.writeStringField("environment", environment.value());
@@ -76,7 +70,7 @@ final class EndpointResponse {
         string(json, "application_version", receipt.applicationVersion());
         // Apple answers "download_id": null when the receipt has no attribute
         // 15, where every other absent field is omitted.
-        numberOrNull(json, "download_id", receipt.downloadId());
+        json.writeObjectField("download_id", receipt.downloadId());
         number(json, "version_external_identifier", receipt.versionExternalIdentifier());
         string(json, "original_application_version", receipt.originalApplicationVersion());
         appleDates(json, "receipt_creation_date", receipt.receiptCreationDateMs());
@@ -129,10 +123,6 @@ final class EndpointResponse {
         if (value != null) {
             json.writeNumberField(key, value);
         }
-    }
-
-    private static void numberOrNull(JsonGenerator json, String key, @Nullable Long value) throws IOException {
-        json.writeObjectField(key, value);
     }
 
     private static void numberAsString(JsonGenerator json, String key, @Nullable Long value) throws IOException {

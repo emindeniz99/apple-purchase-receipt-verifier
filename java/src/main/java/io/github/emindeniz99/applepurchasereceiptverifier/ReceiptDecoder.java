@@ -1,7 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
-import java.math.BigInteger;
 import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -219,13 +218,14 @@ final class ReceiptDecoder {
                             Reason.UNREADABLE_PAYLOAD,
                             "receipt attribute has " + seq.size() + " fields, expected at least 3");
                 }
-                BigInteger rawType = ASN1Integer.getInstance(seq.getObjectAt(0)).getValue();
                 // 0 to Integer.MAX_VALUE; a wider type is refused, since narrowing would invent one.
-                if (rawType.signum() < 0 || rawType.bitLength() > 31) {
+                type = ASN1Integer.getInstance(seq.getObjectAt(0)).intValueExact();
+                if (type < 0) {
                     throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range");
                 }
-                type = rawType.intValue();
                 value = ASN1OctetString.getInstance(seq.getObjectAt(2)).getOctets();
+            } catch (ArithmeticException e) {
+                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range", e);
             } catch (IllegalArgumentException e) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "malformed receipt attribute", e);
             }
@@ -347,11 +347,9 @@ final class ReceiptDecoder {
             if (!(parsed instanceof ASN1Integer)) {
                 throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not an ASN.1 integer");
             }
-            BigInteger value = ((ASN1Integer) parsed).getValue();
-            if (value.bitLength() > 63) {
-                throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt integer out of range");
-            }
-            return value.longValue();
+            return ((ASN1Integer) parsed).longValueExact();
+        } catch (ArithmeticException e) {
+            throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt integer out of range", e);
         } catch (IOException e) {
             throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "attribute value is not valid ASN.1", e);
         } catch (RuntimeException e) {

@@ -1,18 +1,15 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.InvalidAlgorithmParameterException;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
-import java.security.cert.CertPathValidatorException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXParameters;
@@ -36,8 +33,6 @@ final class JwsCore {
 
     /** In UTF-8 bytes, checked before the split; genuine JWS run from a few KB to roughly 15 KB. */
     static final int MAX_JWS_BYTES = 262144;
-
-    static final JsonFactory JSON = JsonFields.factory();
 
     // Raw r || s (RFC 7515), as PLAIN-ECDSA takes it; the JDK's P1363 name is Java 9+.
     static final String ES256_ALGORITHM = "SHA256withPLAIN-ECDSA";
@@ -301,7 +296,7 @@ final class JwsCore {
         if (text == null) {
             throw notAnObject(reason, what, "not UTF-8 JSON text", null);
         }
-        try (JsonParser parser = JSON.createParser(text.toCharArray())) {
+        try (JsonParser parser = JsonFields.JSON.createParser(text.toCharArray())) {
             if (!JsonFields.read(parser, visitor)) {
                 throw notAnObject(reason, what, "not an object", null);
             }
@@ -396,13 +391,8 @@ final class JwsCore {
             params.addCertPathChecker(AppleTrust.HANDLED_CRITICAL_EXTENSIONS);
             // Per call, so no BouncyCastle object is shared between threads.
             CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER).validate(path, params);
-        } catch (CertPathValidatorException e) {
-            throw AppleTrust.chainFailure(e, "x5c", "certificate chain", at);
-        } catch (InvalidAlgorithmParameterException e) {
-            // Raised for the pinned anchors or the path type, never for a certificate.
-            throw new VerificationException(Reason.INTERNAL_ERROR, "chain validation rejected its parameters", e);
         } catch (GeneralSecurityException e) {
-            throw new VerificationException(Reason.UNTRUSTED_CHAIN, "path validator refused the path", e);
+            throw AppleTrust.chainFailure(e, "x5c", "certificate chain", at);
         } catch (RuntimeException e) {
             // BouncyCastle's unchecked exceptions for malformed certificate content.
             throw new VerificationException(
