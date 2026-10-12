@@ -17,7 +17,7 @@ import java.util.Map;
  *
  * <p>The chain and the signature are genuine, so a trusted signer produced
  * the claim. A typed read that cannot take it is the library's failure, not
- * the client's, and every port answers INTERNAL_ERROR rather than a reason a
+ * the client's, and INTERNAL_ERROR is the answer rather than a reason a
  * caller reads as "deny". Six fixtures carry one wrong type each:</p>
  *
  * <ol>
@@ -32,7 +32,7 @@ import java.util.Map;
  *
  * <p>A seventh has no defect: {@code quantity} is {@code 1.0}, two modelled
  * claims are JSON null and an unmodelled claim holds nested values. It must
- * verify, so a port cannot pass the six by refusing everything unusual.</p>
+ * verify, so an implementation cannot pass the six by refusing everything unusual.</p>
  *
  * <p>A {@code main} rather than a {@code @Test}, like the other generators.
  * Regenerate with:</p>
@@ -43,7 +43,6 @@ import java.util.Map;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.JwsClaimTypeFixtures \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of these

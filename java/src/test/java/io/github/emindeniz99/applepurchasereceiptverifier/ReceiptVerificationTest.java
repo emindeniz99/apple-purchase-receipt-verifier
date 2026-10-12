@@ -295,8 +295,7 @@ class ReceiptVerificationTest {
         // certificate. This bag is over the bound AND omits the signer, so the
         // guard where it is reports the bound, while a guard that runs after
         // the lookup reports the missing signer instead. Both are MALFORMED
-        // since 0.7, so the message tells them apart; swift carries the same
-        // test as testTheCountGuardRunsBeforeTheSignerIsResolved.
+        // since 0.7, so the message tells them apart.
         byte[] flooded = pki.signReceiptOmittingSigner(payload(BUNDLE, creationDate.toString()), 11);
         VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, flooded));
         assertEquals(Reason.MALFORMED, e.reason());
@@ -309,7 +308,7 @@ class ReceiptVerificationTest {
         // layer shares a subject name and a key, so either is a valid issuer for
         // the layer below, and the top layer names an issuer that is not embedded.
         // A verifier that explores paths before it bounds anything walks 2^14 of
-        // them to reject this — the shape swift-certificates spends seconds on.
+        // them to reject this.
         // It costs the sender almost nothing to send: 29 certificates in 21,655
         // bytes, a quarter of the genuine legacy receipt under
         // fixtures/public-receipts (79,104 bytes), so no caller-side size limit
@@ -328,20 +327,18 @@ class ReceiptVerificationTest {
         // layers, 1.4 at eighteen, 1.5 at twenty-two (cold, the first call in
         // a fresh JVM, each is 6-24 ms of JIT). The cost tracks the
         // certificates decoded — 29, 37 and 45 of them — rather than
-        // 2^layers, because the builder abandons every path at the port-wide
-        // maximum path length. Java's real protection against this shape is
-        // that depth bound, not the count; the count bound is what keeps the
-        // implementations agreeing on what a receipt may embed.
+        // 2^layers, because the builder abandons every path at the maximum
+        // path length. Java's real protection against this shape is
+        // that depth bound, not the count; the count bound caps what a
+        // receipt may embed.
     }
 
     @Test
     void acceptsAPathOfExactlyTheMaximumLength() throws Exception {
         // Six certificates below the anchor — leaf plus five intermediates —
-        // is the longest path every port accepts (go MaxPathLength, rust
-        // MAX_PATH_LENGTH, node/php/ruby/python/dotnet the same constant at 6,
-        // each counting certificates walked from the leaf with the anchor
-        // excluded). A port that reads its own bound as "intermediates" is off
-        // by one here and rejects a chain the others take.
+        // is the longest path accepted (certificates walked from the
+        // leaf, the anchor excluded). Reading the bound as "intermediates"
+        // would be off by one here and reject a chain that is within it.
         TestPki deep = TestPki.deepReceipt(5, 0);
         ReceiptPayload receipt = verify(deep, deep.signReceipt(payload(BUNDLE, creationDate.toString())));
         assertEquals(BUNDLE, receipt.bundleId());
@@ -349,10 +346,10 @@ class ReceiptVerificationTest {
 
     @Test
     void rejectsAPathOneHopOverTheMaximumLength() throws Exception {
-        // Seven certificates below the anchor. Every other port stops the walk
-        // after six and answers UNTRUSTED_CHAIN; the reason code is the
-        // contract, so this pins that java reaches the same verdict rather
-        // than a format or signature complaint.
+        // Seven certificates below the anchor. The walk stops after six
+        // and answers UNTRUSTED_CHAIN; the reason code is the contract, so
+        // this pins that the verdict is the chain's rather than a format or
+        // signature complaint.
         TestPki deep = TestPki.deepReceipt(6, 0);
         byte[] tooLong = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, tooLong));
@@ -521,9 +518,8 @@ class ReceiptVerificationTest {
         // parser used to avoid that by rewriting any such type to -1 and
         // filing it under unknownAttributes, which is its own bug — -1 is not
         // a valid attribute type, and reporting the receipt as carrying an
-        // attribute it does not carry is how two ports start disagreeing about
-        // what a receipt says. The receipt is rejected instead. node, python
-        // and swift agree.
+        // attribute it does not carry misstates what the receipt says. The
+        // receipt is rejected instead.
         for (BigInteger type : Arrays.asList(
                 BigInteger.ONE.shiftLeft(31), // 2^31, one past int
                 BigInteger.ONE.shiftLeft(32).add(BigInteger.valueOf(2)), // aliases the bundle id
@@ -538,8 +534,8 @@ class ReceiptVerificationTest {
     }
 
     /**
-     * String attributes are UTF8String or IA5String, as in Apple's receipts
-     * and in every other port. Any other ASN.1 string type used to decode
+     * String attributes are UTF8String or IA5String, as in Apple's receipts.
+     * Any other ASN.1 string type used to decode
      * too: a BIT STRING through BouncyCastle's getString() as "#" plus hex,
      * so a bundle id was compared in a form the receipt never stated.
      */

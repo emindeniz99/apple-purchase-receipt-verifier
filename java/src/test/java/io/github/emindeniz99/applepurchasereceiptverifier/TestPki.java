@@ -249,7 +249,7 @@ public final class TestPki {
      * below the anchor is {@code intermediates + selfIssuedTail + 1}
      * certificates long. The self-issued tail exists because PKIX exempts
      * exactly those certificates from {@code maxPathLength}, so it is the shape
-     * that tells whether a port bounds the path it actually built or only the
+     * that tells whether an implementation bounds the path it actually built or only the
      * intermediates the JDK agreed to count.</p>
      */
     static TestPki deepReceipt(int intermediates, int selfIssuedTail) throws Exception {
@@ -330,7 +330,7 @@ public final class TestPki {
      * accepted certificate of its issuer's name and key reaches the signer
      * through the expired copy, in two rounds. A path builder judges dates,
      * so it backtracks off that copy and returns the long path through the
-     * current one: the shape that tells whether a port bounds the path it
+     * current one: the shape that tells whether an implementation bounds the path it
      * built or only the rounds of its walk.</p>
      */
     static TestPki crossCertifiedReceipt(int intermediates) throws Exception {
@@ -638,8 +638,7 @@ public final class TestPki {
      * issuer for the layer below it, and the topmost layer names an issuer that
      * is not embedded, so no path ever reaches a trust anchor. A path builder
      * that explores before it bounds anything walks branching^layers
-     * combinations to reject this — the shape that costs swift-certificates
-     * 3.9 s at layers=14, branching=2 in under 8 KB of receipt.
+     * combinations to reject this.
      */
     /**
      * Signed by the leaf, but embedding only {@code paddingCertificates}
@@ -891,7 +890,7 @@ public final class TestPki {
     }
 
     /**
-     * Same, with the two knobs the port-divergence fixtures need (see
+     * Same, with the two knobs the edge-case fixtures need (see
      * {@link PortDivergenceFixtures}). {@code creationDateAttribute == false}
      * omits attribute 12, the receipt creation date, so a verifier judging
      * certificate validity has nothing to anchor on but "current time".

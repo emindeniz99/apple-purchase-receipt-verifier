@@ -29,21 +29,20 @@ import org.bouncycastle.cert.X509CertificateHolder;
  *
  * <p>The JWS vectors pinned X.509 version 11, a duplicated extension, an
  * unimplemented EC curve and a corrupt extension for a certificate carried in
- * a JWS header. Four ports answered them from checks that sit on the JWS path
- * only (node, python, ruby, dotnet), so the same four mutations on the
- * certificate a legacy PKCS#7 receipt is signed by were unanswered. These are
- * those. The shared cases pin {@code INVALID_CERTIFICATE} for the
+ * a JWS header. Those checks sit on the JWS path, so the same four mutations
+ * on the certificate a legacy PKCS#7 receipt is signed by need vectors of
+ * their own. These are those. The shared cases pin {@code INVALID_CERTIFICATE} for the
  * unimplemented curve and accept {@code INVALID_CERTIFICATE} or
- * {@code MALFORMED} for the other three, since a port that decodes the
+ * {@code MALFORMED} for the other three, since an implementation that decodes the
  * certificate bag as a whole refuses those as a malformed bag before it
  * reaches the signer.</p>
  *
  * <p>Each receipt is genuine in every other respect — real chain, real CMS
  * signature, real bundle id and creation date, a signer re-signed by the
  * intermediate wherever the mutation touched its TBS — so the defective
- * certificate is the only thing a port can object to. The unimplemented-curve
+ * certificate is the only thing an implementation can object to. The unimplemented-curve
  * receipt is the one where the signer's KEY is the mutation: it is signed with
- * a real P-256 key whose certificate then names an unassigned curve, so a port
+ * a real P-256 key whose certificate then names an unassigned curve, so an implementation
  * has to refuse the certificate before it can reach the signature at all.</p>
  *
  * <p>A {@code main} rather than a {@code @Test} for the same reason as the
@@ -56,7 +55,6 @@ import org.bouncycastle.cert.X509CertificateHolder;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.HostileReceiptFixtures \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of these
@@ -123,7 +121,7 @@ public final class HostileReceiptFixtures {
                 Arrays.<byte[]>asList());
 
         // --- 1. a signer claiming X.509 version 11 -----------------------
-        // Re-signed by the intermediate, so a port without a version check
+        // Re-signed by the intermediate, so an implementation without a version check
         // finds nothing else wrong with it: the marker OID is there, the
         // validity window covers the creation date, and it really did sign
         // this receipt.
@@ -166,7 +164,7 @@ public final class HostileReceiptFixtures {
         // Here the KEY is the mutation. The receipt is signed with a real
         // P-256 key, and the certificate that key sits in then names
         // 1.2.840.10045.3.1.10, which is unassigned — so the public key that
-        // would check this signature cannot be built, and a port has to
+        // would check this signature cannot be built, and an implementation has to
         // refuse the certificate before it reaches the signature at all.
         // Its TBS is re-signed by the intermediate, as the other two are.
         KeyPair curveKey = ecKeyPair();
@@ -190,7 +188,7 @@ public final class HostileReceiptFixtures {
         // changes. That one rewrites the extnValue OCTET STRING's own length,
         // which breaks the DER of everything containing it — harmless in a
         // JWS header, where the certificate is a base64 string of its own,
-        // but inside a CMS it would break the receipt's DER and every port
+        // but inside a CMS it would break the receipt's DER and any reader
         // that walks the whole blob would answer MALFORMED about the receipt
         // instead of INVALID_CERTIFICATE about the certificate.
         // So the corruption goes INSIDE the OCTET STRING, where a generic

@@ -9,12 +9,12 @@ import java.util.List;
 
 /**
  * Writes the inputs of the shared cases for where a JWS states its
- * environment (docs/rust-core/DECISIONS.md R42) into the directory given as
+ * environment into the directory given as
  * the first argument (default {@code fixtures/generated-0.7}). Every file
  * is prefixed {@code environment-}, and {@code environment-jws-root.der} is
  * the root they chain to.
  *
- * <p>The core and this implementation read the environment from the first
+ * <p>This library reads the environment from the first
  * of three places Apple documents that is present: the top-level
  * {@code environment} (a transaction, renewal info), {@code data.environment}
  * (an App Store Server Notification V2) and {@code summary.environment} (a

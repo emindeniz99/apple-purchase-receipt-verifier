@@ -37,8 +37,7 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
  *
  * <p>BouncyCastle's {@code X509Certificate.getPublicKey()} returns
  * {@code null} for such a key where it throws for one it cannot build, so
- * the cases pin that both are the certificate's defect, as OpenSSL under
- * the core judges them. One file per position, each under its own pinned
+ * the cases pin that both are the certificate's defect. One file per position, each under its own pinned
  * root:</p>
  *
  * <ul>

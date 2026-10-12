@@ -34,8 +34,8 @@ import org.bouncycastle.cert.X509CertificateHolder;
  * empty OBJECT IDENTIFIER. The SignerInfo is re-signed over the resulting
  * set, so the signature is genuine and that attribute type is the only
  * defect; without it the receipt verifies under
- * {@code signed-attrs-receipt-root.der}. The shape is the one the Node
- * {@code parse-cms} fuzz target reduced a crasher to. BouncyCastle cannot
+ * {@code signed-attrs-receipt-root.der}. The shape is the one a
+ * CMS-parsing fuzz target reduced a crasher to. BouncyCastle cannot
  * encode an empty OID, so the attribute is written byte by byte.</p>
  *
  * <p>The chain is valid from 2024-01-01 to 2050-01-01 and the receipt states

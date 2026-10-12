@@ -14,16 +14,15 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * Writes the shared cross-language fixture set to {@code fixtures/generated/}
+ * Writes the shared fixture set to {@code fixtures/generated/}
  * (PLAN.md milestone 6). Not a test of behavior — it only runs when
  * regeneration is explicitly requested:
  *
  * <pre>mvn test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true</pre>
  *
- * Fixtures are checked in and treated as stable bytes; every language's
- * suite (Java's {@code ConformanceCasesTest}, Node, Python, Swift) must verify
- * the same files. Regenerating changes keys/bytes — do it only deliberately
- * and re-run every language's tests in the same change.
+ * Fixtures are checked in and treated as stable bytes; {@code ConformanceCasesTest}
+ * and the other tests read the same files. Regenerating changes keys/bytes —
+ * do it only deliberately and re-run the tests in the same change.
  */
 class FixtureGeneratorTest {
 
@@ -218,7 +217,7 @@ class FixtureGeneratorTest {
         // --- Manifest -----------------------------------------------------
         Map<String, Object> manifest = TestPki.claims(
                 "comment",
-                "Shared cross-language fixtures. Regenerate only via "
+                "Shared fixtures. Regenerate only via "
                         + "FixtureGeneratorTest (-Dfixtures.generate=true); see file javadoc.",
                 "bundleId",
                 BUNDLE,

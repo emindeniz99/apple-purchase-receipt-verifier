@@ -22,25 +22,23 @@ import java.util.Map;
  *
  * <ol>
  *   <li>one {@code !} inserted in the middle, which a skip-what-you-do-not-
- *       know decoder (Node's {@code Buffer.from(s, 'base64')}, Swift's
- *       {@code .ignoreUnknownCharacters}) drops, recovering the certificate;</li>
+ *       know decoder drops, recovering the certificate;</li>
  *   <li>the whole entry in the base64url alphabet ({@code -} and {@code _}
  *       for {@code +} and {@code /}), which a decoder that accepts both
  *       alphabets reads as the same certificate;</li>
  *   <li>the entry wrapped at 64 columns with LF, as a PEM body is, which a
  *       decoder that tolerates whitespace reads as the same certificate;</li>
  *   <li>the entry with its {@code =} padding omitted, which a decoder that
- *       makes padding optional (Java's {@code Base64.getDecoder()}, PHP's
- *       strict {@code base64_decode}) reads as the same certificate;</li>
+ *       makes padding optional (Java's {@code Base64.getDecoder()}) reads
+ *       as the same certificate;</li>
  *   <li>the entry with one {@code =} more than its length calls for, which
  *       a decoder that stops at the first {@code =} or skips surplus padding
- *       (Swift's {@code Data(base64Encoded:)} on Linux) reads as the same
- *       certificate.</li>
+ *       reads as the same certificate.</li>
  * </ol>
  *
  * <p>All five are {@code INVALID_CERTIFICATE}. The header is signed in its
  * mutated state, so the ES256 signature covers exactly the bytes served and
- * the spelling is the only defect: a port that decodes the entry leniently
+ * the spelling is the only defect: an implementation that decodes the entry leniently
  * recovers a genuine chain and VERIFIES, rather than failing on a stale
  * signature and hiding the difference.</p>
  *
@@ -54,7 +52,6 @@ import java.util.Map;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.X5cBase64Fixtures \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of these

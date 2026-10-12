@@ -19,8 +19,8 @@ import org.bouncycastle.asn1.DERIA5String;
  * and {@code preorder-receipt-root.der} is the root they chain to.
  *
  * <p>Attribute 32 is an IA5String holding an RFC 3339 date, like attributes
- * 12 and 18, and sits at the receipt level. The core and the BouncyCastle
- * implementation answer it as {@code preorder_date_ms} in the receipt JSON
+ * 12 and 18, and sits at the receipt level. This library
+ * answers it as {@code preorder_date_ms} in the receipt JSON
  * and as Apple's {@code preorder_date} triplet at the endpoint; Apple's
  * answer also writes {@code "download_id": null} when attribute 15 is
  * missing. Both were compared against production receipts and Apple's
@@ -29,7 +29,7 @@ import org.bouncycastle.asn1.DERIA5String;
  *
  * <ul>
  *   <li>{@code preorder-receipt-with-date.der} carries 15 and a well-formed
- *       32, so a port that crossed the two fails rather than coincides.</li>
+ *       32, so an implementation that crossed the two fails rather than coincides.</li>
  *   <li>{@code preorder-receipt-without-download-id.der} carries 1 and 16
  *       but neither 15 nor 32.</li>
  *   <li>{@code preorder-receipt-bad-date.der} carries a 32 that is not an
@@ -46,7 +46,6 @@ import org.bouncycastle.asn1.DERIA5String;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.PreorderDateFixtures \
  *      fixtures/generated-0.7
- * node tools/lint-cases.mjs   # every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte and every

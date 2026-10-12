@@ -23,7 +23,7 @@ import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.cms.SignerInfo;
 
 /**
- * Writes the inputs of the shared cases for the core's ASN.1 depth bound
+ * Writes the inputs of the shared cases for the ASN.1 depth bound
  * (32 constructed values, the outermost included; owner, 2026-09-27; Java
  * uses BouncyCastle's own bound since 2026-10-01) into the
  * directory given as the first argument (default

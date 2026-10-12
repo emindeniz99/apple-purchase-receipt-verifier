@@ -78,8 +78,7 @@ import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
  *   <li>{@code standard-receipt-intermediate-with-a-critical-crldp.der} and
  *       {@code standard-jws-intermediate-with-a-critical-crldp.jws}: the
  *       intermediate carries a critical cRLDistributionPoints (RFC 5280
- *       4.2.1.13), which the core reads and Java now accepts too (owner,
- *       Q72, 2026-10-06).</li>
+ *       4.2.1.13), which Java now accepts (owner, Q72, 2026-10-06).</li>
  *   <li>{@code standard-receipt-signing-time-before-the-signer.der}: the
  *       signed attributes carry a signingTime before the signer's notBefore
  *       (RFC 5652 11.3 ties it to no validity check), and

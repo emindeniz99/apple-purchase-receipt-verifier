@@ -34,11 +34,9 @@ with certificates, ASN.1 or Apple receipts.
   the implementation, all package-private (`ReceiptCore`, `JwsCore`, ...).
 - `java/src/shared/java/io/github/emindeniz99/applepurchasereceiptverifier/`:
   the public API types (`Config`, `Reason`, `ReceiptPayload`, ...), compiled
-  into both Java artifacts.
+  into the same jar.
 
-**Scope.** The repository also holds `rust/`, a separate Rust
-implementation that the other language packages run; it is out of scope.
-This review covers `java/` only.
+**Scope.** This review covers `java/` only.
 
 ## 1. What problem this solves
 
@@ -400,9 +398,6 @@ The checks, in the order Java runs them:
 | 9 | CMS signature, with the now-trusted signer key | Tampered content | `INVALID_SIGNATURE` |
 | 10 | Decode the payload | Nothing: Apple signed it | `UNREADABLE_PAYLOAD` |
 
-The Rust core counts the bag inside step 3, before the date; step 4 never
-rejects, so both give the same verdict.
-
 **Why reading the creation date before trust is safe.** Step 4 reads bytes
 nobody has vouched for and uses them only to choose the instant at which
 validity is judged. That cannot make a foreign chain trusted or a bad
@@ -647,8 +642,8 @@ Differences from the receipt path:
   (`data.signedTransactionInfo`, `data.signedRenewalInfo`); pass each to
   `verifySignedData` again.
 - The 64-byte check stops a P-384 leaf verifying a 96-byte signature. A
-  leaf on another 256-bit curve passes in Java where the Rust core refuses
-  it, a recorded difference; such a leaf chains to no pinned root anyway.
+  leaf on another 256-bit curve passes this check; such a leaf chains to no
+  pinned root anyway.
 
 Two deliberate rules looser than the RFCs, both to avoid refusing genuine
 Apple-signed data:
@@ -738,16 +733,11 @@ settings still apply; none can make a forged signature verify
    `TrustStoreIsolationTest`.
 6. **No shared mutable state.** Only `PROVIDER`, the anchors and the clock
    outlive a call. `ConcurrencyTest`.
-7. **Every check has a shared case.** `fixtures/cases.json` is the contract
-   between this code and the Rust core; `ConformanceCasesTest` runs each
-   case as its own test, named by its id. A behaviour change touches the
-   core, Java and the fixtures in one PR. Never edit a case to make an
-   implementation pass.
-8. **Divergences are recorded.** Every known difference from the Rust core
-   is written down with its reason, outside `java/`, in the repository's
-   decision log (`docs/rust-core/DECISIONS.md`). One that changes the
-   verdict on an Apple-signed input, or accepts anything unsigned, is a bug.
-9. **Know the accepted risks.** No revocation; a back-dated payload under a
+7. **Every check has a shared case.** `fixtures/cases.json` holds the
+   shared cases; `ConformanceCasesTest` runs each case as its own test,
+   named by its id. A behaviour change touches the code and the fixtures
+   in one PR. Never edit a case to make the code pass.
+8. **Know the accepted risks.** No revocation; a back-dated payload under a
    leaked historical key; the pre-trust parse cost; SHA-1; no
    signer-algorithm allowlist; `crit` and high-S. Each has a recorded
    reason.

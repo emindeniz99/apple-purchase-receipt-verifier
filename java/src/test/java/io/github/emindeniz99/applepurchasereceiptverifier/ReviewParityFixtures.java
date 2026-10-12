@@ -45,8 +45,8 @@ import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.util.CollectionStore;
 
 /**
- * Writes the inputs of the port-neutral cases the 2026-09-27 Java/Rust
- * cross-review moved into fixtures/cases.json, into the directory given as
+ * Writes the inputs of the shared cases the 2026-09-27 review added to
+ * fixtures/cases.json, into the directory given as
  * the first argument (default {@code fixtures/generated-0.7}). Every file is
  * prefixed {@code review-}.
  *
@@ -202,7 +202,7 @@ public final class ReviewParityFixtures {
         byte[] hash = TestPki.deviceHash(GUID, OPAQUE, BUNDLE);
 
         // Attribute 18 an expanded-year date whose epoch milliseconds overflow
-        // a signed 64-bit value: not a date any port can hold.
+        // a signed 64-bit value: not a date that can be held.
         write(
                 "review-receipt-date-beyond-epoch-ms.der",
                 sign(

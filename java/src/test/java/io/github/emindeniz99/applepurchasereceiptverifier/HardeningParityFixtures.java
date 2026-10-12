@@ -152,7 +152,7 @@ public final class HardeningParityFixtures {
         X509CertificateHolder hugeIntermediate = hugeKeyCertificate(
                 DOS_SINGLE_BITS, "CN=Hardening JWS WWDR", "CN=Hardening JWS Root", INTERMEDIATE_OID, nb, na);
         // x5c[0]: a normal leaf claiming that intermediate as issuer, attacker
-        // signed, with the leaf marker so a broken port reaches the chain.
+        // signed, with the leaf marker so a broken implementation reaches the chain.
         KeyPair leafKp = ec();
         X509CertificateHolder leaf = new X509CertificateHolder(TestPki.cert(
                         "CN=Hardening JWS Leaf",

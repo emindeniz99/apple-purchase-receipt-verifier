@@ -122,8 +122,7 @@ class JwsJsonReadTest {
 
     /**
      * The three places Apple documents for a payload's environment, the first
-     * present one deciding: the same table as the core's
-     * (rust/src/jws.rs, DECISIONS.md R42), so the two read it alike.
+     * present one deciding.
      */
     @Test
     void theEnvironmentIsReadFromTheFirstOfThreePlaces() throws Exception {
@@ -165,8 +164,8 @@ class JwsJsonReadTest {
     }
 
     /**
-     * The reader bounds are Jackson's defaults, which the README and
-     * DECISIONS.md R20 state: a Jackson upgrade that moves them fails here.
+     * The reader bounds are Jackson's defaults, which the README states: a
+     * Jackson upgrade that moves them fails here.
      */
     @Test
     void memberNamesAndNumbersAreBoundedByJacksonsDefaults() throws Exception {

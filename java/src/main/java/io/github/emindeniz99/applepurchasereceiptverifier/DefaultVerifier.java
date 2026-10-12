@@ -30,10 +30,7 @@ import org.jspecify.annotations.Nullable;
  * <p>Each method reads the clock once, before any input is looked at, so
  * a clock that throws is {@link Reason#INTERNAL_ERROR} (the host's fault)
  * and never lands inside a guard that reports unexpected exceptions on
- * unverified input as {@link Reason#MALFORMED}. The product's Rust
- * implementation reads its clock only when a verdict needs the instant, so
- * the two can answer differently on a clock that throws (docs/rust-core
- * DECISIONS.md R20 in the source repository).</p>
+ * unverified input as {@link Reason#MALFORMED}.</p>
  */
 final class DefaultVerifier implements Verifier {
 

@@ -20,11 +20,11 @@ import org.bouncycastle.asn1.ASN1Integer;
  * attributes up against the answer Apple's verifyReceipt endpoint gives for
  * the same receipt (measured 2026-09-21).</p>
  *
- * <p>The two in-app purchases carry 1713 on both sides of the boolean, so a
- * port cannot pass by rendering one constant: the consumable is 0 and the
+ * <p>The two in-app purchases carry 1713 on both sides of the boolean, so an
+ * implementation cannot pass by rendering one constant: the consumable is 0 and the
  * subscription is 1, which the endpoint answers as the strings "false" and
  * "true". The three app-level ids are distinct, distinctly sized numbers, so
- * a port that crossed two of them fails rather than coincides.</p>
+ * an implementation that crossed two of them fails rather than coincides.</p>
  *
  * <p>A {@code main} rather than a {@code @Test} for the same reason as the
  * other generators: a generation-gated test is a permanently skipped test.
@@ -36,7 +36,6 @@ import org.bouncycastle.asn1.ASN1Integer;
  * java -cp "java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)" \
  *      io.github.emindeniz99.applepurchasereceiptverifier.ReceiptIdsFixture \
  *      fixtures/generated
- * node tools/lint-cases.mjs   # re-hash: every contentSha256 must be updated
  * </pre>
  *
  * <p>Each run mints fresh keys, so regenerating changes every byte of the
@@ -56,12 +55,12 @@ public final class ReceiptIdsFixture {
     private static final long CHAIN_NOT_AFTER = 2524608000000L; // 2050-01-01
 
     // Made-up ids, chosen at three different widths so no two can be
-    // confused for one another in a port's output.
+    // confused for one another in an implementation's output.
     private static final long APP_ITEM_ID = 1234567890L;
 
     /**
      * 2^63 - 1: a nineteen-digit, eight-byte integer that an IEEE-754 double
-     * rounds to 2^63, so a port that carries receipt integers as a
+     * rounds to 2^63, so an implementation that carries receipt integers as a
      * JavaScript number answers 9223372036854775808 here, or refuses the
      * receipt. Apple's real {@code download_id} values run to eighteen
      * digits, so the exact digits are the contract rather than an edge case.

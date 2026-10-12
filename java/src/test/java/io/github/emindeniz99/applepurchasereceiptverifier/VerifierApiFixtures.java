@@ -249,7 +249,7 @@ public final class VerifierApiFixtures {
         write(out, "receipt-escapes-product-id.der", pki.signReceipt(escapes, new Date(SIGNED_DATE)));
 
         // Attribute 12 twice under a chain valid 2020 to 2021. The DER SET
-        // sorts the 2020 date first; only a port that takes the FIRST
+        // sorts the 2020 date first; only an implementation that takes the FIRST
         // occurrence judges the chain inside its window.
         TestPki expired = TestPki.receipt(new Date(OLD_NOT_BEFORE), new Date(OLD_NOT_AFTER));
         write(out, "api-receipt-expired-root.der", expired.root.getEncoded());

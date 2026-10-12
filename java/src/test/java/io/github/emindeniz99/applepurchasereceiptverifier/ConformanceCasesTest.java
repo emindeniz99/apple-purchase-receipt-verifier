@@ -31,7 +31,7 @@ import org.junit.jupiter.api.TestFactory;
 
 /**
  * Runs every vector in {@code fixtures/cases.json}, the normative
- * cross-language conformance set for the 0.7 API, through the three public
+ * conformance set for the 0.7 API, through the three public
  * {@link Verifier} methods and the two base64 decoders.
  *
  * <p>This adapter carries no knowledge of any individual case. It resolves a
@@ -133,7 +133,7 @@ class ConformanceCasesTest {
             String response = verifier.verifyReceiptEndpoint(environment, body);
             JsonNode parsed = parse(id, response);
             if (expected.has("oneOf")) {
-                // Port-defined within a list: the response's /status must be
+                // Implementation-defined within a list: the response's /status must be
                 // listed, and nothing else is pinned.
                 JsonNode status = parsed.get("status");
                 List<Integer> allowed = new ArrayList<Integer>();
@@ -435,7 +435,7 @@ class ConformanceCasesTest {
     private static JsonNode parse(String id, String json) {
         try {
             // Strict: trailing content after the value fails, which a plain
-            // readTree would ignore, so a port that appended to its output
+            // readTree would ignore, so an implementation that appended to its output
             // cannot pass.
             return MAPPER.reader()
                     .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)

@@ -18,8 +18,8 @@
   or `INTERNAL_ERROR` → Apple signed it or we broke: alert.
 - **JWS (StoreKit 2):** the same idea, with an ES256 signature and a
   3-certificate `x5c` chain. Deduplicate on `transactionId`.
-- **Proof:** 432 shared cases that the Rust core and this Java code must
-  answer identically.
+- **Proof:** 432 shared cases in `fixtures/cases.json`, each run as its own
+  test.
 
 ## 1. One question
 
