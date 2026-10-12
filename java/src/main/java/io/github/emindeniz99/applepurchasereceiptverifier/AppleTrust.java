@@ -28,9 +28,8 @@ import org.bouncycastle.asn1.x509.Extension;
  * the developers. BouncyCastle validates an RSA key as it decodes it, which
  * costs seconds for a 16384-bit modulus.
  * {@code UnauthenticatedKeyCostTest} pins the rule. PKIX then verifies the
- * same signatures again; that duplicate (about 0.1 ms per receipt, about
- * 0.2 ms per JWS, measured) is the price of never decoding an unvouched
- * key.
+ * same signatures again; that duplicate is the price of never decoding an
+ * unvouched key.
  */
 final class AppleTrust {
 
