@@ -420,7 +420,7 @@ class TrustStoreIsolationTest {
     void noMainSourceCanReachATrustStoreOrTheNetwork() throws Exception {
         List<Path> sources = mainSources();
         for (Path source : sources) {
-            String code = codeStrippedOfComments(new String(Files.readAllBytes(source), StandardCharsets.UTF_8));
+            String code = codeOf(source);
             for (String needle : FORBIDDEN) {
                 assertFalse(
                         code.contains(needle),
@@ -452,7 +452,7 @@ class TrustStoreIsolationTest {
         int declarations = 0;
         int revocationDisabled = 0;
         for (Path source : mainSources()) {
-            String code = codeStrippedOfComments(new String(Files.readAllBytes(source), StandardCharsets.UTF_8));
+            String code = codeOf(source);
             Matcher matcher = construction.matcher(code);
             while (matcher.find()) {
                 constructions++;
@@ -499,7 +499,7 @@ class TrustStoreIsolationTest {
         int builders = 0;
         boolean probeGetsTheLibrarysProvider = false;
         for (Path source : mainSources()) {
-            String code = codeStrippedOfComments(new String(Files.readAllBytes(source), StandardCharsets.UTF_8));
+            String code = codeOf(source);
             // The startup probe takes its provider as a parameter so a test
             // can hand it an empty one; its only caller must pass PROVIDER.
             boolean probe = source.getFileName().toString().equals("DefaultVerifier.java");
@@ -765,14 +765,9 @@ class TrustStoreIsolationTest {
     }
 
     private static String drain(InputStream stream) throws IOException {
-        StringBuilder out = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                out.append(line).append('\n');
-            }
+            return reader.lines().collect(Collectors.joining("\n"));
         }
-        return out.toString();
     }
 
     private static List<Path> mainSources() throws IOException {
@@ -792,62 +787,28 @@ class TrustStoreIsolationTest {
     }
 
     /**
-     * A Java source with its comments removed, so the ban lands on code and not
-     * on prose that legitimately names what the code avoids. String and
-     * character literals are tracked, so a {@code //} inside one is not a
-     * comment; text blocks are not, because these sources compile at the Java 8
-     * baseline where there are none.
+     * Comments, then string and character literals: whichever starts first wins,
+     * so a {@code //} inside a literal is not a comment and a quote inside a
+     * comment opens no literal. Possessive, so a long literal cannot overflow
+     * the stack. Text blocks are not handled: these sources compile at Java 8.
      */
-    private static String codeStrippedOfComments(String source) {
-        StringBuilder out = new StringBuilder(source.length());
-        boolean inBlockComment = false;
-        boolean inString = false;
-        boolean inChar = false;
-        for (int i = 0; i < source.length(); i++) {
-            char c = source.charAt(i);
-            char next = i + 1 < source.length() ? source.charAt(i + 1) : '\0';
-            if (inBlockComment) {
-                if (c == '*' && next == '/') {
-                    inBlockComment = false;
-                    i++;
-                }
-                continue;
-            }
-            if (inString || inChar) {
-                if (c == '\\') {
-                    out.append(c).append(next);
-                    i++;
-                    continue;
-                }
-                if (inString && c == '"') {
-                    inString = false;
-                }
-                if (inChar && c == '\'') {
-                    inChar = false;
-                }
-                out.append(c);
-                continue;
-            }
-            if (c == '/' && next == '/') {
-                while (i < source.length() && source.charAt(i) != '\n') {
-                    i++;
-                }
-                out.append('\n');
-                continue;
-            }
-            if (c == '/' && next == '*') {
-                inBlockComment = true;
-                i++;
-                continue;
-            }
-            if (c == '"') {
-                inString = true;
-            }
-            if (c == '\'') {
-                inChar = true;
-            }
-            out.append(c);
+    private static final Pattern COMMENT_OR_LITERAL =
+            Pattern.compile("//[^\n]*|/\\*.*?\\*/|\"(?:[^\"\\\\]|\\\\.)*+\"|'(?:[^'\\\\]|\\\\.)*+'", Pattern.DOTALL);
+
+    /**
+     * A main source with its comments removed and everything else kept, string
+     * literals included. Every structural assertion above reads this, so it is
+     * load-bearing for the claim that no main code names a trust store, the
+     * network or a subprocess: it drops prose that names what the code avoids,
+     * and keeps a URL or class name written in a string, which is still a hit.
+     */
+    private static String codeOf(Path source) throws IOException {
+        Matcher matcher = COMMENT_OR_LITERAL.matcher(new String(Files.readAllBytes(source), StandardCharsets.UTF_8));
+        StringBuffer code = new StringBuffer();
+        while (matcher.find()) {
+            String token = matcher.group();
+            matcher.appendReplacement(code, token.startsWith("/") ? "" : Matcher.quoteReplacement(token));
         }
-        return out.toString();
+        return matcher.appendTail(code).toString();
     }
 }
