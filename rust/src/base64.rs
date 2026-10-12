@@ -36,13 +36,12 @@
 //! hand-made.
 
 /// The `base64` crate's standard engine, configured for the rule
-/// [`decode_receipt_base64`] documents: canonical padding required, and the
-/// unused low bits of the last data character ignored rather than refused.
+/// [`decode_receipt_base64`] documents: canonical padding required (the
+/// crate's default), and the unused low bits of the last data character
+/// ignored rather than refused.
 const RECEIPT_ENGINE: ::base64::engine::GeneralPurpose = ::base64::engine::GeneralPurpose::new(
     &::base64::alphabet::STANDARD,
-    ::base64::engine::GeneralPurposeConfig::new()
-        .with_decode_allow_trailing_bits(true)
-        .with_decode_padding_mode(::base64::engine::DecodePaddingMode::RequireCanonical),
+    ::base64::engine::GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
 );
 
 /// Decodes `receipt-data`, the base64 string a client sends, by the rule
@@ -78,18 +77,9 @@ pub fn encode(bytes: &[u8]) -> String {
     ::base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-/// The `base64` crate's URL-safe engine as RFC 7515 section 2 reads a JWS
-/// segment: no padding at all, and a final character's unused low bits
-/// must be zero (the crate's default, restated here).
-const JWS_SEGMENT_ENGINE: ::base64::engine::GeneralPurpose = ::base64::engine::GeneralPurpose::new(
-    &::base64::alphabet::URL_SAFE,
-    ::base64::engine::GeneralPurposeConfig::new()
-        .with_decode_allow_trailing_bits(false)
-        .with_decode_padding_mode(::base64::engine::DecodePaddingMode::RequireNone),
-);
-
 /// Decodes unpadded base64url — RFC 4648 §5 as RFC 7515 §2 requires it —
-/// or `None`.
+/// or `None`, with the `base64` crate's `URL_SAFE_NO_PAD` engine: no
+/// padding at all, and a final character's unused low bits must be zero.
 ///
 /// One byte sequence has exactly one encoding under this function. That
 /// makes each segment's text unique for its bytes; it does not make a JWS
@@ -108,7 +98,9 @@ const JWS_SEGMENT_ENGINE: ::base64::engine::GeneralPurpose = ::base64::engine::G
 #[must_use]
 pub fn decode_base64url_strict(text: &[u8]) -> Option<Vec<u8>> {
     use ::base64::Engine as _;
-    JWS_SEGMENT_ENGINE.decode(text).ok()
+    ::base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(text)
+        .ok()
 }
 
 #[cfg(test)]

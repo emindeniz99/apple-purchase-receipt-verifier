@@ -356,6 +356,7 @@ class ReceiptVerificationTest {
         // BouncyCastle 1.86's builder refuses an eighth certificate below
         // the anchor and finds no path. This is where Java's path length
         // ends, and the message shows the builder refused it, not the walk.
+        // The shared case receipt/accept-a-path-of-eight allows both answers.
         TestPki deep = TestPki.deepReceipt(7, 0);
         byte[] eight = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, eight));

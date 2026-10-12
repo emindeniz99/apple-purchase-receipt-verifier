@@ -193,7 +193,7 @@ and `-second`.
 | Go | root package: testhelpers_test, testpki_test |  | test material generators (ASN.1/CMS/JWS builders, synthetic PKIs). Not tests; the source for generating the PROPOSE cases' fixtures (Phase 7 step 1). ac000fd:go/testpki_test.go. |
 | Go | internal/chain: ValidAtIsInclusiveAtBothEnds |  | PROPOSE receipt/verify-at-not-before-instant, verify-at-not-after-instant, reject-one-millisecond-after-not-after |
 | Go | internal/chain: FailuresCarryTheirReason, HappyPathsSucceed |  | COVERED by the chain cases above |
-| Go | internal/chain: PathAcceptsSixAndRejectsSeven |  | COVERED receipt/accept-a-path-of-six, reject-a-path-of-seven |
+| Go | internal/chain: PathAcceptsSixAndRejectsSeven |  | COVERED receipt/accept-a-path-of-six. The seven half went with the core's own bound (2026-10-12, Q126 b): receipt/accept-a-path-of-seven now expects ok, and receipt/accept-a-path-of-eight allows both |
 | Go | internal/chain: AnOversizedKeyIsNeverUsedToCheckASignature |  | COVERED reject-untrusted-oversized-intermediates (maxMillis), signed-data/reject-untrusted-oversized-x5c |
 | Go | internal/chain: StrangerCertificatesAreIgnoredNotFatal |  | COVERED (see certbag) |
 | Go | internal/chain: RSAModulusCap (8,192 bits) |  | Go-only policy, not in the 0.7 bounds table. Decision for the owner: pin it as a case (PROPOSE receipt/reject-a-stranger-with-a-16384-bit-modulus-quickly) or leave it to OpenSSL's own behaviour. |

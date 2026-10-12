@@ -356,8 +356,9 @@ counted on a shallow decode after the envelope's header walk and before
 any certificate is decoded. JSON: strict RFC 8259 grammar, read by
 `serde_json` with no nesting or length bound of its own; a value nobody
 reads is skipped, not built, so the size caps bound the work (R40).
-Chains: at most six certificates, built by OpenSSL from the
-certificates a pinned root vouched for. RSA keys: OpenSSL's cap of 16,384
+Chains: built by OpenSSL from the certificates a pinned root vouched
+for, with no length bound of the core's own: the ten-certificate cap
+bounds the path, far inside OpenSSL's default depth of 100. RSA keys: OpenSSL's cap of 16,384
 bits, on keys a pinned root vouched for.
 
 Input size is capped before anything is decoded, and the caps are Apple's

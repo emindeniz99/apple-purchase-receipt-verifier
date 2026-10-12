@@ -590,8 +590,8 @@ The limits are the module's, fixed in every language of this library, and not
   copy of the number), the cut every Wasm wrapper of this library makes, so
   the module still refuses it for its size; `aprv` returns that answer with exit status
   3 or HTTP 413, and the façade reads it like any other.
-- **ASN.1 nesting depth 32**, **10 embedded certificates**, **4 SignerInfos**
-  and **six certificates below the anchor**: the module checks them before
+- **ASN.1 nesting depth 32**, **10 embedded certificates** and
+  **4 SignerInfos**: the module checks them before
   any certificate is decoded or any signature is checked, and answers
   `Reason::Malformed` (or `UnreadablePayload` for a signed payload) with no
   PHP memory cost. JSON has no nesting or length bound of its own: the

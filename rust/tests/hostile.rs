@@ -354,9 +354,9 @@ fn unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost() {
 #[test]
 fn a_cross_signed_certificate_mesh_stays_flat() {
     // Every embedded certificate is a candidate issuer for every other one.
-    // Without an explicit path-length bound and a try-each-candidate-once
-    // rule, this is where a path builder goes exponential. Ten copies is the
-    // most the certificate bound admits, so the walk is bounded twice over.
+    // Without a try-each-candidate-once rule, this is where a path builder
+    // goes exponential. The walk accepts at least one certificate per round
+    // or stops, and ten copies is the most the certificate bound admits.
     let mut builder = common::CmsBuilder::from_shared();
     let all = builder.certificates.clone();
     builder.certificates.clear();

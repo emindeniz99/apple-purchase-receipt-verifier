@@ -46,10 +46,11 @@ C ABI and `aprv-server` are built without them.
   tries another, so neither the anchors' order nor a same-named
   certificate placed first decides the path. Each run sets
   `X509_V_FLAG_PARTIAL_CHAIN` (a pinned anchor is an anchor whether or not
-  it is self-signed), `set_time` (the chain instant), `set_depth` (the
-  path length bound) and a verify callback that records every problem and
-  lets verification continue, so the core can apply 0.7's order. Anchors are trusted by fiat: their own validity,
-  CA flag and path length problems are waived. OpenSSL 4.0 counts the
+  it is self-signed), `set_time` (the chain instant) and a verify
+  callback that records every problem and lets verification continue, so
+  the core can apply 0.7's order. No depth is set: OpenSSL's default of
+  100 applies. Anchors are trusted by fiat: their own validity, CA flag
+  and path length problems are waived. OpenSSL 4.0 counts the
   `notAfter` second as valid, as RFC 5280 does; it checks whole seconds
   and the core adds the millisecond check. No purpose,
   policy, revocation or host check is asked for.
