@@ -226,6 +226,28 @@
           </execution>
         </executions>
       </plugin>
+      <!-- Maven's default lifecycle plugins, pinned so the build does not
+           change with the Maven version that runs it. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>3.5.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.5.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-install-plugin</artifactId>
+        <version>3.2.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <version>3.2.0</version>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -612,7 +634,14 @@
             <artifactId>maven-javadoc-plugin</artifactId>
             <version>3.12.0</version>
             <configuration>
-              <doclint>none</doclint>
+              <!-- -source 8, not the inherited release 8: under release 8
+                   javadoc warns that jspecify's @Target names an unknown
+                   ElementType.MODULE. javac still holds the API to Java 8. -->
+              <release combine.self="override"/>
+              <source>8</source>
+              <!-- Every doclint group but "missing": a first sentence that
+                   says what a method returns is not repeated as a tag. -->
+              <doclint>all,-missing</doclint>
               <!-- The public API is in src/main/java and the shared sources;
                    the Endive engine and its generated classes are internal. -->
               <sourcepath>${project.basedir}/src/main/java:${project.basedir}/../java/src/shared/java</sourcepath>

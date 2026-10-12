@@ -73,7 +73,7 @@ final class Endpoint {
      */
     static String receiptData(@Nullable String requestJson) throws VerificationException {
         if (requestJson == null) {
-            throw new VerificationException(Reason.MALFORMED, "request body is empty");
+            throw new VerificationException(Reason.MALFORMED, "request body is null");
         }
         if (Utf8Length.exceeds(requestJson, MAX_REQUEST_BYTES)) {
             throw new VerificationException(
