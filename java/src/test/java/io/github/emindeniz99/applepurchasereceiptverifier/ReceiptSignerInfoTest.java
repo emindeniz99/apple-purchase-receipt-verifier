@@ -18,14 +18,20 @@ import java.util.List;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.DERSet;
+import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.DLSet;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
 import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.cms.SignerIdentifier;
 import org.bouncycastle.asn1.cms.SignerInfo;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -229,6 +235,37 @@ class ReceiptSignerInfoTest {
         VerificationException alone = assertThrows(
                 VerificationException.class, () -> verify(withSignerInfos(signedData, new DLSet(unknownDigest))));
         assertEquals(Reason.INVALID_SIGNATURE, alone.reason(), alone.getMessage());
+    }
+
+    /**
+     * A stranger SignerInfo's issuer name is the sender's bytes, and only
+     * BouncyCastle reads it: a name the JDK would refuse (here an attribute
+     * of three elements) is no match, not an exception, so the genuine
+     * SignerInfo behind it still verifies.
+     */
+    @Test
+    void aStrangerSignerInfoWithAnOddIssuerNameIsNoMatchNotAnError() throws Exception {
+        KeyPair signerKey = rsaKeyPair();
+        X509Certificate signer = signerUnderTheIntermediate(signerKey);
+        SignedData signedData = signedData(signAs(signerKey, "SHA256withRSA", signer));
+        SignerInfo genuine = SignerInfo.getInstance(signedData.getSignerInfos().getObjectAt(0));
+        ASN1Encodable threeElementAttribute = new DERSequence(
+                new ASN1Encodable[] {new ASN1ObjectIdentifier("2.5.4.3"), new DERUTF8String("x"), new DERUTF8String("y")
+                });
+        ASN1Encodable oddIssuer = new DERSequence(new DERSet(threeElementAttribute));
+        SignerInfo stranger = new SignerInfo(
+                new SignerIdentifier(IssuerAndSerialNumber.getInstance(
+                        new DERSequence(new ASN1Encodable[] {oddIssuer, new ASN1Integer(7)}))),
+                genuine.getDigestAlgorithm(),
+                genuine.getAuthenticatedAttributes(),
+                genuine.getDigestEncryptionAlgorithm(),
+                genuine.getEncryptedDigest(),
+                genuine.getUnauthenticatedAttributes());
+
+        assertEquals(
+                BUNDLE,
+                verify(withSignerInfos(signedData, new DLSet(new ASN1Encodable[] {stranger, genuine})))
+                        .bundleId());
     }
 
     private static X509Certificate stranger(KeyPair strangerKey) throws Exception {
