@@ -3,7 +3,8 @@
 name: diag release token
 
 on:
-  workflow_dispatch:
+  push:
+    branches: ['diag/**']
 
 permissions:
   contents: read
