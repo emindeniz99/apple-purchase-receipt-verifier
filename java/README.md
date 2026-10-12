@@ -487,7 +487,7 @@ never by `ordinal()`.
 | `MALFORMED` | The base64, ASN.1, CMS or JWS structure is broken, or a structural bound was exceeded (JSON nesting past Jackson's 1,000, ASN.1 nesting past BouncyCastle's bound, more than 10 embedded certificates, more than 4 SignerInfos). Decided before any signature check. When BouncyCastle or Jackson threw an unchecked exception, the message is `unexpected <class>` and `Failure.cause()` carries that exception, for debugging. The cause's message is BouncyCastle's and may quote fragments of the unverified input (tag numbers, lengths, a DN), so treat it like the receipt bytes when logging |
 | `TOO_LARGE` | Over a fixed size cap: 3,145,728 UTF-8 bytes for a receipt or an endpoint request body, 262,144 for a JWS. Decided before anything is decoded |
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
-| `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or has more than six certificates below the anchor |
+| `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or a receipt's signer is more than six certificates below one, each signed by the one above |
 | `INVALID_CERTIFICATE` | A certificate the check depends on does not decode, or is expired or not yet valid at the signing instant |
 | `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, or the intermediate lacks Apple's WWDR marker OID. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
 | `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception when a parser threw one; a payload refused on its shape (not UTF-8 JSON text, not a JSON object, an attribute that is not a SET) has none. Deterministic: alert, do not retry |
@@ -613,7 +613,7 @@ structure they bound is read:
 | JSON number, characters | 1,000 (Jackson's default) | as nesting depth |
 | ASN.1 nesting, constructed values | BouncyCastle's, 64 by default | `MALFORMED` (receipt envelope), `UNREADABLE_PAYLOAD` (signed receipt content), `INVALID_CERTIFICATE` (an `x5c` entry) |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
-| Chain length, certificates below the anchor | 6 | `UNTRUSTED_CHAIN` |
+| Receipt signer's depth below a pinned root, certificates each signed by the one above | 6; the path PKIX then builds can be 7 when a CA is certified twice under one name and key, and is accepted | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
 **Thread stack.** BouncyCastle's ASN.1 parser recurses, so a legal input

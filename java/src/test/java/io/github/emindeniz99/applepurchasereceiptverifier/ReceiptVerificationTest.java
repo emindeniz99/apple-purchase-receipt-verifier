@@ -414,24 +414,54 @@ class ReceiptVerificationTest {
     }
 
     @Test
-    void boundsThePathTheBuilderReturnsNotOnlyTheWalk() throws Exception {
+    void acceptsAnyPathTheBuilderValidatesWhateverItsLength() throws Exception {
         // The signer's CA is certified twice under one name and key: below
         // the root directly, in a copy that has expired, and below a chain
         // of CAs. The walk reaches the signer through the expired copy in
         // two rounds; the builder backtracks off that copy and returns the
-        // path through the current one. BouncyCastle's builder counts every
-        // certificate against setMaxPathLength(5) and still returns seven
-        // (it refuses an eighth), so only the bound on the returned path
-        // refuses this. Five CAs above the current copy make seven
-        // certificates below the anchor; four make the six that verify.
+        // path through the current one. Four CAs above the current copy make
+        // six certificates below the anchor, five make seven, which
+        // BouncyCastle's setMaxPathLength(5) still returns. Every certificate
+        // on the long path is signed under the pinned root and valid at the
+        // instant, so the length alone refuses nothing (Q108 a, 2026-10-12).
         TestPki six = TestPki.crossCertifiedReceipt(4);
         byte[] longest = six.signReceipt(payload(BUNDLE, creationDate.toString()));
         assertEquals(BUNDLE, verify(six, longest).bundleId());
         TestPki seven = TestPki.crossCertifiedReceipt(5);
-        byte[] tooLong = seven.signReceipt(payload(BUNDLE, creationDate.toString()));
-        VerificationException e = assertThrows(VerificationException.class, () -> verify(seven, tooLong));
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
-        assertEquals("signer chain has 7 certificates, more than the maximum of 6", e.getMessage());
+        byte[] longer = seven.signReceipt(payload(BUNDLE, creationDate.toString()));
+        assertEquals(BUNDLE, verify(seven, longer).bundleId());
+    }
+
+    @Test
+    void refusesTheSevenCertificatePathWhenOneLinkIsBroken() throws Exception {
+        // The seven-certificate shape above with one defect on the long
+        // route. The copy under the root is expired, so no route is valid
+        // and the receipt is refused. What this shows is that a defective
+        // long route never yields ok: the refusal may come from the defect
+        // or from the expired copy, whichever the builder reports.
+        // A CA in the middle of the chain signed by a key no pinned root
+        // vouches for: the walk stops there, the current copy never reaches
+        // the builder.
+        TestPki forged = TestPki.crossCertifiedReceipt(5, TestPki.CrossDefect.FORGED_LINK);
+        byte[] forgedReceipt = forged.signReceipt(payload(BUNDLE, creationDate.toString()));
+        VerificationException e = assertThrows(VerificationException.class, () -> verify(forged, forgedReceipt));
+        assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), e.getMessage());
+        // The current copy expired at the instant as well: both copies are
+        // then out of date, and the receipt is refused on validity.
+        TestPki expired = TestPki.crossCertifiedReceipt(5, TestPki.CrossDefect.DEEP_COPY_EXPIRED);
+        byte[] expiredReceipt = expired.signReceipt(payload(BUNDLE, creationDate.toString()));
+        e = assertThrows(VerificationException.class, () -> verify(expired, expiredReceipt));
+        assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), e.getMessage());
+        // A CA in the middle of the chain that says it is not a CA: the walk
+        // takes it, since its signature is genuine, and PKIX refuses it as
+        // an issuer. The builder then fails on the expired copy too, and
+        // which of the two failures it reports follows its HashSet order.
+        TestPki notCa = TestPki.crossCertifiedReceipt(5, TestPki.CrossDefect.NOT_A_CA_LINK);
+        byte[] notCaReceipt = notCa.signReceipt(payload(BUNDLE, creationDate.toString()));
+        e = assertThrows(VerificationException.class, () -> verify(notCa, notCaReceipt));
+        assertTrue(
+                e.reason() == Reason.UNTRUSTED_CHAIN || e.reason() == Reason.INVALID_CERTIFICATE,
+                e.reason() + ": " + e.getMessage());
     }
 
     @Test
