@@ -1,0 +1,30 @@
+diff --git a/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs b/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
+index 15a2d485..6997ff86 100644
+--- a/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
++++ b/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
+@@ -207,14 +207,20 @@ public class PlatformTests
+         // warm-up, in the first window only) is gone in the next window;
+         // retention grows in every window.
+         List<Measured> windows = new();
+-        for (int window = 0; window < MeasuredWindows; window++)
++        System.Text.StringBuilder obs = new();
++        obs.Append($"{System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} alloc/call={allocatedPerCall} control={alloc.BytesPerCall:F1} windows=");
++        for (int window = 0; window < 6; window++)
+         {
+             Measured wrapper = Marginal(() => verifier.VerifyReceipt(receipt));
+             windows.Add(wrapper);
+-            if (wrapper.BytesPerCall - control < LiveSetBudgetPerVerification)
+-            {
+-                return;
+-            }
++            obs.Append($"{wrapper.BytesPerCall:F1} ");
++        }
++
++        obs.Append(" | ").Append(Breakdown(verifier, receipt));
++        System.IO.File.AppendAllText(Environment.GetEnvironmentVariable("Q119_OBS") ?? "/dev/null", obs + "\n");
++        if (windows.Take(MeasuredWindows).Any(w => w.BytesPerCall - control < LiveSetBudgetPerVerification))
++        {
++            return;
+         }
+ 
+         Measured idle = MarginalIdle(windows[0].MicrosPerCall);

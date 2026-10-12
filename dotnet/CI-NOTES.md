@@ -162,3 +162,35 @@ G1d (the final module, `4e9d2d85...c9dd`, 384 cases): `dotnet test` project 599 
   every window's figure and the piece breakdown in the message. The budget is
   unchanged and there is no skip. A real leak grows in every window and still
   fails: injected leaks of 256 and 1,500 B per call fail on Linux in all three.
+- **The same test on macOS after the steady-state change (2026-10-12).** The
+  warm-up diagnosis above does not hold for the failures that followed it.
+  From 2026-10-01 to 2026-10-12, nine `dotnet (macos-latest)` jobs failed
+  it, of 263 that finished after the change (3.4 %).
+  Each was one test host of three (net8.0 twice, net10.0 seven times), and in
+  each the three windows and the whole path measured again read 808 to
+  1,604 B per call, none falling toward the budget (on main at 3e222169:
+  1,483.6, 1,458.8, 1,464.3 and 1,475.2 B). More windows or a longer warm-up
+  would read the same, and a macOS budget above those figures would pass a
+  real leak. The figures point at the reading instead: taking and returning
+  an instance allocates one 32 B stack node per call and keeps none, yet reads
+  26.6 to 37.6 B per call in every failing host (0.0 on Linux), and 0 of 200
+  dropped results are alive there. In those hosts `GC.GetTotalMemory` counts
+  some of what the path allocated and dropped, and the allocation control
+  (100 B arrays with no references) reads 0 beside it, so it cannot take that
+  out.
+  The test now reads each window twice: `GC.GetTotalMemory` as before, and
+  the bytes a compacting full collection marked
+  (`GCMemoryInfo.PromotedBytes`), each net of its own control. A window passes
+  when either reading is within the budget, and the message prints both for
+  every window, both controls and every piece. A leak is live under both:
+  a 256 B array kept per call reads 253.3, 256.0 and 256.0 B under each on
+  Linux and fails. That the marked bytes stay at 0 on the macOS hosts is not
+  established: no macOS machine was used, so the PR's macOS legs are the first
+  measurement, and a failure with both readings high would mean the growth is
+  reachable after all.
+  The budget is now 128 B. The sentence above about a 256 B leak was wrong:
+  a 256 B array per call reads 253.3 B in the first window (the list holding
+  the arrays grows its own array there once) and passed at a 256 B budget; at
+  128 B it fails on net8.0, net9.0 and net10.0. A 128 B array per call reads
+  about 125 B and passes, so the test now catches about 131 B per call and up.
+  Figures and sources: `docs/evidence/2026-10-12-dotnet-growth-test-macos.md`.

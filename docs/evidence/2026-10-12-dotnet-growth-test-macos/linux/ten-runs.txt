@@ -1,0 +1,4 @@
+The growth test alone, 10 runs per runtime, Linux x86-64:
+before the change (main at 4f2b8cbc): net8.0 10 of 10, net9.0 10 of 10, net10.0 10 of 10
+after the change:                    net8.0 10 of 10, net9.0 10 of 10, net10.0 10 of 10
+The whole test project, after the change: net8.0 676 of 676, net9.0 676 of 676, net10.0 676 of 676

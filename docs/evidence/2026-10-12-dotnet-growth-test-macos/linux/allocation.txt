@@ -1,0 +1,3 @@
+.NET 8.0.31 whole path allocates 16032 B per call, take and return allocates 32 B per call
+.NET 9.0.20 whole path allocates 16032 B per call, take and return allocates 32 B per call
+.NET 10.0.12 whole path allocates 16032 B per call, take and return allocates 32 B per call

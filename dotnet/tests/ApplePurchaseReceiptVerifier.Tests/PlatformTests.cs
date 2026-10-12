@@ -124,8 +124,11 @@ public class PlatformTests
     /// <c>X509Certificate2</c> is ~1.5 kB of <c>RawData</c> alone (a measured
     /// leak of one per call read 1,730 B/call), so this is well under one
     /// leaked object per call. Linux measures 0 B/call, net of the controls.
+    /// A 256 B array kept per call reads 253.3 B in the first window (the
+    /// list holding it grows its own array once there), so the budget sits
+    /// at half of that: at 256 B such a leak passed.
     /// </summary>
-    private const int LiveSetBudgetPerVerification = 256;
+    private const int LiveSetBudgetPerVerification = 128;
 
     /// <summary>The last object <see cref="Churn"/> made, so the allocations are not optimised away.</summary>
     private static object? _churned;
@@ -150,6 +153,18 @@ public class PlatformTests
     /// measured again read 0.0 and -0.7 B and no single piece kept anything:
     /// the runtime's tiering and caches were still settling. A tail like that is
     /// gone in the next window; unbounded growth is in every window and fails.</para>
+    /// <para>Each window is read twice: <see cref="GC.GetTotalMemory"/> after
+    /// a full collection, and the bytes a compacting full collection marked
+    /// (<see cref="GCMemoryInfo.PromotedBytes"/>), each net of its own
+    /// control. A window passes when either reading is within the budget. A
+    /// leak is live under both (a 256 B array per call reads 253.3 B under
+    /// each on Linux). On osx-arm64 some test hosts read 0.8 to 1.6 kB per call
+    /// in every window under the first, while taking and returning an
+    /// instance, which allocates one 32 B stack node per call and keeps none,
+    /// reads 26.6 to 37.6 B there and 0.0 on Linux: that reading counts bytes
+    /// the code dropped. Whether the marked bytes do not is unproven on macOS;
+    /// the failure message prints both readings of every window, so the next
+    /// failure says which.</para>
     /// <para>A control is measured the same way and taken out: it allocates as
     /// many bytes per iteration as a verification does and keeps none, so a
     /// collector that reports some share of what a loop allocated as live (a
@@ -200,18 +215,20 @@ public class PlatformTests
 
         Measured alloc = Marginal(() => Churn(allocatedPerCall));
         double control = Math.Max(alloc.BytesPerCall, 0);
+        double markedControl = Math.Max(alloc.MarkedBytesPerCall, 0);
 
         // Judge the steady state: up to three consecutive windows of the whole
-        // path, passing on the first that is within the budget. A warm-up tail
-        // (on osx-arm64 the runtime's tiering and caches settled after the
-        // warm-up, in the first window only) is gone in the next window;
-        // retention grows in every window.
+        // path, passing on the first that is within the budget under either
+        // reading. A warm-up tail (on osx-arm64 the runtime's tiering and caches
+        // settled after the warm-up, in the first window only) is gone in the
+        // next window; retention grows in every window, under both readings.
         List<Measured> windows = new();
         for (int window = 0; window < MeasuredWindows; window++)
         {
             Measured wrapper = Marginal(() => verifier.VerifyReceipt(receipt));
             windows.Add(wrapper);
-            if (wrapper.BytesPerCall - control < LiveSetBudgetPerVerification)
+            if (wrapper.BytesPerCall - control < LiveSetBudgetPerVerification
+                || wrapper.MarkedBytesPerCall - markedControl < LiveSetBudgetPerVerification)
             {
                 return;
             }
@@ -220,39 +237,53 @@ public class PlatformTests
         Measured idle = MarginalIdle(windows[0].MicrosPerCall);
         string figures = string.Join(
             ", ",
-            windows.Select(w => w.BytesPerCall.ToString("F1", CultureInfo.InvariantCulture) + " B (" + w.MicrosPerCall.ToString("F0", CultureInfo.InvariantCulture) + " us each)"));
+            windows.Select(w => Both(w) + " (" + w.MicrosPerCall.ToString("F0", CultureInfo.InvariantCulture) + " us each)"));
 
         Assert.Fail(
-            $"each verification left {figures} on the live set in each of {MeasuredWindows} consecutive windows, against "
-            + $"{alloc.BytesPerCall:F1} B for a control that allocates the same {allocatedPerCall} B and keeps none and "
-            + $"{idle.BytesPerCall:F1} B for one that idles as long (reported, not subtracted); the budget is "
-            + $"{LiveSetBudgetPerVerification} B ({System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, "
+            $"each verification left {figures} on the live set in each of {MeasuredWindows} consecutive windows (every figure: "
+            + "the total after a collection / the bytes a compacting collection marked), against "
+            + $"{Both(alloc)} for a control that allocates the same {allocatedPerCall} B and keeps none and "
+            + $"{Both(idle)} for one that idles as long (reported, not subtracted); the budget is "
+            + $"{LiveSetBudgetPerVerification} B under either reading, net of its control "
+            + $"({System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, "
             + $"{System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier}). Where it is: {Breakdown(verifier, receipt)}");
     }
 
-    /// <summary>A live-set growth per call and the wall time a call took.</summary>
-    private readonly record struct Measured(double BytesPerCall, double MicrosPerCall);
+    /// <summary>
+    /// A live-set growth per call under each reading (<see cref="LiveSet"/>)
+    /// and the wall time a call took.
+    /// </summary>
+    private readonly record struct Measured(double BytesPerCall, double MarkedBytesPerCall, double MicrosPerCall);
+
+    /// <summary>Both readings of a growth, for the failure message.</summary>
+    private static string Both(Measured m) =>
+        m.BytesPerCall.ToString("F1", CultureInfo.InvariantCulture) + " / "
+        + m.MarkedBytesPerCall.ToString("F1", CultureInfo.InvariantCulture) + " B";
 
     /// <summary>Bytes of live set per call from round to round: (large round - small round) / (large - small calls).</summary>
     private static Measured Marginal(Action call)
     {
         System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
-        long small = SmallestGrowth(call, SmallRound, out int smallCalls);
-        long large = SmallestGrowth(call, LargeRound, out int largeCalls);
+        (long Total, long Marked) small = SmallestGrowth(call, SmallRound, out int smallCalls);
+        (long Total, long Marked) large = SmallestGrowth(call, LargeRound, out int largeCalls);
         double micros = clock.Elapsed.TotalMilliseconds * 1000.0 / (smallCalls + largeCalls);
-        return new Measured((large - small) / (double)(LargeRound - SmallRound), micros);
+        return PerCall(small, large, micros);
     }
 
     /// <summary>The same rounds with no calls, each lasting as long as the calls would.</summary>
     private static Measured MarginalIdle(double microsPerCall)
     {
         void Wait(int calls) => System.Threading.Thread.Sleep(TimeSpan.FromMilliseconds(microsPerCall * calls / 1000.0));
-        long small = SmallestIdleGrowth(Wait, SmallRound);
-        long large = SmallestIdleGrowth(Wait, LargeRound);
-        return new Measured((large - small) / (double)(LargeRound - SmallRound), 0);
+        return PerCall(SmallestIdleGrowth(Wait, SmallRound), SmallestIdleGrowth(Wait, LargeRound), 0);
     }
 
-    private static long SmallestGrowth(Action call, int calls, out int total)
+    private static Measured PerCall((long Total, long Marked) small, (long Total, long Marked) large, double micros)
+    {
+        const double calls = LargeRound - SmallRound;
+        return new Measured((large.Total - small.Total) / calls, (large.Marked - small.Marked) / calls, micros);
+    }
+
+    private static (long Total, long Marked) SmallestGrowth(Action call, int calls, out int total)
     {
         total = calls * LiveSetRounds;
         return SmallestIdleGrowth(n =>
@@ -264,15 +295,16 @@ public class PlatformTests
         }, calls);
     }
 
-    private static long SmallestIdleGrowth(Action<int> round, int calls)
+    /// <summary>The smallest growth of <see cref="LiveSetRounds"/> rounds, under each reading on its own.</summary>
+    private static (long Total, long Marked) SmallestIdleGrowth(Action<int> round, int calls)
     {
-        long smallest = long.MaxValue;
-        long before = LiveSet();
+        (long Total, long Marked) smallest = (long.MaxValue, long.MaxValue);
+        (long Total, long Marked) before = LiveSet();
         for (int r = 0; r < LiveSetRounds; r++)
         {
             round(calls);
-            long after = LiveSet();
-            smallest = Math.Min(smallest, after - before);
+            (long Total, long Marked) after = LiveSet();
+            smallest = (Math.Min(smallest.Total, after.Total - before.Total), Math.Min(smallest.Marked, after.Marked - before.Marked));
             before = after;
         }
 
@@ -338,10 +370,10 @@ public class PlatformTests
         bool same = ReferenceEquals(instance, again);
         verifier.Pool.Return(again);
 
-        return $"the whole path again {warm.BytesPerCall:F1} B; clock {clock.BytesPerCall:F1} B, UTF-8 encoding {encode.BytesPerCall:F1} B, "
-            + $"take and return an instance {rentReturn.BytesPerCall:F1} B, lowering alone {lower.BytesPerCall:F1} B, "
-            + $"export with a pre-lowered input {invoke.BytesPerCall:F1} B, that and the post-return {invokeAndPost.BytesPerCall:F1} B, "
-            + $"the whole native call {nativeCall.BytesPerCall:F1} B, reading the answer alone {read.BytesPerCall:F1} B; "
+        return $"the whole path again {Both(warm)}; clock {Both(clock)}, UTF-8 encoding {Both(encode)}, "
+            + $"take and return an instance {Both(rentReturn)}, lowering alone {Both(lower)}, "
+            + $"export with a pre-lowered input {Both(invoke)}, that and the post-return {Both(invokeAndPost)}, "
+            + $"the whole native call {Both(nativeCall)}, reading the answer alone {Both(read)}; "
             + $"{alive} of {results} dropped results still alive after two collections, the pool hands back the same instance: {same}, "
             + $"linear memory {linearMemory} B (the stub module's, four pages, on every platform), store caches {caches}, "
             + $"process working set {Environment.WorkingSet} B";
@@ -369,13 +401,20 @@ public class PlatformTests
         return weak;
     }
 
-    /// <summary>The managed live set, with everything collectable collected.</summary>
-    private static long LiveSet()
+    /// <summary>
+    /// The managed live set, with everything collectable collected, read
+    /// twice: what <see cref="GC.GetTotalMemory"/> reports, and the bytes a
+    /// compacting full collection then marked, which counts only what it
+    /// reached.
+    /// </summary>
+    private static (long Total, long Marked) LiveSet()
     {
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
-        return GC.GetTotalMemory(true);
+        long total = GC.GetTotalMemory(true);
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        return (total, GC.GetGCMemoryInfo(GCKind.FullBlocking).PromotedBytes);
     }
 
     // --- the harness itself --------------------------------------------------

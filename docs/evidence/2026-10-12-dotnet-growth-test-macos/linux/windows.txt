@@ -1,0 +1,9 @@
+.NET 8.0.31 alloc/call=16032 control=0.0 windows=-5.5 0.0 0.0 0.0 0.0 0.0 
+.NET 9.0.20 alloc/call=16032 control=0.0 windows=0.0 0.0 0.0 0.0 0.0 0.0 
+.NET 10.0.12 alloc/call=16032 control=0.0 windows=0.0 0.0 0.0 0.0 0.0 0.0 
+.NET 8.0.31 alloc/call=16032 control=0.0 windows=0.0 0.0 0.0 0.0 0.0 0.0 
+.NET 9.0.20 alloc/call=16032 control=0.0 windows=0.0 0.0 0.0 0.0 0.0 0.0 
+.NET 10.0.12 alloc/call=16032 control=0.0 windows=0.0 0.0 0.0 0.0 0.0 0.0 
+.NET 8.0.31 alloc/call=16032 control=0.0 windows=0.0 0.0 0.0 0.0 0.0 0.0 
+.NET 9.0.20 alloc/call=16032 control=0.0 windows=0.0 0.0 0.0 0.0 0.0 0.0 
+.NET 10.0.12 alloc/call=16032 control=0.0 windows=0.0 -0.0 0.0 0.0 0.0 0.0 

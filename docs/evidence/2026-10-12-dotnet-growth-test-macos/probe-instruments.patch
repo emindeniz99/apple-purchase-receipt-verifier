@@ -1,0 +1,43 @@
+diff --git a/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs b/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
+index 15a2d485..899f5b5e 100644
+--- a/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
++++ b/dotnet/tests/ApplePurchaseReceiptVerifier.Tests/PlatformTests.cs
+@@ -127,6 +127,8 @@ public class PlatformTests
+     /// </summary>
+     private const int LiveSetBudgetPerVerification = 256;
+ 
++    private static readonly List<byte[]> InjectedLeak = new();
++
+     /// <summary>The last object <see cref="Churn"/> made, so the allocations are not optimised away.</summary>
+     private static object? _churned;
+ 
+@@ -209,8 +211,14 @@ public class PlatformTests
+         List<Measured> windows = new();
+         for (int window = 0; window < MeasuredWindows; window++)
+         {
+-            Measured wrapper = Marginal(() => verifier.VerifyReceipt(receipt));
++            int leak = int.Parse(Environment.GetEnvironmentVariable("Q119_LEAK") ?? "0");
++            Measured wrapper = Marginal(() =>
++            {
++                verifier.VerifyReceipt(receipt);
++                if (leak > 0) InjectedLeak.Add(new byte[leak - 24]);
++            });
+             windows.Add(wrapper);
++            System.IO.File.AppendAllText(Environment.GetEnvironmentVariable("Q119_OBS") ?? "/dev/null", $"{Environment.GetEnvironmentVariable("Q119_MODE")} {Environment.GetEnvironmentVariable("Q119_LEAK")} {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} window {window}: {wrapper.BytesPerCall:F1} control {alloc.BytesPerCall:F1} total-now {GC.GetTotalMemory(false)} promoted-now {GC.GetGCMemoryInfo(GCKind.FullBlocking).PromotedBytes}\n");
+             if (wrapper.BytesPerCall - control < LiveSetBudgetPerVerification)
+             {
+                 return;
+@@ -374,8 +382,11 @@ public class PlatformTests
+     {
+         GC.Collect();
+         GC.WaitForPendingFinalizers();
+-        GC.Collect();
+-        return GC.GetTotalMemory(true);
++        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
++        long total = GC.GetTotalMemory(false);
++        long promoted = GC.GetGCMemoryInfo(GCKind.FullBlocking).PromotedBytes;
++        if (Environment.GetEnvironmentVariable("Q119_MODE") == "total") return total;
++        return promoted;
+     }
+ 
+     // --- the harness itself --------------------------------------------------
