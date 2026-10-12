@@ -258,7 +258,9 @@ final class ReceiptCore {
 
     /**
      * The embedded certificates a pinned root vouches for, directly or
-     * through one already accepted, walking down from the roots. Only these
+     * through a CA already accepted, walking down from the roots. An
+     * accepted end entity is returned but vouches for nothing: a developer
+     * certificate is one, and its key belongs to the developer. Only these
      * reach the path builder; see {@link AppleTrust}. The walk's work is
      * bounded by {@link ReceiptCertificates#MAX_EMBEDDED_CERTIFICATES}; the
      * path's length is the builder's business (BouncyCastle 1.86 refuses an
@@ -282,7 +284,15 @@ final class ReceiptCore {
             }
             pending.removeAll(acceptedThisRound);
             accepted.addAll(acceptedThisRound);
-            issuers = acceptedThisRound;
+            // Only a CA vouches further (RFC 5280 4.2.1.9): an end entity's
+            // key belongs to whoever it was issued to, an Apple developer
+            // among them. Reading basicConstraints decodes no key.
+            issuers = new ArrayList<>();
+            for (X509Certificate certificate : acceptedThisRound) {
+                if (certificate.getBasicConstraints() != -1) {
+                    issuers.add(certificate);
+                }
+            }
         }
         return accepted;
     }

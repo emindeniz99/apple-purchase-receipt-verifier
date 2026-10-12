@@ -21,10 +21,12 @@ import org.bouncycastle.asn1.x509.Extension;
 /**
  * Trust material both paths share (the marker OIDs, the anchors and the
  * checker for the critical extensions PKIX leaves unresolved), and their
- * rule for it: no key a pinned
- * root has not vouched for is ever decoded or used, so certificates are
- * checked top-down from the roots. BouncyCastle validates an RSA key
- * as it decodes it, which costs seconds for a 16384-bit modulus.
+ * rule for it: no key is ever decoded or used unless a pinned root, or a CA
+ * it vouched for, has vouched for its certificate, so certificates are
+ * checked top-down from the roots. An end entity vouches for nothing:
+ * Apple's roots also vouch for developer certificates, whose keys belong to
+ * the developers. BouncyCastle validates an RSA key as it decodes it, which
+ * costs seconds for a 16384-bit modulus.
  * {@code UnauthenticatedKeyCostTest} pins the rule. PKIX then verifies the
  * same signatures again; that duplicate (about 0.1 ms per receipt, about
  * 0.2 ms per JWS, measured) is the price of never decoding an unvouched
@@ -100,9 +102,10 @@ final class AppleTrust {
     }
 
     /**
-     * Whether one of {@code issuers}, each a root or a certificate a root
-     * vouched for, signed {@code certificate}. A key is decoded only for an
-     * issuer whose subject names it.
+     * Whether one of {@code issuers}, each a pinned root or a CA a root
+     * vouched for, signed {@code certificate}. It compares names and checks
+     * the signature only, so the caller passes no end entity. A key is
+     * decoded only for an issuer whose subject names it.
      */
     static boolean signedByAny(X509Certificate certificate, Iterable<X509Certificate> issuers) {
         for (X509Certificate issuer : issuers) {

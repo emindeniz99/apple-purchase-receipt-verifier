@@ -39,8 +39,8 @@ import org.junit.jupiter.api.Test;
  * cache of validated moduli does not help. When every embedded key was
  * decoded before the chain was checked, a receipt of a few KB carrying such keys
  * cost about 14 seconds of CPU. The verifiers now decode a key only after
- * a pinned root has vouched for its certificate, so these inputs are
- * rejected, or ignored, in milliseconds.</p>
+ * a pinned root, or a CA it vouched for, has vouched for its certificate,
+ * so these inputs are rejected, or ignored, in milliseconds.</p>
  *
  * <p>The bound is generous so a slow CI runner does not fail it; the
  * regression it guards against is two orders of magnitude slower.</p>
@@ -70,7 +70,7 @@ class UnauthenticatedKeyCostTest {
         embedded.add(signer);
         embedded.add(new X509CertificateHolder(pki.intermediate.getEncoded()));
         for (int i = 0; i < 8; i++) {
-            embedded.add(hugeKeyCertificate(name(pki.intermediate), name(pki.root), null, pki));
+            embedded.add(hugeKeyCertificate(name(pki.intermediate), name(pki.root), null, pki, attacker));
         }
         byte[] receipt = receiptSignedBy(signerKey, signer, embedded);
 
@@ -88,7 +88,7 @@ class UnauthenticatedKeyCostTest {
         List<X509CertificateHolder> embedded = new ArrayList<X509CertificateHolder>();
         embedded.add(signer);
         for (int i = 0; i < 9; i++) {
-            embedded.add(hugeKeyCertificate(name(pki.intermediate), name(pki.root), null, pki));
+            embedded.add(hugeKeyCertificate(name(pki.intermediate), name(pki.root), null, pki, attacker));
         }
         byte[] receipt = receiptSignedBy(signerKey, signer, embedded);
 
@@ -100,15 +100,64 @@ class UnauthenticatedKeyCostTest {
     }
 
     @Test
+    void hugeKeysSignedByAnEndEntityThePinnedRootVouchesForAreNeverDecoded() throws Exception {
+        // A developer certificate is an end entity under Apple's WWDR
+        // intermediate, and its private key belongs to the developer. Signed
+        // by that key: seven CA certificates with huge keys, and one more
+        // certificate naming them as its issuer. If the end entity could
+        // vouch, checking that last certificate would decode all seven keys
+        // (13 to 18 s measured; owner Q122 a, 2026-10-12).
+        TestPki pki = TestPki.receipt();
+        KeyPair developerKey = rsa2048();
+        X509CertificateHolder developer = new X509CertificateHolder(TestPki.cert(
+                        "CN=Some Developer",
+                        developerKey,
+                        name(pki.intermediate),
+                        pki.intermediateKey,
+                        false,
+                        null,
+                        pki.leaf.getNotBefore(),
+                        pki.leaf.getNotAfter(),
+                        "SHA256withRSA")
+                .getEncoded());
+        List<X509CertificateHolder> embedded = new ArrayList<X509CertificateHolder>();
+        embedded.add(developer);
+        embedded.add(new X509CertificateHolder(pki.intermediate.getEncoded()));
+        for (int i = 0; i < 7; i++) {
+            embedded.add(hugeKeyCertificate("CN=Attacker CA", "CN=Some Developer", null, pki, developerKey));
+        }
+        embedded.add(new X509CertificateHolder(TestPki.cert(
+                        "CN=Victim",
+                        rsa2048(),
+                        "CN=Attacker CA",
+                        developerKey.getPrivate(),
+                        false,
+                        null,
+                        pki.leaf.getNotBefore(),
+                        pki.leaf.getNotAfter(),
+                        "SHA256withRSA")
+                .getEncoded()));
+        byte[] receipt = receiptSignedBy(developerKey, developer, embedded);
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+        assertFast(start);
+        // The developer's chain is genuine; it only lacks the receipt-signing marker.
+        assertEquals(Reason.INVALID_CERTIFICATE_PURPOSE, e.reason(), e.getMessage());
+    }
+
+    @Test
     void aJwsWhoseCertificatesHaveHugeKeysIsRefusedQuickly() throws Exception {
         TestPki pki = TestPki.jws();
-        String leaf = TestPki.b64(hugeKeyCertificate("CN=Fake Leaf", name(pki.intermediate), AppleTrustOids.LEAF, pki)
-                .getEncoded());
-        String intermediate =
-                TestPki.b64(hugeKeyCertificate(name(pki.intermediate), name(pki.root), AppleTrustOids.INTERMEDIATE, pki)
+        String leaf = TestPki.b64(
+                hugeKeyCertificate("CN=Fake Leaf", name(pki.intermediate), AppleTrustOids.LEAF, pki, attacker)
                         .getEncoded());
-        String root = TestPki.b64(
-                hugeKeyCertificate(name(pki.root), name(pki.root), null, pki).getEncoded());
+        String intermediate = TestPki.b64(
+                hugeKeyCertificate(name(pki.intermediate), name(pki.root), AppleTrustOids.INTERMEDIATE, pki, attacker)
+                        .getEncoded());
+        String root = TestPki.b64(hugeKeyCertificate(name(pki.root), name(pki.root), null, pki, attacker)
+                .getEncoded());
         String header = "{\"alg\":\"ES256\",\"x5c\":[\"" + leaf + "\",\"" + intermediate + "\",\"" + root + "\"]}";
         String jws = TestPki.b64url(header.getBytes(StandardCharsets.UTF_8)) + "."
                 + TestPki.b64url("{}".getBytes(StandardCharsets.UTF_8)) + "."
@@ -133,13 +182,13 @@ class UnauthenticatedKeyCostTest {
     }
 
     /**
-     * A CA certificate signed by the attacker, claiming {@code issuer}, whose
-     * key is a random 16384-bit modulus with no factor below 10000, so
+     * A CA certificate signed by {@code signer}, claiming {@code issuer},
+     * whose key is a random 16384-bit modulus with no factor below 10000, so
      * BouncyCastle's cheap small-factor check passes and only the expensive
      * primality test could reject it.
      */
     private static X509CertificateHolder hugeKeyCertificate(
-            String subject, String issuer, String markerOid, TestPki pki) throws Exception {
+            String subject, String issuer, String markerOid, TestPki pki, KeyPair signer) throws Exception {
         BigInteger modulus;
         do {
             modulus = new BigInteger(16384, RANDOM).setBit(16383).setBit(0);
@@ -158,7 +207,7 @@ class UnauthenticatedKeyCostTest {
         if (markerOid != null) {
             builder.addExtension(new ASN1ObjectIdentifier(markerOid), false, DERNull.INSTANCE);
         }
-        return builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(attacker.getPrivate()));
+        return builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(signer.getPrivate()));
     }
 
     private static X509CertificateHolder signerUnder(TestPki pki, KeyPair signerKey) throws Exception {

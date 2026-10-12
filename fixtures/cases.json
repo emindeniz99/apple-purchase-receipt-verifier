@@ -1053,6 +1053,18 @@
       "codec": "raw",
       "contentSha256": "fac52b0a7c8652495982973b762fcc65e73d90226899f490db87da7014f63f3e"
     },
+    "hardening-developer-root": {
+      "path": "generated-0.7/hardening-developer-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "cf3612e1bc5e59dff6aabddfdcabebf29d91743e65cb2e9f43e907a5a6043c85"
+    },
+    "receipt-oversized-keys-under-end-entity": {
+      "path": "generated-0.7/receipt-oversized-keys-under-end-entity.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "3fcf589b8538ed7df59a9da371e9b642a84389597c9c3a66d336bb6bf4ad9603"
+    },
     "receipt-signer-ecdsa-p256": {
       "path": "generated-0.7/receipt-signer-ecdsa-p256.der",
       "role": "input",
@@ -8974,6 +8986,37 @@
         "pkcs7",
         "positive",
         "dos",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-oversized-keys-under-an-end-entity-certificate",
+      "description": "A receipt signed by a developer-style end-entity certificate (basicConstraints cA false, keyUsage digitalSignature, no receipt-signing marker) that the pinned root vouches for through its WWDR intermediate, and whose key an attacker would hold. That key signs three CA certificates with 16384-bit RSA moduli, and one more certificate names them as its issuer. An end entity vouches for nothing, so a walk down from the root never decodes those keys, and the receipt fails as INVALID_CERTIFICATE_PURPOSE, within maxMillis. A walk that let every accepted certificate vouch decoded each oversized key, about 1 to 2 s apiece in BouncyCastle (owner Q122 a, 2026-10-12).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "receipt-oversized-keys-under-end-entity"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "hardening-developer-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_CERTIFICATE_PURPOSE"
+      },
+      "fault": "oversized-keys-under-an-end-entity-certificate",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "chain",
+        "dos",
+        "generated",
         "new-in-0-7"
       ]
     },

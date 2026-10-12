@@ -423,15 +423,13 @@ class ReceiptVerificationTest {
         e = assertThrows(VerificationException.class, () -> verify(expired, expiredReceipt));
         assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), e.getMessage());
         // A CA in the middle of the chain that says it is not a CA: the walk
-        // takes it, since its signature is genuine, and PKIX refuses it as
-        // an issuer. The builder then fails on the expired copy too, and
-        // which of the two failures it reports follows its HashSet order.
+        // takes it, since its signature is genuine, but it vouches for
+        // nothing, so the CAs below it and the current copy never reach the
+        // builder. Only the route through the expired copy is left.
         TestPki notCa = TestPki.crossCertifiedReceipt(5, TestPki.CrossDefect.NOT_A_CA_LINK);
         byte[] notCaReceipt = notCa.signReceipt(payload(BUNDLE, creationDate.toString()));
         e = assertThrows(VerificationException.class, () -> verify(notCa, notCaReceipt));
-        assertTrue(
-                e.reason() == Reason.UNTRUSTED_CHAIN || e.reason() == Reason.INVALID_CERTIFICATE,
-                e.reason() + ": " + e.getMessage());
+        assertEquals(Reason.INVALID_CERTIFICATE, e.reason(), e.getMessage());
     }
 
     @Test
