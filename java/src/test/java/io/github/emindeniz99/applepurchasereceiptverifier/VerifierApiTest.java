@@ -11,6 +11,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.lang.reflect.InvocationTargetException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -620,7 +623,9 @@ class VerifierApiTest {
      * ASN1IA5String arrived in bcprov 1.70) would throw a LinkageError out of
      * verifyReceipt, which must not throw. Verifier.create loads each of them
      * first, so the old jar fails there instead. A jar that links but is
-     * older than 1.86 is refused by version (BouncyCastleFloorTest).
+     * older than 1.86 is refused by version (BouncyCastleFloorTest). A
+     * missing bcutil is caught by an initialiser, not a class literal:
+     * createFailsWithoutBcutil.
      */
     @Test
     void theStaticStateLoadsEveryBouncyCastleClassTheDecodersName() throws Exception {
@@ -645,6 +650,52 @@ class VerifierApiTest {
             }
         }
         assertTrue(scanned > 0, "no BouncyCastle import was found, so the check above scanned nothing");
+    }
+
+    /**
+     * Nothing create names lives in bcutil, so without that jar create used
+     * to succeed and every verifyReceipt threw NoClassDefFoundError out of
+     * CMSSignedData's static initialiser. Create runs that initialiser, so a
+     * missing bcutil now fails there. The library, bcprov, bcpkix and
+     * jackson-core are loaded by a class loader that cannot see bcutil; the
+     * same loader with bcutil added is the control.
+     */
+    @Test
+    void createFailsWithoutBcutil() throws Exception {
+        URL library = location(DefaultVerifier.class);
+        URL bcprov = location(BouncyCastle.PROVIDER.getClass());
+        URL bcpkix = location(org.bouncycastle.cms.CMSSignedData.class);
+        URL bcutil = location(org.bouncycastle.asn1.eac.EACObjectIdentifiers.class);
+        URL jackson = location(com.fasterxml.jackson.core.JsonFactory.class);
+        assertEquals(
+                5,
+                new LinkedHashSet<URL>(Arrays.asList(library, bcprov, bcpkix, bcutil, jackson)).size(),
+                "bcutil is not a jar of its own on this classpath, so it cannot be left out");
+
+        assertNotNull(createIn(library, bcprov, bcpkix, bcutil, jackson));
+        InvocationTargetException thrown =
+                assertThrows(InvocationTargetException.class, () -> createIn(library, bcprov, bcpkix, jackson));
+        Throwable e = thrown.getCause();
+        assertTrue(e instanceof IllegalStateException, String.valueOf(e));
+        assertTrue(e.getCause() instanceof NoClassDefFoundError, String.valueOf(e.getCause()));
+        // The missing class is BouncyCastle's, not Jackson's or the library's own.
+        assertTrue(
+                e.getCause().getMessage().startsWith("org/bouncycastle/"),
+                e.getCause().getMessage());
+    }
+
+    private static URL location(Class<?> type) {
+        return type.getProtectionDomain().getCodeSource().getLocation();
+    }
+
+    /** {@code Verifier.create(Config.defaults())} with only {@code classpath} (and the JDK) visible. */
+    private static Object createIn(URL... classpath) throws Exception {
+        try (URLClassLoader loader = new URLClassLoader(classpath, null)) {
+            Class<?> config = loader.loadClass(Config.class.getName());
+            return loader.loadClass(Verifier.class.getName())
+                    .getMethod("create", config)
+                    .invoke(null, config.getMethod("defaults").invoke(null));
+        }
     }
 
     /**

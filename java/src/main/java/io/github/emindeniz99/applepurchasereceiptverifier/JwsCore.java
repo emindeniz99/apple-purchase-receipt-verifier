@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
@@ -370,10 +371,14 @@ final class JwsCore {
         decodeKey(leaf, 0);
     }
 
-    /** The key of an x5c entry whose signature has already verified; one no decoder accepts is its verdict. */
+    /**
+     * The key of an x5c entry whose signature has already verified; one no
+     * decoder accepts is its verdict. BouncyCastle throws for a key that does
+     * not decode and returns null for a key algorithm it does not know.
+     */
     private static PublicKey decodeKey(X509Certificate certificate, int index) throws VerificationException {
         try {
-            return certificate.getPublicKey();
+            return Objects.requireNonNull(certificate.getPublicKey(), "unknown public key algorithm");
         } catch (RuntimeException e) {
             throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + index + "] does not decode", e);
         }

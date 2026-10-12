@@ -972,7 +972,8 @@ the others in 2.15), and below it `Verifier.create` throws
 `IllegalStateException`.
 BouncyCastle `bcprov`, `bcutil` and `bcpkix` 1.86 or later, and below 1.86
 `Verifier.create` throws `IllegalStateException` naming the bcprov it
-found. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws
+found; with `bcutil` or `bcpkix` missing altogether it throws the same,
+instead of the first `verifyReceipt` throwing a `NoClassDefFoundError`. 1.84 added the ASN.1 nesting bound (bcprov 1.81 throws
 `StackOverflowError` out of `verifyReceipt` on a deeply nested receipt;
 [measured](../docs/evidence/2026-10-04-java-bc-floor.md)), and
 1.85 fixed CVE-2026-12860, in the RSA PKCS#1 signature check the receipt

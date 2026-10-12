@@ -115,7 +115,9 @@ final class AppleTrust {
                 certificate.verify(issuer.getPublicKey(), BouncyCastle.PROVIDER);
                 return true;
             } catch (GeneralSecurityException | RuntimeException e) {
-                // Not signed by this issuer; try the next one.
+                // Not signed by this issuer, or the issuer's key is one
+                // BouncyCastle cannot build (null for an unknown algorithm,
+                // which verify refuses); try the next one.
             }
         }
         return false;

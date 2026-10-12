@@ -528,12 +528,20 @@ cRLDistributionPoints, 2026-10-06).
   now the key's, as in Java. `receipt/reject-signer-on-an-unimplemented-curve`
   and `transaction/reject-x5c-unimplemented-curve` keep
   `INVALID_CERTIFICATE`, and `rust/tests` pins the new order on both
-  paths with a signer and a leaf that lack their marker. One input
-  moves the other way, failing closed either way: a custom anchor whose
-  key OpenSSL cannot build, embedded as the receipt's signer, is
-  vouched for without a signature check (an embedded copy of an anchor
-  is the anchor), so the core now answers `INVALID_CERTIFICATE`; the
-  core before and Java answer `UNTRUSTED_CHAIN`. No case pins it.
+  paths with a signer and a leaf that lack their marker. Java's check
+  caught only a key BouncyCastle throws on; for a key algorithm it does
+  not know `getPublicKey()` returns `null`, and Java answered
+  `UNTRUSTED_CHAIN` for such a signer, leaf or JWS intermediate until
+  2026-10-11, when it began treating `null` as a key that does not
+  decode (owner, Q99). The `unknown-key-*` cases pin each position:
+  `INVALID_CERTIFICATE` for those three, and `UNTRUSTED_CHAIN` for a
+  receipt intermediate, whose signer no pinned root then vouches for.
+  One input moves the other way, failing closed either way: a custom
+  anchor whose key OpenSSL cannot build, embedded as the receipt's
+  signer, is vouched for without a signature check (an embedded copy of
+  an anchor is the anchor), so the core now answers
+  `INVALID_CERTIFICATE`; the core before and Java answer
+  `UNTRUSTED_CHAIN`. No case pins it.
 - **What stays different under OpenSSL,** measured against the 0.6 Java
   verifier: the CMS build answers as Java does on 1,028 of the 1,048 rows
   the C ABI can express ([ASN.1 payload §3][payload]). Of the other 20, one
