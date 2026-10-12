@@ -431,7 +431,7 @@ class ReceiptVerificationTest {
         byte[] tooLong = seven.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(seven, tooLong));
         assertEquals(Reason.UNTRUSTED_CHAIN, e.reason());
-        assertEquals("chain exceeds maximum length", e.getMessage());
+        assertEquals("signer chain has 7 certificates, more than the maximum of 6", e.getMessage());
     }
 
     @Test
