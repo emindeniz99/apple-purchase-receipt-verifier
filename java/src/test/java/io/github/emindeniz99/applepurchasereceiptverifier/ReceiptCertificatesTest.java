@@ -9,7 +9,8 @@ import org.bouncycastle.cms.SignerInformation;
 import org.junit.jupiter.api.Test;
 
 /**
- * Every certificate a SignerInfo names is tried (owner Q69), and each try
+ * Every certificate a SignerInfo names is tried, since a renewed signer can
+ * sit behind its expired copy in the bag, and each try
  * costs a chain build and a signature check. Anyone relaying a receipt can
  * copy the signer into the unsigned bag, up to the bag's cap, so equal copies
  * are tried once: they would get the same verdict.

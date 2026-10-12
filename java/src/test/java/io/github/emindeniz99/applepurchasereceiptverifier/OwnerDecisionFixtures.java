@@ -15,8 +15,7 @@ import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERUTF8String;
 
 /**
- * Writes the inputs of the shared cases for the owner decisions of
- * 2026-09-27 (chain before markers on the JWS path, validity before
+ * Writes the inputs of the shared cases for six rules (chain before markers on the JWS path, validity before
  * signature, IA5String high bytes, malformed receipt INTEGERs, the receipt
  * date grammar, and the JSON name and number length bounds) into the
  * directory given as the first argument (default

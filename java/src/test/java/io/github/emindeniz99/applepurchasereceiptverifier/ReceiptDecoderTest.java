@@ -49,7 +49,7 @@ class ReceiptDecoderTest {
         assertEquals("1000", purchase.transactionId());
     }
 
-    /** IA5 is seven-bit (owner, 2026-09-27, Q23): a byte from 0x80 up is not read as Latin-1. */
+    /** IA5 is a seven-bit alphabet: a byte from 0x80 up is not read as Latin-1. */
     @Test
     void anIa5StringWithAByteFrom0x80UpIsKeptRaw() throws Exception {
         byte[] notIa5 = {0x16, 0x04, 'c', 'a', 'f', (byte) 0xE9};
@@ -108,10 +108,9 @@ class ReceiptDecoderTest {
     }
 
     /**
-     * A receipt date is an RFC 3339 date-time (owner, Q68, 2026-10-06,
-     * widening the 2026-09-27 grammar), at every edge of it. An offset may
-     * carry the instant past 9999-12-31 or before 0000-01-01, and the date
-     * still reads (owner, 2026-10-12).
+     * A receipt date is an RFC 3339 date-time, at every edge of it. An
+     * offset may carry the instant past 9999-12-31 or before 0000-01-01, and
+     * the date still reads.
      */
     @Test
     void aReceiptDateIsAnRfc3339DateTime() {
@@ -236,8 +235,7 @@ class ReceiptDecoderTest {
     }
 
     /**
-     * The nesting bound is BouncyCastle's (64 by default; owner,
-     * 2026-10-01). Past it the parser throws an IOException, which the
+     * The nesting bound is BouncyCastle's (64 by default). Past it the parser throws an IOException, which the
      * envelope maps to MALFORMED and signed content to UNREADABLE_PAYLOAD,
      * as for any other defect there, never an uncaught error.
      */

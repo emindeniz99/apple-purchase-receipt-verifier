@@ -131,8 +131,8 @@ public final class PortDivergenceFixtures {
                 OVERSIZED_ATTRIBUTE_TYPE);
         write(out, "receipt-attribute-type-overflow.der", receiptPki.signReceipt(oversized, new Date(SIGNED_DATE)));
 
-        // No attribute 12, so PLAN.md 2.2 step 2's "else current time" is the
-        // only anchor left for certificate validity.
+        // No attribute 12, so the clock is the only instant left for
+        // certificate validity.
         byte[] dateless = TestPki.receiptPayload(
                 "ProductionSandbox",
                 BUNDLE,

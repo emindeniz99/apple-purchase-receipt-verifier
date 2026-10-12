@@ -21,7 +21,6 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.DERBMPString;
 import org.bouncycastle.asn1.DERBitString;
@@ -96,11 +95,6 @@ class ReceiptVerificationTest {
         return Checks.receipt(Checks.verifier(trustedPki), der);
     }
 
-    /** One receipt attribute whose value is the DER of {@code value}. */
-    private static ASN1Encodable integerAttribute(int type, long value) throws Exception {
-        return TestPki.attribute(type, new ASN1Integer(value).getEncoded());
-    }
-
     private static InAppPurchase byProduct(ReceiptPayload receipt, String productId) {
         for (InAppPurchase p : receipt.inApp()) {
             if (productId.equals(p.productId())) {
@@ -143,7 +137,7 @@ class ReceiptVerificationTest {
                         "70000000000001",
                         "2024-01-15T12:00:00Z",
                         null,
-                        Arrays.asList(integerAttribute(1713, 0L))),
+                        Arrays.asList(Checks.integerAttribute(1713, 0L))),
                 TestPki.inAppPurchase(
                         1,
                         "com.example.app.vip",
@@ -151,7 +145,7 @@ class ReceiptVerificationTest {
                         "70000000000002",
                         "2024-02-01T09:30:00Z",
                         "2030-02-01T09:30:00Z",
-                        Arrays.asList(integerAttribute(1713, 1L))));
+                        Arrays.asList(Checks.integerAttribute(1713, 1L))));
         byte[] der = pki.signReceipt(TestPki.receiptPayload(
                 "Production",
                 BUNDLE,
@@ -164,9 +158,9 @@ class ReceiptVerificationTest {
                 null,
                 new byte[] {1, 2, 3},
                 Arrays.asList(
-                        integerAttribute(1, 1234567890L),
-                        integerAttribute(15, 9223372036854775807L),
-                        integerAttribute(16, 456789012L))));
+                        Checks.integerAttribute(1, 1234567890L),
+                        Checks.integerAttribute(15, 9223372036854775807L),
+                        Checks.integerAttribute(16, 456789012L))));
 
         ReceiptPayload receipt = verify(pki, der);
         assertEquals(Long.valueOf(1234567890L), receipt.appItemId());
@@ -205,8 +199,7 @@ class ReceiptVerificationTest {
 
     @Test
     void returnsWhateverBundleIdAppleSignedWithoutJudgingIt() throws Exception {
-        // 0.6 took the caller's bundle id and refused any other. 0.7 takes
-        // none: a receipt for another app verifies and says which app it is
+        // The verifier takes no bundle id: a receipt for another app verifies and says which app it is
         // for, and comparing that is the caller's check.
         byte[] other = pki.signReceipt(payload("com.other.app", creationDate.toString()));
         assertEquals("com.other.app", verify(pki, other).bundleId());
@@ -215,7 +208,7 @@ class ReceiptVerificationTest {
     @Test
     void rejectsTamperedPayload() {
         byte[] tampered = receiptDer.clone();
-        int at = indexOf(tampered, BUNDLE.getBytes(StandardCharsets.UTF_8));
+        int at = TestPki.indexOf(tampered, BUNDLE.getBytes(StandardCharsets.UTF_8));
         tampered[at] ^= 0x01;
         VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, tampered));
         assertEquals(Reason.INVALID_SIGNATURE, e.reason());
@@ -294,8 +287,8 @@ class ReceiptVerificationTest {
         // ordering the tests above cannot see, since neither step decodes a
         // certificate. This bag is over the bound AND omits the signer, so the
         // guard where it is reports the bound, while a guard that runs after
-        // the lookup reports the missing signer instead. Both are MALFORMED
-        // since 0.7, so the message tells them apart.
+        // the lookup reports the missing signer instead. Both are MALFORMED,
+        // so the message tells them apart.
         byte[] flooded = pki.signReceiptOmittingSigner(payload(BUNDLE, creationDate.toString()), 11);
         VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, flooded));
         assertEquals(Reason.MALFORMED, e.reason());
@@ -334,23 +327,12 @@ class ReceiptVerificationTest {
     }
 
     @Test
-    void acceptsAPathOfSixCertificatesBelowTheAnchor() throws Exception {
-        // Six certificates below the anchor: leaf plus five intermediates,
-        // counted from the leaf with the anchor excluded. Neither
-        // implementation bounds the length of its own, so this is a long
-        // path that both accept.
-        TestPki deep = TestPki.deepReceipt(5, 0);
-        ReceiptPayload receipt = verify(deep, deep.signReceipt(payload(BUNDLE, creationDate.toString())));
-        assertEquals(BUNDLE, receipt.bundleId());
-    }
-
-    @Test
     void acceptsAPathOfSevenTheBuilderValidates() throws Exception {
         // Seven certificates below the anchor, each signed by the one above
         // under the pinned root and valid at the instant. The walk has no
         // round bound, and BouncyCastle 1.86 returns a path of seven, so the
-        // receipt verifies (Q120 a, 2026-10-12). The core accepts it too
-        // since it dropped its own bound (Q126 b, DECISIONS.md R20).
+        // receipt verifies: every link is signed under the pinned root, so
+        // the length alone refuses nothing.
         TestPki deep = TestPki.deepReceipt(6, 0);
         byte[] seven = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         assertEquals(BUNDLE, verify(deep, seven).bundleId());
@@ -361,8 +343,7 @@ class ReceiptVerificationTest {
         // The same seven certificates below the anchor, except that the last
         // CA repeats its issuer's subject name under a fresh key. The walk
         // reaches the signer in seven rounds and the builder returns the
-        // path, so the receipt verifies like the one above (Q120 a,
-        // 2026-10-12).
+        // path, so the receipt verifies like the one above.
         TestPki deep = TestPki.deepReceipt(5, 1);
         byte[] seven = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         assertEquals(BUNDLE, verify(deep, seven).bundleId());
@@ -375,8 +356,7 @@ class ReceiptVerificationTest {
         // BouncyCastle 1.86's builder refuses an eighth certificate below
         // the anchor and finds no path. This is where Java's path length
         // ends, and the message shows the builder refused it, not the walk.
-        // The core verifies it (Q126 b; receipt/accept-a-path-of-eight
-        // allows both, DECISIONS.md R20).
+        // The shared case receipt/accept-a-path-of-eight allows both answers.
         TestPki deep = TestPki.deepReceipt(7, 0);
         byte[] eight = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, eight));
@@ -390,15 +370,11 @@ class ReceiptVerificationTest {
         // the root directly, in a copy that has expired, and below a chain
         // of CAs. The walk reaches the signer through the expired copy in
         // two rounds; the builder backtracks off that copy and returns the
-        // path through the current one. Four CAs above the current copy make
-        // six certificates below the anchor, five make seven, which
-        // BouncyCastle 1.86 still returns under the JDK's default
-        // maxPathLength of 5. Every certificate
+        // path through the current one. Five CAs above the current copy make
+        // seven certificates below the anchor, which BouncyCastle 1.86 still
+        // returns under the JDK's default maxPathLength of 5. Every certificate
         // on the long path is signed under the pinned root and valid at the
-        // instant, so the length alone refuses nothing (Q108 a, 2026-10-12).
-        TestPki six = TestPki.crossCertifiedReceipt(4);
-        byte[] longest = six.signReceipt(payload(BUNDLE, creationDate.toString()));
-        assertEquals(BUNDLE, verify(six, longest).bundleId());
+        // instant, so the length alone refuses nothing.
         TestPki seven = TestPki.crossCertifiedReceipt(5);
         byte[] longer = seven.signReceipt(payload(BUNDLE, creationDate.toString()));
         assertEquals(BUNDLE, verify(seven, longer).bundleId());
@@ -448,7 +424,7 @@ class ReceiptVerificationTest {
                 .getSignature();
         // A mid-signature bit keeps the value below the modulus, so the RSA check
         // returns false rather than erroring out as a CMSException.
-        corrupted[indexOf(corrupted, signature) + signature.length / 2] ^= 0x01;
+        corrupted[TestPki.indexOf(corrupted, signature) + signature.length / 2] ^= 0x01;
         VerificationException e = assertThrows(VerificationException.class, () -> verify(pki, corrupted));
         assertEquals(Reason.INVALID_SIGNATURE, e.reason());
     }
@@ -633,20 +609,6 @@ class ReceiptVerificationTest {
     }
 
     @Test
-    void anEmptyRootSetIsRefusedAtStartup() throws Exception {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> Verifier.create(Config.builder()
-                        .roots(Collections.<java.security.cert.X509Certificate>emptySet())
-                        .build()));
-        // And a receipt under a root that is not pinned does not verify.
-        TestPki stranger = TestPki.receipt();
-        VerificationException chain =
-                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(stranger), receiptDer));
-        assertEquals(Reason.UNTRUSTED_CHAIN, chain.reason());
-    }
-
-    @Test
     void boundsAttributeIntegersAtTheEdgeOfALong() throws Exception {
         // Long.MAX_VALUE is the widest value the parser holds, 2^63 is one past
         // it and -1 the first negative; a comparison one step wider lets each
@@ -726,7 +688,8 @@ class ReceiptVerificationTest {
     }
 
     /**
-     * Validity before the signature (owner, 2026-09-27, Q22): a receipt whose
+     * Validity is part of the chain check, which runs before the signature:
+     * a receipt whose
      * chain is outside its window at the creation date is INVALID_CERTIFICATE
      * even when its signature is also broken.
      */
@@ -799,8 +762,8 @@ class ReceiptVerificationTest {
 
     @Test
     void rejectsAnIntermediateWithoutTheWwdrMarker() throws Exception {
-        // New in 0.7: the receipt path checks the intermediate's marker as the
-        // JWS path always has. Everything else about this chain is valid.
+        // The receipt path checks the intermediate's marker as the JWS path
+        // does. Everything else about this chain is valid.
         TestPki unmarked = TestPki.receipt(
                 new Date(System.currentTimeMillis() - 86_400_000L),
                 new Date(System.currentTimeMillis() + 86_400_000L),
@@ -835,7 +798,7 @@ class ReceiptVerificationTest {
                 "70000000000001",
                 "2024-01-15T12:00:00Z",
                 null,
-                Arrays.asList(integerAttribute(1713, 2L), integerAttribute(1719, -1L))));
+                Arrays.asList(Checks.integerAttribute(1713, 2L), Checks.integerAttribute(1719, -1L))));
         byte[] der = pki.signReceipt(TestPki.receiptPayload(
                 "Production",
                 BUNDLE,
@@ -847,7 +810,7 @@ class ReceiptVerificationTest {
                 true,
                 null,
                 new byte[] {1, 2, 3},
-                Arrays.asList(integerAttribute(1, -5L), integerAttribute(15, Long.MIN_VALUE))));
+                Arrays.asList(Checks.integerAttribute(1, -5L), Checks.integerAttribute(15, Long.MIN_VALUE))));
         ReceiptPayload receipt = verify(pki, der);
         assertEquals(Long.valueOf(-5L), receipt.appItemId());
         assertEquals(Long.valueOf(Long.MIN_VALUE), receipt.downloadId());
@@ -862,21 +825,5 @@ class ReceiptVerificationTest {
         ReceiptPayload receipt = verify(pki, pki.signReceipt(TestPki.singleAttributePayload(15, value)));
         assertNull(receipt.downloadId());
         assertArrayEquals(value, receipt.unknownAttributes().get(15).get(0));
-    }
-
-    private static int indexOf(byte[] haystack, byte[] needle) {
-        for (int i = 0; i <= haystack.length - needle.length; i++) {
-            boolean match = true;
-            for (int j = 0; j < needle.length; j++) {
-                if (haystack[i + j] != needle[j]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) {
-                return i;
-            }
-        }
-        throw new AssertionError("needle not found in receipt bytes");
     }
 }

@@ -18,7 +18,7 @@
   or `INTERNAL_ERROR` → Apple signed it or we broke: alert.
 - **JWS (StoreKit 2):** the same idea, with an ES256 signature and a
   3-certificate `x5c` chain. Deduplicate on `transactionId`.
-- **Proof:** 432 shared cases in `fixtures/cases.json`, each run as its own
+- **Proof:** 433 shared cases in `fixtures/cases.json`, each run as its own
   test.
 
 ## 1. One question
@@ -102,7 +102,8 @@ decoded last.** Each line is check → attack it stops → `Reason` on failure:
    even one signed by a developer certificate → `MALFORMED` over the cap;
    strangers are just ignored
 5. PKIX chain from the signer to a pinned root, valid at the instant, at
-   most 6 below the root → forged, foreign or expired chains →
+   most 7 below the root (BouncyCastle's path builder refuses an eighth) →
+   forged, foreign or expired chains →
    `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`
 6. Marker OIDs on leaf and intermediate → a developer certificate signing
    a fake receipt → `INVALID_CERTIFICATE_PURPOSE`

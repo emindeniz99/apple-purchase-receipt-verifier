@@ -11,9 +11,9 @@ import java.util.Date;
  * signed again in this JVM under a {@link TestPki} whose intermediate carries
  * Apple's WWDR marker.
  *
- * <p>0.7 checks that marker on the receipt path, and the receipts committed
- * under {@code fixtures/generated/} were generated before it, so every one of
- * them now fails as INVALID_CERTIFICATE_PURPOSE. Unit tests that need a
+ * <p>The receipt path checks that marker, and the receipts committed under
+ * {@code fixtures/generated/} lack it, so every one of them fails as
+ * INVALID_CERTIFICATE_PURPOSE. Unit tests that need a
  * receipt that verifies take it from here instead: the same payload and dates
  * as {@code FixtureGeneratorTest} writes, fresh keys, built once per JVM.</p>
  */
@@ -76,7 +76,7 @@ final class SyntheticReceipts {
             RECEIPT = PKI.signReceipt(payload, new Date(SIGNED_DATE));
             TAMPERED = RECEIPT.clone();
             byte[] product = (BUNDLE + ".vip").getBytes(StandardCharsets.US_ASCII);
-            TAMPERED[indexOf(TAMPERED, product) + product.length - 1] ^= 0x01;
+            TAMPERED[TestPki.indexOf(TAMPERED, product) + product.length - 1] ^= 0x01;
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
@@ -104,18 +104,5 @@ final class SyntheticReceipts {
     /** The same receipt with one payload byte changed, so its signature no longer verifies. */
     static byte[] tamperedDer() {
         return TAMPERED.clone();
-    }
-
-    private static int indexOf(byte[] haystack, byte[] needle) {
-        for (int i = 0; i <= haystack.length - needle.length; i++) {
-            boolean match = true;
-            for (int j = 0; j < needle.length && match; j++) {
-                match = haystack[i + j] == needle[j];
-            }
-            if (match) {
-                return i;
-            }
-        }
-        throw new AssertionError("needle not found");
     }
 }

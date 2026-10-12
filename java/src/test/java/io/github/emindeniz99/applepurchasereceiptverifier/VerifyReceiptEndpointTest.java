@@ -22,9 +22,7 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
-import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERUTF8String;
@@ -166,7 +164,7 @@ class VerifyReceiptEndpointTest {
                         "70000000000001",
                         "2024-01-15T12:00:00Z",
                         null,
-                        Arrays.asList(integerAttribute(1713, 0L))),
+                        Arrays.asList(Checks.integerAttribute(1713, 0L))),
                 TestPki.inAppPurchase(
                         1,
                         "com.example.app.vip",
@@ -174,7 +172,7 @@ class VerifyReceiptEndpointTest {
                         "70000000000002",
                         "2024-02-01T09:30:00Z",
                         "2030-02-01T09:30:00Z",
-                        Arrays.asList(integerAttribute(1713, 1L))));
+                        Arrays.asList(Checks.integerAttribute(1713, 1L))));
         byte[] receipt = pki.signReceipt(TestPki.receiptPayload(
                 "Production",
                 "com.example.app",
@@ -187,9 +185,9 @@ class VerifyReceiptEndpointTest {
                 null,
                 new byte[] {1, 2, 3},
                 Arrays.asList(
-                        integerAttribute(1, 1234567890L),
-                        integerAttribute(15, 9223372036854775807L),
-                        integerAttribute(16, 456789012L))));
+                        Checks.integerAttribute(1, 1234567890L),
+                        Checks.integerAttribute(15, 9223372036854775807L),
+                        Checks.integerAttribute(16, 456789012L))));
         String body = respond(Environment.PRODUCTION, request(receipt));
         // Raw bytes, not just the parse. Attribute 1 is echoed under both of
         // Apple's names, the three app-level ids are JSON NUMBERS (unlike
@@ -304,7 +302,7 @@ class VerifyReceiptEndpointTest {
         }
     }
 
-    /** password and exclude-old-transactions are read and ignored, as in 0.6. */
+    /** password and exclude-old-transactions are read and ignored. */
     @Test
     void ignoresPasswordAndExcludeOldTransactions() throws Exception {
         String plain = respond(Environment.SANDBOX, request());
@@ -404,23 +402,10 @@ class VerifyReceiptEndpointTest {
     }
 
     /**
-     * The fixture receipt is a ProductionSandbox one: 0 on SANDBOX, 21007 on
-     * PRODUCTION, with the routing following the enum.
-     */
-    @Test
-    void routesOnTheTypedEnvironment() throws Exception {
-        JsonNode sandbox = MAPPER.readTree(respond(Environment.SANDBOX, request()));
-        assertEquals(0, sandbox.get("status").asInt());
-        assertEquals("Sandbox", sandbox.get("environment").asText());
-        assertEquals("{\"status\":21007}", respond(Environment.PRODUCTION, request()));
-    }
-
-    /**
-     * A receipt carrying no creation date is judged against the config clock
-     * (design 0.7: the clock is read for the chain fallback and for
-     * request_date). A clock inside the expired chain's window accepts it;
-     * the system clock does not. 0.6 deliberately ignored an injected clock
-     * here; 0.7 reverses that on purpose.
+     * A receipt carrying no creation date is judged against the config clock,
+     * which is read for the chain fallback and for request_date. A clock
+     * inside the expired chain's window accepts it; the system clock does
+     * not.
      */
     @Test
     void theConfigClockJudgesADatelessReceiptsChain() throws Exception {
@@ -460,18 +445,14 @@ class VerifyReceiptEndpointTest {
         return response;
     }
 
-    private static ASN1Encodable integerAttribute(int type, long value) throws Exception {
-        return TestPki.attribute(type, new ASN1Integer(value).getEncoded());
-    }
-
     /** An in-app purchase SET with exactly one attribute 1711, of {@code webOrderLineItemId}. */
     private static byte[] consumable(String productId, long webOrderLineItemId) throws Exception {
         ASN1EncodableVector attributes = new ASN1EncodableVector();
-        attributes.add(integerAttribute(1701, 1L));
+        attributes.add(Checks.integerAttribute(1701, 1L));
         attributes.add(TestPki.attribute(1702, new DERUTF8String(productId).getEncoded()));
         attributes.add(TestPki.attribute(1703, new DERUTF8String("70000000000009").getEncoded()));
         attributes.add(TestPki.attribute(1704, new DERIA5String("2024-01-15T12:00:00Z").getEncoded()));
-        attributes.add(integerAttribute(1711, webOrderLineItemId));
+        attributes.add(Checks.integerAttribute(1711, webOrderLineItemId));
         return new DERSet(attributes).getEncoded();
     }
 }

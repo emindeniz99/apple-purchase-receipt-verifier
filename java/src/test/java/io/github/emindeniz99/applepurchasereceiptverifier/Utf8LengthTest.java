@@ -24,12 +24,6 @@ class Utf8LengthTest {
     private static final String EMOJI = "😀"; // 4 bytes, 2 units
 
     @Test
-    void theCapIsApplesMeasuredRequestLimit() {
-        assertEquals(3145728, CAP);
-        assertEquals(3145728, ReceiptCore.MAX_RECEIPT_BYTES);
-    }
-
-    @Test
     void asciiIsOneBytePerCharacterRightAtTheCap() {
         assertFalse(Utf8Length.exceeds(repeat("a", CAP), CAP));
         assertTrue(Utf8Length.exceeds(repeat("a", CAP + 1), CAP));

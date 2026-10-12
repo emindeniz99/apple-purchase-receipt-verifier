@@ -2,7 +2,7 @@
 
 Short on time? [WALKTHROUGH-QUICK.md](WALKTHROUGH-QUICK.md) is the same story in 10 minutes.
 
-A guide to `java/`, the BouncyCastle implementation of this library, for a
+A guide to `java/`, this library's Java code over BouncyCastle, for a
 review before production. It assumes you program well and have never worked
 with certificates, ASN.1 or Apple receipts.
 
@@ -152,8 +152,7 @@ the WWDR marker (§2.7). A payload signed under a new **root** fails until
 that root is in the anchor set, through a library release or
 `Config.builder().roots(...)`. Adding one means its `.cer` in `certs/`, a
 constant in `AppleRootCerts` and its fingerprint in `AppleRootCertsTest`.
-The weekly `apple-root-watch` workflow fails when Apple's published roots
-change.
+Apple lists its published roots at https://www.apple.com/certificateauthority/.
 
 ### 2.5 Validity, and at which instant
 
@@ -537,10 +536,10 @@ a genuine Apple sandbox receipt (case
 | 1 | `DefaultVerifier.verifyReceipt` | Reads the clock once, 2026-10-06, before touching the input, so a throwing clock never lands in a catch that blames the input | `INTERNAL_ERROR` |
 | 2 | `verify` (1), `Utf8Length.exceeds`, `StrictBase64.decode` | 7,556 characters, under the cap; length divisible by 4, the JDK decoder refuses anything else; 5,665 bytes | `TOO_LARGE`, `MALFORMED` |
 | 3 | `verifyDer` (2) | Wraps steps 4 to 9: any `RuntimeException` BouncyCastle throws there becomes `MALFORMED` | `MALFORMED` |
-| 4 | `verifySignature` (3), `parseCms` (4), `encapsulatedPayload` (5), `signerInfos` (6), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs), its attributes read up front because BouncyCastle parses them lazily. Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
-| 5 | `ReceiptCertificates.decode`, `signers` | Counts the bag before decoding, skips `[0]` to `[3]` entries, reads no key: the leaf (valid to 2026-08-23), WWDR G5 (to 2030-12-10), a copy of Apple Root CA. The `sid` matches one: the leaf | `MALFORMED`: a broken entry, or no match |
+| 4 | `verifySignature` (3), `parseCms` (4), `encapsulatedPayload` (5), `signerInfos` (6), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs). Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
+| 5 | `ReceiptCertificates.decode` | Counts the bag before decoding, skips `[0]` to `[3]` entries, reads no key: the leaf (valid to 2026-08-23), WWDR G5 (to 2030-12-10), a copy of Apple Root CA | `MALFORMED`: a broken entry |
 | 6 | `authenticatedTopDown` (11), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf, which vouches for nothing: only an accepted CA checks the next round. DNs are compared before any issuer key is decoded | none: a stranger is left out |
-| 7 | `verifySigner` (7), `validateChain` (10) | Signer is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
+| 7 | `ReceiptCertificates.signers`, `verifySigner` (7), `validateChain` (10) | The `sid` matches one certificate, the leaf. It is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `MALFORMED` if the `sid` matches nothing; `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
 | 8 | `requireMarkers` (9) | The leaf carries `...6.11.1`; `path.get(1)`, WWDR G5, carries `...6.2.1` | `INVALID_CERTIFICATE_PURPOSE`, also for a signer issued directly by a root |
 | 9 | `verifyCmsSignature` (12), `signerVerifier` (13) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist, so a change on Apple's side cannot break genuine receipts. Valid | `INVALID_SIGNATURE` |
 | 10 | `parseSignedPayload` (8), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
@@ -552,12 +551,10 @@ length is the builder's in step 7: under the JDK's default
 `maxPathLength` of 5, BouncyCastle 1.86 returns a path of up to seven
 certificates below the anchor and refuses an eighth. A path of seven is
 accepted, because every certificate in it is signed under a pinned root
-and judged by PKIX at the instant like any other. A length bound of
-Java's own refused nothing an attacker without Apple's CA keys could
-make, and made the verdict follow BouncyCastle's `HashSet` order, so the
-post-build check went on 2026-10-12 (Q108 a) and the walk's round bound
-the same day (Q120 a)
-([evidence](../docs/evidence/2026-10-12-java-path-length-bound.md)).
+and judged by PKIX at the instant like any other. The library adds no
+length bound of its own: one would refuse nothing an attacker without
+Apple's CA keys could make, and where several paths exist its verdict
+would follow BouncyCastle's `HashSet` order.
 Step 7 is §2.5 in practice: this receipt verifies only because validity is judged at its
 creation date.
 
@@ -565,7 +562,7 @@ Failures nobody anticipated:
 
 | Raised inside | Becomes |
 |---|---|
-| A `RuntimeException` in steps 4 to 6 (before trust) | `MALFORMED` |
+| A `RuntimeException` anywhere in steps 4 to 9 (before trust) outside `validateChain` and `verifyCmsSignature` | `MALFORMED` |
 | A `RuntimeException` inside `validateChain`, or a missing PKIX or CertStore implementation | `UNTRUSTED_CHAIN` |
 | A `RuntimeException` inside `verifyCmsSignature` | `INVALID_SIGNATURE` |
 | A `RuntimeException` inside `parseSignedPayload` | `UNREADABLE_PAYLOAD` |
@@ -755,7 +752,9 @@ mvn -f java/pom.xml test                              # the whole suite
 mvn -f java/pom.xml test -Dtest=ConformanceCasesTest  # only the shared cases
 ```
 
-Classes named `*Fixture` or `*Fixtures` regenerate fixtures only with
+Classes named `*Fixture` or `*Fixtures` are not tests: they are `main`
+programs that overwrite committed fixtures when run (java/README.md,
+"Vendoring"). `FixtureGeneratorTest` writes fixtures only with
 `-Dfixtures.generate=true`. Jazzer fuzz targets live in `java/fuzz/`.
 
 ## 10. Glossary
@@ -825,3 +824,4 @@ In-app attributes, inside each 17:
 | 1712 | cancellation date | IA5String | `cancellationDateMs()` |
 | 1713 | is trial period | INTEGER flag, 0 is false | `isTrialPeriod()` |
 | 1719 | is in intro offer period | INTEGER flag, 0 is false | `isInIntroOfferPeriod()` |
+| 1720 | cancellation reason | INTEGER | `cancellationReason()` |

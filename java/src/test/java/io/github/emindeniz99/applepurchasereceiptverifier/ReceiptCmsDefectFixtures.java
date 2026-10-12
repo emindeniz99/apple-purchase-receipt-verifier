@@ -29,7 +29,7 @@ import org.bouncycastle.cert.X509CertificateHolder;
  * {@code fixtures/generated/}.
  *
  * <p>They come from the 2026-09-22 audit of the {@code tikhop/TPInAppReceipt}
- * test suite recorded in PLAN.md's prior-art table. That suite exercises the
+ * test suite. That suite exercises the
  * shapes a receipt takes when an attacker rearranges the CMS rather than the
  * receipt payload, and nothing here covered them: every existing negative
  * receipt vector either mutates a certificate, mutates the payload or points

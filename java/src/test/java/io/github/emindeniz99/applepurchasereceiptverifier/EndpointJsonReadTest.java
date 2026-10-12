@@ -12,12 +12,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link Endpoint#receiptData} reads the request body with jackson-core's
- * streaming parser, over a char array. 0.6 read it with jackson-databind into
- * a {@code Map} and took {@code receipt-data} from that, and the endpoint
- * answers 21002 for exactly the bodies that read refuses, so dropping
- * databind is safe only if the streaming read accepts, refuses and returns
- * {@code receipt-data} for every body exactly as the databind read did. That
- * is checked here against databind itself (still on the test classpath) over
+ * streaming parser, over a char array. The endpoint answers 21002 for
+ * exactly the bodies that read refuses, so it must accept, refuse and return
+ * {@code receipt-data} for every body exactly as a jackson-databind read into
+ * a {@code Map} does. That is checked here against databind itself (still on the test classpath) over
  * the readers' factory, on short and long bodies (long
  * enough to cross Jackson's Reader chunks), with escapes, broken surrogates,
  * trailing garbage, truncation, duplicate keys, non-string values, and
@@ -25,7 +23,7 @@ import org.junit.jupiter.api.Test;
  */
 class EndpointJsonReadTest {
 
-    /** The 0.6 read: databind over the readers' factory. */
+    /** The reference read: databind over the readers' factory. */
     private static final ObjectMapper MAPPER = new ObjectMapper(JsonFields.factory());
 
     private static final long SEED = 0x7501_5EEDL;
@@ -111,7 +109,7 @@ class EndpointJsonReadTest {
                 break;
             case 1:
                 int depth = random.nextBoolean() ? 1000 : 1001; // Jackson's default allows 1000
-                body = nested(depth) + "\"" + value + "\"" + closing(depth);
+                body = Checks.nested(depth, "\"" + value + "\"");
                 break;
             case 2:
                 body = "[\"" + value + "\"]";
@@ -127,21 +125,5 @@ class EndpointJsonReadTest {
             body = body.substring(0, random.nextInt(body.length()));
         }
         return body;
-    }
-
-    private static String nested(int depth) {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            out.append("{\"a\":");
-        }
-        return out.toString();
-    }
-
-    private static String closing(int depth) {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            out.append('}');
-        }
-        return out.toString();
     }
 }

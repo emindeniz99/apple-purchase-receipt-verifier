@@ -20,9 +20,8 @@ import org.junit.jupiter.api.Test;
  * <p>What matters here is what a caller builds a retry on. The status is
  * computed from the receipt's own {@code receipt_type}: a production endpoint
  * must never answer 0 for a sandbox receipt, or the 21007 routing that keeps
- * sandbox purchases out of production would be bypassed. 0.6 pinned this on a
- * result object that could be re-rendered for either environment; 0.7 has no
- * such object, so it is pinned on the two calls a caller makes.</p>
+ * sandbox purchases out of production would be bypassed. It is pinned on the
+ * two calls a caller makes.</p>
  */
 class EndpointStatusTest {
 

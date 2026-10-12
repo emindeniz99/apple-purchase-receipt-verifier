@@ -139,7 +139,7 @@ final class JwsCore {
 
         /** The array's entries when all are strings, else null; leaves the parser on END_ARRAY. */
         private static @Nullable List<String> strings(JsonParser parser) throws IOException {
-            List<String> entries = new ArrayList<>(3);
+            List<String> entries = new ArrayList<>();
             boolean allStrings = true;
             JsonToken token;
             while ((token = parser.nextToken()) != JsonToken.END_ARRAY) {
@@ -312,7 +312,7 @@ final class JwsCore {
     }
 
     private static List<X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
-        List<X509Certificate> chain = new ArrayList<>(3);
+        List<X509Certificate> chain = new ArrayList<>();
         try {
             CertificateFactory cf = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
             for (String entry : x5c) {

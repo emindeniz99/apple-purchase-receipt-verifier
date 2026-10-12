@@ -106,7 +106,7 @@ class UnauthenticatedKeyCostTest {
         // by that key: seven CA certificates with huge keys, and one more
         // certificate naming them as its issuer. If the end entity could
         // vouch, checking that last certificate would decode all seven keys
-        // (13 to 18 s measured; owner Q122 a, 2026-10-12).
+        // (13 to 18 s measured).
         TestPki pki = TestPki.receipt();
         KeyPair developerKey = rsa2048();
         X509CertificateHolder developer = new X509CertificateHolder(TestPki.cert(

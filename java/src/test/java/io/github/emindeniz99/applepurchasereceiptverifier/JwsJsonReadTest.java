@@ -15,15 +15,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
  * {@link JwsCore} reads the JWS header and payload with jackson-core's
- * streaming parser. 0.6 read both into a databind tree and asked the tree,
- * so dropping databind is safe only if the streaming read reaches the same
- * answer for every segment: whether the header is a JSON object, its last
+ * streaming parser, which must reach the answer a jackson-databind tree
+ * read reaches for every segment: whether the header is a JSON object, its last
  * {@code alg} and {@code x5c}, whether the payload is a JSON object, and its
  * top-level {@code signedDate} under the tree's number conversions (a
  * fraction truncated, a number no long holds refused). Checked here against
@@ -36,8 +36,8 @@ class JwsJsonReadTest {
     private static final int CASES = 20_000;
 
     /**
-     * The 0.6 read: databind over the readers' factory,
-     * with the one rule 0.7 added: nothing but whitespace after the object.
+     * The reference read: databind over the readers' factory, with one rule
+     * added: nothing but whitespace after the object.
      * Without it {@code {"alg":"ES256"} x} is a header, and a payload with
      * text after its object returns verified with that text in it.
      */
@@ -169,8 +169,8 @@ class JwsJsonReadTest {
      */
     @Test
     void memberNamesAndNumbersAreBoundedByJacksonsDefaults() throws Exception {
-        String longestName = repeat('n', 50_000);
-        String longestNumber = repeat('1', 1000);
+        String longestName = Checks.repeat('n', 50_000);
+        String longestNumber = Checks.repeat('1', 1000);
         assertNull(JwsCore.Header.read(utf8("{\"" + longestName + "\":1}")).alg);
         assertNull(JwsCore.Header.read(utf8("{\"n\":" + longestNumber + "}")).alg);
         for (String header : new String[] {"{\"" + longestName + "n\":1}", "{\"n\":" + longestNumber + "1}"}) {
@@ -186,32 +186,47 @@ class JwsJsonReadTest {
      * cannot turn a genuine input into a refusal.
      */
     @Test
-    void aProcessWideOverrideDoesNotReachTheReadersFactory() {
+    void aProcessWideOverrideDoesNotReachTheReadersFactory() throws Exception {
+        // JsonFields.JSON may have been built before this test runs, so it is
+        // checked to hold its own constraints rather than the shared default
+        // instance a new JsonFactory() takes.
+        assertNotSame(StreamReadConstraints.defaults(), JsonFields.JSON.streamReadConstraints());
         StreamReadConstraints.overrideDefaultStreamReadConstraints(
                 StreamReadConstraints.builder().maxNameLength(10).build());
         try {
             assertEquals(10, new JsonFactory().streamReadConstraints().getMaxNameLength());
-            assertEquals(50_000, JsonFields.factory().streamReadConstraints().getMaxNameLength());
+            assertEquals(50_000, JsonFields.JSON.streamReadConstraints().getMaxNameLength());
+            assertEquals(
+                    "ES256", JwsCore.Header.read(utf8("{\"alg\":\"ES256\",\"" + Checks.repeat('n', 11) + "\":1}")).alg);
         } finally {
             StreamReadConstraints.overrideDefaultStreamReadConstraints(null);
         }
     }
 
     /**
-     * The same for the writer: a host that tightens Jackson's write depth for
-     * its own JSON cannot make the endpoint fail to render a response.
+     * The same for the writers: a host that tightens Jackson's write depth
+     * for its own JSON cannot make the endpoint fail to render a response, or
+     * a receipt payload fail to render itself.
      */
     @Test
-    void aProcessWideOverrideDoesNotReachTheWritersFactory() {
-        // JsonFields.JSON may have been built before this test runs, so it is
-        // checked to hold its own constraints rather than the shared default
-        // instance a new JsonFactory() takes.
+    void aProcessWideOverrideDoesNotReachTheWritersFactories() throws Exception {
         assertNotSame(StreamWriteConstraints.defaults(), JsonFields.JSON.streamWriteConstraints());
+        assertNotSame(StreamWriteConstraints.defaults(), ReceiptPayload.JSON.streamWriteConstraints());
+        ReceiptPayload receipt = ReceiptDecoder.parse(TestPki.receiptPayload(
+                "com.example.app",
+                "1.0",
+                new byte[] {1},
+                new byte[20],
+                "2024-08-06T12:00:00Z",
+                Collections.singletonList(TestPki.inAppPurchase(1, "p", "1", "1", "2024-08-06T12:00:00Z", null))));
         StreamWriteConstraints.overrideDefaultStreamWriteConstraints(
                 StreamWriteConstraints.builder().maxNestingDepth(1).build());
         try {
             assertEquals(1, new JsonFactory().streamWriteConstraints().getMaxNestingDepth());
-            assertEquals(1_000, JsonFields.factory().streamWriteConstraints().getMaxNestingDepth());
+            assertEquals(1_000, JsonFields.JSON.streamWriteConstraints().getMaxNestingDepth());
+            // Three levels deep: the receipt, in_app, the purchase.
+            assertTrue(receipt.toJson().contains("\"in_app\":[{"), receipt.toJson());
+            assertTrue(receipt.inApp().get(0).toString().startsWith("{"));
         } finally {
             StreamWriteConstraints.overrideDefaultStreamWriteConstraints(null);
         }
@@ -226,12 +241,6 @@ class JwsJsonReadTest {
         System.arraycopy(a, 0, out, 0, a.length);
         System.arraycopy(b, 0, out, a.length, b.length);
         return out;
-    }
-
-    private static String repeat(char c, int count) {
-        char[] chars = new char[count];
-        java.util.Arrays.fill(chars, c);
-        return new String(chars);
     }
 
     /** Whether the payload's signedDate is a number no long holds, which both reads treat as absent. */
@@ -281,11 +290,10 @@ class JwsJsonReadTest {
     }
 
     /**
-     * 0.6's instantClaim, on signedDate alone: 0.7 dropped the
-     * receiptCreationDate fallback. One deliberate difference first: 0.7
-     * returns the payload as text, so bytes that are not UTF-8 are
-     * unreadable even where 0.6's tree never reached them (after the
-     * object's closing brace).
+     * The tree's reading of signedDate alone; the receiptCreationDate
+     * fallback is not compared here. The payload is returned as text, so
+     * bytes that are not UTF-8 are unreadable even after the object's closing
+     * brace, where a tree read never reaches them.
      */
     private static String treePayload(byte[] bytes) {
         try {
@@ -333,7 +341,7 @@ class JwsJsonReadTest {
                 out.append(value(random, 0));
                 break;
             case 1:
-                out.append(nested(random.nextBoolean() ? 1000 : 1001)); // Jackson's default allows 1000
+                out.append(Checks.nested(random.nextBoolean() ? 1000 : 1001, "1")); // Jackson's default allows 1000
                 break;
             default:
                 out.append('{');
@@ -433,17 +441,5 @@ class JwsJsonReadTest {
             default:
                 return "{\"k\":" + value(random, depth + 1) + "}";
         }
-    }
-
-    private static String nested(int depth) {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            out.append("{\"a\":");
-        }
-        out.append('1');
-        for (int i = 0; i < depth; i++) {
-            out.append('}');
-        }
-        return out.toString();
     }
 }

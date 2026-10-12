@@ -97,25 +97,12 @@ class PublicReceiptsTest {
         Checks.receipt(verifier, genuine);
 
         byte[] bundleId = "dev.bonzer.weeka.app".getBytes(StandardCharsets.UTF_8);
-        int at = indexOf(genuine, bundleId);
+        int at = TestPki.indexOf(genuine, bundleId);
         assertTrue(at > 0, "bundle id not found in the receipt");
         final byte[] tampered = genuine.clone();
         tampered[at + bundleId.length - 1] ^= 0x01;
 
         VerificationException e = assertThrows(VerificationException.class, () -> Checks.receipt(verifier, tampered));
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
-    }
-
-    private static int indexOf(byte[] haystack, byte[] needle) {
-        outer:
-        for (int i = 0; i + needle.length <= haystack.length; i++) {
-            for (int j = 0; j < needle.length; j++) {
-                if (haystack[i + j] != needle[j]) {
-                    continue outer;
-                }
-            }
-            return i;
-        }
-        return -1;
     }
 }

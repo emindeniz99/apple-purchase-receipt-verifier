@@ -179,7 +179,7 @@ class ConcurrencyTest {
         final String jws = text(FIXTURES.resolve("transaction.jws"));
         final String tamperedJws = text(FIXTURES.resolve("transaction-tampered-payload.jws"));
         // The receipts are SyntheticReceipts', whose chain carries the WWDR
-        // marker 0.7 checks; the committed ones predate it.
+        // marker the receipt path checks; the committed ones lack it.
         final String receipt = SyntheticReceipts.base64();
         final String tamperedReceipt = Base64.getEncoder().encodeToString(SyntheticReceipts.tamperedDer());
         final String genuine = text(PUBLIC_RECEIPTS.resolve("receipt-sandbox-g5.b64"));

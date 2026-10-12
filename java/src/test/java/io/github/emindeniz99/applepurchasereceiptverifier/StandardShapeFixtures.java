@@ -58,7 +58,7 @@ import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 
 /**
  * Writes the inputs of the shared cases on shapes the standards allow in
- * an Apple-signed input (owner, Q69 and Q72, 2026-10-06) into the directory given
+ * an Apple-signed input into the directory given
  * as the first argument (default {@code fixtures/generated-0.7}). Every file
  * is prefixed {@code standard-}.
  *
@@ -78,7 +78,7 @@ import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
  *   <li>{@code standard-receipt-intermediate-with-a-critical-crldp.der} and
  *       {@code standard-jws-intermediate-with-a-critical-crldp.jws}: the
  *       intermediate carries a critical cRLDistributionPoints (RFC 5280
- *       4.2.1.13), which Java now accepts (owner, Q72, 2026-10-06).</li>
+ *       4.2.1.13), which the verifier accepts.</li>
  *   <li>{@code standard-receipt-signing-time-before-the-signer.der}: the
  *       signed attributes carry a signingTime before the signer's notBefore
  *       (RFC 5652 11.3 ties it to no validity check), and

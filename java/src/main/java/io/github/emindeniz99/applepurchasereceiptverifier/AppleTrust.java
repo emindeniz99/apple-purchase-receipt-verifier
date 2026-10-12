@@ -47,14 +47,14 @@ final class AppleTrust {
     /**
      * Marks two critical extensions processed on every certificate of a
      * path, which BouncyCastle's PKIX would otherwise refuse as unknown.
-     * OpenSSL recognises both, and neither is a trust decision here.
+     * Neither is a trust decision here.
      *
      * <ul>
      *   <li>extendedKeyUsage (2.5.29.37): RFC 5280 4.2.1.12 lets it be
      *       critical on any certificate. BouncyCastle processes it on the end
-     *       entity only, where the JDK's PKIX and OpenSSL accept it on a CA
-     *       too. Like them it asks no purpose of a CA, so no genuine chain is
-     *       refused for it.</li>
+     *       entity only; the JDK's PKIX accepts it on a CA too. Like the JDK,
+     *       this asks no purpose of a CA, so no genuine chain is refused for
+     *       it.</li>
      *   <li>cRLDistributionPoints (2.5.29.31): it only says where a CRL is.
      *       Apple's intermediates carry it non-critical today. Revocation checking is off, so
      *       a critical one would be acted on by nothing here.</li>
@@ -126,7 +126,7 @@ final class AppleTrust {
 
     /** The certificates of {@code trustAnchors}. */
     static List<X509Certificate> roots(Set<TrustAnchor> trustAnchors) {
-        List<X509Certificate> roots = new ArrayList<>(trustAnchors.size());
+        List<X509Certificate> roots = new ArrayList<>();
         for (TrustAnchor anchor : trustAnchors) {
             roots.add(anchor.getTrustedCert());
         }

@@ -14,8 +14,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * Writes the shared fixture set to {@code fixtures/generated/}
- * (PLAN.md milestone 6). Not a test of behavior — it only runs when
+ * Writes the shared fixture set to {@code fixtures/generated/}. Not a test of behavior — it only runs when
  * regeneration is explicitly requested:
  *
  * <pre>mvn test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true</pre>

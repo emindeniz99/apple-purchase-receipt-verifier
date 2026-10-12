@@ -31,7 +31,7 @@ import org.junit.jupiter.api.TestFactory;
 
 /**
  * Runs every vector in {@code fixtures/cases.json}, the normative
- * conformance set for the 0.7 API, through the three public
+ * conformance set, through the three public
  * {@link Verifier} methods and the two base64 decoders.
  *
  * <p>This adapter carries no knowledge of any individual case. It resolves a
@@ -233,7 +233,7 @@ class ConformanceCasesTest {
             json = ((ReceiptPayload) payload).toJson();
             if (expected.has("toJson")) {
                 // Same value, not same bytes: whitespace, key order and
-                // escaping are free (docs/design/0.7-api.md "Our JSON").
+                // escaping are free: the JSON value is the contract.
                 assertEquals(parse(id, expected.get("toJson").asText()), parse(id, json), id + ": toJson value");
             }
         } else {

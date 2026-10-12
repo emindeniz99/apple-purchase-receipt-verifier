@@ -2,6 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.StreamWriteConstraints;
 import com.fasterxml.jackson.core.json.JsonWriteFeature;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -220,8 +221,12 @@ public final class ReceiptPayload {
 
     // Every character outside ASCII is escaped, so the text is ASCII and
     // therefore valid UTF-8, even for a lone surrogate in a hand-built payload.
-    static final JsonFactory JSON =
-            JsonFactory.builder().enable(JsonWriteFeature.ESCAPE_NON_ASCII).build();
+    // Jackson's default write constraints are built in, so a host's
+    // process-wide StreamWriteConstraints override cannot make toJson throw.
+    static final JsonFactory JSON = JsonFactory.builder()
+            .enable(JsonWriteFeature.ESCAPE_NON_ASCII)
+            .streamWriteConstraints(StreamWriteConstraints.builder().build())
+            .build();
 
     /**
      * This payload as JSON: snake_case
@@ -298,7 +303,7 @@ public final class ReceiptPayload {
 
     @Override
     public int hashCode() {
-        return 31 * toJson().hashCode() + Objects.hashCode(environment);
+        return Objects.hash(toJson(), environment);
     }
 
     /**

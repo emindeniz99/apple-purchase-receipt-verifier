@@ -9,8 +9,8 @@ import java.util.List;
 
 /**
  * Writes the inputs of the shared cases for the date a JWS's chain is judged
- * at when the payload states no {@code signedDate} (owner Q67, 2026-10-06)
- * into the directory given as the first argument (default
+ * at when the payload states no {@code signedDate} into the directory given
+ * as the first argument (default
  * {@code fixtures/generated-0.7}). Every file is prefixed
  * {@code creation-date-}, and {@code creation-date-jws-root.der} is the root
  * they chain to.

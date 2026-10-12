@@ -53,7 +53,7 @@
          nesting bound and 1.85 fixed CVE-2026-12860 in the RSA PKCS#1
          check the receipt path uses (and CVE-2026-13506, in CRL code this
          library does not reach), so Verifier.create refuses an older
-         bcprov (docs/evidence/2026-10-04-java-bc-floor.md). One property
+         bcprov. One property
          moves all three jars together.
          Revisit: floor = pin = 1.86, so the CI jobs that run the pin test
          the floor. When Dependabot moves the pin past 1.86, add a CI leg
@@ -62,9 +62,9 @@
     <bouncycastle.version>1.86</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsCore and Endpoint read unsigned JSON
          under Jackson's default StreamReadConstraints, built into their
-         own factories (JsonFields.factory) so a process-wide override
-         does not reach them. The factories and the member-name bound are
-         2.16 API, so a host BOM pinning an older Jackson 2 fails to link,
+         own factory (JsonFields.factory) so a process-wide override
+         does not reach it. The factory's constraints and the member-name
+         bound are 2.16 API, so a host BOM pinning an older Jackson 2 fails to link,
          and Verifier.create throws IllegalStateException below 2.16.
          The java-jackson-floor CI job runs the suite with
          -Djackson.version=2.16.1. -->
@@ -123,9 +123,9 @@
       <optional>true</optional>
     </dependency>
 
-    <!-- Test only: TestPki, the fixture generators and several tests build
-         and read JSON through databind; the library uses jackson-core
-         alone. -->
+    <!-- Test only: the fixture generators and several tests build and
+         read JSON through databind; the library and TestPki use
+         jackson-core alone. -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
@@ -152,10 +152,9 @@
       </resource>
     </resources>
     <plugins>
-      <!-- The public classes this artifact and the -wasm artifact share
-           byte for byte (results, payloads, Config, Failure, Reason,
-           Environment) live once, in src/shared/java,
-           and compile into both jars: a source directory, not a module, so
+      <!-- The public value classes (results, payloads, Config, Failure,
+           Reason, Environment) live in src/shared/java, in the same
+           package as src/main/java: a second source root, not a module, so
            it publishes nothing of its own. The sources and javadoc jars
            read the project's source roots, so they carry these classes
            too. -->
@@ -207,8 +206,8 @@
         <configuration>
           <!-- Emit MethodParameters so JVM-language consumers see real
                parameter names. Without it Kotlin named arguments against
-               this jar fail to resolve (the compiler sees p0, p1, ...),
-               which the jvm-interop module caught. Costs a few bytes per
+               this jar fail to resolve (the compiler sees p0, p1, ...).
+               Costs a few bytes per
                method and is not a source or binary break. -->
           <parameters>true</parameters>
         </configuration>
@@ -278,10 +277,7 @@
             <!-- The default is the two source roots; naming them explicitly
                  is what lets fuzz/src join, and the fuzz harness is held to
                  the same format as the library even though Maven never
-                 compiles it (fuzz/run.sh does, with a modern javac).
-                 src/shared/java is the sources the -wasm artifact compiles
-                 too: spotless reads only below the project directory, so
-                 they are checked here, the one spotless run CI makes. -->
+                 compiles it (fuzz/run.sh does, with a modern javac). -->
             <includes>
               <include>src/main/java/**/*.java</include>
               <include>src/test/java/**/*.java</include>

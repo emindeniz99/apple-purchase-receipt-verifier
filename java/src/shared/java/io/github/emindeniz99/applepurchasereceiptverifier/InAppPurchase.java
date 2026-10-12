@@ -168,7 +168,7 @@ public final class InAppPurchase {
     /** The purchase's JSON object, as it appears inside {@link ReceiptPayload#toJson()}. */
     @Override
     public String toString() {
-        StringWriter out = new StringWriter(256);
+        StringWriter out = new StringWriter();
         try (JsonGenerator json = ReceiptPayload.JSON.createGenerator(out)) {
             writeJson(json);
         } catch (IOException e) {

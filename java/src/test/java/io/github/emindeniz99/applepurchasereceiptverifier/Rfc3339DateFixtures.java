@@ -11,8 +11,8 @@ import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERUTF8String;
 
 /**
- * Writes the inputs of the shared cases for the owner decision that a
- * receipt date is an RFC 3339 {@code date-time} (Q68, 2026-10-06) into the
+ * Writes the inputs of the shared cases for the rule that a receipt date is
+ * an RFC 3339 {@code date-time} into the
  * directory given as the first argument (default
  * {@code fixtures/generated-0.7}). Every file is prefixed {@code q68-}, and
  * {@code q68-receipt-root.der} is the root they chain to.

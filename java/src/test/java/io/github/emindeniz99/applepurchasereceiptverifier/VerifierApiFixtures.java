@@ -32,14 +32,14 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 
 /**
- * Writes the synthetic inputs the 0.7 shared cases add (docs/design/0.7-api.md,
- * "Testing"), into the directory given as the first argument:
+ * Writes the synthetic inputs of the API shared cases into the directory
+ * given as the first argument:
  *
  * <ul>
  *   <li>{@code receipt-signers-one-broken.der}: two SignerInfos, both under
  *       trusted receipt-signing certificates. The one that sorts first in the
  *       DER SET is signed with a key that is not its certificate's, so its
- *       signature fails; the other is genuine. 0.7 accepts a receipt when at
+ *       signature fails; the other is genuine. A receipt is accepted when at
  *       least one signer verifies.</li>
  *   <li>{@code receipt-signers-both-broken.der}: the same two signers, both
  *       signed with the wrong key: {@code INVALID_SIGNATURE}.</li>

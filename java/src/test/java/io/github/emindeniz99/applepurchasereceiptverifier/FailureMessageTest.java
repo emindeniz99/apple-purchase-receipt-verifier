@@ -13,7 +13,6 @@ import java.security.KeyPairGenerator;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
-import java.util.Arrays;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +28,7 @@ class FailureMessageTest {
      */
     @Test
     void aHostileAlgorithmClaimCannotSetTheSizeOrTheShapeOfTheMessage() throws Exception {
-        String alg = repeat('A', 100000) + "\nWARN forged";
+        String alg = Checks.repeat('A', 100000) + "\nWARN forged";
         String header = "{\"alg\":\"" + alg + "\",\"x5c\":[\"a\",\"b\",\"c\"]}";
         String jws = Base64.getUrlEncoder().withoutPadding().encodeToString(header.getBytes(StandardCharsets.UTF_8))
                 + ".e30.AA";
@@ -85,12 +84,5 @@ class FailureMessageTest {
         X509Certificate root = (X509Certificate)
                 CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
         return Checks.verifier(root);
-    }
-
-    /** Java 8 has no {@code String.repeat}, and the artifact's floor is 8. */
-    private static String repeat(char c, int count) {
-        char[] chars = new char[count];
-        Arrays.fill(chars, c);
-        return new String(chars);
     }
 }
