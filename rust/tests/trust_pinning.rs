@@ -899,7 +899,7 @@ fn an_intermediate_without_key_cert_sign_is_still_reported_as_not_a_ca() {
     let failure = path::receipt_path(&leaf, &authenticated, &roots, now_millis()).unwrap_err();
     assert_eq!(
         failure.to_string(),
-        "UNTRUSTED_CHAIN: an intermediate is not a CA"
+        "UNTRUSTED_CHAIN: an intermediate is not a CA, or its path length constraint is exceeded"
     );
 }
 

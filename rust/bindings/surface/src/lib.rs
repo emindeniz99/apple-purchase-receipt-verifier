@@ -51,7 +51,8 @@ pub const VERSION: &str = core_api::VERSION;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Reason {
     /// The base64, ASN.1, CMS or JWS structure is broken, or a structural
-    /// bound (JSON depth, embedded certificates, `SignerInfo`s) is exceeded.
+    /// bound (the ASN.1 nesting or value budget, embedded certificates,
+    /// `SignerInfo`s) is exceeded.
     Malformed,
     /// The input is over one of the fixed size caps: 3,145,728 UTF-8 bytes
     /// of receipt base64 or endpoint body, 262,144 of JWS.

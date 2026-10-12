@@ -2,11 +2,16 @@
 //! holds the caller's anchors and nothing else, at a caller-given second.
 //!
 //! OpenSSL builds and checks the path; this module reports every problem it
-//! finds, with the depth it found it at, and decides nothing: the core
-//! turns the problems into a reason in its own order. To see every problem
-//! rather than the first, the verify callback records each one and lets
-//! the verification continue; a path is good only when OpenSSL answers 1
-//! and nothing was recorded.
+//! finds, with the depth it found it at, and the core turns the problems
+//! into a reason in its own order. The module does hold trust policy of
+//! its own: it trusts an anchor by fiat, waiving the anchor's validity
+//! window, CA flag and path length constraint ([`waived`]); it offers
+//! OpenSSL only the certificates that sign the path ([`linked_above`]);
+//! and it runs once per anchor that may end the path and chooses which
+//! run's problems are reported ([`run`]). To see every problem rather than
+//! the first, the verify callback records each one and lets the
+//! verification continue; a path is good only when OpenSSL answers 1 and
+//! nothing was recorded.
 
 use crate::certificate::{same_x509, Certificate};
 use crate::{drain_errors, init, sys};

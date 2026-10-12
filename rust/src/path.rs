@@ -150,7 +150,9 @@ fn is_structural(kind: PathProblemKind) -> bool {
 
 fn structural_failure(kind: PathProblemKind) -> Failure {
     match kind {
-        PathProblemKind::NotCa => untrusted("an intermediate is not a CA"),
+        PathProblemKind::NotCa => {
+            untrusted("an intermediate is not a CA, or its path length constraint is exceeded")
+        }
         PathProblemKind::TooLong => untrusted("chain exceeds the maximum length"),
         _ => untrusted("chain does not reach a pinned root"),
     }
