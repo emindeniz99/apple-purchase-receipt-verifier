@@ -17,7 +17,6 @@ import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
@@ -70,9 +69,9 @@ final class JwsCore {
         if (parts.length != 3) {
             throw new VerificationException(Reason.MALFORMED, "expected 3 dot-separated segments, got " + parts.length);
         }
-        byte[] headerBytes = decodeBase64Url(parts[0], "header");
-        byte[] payloadBytes = decodeBase64Url(parts[1], "payload");
-        byte[] signature = decodeBase64Url(parts[2], "signature");
+        byte[] headerBytes = StrictBase64.decode(parts[0], true, Reason.MALFORMED, "header");
+        byte[] payloadBytes = StrictBase64.decode(parts[1], true, Reason.MALFORMED, "payload");
+        byte[] signature = StrictBase64.decode(parts[2], true, Reason.MALFORMED, "signature");
 
         Header header = Header.read(headerBytes);
         if (!"ES256".equals(header.alg)) {
@@ -313,29 +312,12 @@ final class JwsCore {
         return new VerificationException(reason, what + " is not a JSON object: " + problem, cause);
     }
 
-    /**
-     * Strict base64url (RFC 7515 2). The re-encode comparison refuses the
-     * padding and the non-zero unused bits that the URL decoder tolerates.
-     */
-    private static byte[] decodeBase64Url(String value, String what) throws VerificationException {
-        try {
-            byte[] decoded = Base64.getUrlDecoder().decode(value);
-            String reencoded = Base64.getUrlEncoder().withoutPadding().encodeToString(decoded);
-            if (!reencoded.equals(value)) {
-                throw new VerificationException(Reason.MALFORMED, what + " is not canonical base64url");
-            }
-            return decoded;
-        } catch (IllegalArgumentException e) {
-            throw new VerificationException(Reason.MALFORMED, what + " is not valid base64url", e);
-        }
-    }
-
     private static List<X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
         List<X509Certificate> chain = new ArrayList<>(3);
         try {
             CertificateFactory cf = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
             for (String entry : x5c) {
-                byte[] der = StrictBase64.decode(entry, Reason.INVALID_CERTIFICATE, "x5c entry");
+                byte[] der = StrictBase64.decode(entry, false, Reason.INVALID_CERTIFICATE, "x5c entry");
                 X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
                 // Forces BouncyCastle's lazy signature decode here, not inside
                 // the validator. The key is not read: see authenticateTopDown.

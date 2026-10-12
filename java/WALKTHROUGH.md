@@ -492,7 +492,7 @@ if (result.verified()) {
 | `AppleTrust` | Shared trust material: marker OIDs, anchors, `signedByAny`, `HANDLED_CRITICAL_EXTENSIONS`, `chainFailure` |
 | `AppleRootCerts` | The three roots as base64 constants |
 | `ReceiptDecoder` | Payload grammar: `readCreationDate`, `parse`, `parseDate`, environment mapping |
-| `StrictBase64`, `Utf8Length` | Canonical padded base64 only; UTF-8 byte length, for the caps |
+| `StrictBase64`, `Utf8Length` | The one base64 decoder: canonical padded base64, or unpadded base64url for JWS segments; UTF-8 byte length, for the caps |
 | `BouncyCastle` | `PROVIDER`, the one `BouncyCastleProvider` instance, never registered with `Security` |
 | `VerificationException` | Internal exception carrying a `Reason`; `unexpected`, `toFailure` |
 | `JsonFields` | The one streaming JSON object reader (JWS header and payload, endpoint body); a repeated name keeps its last value |
@@ -503,8 +503,8 @@ The two core files are not in call order. Their methods, top to bottom:
 
 | File | Methods in file order |
 |---|---|
-| `ReceiptCore.java` | (1) `verify`, (2) `verifyDer`, (3) `verifySignature`, (4) `verifySigner`, (5) `parseSignedPayload`, (6) `requireMarkers`, (7) `validateChain`, (8) `authenticatedTopDown`, (9) `verifyCmsSignature`, (10) `signerVerifier` |
-| `JwsCore.java` | `verify`, `verifyUnguarded`, class `Header`, `readOrNull`, `readPayload`, classes `Payload` and `Place`, `jwsEnvironment`, `readObject`, `notAnObject`, `decodeBase64Url`, `decodeChain`, `authenticateTopDown`, `decodeKey`, `validateChain`, `verifyEs256` |
+| `ReceiptCore.java` | (1) `verify`, (2) `verifyDer`, (3) `verifySignature`, (4) `parseCms`, (5) `encapsulatedPayload`, (6) `signerInfos`, (7) `verifySigner`, (8) `parseSignedPayload`, (9) `requireMarkers`, (10) `validateChain`, (11) `authenticatedTopDown`, (12) `verifyCmsSignature`, (13) `signerVerifier` |
+| `JwsCore.java` | `verify`, `verifyUnguarded`, class `Header`, `readOrNull`, `readPayload`, classes `Payload` and `Place`, `jwsEnvironment`, `readObject`, `notAnObject`, `decodeChain`, `authenticateTopDown`, `decodeKey`, `validateChain`, `verifyEs256` |
 
 Read `verifySignature` and `verifyUnguarded` first: each is the whole
 algorithm in a page, and the rest are its steps.
@@ -516,7 +516,7 @@ flowchart TD
     S["DefaultVerifier.verifyReceipt: read the clock once"] --> C1{"ReceiptCore.verify: empty, or over 3,145,728 bytes?"}
     C1 -->|yes| F1["MALFORMED or TOO_LARGE"]
     C1 -->|no| C2["StrictBase64.decode"]
-    C2 --> C3["verifySignature: parse envelope, eContent, 1 to 4 SignerInfos"]
+    C2 --> C3["verifySignature: parseCms, encapsulatedPayload, signerInfos (1 to 4)"]
     C3 --> C4["ReceiptDecoder.readCreationDate: instant is attribute 12, else the clock"]
     C4 --> C5["ReceiptCertificates.decode: at most 10, no keys read"]
     C5 --> C6["authenticatedTopDown: keep what a pinned root vouches for"]
@@ -539,13 +539,13 @@ a genuine Apple sandbox receipt (case
 | 1 | `DefaultVerifier.verifyReceipt` | Reads the clock once, 2026-10-06, before touching the input, so a throwing clock never lands in a catch that blames the input | `INTERNAL_ERROR` |
 | 2 | `verify` (1), `Utf8Length.exceeds`, `StrictBase64.decode` | 7,556 characters, under the cap; length divisible by 4, the JDK decoder refuses anything else; 5,665 bytes | `TOO_LARGE`, `MALFORMED` |
 | 3 | `verifyDer` (2) | Wraps steps 4 to 9: any `RuntimeException` BouncyCastle throws there becomes `MALFORMED` | `MALFORMED` |
-| 4 | `verifySignature` (3), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs), its attributes read up front because BouncyCastle parses them lazily. Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
+| 4 | `verifySignature` (3), `parseCms` (4), `encapsulatedPayload` (5), `signerInfos` (6), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs), its attributes read up front because BouncyCastle parses them lazily. Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
 | 5 | `ReceiptCertificates.decode`, `signers` | Counts the bag before decoding, skips `[0]` to `[3]` entries, reads no key: the leaf (valid to 2026-08-23), WWDR G5 (to 2030-12-10), a copy of Apple Root CA. The `sid` matches one: the leaf | `MALFORMED`: a broken entry, or no match |
-| 6 | `authenticatedTopDown` (8), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf. DNs are compared before any issuer key is decoded | none: a stranger is left out |
-| 7 | `verifySigner` (4), `validateChain` (7) | Signer is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
-| 8 | `requireMarkers` (6) | The leaf carries `...6.11.1`; `path.get(1)`, WWDR G5, carries `...6.2.1` | `INVALID_CERTIFICATE_PURPOSE`, also for a signer issued directly by a root |
-| 9 | `verifyCmsSignature` (9), `signerVerifier` (10) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist, so a change on Apple's side cannot break genuine receipts. Valid | `INVALID_SIGNATURE` |
-| 10 | `parseSignedPayload` (5), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
+| 6 | `authenticatedTopDown` (11), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf. DNs are compared before any issuer key is decoded | none: a stranger is left out |
+| 7 | `verifySigner` (7), `validateChain` (10) | Signer is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
+| 8 | `requireMarkers` (9) | The leaf carries `...6.11.1`; `path.get(1)`, WWDR G5, carries `...6.2.1` | `INVALID_CERTIFICATE_PURPOSE`, also for a signer issued directly by a root |
+| 9 | `verifyCmsSignature` (12), `signerVerifier` (13) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist, so a change on Apple's side cannot break genuine receipts. Valid | `INVALID_SIGNATURE` |
+| 10 | `parseSignedPayload` (8), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
 
 Steps 7 to 9 run per (SignerInfo, certificate) pair. One constant,
 `MAX_PATH_LENGTH` (6), sets the rounds of step 6 and, less one, the

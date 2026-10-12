@@ -43,14 +43,14 @@ public final class FuzzReaders {
 
     private static final Method PARSE_PAYLOAD = method("ReceiptDecoder", "parse", byte[].class);
     private static final Method DECODE_BASE64 =
-            method("StrictBase64", "decode", String.class, Reason.class, String.class);
+            method("StrictBase64", "decode", String.class, boolean.class, Reason.class, String.class);
     private static final Method READ_HEADER = method("JwsCore$Header", "read", byte[].class);
     private static final Method READ_PAYLOAD = method("JwsCore", "readPayload", byte[].class);
 
     public static void fuzzerTestOneInput(byte[] data) {
         String text = new String(data, StandardCharsets.ISO_8859_1);
         call("ReceiptDecoder.parse", PARSE_PAYLOAD, true, (Object) data);
-        call("StrictBase64.decode", DECODE_BASE64, false, text, Reason.MALFORMED, "receipt");
+        call("StrictBase64.decode", DECODE_BASE64, false, text, false, Reason.MALFORMED, "receipt");
         call("JwsCore.Header.read", READ_HEADER, false, (Object) data);
         call("JwsCore.readPayload", READ_PAYLOAD, false, (Object) data);
     }

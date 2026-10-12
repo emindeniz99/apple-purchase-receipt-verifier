@@ -68,7 +68,7 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.TOO_LARGE, "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
         }
-        return verifyDer(StrictBase64.decode(base64, Reason.MALFORMED, "receipt"), trustAnchors, now);
+        return verifyDer(StrictBase64.decode(base64, false, Reason.MALFORMED, "receipt"), trustAnchors, now);
     }
 
     /** {@link #verify} after the base64 step. */
@@ -88,36 +88,9 @@ final class ReceiptCore {
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
     private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
-        ASN1Primitive parsed;
-        try {
-            // Throws when the input is not used up, so appended bytes cannot ride along.
-            parsed = ASN1Primitive.fromByteArray(receiptDer);
-        } catch (IOException e) {
-            throw new VerificationException(Reason.MALFORMED, "receipt has trailing or unparseable bytes", e);
-        }
-        CMSSignedData cms;
-        try {
-            // The tree, not the bytes, so the receipt is parsed once.
-            cms = new CMSSignedData(ContentInfo.getInstance(parsed));
-        } catch (CMSException e) {
-            throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
-        }
-        CMSTypedData signedContent = cms.getSignedContent();
-        Object content = signedContent != null ? signedContent.getContent() : null;
-        if (!(content instanceof byte[])) {
-            throw new VerificationException(Reason.MALFORMED, "no encapsulated payload");
-        }
-        byte[] payload = (byte[]) content;
-
-        List<SignerInformation> signers = new ArrayList<>(cms.getSignerInfos().getSigners());
-        if (signers.isEmpty()) {
-            throw new VerificationException(Reason.MALFORMED, "no signer info");
-        }
-        if (signers.size() > MAX_SIGNER_INFOS) {
-            throw new VerificationException(
-                    Reason.MALFORMED,
-                    "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
-        }
+        CMSSignedData cms = parseCms(receiptDer);
+        byte[] payload = encapsulatedPayload(cms);
+        List<SignerInformation> signers = signerInfos(cms);
         // The one payload read before trust: the sender's own creation date
         // picks the instant the chain must be valid at. That only moves the
         // validity window; the signature and the chain to a pinned root are
@@ -125,7 +98,6 @@ final class ReceiptCore {
         // moves the instant to the clock.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
         Date at = new Date(creationDate != null ? creationDate : now);
-
         ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
         // Signer-independent, so walked once for every SignerInfo.
         List<X509Certificate> authenticated = authenticatedTopDown(certificates.all(), trustAnchors);
@@ -143,6 +115,43 @@ final class ReceiptCore {
             }
         }
         throw first;
+    }
+
+    /** The receipt as CMS, parsed once from its ASN.1 tree; bytes after the DER are refused. */
+    private static CMSSignedData parseCms(byte[] receiptDer) throws VerificationException {
+        ASN1Primitive parsed;
+        try {
+            parsed = ASN1Primitive.fromByteArray(receiptDer);
+        } catch (IOException e) {
+            throw new VerificationException(Reason.MALFORMED, "receipt has trailing or unparseable bytes", e);
+        }
+        try {
+            return new CMSSignedData(ContentInfo.getInstance(parsed));
+        } catch (CMSException e) {
+            throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
+        }
+    }
+
+    private static byte[] encapsulatedPayload(CMSSignedData cms) throws VerificationException {
+        CMSTypedData signedContent = cms.getSignedContent();
+        Object content = signedContent != null ? signedContent.getContent() : null;
+        if (!(content instanceof byte[])) {
+            throw new VerificationException(Reason.MALFORMED, "no encapsulated payload");
+        }
+        return (byte[]) content;
+    }
+
+    private static List<SignerInformation> signerInfos(CMSSignedData cms) throws VerificationException {
+        List<SignerInformation> signers = new ArrayList<>(cms.getSignerInfos().getSigners());
+        if (signers.isEmpty()) {
+            throw new VerificationException(Reason.MALFORMED, "no signer info");
+        }
+        if (signers.size() > MAX_SIGNER_INFOS) {
+            throw new VerificationException(
+                    Reason.MALFORMED,
+                    "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
+        }
+        return signers;
     }
 
     /**
@@ -297,8 +306,7 @@ final class ReceiptCore {
         // An RSA signature binds its hash in the DigestInfo, so the
         // signatureAlgorithm label is not trusted.
         try {
-            boolean valid = signer.verify(signerVerifier(signerCert.getPublicKey()));
-            if (!valid) {
+            if (!signer.verify(signerVerifier(signerCert.getPublicKey()))) {
                 throw new VerificationException(
                         Reason.INVALID_SIGNATURE, "CMS signature does not match the signer certificate's key");
             }

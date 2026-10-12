@@ -320,7 +320,7 @@ class ConformanceCasesTest {
                 String where = id + ": " + name + " texts[" + index + "] " + escape(text);
                 String decoded;
                 try {
-                    decoded = hex(StrictBase64.decode(text, refusal, name));
+                    decoded = hex(StrictBase64.decode(text, false, refusal, name));
                 } catch (VerificationException e) {
                     if (ok) {
                         failures.add(where + " was refused (" + e.reason() + "), want " + want);
