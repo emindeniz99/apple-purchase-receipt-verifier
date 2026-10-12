@@ -678,9 +678,10 @@ class VerifierApiTest {
         Throwable e = thrown.getCause();
         assertTrue(e instanceof IllegalStateException, String.valueOf(e));
         assertTrue(e.getCause() instanceof NoClassDefFoundError, String.valueOf(e.getCause()));
-        // The missing class is BouncyCastle's, not Jackson's or the library's own.
+        // The missing class is BouncyCastle's, not Jackson's or the library's
+        // own. HotSpot names it with slashes, OpenJ9 with dots.
         assertTrue(
-                e.getCause().getMessage().startsWith("org/bouncycastle/"),
+                e.getCause().getMessage().replace('/', '.').startsWith("org.bouncycastle."),
                 e.getCause().getMessage());
     }
 
