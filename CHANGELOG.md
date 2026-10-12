@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.11.0...v0.11.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **java:** answer invalid_certificate for an unknown key algorithm ([e025ec8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e025ec8770d8040ab76be5382f054ffe12f75913))
+* **java:** fail verifier.create when the bcutil jar is missing ([926654c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/926654c34334dbb6bf08c16eb0b665e1eaf574c7))
+* **java:** run the preload initialiser through the library's own loader ([30ca285](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/30ca285abf9fdd28dc7820e038b05bdac31b10a7))
+* **java:** say the path length and its maximum when refusing a chain ([052b78e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/052b78e23d225ad080797c1ca5a6833e649aa96e))
+* **rust:** build the core on openssl 4.0.3 ([bdefa05](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bdefa05ebe95e4eaf5f908d89a4719f46f408212))
+* **swift:** build against wasmkit 0.4.2, which made module.types internal ([fca986c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fca986c17da748b40ed301d9de710d9c3704cdcb))
+
+
+### Build & Dependencies
+
+* **rust:** build the core with rust 1.99.0 and wasm-tools 1.261.0 ([c797cff](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c797cff34a2419669b0ef7b693e9ff0197f7e847))
+* **rust:** build the server image with rust 1.99.0 ([bbb234e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bbb234ebace5025f5ee2bbbf2c8a816f5cb8f804))
+
 ## [0.11.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.10.0...v0.11.0) (2026-10-08)
 
 
