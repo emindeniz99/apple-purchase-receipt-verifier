@@ -97,9 +97,10 @@ decoded last.** Each line is check → attack it stops → `Reason` on failure:
 3. Read attribute 12, unverified → nothing: it only picks the instant, and
    falls back to the clock → never fails
 4. Decode the bag (at most 10, no key read), then accept certificates
-   top-down from the pinned roots → flooding, and an attacker's 16384-bit
-   RSA key costing seconds to decode → `MALFORMED` over the cap; strangers
-   are just ignored
+   top-down from the pinned roots, only a CA vouching for the next level →
+   flooding, and an attacker's 16384-bit RSA key costing seconds to decode,
+   even one signed by a developer certificate → `MALFORMED` over the cap;
+   strangers are just ignored
 5. PKIX chain from the signer to a pinned root, valid at the instant, at
    most 6 below the root → forged, foreign or expired chains →
    `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`
@@ -144,8 +145,9 @@ base64url segments.**
 
 1. **No untrusted key is decoded or used.** `getPublicKey()` runs only on
    roots or on certificates whose signature an already-trusted key has
-   verified: `ReceiptCore.authenticatedTopDown` (through
-   `AppleTrust.signedByAny`) and `JwsCore.authenticateTopDown`.
+   verified, and only a CA's key checks the next level:
+   `ReceiptCore.authenticatedTopDown` (through `AppleTrust.signedByAny`)
+   and `JwsCore.authenticateTopDown`.
    Test: `UnauthenticatedKeyCostTest`.
 2. **Chain, then markers, then signature.** In `ReceiptCore.verifySigner`:
    `validateChain`, `requireMarkers`, `verifyCmsSignature`; the payload is

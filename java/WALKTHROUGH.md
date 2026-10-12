@@ -415,9 +415,12 @@ BouncyCastle validates an RSA key while decoding it, which takes seconds
 for a 16384-bit modulus the attacker chose. So the code never decodes a key
 no pinned root has vouched for. It starts from the roots and accepts a bag
 certificate only when an already-trusted key verifies its signature, then
-repeats one level down. Only accepted certificates reach PKIX; a stranger
-in the bag is never touched (`UnauthenticatedKeyCostTest`). The price: PKIX
-verifies those signatures again, about 0.1 ms per receipt.
+repeats one level down. Only a CA the walk reaches vouches for the next
+level: an accepted end entity vouches for nothing, because Apple's roots
+also vouch for developer certificates, whose keys the developers hold.
+Only accepted certificates reach PKIX; a stranger in the bag is never
+touched (`UnauthenticatedKeyCostTest`). The price: PKIX verifies those
+signatures again, about 0.1 ms per receipt.
 
 **Why the chain comes before the signature.** Checking the signature first
 would run the attacker's own key, of a size they chose, before anything
@@ -536,7 +539,7 @@ a genuine Apple sandbox receipt (case
 | 3 | `verifyDer` (2) | Wraps steps 4 to 9: any `RuntimeException` BouncyCastle throws there becomes `MALFORMED` | `MALFORMED` |
 | 4 | `verifySignature` (3), `parseCms` (4), `encapsulatedPayload` (5), `signerInfos` (6), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs), its attributes read up front because BouncyCastle parses them lazily. Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
 | 5 | `ReceiptCertificates.decode`, `signers` | Counts the bag before decoding, skips `[0]` to `[3]` entries, reads no key: the leaf (valid to 2026-08-23), WWDR G5 (to 2030-12-10), a copy of Apple Root CA. The `sid` matches one: the leaf | `MALFORMED`: a broken entry, or no match |
-| 6 | `authenticatedTopDown` (11), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf. DNs are compared before any issuer key is decoded | none: a stranger is left out |
+| 6 | `authenticatedTopDown` (11), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf, which vouches for nothing: only an accepted CA checks the next round. DNs are compared before any issuer key is decoded | none: a stranger is left out |
 | 7 | `verifySigner` (7), `validateChain` (10) | Signer is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
 | 8 | `requireMarkers` (9) | The leaf carries `...6.11.1`; `path.get(1)`, WWDR G5, carries `...6.2.1` | `INVALID_CERTIFICATE_PURPOSE`, also for a signer issued directly by a root |
 | 9 | `verifyCmsSignature` (12), `signerVerifier` (13) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist, so a change on Apple's side cannot break genuine receipts. Valid | `INVALID_SIGNATURE` |
@@ -716,10 +719,11 @@ settings still apply; none can make a forged signature verify
 
 ## 9. How to review this code
 
-1. **No key is used, or even decoded, before a pinned root vouches for its
-   certificate.** Every `getPublicKey()` and `verify(` under `java/src/main/`
-   must be on a root, on a certificate in the authenticated list, or after
-   `authenticateTopDown`. `UnauthenticatedKeyCostTest`.
+1. **No key is used, or even decoded, before a pinned root, or a CA it
+   vouched for, vouches for its certificate.** Every `getPublicKey()` and
+   `verify(` under `java/src/main/` must be on a root, on a certificate in
+   the authenticated list, or after `authenticateTopDown`; in the walk, only
+   an authenticated CA's key checks the next level. `UnauthenticatedKeyCostTest`.
 2. **Order.** Chain, markers, signature; the payload decoded only after the
    signature. Reading attribute 12 or `signedDate` earlier only moves the
    instant and never fails.
