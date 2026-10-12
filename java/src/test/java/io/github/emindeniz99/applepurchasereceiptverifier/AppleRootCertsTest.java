@@ -81,7 +81,7 @@ class AppleRootCertsTest {
      */
     @Test
     void bundledRootsAreTheRepositorysCertsDirectory() throws Exception {
-        Path certs = TestFixtures.root().toAbsolutePath().normalize().resolveSibling("certs");
+        Path certs = TestFixtures.certs();
         Set<String> expected = new HashSet<String>();
         for (String name : ROOT_FILES) {
             expected.add(Base64.getEncoder().encodeToString(Files.readAllBytes(certs.resolve(name))));

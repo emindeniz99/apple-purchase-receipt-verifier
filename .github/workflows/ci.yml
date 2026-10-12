@@ -132,6 +132,37 @@ jobs:
       - run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=${JAVA_HOME_8_X64}/bin/java"
         working-directory: java
 
+  # The Jackson floor: the pom pins 2.22.3 but declares 2.16 as the oldest
+  # jackson-core a consumer may resolve (java/README.md, "Dependency floors"),
+  # and a floor nothing runs is a claim. The suite runs once with the
+  # version property moved to 2.16.1, which moves jackson-core and the
+  # test-scope jackson-databind together. The classpath step fails the job
+  # if the override ever stops reaching the build, so a green run cannot be
+  # the pin run in disguise. One JDK on one OS: the floor is a library
+  # version, not a runtime.
+  java-jackson-floor:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Check the override reaches the classpath
+        working-directory: java
+        run: |
+          set -euo pipefail
+          mvn -B -q dependency:build-classpath -Djackson.version=2.16.1 -Dmdep.outputFile="$RUNNER_TEMP/cp.txt"
+          grep -F 'jackson-core-2.16.1.jar' "$RUNNER_TEMP/cp.txt"
+      - run: mvn -B test -Djackson.version=2.16.1
+        working-directory: java
+
   # The same suite on every other JDK vendor setup-java installs. The java
   # job covers the version lines on Temurin; this one covers the builds a
   # consumer actually runs on: another vendor's crypto providers, default

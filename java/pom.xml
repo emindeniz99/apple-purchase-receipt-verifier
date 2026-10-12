@@ -65,7 +65,9 @@
          own factories (JsonFields.factory) so a process-wide override
          does not reach them. The factories and the member-name bound are
          2.16 API, so a host BOM pinning an older Jackson 2 fails to link,
-         and Verifier.create throws IllegalStateException below 2.16. -->
+         and Verifier.create throws IllegalStateException below 2.16.
+         The java-jackson-floor CI job runs the suite with
+         -Djackson.version=2.16.1. -->
     <jackson.version>2.22.3</jackson.version>
     <!-- Annotations only, and only at compile time: see the <optional>
          dependency below. -->
