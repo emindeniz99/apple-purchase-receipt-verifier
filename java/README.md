@@ -523,6 +523,11 @@ revoked certificate. See [THREAT-MODEL.md](../THREAT-MODEL.md) section 4,
 and use the App Store Server API for refunds, revocations and subscription
 state, none of which a signature can express.
 
+ES256 signatures are accepted in both of their equivalent forms (low-S and
+high-S). The alternate form is the same key signing the same bytes, not a
+forgery; Apple documents no low-S rule, so refusing one form could refuse
+genuine JWS.
+
 ### One platform caveat: BouncyCastle, not the JDK's PKIX
 
 Every cryptographic lookup in this library, certificate parsing, chain
