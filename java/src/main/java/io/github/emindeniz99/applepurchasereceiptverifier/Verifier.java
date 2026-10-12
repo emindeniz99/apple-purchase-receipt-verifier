@@ -43,10 +43,6 @@ public interface Verifier {
      * @throws IllegalStateException    if this runtime cannot run the
      *                                  library. Each of these throws:
      *                                  <ul>
-     *                                  <li>the sibling {@code -wasm} artifact
-     *                                  (apple-purchase-receipt-verifier-wasm),
-     *                                  which has the same class names, is on
-     *                                  the classpath too;</li>
      *                                  <li>jackson-core is below 2.16;</li>
      *                                  <li>bcprov is below 1.86, or
      *                                  BouncyCastle fails to initialise,

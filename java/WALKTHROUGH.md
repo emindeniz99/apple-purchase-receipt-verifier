@@ -690,8 +690,8 @@ Two costs to know:
   `StackOverflowError`, an `Error` outside the never-throws contract.
 
 **Startup checks.** `Verifier.create` (`DefaultVerifier`'s constructor)
-throws at deployment instead of failing per call: both Java artifacts on one
-classpath (`ClasspathGuard`), a Jackson or BouncyCastle that does not load,
+throws at deployment instead of failing per call: a Jackson or BouncyCastle
+that does not load,
 bcprov below 1.86, an ASN.1 nesting bound below 9, or an empty root set.
 Then the **runtime probe** (`probeRuntime`; off with
 `Config.builder().runtimeProbe(false)`) asks the provider for the SHA-256

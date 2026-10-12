@@ -284,7 +284,8 @@ binary, which runs on distroless as it is (no libc needed).
 
 ## `java-classpath-guard`
 
-Both artifacts on one classpath must fail; Gradle must refuse both.
+The `-wasm` artifact must refuse the main jar beside it; Gradle must
+refuse both.
 
 ```sh
 mvn -B -f java package -DskipTests
@@ -294,8 +295,10 @@ mvn -B -f java-wasm verify -Pclasspath-guard
 The profile copies BouncyCastle, jackson-core and Endive's jars into
 `target/guard-lib` and runs `ClasspathGuardJarsIT` (failsafe, after
 `package`): the real main jar (`java/target/`) and the real `-wasm` jar in
-one class loader, in both orders, make `Verifier.create` throw the guard's
-`IllegalStateException`; each alone gets past it; and every public type
+one class loader, the `-wasm` jar first, make `Verifier.create` throw the
+guard's `IllegalStateException`; with the main jar first the main
+artifact's own classes answer, since it has no guard; each alone gets past
+it; and every public type
 and member of the main jar exists in the `-wasm` jar with the same
 signature.
 

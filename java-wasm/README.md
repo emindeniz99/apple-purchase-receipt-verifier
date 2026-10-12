@@ -23,9 +23,12 @@ a release's assets> install`) gives the Endive engine and the
 `executable()` and `url()` server sources; `maven()` and `github()` need
 the published jar's pins.
 
-Use one artifact or the other, never both. They have the same class names;
-`Verifier.create` throws `IllegalStateException` when it finds both on the
-classpath, and a Gradle build that asks for both fails at resolution.
+Use one artifact or the other, never both. They have the same class names,
+so whichever jar's classes load first answers. This artifact's
+`Verifier.create` throws `IllegalStateException` when it finds the main
+artifact on the classpath too; the main artifact does not check, so with
+its classes first nothing throws. A Gradle build that asks for both fails
+at resolution.
 
 ```xml
 <dependency>

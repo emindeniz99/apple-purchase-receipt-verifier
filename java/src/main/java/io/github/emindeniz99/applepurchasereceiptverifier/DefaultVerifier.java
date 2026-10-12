@@ -42,7 +42,6 @@ final class DefaultVerifier implements Verifier {
 
     DefaultVerifier(Config config) {
         Objects.requireNonNull(config, "config");
-        ClasspathGuard.check(DefaultVerifier.class.getClassLoader());
         initialise();
         // Not behind runtimeProbe: neither looks at the provider's engines,
         // which is what a test double stands in for.

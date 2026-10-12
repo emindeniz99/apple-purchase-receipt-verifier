@@ -142,9 +142,6 @@
 
   <build>
     <resources>
-      <resource>
-        <directory>src/main/resources</directory>
-      </resource>
       <!-- Ship the MIT text inside the jar. -->
       <resource>
         <directory>.</directory>
@@ -157,7 +154,7 @@
     <plugins>
       <!-- The public classes this artifact and the -wasm artifact share
            byte for byte (results, payloads, Config, Failure, Reason,
-           Environment, the classpath guard) live once, in src/shared/java,
+           Environment) live once, in src/shared/java,
            and compile into both jars: a source directory, not a module, so
            it publishes nothing of its own. The sources and javadoc jars
            read the project's source roots, so they carry these classes

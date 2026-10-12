@@ -122,8 +122,8 @@ Java 28 ships 2027-03-17 and replaces 27 as the feature-release leg.
 Temurin's Java 8 builds end in late 2026; the two Java 8 legs move to Zulu 8
 or Corretto 8 before then (an owner decision, BOOTSTRAP.md).
 `java-wasm-consumers` runs `jvm-interop` and the Spring Boot smoke on the
-`-wasm` artifact, and `java-classpath-guard` proves both artifacts on one
-classpath fail fast.
+`-wasm` artifact, and `java-classpath-guard` proves the `-wasm` artifact
+fails fast with the main one beside it and Gradle refuses both.
 
 #### Spring Boot (consumer smoke)
 

@@ -29,8 +29,10 @@ tested with any modern JDK.
 Depend on this artifact or on `apple-purchase-receipt-verifier-wasm` (the
 same API on the shared Rust core; not yet on Maven Central, see
 [../java-wasm/README.md](../java-wasm/README.md)), never both: they have the same class
-names. `Verifier.create` throws `IllegalStateException` when it finds both
-on the classpath.
+names, so whichever jar's classes load first answers. The `-wasm`
+artifact's `Verifier.create` throws `IllegalStateException` when it finds
+this jar on the classpath too, and a Gradle build that asks for both fails
+at resolution; this artifact does not check.
 
 **On Spring Boot**, Boot's BOM decides your Jackson version, not this
 library. The floor is jackson-core 2.16 (see
@@ -952,11 +954,7 @@ directory holds the config, result and payload classes the `-wasm`
 artifact compiles too; both are the same package. What a vendored copy has
 to carry with it, in short:
 
-1. Copy both source directories into one source root, and
-   `src/main/resources` into its resources. That directory holds the
-   classpath-guard marker (`META-INF/io.github.emindeniz99/apple-purchase-receipt-verifier.marker`);
-   without it the guard against the `-wasm` jar on the same classpath is
-   silently off, and `ClasspathGuardTest` fails.
+1. Copy both source directories into one source root.
 2. Declare `jackson-core` 2.16+, `bcprov`, `bcutil` and `bcpkix` at one
    1.86+ release, and `org.jspecify:jspecify` (compile time only).
 3. To run the tests, copy `src/test/java`, add JUnit 5 and
