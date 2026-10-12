@@ -5,9 +5,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * How the implementation reports a failed check internally. Never reaches a
  * caller: {@link DefaultVerifier} turns it into a {@link Failure}, keeping the
- * cause only for {@link Reason#UNREADABLE_PAYLOAD},
- * {@link Reason#INTERNAL_ERROR} and the {@link Reason#MALFORMED} that
- * {@link #unexpected} builds.
+ * cause only for {@link Reason#UNREADABLE_PAYLOAD} and the
+ * {@link Reason#MALFORMED} that {@link #unexpected} builds.
  *
  * <p>The message never quotes the input, so it is safe to log as is.</p>
  */
@@ -26,7 +25,7 @@ final class VerificationException extends Exception {
     }
 
     VerificationException(Reason reason, String message, @Nullable Throwable cause) {
-        this(reason, message, cause, reason == Reason.UNREADABLE_PAYLOAD || reason == Reason.INTERNAL_ERROR);
+        this(reason, message, cause, reason == Reason.UNREADABLE_PAYLOAD);
     }
 
     private VerificationException(Reason reason, String message, @Nullable Throwable cause, boolean keepCause) {
