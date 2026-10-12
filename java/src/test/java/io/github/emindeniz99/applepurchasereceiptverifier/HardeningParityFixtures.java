@@ -19,9 +19,12 @@ import java.util.Date;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
+import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
@@ -35,7 +38,7 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 /**
  * Writes the hardening-parity inputs of the shared cases (the
  * denial-of-service and signer-algorithm cases of fixtures/cases.json), into the
- * directory given as the first argument. Three groups:
+ * directory given as the first argument. Four groups:
  *
  * <ul>
  *   <li><b>DoS (T1, T2, T3).</b> Certificates carrying an oversized RSA
@@ -62,11 +65,20 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
  *       nothing, so a walk that lets only a CA vouch never decodes those keys,
  *       and the receipt fails the purpose check, its signer lacking the
  *       receipt-signing marker.</li>
+ *   <li><b>DoS in the signer lookup (T6).</b> Two SignerInfos name their
+ *       certificate by one serial number and an issuer of many CN RDNs, in
+ *       opposite orders, and the one embedded certificate has that serial
+ *       and the same RDNs rotated by one. A name comparison that keeps RDN
+ *       order finds no signer certificate, MALFORMED; one that ignores RDN
+ *       order can be quadratic in the RDN count, when it compares the two
+ *       SignerInfos with each other or either with the certificate.</li>
  * </ul>
  *
- * <p>Three roots are emitted: {@code hardening-jws-root.der} for T1,
- * {@code hardening-receipt-root.der} for T2, T3 and T4, and
- * {@code hardening-developer-root.der} for T5.</p>
+ * <p>Four roots are emitted: {@code hardening-jws-root.der} for T1,
+ * {@code hardening-receipt-root.der} for T2, T3 and T4,
+ * {@code hardening-developer-root.der} for T5 and
+ * {@code hardening-signer-id-root.der} for T6, which signs nothing in
+ * it.</p>
  *
  * <p>A {@code main} like the other generators. Regenerate with:</p>
  *
@@ -109,6 +121,9 @@ public final class HardeningParityFixtures {
      */
     private static final int DOS_VALIDATED_BITS = 16384;
 
+    /** Issuer RDNs in T6: the receipt is 78 KB, under the 100 KB limit for a committed fixture. */
+    private static final int DOS_ISSUER_RDNS = 1500;
+
     private static final byte[] GUID = {
         0x11,
         0x22,
@@ -145,6 +160,7 @@ public final class HardeningParityFixtures {
         writeReceiptDos(out);
         writeSignerAlgorithms(out);
         writeEndEntityDos(out);
+        writeSignerIdDos(out);
     }
 
     // --- T1: oversized key in an untrusted x5c[1] ------------------------
@@ -439,6 +455,69 @@ public final class HardeningParityFixtures {
                 "receipt-oversized-keys-under-end-entity.der",
                 TestPki.signReceiptAs(
                         payload(), new Date(SIGNED_DATE), developerKp.getPrivate(), RSA, developer, embedded));
+    }
+
+    // --- T6: a SignerId issuer that reorders the certificate's RDNs -----
+
+    private void writeSignerIdDos(Path out) throws Exception {
+        Date nb = new Date(NOT_BEFORE);
+        Date na = new Date(NOT_AFTER);
+        KeyPair rootKp = ec();
+        X509Certificate root = TestPki.cert(
+                "CN=Hardening Signer Id Root",
+                rootKp,
+                "CN=Hardening Signer Id Root",
+                rootKp.getPrivate(),
+                true,
+                null,
+                nb,
+                na,
+                "SHA256withECDSA");
+        write(out, "hardening-signer-id-root.der", root.getEncoded());
+
+        // Three certificates for one key, with one serial: the first two
+        // only supply the SignerInfos' issuerAndSerialNumber and are not
+        // embedded, the third is the whole certificate bag.
+        KeyPair signerKp = ec();
+        BigInteger serial = BigInteger.valueOf(42);
+        List<X509CertificateHolder> named = Arrays.asList(
+                certificateWithIssuer(manyCns(0, 1), serial, signerKp, nb, na),
+                certificateWithIssuer(manyCns(DOS_ISSUER_RDNS - 1, -1), serial, signerKp, nb, na));
+        X509CertificateHolder embedded = certificateWithIssuer(manyCns(1, 1), serial, signerKp, nb, na);
+        write(
+                out,
+                "receipt-signer-id-issuer-rdns-reordered.der",
+                TestPki.signReceiptAs(
+                        payload(),
+                        new Date(SIGNED_DATE),
+                        signerKp.getPrivate(),
+                        "SHA256withECDSA",
+                        named,
+                        Collections.singletonList(embedded)));
+    }
+
+    /** {@link #DOS_ISSUER_RDNS} CN RDNs, numbered {@code first}, {@code first + step}, ... modulo the count. */
+    private static X500Name manyCns(int first, int step) {
+        RDN[] rdns = new RDN[DOS_ISSUER_RDNS];
+        for (int i = 0; i < DOS_ISSUER_RDNS; i++) {
+            int n = Math.floorMod(first + i * step, DOS_ISSUER_RDNS);
+            rdns[i] = new RDN(BCStyle.CN, new DERUTF8String(String.format("%06d", n)));
+        }
+        return new X500Name(rdns);
+    }
+
+    private static X509CertificateHolder certificateWithIssuer(
+            X500Name issuer, BigInteger serial, KeyPair key, Date nb, Date na) throws Exception {
+        X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
+                issuer,
+                serial,
+                nb,
+                na,
+                new X500Name("CN=Hardening Signer Id Signing"),
+                SubjectPublicKeyInfo.getInstance(key.getPublic().getEncoded()));
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+        builder.addExtension(new ASN1ObjectIdentifier(LEAF_OID), false, DERNull.INSTANCE);
+        return builder.build(new JcaContentSignerBuilder("SHA256withECDSA").build(key.getPrivate()));
     }
 
     // --- helpers ---------------------------------------------------------
