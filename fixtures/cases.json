@@ -9353,7 +9353,7 @@
     },
     {
       "id": "receipt/accept-a-path-of-six",
-      "description": "A receipt signed at the end of a path of six certificates below the anchor (the leaf and five CAs, each carrying the WWDR marker): the longest path accepted.",
+      "description": "A receipt signed at the end of a path of six certificates below the anchor (the leaf and five CAs, each carrying the WWDR marker): the longest path the core accepts, and one Java accepts too.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "review-receipt-path-six"
@@ -9385,7 +9385,7 @@
     },
     {
       "id": "receipt/reject-a-path-of-seven",
-      "description": "Seven certificates below the anchor, one over the maximum path length: UNTRUSTED_CHAIN.",
+      "description": "Seven certificates below the anchor, each signed by the one above and valid at the instant. Port-defined (owner, 2026-10-12, Q120 a): the core's walk stops at six certificates and answers UNTRUSTED_CHAIN; Java bounds no length of its own, BouncyCastle 1.86's builder returns a path of seven, and Java verifies. No receipt Apple signs is this deep, and every link is signed under the pinned root. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "review-receipt-path-seven"
@@ -9399,23 +9399,28 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "UNTRUSTED_CHAIN"
+        "oneOf": [
+          "ok",
+          "UNTRUSTED_CHAIN"
+        ]
       },
       "fault": "path-one-over-the-maximum-length",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
-        "negative",
         "limits",
         "chain",
         "review",
+        "owner-decision",
         "new-in-0-7"
       ]
     },
     {
       "id": "receipt/reject-a-path-of-seven-with-a-self-issued-tail",
-      "description": "Seven certificates below the anchor where the last CA repeats its issuer's name. PKIX exempts self-issued certificates from its path length, but this library counts every hop: UNTRUSTED_CHAIN.",
+      "description": "Seven certificates below the anchor where the last CA repeats its issuer's name. PKIX exempts self-issued certificates from its path length. Port-defined (owner, 2026-10-12, Q120 a): the core counts every hop, stops at six and answers UNTRUSTED_CHAIN; Java bounds no length of its own, BouncyCastle 1.86's builder returns the path, and Java verifies. Every link is signed under the pinned root. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "review-receipt-path-seven-self-issued"
@@ -9429,17 +9434,22 @@
         }
       },
       "expected": {
-        "status": "error",
-        "reason": "UNTRUSTED_CHAIN"
+        "oneOf": [
+          "ok",
+          "UNTRUSTED_CHAIN"
+        ]
       },
       "fault": "self-issued-hop-over-the-maximum-length",
+      "maxMillis": 2000,
       "tags": [
+        "tolerant",
+        "port-defined",
         "receipt",
         "pkcs7",
-        "negative",
         "limits",
         "chain",
         "review",
+        "owner-decision",
         "new-in-0-7"
       ]
     },
