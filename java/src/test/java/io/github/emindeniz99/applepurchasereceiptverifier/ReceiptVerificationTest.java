@@ -336,9 +336,9 @@ class ReceiptVerificationTest {
     @Test
     void acceptsAPathOfSixCertificatesBelowTheAnchor() throws Exception {
         // Six certificates below the anchor: leaf plus five intermediates,
-        // counted from the leaf with the anchor excluded. The core's bound
-        // is six; Java has none of its own, so this is a long path that
-        // both implementations accept.
+        // counted from the leaf with the anchor excluded. Neither
+        // implementation bounds the length of its own, so this is a long
+        // path that both accept.
         TestPki deep = TestPki.deepReceipt(5, 0);
         ReceiptPayload receipt = verify(deep, deep.signReceipt(payload(BUNDLE, creationDate.toString())));
         assertEquals(BUNDLE, receipt.bundleId());
@@ -349,8 +349,8 @@ class ReceiptVerificationTest {
         // Seven certificates below the anchor, each signed by the one above
         // under the pinned root and valid at the instant. The walk has no
         // round bound, and BouncyCastle 1.86 returns a path of seven, so the
-        // receipt verifies (Q120 a, 2026-10-12). The core refuses it on its
-        // own six-certificate bound (DECISIONS.md R20).
+        // receipt verifies (Q120 a, 2026-10-12). The core accepts it too
+        // since it dropped its own bound (Q126 b, DECISIONS.md R20).
         TestPki deep = TestPki.deepReceipt(6, 0);
         byte[] seven = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         assertEquals(BUNDLE, verify(deep, seven).bundleId());
@@ -375,6 +375,8 @@ class ReceiptVerificationTest {
         // BouncyCastle 1.86's builder refuses an eighth certificate below
         // the anchor and finds no path. This is where Java's path length
         // ends, and the message shows the builder refused it, not the walk.
+        // The core verifies it (Q126 b; receipt/accept-a-path-of-eight
+        // allows both, DECISIONS.md R20).
         TestPki deep = TestPki.deepReceipt(7, 0);
         byte[] eight = deep.signReceipt(payload(BUNDLE, creationDate.toString()));
         VerificationException e = assertThrows(VerificationException.class, () -> verify(deep, eight));

@@ -294,7 +294,8 @@ chain verify at its own creation date.
 Everything the module parses is attacker-supplied, so its bounds are part of
 the design rather than a configuration, and the core owns every one: this
 package adds none. ASN.1 nesting depth 32; at most ten embedded
-certificates, four `SignerInfo`s, and six certificates below the anchor.
+certificates and four `SignerInfo`s; the path's length is bounded by those
+ten, not by a limit of its own.
 JSON (the JWS header, the JWS payload and the endpoint request body) has no
 nesting or length bound of its own: the module skips a value nobody reads
 without building it, so only the size caps bound it

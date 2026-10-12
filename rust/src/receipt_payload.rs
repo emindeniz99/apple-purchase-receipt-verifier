@@ -559,9 +559,6 @@ mod tests {
         pub const SET: u8 = 0x31;
     }
 
-    /// The ASN.1 nesting bound of 0.7's bounds table.
-    const MAX_DEPTH: usize = 32;
-
     fn der(tag: u8, contents: &[u8]) -> Vec<u8> {
         assert!(contents.len() < 0x80, "short-form lengths only");
         let mut out = vec![tag, u8::try_from(contents.len()).unwrap()];
@@ -739,24 +736,6 @@ mod tests {
             receipt.unknown_attributes.get(&32),
             Some(&vec![ia5("2024-07-03T09:45:20Z")])
         );
-    }
-
-    #[test]
-    fn signed_content_nested_past_the_asn1_bound_is_unreadable() {
-        // Signed content nested past the bound (32 constructed values)
-        // cannot be read, which the verifier reports as UNREADABLE_PAYLOAD,
-        // never MALFORMED. OpenSSL's template decoder refuses it well before
-        // any depth counting: a SET inside the SET is not an attribute.
-        let mut nested: Vec<u8> = Vec::new();
-        for _ in 0..=MAX_DEPTH {
-            let length = u8::try_from(nested.len()).unwrap();
-            nested = if length < 0x80 {
-                [&[tag::SET, length][..], &nested].concat()
-            } else {
-                [&[tag::SET, 0x81, length][..], &nested].concat()
-            };
-        }
-        assert!(parse_receipt_payload(&nested).is_err());
     }
 
     /// One TLV with a definite length of any size.

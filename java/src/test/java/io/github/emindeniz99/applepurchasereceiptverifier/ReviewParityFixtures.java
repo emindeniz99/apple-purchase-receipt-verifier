@@ -54,7 +54,8 @@ import org.bouncycastle.util.CollectionStore;
  * every receipt states the creation date 2024-08-06, so the verdicts do not
  * move with the clock except where a case pins one. Roots are emitted beside
  * the inputs: {@code review-receipt-root.der}, {@code review-deep-root.der},
- * {@code review-deep7-root.der}, {@code review-deep-self-issued-root.der},
+ * {@code review-deep7-root.der}, {@code review-deep8-root.der},
+ * {@code review-deep-self-issued-root.der},
  * {@code review-shallow-root.der} and {@code review-jws-root.der}.</p>
  *
  * <p>Two inputs are derived from files already committed rather than minted:
@@ -148,6 +149,7 @@ public final class ReviewParityFixtures {
         write("review-receipt-cross-signed-mesh.der", pki.signReceiptWithCrossSignedMesh(payload, 14, 2));
         deep("review-deep-root.der", "review-receipt-path-six.der", 5, 0, payload);
         deep("review-deep7-root.der", "review-receipt-path-seven.der", 6, 0, payload);
+        deep("review-deep8-root.der", "review-receipt-path-eight.der", 7, 0, payload);
         deep("review-deep-self-issued-root.der", "review-receipt-path-seven-self-issued.der", 5, 1, payload);
         deep("review-shallow-root.der", "review-receipt-signer-issued-by-root.der", 0, 0, payload);
         write("review-receipt-signer-sha384-tampered.der", tamper(read("receipt-signer-sha384.der")));

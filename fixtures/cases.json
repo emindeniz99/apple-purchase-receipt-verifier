@@ -1179,6 +1179,12 @@
       "codec": "raw",
       "contentSha256": "775daa88d10e5f5d9f210f3615b6644c69bd00aede5592947176e019fe4670ad"
     },
+    "review-deep8-root": {
+      "path": "generated-0.7/review-deep8-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "ca4fb9ba947f5c7453afabfea67a125dfa15df2bcbc3ffcc4af45b8e01dd3b9e"
+    },
     "review-jws-alg-control-characters": {
       "path": "generated-0.7/review-jws-alg-control-characters.jws",
       "role": "input",
@@ -1376,6 +1382,12 @@
       "role": "input",
       "codec": "raw",
       "contentSha256": "6ebb17e88cd437da895a3fd5889abdd8454c3d907399e0645f85dd1545224237"
+    },
+    "review-receipt-path-eight": {
+      "path": "generated-0.7/review-receipt-path-eight.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "504e9ef21526868d74bdc207357f7cfc53cec6ee9f16cb20fa1d6dab96cbd19a"
     },
     "review-receipt-path-seven-self-issued": {
       "path": "generated-0.7/review-receipt-path-seven-self-issued.der",
@@ -9396,7 +9408,7 @@
     },
     {
       "id": "receipt/accept-a-path-of-six",
-      "description": "A receipt signed at the end of a path of six certificates below the anchor (the leaf and five CAs, each carrying the WWDR marker): the longest path the core accepts, and one Java accepts too.",
+      "description": "A receipt signed at the end of a path of six certificates below the anchor (the leaf and five CAs, each carrying the WWDR marker): both implementations accept it.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "review-receipt-path-six"
@@ -9427,8 +9439,8 @@
       ]
     },
     {
-      "id": "receipt/reject-a-path-of-seven",
-      "description": "Seven certificates below the anchor, each signed by the one above and valid at the instant. Port-defined (owner, 2026-10-12, Q120 a): the core's walk stops at six certificates and answers UNTRUSTED_CHAIN; Java bounds no length of its own, BouncyCastle 1.86's builder returns a path of seven, and Java verifies. No receipt Apple signs is this deep, and every link is signed under the pinned root. DECISIONS.md R20.",
+      "id": "receipt/accept-a-path-of-seven",
+      "description": "A receipt signed at the end of a path of seven certificates below the anchor (the leaf and six CAs, each carrying the WWDR marker, each signed by the one above and valid at the instant). Neither implementation bounds the path length of its own (owner, 2026-10-12, Q120 a and Q126 b): BouncyCastle 1.86's builder returns a path of seven, and the core's path is bounded only by the ten-certificate cap. Both accept it. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "review-receipt-path-seven"
@@ -9442,12 +9454,44 @@
         }
       },
       "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
+      },
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "positive",
+        "limits",
+        "chain",
+        "review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-a-path-of-eight",
+      "description": "Eight certificates below the anchor (the leaf and seven CAs, each carrying the WWDR marker, each signed by the one above and valid at the instant): the first depth where the two implementations differ. Port-defined (owner, 2026-10-12, Q126 b): the core sets no path length of its own, so its path is bounded only by the ten-certificate cap, and it verifies; Java's walk has no bound either, but BouncyCastle 1.86's builder, under the JDK's default maxPathLength of 5, returns no path of eight, and Java answers UNTRUSTED_CHAIN. No receipt Apple signs is this deep, and every link is signed under the pinned root. DECISIONS.md R20.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "review-receipt-path-eight"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "review-deep8-root"
+          ]
+        }
+      },
+      "expected": {
         "oneOf": [
           "ok",
           "UNTRUSTED_CHAIN"
         ]
       },
-      "fault": "path-one-over-the-maximum-length",
+      "fault": "path-one-past-the-java-builder-bound",
       "maxMillis": 2000,
       "tags": [
         "tolerant",
@@ -9463,7 +9507,7 @@
     },
     {
       "id": "receipt/reject-a-path-of-seven-with-a-self-issued-tail",
-      "description": "Seven certificates below the anchor where the last CA repeats its issuer's name. PKIX exempts self-issued certificates from its path length. Port-defined (owner, 2026-10-12, Q120 a): the core counts every hop, stops at six and answers UNTRUSTED_CHAIN; Java bounds no length of its own, BouncyCastle 1.86's builder returns the path, and Java verifies. Every link is signed under the pinned root. DECISIONS.md R20.",
+      "description": "Seven certificates below the anchor where the last CA repeats its issuer's name under a fresh key, and no certificate carries key identifiers. Port-defined (owner, 2026-10-12, Q120 a): Java bounds no length of its own, BouncyCastle 1.86's builder returns the path, and Java verifies. The core answers UNTRUSTED_CHAIN whatever the length: without key identifiers OpenSSL's issuer lookup cannot tell the self-issued CA from its same-named issuer, takes the first and never backtracks, so the signer's signature fails under the wrong key; offered the self-issued CA first, OpenSSL reads it as self-signed and ends the path short of the pinned root. Every link is signed under the pinned root. DECISIONS.md R20.",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "review-receipt-path-seven-self-issued"
@@ -9482,7 +9526,7 @@
           "UNTRUSTED_CHAIN"
         ]
       },
-      "fault": "self-issued-hop-over-the-maximum-length",
+      "fault": "self-issued-ca-without-key-identifiers",
       "maxMillis": 2000,
       "tags": [
         "tolerant",
@@ -10443,7 +10487,7 @@
     },
     {
       "id": "signed-data/accept-a-header-nested-64-deep",
-      "description": "A genuinely signed header carrying a member nested 64 deep counting the header object: at the JSON depth limit, so it is read and the JWS verifies.",
+      "description": "A genuinely signed header carrying a member nested 64 deep counting the header object: JSON has no nesting bound of its own, so it is read and the JWS verifies.",
       "operation": "verifySignedData",
       "input": {
         "fixture": "review-jws-header-nested-64"

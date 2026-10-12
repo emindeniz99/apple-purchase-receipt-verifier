@@ -2,11 +2,16 @@
 //! holds the caller's anchors and nothing else, at a caller-given second.
 //!
 //! OpenSSL builds and checks the path; this module reports every problem it
-//! finds, with the depth it found it at, and decides nothing: the core
-//! turns the problems into a reason in its own order. To see every problem
-//! rather than the first, the verify callback records each one and lets
-//! the verification continue; a path is good only when OpenSSL answers 1
-//! and nothing was recorded.
+//! finds, with the depth it found it at, and the core turns the problems
+//! into a reason in its own order. The module does hold trust policy of
+//! its own: it trusts an anchor by fiat, waiving the anchor's validity
+//! window, CA flag and path length constraint ([`waived`]); it offers
+//! OpenSSL only the certificates that sign the path ([`linked_above`]);
+//! and it runs once per anchor that may end the path and chooses which
+//! run's problems are reported ([`run`]). To see every problem rather than
+//! the first, the verify callback records each one and lets the
+//! verification continue; a path is good only when OpenSSL answers 1 and
+//! nothing was recorded.
 
 use crate::certificate::{same_x509, Certificate};
 use crate::{drain_errors, init, sys};
@@ -102,8 +107,9 @@ std::thread_local! {
 }
 
 /// Builds and validates a path from `target` through `untrusted` to one of
-/// `anchors`, at `at_secs` (Unix seconds), with at most `max_intermediates`
-/// certificates between the target and the anchor.
+/// `anchors`, at `at_secs` (Unix seconds). No depth is set, so OpenSSL's
+/// default (100) applies; the caller bounds the path by the certificates
+/// it passes.
 ///
 /// Each run's store holds one of `anchors` and nothing else (see [`run`]).
 /// `X509_V_FLAG_PARTIAL_CHAIN` makes it a trust anchor whether or not it is
@@ -122,10 +128,9 @@ pub fn verify_path(
     untrusted: &[Certificate],
     anchors: &[Certificate],
     at_secs: i64,
-    max_intermediates: u32,
 ) -> PathOutcome {
     init();
-    let outcome = run(target, untrusted, anchors, at_secs, max_intermediates)
+    let outcome = run(target, untrusted, anchors, at_secs)
         .unwrap_or_else(|| PathOutcome::failed(PathProblemKind::Other(-1)));
     ANCHORS.with(|slot| slot.replace(Vec::new()));
     PROBLEMS.with(|slot| slot.replace(Vec::new()));
@@ -163,9 +168,8 @@ fn run(
     untrusted: &[Certificate],
     anchors: &[Certificate],
     at_secs: i64,
-    max_intermediates: u32,
 ) -> Option<PathOutcome> {
-    let linked = linked_above(target, untrusted, max_intermediates);
+    let linked = linked_above(target, untrusted);
     let untrusted: &[Certificate] = &linked;
     let candidates: Vec<&Certificate> = anchors
         .iter()
@@ -177,26 +181,12 @@ fn run(
         .collect();
     if candidates.is_empty() {
         let every: Vec<&Certificate> = anchors.iter().collect();
-        return run_with(
-            target,
-            untrusted,
-            anchors,
-            &every,
-            at_secs,
-            max_intermediates,
-        );
+        return run_with(target, untrusted, anchors, &every, at_secs);
     }
     let mut first_linked: Option<PathOutcome> = None;
     let mut first: Option<PathOutcome> = None;
     for anchor in candidates {
-        let outcome = run_with(
-            target,
-            untrusted,
-            anchors,
-            &[anchor],
-            at_secs,
-            max_intermediates,
-        )?;
+        let outcome = run_with(target, untrusted, anchors, &[anchor], at_secs)?;
         if outcome.passed() {
             return Some(outcome);
         }
@@ -211,9 +201,8 @@ fn run(
 
 /// The certificates of `untrusted` that signed the target, or signed a
 /// certificate already linked this way, under the name it names as its
-/// issuer ([`Certificate::signed_by`]), found in at most
-/// `max_intermediates` + 1 rounds and returned in their order in
-/// `untrusted`. An issuer's `keyUsage` is not judged here: OpenSSL's lookup
+/// issuer ([`Certificate::signed_by`]), found round by round until a round
+/// links nothing, and returned in their order in `untrusted`. An issuer's `keyUsage` is not judged here: OpenSSL's lookup
 /// does not judge it either, and reports it on the path (not a CA).
 ///
 /// OpenSSL's `find_issuer` takes the first certificate of `untrusted` that
@@ -231,14 +220,10 @@ fn run(
 /// comparisons, each followed by a signature check only on a name match,
 /// for the n certificates of `untrusted`, which the certificate cap bounds
 /// (10 for a receipt, 1 for a JWS).
-fn linked_above(
-    target: &Certificate,
-    untrusted: &[Certificate],
-    max_intermediates: u32,
-) -> Vec<Certificate> {
+fn linked_above(target: &Certificate, untrusted: &[Certificate]) -> Vec<Certificate> {
     let mut linked: Vec<&Certificate> = Vec::new();
     let mut frontier: Vec<&Certificate> = vec![target];
-    for _ in 0..=max_intermediates {
+    loop {
         let next: Vec<&Certificate> = untrusted
             .iter()
             .filter(|candidate| !linked.iter().any(|seen| seen.same_as(candidate)))
@@ -279,7 +264,6 @@ fn run_with(
     anchors: &[Certificate],
     store: &[&Certificate],
     at_secs: i64,
-    max_intermediates: u32,
 ) -> Option<PathOutcome> {
     let mut builder = X509StoreBuilder::new().ok()?;
     for anchor in store {
@@ -287,7 +271,6 @@ fn run_with(
     }
     let mut param = X509VerifyParam::new().ok()?;
     param.set_time(libc::time_t::try_from(at_secs).ok()?);
-    param.set_depth(c_int::try_from(max_intermediates).ok()?);
     param.set_flags(X509VerifyFlags::PARTIAL_CHAIN).ok()?;
     builder.set_param(&param).ok()?;
     let store = builder.build();

@@ -94,7 +94,7 @@ fn child() {
     let unrelated = Certificate::from_der(&fixture("jws-root.der")).unwrap();
 
     let anchored =
-        aprv_openssl::verify_path(&leaf, std::slice::from_ref(&intermediate), &[root], AT, 4);
+        aprv_openssl::verify_path(&leaf, std::slice::from_ref(&intermediate), &[root], AT);
     let signed = cms.verify_signer(0, &leaf);
     if mode == "control" {
         assert!(
@@ -105,7 +105,7 @@ fn child() {
     }
     assert!(anchored.passed(), "{:?}", anchored.problems);
     assert!(signed, "the receipt's signature does not verify");
-    let refused = aprv_openssl::verify_path(&leaf, &[intermediate], &[unrelated], AT, 4);
+    let refused = aprv_openssl::verify_path(&leaf, &[intermediate], &[unrelated], AT);
     assert!(!refused.passed());
     assert!(
         refused

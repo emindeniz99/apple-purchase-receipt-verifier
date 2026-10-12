@@ -899,6 +899,110 @@ fn an_intermediate_without_key_cert_sign_is_still_reported_as_not_a_ca() {
     let failure = path::receipt_path(&leaf, &authenticated, &roots, now_millis()).unwrap_err();
     assert_eq!(
         failure.to_string(),
-        "UNTRUSTED_CHAIN: an intermediate is not a CA"
+        "UNTRUSTED_CHAIN: an intermediate is not a CA, or its path length constraint is exceeded"
     );
+}
+
+// --- path length ---------------------------------------------------------
+//
+// The core sets no path length of its own (owner, 2026-10-12, Q126 b): the
+// top-down walk runs until a round accepts nothing, OpenSSL's default depth
+// (100) applies, and the ten-certificate cap is what bounds the path. Java's
+// builder stops at seven certificates below the anchor, so a shared case
+// deeper than that allows both answers, and these pin the core's own
+// (DECISIONS.md R20).
+
+/// The shared receipt's content, signed with no signedAttrs by a minted
+/// leaf `below` certificates under a minted root: the leaf and `below - 1`
+/// CAs, each with its own key and the WWDR marker, no key identifiers. Each
+/// CA has its own name, except that with `self_issued_tail` the last one
+/// repeats its issuer's. Every certificate but the root is embedded.
+/// Returns the receipt and the root.
+fn receipt_at_depth(below: u8, self_issued_tail: bool) -> (Vec<u8>, TrustAnchor) {
+    use common::{der_oid, der_seq, mint, CmsBuilder};
+    let root_key = mint::key(100);
+    let root = mint::certificate(
+        "Depth Root",
+        &root_key,
+        "Depth Root",
+        &root_key,
+        1,
+        true,
+        None,
+    );
+    let mut cas = Vec::new();
+    let (mut issuer, mut issuer_key) = ("Depth Root".to_owned(), root_key);
+    for n in 1..below {
+        let subject = if self_issued_tail && n == below - 1 {
+            issuer.clone()
+        } else {
+            format!("Depth CA {n}")
+        };
+        let key = mint::key(100 + n);
+        cas.push(mint::certificate(
+            &subject,
+            &key,
+            &issuer,
+            &issuer_key,
+            u64::from(n) + 1,
+            true,
+            Some(mint::WWDR_MARKER),
+        ));
+        (issuer, issuer_key) = (subject, key);
+    }
+    let leaf_key = mint::key(99);
+    let leaf = mint::certificate(
+        "Depth Leaf",
+        &leaf_key,
+        &issuer,
+        &issuer_key,
+        100,
+        false,
+        Some(mint::RECEIPT_SIGNER_MARKER),
+    );
+    let mut builder = CmsBuilder::from_shared();
+    builder.certificates = std::iter::once(leaf).chain(cas).collect();
+    builder.signer_issuer = mint::name(&issuer);
+    builder.signer_serial = vec![100];
+    builder.signed_attrs = None;
+    builder.signature_algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
+    builder.signature = leaf_key.sign_der(builder.content.as_deref().unwrap());
+    (builder.build(), TrustAnchor::from_der(&root).unwrap())
+}
+
+#[test]
+fn a_receipt_verifies_eight_and_ten_certificates_below_the_anchor() {
+    // Eight is the first depth where the two implementations differ: Java's
+    // builder returns no path of eight (`refusesAPathOfEightTheBuilderDoesNotReturn`).
+    // Ten embedded certificates, the root left out, is the deepest path the
+    // certificate cap admits: the leaf and nine CAs. Two is the control.
+    for below in [2, 8, 10] {
+        let (receipt, root) = receipt_at_depth(below, false);
+        let payload = common::verify_der(&common::verifier([root]), &receipt)
+            .unwrap_or_else(|failure| panic!("{below} below the anchor: {failure}"));
+        assert_eq!(payload.bundle_id.as_deref(), Some("com.example.app"));
+    }
+}
+
+#[test]
+fn a_self_issued_ca_without_key_identifiers_ends_the_path_whatever_its_length() {
+    // The last CA self-issued (its issuer's name, a fresh key) and no key
+    // identifiers anywhere. OpenSSL's issuer lookup then cannot tell the
+    // self-issued CA from its same-named issuer: it takes the first, never
+    // backtracks, and the signer's signature fails under the wrong key.
+    // Offered the self-issued CA first, it reads that CA as self-signed and
+    // ends the path short of the root. The length plays no part: seven below
+    // the anchor (the shared case's fixture, which Java verifies; DECISIONS.md
+    // R20) and three are refused alike.
+    let shared = (
+        common::read_fixture("generated-0.7/review-receipt-path-seven-self-issued.der"),
+        common::anchor("generated-0.7/review-deep-self-issued-root.der"),
+    );
+    for (receipt, root) in [shared, receipt_at_depth(3, true)] {
+        let failure = common::verify_der(&common::verifier([root]), &receipt).unwrap_err();
+        assert_eq!(
+            failure.to_string(),
+            "UNTRUSTED_CHAIN: chain does not reach a pinned root"
+        );
+    }
 }

@@ -32,7 +32,7 @@ const ENVELOPE_LIMITS: EnvelopeLimits = EnvelopeLimits {
 /// The largest receipt string, in UTF-8 bytes: 3 MiB, Apple's own request
 /// limit, checked before anything is decoded. No receipt Apple accepts can
 /// be larger than the request that carries it.
-pub(crate) const MAX_RECEIPT_BYTES: usize = 3_145_728;
+pub(crate) const MAX_RECEIPT_BYTES: usize = crate::endpoint::MAX_REQUEST_BYTES;
 
 /// Decodes a `receipt-data` text by the rule [`verify`] applies before
 /// anything else: non-empty standard base64 carrying exactly its canonical

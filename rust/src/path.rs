@@ -3,8 +3,11 @@
 //!
 //! OpenSSL (`aprv_openssl::verify_path`, `X509_verify_cert` over a store of
 //! the pinned anchors alone) builds the path and checks its signatures,
-//! CA flags, length, validity windows and critical extensions. This module
-//! decides what goes in and what comes out:
+//! CA flags, path length constraints, validity windows and critical
+//! extensions. The core sets no path length of its own: the path holds at
+//! most the ten embedded certificates a receipt may carry, far inside
+//! OpenSSL's default depth of 100. This module decides what goes in and
+//! what comes out:
 //!
 //! - **Top-down first.** Only certificates a pinned anchor vouched for,
 //!   directly or through a certificate it vouched for, are handed to
@@ -22,10 +25,6 @@
 use crate::error::{Failure, Reason};
 use crate::roots::TrustAnchor;
 use aprv_openssl::{verify_path, Certificate, PathOutcome, PathProblem, PathProblemKind};
-
-/// The longest path, anchor excluded: the target and five certificates
-/// above it.
-pub const MAX_PATH_LENGTH: usize = 6;
 
 fn untrusted(detail: &'static str) -> Failure {
     Failure::new(Reason::UntrustedChain, detail)
@@ -50,9 +49,11 @@ fn anchor_certificates(anchors: &[TrustAnchor]) -> Vec<Certificate> {
 }
 
 /// The embedded certificates a pinned anchor vouched for, directly or
-/// through a certificate accepted this way, walking down from the anchors
-/// in at most [`MAX_PATH_LENGTH`] rounds. An embedded copy of an anchor is
-/// the anchor, and is accepted without a signature check.
+/// through a certificate accepted this way, walking down from the anchors.
+/// Each round accepts at least one certificate or ends the walk, so it
+/// ends after at most as many rounds as there are embedded certificates.
+/// An embedded copy of an anchor is the anchor, and is accepted without a
+/// signature check.
 ///
 /// Walking down means the only keys used are ones an anchor vouched for: a
 /// certificate carrying the attacker's own key (their choice of size and
@@ -76,10 +77,7 @@ pub fn authenticated_top_down(
     }
     let mut issuers: Vec<Certificate> = anchor_certificates(anchors);
     issuers.extend(accepted.iter().cloned());
-    for _ in 0..MAX_PATH_LENGTH {
-        if pending.is_empty() {
-            break;
-        }
+    while !pending.is_empty() {
         let mut this_round: Vec<Certificate> = Vec::new();
         pending.retain(|candidate| {
             let vouched = issuers.iter().any(|issuer| candidate.issued_by(issuer));
@@ -116,16 +114,9 @@ fn checked_path(
     untrusted: &[Certificate],
     anchors: &[TrustAnchor],
     at_millis: i64,
-    max_intermediates: usize,
 ) -> PathOutcome {
     let (second, rounded_up) = seconds(at_millis);
-    let mut outcome = verify_path(
-        target,
-        untrusted,
-        &anchor_certificates(anchors),
-        second,
-        u32::try_from(max_intermediates).unwrap_or(0),
-    );
+    let mut outcome = verify_path(target, untrusted, &anchor_certificates(anchors), second);
     let below_anchor = if outcome.anchored {
         outcome.chain.len().saturating_sub(1)
     } else {
@@ -159,7 +150,9 @@ fn is_structural(kind: PathProblemKind) -> bool {
 
 fn structural_failure(kind: PathProblemKind) -> Failure {
     match kind {
-        PathProblemKind::NotCa => untrusted("an intermediate is not a CA"),
+        PathProblemKind::NotCa => {
+            untrusted("an intermediate is not a CA, or its path length constraint is exceeded")
+        }
         PathProblemKind::TooLong => untrusted("chain exceeds the maximum length"),
         _ => untrusted("chain does not reach a pinned root"),
     }
@@ -173,8 +166,8 @@ fn structural_failure(kind: PathProblemKind) -> Failure {
 /// Returns the path below the anchor, signer first.
 ///
 /// # Errors
-/// `UNTRUSTED_CHAIN` when no path reaches a pinned anchor, a certificate
-/// above the signer is not a CA, or the path is too long;
+/// `UNTRUSTED_CHAIN` when no path reaches a pinned anchor, or a certificate
+/// above the signer is not a CA or its path length constraint is exceeded;
 /// `INVALID_CERTIFICATE` when a certificate on the path is outside its
 /// validity window at `at_millis`; `UNTRUSTED_CHAIN` when one marks
 /// critical an extension OpenSSL does not process.
@@ -184,13 +177,7 @@ pub fn receipt_path(
     anchors: &[TrustAnchor],
     at_millis: i64,
 ) -> Result<Vec<Certificate>, Failure> {
-    let outcome = checked_path(
-        signer,
-        authenticated,
-        anchors,
-        at_millis,
-        MAX_PATH_LENGTH.saturating_sub(1),
-    );
+    let outcome = checked_path(signer, authenticated, anchors, at_millis);
     if let Some(problem) = outcome.problems.iter().find(|p| is_structural(p.kind)) {
         return Err(structural_failure(problem.kind));
     }
@@ -258,13 +245,7 @@ pub fn validate_pair(
             "x5c entry has a public key this library cannot use",
         ));
     }
-    let outcome = checked_path(
-        leaf,
-        std::slice::from_ref(intermediate),
-        anchors,
-        at_millis,
-        1,
-    );
+    let outcome = checked_path(leaf, std::slice::from_ref(intermediate), anchors, at_millis);
     if let Some(problem) = outcome
         .problems
         .iter()

@@ -20,8 +20,7 @@ class Reason(enum.Enum):
     TOO_LARGE = "TOO_LARGE"
     #: The signature does not match the signed content.
     INVALID_SIGNATURE = "INVALID_SIGNATURE"
-    #: The certificate chain does not reach a pinned root, or is longer than
-    #: six certificates.
+    #: The certificate chain does not reach a pinned root.
     UNTRUSTED_CHAIN = "UNTRUSTED_CHAIN"
     #: A certificate the check depends on does not decode, or is expired or
     #: not yet valid at the signing instant.
