@@ -89,7 +89,7 @@ between receipts of one shape.
   `cross-expired`.
 - No receipt Apple signs has either shape: Apple's chains are leaf,
   WWDR intermediate, root. The disagreement refuses a receipt with a
-  valid short path; it accepts nothing unsigned. It is a candidate R20
-  row, not a recorded one.
+  valid short path; it accepts nothing unsigned. R20 records it
+  (row of 2026-10-12).
 - `cross-expired-5` gives the same verdict in both implementations, so
   it could become a shared case. None was added.
