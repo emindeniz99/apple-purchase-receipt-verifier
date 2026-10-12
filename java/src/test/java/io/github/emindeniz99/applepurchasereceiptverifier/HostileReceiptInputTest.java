@@ -175,6 +175,15 @@ class HostileReceiptInputTest {
         assertEquals(Reason.MALFORMED, refused.reason());
         assertNotNull(refused.getCause(), "the parser's exception stands behind it");
         assertNull(refused.toFailure().cause());
+
+        // DER that is not a ContentInfo: BouncyCastle refuses it the way its
+        // API documents, so the library names the refusal itself.
+        for (String notCms : new String[] {"MAA=", "AgEA", "MQA="}) {
+            Failure notContentInfo = verifier.verifyReceipt(notCms).failure();
+            assertEquals(Reason.MALFORMED, notContentInfo.reason(), notCms);
+            assertEquals("not a PKCS#7/CMS blob", notContentInfo.message(), notCms);
+            assertNull(notContentInfo.cause(), notCms);
+        }
     }
 
     private static ReceiptPayload verify(byte[] der) throws VerificationException {

@@ -114,8 +114,15 @@ final class ReceiptCore {
         } catch (IOException e) {
             throw new VerificationException(Reason.MALFORMED, "receipt has trailing or unparseable bytes", e);
         }
+        ContentInfo contentInfo;
         try {
-            return new CMSSignedData(ContentInfo.getInstance(parsed));
+            contentInfo = ContentInfo.getInstance(parsed);
+        } catch (IllegalArgumentException e) {
+            // Its documented refusal of anything but a two-element SEQUENCE.
+            throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
+        }
+        try {
+            return new CMSSignedData(contentInfo);
         } catch (CMSException e) {
             throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
         }

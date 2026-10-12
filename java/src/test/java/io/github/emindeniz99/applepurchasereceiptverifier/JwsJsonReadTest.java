@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
@@ -186,32 +187,46 @@ class JwsJsonReadTest {
      * cannot turn a genuine input into a refusal.
      */
     @Test
-    void aProcessWideOverrideDoesNotReachTheReadersFactory() {
+    void aProcessWideOverrideDoesNotReachTheReadersFactory() throws Exception {
+        // JsonFields.JSON may have been built before this test runs, so it is
+        // checked to hold its own constraints rather than the shared default
+        // instance a new JsonFactory() takes.
+        assertNotSame(StreamReadConstraints.defaults(), JsonFields.JSON.streamReadConstraints());
         StreamReadConstraints.overrideDefaultStreamReadConstraints(
                 StreamReadConstraints.builder().maxNameLength(10).build());
         try {
             assertEquals(10, new JsonFactory().streamReadConstraints().getMaxNameLength());
-            assertEquals(50_000, JsonFields.factory().streamReadConstraints().getMaxNameLength());
+            assertEquals(50_000, JsonFields.JSON.streamReadConstraints().getMaxNameLength());
+            assertEquals("ES256", JwsCore.Header.read(utf8("{\"alg\":\"ES256\",\"" + repeat('n', 11) + "\":1}")).alg);
         } finally {
             StreamReadConstraints.overrideDefaultStreamReadConstraints(null);
         }
     }
 
     /**
-     * The same for the writer: a host that tightens Jackson's write depth for
-     * its own JSON cannot make the endpoint fail to render a response.
+     * The same for the writers: a host that tightens Jackson's write depth
+     * for its own JSON cannot make the endpoint fail to render a response, or
+     * a receipt payload fail to render itself.
      */
     @Test
-    void aProcessWideOverrideDoesNotReachTheWritersFactory() {
-        // JsonFields.JSON may have been built before this test runs, so it is
-        // checked to hold its own constraints rather than the shared default
-        // instance a new JsonFactory() takes.
+    void aProcessWideOverrideDoesNotReachTheWritersFactories() throws Exception {
         assertNotSame(StreamWriteConstraints.defaults(), JsonFields.JSON.streamWriteConstraints());
+        assertNotSame(StreamWriteConstraints.defaults(), ReceiptPayload.JSON.streamWriteConstraints());
+        ReceiptPayload receipt = ReceiptDecoder.parse(TestPki.receiptPayload(
+                "com.example.app",
+                "1.0",
+                new byte[] {1},
+                new byte[20],
+                "2024-08-06T12:00:00Z",
+                Collections.singletonList(TestPki.inAppPurchase(1, "p", "1", "1", "2024-08-06T12:00:00Z", null))));
         StreamWriteConstraints.overrideDefaultStreamWriteConstraints(
                 StreamWriteConstraints.builder().maxNestingDepth(1).build());
         try {
             assertEquals(1, new JsonFactory().streamWriteConstraints().getMaxNestingDepth());
-            assertEquals(1_000, JsonFields.factory().streamWriteConstraints().getMaxNestingDepth());
+            assertEquals(1_000, JsonFields.JSON.streamWriteConstraints().getMaxNestingDepth());
+            // Three levels deep: the receipt, in_app, the purchase.
+            assertTrue(receipt.toJson().contains("\"in_app\":[{"), receipt.toJson());
+            assertTrue(receipt.inApp().get(0).toString().startsWith("{"));
         } finally {
             StreamWriteConstraints.overrideDefaultStreamWriteConstraints(null);
         }
