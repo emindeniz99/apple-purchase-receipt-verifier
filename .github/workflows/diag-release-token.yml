@@ -63,6 +63,24 @@ jobs:
           echo "::group::12 tag ref via git API at the v0.11.1 commit"
           gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-p12" -f sha=a5676485b62cc6623e434e115fc638f092cf153d --jq '.ref'; echo "exit $?"
           echo "::endgroup::"
+          echo "::group::p13 tag ref at 1dad64c1ab2c2902989111d17f1ee2479db1f1e5 (17:24Z merge of #354)"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-p13" -f sha="$(gh api repos/$GH_REPO/commits/1dad64c1ab2c2902989111d17f1ee2479db1f1e5 --jq .sha)" --jq '.ref'; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::p14 tag ref at 7dc7cbdd (15:38Z)"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-p14" -f sha="$(gh api repos/$GH_REPO/commits/7dc7cbdd --jq .sha)" --jq '.ref'; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::p15 tag ref at 4483e8e5 (10:10Z)"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-p15" -f sha="$(gh api repos/$GH_REPO/commits/4483e8e5 --jq .sha)" --jq '.ref'; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::p16 tag ref at 91ce6e7c (10-11 22:35Z)"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-p16" -f sha="$(gh api repos/$GH_REPO/commits/91ce6e7c --jq .sha)" --jq '.ref'; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::p17 tag ref at 4ae4968e (17:53Z merge of #355)"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-p17" -f sha="$(gh api repos/$GH_REPO/commits/4ae4968e --jq .sha)" --jq '.ref'; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::p18 tag ref at 1d883fed (18:22Z merge of #356)"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-p18" -f sha="$(gh api repos/$GH_REPO/commits/1d883fed --jq .sha)" --jq '.ref'; echo "exit $?"
+          echo "::endgroup::"
           echo "::group::cleanup"
           for t in "$stamp-old" "corpus-diag-$stamp" "$stamp-nf" "$stamp-p8" "$stamp-p9" "$stamp-p10" "$stamp-p11"; do gh release delete "$t" --yes --cleanup-tag 2>&1 || true; done
           # Leftovers of the first run, which stopped before its cleanup.
@@ -70,5 +88,5 @@ jobs:
           gh api -X DELETE "repos/$GH_REPO/git/refs/tags/diag-20261012200007-ref" 2>&1 || true
           for f in draft-id.txt rel-id.txt; do id=$(cat "$f" 2>/dev/null || true); [ -n "$id" ] && gh api -X DELETE "repos/$GH_REPO/releases/$id" && echo "deleted release $id"; done
           gh release delete "$stamp-gh" --yes --cleanup-tag 2>&1 || true
-          for t in "$stamp-ref" "$stamp-rel" "$stamp-p12"; do gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$t" 2>&1 && echo "deleted tag $t" || true; done
+          for t in "$stamp-ref" "$stamp-rel" "$stamp-p12" "$stamp-p13" "$stamp-p14" "$stamp-p15" "$stamp-p16" "$stamp-p17" "$stamp-p18"; do gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$t" 2>&1 && echo "deleted tag $t" || true; done
           echo "::endgroup::"
