@@ -133,7 +133,8 @@ the verified payload exactly as signed. What the Wasm hosts depend on:
 Every bound in [0.7-api.md][api07], "Bounds", is owned by the core and
 none is configurable: the receipt's base64 and the endpoint body at
 3,145,728 UTF-8 bytes, the JWS at 262,144, ASN.1 nesting 32, 10
-embedded certificates, six certificates below the anchor, 4 SignerInfos.
+embedded certificates, 4 SignerInfos. The path length has no bound of its
+own since 2026-10-12 (Q126 b): the certificate cap bounds it.
 JSON has no bound of its own in the core since 2026-10-01: a value nobody
 reads is skipped, not built, within the size caps (DECISIONS.md R40);
 Java reads JSON under Jackson's default bounds. Wrappers add none, and keep no copy of
