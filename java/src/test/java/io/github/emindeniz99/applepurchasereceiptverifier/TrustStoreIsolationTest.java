@@ -756,7 +756,8 @@ class TrustStoreIsolationTest {
         return Collections.emptySet();
     }
 
-    private static Path javaExecutable() {
+    /** The {@code java} binary of this JVM, or null where there is none to start a child with. */
+    static Path javaExecutable() {
         Path home = Paths.get(System.getProperty("java.home"));
         for (String name : new String[] {"java", "java.exe"}) {
             Path candidate = home.resolve("bin").resolve(name);
