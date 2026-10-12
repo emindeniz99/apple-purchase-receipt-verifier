@@ -1,0 +1,43 @@
+# Temporary diagnostic for the refresh-corpus 403: which of the two writes
+# the publish job performs does GITHUB_TOKEN lack? Deleted with its branch.
+name: diag release token
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: draft release (no tag), then tag ref, then release with new tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          stamp="diag-$(date -u +%Y%m%d%H%M%S)"
+          echo "::group::1 draft release, no tag"
+          gh api -X POST "repos/$GH_REPO/releases" -f tag_name="$stamp-draft" -F draft=true -f name="$stamp draft" --jq '.id' > draft-id.txt; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::2 tag ref via git API"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$stamp-ref" -f sha="$SHA" --jq '.ref'; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::3 release that creates its tag (the corpus shape)"
+          gh api -X POST "repos/$GH_REPO/releases" -f tag_name="$stamp-rel" -f target_commitish="$SHA" -F prerelease=true -F make_latest=false -f name="$stamp rel" --jq '.id' > rel-id.txt; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::4 gh release create, same shape"
+          echo diag > diag.txt
+          gh release create "$stamp-gh" diag.txt --target "$SHA" --prerelease --latest=false --title "$stamp gh" --notes diag; echo "exit $?"
+          echo "::endgroup::"
+          echo "::group::cleanup"
+          for f in draft-id.txt rel-id.txt; do id=$(cat "$f" 2>/dev/null || true); [ -n "$id" ] && gh api -X DELETE "repos/$GH_REPO/releases/$id" && echo "deleted release $id"; done
+          gh release delete "$stamp-gh" --yes --cleanup-tag 2>&1 || true
+          for t in "$stamp-ref" "$stamp-rel"; do gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$t" 2>&1 && echo "deleted tag $t" || true; done
+          echo "::endgroup::"
