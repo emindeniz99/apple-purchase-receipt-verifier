@@ -29,8 +29,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      source_sha: ${{ steps.archive.outputs.source_sha }}
     steps:
       - name: validate inputs
         env:
@@ -188,7 +186,6 @@ jobs:
           tar --sort=name --mtime="$CORPUS_DATE 00:00:00Z" --owner=0 --group=0 --numeric-owner -C "$g1" -cf - . | gzip -n > "$out/$archive"
           (cd "$out" && sha256sum "$archive" > "$archive.sha256")
           cp "$g1/README.md" "$out/README.md"
-          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: corpus-release
@@ -215,14 +212,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           CORPUS_DATE: ${{ inputs.corpus_date }}
-          SOURCE_SHA: ${{ needs.generate.outputs.source_sha }}
         run: |
           set -euo pipefail
           archive="corpus-$CORPUS_DATE.tar.gz"
           sha256sum -c "$archive.sha256"
           # No --clobber: an existing corpus tag or asset is immutable.
+          # The tag sits on the dispatched head of main, not on the release
+          # commit the rows were built from (the archive's README names
+          # that one): GITHUB_TOKEN has no workflows permission, so it may
+          # not create a ref at a commit whose .github/workflows differ
+          # from the default branch's head, and GitHub answers 403
+          # "Resource not accessible by integration" (measured 2026-10-12).
           gh release create "corpus-$CORPUS_DATE" "$archive" "$archive.sha256" \
-            --target "$SOURCE_SHA" --prerelease --latest=false \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "parity corpus $CORPUS_DATE" --notes-file README.md
           hash="$(cut -c1-64 "$archive.sha256")"
           jq -n --arg url "https://github.com/$GH_REPO/releases/download/corpus-$CORPUS_DATE/$archive" \
