@@ -126,9 +126,8 @@ final class DefaultVerifier implements Verifier {
      * Refuses a bcprov older than 1.86, reading the release from the provider
      * instance this library holds, so nothing is registered with
      * {@code Security}. The info string ("BouncyCastle Security Provider
-     * v1.81.1") is compared by its parts; the double BouncyCastle passes to
-     * {@link Provider}'s constructor (1.81.1 is {@code 1.8101}) is the
-     * fallback for an info string without a release in it. 1.84 added the
+     * v1.81.1") is compared by its parts, and one without a release in it is
+     * refused. 1.84 added the
      * ASN.1 nesting bound (bcprov 1.81 throws {@code StackOverflowError} out
      * of {@code verifyReceipt} on a deeply nested receipt), and 1.85 fixed
      * CVE-2026-12860 (RSA PKCS#1 verification skipped two hash bytes), which
@@ -138,14 +137,10 @@ final class DefaultVerifier implements Verifier {
      *
      * @throws IllegalStateException naming the release found
      */
-    @SuppressWarnings("deprecation")
     static void requireBouncyCastle(Provider provider) {
         String info = String.valueOf(provider.getInfo());
         Matcher release = BOUNCY_CASTLE_RELEASE.matcher(info);
-        boolean atFloor = release.find()
-                ? Integer.parseInt(release.group(1)) * 1000 + Integer.parseInt(release.group(2)) >= 1086
-                : provider.getVersion() >= 1.86;
-        if (!atFloor) {
+        if (!release.find() || Integer.parseInt(release.group(1)) * 1000 + Integer.parseInt(release.group(2)) < 1086) {
             throw new IllegalStateException("BouncyCastle bcprov on the classpath is \"" + info
                     + "\"; the verifier needs 1.86 or later: 1.84 added the ASN.1 nesting bound that"
                     + " keeps a deeply nested receipt from overflowing the stack, and 1.85 fixed"

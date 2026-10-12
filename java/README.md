@@ -127,8 +127,8 @@ decides whether a certificate is expired when the input states a date; see
 [Trust anchors](#trust-anchors).
 
 `Verifier.create` and `Config.defaults()` fail at startup, not per call:
-`Config.defaults()` throws `IllegalStateException` if the bundled roots do
-not parse, and `Verifier.create`
+`Config.defaults()` throws a `LinkageError` if bcprov is missing or the
+bundled roots do not parse, and `Verifier.create`
 throws `IllegalArgumentException` for an empty root set, since a verifier
 with no roots would answer `UNTRUSTED_CHAIN` to everything and nobody would
 notice until production. `Verifier.create` also builds the Jackson
