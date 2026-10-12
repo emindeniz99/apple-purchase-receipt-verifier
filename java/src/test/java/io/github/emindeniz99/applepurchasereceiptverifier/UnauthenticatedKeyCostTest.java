@@ -12,14 +12,18 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
+import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
@@ -52,6 +56,9 @@ class UnauthenticatedKeyCostTest {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final BigInteger SMALL_PRIMES = smallPrimes();
 
+    /** Issuer RDNs for the name-comparison test: about 7.5 s cold with BouncyCastle's comparison. */
+    private static final int RDNS = 8000;
+
     private static KeyPair attacker;
 
     @BeforeAll
@@ -72,7 +79,7 @@ class UnauthenticatedKeyCostTest {
         for (int i = 0; i < 8; i++) {
             embedded.add(hugeKeyCertificate(name(pki.intermediate), name(pki.root), null, pki, attacker));
         }
-        byte[] receipt = receiptSignedBy(signerKey, signer, embedded);
+        byte[] receipt = receiptSignedBy(signerKey, Collections.singletonList(signer), embedded);
 
         long start = System.nanoTime();
         ReceiptPayload verified = Checks.receipt(Checks.verifier(pki), receipt);
@@ -90,7 +97,7 @@ class UnauthenticatedKeyCostTest {
         for (int i = 0; i < 9; i++) {
             embedded.add(hugeKeyCertificate(name(pki.intermediate), name(pki.root), null, pki, attacker));
         }
-        byte[] receipt = receiptSignedBy(signerKey, signer, embedded);
+        byte[] receipt = receiptSignedBy(signerKey, Collections.singletonList(signer), embedded);
 
         long start = System.nanoTime();
         VerificationException e =
@@ -137,7 +144,7 @@ class UnauthenticatedKeyCostTest {
                         pki.leaf.getNotAfter(),
                         "SHA256withRSA")
                 .getEncoded()));
-        byte[] receipt = receiptSignedBy(developerKey, developer, embedded);
+        byte[] receipt = receiptSignedBy(developerKey, Collections.singletonList(developer), embedded);
 
         long start = System.nanoTime();
         VerificationException e =
@@ -168,6 +175,56 @@ class UnauthenticatedKeyCostTest {
         VerificationException e = assertThrows(VerificationException.class, () -> Checks.signedData(verifier, jws));
         assertFast(start);
         assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+    }
+
+    @Test
+    void aSignerIdWhoseIssuerReordersTheCertificatesRdnsIsRefusedQuickly() throws Exception {
+        // The SignerInfo names its certificate by issuer and serial number,
+        // and the one embedded certificate has that serial and the same
+        // issuer RDNs in the opposite order. BouncyCastle's X500Name.equals
+        // ignores RDN order and is quadratic in the RDN count: matching the
+        // two took 7 to 8 s before anything was authenticated. The JDK's
+        // comparison keeps RDN order, so no certificate matches.
+        TestPki pki = TestPki.receipt();
+        KeyPair signerKey = rsa2048();
+        BigInteger serial = BigInteger.valueOf(42);
+        X509CertificateHolder named = certificateWithIssuer(manyCns(RDNS - 1, -1), serial, signerKey);
+        X509CertificateHolder embedded = certificateWithIssuer(manyCns(0, 1), serial, signerKey);
+        byte[] receipt =
+                receiptSignedBy(signerKey, Collections.singletonList(named), Collections.singletonList(embedded));
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+        assertFast(start);
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
+        assertEquals("signer certificate not embedded", e.getMessage());
+    }
+
+    @Test
+    void twoSignerIdsWhoseIssuersReorderEachOthersRdnsAreRefusedQuickly() throws Exception {
+        // Two SignerInfos with one serial number and the same issuer RDNs in
+        // opposite orders, and one embedded certificate whose issuer rotates
+        // them by one, so neither SignerInfo names it. BouncyCastle's
+        // SignerInformationStore keys the SignerInfos by SignerId; the two
+        // collide on the order-insensitive hash and are compared with
+        // X500Name.equals, 7 s before any certificate is looked at. One
+        // store per SignerInfo compares nothing.
+        TestPki pki = TestPki.receipt();
+        KeyPair signerKey = rsa2048();
+        BigInteger serial = BigInteger.valueOf(42);
+        List<X509CertificateHolder> named = Arrays.asList(
+                certificateWithIssuer(manyCns(0, 1), serial, signerKey),
+                certificateWithIssuer(manyCns(RDNS - 1, -1), serial, signerKey));
+        X509CertificateHolder embedded = certificateWithIssuer(manyCns(1, 1), serial, signerKey);
+        byte[] receipt = receiptSignedBy(signerKey, named, Collections.singletonList(embedded));
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+        assertFast(start);
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
+        assertEquals("signer certificate not embedded", e.getMessage());
     }
 
     /** The Apple marker OIDs, so the JWS test reaches the chain check rather than the purpose check. */
@@ -210,6 +267,28 @@ class UnauthenticatedKeyCostTest {
         return builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(signer.getPrivate()));
     }
 
+    /** {@link #RDNS} CN RDNs, numbered {@code first}, {@code first + step}, ... modulo {@link #RDNS}. */
+    private static X500Name manyCns(int first, int step) {
+        RDN[] rdns = new RDN[RDNS];
+        for (int i = 0; i < RDNS; i++) {
+            int n = Math.floorMod(first + i * step, RDNS);
+            rdns[i] = new RDN(BCStyle.CN, new DERUTF8String(String.format("%06d", n)));
+        }
+        return new X500Name(rdns);
+    }
+
+    private static X509CertificateHolder certificateWithIssuer(X500Name issuer, BigInteger serial, KeyPair key)
+            throws Exception {
+        X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
+                issuer,
+                serial,
+                Date.from(Instant.now().minus(1, ChronoUnit.DAYS)),
+                Date.from(Instant.now().plus(365, ChronoUnit.DAYS)),
+                new X500Name("CN=Signer"),
+                SubjectPublicKeyInfo.getInstance(key.getPublic().getEncoded()));
+        return builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(key.getPrivate()));
+    }
+
     private static X509CertificateHolder signerUnder(TestPki pki, KeyPair signerKey) throws Exception {
         return new X509CertificateHolder(TestPki.cert(
                         "CN=Fake Receipt Signing",
@@ -225,7 +304,8 @@ class UnauthenticatedKeyCostTest {
     }
 
     private static byte[] receiptSignedBy(
-            KeyPair signerKey, X509CertificateHolder signer, List<X509CertificateHolder> embedded) throws Exception {
+            KeyPair signerKey, List<X509CertificateHolder> signers, List<X509CertificateHolder> embedded)
+            throws Exception {
         Instant creation = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         byte[] payload = TestPki.receiptPayload(
                 BUNDLE,
@@ -235,7 +315,7 @@ class UnauthenticatedKeyCostTest {
                 creation.toString(),
                 Collections.<byte[]>emptyList());
         return TestPki.signReceiptAs(
-                payload, Date.from(creation), signerKey.getPrivate(), "SHA256withRSA", signer, embedded);
+                payload, Date.from(creation), signerKey.getPrivate(), "SHA256withRSA", signers, embedded);
     }
 
     private static String name(java.security.cert.X509Certificate certificate) {

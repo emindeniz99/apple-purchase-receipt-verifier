@@ -6,6 +6,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
@@ -92,14 +93,37 @@ final class ReceiptCertificates {
      * More than one can: a renewed certificate keeps its key and so its
      * subjectKeyIdentifier, and anyone relaying a receipt can add a copy of
      * the signer's identity to the bag. Equal certificates are returned once.
+     *
+     * <p>Issuers are compared with the JDK's {@link X500Principal}, as the
+     * chain walk does: BouncyCastle's {@code X500Name.equals} ignores RDN
+     * order and costs time quadratic in the RDN count of two names nobody has
+     * authenticated yet. The JDK's comparison keeps RDN order, so a SignerId
+     * listing the certificate's RDNs in another order names no
+     * certificate.</p>
      */
     List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();
+        X500Principal issuer = null;
+        if (sid.getSerialNumber() != null) {
+            try {
+                issuer = new X500Principal(sid.getIssuer().getEncoded());
+            } catch (IOException e) {
+                // Re-encoding a name BouncyCastle has already parsed.
+                throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded", e);
+            }
+        }
         List<X509Certificate> matches = new ArrayList<>();
         for (int i = 0; i < holders.size(); i++) {
+            X509Certificate certificate = all.get(i);
+            boolean match = issuer != null
+                    ? sid.getSerialNumber().equals(certificate.getSerialNumber())
+                            && issuer.equals(certificate.getIssuerX500Principal())
+                    // The subjectKeyIdentifier form: BouncyCastle compares
+                    // key identifiers only, never a name.
+                    : sid.match(holders.get(i));
             // A byte-identical copy gets the same verdict, so it is tried once.
-            if (sid.match(holders.get(i)) && !matches.contains(all.get(i))) {
-                matches.add(all.get(i));
+            if (match && !matches.contains(certificate)) {
+                matches.add(certificate);
             }
         }
         if (matches.isEmpty()) {

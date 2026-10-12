@@ -18,7 +18,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.DERSet;
+import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.CMSTypedData;
@@ -138,14 +142,36 @@ final class ReceiptCore {
     }
 
     private static List<SignerInformation> signerInfos(CMSSignedData cms) throws VerificationException {
-        List<SignerInformation> signers = new ArrayList<>(cms.getSignerInfos().getSigners());
-        if (signers.isEmpty()) {
+        SignedData signedData = SignedData.getInstance(cms.toASN1Structure().getContent());
+        ASN1Set raw = signedData.getSignerInfos();
+        if (raw.size() == 0) {
             throw new VerificationException(Reason.MALFORMED, "no signer info");
         }
-        if (signers.size() > MAX_SIGNER_INFOS) {
+        if (raw.size() > MAX_SIGNER_INFOS) {
             throw new VerificationException(
                     Reason.MALFORMED,
-                    "receipt carries " + signers.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
+                    "receipt carries " + raw.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
+        }
+        // BouncyCastle's SignerInformationStore keys its signers by SignerId,
+        // comparing issuer names in time quadratic in their RDN count; a store
+        // of one signer compares nothing.
+        List<SignerInformation> signers = new ArrayList<>();
+        for (int i = 0; i < raw.size(); i++) {
+            SignedData one = new SignedData(
+                    signedData.getDigestAlgorithms(),
+                    signedData.getEncapContentInfo(),
+                    signedData.getCertificates(),
+                    signedData.getCRLs(),
+                    new DERSet(raw.getObjectAt(i)));
+            try {
+                signers.add(new CMSSignedData(new ContentInfo(CMSObjectIdentifiers.signedData, one))
+                        .getSignerInfos()
+                        .getSigners()
+                        .iterator()
+                        .next());
+            } catch (CMSException e) {
+                throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
+            }
         }
         return signers;
     }
