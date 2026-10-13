@@ -1447,6 +1447,17 @@ variables of OD-05 (STATUS.md).
   other file, and `git log` shows which archive each nightly used. The
   rows belong to one module, so a release that changes the module needs
   a new archive under a new tag and a new pin.
+- **What the nightly runs against it:** rows only (owner, Q132 c,
+  2026-10-13, merged as #361). The rows still belong to the archive's
+  module, and the parity they prove is the wrappers' over that module;
+  every host's corpus script compares rows and nothing else. The test
+  suites, the shared cases, the smokes and the benchmarks run in
+  `ci.yml` against the module built from each commit. The archive holds
+  the last release's module, which predates every core and shared-case
+  change made since, so a suite run there fails on exactly those
+  changes: run 38309656789 failed on 7 of 8 hosts for
+  `receipt/accept-a-path-of-seven` after #355 dropped the core's
+  path-length bound. The rest of this record is unchanged.
 - **Later, perhaps:** a separate corpus repository. Nothing is decided.
 
 ---
