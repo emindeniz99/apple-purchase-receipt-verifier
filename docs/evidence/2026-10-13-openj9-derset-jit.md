@@ -55,8 +55,8 @@ From [logs/results.txt](2026-10-13-openj9-derset-jit/logs/results.txt):
 
 | JVM and options | runs through the cost class | corrupt | other |
 |---|---|---|---|
-| Semeru 21, no options | 5 | 2 | 2 more runs hung in a JIT thread before the cost class (below) |
-| Semeru 21, `-Xjit:verbose={compileStart,compileEnd}` | 4 | 3 | |
+| Semeru 21, no options | 4 | 1 | 2 more runs hung in a JIT thread before the cost class (below) |
+| Semeru 21, `-Xjit:verbose={compileStart,compileEnd}` | 5 | 4 | |
 | Semeru 21, `-Xjit:disableStoreSinking` | 4 | 2 | 1 run had 4 timing-only failures (two batches ran side by side) |
 | Semeru 21, `-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}` | 5 | **0** | |
 | Semeru 21, `-Xjit:exclude={org/bouncycastle/asn1/DERSet.encode*}` | 5 | **0** | |
