@@ -698,6 +698,33 @@ class UnauthenticatedKeyCostTest {
     }
 
     @Test
+    void aVersionTaggedThreeIsNotCountedAsExtensions() throws Exception {
+        // BouncyCastle reads a tagged first TBS field as the version whatever
+        // its tag number, so this stranger parses. Counting its [3] INTEGER
+        // as extensions would throw and turn an ok receipt MALFORMED.
+        TestPki pki = TestPki.receipt();
+        DLSequence certificate = certificateShaped(
+                SHA256_WITH_RSA, subject(pki.root), new X500Name("CN=x"), key(pki.leaf), fillerExtensions(8));
+        ASN1Sequence tbs = ASN1Sequence.getInstance(certificate.getObjectAt(0));
+        ASN1EncodableVector fields = new ASN1EncodableVector();
+        fields.add(new DLTaggedObject(true, 3, new ASN1Integer(2)));
+        for (int i = 1; i < tbs.size(); i++) {
+            fields.add(tbs.getObjectAt(i));
+        }
+        DLSequence stranger = new DLSequence(
+                new ASN1Encodable[] {new DLSequence(fields), certificate.getObjectAt(1), certificate.getObjectAt(2)});
+        assertEquals(
+                8,
+                org.bouncycastle.asn1.x509.Certificate.getInstance(stranger)
+                        .getTBSCertificate()
+                        .getExtensions()
+                        .getExtensionOIDs()
+                        .length);
+        assertFalse(ReceiptCertificates.tooManyExtensions(stranger));
+        Checks.receipt(Checks.verifier(pki), withBagEntry(pki, stranger));
+    }
+
+    @Test
     void aJwsIntermediateAtTheExtensionCapVerifiesAndOneOverIsUntrusted() throws Exception {
         TestPki pki = TestPki.jws();
         String atCap = pki.signJwsWithHeader(

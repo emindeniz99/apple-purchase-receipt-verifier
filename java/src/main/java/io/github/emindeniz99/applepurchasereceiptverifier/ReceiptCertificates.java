@@ -31,9 +31,12 @@ final class ReceiptCertificates {
      * {@code java.util.Hashtable} keyed by OID, whose hash is an unkeyed
      * function of the OID's octets and whose buckets are lists, so
      * distinct OIDs of one hash make building the table quadratic in their
-     * number. Apple's certificates carry three to eight. At this cap one
-     * table costs at most about 500,000 OID comparisons. A certificate over
-     * it is passed over, as one {@link AppleTrust#convertible} rejects.
+     * number. Apple's certificates carry three to eight. Each insert scans
+     * the bucket twice, so at this cap one table costs at most about a
+     * million OID comparisons, a few milliseconds, and a certificate's table
+     * is built at least twice: an estimate from the sources, not timed. A
+     * certificate over it is passed over, as one
+     * {@link AppleTrust#convertible} rejects.
      */
     static final int MAX_CERTIFICATE_EXTENSIONS = 1000;
 
@@ -113,13 +116,19 @@ final class ReceiptCertificates {
     /**
      * Whether {@code certificate}, a Certificate not yet parsed, carries more
      * than {@link #MAX_CERTIFICATE_EXTENSIONS} extensions. Every {@code [3]}
-     * field of the TBS counts wherever it stands, as BouncyCastle parses each
-     * of them. A shape that is not a certificate throws, as its parse would.
+     * field of the TBS after its first counts wherever it stands, as
+     * BouncyCastle parses each of them. The first is not counted:
+     * BouncyCastle reads a tagged first field as the version whatever its tag
+     * number, and reads extensions only after the subject's key, so a
+     * {@code [3]} there is never an extensions table. A shape that is not a
+     * certificate throws, as its parse would.
      */
     static boolean tooManyExtensions(ASN1Encodable certificate) {
+        ASN1Sequence tbs =
+                ASN1Sequence.getInstance(ASN1Sequence.getInstance(certificate).getObjectAt(0));
         int count = 0;
-        for (ASN1Encodable field :
-                ASN1Sequence.getInstance(ASN1Sequence.getInstance(certificate).getObjectAt(0))) {
+        for (int i = 1; i < tbs.size(); i++) {
+            ASN1Encodable field = tbs.getObjectAt(i);
             if (field instanceof ASN1TaggedObject && ((ASN1TaggedObject) field).getTagNo() == 3) {
                 count +=
                         ASN1Sequence.getInstance((ASN1TaggedObject) field, true).size();

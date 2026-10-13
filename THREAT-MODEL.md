@@ -411,7 +411,9 @@ so many distinct OIDs of one hash would make building the table
 quadratic, read from the sources and not measured. Java counts both
 before BouncyCastle parses them and passes over a certificate with more
 than 1,000 extensions, or leaves out a SignerInfo with more than 1,000
-attributes, which bounds each table at 1,000^2/2 comparisons; Apple's
+attributes, which bounds each table at about a million comparisons
+(each insert scans the bucket twice), a few milliseconds, estimated from
+the sources and not timed; Apple's
 certificates carry three to eight extensions and Apple's SignerInfo none
 (docs/evidence/2026-10-13-java-oid-tables.md).
 

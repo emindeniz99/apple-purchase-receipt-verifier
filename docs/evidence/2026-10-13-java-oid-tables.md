@@ -4,8 +4,9 @@ Date: 2026-10-13. Records why Java caps the extensions on a certificate
 and the attributes on a SignerInfo (owner Q141 a and Q143), the bound
 behind the two caps, and what the caps refuse. It feeds DECISIONS.md
 R20, java/README.md's resource bounds and THREAT-MODEL.md §3.7. Nothing
-here was run: the cost is a bound read from the sources, not a
-measurement, so this note has no folder.
+was timed: the cost is a bound read from the sources, not a
+measurement, so this note has no folder. The Apple counts came from
+`openssl`.
 
 ## Question
 
@@ -34,9 +35,12 @@ turns a long chain into a tree. Two tables are built that way:
 | `AttributeTable` (`Hashtable attributes`) | `SignerInformation`, for signed and unsigned attributes | once a SignerInfo is read for verification; a copy of Apple's SignerInfo is vouched for by Apple's chain | anyone relaying a receipt, for unsigned attributes |
 
 When every key lands in one bucket, inserting the Nth compares it with
-the N - 1 already there, so building the table costs N^2/2 OID
-comparisons. The Q141 review estimated that about 10^5 extensions fit
-under the 3 MiB receipt cap, about 5 x 10^9 comparisons. Distinct OIDs
+the N - 1 already there, and each insert scans the bucket twice:
+`Extensions` calls `containsKey` then `put`, and
+`AttributeTable.addAttribute` calls `get` then `put`. Building the table
+therefore costs about N^2 OID comparisons. The Q141 review estimated
+that about 10^5 extensions fit under the 3 MiB receipt cap, about 10^10
+comparisons. Distinct OIDs
 that share a hash are cheap to find for an unkeyed hash; this note did
 not build any, and no test does.
 
@@ -44,13 +48,16 @@ not build any, and no test does.
 
 | Constant | Value | Counted | Over the cap |
 |---|---:|---|---|
-| `ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS` | 1,000 | on the raw TBS, every `[3]` field, before `Certificate.getInstance` | a bag entry is skipped, as one `AppleTrust.convertible` rejects; an x5c entry is a null link, `UNTRUSTED_CHAIN` |
+| `ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS` | 1,000 | on the raw TBS, every `[3]` field after the version slot, before `Certificate.getInstance` | a bag entry is skipped, as one `AppleTrust.convertible` rejects; an x5c entry is a null link, `UNTRUSTED_CHAIN` |
 | `ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES` | 1,000 | signed plus unsigned, on the raw `SignerInfo`, before `CMSSignedData` and `SignerInformation` are built | the SignerInfo is left out; `MALFORMED`, "signer certificate not embedded", when none is left |
 
-At the cap the worst case is 1,000^2/2 = 500,000 comparisons per
-certificate or SignerInfo, each over a few octets: far under a
-millisecond. The receipt cap admits ten certificates and four
-SignerInfos, so the bound holds per receipt too.
+At the cap the worst case is about 1,000^2 = 10^6 comparisons per
+table, each over a few octets: a few milliseconds, an estimate from
+the sources and not timed. A certificate's table is built at least
+twice, by `Certificate.getInstance` and again by the CertificateFactory
+re-parse in `JcaX509CertificateConverter.getCertificate`. The receipt
+cap admits ten certificates and four SignerInfos, so the bound holds
+per receipt too.
 
 ## What Apple sends
 
@@ -70,7 +77,9 @@ Counted with `openssl x509 -text` and `openssl pkcs7 -print_certs`.
   verifies and one at 1,001 is passed over; an x5c intermediate at 1,000
   verifies and one at 1,001 is `UNTRUSTED_CHAIN`; a bag stranger at 1,001
   is passed over beside the genuine chain; a `[3]` placed out of order
-  still counts; a SignerInfo at 1,000 attributes verifies and one at
+  still counts; a stranger whose version field is tagged `[3]`, which
+  BouncyCastle reads as the version, is not counted and the receipt
+  still verifies; a SignerInfo at 1,000 attributes verifies and one at
   1,001 is left out. The OIDs are ordinary distinct arcs under
   1.3.6.1.4.1.99999.
 - `receipt/accept-genuine-beside-a-stranger-with-a-thousand-and-one-extensions`:

@@ -868,7 +868,9 @@ cRLDistributionPoints, 2026-10-06).
   `ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES` (1,000, signed and unsigned
   together) leaves a SignerInfo out before BouncyCastle reads its
   attributes, `MALFORMED`, "signer certificate not embedded", when none
-  is left. At either cap a table costs at most 1,000^2/2 comparisons.
+  is left. At either cap a table costs about a million comparisons,
+  since each insert scans the bucket twice: a few milliseconds, an
+  estimate from the sources, not timed.
   Apple's certificates carry three to eight extensions and Apple's
   SignerInfo no attributes, so no Apple-signed input is refused for its
   own content; a row in the table above records Apple's SignerInfo with

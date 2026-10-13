@@ -56,8 +56,10 @@ final class ReceiptCore {
      * function of the OID's octets and whose buckets are lists, so
      * distinct OIDs of one hash make building the table quadratic in their
      * number, and the unsigned attributes are anyone's to add. Apple's
-     * receipt SignerInfos carry none. At this cap the two tables cost at
-     * most about 500,000 OID comparisons. A SignerInfo over it is left out.
+     * receipt SignerInfos carry none. Each insert scans the bucket twice, so
+     * at this cap the two tables cost at most about a million OID
+     * comparisons, a few milliseconds: an estimate from the sources, not
+     * timed. A SignerInfo over it is left out.
      */
     static final int MAX_SIGNER_INFO_ATTRIBUTES = 1000;
 
