@@ -44,6 +44,10 @@
  *                                       SHA-256, saltLength 2,147,483,647),
  *                                       with the receipt signer's key and 256
  *                                       zero octets as its signature
+ *   certificates/rsa-pss-negative-salt-stranger.der
+ *                                       the same entry with saltLength
+ *                                       -3,294,967,296, whose low 32 bits are
+ *                                       1,000,000,000
  *   certificates/thousand-and-one-extensions-stranger.der
  *                                       the receipt with one more bag entry
  *                                       naming Apple Root CA as its issuer,
@@ -152,20 +156,25 @@ const pssHugeSalt = withSignature(pss(Buffer.from('02043b9aca00', 'hex'))); // I
 const tbsOf = (certificate) => children(certificate, children(certificate, 0)[0][0]).map((p) => slice(certificate, p));
 const [leafCert, , rootCert] = children(der, bag[0]).map((p) => slice(der, p));
 const rootTbs = tbsOf(rootCert);
-const strangerLabel = wrap(0x30, pss(Buffer.from('02047fffffff', 'hex'))); // INTEGER 2,147,483,647
-const stranger = wrap(0x30, Buffer.concat([
-  wrap(0x30, Buffer.concat([
-    Buffer.from('a003020102', 'hex'), // v3
-    Buffer.from('02021092', 'hex'), // serial 4242
+const strangerWithSalt = (saltLength) => {
+  const strangerLabel = wrap(0x30, pss(saltLength));
+  return wrap(0x30, Buffer.concat([
+    wrap(0x30, Buffer.concat([
+      Buffer.from('a003020102', 'hex'), // v3
+      Buffer.from('02021092', 'hex'), // serial 4242
+      strangerLabel,
+      rootTbs[5], // issuer: Apple Root CA's subject
+      rootTbs[4], // Apple Root CA's validity
+      wrap(0x30, wrap(0x31, wrap(0x30, Buffer.concat([Buffer.from('0603550403', 'hex'), wrap(0x0c, Buffer.from('Stranger'))])))),
+      tbsOf(leafCert)[6], // the receipt signer's key
+    ])),
     strangerLabel,
-    rootTbs[5], // issuer: Apple Root CA's subject
-    rootTbs[4], // Apple Root CA's validity
-    wrap(0x30, wrap(0x31, wrap(0x30, Buffer.concat([Buffer.from('0603550403', 'hex'), wrap(0x0c, Buffer.from('Stranger'))])))),
-    tbsOf(leafCert)[6], // the receipt signer's key
-  ])),
-  strangerLabel,
-  wrap(0x03, Buffer.alloc(257)), // no unused bits, 256 zero octets
-]));
+    wrap(0x03, Buffer.alloc(257)), // no unused bits, 256 zero octets
+  ]));
+};
+const stranger = strangerWithSalt(Buffer.from('02047fffffff', 'hex')); // INTEGER 2,147,483,647
+// INTEGER -3,294,967,296: two's complement in 5 octets, low 32 bits 0x3b9aca00.
+const negativeSaltStranger = strangerWithSalt(Buffer.from('0205ff3b9aca00', 'hex'));
 /** The OID 1.3.6.1.4.1.99999.1.n: each arc after 1.3 in base 128, high octets marked. */
 const fillerOid = (n) =>
   wrap(0x06, Buffer.from([0x2b, ...[6, 1, 4, 1, 99999, 1, n].flatMap((arc) => {
@@ -200,6 +209,7 @@ const files = {
   'signer-infos/md2-with-rsa-label-alone.der': receipt(md2WithRsa),
   'signer-infos/rsa-pss-huge-salt-label-alone.der': receipt(pssHugeSalt),
   'certificates/rsa-pss-huge-salt-stranger.der': withBagEntry(stranger),
+  'certificates/rsa-pss-negative-salt-stranger.der': withBagEntry(negativeSaltStranger),
   'certificates/thousand-and-one-extensions-stranger.der': withBagEntry(crowded),
 };
 for (const [name, bytes] of Object.entries(files)) {

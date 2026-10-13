@@ -83,6 +83,12 @@ class UnauthenticatedKeyCostTest {
     private static final String BUNDLE = "com.example.app";
     private static final long BOUND_MS = 2000;
 
+    /**
+     * A saltLength RFC 8017 does not allow, whose low 32 bits, all
+     * BouncyCastle reads, are 1,000,000,000.
+     */
+    private static final long NEGATIVE_SALT = -3_294_967_296L;
+
     /** The largest receipt DER whose base64 fits the cap. */
     private static final int CAP_DER = ReceiptCore.MAX_RECEIPT_BYTES / 4 * 3;
 
@@ -523,10 +529,13 @@ class UnauthenticatedKeyCostTest {
         // RSASSA-PSS, BouncyCastle allocated an array of saltLength bytes while
         // it built the verifier: with 2,147,483,647 an OutOfMemoryError out of
         // verifyReceipt from a 3.5 KB receipt, with 1,000,000,000 about 1 GB a
-        // call and 1 to 32 s. Neither fits the root's 2048-bit key, so the
-        // entry is not signed by the root and the genuine chain decides.
+        // call and 1 to 32 s. BouncyCastle reads only the low 32 bits, so
+        // -3,294,967,296 allocated 1,000,000,000 bytes too, and a bound that
+        // compared the whole integer let it through as short. None fits the
+        // root's 2048-bit key, so the entry is not signed by the root and the
+        // genuine chain decides.
         TestPki pki = TestPki.receipt();
-        for (int saltLength : new int[] {Integer.MAX_VALUE, 1_000_000_000}) {
+        for (long saltLength : new long[] {Integer.MAX_VALUE, 1_000_000_000, NEGATIVE_SALT}) {
             byte[] receipt = withBagEntry(
                     pki, certificateShaped(pss(saltLength), subject(pki.root), new X500Name("CN=x"), key(pki.leaf)));
 
@@ -542,17 +551,19 @@ class UnauthenticatedKeyCostTest {
         // signature is checked under the root's key, with the same allocation.
         TestPki jws = TestPki.jws();
         TestPki rsa = TestPki.receipt();
-        byte[] intermediate = certificateShaped(
-                        pss(Integer.MAX_VALUE), subject(rsa.root), new X500Name("CN=x"), key(jws.leaf))
-                .getEncoded(ASN1Encoding.DL);
-        String token = unsignedJws(jws.leaf.getEncoded(), intermediate, rsa.root.getEncoded());
+        for (long saltLength : new long[] {Integer.MAX_VALUE, NEGATIVE_SALT}) {
+            byte[] intermediate = certificateShaped(
+                            pss(saltLength), subject(rsa.root), new X500Name("CN=x"), key(jws.leaf))
+                    .getEncoded(ASN1Encoding.DL);
+            String token = unsignedJws(jws.leaf.getEncoded(), intermediate, rsa.root.getEncoded());
 
-        long start = System.nanoTime();
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(rsa.root), token));
-        assertFast(start);
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
-        assertEquals("intermediate certificate is not signed by a pinned Apple root", e.getMessage());
+            long start = System.nanoTime();
+            VerificationException e = assertThrows(
+                    VerificationException.class, () -> Checks.signedData(Checks.verifier(rsa.root), token));
+            assertFast(start);
+            assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+            assertEquals("intermediate certificate is not signed by a pinned Apple root", e.getMessage());
+        }
     }
 
     @Test
@@ -562,17 +573,19 @@ class UnauthenticatedKeyCostTest {
         // signature is checked under the intermediate's key.
         TestPki jws = TestPki.jws();
         TestPki rsa = TestPki.receipt();
-        byte[] leaf = certificateShaped(
-                        pss(Integer.MAX_VALUE), subject(rsa.intermediate), new X500Name("CN=x"), key(jws.leaf))
-                .getEncoded(ASN1Encoding.DL);
-        String token = unsignedJws(leaf, rsa.intermediate.getEncoded(), rsa.root.getEncoded());
+        for (long saltLength : new long[] {Integer.MAX_VALUE, NEGATIVE_SALT}) {
+            byte[] leaf = certificateShaped(
+                            pss(saltLength), subject(rsa.intermediate), new X500Name("CN=x"), key(jws.leaf))
+                    .getEncoded(ASN1Encoding.DL);
+            String token = unsignedJws(leaf, rsa.intermediate.getEncoded(), rsa.root.getEncoded());
 
-        long start = System.nanoTime();
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(rsa.root), token));
-        assertFast(start);
-        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
-        assertEquals("leaf certificate is not signed by the intermediate", e.getMessage());
+            long start = System.nanoTime();
+            VerificationException e = assertThrows(
+                    VerificationException.class, () -> Checks.signedData(Checks.verifier(rsa.root), token));
+            assertFast(start);
+            assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+            assertEquals("leaf certificate is not signed by the intermediate", e.getMessage());
+        }
     }
 
     @Test
@@ -891,7 +904,7 @@ class UnauthenticatedKeyCostTest {
     }
 
     /** RSASSA-PSS with SHA-256, MGF1 with SHA-256 and {@code saltLength}. */
-    private static AlgorithmIdentifier pss(int saltLength) {
+    private static AlgorithmIdentifier pss(long saltLength) {
         AlgorithmIdentifier sha256 = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256, DERNull.INSTANCE);
         return new AlgorithmIdentifier(
                 PKCSObjectIdentifiers.id_RSASSA_PSS,
