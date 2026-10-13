@@ -821,7 +821,16 @@ it allocate that many bytes, an `OutOfMemoryError` out of
 `verifyReceipt`. The MD2 label is refused before anything is hashed, and
 a PSS saltLength the signer's key cannot hold (RFC 8017) before anything
 is allocated, both as `INVALID_SIGNATURE`; a PSS signature whose salt
-fits verifies.
+fits verifies. The generic composite label of an abandoned 2021 draft
+(1.3.6.1.4.1.18227.2.1) names any number of parts, and BouncyCastle
+made a signature check per part and streamed the whole content into
+each: 15.6 s for 1,000 parts over a cap-sized receipt, and a
+`StackOverflowError` out of `verifyReceipt` at 50,000. It is refused
+before anything is built, as `INVALID_SIGNATURE`. No Apple receipt uses
+it. The per-pair composite OIDs of the LAMPS draft (IANA
+1.3.6.1.5.5.7.6.37 to .54 since draft -13), which BouncyCastle verifies
+through their own SPI and not through the generic path, are not
+affected.
 A bag entry shaped as a certificate, with nested values in its names or
 algorithm parameters, cost 3.6 to 17 s at the cap inside BouncyCastle's
 X.509 class, which DER-encodes them as it builds, verifies and compares
@@ -834,7 +843,11 @@ before converting it, so such a receipt costs about its parse, 0.4 to
 signature label is unsigned as well: RSASSA-PSS with a saltLength of
 2,147,483,647 threw `OutOfMemoryError` from a 3.5 KB receipt or a 2.3 KB
 JWS, and a saltLength the issuer's key cannot hold (RFC 8017) is now
-refused before anything is built. BouncyCastle also DER-encoded a
+refused before anything is built. Under the generic composite label,
+BouncyCastle compared the whole list of parts once per part, so a bag
+entry with 20,000 parts cost 18 to 47 s from a 0.5 MB receipt that
+still verified; a certificate with that label is now signed by nobody.
+BouncyCastle also DER-encoded a
 SignerInfo's signed attributes before checking its signature, 2.8 to 4.9
 s for one cap-sized nested attribute; they are now hashed as sent, 0.5
 to 0.9 s (`docs/evidence/2026-10-13-java-pretrust-reencoding.md`,

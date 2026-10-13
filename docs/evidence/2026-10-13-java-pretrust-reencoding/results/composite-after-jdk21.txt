@@ -1,0 +1,40 @@
+signer composite parts=1 payload=1000000 der=1002615
+  run 0: 475 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+  run 1: 27 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+  run 2: 26 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+signer composite parts=1000 payload=1000000 der=1017604
+  run 0: 374 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+  run 1: 18 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+  run 2: 17 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+signer composite parts=3000 payload=1000000 der=1047604
+  run 0: 418 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+  run 1: 96 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+  run 2: 56 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+signer composite parts=50000 payload=1000 der=753602
+  run 0: 414 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+  run 1: 143 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+  run 2: 81 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the composite signature label is refused]
+cert composite parts=1000 kind=ecdsa der=30192
+  run 0: 515 ms [ACCEPTED]
+  run 1: 44 ms [ACCEPTED]
+  run 2: 48 ms [ACCEPTED]
+cert composite parts=10000 kind=ecdsa der=273202
+  run 0: 502 ms [ACCEPTED]
+  run 1: 111 ms [ACCEPTED]
+  run 2: 116 ms [ACCEPTED]
+cert composite parts=20000 kind=ecdsa der=543202
+  run 0: 584 ms [ACCEPTED]
+  run 1: 172 ms [ACCEPTED]
+  run 2: 247 ms [ACCEPTED]
+cert composite parts=8500 kind=ed25519 der=147697
+  run 0: 364 ms [ACCEPTED]
+  run 1: 106 ms [ACCEPTED]
+  run 2: 161 ms [ACCEPTED]
+cert composite parts=10000 kind=unknown der=293202
+  run 0: 567 ms [ACCEPTED]
+  run 1: 142 ms [ACCEPTED]
+  run 2: 160 ms [ACCEPTED]
+cert composite parts=20000 kind=rsa der=663202
+  run 0: 609 ms [ACCEPTED]
+  run 1: 222 ms [ACCEPTED]
+  run 2: 147 ms [ACCEPTED]

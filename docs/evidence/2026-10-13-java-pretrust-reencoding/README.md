@@ -8,6 +8,7 @@ The note is [`../2026-10-13-java-pretrust-reencoding.md`](../2026-10-13-java-pre
 | `CertShapeProbe.java` | The same for a bag entry shaped as a certificate, the nested value in its issuer, subject, key parameters or signature parameters (`bag` is `NestedValueProbe cert` again). |
 | `SigAlgDigestProbe.java` | The round-4 review's probe: what the signatureAlgorithm label costs when the signed attributes are padded to the cap. Added here: `-Ddump`. |
 | `PssSaltProbe.java` | What a SignerInfo relabelled RSASSA-PSS with a given saltLength does to one call. Added for Q142 a: the same parameters under id-TA-RSA-PSS-SHA-256, id-TA-RSA-PSS-SHA-1 or id-alg-composite. |
+| `CompositeLabelProbe.java` | Q144 a: what the generic composite label (1.3.6.1.4.1.18227.2.1) costs one call. `signer PARTS PAYLOAD`: the round-6 review's construction, the genuine SignerInfo without signed attributes and with PARTS sha256WithRSAEncryption parts, over a payload of PAYLOAD octets. `cert PARTS KIND`: a bag entry naming the RSA root as its issuer, with PARTS parts of `rsa`, `ecdsa`, `ed25519` or `unknown` and a signature of as many empty BIT STRINGs. |
 | `core_shapes.rs` | What the core answers for each receipt the probes dumped, under its own test root. |
 | `measure.sh` | Every shape above in a fresh JVM, for one `java` and one build of the library. |
 | `profile.sh`, `callers.sh` | One probe run under JFR (10 ms samples, 2,048-frame stacks), and the samples grouped by the first frames outside BouncyCastle's ASN.1 package: which call pays. |
@@ -17,6 +18,7 @@ The note is [`../2026-10-13-java-pretrust-reencoding.md`](../2026-10-13-java-pre
 | `results/profile-after-sid.txt`, `results/profile-after-plain.txt`, `results/profile-after-issuer-30.txt` | The same on the branch, the last for `CertShapeProbe issuer 30`. |
 | `results/denylist-tables.txt` | `DigestDenylistCostTest`'s two sweeps, each table printed once on JDK 21 (a copy of the test with a `main` that prints the table it passes on). |
 | `results/pss-routes-before-jdk21.txt`, `results/pss-routes-after-jdk21.txt` | `measure.sh ... routes` on JDK 21: before, `ReceiptCore` and `AppleTrust` from `97dc9ce3` (the RSASSA-PSS label refused) ahead of the branch's classes; after, the branch with the salt bound (Q142 a). |
+| `results/composite-before-jdk21.txt`, `results/composite-after-jdk21.txt` | `measure.sh ... composite` on JDK 21: before, the classes at `60f1a4df` (the PSS bound, no composite refusal); after, the branch with the generic composite label refused (Q144 a). |
 | `results/core-shapes.txt` | `core_shapes.rs` over the dumped receipts and the shared fixture `receipt-signer-rsa-pss.der`. |
 
 ## Reproduce
@@ -49,6 +51,10 @@ for f in ReceiptCore AppleTrust; do git -C "$REPO" show "97dc9ce3:$SRC/$f.java" 
 javac -nowarn --release 8 -d "$SCRATCH/before-q142" -cp "$MAIN:$DEPS" "$SCRATCH"/oldsrc/*.java
 sh "$E/measure.sh" "$JAVA21" "$SCRATCH/before-q142:$MAIN" "$TEST" "$SCRATCH/probes" "$DEPS" routes > "$SCRATCH/pss-routes-before-jdk21.txt"
 sh "$E/measure.sh" "$JAVA21" "$MAIN" "$TEST" "$SCRATCH/probes" "$DEPS" routes > "$SCRATCH/pss-routes-after-jdk21.txt"
+
+# Q144 a: "before" is the library built at 60f1a4df, copied to $SCRATCH/before-q144
+sh "$E/measure.sh" "$JAVA21" "$SCRATCH/before-q144" "$TEST" "$SCRATCH/probes" "$DEPS" composite > "$SCRATCH/composite-before-jdk21.txt"
+sh "$E/measure.sh" "$JAVA21" "$MAIN" "$TEST" "$SCRATCH/probes" "$DEPS" composite > "$SCRATCH/composite-after-jdk21.txt"
 
 P=io.github.emindeniz99.applepurchasereceiptverifier
 mkdir -p "$SCRATCH/profile-sid"

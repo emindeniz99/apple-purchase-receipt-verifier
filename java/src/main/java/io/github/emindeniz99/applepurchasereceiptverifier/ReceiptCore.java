@@ -445,10 +445,10 @@ final class ReceiptCore {
                         Reason.INVALID_SIGNATURE, "CMS signature does not match the signer certificate's key");
             }
         } catch (CMSException | OperatorCreationException | RuntimeException e) {
-            if (e.getCause() instanceof SaltDoesNotFit) {
+            if (e.getCause() instanceof RefusedBeforeBuilding) {
                 throw new VerificationException(
                         Reason.INVALID_SIGNATURE,
-                        "CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key");
+                        "CMS verifier refused the signer info: " + e.getCause().getMessage());
             }
             // A digest that does not match, a key with no CMS verifier, an
             // algorithm BouncyCastle does not implement, or a value it reads
@@ -476,8 +476,10 @@ final class ReceiptCore {
      * An RSASSA-PSS verifier allocates the saltLength as an array while it
      * is built, before any signature byte is compared, so the provider
      * first requires the saltLength to fit the signer's key
-     * ({@link AppleTrust#saltFits}, each part of a composite too). A PSS
-     * signature the key can make passes.</p>
+     * ({@link AppleTrust#saltFits}). A PSS signature the key can make
+     * passes. The generic composite label
+     * ({@link AppleTrust#GENERIC_COMPOSITE_SIGNATURE}) is refused before
+     * anything is built.</p>
      */
     private static SignerInformationVerifier signerVerifier(PublicKey signerKey) throws OperatorCreationException {
         ContentVerifierProvider built = new JcaContentVerifierProviderBuilder()
@@ -496,6 +498,10 @@ final class ReceiptCore {
 
             @Override
             public ContentVerifier get(AlgorithmIdentifier algorithm) throws OperatorCreationException {
+                if (AppleTrust.GENERIC_COMPOSITE_SIGNATURE.equals(
+                        algorithm.getAlgorithm().getId())) {
+                    throw new RefusedBeforeBuilding("the composite signature label is refused");
+                }
                 boolean fits;
                 try {
                     fits = AppleTrust.saltFits(algorithm, signerKey);
@@ -503,7 +509,7 @@ final class ReceiptCore {
                     throw new OperatorCreationException("unknown digest in the signature parameters", e);
                 }
                 if (!fits) {
-                    throw new SaltDoesNotFit();
+                    throw new RefusedBeforeBuilding("the RSASSA-PSS label does not fit the signer's key");
                 }
                 return built.get(algorithm);
             }
@@ -517,12 +523,15 @@ final class ReceiptCore {
                         .build());
     }
 
-    /** An RSASSA-PSS saltLength longer than the signer's key can hold. */
-    private static final class SaltDoesNotFit extends OperatorCreationException {
+    /**
+     * A signature algorithm refused before any verifier is built: its
+     * message, which names no input byte, completes the refusal's.
+     */
+    private static final class RefusedBeforeBuilding extends OperatorCreationException {
         private static final long serialVersionUID = 1L;
 
-        SaltDoesNotFit() {
-            super("RSASSA-PSS saltLength does not fit the signer's key");
+        RefusedBeforeBuilding(String message) {
+            super(message);
         }
     }
 }

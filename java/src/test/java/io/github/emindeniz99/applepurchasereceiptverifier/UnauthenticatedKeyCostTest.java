@@ -51,6 +51,7 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.cms.CMSProcessableByteArray;
@@ -90,6 +91,12 @@ class UnauthenticatedKeyCostTest {
     private static final AlgorithmIdentifier SHA256_WITH_RSA =
             new AlgorithmIdentifier(PKCSObjectIdentifiers.sha256WithRSAEncryption, DERNull.INSTANCE);
     private static final BigInteger SMALL_PRIMES = smallPrimes();
+
+    private static final String COMPOSITE_REFUSED =
+            "CMS verifier refused the signer info: the composite signature label is refused";
+
+    /** About as many Ed25519 parts as an x5c intermediate can carry under the JWS cap. */
+    private static final int JWS_COMPOSITE_PARTS = 8400;
 
     /** Issuer RDNs for the name-comparison test: about 7.5 s cold with BouncyCastle's comparison. */
     private static final int RDNS = 8000;
@@ -520,12 +527,118 @@ class UnauthenticatedKeyCostTest {
         // id-alg-composite names each part's algorithm in its parameters, and
         // BouncyCastle builds a verifier for each part: one part RSASSA-PSS
         // with a saltLength of 1,000,000,000. Measured with only the
-        // RSASSA-PSS label refused: 0.5 to 9 s a call before the composite
-        // signature failed to parse.
+        // RSASSA-PSS label refused: 0.5 to 6 s a call before the composite
+        // signature failed to parse. The generic composite label is now
+        // refused before any part is looked at.
         AlgorithmIdentifier label =
                 new AlgorithmIdentifier(MiscObjectIdentifiers.id_alg_composite, new DLSequence(pss(1_000_000_000)));
-        assertSaltRefusedQuickly(label);
+        assertLabelRefusedQuickly(label, COMPOSITE_REFUSED);
         assertAcceptedBesideGenuine(label);
+    }
+
+    @Test
+    void aSignerInfoWithACompositeLabelOfManyPartsIsRefusedBeforeTheContentIsRead() throws Exception {
+        // BouncyCastle builds one Signature per part of the generic composite
+        // label and, with no signed attributes, streams the whole content into
+        // each. A copy of the genuine SignerInfo without its signed
+        // attributes, labelled with 1,000 parts of sha256WithRSAEncryption,
+        // ahead of Apple's over content just under the cap: 15.6 s a call
+        // before the label was refused (the review measured 6.8 s over 1 MB,
+        // 20 s for 3,000 parts, and a StackOverflowError out of verifyReceipt
+        // at 50,000).
+        TestPki pki = TestPki.receipt();
+        SignedData genuine =
+                signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[CAP_DER - 65536])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        DLSequence copy = new DLSequence(new ASN1Encodable[] {
+            new ASN1Integer(1),
+            signer.getSID(),
+            signer.getDigestAlgorithm(),
+            composite(SHA256_WITH_RSA, 1000),
+            new DEROctetString(new byte[256])
+        });
+        acceptedFast(pki, receipt(genuine, genuine.getCertificates(), new DLSet(new ASN1Encodable[] {copy, signer})));
+        assertRefusedAlone(pki, receipt(genuine, genuine.getCertificates(), new DLSet(copy)), COMPOSITE_REFUSED);
+    }
+
+    @Test
+    void aBagEntryLabelledCompositeWithManyPartsIsPassedOverBeforeAnyPartIsBuilt() throws Exception {
+        // A bag entry naming the root as its issuer, labelled with the generic
+        // composite label: 20,000 parts of ecdsa-with-SHA256 and a signature
+        // of 20,000 empty BIT STRINGs. Under the root's RSA key BouncyCastle
+        // made a Signature per part, compared the whole list of parts for
+        // each and skipped the part when the key did not fit it: 18 to 47 s
+        // a call from a 0.5 MB receipt, growing with the square of the parts.
+        // The entry is now signed by nobody and the genuine chain decides.
+        TestPki pki = TestPki.receipt();
+        byte[] receipt = withBagEntry(
+                pki,
+                compositeCertificate(
+                        new AlgorithmIdentifier(X9ObjectIdentifiers.ecdsa_with_SHA256),
+                        20_000,
+                        subject(pki.root),
+                        key(pki.leaf)));
+        acceptedFast(pki, receipt);
+    }
+
+    @Test
+    void aJwsIntermediateLabelledCompositeWithManyPartsIsRefusedBeforeAnyPartIsBuilt() throws Exception {
+        // The JWS twin: x5c[1] names an RSA root as its issuer, with as many
+        // Ed25519 parts, the shortest identifier, as fit the JWS cap: 2.9 s
+        // before the label was refused, where the cap keeps the square small.
+        TestPki jws = TestPki.jws();
+        TestPki rsa = TestPki.receipt();
+        byte[] intermediate = compositeCertificate(
+                        new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.3.101.112")),
+                        JWS_COMPOSITE_PARTS,
+                        subject(rsa.root),
+                        key(jws.leaf))
+                .getEncoded(ASN1Encoding.DL);
+        String token = unsignedJws(jws.leaf.getEncoded(), intermediate, rsa.root.getEncoded());
+        assertTrue(token.length() <= JwsCore.MAX_JWS_BYTES, "the JWS is over the cap: " + token.length());
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(rsa.root), token));
+        assertFast(start);
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+        assertEquals("intermediate certificate is not signed by a pinned Apple root", e.getMessage());
+    }
+
+    /** The generic composite label with {@code parts} copies of {@code part}. */
+    private static AlgorithmIdentifier composite(AlgorithmIdentifier part, int parts) {
+        ASN1EncodableVector v = new ASN1EncodableVector();
+        for (int i = 0; i < parts; i++) {
+            v.add(part);
+        }
+        return new AlgorithmIdentifier(MiscObjectIdentifiers.id_alg_composite, new DLSequence(v));
+    }
+
+    /**
+     * A certificate-shaped SEQUENCE labelled with the generic composite label
+     * of {@code parts} copies of {@code part}, whose signature is a SEQUENCE
+     * of as many empty BIT STRINGs. A part for a key other than the issuer's
+     * is skipped without reading the TBS, so none ends the loop.
+     */
+    private static DLSequence compositeCertificate(
+            AlgorithmIdentifier part, int parts, ASN1Encodable issuer, ASN1Encodable key) throws Exception {
+        DLSequence shaped = certificateShaped(composite(part, parts), issuer, new X500Name("CN=x"), key);
+        ASN1EncodableVector signatures = new ASN1EncodableVector();
+        for (int i = 0; i < parts; i++) {
+            signatures.add(new DERBitString(new byte[0]));
+        }
+        return new DLSequence(new ASN1Encodable[] {
+            shaped.getObjectAt(0),
+            shaped.getObjectAt(1),
+            new DERBitString(new DLSequence(signatures).getEncoded(ASN1Encoding.DL))
+        });
+    }
+
+    /** {@code receipt}, whose one SignerInfo is refused, is refused quickly with {@code message}. */
+    private static void assertRefusedAlone(TestPki pki, byte[] receipt, String message) {
+        VerificationException e = refusedFast(pki, receipt);
+        assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
+        assertEquals(message, e.getMessage());
     }
 
     /** {@code label} on a copy of the genuine SignerInfo ahead of it: the receipt verifies, quickly. */
@@ -557,6 +670,12 @@ class UnauthenticatedKeyCostTest {
      * hold.
      */
     private static void assertSaltRefusedQuickly(AlgorithmIdentifier label) throws Exception {
+        assertLabelRefusedQuickly(
+                label, "CMS verifier refused the signer info: the RSASSA-PSS label does not fit the signer's key");
+    }
+
+    /** Relabels the genuine signer's SignerInfo {@code label} and asserts it is refused quickly with {@code message}. */
+    private static void assertLabelRefusedQuickly(AlgorithmIdentifier label, String message) throws Exception {
         TestPki pki = TestPki.receipt();
         byte[] receipt = pssRelabelled(pki, label);
 
@@ -565,9 +684,7 @@ class UnauthenticatedKeyCostTest {
                 assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
         assertFast(start);
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
-        assertEquals(
-                "CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key",
-                e.getMessage());
+        assertEquals(message, e.getMessage());
     }
 
     /**

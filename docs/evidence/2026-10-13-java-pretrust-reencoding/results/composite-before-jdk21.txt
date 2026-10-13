@@ -1,0 +1,40 @@
+signer composite parts=1 payload=1000000 der=1002615
+  run 0: 405 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 47 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 37 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+signer composite parts=1000 payload=1000000 der=1017604
+  run 0: 6831 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 6569 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 6905 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+signer composite parts=3000 payload=1000000 der=1047604
+  run 0: 20350 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 20193 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 20710 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+signer composite parts=50000 payload=1000 der=753602
+  run 0: 804 ms [THREW java.lang.StackOverflowError]
+  run 1: 265 ms [THREW java.lang.StackOverflowError]
+  run 2: 123 ms [THREW java.lang.StackOverflowError]
+cert composite parts=1000 kind=ecdsa der=30192
+  run 0: 488 ms [ACCEPTED]
+  run 1: 184 ms [ACCEPTED]
+  run 2: 138 ms [ACCEPTED]
+cert composite parts=10000 kind=ecdsa der=273202
+  run 0: 4547 ms [ACCEPTED]
+  run 1: 8108 ms [ACCEPTED]
+  run 2: 9059 ms [ACCEPTED]
+cert composite parts=20000 kind=ecdsa der=543202
+  run 0: 35651 ms [ACCEPTED]
+  run 1: 37916 ms [ACCEPTED]
+  run 2: 44082 ms [ACCEPTED]
+cert composite parts=8500 kind=ed25519 der=147697
+  run 0: 3857 ms [ACCEPTED]
+  run 1: 4895 ms [ACCEPTED]
+  run 2: 3268 ms [ACCEPTED]
+cert composite parts=10000 kind=unknown der=293202
+  run 0: 1170 ms [ACCEPTED]
+  run 1: 301 ms [ACCEPTED]
+  run 2: 393 ms [ACCEPTED]
+cert composite parts=20000 kind=rsa der=663202
+  run 0: 1219 ms [ACCEPTED]
+  run 1: 340 ms [ACCEPTED]
+  run 2: 252 ms [ACCEPTED]
