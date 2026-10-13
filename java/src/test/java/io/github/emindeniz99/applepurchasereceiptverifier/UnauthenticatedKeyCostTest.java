@@ -16,10 +16,21 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DERUTF8String;
+import org.bouncycastle.asn1.DLSequence;
+import org.bouncycastle.asn1.DLSet;
+import org.bouncycastle.asn1.DLTaggedObject;
+import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
+import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.cms.SignerInfo;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
@@ -61,6 +72,10 @@ class UnauthenticatedKeyCostTest {
 
     private static final String BUNDLE = "com.example.app";
     private static final long BOUND_MS = 2000;
+
+    /** The largest receipt DER whose base64 fits the cap. */
+    private static final int CAP_DER = ReceiptCore.MAX_RECEIPT_BYTES / 4 * 3;
+
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final BigInteger SMALL_PRIMES = smallPrimes();
 
@@ -253,10 +268,8 @@ class UnauthenticatedKeyCostTest {
         List<X509CertificateHolder> embedded =
                 Arrays.asList(leaf, new X509CertificateHolder(pki.intermediate.getEncoded()));
         int overhead = slowDigestReceipt(1000, signers, embedded).length - 1000;
-        // The largest DER whose base64 fits the cap, less a margin for the
-        // longer length octets of the larger content.
-        int capDer = ReceiptCore.MAX_RECEIPT_BYTES / 4 * 3;
-        byte[] receipt = slowDigestReceipt(capDer - overhead - 64, signers, embedded);
+        // Less a margin for the longer length octets of the larger content.
+        byte[] receipt = slowDigestReceipt(CAP_DER - overhead - 64, signers, embedded);
 
         long start = System.nanoTime();
         VerificationException e =
@@ -266,10 +279,138 @@ class UnauthenticatedKeyCostTest {
         assertEquals("CMS verifier refused the signer info: digest 1.2.643.2.2.9 is refused", e.getMessage());
     }
 
+    @Test
+    void aBagEntryOfNestedSetsIsRefusedWithoutBeingReEncoded() throws Exception {
+        // The unsigned certificate bag gains one entry, a SEQUENCE of SETs
+        // nested 30 deep, just under the cap. Re-encoding a SET to DER sorts
+        // it by its members' encodings, so re-encoding the entry before
+        // parsing it as a certificate cost about 3.1 s. It is now parsed as
+        // it stands and refused as no certificate.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        ASN1EncodableVector bag = new ASN1EncodableVector();
+        for (int i = 0; i < genuine.getCertificates().size(); i++) {
+            bag.add(genuine.getCertificates().getObjectAt(i));
+        }
+        bag.add(nestedSets(30, CAP_DER - 16384));
+        byte[] receipt = receipt(genuine, new DLSet(bag), genuine.getSignerInfos());
+
+        VerificationException e = refusedFast(pki, receipt);
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
+        assertEquals("an embedded certificate is not a valid certificate", e.getMessage());
+    }
+
+    @Test
+    void aSignerIdWhoseIssuerValueIsNestedSetsIsRefusedBeforeItIsCompared() throws Exception {
+        // The SignerInfo's issuer is one CN whose value is a SEQUENCE of SETs
+        // nested 30 deep, just under the cap, and the bag holds ten
+        // certificates with its serial number. BouncyCastle re-encodes a
+        // value that is not a string to compare or hash a name, so hashing
+        // the SignerId and comparing it with each certificate cost about
+        // 10.8 s before anything was trusted.
+        assertSignerIdRefusedQuickly(nestedSets(30, CAP_DER - 32768));
+    }
+
+    @Test
+    void aSignerIdWhoseIssuerValueIsALargeFlatSequenceIsRefusedBeforeItIsCompared() throws Exception {
+        // The same with no nesting: a SEQUENCE of INTEGERs just under the
+        // cap. 4.5 to 12.5 s before.
+        ASN1EncodableVector integers = new ASN1EncodableVector();
+        for (int i = 0; i < (CAP_DER - 32768) / 3; i++) {
+            integers.add(new ASN1Integer(1));
+        }
+        assertSignerIdRefusedQuickly(new DLSequence(integers));
+    }
+
+    /** {@code issuerValue} as the one CN of the SignerInfo's issuer, beside a full bag sharing its serial. */
+    private static void assertSignerIdRefusedQuickly(ASN1Encodable issuerValue) throws Exception {
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        BigInteger serial = BigInteger.valueOf(4242);
+        X509CertificateHolder named = certificateWithIssuer(new X500Name("CN=x"), serial, attacker);
+        ASN1EncodableVector bag = new ASN1EncodableVector();
+        for (int i = 0; i < ReceiptCertificates.MAX_EMBEDDED_CERTIFICATES; i++) {
+            bag.add(named.toASN1Structure());
+        }
+        // Built from definite-length types throughout: BouncyCastle's own
+        // SignerInfo and name classes encode as DER, which would sort the
+        // nested SETs while the input is built.
+        DLSequence issuer = new DLSequence(new DLSet(new DLSequence(new ASN1Encodable[] {BCStyle.CN, issuerValue})));
+        DLSequence naming = new DLSequence(new ASN1Encodable[] {
+            new ASN1Integer(1),
+            new DLSequence(new ASN1Encodable[] {issuer, new ASN1Integer(serial)}),
+            signer.getDigestAlgorithm(),
+            new DLTaggedObject(false, 0, signer.getAuthenticatedAttributes()),
+            signer.getDigestEncryptionAlgorithm(),
+            signer.getEncryptedDigest()
+        });
+        byte[] receipt = receipt(genuine, new DLSet(bag), new DLSet(naming));
+
+        VerificationException e = refusedFast(pki, receipt);
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
+        assertEquals("signer certificate not embedded", e.getMessage());
+    }
+
+    /** A SEQUENCE of chains of SETs {@code depth} deep, each SET a chain and an INTEGER, of about {@code bytes}. */
+    private static DLSequence nestedSets(int depth, int bytes) throws Exception {
+        ASN1Encodable chain = new ASN1Integer(7);
+        for (int i = 0; i < depth; i++) {
+            chain = new DLSet(new ASN1Encodable[] {chain, new ASN1Integer(1)});
+        }
+        int chainBytes = chain.toASN1Primitive().getEncoded(ASN1Encoding.DL).length;
+        ASN1EncodableVector chains = new ASN1EncodableVector();
+        for (int i = 0; i < bytes / chainBytes; i++) {
+            chains.add(chain);
+        }
+        return new DLSequence(chains);
+    }
+
+    private static SignedData signedData(byte[] receipt) {
+        return SignedData.getInstance(ContentInfo.getInstance(receipt).getContent());
+    }
+
+    /**
+     * {@code genuine}'s content in a receipt with {@code certificates} and
+     * {@code signerInfos}, encoded definite-length as built: DER would sort
+     * the sets, which is the cost under test.
+     */
+    private static byte[] receipt(SignedData genuine, ASN1Set certificates, ASN1Set signerInfos) throws Exception {
+        DLSequence signedData = new DLSequence(new ASN1Encodable[] {
+            new ASN1Integer(1),
+            genuine.getDigestAlgorithms(),
+            genuine.getEncapContentInfo(),
+            new DLTaggedObject(false, 0, certificates),
+            signerInfos
+        });
+        byte[] receipt = new DLSequence(
+                        new ASN1Encodable[] {CMSObjectIdentifiers.signedData, new DLTaggedObject(true, 0, signedData)})
+                .getEncoded(ASN1Encoding.DL);
+        assertTrue(receipt.length <= CAP_DER, "the receipt is over the cap: " + receipt.length);
+        return receipt;
+    }
+
     /** The Apple marker OIDs, so the JWS test reaches the chain check rather than the purpose check. */
     private static final class AppleTrustOids {
         static final String LEAF = "1.2.840.113635.100.6.11.1";
         static final String INTERMEDIATE = "1.2.840.113635.100.6.2.1";
+    }
+
+    /**
+     * Verifies {@code receipt} twice and asserts the faster refusal fits the
+     * bound: these inputs are cap-sized trees whose parse alone costs 0.3 to
+     * 0.9 s, and one garbage collection can double a single call.
+     */
+    private static VerificationException refusedFast(TestPki pki, byte[] receipt) {
+        long best = Long.MAX_VALUE;
+        VerificationException refused = null;
+        for (int i = 0; i < 2; i++) {
+            long start = System.nanoTime();
+            refused = assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+            best = Math.min(best, (System.nanoTime() - start) / 1_000_000);
+        }
+        assertTrue(best < BOUND_MS, "took " + best + " ms");
+        return refused;
     }
 
     private static void assertFast(long startNanos) {

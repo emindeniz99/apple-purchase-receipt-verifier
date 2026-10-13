@@ -22,10 +22,17 @@ import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
 import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.cms.SignerIdentifier;
+import org.bouncycastle.asn1.cms.SignerInfo;
+import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
+import org.bouncycastle.asn1.x500.RDN;
+import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.CMSTypedData;
@@ -184,6 +191,18 @@ final class ReceiptCore {
         // of one signer compares nothing.
         List<SignerInformation> signers = new ArrayList<>();
         for (int i = 0; i < raw.size(); i++) {
+            // Hashing a SignerId, and comparing its issuer with each
+            // certificate's, re-encodes every issuer value that is not a
+            // string, at a cost that grows with its nesting: up to 10 s for
+            // one cap-sized value. Every name Apple issues holds strings, so
+            // such an issuer names no Apple certificate, and its SignerInfo
+            // is left out before either.
+            SignerIdentifier sid = SignerInfo.getInstance(raw.getObjectAt(i)).getSID();
+            if (!sid.isTagged()
+                    && !stringsOnly(
+                            IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
+                continue;
+            }
             SignedData one = new SignedData(
                     signedData.getDigestAlgorithms(),
                     signedData.getEncapContentInfo(),
@@ -200,7 +219,21 @@ final class ReceiptCore {
                 throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
             }
         }
+        if (signers.isEmpty()) {
+            throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
+        }
         return signers;
+    }
+
+    private static boolean stringsOnly(X500Name name) {
+        for (RDN rdn : name.getRDNs()) {
+            for (AttributeTypeAndValue value : rdn.getTypesAndValues()) {
+                if (!(value.getValue() instanceof ASN1String)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**

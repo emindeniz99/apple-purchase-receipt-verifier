@@ -1,6 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import java.io.IOException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -13,6 +12,7 @@ import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.x500.style.BCStrictStyle;
+import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSSignedData;
@@ -70,8 +70,9 @@ final class ReceiptCertificates {
                     ASN1Sequence.getInstance((ASN1TaggedObject) entry, false);
                     continue;
                 }
-                X509CertificateHolder holder =
-                        new X509CertificateHolder(entry.toASN1Primitive().getEncoded("DER"));
+                // Read as parsed, not re-encoded: DER sorts every SET by its
+                // members' encodings, seconds for a cap-sized nested entry.
+                X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(entry));
                 X509Certificate certificate = converter.getCertificate(holder);
                 // Forces BouncyCastle's lazy signature decode here, not inside
                 // the path builder. The key is not read: see
@@ -79,7 +80,7 @@ final class ReceiptCertificates {
                 certificate.getSignature();
                 certificates.all.add(certificate);
                 certificates.holders.add(holder);
-            } catch (IOException | CertificateException | RuntimeException e) {
+            } catch (CertificateException | RuntimeException e) {
                 throw new VerificationException(
                         Reason.MALFORMED, "an embedded certificate is not a valid certificate", e);
             }
