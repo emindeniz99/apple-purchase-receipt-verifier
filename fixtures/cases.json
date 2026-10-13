@@ -315,6 +315,18 @@
       "codec": "raw",
       "contentSha256": "3cfd29881fcdf7457d3a1f59d5e244d3dbf6b111d50b2bfffb14a7c79489783f"
     },
+    "public-receipt-sandbox-g5-signer-infos-md2-with-rsa-label-alone": {
+      "path": "public-receipts/signer-infos/md2-with-rsa-label-alone.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "9b7689ebfcbfcf2c192d0ed577007202d2d0b5652b458fb992a8440e0c121df7"
+    },
+    "public-receipt-sandbox-g5-signer-infos-rsa-pss-huge-salt-label-alone": {
+      "path": "public-receipts/signer-infos/rsa-pss-huge-salt-label-alone.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "def6020aa5f315beb151a2f63920bf96111409768ad5754b4a04d3b5bf028e5a"
+    },
     "public-receipt-xcode-with-purchases": {
       "path": "public-receipts/receipt-xcode-with-purchases.b64",
       "role": "input",
@@ -10163,6 +10175,66 @@
         "signers",
         "negative",
         "signer-algorithm",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-a-signer-info-signed-md2-with-rsa",
+      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to md2WithRSAEncryption (1.2.840.113549.1.1.2), alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The signatureAlgorithm is unsigned, and BouncyCastle hashes the signed attributes with the digest it names before any signature is checked, so MD2 is a cost lever there as in the digestAlgorithm. Java refuses the label before hashing anything: INVALID_SIGNATURE, as it answered before when the MD2 hash did not match the signature's DigestInfo (owner Q136 a, 2026-10-13). The core verifies: OpenSSL reads an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1 v1.5 or RSASSA-PSS, hashes with the digestAlgorithm, which is Apple's SHA-256, and the signature is Apple's. Port-defined; nothing unsigned is accepted either way (DECISIONS.md R20).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-signer-infos-md2-with-rsa-label-alone"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "oneOf": [
+          "ok",
+          "INVALID_SIGNATURE"
+        ]
+      },
+      "fault": "no-signer-info-signature-verifies",
+      "tags": [
+        "tolerant",
+        "port-defined",
+        "receipt",
+        "pkcs7",
+        "signers",
+        "negative",
+        "signer-algorithm",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-a-signer-info-labelled-rsa-pss-with-a-huge-salt",
+      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to RSASSA-PSS (SHA-256, MGF1 with SHA-256) and a saltLength of 1,000,000,000, alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The signatureAlgorithm and its parameters are unsigned, and BouncyCastle allocates an array of saltLength bytes while it builds the verifier, before any signature byte is compared: an OutOfMemoryError. Java refuses RSASSA-PSS before building anything; Apple never signs receipts with it (owner Q137 a, 2026-10-13). The core hands the label and its parameters to OpenSSL, and Apple's PKCS#1 v1.5 signature does not verify as PSS under them, within maxMillis. INVALID_SIGNATURE in both (DECISIONS.md R20).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-signer-infos-rsa-pss-huge-salt-label-alone"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "no-signer-info-signature-verifies",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "signers",
+        "negative",
+        "signer-algorithm",
+        "dos",
         "public-receipts",
         "new-in-0-7"
       ]
