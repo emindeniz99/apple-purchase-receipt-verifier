@@ -16,9 +16,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DERUTF8String;
+import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
 import org.bouncycastle.asn1.x500.RDN;
@@ -30,7 +32,13 @@ import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cms.CMSProcessableByteArray;
+import org.bouncycastle.cms.CMSSignedDataGenerator;
+import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder;
+import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
+import org.bouncycastle.util.CollectionStore;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -227,6 +235,37 @@ class UnauthenticatedKeyCostTest {
         assertEquals("signer certificate not embedded", e.getMessage());
     }
 
+    @Test
+    void capSizedContentUnderTheSlowestDigestIsRefusedBeforeItIsDigested() throws Exception {
+        // The SignerInfo's digestAlgorithm is the sender's choice and is not
+        // signed. BouncyCastle digests the whole encapsulated content with
+        // it, once per SignerInfo, before it compares the messageDigest
+        // attribute or checks the signature. Nothing here needs a key: four
+        // SignerInfos name the genuine receipt signer, which chains to the
+        // pinned root and carries the marker, declare GOST R 34.11-94 (the
+        // slowest digest BouncyCastle resolves) and are signed by an
+        // unrelated key, over content just under the cap. Digesting it cost
+        // about 1.2 s warm and up to 1.8 s cold on Java 8; the digest is now
+        // refused before a byte is digested (DECISIONS.md R20).
+        TestPki pki = TestPki.receipt();
+        X509CertificateHolder leaf = new X509CertificateHolder(pki.leaf.getEncoded());
+        List<X509CertificateHolder> signers = Arrays.asList(leaf, leaf, leaf, leaf);
+        List<X509CertificateHolder> embedded =
+                Arrays.asList(leaf, new X509CertificateHolder(pki.intermediate.getEncoded()));
+        int overhead = slowDigestReceipt(1000, signers, embedded).length - 1000;
+        // The largest DER whose base64 fits the cap, less a margin for the
+        // longer length octets of the larger content.
+        int capDer = ReceiptCore.MAX_RECEIPT_BYTES / 4 * 3;
+        byte[] receipt = slowDigestReceipt(capDer - overhead - 64, signers, embedded);
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+        assertFast(start);
+        assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
+        assertEquals("CMS verifier refused the signer info: digest 1.2.643.2.2.9 is refused", e.getMessage());
+    }
+
     /** The Apple marker OIDs, so the JWS test reaches the chain check rather than the purpose check. */
     private static final class AppleTrustOids {
         static final String LEAF = "1.2.840.113635.100.6.11.1";
@@ -316,6 +355,30 @@ class UnauthenticatedKeyCostTest {
                 Collections.<byte[]>emptyList());
         return TestPki.signReceiptAs(
                 payload, Date.from(creation), signerKey.getPrivate(), "SHA256withRSA", signers, embedded);
+    }
+
+    /**
+     * DER CMS over one attribute of {@code valueBytes} zero bytes, one
+     * SignerInfo per entry of {@code signers}, each declaring GOST R
+     * 34.11-94 as its digest and signed by {@link #attacker}.
+     */
+    private static byte[] slowDigestReceipt(
+            int valueBytes, List<X509CertificateHolder> signers, List<X509CertificateHolder> embedded)
+            throws Exception {
+        byte[] payload = TestPki.singleAttributePayload(9999, new byte[valueBytes]);
+        ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withRSA")
+                .setProvider(TestPki.BC)
+                .build(attacker.getPrivate());
+        CMSSignedDataGenerator generator = new CMSSignedDataGenerator();
+        for (X509CertificateHolder signer : signers) {
+            generator.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder()
+                            .setProvider(TestPki.BC)
+                            .build())
+                    .setContentDigest(new AlgorithmIdentifier(CryptoProObjectIdentifiers.gostR3411))
+                    .build(contentSigner, signer));
+        }
+        generator.addCertificates(new CollectionStore<X509CertificateHolder>(embedded));
+        return generator.generate(new CMSProcessableByteArray(payload), true).getEncoded(ASN1Encoding.DER);
     }
 
     private static String name(java.security.cert.X509Certificate certificate) {

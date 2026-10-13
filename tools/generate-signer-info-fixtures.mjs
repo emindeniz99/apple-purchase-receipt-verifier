@@ -20,6 +20,9 @@
  *   unknown-digest-alone.der            Apple's SignerInfo with its digest
  *                                       algorithm set to 1.2.3.4, alone
  *   unknown-digest-then-genuine.der     that SignerInfo, then Apple's
+ *   refused-digest-alone.der            Apple's SignerInfo with its digest
+ *                                       algorithm set to MD2
+ *                                       (1.2.840.113549.2.2), alone
  *   malformed-unsigned-attrs-then-genuine.der
  *                                       Apple's SignerInfo with unsignedAttrs
  *                                       [1] { INTEGER 5 } appended, then Apple's
@@ -88,16 +91,17 @@ const parts = children(genuine, 0).map((p) => slice(genuine, p));
 if (parts.length < 5 || parts[2][0] !== 0x30 || parts[parts.length - 1][0] !== 0x04) {
   throw new Error('unexpected SignerInfo shape');
 }
-const unknownDigest = wrap(
-  0x30,
-  Buffer.concat([parts[0], parts[1], wrap(0x30, Buffer.from('06032a03040500', 'hex')), ...parts.slice(3)]),
-);
+const withDigest = (algorithm) =>
+  wrap(0x30, Buffer.concat([parts[0], parts[1], wrap(0x30, Buffer.from(algorithm, 'hex')), ...parts.slice(3)]));
+const unknownDigest = withDigest('06032a03040500');
+const md2Digest = withDigest('06082a864886f70d02020500');
 const malformedUnsigned = wrap(0x30, Buffer.concat([...parts, Buffer.from('a103020105', 'hex')]));
 
 const files = {
   'unknown-digest-alone.der': receipt(unknownDigest),
   'unknown-digest-then-genuine.der': receipt(unknownDigest, genuine),
   'malformed-unsigned-attrs-then-genuine.der': receipt(malformedUnsigned, genuine),
+  'refused-digest-alone.der': receipt(md2Digest),
 };
 mkdirSync(OUT, { recursive: true });
 for (const [name, bytes] of Object.entries(files)) {

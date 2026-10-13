@@ -13,7 +13,10 @@ import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -48,6 +51,30 @@ final class ReceiptCore {
      * verifyReceipt body ({@link Endpoint#MAX_REQUEST_BYTES}).
      */
     static final int MAX_RECEIPT_BYTES = Endpoint.MAX_REQUEST_BYTES;
+
+    /**
+     * Digest algorithms a SignerInfo may not name: GOST R 34.11-94, MD2,
+     * Whirlpool, GOST R 34.11-2012 (Streebog, 256 and 512) and DSTU 7564
+     * (256, 384, 512), none a hash Apple signs receipts with. The digestAlgorithm is
+     * the sender's unsigned choice, and BouncyCastle digests the whole
+     * content with it once per SignerInfo before any signature is checked:
+     * four SignerInfos over a cap-sized receipt cost about 1.2 s warm under
+     * GOST R 34.11-94. On BouncyCastle 1.86 these eight cost 2.9 to 25 times
+     * SHA-256 over the same bytes and every other digest it resolves at most
+     * 2.6 times. A denylist, not an allowlist, so a new fast hash needs
+     * no change here. The core refuses all eight because OpenSSL's default
+     * provider implements none of them. DigestDenylistCostTest re-measures
+     * the split.
+     */
+    static final Set<String> REFUSED_DIGESTS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "1.2.643.2.2.9", // GOST R 34.11-94
+            "1.2.840.113549.2.2", // MD2
+            "1.0.10118.3.0.55", // Whirlpool
+            "1.2.643.7.1.1.2.2", // GOST R 34.11-2012, 256 bits
+            "1.2.643.7.1.1.2.3", // GOST R 34.11-2012, 512 bits
+            "1.2.804.2.1.1.1.1.2.2.1", // DSTU 7564, 256 bits
+            "1.2.804.2.1.1.1.1.2.2.2", // DSTU 7564, 384 bits
+            "1.2.804.2.1.1.1.1.2.2.3"))); // DSTU 7564, 512 bits
 
     private ReceiptCore() {}
 
@@ -339,6 +366,13 @@ final class ReceiptCore {
         // verifies.
         // An RSA signature binds its hash in the DigestInfo, so the
         // signatureAlgorithm label is not trusted.
+        String digest = signer.getDigestAlgOID();
+        if (REFUSED_DIGESTS.contains(digest)) {
+            // Before BouncyCastle digests a byte, and the same verdict as a
+            // digest it does not implement.
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info: digest " + digest + " is refused");
+        }
         try {
             if (!signer.verify(signerVerifier(signerCert.getPublicKey()))) {
                 throw new VerificationException(

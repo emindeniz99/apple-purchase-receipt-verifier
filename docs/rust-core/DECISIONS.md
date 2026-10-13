@@ -676,6 +676,28 @@ cRLDistributionPoints, 2026-10-06).
   shared cases pin the agreement:
   `receipt/reject-a-signer-info-in-an-unimplemented-digest` and
   `receipt/accept-a-genuine-signer-info-behind-one-in-an-unimplemented-digest`.
+  Java refuses, the same way, eight digests it does implement (owner,
+  Q134 a, 2026-10-13): GOST R 34.11-94 (1.2.643.2.2.9), MD2
+  (1.2.840.113549.2.2), Whirlpool (1.0.10118.3.0.55), GOST R
+  34.11-2012 256 and 512 (1.2.643.7.1.1.2.2, .3) and DSTU 7564 256,
+  384 and 512 (1.2.804.2.1.1.1.1.2.2.1, .2, .3), none a hash Apple
+  signs receipts with. The digestAlgorithm is unsigned, and BouncyCastle
+  digests the whole content with it once per SignerInfo before any
+  signature is checked: four SignerInfos naming Apple's public leaf and
+  declaring GOST R 34.11-94 cost about 1.2 s warm and up to 1.8 s cold
+  on Java 8 at the receipt cap, against about 0.09 s warm for SHA-256.
+  Over the same bytes on BouncyCastle 1.86 the eight cost 2.9 to 25
+  times SHA-256 and every other digest it resolves at most 2.6 times.
+  `DigestDenylistCostTest` re-measures that on every build against a
+  band, refused above 2.4 and allowed below 3.2, so a digest near the
+  boundary cannot flap. RIPEMD-160, now the slowest digest accepted,
+  costs about 0.2 s warm at the cap ([digest cost][digestcost]). It is
+  a denylist, so a fast digest added later needs no code change. The
+  core answers `INVALID_SIGNATURE` for all eight because it loads only
+  OpenSSL's default provider, which implements none of them, so this is
+  a convergence, not a divergence:
+  `receipt/reject-a-signer-info-in-a-refused-digest` (MD2) pins it, and
+  the refused SignerInfo is skipped like any other that does not verify.
   Java no longer reads every SignerInfo's signed and unsigned attributes
   before trying any (owner, 2026-10-12; it did from Q65 until then).
   The pre-read made a malformed SignerInfo `MALFORMED` at any position,
@@ -1447,6 +1469,17 @@ variables of OD-05 (STATUS.md).
   other file, and `git log` shows which archive each nightly used. The
   rows belong to one module, so a release that changes the module needs
   a new archive under a new tag and a new pin.
+- **What the nightly runs against it:** rows only (owner, Q132 c,
+  2026-10-13, merged as #361). The rows still belong to the archive's
+  module, and the parity they prove is the wrappers' over that module;
+  every host's corpus script compares rows and nothing else. The test
+  suites, the shared cases, the smokes and the benchmarks run in
+  `ci.yml` against the module built from each commit. The archive holds
+  the last release's module, which predates every core and shared-case
+  change made since, so a suite run there fails on exactly those
+  changes: run 38309656789 failed on 7 of 8 hosts for
+  `receipt/accept-a-path-of-seven` after #355 dropped the core's
+  path-length bound. The rest of this record is unchanged.
 - **Later, perhaps:** a separate corpus repository. Nothing is decided.
 
 ---
@@ -2222,3 +2255,4 @@ One table for everything the plan measured or considered and rejected.
 [fracforum]: https://developer.apple.com/forums/thread/663119
 [javaparse]: ../evidence/2026-10-05-java-presignature-parse-cost.md
 [twosigners]: ../evidence/2026-10-06-verifyreceipt-two-signerinfos.md
+[digestcost]: ../evidence/2026-10-13-java-digest-cost.md
