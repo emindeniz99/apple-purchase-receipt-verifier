@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERSet;
@@ -201,10 +202,18 @@ final class ReceiptCore {
             // one cap-sized value. Every name Apple issues holds strings, so
             // such an issuer names no Apple certificate, and its SignerInfo
             // is left out before either.
-            SignerIdentifier sid = SignerInfo.getInstance(raw.getObjectAt(i)).getSID();
+            SignerInfo info = SignerInfo.getInstance(raw.getObjectAt(i));
+            SignerIdentifier sid = info.getSID();
             if (!sid.isTagged()
                     && !AppleTrust.stringsOnly(
                             IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
+                continue;
+            }
+            // BouncyCastle compares these parameters with the
+            // CMSAlgorithmProtection attribute's, which sorts a SET on both
+            // sides, and no digest or signature algorithm defines one.
+            if (AppleTrust.holdsSet(info.getDigestAlgorithm().getParameters())
+                    || AppleTrust.holdsSet(info.getDigestEncryptionAlgorithm().getParameters())) {
                 continue;
             }
             SignedData one = new SignedData(
@@ -227,6 +236,25 @@ final class ReceiptCore {
             throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
         }
         return signers;
+    }
+
+    /**
+     * A SignerInfo whose signed attributes are hashed as they were sent.
+     * BouncyCastle hashes their DER encoding, and DER sorts every SET in the
+     * sender's attribute values before any signature is checked: seconds for
+     * a cap-sized value of nested SETs. RFC 5652 5.4 signs the DER encoding
+     * of the attributes, and a definite-length encoding of a DER input
+     * reproduces it.
+     */
+    private static final class SignedAsSent extends SignerInformation {
+        SignedAsSent(SignerInformation signer) {
+            super(signer);
+        }
+
+        @Override
+        public byte @Nullable [] getEncodedSignedAttributes() throws IOException {
+            return signedAttributeSet == null ? null : signedAttributeSet.getEncoded(ASN1Encoding.DL);
+        }
     }
 
     /**
@@ -406,7 +434,10 @@ final class ReceiptCore {
                     "CMS verifier refused the signer info: signature algorithm " + signature + " is refused");
         }
         try {
-            if (!signer.verify(signerVerifier(signerCert.getPublicKey()))) {
+            // Wrapped here, not when the SignerInfos are read: the copy reads
+            // the attributes, and ones that do not decode fail this SignerInfo
+            // alone.
+            if (!new SignedAsSent(signer).verify(signerVerifier(signerCert.getPublicKey()))) {
                 throw new VerificationException(
                         Reason.INVALID_SIGNATURE, "CMS signature does not match the signer certificate's key");
             }

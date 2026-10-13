@@ -238,6 +238,46 @@ class ReceiptSignerInfoTest {
     }
 
     /**
+     * Signed or unsigned attributes that do not decode fail their own
+     * SignerInfo, and the next one is tried (owner, 2026-10-12). The shared
+     * cases allow MALFORMED as well, so this pins Java's answer: BouncyCastle
+     * reads the attributes only while it verifies.
+     */
+    @Test
+    void aSignerInfoWhoseAttributesDoNotDecodeFailsAlone() throws Exception {
+        KeyPair signerKey = rsaKeyPair();
+        X509Certificate signer = signerUnderTheIntermediate(signerKey);
+        SignedData signedData = signedData(signAs(signerKey, "SHA256withRSA", signer));
+        SignerInfo genuine = SignerInfo.getInstance(signedData.getSignerInfos().getObjectAt(0));
+        // An INTEGER where Attributes belong, in either attribute field.
+        SignerInfo brokenSigned = new SignerInfo(
+                genuine.getSID(),
+                genuine.getDigestAlgorithm(),
+                new DERSet(new ASN1Integer(7)),
+                genuine.getDigestEncryptionAlgorithm(),
+                genuine.getEncryptedDigest(),
+                genuine.getUnauthenticatedAttributes());
+        SignerInfo brokenUnsigned = new SignerInfo(
+                genuine.getSID(),
+                genuine.getDigestAlgorithm(),
+                genuine.getAuthenticatedAttributes(),
+                genuine.getDigestEncryptionAlgorithm(),
+                genuine.getEncryptedDigest(),
+                new DERSet(new ASN1Integer(5)));
+
+        for (SignerInfo broken : Arrays.asList(brokenSigned, brokenUnsigned)) {
+            assertEquals(
+                    BUNDLE,
+                    verify(withSignerInfos(signedData, new DLSet(new ASN1Encodable[] {broken, genuine})))
+                            .bundleId());
+            assertEquals(
+                    BUNDLE,
+                    verify(withSignerInfos(signedData, new DLSet(new ASN1Encodable[] {genuine, broken})))
+                            .bundleId());
+        }
+    }
+
+    /**
      * A stranger SignerInfo's issuer name is the sender's bytes, and only
      * BouncyCastle reads it: a name the JDK would refuse (here an attribute
      * of three elements) is no match, not an exception, so the genuine

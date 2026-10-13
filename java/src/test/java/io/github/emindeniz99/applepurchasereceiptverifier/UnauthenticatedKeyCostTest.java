@@ -557,6 +557,71 @@ class UnauthenticatedKeyCostTest {
         assertEquals("leaf certificate is not signed by the intermediate", e.getMessage());
     }
 
+    @Test
+    void aSignerInfoWhoseSignedAttributesHoldNestedSetsIsHashedAsSent() throws Exception {
+        // A copy of the genuine SignerInfo, ahead of it, with one more signed
+        // attribute: a SEQUENCE of SETs nested 30 deep, just under the cap.
+        // BouncyCastle hashed the DER encoding of the signed attributes, which
+        // sorts every SET, before the copy's signature failed: 2.8 to 3.4 s a
+        // call. It now hashes them as sent, and Apple's SignerInfo decides.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        ASN1EncodableVector attributes = signedAttributes(signer);
+        attributes.add(new DLSequence(new ASN1Encodable[] {
+            new ASN1ObjectIdentifier("1.3.6.1.4.1.99999.1"), new DLSet(nestedSets(30, CAP_DER - 16384))
+        }));
+        acceptedFast(pki, aheadOfGenuine(genuine, signer, attributes, signer.getDigestEncryptionAlgorithm()));
+    }
+
+    @Test
+    void aSignerInfoWhoseSignatureParametersHoldNestedSetsIsLeftOut() throws Exception {
+        // The copy's signatureAlgorithm parameters hold the nested value, and
+        // a CMSAlgorithmProtection attribute names the same label, so
+        // BouncyCastle compares the two, sorting both. No signature algorithm
+        // defines a SET in its parameters, so the copy is left out unbuilt.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        DLSequence label = new DLSequence(
+                new ASN1Encodable[] {PKCSObjectIdentifiers.sha256WithRSAEncryption, nestedSets(30, CAP_DER / 2 - 16384)
+                });
+        ASN1EncodableVector attributes = signedAttributes(signer);
+        attributes.add(new DLSequence(new ASN1Encodable[] {
+            PKCSObjectIdentifiers.id_aa_cmsAlgorithmProtect,
+            new DLSet(new DLSequence(
+                    new ASN1Encodable[] {signer.getDigestAlgorithm(), new DLTaggedObject(false, 1, label)}))
+        }));
+        acceptedFast(pki, aheadOfGenuine(genuine, signer, attributes, label));
+    }
+
+    private static ASN1EncodableVector signedAttributes(SignerInfo signer) {
+        ASN1EncodableVector attributes = new ASN1EncodableVector();
+        for (int i = 0; i < signer.getAuthenticatedAttributes().size(); i++) {
+            attributes.add(signer.getAuthenticatedAttributes().getObjectAt(i));
+        }
+        return attributes;
+    }
+
+    /**
+     * {@code genuine} with a copy of {@code signer} carrying {@code attributes}
+     * and {@code label} ahead of it, built of definite-length types: the copy's
+     * signature is the genuine one, over other bytes, so it fails.
+     */
+    private static byte[] aheadOfGenuine(
+            SignedData genuine, SignerInfo signer, ASN1EncodableVector attributes, ASN1Encodable label)
+            throws Exception {
+        DLSequence copy = new DLSequence(new ASN1Encodable[] {
+            new ASN1Integer(1),
+            signer.getSID(),
+            signer.getDigestAlgorithm(),
+            new DLTaggedObject(false, 0, new DLSet(attributes)),
+            label,
+            signer.getEncryptedDigest()
+        });
+        return receipt(genuine, genuine.getCertificates(), new DLSet(new ASN1Encodable[] {copy, signer}));
+    }
+
     /** RSASSA-PSS with SHA-256, MGF1 with SHA-256 and {@code saltLength}. */
     private static AlgorithmIdentifier pss(int saltLength) {
         AlgorithmIdentifier sha256 = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256, DERNull.INSTANCE);
