@@ -791,6 +791,14 @@ the core's bounds are what keep every call short (§3.7). Only
   outside the code can switch the engine or point it at another binary.
   `noexec` directories block an extracted binary; such hosts use `url()` or
   `executable()`, which extract nothing.
+- **A miscompiling JIT is an availability risk, not a forgery risk.**
+  OpenJ9 0.61.0's JIT can miscompile BouncyCastle's `DERSet.encode` after
+  warm-up. From then on the main artifact refuses genuine receipts in that
+  process, and `Verifier.create` throws, while still accepting nothing
+  unsigned. The mitigation is
+  `-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}` on OpenJ9, plus the
+  known-good canary (java/README.md, "Runtime notes: OpenJ9";
+  docs/evidence/2026-10-13-openj9-derset-jit.md).
 - **Python's compile cache holds native code.** wasmtime-py compiles the
   module at start and, with the cache on, stores the result on disk, where
   the next process runs it. Anyone who can write that directory can plant
