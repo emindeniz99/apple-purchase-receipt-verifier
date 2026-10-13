@@ -22,10 +22,10 @@ secret.
   for a differential run and as the source of the port-only tests
   (Phase 7 step 1).
 - All 311 cases pass against the G1 module. `internal/corpusrun/g1.sh G1_DIR`
-  runs the whole re-run in one command: place the module with
-  `.github/scripts/place-module.sh` (for this run only), `go vet`,
-  `go test ./...`, then the five corpora through the host layer compared
-  byte for byte with the reference rows.
+  is the corpus parity run in one command: place the module with
+  `.github/scripts/place-module.sh` (for this run only), then the five
+  corpora through the host layer compared byte for byte with the reference
+  rows. It runs no suite; `go vet` and `go test ./...` run in `ci.yml`.
 
 ## Jobs
 

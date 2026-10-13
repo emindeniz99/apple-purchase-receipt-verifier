@@ -39,10 +39,13 @@ and a host reads it there rather than keeping a copy (DECISIONS.md R42).
 | Rust crate | native: the core over OpenSSL 4, in the caller's process | Rust 1.85 | wherever the crate and OpenSSL 4 build | none | the core's caps | `TrustAnchor` values (`from_der`, `from_pem`, `from_der_or_pem`) in `Config::builder().roots(...)` | `cargo test --locked --workspace` in `rust/` |
 | C ABI (`rust/ffi`) | native: the core over OpenSSL 4, in the caller's process; source only | Rust 1.85 to build it | Linux, macOS and Windows in CI | none | the core's caps | roots passed to `aprv_verifier_new`, read as `init` reads them (DER or PEM) | the C++ and ctypes harnesses (`rust/ffi/README.md`) |
 
-The one-command checks run everything the package's CI job runs plus the
-parity run over the corpora of generated receipts against a directory
-holding a module, its call files and its reference rows. Each script's
-header names what it needs.
+For the Wasm hosts and `aprv-server`, the one-command check is the parity
+run over the corpora of generated receipts: given a directory holding a
+module, its call files and its reference rows, it puts the module in place
+and compares every row with the module's own. It runs no suite; the suites
+run in `ci.yml` against the module built from the commit, and the nightly
+`corpus` job runs these scripts against the archive's module
+(DECISIONS.md R35). Each script's header names what it needs.
 
 Notes:
 

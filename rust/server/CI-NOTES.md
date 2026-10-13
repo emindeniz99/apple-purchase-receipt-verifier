@@ -26,9 +26,11 @@ binaries are not built in this lane (MIGRATION.md step 2.4 leaves them
 open).
 
 Steps, working directory `rust/server`, `COMPONENT` = the component path.
-`scripts/check-component.sh` runs all of the non-lint steps below in one
-command (APRV_COMPONENT, OUT, and optionally CALLS, ROWS, SCHEMATHESIS,
-SPECTRAL; see its header) and is how lane B takes a new component.
+`scripts/check-component.sh` runs the static build, `aprv info` and the
+three corpus steps below in one command (APRV_COMPONENT, OUT, CALLS, ROWS;
+see its header); the nightly `corpus` job runs it against the archive's
+component. The tests, the cases, the smokes and the OpenAPI checks run in
+`ci.yml` against the component built from the commit.
 
 ```sh
 cargo fmt --check

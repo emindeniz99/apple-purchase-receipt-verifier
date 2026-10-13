@@ -1,10 +1,11 @@
 #!/bin/sh
-# One command for a module drop: put the module in place, run the
-# gem's whole suite (every conformance case and the packaging round trip
-# included), run the five corpora through the gem's host code and compare
-# every row byte for byte with the reference rows. The nightly `corpus` job
-# runs it; docs/evidence/2026-09-29-ruby-host/scripts/g1.sh is the copy that
-# round recorded its results with.
+# The corpus parity run (DECISIONS.md R35): put the module in place, run
+# the five corpora through the gem's host code and compare every row byte
+# for byte with the reference rows. The nightly `corpus` job runs it. Rows
+# only: the gem's suite runs in ci.yml against the freshly built module,
+# and the archive's module predates whatever the core and the shared cases
+# changed since its release. docs/evidence/2026-09-29-ruby-host/scripts/g1.sh
+# is the copy that round recorded its results with (it ran the suite too).
 #
 #   sh ruby/tools/g1.sh <g1-dir> [<work-dir>]
 #
@@ -27,10 +28,6 @@ bash "$ROOT/.github/scripts/place-module.sh" "$G1" ruby
 echo "module: $(wc -c < "$LIB/aprv.wasm") bytes, $(cut -d' ' -f1 "$LIB/aprv.wasm.sha256")"
 
 status=0
-echo "== suite"
-(cd "$ROOT/ruby" && APRV_PACKAGING=1 bundle exec rake test) > "$WORK/suite.out" 2>&1 || status=1
-grep 'runs, ' "$WORK/suite.out" || status=1
-
 echo "== corpora"
 for c in cases hostile algorithms substrate fuzz; do
   (cd "$ROOT/ruby" && bundle exec ruby -Ilib bench/corpus.rb "$G1/calls/$c.pinned.jsonl") \

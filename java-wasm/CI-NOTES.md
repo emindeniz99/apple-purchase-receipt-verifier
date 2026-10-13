@@ -64,12 +64,15 @@ floor is 11 (Endive's), and the plan asks for 11 to 27.
   host, identical to the native core); it exits non-zero on any differing
   row or trap. Both inputs come from lane A's release bundle, not from the
   repository. Run it once single-threaded and once with 4 threads.
-- **One command** for all of the above: `scripts/g1.sh BUNDLE_DIR OUT_DIR`
+- **One command** for the corpus: `scripts/g1.sh BUNDLE_DIR OUT_DIR`
   checks the bundle's `aprv.wasm` against the committed pin, has
   `.github/scripts/place-module.sh` check the bundle (`aprv.wasm`,
   `aprv.component.wasm`, `aprv.wit`, `SHA256SUMS`) and place the module,
-  then runs `verify`, every case on each JVM in `ENDIVE_JVMS`, the corpus
-  on 1 and 4 threads, and `scripts/bench.sh`.
+  builds the jar and test classes with `package -DskipTests`, then runs the
+  corpus on 1 and 4 threads (and through the server engine with
+  `APRV_SERVER`, on Java 8 too with `JAVA8`). It runs no test: `verify`,
+  the cases on each JDK and the Java 8 leg run in `ci.yml` against the
+  module built from the commit; `scripts/bench.sh` runs on its own.
 - Failure means: a case that answers differently from `fixtures/cases.json`,
   an ABI misuse that no longer traps, a Java 11 class in the facade, a
   native-loading reference, or a `System.getProperty`/`System.getenv` in

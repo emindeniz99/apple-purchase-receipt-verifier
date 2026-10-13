@@ -447,9 +447,9 @@ npm run runtime:browser -- chromium firefox webkit   # needs playwright
 copy it into place (CI takes it from the rust-wasm job), or set
 `APRV_COMPONENT` to its path.
 
-`node scripts/g1.mjs DROP_DIR` runs everything above plus the cross-host
-corpus parity, timings and memory against a directory holding a new
-module's component, call files and reference rows.
+`node scripts/g1.mjs DROP_DIR` builds against a directory holding a new
+module's component, call files and reference rows, and runs the cross-host
+corpus parity against it; it runs none of the commands above.
 
 `test/conformance.test.js` runs `fixtures/cases.json`, the cross-language
 vector file every package of this library answers, as one named test per

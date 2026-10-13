@@ -56,8 +56,9 @@ uv run --locked --extra dev python -m unittest discover -s tests
   Windows only, where the rule does not apply (`unittest` prints the reason).
 - Every case must pass against the release module (checked: 338 of 338 on
   the G1b module, sha256 `9c0a581c...a263`); there is no list of expected
-  differences. `tools/g1.sh G1_DIR` runs the whole re-run for a new module in
-  one command (see "Re-running against a new module" below).
+  differences. `tools/g1.sh G1_DIR` runs the corpus parity for a new module
+  in one command (see "Re-running against a new module" below); the suite
+  runs in `ci.yml`.
 - Each leg should also run once with the cache warm (the second run of the
   step above) and record the wall time of `tests/test_cache.py`'s printed
   cold and warm starts, which feed the README's numbers.
@@ -90,8 +91,9 @@ PYTHON=/path/to/venv/bin/python tools/g1.sh $G1
 
 puts `$G1/aprv.wasm` in the package with `.github/scripts/place-module.sh`
 (which rewrites `aprv.wasm.sha256` in the checkout for this run only; the
-release tooling refreshes the committed pin), runs the whole suite and then
-the section 2 comparison for every corpus, and exits non-zero on any failure.
+release tooling refreshes the committed pin), runs the section 2 comparison
+for every corpus, and exits non-zero on any differing row. It runs no suite:
+the suite runs in `ci.yml` against the module built from the commit.
 
 ## 3. Install failure (new job `python-install`, R28)
 

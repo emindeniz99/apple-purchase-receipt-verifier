@@ -59,9 +59,9 @@ includes `bin/aprv-install`).
 
 ## Corpus through the façade (nightly or per release, with the corpus files)
 
-`tools/rerun.sh "$APRV_BIN" "$G1_DIR"` runs everything in this file's `php` job
-and then the corpus (`tools/corpus.php`, both transports, every clock pinned)
-against the module's reference rows. Expected: every row identical, except the
+`tools/rerun.sh "$APRV_BIN" "$G1_DIR"` runs the corpus (`tools/corpus.php`,
+both transports, every clock pinned) against the module's reference rows; the
+`php` job's suites run in `ci.yml`, not here. Expected: every row identical, except the
 rows whose input is over 3,145,728 bytes, which reach the module cut to
 3,145,729 bytes and count as answered when its answer (exit 3 or HTTP 413)
 equals the reference's size refusal; 0 different. The
