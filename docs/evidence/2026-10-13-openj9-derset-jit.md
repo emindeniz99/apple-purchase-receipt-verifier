@@ -155,10 +155,17 @@ surefire kills the fork 30 s after `System.exit` and fails the build with
 0 test failures. 11 of 38 Semeru 21 runs and 1 of 3 Semeru 8 runs hung
 (`HANG` in results.txt), with or without the DERSet exclusion, and 0 of 4
 with `-Xjit:disableStoreSinking`. The stack was captured for two of them;
-the others were not checked and could have hung somewhere else. The CI change does not cover it, because CI
-has not shown it. If it appears there, add `disableStoreSinking` to the
-same `-Xjit:` option: OpenJ9 honours only the last `-Xjit:` on a command
+the others were not checked and could have hung somewhere else. CI never showed it. A host that meets it
+adds `disableStoreSinking` to the same `-Xjit:` option: OpenJ9 honours only the last `-Xjit:` on a command
 line (checked: of two `-Xjit:` options, only the second took effect).
+
+## Decision
+
+The semeru legs leave the vendor matrix (owner, 2026-10-13). The
+exclusion keeps the miscompile away but not the JIT hang below, and a CI
+leg that fails on the JVM in some runs says nothing about the library.
+The matrix tests HotSpot vendors only; `java/README.md` ("Runtime notes:
+OpenJ9") carries the mitigation for a host that runs OpenJ9 anyway.
 
 ## Where this stops holding
 

@@ -166,10 +166,14 @@ jobs:
   # The same suite on every other JDK vendor setup-java installs. The java
   # job covers the version lines on Temurin; this one covers the builds a
   # consumer actually runs on: another vendor's crypto providers, default
-  # java.security, and on Semeru a different JVM (OpenJ9). The port pins
-  # its own BouncyCastle instance and never asks the JCA for a provider by
-  # name, so a vendor difference should not reach a verdict; this job is
-  # what makes that a tested claim. Each vendor runs on 21 and 25 and, where
+  # java.security. The port pins its own BouncyCastle instance and never
+  # asks the JCA for a provider by name, so a vendor difference should not
+  # reach a verdict; this job is what makes that a tested claim. Semeru
+  # (OpenJ9) is not in the list: OpenJ9 0.61.0's JIT miscompiles
+  # BouncyCastle's DERSet.encode after warm-up, so its legs failed on the
+  # JVM rather than on the library in some runs and passed in others
+  # (docs/evidence/2026-10-13-openj9-derset-jit.md; owner, 2026-10-13).
+  # Every vendor here runs HotSpot. Each vendor runs on 21 and 25 and, where
   # it still ships one, on the Java 8 floor. Maven runs on Temurin 25 and
   # surefire forks the vendor's JVM (the jdk8-runtime profile's `jvm`
   # override), so javac and the build are the same for every leg and only
@@ -187,7 +191,7 @@ jobs:
       fail-fast: false
       matrix:
         vendor: [corretto, dragonwell, graalvm, jetbrains, kona, liberica,
-                 microsoft, oracle, redhat, sapmachine, semeru, zulu]
+                 microsoft, oracle, redhat, sapmachine, zulu]
         jdk: ["8", "21", "25"]
         # Lines the vendor does not ship through setup-java (measured on
         # 2026-10-05; the evidence note has each refusal). Drop an entry
@@ -228,20 +232,11 @@ jobs:
           set -euo pipefail
           "$JUT/bin/java" -XshowSettings:properties -version 2>&1 \
             | grep -E '^ +(java\.(vendor|version|vm\.name|vm\.version|runtime\.version)) ='
-      # On Semeru the forked JVM keeps BouncyCastle's DERSet out of the JIT.
-      # OpenJ9 0.61.0 sometimes miscompiles DERSet.encode at its top
-      # optimisation levels: every SET encoded after that point gets the
-      # length byte 0xFF, and every verification fails closed from then on.
-      # This is a JVM bug, not a library bug, and the exclusion keeps the
-      # leg testing everything else on OpenJ9. Drop it when an OpenJ9 release
-      # fixes the miscompile.
-      # Evidence: docs/evidence/2026-10-13-openj9-derset-jit.md.
       - name: the suite on that JVM
         working-directory: java
         env:
           JUT: ${{ steps.jut.outputs.path }}
-          JIT_ARGLINE: ${{ matrix.vendor == 'semeru' && '-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}' || '' }}
-        run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java" ${JIT_ARGLINE:+"-DargLine=$JIT_ARGLINE"}
+        run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java"
 
   # The genuine legacy receipt chain is SHA-1 end to end. The JDK's own PKIX
   # code obeys jdk.certpath.disabledAlgorithms, so a hardened java.security

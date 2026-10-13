@@ -795,9 +795,10 @@ the core's bounds are what keep every call short (§3.7). Only
   OpenJ9 0.61.0's JIT can miscompile BouncyCastle's `DERSet.encode` after
   warm-up. From then on the main artifact refuses genuine receipts in that
   process, and `Verifier.create` throws, while still accepting nothing
-  unsigned. The mitigation is
-  `-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}` on OpenJ9, plus the
-  known-good canary (java/README.md, "Runtime notes: OpenJ9";
+  unsigned. OpenJ9 is out of the CI vendor matrix and the library is not
+  tested on it; a host that runs it anyway passes
+  `-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}` and keeps the
+  known-good canary running (java/README.md, "Runtime notes: OpenJ9";
   docs/evidence/2026-10-13-openj9-derset-jit.md).
 - **Python's compile cache holds native code.** wasmtime-py compiles the
   module at start and, with the cache on, stores the result on disk, where
