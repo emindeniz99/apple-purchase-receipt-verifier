@@ -81,12 +81,15 @@ final class ReceiptCore {
             "1.2.804.2.1.1.1.1.2.2.3"))); // DSTU 7564, 512 bits
 
     /**
-     * Signature algorithms a SignerInfo may not name, none of them one Apple
-     * signs receipts with: md2WithRSAEncryption, whose MD2 BouncyCastle runs
-     * over the signed attributes before the signature is checked.
+     * Signature algorithms a SignerInfo may not name, neither one Apple signs
+     * receipts with: md2WithRSAEncryption, whose MD2 BouncyCastle runs over
+     * the signed attributes before the signature is checked, and RSASSA-PSS,
+     * whose unsigned saltLength sizes an array BouncyCastle allocates before
+     * the signature is compared.
      */
-    static final Set<String> REFUSED_SIGNATURE_ALGORITHMS =
-            Collections.unmodifiableSet(new HashSet<>(Arrays.asList("1.2.840.113549.1.1.2"))); // md2WithRSAEncryption
+    static final Set<String> REFUSED_SIGNATURE_ALGORITHMS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "1.2.840.113549.1.1.2", // md2WithRSAEncryption
+            "1.2.840.113549.1.1.10"))); // RSASSA-PSS
 
     private ReceiptCore() {}
 

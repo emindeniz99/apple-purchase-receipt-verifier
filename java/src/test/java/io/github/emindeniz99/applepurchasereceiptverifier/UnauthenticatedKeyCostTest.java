@@ -35,8 +35,10 @@ import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.cms.SignerInfo;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
+import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
+import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.style.BCStyle;
@@ -355,6 +357,35 @@ class UnauthenticatedKeyCostTest {
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
         assertEquals(
                 "CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.2 is refused",
+                e.getMessage());
+    }
+
+    @Test
+    void aSignerInfoLabelledRsaPssWithAHugeSaltIsRefusedBeforeAnythingIsAllocated() throws Exception {
+        // RSASSA-PSS parameters are unsigned, and BouncyCastle allocates an
+        // array of saltLength bytes while it builds the verifier: with a
+        // saltLength of 1,000,000,000, an OutOfMemoryError out of
+        // verifyReceipt, before a signature byte was compared.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        AlgorithmIdentifier sha256 = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256, DERNull.INSTANCE);
+        AlgorithmIdentifier pss = new AlgorithmIdentifier(
+                PKCSObjectIdentifiers.id_RSASSA_PSS,
+                new RSASSAPSSparams(
+                        sha256,
+                        new AlgorithmIdentifier(PKCSObjectIdentifiers.id_mgf1, sha256),
+                        new ASN1Integer(1_000_000_000),
+                        new ASN1Integer(1)));
+        byte[] receipt = relabelled(genuine, signer, signer.getAuthenticatedAttributes(), pss);
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+        assertFast(start);
+        assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
+        assertEquals(
+                "CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused",
                 e.getMessage());
     }
 

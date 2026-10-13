@@ -51,7 +51,8 @@ import org.junit.jupiter.api.Test;
  * checked. Every Signature OID the provider registers is offered to the CMS
  * verifier as SignerInformation offers it, with SHA-256 as the digest, for an
  * RSA and an EC key, and each content verifier that builds is timed against
- * rsaEncryption's or id-ecPublicKey's.</p>
+ * rsaEncryption's or id-ecPublicKey's. RSASSA-PSS is refused for its salt
+ * allocation, not its cost, so the band does not judge it.</p>
  *
  * <p>Two edges, not one cut. A ratio moves by up to a third between runs and
  * JDKs, so a single threshold near any digest would flap. The band between
@@ -86,6 +87,9 @@ class DigestDenylistCostTest {
 
     /** The one signature label refused for what its digest costs. */
     private static final String MD2_WITH_RSA = "1.2.840.113549.1.1.2";
+
+    /** Refused for the array its saltLength sizes, which this sweep does not time. */
+    private static final String RSASSA_PSS = "1.2.840.113549.1.1.10";
 
     private static final Pattern OID = Pattern.compile("[0-2](\\.[0-9]+)+");
     private static final Pattern SHAKE_LENGTH = Pattern.compile("MessageDigest\\.SHAKE(128|256)-([0-9]+)");
@@ -133,7 +137,7 @@ class DigestDenylistCostTest {
                     labels,
                     baseline,
                     (algorithm, content) -> labelNanos(verifier, algorithm, content),
-                    ReceiptCore.REFUSED_SIGNATURE_ALGORITHMS::contains,
+                    oid -> ReceiptCore.REFUSED_SIGNATURE_ALGORITHMS.contains(oid) && !oid.equals(RSASSA_PSS),
                     ReceiptCore.REFUSED_SIGNATURE_ALGORITHMS::contains);
         }
     }
