@@ -43,7 +43,7 @@ sh "$E/measure.sh" "$JAVA8" "$MAIN" "$TEST" "$SCRATCH/probes" "$DEPS" > "$SCRATC
 
 P=io.github.emindeniz99.applepurchasereceiptverifier
 mkdir -p "$SCRATCH/profile-sid"
-sh "$E/profile.sh" "$SCRATCH/profile-sid" "$SCRATCH/probes:$SCRATCH/before:$TEST:$DEPS" \
+JAVA="$JAVA21" sh "$E/profile.sh" "$SCRATCH/profile-sid" "$SCRATCH/probes:$SCRATCH/before:$TEST:$DEPS" \
   $P.NestedValueProbe sid 30 2300000
 sh "$E/callers.sh" "$SCRATCH/profile-sid/profile.jfr" | head -10
 
