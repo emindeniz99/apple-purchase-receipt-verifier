@@ -254,9 +254,11 @@ final class AppleTrust {
 
     /**
      * Whether {@code value} is a SET or holds one inside a SEQUENCE, a
-     * tagged object or an EXTERNAL, the containers BouncyCastle's parser
-     * builds besides constructed strings, which hold only strings. The
-     * depth is the parser's own bound.
+     * tagged object, or an EXTERNAL's content or data value descriptor, the
+     * containers BouncyCastle's parser builds besides constructed strings,
+     * which hold only strings. BouncyCastle puts any EXTERNAL element that is
+     * not an OID, an INTEGER or a tagged object in the descriptor, a SET
+     * included. The depth is the parser's own bound.
      */
     static boolean holdsSet(@Nullable ASN1Encodable value) {
         if (value == null) {
@@ -277,7 +279,11 @@ final class AppleTrust {
         if (primitive instanceof ASN1TaggedObject) {
             return holdsSet(((ASN1TaggedObject) primitive).getBaseObject());
         }
-        return primitive instanceof ASN1External && holdsSet(((ASN1External) primitive).getExternalContent());
+        if (primitive instanceof ASN1External) {
+            ASN1External external = (ASN1External) primitive;
+            return holdsSet(external.getDataValueDescriptor()) || holdsSet(external.getExternalContent());
+        }
+        return false;
     }
 
     /** The certificates of {@code trustAnchors}. */

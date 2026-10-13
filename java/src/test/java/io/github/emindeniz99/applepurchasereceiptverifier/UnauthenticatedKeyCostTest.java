@@ -21,6 +21,7 @@ import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERNull;
@@ -344,6 +345,21 @@ class UnauthenticatedKeyCostTest {
     }
 
     @Test
+    void aBagCertificateWhoseKeyParametersHoldNestedSetsInAnExternalIsPassedOverUnconverted() throws Exception {
+        // The same value as an EXTERNAL's data value descriptor, where
+        // BouncyCastle puts any element that is not an OID, an INTEGER or a
+        // tagged object: 4.1 to 4.3 s, and the receipt verified, while the
+        // walk read only the EXTERNAL's content.
+        TestPki pki = TestPki.receipt();
+        SubjectPublicKeyInfo key = new SubjectPublicKeyInfo(
+                new AlgorithmIdentifier(PKCSObjectIdentifiers.rsaEncryption, external(nestedSets(30, CAP_DER - 16384))),
+                key(pki.leaf).getPublicKeyData().getBytes());
+        acceptedFast(
+                pki,
+                withBagEntry(pki, certificateShaped(SHA256_WITH_RSA, subject(pki.root), new X500Name("CN=x"), key)));
+    }
+
+    @Test
     void aBagCertificateWithNestedSetsInsideAnExtensionStaysCheap() throws Exception {
         // Extension values are octets to the shape rule: a subjectAltName
         // whose directoryName holds the nested value passes and is converted.
@@ -593,6 +609,38 @@ class UnauthenticatedKeyCostTest {
                     new ASN1Encodable[] {signer.getDigestAlgorithm(), new DLTaggedObject(false, 1, label)}))
         }));
         acceptedFast(pki, aheadOfGenuine(genuine, signer, attributes, label));
+    }
+
+    @Test
+    void aSignerInfoWhoseSignatureParametersHoldNestedSetsInAnExternalIsLeftOut() throws Exception {
+        // The same with the nested value as an EXTERNAL's data value
+        // descriptor: 2.9 to 3.0 s, and the receipt verified, while the walk
+        // read only the EXTERNAL's content.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        DLSequence label = new DLSequence(new ASN1Encodable[] {
+            PKCSObjectIdentifiers.sha256WithRSAEncryption, external(nestedSets(30, CAP_DER / 2 - 16384))
+        });
+        ASN1EncodableVector attributes = signedAttributes(signer);
+        attributes.add(new DLSequence(new ASN1Encodable[] {
+            PKCSObjectIdentifiers.id_aa_cmsAlgorithmProtect,
+            new DLSet(new DLSequence(
+                    new ASN1Encodable[] {signer.getDigestAlgorithm(), new DLTaggedObject(false, 1, label)}))
+        }));
+        acceptedFast(pki, aheadOfGenuine(genuine, signer, attributes, label));
+    }
+
+    /**
+     * An EXTERNAL whose data value descriptor is {@code descriptor} and whose
+     * content is {@code [0] NULL}: a SEQUENCE of the two, encoded
+     * definite-length and retagged EXTERNAL (0x28), then parsed.
+     */
+    private static ASN1Primitive external(ASN1Encodable descriptor) throws Exception {
+        byte[] encoded = new DLSequence(new ASN1Encodable[] {descriptor, new DLTaggedObject(true, 0, DERNull.INSTANCE)})
+                .getEncoded(ASN1Encoding.DL);
+        encoded[0] = 0x28;
+        return ASN1Primitive.fromByteArray(encoded);
     }
 
     /**
