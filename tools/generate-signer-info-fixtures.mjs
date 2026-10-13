@@ -36,6 +36,11 @@
  *                                       algorithm set to RSASSA-PSS (SHA-256,
  *                                       MGF1 with SHA-256, saltLength
  *                                       1,000,000,000), alone
+ *   generic-composite-label-alone.der   Apple's SignerInfo with its signature
+ *                                       algorithm set to the generic composite
+ *                                       label (1.3.6.1.4.1.18227.2.1) holding
+ *                                       two sha256WithRSAEncryption parts,
+ *                                       alone
  *
  *   certificates/rsa-pss-huge-salt-stranger.der
  *                                       the receipt with one more bag entry
@@ -44,6 +49,12 @@
  *                                       SHA-256, saltLength 2,147,483,647),
  *                                       with the receipt signer's key and 256
  *                                       zero octets as its signature
+ *   certificates/generic-composite-stranger.der
+ *                                       the same stranger labelled with the
+ *                                       generic composite label holding 300
+ *                                       ecdsa-with-SHA256 parts, with a
+ *                                       SEQUENCE of 300 empty BIT STRINGs as
+ *                                       its signature
  */
 
 import { createHash } from 'node:crypto';
@@ -137,26 +148,39 @@ const pss = (saltLength) => Buffer.concat([
   ])),
 ]);
 const pssHugeSalt = withSignature(pss(Buffer.from('02043b9aca00', 'hex'))); // INTEGER 1,000,000,000
+// The generic composite label, 1.3.6.1.4.1.18227.2.1, whose parameters are a
+// SEQUENCE of the parts' AlgorithmIdentifiers.
+const composite = (part, count) =>
+  Buffer.concat([Buffer.from('060a2b06010401818e330201', 'hex'), wrap(0x30, Buffer.concat(Array(count).fill(part)))]);
+const sha256WithRsa = Buffer.from('300d06092a864886f70d01010b0500', 'hex');
+const genericComposite = withSignature(composite(sha256WithRsa, 2));
 
 // Certificate: TBSCertificate, signatureAlgorithm, signature. TBSCertificate:
 // [0] version, serialNumber, signature, issuer, validity, subject, key, ...
 const tbsOf = (certificate) => children(certificate, children(certificate, 0)[0][0]).map((p) => slice(certificate, p));
 const [leafCert, , rootCert] = children(der, bag[0]).map((p) => slice(der, p));
 const rootTbs = tbsOf(rootCert);
-const strangerLabel = wrap(0x30, pss(Buffer.from('02047fffffff', 'hex'))); // INTEGER 2,147,483,647
-const stranger = wrap(0x30, Buffer.concat([
+// A stranger naming Apple Root CA as its issuer, with the receipt signer's key.
+const strangerWith = (label, signature) => wrap(0x30, Buffer.concat([
   wrap(0x30, Buffer.concat([
     Buffer.from('a003020102', 'hex'), // v3
     Buffer.from('02021092', 'hex'), // serial 4242
-    strangerLabel,
+    label,
     rootTbs[5], // issuer: Apple Root CA's subject
     rootTbs[4], // Apple Root CA's validity
     wrap(0x30, wrap(0x31, wrap(0x30, Buffer.concat([Buffer.from('0603550403', 'hex'), wrap(0x0c, Buffer.from('Stranger'))])))),
     tbsOf(leafCert)[6], // the receipt signer's key
   ])),
-  strangerLabel,
-  wrap(0x03, Buffer.alloc(257)), // no unused bits, 256 zero octets
+  label,
+  wrap(0x03, Buffer.concat([Buffer.from([0]), signature])), // no unused bits
 ]));
+const strangerLabel = wrap(0x30, pss(Buffer.from('02047fffffff', 'hex'))); // INTEGER 2,147,483,647
+const stranger = strangerWith(strangerLabel, Buffer.alloc(256));
+const ecdsaWithSha256 = Buffer.from('300a06082a8648ce3d040302', 'hex');
+const compositeStranger = strangerWith(
+  wrap(0x30, composite(ecdsaWithSha256, 300)),
+  wrap(0x30, Buffer.concat(Array(300).fill(Buffer.from('030100', 'hex')))), // 300 empty BIT STRINGs
+);
 const malformedUnsigned = wrap(0x30, Buffer.concat([...parts, Buffer.from('a103020105', 'hex')]));
 
 const files = {
@@ -166,7 +190,9 @@ const files = {
   'signer-infos/refused-digest-alone.der': receipt(md2Digest),
   'signer-infos/md2-with-rsa-label-alone.der': receipt(md2WithRsa),
   'signer-infos/rsa-pss-huge-salt-label-alone.der': receipt(pssHugeSalt),
+  'signer-infos/generic-composite-label-alone.der': receipt(genericComposite),
   'certificates/rsa-pss-huge-salt-stranger.der': withBagEntry(stranger),
+  'certificates/generic-composite-stranger.der': withBagEntry(compositeStranger),
 };
 for (const [name, bytes] of Object.entries(files)) {
   mkdirSync(dirname(join(OUT, name)), { recursive: true });
