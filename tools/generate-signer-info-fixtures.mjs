@@ -26,6 +26,13 @@
  *   malformed-unsigned-attrs-then-genuine.der
  *                                       Apple's SignerInfo with unsignedAttrs
  *                                       [1] { INTEGER 5 } appended, then Apple's
+ *   md2-with-rsa-label-alone.der        Apple's SignerInfo with its signature
+ *                                       algorithm set to md2WithRSAEncryption
+ *                                       (1.2.840.113549.1.1.2), alone
+ *   rsa-pss-huge-salt-label-alone.der   Apple's SignerInfo with its signature
+ *                                       algorithm set to RSASSA-PSS (SHA-256,
+ *                                       MGF1 with SHA-256, saltLength
+ *                                       1,000,000,000), alone
  */
 
 import { createHash } from 'node:crypto';
@@ -95,6 +102,16 @@ const withDigest = (algorithm) =>
   wrap(0x30, Buffer.concat([parts[0], parts[1], wrap(0x30, Buffer.from(algorithm, 'hex')), ...parts.slice(3)]));
 const unknownDigest = withDigest('06032a03040500');
 const md2Digest = withDigest('06082a864886f70d02020500');
+const withSignature = (algorithm) =>
+  wrap(0x30, Buffer.concat([...parts.slice(0, -2), wrap(0x30, algorithm), parts[parts.length - 1]]));
+const md2WithRsa = withSignature(Buffer.from('06092a864886f70d0101020500', 'hex'));
+const sha256 = wrap(0x30, Buffer.from('0609608648016503040201' + '0500', 'hex'));
+const pssParams = wrap(0x30, Buffer.concat([
+  wrap(0xa0, sha256),
+  wrap(0xa1, wrap(0x30, Buffer.concat([Buffer.from('06092a864886f70d010108', 'hex'), sha256]))),
+  wrap(0xa2, Buffer.from('02043b9aca00', 'hex')), // INTEGER 1,000,000,000
+]));
+const pssHugeSalt = withSignature(Buffer.concat([Buffer.from('06092a864886f70d01010a', 'hex'), pssParams]));
 const malformedUnsigned = wrap(0x30, Buffer.concat([...parts, Buffer.from('a103020105', 'hex')]));
 
 const files = {
@@ -102,6 +119,8 @@ const files = {
   'unknown-digest-then-genuine.der': receipt(unknownDigest, genuine),
   'malformed-unsigned-attrs-then-genuine.der': receipt(malformedUnsigned, genuine),
   'refused-digest-alone.der': receipt(md2Digest),
+  'md2-with-rsa-label-alone.der': receipt(md2WithRsa),
+  'rsa-pss-huge-salt-label-alone.der': receipt(pssHugeSalt),
 };
 mkdirSync(OUT, { recursive: true });
 for (const [name, bytes] of Object.entries(files)) {

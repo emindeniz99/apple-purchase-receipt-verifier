@@ -1,0 +1,32 @@
+mode=plain depth=0 chain=3B der=2304580 base64=3072776 (cap 3145728)
+  run 0: 3668 ms [MALFORMED: signer certificate not embedded]
+  run 1: 2203 ms [MALFORMED: signer certificate not embedded]
+  run 2: 1926 ms [MALFORMED: signer certificate not embedded]
+mode=cert depth=30 chain=158B der=2302604 base64=3070140 (cap 3145728)
+  run 0: 3051 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 1: 2921 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 2: 3131 ms [MALFORMED: an embedded certificate is not a valid certificate]
+mode=sid depth=30 chain=158B der=2304430 base64=3072576 (cap 3145728)
+  run 0: 9540 ms [MALFORMED: signer certificate not embedded]
+  run 1: 8271 ms [MALFORMED: signer certificate not embedded]
+  run 2: 7848 ms [MALFORMED: signer certificate not embedded]
+digest=null content=16 1.2.840.113549.1.1.1     signerInfos=1 der=2202780 base64=2937040 best=25 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+digest=null content=16 1.2.840.113549.1.1.2     signerInfos=1 der=2202780 base64=2937040 best=289 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+digest=null content=16 1.2.840.113549.1.1.1     signerInfos=4 der=2204307 base64=2939076 best=28 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+digest=null content=16 1.2.840.113549.1.1.2     signerInfos=4 der=2204307 base64=2939076 best=280 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+saltLength=32 signerInfos=1 der=2800 maxHeapMB=3040
+  run 0: 248 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 6 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+saltLength=1000000000 signerInfos=1 der=2803 maxHeapMB=3040
+  run 0: 10483 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 1: 2875 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 2: 2282 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+saltLength=1000000000 signerInfos=4 der=4405 maxHeapMB=3040
+  run 0: 7415 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 1: 5217 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 2: 2145 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+saltLength=2147483647 signerInfos=1 der=2803 maxHeapMB=3040
+  run 0: 298 ms [THREW java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+  run 1: 6 ms [THREW java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+  run 2: 6 ms [THREW java.lang.OutOfMemoryError: Requested array size exceeds VM limit]

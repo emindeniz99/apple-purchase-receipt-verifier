@@ -1,0 +1,79 @@
+mode=plain depth=0 chain=3B der=2304580 base64=3072776 (cap 3145728)
+  run 0: 7120 ms [MALFORMED: signer certificate not embedded]
+  run 1: 9374 ms [MALFORMED: signer certificate not embedded]
+  run 2: 4010 ms [MALFORMED: signer certificate not embedded]
+mode=cert depth=30 chain=158B der=2302604 base64=3070140 (cap 3145728)
+  run 0: 3135 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 1: 3690 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 2: 3001 ms [MALFORMED: an embedded certificate is not a valid certificate]
+mode=sid depth=30 chain=158B der=2304430 base64=3072576 (cap 3145728)
+  run 0: 10732 ms [MALFORMED: signer certificate not embedded]
+  run 1: 10624 ms [MALFORMED: signer certificate not embedded]
+  run 2: 11746 ms [MALFORMED: signer certificate not embedded]
+digest=null content=16 1.2.840.113549.1.1.1     signerInfos=1 der=2202780 base64=2937040 best=26 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+digest=null content=16 1.2.840.113549.1.1.2     signerInfos=1 der=2202780 base64=2937040 best=264 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+digest=null content=16 1.2.840.113549.1.1.1     signerInfos=4 der=2204307 base64=2939076 best=28 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+digest=null content=16 1.2.840.113549.1.1.2     signerInfos=4 der=2204307 base64=2939076 best=261 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+saltLength=32 signerInfos=1 der=2800 maxHeapMB=3420
+  run 0: 219 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 26 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 13 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+saltLength=1000000000 signerInfos=1 der=2803 maxHeapMB=3420
+  run 0: 21855 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 1: 2232 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 2: 5250 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+saltLength=1000000000 signerInfos=4 der=4405 maxHeapMB=3420
+  run 0: 18180 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 1: 1985 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 2: 2519 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+saltLength=2147483647 signerInfos=1 der=2803 maxHeapMB=3420
+  run 0: 310 ms [THREW java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+  run 1: 18 ms [THREW java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+  run 2: 17 ms [THREW java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+mode=cert depth=50 chain=282B der=2302748 base64=3070332 (cap 3145728)
+  run 0: 5158 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 1: 6850 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 2: 6528 ms [MALFORMED: an embedded certificate is not a valid certificate]
+mode=sid depth=50 chain=282B der=2304574 base64=3072768 (cap 3145728)
+  run 0: 19548 ms [MALFORMED: signer certificate not embedded]
+  run 1: 16873 ms [MALFORMED: signer certificate not embedded]
+  run 2: 17789 ms [MALFORMED: signer certificate not embedded]
+mode=string depth=0 chain=3B der=2304582 base64=3072776 (cap 3145728)
+  run 0: 526 ms [MALFORMED: signer certificate not embedded]
+  run 1: 343 ms [MALFORMED: signer certificate not embedded]
+  run 2: 327 ms [MALFORMED: signer certificate not embedded]
+mode=bag depth=30 der=2292650 base64=3056868 (cap 3145728)
+  run 0: 3207 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 1: 3897 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 2: 3480 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 3: 3278 ms [MALFORMED: an embedded certificate is not a valid certificate]
+mode=issuer depth=30 der=2293316 base64=3057756 (cap 3145728)
+  run 0: 6913 ms [ACCEPTED]
+  run 1: 7030 ms [ACCEPTED]
+  run 2: 10062 ms [ACCEPTED]
+  run 3: 6768 ms [ACCEPTED]
+mode=subject depth=30 der=2293334 base64=3057780 (cap 3145728)
+  run 0: 7943 ms [ACCEPTED]
+  run 1: 7570 ms [ACCEPTED]
+  run 2: 8256 ms [ACCEPTED]
+  run 3: 7762 ms [ACCEPTED]
+mode=spki depth=30 der=2293330 base64=3057776 (cap 3145728)
+  run 0: 7556 ms [ACCEPTED]
+  run 1: 7625 ms [ACCEPTED]
+  run 2: 7950 ms [ACCEPTED]
+  run 3: 7711 ms [ACCEPTED]
+mode=sigalg depth=30 der=2293330 base64=3057776 (cap 3145728)
+  run 0: 5631 ms [ACCEPTED]
+  run 1: 7600 ms [ACCEPTED]
+  run 2: 7339 ms [ACCEPTED]
+  run 3: 7082 ms [ACCEPTED]
+mode=issuer depth=0 der=2293421 base64=3057896 (cap 3145728)
+  run 0: 1546 ms [ACCEPTED]
+  run 1: 1202 ms [ACCEPTED]
+  run 2: 1081 ms [ACCEPTED]
+  run 3: 1169 ms [ACCEPTED]
+mode=issuer depth=50 der=2293262 base64=3057684 (cap 3145728)
+  run 0: 10502 ms [ACCEPTED]
+  run 1: 11670 ms [ACCEPTED]
+  run 2: 11937 ms [ACCEPTED]
+  run 3: 11880 ms [ACCEPTED]

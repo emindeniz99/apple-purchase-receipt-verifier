@@ -805,6 +805,26 @@ digest still accepted, RIPEMD-160 at about 2.3 times SHA-256, costs about
 on 2026-10-13 with a plain loop, not JMH, on a 4 vCPU machine
 (`docs/evidence/2026-10-13-java-digest-cost.md`).
 
+Three more sender-chosen inputs cost seconds before any signer was
+trusted, measured the same way on 2026-10-13. Re-encoding ASN.1 to DER
+sorts every SET in it: the library re-encoded each certificate-bag entry
+before parsing it, and BouncyCastle re-encodes a SignerInfo issuer value
+that is not a string to hash and compare the name. At the cap, a bag
+entry of nested SETs cost about 3 s and an issuer value of them about
+11 s. The library now reads each bag entry as parsed, and leaves out a
+SignerInfo whose issuer holds anything but strings, as no name Apple
+issues does; both inputs cost what parsing them costs, 0.25 to 0.9 s.
+The signatureAlgorithm is unsigned too: md2WithRSAEncryption made
+BouncyCastle hash the signed attributes with MD2 (0.26 s at the cap,
+against 0.03 s), and RSASSA-PSS with a saltLength of 1,000,000,000 made
+it allocate that many bytes, an `OutOfMemoryError` out of
+`verifyReceipt`. Both labels are refused before anything is hashed or
+allocated, as `INVALID_SIGNATURE`; Apple signs receipts with neither. A
+bag entry shaped as a certificate, with nested values in its names or
+algorithm parameters, still costs 3.4 to 7 s at the cap inside
+BouncyCastle's X.509 class
+(`docs/evidence/2026-10-13-java-pretrust-reencoding.md`).
+
 ## Testing with synthetic receipts
 
 Your own logic and wiring tests need none of this: mock `Verifier` and build

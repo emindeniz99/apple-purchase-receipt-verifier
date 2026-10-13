@@ -1,0 +1,79 @@
+mode=plain depth=0 chain=3B der=2304580 base64=3072776 (cap 3145728)
+  run 0: 378 ms [MALFORMED: signer certificate not embedded]
+  run 1: 267 ms [MALFORMED: signer certificate not embedded]
+  run 2: 248 ms [MALFORMED: signer certificate not embedded]
+mode=cert depth=30 chain=158B der=2302604 base64=3070140 (cap 3145728)
+  run 0: 661 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 1: 407 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 2: 388 ms [MALFORMED: an embedded certificate is not a valid certificate]
+mode=sid depth=30 chain=158B der=2304430 base64=3072576 (cap 3145728)
+  run 0: 792 ms [MALFORMED: signer certificate not embedded]
+  run 1: 863 ms [MALFORMED: signer certificate not embedded]
+  run 2: 703 ms [MALFORMED: signer certificate not embedded]
+digest=null content=16 1.2.840.113549.1.1.1     signerInfos=1 der=2202780 base64=2937040 best=24 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+digest=null content=16 1.2.840.113549.1.1.2     signerInfos=1 der=2202780 base64=2937040 best=6 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.2 is refused]
+digest=null content=16 1.2.840.113549.1.1.1     signerInfos=4 der=2204307 base64=2939076 best=33 ms [INVALID_SIGNATURE: CMS verifier refused the signer info / CMS Algorithm Protection check failed for signatureAlgorithm]
+digest=null content=16 1.2.840.113549.1.1.2     signerInfos=4 der=2204307 base64=2939076 best=7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.2 is refused]
+saltLength=32 signerInfos=1 der=2800 maxHeapMB=3420
+  run 0: 200 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 1: 12 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 2: 11 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+saltLength=1000000000 signerInfos=1 der=2803 maxHeapMB=3420
+  run 0: 163 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 1: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 2: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+saltLength=1000000000 signerInfos=4 der=4405 maxHeapMB=3420
+  run 0: 214 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 1: 21 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 2: 21 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+saltLength=2147483647 signerInfos=1 der=2803 maxHeapMB=3420
+  run 0: 215 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 1: 15 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 2: 11 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+mode=cert depth=50 chain=282B der=2302748 base64=3070332 (cap 3145728)
+  run 0: 888 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 1: 662 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 2: 529 ms [MALFORMED: an embedded certificate is not a valid certificate]
+mode=sid depth=50 chain=282B der=2304574 base64=3072768 (cap 3145728)
+  run 0: 657 ms [MALFORMED: signer certificate not embedded]
+  run 1: 649 ms [MALFORMED: signer certificate not embedded]
+  run 2: 615 ms [MALFORMED: signer certificate not embedded]
+mode=string depth=0 chain=3B der=2304582 base64=3072776 (cap 3145728)
+  run 0: 675 ms [MALFORMED: signer certificate not embedded]
+  run 1: 344 ms [MALFORMED: signer certificate not embedded]
+  run 2: 318 ms [MALFORMED: signer certificate not embedded]
+mode=bag depth=30 der=2292650 base64=3056868 (cap 3145728)
+  run 0: 786 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 1: 402 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 2: 389 ms [MALFORMED: an embedded certificate is not a valid certificate]
+  run 3: 386 ms [MALFORMED: an embedded certificate is not a valid certificate]
+mode=issuer depth=30 der=2293316 base64=3057756 (cap 3145728)
+  run 0: 3826 ms [ACCEPTED]
+  run 1: 4145 ms [ACCEPTED]
+  run 2: 4044 ms [ACCEPTED]
+  run 3: 11779 ms [ACCEPTED]
+mode=subject depth=30 der=2293334 base64=3057780 (cap 3145728)
+  run 0: 4051 ms [ACCEPTED]
+  run 1: 4377 ms [ACCEPTED]
+  run 2: 4684 ms [ACCEPTED]
+  run 3: 4640 ms [ACCEPTED]
+mode=spki depth=30 der=2293330 base64=3057776 (cap 3145728)
+  run 0: 4243 ms [ACCEPTED]
+  run 1: 4137 ms [ACCEPTED]
+  run 2: 4103 ms [ACCEPTED]
+  run 3: 4204 ms [ACCEPTED]
+mode=sigalg depth=30 der=2293330 base64=3057776 (cap 3145728)
+  run 0: 3492 ms [ACCEPTED]
+  run 1: 3539 ms [ACCEPTED]
+  run 2: 3448 ms [ACCEPTED]
+  run 3: 3580 ms [ACCEPTED]
+mode=issuer depth=0 der=2293421 base64=3057896 (cap 3145728)
+  run 0: 1236 ms [ACCEPTED]
+  run 1: 864 ms [ACCEPTED]
+  run 2: 822 ms [ACCEPTED]
+  run 3: 876 ms [ACCEPTED]
+mode=issuer depth=50 der=2293262 base64=3057684 (cap 3145728)
+  run 0: 5050 ms [ACCEPTED]
+  run 1: 6804 ms [ACCEPTED]
+  run 2: 6406 ms [ACCEPTED]
+  run 3: 7051 ms [ACCEPTED]
