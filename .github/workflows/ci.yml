@@ -228,11 +228,20 @@ jobs:
           set -euo pipefail
           "$JUT/bin/java" -XshowSettings:properties -version 2>&1 \
             | grep -E '^ +(java\.(vendor|version|vm\.name|vm\.version|runtime\.version)) ='
+      # On Semeru the forked JVM keeps BouncyCastle's DERSet out of the JIT.
+      # OpenJ9 0.61.0 sometimes miscompiles DERSet.encode at its top
+      # optimisation levels: every SET encoded after that point gets the
+      # length byte 0xFF, and every verification fails closed from then on.
+      # This is a JVM bug, not a library bug, and the exclusion keeps the
+      # leg testing everything else on OpenJ9. Drop it when an OpenJ9 release
+      # fixes the miscompile.
+      # Evidence: docs/evidence/2026-10-13-openj9-derset-jit.md.
       - name: the suite on that JVM
         working-directory: java
         env:
           JUT: ${{ steps.jut.outputs.path }}
-        run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java"
+          JIT_ARGLINE: ${{ matrix.vendor == 'semeru' && '-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}' || '' }}
+        run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java" ${JIT_ARGLINE:+"-DargLine=$JIT_ARGLINE"}
 
   # The genuine legacy receipt chain is SHA-1 end to end. The JDK's own PKIX
   # code obeys jdk.certpath.disabledAlgorithms, so a hardened java.security
