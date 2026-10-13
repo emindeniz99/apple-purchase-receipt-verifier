@@ -48,7 +48,7 @@ not build any, and no test does.
 
 | Constant | Value | Counted | Over the cap |
 |---|---:|---|---|
-| `ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS` | 1,000 | on the raw TBS, every `[3]` field after the version slot, before `Certificate.getInstance` | a bag entry is skipped, as one `AppleTrust.convertible` rejects; an x5c entry is a null link, `UNTRUSTED_CHAIN` |
+| `ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS` | 1,000 | on the raw TBS, every `[3]` field after the version slot, before `Certificate.getInstance` | a bag entry is skipped, as one `AppleTrust.convertible` rejects; an x5c leaf or intermediate is a null link, `UNTRUSTED_CHAIN`, and x5c[2] is never read |
 | `ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES` | 1,000 | signed plus unsigned, on the raw `SignerInfo`, before `CMSSignedData` and `SignerInformation` are built | the SignerInfo is left out; `MALFORMED`, "signer certificate not embedded", when none is left |
 
 At the cap the worst case is about 1,000^2 = 10^6 comparisons per
@@ -95,3 +95,8 @@ Counted with `openssl x509 -text` and `openssl pkcs7 -print_certs`.
 - Apple's own SignerInfo with more than 1,000 unsigned attributes
   appended is refused by Java and accepted by the core, a row in
   DECISIONS.md R20.
+- The count runs before the parse, since the parse builds the table, so
+  an entry over the cap that would not otherwise decode is passed over
+  (a bag stranger leaves the receipt ok; x5c `UNTRUSTED_CHAIN`, or ok
+  for x5c[2]) where the core
+  answers `MALFORMED` or `INVALID_CERTIFICATE`, another R20 row.

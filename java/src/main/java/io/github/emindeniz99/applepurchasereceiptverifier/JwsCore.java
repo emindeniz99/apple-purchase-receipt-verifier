@@ -319,8 +319,9 @@ final class JwsCore {
      * Each entry as a certificate, or null for one over
      * {@link ReceiptCertificates#MAX_CERTIFICATE_EXTENSIONS} or one
      * {@link AppleTrust#convertible} passes over: no Apple certificate, so it
-     * stands for nothing in the chain. An entry that does not decode is
-     * INVALID_CERTIFICATE.
+     * stands for nothing in the chain. An entry under the cap that does not
+     * decode is INVALID_CERTIFICATE; one over it is null before it is parsed,
+     * decodable or not.
      */
     private static List<@Nullable X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
         JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);

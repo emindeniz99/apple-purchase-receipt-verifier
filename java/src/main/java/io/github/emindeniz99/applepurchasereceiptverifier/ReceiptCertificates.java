@@ -58,8 +58,9 @@ final class ReceiptCertificates {
      * signer and are skipped, and so is a certificate over
      * {@link #MAX_CERTIFICATE_EXTENSIONS} or one
      * {@link AppleTrust#convertible} passes over. The bag is unsigned, so an
-     * entry that does not decode is a defect of the receipt: MALFORMED,
-     * whichever certificate it was meant to be.
+     * entry under the cap that does not decode is a defect of the receipt:
+     * MALFORMED, whichever certificate it was meant to be. One over the cap
+     * is passed over before it is parsed, decodable or not.
      */
     static ReceiptCertificates decode(CMSSignedData cms) throws VerificationException {
         ASN1Set certificateSet =
@@ -116,12 +117,15 @@ final class ReceiptCertificates {
     /**
      * Whether {@code certificate}, a Certificate not yet parsed, carries more
      * than {@link #MAX_CERTIFICATE_EXTENSIONS} extensions. Every {@code [3]}
-     * field of the TBS after its first counts wherever it stands, as
-     * BouncyCastle parses each of them. The first is not counted:
-     * BouncyCastle reads a tagged first field as the version whatever its tag
-     * number, and reads extensions only after the subject's key, so a
-     * {@code [3]} there is never an extensions table. A shape that is not a
-     * certificate throws, as its parse would.
+     * field of the TBS after its first counts wherever it stands, a superset
+     * of the fields BouncyCastle parses as extensions, which it reads only
+     * after the subject's key. The first is not counted: BouncyCastle reads a
+     * tagged first field as the version whatever its tag number, so a
+     * {@code [3]} there is never an extensions table. Only the outer
+     * Certificate and TBS SEQUENCEs and the counted fields are checked, and a
+     * shape that fails those throws. The rest is not read, so an entry over
+     * the cap is passed over whether or not its parse would succeed: the
+     * count must come first, as the parse is what builds the table.
      */
     static boolean tooManyExtensions(ASN1Encodable certificate) {
         ASN1Sequence tbs =
