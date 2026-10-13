@@ -38,6 +38,8 @@ import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.cms.SignerInfo;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
+import org.bouncycastle.asn1.eac.EACObjectIdentifiers;
+import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
@@ -490,19 +492,73 @@ class UnauthenticatedKeyCostTest {
         // RSASSA-PSS parameters are unsigned, and BouncyCastle allocates an
         // array of saltLength bytes while it builds the verifier: with a
         // saltLength of 1,000,000,000, an OutOfMemoryError out of
-        // verifyReceipt, before a signature byte was compared.
+        // verifyReceipt, before a signature byte was compared. The salt is
+        // now bounded by the signer's key, which holds at most 222 octets.
+        assertSaltRefusedQuickly(pss(1_000_000_000));
+    }
+
+    @Test
+    void aSignerInfoWithAnEacPssLabelAndAHugeSaltIsRefusedBeforeAnythingIsAllocated() throws Exception {
+        // BouncyCastle builds the verifier for what its CMS name for the label
+        // resolves to, with the label's parameters: id-TA-RSA-PSS-SHA-256 and
+        // -SHA-1 resolve to RSASSA-PSS. Measured with only the RSASSA-PSS
+        // label refused: an OutOfMemoryError out of verifyReceipt after 2.6
+        // to 33 s, with either label and a saltLength of 1,000,000,000. Ahead
+        // of Apple's SignerInfo, the copy is refused and the receipt verifies.
+        for (ASN1ObjectIdentifier oid : new ASN1ObjectIdentifier[] {
+            EACObjectIdentifiers.id_TA_RSA_PSS_SHA_256, EACObjectIdentifiers.id_TA_RSA_PSS_SHA_1
+        }) {
+            AlgorithmIdentifier label =
+                    new AlgorithmIdentifier(oid, pss(1_000_000_000).getParameters());
+            assertSaltRefusedQuickly(label);
+            assertAcceptedBesideGenuine(label);
+        }
+    }
+
+    @Test
+    void aSignerInfoWithACompositeLabelHoldingAHugeSaltIsRefusedBeforeAnythingIsAllocated() throws Exception {
+        // id-alg-composite names each part's algorithm in its parameters, and
+        // BouncyCastle builds a verifier for each part: one part RSASSA-PSS
+        // with a saltLength of 1,000,000,000. Measured with only the
+        // RSASSA-PSS label refused: 0.5 to 9 s a call before the composite
+        // signature failed to parse.
+        AlgorithmIdentifier label =
+                new AlgorithmIdentifier(MiscObjectIdentifiers.id_alg_composite, new DLSequence(pss(1_000_000_000)));
+        assertSaltRefusedQuickly(label);
+        assertAcceptedBesideGenuine(label);
+    }
+
+    /** {@code label} on a copy of the genuine SignerInfo ahead of it: the receipt verifies, quickly. */
+    private static void assertAcceptedBesideGenuine(AlgorithmIdentifier label) throws Exception {
         TestPki pki = TestPki.receipt();
         SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
         SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
-        AlgorithmIdentifier sha256 = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256, DERNull.INSTANCE);
-        AlgorithmIdentifier pss = new AlgorithmIdentifier(
-                PKCSObjectIdentifiers.id_RSASSA_PSS,
-                new RSASSAPSSparams(
-                        sha256,
-                        new AlgorithmIdentifier(PKCSObjectIdentifiers.id_mgf1, sha256),
-                        new ASN1Integer(1_000_000_000),
-                        new ASN1Integer(1)));
-        byte[] receipt = relabelled(genuine, signer, signer.getAuthenticatedAttributes(), pss);
+        acceptedFast(pki, aheadOfGenuine(genuine, signer, signedAttributes(signer), label));
+    }
+
+    @Test
+    void aSignerInfoSaltIsBoundedAtTheLargestTheSignersKeyHolds() throws Exception {
+        // RFC 8017 9.1.2 for the 2048-bit signer key and SHA-256: emLen 256,
+        // hLen 32. 222 octets fit, so the verifier is built and the signature
+        // checked (it fails: the genuine signature is PKCS #1 v1.5 over other
+        // attributes). 223 do not, and the SignerInfo is refused before a
+        // verifier is built.
+        TestPki pki = TestPki.receipt();
+        byte[] fits = pssRelabelled(pki, pss(222));
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), fits));
+        assertEquals("CMS signature does not match the signer certificate's key", e.getMessage());
+        assertSaltRefusedQuickly(pss(223));
+    }
+
+    /**
+     * Relabels the genuine signer's SignerInfo {@code label} and asserts the
+     * receipt is refused quickly for a saltLength the signer's key cannot
+     * hold.
+     */
+    private static void assertSaltRefusedQuickly(AlgorithmIdentifier label) throws Exception {
+        TestPki pki = TestPki.receipt();
+        byte[] receipt = pssRelabelled(pki, label);
 
         long start = System.nanoTime();
         VerificationException e =
@@ -510,8 +566,20 @@ class UnauthenticatedKeyCostTest {
         assertFast(start);
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
         assertEquals(
-                "CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused",
+                "CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key",
                 e.getMessage());
+    }
+
+    /**
+     * A receipt by {@code pki} whose one SignerInfo is the genuine one
+     * relabelled {@code label}, less its CMSAlgorithmProtection attribute,
+     * which names the genuine label and would fail the SignerInfo before its
+     * signature is compared.
+     */
+    private static byte[] pssRelabelled(TestPki pki, AlgorithmIdentifier label) throws Exception {
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        return relabelled(genuine, signer, new DLSet(signedAttributes(signer)), label);
     }
 
     @Test

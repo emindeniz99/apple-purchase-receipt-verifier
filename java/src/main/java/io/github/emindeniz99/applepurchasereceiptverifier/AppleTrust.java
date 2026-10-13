@@ -190,8 +190,7 @@ final class AppleTrust {
      * the parameters name. Any other algorithm fits, and PSS under a key that
      * is not RSA verifies nothing.
      */
-    private static boolean saltFits(AlgorithmIdentifier algorithm, @Nullable PublicKey key)
-            throws GeneralSecurityException {
+    static boolean saltFits(AlgorithmIdentifier algorithm, @Nullable PublicKey key) throws GeneralSecurityException {
         if (MiscObjectIdentifiers.id_alg_composite.equals(algorithm.getAlgorithm())) {
             for (ASN1Encodable part : ASN1Sequence.getInstance(algorithm.getParameters())) {
                 if (!saltFits(AlgorithmIdentifier.getInstance(part), key)) {

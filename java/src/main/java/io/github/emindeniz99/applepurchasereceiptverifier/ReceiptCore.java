@@ -30,13 +30,20 @@ import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.cms.SignerIdentifier;
 import org.bouncycastle.asn1.cms.SignerInfo;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.CMSTypedData;
+import org.bouncycastle.cms.DefaultCMSSignatureAlgorithmNameGenerator;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationVerifier;
-import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
+import org.bouncycastle.operator.ContentVerifier;
+import org.bouncycastle.operator.ContentVerifierProvider;
+import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
+import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -64,8 +71,8 @@ final class ReceiptCore {
      * choice, and BouncyCastle 1.86 runs the digest they name over up to the
      * whole receipt before any signature is checked, where these eight cost
      * 2.9 to 25 times SHA-256 and every other digest it resolves at most 2.6
-     * times. {@link #REFUSED_SIGNATURE_ALGORITHMS} holds the one signature
-     * label that names one of them.
+     * times. {@link #REFUSED_SIGNATURE_ALGORITHM} is the one signature label
+     * that names one of them.
      */
     static final Set<String> REFUSED_DIGESTS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "1.2.643.2.2.9", // GOST R 34.11-94
@@ -78,15 +85,11 @@ final class ReceiptCore {
             "1.2.804.2.1.1.1.1.2.2.3"))); // DSTU 7564, 512 bits
 
     /**
-     * Signature algorithms a SignerInfo may not name, neither one Apple signs
+     * The signature algorithm a SignerInfo may not name, not one Apple signs
      * receipts with: md2WithRSAEncryption, whose MD2 BouncyCastle runs over
-     * the signed attributes before the signature is checked, and RSASSA-PSS,
-     * whose unsigned saltLength sizes an array BouncyCastle allocates before
-     * the signature is compared.
+     * the signed attributes before the signature is checked.
      */
-    static final Set<String> REFUSED_SIGNATURE_ALGORITHMS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "1.2.840.113549.1.1.2", // md2WithRSAEncryption
-            "1.2.840.113549.1.1.10"))); // RSASSA-PSS
+    static final String REFUSED_SIGNATURE_ALGORITHM = "1.2.840.113549.1.1.2"; // md2WithRSAEncryption
 
     private ReceiptCore() {}
 
@@ -428,7 +431,7 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info: digest " + digest + " is refused");
         }
-        if (REFUSED_SIGNATURE_ALGORITHMS.contains(signature)) {
+        if (REFUSED_SIGNATURE_ALGORITHM.equals(signature)) {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE,
                     "CMS verifier refused the signer info: signature algorithm " + signature + " is refused");
@@ -442,6 +445,11 @@ final class ReceiptCore {
                         Reason.INVALID_SIGNATURE, "CMS signature does not match the signer certificate's key");
             }
         } catch (CMSException | OperatorCreationException | RuntimeException e) {
+            if (e.getCause() instanceof SaltDoesNotFit) {
+                throw new VerificationException(
+                        Reason.INVALID_SIGNATURE,
+                        "CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key");
+            }
             // A digest that does not match, a key with no CMS verifier, an
             // algorithm BouncyCastle does not implement, or a value it reads
             // only while verifying (the CMSAlgorithmProtection attribute):
@@ -453,16 +461,68 @@ final class ReceiptCore {
     }
 
     /**
-     * The CMS verifier for the signer's key, from a builder made per call so
-     * no BouncyCastle object is shared between threads. Built from the key,
+     * The CMS verifier for the signer's key, made per call so no
+     * BouncyCastle object is shared between threads. Built from the key,
      * not the certificate: with a certificate BouncyCastle also refuses a
      * signer outside its validity at a signed signingTime, which RFC 5652
      * 11.3 does not ask, and the chain is judged at the creation date
      * already.
+     *
+     * <p>Assembled as {@code JcaSimpleSignerInfoVerifierBuilder.build(PublicKey)}
+     * assembles it, with one check in the middle. BouncyCastle hands its
+     * content verifier provider the algorithm it is about to build: the one
+     * its CMS name for the SignerInfo's labels resolves to, carrying the
+     * signatureAlgorithm's unsigned parameters, whatever that label's OID.
+     * An RSASSA-PSS verifier allocates the saltLength as an array while it
+     * is built, before any signature byte is compared, so the provider
+     * first requires the saltLength to fit the signer's key
+     * ({@link AppleTrust#saltFits}, each part of a composite too). A PSS
+     * signature the key can make passes.</p>
      */
     private static SignerInformationVerifier signerVerifier(PublicKey signerKey) throws OperatorCreationException {
-        return new JcaSimpleSignerInfoVerifierBuilder()
+        ContentVerifierProvider built = new JcaContentVerifierProviderBuilder()
                 .setProvider(BouncyCastle.PROVIDER)
                 .build(signerKey);
+        ContentVerifierProvider bounded = new ContentVerifierProvider() {
+            @Override
+            public boolean hasAssociatedCertificate() {
+                return false;
+            }
+
+            @Override
+            public @Nullable X509CertificateHolder getAssociatedCertificate() {
+                return null;
+            }
+
+            @Override
+            public ContentVerifier get(AlgorithmIdentifier algorithm) throws OperatorCreationException {
+                boolean fits;
+                try {
+                    fits = AppleTrust.saltFits(algorithm, signerKey);
+                } catch (GeneralSecurityException e) {
+                    throw new OperatorCreationException("unknown digest in the signature parameters", e);
+                }
+                if (!fits) {
+                    throw new SaltDoesNotFit();
+                }
+                return built.get(algorithm);
+            }
+        };
+        return new SignerInformationVerifier(
+                new DefaultCMSSignatureAlgorithmNameGenerator(),
+                new DefaultSignatureAlgorithmIdentifierFinder(),
+                bounded,
+                new JcaDigestCalculatorProviderBuilder()
+                        .setProvider(BouncyCastle.PROVIDER)
+                        .build());
+    }
+
+    /** An RSASSA-PSS saltLength longer than the signer's key can hold. */
+    private static final class SaltDoesNotFit extends OperatorCreationException {
+        private static final long serialVersionUID = 1L;
+
+        SaltDoesNotFit() {
+            super("RSASSA-PSS saltLength does not fit the signer's key");
+        }
     }
 }

@@ -585,7 +585,7 @@ cRLDistributionPoints, 2026-10-06).
   | A receipt date of 0000-01-01T00:00:00Z at the endpoint, whose `_pst` time falls in the year -1 (2 BC) | not measured | `-0001-12-31 16:07:02 America/Los_Angeles` (`java.time`'s `uuuu`: a sign and four digits) | `-001-12-31 16:07:02 America/Los_Angeles` (jiff's `%Y`: four characters with the sign counted) | Both are the same instant and every other field agrees. No Apple receipt carries a year-0000 date, and Apple's rendering of one is unknown, so neither form is preferred (owner, 2026-10-07) | `endpoint/rfc3339-dates-render` (the case pins other purchases' dates, not this one) |
   | A SignerInfo whose signedAttrs or unsignedAttrs field holds something other than Attributes, first or second, beside a SignerInfo that verifies | not measured | ok (owner, 2026-10-12): BouncyCastle reads the attributes only while verifying, so the broken SignerInfo is `INVALID_SIGNATURE` and the other one decides; from Q65 until then Java read every SignerInfo's attributes first and answered `MALFORMED` | `MALFORMED` | OpenSSL decodes every SignerInfo, attributes included, when it parses the SignedData, so one that does not parse is a SignedData that does not. Java's ok still needs a SignerInfo whose signature verifies over the returned content under a pinned chain, so the cases allow both | `receipt/reject-malformed-signed-attrs-in-the-first-signer`, `receipt/malformed-signed-attrs-in-the-second-signer-does-not-crash`, `receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info` |
   | Apple's genuine SignerInfo with its signatureAlgorithm relabelled md2WithRSAEncryption (1.2.840.113549.1.1.2), alone | not measured | `INVALID_SIGNATURE`: BouncyCastle hashed with the label's MD2, which Apple's DigestInfo does not match; since Q136 a (2026-10-13) the label is refused before anything is hashed | ok (measured 2026-10-13 with `cargo test`) | OpenSSL reads an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1 v1.5 or RSASSA-PSS and hashes with the digestAlgorithm, Apple's SHA-256, so Apple's signature verifies. The label is unsigned packaging Apple never writes; Java refuses a receipt whose signature is Apple's, as it did before the label was refused, and nothing unsigned is accepted either way | `receipt/reject-a-signer-info-signed-md2-with-rsa`, which allows both |
-  | A genuine RSASSA-PSS signature on a receipt, under the test PKI | not measured | `INVALID_SIGNATURE` since Q137 a (2026-10-13): the label is refused before BouncyCastle builds a verifier, because building one allocates the unsigned saltLength | ok (measured 2026-10-13) | OpenSSL verifies PSS. Apple never signs receipts with RSA-PSS (port-defined 2026-09-27), so the case allows both | `receipt/signer-rsa-pss-does-not-crash` |
+  | A genuine RSASSA-PSS signature on a receipt, under the test PKI | not measured | ok since Q142 a (2026-10-13): the saltLength is bounded by the signer's key before BouncyCastle builds a verifier, because building one allocates it. Earlier the same day, under Q137 a, the label was refused and the receipt was `INVALID_SIGNATURE` | ok (measured 2026-10-13) | OpenSSL verifies PSS. Apple does not sign receipts with RSA-PSS today, but an input Apple signed must not be refused after a future change on its side (Q142 a), so Java bounds the salt instead of refusing the label and the case, which allowed both, now expects ok of both | `receipt/signer-rsa-pss-does-not-crash` |
   | A receipt date whose offset moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z (`9999-12-31T23:59:59-00:01`, `0000-01-01T00:00:00+00:01`) | not measured | read (owner, 2026-10-12): a `long` holds the instant and the endpoint's `uuuu` renders the year | null, kept raw | jiff's calendar ends at 9999, so the core reads only dates it can render. Before trust only the creation date is read, and such a date only moves the chain instant to where no certificate is valid (`INVALID_CERTIFICATE`); the other dates are informational | `receipt/rfc3339-date-forms` (purchases 318 and 319 are not pinned) |
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
@@ -702,9 +702,10 @@ cRLDistributionPoints, 2026-10-06).
   `receipt/reject-a-signer-info-in-a-refused-digest` (MD2) pins it, and
   the refused SignerInfo is skipped like any other that does not verify.
 
-  The signatureAlgorithm is unsigned as well, and Java refuses two
-  labels the same way, before `signer.verify` (owner, Q136 a and Q137 a,
-  2026-10-13), neither one Apple signs receipts with. With signed
+  The signatureAlgorithm is unsigned as well. Java refuses one label the
+  same way, before `signer.verify`, and bounds the RSASSA-PSS saltLength
+  whatever the label, before BouncyCastle builds a verifier (owner, Q136 a
+  and Q142 a, 2026-10-13). With signed
   attributes, BouncyCastle hashes them with the digest the label names
   before any signature is checked, so md2WithRSAEncryption
   (1.2.840.113549.1.1.2) ran MD2 over them whatever the digestAlgorithm
@@ -713,22 +714,37 @@ cRLDistributionPoints, 2026-10-06).
   registers, for an RSA and an EC key, it costs 16 times rsaEncryption and
   every other label at most 2.4 times, and `DigestDenylistCostTest` now
   re-measures that against the same band. RSASSA-PSS
-  (1.2.840.113549.1.1.10) is refused for its parameters: BouncyCastle
+  (1.2.840.113549.1.1.10) is bounded for its parameters: BouncyCastle
   allocates an array of the unsigned saltLength while it builds the
   verifier, so a saltLength of 1,000,000,000 threw `OutOfMemoryError` out
   of `verifyReceipt`, 2 to 22 s into the call, before a signature byte
-  was compared. Nothing is parsed or bounded; the label alone decides
-  ([pre-trust re-encoding][pretrust]). The core never hashes with the
-  label: OpenSSL takes the digest from the digestAlgorithm alone and reads
-  an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1 v1.5 or
-  PSS, so the label costs it nothing, and Apple's SignerInfo relabelled
+  was compared ([pre-trust re-encoding][pretrust]). Q137 a refused the
+  label outright; Q142 a replaced that the same day with the bound
+  certificates already had (Q140 a, below), because a refusal would turn
+  away a PSS signature Apple made after a future change on its side.
+  Java now requires the saltLength to fit the signer's RSA key, at most
+  emLen - hLen - 2 octets (RFC 8017 9.1.2), in the content verifier
+  provider it hands BouncyCastle, so the check sees the algorithm
+  BouncyCastle is about to build and not the label. BouncyCastle
+  resolves the label through its CMS name tables and keeps the label's
+  parameters, so two more labels reach the same PSS verifier: the EAC
+  labels id-TA-RSA-PSS-SHA-256 and -SHA-1 (0.4.0.127.0.7.2.2.2.1.4 and
+  .3), and id-alg-composite with a PSS part. With the RSASSA-PSS label
+  refused and a saltLength of 1,000,000,000, the EAC labels threw
+  `OutOfMemoryError` out of `verifyReceipt` after 3 to 23 s, and the
+  composite cost 0.5 to 6 s a call before its signature failed to parse
+  (measured 2026-10-13, JDK 21). A salt that does not fit is
+  `INVALID_SIGNATURE`, "the RSASSA-PSS saltLength does not fit the
+  signer's key", 7 to 16 ms warm on every route. The core never hashes
+  with the label: OpenSSL takes the digest from the digestAlgorithm alone
+  and reads an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1
+  v1.5 or PSS, so the label costs it nothing, and Apple's SignerInfo relabelled
   md2WithRSAEncryption verifies there, a row in the table above. It
   answers `INVALID_SIGNATURE` for Apple's SignerInfo relabelled PSS with
   that salt, so
   `receipt/reject-a-signer-info-labelled-rsa-pss-with-a-huge-salt`
-  expects it of both; a genuine PSS signature is ok in the core and now
-  `INVALID_SIGNATURE` in Java, which
-  `receipt/signer-rsa-pss-does-not-crash` already allowed.
+  expects it of both; a genuine PSS signature is ok in both, and
+  `receipt/signer-rsa-pss-does-not-crash` now expects ok.
 
   Two pre-trust re-encodings in Java are gone (owner, Q135 a,
   2026-10-13). Re-encoding ASN.1 to DER sorts every SET by its members'
@@ -795,7 +811,8 @@ cRLDistributionPoints, 2026-10-06).
   `INVALID_CERTIFICATE` in Java, as in the core.
 
   A certificate's signature label is bounded too (owner, Q140 a,
-  2026-10-13). Q137 a refused RSASSA-PSS on SignerInfos, but a bag entry
+  2026-10-13). Q137 a refused RSASSA-PSS on SignerInfos (a bound since
+  Q142 a, above), but a bag entry
   or an x5c certificate that names an RSA root, or a genuine RSA
   intermediate, as its issuer still reached `X509Certificate.verify`,
   and BouncyCastle allocates saltLength bytes as it initialises the

@@ -237,6 +237,38 @@ Apple never signs receipts with RSASSA-PSS (owner, 2026-09-27). The
 genuine receipts in the shared cases, the G5 and legacy sandbox receipts under
 the default roots among them, verify as before.
 
+## Later the same day: the PSS refusal became a bound (Q142 a)
+
+The owner replaced the RSASSA-PSS refusal with a bound (Q142 a): an
+input Apple signed must not be refused, including after a future change
+on Apple's side, and the refusal turned the genuine PSS signature of
+`receipt/signer-rsa-pss-does-not-crash` into `INVALID_SIGNATURE`. Java
+now requires a SignerInfo's saltLength to fit the signer's RSA key, at
+most emLen - hLen - 2 octets (RFC 8017 9.1.2, `AppleTrust.saltFits`,
+the check certificates already had), before BouncyCastle builds the
+verifier. The check sits in the content verifier provider Java hands
+BouncyCastle, so it sees the algorithm about to be built, not the label:
+`SignerInformationVerifier.getContentVerifier` resolves the label
+through BouncyCastle's CMS name tables and keeps the label's parameters,
+so the EAC labels id-TA-RSA-PSS-SHA-256 (0.4.0.127.0.7.2.2.2.1.4) and
+id-TA-RSA-PSS-SHA-1 (.3) reach the same PSS verifier, and so does
+id-alg-composite with a PSS part, which builds a verifier per part.
+
+`PssSaltProbe` takes the label as a third argument now, and
+`measure.sh ... routes` runs each route at a saltLength of 32 and
+1,000,000,000 (`results/pss-routes-before-jdk21.txt`, `-after-`; JDK
+21.0.10, default heap of 3,420 MiB, 4 vCPU, 15 GiB). Before, with the
+RSASSA-PSS label refused (`97dc9ce3`), the huge salt under either EAC
+label threw `OutOfMemoryError` out of `verifyReceipt` on every call,
+3.1 to 23.5 s, and under the composite cost 0.5 to 6.0 s a call before
+the composite signature failed to parse; at a salt of 32 every route
+took 6 to 17 ms warm. After, the huge salt is `INVALID_SIGNATURE`, "the
+RSASSA-PSS saltLength does not fit the signer's key", 7 to 16 ms warm,
+under all four labels. `UnauthenticatedKeyCostTest` pins the four
+routes, and the EAC and composite ones also ahead of the genuine
+SignerInfo, where the receipt verifies. The genuine PSS receipt is ok
+again in Java, as in the core, and the case now expects ok.
+
 ## Where this stops holding
 
 - One machine, single runs: the figures are an order of magnitude, and

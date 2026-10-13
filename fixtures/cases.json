@@ -9190,7 +9190,7 @@
     },
     {
       "id": "receipt/signer-rsa-pss-does-not-crash",
-      "description": "A receipt whose CMS signature is RSASSA-PSS with SHA-256 under the test PKI; the signature is genuine. Apple never signs receipts with RSA-PSS, so RSA-PSS support is port-defined (owner, 2026-09-27): the port may verify or refuse with one of the listed reasons, but must not crash and must finish within maxMillis. PHP refuses it, because its OpenSSL binding has no PSS mode and the owner rules out hand-written crypto.",
+      "description": "A receipt whose CMS signature is RSASSA-PSS with SHA-256 under the test PKI; the signature is genuine and its saltLength fits the signer's key, so it verifies, within maxMillis. Apple does not sign receipts with RSA-PSS today, but an input Apple signed must never be refused, including after a future change on Apple's side (owner Q142 a, 2026-10-13): Java bounds the saltLength by the signer's key (RFC 8017 9.1.2) instead of refusing the label, and the core hands the label and its parameters to OpenSSL. ok in both (DECISIONS.md R20).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "receipt-signer-rsa-pss"
@@ -9204,17 +9204,17 @@
         }
       },
       "expected": {
-        "oneOf": [
-          "ok",
-          "INVALID_SIGNATURE"
-        ]
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
       },
-      "fault": "signer-algorithm-is-rsa-pss",
       "maxMillis": 2000,
       "tags": [
         "receipt",
         "pkcs7",
-        "tolerant",
+        "positive",
         "signer-algorithm",
         "new-in-0-7"
       ]
@@ -10218,7 +10218,7 @@
     },
     {
       "id": "receipt/reject-a-signer-info-labelled-rsa-pss-with-a-huge-salt",
-      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to RSASSA-PSS (SHA-256, MGF1 with SHA-256) and a saltLength of 1,000,000,000, alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The signatureAlgorithm and its parameters are unsigned, and BouncyCastle allocates an array of saltLength bytes while it builds the verifier, before any signature byte is compared: an OutOfMemoryError. Java refuses RSASSA-PSS before building anything; Apple never signs receipts with it (owner Q137 a, 2026-10-13). The core hands the label and its parameters to OpenSSL, and Apple's PKCS#1 v1.5 signature does not verify as PSS under them, within maxMillis. INVALID_SIGNATURE in both (DECISIONS.md R20).",
+      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to RSASSA-PSS (SHA-256, MGF1 with SHA-256) and a saltLength of 1,000,000,000, alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The signatureAlgorithm and its parameters are unsigned, and BouncyCastle allocates an array of saltLength bytes while it builds the verifier, before any signature byte is compared: an OutOfMemoryError. Java bounds the saltLength by the signer's key before building anything (RFC 8017 9.1.2: at most emLen - hLen - 2 octets, owner Q142 a, 2026-10-13), and Apple's signer key holds far fewer than 1,000,000,000. The core hands the label and its parameters to OpenSSL, and Apple's PKCS#1 v1.5 signature does not verify as PSS under them, within maxMillis. INVALID_SIGNATURE in both (DECISIONS.md R20).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "public-receipt-sandbox-g5-signer-infos-rsa-pss-huge-salt-label-alone"

@@ -1,0 +1,32 @@
+label=pss saltLength=32 signerInfos=1 der=2800 maxHeapMB=3420
+  run 0: 328 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 10 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 9 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+label=pss saltLength=1000000000 signerInfos=1 der=2803 maxHeapMB=3420
+  run 0: 401 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+  run 1: 16 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+  run 2: 16 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+label=eac-sha256 saltLength=32 signerInfos=1 der=2801 maxHeapMB=3420
+  run 0: 163 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 9 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+label=eac-sha256 saltLength=1000000000 signerInfos=1 der=2804 maxHeapMB=3420
+  run 0: 201 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+  run 1: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+  run 2: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+label=eac-sha1 saltLength=32 signerInfos=1 der=2801 maxHeapMB=3420
+  run 0: 176 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 11 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+label=eac-sha1 saltLength=1000000000 signerInfos=1 der=2804 maxHeapMB=3420
+  run 0: 203 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+  run 1: 11 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+  run 2: 15 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+label=composite saltLength=32 signerInfos=1 der=2816 maxHeapMB=3420
+  run 0: 173 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 8 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+label=composite saltLength=1000000000 signerInfos=1 der=2819 maxHeapMB=3420
+  run 0: 158 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+  run 1: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]
+  run 2: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: the RSASSA-PSS saltLength does not fit the signer's key]

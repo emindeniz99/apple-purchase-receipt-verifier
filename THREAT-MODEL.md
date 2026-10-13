@@ -372,10 +372,15 @@ accepted, RIPEMD-160, costs about 0.2 s warm at the cap
 (docs/evidence/2026-10-13-java-digest-cost.md). The signatureAlgorithm
 is unsigned too: Java refuses md2WithRSAEncryption, whose MD2
 BouncyCastle ran over the signed attributes before the signature was
-checked (0.26 s at the cap, against 0.03 s), and RSASSA-PSS, whose
-saltLength BouncyCastle allocated as an array while it built the
-verifier (an `OutOfMemoryError` at 1,000,000,000), before anything is
-hashed or built. Re-encoding ASN.1 to DER sorts every SET, so a cap-sized
+checked (0.26 s at the cap, against 0.03 s), before anything is hashed.
+RSASSA-PSS is not refused: BouncyCastle allocated its saltLength as an
+array while it built the verifier (an `OutOfMemoryError` at
+1,000,000,000), so Java requires the saltLength to fit the signer's RSA
+key (RFC 8017 9.1.2) before anything is built. The check sits in the
+content verifier provider Java hands BouncyCastle, so it sees the
+algorithm about to be built rather than the label: two EAC labels and
+a composite label reach the same PSS verifier (DECISIONS.md R20, owner
+Q142 a). A genuine PSS signature verifies. Re-encoding ASN.1 to DER sorts every SET, so a cap-sized
 value of nested SETs cost seconds where Java re-encoded before trust: a
 bag entry re-encoded before it was parsed (about 3 s), and a SignerInfo
 issuer value that is not a string, which BouncyCastle re-encodes to hash

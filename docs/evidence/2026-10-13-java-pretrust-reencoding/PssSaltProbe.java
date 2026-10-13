@@ -23,7 +23,10 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
  * saltLength of saltLength; the signature is the genuine PKCS#1 v1.5 one, so
  * nothing here verifies. Times ReceiptCore.verifyDer, catching Throwable so
  * an OutOfMemoryError is printed rather than ending the run.
- * Args: saltLength [signerInfos]
+ * Args: saltLength [signerInfos [label]]. Added for Q142 a: label is pss
+ * (the default), eac-sha256 or eac-sha1 (id-TA-RSA-PSS-SHA-256 or -SHA-1
+ * carrying the same parameters), or composite (id-alg-composite whose one
+ * part is the PSS identifier).
  */
 public class PssSaltProbe {
     public static void main(String[] a) throws Exception {
@@ -39,6 +42,19 @@ public class PssSaltProbe {
         AlgorithmIdentifier pss = new AlgorithmIdentifier(PKCSObjectIdentifiers.id_RSASSA_PSS, new RSASSAPSSparams(
                 sha256, new AlgorithmIdentifier(PKCSObjectIdentifiers.id_mgf1, sha256), new ASN1Integer(salt),
                 new ASN1Integer(1)));
+        String label = a.length > 2 ? a[2] : "pss";
+        if (label.equals("eac-sha256")) {
+            pss = new AlgorithmIdentifier(
+                    org.bouncycastle.asn1.eac.EACObjectIdentifiers.id_TA_RSA_PSS_SHA_256, pss.getParameters());
+        } else if (label.equals("eac-sha1")) {
+            pss = new AlgorithmIdentifier(
+                    org.bouncycastle.asn1.eac.EACObjectIdentifiers.id_TA_RSA_PSS_SHA_1, pss.getParameters());
+        } else if (label.equals("composite")) {
+            pss = new AlgorithmIdentifier(org.bouncycastle.asn1.misc.MiscObjectIdentifiers.id_alg_composite,
+                    new org.bouncycastle.asn1.DERSequence(pss));
+        } else if (!label.equals("pss")) {
+            throw new IllegalArgumentException("label: pss, eac-sha256, eac-sha1 or composite");
+        }
         ASN1EncodableVector signers = new ASN1EncodableVector();
         for (int i = 0; i < count; i++) {
             // Distinct copies: the SignerInfos SET would keep only one of equal ones.
@@ -56,7 +72,7 @@ public class PssSaltProbe {
             java.nio.file.Files.write(java.nio.file.Paths.get(System.getProperty("dump") + ".root.der"), pki.root.getEncoded());
             return;
         }
-        System.out.printf("saltLength=%d signerInfos=%d der=%d maxHeapMB=%d%n", salt, count, der.length,
+        System.out.printf("label=%s saltLength=%d signerInfos=%d der=%d maxHeapMB=%d%n", label, salt, count, der.length,
                 Runtime.getRuntime().maxMemory() >> 20);
         for (int r = 0; r < 3; r++) {
             long t = System.nanoTime();

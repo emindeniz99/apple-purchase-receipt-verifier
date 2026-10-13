@@ -818,8 +818,10 @@ The signatureAlgorithm is unsigned too: md2WithRSAEncryption made
 BouncyCastle hash the signed attributes with MD2 (0.26 s at the cap,
 against 0.03 s), and RSASSA-PSS with a saltLength of 1,000,000,000 made
 it allocate that many bytes, an `OutOfMemoryError` out of
-`verifyReceipt`. Both labels are refused before anything is hashed or
-allocated, as `INVALID_SIGNATURE`; Apple signs receipts with neither.
+`verifyReceipt`. The MD2 label is refused before anything is hashed, and
+a PSS saltLength the signer's key cannot hold (RFC 8017) before anything
+is allocated, both as `INVALID_SIGNATURE`; a PSS signature whose salt
+fits verifies.
 A bag entry shaped as a certificate, with nested values in its names or
 algorithm parameters, cost 3.6 to 17 s at the cap inside BouncyCastle's
 X.509 class, which DER-encodes them as it builds, verifies and compares

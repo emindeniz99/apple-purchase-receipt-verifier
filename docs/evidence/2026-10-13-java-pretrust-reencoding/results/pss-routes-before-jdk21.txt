@@ -1,0 +1,32 @@
+label=pss saltLength=32 signerInfos=1 der=2800 maxHeapMB=3420
+  run 0: 464 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 1: 14 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 2: 15 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+label=pss saltLength=1000000000 signerInfos=1 der=2803 maxHeapMB=3420
+  run 0: 450 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 1: 24 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+  run 2: 21 ms [INVALID_SIGNATURE: CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused]
+label=eac-sha256 saltLength=32 signerInfos=1 der=2801 maxHeapMB=3420
+  run 0: 422 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 7 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 6 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+label=eac-sha256 saltLength=1000000000 signerInfos=1 der=2804 maxHeapMB=3420
+  run 0: 23470 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 1: 3364 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 2: 4997 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+label=eac-sha1 saltLength=32 signerInfos=1 der=2801 maxHeapMB=3420
+  run 0: 323 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 17 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 12 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+label=eac-sha1 saltLength=1000000000 signerInfos=1 der=2804 maxHeapMB=3420
+  run 0: 15735 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 1: 6890 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+  run 2: 3144 ms [THREW java.lang.OutOfMemoryError: Java heap space]
+label=composite saltLength=32 signerInfos=1 der=2816 maxHeapMB=3420
+  run 0: 227 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 11 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 11 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+label=composite saltLength=1000000000 signerInfos=1 der=2819 maxHeapMB=3420
+  run 0: 4205 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 1: 6038 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
+  run 2: 490 ms [INVALID_SIGNATURE: CMS verifier refused the signer info]
