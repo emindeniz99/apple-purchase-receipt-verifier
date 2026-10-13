@@ -791,6 +791,20 @@ can build. These are warm-JVM figures; see
 [Running in production](#running-in-production) for the cold start. The
 machine was shared with other work, so treat them as an order of magnitude.
 
+The digest a SignerInfo declares is the sender's choice and is not
+signed, and BouncyCastle digests the whole content with it once per
+SignerInfo before any signature is checked. A cap-sized receipt with four
+SignerInfos naming Apple's public receipt-signing certificate and
+declaring GOST R 34.11-94 cost about 1.2 s warm and up to 1.8 s cold on
+Java 8, against about 0.09 s warm for SHA-256. The library now refuses
+the eight slow digests BouncyCastle implements (GOST R 34.11-94, MD2,
+Whirlpool, GOST R 34.11-2012 and DSTU 7564) before digesting a byte, as
+`INVALID_SIGNATURE`, which costs less than a SHA-256 receipt. The slowest
+digest still accepted, RIPEMD-160 at about 2.3 times SHA-256, costs about
+0.17 to 0.21 s warm and up to 0.44 s cold for the same receipt, measured
+on 2026-10-13 with a plain loop, not JMH, on a 4 vCPU machine
+(`docs/evidence/2026-10-13-java-digest-cost.md`).
+
 ## Testing with synthetic receipts
 
 Your own logic and wiring tests need none of this: mock `Verifier` and build

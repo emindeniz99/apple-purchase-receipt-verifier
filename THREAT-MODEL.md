@@ -362,7 +362,14 @@ flattened copy of each node's subtree while it parses the envelope; Apple
 sends DER, the core refuses constructed strings past six levels, and in
 Java the body cap and the concurrency limit bound it as they bound the
 tiny attributes
-(docs/evidence/2026-10-13-java-branched-econtent-heap.md).
+(docs/evidence/2026-10-13-java-branched-econtent-heap.md). A SignerInfo's
+digest algorithm is unsigned too, and BouncyCastle digests the whole
+content with it before any signature is checked, so Java refuses the
+eight slow digests BouncyCastle implements, GOST R 34.11-94 among them
+(about 1.2 s warm at the cap for four SignerInfos), before digesting, as
+the core does for lack of an implementation; the slowest digest still
+accepted, RIPEMD-160, costs about 0.2 s warm at the cap
+(docs/evidence/2026-10-13-java-digest-cost.md).
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
 in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header

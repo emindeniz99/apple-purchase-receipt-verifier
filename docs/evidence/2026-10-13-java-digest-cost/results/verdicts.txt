@@ -1,0 +1,16 @@
+core gost94: Some(Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None })
+core md2: Some(Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None })
+core whirlpool: Some(Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None })
+core streebog256: Some(Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None })
+core streebog512: Some(Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None })
+core dstu256: Some(Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None })
+core dstu384: Some(Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None })
+core dstu512: Some(Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None })
+java gost94: INVALID_SIGNATURE / CMS verifier refused the signer info: digest 1.2.643.2.2.9 is refused
+java md2: INVALID_SIGNATURE / CMS verifier refused the signer info: digest 1.2.840.113549.2.2 is refused
+java whirlpool: INVALID_SIGNATURE / CMS verifier refused the signer info: digest 1.0.10118.3.0.55 is refused
+java streebog256: INVALID_SIGNATURE / CMS verifier refused the signer info: digest 1.2.643.7.1.1.2.2 is refused
+java streebog512: INVALID_SIGNATURE / CMS verifier refused the signer info: digest 1.2.643.7.1.1.2.3 is refused
+java dstu256: INVALID_SIGNATURE / CMS verifier refused the signer info: digest 1.2.804.2.1.1.1.1.2.2.1 is refused
+java dstu384: INVALID_SIGNATURE / CMS verifier refused the signer info: digest 1.2.804.2.1.1.1.1.2.2.2 is refused
+java dstu512: INVALID_SIGNATURE / CMS verifier refused the signer info: digest 1.2.804.2.1.1.1.1.2.2.3 is refused
