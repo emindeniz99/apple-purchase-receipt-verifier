@@ -147,18 +147,21 @@ final class AppleTrust {
 
     /**
      * Whether {@code issuerKey}, which a pinned root vouches for, signed
-     * {@code certificate}, converted by {@link BouncyCastle#PROVIDER}. The
-     * signature algorithm is the certificate's own and unsigned until this
-     * returns, so the TBS's signed label must equal the outer one (RFC 5280
-     * 4.1.1.2), and an RSASSA-PSS label may not name a saltLength longer
-     * than {@code issuerKey} can hold: BouncyCastle allocates an array of
-     * saltLength bytes while it builds the verifier, before any signature
-     * byte is compared.
+     * {@code certificate}.
+     *
+     * <p>The certificate must be one {@link BouncyCastle#PROVIDER} built;
+     * another provider's returns false. Its signature algorithm is its own
+     * choice and stays unsigned until this returns. So the label inside the
+     * TBS, which the signature covers, must equal the outer one (RFC 5280
+     * 4.1.1.2). An RSASSA-PSS label may not name a saltLength longer than
+     * {@code issuerKey} can hold, because BouncyCastle allocates an array of
+     * saltLength bytes while it builds the verifier, before it compares any
+     * signature byte.</p>
      */
     static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
         try {
-            // Every caller passes a certificate BouncyCastle converted; any
-            // other provider's lands in the catch below as "not signed".
+            // Another provider's certificate fails this cast and lands in the
+            // catch below as "not signed".
             AlgorithmIdentifier signed =
                     ((BCX509Certificate) certificate).getTBSCertificateNative().getSignature();
             ASN1Encodable parameters = signed.getParameters();

@@ -65,7 +65,9 @@ gaps (`SidIssuerProbe`).
   `Signature` is built. A composite label is checked part by part.
 - `AppleTrust.convertible`: every name value is an `ASN1String` and none
   of the three AlgorithmIdentifier parameters holds a SET under
-  SEQUENCEs, tagged objects or EXTERNAL. `ReceiptCertificates.decode`
+  SEQUENCEs, tagged objects or an EXTERNAL's content or data value
+  descriptor (the descriptor only since review; see "Found in review"
+  below). `ReceiptCertificates.decode`
   skips an entry that fails, after the existing decode checks;
   `JwsCore.decodeChain` now reads each entry with
   `Certificate.getInstance` and the same check (a leaf or intermediate
@@ -177,6 +179,55 @@ read it. The leaf as PEM text, which the factory decoded, is now
 `INVALID_CERTIFICATE`, as in the core. The header is signed, so no
 Apple-signed JWS carries any of these.
 
+### Found in review: the EXTERNAL's data value descriptor
+
+The first commit of the SET walk (`AppleTrust.holdsSet`, used by
+`convertible` and by the SignerInfo parameter check) read an EXTERNAL's
+content and not its data value descriptor. BouncyCastle 1.86 puts any
+EXTERNAL element that is not an OID, an INTEGER or a tagged object in the
+descriptor, a SET included, and DER-encodes it with the rest. Review
+found it by wrapping the nested value as `EXTERNAL { descriptor, [0] NULL }`
+(a definite-length SEQUENCE retagged 0x28). The receipt was accepted in
+every row. The review's figures, JDK 21, 4 vCPU, warm calls, in seconds:
+
+| Shape, about 2.3 MB | Direct SET (skipped) | Inside an EXTERNAL, first commit | Inside an EXTERNAL, walk reads the descriptor |
+|---|---:|---:|---:|
+| bag certificate, key parameters | 0.62 to 0.65 | 4.1 to 4.3 | 0.63 to 0.76 |
+| bag certificate, signature label (TBS and outer) | skipped | 3.5 to 4.0 | 0.47 to 0.53 |
+| SignerInfo signature parameters with one CMSAlgorithmProtection attribute | 0.65 to 0.83 | 2.9 to 3.0 | 0.47 to 0.52 |
+| the key-parameter bag certificate and three SignerInfos in subjectKeyIdentifier form | n/a | 7.5 to 8.8 | 0.48 to 0.87 |
+
+The walk now reads both. Two tests in `UnauthenticatedKeyCostTest` wrap
+the value of their direct twins this way. The faster of two calls, JDK
+21, in ms:
+
+| Test | Before the walk read the descriptor | After |
+|---|---:|---:|
+| `aBagCertificateWhoseKeyParametersHoldNestedSetsInAnExternalIsPassedOverUnconverted` | 4,268 | 421, 539 |
+| `aSignerInfoWhoseSignatureParametersHoldNestedSetsInAnExternalIsLeftOut` | 2,858, 3,063 | 433, 580 |
+
+The SignerInfo test, and its direct twin, also stopped being vacuous.
+Their copy of the SignerInfo kept the genuine CMSAlgorithmProtection
+attribute and added a second, and BouncyCastle refuses two before it
+compares any parameters. With the genuine one kept, the EXTERNAL twin took
+547 ms on the first commit, where the walk could not catch it; with it
+dropped, 3,063 ms. No genuine receipt or JWS carries an EXTERNAL, and
+the shared cases are unchanged.
+
+### Residual costs, measured and bounded
+
+Measured in the same review, on the branch, receipts accepted, JDK 21.
+None has a fix: no SET is involved, so no rule of the X.509 grammar
+removes it, and each is bounded by the parser or by a fixed count.
+
+| Shape | Cost | Bound |
+|---|---|---|
+| nested SEQUENCEs, no SET, 2.1 MB in a bag certificate's key parameters, 50 to 55 deep | 2.4 to 3.1 s (1 deep: 0.7 to 1.3 s; 30 deep: 1.3 to 2.0 s) | BouncyCastle's parser depth of 64 (about 55 levels reachable there) |
+| each SignerInfo in subjectKeyIdentifier form, per bag certificate without that extension | about 0.4 s more each at depth 55: `MSOutlookKeyIdCalculator` DER-encodes the SubjectPublicKeyInfo again | four SignerInfos |
+| a keyUsage extension value of 2.2 MB | a `boolean[8 * length]` of 17.6 MB per certificate, 0.12 s | linear in the input |
+
+The first is above the test bound of 2 s and no test covers it.
+
 ### Re-encoding cost
 
 `results/encode-cost.txt` (`EncodeCost`): a parsed 2.3 MB value
@@ -214,3 +265,6 @@ values sent out of DER order.
   N; `UnauthenticatedKeyCostTest` fails if a release changes either. The
   parse itself still grows with nesting, up to BouncyCastle's bound of
   64.
+- The fixes remove the SET sort and nothing else. Nested SEQUENCEs in
+  algorithm parameters still cost up to about 3 s at the cap ("Residual
+  costs" above).

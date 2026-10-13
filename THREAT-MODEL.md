@@ -390,7 +390,13 @@ BouncyCastle's X.509 class, which encodes them as it builds, verifies
 and compares the certificate, while the receipt still verified; Java now
 passes over a certificate whose names hold anything but strings or whose
 parameters hold a SET before converting it, so it costs about its parse
-(0.4 to 0.85 s, up to 1.1 s at 50 deep). A certificate's own RSASSA-PSS
+(0.4 to 0.85 s, up to 1.1 s at 50 deep). The first version of that
+check missed a SET inside an EXTERNAL's data value descriptor, in a
+certificate's or a SignerInfo's algorithm parameters, which review
+found (2.9 to 8.8 s at the cap, the receipt accepted); it reads the
+descriptor since. Nested SEQUENCEs with no SET still cost up to
+about 3 s at the cap, bounded by BouncyCastle's parser depth of 64.
+A certificate's own RSASSA-PSS
 label threw `OutOfMemoryError` from a 3.5 KB receipt or a 2.3 KB JWS at
 a saltLength of 2,147,483,647, and a saltLength the issuer's RSA key
 cannot hold (RFC 8017 9.1.2) is now refused before anything is built.

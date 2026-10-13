@@ -837,6 +837,19 @@ cRLDistributionPoints, 2026-10-06).
   comes from a conforming signer, and Apple's receipts carry no signed
   attributes.
 
+  The SET walk behind both skips, the certificate one and the SignerInfo
+  one, first read an EXTERNAL's content and not its data value
+  descriptor, where BouncyCastle 1.86 puts any element that is not an
+  OID, an INTEGER or a tagged object, a SET included. Review found it
+  (2026-10-13): the same nested value wrapped in an EXTERNAL passed both
+  skips and cost 2.9 to 4.3 s at the cap, 7.5 to 8.8 s with three
+  SignerInfos in subjectKeyIdentifier form, and the receipt verified. The
+  walk reads the descriptor too since, 0.5 to 0.9 s, and two tests in
+  `UnauthenticatedKeyCostTest` pin it. Nested SEQUENCEs with no SET in
+  them still cost up to about 3 s at the cap, bounded by BouncyCastle's
+  parser depth; the figures for each shape and for the costs left are in
+  the [pre-trust shape][pretrustshape] note.
+
   Java no longer reads every SignerInfo's signed and unsigned attributes
   before trying any (owner, 2026-10-12; it did from Q65 until then).
   The pre-read made a malformed SignerInfo `MALFORMED` at any position,
