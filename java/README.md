@@ -606,6 +606,8 @@ structure they bound is read:
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | Receipt signer's depth below a pinned root, certificates each signed by the one above | 7, BouncyCastle 1.86's path builder's: it refuses an eighth under the JDK's default `maxPathLength` of 5. The library adds no bound of its own | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
+| Extensions on one certificate, counted before it is parsed | 1,000 | The certificate is passed over: in a receipt's bag it names no signer and vouches for nothing (`MALFORMED`, "signer certificate not embedded", when it was the signer's), and an `x5c` entry stands for nothing (`UNTRUSTED_CHAIN`) |
+| Attributes on one SignerInfo, signed and unsigned together | 1,000 | The SignerInfo is left out; `MALFORMED`, "signer certificate not embedded", when none is left |
 
 **Thread stack.** BouncyCastle's ASN.1 parser recurses, so a legal input
 nested up to the bound needs stack: on OpenJDK 21 a SignerInfo

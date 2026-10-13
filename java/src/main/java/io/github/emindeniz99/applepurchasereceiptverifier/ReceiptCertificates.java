@@ -25,6 +25,18 @@ final class ReceiptCertificates {
     /** Genuine receipts embed one to three; checked before any is decoded. */
     static final int MAX_EMBEDDED_CERTIFICATES = 10;
 
+    /**
+     * The most extensions a certificate may carry, counted before it is
+     * parsed. BouncyCastle keeps a certificate's extensions in a
+     * {@code java.util.Hashtable} keyed by OID, whose hash is an unkeyed
+     * function of the OID's octets and whose buckets are lists, so
+     * distinct OIDs of one hash make building the table quadratic in their
+     * number. Apple's certificates carry three to eight. At this cap one
+     * table costs at most about 500,000 OID comparisons. A certificate over
+     * it is passed over, as one {@link AppleTrust#convertible} rejects.
+     */
+    static final int MAX_CERTIFICATE_EXTENSIONS = 1000;
+
     private final List<X509Certificate> all = new ArrayList<>();
     private final List<X509CertificateHolder> holders = new ArrayList<>();
 
@@ -40,7 +52,8 @@ final class ReceiptCertificates {
      * IMPLICIT SET}, after counting the set against
      * {@link #MAX_EMBEDDED_CERTIFICATES}. The other CertificateChoices
      * (RFC 5652 10.2.2: {@code [0]} to {@code [3]}, each a SEQUENCE) name no
-     * signer and are skipped, and so is a certificate
+     * signer and are skipped, and so is a certificate over
+     * {@link #MAX_CERTIFICATE_EXTENSIONS} or one
      * {@link AppleTrust#convertible} passes over. The bag is unsigned, so an
      * entry that does not decode is a defect of the receipt: MALFORMED,
      * whichever certificate it was meant to be.
@@ -71,6 +84,10 @@ final class ReceiptCertificates {
                     ASN1Sequence.getInstance((ASN1TaggedObject) entry, false);
                     continue;
                 }
+                // Counted before the parse builds BouncyCastle's table of them.
+                if (tooManyExtensions(entry)) {
+                    continue;
+                }
                 // Read as parsed, not re-encoded: DER sorts every SET by its
                 // members' encodings, seconds for a cap-sized nested entry.
                 X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(entry));
@@ -91,6 +108,24 @@ final class ReceiptCertificates {
             }
         }
         return certificates;
+    }
+
+    /**
+     * Whether {@code certificate}, a Certificate not yet parsed, carries more
+     * than {@link #MAX_CERTIFICATE_EXTENSIONS} extensions. Every {@code [3]}
+     * field of the TBS counts wherever it stands, as BouncyCastle parses each
+     * of them. A shape that is not a certificate throws, as its parse would.
+     */
+    static boolean tooManyExtensions(ASN1Encodable certificate) {
+        int count = 0;
+        for (ASN1Encodable field :
+                ASN1Sequence.getInstance(ASN1Sequence.getInstance(certificate).getObjectAt(0))) {
+            if (field instanceof ASN1TaggedObject && ((ASN1TaggedObject) field).getTagNo() == 3) {
+                count +=
+                        ASN1Sequence.getInstance((ASN1TaggedObject) field, true).size();
+            }
+        }
+        return count > MAX_CERTIFICATE_EXTENSIONS;
     }
 
     /**
