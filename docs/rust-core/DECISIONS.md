@@ -831,7 +831,11 @@ cRLDistributionPoints, 2026-10-06).
   values sorted. Java now agrees on the first, where it used to sort,
   which closes the two `attributes-unsorted` rows of the [CMS
   everywhere][cms] table; it parts on the second, a row in the table
-  above.
+  above, in both directions: values signed as sent verify in Java and
+  not in the core, values sent out of order but signed sorted (the form
+  RFC 5652 5.4 names) verify in the core and no longer in Java. Neither
+  comes from a conforming signer, and Apple's receipts carry no signed
+  attributes.
 
   Java no longer reads every SignerInfo's signed and unsigned attributes
   before trying any (owner, 2026-10-12; it did from Q65 until then).

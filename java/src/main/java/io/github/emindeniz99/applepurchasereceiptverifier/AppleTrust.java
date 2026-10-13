@@ -157,6 +157,8 @@ final class AppleTrust {
      */
     static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
         try {
+            // Every caller passes a certificate BouncyCastle converted; any
+            // other provider's lands in the catch below as "not signed".
             AlgorithmIdentifier signed =
                     ((BCX509Certificate) certificate).getTBSCertificateNative().getSignature();
             ASN1Encodable parameters = signed.getParameters();
