@@ -23,10 +23,13 @@ import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.DLSet;
 import org.bouncycastle.asn1.DLTaggedObject;
+import org.bouncycastle.asn1.cms.Attribute;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
@@ -322,6 +325,39 @@ class UnauthenticatedKeyCostTest {
         assertSignerIdRefusedQuickly(new DLSequence(integers));
     }
 
+    @Test
+    void aSignerInfoLabelledMd2WithRsaIsRefusedBeforeItsSignedAttributesAreHashed() throws Exception {
+        // The signatureAlgorithm is unsigned too, and BouncyCastle hashes the
+        // signed attributes with the digest it names before it checks the
+        // signature. The genuine signer's SignerInfo, its signed attributes
+        // padded to just under the cap, relabelled md2WithRSAEncryption: 250
+        // ms of MD2 before, eight times the same input under SHA-256.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        ASN1EncodableVector attributes = new ASN1EncodableVector();
+        for (int i = 0; i < signer.getAuthenticatedAttributes().size(); i++) {
+            attributes.add(signer.getAuthenticatedAttributes().getObjectAt(i));
+        }
+        attributes.add(new Attribute(
+                new ASN1ObjectIdentifier("1.3.6.1.4.1.99999.1"),
+                new DERSet(new DEROctetString(new byte[CAP_DER - 16384]))));
+        byte[] receipt = relabelled(
+                genuine,
+                signer,
+                new DERSet(attributes),
+                new AlgorithmIdentifier(PKCSObjectIdentifiers.md2WithRSAEncryption, DERNull.INSTANCE));
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+        assertFast(start);
+        assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
+        assertEquals(
+                "CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.2 is refused",
+                e.getMessage());
+    }
+
     /** {@code issuerValue} as the one CN of the SignerInfo's issuer, beside a full bag sharing its serial. */
     private static void assertSignerIdRefusedQuickly(ASN1Encodable issuerValue) throws Exception {
         TestPki pki = TestPki.receipt();
@@ -368,6 +404,20 @@ class UnauthenticatedKeyCostTest {
 
     private static SignedData signedData(byte[] receipt) {
         return SignedData.getInstance(ContentInfo.getInstance(receipt).getContent());
+    }
+
+    /** {@code genuine} with {@code signer} relabelled {@code signatureAlgorithm} and carrying {@code signedAttributes}. */
+    private static byte[] relabelled(
+            SignedData genuine, SignerInfo signer, ASN1Set signedAttributes, AlgorithmIdentifier signatureAlgorithm)
+            throws Exception {
+        SignerInfo relabelled = new SignerInfo(
+                signer.getSID(),
+                signer.getDigestAlgorithm(),
+                signedAttributes,
+                signatureAlgorithm,
+                signer.getEncryptedDigest(),
+                (ASN1Set) null);
+        return receipt(genuine, genuine.getCertificates(), new DLSet(relabelled));
     }
 
     /**

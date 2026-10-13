@@ -60,18 +60,15 @@ final class ReceiptCore {
     static final int MAX_RECEIPT_BYTES = Endpoint.MAX_REQUEST_BYTES;
 
     /**
-     * Digest algorithms a SignerInfo may not name: GOST R 34.11-94, MD2,
-     * Whirlpool, GOST R 34.11-2012 (Streebog, 256 and 512) and DSTU 7564
-     * (256, 384, 512), none a hash Apple signs receipts with. The digestAlgorithm is
-     * the sender's unsigned choice, and BouncyCastle digests the whole
-     * content with it once per SignerInfo before any signature is checked:
-     * four SignerInfos over a cap-sized receipt cost about 1.2 s warm under
-     * GOST R 34.11-94. On BouncyCastle 1.86 these eight cost 2.9 to 25 times
-     * SHA-256 over the same bytes and every other digest it resolves at most
-     * 2.6 times. A denylist, not an allowlist, so a new fast hash needs
-     * no change here. The core refuses all eight because OpenSSL's default
-     * provider implements none of them. DigestDenylistCostTest re-measures
-     * the split.
+     * Digest algorithms a SignerInfo's digestAlgorithm or signatureAlgorithm
+     * may not name: GOST R 34.11-94, MD2, Whirlpool, GOST R 34.11-2012
+     * (Streebog, 256 and 512) and DSTU 7564 (256, 384, 512), none a hash
+     * Apple signs receipts with. Both fields are the sender's unsigned
+     * choice, and BouncyCastle 1.86 runs the digest they name over up to the
+     * whole receipt before any signature is checked, where these eight cost
+     * 2.9 to 25 times SHA-256 and every other digest it resolves at most 2.6
+     * times. {@link #REFUSED_SIGNATURE_ALGORITHMS} holds the one signature
+     * label that names one of them.
      */
     static final Set<String> REFUSED_DIGESTS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "1.2.643.2.2.9", // GOST R 34.11-94
@@ -82,6 +79,14 @@ final class ReceiptCore {
             "1.2.804.2.1.1.1.1.2.2.1", // DSTU 7564, 256 bits
             "1.2.804.2.1.1.1.1.2.2.2", // DSTU 7564, 384 bits
             "1.2.804.2.1.1.1.1.2.2.3"))); // DSTU 7564, 512 bits
+
+    /**
+     * Signature algorithms a SignerInfo may not name, none of them one Apple
+     * signs receipts with: md2WithRSAEncryption, whose MD2 BouncyCastle runs
+     * over the signed attributes before the signature is checked.
+     */
+    static final Set<String> REFUSED_SIGNATURE_ALGORITHMS =
+            Collections.unmodifiableSet(new HashSet<>(Arrays.asList("1.2.840.113549.1.1.2"))); // md2WithRSAEncryption
 
     private ReceiptCore() {}
 
@@ -393,18 +398,24 @@ final class ReceiptCore {
             throws VerificationException {
         // No algorithm allowlist of our own: the signer is pinned to an
         // Apple root and carries Apple's marker, so any algorithm
-        // BouncyCastle can verify is accepted. One it has no verifier for is
-        // refused below as INVALID_SIGNATURE, so a genuine receipt signed
-        // with such an algorithm is rejected unless another SignerInfo
-        // verifies.
+        // BouncyCastle can verify is accepted but the refused ones. One it
+        // has no verifier for is refused below as INVALID_SIGNATURE, so a
+        // genuine receipt signed with such an algorithm is rejected unless
+        // another SignerInfo verifies.
         // An RSA signature binds its hash in the DigestInfo, so the
         // signatureAlgorithm label is not trusted.
         String digest = signer.getDigestAlgOID();
+        String signature = signer.getEncryptionAlgOID();
+        // Both before BouncyCastle digests a byte or builds a verifier, and
+        // the same verdict as an algorithm it does not implement.
         if (REFUSED_DIGESTS.contains(digest)) {
-            // Before BouncyCastle digests a byte, and the same verdict as a
-            // digest it does not implement.
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info: digest " + digest + " is refused");
+        }
+        if (REFUSED_SIGNATURE_ALGORITHMS.contains(signature)) {
+            throw new VerificationException(
+                    Reason.INVALID_SIGNATURE,
+                    "CMS verifier refused the signer info: signature algorithm " + signature + " is refused");
         }
         try {
             if (!signer.verify(signerVerifier(signerCert.getPublicKey()))) {
