@@ -22,7 +22,6 @@ import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
@@ -30,9 +29,6 @@ import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.cms.SignerIdentifier;
 import org.bouncycastle.asn1.cms.SignerInfo;
-import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
-import org.bouncycastle.asn1.x500.RDN;
-import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.CMSTypedData;
@@ -207,7 +203,7 @@ final class ReceiptCore {
             // is left out before either.
             SignerIdentifier sid = SignerInfo.getInstance(raw.getObjectAt(i)).getSID();
             if (!sid.isTagged()
-                    && !stringsOnly(
+                    && !AppleTrust.stringsOnly(
                             IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
                 continue;
             }
@@ -231,17 +227,6 @@ final class ReceiptCore {
             throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
         }
         return signers;
-    }
-
-    private static boolean stringsOnly(X500Name name) {
-        for (RDN rdn : name.getRDNs()) {
-            for (AttributeTypeAndValue value : rdn.getTypesAndValues()) {
-                if (!(value.getValue() instanceof ASN1String)) {
-                    return false;
-                }
-            }
-        }
-        return true;
     }
 
     /**

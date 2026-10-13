@@ -84,6 +84,8 @@ class UnauthenticatedKeyCostTest {
     private static final int CAP_DER = ReceiptCore.MAX_RECEIPT_BYTES / 4 * 3;
 
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final AlgorithmIdentifier SHA256_WITH_RSA =
+            new AlgorithmIdentifier(PKCSObjectIdentifiers.sha256WithRSAEncryption, DERNull.INSTANCE);
     private static final BigInteger SMALL_PRIMES = smallPrimes();
 
     /** Issuer RDNs for the name-comparison test: about 7.5 s cold with BouncyCastle's comparison. */
@@ -308,6 +310,111 @@ class UnauthenticatedKeyCostTest {
     }
 
     @Test
+    void aBagCertificateWhoseSubjectHoldsNestedSetsIsPassedOverUnconverted() throws Exception {
+        // The genuine receipt and one more bag entry shaped as a certificate
+        // the root issued, whose subject CN is a SEQUENCE of SETs nested 30
+        // deep, just under the cap. BouncyCastle's X.509 object DER-encodes
+        // the names as it is built and the TBS as it is verified, and DER
+        // sorts every SET: 4.1 to 4.7 s a call, and the receipt verified.
+        // Apple's names hold strings, so the entry is passed over.
+        TestPki pki = TestPki.receipt();
+        acceptedFast(
+                pki,
+                withBagEntry(
+                        pki,
+                        certificateShaped(
+                                SHA256_WITH_RSA,
+                                subject(pki.root),
+                                cnOf(nestedSets(30, CAP_DER - 16384)),
+                                key(pki.leaf))));
+    }
+
+    @Test
+    void aBagCertificateWhoseKeyParametersHoldNestedSetsIsPassedOverUnconverted() throws Exception {
+        // The same value as the key's AlgorithmIdentifier parameters, which
+        // BouncyCastle compares and encodes the same way: 4.1 to 4.2 s. No key
+        // algorithm defines a SET in its parameters.
+        TestPki pki = TestPki.receipt();
+        SubjectPublicKeyInfo key = new SubjectPublicKeyInfo(
+                new AlgorithmIdentifier(PKCSObjectIdentifiers.rsaEncryption, nestedSets(30, CAP_DER - 16384)),
+                key(pki.leaf).getPublicKeyData().getBytes());
+        acceptedFast(
+                pki,
+                withBagEntry(pki, certificateShaped(SHA256_WITH_RSA, subject(pki.root), new X500Name("CN=x"), key)));
+    }
+
+    @Test
+    void aBagCertificateWithNestedSetsInsideAnExtensionStaysCheap() throws Exception {
+        // Extension values are octets to the shape rule: a subjectAltName
+        // whose directoryName holds the nested value passes and is converted.
+        // It stays cheap only because BouncyCastle decodes subjectAltName
+        // lazily, never before trust; a release that decoded it as the
+        // certificate is built would fail here, not in a deployment.
+        TestPki pki = TestPki.receipt();
+        byte[] names = new DLSequence(new DLTaggedObject(true, 4, cnOf(nestedSets(30, CAP_DER - 16384))))
+                .getEncoded(ASN1Encoding.DL);
+        DLSequence subjectAltName =
+                new DLSequence(new ASN1Encodable[] {Extension.subjectAlternativeName, new DEROctetString(names)});
+        acceptedFast(
+                pki,
+                withBagEntry(
+                        pki,
+                        certificateShaped(
+                                SHA256_WITH_RSA,
+                                subject(pki.root),
+                                new X500Name("CN=x"),
+                                key(pki.leaf),
+                                subjectAltName)));
+    }
+
+    @Test
+    void aBagCertificateWithOneWideRdnStaysCheap() throws Exception {
+        // The one SET the shape rule cannot leave out is an RDN's SET OF
+        // values, which DER sorts: here 100,000 string values in descending
+        // order. BouncyCastle 1.86 encodes each value once and sorts the
+        // encodings in N log N; a release that went back to an insertion sort
+        // would fail here.
+        TestPki pki = TestPki.receipt();
+        ASN1EncodableVector values = new ASN1EncodableVector();
+        for (int i = 100_000; i > 0; i--) {
+            values.add(new DLSequence(new ASN1Encodable[] {BCStyle.CN, new DERUTF8String(String.format("%06d", i))}));
+        }
+        acceptedFast(
+                pki,
+                withBagEntry(
+                        pki,
+                        certificateShaped(
+                                SHA256_WITH_RSA, subject(pki.root), new DLSequence(new DLSet(values)), key(pki.leaf))));
+    }
+
+    @Test
+    void aJwsCertificateWhoseSubjectHoldsNestedSetsIsPassedOverUnconverted() throws Exception {
+        // The JWS twin, at the 256 KiB cap: x5c[2], which the pinned anchor
+        // stands in for, carries the nested subject, and the JWS verifies.
+        TestPki pki = TestPki.jws();
+        String leaf = TestPki.b64(pki.leaf.getEncoded());
+        String intermediate = TestPki.b64(pki.intermediate.getEncoded());
+        String root = TestPki.b64(certificateShaped(
+                        SHA256_WITH_RSA,
+                        subject(pki.root),
+                        cnOf(nestedSets(30, JwsCore.MAX_JWS_BYTES * 9 / 16 - 4096)),
+                        key(pki.leaf))
+                .getEncoded(ASN1Encoding.DL));
+        String jws = pki.signJwsWithHeader(
+                "{\"alg\":\"ES256\",\"x5c\":[\"" + leaf + "\",\"" + intermediate + "\",\"" + root + "\"]}", "{}");
+        assertTrue(jws.length() <= JwsCore.MAX_JWS_BYTES, "the JWS is over the cap: " + jws.length());
+        Verifier verifier = Checks.verifier(pki);
+
+        long best = Long.MAX_VALUE;
+        for (int i = 0; i < 2; i++) {
+            long start = System.nanoTime();
+            Checks.signedData(verifier, jws);
+            best = Math.min(best, (System.nanoTime() - start) / 1_000_000);
+        }
+        assertTrue(best < BOUND_MS, "took " + best + " ms");
+    }
+
+    @Test
     void aSignerIdWhoseIssuerValueIsNestedSetsIsRefusedBeforeItIsCompared() throws Exception {
         // The SignerInfo's issuer is one CN whose value is a SEQUENCE of SETs
         // nested 30 deep, just under the cap, and the bag holds ten
@@ -464,25 +571,51 @@ class UnauthenticatedKeyCostTest {
 
     /**
      * A certificate-shaped SEQUENCE, valid from yesterday to tomorrow: a TBS
-     * with {@code label}, {@code issuer}, {@code subject} and {@code key},
-     * then {@code label} again and 256 zero octets as the signature. Built of
-     * definite-length types, so nothing is sorted while the input is built.
+     * with {@code label}, {@code issuer}, {@code subject}, {@code key} and any
+     * {@code extensions}, then {@code label} again and 256 zero octets as the
+     * signature. Built of definite-length types, so nothing is sorted while
+     * the input is built.
      */
     private static DLSequence certificateShaped(
-            ASN1Encodable label, ASN1Encodable issuer, ASN1Encodable subject, ASN1Encodable key) {
+            ASN1Encodable label,
+            ASN1Encodable issuer,
+            ASN1Encodable subject,
+            ASN1Encodable key,
+            ASN1Encodable... extensions) {
         long now = System.currentTimeMillis();
-        DLSequence tbs = new DLSequence(new ASN1Encodable[] {
-            new DLTaggedObject(true, 0, new ASN1Integer(2)),
-            new ASN1Integer(4242),
-            label,
-            issuer,
-            new DLSequence(new ASN1Encodable[] {
-                new DERUTCTime(new Date(now - 86_400_000L)), new DERUTCTime(new Date(now + 86_400_000L))
-            }),
-            subject,
-            key
-        });
-        return new DLSequence(new ASN1Encodable[] {tbs, label, new DERBitString(new byte[256])});
+        ASN1EncodableVector tbs = new ASN1EncodableVector();
+        tbs.add(new DLTaggedObject(true, 0, new ASN1Integer(2)));
+        tbs.add(new ASN1Integer(4242));
+        tbs.add(label);
+        tbs.add(issuer);
+        tbs.add(new DLSequence(new ASN1Encodable[] {
+            new DERUTCTime(new Date(now - 86_400_000L)), new DERUTCTime(new Date(now + 86_400_000L))
+        }));
+        tbs.add(subject);
+        tbs.add(key);
+        if (extensions.length > 0) {
+            tbs.add(new DLTaggedObject(true, 3, new DLSequence(extensions)));
+        }
+        return new DLSequence(new ASN1Encodable[] {new DLSequence(tbs), label, new DERBitString(new byte[256])});
+    }
+
+    /** A name of one CN whose value is {@code value}. */
+    private static DLSequence cnOf(ASN1Encodable value) {
+        return new DLSequence(new DLSet(new DLSequence(new ASN1Encodable[] {BCStyle.CN, value})));
+    }
+
+    /**
+     * Verifies {@code receipt} twice and asserts it verifies and the faster
+     * call fits the bound, as {@link #refusedFast} does for a refusal.
+     */
+    private static void acceptedFast(TestPki pki, byte[] receipt) throws Exception {
+        long best = Long.MAX_VALUE;
+        for (int i = 0; i < 2; i++) {
+            long start = System.nanoTime();
+            Checks.receipt(Checks.verifier(pki), receipt);
+            best = Math.min(best, (System.nanoTime() - start) / 1_000_000);
+        }
+        assertTrue(best < BOUND_MS, "took " + best + " ms");
     }
 
     /** {@code pki}'s genuine receipt with {@code entry} added to its certificate bag. */

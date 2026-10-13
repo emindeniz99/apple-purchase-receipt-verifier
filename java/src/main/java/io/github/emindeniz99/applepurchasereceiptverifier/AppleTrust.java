@@ -23,12 +23,21 @@ import java.util.List;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1External;
+import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.ASN1String;
+import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
+import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
+import org.bouncycastle.asn1.x500.RDN;
+import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.jcajce.interfaces.BCX509Certificate;
 import org.jspecify.annotations.Nullable;
 
@@ -198,6 +207,75 @@ final class AppleTrust {
                         parameters.getHashAlgorithm().getAlgorithm().getId(), BouncyCastle.PROVIDER)
                 .getDigestLength();
         return parameters.getSaltLength().compareTo(BigInteger.valueOf(emLen - hLen - 2)) <= 0;
+    }
+
+    /**
+     * Whether BouncyCastle can turn {@code certificate} into a JCA object, and
+     * verify and compare that object, without sorting a SET the sender
+     * nested. Encoding to DER sorts every SET by its members' encodings, at a
+     * cost that grows with the nesting, and BouncyCastle's X.509 object
+     * DER-encodes the names and the signature parameters as it is built, the
+     * TBS as it is verified and the whole certificate as it is compared.
+     *
+     * <p>The X.509 grammar leaves two places open to any ASN.1, and
+     * BouncyCastle parses the rest strictly or keeps it as octets (extension
+     * values, the key, the signature): an attribute value in the issuer or
+     * subject name, and the parameters of the three AlgorithmIdentifiers
+     * (the TBS signature, the outer signatureAlgorithm, the key's). So the
+     * certificate is convertible when every name value is a string and no
+     * parameters hold a SET. Apple's names hold PrintableString and
+     * UTF8String, and no signature or key algorithm defines a SET in its
+     * parameters, so a certificate that is not convertible is not one Apple
+     * issued. The one SET left, an RDN's SET OF values, BouncyCastle 1.86
+     * sorts in N log N.</p>
+     */
+    static boolean convertible(org.bouncycastle.asn1.x509.Certificate certificate) {
+        TBSCertificate tbs = certificate.getTBSCertificate();
+        return stringsOnly(tbs.getIssuer())
+                && stringsOnly(tbs.getSubject())
+                && !holdsSet(tbs.getSignature().getParameters())
+                && !holdsSet(certificate.getSignatureAlgorithm().getParameters())
+                && !holdsSet(tbs.getSubjectPublicKeyInfo().getAlgorithm().getParameters());
+    }
+
+    /** Whether every attribute value in {@code name} is a string. */
+    static boolean stringsOnly(X500Name name) {
+        for (RDN rdn : name.getRDNs()) {
+            for (AttributeTypeAndValue value : rdn.getTypesAndValues()) {
+                if (!(value.getValue() instanceof ASN1String)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether {@code value} is a SET or holds one inside a SEQUENCE, a
+     * tagged object or an EXTERNAL, the containers BouncyCastle's parser
+     * builds besides constructed strings, which hold only strings. The
+     * depth is the parser's own bound.
+     */
+    static boolean holdsSet(@Nullable ASN1Encodable value) {
+        if (value == null) {
+            return false;
+        }
+        ASN1Primitive primitive = value.toASN1Primitive();
+        if (primitive instanceof ASN1Set) {
+            return true;
+        }
+        if (primitive instanceof ASN1Sequence) {
+            for (ASN1Encodable member : (ASN1Sequence) primitive) {
+                if (holdsSet(member)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (primitive instanceof ASN1TaggedObject) {
+            return holdsSet(((ASN1TaggedObject) primitive).getBaseObject());
+        }
+        return primitive instanceof ASN1External && holdsSet(((ASN1External) primitive).getExternalContent());
     }
 
     /** The certificates of {@code trustAnchors}. */
