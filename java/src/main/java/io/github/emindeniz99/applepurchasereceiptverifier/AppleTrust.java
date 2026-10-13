@@ -26,8 +26,7 @@ import org.bouncycastle.asn1.x509.Extension;
  * checked top-down from the roots. An end entity vouches for nothing:
  * Apple's roots also vouch for developer certificates, whose keys belong to
  * the developers. BouncyCastle validates an RSA key as it decodes it, which
- * costs seconds for a 16384-bit modulus.
- * {@code UnauthenticatedKeyCostTest} pins the rule. PKIX then verifies the
+ * costs seconds for a 16384-bit modulus. PKIX then verifies the
  * same signatures again; that duplicate is the price of never decoding an
  * unvouched key.
  */

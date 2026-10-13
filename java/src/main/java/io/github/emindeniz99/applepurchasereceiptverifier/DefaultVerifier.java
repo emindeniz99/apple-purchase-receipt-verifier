@@ -180,8 +180,8 @@ final class DefaultVerifier implements Verifier {
      * Collection cert store, and checks each of {@code roots} (the bundled
      * Apple roots) against its own signature with it, so a runtime that
      * cannot verify (a stripped JRE, a FIPS-mode JDK that refuses the
-     * provider) fails {@link Verifier#create} instead of the first call. It needs no receipt or
-     * JWS fixture. The SHA-1 RSA root stays in: BouncyCastle ignores the
+     * provider) fails {@link Verifier#create} instead of the first call. It needs no sample
+     * receipt or JWS. The SHA-1 RSA root stays in: BouncyCastle ignores the
      * JDK's disabled-algorithm lists, and the receipt path needs SHA-1 RSA.
      * The RSA engines behind the CMS signer verifier are not asked for by
      * name; the roots' signatures exercise RSA only as far as they reach.

@@ -12,8 +12,8 @@ import java.util.Set;
 /**
  * The three published Apple roots (https://www.apple.com/certificateauthority/),
  * the anchors behind {@link Config#defaults()}. They are compiled in, so no
- * resource on the classpath can stand in for them. {@code AppleRootCertsTest}
- * pins them to Apple's fingerprints and to the repository's {@code certs/}.
+ * resource on the classpath can stand in for them. Compare each one's SHA-256
+ * fingerprint with Apple's before changing it.
  */
 final class AppleRootCerts {
 
