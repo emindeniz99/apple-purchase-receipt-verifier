@@ -20,3 +20,19 @@ for salt in 32 1000000000 2147483647; do
   run BagPssProbe $salt
   run JwsPssRsaProbe $salt
 done
+# Review 5's probes, added after results/before-* and after-* were made;
+# their output is results/review-*.txt. The EXTERNAL data value descriptor:
+run ExternalDescriptorProbe 30
+run ExternalSignerParamsProbe
+run SkiSignerInfoProbe external 3
+# The residual costs: nested SEQUENCEs of about 2.1 MB, the
+# subjectKeyIdentifier amplifier over them, and flat shapes.
+for args in "1 700000 key" "30 23300 key" "50 14000 key" "55 13000 key" "55 6500 label"; do
+  run NestedSequenceProbe $args
+done
+for copies in 0 3; do
+  run SkiSignerInfoProbe seq55 $copies
+done
+for mode in keyusage subject-rdns issuer-rdns bigstring manyext; do
+  run FlatCostProbe $mode
+done

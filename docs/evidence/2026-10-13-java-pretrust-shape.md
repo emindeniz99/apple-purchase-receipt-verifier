@@ -188,7 +188,9 @@ EXTERNAL element that is not an OID, an INTEGER or a tagged object in the
 descriptor, a SET included, and DER-encodes it with the rest. Review
 found it by wrapping the nested value as `EXTERNAL { descriptor, [0] NULL }`
 (a definite-length SEQUENCE retagged 0x28). The receipt was accepted in
-every row. The review's figures, JDK 21, 4 vCPU, warm calls, in seconds:
+every row. The review's figures, JDK 21, 4 vCPU, warm calls, in seconds,
+from `ExternalDescriptorProbe`, `ExternalSignerParamsProbe` and
+`SkiSignerInfoProbe`:
 
 | Shape, about 2.3 MB | Direct SET (skipped) | Inside an EXTERNAL, first commit | Inside an EXTERNAL, walk reads the descriptor |
 |---|---:|---:|---:|
@@ -196,6 +198,12 @@ every row. The review's figures, JDK 21, 4 vCPU, warm calls, in seconds:
 | bag certificate, signature label (TBS and outer) | skipped | 3.5 to 4.0 | 0.47 to 0.53 |
 | SignerInfo signature parameters with one CMSAlgorithmProtection attribute | 0.65 to 0.83 | 2.9 to 3.0 | 0.47 to 0.52 |
 | the key-parameter bag certificate and three SignerInfos in subjectKeyIdentifier form | n/a | 7.5 to 8.8 | 0.48 to 0.87 |
+
+A rerun of the three probes on the same machine
+(`results/review-first-commit-jdk21.txt` at `83ffe231`,
+`results/review-after-jdk21.txt` on the branch) gave, warm, 4.3 to 4.7,
+4.3 to 4.4, 3.2 to 3.6 and 7.8 to 8.6 s on the first commit, and 0.46
+to 0.88 s after.
 
 The walk now reads both. Two tests in `UnauthenticatedKeyCostTest` wrap
 the value of their direct twins this way. The faster of two calls, JDK
@@ -216,8 +224,12 @@ the shared cases are unchanged.
 
 ### Residual costs, measured and bounded
 
-Measured in the same review, on the branch, receipts accepted, JDK 21.
-None has a fix: no SET is involved, so no rule of the X.509 grammar
+Measured in the same review, on the branch, receipts accepted, JDK 21,
+with `NestedSequenceProbe`, `SkiSignerInfoProbe` and `FlatCostProbe`.
+The rerun in `results/review-after-jdk21.txt` agrees within about 0.1 s
+on every row but the second: there, three SignerInfos in
+subjectKeyIdentifier form added 0.03 to 0.25 s in all over none, call
+for call, not about 0.4 s each. None has a fix: no SET is involved, so no rule of the X.509 grammar
 removes it, and each is bounded by the parser or by a fixed count.
 
 | Shape | Cost | Bound |

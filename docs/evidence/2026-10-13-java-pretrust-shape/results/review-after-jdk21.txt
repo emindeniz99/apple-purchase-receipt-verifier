@@ -1,0 +1,76 @@
+external-in-label depth=30 der=2329855
+  run 0: 1090 ms [ACCEPTED]
+  run 1: 487 ms [ACCEPTED]
+  run 2: 457 ms [ACCEPTED]
+external-in-key depth=30 der=2346273
+  run 0: 533 ms [ACCEPTED]
+  run 1: 670 ms [ACCEPTED]
+  run 2: 590 ms [ACCEPTED]
+direct-set-in-key depth=30 der=2346264
+  run 0: 492 ms [ACCEPTED]
+  run 1: 731 ms [ACCEPTED]
+  run 2: 536 ms [ACCEPTED]
+signerinfo-params-none der=3225
+  run 0: 285 ms [ACCEPTED]
+  run 1: 24 ms [ACCEPTED]
+  run 2: 20 ms [ACCEPTED]
+signerinfo-params-direct-set der=2329645
+  run 0: 870 ms [ACCEPTED]
+  run 1: 768 ms [ACCEPTED]
+  run 2: 794 ms [ACCEPTED]
+signerinfo-params-external der=2329663
+  run 0: 833 ms [ACCEPTED]
+  run 1: 800 ms [ACCEPTED]
+  run 2: 882 ms [ACCEPTED]
+ski-signerinfos key=external copies=3 der=2264101
+  run 0: 977 ms [ACCEPTED]
+  run 1: 688 ms [ACCEPTED]
+  run 2: 512 ms [ACCEPTED]
+nested-sequences depth=1 fan=700000 in=key params=2100008 der=2103443
+  run 0: 1287 ms [ACCEPTED]
+  run 1: 926 ms [ACCEPTED]
+  run 2: 687 ms [ACCEPTED]
+nested-sequences depth=30 fan=23300 in=key params=2097153 der=2100588
+  run 0: 1777 ms [ACCEPTED]
+  run 1: 1348 ms [ACCEPTED]
+  run 2: 1251 ms [ACCEPTED]
+nested-sequences depth=50 fan=14000 in=key params=2100252 der=2103687
+  run 0: 2300 ms [ACCEPTED]
+  run 1: 1858 ms [ACCEPTED]
+  run 2: 1757 ms [ACCEPTED]
+nested-sequences depth=55 fan=13000 in=key params=2145277 der=2148712
+  run 0: 3226 ms [ACCEPTED]
+  run 1: 2680 ms [ACCEPTED]
+  run 2: 2631 ms [ACCEPTED]
+nested-sequences depth=55 fan=6500 in=label params=1072775 der=2148985
+  run 0: 2673 ms [ACCEPTED]
+  run 1: 2374 ms [ACCEPTED]
+  run 2: 2380 ms [ACCEPTED]
+ski-signerinfos key=seq55 copies=0 der=2148712
+  run 0: 3373 ms [ACCEPTED]
+  run 1: 3000 ms [ACCEPTED]
+  run 2: 2741 ms [ACCEPTED]
+ski-signerinfos key=seq55 copies=3 der=2150122
+  run 0: 3618 ms [ACCEPTED]
+  run 1: 3213 ms [ACCEPTED]
+  run 2: 2766 ms [ACCEPTED]
+flat keyusage der=2203464
+  run 0: 540 ms [ACCEPTED]
+  run 1: 150 ms [ACCEPTED]
+  run 2: 127 ms [ACCEPTED]
+flat subject-rdns der=1803424
+  run 0: 1636 ms [ACCEPTED]
+  run 1: 904 ms [ACCEPTED]
+  run 2: 941 ms [ACCEPTED]
+flat issuer-rdns der=1803406
+  run 0: 1506 ms [ACCEPTED]
+  run 1: 619 ms [ACCEPTED]
+  run 2: 672 ms [ACCEPTED]
+flat bigstring der=2203444
+  run 0: 569 ms [ACCEPTED]
+  run 1: 106 ms [ACCEPTED]
+  run 2: 94 ms [ACCEPTED]
+flat manyext der=1786933
+  run 0: 1332 ms [ACCEPTED]
+  run 1: 466 ms [ACCEPTED]
+  run 2: 514 ms [ACCEPTED]
