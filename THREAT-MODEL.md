@@ -348,14 +348,21 @@ The most CRLs the budget lets through, 11,092 minimal ones, cost about
 0.1 s and 10 MiB.
 
 *Residual risk: Java's parse before trust.* Java has no value budget, so
-only the input cap bounds two costs paid before any signer is matched,
+only the input cap bounds three costs paid before any signer is matched,
 measured on OpenJDK 21 with BouncyCastle 1.86: a receipt at the 3 MiB
 cap whose payload holds 195,562 tiny attributes is decoded in full at
 about 0.2 s, 144 MiB of allocation and 66 MiB more peak heap than a
 genuine receipt, and one unsigned attribute of 1,178,054 empty
 SEQUENCEs, which anyone can append to a genuine receipt, costs about
 0.19 s and 14 MiB more
-(docs/evidence/2026-10-05-java-presignature-parse-cost.md).
+(docs/evidence/2026-10-05-java-presignature-parse-cost.md). An unsigned
+receipt whose eContent is a branching tree of constructed OCTET STRINGs
+needs about 56 MiB more at the cap, because BouncyCastle keeps a
+flattened copy of each node's subtree while it parses the envelope; Apple
+sends DER, the core refuses constructed strings past six levels, and in
+Java the body cap and the concurrency limit bound it as they bound the
+tiny attributes
+(docs/evidence/2026-10-13-java-branched-econtent-heap.md).
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
 in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header

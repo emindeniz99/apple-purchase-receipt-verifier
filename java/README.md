@@ -711,8 +711,11 @@ milliseconds and 150 to 200 MB of allocation per call on one 4 vCPU
 machine; the
 CPU time scales with the host, the allocation less so. Size the heap
 against the concurrency limit: such a receipt adds about 66 MiB of peak
-heap per call in flight,
-so a semaphore of 8 needs about 530 MiB of headroom above what the
+heap per call in flight, the most of any shape measured. A cap-sized
+forgery whose signed content is a branching tree of constructed (BER)
+OCTET STRINGs, of which BouncyCastle keeps a flattened copy at every node,
+adds about 56 MiB. With 66 MiB a call,
+a semaphore of 8 needs about 530 MiB of headroom above what the
 application itself uses. The body cap and the concurrency limit are what
 bound that, and they are the deployment's job.
 

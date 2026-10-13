@@ -1,0 +1,5 @@
+baseline.b64: 3123 DER bytes, 4164 base64 chars (cap 3145728), payload 395 bytes
+tiny-attributes.b64: 2359255 DER bytes, 3145676 base64 chars (cap 3145728), payload 2347140 bytes
+  tiny attributes appended: 195562
+unsigned-attribute.b64: 2359253 DER bytes, 3145672 base64 chars (cap 3145728), payload 395 bytes
+  empty SEQUENCEs in the unsigned attribute: 1178054
