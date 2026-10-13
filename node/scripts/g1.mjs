@@ -1,16 +1,18 @@
-// One command for a module drop: build from a directory holding the
-// module's release files, then run everything the Node lane checks and
-// measures against it.
+// The corpus parity run (DECISIONS.md R35): build from a directory holding
+// the module's release files, then run the five corpora through the
+// package's host layer and compare every row with the module's own.
 //
 //   node scripts/g1.mjs DROP_DIR
 //
 // DROP_DIR holds aprv.component.wasm, calls/<corpus>.pinned.jsonl and
 // rows/module-<corpus>.jsonl. The steps, in order, stop at the first
-// failure: the build (APRV_COMPONENT pointing at the drop), the node:test
-// suite, the runtime smoke on Node and on workerd, the corpus against the
-// reference rows, then the timings (bench/bench.mjs, bench/startup.mjs) and
-// memory (bench/memory.mjs, bench/memory-workerd.mjs). Nothing is written
-// into the repository except dist/ and src/generated/.
+// failure: the build (APRV_COMPONENT pointing at the drop), then the corpus
+// against the reference rows. Rows only: the node:test suite and the
+// runtime smokes run in ci.yml against the freshly built component, and the
+// archive's component predates whatever the core and the shared cases
+// changed since its release; the timings and memory scripts in bench/ run
+// on their own. Nothing is written into the repository except dist/ and
+// src/generated/.
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,14 +28,7 @@ const node = process.execPath;
 
 const steps = [
   ['build', node, ['scripts/build.mjs']],
-  ['node:test', node, ['--test', '--test-reporter=dot']],
-  ['smoke: node', node, ['runtime-smoke/node-like.mjs']],
-  ['smoke: workerd', node, ['runtime-smoke/run-workerd.mjs', 'workerd@1.20260903.1']],
   ['corpus', node, ['scripts/corpus.mjs', join(drop, 'calls'), join(drop, 'rows')]],
-  ['bench', node, ['bench/bench.mjs']],
-  ['startup', node, ['bench/startup.mjs']],
-  ['memory: node', node, ['bench/memory.mjs']],
-  ['memory: workerd', node, ['bench/memory-workerd.mjs']],
 ];
 for (const [name, command, args] of steps) {
   console.log(`\n## ${name}`);

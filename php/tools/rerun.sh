@@ -1,29 +1,26 @@
 #!/bin/sh
-# Re-runs the whole PHP lane against one aprv binary: the phpunit suites (the
-# shared cases through the CLI and over HTTP, the façade, transport and installer
-# tests), then the corpus through the façade over both transports, compared
-# with the module's own rows.
+# The PHP corpus parity run against one aprv binary (DECISIONS.md R35): the
+# corpus through the façade over both transports, compared with the module's
+# own rows. Rows only: the phpunit suites (the shared cases through the CLI
+# and over HTTP, the façade, transport and installer tests) run in ci.yml
+# against the freshly built binary, and the archive's module predates
+# whatever the core and the shared cases changed since its release.
 #
 #   tools/rerun.sh /path/to/aprv /path/to/g1
 #
 # The g1 directory holds calls/<corpus>.pinned.jsonl and rows/module-<corpus>.jsonl
-# (and same.py, used for the byte-for-byte comparison when it is there).
-# PHPUNIT overrides the phpunit command (default vendor/bin/phpunit). The
-# binary is only ever named in the environment of this run; the library reads
-# no environment variable.
+# (and same.py, used for the byte-for-byte comparison when it is there). The
+# binary is passed to tools/corpus.php as --aprv; the library reads no
+# environment variable.
 set -eu
 [ $# -eq 2 ] || { echo "usage: tools/rerun.sh APRV_BINARY G1_DIR" >&2; exit 2; }
 here=$(cd "$(dirname "$0")/.." && pwd)
 APRV_BIN=$1
 g1=$2
-export APRV_BIN
 cd "$here"
 rows=$(mktemp -d)
 trap 'rm -rf "$rows"' EXIT
 failed=0
-
-echo "== phpunit"
-${PHPUNIT:-vendor/bin/phpunit} --no-progress || failed=1
 
 for mode in cli http; do
     echo "== corpus through the façade, $mode"

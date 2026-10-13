@@ -254,7 +254,7 @@ messages and no code path the timings exercise.
 | Limits in a real process | `scripts/hostile-smoke.sh <full build>` (the hostile component of `tests/hostile.wat`) |
 | Managed mode | `scripts/managed-smoke.py --aprv <binary>` |
 | Start-up and per-call cost, for the record | `scripts/startup.py --aprv <binary>` |
-| All of the above against one component | `scripts/check-component.sh` (APRV_COMPONENT, OUT; see its header) |
+| The build and the corpus against one component (the nightly parity run) | `scripts/check-component.sh` (APRV_COMPONENT, OUT, CALLS, ROWS; see its header) |
 | OpenAPI | `npx @stoplight/spectral-cli lint --fail-severity=hint openapi.yaml` (ruleset `.spectral.yaml`); Schemathesis against a running server |
 | Image | `scripts/docker-smoke.sh IMAGE` |
 

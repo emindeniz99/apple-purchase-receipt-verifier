@@ -1,5 +1,6 @@
 #!/bin/sh
-# Re-runs the lane against a new aprv.wasm, in one command, from python/:
+# The corpus parity run against an aprv.wasm (DECISIONS.md R35), from
+# python/:
 #
 #     PYTHON=/path/to/venv/bin/python tools/g1.sh G1_DIR
 #
@@ -10,11 +11,12 @@
 #      and puts aprv.wasm in the package, rewriting aprv.wasm.sha256 in this
 #      checkout. Both are for this run only and never committed: the release
 #      tooling refreshes the pin;
-#   2. the whole test suite, every conformance case included;
-#   3. every corpus through the host layer, compared byte for byte with the
+#   2. every corpus through the host layer, compared byte for byte with the
 #      module's own rows. A differing row is reported, never adjusted.
-# Exit status is 0 only when all of it passed. The module and the outputs
-# stay outside the repository.
+# Rows only: the test suite runs in ci.yml against the freshly built
+# module, and the archive's module predates whatever the core and the
+# shared cases changed since its release. Exit status is 0 only when every
+# row is identical. The module and the outputs stay outside the repository.
 set -eu
 G1=${1:?usage: tools/g1.sh G1_DIR}
 PYTHON=${PYTHON:-python3}
@@ -25,9 +27,6 @@ status=0
 
 bash "$HERE/../.github/scripts/place-module.sh" "$G1" python
 echo "== module $(cut -c1-64 "$PKG/aprv.wasm.sha256")"
-
-echo "== tests"
-(cd "$HERE" && "$PYTHON" -m unittest discover -s tests) || status=1
 
 echo "== corpora (rows written to $OUT)"
 for calls in "$G1"/calls/*.pinned.jsonl; do

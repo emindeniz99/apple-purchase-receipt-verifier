@@ -60,7 +60,7 @@ results below report both.
 | package | tool | where | output |
 |---|---|---|---|
 | Java, main artifact | JMH 1.37, 2 forks, 5 warmup and 5 measured iterations of 1 s | `java-bench/` | JMH JSON, µs/op (mean) |
-| Java `-wasm` | the timing step of the parity run | `java-wasm/scripts/g1.sh` | text |
+| Java `-wasm` | `BenchMain` in a fresh JVM, each thread on its own instance | `java-wasm/scripts/bench.sh` | text |
 | Go | `testing.B` | `go/bench_test.go`, `go/internal/host/bench_test.go` | Go benchmark text, ns/op, readable by benchstat |
 | Rust core, native | an example with `std::time` | `rust/examples/bench.rs` | JSON, µs/op |
 | Node | a script with `node:perf_hooks` | `node/bench/bench.mjs`; `startup.mjs` and `memory.mjs` beside it | JSON, µs/op |

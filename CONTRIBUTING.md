@@ -130,9 +130,11 @@ legs (Node's runtimes and browsers, .NET's netstandard2.0 floor, Java's
 Temurin 8 server-engine leg). Each package also carries a one-command
 parity run over the corpora of generated receipts (1,179 rows and 5,000
 mutants), which compares every answer byte for byte with the module's own
-rows; PORTS.md names the script. The corpora are too large for the
-repository: the nightly `corpus` job fetches the archive that
-`fixtures/corpus.json` pins by URL and SHA-256.
+rows; PORTS.md names the script. It runs no suite: the suites run in
+`ci.yml` against the module built from the commit. The corpora are too
+large for the repository: the nightly `corpus` job fetches the archive
+that `fixtures/corpus.json` pins by URL and SHA-256 and runs each
+package's parity script over it.
 
 ### The three fixture tiers
 

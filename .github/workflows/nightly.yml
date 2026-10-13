@@ -11,9 +11,10 @@
 #   java-wasm-s390x    the -wasm artifact's Endive cases on a big-endian JVM
 #                      (QEMU), the check java-wasm/CI-NOTES.md asks for
 #                      before each release;
-#   corpus             every host's one-command gate over the generated
+#   corpus             every host's corpus parity run over the generated
 #                      corpora (6,179 calls), each row compared byte for
-#                      byte with the module's own. The corpora are 200 MB of
+#                      byte with the module's own, and nothing else: the
+#                      suites run in ci.yml. The corpora are 200 MB of
 #                      generated rows and stay out of the repository (OD-05
 #                      in docs/rust-core/STATUS.md): the job fetches the
 #                      release asset that fixtures/corpus.json pins by URL
@@ -253,11 +254,15 @@ jobs:
   # aprv.wasm and aprv.component.wasm (the release's module), same.py,
   # calls/<corpus>.pinned.jsonl (every clock pinned) and
   # rows/module-<corpus>.jsonl (the module's own answers). Each leg runs its
-  # lane's one-command gate over it, which puts that module in place, runs
-  # the whole suite and compares every corpus row. The rows belong to the
-  # archive's module, so after a release changes the module a new archive
-  # is uploaded and fixtures/corpus.json is changed in a PR (a stale one
-  # is reported by the first step).
+  # lane's corpus script over it, which puts that module in place, runs the
+  # five corpora through the host layer and compares every row with the
+  # module's own (DECISIONS.md R35: wrapper parity). It runs no suite: the
+  # suites run in ci.yml against the module built from the commit, while
+  # the archive's module is the last release's, so a suite here would fail
+  # whenever the core or a shared case changed since that release. The rows
+  # belong to the archive's module, so after a release changes the module a
+  # new archive is uploaded and fixtures/corpus.json is changed in a PR (a
+  # stale one is reported by the first step).
   corpus:
     if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'emindeniz99'
     runs-on: ubuntu-latest
@@ -311,7 +316,7 @@ jobs:
         if: matrix.host == 'python'
         run: |
           set -euo pipefail
-          uv sync --locked --extra dev --project python
+          uv sync --locked --project python
           PYTHON="$GITHUB_WORKSPACE/python/.venv/bin/python" G1_OUT="$RUNNER_TEMP/out" sh python/tools/g1.sh "$G1"
 
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
@@ -360,8 +365,6 @@ jobs:
           java-version: "21"
       - name: java-wasm
         if: matrix.host == 'java-wasm'
-        env:
-          BENCH_SECONDS: "0"
         run: sh java-wasm/scripts/g1.sh "$G1" "$RUNNER_TEMP/out"
 
       # swift:6.3, digest-pinned as in ci.yml; python3 is for same.py.
@@ -376,7 +379,7 @@ jobs:
       # rust/server's check-component.sh builds the static binary around the
       # archive's component and runs the server's corpus over HTTP (fresh
       # and pooled) and the CLI; PHP's façade then runs the corpus through
-      # that binary.
+      # that binary. Neither runs its suite (ci.yml does).
       - name: the pinned Rust toolchain, the musl target and musl-gcc
         if: matrix.host == 'server-php'
         run: |
@@ -385,14 +388,6 @@ jobs:
           rustup toolchain install "$channel" --profile minimal --target x86_64-unknown-linux-musl
           echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
           sudo apt-get update && sudo apt-get install -y musl-tools
-      # check-component.sh's hostile step assembles tests/hostile.wat with
-      # wasm-tools, from the release archive ci.yml installs it from.
-      - name: wasm-tools
-        if: matrix.host == 'server-php'
-        run: |
-          set -euo pipefail
-          .github/scripts/install-wasm-tools.sh "$RUNNER_TEMP/wasm-tools"
-          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
       - name: server
         if: matrix.host == 'server-php'
         run: |

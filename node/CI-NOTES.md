@@ -73,13 +73,12 @@ the component's published hash), not against `aprv.wasm` itself.
 ## Module drops: one command
 
 `node scripts/g1.mjs DROP_DIR` builds from `DROP_DIR/aprv.component.wasm`
-and runs, in order: the node:test suite, the runtime smoke on Node and
-workerd, `scripts/corpus.mjs` (the five corpora's pinned call files through
+and runs `scripts/corpus.mjs` (the five corpora's pinned call files through
 the package's host layer, compared byte for byte with
-`DROP_DIR/rows/module-<corpus>.jsonl`), `bench/bench.mjs`,
-`bench/startup.mjs`, `bench/memory.mjs` and `bench/memory-workerd.mjs`. It
-stops at the first failure. A CI job for the corpus parity can run
-`node scripts/corpus.mjs CALLS_DIR ROWS_DIR` alone after `npm run build`.
+`DROP_DIR/rows/module-<corpus>.jsonl`). It stops at the first failure. It
+runs no suite and no smoke: those run in `ci.yml` against the component
+built from the commit. The nightly `corpus` job runs it; the timings and
+memory scripts in `bench/` run on their own.
 
 G1c (rust-core b863252, component sha256 `84fe428c…`), 2026-09-29, Node
 22.22.2, the same counts as G1 and G1b had against their own rows:

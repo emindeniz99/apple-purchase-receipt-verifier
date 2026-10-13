@@ -687,8 +687,8 @@ compares each row byte for byte with the module's own answers. A row whose
 input is over 3,145,728 bytes is counted as over-cap: `aprv` sends the
 module's answer to its first 3,145,729 bytes with exit 3 or HTTP 413, and that
 answer must equal the module's row.
-`tools/rerun.sh APRV_BINARY G1_DIR` runs the phpunit suites and the corpus over
-both transports as one command.
+`tools/rerun.sh APRV_BINARY G1_DIR` runs the corpus over both transports as
+one command; the phpunit suites run on their own (and in CI).
 
 **Releasing.** On the release branch, before the tag, the release workflow
 writes sha256sum's lines for the two Linux binaries into `SHA256SUMS`, each
