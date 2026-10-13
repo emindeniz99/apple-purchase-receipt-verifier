@@ -63,6 +63,11 @@ gaps (`SidIssuerProbe`).
   label whose saltLength exceeds emLen - hLen - 2 for the issuer's RSA
   key (RFC 8017 9.1.2), or whose issuer key is not RSA, before a
   `Signature` is built. A composite label is checked part by part.
+  Since review the bound also refuses a negative saltLength, which RFC
+  8017 9.1.1 does not allow: BouncyCastle reads only the low 32 bits, so
+  -3,294,967,296 passed the first bound as short and allocated
+  1,000,000,000 bytes, an `OutOfMemoryError` at `-Xmx1g` in about 1 s,
+  where the bag stranger is now passed over in milliseconds.
 - `AppleTrust.convertible`: every name value is an `ASN1String` and none
   of the three AlgorithmIdentifier parameters holds a SET under
   SEQUENCEs, tagged objects or an EXTERNAL's content or data value

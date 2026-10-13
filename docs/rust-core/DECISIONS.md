@@ -806,7 +806,11 @@ cRLDistributionPoints, 2026-10-06).
   the outer signatureAlgorithm to equal the TBS's (RFC 5280 4.1.1.2) and
   passes over a PSS label whose saltLength exceeds emLen - hLen - 2 for
   the issuer's RSA key (RFC 8017 9.1.2), or whose issuer key is not RSA,
-  before anything is built. The bound comes from the key and the label's
+  before anything is built. The bound also refuses a negative
+  saltLength, which review found: BouncyCastle reads only its low 32
+  bits, so -3,294,967,296 passed as short and allocated 1,000,000,000
+  bytes, an `OutOfMemoryError` at `-Xmx1g` in about 1 s, now refused in
+  milliseconds. The bound comes from the key and the label's
   hash, so a PSS-signed Apple CA would still verify. OpenSSL refuses
   such a signature in the core, and
   `receipt/accept-genuine-beside-a-stranger-labelled-rsa-pss-with-a-huge-salt`,
