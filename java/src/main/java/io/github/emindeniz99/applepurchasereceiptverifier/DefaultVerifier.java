@@ -143,7 +143,8 @@ final class DefaultVerifier implements Verifier {
                     + "\"; the verifier needs 1.86 or later: 1.84 added the ASN.1 nesting bound that"
                     + " keeps a deeply nested receipt from overflowing the stack, and 1.85 fixed"
                     + " CVE-2026-12860 in the RSA signature check receipts use (and CVE-2026-13506)."
-                    + " Resolve bcprov, bcutil and bcpkix to 1.86 or later");
+                    + " Resolve bcprov to 1.86 or later; this check reads bcprov's release only, so keep"
+                    + " bcutil and bcpkix at the same release");
         }
     }
 
