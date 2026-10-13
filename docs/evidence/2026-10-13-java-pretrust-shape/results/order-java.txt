@@ -1,0 +1,10 @@
+== f309a300
+order top-as-sent der=2033 sentIsDer=false topIsDer=false [INVALID_SIGNATURE: CMS signature does not match the signer certificate's key]
+order top-sorted der=2033 sentIsDer=false topIsDer=false [ACCEPTED]
+order values-as-sent der=2016 sentIsDer=false topIsDer=true [INVALID_SIGNATURE: CMS signature does not match the signer certificate's key]
+order values-sorted der=2016 sentIsDer=false topIsDer=true [ACCEPTED]
+== branch
+order top-as-sent der=2033 sentIsDer=false topIsDer=false [ACCEPTED]
+order top-sorted der=2033 sentIsDer=false topIsDer=false [INVALID_SIGNATURE: CMS signature does not match the signer certificate's key]
+order values-as-sent der=2016 sentIsDer=false topIsDer=true [ACCEPTED]
+order values-sorted der=2016 sentIsDer=false topIsDer=true [INVALID_SIGNATURE: CMS signature does not match the signer certificate's key]

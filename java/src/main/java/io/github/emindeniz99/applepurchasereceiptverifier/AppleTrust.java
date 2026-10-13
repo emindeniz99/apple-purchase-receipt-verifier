@@ -1,6 +1,10 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.io.IOException;
+import java.math.BigInteger;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.PublicKey;
 import java.security.cert.CertPathValidatorException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateExpiredException;
@@ -8,6 +12,7 @@ import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.PKIXCertPathChecker;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -16,7 +21,25 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1External;
+import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.ASN1String;
+import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
+import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
+import org.bouncycastle.asn1.x500.RDN;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.TBSCertificate;
+import org.bouncycastle.jcajce.interfaces.BCX509Certificate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Trust material both paths share (the marker OIDs, the anchors and the
@@ -111,13 +134,160 @@ final class AppleTrust {
                 continue;
             }
             try {
-                certificate.verify(issuer.getPublicKey(), BouncyCastle.PROVIDER);
-                return true;
-            } catch (GeneralSecurityException | RuntimeException e) {
-                // Not signed by this issuer, or the issuer's key is one
-                // BouncyCastle cannot build (null for an unknown algorithm,
-                // which verify refuses); try the next one.
+                if (signedBy(certificate, issuer.getPublicKey())) {
+                    return true;
+                }
+            } catch (RuntimeException e) {
+                // The issuer's key is one BouncyCastle cannot build; try the
+                // next one.
             }
+        }
+        return false;
+    }
+
+    /**
+     * Whether {@code issuerKey}, which a pinned root vouches for, signed
+     * {@code certificate}.
+     *
+     * <p>The certificate must be one {@link BouncyCastle#PROVIDER} built;
+     * another provider's returns false. Its signature algorithm is its own
+     * choice and stays unsigned until this returns. So the label inside the
+     * TBS, which the signature covers, must equal the outer one (RFC 5280
+     * 4.1.1.2). An RSASSA-PSS label may not name a saltLength longer than
+     * {@code issuerKey} can hold, or a negative one, because BouncyCastle
+     * allocates an array of saltLength bytes (the low 32 bits of it) while it
+     * builds the verifier, before it compares any signature byte.</p>
+     */
+    static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
+        try {
+            // Another provider's certificate fails this cast and lands in the
+            // catch below as "not signed".
+            AlgorithmIdentifier signed =
+                    ((BCX509Certificate) certificate).getTBSCertificateNative().getSignature();
+            ASN1Encodable parameters = signed.getParameters();
+            if (!signed.getAlgorithm().getId().equals(certificate.getSigAlgOID())
+                    || !Arrays.equals(
+                            parameters == null
+                                    ? null
+                                    : parameters.toASN1Primitive().getEncoded(ASN1Encoding.DER),
+                            certificate.getSigAlgParams())
+                    || !saltFits(signed, issuerKey)) {
+                return false;
+            }
+            certificate.verify(issuerKey, BouncyCastle.PROVIDER);
+            return true;
+        } catch (GeneralSecurityException | IOException | RuntimeException e) {
+            // Not signed by this key, or a key verify cannot use (null for
+            // an algorithm BouncyCastle does not know, which verify refuses).
+            return false;
+        }
+    }
+
+    /**
+     * Whether an RSASSA-PSS {@code algorithm}, or each part of a composite
+     * one, names a saltLength {@code key} can hold: at most emLen - hLen - 2
+     * octets (RFC 8017 9.1.2), emLen from the modulus and hLen from the hash
+     * the parameters name. The salt is a non-negative integer (RFC 8017
+     * 9.1.1), so a negative one does not fit. Any other algorithm fits, and
+     * PSS under a key that is not RSA, or with no parameters, verifies
+     * nothing.
+     */
+    private static boolean saltFits(AlgorithmIdentifier algorithm, @Nullable PublicKey key)
+            throws GeneralSecurityException {
+        if (MiscObjectIdentifiers.id_alg_composite.equals(algorithm.getAlgorithm())) {
+            for (ASN1Encodable part : ASN1Sequence.getInstance(algorithm.getParameters())) {
+                if (!saltFits(AlgorithmIdentifier.getInstance(part), key)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (!PKCSObjectIdentifiers.id_RSASSA_PSS.equals(algorithm.getAlgorithm())) {
+            return true;
+        }
+        if (!(key instanceof RSAPublicKey) || algorithm.getParameters() == null) {
+            return false;
+        }
+        RSASSAPSSparams parameters = RSASSAPSSparams.getInstance(algorithm.getParameters());
+        int emLen = (((RSAPublicKey) key).getModulus().bitLength() + 6) / 8;
+        int hLen = MessageDigest.getInstance(
+                        parameters.getHashAlgorithm().getAlgorithm().getId(), BouncyCastle.PROVIDER)
+                .getDigestLength();
+        BigInteger salt = parameters.getSaltLength();
+        return salt.signum() >= 0 && salt.compareTo(BigInteger.valueOf(emLen - hLen - 2)) <= 0;
+    }
+
+    /**
+     * Whether BouncyCastle can turn {@code certificate} into a JCA object, and
+     * verify and compare that object, without sorting a SET the sender
+     * nested. Encoding to DER sorts every SET by its members' encodings, at a
+     * cost that grows with the nesting, and BouncyCastle's X.509 object
+     * DER-encodes the names and the signature parameters as it is built, the
+     * TBS as it is verified and the whole certificate as it is compared.
+     *
+     * <p>The X.509 grammar leaves two places open to any ASN.1, and
+     * BouncyCastle parses the rest strictly or keeps it as octets (extension
+     * values, the key, the signature): an attribute value in the issuer or
+     * subject name, and the parameters of the three AlgorithmIdentifiers
+     * (the TBS signature, the outer signatureAlgorithm, the key's). So the
+     * certificate is convertible when every name value is a string and no
+     * parameters hold a SET. Apple's names hold PrintableString and
+     * UTF8String, and no signature or key algorithm defines a SET in its
+     * parameters, so a certificate that is not convertible is not one Apple
+     * issued. The one SET left, an RDN's SET OF values, BouncyCastle 1.86
+     * sorts in N log N.</p>
+     */
+    static boolean convertible(org.bouncycastle.asn1.x509.Certificate certificate) {
+        TBSCertificate tbs = certificate.getTBSCertificate();
+        return stringsOnly(tbs.getIssuer())
+                && stringsOnly(tbs.getSubject())
+                && !holdsSet(tbs.getSignature().getParameters())
+                && !holdsSet(certificate.getSignatureAlgorithm().getParameters())
+                && !holdsSet(tbs.getSubjectPublicKeyInfo().getAlgorithm().getParameters());
+    }
+
+    /** Whether every attribute value in {@code name} is a string. */
+    static boolean stringsOnly(X500Name name) {
+        for (RDN rdn : name.getRDNs()) {
+            for (AttributeTypeAndValue value : rdn.getTypesAndValues()) {
+                if (!(value.getValue() instanceof ASN1String)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether {@code value} is a SET or holds one inside a SEQUENCE, a
+     * tagged object, or an EXTERNAL's content or data value descriptor, the
+     * containers BouncyCastle's parser builds besides constructed strings,
+     * which hold only strings. BouncyCastle puts any EXTERNAL element that is
+     * not an OID, an INTEGER or a tagged object in the descriptor, a SET
+     * included. The depth is the parser's own bound.
+     */
+    static boolean holdsSet(@Nullable ASN1Encodable value) {
+        if (value == null) {
+            return false;
+        }
+        ASN1Primitive primitive = value.toASN1Primitive();
+        if (primitive instanceof ASN1Set) {
+            return true;
+        }
+        if (primitive instanceof ASN1Sequence) {
+            for (ASN1Encodable member : (ASN1Sequence) primitive) {
+                if (holdsSet(member)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (primitive instanceof ASN1TaggedObject) {
+            return holdsSet(((ASN1TaggedObject) primitive).getBaseObject());
+        }
+        if (primitive instanceof ASN1External) {
+            ASN1External external = (ASN1External) primitive;
+            return holdsSet(external.getDataValueDescriptor()) || holdsSet(external.getExternalContent());
         }
         return false;
     }

@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
  * Writes fixtures/public-receipts/signer-infos/, genuine Apple receipts whose
- * SignerInfos SET carries one more SignerInfo beside Apple's.
+ * SignerInfos SET carries one more SignerInfo beside Apple's, and
+ * fixtures/public-receipts/certificates/, genuine Apple receipts whose
+ * certificate bag carries one more entry beside Apple's three.
  *
  *   node tools/generate-signer-info-fixtures.mjs
  *
- * Every byte outside the SignerInfos SET is kept as Apple wrote it; only the
- * length headers of the three containers around that SET are rewritten. An
+ * Every byte outside the SignerInfos SET, or the certificate bag, is kept as
+ * Apple wrote it; only the length headers of the containers around it are
+ * rewritten. An
  * ASN.1 library is not used to re-encode: BouncyCastle sorts the certificates
  * SET into DER order, which changes bytes Apple wrote for no reason of the
  * case's (docs/evidence/2026-10-06-verifyreceipt-two-signerinfos.md). The
@@ -33,6 +36,18 @@
  *                                       algorithm set to RSASSA-PSS (SHA-256,
  *                                       MGF1 with SHA-256, saltLength
  *                                       1,000,000,000), alone
+ *
+ *   certificates/rsa-pss-huge-salt-stranger.der
+ *                                       the receipt with one more bag entry
+ *                                       naming Apple Root CA as its issuer,
+ *                                       labelled RSASSA-PSS (SHA-256, MGF1 with
+ *                                       SHA-256, saltLength 2,147,483,647),
+ *                                       with the receipt signer's key and 256
+ *                                       zero octets as its signature
+ *   certificates/rsa-pss-negative-salt-stranger.der
+ *                                       the same entry with saltLength
+ *                                       -3,294,967,296, whose low 32 bits are
+ *                                       1,000,000,000
  */
 
 import { createHash } from 'node:crypto';
@@ -42,7 +57,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES = join(REPO, 'fixtures');
-const OUT = join(FIXTURES, 'public-receipts', 'signer-infos');
+const OUT = join(FIXTURES, 'public-receipts');
 
 /** [header length, content length] of the definite-length value at off. */
 function tlv(buf, off) {
@@ -81,6 +96,8 @@ const signedData = children(der, contentInfo[1][0])[0][0];
 const fields = children(der, signedData); // version, digestAlgorithms, encapContentInfo, [0] certificates, SignerInfos
 const set = fields[fields.length - 1];
 if (der[set[0]] !== 0x31 || set[0] + set[1] !== der.length) throw new Error('the SignerInfos SET is not last');
+const bag = fields[fields.length - 2];
+if (der[bag[0]] !== 0xa0) throw new Error('the certificate bag is not before the SignerInfos SET');
 const infos = children(der, set[0]);
 if (infos.length !== 1) throw new Error(`expected one SignerInfo, found ${infos.length}`);
 const genuine = slice(der, infos[0]);
@@ -91,7 +108,15 @@ function receipt(...signerInfos) {
   return wrap(0x30, Buffer.concat([slice(der, contentInfo[0]), wrap(0xa0, sd)]));
 }
 
+function withBagEntry(entry) {
+  const head = der.subarray(signedData + tlv(der, signedData)[0], bag[0]);
+  const certificates = der.subarray(bag[0] + tlv(der, bag[0])[0], bag[0] + bag[1]);
+  const sd = wrap(0x30, Buffer.concat([head, wrap(0xa0, Buffer.concat([certificates, entry])), slice(der, set)]));
+  return wrap(0x30, Buffer.concat([slice(der, contentInfo[0]), wrap(0xa0, sd)]));
+}
+
 if (!receipt(genuine).equals(der)) throw new Error('the splice does not reproduce the original bytes');
+if (!withBagEntry(Buffer.alloc(0)).equals(der)) throw new Error('the bag splice does not reproduce the original bytes');
 
 // SignerInfo: version, sid, digestAlgorithm, [[0] signedAttrs,] signatureAlgorithm, signature.
 const parts = children(genuine, 0).map((p) => slice(genuine, p));
@@ -106,24 +131,55 @@ const withSignature = (algorithm) =>
   wrap(0x30, Buffer.concat([...parts.slice(0, -2), wrap(0x30, algorithm), parts[parts.length - 1]]));
 const md2WithRsa = withSignature(Buffer.from('06092a864886f70d0101020500', 'hex'));
 const sha256 = wrap(0x30, Buffer.from('0609608648016503040201' + '0500', 'hex'));
-const pssParams = wrap(0x30, Buffer.concat([
-  wrap(0xa0, sha256),
-  wrap(0xa1, wrap(0x30, Buffer.concat([Buffer.from('06092a864886f70d010108', 'hex'), sha256]))),
-  wrap(0xa2, Buffer.from('02043b9aca00', 'hex')), // INTEGER 1,000,000,000
-]));
-const pssHugeSalt = withSignature(Buffer.concat([Buffer.from('06092a864886f70d01010a', 'hex'), pssParams]));
+// RSASSA-PSS, SHA-256, MGF1 with SHA-256, the given saltLength INTEGER.
+const pss = (saltLength) => Buffer.concat([
+  Buffer.from('06092a864886f70d01010a', 'hex'),
+  wrap(0x30, Buffer.concat([
+    wrap(0xa0, sha256),
+    wrap(0xa1, wrap(0x30, Buffer.concat([Buffer.from('06092a864886f70d010108', 'hex'), sha256]))),
+    wrap(0xa2, saltLength),
+  ])),
+]);
+const pssHugeSalt = withSignature(pss(Buffer.from('02043b9aca00', 'hex'))); // INTEGER 1,000,000,000
+
+// Certificate: TBSCertificate, signatureAlgorithm, signature. TBSCertificate:
+// [0] version, serialNumber, signature, issuer, validity, subject, key, ...
+const tbsOf = (certificate) => children(certificate, children(certificate, 0)[0][0]).map((p) => slice(certificate, p));
+const [leafCert, , rootCert] = children(der, bag[0]).map((p) => slice(der, p));
+const rootTbs = tbsOf(rootCert);
+const strangerWithSalt = (saltLength) => {
+  const strangerLabel = wrap(0x30, pss(saltLength));
+  return wrap(0x30, Buffer.concat([
+    wrap(0x30, Buffer.concat([
+      Buffer.from('a003020102', 'hex'), // v3
+      Buffer.from('02021092', 'hex'), // serial 4242
+      strangerLabel,
+      rootTbs[5], // issuer: Apple Root CA's subject
+      rootTbs[4], // Apple Root CA's validity
+      wrap(0x30, wrap(0x31, wrap(0x30, Buffer.concat([Buffer.from('0603550403', 'hex'), wrap(0x0c, Buffer.from('Stranger'))])))),
+      tbsOf(leafCert)[6], // the receipt signer's key
+    ])),
+    strangerLabel,
+    wrap(0x03, Buffer.alloc(257)), // no unused bits, 256 zero octets
+  ]));
+};
+const stranger = strangerWithSalt(Buffer.from('02047fffffff', 'hex')); // INTEGER 2,147,483,647
+// INTEGER -3,294,967,296: two's complement in 5 octets, low 32 bits 0x3b9aca00.
+const negativeSaltStranger = strangerWithSalt(Buffer.from('0205ff3b9aca00', 'hex'));
 const malformedUnsigned = wrap(0x30, Buffer.concat([...parts, Buffer.from('a103020105', 'hex')]));
 
 const files = {
-  'unknown-digest-alone.der': receipt(unknownDigest),
-  'unknown-digest-then-genuine.der': receipt(unknownDigest, genuine),
-  'malformed-unsigned-attrs-then-genuine.der': receipt(malformedUnsigned, genuine),
-  'refused-digest-alone.der': receipt(md2Digest),
-  'md2-with-rsa-label-alone.der': receipt(md2WithRsa),
-  'rsa-pss-huge-salt-label-alone.der': receipt(pssHugeSalt),
+  'signer-infos/unknown-digest-alone.der': receipt(unknownDigest),
+  'signer-infos/unknown-digest-then-genuine.der': receipt(unknownDigest, genuine),
+  'signer-infos/malformed-unsigned-attrs-then-genuine.der': receipt(malformedUnsigned, genuine),
+  'signer-infos/refused-digest-alone.der': receipt(md2Digest),
+  'signer-infos/md2-with-rsa-label-alone.der': receipt(md2WithRsa),
+  'signer-infos/rsa-pss-huge-salt-label-alone.der': receipt(pssHugeSalt),
+  'certificates/rsa-pss-huge-salt-stranger.der': withBagEntry(stranger),
+  'certificates/rsa-pss-negative-salt-stranger.der': withBagEntry(negativeSaltStranger),
 };
-mkdirSync(OUT, { recursive: true });
 for (const [name, bytes] of Object.entries(files)) {
+  mkdirSync(dirname(join(OUT, name)), { recursive: true });
   writeFileSync(join(OUT, name), bytes);
-  console.log(`${createHash('sha256').update(bytes).digest('hex')}  public-receipts/signer-infos/${name}`);
+  console.log(`${createHash('sha256').update(bytes).digest('hex')}  public-receipts/${name}`);
 }

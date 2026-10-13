@@ -1,0 +1,28 @@
+external-in-label depth=30 der=2329855
+  run 0: 4733 ms [ACCEPTED]
+  run 1: 4338 ms [ACCEPTED]
+  run 2: 4386 ms [ACCEPTED]
+external-in-key depth=30 der=2346273
+  run 0: 7362 ms [ACCEPTED]
+  run 1: 4305 ms [ACCEPTED]
+  run 2: 4653 ms [ACCEPTED]
+direct-set-in-key depth=30 der=2346264
+  run 0: 536 ms [ACCEPTED]
+  run 1: 436 ms [ACCEPTED]
+  run 2: 529 ms [ACCEPTED]
+signerinfo-params-none der=3225
+  run 0: 369 ms [ACCEPTED]
+  run 1: 28 ms [ACCEPTED]
+  run 2: 22 ms [ACCEPTED]
+signerinfo-params-direct-set der=2329645
+  run 0: 752 ms [ACCEPTED]
+  run 1: 776 ms [ACCEPTED]
+  run 2: 777 ms [ACCEPTED]
+signerinfo-params-external der=2329663
+  run 0: 3660 ms [ACCEPTED]
+  run 1: 3564 ms [ACCEPTED]
+  run 2: 3216 ms [ACCEPTED]
+ski-signerinfos key=external copies=3 der=2264101
+  run 0: 8303 ms [ACCEPTED]
+  run 1: 8584 ms [ACCEPTED]
+  run 2: 7822 ms [ACCEPTED]

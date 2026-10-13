@@ -1,0 +1,8 @@
+== f309a300
+trailing ACCEPTED
+second ACCEPTED
+pem ACCEPTED
+== branch
+trailing ACCEPTED
+second ACCEPTED
+pem INVALID_CERTIFICATE: x5c[0] does not decode

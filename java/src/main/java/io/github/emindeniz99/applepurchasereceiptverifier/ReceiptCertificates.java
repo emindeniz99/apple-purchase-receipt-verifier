@@ -40,9 +40,10 @@ final class ReceiptCertificates {
      * IMPLICIT SET}, after counting the set against
      * {@link #MAX_EMBEDDED_CERTIFICATES}. The other CertificateChoices
      * (RFC 5652 10.2.2: {@code [0]} to {@code [3]}, each a SEQUENCE) name no
-     * signer and are skipped. The bag is unsigned, so an entry that does not
-     * decode is a defect of the receipt: MALFORMED, whichever certificate it
-     * was meant to be.
+     * signer and are skipped, and so is a certificate
+     * {@link AppleTrust#convertible} passes over. The bag is unsigned, so an
+     * entry that does not decode is a defect of the receipt: MALFORMED,
+     * whichever certificate it was meant to be.
      */
     static ReceiptCertificates decode(CMSSignedData cms) throws VerificationException {
         ASN1Set certificateSet =
@@ -73,12 +74,16 @@ final class ReceiptCertificates {
                 // Read as parsed, not re-encoded: DER sorts every SET by its
                 // members' encodings, seconds for a cap-sized nested entry.
                 X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(entry));
-                X509Certificate certificate = converter.getCertificate(holder);
-                // Forces BouncyCastle's lazy signature decode here, not inside
-                // the path builder. The key is not read: see
-                // ReceiptCore.authenticatedTopDown.
-                certificate.getSignature();
-                certificates.all.add(certificate);
+                // Decodes the signature here, not inside the path builder.
+                // The key is not read: see ReceiptCore.authenticatedTopDown.
+                holder.toASN1Structure().getSignature().getOctets();
+                // A certificate Apple could not have issued, which the
+                // conversion would spend seconds on, names no signer and
+                // vouches for nothing: it is passed over, not refused.
+                if (!AppleTrust.convertible(holder.toASN1Structure())) {
+                    continue;
+                }
+                certificates.all.add(converter.getCertificate(holder));
                 certificates.holders.add(holder);
             } catch (CertificateException | RuntimeException e) {
                 throw new VerificationException(
@@ -100,7 +105,9 @@ final class ReceiptCertificates {
      * which {@code SignerId.match} uses, ignores RDN order and costs time
      * quadratic in the RDN count of two names nobody has authenticated yet.
      * So a SignerId listing the certificate's RDNs in another order names
-     * no certificate.</p>
+     * no certificate. Both names hold strings only, the SignerId's checked
+     * in ReceiptCore and every certificate's in {@link #decode}, so the
+     * comparison re-encodes no value.</p>
      */
     List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();

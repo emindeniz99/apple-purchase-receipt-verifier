@@ -1,0 +1,84 @@
+mode=subject depth=30 der=2293334 base64=3057780 (cap 3145728)
+  run 0: 4426 ms [ACCEPTED]
+  run 1: 4768 ms [ACCEPTED]
+  run 2: 4718 ms [ACCEPTED]
+  run 3: 4881 ms [ACCEPTED]
+mode=issuer depth=30 der=2293316 base64=3057756 (cap 3145728)
+  run 0: 4372 ms [ACCEPTED]
+  run 1: 4371 ms [ACCEPTED]
+  run 2: 4344 ms [ACCEPTED]
+  run 3: 4000 ms [ACCEPTED]
+mode=spki depth=30 der=2293330 base64=3057776 (cap 3145728)
+  run 0: 3887 ms [ACCEPTED]
+  run 1: 4494 ms [ACCEPTED]
+  run 2: 4681 ms [ACCEPTED]
+  run 3: 4574 ms [ACCEPTED]
+mode=sigalg depth=30 der=2293330 base64=3057776 (cap 3145728)
+  run 0: 3702 ms [ACCEPTED]
+  run 1: 4260 ms [ACCEPTED]
+  run 2: 4067 ms [ACCEPTED]
+  run 3: 3938 ms [ACCEPTED]
+mode=subject depth=50 der=2293280 base64=3057708 (cap 3145728)
+  run 0: 6587 ms [ACCEPTED]
+  run 1: 7366 ms [ACCEPTED]
+  run 2: 7152 ms [ACCEPTED]
+  run 3: 6869 ms [ACCEPTED]
+mode=san depth=30 der=2293383 base64=3057844 (cap 3145728)
+  run 0: 307 ms [ACCEPTED]
+  run 1: 78 ms [ACCEPTED]
+  run 2: 48 ms [ACCEPTED]
+  run 3: 49 ms [ACCEPTED]
+mode=widerdn depth=100 der=1503425 base64=2004568 (cap 3145728)
+  run 0: 1203 ms [ACCEPTED]
+  run 1: 517 ms [ACCEPTED]
+  run 2: 560 ms [ACCEPTED]
+  run 3: 580 ms [ACCEPTED]
+mode=jws depth=30 jws=256406 (cap 262144)
+  run 0: 683 ms [ACCEPTED]
+  run 1: 357 ms [ACCEPTED]
+  run 2: 201 ms [ACCEPTED]
+  run 3: 244 ms [ACCEPTED]
+mode=signedattrs depth=30 der=2293152 base64=3057536 (cap 3145728)
+  run 0: 3155 ms [ACCEPTED]
+  run 1: 3357 ms [ACCEPTED]
+  run 2: 3462 ms [ACCEPTED]
+  run 3: 3292 ms [ACCEPTED]
+mode=signerparams depth=30 der=2293034 base64=3057380 (cap 3145728)
+  run 0: 2505 ms [ACCEPTED]
+  run 1: 2556 ms [ACCEPTED]
+  run 2: 2195 ms [ACCEPTED]
+  run 3: 2409 ms [ACCEPTED]
+depth=30 k=1 matchSerial=true der=2293315 base64=3057756 (cap 3145728)
+  run 0: 6859 ms [ACCEPTED]
+  run 1: 7184 ms [ACCEPTED]
+  run 2: 9337 ms [ACCEPTED]
+  run 3: 8288 ms [ACCEPTED]
+depth=30 k=4 matchSerial=true der=2294749 base64=3059668 (cap 3145728)
+  run 0: 9919 ms [ACCEPTED]
+  run 1: 9018 ms [ACCEPTED]
+  run 2: 16641 ms [ACCEPTED]
+  run 3: 9536 ms [ACCEPTED]
+salt=32 der=3531
+  run 0: 192 ms [ACCEPTED]
+  run 1: 9 ms [ACCEPTED]
+  run 2: 8 ms [ACCEPTED]
+salt=32 jws=2342
+  run 0: 125 ms [UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root]
+  run 1: 3 ms [UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root]
+  run 2: 2 ms [UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root]
+salt=1000000000 der=3537
+  run 0: 20277 ms [ACCEPTED]
+  run 1: 999 ms [ACCEPTED]
+  run 2: 966 ms [ACCEPTED]
+salt=1000000000 jws=2353
+  run 0: 3306 ms [UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root]
+  run 1: 5931 ms [UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root]
+  run 2: 516 ms [UNTRUSTED_CHAIN: intermediate certificate is not signed by a pinned Apple root]
+salt=2147483647 der=3537
+  run 0: 112 ms [THROWN java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+  run 1: 3 ms [THROWN java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+  run 2: 3 ms [THROWN java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+salt=2147483647 jws=2353
+  run 0: 117 ms [THROWN java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+  run 1: 2 ms [THROWN java.lang.OutOfMemoryError: Requested array size exceeds VM limit]
+  run 2: 1 ms [THROWN java.lang.OutOfMemoryError: Requested array size exceeds VM limit]

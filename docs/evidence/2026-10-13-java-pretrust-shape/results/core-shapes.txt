@@ -1,0 +1,10 @@
+core order-top-as-sent der=2033 ms=[0, 0, 0] ok
+core order-top-sorted der=2033 ms=[0, 0, 0] Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None }
+core order-values-as-sent der=2016 ms=[0, 0, 0] Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None }
+core order-values-sorted der=2016 ms=[0, 0, 0] ok
+core shape-san-30 der=2293383 ms=[57, 54, 48] ok
+core shape-signedattrs-30 der=2293152 ms=[45, 44, 45] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core shape-signerparams-30 der=2293034 ms=[42, 43, 40] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core shape-spki-30 der=2293330 ms=[42, 43, 40] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core shape-subject-30 der=2293334 ms=[41, 41, 39] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core shape-widerdn-100 der=1503425 ms=[101, 107, 96] Failure { reason: Malformed, message: "malformed CMS structure: more than 100000 ASN.1 values", source: None }

@@ -2,7 +2,6 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -21,6 +20,10 @@ import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1InputStream;
+import org.bouncycastle.asn1.x509.Certificate;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -81,7 +84,7 @@ final class JwsCore {
             throw new VerificationException(Reason.MALFORMED, "x5c must contain exactly 3 certificates");
         }
         // x5c[2] is decoded but unused: the pinned anchor stands in for it.
-        List<X509Certificate> chain = decodeChain(header.x5c);
+        List<@Nullable X509Certificate> chain = decodeChain(header.x5c);
         X509Certificate leaf = chain.get(0);
         X509Certificate intermediate = chain.get(1);
 
@@ -311,38 +314,46 @@ final class JwsCore {
         return new VerificationException(reason, what + " is not a JSON object: " + problem, cause);
     }
 
-    private static List<X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
-        List<X509Certificate> chain = new ArrayList<>();
+    /**
+     * Each entry as a certificate, or null for one {@link AppleTrust#convertible}
+     * passes over: no Apple certificate, so it stands for nothing in the
+     * chain. An entry that does not decode is INVALID_CERTIFICATE.
+     */
+    private static List<@Nullable X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
+        JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);
+        List<@Nullable X509Certificate> chain = new ArrayList<>();
         try {
-            CertificateFactory cf = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER);
             for (String entry : x5c) {
                 byte[] der = StrictBase64.decode(entry, false, Reason.INVALID_CERTIFICATE, "x5c entry");
-                X509Certificate certificate = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der));
-                // Forces BouncyCastle's lazy signature decode here, not inside
-                // the validator. The key is not read: see authenticateTopDown.
-                certificate.getSignature();
-                chain.add(certificate);
+                // The first object only, as a CertificateFactory reads one.
+                X509CertificateHolder holder =
+                        new X509CertificateHolder(Certificate.getInstance(new ASN1InputStream(der).readObject()));
+                // Decodes the signature here, not inside the validator. The
+                // key is not read: see authenticateTopDown.
+                holder.toASN1Structure().getSignature().getOctets();
+                chain.add(AppleTrust.convertible(holder.toASN1Structure()) ? converter.getCertificate(holder) : null);
             }
-        } catch (CertificateException | RuntimeException e) {
+        } catch (CertificateException | IOException | RuntimeException e) {
             throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + chain.size() + "] does not decode", e);
         }
         return chain;
     }
 
-    /** Checks both signatures from a pinned root down, decoding a key only once it is vouched for; see {@link AppleTrust}. */
+    /**
+     * Checks both signatures from a pinned root down, decoding a key only once
+     * it is vouched for; see {@link AppleTrust}. A null certificate, one
+     * {@link #decodeChain} passed over, is signed by nobody.
+     */
     private static void authenticateTopDown(
-            X509Certificate leaf, X509Certificate intermediate, Set<TrustAnchor> trustAnchors)
+            @Nullable X509Certificate leaf, @Nullable X509Certificate intermediate, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        if (!AppleTrust.signedByAny(intermediate, AppleTrust.roots(trustAnchors))) {
+        if (intermediate == null || !AppleTrust.signedByAny(intermediate, AppleTrust.roots(trustAnchors))) {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "intermediate certificate is not signed by a pinned Apple root");
         }
-        PublicKey intermediateKey = decodeKey(intermediate, 1);
-        try {
-            leaf.verify(intermediateKey, BouncyCastle.PROVIDER);
-        } catch (GeneralSecurityException | RuntimeException e) {
+        if (leaf == null || !AppleTrust.signedBy(leaf, decodeKey(intermediate, 1))) {
             throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate", e);
+                    Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");
         }
         decodeKey(leaf, 0);
     }

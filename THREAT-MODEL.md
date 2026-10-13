@@ -382,11 +382,33 @@ issuer value that is not a string, which BouncyCastle re-encodes to hash
 and compare the name (about 11 s). Java now reads bag entries as parsed
 and leaves out a SignerInfo whose issuer holds anything but strings, so
 each costs its parse, 0.25 to 0.9 s at the cap; the core refuses all of
-them at its depth bound or value budget. A bag entry shaped as a
-certificate whose names or algorithm parameters hold such a value still
-costs 3.4 to 7 s at the cap inside BouncyCastle's X.509 class, which
-encodes them as it builds the certificate, and is not bounded
-(docs/evidence/2026-10-13-java-pretrust-reencoding.md).
+them at its depth bound or value budget
+(docs/evidence/2026-10-13-java-pretrust-reencoding.md). A bag entry
+shaped as a certificate, or an x5c certificate, whose names or algorithm
+parameters hold such a value cost 3.6 to 17 s at the cap inside
+BouncyCastle's X.509 class, which encodes them as it builds, verifies
+and compares the certificate, while the receipt still verified; Java now
+passes over a certificate whose names hold anything but strings or whose
+parameters hold a SET before converting it, so it costs about its parse
+(0.4 to 0.85 s, up to 1.1 s at 50 deep). The first version of that
+check missed a SET inside an EXTERNAL's data value descriptor, in a
+certificate's or a SignerInfo's algorithm parameters, which review
+found (2.9 to 8.8 s at the cap, the receipt accepted); it reads the
+descriptor since. Nested SEQUENCEs with no SET still cost up to
+about 3 s at the cap, bounded by BouncyCastle's parser depth of 64.
+A certificate's own RSASSA-PSS
+label threw `OutOfMemoryError` from a 3.5 KB receipt or a 2.3 KB JWS at
+a saltLength of 2,147,483,647, and a saltLength the issuer's RSA key
+cannot hold (RFC 8017 9.1.2) is now refused before anything is built,
+as is a negative one, which review found: BouncyCastle reads only the
+low 32 bits, so -3,294,967,296 allocated 1,000,000,000 bytes (an
+`OutOfMemoryError` at `-Xmx1g` in about 1 s, refused in milliseconds
+since).
+Signed attributes were DER-encoded, and so sorted, before the signature
+was checked (2.8 to 4.9 s for one cap-sized nested attribute); Java now
+hashes them as sent, 0.5 to 0.9 s. The core refuses the nested shapes at
+its depth bound or value budget
+(docs/evidence/2026-10-13-java-pretrust-shape.md).
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
 in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header
