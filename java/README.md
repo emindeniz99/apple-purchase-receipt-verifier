@@ -819,11 +819,24 @@ BouncyCastle hash the signed attributes with MD2 (0.26 s at the cap,
 against 0.03 s), and RSASSA-PSS with a saltLength of 1,000,000,000 made
 it allocate that many bytes, an `OutOfMemoryError` out of
 `verifyReceipt`. Both labels are refused before anything is hashed or
-allocated, as `INVALID_SIGNATURE`; Apple signs receipts with neither. A
-bag entry shaped as a certificate, with nested values in its names or
-algorithm parameters, still costs 3.4 to 7 s at the cap inside
-BouncyCastle's X.509 class
-(`docs/evidence/2026-10-13-java-pretrust-reencoding.md`).
+allocated, as `INVALID_SIGNATURE`; Apple signs receipts with neither.
+A bag entry shaped as a certificate, with nested values in its names or
+algorithm parameters, cost 3.6 to 17 s at the cap inside BouncyCastle's
+X.509 class, which DER-encodes them as it builds, verifies and compares
+the certificate, and the receipt still verified; the JWS `x5c` chain
+builds the same object under its 256 KiB cap. The library now passes
+over a certificate whose names hold anything but strings or whose
+algorithm parameters hold a SET, as no certificate Apple issues does,
+before converting it, so such a receipt costs about its parse, 0.4 to
+0.85 s, and up to 1.1 s for a value nested 50 deep. A certificate's own
+signature label is unsigned as well: RSASSA-PSS with a saltLength of
+2,147,483,647 threw `OutOfMemoryError` from a 3.5 KB receipt or a 2.3 KB
+JWS, and a saltLength the issuer's key cannot hold (RFC 8017) is now
+refused before anything is built. BouncyCastle also DER-encoded a
+SignerInfo's signed attributes before checking its signature, 2.8 to 4.9
+s for one cap-sized nested attribute; they are now hashed as sent, 0.5
+to 0.9 s (`docs/evidence/2026-10-13-java-pretrust-reencoding.md`,
+`docs/evidence/2026-10-13-java-pretrust-shape.md`).
 
 ## Testing with synthetic receipts
 

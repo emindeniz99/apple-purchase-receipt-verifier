@@ -1,0 +1,12 @@
+depth= 1 seq DL  in=2300005  DL 76 ms  DER 95 ms  parse 80 ms
+depth= 1 seq BER in=2300004  DL 68 ms  DER 92 ms  parse 336 ms
+depth= 1 set DL  in=2300005  DL 111 ms  DER 350 ms  parse 123 ms
+depth= 1 set BER in=2300004  DL 80 ms  DER 237 ms  parse 136 ms
+depth=30 seq DL  in=2299853  DL 85 ms  DER 231 ms  parse 266 ms
+depth=30 seq BER in=2299978  DL 191 ms  DER 176 ms  parse 228 ms
+depth=30 set DL  in=2299853  DL 103 ms  DER 1677 ms  parse 278 ms
+depth=30 set BER in=2299978  DL 160 ms  DER 1415 ms  parse 226 ms
+depth=60 seq DL  in=2299973  DL 105 ms  DER 349 ms  parse 483 ms
+depth=60 seq BER in=2299855  DL 260 ms  DER 250 ms  parse 460 ms
+depth=60 set DL  in=2299973  DL 95 ms  DER 5101 ms  parse 464 ms
+depth=60 set BER in=2299855  DL 203 ms  DER 4414 ms  parse 467 ms

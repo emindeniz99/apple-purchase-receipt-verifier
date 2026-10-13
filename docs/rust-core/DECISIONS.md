@@ -595,7 +595,8 @@ cRLDistributionPoints, 2026-10-06).
   | A lone surrogate escape in a member name inside `data` or `summary` of a genuinely signed JWS payload | not measured (the 0.7 answers carry no environment) | reads on: Jackson keeps the name, and the container's `environment` is read | ok, without that container's environment (port-defined 2026-10-03) | The core reads `data` and `summary` for the environment alone, and `serde_json` refuses the name (R40), so the container states none; the payload and the signature are unchanged. Apple's documents are ASCII | none: no case pins it; R42 |
   | A genuine receipt whose eContent is re-encoded as a constructed `OCTET STRING` with a chunk of another tag (a `UTF8String`, an `INTEGER`), the joined octets unchanged | `MALFORMED` | `MALFORMED` (BouncyCastle 1.86's parser refuses it, "unknown object encountered in constructed OCTET STRING", measured 2026-10-05; the verdict is read from `ReceiptCore.verifySignature`, which maps that `IOException` to `MALFORMED`, not run; [duplicate checks][dupchecks]) | ok (owner, 2026-10-05) | X.690 8.7.3 allows only `OCTET STRING` chunks, but OpenSSL joins chunks of any tag or class, and the joined octets are both what the signature covers and what the payload is read from, so nothing unsigned is accepted. The core dropped its own chunk check on the eContent; payload attribute values and the Xcode wrap keep theirs (`UNREADABLE_PAYLOAD`). Apple's receipts are DER and never chunk a string | none: no case pins it; `rust/tests/receipt_negative.rs` |
   | A receipt whose outer `ContentInfo.contentType` is not `signedData` (`id-data`, or an OID nobody assigned) around a genuine SignedData, or whose `digestAlgorithms` SET carries another tag byte (`0x58` for `0x30`) | not measured | ok: BouncyCastle decodes the content as SignedData without reading the OID, and reads the SET whatever its tag | `MALFORMED` (`not a CMS SignedData`; the tag, from the envelope walk) | Neither field is under the signature. The core reads the OID so that OpenSSL's SignedData accessors are only called on a SignedData; Java needs no such guard. Apple sends `signedData`, and nothing unsigned is accepted either way (recorded 2026-10-05, owner: no code in either implementation) | none: measured by a review probe, not a case |
-  | An `x5c` entry that decodes to a certificate followed by more bytes: trailing octets, a second certificate, PEM text or a PKCS#7 certs-only bundle holding the leaf | not measured | ok: `CertificateFactory.generateCertificate` reads one certificate from a stream and stops | `INVALID_CERTIFICATE` | The header is signed, so an Apple-signed JWS never carries one, and a foreign one still chains to no pinned root. `transaction/reject-x5c-leaf-with-line-breaks` is refused by both for its base64, before the bytes are read (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
+  | An `x5c` entry that decodes to a certificate followed by more bytes: trailing octets or a second certificate | not measured | ok: Java reads the first ASN.1 object of an entry and stops, as `CertificateFactory.generateCertificate` did; PEM text and a PKCS#7 certs-only bundle holding the leaf were ok too, and are `INVALID_CERTIFICATE` since Q140 a (2026-10-13), when x5c moved to `Certificate.getInstance` | `INVALID_CERTIFICATE` | The header is signed, so an Apple-signed JWS never carries one, and a foreign one still chains to no pinned root. `transaction/reject-x5c-leaf-with-line-breaks` is refused by both for its base64, before the bytes are read (recorded 2026-10-05, owner: no code) | none: measured by a review probe and `X5cTrailProbe` ([pre-trust shape][pretrustshape]), not a case |
+  | Signed attributes in DER order, one of which holds its values out of DER order | not measured | since Q140 a (2026-10-13) ok when the signature covers the bytes as sent and `INVALID_SIGNATURE` when it covers the values sorted; the reverse before | ok when the signature covers the values sorted, `INVALID_SIGNATURE` over the bytes as sent | OpenSSL re-encodes the attributes in the order sent and each attribute's SET OF values in DER order (measured 2026-10-13, `SignedAttrsOrderProbe`); Java hashes the bytes as sent, so that a cap-sized nested value is not sorted before trust. RFC 5652 5.3 requires DER, so neither input comes from a conforming signer, and each answer still needs a signature by a key under a pinned chain. Apple's receipts carry no signed attributes | none: measured by an evidence probe, not a case |
   | A leaf whose AuthorityKeyIdentifier names a key other than the issuing intermediate's SubjectKeyIdentifier, in a JWS `x5c` chain that otherwise verifies | not measured | ok: BouncyCastle's PKIX validator matches issuer by name and signature, not by key identifier | `UNTRUSTED_CHAIN` (OpenSSL checks the identifiers) | The signature still has to verify under the intermediate's real key, and Apple's chains carry matching identifiers (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
   | An ES256 JWS whose leaf key is on a curve other than P-256 with a 32-byte order (secp256k1, brainpoolP256r1) | not measured | ok: the 64-byte signature verifies under whatever curve the leaf names | `INVALID_SIGNATURE` | RFC 7518 ties ES256 to P-256. Apple's leaves are P-256 and a foreign leaf chains to no pinned root; a P-384 leaf is `INVALID_SIGNATURE` in both (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
   | A version 1 or 2 certificate that carries extensions, on the path | not measured | refused at parse (BouncyCastle: "version 1 certificate contains extra data") | ok | OpenSSL and the core accept any version from 1 to 3 and read the extensions whatever it says. Apple's certificates are v3, and the path is signed either way (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
@@ -754,7 +755,84 @@ cRLDistributionPoints, 2026-10-06).
   value is not bounded by this: BouncyCastle's X.509 class encodes them
   as it builds the certificate, 3.4 to 7 s at the cap, and the receipt it
   rides on verifies. Bounding it needs a rule of Java's own (a value
-  budget, or refusing such names and parameters), the owner's choice.
+  budget, or refusing such names and parameters), the owner's choice;
+  Q140 a below is that rule.
+
+  Java passes over a certificate whose conversion would sort a SET the
+  sender nested (owner, Q140 a, 2026-10-13). BouncyCastle's X.509 object
+  DER-encodes the names and the signature parameters as it is built, the
+  TBS as it is verified and the whole certificate as it is compared, so
+  one bag entry shaped as a certificate, with a cap-sized value of SETs
+  nested 30 deep in a name or in algorithm parameters, cost 3.6 to 17 s
+  a call on JDK 21, and 6.8 to 17 s when it also carried the signer's
+  serial so that `ReceiptCertificates.signers` compared its issuer; the
+  receipt verified. The X.509 grammar leaves two places open to any
+  ASN.1, a name's attribute values and the parameters of the three
+  AlgorithmIdentifiers, so `AppleTrust.convertible` requires every name
+  value to be a string and no parameters to hold a SET.
+  `ReceiptCertificates.decode` skips an entry that fails, after the
+  decode checks, so an entry that does not decode is still `MALFORMED`,
+  and every holder kept has an issuer of strings, which bounds
+  `signers()` too. `JwsCore` applies the same check to x5c: a leaf or
+  intermediate that fails is `UNTRUSTED_CHAIN`, and x5c[2] is left
+  unconverted. Apple's names hold PrintableString and UTF8String and no
+  signature or key algorithm defines a SET in its parameters, so no
+  Apple certificate is skipped. Each shape now costs about its parse:
+  0.4 to 0.85 s warm at 30 deep on JDK 21 and 8, and up to 1.1 s at 50
+  deep, where the profile puts the time in `parseCms`. The guard is
+  Java's alone, before trust: the core refuses the same receipts at its
+  depth bound or value budget before OpenSSL decodes anything
+  (`MALFORMED`, 40 to 100 ms; [pre-trust shape][pretrustshape]), the
+  direction the nesting rows above record. The inputs are over 100 KB,
+  so `UnauthenticatedKeyCostTest` pins them, and two shapes the rule
+  leaves to BouncyCastle: a nested SET inside a subjectAltName (0.07 s,
+  decoded lazily and never before trust; ok in the core) and one RDN of
+  100,000 string values (about 0.5 s, sorted in N log N by BouncyCastle
+  1.86; `MALFORMED` in the core, at its value budget). Read through
+  `Certificate.getInstance`, an x5c entry is still read up to its first
+  object, so the row above on trailing bytes holds for trailing octets
+  and a second certificate; PEM text and a PKCS#7 bundle are now
+  `INVALID_CERTIFICATE` in Java, as in the core.
+
+  A certificate's signature label is bounded too (owner, Q140 a,
+  2026-10-13). Q137 a refused RSASSA-PSS on SignerInfos, but a bag entry
+  or an x5c certificate that names an RSA root, or a genuine RSA
+  intermediate, as its issuer still reached `X509Certificate.verify`,
+  and BouncyCastle allocates saltLength bytes as it initialises the
+  verifier: with 2,147,483,647 an `OutOfMemoryError` out of
+  `verifyReceipt` from a 3.5 KB receipt and out of `verifySignedData`
+  from a 2.3 KB JWS, and with 1,000,000,000 about 1 GB and 1 to 20 s a
+  call while the receipt verified. `AppleTrust.signedBy` now requires
+  the outer signatureAlgorithm to equal the TBS's (RFC 5280 4.1.1.2) and
+  passes over a PSS label whose saltLength exceeds emLen - hLen - 2 for
+  the issuer's RSA key (RFC 8017 9.1.2), or whose issuer key is not RSA,
+  before anything is built. The bound comes from the key and the label's
+  hash, so a PSS-signed Apple CA would still verify. OpenSSL refuses
+  such a signature in the core, and
+  `receipt/accept-genuine-beside-a-stranger-labelled-rsa-pss-with-a-huge-salt`,
+  Apple's G5 receipt with such a stranger in its bag, expects ok of
+  both.
+
+  Java hashes signed attributes as they were sent (owner, Q140 a,
+  2026-10-13). BouncyCastle hashed their DER encoding, which sorts every
+  SET in the sender's values before the signature is checked: a copy of
+  the SignerInfo ahead of the genuine one, carrying one cap-sized
+  attribute of nested SETs, cost 2.8 to 4.9 s, and the receipt verified.
+  A `SignerInformation` subclass now returns the definite-length
+  encoding, the bytes as sent, which for DER input are the bytes RFC
+  5652 5.4 signs. It is made at verify time, so attributes that do not
+  decode still fail only their own SignerInfo. A SignerInfo whose digest
+  or signature algorithm parameters hold a SET, which BouncyCastle sorts
+  to compare with a CMSAlgorithmProtection attribute, is left out with
+  the issuer check (1.8 to 2.6 s before). Both shapes now cost 0.5 to
+  0.9 s warm, the parse and one SHA-256 over the attributes. For
+  attributes out of DER order the two implementations were measured:
+  OpenSSL hashes the attributes in the order sent and each attribute's
+  values sorted. Java now agrees on the first, where it used to sort,
+  which closes the two `attributes-unsorted` rows of the [CMS
+  everywhere][cms] table; it parts on the second, a row in the table
+  above.
+
   Java no longer reads every SignerInfo's signed and unsigned attributes
   before trying any (owner, 2026-10-12; it did from Q65 until then).
   The pre-read made a malformed SignerInfo `MALFORMED` at any position,
@@ -2314,3 +2392,4 @@ One table for everything the plan measured or considered and rejected.
 [twosigners]: ../evidence/2026-10-06-verifyreceipt-two-signerinfos.md
 [digestcost]: ../evidence/2026-10-13-java-digest-cost.md
 [pretrust]: ../evidence/2026-10-13-java-pretrust-reencoding.md
+[pretrustshape]: ../evidence/2026-10-13-java-pretrust-shape.md
