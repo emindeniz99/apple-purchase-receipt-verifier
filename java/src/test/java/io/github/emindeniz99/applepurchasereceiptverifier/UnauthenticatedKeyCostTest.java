@@ -22,9 +22,11 @@ import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSet;
+import org.bouncycastle.asn1.DERUTCTime;
 import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.DLSet;
@@ -387,6 +389,128 @@ class UnauthenticatedKeyCostTest {
         assertEquals(
                 "CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.10 is refused",
                 e.getMessage());
+    }
+
+    @Test
+    void aBagEntryLabelledRsaPssWithAHugeSaltIsPassedOverBeforeAnythingIsAllocated() throws Exception {
+        // A bag entry that names the root as its issuer reaches the signature
+        // check, and its label is as unsigned as the rest of it. Labelled
+        // RSASSA-PSS, BouncyCastle allocated an array of saltLength bytes while
+        // it built the verifier: with 2,147,483,647 an OutOfMemoryError out of
+        // verifyReceipt from a 3.5 KB receipt, with 1,000,000,000 about 1 GB a
+        // call and 1 to 32 s. Neither fits the root's 2048-bit key, so the
+        // entry is not signed by the root and the genuine chain decides.
+        TestPki pki = TestPki.receipt();
+        for (int saltLength : new int[] {Integer.MAX_VALUE, 1_000_000_000}) {
+            byte[] receipt = withBagEntry(
+                    pki, certificateShaped(pss(saltLength), subject(pki.root), new X500Name("CN=x"), key(pki.leaf)));
+
+            long start = System.nanoTime();
+            Checks.receipt(Checks.verifier(pki), receipt);
+            assertFast(start);
+        }
+    }
+
+    @Test
+    void aJwsIntermediateLabelledRsaPssWithAHugeSaltIsRefusedBeforeAnythingIsAllocated() throws Exception {
+        // The JWS twin: x5c[1] names an RSA root as its issuer, so its
+        // signature is checked under the root's key, with the same allocation.
+        TestPki jws = TestPki.jws();
+        TestPki rsa = TestPki.receipt();
+        byte[] intermediate = certificateShaped(
+                        pss(Integer.MAX_VALUE), subject(rsa.root), new X500Name("CN=x"), key(jws.leaf))
+                .getEncoded(ASN1Encoding.DL);
+        String token = unsignedJws(jws.leaf.getEncoded(), intermediate, rsa.root.getEncoded());
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(rsa.root), token));
+        assertFast(start);
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+        assertEquals("intermediate certificate is not signed by a pinned Apple root", e.getMessage());
+    }
+
+    @Test
+    void aJwsLeafLabelledRsaPssWithAHugeSaltIsRefusedBeforeAnythingIsAllocated() throws Exception {
+        // x5c[1] is a genuine RSA intermediate under the pinned root, which
+        // anyone can copy, and x5c[0] names it as the issuer: the leaf's
+        // signature is checked under the intermediate's key.
+        TestPki jws = TestPki.jws();
+        TestPki rsa = TestPki.receipt();
+        byte[] leaf = certificateShaped(
+                        pss(Integer.MAX_VALUE), subject(rsa.intermediate), new X500Name("CN=x"), key(jws.leaf))
+                .getEncoded(ASN1Encoding.DL);
+        String token = unsignedJws(leaf, rsa.intermediate.getEncoded(), rsa.root.getEncoded());
+
+        long start = System.nanoTime();
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(rsa.root), token));
+        assertFast(start);
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+        assertEquals("leaf certificate is not signed by the intermediate", e.getMessage());
+    }
+
+    /** RSASSA-PSS with SHA-256, MGF1 with SHA-256 and {@code saltLength}. */
+    private static AlgorithmIdentifier pss(int saltLength) {
+        AlgorithmIdentifier sha256 = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256, DERNull.INSTANCE);
+        return new AlgorithmIdentifier(
+                PKCSObjectIdentifiers.id_RSASSA_PSS,
+                new RSASSAPSSparams(
+                        sha256,
+                        new AlgorithmIdentifier(PKCSObjectIdentifiers.id_mgf1, sha256),
+                        new ASN1Integer(saltLength),
+                        new ASN1Integer(1)));
+    }
+
+    /**
+     * A certificate-shaped SEQUENCE, valid from yesterday to tomorrow: a TBS
+     * with {@code label}, {@code issuer}, {@code subject} and {@code key},
+     * then {@code label} again and 256 zero octets as the signature. Built of
+     * definite-length types, so nothing is sorted while the input is built.
+     */
+    private static DLSequence certificateShaped(
+            ASN1Encodable label, ASN1Encodable issuer, ASN1Encodable subject, ASN1Encodable key) {
+        long now = System.currentTimeMillis();
+        DLSequence tbs = new DLSequence(new ASN1Encodable[] {
+            new DLTaggedObject(true, 0, new ASN1Integer(2)),
+            new ASN1Integer(4242),
+            label,
+            issuer,
+            new DLSequence(new ASN1Encodable[] {
+                new DERUTCTime(new Date(now - 86_400_000L)), new DERUTCTime(new Date(now + 86_400_000L))
+            }),
+            subject,
+            key
+        });
+        return new DLSequence(new ASN1Encodable[] {tbs, label, new DERBitString(new byte[256])});
+    }
+
+    /** {@code pki}'s genuine receipt with {@code entry} added to its certificate bag. */
+    private static byte[] withBagEntry(TestPki pki, ASN1Encodable entry) throws Exception {
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        ASN1EncodableVector bag = new ASN1EncodableVector();
+        for (int i = 0; i < genuine.getCertificates().size(); i++) {
+            bag.add(genuine.getCertificates().getObjectAt(i));
+        }
+        bag.add(entry);
+        return receipt(genuine, new DLSet(bag), genuine.getSignerInfos());
+    }
+
+    /** A JWS of the three DER certificates, an empty payload and a signature of zeros. */
+    private static String unsignedJws(byte[] leaf, byte[] intermediate, byte[] root) {
+        String header = "{\"alg\":\"ES256\",\"x5c\":[\"" + TestPki.b64(leaf) + "\",\"" + TestPki.b64(intermediate)
+                + "\",\"" + TestPki.b64(root) + "\"]}";
+        return TestPki.b64url(header.getBytes(StandardCharsets.UTF_8)) + "."
+                + TestPki.b64url("{}".getBytes(StandardCharsets.UTF_8)) + "."
+                + TestPki.b64url(new byte[64]);
+    }
+
+    private static X500Name subject(java.security.cert.X509Certificate certificate) {
+        return X500Name.getInstance(certificate.getSubjectX500Principal().getEncoded());
+    }
+
+    private static SubjectPublicKeyInfo key(java.security.cert.X509Certificate certificate) {
+        return SubjectPublicKeyInfo.getInstance(certificate.getPublicKey().getEncoded());
     }
 
     /** {@code issuerValue} as the one CN of the SignerInfo's issuer, beside a full bag sharing its serial. */

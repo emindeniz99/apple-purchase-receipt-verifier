@@ -337,12 +337,9 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "intermediate certificate is not signed by a pinned Apple root");
         }
-        PublicKey intermediateKey = decodeKey(intermediate, 1);
-        try {
-            leaf.verify(intermediateKey, BouncyCastle.PROVIDER);
-        } catch (GeneralSecurityException | RuntimeException e) {
+        if (!AppleTrust.signedBy(leaf, decodeKey(intermediate, 1))) {
             throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate", e);
+                    Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");
         }
         decodeKey(leaf, 0);
     }

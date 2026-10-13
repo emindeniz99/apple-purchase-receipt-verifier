@@ -1,6 +1,10 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.io.IOException;
+import java.math.BigInteger;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.PublicKey;
 import java.security.cert.CertPathValidatorException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateExpiredException;
@@ -8,6 +12,7 @@ import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.PKIXCertPathChecker;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -16,7 +21,16 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.jcajce.interfaces.BCX509Certificate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Trust material both paths share (the marker OIDs, the anchors and the
@@ -111,15 +125,79 @@ final class AppleTrust {
                 continue;
             }
             try {
-                certificate.verify(issuer.getPublicKey(), BouncyCastle.PROVIDER);
-                return true;
-            } catch (GeneralSecurityException | RuntimeException e) {
-                // Not signed by this issuer, or the issuer's key is one
-                // BouncyCastle cannot build (null for an unknown algorithm,
-                // which verify refuses); try the next one.
+                if (signedBy(certificate, issuer.getPublicKey())) {
+                    return true;
+                }
+            } catch (RuntimeException e) {
+                // The issuer's key is one BouncyCastle cannot build; try the
+                // next one.
             }
         }
         return false;
+    }
+
+    /**
+     * Whether {@code issuerKey}, which a pinned root vouches for, signed
+     * {@code certificate}, converted by {@link BouncyCastle#PROVIDER}. The
+     * signature algorithm is the certificate's own and unsigned until this
+     * returns, so the TBS's signed label must equal the outer one (RFC 5280
+     * 4.1.1.2), and an RSASSA-PSS label may not name a saltLength longer
+     * than {@code issuerKey} can hold: BouncyCastle allocates an array of
+     * saltLength bytes while it builds the verifier, before any signature
+     * byte is compared.
+     */
+    static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
+        try {
+            AlgorithmIdentifier signed =
+                    ((BCX509Certificate) certificate).getTBSCertificateNative().getSignature();
+            ASN1Encodable parameters = signed.getParameters();
+            if (!signed.getAlgorithm().getId().equals(certificate.getSigAlgOID())
+                    || !Arrays.equals(
+                            parameters == null
+                                    ? null
+                                    : parameters.toASN1Primitive().getEncoded(ASN1Encoding.DER),
+                            certificate.getSigAlgParams())
+                    || !saltFits(signed, issuerKey)) {
+                return false;
+            }
+            certificate.verify(issuerKey, BouncyCastle.PROVIDER);
+            return true;
+        } catch (GeneralSecurityException | IOException | RuntimeException e) {
+            // Not signed by this key, or a key verify cannot use (null for
+            // an algorithm BouncyCastle does not know, which verify refuses).
+            return false;
+        }
+    }
+
+    /**
+     * Whether an RSASSA-PSS {@code algorithm}, or each part of a composite
+     * one, names a saltLength {@code key} can hold: at most emLen - hLen - 2
+     * octets (RFC 8017 9.1.2), emLen from the modulus and hLen from the hash
+     * the parameters name. Any other algorithm fits, and PSS under a key that
+     * is not RSA verifies nothing.
+     */
+    private static boolean saltFits(AlgorithmIdentifier algorithm, @Nullable PublicKey key)
+            throws GeneralSecurityException {
+        if (MiscObjectIdentifiers.id_alg_composite.equals(algorithm.getAlgorithm())) {
+            for (ASN1Encodable part : ASN1Sequence.getInstance(algorithm.getParameters())) {
+                if (!saltFits(AlgorithmIdentifier.getInstance(part), key)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (!PKCSObjectIdentifiers.id_RSASSA_PSS.equals(algorithm.getAlgorithm())) {
+            return true;
+        }
+        if (!(key instanceof RSAPublicKey)) {
+            return false;
+        }
+        RSASSAPSSparams parameters = RSASSAPSSparams.getInstance(algorithm.getParameters());
+        int emLen = (((RSAPublicKey) key).getModulus().bitLength() + 6) / 8;
+        int hLen = MessageDigest.getInstance(
+                        parameters.getHashAlgorithm().getAlgorithm().getId(), BouncyCastle.PROVIDER)
+                .getDigestLength();
+        return parameters.getSaltLength().compareTo(BigInteger.valueOf(emLen - hLen - 2)) <= 0;
     }
 
     /** The certificates of {@code trustAnchors}. */
