@@ -369,7 +369,24 @@ eight slow digests BouncyCastle implements, GOST R 34.11-94 among them
 (about 1.2 s warm at the cap for four SignerInfos), before digesting, as
 the core does for lack of an implementation; the slowest digest still
 accepted, RIPEMD-160, costs about 0.2 s warm at the cap
-(docs/evidence/2026-10-13-java-digest-cost.md).
+(docs/evidence/2026-10-13-java-digest-cost.md). The signatureAlgorithm
+is unsigned too: Java refuses md2WithRSAEncryption, whose MD2
+BouncyCastle ran over the signed attributes before the signature was
+checked (0.26 s at the cap, against 0.03 s), and RSASSA-PSS, whose
+saltLength BouncyCastle allocated as an array while it built the
+verifier (an `OutOfMemoryError` at 1,000,000,000), before anything is
+hashed or built. Re-encoding ASN.1 to DER sorts every SET, so a cap-sized
+value of nested SETs cost seconds where Java re-encoded before trust: a
+bag entry re-encoded before it was parsed (about 3 s), and a SignerInfo
+issuer value that is not a string, which BouncyCastle re-encodes to hash
+and compare the name (about 11 s). Java now reads bag entries as parsed
+and leaves out a SignerInfo whose issuer holds anything but strings, so
+each costs its parse, 0.25 to 0.9 s at the cap; the core refuses all of
+them at its depth bound or value budget. A bag entry shaped as a
+certificate whose names or algorithm parameters hold such a value still
+costs 3.4 to 7 s at the cap inside BouncyCastle's X.509 class, which
+encodes them as it builds the certificate, and is not bounded
+(docs/evidence/2026-10-13-java-pretrust-reencoding.md).
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
 in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header

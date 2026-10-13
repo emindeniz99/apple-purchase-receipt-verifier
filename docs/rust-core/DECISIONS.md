@@ -584,6 +584,8 @@ cRLDistributionPoints, 2026-10-06).
   | A receipt signer eight to ten certificates below a pinned root, every CA with its own name and key (ten is the most the ten-certificate cap admits, the root left out of the bag) | not measured | `UNTRUSTED_CHAIN`, "signer chain does not validate to a pinned Apple root" (measured at eight on 2026-10-12): the walk has no bound, but BouncyCastle 1.86's builder, under the JDK's default `maxPathLength` of 5, returns no path of eight (`refusesAPathOfEightTheBuilderDoesNotReturn`) | ok (Q126 b, 2026-10-12): the core sets no path length of its own, its walk runs until a round accepts nothing, and OpenSSL's default depth of 100 is out of reach under the cap | Accepted by the owner (Q126 b) as the mirror of Q120 a: a path a pinned root vouches for link by link is accepted whatever its length. Every link is signed under a pinned root and judged by PKIX at the instant, the markers apply and the cap bounds the work, so the core accepts nothing unsigned; Java's refusal is its builder's bound, not a policy of its own. Apple's chains are leaf, intermediate, root | `receipt/accept-a-path-of-eight`, which allows ok and `UNTRUSTED_CHAIN`. `a_receipt_verifies_eight_and_ten_certificates_below_the_anchor` (rust/tests/trust_pinning.rs) pins the core's ok at eight and at the cap |
   | A receipt date of 0000-01-01T00:00:00Z at the endpoint, whose `_pst` time falls in the year -1 (2 BC) | not measured | `-0001-12-31 16:07:02 America/Los_Angeles` (`java.time`'s `uuuu`: a sign and four digits) | `-001-12-31 16:07:02 America/Los_Angeles` (jiff's `%Y`: four characters with the sign counted) | Both are the same instant and every other field agrees. No Apple receipt carries a year-0000 date, and Apple's rendering of one is unknown, so neither form is preferred (owner, 2026-10-07) | `endpoint/rfc3339-dates-render` (the case pins other purchases' dates, not this one) |
   | A SignerInfo whose signedAttrs or unsignedAttrs field holds something other than Attributes, first or second, beside a SignerInfo that verifies | not measured | ok (owner, 2026-10-12): BouncyCastle reads the attributes only while verifying, so the broken SignerInfo is `INVALID_SIGNATURE` and the other one decides; from Q65 until then Java read every SignerInfo's attributes first and answered `MALFORMED` | `MALFORMED` | OpenSSL decodes every SignerInfo, attributes included, when it parses the SignedData, so one that does not parse is a SignedData that does not. Java's ok still needs a SignerInfo whose signature verifies over the returned content under a pinned chain, so the cases allow both | `receipt/reject-malformed-signed-attrs-in-the-first-signer`, `receipt/malformed-signed-attrs-in-the-second-signer-does-not-crash`, `receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info` |
+  | Apple's genuine SignerInfo with its signatureAlgorithm relabelled md2WithRSAEncryption (1.2.840.113549.1.1.2), alone | not measured | `INVALID_SIGNATURE`: BouncyCastle hashed with the label's MD2, which Apple's DigestInfo does not match; since Q136 a (2026-10-13) the label is refused before anything is hashed | ok (measured 2026-10-13 with `cargo test`) | OpenSSL reads an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1 v1.5 or RSASSA-PSS and hashes with the digestAlgorithm, Apple's SHA-256, so Apple's signature verifies. The label is unsigned packaging Apple never writes; Java refuses a receipt whose signature is Apple's, as it did before the label was refused, and nothing unsigned is accepted either way | `receipt/reject-a-signer-info-signed-md2-with-rsa`, which allows both |
+  | A genuine RSASSA-PSS signature on a receipt, under the test PKI | not measured | `INVALID_SIGNATURE` since Q137 a (2026-10-13): the label is refused before BouncyCastle builds a verifier, because building one allocates the unsigned saltLength | ok (measured 2026-10-13) | OpenSSL verifies PSS. Apple never signs receipts with RSA-PSS (port-defined 2026-09-27), so the case allows both | `receipt/signer-rsa-pss-does-not-crash` |
   | A receipt date whose offset moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z (`9999-12-31T23:59:59-00:01`, `0000-01-01T00:00:00+00:01`) | not measured | read (owner, 2026-10-12): a `long` holds the instant and the endpoint's `uuuu` renders the year | null, kept raw | jiff's calendar ends at 9999, so the core reads only dates it can render. Before trust only the creation date is read, and such a date only moves the chain instant to where no certificate is valid (`INVALID_CERTIFICATE`); the other dates are informational | `receipt/rfc3339-date-forms` (purchases 318 and 319 are not pinned) |
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
@@ -698,6 +700,61 @@ cRLDistributionPoints, 2026-10-06).
   a convergence, not a divergence:
   `receipt/reject-a-signer-info-in-a-refused-digest` (MD2) pins it, and
   the refused SignerInfo is skipped like any other that does not verify.
+
+  The signatureAlgorithm is unsigned as well, and Java refuses two
+  labels the same way, before `signer.verify` (owner, Q136 a and Q137 a,
+  2026-10-13), neither one Apple signs receipts with. With signed
+  attributes, BouncyCastle hashes them with the digest the label names
+  before any signature is checked, so md2WithRSAEncryption
+  (1.2.840.113549.1.1.2) ran MD2 over them whatever the digestAlgorithm
+  said: about 0.26 s at the cap against 0.03 s for rsaEncryption. It is
+  the only slow label: over every Signature OID BouncyCastle 1.86
+  registers, for an RSA and an EC key, it costs 16 times rsaEncryption and
+  every other label at most 2.4 times, and `DigestDenylistCostTest` now
+  re-measures that against the same band. RSASSA-PSS
+  (1.2.840.113549.1.1.10) is refused for its parameters: BouncyCastle
+  allocates an array of the unsigned saltLength while it builds the
+  verifier, so a saltLength of 1,000,000,000 threw `OutOfMemoryError` out
+  of `verifyReceipt`, 2 to 22 s into the call, before a signature byte
+  was compared. Nothing is parsed or bounded; the label alone decides
+  ([pre-trust re-encoding][pretrust]). The core never hashes with the
+  label: OpenSSL takes the digest from the digestAlgorithm alone and reads
+  an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1 v1.5 or
+  PSS, so the label costs it nothing, and Apple's SignerInfo relabelled
+  md2WithRSAEncryption verifies there, a row in the table above. It
+  answers `INVALID_SIGNATURE` for Apple's SignerInfo relabelled PSS with
+  that salt, so
+  `receipt/reject-a-signer-info-labelled-rsa-pss-with-a-huge-salt`
+  expects it of both; a genuine PSS signature is ok in the core and now
+  `INVALID_SIGNATURE` in Java, which
+  `receipt/signer-rsa-pss-does-not-crash` already allowed.
+
+  Two pre-trust re-encodings in Java are gone (owner, Q135 a,
+  2026-10-13). Re-encoding ASN.1 to DER sorts every SET by its members'
+  encodings, so a cap-sized value of SETs nested 30 deep cost seconds.
+  `ReceiptCertificates.decode` re-encoded each bag entry before parsing
+  it as a certificate (about 3 s at the cap) and now reads it as parsed;
+  nothing needed the re-encoding. BouncyCastle hashes the SignerId for its
+  one-signer `SignerInformationStore`, and `BCStrictStyle` compares it with
+  each embedded certificate's issuer, through a canonical string that
+  re-encodes every value that is not a string (about 11 s at the cap, 4.5
+  to 12.5 s for a flat SEQUENCE of INTEGERs). Java now leaves out a
+  SignerInfo whose issuer holds a value that is not a string, before
+  either, and answers `MALFORMED`, "signer certificate not embedded", when
+  none is left, as it did. Every name in Apple's certificates holds
+  strings, and BouncyCastle never matches a value that is not a string
+  with one that is, so the SignerInfo left out could not have named an
+  Apple certificate. Each shape now costs its parse, 0.25 to 0.9 s at the
+  cap, the parse cost recorded above. The core refuses all of them before
+  OpenSSL decodes anything, at its depth bound (32) or its value budget
+  (100,000), so the verdicts already agreed: `MALFORMED` in both,
+  measured 2026-10-13 with `core_shapes.rs`. The inputs are 2.3 MB, so
+  `UnauthenticatedKeyCostTest` pins them, not a shared case. A bag entry
+  shaped as a certificate whose names or algorithm parameters hold such a
+  value is not bounded by this: BouncyCastle's X.509 class encodes them
+  as it builds the certificate, 3.4 to 7 s at the cap, and the receipt it
+  rides on verifies. Bounding it needs a rule of Java's own (a value
+  budget, or refusing such names and parameters), the owner's choice.
   Java no longer reads every SignerInfo's signed and unsigned attributes
   before trying any (owner, 2026-10-12; it did from Q65 until then).
   The pre-read made a malformed SignerInfo `MALFORMED` at any position,
@@ -2256,3 +2313,4 @@ One table for everything the plan measured or considered and rejected.
 [javaparse]: ../evidence/2026-10-05-java-presignature-parse-cost.md
 [twosigners]: ../evidence/2026-10-06-verifyreceipt-two-signerinfos.md
 [digestcost]: ../evidence/2026-10-13-java-digest-cost.md
+[pretrust]: ../evidence/2026-10-13-java-pretrust-reencoding.md

@@ -1,0 +1,11 @@
+core certshape-bag-30 der=2292650 ms=[48, 60, 67] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core certshape-issuer-0 der=2293421 ms=[99, 136, 132] Failure { reason: Malformed, message: "malformed CMS structure: more than 100000 ASN.1 values", source: None }
+core certshape-issuer-30 der=2293316 ms=[44, 63, 70] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core certshape-spki-30 der=2293330 ms=[42, 42, 41] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core fixture-receipt-signer-rsa-pss der=3049 ms=[1, 0, 0] ok
+core nested-cert-30 der=2302604 ms=[58, 48, 39] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core nested-plain-0 der=2304580 ms=[81, 78, 97] Failure { reason: Malformed, message: "malformed CMS structure: more than 100000 ASN.1 values", source: None }
+core nested-sid-30 der=2304430 ms=[55, 41, 43] Failure { reason: Malformed, message: "malformed CMS structure: nested deeper than 32 constructed values", source: None }
+core pss-1e9 der=2803 ms=[0, 0, 1] Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None }
+core sigalg-1.2.840.113549.1.1.1-1 der=2202780 ms=[64, 57, 80] Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None }
+core sigalg-1.2.840.113549.1.1.2-1 der=2202780 ms=[50, 48, 49] Failure { reason: InvalidSignature, message: "CMS signature check failed", source: None }
