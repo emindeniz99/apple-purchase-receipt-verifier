@@ -411,7 +411,11 @@ about 3 s at the cap, bounded by BouncyCastle's parser depth of 64.
 A certificate's own RSASSA-PSS
 label threw `OutOfMemoryError` from a 3.5 KB receipt or a 2.3 KB JWS at
 a saltLength of 2,147,483,647, and a saltLength the issuer's RSA key
-cannot hold (RFC 8017 9.1.2) is now refused before anything is built.
+cannot hold (RFC 8017 9.1.2) is now refused before anything is built,
+as is a negative one, which review found: BouncyCastle reads only the
+low 32 bits, so -3,294,967,296 allocated 1,000,000,000 bytes (an
+`OutOfMemoryError` at `-Xmx1g` in about 1 s, refused in milliseconds
+since).
 Under the generic composite label BouncyCastle made a signature check
 per part of a certificate and compared the whole list of parts for each,
 so the cost grew with the square of the parts: 18 to 47 s for a bag

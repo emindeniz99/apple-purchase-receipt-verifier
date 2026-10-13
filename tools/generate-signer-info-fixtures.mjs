@@ -49,6 +49,10 @@
  *                                       SHA-256, saltLength 2,147,483,647),
  *                                       with the receipt signer's key and 256
  *                                       zero octets as its signature
+ *   certificates/rsa-pss-negative-salt-stranger.der
+ *                                       the same entry with saltLength
+ *                                       -3,294,967,296, whose low 32 bits are
+ *                                       1,000,000,000
  *   certificates/generic-composite-stranger.der
  *                                       the same stranger labelled with the
  *                                       generic composite label holding 300
@@ -176,6 +180,8 @@ const strangerWith = (label, signature) => wrap(0x30, Buffer.concat([
 ]));
 const strangerLabel = wrap(0x30, pss(Buffer.from('02047fffffff', 'hex'))); // INTEGER 2,147,483,647
 const stranger = strangerWith(strangerLabel, Buffer.alloc(256));
+// INTEGER -3,294,967,296: two's complement in 5 octets, low 32 bits 0x3b9aca00.
+const negativeSaltStranger = strangerWith(wrap(0x30, pss(Buffer.from('0205ff3b9aca00', 'hex'))), Buffer.alloc(256));
 const ecdsaWithSha256 = Buffer.from('300a06082a8648ce3d040302', 'hex');
 const compositeStranger = strangerWith(
   wrap(0x30, composite(ecdsaWithSha256, 300)),
@@ -192,6 +198,7 @@ const files = {
   'signer-infos/rsa-pss-huge-salt-label-alone.der': receipt(pssHugeSalt),
   'signer-infos/generic-composite-label-alone.der': receipt(genericComposite),
   'certificates/rsa-pss-huge-salt-stranger.der': withBagEntry(stranger),
+  'certificates/rsa-pss-negative-salt-stranger.der': withBagEntry(negativeSaltStranger),
   'certificates/generic-composite-stranger.der': withBagEntry(compositeStranger),
 };
 for (const [name, bytes] of Object.entries(files)) {

@@ -171,10 +171,11 @@ final class AppleTrust {
      * choice and stays unsigned until this returns. So the label inside the
      * TBS, which the signature covers, must equal the outer one (RFC 5280
      * 4.1.1.2). An RSASSA-PSS label may not name a saltLength longer than
-     * {@code issuerKey} can hold, because BouncyCastle allocates an array of
-     * saltLength bytes while it builds the verifier, before it compares any
-     * signature byte. A certificate labelled
-     * {@link #GENERIC_COMPOSITE_SIGNATURE} is signed by nobody.</p>
+     * {@code issuerKey} can hold, or a negative one, because BouncyCastle
+     * allocates an array of saltLength bytes (the low 32 bits of it) while it
+     * builds the verifier, before it compares any signature byte. A
+     * certificate labelled {@link #GENERIC_COMPOSITE_SIGNATURE} is signed by
+     * nobody.</p>
      */
     static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
         try {
@@ -205,14 +206,16 @@ final class AppleTrust {
     /**
      * Whether an RSASSA-PSS {@code algorithm} names a saltLength {@code key}
      * can hold: at most emLen - hLen - 2 octets (RFC 8017 9.1.2), emLen from
-     * the modulus and hLen from the hash the parameters name. Any other
-     * algorithm fits, and PSS under a key that is not RSA verifies nothing.
+     * the modulus and hLen from the hash the parameters name. The salt is a
+     * non-negative integer (RFC 8017 9.1.1), so a negative one does not fit.
+     * Any other algorithm fits, and PSS under a key that is not RSA, or with
+     * no parameters, verifies nothing.
      */
     static boolean saltFits(AlgorithmIdentifier algorithm, @Nullable PublicKey key) throws GeneralSecurityException {
         if (!PKCSObjectIdentifiers.id_RSASSA_PSS.equals(algorithm.getAlgorithm())) {
             return true;
         }
-        if (!(key instanceof RSAPublicKey)) {
+        if (!(key instanceof RSAPublicKey) || algorithm.getParameters() == null) {
             return false;
         }
         RSASSAPSSparams parameters = RSASSAPSSparams.getInstance(algorithm.getParameters());
@@ -220,7 +223,8 @@ final class AppleTrust {
         int hLen = MessageDigest.getInstance(
                         parameters.getHashAlgorithm().getAlgorithm().getId(), BouncyCastle.PROVIDER)
                 .getDigestLength();
-        return parameters.getSaltLength().compareTo(BigInteger.valueOf(emLen - hLen - 2)) <= 0;
+        BigInteger salt = parameters.getSaltLength();
+        return salt.signum() >= 0 && salt.compareTo(BigInteger.valueOf(emLen - hLen - 2)) <= 0;
     }
 
     /**
