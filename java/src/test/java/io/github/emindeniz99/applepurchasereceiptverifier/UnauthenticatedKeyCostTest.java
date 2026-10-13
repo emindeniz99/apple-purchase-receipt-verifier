@@ -507,7 +507,12 @@ class UnauthenticatedKeyCostTest {
         // saltLength of 1,000,000,000, an OutOfMemoryError out of
         // verifyReceipt, before a signature byte was compared. The salt is
         // now bounded by the signer's key, which holds at most 222 octets.
-        assertSaltRefusedQuickly(pss(1_000_000_000));
+        // A negative salt passes the upper bound, and BouncyCastle reads only
+        // its low 32 bits, 1,000,000,000: refused by its sign on this route
+        // too.
+        for (long saltLength : new long[] {1_000_000_000, NEGATIVE_SALT}) {
+            assertSaltRefusedQuickly(pss(saltLength));
+        }
     }
 
     @Test

@@ -275,8 +275,9 @@ again in Java, as in the core, and the case now expects ok.
 The round-6 review (F2) found that the composite route costs more than
 its PSS part. BouncyCastle 1.86 sends exactly one OID to
 `JcaContentVerifierProviderBuilder.createCompositeVerifier`:
-id-alg-composite, 1.3.6.1.4.1.18227.2.1, the generic composite of an
-abandoned 2021 draft. Its parameters are a SEQUENCE of
+id-alg-composite, 1.3.6.1.4.1.18227.2.1, the generic composite that the
+individual draft draft-ounsworth-pq-composite-sigs defined from -01
+(January 2020) until -09 (May 2023) removed it. Its parameters are a SEQUENCE of
 AlgorithmIdentifiers of any length. The verifier builds one JCA
 `Signature` per part and chains them in nested `TeeOutputStream`s, and
 with no signed attributes `SignerInformation` streams the whole content

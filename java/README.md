@@ -821,8 +821,9 @@ it allocate that many bytes, an `OutOfMemoryError` out of
 `verifyReceipt`. The MD2 label is refused before anything is hashed, and
 a PSS saltLength the signer's key cannot hold (RFC 8017) before anything
 is allocated, both as `INVALID_SIGNATURE`; a PSS signature whose salt
-fits verifies. The generic composite label of an abandoned 2021 draft
-(1.3.6.1.4.1.18227.2.1) names any number of parts, and BouncyCastle
+fits verifies. The generic composite label (1.3.6.1.4.1.18227.2.1),
+defined by an individual draft from January 2020 until May 2023, names
+any number of parts, and BouncyCastle
 made a signature check per part and streamed the whole content into
 each: 15.6 s for 1,000 parts over a cap-sized receipt, and a
 `StackOverflowError` out of `verifyReceipt` at 50,000. It is refused

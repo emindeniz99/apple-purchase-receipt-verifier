@@ -380,8 +380,9 @@ key (RFC 8017 9.1.2) before anything is built. The check sits in the
 content verifier provider Java hands BouncyCastle, so it sees the
 algorithm about to be built rather than the label: two EAC labels reach
 the same PSS verifier (DECISIONS.md R20, owner Q142 a). A genuine PSS
-signature verifies. The generic composite label of an abandoned 2021
-draft (1.3.6.1.4.1.18227.2.1) names any number of parts, and
+signature verifies. The generic composite label
+(1.3.6.1.4.1.18227.2.1), defined by an individual draft from January
+2020 until May 2023, names any number of parts, and
 BouncyCastle built a signature check per part and streamed the whole
 content into each: 15.6 s for 1,000 parts at the cap, and a
 `StackOverflowError` out of `verifyReceipt` at 50,000. Java refuses it

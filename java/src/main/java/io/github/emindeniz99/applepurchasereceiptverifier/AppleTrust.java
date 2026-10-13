@@ -61,8 +61,9 @@ final class AppleTrust {
     static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
 
     /**
-     * The generic composite signature label of an abandoned 2021 draft
-     * (id-alg-composite), refused wherever BouncyCastle would build a
+     * The generic composite signature label (id-alg-composite) of the
+     * individual draft draft-ounsworth-pq-composite-sigs, from -01 (January
+     * 2020) until -09 (May 2023) removed it, refused wherever BouncyCastle would build a
      * verifier from it: a certificate with it is signed by nobody, and a
      * SignerInfo with it is refused before a verifier is built. Its
      * parameters are a SEQUENCE of algorithm identifiers with no bound on
@@ -209,7 +210,9 @@ final class AppleTrust {
      * the modulus and hLen from the hash the parameters name. The salt is a
      * non-negative integer (RFC 8017 9.1.1), so a negative one does not fit.
      * Any other algorithm fits, and PSS under a key that is not RSA, or with
-     * no parameters, verifies nothing.
+     * no parameters, verifies nothing. That includes a composite with a PSS
+     * part, which this does not look inside: both callers refuse
+     * {@link #GENERIC_COMPOSITE_SIGNATURE} before they ask.
      */
     static boolean saltFits(AlgorithmIdentifier algorithm, @Nullable PublicKey key) throws GeneralSecurityException {
         if (!PKCSObjectIdentifiers.id_RSASSA_PSS.equals(algorithm.getAlgorithm())) {

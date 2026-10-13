@@ -736,12 +736,13 @@ cRLDistributionPoints, 2026-10-06).
   (measured 2026-10-13, JDK 21). A salt that does not fit is
   `INVALID_SIGNATURE`, "the RSASSA-PSS label does not fit the signer's
   key", 7 to 16 ms warm on every route. id-alg-composite
-  (1.3.6.1.4.1.18227.2.1) is the generic composite of an abandoned 2021
-  draft, and it is now refused by the label in that same provider
-  (owner, Q144 a, 2026-10-13), because its cost does not need a PSS
-  part: its parameters name any number of parts, and BouncyCastle builds
-  one Signature per part and, with no signed attributes, streams the
-  whole content into each. A copy of the genuine SignerInfo with 1,000
+  (1.3.6.1.4.1.18227.2.1) is the generic composite that the individual
+  draft draft-ounsworth-pq-composite-sigs defined from -01 (January 2020)
+  until -09 (May 2023) removed it, and it is now refused by the label in
+  that same provider (owner, Q144 a, 2026-10-13), because its cost does
+  not need a PSS part: its parameters name any number of parts, and
+  BouncyCastle builds one Signature per part and, with no signed
+  attributes, streams the whole content into each. A copy of the genuine SignerInfo with 1,000
   sha256WithRSAEncryption parts ahead of it cost 15.6 s a call at the
   cap, 6.8 s over 1 MB, 20 s with 3,000 parts, and 50,000 parts threw
   `StackOverflowError` out of `verifyReceipt`; refused, it is
@@ -753,17 +754,18 @@ cRLDistributionPoints, 2026-10-06).
   still verified, and is now signed by nobody. The per-pair composite
   OIDs of the LAMPS draft (IANA 1.3.6.1.5.5.7.6.37 to .54 since draft
   -13), which BouncyCastle verifies through their own SPI and not
-  through `createCompositeVerifier`, stay accepted. The core has no verifier for the generic OID, so
+  through `createCompositeVerifier`, stay accepted. The core has no
+  verifier for the generic OID, so
   `receipt/reject-a-signer-info-labelled-with-the-generic-composite-oid`
   is `INVALID_SIGNATURE` and
   `receipt/accept-genuine-beside-a-stranger-labelled-with-the-generic-composite-oid`
   ok in both ([pre-trust re-encoding][pretrust]). The core never hashes
   with the label: OpenSSL takes the digest from the digestAlgorithm alone
   and reads an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1
-  v1.5 or PSS, so the label costs it nothing, and Apple's SignerInfo relabelled
-  md2WithRSAEncryption verifies there, a row in the table above. It
-  answers `INVALID_SIGNATURE` for Apple's SignerInfo relabelled PSS with
-  that salt, so
+  v1.5 or PSS, so the label costs it nothing, and Apple's SignerInfo
+  relabelled md2WithRSAEncryption verifies there, a row in the table
+  above. It answers `INVALID_SIGNATURE` for Apple's SignerInfo relabelled
+  PSS with that salt, so
   `receipt/reject-a-signer-info-labelled-rsa-pss-with-a-huge-salt`
   expects it of both; a genuine PSS signature is ok in both, and
   `receipt/signer-rsa-pss-does-not-crash` now expects ok.
