@@ -595,10 +595,19 @@ class UnauthenticatedKeyCostTest {
         acceptedFast(pki, aheadOfGenuine(genuine, signer, attributes, label));
     }
 
+    /**
+     * {@code signer}'s signed attributes less its CMSAlgorithmProtection one:
+     * with two, BouncyCastle refuses the SignerInfo before it compares any
+     * parameters, and a sender builds the copy with one.
+     */
     private static ASN1EncodableVector signedAttributes(SignerInfo signer) {
         ASN1EncodableVector attributes = new ASN1EncodableVector();
         for (int i = 0; i < signer.getAuthenticatedAttributes().size(); i++) {
-            attributes.add(signer.getAuthenticatedAttributes().getObjectAt(i));
+            Attribute attribute =
+                    Attribute.getInstance(signer.getAuthenticatedAttributes().getObjectAt(i));
+            if (!PKCSObjectIdentifiers.id_aa_cmsAlgorithmProtect.equals(attribute.getAttrType())) {
+                attributes.add(attribute);
+            }
         }
         return attributes;
     }
