@@ -669,7 +669,13 @@ and fail readiness unless both are `verified()`. Repeat every minute. The
 two receipts `receipt-sandbox-legacy.b64` and `receipt-sandbox-g5.b64` under
 the repository's `fixtures/public-receipts/` chain to the real
 Apple roots and keep verifying, because validity is judged at their own
-signing date. The repository has no JWS signed by a real Apple root (the
+signing date. A vendored build keeps `fixtures/` at test scope, so a
+production canary ships those two files as main resources, with
+`LICENSE-upstream` beside them. It checks `verified()` only: both are
+sandbox receipts with other developers' bundle ids, so the bundle id and
+environment checks from
+[What to check after verification](#what-to-check-after-verification) would
+reject them. The repository has no JWS signed by a real Apple root (the
 vendored Apple JWS fixtures are signed by a test CA), so keep one from your
 own sandbox, such as a transaction you bought there. Why: the crypto
 engines come from the library's own BouncyCastle instance, so a missing one
@@ -733,9 +739,12 @@ bound that, and they are the deployment's job.
 
 **Warm up before taking traffic.** Build the `Verifier` at startup, not
 lazily on the first request. `Verifier.create` takes about 450 ms cold, the
-first receipt about 150 ms and the first JWS about 75 ms (approximate), and
-calls settle only after about 1,000 to 2,000 of them, when the JIT has
-compiled the hot paths. At 10 requests a second that is minutes of slower
+first receipt about 150 ms and the first JWS about 75 ms (approximate).
+Those are OpenJDK 21 on one machine. Temurin 17 on a 4-vCPU box measured 2
+to 3 times slower: `create` 1.0 to 1.3 s, the first receipt 170 to 240 ms
+and the second call 50 to 75 ms. Size by your own measurement. Calls settle
+only after about 1,000 to 2,000 of them, when the JIT has compiled the hot
+paths. At 10 requests a second that is minutes of slower
 answers after every deploy, so verify a known receipt and JWS that many
 times before the instance reports ready.
 
@@ -994,16 +1003,26 @@ to carry with it, in short:
 
 1. Copy both source directories into one source root.
 2. Declare `jackson-core` 2.16+, `bcprov`, `bcutil` and `bcpkix` at one
-   1.86+ release, and `org.jspecify:jspecify` (compile time only).
-3. To run the tests, copy `src/test/java`, add JUnit 5 and
-   `jackson-databind` at test scope, and copy the repository's `fixtures/`
-   and `certs/` as siblings (below). Compile as UTF-8: the pom sets
-   `project.build.sourceEncoding`; a Gradle build sets `options.encoding`.
-   Some test sources hold non-ASCII text.
+   1.86+ release, and `org.jspecify:jspecify` (compile time only: Maven
+   `provided`, Gradle `compileOnly`).
+3. To run the tests, copy `src/test/java`, add JUnit 5 (any current 5.x) and
+   `jackson-databind` (the version of your `jackson-core`) at test scope, and
+   copy the repository's `fixtures/` and `certs/` beside your project
+   directory (below). Compile as UTF-8, because some test sources hold
+   non-ASCII text: set `project.build.sourceEncoding` in your own build
+   (Gradle: `options.encoding`). A US-ASCII build does not compile the tests.
 4. On every BouncyCastle upgrade, re-check the behaviours listed below.
 
+**Licence and package name.** The MIT notice has to travel with the
+sources, so copy `java/LICENSE` with them, and
+`fixtures/public-receipts/LICENSE-upstream` with any receipt you ship. The
+same licence lets you move the classes to a package of your own, and a
+relocated copy cannot clash with the published jar if that arrives
+transitively. That is the same-class-names problem the warning about the
+`-wasm` jar describes at the top.
+
 **Dependency floors.** `jspecify` carries the `@Nullable` annotations; the
-pom declares it `optional`, since nothing reads it at run time, but the
+library's pom declares it `optional`, since nothing reads it at run time, but the
 sources do not compile without it.
 `jackson-core` 2.16 or later: the JSON readers use its default `StreamReadConstraints` (the member-name bound arrived in 2.16,
 the others in 2.15), and below it `Verifier.create` throws
@@ -1051,8 +1070,11 @@ the `parse(...)` call, and add the fingerprint Apple lists on its PKI page
 (check it with `sha256sum` on the DER file) to `AppleRootCertsTest`, which
 pins the set against both.
 
-**The tests need the shared fixtures.** They read `fixtures/` next to
-`java/`, or the directory `-Daprv.fixtures.dir=...` names. The subset they
+**The tests need the shared fixtures.** They read `../fixtures`
+relative to the test JVM's working directory (Maven: the project basedir),
+which is `fixtures/` beside your project directory, or the directory
+`-Daprv.fixtures.dir=...` names. Maven forwards that property to the tests;
+Gradle needs `test { systemProperty 'aprv.fixtures.dir', '...' }`. The subset they
 use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 `public-receipts/` and `apple-official/`; `cases.schema.json` is not
 read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
@@ -1062,8 +1084,11 @@ not skip. Two tests read the build itself, relative to the working
 directory. `TrustStoreIsolationTest` scans whichever of `src/main/java`
 and `src/shared/java` exists, so step 1's merged root passes when it is
 `src/main/java`, and fails only when neither is there.
-`BouncyCastleFloorTest` reads the `bouncycastle.version` pin in
-`pom.xml`; it is the one test to adapt to your own build.
+`BouncyCastleFloorTest` has one method that reads `./pom.xml` for
+`<bouncycastle.version>X.Y[.Z]</bouncycastle.version>` and compares it with
+the bcprov loaded; it is the one test to adapt to your own build. Declare
+that property in your pom and it passes unchanged. With hardcoded versions
+or a Gradle build, drop or rewrite that one method.
 
 **The generators are not tests, and `mvn test` writes nothing.** The 29
 classes named `*Fixture` or `*Fixtures` (other than `TestFixtures`) are
@@ -1093,7 +1118,8 @@ Two generators go with them, because a test compiles against each:
 (`StandardShapesTest`); both need only `TestPki` and `TestFixtures`.
 `FixtureGeneratorTest` and the other 27 `*Fixture(s)` classes can be left
 out: with them removed, the suite compiles and runs 696 tests with none
-skipped, `BouncyCastleFloorTest` among them. `HostPolicyTest` and
+skipped, `BouncyCastleFloorTest` among them, provided your pom declares that
+property. `HostPolicyTest` and
 `TrustStoreIsolationTest` start a child JVM from `java.home` and skip
 where there is no `java` binary there.
 
