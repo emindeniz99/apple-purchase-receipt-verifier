@@ -43,7 +43,7 @@ document's length. Jackson keeps the nesting context on the heap and the
 readers skip what they do not read with `skipChildren`, so depth costs no
 stack; until 2026-10-05 `BoundedJson` set a depth of 64 and restated the
 other two, which bought nothing over these defaults. Two things are
-still the library's: `JsonFields.factory` builds the constraints with
+still the library's: `JsonFields.JSON` builds the constraints with
 `StreamReadConstraints.builder()` rather than inheriting them, so a host's
 process-wide `overrideDefaultStreamReadConstraints` cannot change a
 verdict; and `Verifier.create` reads the 2.16 name bound, so a host BOM
