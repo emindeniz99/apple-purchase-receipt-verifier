@@ -333,6 +333,12 @@
       "codec": "raw",
       "contentSha256": "a5c705cb93a9f5ff4ec622f6f796717eeaec5e77182e1a0d2415859dc732c2f9"
     },
+    "public-receipt-sandbox-g5-signer-infos-set-parameters-label-alone": {
+      "path": "public-receipts/signer-infos/set-parameters-label-alone.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "ae856d863d5f741c91110adea74fb87cbd59bc9dd31594fc7e9893996e64cf6f"
+    },
     "public-receipt-sandbox-g5-certificates-rsa-pss-huge-salt-stranger": {
       "path": "public-receipts/certificates/rsa-pss-huge-salt-stranger.der",
       "role": "input",
@@ -362,6 +368,12 @@
       "role": "input",
       "codec": "raw",
       "contentSha256": "aab13971dc0b8b8850be9a051a41e3d86343b45d95815ce78035a7543638ade3"
+    },
+    "public-receipt-sandbox-g5-certificates-set-names-stranger": {
+      "path": "public-receipts/certificates/set-names-stranger.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "9001a1dfafe340c3f043bf07de9c68def030ff54db8c8a658f26c6762da883aa"
     },
     "public-receipt-xcode-with-purchases": {
       "path": "public-receipts/receipt-xcode-with-purchases.b64",
@@ -10247,6 +10259,38 @@
       ]
     },
     {
+      "id": "receipt/reject-a-signer-info-labelled-with-parameters-holding-a-set",
+      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to sha256WithRSAEncryption (1.2.840.113549.1.1.11) whose parameters are a SET holding a SET holding a UTF8String, alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The signatureAlgorithm and its parameters are unsigned, and no signature algorithm defines a SET in its parameters. BouncyCastle sorts such a SET to compare it with a CMSAlgorithmProtection attribute, at a cost that grows with its nesting, so Java leaves out a SignerInfo whose digest or signature algorithm parameters hold a SET before anything is compared, and with none left answers MALFORMED, \"signer certificate not embedded\" (owner Q140 a, 2026-10-13). The core verifies: OpenSSL reads an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1 v1.5 or RSASSA-PSS and ignores its parameters, hashes with the digestAlgorithm, which is Apple's SHA-256, and the signature is Apple's (docs/evidence/2026-10-14-core-october-cost-scan.md). Port-defined; nothing unsigned is accepted either way (DECISIONS.md R20).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-signer-infos-set-parameters-label-alone"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
+      },
+      "fault": "signer-info-signature-parameters-hold-a-set",
+      "maxMillis": 2000,
+      "tags": [
+        "tolerant",
+        "port-defined",
+        "receipt",
+        "pkcs7",
+        "signers",
+        "negative",
+        "signer-algorithm",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
       "id": "receipt/reject-a-signer-info-labelled-rsa-pss-with-a-huge-salt",
       "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to RSASSA-PSS (SHA-256, MGF1 with SHA-256) and a saltLength of 1,000,000,000, alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The signatureAlgorithm and its parameters are unsigned, and BouncyCastle allocates an array of saltLength bytes while it builds the verifier, before any signature byte is compared: an OutOfMemoryError. Java bounds the saltLength by the signer's key before building anything (RFC 8017 9.1.2: at most emLen - hLen - 2 octets, owner Q142 a, 2026-10-13), and Apple's signer key holds far fewer than 1,000,000,000. The core hands the label and its parameters to OpenSSL, and Apple's PKCS#1 v1.5 signature does not verify as PSS under them, within maxMillis. INVALID_SIGNATURE in both (DECISIONS.md R20).",
       "operation": "verifyReceipt",
@@ -10450,6 +10494,36 @@
         "certificate",
         "positive",
         "dos",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-genuine-beside-a-stranger-whose-names-hold-a-set",
+      "description": "The genuine G5 sandbox receipt with one more certificate-bag entry, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs): a stranger labelled sha256WithRSAEncryption, with the receipt signer's key and 256 zero octets as its signature, whose issuer and subject each hold one commonName whose value is a SET holding a SET holding a UTF8String, not a string. The bag is unsigned. BouncyCastle's X.509 class DER-encodes the names as it builds the certificate, sorting every SET at a cost that grows with its nesting, so Java passes over a bag entry whose names hold a value that is not a string (owner Q140 a, 2026-10-13), and Apple's own chain verifies: ok. The core answers MALFORMED: OpenSSL's Name grammar refuses a SET as an attribute value at any size, so the whole ContentInfo fails to decode (docs/evidence/2026-10-14-core-october-cost-scan.md). Apple's names hold PrintableString and UTF8String. Port-defined; nothing unsigned is accepted either way (DECISIONS.md R20).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-certificates-set-names-stranger"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "oneOf": [
+          "ok",
+          "MALFORMED"
+        ]
+      },
+      "fault": "stranger-names-hold-a-set",
+      "maxMillis": 2000,
+      "tags": [
+        "tolerant",
+        "port-defined",
+        "receipt",
+        "pkcs7",
+        "certificate",
         "public-receipts",
         "new-in-0-7"
       ]
