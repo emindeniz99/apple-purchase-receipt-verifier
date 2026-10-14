@@ -89,8 +89,8 @@ String responseJson = verifier.verifyReceiptEndpoint(Environment.PRODUCTION, req
 ```
 
 **No method throws for any input.** A `null` or empty `base64` / `jws` /
-`requestJson` is input and fails as `Reason.MALFORMED`, the same as a garbled
-one. An unexpected runtime exception inside the library is reported by where
+`requestJson` is input and fails as `Reason.MALFORMED` (status 21002 from the
+endpoint), the same as a garbled one. An unexpected runtime exception inside the library is reported by where
 it happened: anywhere in `verifySignedData`, and in `verifyReceipt` before the
 signature has verified, it is `Reason.MALFORMED` (input nobody vouched for
 must not be able to raise the internal-error alarm at will); while the signed
@@ -133,8 +133,10 @@ factory, touches the BouncyCastle provider and a bcpkix class, checks that
 bcprov is 1.86 or later and that BouncyCastle's ASN.1 nesting bound admits a
 genuine receipt, and probes the crypto runtime (see [Running in
 production](#running-in-production)), so a jackson-core below 2.16, a
-missing BouncyCastle jar, a bcprov below 1.86 or a nesting bound below 9
-throws `IllegalStateException` there rather than on the first call.
+missing BouncyCastle jar, a bcprov below 1.86, a nesting bound below 9 or a
+time-zone database without America/Los_Angeles (the endpoint renders
+Pacific-time dates) throws `IllegalStateException` there rather than on the
+first call.
 
 ## Which method to call
 
@@ -512,8 +514,9 @@ anchor set: bump this library, or pass your own set through
 
 A chain must also carry Apple's two marker OIDs, 1.2.840.113635.100.6.2.1
 on the intermediate and 1.2.840.113635.100.6.11.1 on the leaf, or the
-answer is `INVALID_CERTIFICATE_PURPOSE`. That is Apple's own rule: its
-`app-store-server-library` checks the same two. Not every intermediate on
+answer is `INVALID_CERTIFICATE_PURPOSE`. That is Apple's own rule for JWS:
+its `app-store-server-library` checks the same two. Apple's legacy-receipt
+procedure does not ask for them; the library requires them on receipts too. Not every intermediate on
 Apple's PKI page carries the first. "Apple Worldwide Developer Relations
 CA - G2" (ECC, under Apple Root CA - G3) carries
 1.2.840.113635.100.6.2.15 instead, so a leaf under it is
@@ -616,7 +619,7 @@ structure they bound is read:
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | Receipt signer's depth below a pinned root, certificates each signed by the one above | 7, BouncyCastle 1.86's path builder's: it refuses an eighth under the JDK's default `maxPathLength` of 5. The library adds no bound of its own | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
-| Extensions on one certificate, counted before it is parsed | 1,000 | The certificate is passed over: in a receipt's bag it names no signer and vouches for nothing (`MALFORMED`, "signer certificate not embedded", when it was the signer's), and an `x5c` leaf or intermediate stands for nothing (`UNTRUSTED_CHAIN`); `x5c[2]` is never read. Passed over even when the rest of it would not parse |
+| Extensions on one certificate, counted before it is parsed | 1,000 | The certificate is passed over: in a receipt's bag it names no signer and vouches for nothing (`MALFORMED`, "signer certificate not embedded", when it was the signer's), and an `x5c` leaf or intermediate stands for nothing (`UNTRUSTED_CHAIN`); `x5c[2]` is decoded but never used, so one over the cap is passed over without effect. Passed over even when the rest of it would not parse |
 | Attributes on one SignerInfo, signed and unsigned together | 1,000 | The SignerInfo is left out; `MALFORMED`, "signer certificate not embedded", when none is left |
 
 **Thread stack.** BouncyCastle's ASN.1 parser recurses, so a legal input
@@ -1040,6 +1043,9 @@ lets another library's older bcprov replace them unnoticed; a BOM or your
 own `dependencyManagement` still can, and the check at create is what
 catches that. The check reads bcprov's version only; keep `bcutil` and
 `bcpkix` at the same release.
+A time-zone database that has America/Los_Angeles, which the endpoint's
+Pacific-time dates need: a trimmed runtime (jlink, a slim container image)
+without it makes `Verifier.create` throw `IllegalStateException`.
 
 **What to re-check on a BouncyCastle upgrade.** The code relies on a few
 BouncyCastle behaviours that are not API contracts. Thread safety is not

@@ -96,7 +96,8 @@ check one. Two families appear here:
   say SHA-1 while the signature's DigestInfo says SHA-256: the verifier
   hashes with SHA-1, the recovered DigestInfo still names SHA-256 and its
   hash, they disagree, and the check fails. The label cannot downgrade the
-  hash, which is why `ReceiptCore.verifyCmsSignature` does not trust it.
+  hash, which is why the code keeps no allowlist of hash labels and refuses
+  only the ones that cost work (§8).
 - **ECDSA** (JWS). ES256 is ECDSA on the P-256 curve with SHA-256. A
   signature is two 32-byte numbers, `r` and `s`.
 
@@ -200,8 +201,9 @@ the library requires them:
 | `1.2.840.113635.100.6.2.1` | The intermediate directly above that leaf | `AppleTrust.INTERMEDIATE_OID` |
 
 `1.2.840.113635` is Apple's OID arc. A missing marker is
-`INVALID_CERTIFICATE_PURPOSE`. Apple's published receipt procedure does not
-ask for these; here the library is stricter than Apple.
+`INVALID_CERTIFICATE_PURPOSE`. Apple's JWS library checks both; Apple's
+published receipt procedure does not ask for these, so on receipts the
+library is stricter than Apple.
 
 ## 3. Encodings in five minutes
 
@@ -388,10 +390,10 @@ The checks, in the order Java runs them:
 |---|---|---|---|
 | 1 | Non-empty, at most 3,145,728 UTF-8 bytes, before any decoding | Memory and CPU exhaustion | `MALFORMED`, `TOO_LARGE` |
 | 2 | Canonical padded base64 | Two decoders reading one string differently; Apple's own rule | `MALFORMED` |
-| 3 | Envelope: no trailing bytes, eContent present, 1 to 4 SignerInfos | Garbage, smuggled bytes, amplification | `MALFORMED` |
+| 3 | Envelope: no trailing bytes, eContent present, at most 4 SignerInfos; leave out a SignerInfo whose issuer name is not strings only, whose algorithm parameters hold a SET, or that carries more than 1,000 attributes; at least one left | Garbage, smuggled bytes, amplification, costs an attacker chooses | `MALFORMED`; left out |
 | 4 | Read attribute 12 from the unverified payload to pick the instant | Nothing: this never fails | none |
 | 5 | Decode the bag: at most 10 certificates, each decodes, no key read | Certificate flooding | `MALFORMED` |
-| 5a | Before trust, pass over a bag certificate and leave out a SignerInfo whose shape or labels would cost seconds to process, and refuse the slow SignerInfo labels at step 9 (below, and §8) | Costs an attacker chooses, paid before anything is trusted | passed over, left out; `INVALID_SIGNATURE` |
+| 5a | Before trust, pass over a bag certificate whose shape or labels would cost seconds to process, and refuse the slow SignerInfo labels at step 9 (below, and §8) | Costs an attacker chooses, paid before anything is trusted | passed over; `INVALID_SIGNATURE` |
 | 6 | Authenticate the bag top-down from the pinned roots (see "Why top-down" below) | Attacker keys being decoded or used | feeds step 7 |
 | 7 | PKIX path from the signer through authenticated bag certificates to a pinned root, valid at the instant | Forged and foreign chains, expired certificates, CA rule violations | `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE` |
 | 8 | Marker OIDs on the signer and the intermediate above it | A developer certificate signing a fake receipt | `INVALID_CERTIFICATE_PURPOSE` |
@@ -515,7 +517,7 @@ flowchart TD
     S["DefaultVerifier.verifyReceipt: read the clock once"] --> C1{"ReceiptCore.verify: empty, or over 3,145,728 bytes?"}
     C1 -->|yes| F1["MALFORMED or TOO_LARGE"]
     C1 -->|no| C2["StrictBase64.decode"]
-    C2 --> C3["verifySignature: parseCms, encapsulatedPayload, signerInfos (1 to 4)"]
+    C2 --> C3["verifySignature: parseCms, encapsulatedPayload, signerInfos (at most 4, screened)"]
     C3 --> C4["ReceiptDecoder.readCreationDate: instant is attribute 12, else the clock"]
     C4 --> C5["ReceiptCertificates.decode: at most 10, no keys read"]
     C5 --> C6["authenticatedTopDown: keep what a pinned root vouches for"]
@@ -626,9 +628,9 @@ segments joined by dots: `header.payload.signature`. Decoded:
 | 1 | Non-empty, at most 262,144 UTF-8 bytes | `MALFORMED`, `TOO_LARGE` |
 | 2 | Exactly 3 segments, each canonical base64url (decode, re-encode, compare) | `MALFORMED` |
 | 3 | Header is one JSON object, `alg` is `ES256`, `x5c` is exactly 3 strings | `MALFORMED` |
-| 4 | `decodeChain`: each entry strict base64 and a certificate; keys not read | `INVALID_CERTIFICATE` |
+| 4 | `decodeChain`: each entry strict base64 and a certificate; keys not read; an entry `PreTrustScreen.readCertificate` passes over becomes null and fails at step 6 as `UNTRUSTED_CHAIN` | `INVALID_CERTIFICATE` |
 | 5 | `readOrNull`: read the payload, if it reads, for the instant | never fails |
-| 6 | `authenticateTopDown`: intermediate signed by a pinned root, then its key decoded; leaf signed by the intermediate, then its key decoded | `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE` |
+| 6 | `authenticateTopDown`: intermediate signed by a pinned root and a CA, then its key decoded; leaf signed by the intermediate, then its key decoded | `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE` |
 | 7 | `validateChain`: PKIX **validate** of `[leaf, intermediate]` at the instant | `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE` |
 | 8 | Leaf and intermediate markers | `INVALID_CERTIFICATE_PURPOSE` |
 | 9 | `verifyEs256`: exactly 64 bytes, then ECDSA with the leaf key | `INVALID_SIGNATURE` |
@@ -710,7 +712,8 @@ cost and why no Apple input is affected, is in R20 of
 **Startup checks.** `Verifier.create` (`DefaultVerifier`'s constructor)
 throws at deployment instead of failing per call: a Jackson or BouncyCastle
 that does not load,
-bcprov below 1.86, an ASN.1 nesting bound below 9, or an empty root set.
+bcprov below 1.86, an ASN.1 nesting bound below 9, a time-zone database
+without America/Los_Angeles, or an empty root set.
 Then the **runtime probe** (`probeRuntime`; off with
 `Config.builder().runtimeProbe(false)`) asks the provider for the SHA-256
 digest, the ES256 signature, the X.509 factory, the PKIX validator and
@@ -806,7 +809,7 @@ programs that overwrite committed fixtures when run (java/README.md,
 | verifyReceipt | Apple's deprecated HTTP receipt-validation endpoint, imitated by `verifyReceiptEndpoint` |
 | WWDR | Apple Worldwide Developer Relations, the intermediate CA family under Apple's roots |
 | x5c | JWS header member carrying the certificate chain, leaf first |
-| Xcode receipt | A receipt signed locally by Xcode for testing; it chains to no Apple root and is refused |
+| Xcode receipt | A receipt signed locally by Xcode for testing; it chains to no Apple root, so the default roots refuse it |
 
 ## Appendix: receipt attribute tables
 
