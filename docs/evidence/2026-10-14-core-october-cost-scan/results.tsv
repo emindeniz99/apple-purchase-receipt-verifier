@@ -1,0 +1,92 @@
+part	name	param	input_b64_bytes	verdict	median_ms	min_ms	runs	peak_heap_kib	allocated_kib	rss_rise_kib
+case	receipt/expose-unknown-attributes	expected ok; maxMillis -	4508	ok	0.320	0.278	9	25	111	8
+case	receipt/reject-signer-absent-beside-a-malformed-stranger	expected MALFORMED; maxMillis -	3040	MALFORMED: malformed CMS structure: not a CMS ContentInfo	0.018	0.018	9	9	17	4
+case	receipt/verify-genuine-padded-with-oversized-strangers	expected ok; maxMillis 2000	85076	ok	0.921	0.807	9	344	1123	344
+case	receipt/signer-rsa-pss-does-not-crash	expected ok; maxMillis 2000	4068	ok	0.235	0.228	9	23	99	8
+case	receipt/reject-signer-rsa-pss-tampered	expected INVALID_SIGNATURE; maxMillis -	4068	INVALID_SIGNATURE: CMS signature check failed	0.240	0.224	9	23	98	4
+case	receipt/first-failing-signer-decides-when-the-stranger-comes-first	expected UNTRUSTED_CHAIN; maxMillis -	5548	UNTRUSTED_CHAIN: signer certificate is not issued under a pinned Apple root	0.272	0.248	9	29	115	12
+case	receipt/reject-a-signer-info-signed-md2-with-rsa	expected oneOf ["ok","INVALID_SIGNATURE"]; maxMillis -	7556	ok	0.359	0.334	9	36	159	12
+case	receipt/reject-a-signer-info-labelled-rsa-pss-with-a-huge-salt	expected INVALID_SIGNATURE; maxMillis 2000	7628	INVALID_SIGNATURE: CMS signature check failed	0.536	0.295	9	36	135	12
+case	receipt/accept-genuine-beside-a-stranger-labelled-rsa-pss-with-a-huge-salt	expected ok; maxMillis 2000	8708	ok	0.801	0.705	9	41	185	20
+case	receipt/accept-genuine-beside-a-stranger-labelled-rsa-pss-with-a-negative-salt	expected ok; maxMillis 2000	8712	ok	0.842	0.734	9	41	185	20
+case	receipt/reject-a-signer-info-labelled-with-the-generic-composite-oid	expected INVALID_SIGNATURE; maxMillis 2000	7596	INVALID_SIGNATURE: CMS signature check failed	0.573	0.484	9	36	129	16
+case	receipt/accept-genuine-beside-a-stranger-labelled-with-the-generic-composite-oid	expected ok; maxMillis 2000	19040	ok	0.962	0.923	9	62	234	52
+case	receipt/accept-genuine-beside-a-stranger-with-a-thousand-and-one-extensions	expected ok; maxMillis 2000	31092	ok	3.487	2.763	9	197	517	248
+case	receipt/accept-genuine-beside-a-stranger-labelled-md2-with-rsa	expected ok; maxMillis 2000	8560	ok	0.455	0.436	9	40	180	12
+case	receipt/verify-with-a-stranger-whose-key-is-unreadable	expected ok; maxMillis -	6568	ok	0.448	0.416	9	33	161	12
+case	receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-first	expected ok; maxMillis -	6568	ok	0.577	0.551	9	35	189	12
+case	receipt/verify-with-a-stranger-vouched-by-a-same-named-root-listed-second	expected ok; maxMillis -	6568	ok	0.531	0.508	9	35	176	12
+case	receipt/reject-a-stranger-whose-signature-bit-string-is-unaligned	expected MALFORMED; maxMillis -	4896	MALFORMED: an embedded certificate is not a valid certificate	0.091	0.086	9	23	62	12
+case	receipt/printable-string-attributes-are-kept-raw	expected ok; maxMillis -	3788	ok	0.272	0.254	9	22	94	8
+case	signed-data/reject-a-header-number-of-1001-digits	expected oneOf ["ok","MALFORMED"]; maxMillis 2000	3454	ok	0.595	0.538	9	18	92	28
+case	receipt/reject-signed-attributes-with-two-message-digests	expected INVALID_SIGNATURE; maxMillis -	3904	INVALID_SIGNATURE: CMS signature check failed	0.289	0.235	9	23	90	8
+shape	baseline-unsigned-octets	0	4504	ok	0.307	0.298	9	25	110	0
+shape	baseline-unsigned-octets	262144	354076	ok	0.458	0.420	9	1037	1390	1036
+shape	baseline-unsigned-octets	2355884	3145728	ok	2.785	2.715	9	9216	11613	9212
+shape	pss-salt-signer-info	1e9 (fixture)	4576	INVALID_SIGNATURE: CMS signature check failed	0.368	0.286	9	25	101	0
+shape	pss-salt-signer-info	4 octets	4576	INVALID_SIGNATURE: CMS signature check failed	0.348	0.287	9	25	101	0
+shape	pss-salt-signer-info	8 octets	4580	INVALID_SIGNATURE: CMS signature check failed	0.262	0.248	9	25	95	0
+shape	pss-salt-signer-info	65536 octets	91976	INVALID_SIGNATURE: CMS signature check failed	0.469	0.427	9	269	544	324
+shape	pss-salt-signer-info	524288 octets	703644	INVALID_SIGNATURE: CMS signature check failed	1.600	1.483	9	2061	3680	2060
+shape	pss-salt-signer-info	2355852 octets	3145728	INVALID_SIGNATURE: CMS signature check failed	6.531	6.242	9	9216	16200	9212
+shape	pss-salt-stranger	4 octets	5568	ok	0.429	0.379	9	29	136	0
+shape	pss-salt-stranger	8 octets	5580	ok	0.363	0.337	9	28	126	0
+shape	pss-salt-stranger	65536 octets	180360	ok	0.839	0.800	9	528	1279	772
+shape	pss-salt-stranger	524288 octets	1403700	ok	3.993	3.907	9	4112	9343	4620
+shape	pss-salt-stranger	1177549 octets	3145728	ok	8.600	8.364	9	9216	20826	9212
+shape	composite-signer-info	2 parts	4544	INVALID_SIGNATURE: CMS signature check failed	0.255	0.241	9	25	95	0
+shape	composite-signer-info	300 parts	10508	INVALID_SIGNATURE: CMS signature check failed	0.318	0.305	9	33	126	16
+shape	composite-signer-info	3000 parts	64508	INVALID_SIGNATURE: CMS signature check failed	0.903	0.875	9	189	408	224
+shape	composite-signer-info	30000 parts	604520	INVALID_SIGNATURE: CMS signature check failed	6.642	6.562	9	1771	3229	1764
+shape	composite-signer-info	33278 parts	670080	INVALID_SIGNATURE: CMS signature check failed	7.377	7.302	9	1963	3572	1956
+shape	composite-signer-info	157060 parts	3145720	MALFORMED: malformed CMS structure: more than 100000 ASN.1 values	7.981	7.906	9	2304	3349	2304
+shape	composite-stranger	300 parts	15900	ok	0.577	0.424	9	50	183	32
+shape	composite-stranger	3000 parts	113104	ok	1.881	1.822	9	331	734	432
+shape	composite-stranger	24951 parts	903352	ok	11.202	8.871	9	2647	5214	3584
+shape	composite-stranger	87239 parts	3145720	MALFORMED: malformed CMS structure: more than 100000 ASN.1 values	8.880	8.370	9	2304	3089	2304
+shape	md2-label-signer-info	shared content	4504	ok	0.549	0.500	9	25	110	0
+shape	md2-label-signer-info	+262144 octets	354068	INVALID_SIGNATURE: CMS signature check failed	1.115	1.010	9	1300	2149	1288
+shape	md2-label-signer-info	+2355891 octets	3145728	INVALID_SIGNATURE: CMS signature check failed	5.579	4.794	9	11523	18506	11508
+shape	md2-digest-signer-info	shared content	4500	INVALID_SIGNATURE: CMS signature check failed	0.247	0.238	9	25	95	0
+shape	md2-digest-signer-info	+2355893 octets	3145728	INVALID_SIGNATURE: CMS signature check failed	3.129	3.077	9	11523	18501	11508
+shape	md2-label-stranger	+0 octets	5448	ok	0.499	0.478	9	28	130	28
+shape	md2-label-stranger	+262144 octets	354996	ok	1.035	0.843	9	1048	1922	1036
+shape	md2-label-stranger	+2355194 octets	3145728	ok	5.574	5.145	9	9224	16230	9212
+shape	colliding-oids-unsigned-attrs	1001 x 129 octets	190036	ok	2.583	2.439	9	577	1136	692
+shape	colliding-oids-unsigned-attrs	4096 x 129 octets	763640	ok	8.662	7.500	9	2303	4309	3184
+shape	colliding-oids-unsigned-attrs	16384 x 129 octets	3041016	ok	38.183	36.983	9	9158	16912	12004
+shape	colliding-oids-unsigned-attrs	16948 x 129 octets	3145544	ok	29.358	24.678	9	9465	17484	16968
+shape	colliding-oids-unsigned-attrs	32768 x 129 octets	6077520	TOO_LARGE: receipt exceeds the maximum accepted size of 3145728 bytes	0.000	0.000	9	2	2	0
+shape	colliding-oids-unsigned-attrs	1024 x 2288 octets	3144784	ok	10.011	9.818	9	9213	14121	11784
+shape	extensions-stranger	1001 colliding	188292	ok	4.863	3.746	9	654	1753	892
+shape	extensions-stranger	10000 colliding	1832108	ok	36.742	35.632	9	6511	16460	10092
+shape	extensions-stranger	17191 colliding	3145664	ok	76.397	64.770	9	11272	28293	16596
+shape	extensions-stranger	131762 filler	3145716	MALFORMED: malformed CMS structure: more than 100000 ASN.1 values	11.380	9.930	9	2304	4503	2304
+shape	signed-attrs-signer-info	2 + 0 colliding	4400	INVALID_SIGNATURE: CMS signature check failed	0.233	0.218	9	24	99	0
+shape	signed-attrs-signer-info	2 + 1001 colliding	189932	INVALID_SIGNATURE: CMS signature check failed	1.571	1.517	9	577	1261	920
+shape	signed-attrs-signer-info	2 + 10000 colliding	1857744	INVALID_SIGNATURE: CMS signature check failed	14.315	13.989	9	5599	11715	9892
+shape	signed-attrs-signer-info	2 + 16949 colliding	3145628	INVALID_SIGNATURE: CMS signature check failed	25.755	24.918	9	9465	19775	16860
+shape	nested-set-signer-info-issuer	depth 23, width 1	4644	MALFORMED: malformed CMS structure: not a CMS ContentInfo	0.053	0.052	9	20	52	4
+shape	nested-set-signer-info-issuer	depth 23, width 433	44456	MALFORMED: malformed CMS structure: not a CMS ContentInfo	0.147	0.141	9	130	168	120
+shape	nested-set-signer-info-issuer	depth 23, width 4339	403844	MALFORMED: malformed CMS structure: not a CMS ContentInfo	1.077	1.004	9	1183	1221	1176
+shape	nested-set-signer-info-issuer	depth 23, width 1, leaves of 98153 octets	3145716	MALFORMED: malformed CMS structure: not a CMS ContentInfo	2.158	2.093	9	9216	9253	9212
+shape	nested-set-stranger-names	depth 23, width 1	5696	MALFORMED: malformed CMS structure: not a CMS ContentInfo	0.071	0.070	9	22	56	12
+shape	nested-set-stranger-names	depth 23, width 216	45392	MALFORMED: malformed CMS structure: not a CMS ContentInfo	0.152	0.147	9	133	172	128
+shape	nested-set-stranger-names	depth 23, width 2168	404612	MALFORMED: malformed CMS structure: not a CMS ContentInfo	1.036	1.004	9	1185	1225	1180
+shape	nested-set-stranger-names	depth 23, width 1, leaves of 49058 octets	3145688	MALFORMED: malformed CMS structure: not a CMS ContentInfo	2.239	2.148	9	9216	9255	9212
+shape	nested-sequence-signer-info-issuer	depth 23, width 1	4644	MALFORMED: signer certificate not embedded	0.106	0.072	9	20	52	4
+shape	nested-sequence-signer-info-issuer	depth 23, width 433	44456	MALFORMED: signer certificate not embedded	0.192	0.186	9	203	295	180
+shape	nested-sequence-signer-info-issuer	depth 23, width 4339	403844	MALFORMED: signer certificate not embedded	1.487	1.404	9	1870	2488	1852
+shape	nested-sequence-signer-info-issuer	depth 23, width 1, leaves of 98153 octets	3145716	MALFORMED: malformed CMS structure: not a CMS ContentInfo	2.002	1.902	9	9216	9253	9212
+shape	nested-sequence-stranger-names	depth 23, width 1	5696	ok	0.335	0.310	9	29	125	0
+shape	nested-sequence-stranger-names	depth 23, width 216	45392	ok	0.866	0.470	9	209	426	208
+shape	nested-sequence-stranger-names	depth 23, width 2168	404612	ok	2.067	1.975	9	1875	3144	2104
+shape	nested-sequence-stranger-names	depth 23, width 1, leaves of 49058 octets	3145688	MALFORMED: malformed CMS structure: not a CMS ContentInfo	1.903	1.758	9	9216	9255	9212
+shape	nested-set-params-signer-info-signature-algorithm	depth 26, width 1	4680	ok	0.253	0.232	9	25	110	4
+shape	nested-set-params-signer-info-signature-algorithm	depth 26, width 383	44476	ok	0.376	0.345	9	130	256	156
+shape	nested-set-params-signer-info-signature-algorithm	depth 26, width 3838	403832	ok	2.583	1.483	9	1183	1572	1180
+shape	nested-set-params-signer-info-signature-algorithm	depth 26, width 1, leaves of 87246 octets	3145720	ok	2.794	2.633	9	9216	11613	9212
+shape	nested-set-params-stranger-labels	depth 25, width 1	5760	ok	0.400	0.377	9	29	136	0
+shape	nested-set-params-stranger-labels	depth 25, width 199	45496	ok	0.845	0.823	9	133	354	184
+shape	nested-set-params-stranger-labels	depth 25, width 1995	404748	ok	3.374	3.212	9	1186	2327	1472
+shape	nested-set-params-stranger-labels	depth 25, width 1, leaves of 45283 octets	3145664	ok	6.841	6.610	9	9216	17384	11508
