@@ -74,9 +74,9 @@ final class ReceiptCore {
     /**
      * The largest receipt accepted: the base64 text's length in UTF-8 bytes,
      * checked before it is decoded. The figure is Apple's limit on a whole
-     * verifyReceipt body ({@link Endpoint#MAX_REQUEST_BYTES}).
+     * verifyReceipt body.
      */
-    static final int MAX_RECEIPT_BYTES = Endpoint.MAX_REQUEST_BYTES;
+    static final int MAX_RECEIPT_BYTES = 3145728;
 
     /**
      * Digest algorithms a SignerInfo's digestAlgorithm or signatureAlgorithm
