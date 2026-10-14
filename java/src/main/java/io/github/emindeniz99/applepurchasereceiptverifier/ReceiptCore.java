@@ -129,6 +129,18 @@ final class ReceiptCore {
         return parseSignedPayload(payload);
     }
 
+    /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
+    private static ReceiptPayload parseSignedPayload(byte[] payload) throws VerificationException {
+        try {
+            return ReceiptDecoder.parse(payload);
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.UNREADABLE_PAYLOAD,
+                    "signed receipt content could not be read: " + e.getClass().getName(),
+                    e);
+        }
+    }
+
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
     private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
@@ -238,6 +250,10 @@ final class ReceiptCore {
                 <= MAX_SIGNER_INFO_ATTRIBUTES;
     }
 
+    private static int size(@Nullable ASN1Set attributes) {
+        return attributes == null ? 0 : attributes.size();
+    }
+
     /**
      * {@code signerInfo} as the one signer of a copy of {@code signedData}.
      * BouncyCastle's SignerInformationStore keys its signers by SignerId,
@@ -260,116 +276,6 @@ final class ReceiptCore {
                     .next();
         } catch (CMSException e) {
             throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
-        }
-    }
-
-    private static int size(@Nullable ASN1Set attributes) {
-        return attributes == null ? 0 : attributes.size();
-    }
-
-    /**
-     * A SignerInfo whose signed attributes are hashed as they were sent.
-     * BouncyCastle hashes their DER encoding, and DER sorts every SET in the
-     * sender's attribute values before any signature is checked: seconds for
-     * a cap-sized value of nested SETs. RFC 5652 5.4 signs the DER encoding
-     * of the attributes, and a definite-length encoding of a DER input
-     * reproduces it.
-     */
-    private static final class SignedAsSent extends SignerInformation {
-        SignedAsSent(SignerInformation signer) {
-            super(signer);
-        }
-
-        @Override
-        public byte @Nullable [] getEncodedSignedAttributes() throws IOException {
-            return signedAttributeSet == null ? null : signedAttributeSet.getEncoded(ASN1Encoding.DL);
-        }
-    }
-
-    /**
-     * Tries every certificate {@code signer} names, as the SignerInfos are
-     * tried: one passing is enough, and when none does the first one's
-     * failure is the verdict. Together the two loops are one loop over
-     * (SignerInfo, certificate) pairs in receipt order.
-     */
-    private static void verifySigner(
-            SignerInformation signer,
-            List<X509Certificate> matches,
-            List<X509Certificate> authenticated,
-            Date at,
-            Set<TrustAnchor> trustAnchors)
-            throws VerificationException {
-        VerificationException first = null;
-        for (X509Certificate signerCert : matches) {
-            try {
-                List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
-                // The certificate after the signer on the path; a signer a
-                // root issued directly has none.
-                AppleTrust.requireMarkers(
-                        signerCert, path.size() < 2 ? null : (X509Certificate) path.get(1), "receipt");
-                // The chain before the signature: checking the signature
-                // first would run the attacker's own key before anything
-                // about it is trusted.
-                verifyCmsSignature(signer, signerCert);
-                return;
-            } catch (VerificationException e) {
-                if (first == null) {
-                    first = e;
-                }
-            }
-        }
-        throw first;
-    }
-
-    /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
-    private static ReceiptPayload parseSignedPayload(byte[] payload) throws VerificationException {
-        try {
-            return ReceiptDecoder.parse(payload);
-        } catch (RuntimeException e) {
-            throw new VerificationException(
-                    Reason.UNREADABLE_PAYLOAD,
-                    "signed receipt content could not be read: " + e.getClass().getName(),
-                    e);
-        }
-    }
-
-    /**
-     * PKIX-builds signer, then the authenticated embedded certificates, then a
-     * pinned root, at {@code at}; returns the path, leaf first, anchor
-     * excluded.
-     */
-    private static List<? extends Certificate> validateChain(
-            X509Certificate signerCert, List<X509Certificate> authenticated, Date at, Set<TrustAnchor> trustAnchors)
-            throws VerificationException {
-        // Refused before anything decodes its key (see AppleTrust).
-        if (!authenticated.contains(signerCert)) {
-            throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
-        }
-        try {
-            // BouncyCastle throws for a key that does not decode and returns
-            // null for a key algorithm it does not know; neither can check
-            // the signature.
-            Objects.requireNonNull(signerCert.getPublicKey(), "unknown public key algorithm");
-        } catch (RuntimeException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate does not decode", e);
-        }
-        try {
-            X509CertSelector target = new X509CertSelector();
-            target.setCertificate(signerCert);
-            PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
-            params.addCertStore(CertStore.getInstance(
-                    "Collection", new CollectionCertStoreParameters(authenticated), BouncyCastle.PROVIDER));
-            params.setRevocationEnabled(false);
-            params.setDate(at);
-            params.addCertPathChecker(AppleTrust.HANDLED_CRITICAL_EXTENSIONS);
-            // Per call: BouncyCastle's builder keeps state for the build it runs.
-            CertPathBuilderResult result =
-                    CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
-            return result.getCertPath().getCertificates();
-        } catch (GeneralSecurityException | RuntimeException e) {
-            throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
         }
     }
 
@@ -417,6 +323,81 @@ final class ReceiptCore {
         return accepted;
     }
 
+    /**
+     * Tries every certificate {@code signer} names, as the SignerInfos are
+     * tried: one passing is enough, and when none does the first one's
+     * failure is the verdict. Together the two loops are one loop over
+     * (SignerInfo, certificate) pairs in receipt order.
+     */
+    private static void verifySigner(
+            SignerInformation signer,
+            List<X509Certificate> matches,
+            List<X509Certificate> authenticated,
+            Date at,
+            Set<TrustAnchor> trustAnchors)
+            throws VerificationException {
+        VerificationException first = null;
+        for (X509Certificate signerCert : matches) {
+            try {
+                List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
+                // The certificate after the signer on the path; a signer a
+                // root issued directly has none.
+                AppleTrust.requireMarkers(
+                        signerCert, path.size() < 2 ? null : (X509Certificate) path.get(1), "receipt");
+                // The chain before the signature: checking the signature
+                // first would run the attacker's own key before anything
+                // about it is trusted.
+                verifyCmsSignature(signer, signerCert);
+                return;
+            } catch (VerificationException e) {
+                if (first == null) {
+                    first = e;
+                }
+            }
+        }
+        throw first;
+    }
+
+    /**
+     * PKIX-builds signer, then the authenticated embedded certificates, then a
+     * pinned root, at {@code at}; returns the path, leaf first, anchor
+     * excluded.
+     */
+    private static List<? extends Certificate> validateChain(
+            X509Certificate signerCert, List<X509Certificate> authenticated, Date at, Set<TrustAnchor> trustAnchors)
+            throws VerificationException {
+        // Refused before anything decodes its key (see AppleTrust).
+        if (!authenticated.contains(signerCert)) {
+            throw new VerificationException(
+                    Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
+        }
+        try {
+            // BouncyCastle throws for a key that does not decode and returns
+            // null for a key algorithm it does not know; neither can check
+            // the signature.
+            Objects.requireNonNull(signerCert.getPublicKey(), "unknown public key algorithm");
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE, "receipt signer certificate does not decode", e);
+        }
+        try {
+            X509CertSelector target = new X509CertSelector();
+            target.setCertificate(signerCert);
+            PKIXBuilderParameters params = new PKIXBuilderParameters(trustAnchors, target);
+            params.addCertStore(CertStore.getInstance(
+                    "Collection", new CollectionCertStoreParameters(authenticated), BouncyCastle.PROVIDER));
+            params.setRevocationEnabled(false);
+            params.setDate(at);
+            params.addCertPathChecker(AppleTrust.HANDLED_CRITICAL_EXTENSIONS);
+            // Per call: BouncyCastle's builder keeps state for the build it runs.
+            CertPathBuilderResult result =
+                    CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
+            return result.getCertPath().getCertificates();
+        } catch (GeneralSecurityException | RuntimeException e) {
+            throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
+        }
+    }
+
     private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
             throws VerificationException {
         // No algorithm allowlist of our own: the signer is pinned to an
@@ -461,6 +442,25 @@ final class ReceiptCore {
             // implementations MUST gracefully handle unimplemented signature
             // algorithms).
             throw new VerificationException(Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info", e);
+        }
+    }
+
+    /**
+     * A SignerInfo whose signed attributes are hashed as they were sent.
+     * BouncyCastle hashes their DER encoding, and DER sorts every SET in the
+     * sender's attribute values before any signature is checked: seconds for
+     * a cap-sized value of nested SETs. RFC 5652 5.4 signs the DER encoding
+     * of the attributes, and a definite-length encoding of a DER input
+     * reproduces it.
+     */
+    private static final class SignedAsSent extends SignerInformation {
+        SignedAsSent(SignerInformation signer) {
+            super(signer);
+        }
+
+        @Override
+        public byte @Nullable [] getEncodedSignedAttributes() throws IOException {
+            return signedAttributeSet == null ? null : signedAttributeSet.getEncoded(ASN1Encoding.DL);
         }
     }
 
