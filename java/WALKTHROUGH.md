@@ -549,7 +549,7 @@ a genuine Apple sandbox receipt (case
 | 6 | `authenticatedTopDown` (8), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf, which vouches for nothing: only an accepted CA checks the next round. DNs are compared before any issuer key is decoded | none: a stranger is left out |
 | 7 | `ReceiptCertificates.signers`, `verifySigner` (9), `validateChain` (10) | The `sid` matches one certificate, the leaf. It is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `MALFORMED` if the `sid` matches nothing; `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
 | 8 | `AppleTrust.requireMarkers` | The leaf carries `...6.11.1`; `path.get(1)`, WWDR G5, carries `...6.2.1` | `INVALID_CERTIFICATE_PURPOSE`, also for a signer issued directly by a root |
-| 9 | `verifyCmsSignature` (11), `signerVerifier` (12) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist; a short denylist of costs (R20). Valid | `INVALID_SIGNATURE` |
+| 9 | `verifyCmsSignature` (11), `signerVerifier` (12) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist; a short denylist of costs. Valid | `INVALID_SIGNATURE` |
 | 10 | `parseSignedPayload` (13), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
 
 Steps 7 to 9 run per (SignerInfo, certificate) pair. Step 6 has no
@@ -709,9 +709,7 @@ it carries more than 1,000 extensions, or its own label is one of those
 labels or a salt its issuer's key cannot hold. A SignerInfo is left out
 for the same name and parameter shapes or more than 1,000 attributes.
 Passing over or leaving out only removes something: the receipt still
-needs Apple's signature under a pinned chain. Each refusal, with what it
-cost and why no Apple input is affected, is in R20 of
-`docs/rust-core/DECISIONS.md`.
+needs Apple's signature under a pinned chain.
 
 **Startup checks.** `Verifier.create` (`DefaultVerifier`'s constructor)
 throws at deployment instead of failing per call: a Jackson or BouncyCastle
@@ -770,7 +768,7 @@ settings still apply; none can make a forged signature verify
    in one PR. Never edit a case to make the code pass.
 8. **Know the accepted risks.** No revocation; a back-dated payload under a
    leaked historical key; the pre-trust parse cost; SHA-1; no
-   signer-algorithm allowlist, only a short denylist of costs (R20);
+   signer-algorithm allowlist, only a short denylist of costs;
    `crit` and high-S. Each has a recorded
    reason.
 

@@ -523,8 +523,7 @@ procedure does not ask for them; the library requires them on receipts too. Not 
 Apple's PKI page carries the first. "Apple Worldwide Developer Relations
 CA - G2" (ECC, under Apple Root CA - G3) carries
 1.2.840.113635.100.6.2.15 instead, so a leaf under it is
-`INVALID_CERTIFICATE_PURPOSE` here and in the Rust core, as it is in
-Apple's library.
+`INVALID_CERTIFICATE_PURPOSE` here, as it is in Apple's library.
 
 Revocation is not checked: no OCSP, no CRL. Offline verification is the
 point; Apple handles a compromised signing certificate by rotating it, and
