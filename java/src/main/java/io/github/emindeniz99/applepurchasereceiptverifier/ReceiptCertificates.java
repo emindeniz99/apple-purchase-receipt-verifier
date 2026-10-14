@@ -14,7 +14,6 @@ import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.x500.style.BCStrictStyle;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
-import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
 
@@ -45,9 +44,8 @@ final class ReceiptCertificates {
      * the receipt: MALFORMED, whichever certificate it was meant to be. One
      * over the cap is passed over before it is parsed, decodable or not.
      */
-    static ReceiptCertificates decode(CMSSignedData cms) throws VerificationException {
-        ASN1Set certificateSet =
-                SignedData.getInstance(cms.toASN1Structure().getContent()).getCertificates();
+    static ReceiptCertificates decode(SignedData signedData) throws VerificationException {
+        ASN1Set certificateSet = signedData.getCertificates();
         int embeddedCount = certificateSet == null ? 0 : certificateSet.size();
         if (embeddedCount > MAX_EMBEDDED_CERTIFICATES) {
             throw new VerificationException(
@@ -100,8 +98,8 @@ final class ReceiptCertificates {
      * quadratic in the RDN count of two names nobody has authenticated yet.
      * So a SignerId listing the certificate's RDNs in another order names
      * no certificate. Both names hold strings only, the SignerId's checked
-     * in ReceiptCore and every certificate's in {@link #decode}, so the
-     * comparison re-encodes no value.</p>
+     * by {@link PreTrustScreen#appleShaped} and every certificate's in
+     * {@link #decode}, so the comparison re-encodes no value.</p>
      */
     List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();

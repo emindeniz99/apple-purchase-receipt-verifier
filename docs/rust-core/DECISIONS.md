@@ -912,14 +912,14 @@ cRLDistributionPoints, 2026-10-06).
   and the attribute tables for a copy of Apple's SignerInfo that anyone
   relaying a receipt can append unsigned attributes to. The review
   estimated about 10^5 extensions under the 3 MiB cap; nothing was
-  measured. `PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS` (1,000) is
+  measured. `PreTrustScreen.MAX_OID_TABLE_ENTRIES` (1,000) is
   counted on the raw TBS before `Certificate.getInstance`: a bag entry
   over it is skipped, as one `PreTrustScreen.convertible` rejects, and an x5c
   leaf or intermediate over it stands for nothing (`UNTRUSTED_CHAIN`);
-  an x5c[2] is never read. The count comes first because the parse is
+  an x5c[2] is decoded but never used. The count comes first because the parse is
   what builds the table, so an entry over the cap is passed over even
   when the rest of it would not parse, a row in the table above.
-  `ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES` (1,000, signed and unsigned
+  The same cap (1,000, signed and unsigned
   together) leaves a SignerInfo out before BouncyCastle reads its
   attributes, `MALFORMED`, "signer certificate not embedded", when none
   is left. At either cap a table costs about a million comparisons,

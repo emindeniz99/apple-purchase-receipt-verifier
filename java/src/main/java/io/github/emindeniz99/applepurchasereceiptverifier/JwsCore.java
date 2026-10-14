@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.JsonToken;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
@@ -18,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.cert.X509CertificateHolder;
@@ -157,8 +155,7 @@ final class JwsCore {
 
     /**
      * Reads the payload as one JSON object with nothing after it, once, for
-     * everything this class needs of it. Package-private so the class can be
-     * driven directly.
+     * everything this class needs of it.
      */
     static Payload readPayload(byte[] payload) throws VerificationException {
         Payload read = new Payload();
@@ -249,14 +246,11 @@ final class JwsCore {
             if (token != JsonToken.START_OBJECT) {
                 return;
             }
-            while (parser.nextToken() == JsonToken.FIELD_NAME) {
-                String name = parser.currentName();
-                JsonToken member = parser.nextToken();
+            JsonFields.members(parser, (name, member, p) -> {
                 if ("environment".equals(name)) {
-                    state(member, parser);
+                    state(member, p);
                 }
-                parser.skipChildren();
-            }
+            });
         }
     }
 
@@ -344,24 +338,11 @@ final class JwsCore {
         if (intermediate.getBasicConstraints() == -1) {
             throw new VerificationException(Reason.UNTRUSTED_CHAIN, "intermediate certificate is not a CA");
         }
-        if (leaf == null || !AppleTrust.signedBy(leaf, decodeKey(intermediate, 1))) {
+        if (leaf == null || !AppleTrust.signedBy(leaf, AppleTrust.decodeKey(intermediate, "x5c[1]"))) {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");
         }
-        decodeKey(leaf, 0);
-    }
-
-    /**
-     * The key of an x5c entry whose signature has already verified; one no
-     * decoder accepts is its verdict. BouncyCastle throws for a key that does
-     * not decode and returns null for a key algorithm it does not know.
-     */
-    private static PublicKey decodeKey(X509Certificate certificate, int index) throws VerificationException {
-        try {
-            return Objects.requireNonNull(certificate.getPublicKey(), "unknown public key algorithm");
-        } catch (RuntimeException e) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + index + "] does not decode", e);
-        }
+        AppleTrust.decodeKey(leaf, "x5c[0]");
     }
 
     private static void validateChain(

@@ -12,31 +12,28 @@ import java.nio.charset.StandardCharsets;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The one streaming read of a JSON object's top-level members, shared by the
- * JWS header and payload and the verifyReceipt request body, so a repeated
- * name resolves the same way (the last one wins) in all three. What follows
- * the object is each caller's own decision.
+ * The one streaming read of a JSON object's members, shared by the JWS
+ * header, the payload and its {@code data} and {@code summary} objects, and
+ * the verifyReceipt request body, so a repeated name resolves the same way
+ * (the last one wins) in all of them. What follows the object is each
+ * caller's own decision.
  */
 final class JsonFields {
 
     private JsonFields() {}
 
-    /** The one factory every reader and the endpoint writer use; immutable once built. */
-    static final JsonFactory JSON = factory();
-
     /**
-     * A factory with Jackson's own default constraints, built rather than
+     * The one factory every reader and the endpoint writer use; immutable once
+     * built. Its constraints are Jackson's own defaults, built rather than
      * inherited so a host's process-wide
      * {@code StreamReadConstraints.overrideDefaultStreamReadConstraints} (or
      * its {@code StreamWriteConstraints} twin) cannot change a verdict or
      * fail a response.
      */
-    static JsonFactory factory() {
-        return JsonFactory.builder()
-                .streamReadConstraints(StreamReadConstraints.builder().build())
-                .streamWriteConstraints(StreamWriteConstraints.builder().build())
-                .build();
-    }
+    static final JsonFactory JSON = JsonFactory.builder()
+            .streamReadConstraints(StreamReadConstraints.builder().build())
+            .streamWriteConstraints(StreamWriteConstraints.builder().build())
+            .build();
 
     /** Called with each member's name and first value token; may consume the value. */
     interface Visitor {
@@ -52,12 +49,21 @@ final class JsonFields {
         if (parser.nextToken() != JsonToken.START_OBJECT) {
             return false;
         }
+        members(parser, visitor);
+        return true;
+    }
+
+    /**
+     * Hands each member of the object whose opening brace {@code parser} is
+     * on to {@code visitor}, in order, and leaves the parser on its closing
+     * brace.
+     */
+    static void members(JsonParser parser, Visitor visitor) throws IOException {
         while (parser.nextToken() == JsonToken.FIELD_NAME) {
             String name = parser.currentName();
             visitor.field(name, parser.nextToken(), parser);
             parser.skipChildren();
         }
-        return true;
     }
 
     /**

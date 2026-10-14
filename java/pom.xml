@@ -62,7 +62,7 @@
     <bouncycastle.version>1.86</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsCore and Endpoint read unsigned JSON
          under Jackson's default StreamReadConstraints, built into their
-         own factory (JsonFields.factory) so a process-wide override
+         own factory (JsonFields.JSON) so a process-wide override
          does not reach it. The factory's constraints and the member-name
          bound are 2.16 API, so a host BOM pinning an older Jackson 2 fails to link,
          and Verifier.create throws IllegalStateException below 2.16.

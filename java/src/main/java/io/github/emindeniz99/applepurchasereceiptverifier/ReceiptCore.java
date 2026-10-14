@@ -18,7 +18,6 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
@@ -27,9 +26,7 @@ import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
-import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
 import org.bouncycastle.asn1.cms.SignedData;
-import org.bouncycastle.asn1.cms.SignerIdentifier;
 import org.bouncycastle.asn1.cms.SignerInfo;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.iso.ISOIECObjectIdentifiers;
@@ -55,7 +52,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * The receipt half of {@link Verifier#verifyReceipt}, offline, against the
  * pinned roots. Stateless; every cryptographic step uses
- * {@link BouncyCastle#PROVIDER}.
+ * {@link BouncyCastle#PROVIDER}. The shapes screened before trust, a
+ * SignerInfo's among them, are in {@link PreTrustScreen}.
  */
 final class ReceiptCore {
 
@@ -63,21 +61,11 @@ final class ReceiptCore {
     static final int MAX_SIGNER_INFOS = 4;
 
     /**
-     * The most attributes a SignerInfo may carry, signed and unsigned
-     * together, counted before BouncyCastle reads each set into the same
-     * OID-keyed table as a certificate's extensions, at the cost
-     * {@link PreTrustScreen#MAX_CERTIFICATE_EXTENSIONS} gives. The unsigned
-     * attributes are anyone's to add; Apple's receipt SignerInfos carry
-     * none. A SignerInfo over it is left out.
-     */
-    static final int MAX_SIGNER_INFO_ATTRIBUTES = 1000;
-
-    /**
      * The largest receipt accepted: the base64 text's length in UTF-8 bytes,
      * checked before it is decoded. The figure is Apple's limit on a whole
-     * verifyReceipt body ({@link Endpoint#MAX_REQUEST_BYTES}).
+     * verifyReceipt body.
      */
-    static final int MAX_RECEIPT_BYTES = Endpoint.MAX_REQUEST_BYTES;
+    static final int MAX_RECEIPT_BYTES = 3145728;
 
     /**
      * Digest algorithms a SignerInfo's digestAlgorithm or signatureAlgorithm
@@ -146,7 +134,8 @@ final class ReceiptCore {
             throws VerificationException {
         CMSSignedData cms = parseCms(receiptDer);
         byte[] payload = encapsulatedPayload(cms);
-        List<SignerInformation> signers = signerInfos(cms);
+        SignedData signedData = SignedData.getInstance(cms.toASN1Structure().getContent());
+        List<SignerInformation> signers = signerInfos(signedData);
         // The one payload read before trust: the sender's own creation date
         // picks the instant the chain must be valid at. That only moves the
         // validity window; the signature and the chain to a pinned root are
@@ -154,7 +143,7 @@ final class ReceiptCore {
         // moves the instant to the clock.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
         Date at = new Date(creationDate != null ? creationDate : now);
-        ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
+        ReceiptCertificates certificates = ReceiptCertificates.decode(signedData);
         // Signer-independent, so walked once for every SignerInfo.
         List<X509Certificate> authenticated = authenticatedTopDown(certificates.all(), trustAnchors);
         // Every SignerInfo signs the same content, so one passing is enough;
@@ -199,8 +188,7 @@ final class ReceiptCore {
         return (byte[]) content;
     }
 
-    private static List<SignerInformation> signerInfos(CMSSignedData cms) throws VerificationException {
-        SignedData signedData = SignedData.getInstance(cms.toASN1Structure().getContent());
+    private static List<SignerInformation> signerInfos(SignedData signedData) throws VerificationException {
         ASN1Set raw = signedData.getSignerInfos();
         if (raw.size() > MAX_SIGNER_INFOS) {
             throw new VerificationException(
@@ -210,7 +198,7 @@ final class ReceiptCore {
         List<SignerInformation> signers = new ArrayList<>();
         for (int i = 0; i < raw.size(); i++) {
             ASN1Encodable entry = raw.getObjectAt(i);
-            if (appleShaped(SignerInfo.getInstance(entry))) {
+            if (PreTrustScreen.appleShaped(SignerInfo.getInstance(entry))) {
                 signers.add(oneSigner(signedData, entry));
             }
         }
@@ -218,40 +206,6 @@ final class ReceiptCore {
             throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
         }
         return signers;
-    }
-
-    /**
-     * Whether {@code info} has a shape Apple issues. One that does not names
-     * no Apple certificate and is left out before BouncyCastle does
-     * super-linear work on it.
-     */
-    private static boolean appleShaped(SignerInfo info) {
-        // Hashing a SignerId, and comparing its issuer with each
-        // certificate's, re-encodes every issuer value that is not a
-        // string, at a cost that grows with its nesting: up to 10 s for
-        // one cap-sized value. Every name Apple issues holds strings, so
-        // such an issuer names no Apple certificate, and its SignerInfo
-        // is left out before either.
-        SignerIdentifier sid = info.getSID();
-        if (!sid.isTagged()
-                && !PreTrustScreen.stringsOnly(
-                        IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
-            return false;
-        }
-        // BouncyCastle compares these parameters with the
-        // CMSAlgorithmProtection attribute's, which sorts a SET on both
-        // sides, and no digest or signature algorithm defines one.
-        if (PreTrustScreen.holdsSet(info.getDigestAlgorithm().getParameters())
-                || PreTrustScreen.holdsSet(info.getDigestEncryptionAlgorithm().getParameters())) {
-            return false;
-        }
-        // Counted before BouncyCastle builds its tables of them.
-        return size(info.getAuthenticatedAttributes()) + size(info.getUnauthenticatedAttributes())
-                <= MAX_SIGNER_INFO_ATTRIBUTES;
-    }
-
-    private static int size(@Nullable ASN1Set attributes) {
-        return attributes == null ? 0 : attributes.size();
     }
 
     /**
@@ -371,15 +325,7 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
         }
-        try {
-            // BouncyCastle throws for a key that does not decode and returns
-            // null for a key algorithm it does not know; neither can check
-            // the signature.
-            Objects.requireNonNull(signerCert.getPublicKey(), "unknown public key algorithm");
-        } catch (RuntimeException e) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE, "receipt signer certificate does not decode", e);
-        }
+        AppleTrust.decodeKey(signerCert, "receipt signer certificate");
         try {
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);

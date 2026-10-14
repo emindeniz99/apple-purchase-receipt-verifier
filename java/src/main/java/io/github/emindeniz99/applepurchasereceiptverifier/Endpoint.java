@@ -13,8 +13,12 @@ import org.jspecify.annotations.Nullable;
  */
 final class Endpoint {
 
-    /** Apple's own limit, in UTF-8 bytes (it answers HTTP 413 above it); this answers 21002. */
-    static final int MAX_REQUEST_BYTES = 3145728;
+    /**
+     * The largest request body, in UTF-8 bytes: the receipt's cap, which is
+     * Apple's own limit on the body (it answers HTTP 413 above it); this
+     * answers 21002.
+     */
+    static final int MAX_REQUEST_BYTES = ReceiptCore.MAX_RECEIPT_BYTES;
 
     private Endpoint() {}
 
