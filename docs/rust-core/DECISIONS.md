@@ -871,19 +871,18 @@ cRLDistributionPoints, 2026-10-06).
   verifier: with 2,147,483,647 an `OutOfMemoryError` out of
   `verifyReceipt` from a 3.5 KB receipt and out of `verifySignedData`
   from a 2.3 KB JWS, and with 1,000,000,000 about 1 GB and 1 to 20 s a
-  call while the receipt verified. `AppleTrust.signedBy` now requires
-  the outer signatureAlgorithm to equal the TBS's (RFC 5280 4.1.1.2) and
-  passes over a PSS label whose saltLength exceeds emLen - hLen - 2 for
-  the issuer's RSA key (RFC 8017 9.1.2), or whose issuer key is not RSA,
-  before anything is built. BouncyCastle itself refuses a TBS label that
-  differs from the outer one before it allocates
-  (`X509SignatureUtil.areEquivalentAlgorithms`); the equality check
-  makes that independent of `org.bouncycastle.x509.allow_absent_equiv_NULL`,
-  and the salt bound is what covers a PSS label that agrees inside and
-  out. The bound also refuses a negative
-  saltLength, which review found: BouncyCastle reads only its low 32
-  bits, so -3,294,967,296 passed as short and allocated 1,000,000,000
-  bytes, an `OutOfMemoryError` at `-Xmx1g` in about 1 s, now refused in
+  call while the receipt verified. `AppleTrust.signedBy` now passes over
+  a PSS label whose saltLength exceeds emLen - hLen - 2 for the issuer's
+  RSA key (RFC 8017 9.1.2), or whose issuer key is not RSA, before
+  anything is built. BouncyCastle refuses a TBS label that differs from
+  the outer one before it allocates
+  (`X509SignatureUtil.areEquivalentAlgorithms`), so Java no longer
+  repeats that check (owner, 2026-10-14, Q181 a), and the salt bound
+  covers a PSS label that agrees inside and out. The bound also refuses
+  a negative saltLength, which review found: BouncyCastle reads only its
+  low 32 bits, so -3,294,967,296 passed as short and allocated
+  1,000,000,000 bytes, an `OutOfMemoryError` at `-Xmx1g` in about 1 s,
+  now refused in
   milliseconds. The bound comes from the key and the label's
   hash, so a PSS-signed Apple CA would still verify. OpenSSL refuses
   such a signature in the core, and
@@ -1004,7 +1003,13 @@ cRLDistributionPoints, 2026-10-06).
   verify MD2 at all (OpenSSL 4 has none), so the verdicts agree: a
   stranger with that label is passed over and the receipt is ok
   (`receipt/accept-genuine-beside-a-stranger-labelled-md2-with-rsa`),
-  and a chain link with it is `UNTRUSTED_CHAIN` in both.
+  and a chain link with it is `UNTRUSTED_CHAIN` in both. Since Q180 a
+  (owner, 2026-10-14) the rule is one list: a label is refused when the
+  digest it names, resolved with BouncyCastle's
+  `DefaultDigestAlgorithmIdentifierFinder`, is in `REFUSED_DIGESTS`,
+  which covers a GOST R 34.11-94 label under an EC root, where
+  BouncyCastle's own aliases verified it at about 10 times SHA-256
+  over the TBS (measured 2026-10-14, 413 ms for 3 MiB against 40 ms).
 
   Two shared policies are recorded here, not divergences (round-3
   vendor review, 2026-10-14; the owner decides later whether to change

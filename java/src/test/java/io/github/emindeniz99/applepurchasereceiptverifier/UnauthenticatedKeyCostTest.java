@@ -15,6 +15,7 @@ import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPrivateKey;
 import java.security.spec.ECPrivateKeySpec;
@@ -73,7 +74,6 @@ import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.bouncycastle.util.CollectionStore;
-import org.bouncycastle.util.Properties;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -736,10 +736,9 @@ class UnauthenticatedKeyCostTest {
         // RFC 5280 4.1.1.2: the outer signatureAlgorithm must equal the TBS
         // signature field, which the signature covers. The root signed this
         // TBS, labelled sha256WithRSAEncryption with NULL parameters, and the
-        // outer label is the same OID with none. BouncyCastle refuses a
-        // mismatch itself unless org.bouncycastle.x509.allow_absent_equiv_NULL
-        // is set, and then it verifies this one; signedBy compares the
-        // encodings, so its answer does not move with the property.
+        // outer label is the same OID with none. BouncyCastle refuses the
+        // mismatch before it builds a verifier, and signedBy leaves that
+        // check to it.
         TestPki pki = TestPki.receipt();
         org.bouncycastle.asn1.x509.Certificate signed = new X509v3CertificateBuilder(
                         subject(pki.root),
@@ -756,14 +755,9 @@ class UnauthenticatedKeyCostTest {
                     new AlgorithmIdentifier(PKCSObjectIdentifiers.sha256WithRSAEncryption),
                     signed.getSignature()
                 }))));
-        String absentIsNull = "org.bouncycastle.x509.allow_absent_equiv_NULL";
-        Properties.setThreadOverride(absentIsNull, true);
-        try {
-            relabelled.verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER);
-            assertFalse(AppleTrust.signedBy(relabelled, pki.root.getPublicKey()));
-        } finally {
-            Properties.removeThreadOverride(absentIsNull);
-        }
+        assertThrows(
+                CertificateException.class, () -> relabelled.verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER));
+        assertFalse(AppleTrust.signedBy(relabelled, pki.root.getPublicKey()));
     }
 
     /**

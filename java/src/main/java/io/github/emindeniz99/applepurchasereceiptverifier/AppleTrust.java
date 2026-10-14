@@ -1,6 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import java.io.IOException;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -22,8 +21,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
@@ -174,13 +171,12 @@ final class AppleTrust {
      *
      * <p>The certificate must be one {@link BouncyCastle#PROVIDER} built;
      * another provider's returns false. Its signature algorithm is its own
-     * choice and stays unsigned until this returns. So the label inside the
-     * TBS, which the signature covers, must equal the outer one (RFC 5280
-     * 4.1.1.2), and its saltLength must fit {@code issuerKey}
-     * ({@link #saltFits}). A certificate labelled
+     * choice and stays unsigned until this returns, so its saltLength must
+     * fit {@code issuerKey} ({@link #saltFits}), and a certificate labelled
      * {@link #GENERIC_COMPOSITE_SIGNATURE}, or with a label that names a
      * refused digest ({@link ReceiptCore#namesRefusedDigest}), is signed by
-     * nobody.</p>
+     * nobody. The label read is the TBS's: BouncyCastle refuses an outer
+     * label that differs from it before it builds a verifier.</p>
      */
     static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
         try {
@@ -188,21 +184,14 @@ final class AppleTrust {
             // catch below as "not signed".
             AlgorithmIdentifier signed =
                     ((BCX509Certificate) certificate).getTBSCertificateNative().getSignature();
-            ASN1Encodable parameters = signed.getParameters();
             if (GENERIC_COMPOSITE_SIGNATURE.equals(signed.getAlgorithm().getId())
                     || ReceiptCore.namesRefusedDigest(signed)
-                    || !signed.getAlgorithm().getId().equals(certificate.getSigAlgOID())
-                    || !Arrays.equals(
-                            parameters == null
-                                    ? null
-                                    : parameters.toASN1Primitive().getEncoded(ASN1Encoding.DER),
-                            certificate.getSigAlgParams())
                     || !saltFits(signed, issuerKey)) {
                 return false;
             }
             certificate.verify(issuerKey, BouncyCastle.PROVIDER);
             return true;
-        } catch (GeneralSecurityException | IOException | RuntimeException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
             // Not signed by this key, or a key verify cannot use (null for
             // an algorithm BouncyCastle does not know, which verify refuses).
             return false;

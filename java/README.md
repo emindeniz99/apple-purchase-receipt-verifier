@@ -1096,6 +1096,12 @@ between calls) and every `Signature`.
   RSASSA-PSS salt the key cannot hold there. Tests:
   `UnauthenticatedKeyCostTest.aSignerInfoWithAnEacPssLabelAndAHugeSaltIsRefusedBeforeAnythingIsAllocated`,
   `UnauthenticatedKeyCostTest.aSignerInfoWithACompositeLabelOfManyPartsIsRefusedBeforeTheContentIsRead`.
+- `X509Certificate.verify` refuses a certificate whose outer
+  signatureAlgorithm differs from its TBS's before it builds a verifier
+  from the outer one. `AppleTrust.signedBy` screens the TBS label (the
+  composite and refused-digest labels, `AppleTrust.saltFits`) and relies
+  on this for the outer one. Test:
+  `UnauthenticatedKeyCostTest.aCertificateWhoseOuterLabelDiffersFromItsTbsLabelIsSignedByNobody`.
 - A certificate's extensions and a SignerInfo's attributes go into a
   `java.util.Hashtable` keyed by OID, where OIDs of one hash make building
   the table quadratic. `PreTrustScreen.MAX_OID_TABLE_ENTRIES` is set from an
