@@ -5,11 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -28,6 +33,7 @@ import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERUTCTime;
 import org.bouncycastle.asn1.DERUTF8String;
@@ -56,6 +62,7 @@ import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSProcessableByteArray;
 import org.bouncycastle.cms.CMSSignedDataGenerator;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder;
@@ -63,8 +70,10 @@ import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.bouncycastle.util.CollectionStore;
+import org.bouncycastle.util.Properties;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 /**
  * Certificates nobody trusted yet must cost almost nothing to reject.
@@ -298,10 +307,7 @@ class UnauthenticatedKeyCostTest {
         // Less a margin for the longer length octets of the larger content.
         byte[] receipt = slowDigestReceipt(CAP_DER - overhead - 64, signers, embedded);
 
-        long start = System.nanoTime();
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
-        assertFast(start);
+        VerificationException e = refusedFast(pki, receipt);
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
         assertEquals("CMS verifier refused the signer info: digest 1.2.643.2.2.9 is refused", e.getMessage());
     }
@@ -492,10 +498,7 @@ class UnauthenticatedKeyCostTest {
                 new DERSet(attributes),
                 new AlgorithmIdentifier(PKCSObjectIdentifiers.md2WithRSAEncryption, DERNull.INSTANCE));
 
-        long start = System.nanoTime();
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
-        assertFast(start);
+        VerificationException e = refusedFast(pki, receipt);
         assertEquals(Reason.INVALID_SIGNATURE, e.reason(), e.getMessage());
         assertEquals(
                 "CMS verifier refused the signer info: signature algorithm 1.2.840.113549.1.1.2 is refused",
@@ -512,6 +515,7 @@ class UnauthenticatedKeyCostTest {
         // A negative salt passes the upper bound, and BouncyCastle reads only
         // its low 32 bits, 1,000,000,000: refused by its sign on this route
         // too.
+        assertNegativeSaltFitsNoKey();
         for (long saltLength : new long[] {1_000_000_000, NEGATIVE_SALT}) {
             assertSaltRefusedQuickly(pss(saltLength));
         }
@@ -595,6 +599,63 @@ class UnauthenticatedKeyCostTest {
     }
 
     @Test
+    void aCapSizedBagEntryLabelledMd2WithRsaBesideCopiesOfTheRootIsPassedOverQuickly() throws Exception {
+        // A certificate's signature label is as unsigned as a SignerInfo's,
+        // and BouncyCastle runs the digest it names over the TBS before it
+        // compares a signature byte, once for every issuer whose name
+        // matches. Every CA the walk accepted became an issuer, byte-identical
+        // copies of the root included. The bag fills up with copies of the
+        // root beside the genuine chain, and one stranger of about 2.3 MB
+        // naming the root as its issuer, labelled md2WithRSAEncryption: MD2
+        // once under the anchor and once under each copy, before anything
+        // was trusted. The label is now signed by nobody, and a copy of a
+        // certificate already vouching vouches no further.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        AlgorithmIdentifier md2WithRsa =
+                new AlgorithmIdentifier(PKCSObjectIdentifiers.md2WithRSAEncryption, DERNull.INSTANCE);
+        int overhead = md2BesideRootCopies(pki, genuine, md2WithRsa, 1000).length - 1000;
+        byte[] receipt = md2BesideRootCopies(pki, genuine, md2WithRsa, CAP_DER - overhead - 64);
+        acceptedFast(pki, receipt);
+
+        // The same label on a certificate the root really signed, which
+        // BouncyCastle verifies: refused by its label alone.
+        X509Certificate signed = bouncyCastle(new X509v3CertificateBuilder(
+                        subject(pki.root),
+                        new BigInteger(64, RANDOM),
+                        pki.leaf.getNotBefore(),
+                        pki.leaf.getNotAfter(),
+                        new X500Name("CN=x"),
+                        key(pki.leaf))
+                .build(new JcaContentSignerBuilder("MD2withRSA").build(pki.rootKey)));
+        signed.verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER);
+        assertFalse(AppleTrust.signedBy(signed, pki.root.getPublicKey()));
+    }
+
+    /**
+     * {@code genuine} with its bag filled to the cap: its own certificates,
+     * copies of {@code pki}'s root, and a stranger naming the root as its
+     * issuer, labelled {@code label}, with one extension of {@code bytes}
+     * octets.
+     */
+    private static byte[] md2BesideRootCopies(TestPki pki, SignedData genuine, AlgorithmIdentifier label, int bytes)
+            throws Exception {
+        ASN1EncodableVector bag = new ASN1EncodableVector();
+        for (int i = 0; i < genuine.getCertificates().size(); i++) {
+            bag.add(genuine.getCertificates().getObjectAt(i));
+        }
+        ASN1Primitive root = ASN1Primitive.fromByteArray(pki.root.getEncoded());
+        while (bag.size() < ReceiptCertificates.MAX_EMBEDDED_CERTIFICATES - 1) {
+            bag.add(root);
+        }
+        bag.add(certificateShaped(
+                label, subject(pki.root), new X500Name("CN=x"), key(pki.leaf), new DLSequence(new ASN1Encodable[] {
+                    filler(0), new DEROctetString(new byte[bytes])
+                })));
+        return receipt(genuine, new DLSet(bag), genuine.getSignerInfos());
+    }
+
+    @Test
     void aJwsIntermediateLabelledCompositeWithManyPartsIsRefusedBeforeAnyPartIsBuilt() throws Exception {
         // The JWS twin: x5c[1] names an RSA root as its issuer, with as many
         // Ed25519 parts, the shortest identifier, as fit the JWS cap: 2.9 s
@@ -610,12 +671,98 @@ class UnauthenticatedKeyCostTest {
         String token = unsignedJws(jws.leaf.getEncoded(), intermediate, rsa.root.getEncoded());
         assertTrue(token.length() <= JwsCore.MAX_JWS_BYTES, "the JWS is over the cap: " + token.length());
 
-        long start = System.nanoTime();
-        VerificationException e =
-                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(rsa.root), token));
-        assertFast(start);
+        VerificationException e = refusedFast(() -> Checks.signedData(Checks.verifier(rsa.root), token));
         assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
         assertEquals("intermediate certificate is not signed by a pinned Apple root", e.getMessage());
+    }
+
+    @Test
+    void aJwsIntermediateLabelledCompositeIsUntrustedThoughBouncyCastleVerifiesIt() throws Exception {
+        // The test above decides by time alone, and a fast machine builds its
+        // parts under the bound. Here the root reissues the intermediate under
+        // the generic composite label with one part, ecdsa-with-SHA256, and
+        // that part's signature is the root's own: BouncyCastle verifies it.
+        // Only the refusal of the label keeps it from vouching for the leaf.
+        TestPki pki = TestPki.jws();
+        X509CertificateHolder intermediate = intermediateWithExtensions(
+                pki, 2, compositeOfOne(new JcaContentSignerBuilder("SHA256withECDSA").build(pki.rootKey)));
+        bouncyCastle(intermediate).verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER);
+        String token = pki.signJwsWithHeader(jwsHeader(pki, intermediate), "{}");
+
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(pki), token));
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+        assertEquals("intermediate certificate is not signed by a pinned Apple root", e.getMessage());
+    }
+
+    @Test
+    void aCertificateWhoseOuterLabelDiffersFromItsTbsLabelIsSignedByNobody() throws Exception {
+        // RFC 5280 4.1.1.2: the outer signatureAlgorithm must equal the TBS
+        // signature field, which the signature covers. The root signed this
+        // TBS, labelled sha256WithRSAEncryption with NULL parameters, and the
+        // outer label is the same OID with none. BouncyCastle refuses a
+        // mismatch itself unless org.bouncycastle.x509.allow_absent_equiv_NULL
+        // is set, and then it verifies this one; signedBy compares the
+        // encodings, so its answer does not move with the property.
+        TestPki pki = TestPki.receipt();
+        org.bouncycastle.asn1.x509.Certificate signed = new X509v3CertificateBuilder(
+                        subject(pki.root),
+                        new BigInteger(64, RANDOM),
+                        pki.leaf.getNotBefore(),
+                        pki.leaf.getNotAfter(),
+                        new X500Name("CN=x"),
+                        key(pki.leaf))
+                .build(new JcaContentSignerBuilder("SHA256withRSA").build(pki.rootKey))
+                .toASN1Structure();
+        X509Certificate relabelled = bouncyCastle(new X509CertificateHolder(
+                org.bouncycastle.asn1.x509.Certificate.getInstance(new DLSequence(new ASN1Encodable[] {
+                    signed.getTBSCertificate(),
+                    new AlgorithmIdentifier(PKCSObjectIdentifiers.sha256WithRSAEncryption),
+                    signed.getSignature()
+                }))));
+        String absentIsNull = "org.bouncycastle.x509.allow_absent_equiv_NULL";
+        Properties.setThreadOverride(absentIsNull, true);
+        try {
+            relabelled.verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER);
+            assertFalse(AppleTrust.signedBy(relabelled, pki.root.getPublicKey()));
+        } finally {
+            Properties.removeThreadOverride(absentIsNull);
+        }
+    }
+
+    /**
+     * {@code part} under the generic composite label of that one part, its
+     * signature a SEQUENCE of the part's one BIT STRING: the shape
+     * BouncyCastle verifies part by part under a key that is not composite.
+     */
+    private static ContentSigner compositeOfOne(ContentSigner part) {
+        return new ContentSigner() {
+            @Override
+            public AlgorithmIdentifier getAlgorithmIdentifier() {
+                return composite(part.getAlgorithmIdentifier(), 1);
+            }
+
+            @Override
+            public OutputStream getOutputStream() {
+                return part.getOutputStream();
+            }
+
+            @Override
+            public byte[] getSignature() {
+                try {
+                    return new DERSequence(new DERBitString(part.getSignature())).getEncoded(ASN1Encoding.DER);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            }
+        };
+    }
+
+    /** {@code holder} as BouncyCastle's X.509 object, the kind the verifier checks. */
+    private static X509Certificate bouncyCastle(X509CertificateHolder holder) throws Exception {
+        return new JcaX509CertificateConverter()
+                .setProvider(BouncyCastle.PROVIDER)
+                .getCertificate(holder);
     }
 
     /** The generic composite label with {@code parts} copies of {@code part}. */
@@ -678,6 +825,16 @@ class UnauthenticatedKeyCostTest {
     }
 
     /**
+     * A negative saltLength fits no key (RFC 8017 9.1.1). Asserted first by
+     * every test that sends one: without the sign check, BouncyCastle would
+     * allocate 1,000,000,000 bytes for it, the low 32 bits, and the
+     * OutOfMemoryError would end the test JVM rather than fail a test.
+     */
+    private static void assertNegativeSaltFitsNoKey() throws Exception {
+        assertFalse(AppleTrust.saltFits(pss(NEGATIVE_SALT), attacker.getPublic()), "a negative saltLength fits");
+    }
+
+    /**
      * Relabels the genuine signer's SignerInfo {@code label} and asserts the
      * receipt is refused quickly for a saltLength the signer's key cannot
      * hold.
@@ -725,6 +882,7 @@ class UnauthenticatedKeyCostTest {
         // root's 2048-bit key, so the entry is not signed by the root and the
         // genuine chain decides.
         TestPki pki = TestPki.receipt();
+        assertNegativeSaltFitsNoKey();
         for (long saltLength : new long[] {Integer.MAX_VALUE, 1_000_000_000, NEGATIVE_SALT}) {
             byte[] receipt = withBagEntry(
                     pki, certificateShaped(pss(saltLength), subject(pki.root), new X500Name("CN=x"), key(pki.leaf)));
@@ -741,6 +899,7 @@ class UnauthenticatedKeyCostTest {
         // signature is checked under the root's key, with the same allocation.
         TestPki jws = TestPki.jws();
         TestPki rsa = TestPki.receipt();
+        assertNegativeSaltFitsNoKey();
         for (long saltLength : new long[] {Integer.MAX_VALUE, NEGATIVE_SALT}) {
             byte[] intermediate = certificateShaped(
                             pss(saltLength), subject(rsa.root), new X500Name("CN=x"), key(jws.leaf))
@@ -763,6 +922,7 @@ class UnauthenticatedKeyCostTest {
         // signature is checked under the intermediate's key.
         TestPki jws = TestPki.jws();
         TestPki rsa = TestPki.receipt();
+        assertNegativeSaltFitsNoKey();
         for (long saltLength : new long[] {Integer.MAX_VALUE, NEGATIVE_SALT}) {
             byte[] leaf = certificateShaped(
                             pss(saltLength), subject(rsa.intermediate), new X500Name("CN=x"), key(jws.leaf))
@@ -873,6 +1033,36 @@ class UnauthenticatedKeyCostTest {
     }
 
     @Test
+    void aStrangerOverTheExtensionCapIsPassedOverBeforeItIsParsed() throws Exception {
+        // The test above holds with the count skipped too: that stranger
+        // parses and vouches for nothing. This one would not parse. The
+        // committed stranger beside Apple's G5 chain, its signature BIT
+        // STRING's unused-bits octet set to 1: BouncyCastle parses the
+        // certificate and then refuses that signature, which makes the
+        // receipt MALFORMED. Counted first, it is passed over and Apple's
+        // chain decides (DECISIONS.md R20).
+        byte[] receipt = Files.readAllBytes(
+                TestFixtures.publicReceipts().resolve("certificates/thousand-and-one-extensions-stranger.der"));
+        byte[] zeros = new byte[5 + 256];
+        zeros[0] = 0x03;
+        zeros[1] = (byte) 0x82;
+        zeros[2] = 0x01;
+        zeros[3] = 0x01;
+        int at = -1;
+        for (int i = 0; i + zeros.length <= receipt.length; i++) {
+            if (Arrays.equals(Arrays.copyOfRange(receipt, i, i + zeros.length), zeros)) {
+                assertEquals(-1, at, "two signatures of 256 zero octets");
+                at = i;
+            }
+        }
+        assertTrue(at >= 0, "the stranger's signature was not found");
+        receipt[at + 4] = 1;
+        assertEquals(
+                Environment.SANDBOX,
+                Checks.receipt(Verifier.create(Config.defaults()), receipt).environment());
+    }
+
+    @Test
     void everyExtensionsFieldOfTheTbsCounts() throws Exception {
         // BouncyCastle parses a [3] wherever it stands among the fields after
         // the key, so one placed before an issuerUniqueID is counted too.
@@ -925,6 +1115,31 @@ class UnauthenticatedKeyCostTest {
                         .length);
         assertFalse(ReceiptCertificates.tooManyExtensions(stranger));
         Checks.receipt(Checks.verifier(pki), withBagEntry(pki, stranger));
+    }
+
+    @Test
+    void aJwsIntermediateThatIsNotACaVouchesForNoLeaf() throws Exception {
+        // The root signs x5c[1], but as an end entity, whose key belongs to
+        // whoever it was issued to: it vouches for nothing, so the leaf's
+        // key is never decoded, as in the receipt walk.
+        TestPki pki = TestPki.jws();
+        X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
+                subject(pki.root),
+                new BigInteger(64, RANDOM),
+                pki.intermediate.getNotBefore(),
+                pki.intermediate.getNotAfter(),
+                subject(pki.intermediate),
+                key(pki.intermediate));
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+        builder.addExtension(new ASN1ObjectIdentifier(AppleTrustOids.INTERMEDIATE), false, DERNull.INSTANCE);
+        X509CertificateHolder endEntity =
+                builder.build(new JcaContentSignerBuilder("SHA256withECDSA").build(pki.rootKey));
+        String token = pki.signJwsWithHeader(jwsHeader(pki, endEntity), "{}");
+
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(pki), token));
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+        assertEquals("intermediate certificate is not a CA", e.getMessage());
     }
 
     @Test
@@ -1025,6 +1240,13 @@ class UnauthenticatedKeyCostTest {
      * with {@code total} extensions, the marker among them.
      */
     private static X509CertificateHolder intermediateWithExtensions(TestPki pki, int total) throws Exception {
+        return intermediateWithExtensions(
+                pki, total, new JcaContentSignerBuilder("SHA256withECDSA").build(pki.rootKey));
+    }
+
+    /** As {@link #intermediateWithExtensions(TestPki, int)}, signed by {@code root}. */
+    private static X509CertificateHolder intermediateWithExtensions(TestPki pki, int total, ContentSigner root)
+            throws Exception {
         X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
                 subject(pki.root),
                 new BigInteger(64, RANDOM),
@@ -1037,7 +1259,7 @@ class UnauthenticatedKeyCostTest {
         for (int i = 0; i < total - 2; i++) {
             builder.addExtension(filler(i), false, DERNull.INSTANCE);
         }
-        return builder.build(new JcaContentSignerBuilder("SHA256withECDSA").build(pki.rootKey));
+        return builder.build(root);
     }
 
     private static String jwsHeader(TestPki pki, X509CertificateHolder intermediate) throws Exception {
@@ -1276,11 +1498,16 @@ class UnauthenticatedKeyCostTest {
      * 0.9 s, and one garbage collection can double a single call.
      */
     private static VerificationException refusedFast(TestPki pki, byte[] receipt) {
+        return refusedFast(() -> Checks.receipt(Checks.verifier(pki), receipt));
+    }
+
+    /** As {@link #refusedFast(TestPki, byte[])}, for any call. */
+    private static VerificationException refusedFast(Executable call) {
         long best = Long.MAX_VALUE;
         VerificationException refused = null;
         for (int i = 0; i < 2; i++) {
             long start = System.nanoTime();
-            refused = assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+            refused = assertThrows(VerificationException.class, call);
             best = Math.min(best, (System.nanoTime() - start) / 1_000_000);
         }
         assertTrue(best < BOUND_MS, "took " + best + " ms");

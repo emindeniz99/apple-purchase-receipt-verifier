@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p><strong>Roots</strong> are the pinned trust anchors every chain must
  * reach; {@link #defaults()} uses the three Apple roots bundled with this
- * library, and tests substitute their own.</p>
+ * library, and a caller substitutes its own.</p>
  *
  * <p><strong>The clock</strong> answers "what time is it now?" and nothing
  * else. It is read once per call and used for two things: the
@@ -40,9 +40,9 @@ public final class Config {
     /**
      * Apple's three pinned roots and {@link Clock#systemUTC()}.
      *
-     * @throws LinkageError or {@link IllegalStateException} if the bundled
-     *     Apple roots do not load (a missing crypto library, or a root that
-     *     does not parse); they are parsed when first used
+     * @throws LinkageError if the bundled Apple roots cannot be loaded (a
+     *     missing crypto library, or a root that does not parse); they are
+     *     parsed when first used
      */
     public static Config defaults() {
         return builder().build();
@@ -122,9 +122,9 @@ public final class Config {
         }
 
         /**
-         * @throws LinkageError or {@link IllegalStateException} if no roots
-         *     were set and the bundled Apple roots do not load (a missing
-         *     crypto library, or a root that does not parse)
+         * @throws LinkageError if no roots were set and the bundled Apple
+         *     roots cannot be loaded (a missing crypto library, or a root
+         *     that does not parse)
          */
         public Config build() {
             // roots(...) already copied, and never touches a set it handed on.

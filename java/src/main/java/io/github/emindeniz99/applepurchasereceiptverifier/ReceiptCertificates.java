@@ -33,10 +33,11 @@ final class ReceiptCertificates {
      * distinct OIDs of one hash make building the table quadratic in their
      * number. Apple's certificates carry three to eight. Each insert scans
      * the bucket twice, so at this cap one table costs at most about a
-     * million OID comparisons, a few milliseconds, and a certificate's table
-     * is built at least twice: an estimate from the sources, not timed. A
-     * certificate over it is passed over, as one
-     * {@link AppleTrust#convertible} rejects.
+     * million OID comparisons, a few hundred milliseconds at the longest
+     * OIDs BouncyCastle admits (each comparison is {@code Arrays.equals}
+     * over up to 4,096 octets), and a certificate's table is built at least
+     * twice: an estimate from the sources, not timed. A certificate over it
+     * is passed over, as one {@link AppleTrust#convertible} rejects.
      */
     static final int MAX_CERTIFICATE_EXTENSIONS = 1000;
 

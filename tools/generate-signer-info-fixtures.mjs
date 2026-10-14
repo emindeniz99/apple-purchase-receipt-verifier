@@ -68,6 +68,11 @@
  *                                       1.3.6.1.4.1.99999.1.0 to .1000, each
  *                                       with an empty extnValue, and 256 zero
  *                                       octets as its signature
+ *   certificates/md2-with-rsa-stranger.der
+ *                                       the same stranger labelled
+ *                                       md2WithRSAEncryption
+ *                                       (1.2.840.113549.1.1.2), with 256 zero
+ *                                       octets as its signature
  */
 
 import { createHash } from 'node:crypto';
@@ -191,6 +196,7 @@ const strangerLabel = wrap(0x30, pss(Buffer.from('02047fffffff', 'hex'))); // IN
 const stranger = strangerWith(strangerLabel, Buffer.alloc(256));
 // INTEGER -3,294,967,296: two's complement in 5 octets, low 32 bits 0x3b9aca00.
 const negativeSaltStranger = strangerWith(wrap(0x30, pss(Buffer.from('0205ff3b9aca00', 'hex'))), Buffer.alloc(256));
+const md2Stranger = strangerWith(wrap(0x30, Buffer.from('06092a864886f70d0101020500', 'hex')), Buffer.alloc(256));
 const ecdsaWithSha256 = Buffer.from('300a06082a8648ce3d040302', 'hex');
 const compositeStranger = strangerWith(
   wrap(0x30, composite(ecdsaWithSha256, 300)),
@@ -233,6 +239,7 @@ const files = {
   'certificates/rsa-pss-negative-salt-stranger.der': withBagEntry(negativeSaltStranger),
   'certificates/generic-composite-stranger.der': withBagEntry(compositeStranger),
   'certificates/thousand-and-one-extensions-stranger.der': withBagEntry(crowded),
+  'certificates/md2-with-rsa-stranger.der': withBagEntry(md2Stranger),
 };
 for (const [name, bytes] of Object.entries(files)) {
   mkdirSync(dirname(join(OUT, name)), { recursive: true });

@@ -168,8 +168,8 @@ final class JwsCore {
 
     /**
      * Reads the payload as one JSON object with nothing after it, once, for
-     * everything this class needs of it. Package-private for the tests and
-     * the fuzz harness, which drive it directly.
+     * everything this class needs of it. Package-private so the class can be
+     * driven directly.
      */
     static Payload readPayload(byte[] payload) throws VerificationException {
         Payload read = new Payload();
@@ -358,6 +358,11 @@ final class JwsCore {
         if (intermediate == null || !AppleTrust.signedByAny(intermediate, AppleTrust.roots(trustAnchors))) {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "intermediate certificate is not signed by a pinned Apple root");
+        }
+        // Only a CA vouches further, as in the receipt walk. Reading
+        // basicConstraints decodes no key.
+        if (intermediate.getBasicConstraints() == -1) {
+            throw new VerificationException(Reason.UNTRUSTED_CHAIN, "intermediate certificate is not a CA");
         }
         if (leaf == null || !AppleTrust.signedBy(leaf, decodeKey(intermediate, 1))) {
             throw new VerificationException(

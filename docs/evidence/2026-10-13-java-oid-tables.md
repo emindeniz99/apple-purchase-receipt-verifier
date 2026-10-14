@@ -52,11 +52,21 @@ not build any, and no test does.
 | `ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES` | 1,000 | signed plus unsigned, on the raw `SignerInfo`, before `CMSSignedData` and `SignerInformation` are built | the SignerInfo is left out; `MALFORMED`, "signer certificate not embedded", when none is left |
 
 At the cap the worst case is about 1,000^2 = 10^6 comparisons per
-table, each over a few octets: a few milliseconds, an estimate from
-the sources and not timed. A certificate's table is built at least
-twice, by `Certificate.getInstance` and again by the CertificateFactory
-re-parse in `JcaX509CertificateConverter.getCertificate`. The receipt
-cap admits ten certificates and four SignerInfos, so the bound holds
+table, an estimate from the sources: the table itself was not built or
+timed. Each comparison is `Arrays.equals` over the OID's content
+octets, and BouncyCastle admits OIDs of up to 4,096 octets, so keys of
+one hash that share a long prefix are compared across all of it. The
+cost of one comparison was measured (2026-10-14, JDK 21, warm,
+[`2026-10-13-java-oid-tables/`](2026-10-13-java-oid-tables/)): 10^6 of
+two 3,000-octet OIDs that differ in the last octet take 73 to 84 ms,
+101 to 109 ms at 4,000 octets and 5 to 6 ms at 8. So one table at the
+cap costs roughly 85 to 170 ms (each insert scans the bucket twice),
+not the few milliseconds first estimated, and two tables per
+certificate make about 0.2 to 0.4 s per receipt at worst, because the
+3 MiB cap bounds the OID octets the bag can hold. That is under the
+2 s band. A certificate's table is built at least twice, by
+`Certificate.getInstance` and again by the CertificateFactory re-parse
+in `JcaX509CertificateConverter.getCertificate`. The receipt cap admits ten certificates and four SignerInfos, so the bound holds
 per receipt too.
 
 ## What Apple sends

@@ -694,7 +694,7 @@ cRLDistributionPoints, 2026-10-06).
   Over the same bytes on BouncyCastle 1.86 the eight cost 2.9 to 25
   times SHA-256 and every other digest it resolves at most 2.6 times.
   `DigestDenylistCostTest` re-measures that on every build against a
-  band, refused above 2.4 and allowed below 3.2, so a digest near the
+  band, refused above 2.4 and allowed below 4.0, so a digest near the
   boundary cannot flap. RIPEMD-160, now the slowest digest accepted,
   costs about 0.2 s warm at the cap ([digest cost][digestcost]). It is
   a denylist, so a fast digest added later needs no code change. The
@@ -849,7 +849,12 @@ cRLDistributionPoints, 2026-10-06).
   the outer signatureAlgorithm to equal the TBS's (RFC 5280 4.1.1.2) and
   passes over a PSS label whose saltLength exceeds emLen - hLen - 2 for
   the issuer's RSA key (RFC 8017 9.1.2), or whose issuer key is not RSA,
-  before anything is built. The bound also refuses a negative
+  before anything is built. BouncyCastle itself refuses a TBS label that
+  differs from the outer one before it allocates
+  (`X509SignatureUtil.areEquivalentAlgorithms`); the equality check
+  makes that independent of `org.bouncycastle.x509.allow_absent_equiv_NULL`,
+  and the salt bound is what covers a PSS label that agrees inside and
+  out. The bound also refuses a negative
   saltLength, which review found: BouncyCastle reads only its low 32
   bits, so -3,294,967,296 passed as short and allocated 1,000,000,000
   bytes, an `OutOfMemoryError` at `-Xmx1g` in about 1 s, now refused in
@@ -918,8 +923,15 @@ cRLDistributionPoints, 2026-10-06).
   together) leaves a SignerInfo out before BouncyCastle reads its
   attributes, `MALFORMED`, "signer certificate not embedded", when none
   is left. At either cap a table costs about a million comparisons,
-  since each insert scans the bucket twice: a few milliseconds, an
-  estimate from the sources, not timed.
+  since each insert scans the bucket twice, an estimate from the
+  sources; the table was not built. Each comparison is `Arrays.equals`
+  over up to 4,096 octets, and 10^6 comparisons of two 3,000-octet OIDs
+  differing in the last octet take 73 to 84 ms warm on JDK 21 (101 to
+  109 ms at 4,000 octets, 5 to 6 ms at 8). So one table at the cap is
+  roughly 85 to 170 ms, not the few milliseconds first estimated, and
+  two tables per certificate about 0.2 to 0.4 s per receipt at worst,
+  bounded by the 3 MiB cap and under the band (round-3 vendor review,
+  2026-10-14).
   Apple's certificates carry three to eight extensions and Apple's
   SignerInfo no attributes, so no Apple-signed input is refused for its
   own content; a row in the table above records Apple's SignerInfo with
@@ -951,6 +963,31 @@ cRLDistributionPoints, 2026-10-06).
   over the returned content under a chain to a pinned root. Reopen if
   Apple publishes a rule on SignerInfos or ships a receipt with more
   than one.
+
+  md2WithRSAEncryption as a certificate's signature label is refused
+  before any verify in Java (2026-10-14): `AppleTrust.signedBy` treats
+  such a certificate as signed by nobody, the label the SignerInfo
+  refusal above already names. BouncyCastle ran MD2 over the TBS once
+  per issuer whose name matched, and the receipt walk made every
+  accepted CA an issuer, copies of the root included: a cap-sized
+  stranger beside seven copies of the root cost 2.5 to 2.8 s a call
+  with nothing trusted, and 0.05 to 0.2 s after. A copy of a root or of
+  an earlier issuer is no longer tried as an issuer. The core cannot
+  verify MD2 at all (OpenSSL 4 has none), so the verdicts agree: a
+  stranger with that label is passed over and the receipt is ok
+  (`receipt/accept-genuine-beside-a-stranger-labelled-md2-with-rsa`),
+  and a chain link with it is `UNTRUSTED_CHAIN` in both.
+
+  Two shared policies are recorded here, not divergences (round-3
+  vendor review, 2026-10-14; the owner decides later whether to change
+  either). A bag entry that does not decode fails the whole receipt as
+  `MALFORMED` in both implementations, even when it is not the
+  signer's (`ReceiptCertificates.decode` in Java), unlike the entries
+  Java passes over for their cost. And an unknown critical extension
+  anywhere on the path refuses the chain in both, as RFC 5280 4.2
+  requires (`receipt/reject-intermediate-with-an-unknown-critical-extension`
+  and its `signed-data/` twin). Apple's two marker extensions are
+  non-critical today, so neither policy refuses anything Apple sends.
 
   Java aligned on four standard-allowed shapes (owner, Q69,
   2026-10-06). An audit found four places where Java refused

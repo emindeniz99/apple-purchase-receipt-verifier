@@ -510,6 +510,16 @@ A payload signed after Apple moves to a new root needs that root in the
 anchor set: bump this library, or pass your own set through
 `Config.builder().roots(...)`.
 
+A chain must also carry Apple's two marker OIDs, 1.2.840.113635.100.6.2.1
+on the intermediate and 1.2.840.113635.100.6.11.1 on the leaf, or the
+answer is `INVALID_CERTIFICATE_PURPOSE`. That is Apple's own rule: its
+`app-store-server-library` checks the same two. Not every intermediate on
+Apple's PKI page carries the first. "Apple Worldwide Developer Relations
+CA - G2" (ECC, under Apple Root CA - G3) carries
+1.2.840.113635.100.6.2.15 instead, so a leaf under it is
+`INVALID_CERTIFICATE_PURPOSE` here and in the Rust core, as it is in
+Apple's library.
+
 Revocation is not checked: no OCSP, no CRL. Offline verification is the
 point; Apple handles a compromised signing certificate by rotating it, and
 `INVALID_CERTIFICATE` is where a future revocation check would report a
@@ -572,7 +582,7 @@ and the rest are never reached):
 | `org.bouncycastle.asn1.max_cons_depth` | 64 | Lower refuses deeper input; below 9 it refuses every genuine receipt, so `Verifier.create` throws (see [Resource bounds](#resource-bounds)). Much higher lets the parser recurse deeper, up to a `StackOverflowError`, which is an `Error` and escapes the call | No |
 | `org.bouncycastle.asn1.max_limit` | sized from the input | Lower can only refuse input | No |
 | `org.bouncycastle.asn1.allow_unsafe_integer` | off | On accepts INTEGERs that are not minimally encoded. A padded integer in a signed payload then fills a typed field instead of staying raw. This loosens parsing, but only of content a valid signature covers | No |
-| `org.bouncycastle.x509.allow_non-der_tbscert` | unset: a certificate is verified as received | `false` re-encodes the TBSCertificate as DER before verifying it, so a genuinely signed certificate in another encoding fails. Stricter, and only on a JWS `x5c` entry: a receipt's embedded certificates are re-encoded as DER before BouncyCastle reads them (`ReceiptCertificates`), so there it changes nothing | No |
+| `org.bouncycastle.x509.allow_non-der_tbscert` | unset or `true`: the parsed TBS is re-encoded as DER for the signature check, on both paths, so a genuinely signed certificate sent in BER verifies | `false` rebuilds the TBS from its fields first, stricter. Neither can make a forged signature verify | No |
 | `org.bouncycastle.asn1.allow_non_der_time` | on: a UTCTime or GeneralizedTime not in DER form is written out as received | `false` throws where such a time must be written as DER, so input that carries one can be refused. Stricter | No |
 | `org.bouncycastle.x509.allow_empty_issuer_cert`, `org.bouncycastle.x509.ignore_repeated_extensions`, `org.bouncycastle.x509.allow_absent_equiv_NULL`, `org.bouncycastle.asn1.allow_zoneless_utctime`, `org.bouncycastle.asn1.allow_wrong_oid_enc` | off | On loosens certificate and time parsing: an empty issuer, a repeated extension (read on every certificate decode), absent and NULL algorithm parameters taken as equal. The certificate must still chain to a pinned root and verify | No |
 | `org.bouncycastle.pkcs1.strict_digestinfo` | off: the receipt's RSA check accepts a DigestInfo without its NULL parameters | On refuses that form. Stricter | No |
@@ -814,8 +824,10 @@ can build. These are warm-JVM figures; see
 machine was shared with other work, so treat them as an order of magnitude.
 
 The digest a SignerInfo declares is the sender's choice and is not
-signed, and BouncyCastle digests the whole content with it once per
-SignerInfo before any signature is checked. A cap-sized receipt with four
+signed, and BouncyCastle digests the whole content with it once for
+every certificate a SignerInfo names whose chain and markers pass, before
+that SignerInfo's signature is checked: once per SignerInfo when, as in
+Apple's receipts, one certificate matches. A cap-sized receipt with four
 SignerInfos naming Apple's public receipt-signing certificate and
 declaring GOST R 34.11-94 cost about 1.2 s warm and up to 1.8 s cold on
 Java 8, against about 0.09 s warm for SHA-256. The library now refuses
@@ -870,6 +882,12 @@ refused before anything is built. Under the generic composite label,
 BouncyCastle compared the whole list of parts once per part, so a bag
 entry with 20,000 parts cost 18 to 47 s from a 0.5 MB receipt that
 still verified; a certificate with that label is now signed by nobody.
+The label md2WithRSAEncryption made BouncyCastle run MD2 over the TBS
+once per issuer whose name matched, and every CA in the bag was an
+issuer, copies of the root included: a cap-sized stranger beside seven
+copies of the root cost about 2.5 s a call, measured on 2026-10-14. A
+certificate with that label is now signed by nobody, and a copy of a root
+or of an accepted CA is not tried as an issuer again: 0.05 to 0.2 s.
 BouncyCastle also DER-encoded a
 SignerInfo's signed attributes before checking its signature, 2.8 to 4.9
 s for one cap-sized nested attribute; they are now hashed as sent, 0.5
@@ -925,6 +943,8 @@ fixture machinery:
 | `pki.signReceipt(payload)` | CMS-signs a receipt payload with this chain |
 | `pki.signJws(claims)` | Signs claims as a compact ES256 JWS with this chain in `x5c` |
 | `pki.root` | The chain's trust anchor, to pin with `Config.builder().roots(...)` |
+| `pki.intermediate` | The chain's intermediate, which issued `pki.leaf` |
+| `pki.leaf` | The certificate that signs this chain's receipts and JWS |
 
 ```java
 package io.github.emindeniz99.applepurchasereceiptverifier;
@@ -977,7 +997,9 @@ to carry with it, in short:
    1.86+ release, and `org.jspecify:jspecify` (compile time only).
 3. To run the tests, copy `src/test/java`, add JUnit 5 and
    `jackson-databind` at test scope, and copy the repository's `fixtures/`
-   and `certs/` as siblings (below).
+   and `certs/` as siblings (below). Compile as UTF-8: the pom sets
+   `project.build.sourceEncoding`; a Gradle build sets `options.encoding`.
+   Some test sources hold non-ASCII text.
 4. On every BouncyCastle upgrade, re-check the behaviours listed below.
 
 **Dependency floors.** `jspecify` carries the `@Nullable` annotations; the
@@ -1037,9 +1059,11 @@ read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
 fixtures directory. If either directory is missing, the tests that read it
 fail with one message that names the path expected and points here; they do
 not skip. Two tests read the build itself, relative to the working
-directory, and need adapting to another layout: `BouncyCastleFloorTest`
-reads the `bouncycastle.version` pin in `pom.xml`, and
-`TrustStoreIsolationTest` scans `src/main/java` and `src/shared/java`.
+directory. `TrustStoreIsolationTest` scans whichever of `src/main/java`
+and `src/shared/java` exists, so step 1's merged root passes when it is
+`src/main/java`, and fails only when neither is there.
+`BouncyCastleFloorTest` reads the `bouncycastle.version` pin in
+`pom.xml`; it is the one test to adapt to your own build.
 
 **The generators are not tests, and `mvn test` writes nothing.** The 29
 classes named `*Fixture` or `*Fixtures` (other than `TestFixtures`) are
@@ -1068,8 +1092,8 @@ Two generators go with them, because a test compiles against each:
 `LargeReceiptFixture` (`InputSizeBoundsTest`) and `StandardShapeFixtures`
 (`StandardShapesTest`); both need only `TestPki` and `TestFixtures`.
 `FixtureGeneratorTest` and the other 27 `*Fixture(s)` classes can be left
-out: with them removed, the suite compiles and runs 644 tests with none
-skipped. `HostPolicyTest` and
+out: with them removed, the suite compiles and runs 696 tests with none
+skipped, `BouncyCastleFloorTest` among them. `HostPolicyTest` and
 `TrustStoreIsolationTest` start a child JVM from `java.home` and skip
 where there is no `java` binary there.
 
