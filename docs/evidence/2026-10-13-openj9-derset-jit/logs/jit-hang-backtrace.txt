@@ -1,0 +1,19 @@
+# Separate OpenJ9 0.61.0 JIT bug seen on this container, not on CI: a compilation thread
+# never finishes compiling org/bouncycastle/crypto/digests/SHA256Digest.processBlock()V at 'hot'
+# (verbose log: 'Compiling' with no matching end). Native stack of that thread (gdb), run s21-ci-03:
+# hundreds of identical recursive frames, then the JVM blocks at a GC or at exit.
+
+Thread 22 (LWP ...) "JIT Compilation":
+#0  TR_SinkStores::genStoreToTempSyms(TR::TreeTop*, TR::Node*, TR_BitVector*, TR_BitVector*, TR::Node*, List<TR_MovableStore>&) [clone .localalias] () from lib/default/libj9jit29.so
+#1  TR_SinkStores::genStoreToTempSyms(TR::TreeTop*, TR::Node*, TR_BitVector*, TR_BitVector*, TR::Node*, List<TR_MovableStore>&) [clone .localalias] () from lib/default/libj9jit29.so
+#2  TR_SinkStores::genStoreToTempSyms(TR::TreeTop*, TR::Node*, TR_BitVector*, TR_BitVector*, TR::Node*, List<TR_MovableStore>&) [clone .localalias] () from lib/default/libj9jit29.so
+#3  TR_SinkStores::genStoreToTempSyms(TR::TreeTop*, TR::Node*, TR_BitVector*, TR_BitVector*, TR::Node*, List<TR_MovableStore>&) [clone .localalias] () from lib/default/libj9jit29.so
+#4  TR_SinkStores::genStoreToTempSyms(TR::TreeTop*, TR::Node*, TR_BitVector*, TR_BitVector*, TR::Node*, List<TR_MovableStore>&) [clone .localalias] () from lib/default/libj9jit29.so
+... (identical frames continue)
+
+Run s21-trace-1 hung at exit after all tests passed. gdb attached by hand showed the same
+TR_SinkStores::genStoreToTempSyms frames on the JIT thread, and its verbose log has
+'(hot) Compiling org/bouncycastle/crypto/digests/SHA256Digest.processBlock()V ... t=28325'
+with no end line.
+
+Hangs per configuration are in results.txt (HANG). With -Xjit:disableStoreSinking: 0 hangs in 4 runs.

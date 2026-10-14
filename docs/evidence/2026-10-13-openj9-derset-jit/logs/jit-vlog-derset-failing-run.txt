@@ -1,0 +1,34 @@
+# JIT verbose log lines for DERSet in failing runs s21-vlog-2 and s21-vlog-3 (Semeru 21.0.12.15, OpenJ9 0.61.0).
+# 't=' on a 'Compiling' line is ms since JVM start (ignore the later memLimit field).
+# In the same run: the cost class's tests passed up to t=70813; the next test started at t=70814 and failed at t=72774 (0xFF).
+ (warm) Compiling org/bouncycastle/asn1/DERSet.getContentsLength()I  OrdinaryMethod  t=10391 compThreadID=2 memLimit=262144 KB freePhysicalMemory=13679 MB
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I OrdinaryMethod - Q_SZ=40 Q_SZI=39 QW=245 bcsz=63 compThreadID=2 CpuLoad=373%(93%avg) JvmCpu=106%
+ (warm) Compiling org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V  OrdinaryMethod  t=11290 compThreadID=1 memLimit=262144 KB freePhysicalMemory=13650 MB
++ (warm) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V OrdinaryMethod - Q_SZ=48 Q_SZI=48 QW=312 bcsz=184 OSR compThreadID=1 CpuLoad=400%(100%avg) JvmCpu=127%
+ (warm) Compiling org/bouncycastle/asn1/DERSet.encodedLength(Z)I  OrdinaryMethod  t=39704 compThreadID=0 memLimit=262144 KB freePhysicalMemory=14132 MB
++ (warm) org/bouncycastle/asn1/DERSet.encodedLength(Z)I OrdinaryMethod - Q_SZ=14 Q_SZI=14 QW=114 bcsz=9 OSR compThreadID=0 CpuLoad=355%(88%avg) JvmCpu=242%
+ (profiled very-hot) Compiling org/bouncycastle/asn1/DERSet.getContentsLength()I  OrdinaryMethod  t=64343 compThreadID=0 memLimit=262144 KB freePhysicalMemory=13701 MB
++ (profiled very-hot) org/bouncycastle/asn1/DERSet.getContentsLength()I OrdinaryMethod 55.50% T Q_SZ=0 Q_SZI=0 QW=100 bcsz=63 OSR JPROF compThreadID=0 CpuLoad=400%(100%avg) JvmCpu=85%
+ (scorching) Compiling org/bouncycastle/asn1/DERSet.getContentsLength()I  OrdinaryMethod  t=64579 compThreadID=0 memLimit=262144 KB freePhysicalMemory=13673 MB
++ (scorching) org/bouncycastle/asn1/DERSet.getContentsLength()I OrdinaryMethod J Q_SZ=0 Q_SZI=0 QW=100 bcsz=63 OSR compThreadID=0 CpuLoad=396%(99%avg) JvmCpu=106%
+ (profiled very-hot) Compiling org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V  OrdinaryMethod  t=65194 compThreadID=0 memLimit=262144 KB freePhysicalMemory=13657 MB
++ (profiled very-hot) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V OrdinaryMethod 36.50% T Q_SZ=0 Q_SZI=0 QW=100 bcsz=184 OSR JPROF compThreadID=0 CpuLoad=397%(99%avg) JvmCpu=159%
+ (scorching) Compiling org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V  OrdinaryMethod  t=70454 compThreadID=0 memLimit=262144 KB freePhysicalMemory=13672 MB
++ (scorching) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V OrdinaryMethod J Q_SZ=0 Q_SZI=0 QW=100 bcsz=184 OSR compThreadID=0 CpuLoad=400%(100%avg) JvmCpu=171%
+
+# Second failing run, s21-vlog-3: the cost class's tests passed up to t=93823 (24 s after the profiled very-hot
+# body of encode was compiled); the scorching compile of encode started at t=93597; the next test failed at t=95253.
+ (warm) Compiling org/bouncycastle/asn1/DERSet.getContentsLength()I  OrdinaryMethod  t=11988 compThreadID=1 memLimit=262144 KB freePhysicalMemory=13489 MB
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I OrdinaryMethod - Q_SZ=45 Q_SZI=45 QW=308 bcsz=63 OSR compThreadID=1 CpuLoad=314%(78%avg) JvmCpu=100%
+ (warm) Compiling org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V  OrdinaryMethod  t=12524 compThreadID=1 memLimit=262144 KB freePhysicalMemory=13465 MB
++ (warm) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V OrdinaryMethod - Q_SZ=37 Q_SZI=37 QW=244 bcsz=184 OSR compThreadID=1 CpuLoad=388%(97%avg) JvmCpu=182%
+ (warm) Compiling org/bouncycastle/asn1/DERSet.encodedLength(Z)I  OrdinaryMethod  t=42028 compThreadID=0 memLimit=262144 KB freePhysicalMemory=13675 MB
++ (warm) org/bouncycastle/asn1/DERSet.encodedLength(Z)I OrdinaryMethod - Q_SZ=24 Q_SZI=8 QW=180 bcsz=9 OSR compThreadID=0 CpuLoad=381%(95%avg) JvmCpu=92%
+ (profiled very-hot) Compiling org/bouncycastle/asn1/DERSet.getContentsLength()I  OrdinaryMethod  t=68610 compThreadID=2 memLimit=262144 KB freePhysicalMemory=14150 MB
++ (profiled very-hot) org/bouncycastle/asn1/DERSet.getContentsLength()I OrdinaryMethod 53.50% T Q_SZ=0 Q_SZI=0 QW=100 bcsz=63 OSR JPROF compThreadID=2 CpuLoad=394%(98%avg) JvmCpu=104%
+ (scorching) Compiling org/bouncycastle/asn1/DERSet.getContentsLength()I  OrdinaryMethod  t=68713 compThreadID=2 memLimit=262144 KB freePhysicalMemory=14145 MB
++ (scorching) org/bouncycastle/asn1/DERSet.getContentsLength()I OrdinaryMethod J Q_SZ=0 Q_SZI=0 QW=100 bcsz=63 OSR compThreadID=2 CpuLoad=394%(98%avg) JvmCpu=104%
+ (profiled very-hot) Compiling org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V  OrdinaryMethod  t=69800 compThreadID=2 memLimit=262144 KB freePhysicalMemory=14120 MB
++ (profiled very-hot) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V OrdinaryMethod 34.40% T Q_SZ=1 Q_SZI=0 QW=200 bcsz=184 OSR JPROF compThreadID=2 CpuLoad=400%(100%avg) JvmCpu=189%
+ (scorching) Compiling org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V  OrdinaryMethod  t=93597 compThreadID=0 memLimit=262144 KB freePhysicalMemory=13977 MB
++ (scorching) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V OrdinaryMethod J Q_SZ=1 Q_SZI=0 QW=200 bcsz=184 OSR compThreadID=0 CpuLoad=400%(100%avg) JvmCpu=191%

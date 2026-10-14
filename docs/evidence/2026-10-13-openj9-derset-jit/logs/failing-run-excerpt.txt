@@ -1,0 +1,201 @@
+# Run s21-vlog-2: Semeru 21.0.12.15 (OpenJ9 0.61.0), CI class order, -Xjit:verbose on.
+# Class summaries, both DIAG blocks, and the cost class up to its fourth test failure (stack traces cut to 12 lines).
+
+CLASS VerifierApiTest tests=25 failed=0 8.7s
+CLASS InputSizeBoundsTest tests=13 failed=0 3.1s
+CLASS ReceiptCertificatesTest tests=1 failed=0 1.4s
+CLASS DigestDenylistCostTest tests=2 failed=0 10.8s
+CLASS HostPolicyTest tests=2 failed=0 8.2s
+CLASS ReceiptContentInfoTest tests=1 failed=0 1.9s
+CLASS ReceiptDecoderTest tests=9 failed=0 0.0s
+CLASS TrustStoreIsolationTest tests=7 failed=0 4.1s
+CLASS EndpointStatusTest tests=5 failed=0 3.2s
+CLASS EndpointJsonReadTest tests=1 failed=0 4.9s
+CLASS CertificateDecodeTest tests=3 failed=0 0.2s
+CLASS VerifyReceiptEndpointTest tests=18 failed=0 1.7s
+CLASS FixtureGeneratorTest tests=1 failed=1 0.0s
+CLASS AppleRootCertsTest tests=6 failed=0 0.1s
+CLASS ReceiptSignerInfoTest tests=10 failed=0 7.1s
+CLASS FailureMessageTest tests=2 failed=0 0.1s
+CLASS ReadmeSyntheticReceiptExampleTest tests=1 failed=0 1.3s
+CLASS UnauthenticatedKeyCostTest tests=24 failed=22 47.0s
+CLASS ConformanceCasesTest tests=442 failed=407 1.8s
+CLASS SignedDataTest tests=25 failed=25 0.3s
+
+DIAG-BEGIN after ReadmeSyntheticReceiptExampleTest
+  DIAG ok  BC SHA256Digest(abc)
+  DIAG ok  SHA-256 1MiB BC == SUN
+  DIAG ok  SHA-1 1MiB BC == SUN
+  DIAG ok  BigInteger.modPow == square-multiply
+  DIAG ok  DER SEQ{INT 1, OCTET[200], INT -129} header
+  DIAG ok  DER OCTET[70000] header
+  DIAG ok  DER SET{SEQ{9999,1,OCTET[16]}} == 311b3019...
+  DIAG ok  DER round trip
+  DIAG ok  TestPki receipt parses (len 2755)
+  DIAG ok  receipt-sandbox-legacy.b64 verifies (verifier built before / after)
+  DIAG ok  receipt-sandbox-g5.b64 verifies (verifier built before / after)
+  DIAG ok  APPLE_INC_ROOT: cached getEncoded() == bundled constant
+  DIAG ok  APPLE_ROOT_CA_G2: cached getEncoded() == bundled constant
+  DIAG ok  APPLE_ROOT_CA_G3: cached getEncoded() == bundled constant
+  DIAG ok  Apple Root CA: BC TBS re-encode == original
+  DIAG ok  Apple Root CA: BC cert re-encode == original
+  DIAG ok  Apple Root CA: JDK SHA1withRSA verify(original TBS)
+  DIAG ok  Apple Root CA: BC SHA1withRSA verify(original TBS)
+  DIAG ok  Apple Root CA: X509Certificate.verify(BC) (probeRuntime)
+  DIAG ok  Apple Root CA: raw RSA (BigInteger.modPow) recovers PKCS#1 + digest
+  DIAG ok  Apple Root CA - G2: BC TBS re-encode == original
+  DIAG ok  Apple Root CA - G2: BC cert re-encode == original
+  DIAG ok  Apple Root CA - G2: JDK SHA384withRSA verify(original TBS)
+  DIAG ok  Apple Root CA - G2: BC SHA384withRSA verify(original TBS)
+  DIAG ok  Apple Root CA - G2: X509Certificate.verify(BC) (probeRuntime)
+  DIAG ok  Apple Root CA - G2: raw RSA (BigInteger.modPow) recovers PKCS#1 + digest
+  DIAG ok  Apple Root CA - G3: BC TBS re-encode == original
+  DIAG ok  Apple Root CA - G3: BC cert re-encode == original
+  DIAG ok  Apple Root CA - G3: JDK SHA384withECDSA verify(original TBS)
+  DIAG ok  Apple Root CA - G3: BC SHA384withECDSA verify(original TBS)
+  DIAG ok  Apple Root CA - G3: X509Certificate.verify(BC) (probeRuntime)
+DIAG-END after ReadmeSyntheticReceiptExampleTest bad=0
+
+  start t=60595 aBagCertificateWhoseKeyParametersHoldNestedSetsInAnExternalIsPassedOverUnconverted()
+  ok   t=67997 aBagCertificateWhoseKeyParametersHoldNestedSetsInAnExternalIsPassedOverUnconverted()
+  start t=67998 aSignerIdWhoseIssuerReordersTheCertificatesRdnsIsRefusedQuickly()
+  ok   t=70813 aSignerIdWhoseIssuerReordersTheCertificatesRdnsIsRefusedQuickly()
+  start t=70814 aSignerInfoLabelledMd2WithRsaIsRefusedBeforeItsSignedAttributesAreHashed()
+  FAIL t=72774 aSignerInfoLabelledMd2WithRsaIsRefusedBeforeItsSignedAttributesAreHashed()
+java.lang.IllegalArgumentException: failed to construct sequence from byte[]
+	at org.bouncycastle.util.Exceptions.illegalArgumentException(Unknown Source)
+	at org.bouncycastle.asn1.ASN1Sequence.getInstance(Unknown Source)
+	at org.bouncycastle.asn1.cms.ContentInfo.getInstance(Unknown Source)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.signedData(UnauthenticatedKeyCostTest.java:829)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.aSignerInfoLabelledMd2WithRsaIsRefusedBeforeItsSignedAttributesAreHashed(UnauthenticatedKeyCostTest.java:469)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:586)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+Caused by: java.io.IOException: invalid long form definite-length 0xFF
+	at org.bouncycastle.asn1.ASN1InputStream.readLongLength(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.implParseObject(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.readVector(Unknown Source)
+	at org.bouncycastle.asn1.BERSequenceParser.parse(Unknown Source)
+	at org.bouncycastle.asn1.BERSequenceParser.getLoadedObject(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.readVector(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.loadTaggedIL(Unknown Source)
+	at org.bouncycastle.asn1.BERTaggedObjectParser.getLoadedObject(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.readVector(Unknown Source)
+	at org.bouncycastle.asn1.BERSequenceParser.parse(Unknown Source)
+	at org.bouncycastle.asn1.ASN1InputStream.readObject(Unknown Source)
+	at org.bouncycastle.asn1.ASN1Primitive.fromByteArray(Unknown Source)
+
+  start t=72776 hugeKeysSignedByAnEndEntityThePinnedRootVouchesForAreNeverDecoded()
+  FAIL t=74960 hugeKeysSignedByAnEndEntityThePinnedRootVouchesForAreNeverDecoded()
+org.opentest4j.AssertionFailedError: Unexpected exception type thrown, expected: <io.github.emindeniz99.applepurchasereceiptverifier.VerificationException> but was: <java.lang.IllegalStateException>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:67)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:35)
+	at org.junit.jupiter.api.Assertions.assertThrows(Assertions.java:3128)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.hugeKeysSignedByAnEndEntityThePinnedRootVouchesForAreNeverDecoded(UnauthenticatedKeyCostTest.java:190)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:586)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+Caused by: java.lang.IllegalStateException: this runtime cannot verify Apple signatures: certificate does not verify with supplied key
+	at io.github.emindeniz99.applepurchasereceiptverifier.DefaultVerifier.probeRuntime(DefaultVerifier.java:207)
+	at io.github.emindeniz99.applepurchasereceiptverifier.DefaultVerifier.<init>(DefaultVerifier.java:54)
+	at io.github.emindeniz99.applepurchasereceiptverifier.Verifier.create(Verifier.java:67)
+	at io.github.emindeniz99.applepurchasereceiptverifier.Checks.verifier(Checks.java:26)
+	at io.github.emindeniz99.applepurchasereceiptverifier.Checks.verifier(Checks.java:30)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.lambda$hugeKeysSignedByAnEndEntityThePinnedRootVouchesForAreNeverDecoded$1(UnauthenticatedKeyCostTest.java:190)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:53)
+	... 6 more
+Caused by: java.security.SignatureException: certificate does not verify with supplied key
+	at org.bouncycastle.jcajce.provider.asymmetric.x509.X509CertificateImpl.checkSignature(Unknown Source)
+	at org.bouncycastle.jcajce.provider.asymmetric.x509.X509CertificateImpl.doVerify(Unknown Source)
+	at org.bouncycastle.jcajce.provider.asymmetric.x509.X509CertificateImpl.verify(Unknown Source)
+	at io.github.emindeniz99.applepurchasereceiptverifier.DefaultVerifier.probeRuntime(DefaultVerifier.java:202)
+	... 12 more
+
+  start t=74961 aJwsIntermediateLabelledRsaPssWithAHugeSaltIsRefusedBeforeAnythingIsAllocated()
+  FAIL t=76831 aJwsIntermediateLabelledRsaPssWithAHugeSaltIsRefusedBeforeAnythingIsAllocated()
+org.opentest4j.AssertionFailedError: Unexpected exception type thrown, expected: <io.github.emindeniz99.applepurchasereceiptverifier.VerificationException> but was: <java.lang.IllegalStateException>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:67)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:35)
+	at org.junit.jupiter.api.Assertions.assertThrows(Assertions.java:3128)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.aJwsIntermediateLabelledRsaPssWithAHugeSaltIsRefusedBeforeAnythingIsAllocated(UnauthenticatedKeyCostTest.java:559)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:586)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+Caused by: java.lang.IllegalStateException: this runtime cannot verify Apple signatures: certificate does not verify with supplied key
+	at io.github.emindeniz99.applepurchasereceiptverifier.DefaultVerifier.probeRuntime(DefaultVerifier.java:207)
+	at io.github.emindeniz99.applepurchasereceiptverifier.DefaultVerifier.<init>(DefaultVerifier.java:54)
+	at io.github.emindeniz99.applepurchasereceiptverifier.Verifier.create(Verifier.java:67)
+	at io.github.emindeniz99.applepurchasereceiptverifier.Checks.verifier(Checks.java:26)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.lambda$aJwsIntermediateLabelledRsaPssWithAHugeSaltIsRefusedBeforeAnythingIsAllocated$8(UnauthenticatedKeyCostTest.java:560)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:53)
+	... 6 more
+Caused by: java.security.SignatureException: certificate does not verify with supplied key
+	at org.bouncycastle.jcajce.provider.asymmetric.x509.X509CertificateImpl.checkSignature(Unknown Source)
+	at org.bouncycastle.jcajce.provider.asymmetric.x509.X509CertificateImpl.doVerify(Unknown Source)
+	at org.bouncycastle.jcajce.provider.asymmetric.x509.X509CertificateImpl.verify(Unknown Source)
+	at io.github.emindeniz99.applepurchasereceiptverifier.DefaultVerifier.probeRuntime(DefaultVerifier.java:202)
+	... 11 more
+
+  start t=76837 aSignerIdWhoseIssuerValueIsALargeFlatSequenceIsRefusedBeforeItIsCompared()
+  FAIL t=79677 aSignerIdWhoseIssuerValueIsALargeFlatSequenceIsRefusedBeforeItIsCompared()
+java.lang.IllegalArgumentException: failed to construct sequence from byte[]
+	at org.bouncycastle.util.Exceptions.illegalArgumentException(Unknown Source)
+	at org.bouncycastle.asn1.ASN1Sequence.getInstance(Unknown Source)
+	at org.bouncycastle.asn1.cms.ContentInfo.getInstance(Unknown Source)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.signedData(UnauthenticatedKeyCostTest.java:829)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.assertSignerIdRefusedQuickly(UnauthenticatedKeyCostTest.java:787)
+	at io.github.emindeniz99.applepurchasereceiptverifier.UnauthenticatedKeyCostTest.aSignerIdWhoseIssuerValueIsALargeFlatSequenceIsRefusedBeforeItIsCompared(UnauthenticatedKeyCostTest.java:458)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:586)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+Caused by: java.io.IOException: invalid long form definite-length 0xFF
+	at org.bouncycastle.asn1.ASN1InputStream.readLongLength(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.implParseObject(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.readVector(Unknown Source)
+	at org.bouncycastle.asn1.BERSequenceParser.parse(Unknown Source)
+	at org.bouncycastle.asn1.BERSequenceParser.getLoadedObject(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.readVector(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.loadTaggedIL(Unknown Source)
+	at org.bouncycastle.asn1.BERTaggedObjectParser.getLoadedObject(Unknown Source)
+	at org.bouncycastle.asn1.ASN1StreamParser.readVector(Unknown Source)
+	at org.bouncycastle.asn1.BERSequenceParser.parse(Unknown Source)
+	at org.bouncycastle.asn1.ASN1InputStream.readObject(Unknown Source)
+	at org.bouncycastle.asn1.ASN1Primitive.fromByteArray(Unknown Source)
+
+  start t=79679 aReceiptWhoseOnlyIntermediatesHaveHugeKeysIsRefusedQuickly()
+
+DIAG-BEGIN after UnauthenticatedKeyCostTest
+  DIAG ok  BC SHA256Digest(abc)
+  DIAG ok  SHA-256 1MiB BC == SUN
+  DIAG ok  SHA-1 1MiB BC == SUN
+  DIAG ok  BigInteger.modPow == square-multiply
+  DIAG ok  DER SEQ{INT 1, OCTET[200], INT -129} header
+  DIAG ok  DER OCTET[70000] header
+  DIAG BAD DER SET{SEQ{9999,1,OCTET[16]}} == 311b3019... :: 31ff30190202270f
+  DIAG ok  DER round trip
+  DIAG BAD TestPki receipt parses (len 2755) :: java.lang.IllegalArgumentException: failed to construct sequence from byte[] / java.io.IOException: invalid long form definite-length 0xFF
+  DIAG BAD receipt-sandbox-legacy.b64 verifies (verifier built before / after) :: before=UNTRUSTED_CHAIN after=UNTRUSTED_CHAIN
+  DIAG BAD receipt-sandbox-g5.b64 verifies (verifier built before / after) :: before=UNTRUSTED_CHAIN after=UNTRUSTED_CHAIN
+  DIAG ok  APPLE_INC_ROOT: cached getEncoded() == bundled constant
+  DIAG ok  APPLE_ROOT_CA_G2: cached getEncoded() == bundled constant
+  DIAG ok  APPLE_ROOT_CA_G3: cached getEncoded() == bundled constant
+  DIAG ok  Apple Root CA: BC TBS re-encode == original
+  DIAG ok  Apple Root CA: BC cert re-encode == original
+  DIAG BAD Apple Root CA: JDK SHA1withRSA verify(original TBS) :: 
+  DIAG BAD Apple Root CA: BC SHA1withRSA verify(original TBS) :: 
+  DIAG BAD Apple Root CA: X509Certificate.verify(BC) (probeRuntime) :: java.security.SignatureException: certificate does not verify with supplied key
+  DIAG BAD Apple Root CA: raw RSA (BigInteger.modPow) recovers PKCS#1 + digest :: em=01ffffffffffffff...a3ba5b1d95288fda
+  DIAG ok  Apple Root CA - G2: BC TBS re-encode == original
+  DIAG ok  Apple Root CA - G2: BC cert re-encode == original
+  DIAG BAD Apple Root CA - G2: JDK SHA384withRSA verify(original TBS) :: 
+  DIAG BAD Apple Root CA - G2: BC SHA384withRSA verify(original TBS) :: 
+  DIAG BAD Apple Root CA - G2: X509Certificate.verify(BC) (probeRuntime) :: java.security.SignatureException: certificate does not verify with supplied key
+  DIAG BAD Apple Root CA - G2: raw RSA (BigInteger.modPow) recovers PKCS#1 + digest :: em=01ffffffffffffff...c33d2d1a2b4e41d7
+  DIAG ok  Apple Root CA - G3: BC TBS re-encode == original
+  DIAG ok  Apple Root CA - G3: BC cert re-encode == original
+  DIAG BAD Apple Root CA - G3: JDK SHA384withECDSA verify(original TBS) :: 
+  DIAG BAD Apple Root CA - G3: BC SHA384withECDSA verify(original TBS) :: 
+  DIAG BAD Apple Root CA - G3: X509Certificate.verify(BC) (probeRuntime) :: java.security.SignatureException: certificate does not verify with supplied key
+DIAG-END after UnauthenticatedKeyCostTest bad=15

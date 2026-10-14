@@ -1,0 +1,19 @@
+# Two receipts TestPki built in one JVM (run s21-nosink-4), each from
+# TestPki.receipt().signReceipt(TestPki.singleAttributePayload(9999, new byte[16])):
+# 'before' at the DIAG before UnauthenticatedKeyCostTest, 'after' at the DIAG after it.
+# Both are 2755 and 2755 bytes. Signing time, serial numbers and signatures differ by design;
+# the structural damage is three SET lengths written as 0xFF:
+before SET tag followed by 0xFF at offsets []
+after  SET tag followed by 0xFF at offsets [54, 2268, 2281]
+
+payload SET inside the eContent OCTET STRING
+  before @54: 31 1b 30 19 02 02 27 0f
+  after  @54: 31 ff 30 19 02 02 27 0f
+
+SignerInfos SET (good: 31 82 01 de; bad one starts a byte later because an earlier serial number is one byte longer)
+  before @2267: 31 82 01 de 30 82 01 da
+  after  @2268: 31 ff 30 82 01 db 02 01
+
+RDN SET in the SignerInfo's issuer name
+  before @2282: 31 15 30 13 06 03 55 04
+  after  @2281: 31 ff 30 13 06 03 55 04
