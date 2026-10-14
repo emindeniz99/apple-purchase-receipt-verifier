@@ -79,6 +79,17 @@ final class AppleTrust {
      */
     static final String GENERIC_COMPOSITE_SIGNATURE = "1.3.6.1.4.1.18227.2.1";
 
+    /**
+     * md2WithRSAEncryption, the one signature label refused for what its
+     * digest costs: a SignerInfo labelled with it is refused, and a
+     * certificate labelled with it is signed by nobody. The label is the
+     * sender's unsigned choice, and BouncyCastle runs MD2, about 16 times
+     * slower than SHA-256, over the signed attributes or over the TBS, once
+     * per issuer tried, before it compares a signature byte. Apple signs
+     * nothing with MD2.
+     */
+    static final String REFUSED_SIGNATURE_ALGORITHM = "1.2.840.113549.1.1.2";
+
     /** The critical extensions {@link #HANDLED_CRITICAL_EXTENSIONS} marks processed. */
     private static final Set<String> HANDLED = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList(Extension.extendedKeyUsage.getId(), Extension.cRLDistributionPoints.getId())));
@@ -175,8 +186,8 @@ final class AppleTrust {
      * {@code issuerKey} can hold, or a negative one, because BouncyCastle
      * allocates an array of saltLength bytes (the low 32 bits of it) while it
      * builds the verifier, before it compares any signature byte. A
-     * certificate labelled {@link #GENERIC_COMPOSITE_SIGNATURE} is signed by
-     * nobody.</p>
+     * certificate labelled {@link #GENERIC_COMPOSITE_SIGNATURE} or
+     * {@link #REFUSED_SIGNATURE_ALGORITHM} is signed by nobody.</p>
      */
     static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
         try {
@@ -186,6 +197,7 @@ final class AppleTrust {
                     ((BCX509Certificate) certificate).getTBSCertificateNative().getSignature();
             ASN1Encodable parameters = signed.getParameters();
             if (GENERIC_COMPOSITE_SIGNATURE.equals(signed.getAlgorithm().getId())
+                    || REFUSED_SIGNATURE_ALGORITHM.equals(signed.getAlgorithm().getId())
                     || !signed.getAlgorithm().getId().equals(certificate.getSigAlgOID())
                     || !Arrays.equals(
                             parameters == null

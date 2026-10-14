@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test;
 /**
  * {@link ReceiptCore#REFUSED_DIGESTS} is the slow cluster of the digests
  * BouncyCastle's CMS layer resolves, and md2WithRSAEncryption, refused by
- * {@link ReceiptCore#REFUSED_SIGNATURE_ALGORITHM}, the one slow signature
+ * {@link AppleTrust#REFUSED_SIGNATURE_ALGORITHM}, the one slow signature
  * label: every one refused for its cost costs more than {@link #REFUSED_ABOVE}
  * times the baseline, every one allowed less than {@link #ALLOWED_BELOW} times.
  *
@@ -138,8 +138,8 @@ class DigestDenylistCostTest {
                     labels,
                     baseline,
                     (algorithm, content) -> labelNanos(verifier, algorithm, content),
-                    ReceiptCore.REFUSED_SIGNATURE_ALGORITHM::equals,
-                    ReceiptCore.REFUSED_SIGNATURE_ALGORITHM::equals);
+                    AppleTrust.REFUSED_SIGNATURE_ALGORITHM::equals,
+                    AppleTrust.REFUSED_SIGNATURE_ALGORITHM::equals);
         }
     }
 

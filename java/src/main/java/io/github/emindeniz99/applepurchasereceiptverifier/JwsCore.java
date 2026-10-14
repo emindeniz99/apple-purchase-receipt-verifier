@@ -359,6 +359,11 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "intermediate certificate is not signed by a pinned Apple root");
         }
+        // Only a CA vouches further, as in the receipt walk. Reading
+        // basicConstraints decodes no key.
+        if (intermediate.getBasicConstraints() == -1) {
+            throw new VerificationException(Reason.UNTRUSTED_CHAIN, "intermediate certificate is not a CA");
+        }
         if (leaf == null || !AppleTrust.signedBy(leaf, decodeKey(intermediate, 1))) {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");

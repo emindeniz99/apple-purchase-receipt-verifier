@@ -599,6 +599,63 @@ class UnauthenticatedKeyCostTest {
     }
 
     @Test
+    void aCapSizedBagEntryLabelledMd2WithRsaBesideCopiesOfTheRootIsPassedOverQuickly() throws Exception {
+        // A certificate's signature label is as unsigned as a SignerInfo's,
+        // and BouncyCastle runs the digest it names over the TBS before it
+        // compares a signature byte, once for every issuer whose name
+        // matches. Every CA the walk accepted became an issuer, byte-identical
+        // copies of the root included. The bag fills up with copies of the
+        // root beside the genuine chain, and one stranger of about 2.3 MB
+        // naming the root as its issuer, labelled md2WithRSAEncryption: MD2
+        // once under the anchor and once under each copy, before anything
+        // was trusted. The label is now signed by nobody, and a copy of a
+        // certificate already vouching vouches no further.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        AlgorithmIdentifier md2WithRsa =
+                new AlgorithmIdentifier(PKCSObjectIdentifiers.md2WithRSAEncryption, DERNull.INSTANCE);
+        int overhead = md2BesideRootCopies(pki, genuine, md2WithRsa, 1000).length - 1000;
+        byte[] receipt = md2BesideRootCopies(pki, genuine, md2WithRsa, CAP_DER - overhead - 64);
+        acceptedFast(pki, receipt);
+
+        // The same label on a certificate the root really signed, which
+        // BouncyCastle verifies: refused by its label alone.
+        X509Certificate signed = bouncyCastle(new X509v3CertificateBuilder(
+                        subject(pki.root),
+                        new BigInteger(64, RANDOM),
+                        pki.leaf.getNotBefore(),
+                        pki.leaf.getNotAfter(),
+                        new X500Name("CN=x"),
+                        key(pki.leaf))
+                .build(new JcaContentSignerBuilder("MD2withRSA").build(pki.rootKey)));
+        signed.verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER);
+        assertFalse(AppleTrust.signedBy(signed, pki.root.getPublicKey()));
+    }
+
+    /**
+     * {@code genuine} with its bag filled to the cap: its own certificates,
+     * copies of {@code pki}'s root, and a stranger naming the root as its
+     * issuer, labelled {@code label}, with one extension of {@code bytes}
+     * octets.
+     */
+    private static byte[] md2BesideRootCopies(TestPki pki, SignedData genuine, AlgorithmIdentifier label, int bytes)
+            throws Exception {
+        ASN1EncodableVector bag = new ASN1EncodableVector();
+        for (int i = 0; i < genuine.getCertificates().size(); i++) {
+            bag.add(genuine.getCertificates().getObjectAt(i));
+        }
+        ASN1Primitive root = ASN1Primitive.fromByteArray(pki.root.getEncoded());
+        while (bag.size() < ReceiptCertificates.MAX_EMBEDDED_CERTIFICATES - 1) {
+            bag.add(root);
+        }
+        bag.add(certificateShaped(
+                label, subject(pki.root), new X500Name("CN=x"), key(pki.leaf), new DLSequence(new ASN1Encodable[] {
+                    filler(0), new DEROctetString(new byte[bytes])
+                })));
+        return receipt(genuine, new DLSet(bag), genuine.getSignerInfos());
+    }
+
+    @Test
     void aJwsIntermediateLabelledCompositeWithManyPartsIsRefusedBeforeAnyPartIsBuilt() throws Exception {
         // The JWS twin: x5c[1] names an RSA root as its issuer, with as many
         // Ed25519 parts, the shortest identifier, as fit the JWS cap: 2.9 s
@@ -1058,6 +1115,31 @@ class UnauthenticatedKeyCostTest {
                         .length);
         assertFalse(ReceiptCertificates.tooManyExtensions(stranger));
         Checks.receipt(Checks.verifier(pki), withBagEntry(pki, stranger));
+    }
+
+    @Test
+    void aJwsIntermediateThatIsNotACaVouchesForNoLeaf() throws Exception {
+        // The root signs x5c[1], but as an end entity, whose key belongs to
+        // whoever it was issued to: it vouches for nothing, so the leaf's
+        // key is never decoded, as in the receipt walk.
+        TestPki pki = TestPki.jws();
+        X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
+                subject(pki.root),
+                new BigInteger(64, RANDOM),
+                pki.intermediate.getNotBefore(),
+                pki.intermediate.getNotAfter(),
+                subject(pki.intermediate),
+                key(pki.intermediate));
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+        builder.addExtension(new ASN1ObjectIdentifier(AppleTrustOids.INTERMEDIATE), false, DERNull.INSTANCE);
+        X509CertificateHolder endEntity =
+                builder.build(new JcaContentSignerBuilder("SHA256withECDSA").build(pki.rootKey));
+        String token = pki.signJwsWithHeader(jwsHeader(pki, endEntity), "{}");
+
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(pki), token));
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+        assertEquals("intermediate certificate is not a CA", e.getMessage());
     }
 
     @Test

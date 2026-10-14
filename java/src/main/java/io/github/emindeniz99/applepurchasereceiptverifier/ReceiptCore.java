@@ -87,8 +87,8 @@ final class ReceiptCore {
      * choice, and BouncyCastle 1.86 runs the digest they name over up to the
      * whole receipt before any signature is checked, where these eight cost
      * 2.9 to 25 times SHA-256 and every other digest it resolves at most 2.6
-     * times. {@link #REFUSED_SIGNATURE_ALGORITHM} is the one signature label
-     * that names one of them.
+     * times. {@link AppleTrust#REFUSED_SIGNATURE_ALGORITHM} is the one
+     * signature label that names one of them.
      */
     static final Set<String> REFUSED_DIGESTS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "1.2.643.2.2.9", // GOST R 34.11-94
@@ -99,13 +99,6 @@ final class ReceiptCore {
             "1.2.804.2.1.1.1.1.2.2.1", // DSTU 7564, 256 bits
             "1.2.804.2.1.1.1.1.2.2.2", // DSTU 7564, 384 bits
             "1.2.804.2.1.1.1.1.2.2.3"))); // DSTU 7564, 512 bits
-
-    /**
-     * The signature algorithm a SignerInfo may not name, not one Apple signs
-     * receipts with: md2WithRSAEncryption, whose MD2 BouncyCastle runs over
-     * the signed attributes before the signature is checked.
-     */
-    static final String REFUSED_SIGNATURE_ALGORITHM = "1.2.840.113549.1.1.2"; // md2WithRSAEncryption
 
     private ReceiptCore() {}
 
@@ -411,6 +404,7 @@ final class ReceiptCore {
     private static List<X509Certificate> authenticatedTopDown(
             List<X509Certificate> embedded, Set<TrustAnchor> trustAnchors) {
         List<X509Certificate> issuers = AppleTrust.roots(trustAnchors);
+        List<X509Certificate> vouchers = new ArrayList<>(issuers);
         List<X509Certificate> accepted = new ArrayList<>();
         List<X509Certificate> pending = new ArrayList<>(embedded);
         while (!pending.isEmpty()) {
@@ -428,10 +422,13 @@ final class ReceiptCore {
             // Only a CA vouches further (RFC 5280 4.2.1.9): an end entity's
             // key belongs to whoever it was issued to, an Apple developer
             // among them. Reading basicConstraints decodes no key.
+            // A copy of a root or of an earlier issuer vouches for nothing
+            // new, and each issuer costs every later candidate a check.
             issuers = new ArrayList<>();
             for (X509Certificate certificate : acceptedThisRound) {
-                if (certificate.getBasicConstraints() != -1) {
+                if (certificate.getBasicConstraints() != -1 && !vouchers.contains(certificate)) {
                     issuers.add(certificate);
+                    vouchers.add(certificate);
                 }
             }
         }
@@ -456,7 +453,7 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info: digest " + digest + " is refused");
         }
-        if (REFUSED_SIGNATURE_ALGORITHM.equals(signature)) {
+        if (AppleTrust.REFUSED_SIGNATURE_ALGORITHM.equals(signature)) {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE,
                     "CMS verifier refused the signer info: signature algorithm " + signature + " is refused");
