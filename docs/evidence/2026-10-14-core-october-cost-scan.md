@@ -18,7 +18,7 @@ that is bounded and roughly linear in the input, up to the largest input
 the 3 MiB receipt cap lets through? The answer decides whether the core
 needs a screen of its own for any of them.
 
-**Answer.** It does not. Every shape costs the core 76 ms or less at the
+**Answer.** It does not. Every shape costs the core 77 ms or less at the
 cap and at most 11 MiB of peak heap, and every one grows linearly in the
 input. Two divergences from Java turned up that no R20 row records
 (see "Divergences found").
