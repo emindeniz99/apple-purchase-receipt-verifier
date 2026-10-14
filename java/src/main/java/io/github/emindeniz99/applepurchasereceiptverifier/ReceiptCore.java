@@ -117,18 +117,6 @@ final class ReceiptCore {
         return parseSignedPayload(payload);
     }
 
-    /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
-    private static ReceiptPayload parseSignedPayload(byte[] payload) throws VerificationException {
-        try {
-            return ReceiptDecoder.parse(payload);
-        } catch (RuntimeException e) {
-            throw new VerificationException(
-                    Reason.UNREADABLE_PAYLOAD,
-                    "signed receipt content could not be read: " + e.getClass().getName(),
-                    e);
-        }
-    }
-
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
     private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
@@ -466,6 +454,18 @@ final class ReceiptCore {
                 new JcaDigestCalculatorProviderBuilder()
                         .setProvider(BouncyCastle.PROVIDER)
                         .build());
+    }
+
+    /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
+    private static ReceiptPayload parseSignedPayload(byte[] payload) throws VerificationException {
+        try {
+            return ReceiptDecoder.parse(payload);
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.UNREADABLE_PAYLOAD,
+                    "signed receipt content could not be read: " + e.getClass().getName(),
+                    e);
+        }
     }
 
     /**

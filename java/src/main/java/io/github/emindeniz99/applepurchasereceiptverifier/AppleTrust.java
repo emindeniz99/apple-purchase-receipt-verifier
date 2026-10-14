@@ -52,7 +52,8 @@ import org.jspecify.annotations.Nullable;
  * of never decoding an unvouched key. A signature label is the sender's
  * until its signature verifies, so the rule also refuses the labels that
  * cost work before a byte is compared ({@link #GENERIC_COMPOSITE_SIGNATURE},
- * {@link #REFUSED_SIGNATURE_ALGORITHM}, {@link #saltFits}).</p>
+ * {@link #REFUSED_SIGNATURE_ALGORITHM}, {@link #saltFits},
+ * {@link ReceiptCore#REFUSED_DIGESTS}).</p>
  *
  * <p>The shapes screened before any of this runs are in
  * {@link PreTrustScreen}.</p>

@@ -508,7 +508,7 @@ if (result.verified()) {
 
 | File | Methods in file order |
 |---|---|
-| `ReceiptCore.java` | (1) `verify`, (2) `verifyDer`, (3) `parseSignedPayload`, (4) `verifySignature`, (5) `parseCms`, (6) `encapsulatedPayload`, (7) `signerInfos`, (8) `oneSigner`, (9) `authenticatedTopDown`, (10) `verifySigner`, (11) `validateChain`, (12) `verifyCmsSignature`, (13) `signerVerifier` |
+| `ReceiptCore.java` | (1) `verify`, (2) `verifyDer`, (3) `verifySignature`, (4) `parseCms`, (5) `encapsulatedPayload`, (6) `signerInfos`, (7) `oneSigner`, (8) `authenticatedTopDown`, (9) `verifySigner`, (10) `validateChain`, (11) `verifyCmsSignature`, (12) `signerVerifier`, (13) `parseSignedPayload` |
 | `JwsCore.java` | `verify`, `verifyUnguarded`, class `Header`, `readOrNull`, `readPayload`, classes `Payload` and `Place`, `jwsEnvironment`, `readObject`, `notAnObject`, `decodeChain`, `authenticateTopDown`, `validateChain`, `verifyEs256` |
 
 Read `verifySignature` and `verifyUnguarded` first: each is the whole
@@ -544,13 +544,13 @@ a genuine Apple sandbox receipt (case
 | 1 | `DefaultVerifier.verifyReceipt` | Reads the clock once, 2026-10-06, before touching the input, so a throwing clock never lands in a catch that blames the input | `INTERNAL_ERROR` |
 | 2 | `verify` (1), `Utf8Length.exceeds`, `StrictBase64.standard` | 7,556 characters, under the cap; length divisible by 4, the JDK decoder refuses anything else; 5,665 bytes | `TOO_LARGE`, `MALFORMED` |
 | 3 | `verifyDer` (2) | Wraps steps 4 to 9: any `RuntimeException` BouncyCastle throws there becomes `MALFORMED` | `MALFORMED` |
-| 4 | `verifySignature` (4), `parseCms` (5), `encapsulatedPayload` (6), `signerInfos` (7), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs). Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
+| 4 | `verifySignature` (3), `parseCms` (4), `encapsulatedPayload` (5), `signerInfos` (6), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs). Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
 | 5 | `ReceiptCertificates.decode`, `PreTrustScreen.readCertificate` | Counts the bag before decoding, skips `[0]` to `[3]` entries, reads no key: the leaf (valid to 2026-08-23), WWDR G5 (to 2030-12-10), a copy of Apple Root CA | `MALFORMED`: a broken entry |
-| 6 | `authenticatedTopDown` (9), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf, which vouches for nothing: only an accepted CA checks the next round. DNs are compared before any issuer key is decoded | none: a stranger is left out |
-| 7 | `ReceiptCertificates.signers`, `verifySigner` (10), `validateChain` (11) | The `sid` matches one certificate, the leaf. It is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `MALFORMED` if the `sid` matches nothing; `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
+| 6 | `authenticatedTopDown` (8), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf, which vouches for nothing: only an accepted CA checks the next round. DNs are compared before any issuer key is decoded | none: a stranger is left out |
+| 7 | `ReceiptCertificates.signers`, `verifySigner` (9), `validateChain` (10) | The `sid` matches one certificate, the leaf. It is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `MALFORMED` if the `sid` matches nothing; `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
 | 8 | `AppleTrust.requireMarkers` | The leaf carries `...6.11.1`; `path.get(1)`, WWDR G5, carries `...6.2.1` | `INVALID_CERTIFICATE_PURPOSE`, also for a signer issued directly by a root |
-| 9 | `verifyCmsSignature` (12), `signerVerifier` (13) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist; a short denylist of costs (R20). Valid | `INVALID_SIGNATURE` |
-| 10 | `parseSignedPayload` (3), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
+| 9 | `verifyCmsSignature` (11), `signerVerifier` (12) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist; a short denylist of costs (R20). Valid | `INVALID_SIGNATURE` |
+| 10 | `parseSignedPayload` (13), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
 
 Steps 7 to 9 run per (SignerInfo, certificate) pair. Step 6 has no
 round bound: each round accepts at least one certificate or ends the

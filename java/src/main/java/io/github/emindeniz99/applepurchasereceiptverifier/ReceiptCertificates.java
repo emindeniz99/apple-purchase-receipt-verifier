@@ -17,7 +17,10 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
 
-/** A receipt's embedded certificate bag, every entry decoded once except its public key. */
+/**
+ * A receipt's embedded certificate bag, decoded once per receipt, not per
+ * SignerInfo, without any public key.
+ */
 final class ReceiptCertificates {
 
     /** Genuine receipts embed one to three; checked before any is decoded. */
