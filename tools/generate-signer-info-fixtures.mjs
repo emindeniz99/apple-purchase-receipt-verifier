@@ -41,6 +41,11 @@
  *                                       label (1.3.6.1.4.1.18227.2.1) holding
  *                                       two sha256WithRSAEncryption parts,
  *                                       alone
+ *   set-parameters-label-alone.der      Apple's SignerInfo with its signature
+ *                                       algorithm set to sha256WithRSAEncryption
+ *                                       (1.2.840.113549.1.1.11) whose
+ *                                       parameters are SET { SET { UTF8String
+ *                                       "A" } }, alone
  *
  *   certificates/rsa-pss-huge-salt-stranger.der
  *                                       the receipt with one more bag entry
@@ -73,6 +78,14 @@
  *                                       md2WithRSAEncryption
  *                                       (1.2.840.113549.1.1.2), with 256 zero
  *                                       octets as its signature
+ *   certificates/set-names-stranger.der
+ *                                       the receipt with one more bag entry,
+ *                                       labelled sha256WithRSAEncryption, with
+ *                                       the receipt signer's key and 256 zero
+ *                                       octets as its signature, whose issuer
+ *                                       and subject are each one commonName
+ *                                       whose value is SET { SET { UTF8String
+ *                                       "Stranger" } }, not a string
  */
 
 import { createHash } from 'node:crypto';
@@ -172,21 +185,27 @@ const composite = (part, count) =>
   Buffer.concat([Buffer.from('060a2b06010401818e330201', 'hex'), wrap(0x30, Buffer.concat(Array(count).fill(part)))]);
 const sha256WithRsa = Buffer.from('300d06092a864886f70d01010b0500', 'hex');
 const genericComposite = withSignature(composite(sha256WithRsa, 2));
+// A SET holding a SET holding a string, where a string or nothing would be.
+const nestedSet = (text) => wrap(0x31, wrap(0x31, wrap(0x0c, Buffer.from(text))));
+const setParameters = withSignature(Buffer.concat([Buffer.from('06092a864886f70d01010b', 'hex'), nestedSet('A')]));
 
 // Certificate: TBSCertificate, signatureAlgorithm, signature. TBSCertificate:
 // [0] version, serialNumber, signature, issuer, validity, subject, key, ...
 const tbsOf = (certificate) => children(certificate, children(certificate, 0)[0][0]).map((p) => slice(certificate, p));
 const [leafCert, , rootCert] = children(der, bag[0]).map((p) => slice(der, p));
 const rootTbs = tbsOf(rootCert);
-// A stranger naming Apple Root CA as its issuer, with the receipt signer's key.
-const strangerWith = (label, signature) => wrap(0x30, Buffer.concat([
+/** A Name of one RDN holding one commonName with this value TLV. */
+const commonName = (value) => wrap(0x30, wrap(0x31, wrap(0x30, Buffer.concat([Buffer.from('0603550403', 'hex'), value]))));
+// A stranger naming Apple Root CA as its issuer, with the receipt signer's key,
+// unless other names are given.
+const strangerWith = (label, signature, issuer = rootTbs[5], subject = commonName(wrap(0x0c, Buffer.from('Stranger')))) => wrap(0x30, Buffer.concat([
   wrap(0x30, Buffer.concat([
     Buffer.from('a003020102', 'hex'), // v3
     Buffer.from('02021092', 'hex'), // serial 4242
     label,
-    rootTbs[5], // issuer: Apple Root CA's subject
+    issuer, // by default Apple Root CA's subject
     rootTbs[4], // Apple Root CA's validity
-    wrap(0x30, wrap(0x31, wrap(0x30, Buffer.concat([Buffer.from('0603550403', 'hex'), wrap(0x0c, Buffer.from('Stranger'))])))),
+    subject,
     tbsOf(leafCert)[6], // the receipt signer's key
   ])),
   label,
@@ -197,6 +216,7 @@ const stranger = strangerWith(strangerLabel, Buffer.alloc(256));
 // INTEGER -3,294,967,296: two's complement in 5 octets, low 32 bits 0x3b9aca00.
 const negativeSaltStranger = strangerWith(wrap(0x30, pss(Buffer.from('0205ff3b9aca00', 'hex'))), Buffer.alloc(256));
 const md2Stranger = strangerWith(wrap(0x30, Buffer.from('06092a864886f70d0101020500', 'hex')), Buffer.alloc(256));
+const setNamesStranger = strangerWith(sha256WithRsa, Buffer.alloc(256), commonName(nestedSet('Stranger')), commonName(nestedSet('Stranger')));
 const ecdsaWithSha256 = Buffer.from('300a06082a8648ce3d040302', 'hex');
 const compositeStranger = strangerWith(
   wrap(0x30, composite(ecdsaWithSha256, 300)),
@@ -235,11 +255,13 @@ const files = {
   'signer-infos/md2-with-rsa-label-alone.der': receipt(md2WithRsa),
   'signer-infos/rsa-pss-huge-salt-label-alone.der': receipt(pssHugeSalt),
   'signer-infos/generic-composite-label-alone.der': receipt(genericComposite),
+  'signer-infos/set-parameters-label-alone.der': receipt(setParameters),
   'certificates/rsa-pss-huge-salt-stranger.der': withBagEntry(stranger),
   'certificates/rsa-pss-negative-salt-stranger.der': withBagEntry(negativeSaltStranger),
   'certificates/generic-composite-stranger.der': withBagEntry(compositeStranger),
   'certificates/thousand-and-one-extensions-stranger.der': withBagEntry(crowded),
   'certificates/md2-with-rsa-stranger.der': withBagEntry(md2Stranger),
+  'certificates/set-names-stranger.der': withBagEntry(setNamesStranger),
 };
 for (const [name, bytes] of Object.entries(files)) {
   mkdirSync(dirname(join(OUT, name)), { recursive: true });
