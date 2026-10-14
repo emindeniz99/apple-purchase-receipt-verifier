@@ -295,7 +295,10 @@ final class ReceiptCore {
         for (X509Certificate signerCert : matches) {
             try {
                 List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
-                requireMarkers(signerCert, path);
+                // The certificate after the signer on the path; a signer a
+                // root issued directly has none.
+                AppleTrust.requireMarkers(
+                        signerCert, path.size() < 2 ? null : (X509Certificate) path.get(1), "receipt");
                 // The chain before the signature: checking the signature
                 // first would run the attacker's own key before anything
                 // about it is trusted.
@@ -319,29 +322,6 @@ final class ReceiptCore {
                     Reason.UNREADABLE_PAYLOAD,
                     "signed receipt content could not be read: " + e.getClass().getName(),
                     e);
-        }
-    }
-
-    /**
-     * Apple's marker OIDs on the signer and on the intermediate after it in
-     * the path: developer certificates chain to the same pinned roots.
-     */
-    private static void requireMarkers(X509Certificate signerCert, List<? extends Certificate> path)
-            throws VerificationException {
-        if (signerCert.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "receipt signer certificate lacks Apple receipt-signing marker OID " + AppleTrust.SIGNING_LEAF_OID);
-        }
-        if (path.size() < 2) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "receipt signer is issued by a root directly, with no WWDR intermediate");
-        }
-        if (((X509Certificate) path.get(1)).getExtensionValue(AppleTrust.INTERMEDIATE_OID) == null) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "receipt intermediate certificate lacks Apple WWDR marker OID " + AppleTrust.INTERMEDIATE_OID);
         }
     }
 
@@ -380,14 +360,8 @@ final class ReceiptCore {
             CertPathBuilderResult result =
                     CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
             return result.getCertPath().getCertificates();
-        } catch (GeneralSecurityException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
             throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
-        } catch (RuntimeException e) {
-            // BouncyCastle's unchecked exceptions for malformed certificate content.
-            throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN,
-                    "path builder raised " + e.getClass().getName(),
-                    e);
         }
     }
 

@@ -317,6 +317,32 @@ final class AppleTrust {
         return false;
     }
 
+    /**
+     * Apple's marker OIDs, checked once the chain to a pinned root holds:
+     * the signing marker on {@code signer} and the WWDR marker on
+     * {@code intermediate}, the certificate that issued it, null for a signer
+     * a root issued directly. Developer certificates chain to the same roots.
+     * {@code what} names the input in the message.
+     */
+    static void requireMarkers(X509Certificate signer, @Nullable X509Certificate intermediate, String what)
+            throws VerificationException {
+        if (signer.getExtensionValue(SIGNING_LEAF_OID) == null) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    what + " signer certificate lacks Apple receipt-signing marker OID " + SIGNING_LEAF_OID);
+        }
+        if (intermediate == null) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    what + " signer is issued by a root directly, with no WWDR intermediate");
+        }
+        if (intermediate.getExtensionValue(INTERMEDIATE_OID) == null) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    what + " intermediate certificate lacks Apple WWDR marker OID " + INTERMEDIATE_OID);
+        }
+    }
+
     /** The certificates of {@code trustAnchors}. */
     static List<X509Certificate> roots(Set<TrustAnchor> trustAnchors) {
         List<X509Certificate> roots = new ArrayList<>();
@@ -327,14 +353,21 @@ final class AppleTrust {
     }
 
     /**
+     * UNTRUSTED_CHAIN for an unchecked exception, BouncyCastle's report of
+     * malformed certificate content, whatever it wraps; otherwise
      * INVALID_CERTIFICATE when a certificate was outside its validity window
      * at {@code at}, else UNTRUSTED_CHAIN. The validator's message can quote
      * names out of the certificates, so it is kept out of the failure's own
      * message and is only the exception's cause. {@code VerificationException.toFailure}
      * then drops that cause for both reasons, so a caller never sees it.
      */
-    static VerificationException chainFailure(
-            GeneralSecurityException failure, String certificates, String chain, Date at) {
+    static VerificationException chainFailure(Exception failure, String certificates, String chain, Date at) {
+        if (failure instanceof RuntimeException) {
+            return new VerificationException(
+                    Reason.UNTRUSTED_CHAIN,
+                    chain + " raised " + failure.getClass().getName(),
+                    failure);
+        }
         if (outsideValidity(failure)) {
             return new VerificationException(
                     Reason.INVALID_CERTIFICATE,

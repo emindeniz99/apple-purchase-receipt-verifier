@@ -97,16 +97,7 @@ final class JwsCore {
         authenticateTopDown(leaf, intermediate, trustAnchors);
         validateChain(leaf, intermediate, new Date(carried != null ? carried : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
-        if (leaf.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "leaf certificate lacks Apple marker OID " + AppleTrust.SIGNING_LEAF_OID);
-        }
-        if (intermediate.getExtensionValue(AppleTrust.INTERMEDIATE_OID) == null) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "intermediate certificate lacks Apple marker OID " + AppleTrust.INTERMEDIATE_OID);
-        }
+        AppleTrust.requireMarkers(leaf, intermediate, "x5c");
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
         // A payload that did not read fails here, as UNREADABLE_PAYLOAD.
         Payload payload = read != null ? read : readPayload(payloadBytes);
@@ -386,14 +377,8 @@ final class JwsCore {
             params.addCertPathChecker(AppleTrust.HANDLED_CRITICAL_EXTENSIONS);
             // Per call, so no BouncyCastle object is shared between threads.
             CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER).validate(path, params);
-        } catch (GeneralSecurityException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
             throw AppleTrust.chainFailure(e, "x5c", "certificate chain", at);
-        } catch (RuntimeException e) {
-            // BouncyCastle's unchecked exceptions for malformed certificate content.
-            throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN,
-                    "path validator raised " + e.getClass().getName(),
-                    e);
         }
     }
 
