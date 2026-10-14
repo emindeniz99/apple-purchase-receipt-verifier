@@ -18,6 +18,7 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
+import org.jspecify.annotations.Nullable;
 
 /** A receipt's embedded certificate bag, every entry decoded once except its public key. */
 final class ReceiptCertificates {
@@ -56,9 +57,8 @@ final class ReceiptCertificates {
      * IMPLICIT SET}, after counting the set against
      * {@link #MAX_EMBEDDED_CERTIFICATES}. The other CertificateChoices
      * (RFC 5652 10.2.2: {@code [0]} to {@code [3]}, each a SEQUENCE) name no
-     * signer and are skipped, and so is a certificate over
-     * {@link #MAX_CERTIFICATE_EXTENSIONS} or one
-     * {@link AppleTrust#convertible} passes over. The bag is unsigned, so an
+     * signer and are skipped, and so is a certificate
+     * {@link #readCertificate} passes over. The bag is unsigned, so an
      * entry under the cap that does not decode is a defect of the receipt:
      * MALFORMED, whichever certificate it was meant to be. One over the cap
      * is passed over before it is parsed, decodable or not.
@@ -89,20 +89,10 @@ final class ReceiptCertificates {
                     ASN1Sequence.getInstance((ASN1TaggedObject) entry, false);
                     continue;
                 }
-                // Counted before the parse builds BouncyCastle's table of them.
-                if (tooManyExtensions(entry)) {
-                    continue;
-                }
-                // Read as parsed, not re-encoded: DER sorts every SET by its
-                // members' encodings, seconds for a cap-sized nested entry.
-                X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(entry));
-                // Decodes the signature here, not inside the path builder.
-                // The key is not read: see ReceiptCore.authenticatedTopDown.
-                holder.toASN1Structure().getSignature().getOctets();
-                // A certificate Apple could not have issued, which the
-                // conversion would spend seconds on, names no signer and
-                // vouches for nothing: it is passed over, not refused.
-                if (!AppleTrust.convertible(holder.toASN1Structure())) {
+                X509CertificateHolder holder = readCertificate(entry);
+                // A certificate Apple could not have issued names no signer
+                // and vouches for nothing: it is passed over, not refused.
+                if (holder == null) {
                     continue;
                 }
                 certificates.all.add(converter.getCertificate(holder));
@@ -113,6 +103,28 @@ final class ReceiptCertificates {
             }
         }
         return certificates;
+    }
+
+    /**
+     * One Certificate entry, of the receipt's bag or of an {@code x5c}
+     * header, read without decoding its key, or null for an entry passed
+     * over: one over {@link #MAX_CERTIFICATE_EXTENSIONS}, counted before the
+     * parse builds BouncyCastle's table of them, or one
+     * {@link AppleTrust#convertible} passes over, which the conversion would
+     * spend seconds on. An entry under the cap that does not parse throws.
+     */
+    static @Nullable X509CertificateHolder readCertificate(ASN1Encodable entry) {
+        if (tooManyExtensions(entry)) {
+            return null;
+        }
+        // Read as parsed, not re-encoded: DER sorts every SET by its
+        // members' encodings, seconds for a cap-sized nested entry.
+        X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(entry));
+        // getOctets throws for a signature BIT STRING with unused bits, so
+        // such an entry fails here as one that does not decode, not later
+        // inside the path builder or validator.
+        holder.toASN1Structure().getSignature().getOctets();
+        return AppleTrust.convertible(holder.toASN1Structure()) ? holder : null;
     }
 
     /**

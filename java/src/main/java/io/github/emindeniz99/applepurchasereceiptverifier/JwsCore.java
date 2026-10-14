@@ -21,8 +21,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1InputStream;
-import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.jspecify.annotations.Nullable;
@@ -316,12 +314,11 @@ final class JwsCore {
     }
 
     /**
-     * Each entry as a certificate, or null for one over
-     * {@link ReceiptCertificates#MAX_CERTIFICATE_EXTENSIONS} or one
-     * {@link AppleTrust#convertible} passes over: no Apple certificate, so it
-     * stands for nothing in the chain. An entry under the cap that does not
-     * decode is INVALID_CERTIFICATE; one over it is null before it is parsed,
-     * decodable or not.
+     * Each entry as a certificate, or null for one
+     * {@link ReceiptCertificates#readCertificate} passes over: no Apple
+     * certificate, so it stands for nothing in the chain. An entry under the
+     * cap that does not decode is INVALID_CERTIFICATE; one over it is null
+     * before it is parsed, decodable or not.
      */
     private static List<@Nullable X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
         JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);
@@ -330,16 +327,9 @@ final class JwsCore {
             for (String entry : x5c) {
                 byte[] der = StrictBase64.decode(entry, false, Reason.INVALID_CERTIFICATE, "x5c entry");
                 // The first object only, as a CertificateFactory reads one.
-                ASN1Primitive parsed = new ASN1InputStream(der).readObject();
-                if (ReceiptCertificates.tooManyExtensions(parsed)) {
-                    chain.add(null);
-                    continue;
-                }
-                X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(parsed));
-                // Decodes the signature here, not inside the validator. The
-                // key is not read: see authenticateTopDown.
-                holder.toASN1Structure().getSignature().getOctets();
-                chain.add(AppleTrust.convertible(holder.toASN1Structure()) ? converter.getCertificate(holder) : null);
+                X509CertificateHolder holder =
+                        ReceiptCertificates.readCertificate(new ASN1InputStream(der).readObject());
+                chain.add(holder == null ? null : converter.getCertificate(holder));
             }
         } catch (CertificateException | IOException | RuntimeException e) {
             throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + chain.size() + "] does not decode", e);
