@@ -1,0 +1,30 @@
+# DERSet.encode / getContentsLength compile levels in runs that passed (same harness, default options or traced).
+== passing run
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (warm) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
+== passing run
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (warm) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (warm) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
++ (hot) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (hot) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
++ (profiled very-hot) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (scorching) org/bouncycastle/asn1/DERSet.getContentsLength()I
+== passing run
++ (cold) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (warm) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
++ (profiled very-hot) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (scorching) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (hot) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
+== passing run
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (warm) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
++ (profiled very-hot) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (scorching) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (hot) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V
+== passing run
++ (warm) org/bouncycastle/asn1/DERSet.getContentsLength()I
++ (warm) org/bouncycastle/asn1/DERSet.encode(Lorg/bouncycastle/asn1/ASN1OutputStream;Z)V

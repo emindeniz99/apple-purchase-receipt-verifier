@@ -57,6 +57,20 @@ final class ReceiptCore {
     static final int MAX_SIGNER_INFOS = 4;
 
     /**
+     * The most attributes a SignerInfo may carry, signed and unsigned
+     * together, counted before BouncyCastle reads them. It keeps each set in
+     * a {@code java.util.Hashtable} keyed by OID, whose hash is an unkeyed
+     * function of the OID's octets and whose buckets are lists, so
+     * distinct OIDs of one hash make building the table quadratic in their
+     * number, and the unsigned attributes are anyone's to add. Apple's
+     * receipt SignerInfos carry none. Each insert scans the bucket twice, so
+     * at this cap the two tables cost at most about a million OID
+     * comparisons, a few milliseconds: an estimate from the sources, not
+     * timed. A SignerInfo over it is left out.
+     */
+    static final int MAX_SIGNER_INFO_ATTRIBUTES = 1000;
+
+    /**
      * The largest receipt accepted: the base64 text's length in UTF-8 bytes,
      * checked before it is decoded. The figure is Apple's limit on a whole
      * verifyReceipt body ({@link Endpoint#MAX_REQUEST_BYTES}).
@@ -219,6 +233,11 @@ final class ReceiptCore {
                     || AppleTrust.holdsSet(info.getDigestEncryptionAlgorithm().getParameters())) {
                 continue;
             }
+            // Counted before BouncyCastle builds its tables of them.
+            if (size(info.getAuthenticatedAttributes()) + size(info.getUnauthenticatedAttributes())
+                    > MAX_SIGNER_INFO_ATTRIBUTES) {
+                continue;
+            }
             SignedData one = new SignedData(
                     signedData.getDigestAlgorithms(),
                     signedData.getEncapContentInfo(),
@@ -239,6 +258,10 @@ final class ReceiptCore {
             throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
         }
         return signers;
+    }
+
+    private static int size(@Nullable ASN1Set attributes) {
+        return attributes == null ? 0 : attributes.size();
     }
 
     /**

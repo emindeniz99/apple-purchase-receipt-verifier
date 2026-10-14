@@ -429,6 +429,17 @@ was checked (2.8 to 4.9 s for one cap-sized nested attribute); Java now
 hashes them as sent, 0.5 to 0.9 s. The core refuses the nested shapes at
 its depth bound or value budget
 (docs/evidence/2026-10-13-java-pretrust-shape.md).
+BouncyCastle keeps a certificate's extensions and a SignerInfo's
+attributes in a `java.util.Hashtable` under an unkeyed hash of each OID,
+so many distinct OIDs of one hash would make building the table
+quadratic, read from the sources and not measured. Java counts both
+before BouncyCastle parses them and passes over a certificate with more
+than 1,000 extensions, or leaves out a SignerInfo with more than 1,000
+attributes, which bounds each table at about a million comparisons
+(each insert scans the bucket twice), a few milliseconds, estimated from
+the sources and not timed; Apple's
+certificates carry three to eight extensions and Apple's SignerInfo none
+(docs/evidence/2026-10-13-java-oid-tables.md).
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
 in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header
@@ -811,6 +822,15 @@ the core's bounds are what keep every call short (§3.7). Only
   outside the code can switch the engine or point it at another binary.
   `noexec` directories block an extracted binary; such hosts use `url()` or
   `executable()`, which extract nothing.
+- **A miscompiling JIT is an availability risk, not a forgery risk.**
+  OpenJ9 0.61.0's JIT can miscompile BouncyCastle's `DERSet.encode` after
+  warm-up. From then on the main artifact refuses genuine receipts in that
+  process, and `Verifier.create` throws, while still accepting nothing
+  unsigned. OpenJ9 is out of the CI vendor matrix and the library is not
+  tested on it; a host that runs it anyway passes
+  `-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}` and keeps the
+  known-good canary running (java/README.md, "Runtime notes: OpenJ9";
+  docs/evidence/2026-10-13-openj9-derset-jit.md).
 - **Python's compile cache holds native code.** wasmtime-py compiles the
   module at start and, with the cache on, stores the result on disk, where
   the next process runs it. Anyone who can write that directory can plant

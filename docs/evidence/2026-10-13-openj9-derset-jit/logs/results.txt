@@ -1,0 +1,52 @@
+# One line per JVM, in the order they ran, 2026-10-13, Semeru 21.0.12.15 unless the label starts s8- (Semeru 8.0.504.5).
+# Labels: default = no options; vlog = -Xjit:verbose={compileStart,compileEnd}; nosink = -Xjit:disableStoreSinking;
+# exclDERSet = -Xjit:exclude={org/bouncycastle/asn1/DERSet.*}; exclEncode = -Xjit:exclude={org/bouncycastle/asn1/DERSet.encode*};
+# exclGCL = -Xjit:exclude= and dontInline= on DERSet.getContentsLength*; trace = traceFull logging of DERSet.encode and
+# getContentsLength plus verbose; count0 = -Xjit:count=0; xint = -Xint.
+# The first four lines were written by hand. s21-ci-01..03 ran from the wrong working directory, so TrustStoreIsolationTest's
+# three source-tree tests failed there. Those failures are not part of the bug.
+# Fields: seconds, HANG (killed after 240 s without output), the cost class line, total failed (1 = the aborted
+# FixtureGeneratorTest), diagBad = failed checks in the two DIAG blocks, probeFail/ff/timing = counts among the first 40
+# printed traces.
+s21-full-01 (mvn surefire, filesystem order) rc=1: 676 run, 0 fail, fork hung at exit (JIT thread spinning)
+s21-ci-01 HANG after ReceiptDecoderTest (JIT thread spinning, killed)
+s21-ci-02-vlog: cost class 13/24 failed, 450 total failures (reproduced)
+s21-ci-03 HANG at TrustStoreIsolationTest: JIT compThread 1 in TR_SinkStores::genStoreToTempSyms compiling SHA256Digest.processBlock (hot)
+s21-nosink-1 259s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=4 116.9s | TOTAL_FAILED 5 | diagBad: 0
+s21-nosink-2 151s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=21 64.7s | TOTAL_FAILED 454 | diagBad: 11
+s21-default-1 501s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 92.0s | TOTAL_FAILED 1 | diagBad: 0
+s21-nosink-3 166s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 72.1s | TOTAL_FAILED 1 | diagBad: 0
+s21-default-2 145s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 66.3s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-nosink-4 116s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=13 52.3s | TOTAL_FAILED 446 | diagBad: 12 probeFail: 30 ff: 10 timing: 0 firstCorrupt: 
+s21-exclDERSet-1 151s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 82.3s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-default-3 393s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 59.1s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-default-4 120s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=13 46.8s | TOTAL_FAILED 446 | diagBad: 13 probeFail: 30 ff: 10 timing: 0 firstCorrupt: 
+s21-exclDERSet-2 422s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 93.7s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclDERSet-3 150s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 78.6s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclDERSet-4 156s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 83.0s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclDERSet-5 397s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 79.3s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclEncode-1 156s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 71.2s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclEncode-2 135s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 64.1s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-trace-1 398s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 58.7s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclEncode-3 136s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 66.3s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-trace-2 125s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 56.5s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-trace-3 126s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 58.2s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-trace-4 151s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 72.2s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclEncode-4 398s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 69.3s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-xint-1 STOPPED by hand after ~3 min: still in the first class (VerifierApiTest, 7 s under the JIT); -Xint too slow for this harness
+s8-default-1 132s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 58.4s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclEncode-5 151s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 70.8s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclGCL-1 166s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 77.5s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclGCL-2 145s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 76.1s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-vlog-1 423s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 84.6s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s8-default-2 393s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 51.0s | TOTAL_FAILED 2 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-vlog-2 110s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=22 47.0s | TOTAL_FAILED 455 | diagBad: 15 probeFail: 26 ff: 14 timing: 0 firstCorrupt: 
+s21-exclGCL-3 161s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 85.1s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s8-default-3 126s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 54.0s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-vlog-3 116s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=13 46.3s | TOTAL_FAILED 446 | diagBad: 15 probeFail: 30 ff: 10 timing: 0 firstCorrupt: 
+s21-vlog-4 110s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=22 44.6s | TOTAL_FAILED 455 | diagBad: 15 probeFail: 26 ff: 14 timing: 0 firstCorrupt: 
+s21-exclGCL-4 412s HANG | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 78.3s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-exclGCL-5 135s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 71.4s | TOTAL_FAILED 1 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-count0-1 196s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 74.4s | TOTAL_FAILED 2 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-count0-2 195s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 68.1s | TOTAL_FAILED 2 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 
+s21-count0-3 191s  | CLASS UnauthenticatedKeyCostTest tests=24 failed=0 69.5s | TOTAL_FAILED 2 | diagBad: 0 probeFail: 0 ff: 0 timing: 0 firstCorrupt: 

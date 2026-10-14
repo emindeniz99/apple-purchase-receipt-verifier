@@ -585,6 +585,8 @@ cRLDistributionPoints, 2026-10-06).
   | A receipt date of 0000-01-01T00:00:00Z at the endpoint, whose `_pst` time falls in the year -1 (2 BC) | not measured | `-0001-12-31 16:07:02 America/Los_Angeles` (`java.time`'s `uuuu`: a sign and four digits) | `-001-12-31 16:07:02 America/Los_Angeles` (jiff's `%Y`: four characters with the sign counted) | Both are the same instant and every other field agrees. No Apple receipt carries a year-0000 date, and Apple's rendering of one is unknown, so neither form is preferred (owner, 2026-10-07) | `endpoint/rfc3339-dates-render` (the case pins other purchases' dates, not this one) |
   | A SignerInfo whose signedAttrs or unsignedAttrs field holds something other than Attributes, first or second, beside a SignerInfo that verifies | not measured | ok (owner, 2026-10-12): BouncyCastle reads the attributes only while verifying, so the broken SignerInfo is `INVALID_SIGNATURE` and the other one decides; from Q65 until then Java read every SignerInfo's attributes first and answered `MALFORMED` | `MALFORMED` | OpenSSL decodes every SignerInfo, attributes included, when it parses the SignedData, so one that does not parse is a SignedData that does not. Java's ok still needs a SignerInfo whose signature verifies over the returned content under a pinned chain, so the cases allow both | `receipt/reject-malformed-signed-attrs-in-the-first-signer`, `receipt/malformed-signed-attrs-in-the-second-signer-does-not-crash`, `receipt/reject-malformed-unsigned-attrs-ahead-of-a-genuine-signer-info` |
   | Apple's genuine SignerInfo with its signatureAlgorithm relabelled md2WithRSAEncryption (1.2.840.113549.1.1.2), alone | not measured | `INVALID_SIGNATURE`: BouncyCastle hashed with the label's MD2, which Apple's DigestInfo does not match; since Q136 a (2026-10-13) the label is refused before anything is hashed | ok (measured 2026-10-13 with `cargo test`) | OpenSSL reads an RSA SignerInfo's signatureAlgorithm only to choose PKCS#1 v1.5 or RSASSA-PSS and hashes with the digestAlgorithm, Apple's SHA-256, so Apple's signature verifies. The label is unsigned packaging Apple never writes; Java refuses a receipt whose signature is Apple's, as it did before the label was refused, and nothing unsigned is accepted either way | `receipt/reject-a-signer-info-signed-md2-with-rsa`, which allows both |
+  | Apple's genuine SignerInfo with more than 1,000 unsigned attributes appended, alone | not measured | `MALFORMED`, "signer certificate not embedded", since Q143 (2026-10-13): a SignerInfo with more than 1,000 attributes, signed and unsigned together, is left out before BouncyCastle builds its tables of them, and none is left | ok, read from the sources and not measured | Unsigned attributes are outside Apple's signature, OpenSSL verifies the signature without reading them, and the core's value budget (100,000) is far above 1,001 attributes of a few values each. The attributes are unsigned packaging Apple never writes (Apple's SignerInfo carries none); Java refuses a receipt whose signature is Apple's, as in the md2 relabel row above, and nothing unsigned is accepted either way | none: `aSignerInfoAtTheAttributeCapVerifiesAndOneOverIsLeftOut` pins Java's answer under the test PKI |
+  | A certificate with more than 1,000 extensions that would not otherwise decode, such as the 1,001-extension stranger with its signature BIT STRING's unused-bits octet set to 1, in a receipt's bag beside Apple's chain or as an x5c entry | not measured | passed over since Q143 (2026-10-13): the receipt is ok; an x5c leaf or intermediate is a null link, `UNTRUSTED_CHAIN`, and an x5c[2], which is never read, leaves the JWS ok. Until then BouncyCastle's parse threw: `MALFORMED` in the bag, `INVALID_CERTIFICATE` in x5c | `MALFORMED` in the bag, `INVALID_CERTIFICATE` in x5c, read from the cases named here and not measured | The core decodes every bag and x5c entry, so one that does not decode is a defect of the input. Java counts the extensions before BouncyCastle parses the certificate by design, since the parse is what builds the table the cap bounds, so an entry over the cap is passed over whether or not the rest of it would parse. Passing over only removes a certificate: the bag is unsigned packaging and still needs Apple's signature under a pinned chain, and the x5c array sits in the signed JWS header, so only Apple's leaf key could send an undecodable x5c[2]. Nothing unsigned is accepted either way | none: Java's answer was reproduced on the committed `thousand-and-one-extensions-stranger.der` with one octet changed (round-7 review, 2026-10-13); `receipt/reject-a-stranger-whose-signature-bit-string-is-unaligned` and `transaction/reject-x5c-root-that-is-not-a-certificate` pin both implementations under the cap |
   | A genuine RSASSA-PSS signature on a receipt, under the test PKI | not measured | ok since Q142 a (2026-10-13): the saltLength is bounded by the signer's key before BouncyCastle builds a verifier, because building one allocates it. Earlier the same day, under Q137 a, the label was refused and the receipt was `INVALID_SIGNATURE` | ok (measured 2026-10-13) | OpenSSL verifies PSS. Apple does not sign receipts with RSA-PSS today, but an input Apple signed must not be refused after a future change on its side (Q142 a), so Java bounds the salt instead of refusing the label and the case, which allowed both, now expects ok of both | `receipt/signer-rsa-pss-does-not-crash` |
   | A receipt date whose offset moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z (`9999-12-31T23:59:59-00:01`, `0000-01-01T00:00:00+00:01`) | not measured | read (owner, 2026-10-12): a `long` holds the instant and the endpoint's `uuuu` renders the year | null, kept raw | jiff's calendar ends at 9999, so the core reads only dates it can render. Before trust only the creation date is read, and such a date only moves the chain instant to where no certificate is valid (`INVALID_CERTIFICATE`); the other dates are informational | `receipt/rfc3339-date-forms` (purchases 318 and 319 are not pinned) |
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
@@ -894,6 +896,38 @@ cRLDistributionPoints, 2026-10-06).
   them still cost up to about 3 s at the cap, bounded by BouncyCastle's
   parser depth; the figures for each shape and for the costs left are in
   the [pre-trust shape][pretrustshape] note.
+
+  Java caps two tables BouncyCastle builds keyed by OID (owner, Q141 a
+  and Q143, 2026-10-13). A certificate's extensions and a SignerInfo's
+  signed and unsigned attributes each go into a `java.util.Hashtable`
+  under `ASN1ObjectIdentifier.hashCode`, an unkeyed hash of the OID's
+  octets, with chained buckets, so many distinct OIDs that share a hash
+  make building the table quadratic in their number. The extensions
+  table is built for every bag and x5c entry before any chain is trusted,
+  and the attribute tables for a copy of Apple's SignerInfo that anyone
+  relaying a receipt can append unsigned attributes to. The review
+  estimated about 10^5 extensions under the 3 MiB cap; nothing was
+  measured. `ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS` (1,000) is
+  counted on the raw TBS before `Certificate.getInstance`: a bag entry
+  over it is skipped, as one `AppleTrust.convertible` rejects, and an x5c
+  leaf or intermediate over it stands for nothing (`UNTRUSTED_CHAIN`);
+  an x5c[2] is never read. The count comes first because the parse is
+  what builds the table, so an entry over the cap is passed over even
+  when the rest of it would not parse, a row in the table above.
+  `ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES` (1,000, signed and unsigned
+  together) leaves a SignerInfo out before BouncyCastle reads its
+  attributes, `MALFORMED`, "signer certificate not embedded", when none
+  is left. At either cap a table costs about a million comparisons,
+  since each insert scans the bucket twice: a few milliseconds, an
+  estimate from the sources, not timed.
+  Apple's certificates carry three to eight extensions and Apple's
+  SignerInfo no attributes, so no Apple-signed input is refused for its
+  own content; a row in the table above records Apple's SignerInfo with
+  more than 1,000 unsigned attributes appended, which the core accepts.
+  The core reads a stranger and finds it vouches for nothing, so
+  `receipt/accept-genuine-beside-a-stranger-with-a-thousand-and-one-extensions`,
+  Apple's G5 receipt with a stranger of 1,001 extensions in its bag,
+  expects ok of both ([OID tables][oidtables]).
 
   Java no longer reads every SignerInfo's signed and unsigned attributes
   before trying any (owner, 2026-10-12; it did from Q65 until then).
@@ -2455,3 +2489,4 @@ One table for everything the plan measured or considered and rejected.
 [digestcost]: ../evidence/2026-10-13-java-digest-cost.md
 [pretrust]: ../evidence/2026-10-13-java-pretrust-reencoding.md
 [pretrustshape]: ../evidence/2026-10-13-java-pretrust-shape.md
+[oidtables]: ../evidence/2026-10-13-java-oid-tables.md

@@ -606,6 +606,8 @@ structure they bound is read:
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
 | Receipt signer's depth below a pinned root, certificates each signed by the one above | 7, BouncyCastle 1.86's path builder's: it refuses an eighth under the JDK's default `maxPathLength` of 5. The library adds no bound of its own | `UNTRUSTED_CHAIN` |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
+| Extensions on one certificate, counted before it is parsed | 1,000 | The certificate is passed over: in a receipt's bag it names no signer and vouches for nothing (`MALFORMED`, "signer certificate not embedded", when it was the signer's), and an `x5c` leaf or intermediate stands for nothing (`UNTRUSTED_CHAIN`); `x5c[2]` is never read. Passed over even when the rest of it would not parse |
+| Attributes on one SignerInfo, signed and unsigned together | 1,000 | The SignerInfo is left out; `MALFORMED`, "signer certificate not embedded", when none is left |
 
 **Thread stack.** BouncyCastle's ASN.1 parser recurses, so a legal input
 nested up to the bound needs stack: on OpenJDK 21 a SignerInfo
@@ -755,6 +757,26 @@ a config change, not a dependency bump.
 `Provider.getService` is synchronized, and every call makes several lookups
 on the library's private BouncyCastle provider, so concurrent calls
 serialise on it.
+
+**Runtime notes: OpenJ9.** The vendor matrix in CI runs HotSpot JVMs only
+(Temurin, Zulu, Corretto and the rest). IBM Semeru is not in it: on OpenJ9
+0.61.0 (measured on 8.0.504, 21.0.12 and 25.0.4) the JIT can miscompile
+BouncyCastle 1.86's `DERSet.encode` once the method is hot enough to be
+recompiled at its highest optimisation levels. From then on every DER SET
+the JVM encodes carries the length byte `0xFF`. Certificate checks
+re-encode names, so signatures stop verifying: `Verifier.create` throws
+`IllegalStateException`, and a verifier built before the miscompile
+refuses genuine receipts. The failure is closed. No unsigned input was
+accepted in any of the measured runs. It happens in some processes and
+not in others, depending on when the JIT recompiles, and a second OpenJ9
+bug seen in the same runs hangs the JVM inside a JIT thread. The library
+is not tested on OpenJ9. If you run it there anyway, pass
+`-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}`, which stopped the
+miscompile in every measured run, and keep the canary in the self-test
+above running: it is what detects this on a host that has not. OpenJ9
+honours only the last `-Xjit:` option, so merge the exclusion into any
+`-Xjit:` options you already pass. Evidence:
+[docs/evidence/2026-10-13-openj9-derset-jit.md](../docs/evidence/2026-10-13-openj9-derset-jit.md).
 
 The worst-case CPU for one call is measured in the next section.
 
