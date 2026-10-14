@@ -409,6 +409,17 @@ was checked (2.8 to 4.9 s for one cap-sized nested attribute); Java now
 hashes them as sent, 0.5 to 0.9 s. The core refuses the nested shapes at
 its depth bound or value budget
 (docs/evidence/2026-10-13-java-pretrust-shape.md).
+BouncyCastle keeps a certificate's extensions and a SignerInfo's
+attributes in a `java.util.Hashtable` under an unkeyed hash of each OID,
+so many distinct OIDs of one hash would make building the table
+quadratic, read from the sources and not measured. Java counts both
+before BouncyCastle parses them and passes over a certificate with more
+than 1,000 extensions, or leaves out a SignerInfo with more than 1,000
+attributes, which bounds each table at about a million comparisons
+(each insert scans the bucket twice), a few milliseconds, estimated from
+the sources and not timed; Apple's
+certificates carry three to eight extensions and Apple's SignerInfo none
+(docs/evidence/2026-10-13-java-oid-tables.md).
 
 *Proof.* Trailing bytes: `receipt/reject-one-trailing-byte-after-the-der`;
 in Rust `CmsError::Trailing` (`rust/openssl/src/cms.rs`, from the header

@@ -1,6 +1,7 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,6 +23,7 @@ import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERNull;
@@ -642,6 +644,215 @@ class UnauthenticatedKeyCostTest {
                     new ASN1Encodable[] {signer.getDigestAlgorithm(), new DLTaggedObject(false, 1, label)}))
         }));
         acceptedFast(pki, aheadOfGenuine(genuine, signer, attributes, label));
+    }
+
+    @Test
+    void aSignerCertificateAtTheExtensionCapVerifiesAndOneOverIsPassedOver() throws Exception {
+        TestPki pki = TestPki.receipt();
+        KeyPair signerKey = rsa2048();
+        X509CertificateHolder intermediate = new X509CertificateHolder(pki.intermediate.getEncoded());
+        X509CertificateHolder root = new X509CertificateHolder(pki.root.getEncoded());
+        X509CertificateHolder atCap =
+                signerWithExtensions(pki, signerKey, ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS);
+        ReceiptPayload verified = Checks.receipt(
+                Checks.verifier(pki),
+                receiptSignedBy(signerKey, Collections.singletonList(atCap), Arrays.asList(atCap, intermediate, root)));
+        assertEquals(BUNDLE, verified.bundleId());
+
+        X509CertificateHolder over =
+                signerWithExtensions(pki, signerKey, ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS + 1);
+        byte[] receipt =
+                receiptSignedBy(signerKey, Collections.singletonList(over), Arrays.asList(over, intermediate, root));
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
+        assertEquals("signer certificate not embedded", e.getMessage());
+    }
+
+    @Test
+    void aStrangerOverTheExtensionCapIsPassedOverBesideTheGenuineChain() throws Exception {
+        TestPki pki = TestPki.receipt();
+        ASN1Encodable stranger = certificateShaped(
+                SHA256_WITH_RSA,
+                subject(pki.root),
+                new X500Name("CN=x"),
+                key(pki.leaf),
+                fillerExtensions(ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS + 1));
+        assertTrue(ReceiptCertificates.tooManyExtensions(stranger));
+        Checks.receipt(Checks.verifier(pki), withBagEntry(pki, stranger));
+    }
+
+    @Test
+    void everyExtensionsFieldOfTheTbsCounts() throws Exception {
+        // BouncyCastle parses a [3] wherever it stands among the fields after
+        // the key, so one placed before an issuerUniqueID is counted too.
+        TestPki pki = TestPki.receipt();
+        DLSequence certificate = certificateShaped(
+                SHA256_WITH_RSA,
+                subject(pki.root),
+                new X500Name("CN=x"),
+                key(pki.leaf),
+                fillerExtensions(ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS + 1));
+        ASN1Sequence tbs = ASN1Sequence.getInstance(certificate.getObjectAt(0));
+        ASN1EncodableVector fields = new ASN1EncodableVector();
+        for (ASN1Encodable field : tbs) {
+            fields.add(field);
+        }
+        fields.add(new DLTaggedObject(false, 1, new DERBitString(new byte[1])));
+        DLSequence reordered = new DLSequence(
+                new ASN1Encodable[] {new DLSequence(fields), certificate.getObjectAt(1), certificate.getObjectAt(2)});
+        assertTrue(ReceiptCertificates.tooManyExtensions(reordered));
+        assertFalse(ReceiptCertificates.tooManyExtensions(certificateShaped(
+                SHA256_WITH_RSA,
+                subject(pki.root),
+                new X500Name("CN=x"),
+                key(pki.leaf),
+                fillerExtensions(ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS))));
+    }
+
+    @Test
+    void aVersionTaggedThreeIsNotCountedAsExtensions() throws Exception {
+        // BouncyCastle reads a tagged first TBS field as the version whatever
+        // its tag number, so this stranger parses. Counting its [3] INTEGER
+        // as extensions would throw and turn an ok receipt MALFORMED.
+        TestPki pki = TestPki.receipt();
+        DLSequence certificate = certificateShaped(
+                SHA256_WITH_RSA, subject(pki.root), new X500Name("CN=x"), key(pki.leaf), fillerExtensions(8));
+        ASN1Sequence tbs = ASN1Sequence.getInstance(certificate.getObjectAt(0));
+        ASN1EncodableVector fields = new ASN1EncodableVector();
+        fields.add(new DLTaggedObject(true, 3, new ASN1Integer(2)));
+        for (int i = 1; i < tbs.size(); i++) {
+            fields.add(tbs.getObjectAt(i));
+        }
+        DLSequence stranger = new DLSequence(
+                new ASN1Encodable[] {new DLSequence(fields), certificate.getObjectAt(1), certificate.getObjectAt(2)});
+        assertEquals(
+                8,
+                org.bouncycastle.asn1.x509.Certificate.getInstance(stranger)
+                        .getTBSCertificate()
+                        .getExtensions()
+                        .getExtensionOIDs()
+                        .length);
+        assertFalse(ReceiptCertificates.tooManyExtensions(stranger));
+        Checks.receipt(Checks.verifier(pki), withBagEntry(pki, stranger));
+    }
+
+    @Test
+    void aJwsIntermediateAtTheExtensionCapVerifiesAndOneOverIsUntrusted() throws Exception {
+        TestPki pki = TestPki.jws();
+        String atCap = pki.signJwsWithHeader(
+                jwsHeader(pki, intermediateWithExtensions(pki, ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS)), "{}");
+        Checks.signedData(Checks.verifier(pki), atCap);
+
+        String over = pki.signJwsWithHeader(
+                jwsHeader(pki, intermediateWithExtensions(pki, ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS + 1)),
+                "{}");
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(pki), over));
+        assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
+        assertEquals("intermediate certificate is not signed by a pinned Apple root", e.getMessage());
+    }
+
+    @Test
+    void aSignerInfoAtTheAttributeCapVerifiesAndOneOverIsLeftOut() throws Exception {
+        // Signed and unsigned attributes count together.
+        TestPki pki = TestPki.receipt();
+        SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
+        SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
+        int unsigned = ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES
+                - signer.getAuthenticatedAttributes().size();
+        ASN1Encodable atCap = withUnsignedAttributes(signer, fillerAttributes(unsigned));
+        Checks.receipt(Checks.verifier(pki), receipt(genuine, genuine.getCertificates(), new DLSet(atCap)));
+
+        ASN1Encodable over = withUnsignedAttributes(signer, fillerAttributes(unsigned + 1));
+        byte[] receipt = receipt(genuine, genuine.getCertificates(), new DLSet(over));
+        VerificationException e =
+                assertThrows(VerificationException.class, () -> Checks.receipt(Checks.verifier(pki), receipt));
+        assertEquals(Reason.MALFORMED, e.reason(), e.getMessage());
+        assertEquals("signer certificate not embedded", e.getMessage());
+        // Ahead of the genuine SignerInfo, the one over the cap is left out
+        // and the genuine one decides.
+        Checks.receipt(
+                Checks.verifier(pki),
+                receipt(genuine, genuine.getCertificates(), new DLSet(new ASN1Encodable[] {over, signer})));
+    }
+
+    /** {@code count} extensions under distinct OIDs of one arc, each an empty extnValue. */
+    private static ASN1Encodable[] fillerExtensions(int count) {
+        ASN1Encodable[] extensions = new ASN1Encodable[count];
+        for (int i = 0; i < count; i++) {
+            extensions[i] = new DLSequence(new ASN1Encodable[] {filler(i), new DEROctetString(new byte[0])});
+        }
+        return extensions;
+    }
+
+    /** {@code count} attributes under distinct OIDs of one arc, each with one NULL value. */
+    private static ASN1EncodableVector fillerAttributes(int count) {
+        ASN1EncodableVector attributes = new ASN1EncodableVector();
+        for (int i = 0; i < count; i++) {
+            attributes.add(new Attribute(filler(i), new DERSet(DERNull.INSTANCE)));
+        }
+        return attributes;
+    }
+
+    private static ASN1ObjectIdentifier filler(int i) {
+        return new ASN1ObjectIdentifier("1.3.6.1.4.1.99999.2." + i);
+    }
+
+    /** {@code signer} with {@code unsigned} as its unsignedAttrs, built of definite-length types. */
+    private static ASN1Encodable withUnsignedAttributes(SignerInfo signer, ASN1EncodableVector unsigned) {
+        return new DLSequence(new ASN1Encodable[] {
+            signer.getVersion(),
+            signer.getSID(),
+            signer.getDigestAlgorithm(),
+            new DLTaggedObject(false, 0, signer.getAuthenticatedAttributes()),
+            signer.getDigestEncryptionAlgorithm(),
+            signer.getEncryptedDigest(),
+            new DLTaggedObject(false, 1, new DLSet(unsigned))
+        });
+    }
+
+    /** A receipt signer under {@code pki}'s intermediate with {@code total} extensions, the marker among them. */
+    private static X509CertificateHolder signerWithExtensions(TestPki pki, KeyPair signerKey, int total)
+            throws Exception {
+        X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
+                subject(pki.intermediate),
+                new BigInteger(64, RANDOM),
+                pki.leaf.getNotBefore(),
+                pki.leaf.getNotAfter(),
+                new X500Name("CN=Fake Receipt Signing"),
+                SubjectPublicKeyInfo.getInstance(signerKey.getPublic().getEncoded()));
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+        builder.addExtension(new ASN1ObjectIdentifier(AppleTrustOids.LEAF), false, DERNull.INSTANCE);
+        for (int i = 0; i < total - 2; i++) {
+            builder.addExtension(filler(i), false, DERNull.INSTANCE);
+        }
+        return builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(pki.intermediateKey));
+    }
+
+    /**
+     * {@code pki}'s intermediate, its name and key kept, reissued by the root
+     * with {@code total} extensions, the marker among them.
+     */
+    private static X509CertificateHolder intermediateWithExtensions(TestPki pki, int total) throws Exception {
+        X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
+                subject(pki.root),
+                new BigInteger(64, RANDOM),
+                pki.intermediate.getNotBefore(),
+                pki.intermediate.getNotAfter(),
+                subject(pki.intermediate),
+                key(pki.intermediate));
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+        builder.addExtension(new ASN1ObjectIdentifier(AppleTrustOids.INTERMEDIATE), false, DERNull.INSTANCE);
+        for (int i = 0; i < total - 2; i++) {
+            builder.addExtension(filler(i), false, DERNull.INSTANCE);
+        }
+        return builder.build(new JcaContentSignerBuilder("SHA256withECDSA").build(pki.rootKey));
+    }
+
+    private static String jwsHeader(TestPki pki, X509CertificateHolder intermediate) throws Exception {
+        return "{\"alg\":\"ES256\",\"x5c\":[\"" + TestPki.b64(pki.leaf.getEncoded()) + "\",\""
+                + TestPki.b64(intermediate.getEncoded()) + "\",\"" + TestPki.b64(pki.root.getEncoded()) + "\"]}";
     }
 
     /**

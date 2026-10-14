@@ -48,6 +48,15 @@
  *                                       the same entry with saltLength
  *                                       -3,294,967,296, whose low 32 bits are
  *                                       1,000,000,000
+ *   certificates/thousand-and-one-extensions-stranger.der
+ *                                       the receipt with one more bag entry
+ *                                       naming Apple Root CA as its issuer,
+ *                                       labelled sha256WithRSAEncryption, with
+ *                                       the receipt signer's key, 1,001
+ *                                       non-critical extensions under the OIDs
+ *                                       1.3.6.1.4.1.99999.1.0 to .1000, each
+ *                                       with an empty extnValue, and 256 zero
+ *                                       octets as its signature
  */
 
 import { createHash } from 'node:crypto';
@@ -166,6 +175,30 @@ const strangerWithSalt = (saltLength) => {
 const stranger = strangerWithSalt(Buffer.from('02047fffffff', 'hex')); // INTEGER 2,147,483,647
 // INTEGER -3,294,967,296: two's complement in 5 octets, low 32 bits 0x3b9aca00.
 const negativeSaltStranger = strangerWithSalt(Buffer.from('0205ff3b9aca00', 'hex'));
+/** The OID 1.3.6.1.4.1.99999.1.n: each arc after 1.3 in base 128, high octets marked. */
+const fillerOid = (n) =>
+  wrap(0x06, Buffer.from([0x2b, ...[6, 1, 4, 1, 99999, 1, n].flatMap((arc) => {
+    const octets = [arc & 0x7f];
+    for (let rest = arc >> 7; rest > 0; rest >>= 7) octets.unshift(0x80 | (rest & 0x7f));
+    return octets;
+  })]));
+const sha256WithRsa = wrap(0x30, Buffer.from('06092a864886f70d01010b0500', 'hex'));
+const crowded = wrap(0x30, Buffer.concat([
+  wrap(0x30, Buffer.concat([
+    Buffer.from('a003020102', 'hex'), // v3
+    Buffer.from('02021093', 'hex'), // serial 4243
+    sha256WithRsa,
+    rootTbs[5], // issuer: Apple Root CA's subject
+    rootTbs[4], // Apple Root CA's validity
+    wrap(0x30, wrap(0x31, wrap(0x30, Buffer.concat([Buffer.from('0603550403', 'hex'), wrap(0x0c, Buffer.from('Stranger'))])))),
+    tbsOf(leafCert)[6], // the receipt signer's key
+    // [3] Extensions: one more than the 1,000 Java parses.
+    wrap(0xa3, wrap(0x30, Buffer.concat(Array.from({ length: 1001 }, (_, n) =>
+      wrap(0x30, Buffer.concat([fillerOid(n), Buffer.from('0400', 'hex')])))))),
+  ])),
+  sha256WithRsa,
+  wrap(0x03, Buffer.alloc(257)), // no unused bits, 256 zero octets
+]));
 const malformedUnsigned = wrap(0x30, Buffer.concat([...parts, Buffer.from('a103020105', 'hex')]));
 
 const files = {
@@ -177,6 +210,7 @@ const files = {
   'signer-infos/rsa-pss-huge-salt-label-alone.der': receipt(pssHugeSalt),
   'certificates/rsa-pss-huge-salt-stranger.der': withBagEntry(stranger),
   'certificates/rsa-pss-negative-salt-stranger.der': withBagEntry(negativeSaltStranger),
+  'certificates/thousand-and-one-extensions-stranger.der': withBagEntry(crowded),
 };
 for (const [name, bytes] of Object.entries(files)) {
   mkdirSync(dirname(join(OUT, name)), { recursive: true });

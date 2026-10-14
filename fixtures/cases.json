@@ -339,6 +339,12 @@
       "codec": "raw",
       "contentSha256": "6cefb8d6bb742121d7b90231429349ed115c287d9e49ed9f3b9b55d8ca971089"
     },
+    "public-receipt-sandbox-g5-certificates-thousand-and-one-extensions-stranger": {
+      "path": "public-receipts/certificates/thousand-and-one-extensions-stranger.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "168f83f0a16e7021f81bc778a5de9a5fb2a8bf6f66bc62e3ebe32dbe48ff2a0a"
+    },
     "public-receipt-xcode-with-purchases": {
       "path": "public-receipts/receipt-xcode-with-purchases.b64",
       "role": "input",
@@ -10287,6 +10293,36 @@
       "operation": "verifyReceipt",
       "input": {
         "fixture": "public-receipt-sandbox-g5-certificates-rsa-pss-negative-salt-stranger"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/receipt_type": "ProductionSandbox"
+        }
+      },
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "certificate",
+        "positive",
+        "dos",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-genuine-beside-a-stranger-with-a-thousand-and-one-extensions",
+      "description": "The genuine G5 sandbox receipt with one more certificate-bag entry, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs): a stranger that names Apple Root CA as its issuer, carries the receipt signer's key, 256 zero octets as its signature, and 1,001 non-critical extensions under distinct OIDs. BouncyCastle keeps a certificate's extensions in a Hashtable keyed by an unkeyed hash of the OID, so building it is quadratic when many OIDs share a hash. Java counts the extensions before it parses a certificate and passes over one with more than 1,000 (owner Q141 a and Q143, 2026-10-13); the core reads the stranger and finds it vouches for nothing. Apple's certificates carry three to eight extensions. Nothing vouches for the stranger and Apple's own chain verifies, within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-certificates-thousand-and-one-extensions-stranger"
       },
       "config": {
         "trustedRoots": {
