@@ -169,16 +169,11 @@ final class ReceiptCore {
         } catch (IOException e) {
             throw new VerificationException(Reason.MALFORMED, "receipt has trailing or unparseable bytes", e);
         }
-        ContentInfo contentInfo;
         try {
-            contentInfo = ContentInfo.getInstance(parsed);
-        } catch (IllegalArgumentException e) {
-            // Its documented refusal of anything but a two-element SEQUENCE.
-            throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
-        }
-        try {
-            return new CMSSignedData(contentInfo);
-        } catch (CMSException e) {
+            // IllegalArgumentException is ContentInfo.getInstance's documented
+            // refusal of anything but a two-element SEQUENCE.
+            return new CMSSignedData(ContentInfo.getInstance(parsed));
+        } catch (IllegalArgumentException | CMSException e) {
             throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
         }
     }
@@ -195,9 +190,6 @@ final class ReceiptCore {
     private static List<SignerInformation> signerInfos(CMSSignedData cms) throws VerificationException {
         SignedData signedData = SignedData.getInstance(cms.toASN1Structure().getContent());
         ASN1Set raw = signedData.getSignerInfos();
-        if (raw.size() == 0) {
-            throw new VerificationException(Reason.MALFORMED, "no signer info");
-        }
         if (raw.size() > MAX_SIGNER_INFOS) {
             throw new VerificationException(
                     Reason.MALFORMED,
@@ -417,12 +409,12 @@ final class ReceiptCore {
         // has no verifier for is refused below as INVALID_SIGNATURE, so a
         // genuine receipt signed with such an algorithm is rejected unless
         // another SignerInfo verifies.
-        // An RSA signature binds its hash in the DigestInfo, so the
-        // signatureAlgorithm label is not trusted.
         String digest = signer.getDigestAlgOID();
         String signature = signer.getEncryptionAlgOID();
-        // Both before BouncyCastle digests a byte or builds a verifier, and
-        // the same verdict as an algorithm it does not implement.
+        // Both labels are the sender's unsigned choice, and BouncyCastle runs
+        // the digest either one names before it compares a signature byte,
+        // so both are checked before it digests a byte or builds a verifier,
+        // with the verdict of an algorithm it does not implement.
         if (REFUSED_DIGESTS.contains(digest)) {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info: digest " + digest + " is refused");

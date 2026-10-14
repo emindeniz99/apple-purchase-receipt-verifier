@@ -27,8 +27,6 @@ final class Endpoint {
             status = status(environment, receipt);
         } catch (VerificationException e) {
             status = status(e.reason());
-        } catch (RuntimeException e) {
-            status = AppleStatus.INTERNAL_DATA_ACCESS_ERROR;
         }
         return EndpointResponse.render(status, environment, receipt, now);
     }
