@@ -91,16 +91,15 @@ String responseJson = verifier.verifyReceiptEndpoint(Environment.PRODUCTION, req
 **No method throws for any input.** A `null` or empty `base64` / `jws` /
 `requestJson` is input and fails as `Reason.MALFORMED` (status 21002 from the
 endpoint), the same as a garbled one. An unexpected runtime exception inside the library is reported by where
-it happened: anywhere in `verifySignedData`, and in `verifyReceipt` before the
-signature has verified, it is `Reason.MALFORMED` (input nobody vouched for
-must not be able to raise the internal-error alarm at will); while the signed
-receipt content is decoded, `Reason.UNREADABLE_PAYLOAD`; and outside those, as
-from a clock that throws, `Reason.INTERNAL_ERROR`. Only a JVM error escapes:
-`OutOfMemoryError`, or `StackOverflowError` on a thread whose stack is
-smaller than about 160 KB ([Resource bounds](#resource-bounds)).
-The one exception: a `null` `Environment` or `Config` is a programming
-mistake, not something a receipt can cause, and throws
-`NullPointerException`.
+it happened: in `verifyReceipt` or `verifySignedData` before the signature
+has verified, it is `Reason.MALFORMED` (input nobody vouched for must not be
+able to raise the internal-error alarm at will); while the signed content is
+read, `Reason.UNREADABLE_PAYLOAD`; and outside those, as from a clock that
+throws, `Reason.INTERNAL_ERROR`. Only a JVM error escapes (`OutOfMemoryError`,
+or `StackOverflowError` on a thread whose stack is smaller than about 160 KB;
+[Resource bounds](#resource-bounds)), besides the `NullPointerException` a
+`null` `Environment` or `Config` throws: a programming mistake, not something
+a receipt can cause.
 
 **A custom clock**, for tests or for pinning `request_date`:
 

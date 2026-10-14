@@ -114,8 +114,8 @@ final class DefaultVerifier implements Verifier {
 
     /**
      * How deep a genuine Apple receipt nests constructed ASN.1 values, as
-     * BouncyCastle's bound counts them: the public sandbox receipts parse
-     * with {@code org.bouncycastle.asn1.max_cons_depth} at 9 and fail at 8,
+     * BouncyCastle's bound counts them: a genuine Apple receipt parses with
+     * {@code org.bouncycastle.asn1.max_cons_depth} at 9 and fails at 8,
      * the same as {@link #RECEIPT_NESTING} SEQUENCEs around an INTEGER.
      */
     static final int RECEIPT_NESTING = 9;
@@ -125,13 +125,15 @@ final class DefaultVerifier implements Verifier {
      * instance this library holds, so nothing is registered with
      * {@code Security}. The info string ("BouncyCastle Security Provider
      * v1.81.1") is compared by its parts, and one without a release in it is
-     * refused. 1.84 added the
-     * ASN.1 nesting bound (bcprov 1.81 throws {@code StackOverflowError} out
-     * of {@code verifyReceipt} on a deeply nested receipt), and 1.85 fixed
+     * refused. 1.86 is the release whose behaviour this library's bounds were
+     * checked against: the RDN sort, the path builder's length limit and the
+     * digest costs its comments describe. Below it, 1.84 added the ASN.1
+     * nesting bound (bcprov 1.81 throws {@code StackOverflowError} out of
+     * {@code verifyReceipt} on a deeply nested receipt), and 1.85 fixed
      * CVE-2026-12860 (RSA PKCS#1 verification skipped two hash bytes), which
-     * the receipt signature check reaches, and CVE-2026-13506. The class
-     * loading in {@link #buildStaticState} does not read the release, so it
-     * cannot tell these apart.
+     * the receipt signature check reaches. The class loading in
+     * {@link #buildStaticState} does not read the release, so it cannot tell
+     * these apart.
      *
      * @throws IllegalStateException naming the release found
      */
@@ -140,9 +142,10 @@ final class DefaultVerifier implements Verifier {
         Matcher release = BOUNCY_CASTLE_RELEASE.matcher(info);
         if (!release.find() || Integer.parseInt(release.group(1)) * 1000 + Integer.parseInt(release.group(2)) < 1086) {
             throw new IllegalStateException("BouncyCastle bcprov on the classpath is \"" + info
-                    + "\"; the verifier needs 1.86 or later: 1.84 added the ASN.1 nesting bound that"
-                    + " keeps a deeply nested receipt from overflowing the stack, and 1.85 fixed"
-                    + " CVE-2026-12860 in the RSA signature check receipts use (and CVE-2026-13506)."
+                    + "\"; the verifier needs 1.86 or later, the release its resource bounds were"
+                    + " checked against: 1.84 added the ASN.1 nesting bound that keeps a deeply nested"
+                    + " receipt from overflowing the stack, and 1.85 fixed CVE-2026-12860 in the RSA"
+                    + " signature check receipts use."
                     + " Resolve bcprov to 1.86 or later; this check reads bcprov's release only, so keep"
                     + " bcutil and bcpkix at the same release");
         }
