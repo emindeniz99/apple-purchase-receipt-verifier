@@ -41,9 +41,10 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    floors allow, then Dependabot weekly. The sweep is #204.
 5. **API.** The 0.7 shape stays in all nine packages; Java keeps
    `runtimeProbe`; roots keep the native certificate type in Java, .NET
-   and Go and are bytes elsewhere; Java's `Environment.value()` becomes
-   public; the WIT package version moved to `aprv:verifier@0.1.0` in one
-   pull request across every binding on 2026-10-01 (R36).
+   and Go and are bytes elsewhere; Java's `Environment.value()` is
+   public (2026-10-14); the WIT package version moved to
+   `aprv:verifier@0.1.0` in one pull request across every binding on
+   2026-10-01 (R36).
    - Decided 2026-10-01 (DECISIONS.md R41): internals that leaked are
      hidden (Rust's top-level `decode_receipt_data`; Go's `String()`
      methods that repeated `ToJSON()`/`JSON()`; Swift's
@@ -489,7 +490,7 @@ for a production receipt and 0.78 to 0.87 ms for a sandbox one.
 | 4 | A public `TestPki` builder: set the receipt type (the public `receiptPayload` always writes `ProductionSandbox`), omit `web_order_line_item_id` (always 42 today), set cancellation date (1712) and receipt expiration (21), no forced unknown attribute 9999; named setters instead of `inAppPurchase(long, String, String, String, String, String)`, where the two date strings cannot be told apart | True | About 150 lines, test-jar only, plus a sources jar for it | Do. Closes "Test signer fields" above |
 | 5 | `AppleStatus.isAppleRetryable(status, isRetryable)`: 21005, Apple's 21009 and 21100 to 21199, unless `is_retryable` is false | The class doc already says this in prose | About 20 lines | Do; decide whether other ports get it |
 | 6 | Say that `ReceiptPayload.toJson()` is not a verifyReceipt body | True. The class doc's "one vocabulary" line misled them into a wrong diff | One sentence | Do |
-| 7 | Make `Environment.value()` public, to log `Production` or `Sandbox` | True, package-private today | One keyword | Do |
+| 7 | Make `Environment.value()` public, to log `Production` or `Sandbox` | True, it was package-private | One keyword | Done 2026-10-14 (R36) |
 | 8 | Check the interrupt flag between decode, chain and signature | Repeat of the 0.6 ask | Small | Keep "not added" (above). Their own worst case is 3.7 ms |
 
 They asked to leave `Endpoint.MAX_REQUEST_BYTES` and the `Reason` to

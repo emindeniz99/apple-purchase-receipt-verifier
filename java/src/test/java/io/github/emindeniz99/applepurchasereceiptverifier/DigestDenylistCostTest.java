@@ -1,5 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -8,6 +9,8 @@ import java.lang.reflect.Field;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -105,6 +108,18 @@ class DigestDenylistCostTest {
         DigestCalculatorProvider calculators = new JcaDigestCalculatorProviderBuilder()
                 .setProvider(BouncyCastle.PROVIDER)
                 .build();
+        // The source names them by BouncyCastle's constants; these are their values.
+        assertEquals(
+                new HashSet<>(Arrays.asList(
+                        "1.2.643.2.2.9",
+                        "1.2.840.113549.2.2",
+                        "1.0.10118.3.0.55",
+                        "1.2.643.7.1.1.2.2",
+                        "1.2.643.7.1.1.2.3",
+                        "1.2.804.2.1.1.1.1.2.2.1",
+                        "1.2.804.2.1.1.1.1.2.2.2",
+                        "1.2.804.2.1.1.1.1.2.2.3")),
+                ReceiptCore.REFUSED_DIGESTS);
         Map<String, AlgorithmIdentifier> resolved = resolvedDigests(calculators);
         assertTrue(resolved.containsKey(SHA256), "SHA-256 did not resolve: " + resolved.keySet());
         assertTrue(
@@ -120,6 +135,7 @@ class DigestDenylistCostTest {
 
     @Test
     void md2WithRsaIsTheOneSlowSignatureLabel() throws Exception {
+        assertEquals(MD2_WITH_RSA, AppleTrust.REFUSED_SIGNATURE_ALGORITHM);
         KeyPairGenerator rsa = KeyPairGenerator.getInstance("RSA", BouncyCastle.PROVIDER);
         rsa.initialize(2048);
         KeyPairGenerator ec = KeyPairGenerator.getInstance("EC", BouncyCastle.PROVIDER);

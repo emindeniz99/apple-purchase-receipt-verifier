@@ -21,8 +21,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1InputStream;
-import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.jspecify.annotations.Nullable;
@@ -99,16 +97,7 @@ final class JwsCore {
         authenticateTopDown(leaf, intermediate, trustAnchors);
         validateChain(leaf, intermediate, new Date(carried != null ? carried : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
-        if (leaf.getExtensionValue(AppleTrust.SIGNING_LEAF_OID) == null) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "leaf certificate lacks Apple marker OID " + AppleTrust.SIGNING_LEAF_OID);
-        }
-        if (intermediate.getExtensionValue(AppleTrust.INTERMEDIATE_OID) == null) {
-            throw new VerificationException(
-                    Reason.INVALID_CERTIFICATE_PURPOSE,
-                    "intermediate certificate lacks Apple marker OID " + AppleTrust.INTERMEDIATE_OID);
-        }
+        AppleTrust.requireMarkers(leaf, intermediate, "x5c");
         verifyEs256(leaf, parts[0] + "." + parts[1], signature);
         // A payload that did not read fails here, as UNREADABLE_PAYLOAD.
         Payload payload = read != null ? read : readPayload(payloadBytes);
@@ -316,12 +305,11 @@ final class JwsCore {
     }
 
     /**
-     * Each entry as a certificate, or null for one over
-     * {@link ReceiptCertificates#MAX_CERTIFICATE_EXTENSIONS} or one
-     * {@link AppleTrust#convertible} passes over: no Apple certificate, so it
-     * stands for nothing in the chain. An entry under the cap that does not
-     * decode is INVALID_CERTIFICATE; one over it is null before it is parsed,
-     * decodable or not.
+     * Each entry as a certificate, or null for one
+     * {@link PreTrustScreen#readCertificate} passes over: no Apple
+     * certificate, so it stands for nothing in the chain. An entry under the
+     * cap that does not decode is INVALID_CERTIFICATE; one over it is null
+     * before it is parsed, decodable or not.
      */
     private static List<@Nullable X509Certificate> decodeChain(List<String> x5c) throws VerificationException {
         JcaX509CertificateConverter converter = new JcaX509CertificateConverter().setProvider(BouncyCastle.PROVIDER);
@@ -330,16 +318,8 @@ final class JwsCore {
             for (String entry : x5c) {
                 byte[] der = StrictBase64.decode(entry, false, Reason.INVALID_CERTIFICATE, "x5c entry");
                 // The first object only, as a CertificateFactory reads one.
-                ASN1Primitive parsed = new ASN1InputStream(der).readObject();
-                if (ReceiptCertificates.tooManyExtensions(parsed)) {
-                    chain.add(null);
-                    continue;
-                }
-                X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(parsed));
-                // Decodes the signature here, not inside the validator. The
-                // key is not read: see authenticateTopDown.
-                holder.toASN1Structure().getSignature().getOctets();
-                chain.add(AppleTrust.convertible(holder.toASN1Structure()) ? converter.getCertificate(holder) : null);
+                X509CertificateHolder holder = PreTrustScreen.readCertificate(new ASN1InputStream(der).readObject());
+                chain.add(holder == null ? null : converter.getCertificate(holder));
             }
         } catch (CertificateException | IOException | RuntimeException e) {
             throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + chain.size() + "] does not decode", e);
@@ -396,14 +376,8 @@ final class JwsCore {
             params.addCertPathChecker(AppleTrust.HANDLED_CRITICAL_EXTENSIONS);
             // Per call, so no BouncyCastle object is shared between threads.
             CertPathValidator.getInstance("PKIX", BouncyCastle.PROVIDER).validate(path, params);
-        } catch (GeneralSecurityException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
             throw AppleTrust.chainFailure(e, "x5c", "certificate chain", at);
-        } catch (RuntimeException e) {
-            // BouncyCastle's unchecked exceptions for malformed certificate content.
-            throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN,
-                    "path validator raised " + e.getClass().getName(),
-                    e);
         }
     }
 

@@ -23,34 +23,37 @@ import java.util.List;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
-import org.bouncycastle.asn1.ASN1External;
-import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.ASN1String;
-import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
-import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
-import org.bouncycastle.asn1.x500.RDN;
-import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.jcajce.interfaces.BCX509Certificate;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Trust material both paths share (the marker OIDs, the anchors and the
- * checker for the critical extensions PKIX leaves unresolved), and their
- * rule for it: no key is ever decoded or used unless a pinned root, or a CA
- * it vouched for, has vouched for its certificate, so certificates are
- * checked top-down from the roots. An end entity vouches for nothing:
- * Apple's roots also vouch for developer certificates, whose keys belong to
- * the developers. BouncyCastle validates an RSA key as it decodes it, which
- * costs seconds for a 16384-bit modulus. PKIX then verifies the
- * same signatures again; that duplicate is the price of never decoding an
- * unvouched key.
+ * The trust policy both paths share, and their top-down signature rule.
+ *
+ * <p>Policy: the pinned roots as PKIX anchors ({@link #anchors},
+ * {@link #roots}), the critical extensions PKIX leaves unresolved
+ * ({@link #HANDLED_CRITICAL_EXTENSIONS}), Apple's marker OIDs
+ * ({@link #requireMarkers}), and the verdict for a path that fails
+ * ({@link #chainFailure}).</p>
+ *
+ * <p>Rule: no key is ever decoded or used unless a pinned root, or a CA it
+ * vouched for, has vouched for its certificate, so certificates are checked
+ * top-down from the roots ({@link #signedByAny}, {@link #signedBy}). An end
+ * entity vouches for nothing: Apple's roots also vouch for developer
+ * certificates, whose keys belong to the developers. BouncyCastle validates
+ * an RSA key as it decodes it, which costs seconds for a 16384-bit modulus.
+ * PKIX then verifies the same signatures again; that duplicate is the price
+ * of never decoding an unvouched key. A signature label is the sender's
+ * until its signature verifies, so the rule also refuses the labels that
+ * cost work before a byte is compared ({@link #GENERIC_COMPOSITE_SIGNATURE},
+ * {@link #REFUSED_SIGNATURE_ALGORITHM}, {@link #saltFits}).</p>
+ *
+ * <p>The shapes screened before any of this runs are in
+ * {@link PreTrustScreen}.</p>
  */
 final class AppleTrust {
 
@@ -77,7 +80,7 @@ final class AppleTrust {
      * verifies through their own SPI and not through this generic path,
      * stay accepted.
      */
-    static final String GENERIC_COMPOSITE_SIGNATURE = "1.3.6.1.4.1.18227.2.1";
+    static final String GENERIC_COMPOSITE_SIGNATURE = MiscObjectIdentifiers.id_alg_composite.getId();
 
     /**
      * md2WithRSAEncryption, the one signature label refused for what its
@@ -88,7 +91,7 @@ final class AppleTrust {
      * per issuer tried, before it compares a signature byte. Apple signs
      * nothing with MD2.
      */
-    static final String REFUSED_SIGNATURE_ALGORITHM = "1.2.840.113549.1.1.2";
+    static final String REFUSED_SIGNATURE_ALGORITHM = PKCSObjectIdentifiers.md2WithRSAEncryption.getId();
 
     /** The critical extensions {@link #HANDLED_CRITICAL_EXTENSIONS} marks processed. */
     private static final Set<String> HANDLED = Collections.unmodifiableSet(
@@ -182,11 +185,9 @@ final class AppleTrust {
      * another provider's returns false. Its signature algorithm is its own
      * choice and stays unsigned until this returns. So the label inside the
      * TBS, which the signature covers, must equal the outer one (RFC 5280
-     * 4.1.1.2). An RSASSA-PSS label may not name a saltLength longer than
-     * {@code issuerKey} can hold, or a negative one, because BouncyCastle
-     * allocates an array of saltLength bytes (the low 32 bits of it) while it
-     * builds the verifier, before it compares any signature byte. A
-     * certificate labelled {@link #GENERIC_COMPOSITE_SIGNATURE} or
+     * 4.1.1.2), and its saltLength must fit {@code issuerKey}
+     * ({@link #saltFits}). A certificate labelled
+     * {@link #GENERIC_COMPOSITE_SIGNATURE} or
      * {@link #REFUSED_SIGNATURE_ALGORITHM} is signed by nobody.</p>
      */
     static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
@@ -221,6 +222,9 @@ final class AppleTrust {
      * can hold: at most emLen - hLen - 2 octets (RFC 8017 9.1.2), emLen from
      * the modulus and hLen from the hash the parameters name. The salt is a
      * non-negative integer (RFC 8017 9.1.1), so a negative one does not fit.
+     * BouncyCastle allocates an array of saltLength bytes (the low 32 bits of
+     * it) while it builds a PSS verifier, before it compares any signature
+     * byte, so both callers ask this first.
      * Any other algorithm fits, and PSS under a key that is not RSA, or with
      * no parameters, verifies nothing. That includes a composite with a PSS
      * part, which this does not look inside: both callers refuse
@@ -243,78 +247,29 @@ final class AppleTrust {
     }
 
     /**
-     * Whether BouncyCastle can turn {@code certificate} into a JCA object, and
-     * verify and compare that object, without sorting a SET the sender
-     * nested. Encoding to DER sorts every SET by its members' encodings, at a
-     * cost that grows with the nesting, and BouncyCastle's X.509 object
-     * DER-encodes the names and the signature parameters as it is built, the
-     * TBS as it is verified and the whole certificate as it is compared.
-     *
-     * <p>The X.509 grammar leaves two places open to any ASN.1, and
-     * BouncyCastle parses the rest strictly or keeps it as octets (extension
-     * values, the key, the signature): an attribute value in the issuer or
-     * subject name, and the parameters of the three AlgorithmIdentifiers
-     * (the TBS signature, the outer signatureAlgorithm, the key's). So the
-     * certificate is convertible when every name value is a string and no
-     * parameters hold a SET. Apple's names hold PrintableString and
-     * UTF8String, and no signature or key algorithm defines a SET in its
-     * parameters, so a certificate that is not convertible is not one Apple
-     * issued. The one SET left, an RDN's SET OF values, BouncyCastle 1.86
-     * sorts in N log N.</p>
+     * Apple's marker OIDs, checked once the chain to a pinned root holds:
+     * the signing marker on {@code signer} and the WWDR marker on
+     * {@code intermediate}, the certificate that issued it, null for a signer
+     * a root issued directly. Developer certificates chain to the same roots.
+     * {@code what} names the input in the message.
      */
-    static boolean convertible(org.bouncycastle.asn1.x509.Certificate certificate) {
-        TBSCertificate tbs = certificate.getTBSCertificate();
-        return stringsOnly(tbs.getIssuer())
-                && stringsOnly(tbs.getSubject())
-                && !holdsSet(tbs.getSignature().getParameters())
-                && !holdsSet(certificate.getSignatureAlgorithm().getParameters())
-                && !holdsSet(tbs.getSubjectPublicKeyInfo().getAlgorithm().getParameters());
-    }
-
-    /** Whether every attribute value in {@code name} is a string. */
-    static boolean stringsOnly(X500Name name) {
-        for (RDN rdn : name.getRDNs()) {
-            for (AttributeTypeAndValue value : rdn.getTypesAndValues()) {
-                if (!(value.getValue() instanceof ASN1String)) {
-                    return false;
-                }
-            }
+    static void requireMarkers(X509Certificate signer, @Nullable X509Certificate intermediate, String what)
+            throws VerificationException {
+        if (signer.getExtensionValue(SIGNING_LEAF_OID) == null) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    what + " signer certificate lacks Apple signing marker OID " + SIGNING_LEAF_OID);
         }
-        return true;
-    }
-
-    /**
-     * Whether {@code value} is a SET or holds one inside a SEQUENCE, a
-     * tagged object, or an EXTERNAL's content or data value descriptor, the
-     * containers BouncyCastle's parser builds besides constructed strings,
-     * which hold only strings. BouncyCastle puts any EXTERNAL element that is
-     * not an OID, an INTEGER or a tagged object in the descriptor, a SET
-     * included. The depth is the parser's own bound.
-     */
-    static boolean holdsSet(@Nullable ASN1Encodable value) {
-        if (value == null) {
-            return false;
+        if (intermediate == null) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    what + " signer is issued by a root directly, with no WWDR intermediate");
         }
-        ASN1Primitive primitive = value.toASN1Primitive();
-        if (primitive instanceof ASN1Set) {
-            return true;
+        if (intermediate.getExtensionValue(INTERMEDIATE_OID) == null) {
+            throw new VerificationException(
+                    Reason.INVALID_CERTIFICATE_PURPOSE,
+                    what + " intermediate certificate lacks Apple WWDR marker OID " + INTERMEDIATE_OID);
         }
-        if (primitive instanceof ASN1Sequence) {
-            for (ASN1Encodable member : (ASN1Sequence) primitive) {
-                if (holdsSet(member)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (primitive instanceof ASN1TaggedObject) {
-            return holdsSet(((ASN1TaggedObject) primitive).getBaseObject());
-        }
-        if (primitive instanceof ASN1External) {
-            ASN1External external = (ASN1External) primitive;
-            return holdsSet(external.getDataValueDescriptor()) || holdsSet(external.getExternalContent());
-        }
-        return false;
     }
 
     /** The certificates of {@code trustAnchors}. */
@@ -327,14 +282,21 @@ final class AppleTrust {
     }
 
     /**
+     * UNTRUSTED_CHAIN for an unchecked exception, BouncyCastle's report of
+     * malformed certificate content, whatever it wraps; otherwise
      * INVALID_CERTIFICATE when a certificate was outside its validity window
      * at {@code at}, else UNTRUSTED_CHAIN. The validator's message can quote
      * names out of the certificates, so it is kept out of the failure's own
      * message and is only the exception's cause. {@code VerificationException.toFailure}
      * then drops that cause for both reasons, so a caller never sees it.
      */
-    static VerificationException chainFailure(
-            GeneralSecurityException failure, String certificates, String chain, Date at) {
+    static VerificationException chainFailure(Exception failure, String certificates, String chain, Date at) {
+        if (failure instanceof RuntimeException) {
+            return new VerificationException(
+                    Reason.UNTRUSTED_CHAIN,
+                    chain + " raised " + failure.getClass().getName(),
+                    failure);
+        }
         if (outsideValidity(failure)) {
             return new VerificationException(
                     Reason.INVALID_CERTIFICATE,

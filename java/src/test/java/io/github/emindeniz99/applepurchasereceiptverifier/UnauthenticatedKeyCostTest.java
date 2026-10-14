@@ -547,6 +547,7 @@ class UnauthenticatedKeyCostTest {
         // RSASSA-PSS label refused: 0.5 to 6 s a call before the composite
         // signature failed to parse. The generic composite label is now
         // refused before any part is looked at.
+        assertEquals("1.3.6.1.4.1.18227.2.1", AppleTrust.GENERIC_COMPOSITE_SIGNATURE);
         AlgorithmIdentifier label =
                 new AlgorithmIdentifier(MiscObjectIdentifiers.id_alg_composite, new DLSequence(pss(1_000_000_000)));
         assertLabelRefusedQuickly(label, COMPOSITE_REFUSED);
@@ -1023,15 +1024,14 @@ class UnauthenticatedKeyCostTest {
         KeyPair signerKey = rsa2048();
         X509CertificateHolder intermediate = new X509CertificateHolder(pki.intermediate.getEncoded());
         X509CertificateHolder root = new X509CertificateHolder(pki.root.getEncoded());
-        X509CertificateHolder atCap =
-                signerWithExtensions(pki, signerKey, ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS);
+        X509CertificateHolder atCap = signerWithExtensions(pki, signerKey, PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS);
         ReceiptPayload verified = Checks.receipt(
                 Checks.verifier(pki),
                 receiptSignedBy(signerKey, Collections.singletonList(atCap), Arrays.asList(atCap, intermediate, root)));
         assertEquals(BUNDLE, verified.bundleId());
 
         X509CertificateHolder over =
-                signerWithExtensions(pki, signerKey, ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS + 1);
+                signerWithExtensions(pki, signerKey, PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS + 1);
         byte[] receipt =
                 receiptSignedBy(signerKey, Collections.singletonList(over), Arrays.asList(over, intermediate, root));
         VerificationException e =
@@ -1048,8 +1048,8 @@ class UnauthenticatedKeyCostTest {
                 subject(pki.root),
                 new X500Name("CN=x"),
                 key(pki.leaf),
-                fillerExtensions(ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS + 1));
-        assertTrue(ReceiptCertificates.tooManyExtensions(stranger));
+                fillerExtensions(PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS + 1));
+        assertTrue(PreTrustScreen.tooManyExtensions(stranger));
         Checks.receipt(Checks.verifier(pki), withBagEntry(pki, stranger));
     }
 
@@ -1093,7 +1093,7 @@ class UnauthenticatedKeyCostTest {
                 subject(pki.root),
                 new X500Name("CN=x"),
                 key(pki.leaf),
-                fillerExtensions(ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS + 1));
+                fillerExtensions(PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS + 1));
         ASN1Sequence tbs = ASN1Sequence.getInstance(certificate.getObjectAt(0));
         ASN1EncodableVector fields = new ASN1EncodableVector();
         for (ASN1Encodable field : tbs) {
@@ -1102,13 +1102,13 @@ class UnauthenticatedKeyCostTest {
         fields.add(new DLTaggedObject(false, 1, new DERBitString(new byte[1])));
         DLSequence reordered = new DLSequence(
                 new ASN1Encodable[] {new DLSequence(fields), certificate.getObjectAt(1), certificate.getObjectAt(2)});
-        assertTrue(ReceiptCertificates.tooManyExtensions(reordered));
-        assertFalse(ReceiptCertificates.tooManyExtensions(certificateShaped(
+        assertTrue(PreTrustScreen.tooManyExtensions(reordered));
+        assertFalse(PreTrustScreen.tooManyExtensions(certificateShaped(
                 SHA256_WITH_RSA,
                 subject(pki.root),
                 new X500Name("CN=x"),
                 key(pki.leaf),
-                fillerExtensions(ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS))));
+                fillerExtensions(PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS))));
     }
 
     @Test
@@ -1134,7 +1134,7 @@ class UnauthenticatedKeyCostTest {
                         .getExtensions()
                         .getExtensionOIDs()
                         .length);
-        assertFalse(ReceiptCertificates.tooManyExtensions(stranger));
+        assertFalse(PreTrustScreen.tooManyExtensions(stranger));
         Checks.receipt(Checks.verifier(pki), withBagEntry(pki, stranger));
     }
 
@@ -1167,12 +1167,11 @@ class UnauthenticatedKeyCostTest {
     void aJwsIntermediateAtTheExtensionCapVerifiesAndOneOverIsUntrusted() throws Exception {
         TestPki pki = TestPki.jws();
         String atCap = pki.signJwsWithHeader(
-                jwsHeader(pki, intermediateWithExtensions(pki, ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS)), "{}");
+                jwsHeader(pki, intermediateWithExtensions(pki, PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS)), "{}");
         Checks.signedData(Checks.verifier(pki), atCap);
 
         String over = pki.signJwsWithHeader(
-                jwsHeader(pki, intermediateWithExtensions(pki, ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS + 1)),
-                "{}");
+                jwsHeader(pki, intermediateWithExtensions(pki, PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS + 1)), "{}");
         VerificationException e =
                 assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(pki), over));
         assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());

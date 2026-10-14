@@ -170,7 +170,7 @@ base64url segments.**
    and `JwsCore.authenticateTopDown`.
    Test: `UnauthenticatedKeyCostTest`.
 2. **Chain, then markers, then signature.** In `ReceiptCore.verifySigner`:
-   `validateChain`, `requireMarkers`, `verifyCmsSignature`; the payload is
+   `validateChain`, `AppleTrust.requireMarkers`, `verifyCmsSignature`; the payload is
    decoded only after, in `parseSignedPayload`. `JwsCore.verifyUnguarded`
    follows the same order.
 3. **Failures land on the right `Reason`.** An unchecked exception before
@@ -209,6 +209,8 @@ The key files, all in `src/main/java/io/github/emindeniz99/applepurchasereceiptv
 (the JWS algorithm),
 [`AppleTrust.java`](src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/AppleTrust.java)
 (markers, anchors, top-down check),
+[`PreTrustScreen.java`](src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/PreTrustScreen.java)
+(what runs before trust),
 [`ReceiptCertificates.java`](src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCertificates.java)
 (the bag),
 [`ReceiptDecoder.java`](src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptDecoder.java)
