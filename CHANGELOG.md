@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.12.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.11.1...v0.12.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **java:** Verifier.create in apple-purchase-receipt-verifier no longer throws IllegalStateException when apple-purchase-receipt-verifier-wasm is on the classpath too. Depend on exactly one of the two; the -wasm artifact still refuses the pair when its classes load first.
+* **java:** the Version class is gone from the apple-purchase-receipt-verifier artifact. Read the version from the jar manifest instead: Verifier.class.getPackage().getImplementationVersion().
+
+### Features
+
+* **java:** make Environment.value() public ([b4ae20d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b4ae20d3aa89efeaee8913c1dfd51a48a3c90c80))
+
+
+### Bug Fixes
+
+* **java:** accept a seven-certificate path the builder validates ([d993e32](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d993e32e945b9f6375ef97928bb6cb5f62163fc8))
+* **java:** accept any signer path the pkix builder validates ([3800624](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/38006241f6325e93a7e96586eff2cf928da59574))
+* **java:** bound the cost of the certificate bag and the signer issuer ([b45ab1d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b45ab1d73e6b06c35a8359c5a214fb42965c4b25))
+* **java:** bound the pss salt on signer infos instead of the label ([60f1a4d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/60f1a4df6accc6a65829261689cf2653359b22bd))
+* **java:** bound the RSASSA-PSS salt a certificate signature may name ([d73c400](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d73c40004d74ea7b1887528d665a40bc4c157e02))
+* **java:** cap extensions and signer info attributes before parsing ([4a439a0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4a439a0d466b4f841cf2432c861eb01fada053f6))
+* **java:** compare SignerId issuers with BouncyCastle's strict style ([200797e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/200797e5c0bf5487275034ab982122d74be58970))
+* **java:** count extensions after the version slot, correct the cost figure ([77e7376](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/77e737619055c2a8e778ccbb4c4700b76e892473))
+* **java:** fail closed on an unnamed bcprov release, drop root holder ([af7ed62](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/af7ed628293b1a75661e1c97eb3a14645f99c63f))
+* **java:** hash signed attributes as sent ([f546a93](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f546a93a44f051549d86fac88f9b96bdc99ba7b5))
+* **java:** keep src/main ascii-only and free of test mentions ([c2efad6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c2efad66293e801c353493a1c5b9de0ff7a8697c))
+* **java:** let only a CA vouch in the receipt certificate walk ([35021b6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/35021b69d76ad5d22f76e97b71b54f52986ff7c2))
+* **java:** look for a set in an external's data value descriptor ([503db43](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/503db43fb5932a71fa749ea5c785821568f68919))
+* **java:** match the signer certificate with the JDK's name comparison ([1058728](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1058728609c7c05a6df6b8faa595031144c34d91))
+* **java:** name a non-CMS envelope and pin the payload's write limits ([71e31dc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/71e31dc3d3a3b57bbe8da1baa1ee98b741be5016))
+* **java:** refuse a negative pss salt before bouncycastle reads it ([418f48f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/418f48f114886670d40246a7af483599029bf046))
+* **java:** refuse md2 certificate labels and skip duplicate issuers ([357e8cc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/357e8cc215bce6e48bed5cfad0512d23085f0cb9))
+* **java:** refuse the generic composite label before building ([2cbb571](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2cbb571f310b5980afb26dd20412995708e9151c))
+* **java:** refuse the md2WithRSAEncryption signature label ([d47ab2d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d47ab2d51352fe65a402a9856c3d09bb9e9cee15))
+* **java:** refuse the RSASSA-PSS signature label before building it ([c0aeab9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c0aeab9fdb4273c7fba572dfa00b32fa0a462ae3))
+* **java:** refuse the slow digests before digesting the content ([84af582](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/84af5823385f23e31c1e1266022a982635bf3a23))
+* **java:** say the BouncyCastle release check reads bcprov only ([8397665](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8397665956cb00916e9a76c09d4c48ddee78496b))
+* **java:** skip certificates whose conversion would sort a nested SET ([7e0cf73](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7e0cf735e9b11bcc7e16805ffd096be7e7d234a4))
+* **java:** stop pre-reading signer attributes and bounding date years ([8a05a3b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8a05a3b227fd251beaecfffefd26bb18e824c3b9))
+
+
+### Code Refactoring
+
+* **java:** build the JSON factory in its field initializer ([5713165](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5713165e0de9e7153567a17ec858004ff0d82fb6))
+* **java:** check the Apple markers in one place ([52f051d](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/52f051d7d1032ecd761167c9870e9ba28c8280ab))
+* **java:** decode a vouched signer key in one place ([8d01d48](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8d01d48fdb7878fcf9537b0b82ecc90936287977))
+* **java:** define the receipt size cap in ReceiptCore ([a4a9675](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a4a9675d3e83a4ed50e3a40caf6039ee478b8e70))
+* **java:** drop checks and helpers java bc does not need ([cdf8968](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/cdf896822bb42e31e020258676a2f355387a92aa))
+* **java:** drop hand-set numbers that repeat library defaults ([95a52bd](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/95a52bda23b030edad1e992102c312cfe557f79d))
+* **java:** drop the dead checks and the duplicate try ([6bcfce2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6bcfce2fab903e17e2bf6337feccc7af4ec907de))
+* **java:** drop the INTERNAL_ERROR cause nothing builds ([29f1eed](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/29f1eedccafc30be7d23b63f8267ef7f1cdff282))
+* **java:** give the JWS chain checks non-null certificates ([2a20df4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2a20df493e421c7ff470722419c6df2533542a69))
+* **java:** keep every pre-trust screen in PreTrustScreen ([b10f342](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b10f342a9dc3331713e45032d18b2f743de982cb))
+* **java:** keep the fields together in defaultverifier ([8d558a6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8d558a6e4389997db0ad07ee557403b15f64447e))
+* **java:** leave the label equality to bouncycastle ([a75bf82](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a75bf829d8dee23d0f4661b1dddbb017f7125607))
+* **java:** move the classpath guard into the -wasm artifact ([748b6e0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/748b6e09969b27cffd571c1816068b5ca705f4de))
+* **java:** move the pre-trust shape screen out of AppleTrust ([081a97a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/081a97aad5850e0bfaacf93b0e2653918a3dc163))
+* **java:** name the algorithm OIDs by their BouncyCastle constants ([3a4ec7b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3a4ec7b8f4b1d325435ee81fd3cffd9253ee2e23))
+* **java:** name the two base64 spellings at the call sites ([e5033c0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e5033c0cb3b25daed5cb622e8286fd5b462b4dd4))
+* **java:** parse a receipt's SignedData once ([0426e0b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0426e0b962b29c3ef96b6f97eb966c5dadf5492c))
+* **java:** pass the decoded signer key to the signature check ([b157ff4](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b157ff40c85f09ca4fcbb09b3fb78919f0f8667f))
+* **java:** put ReceiptCore's methods in call order ([ab62bb2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ab62bb20a706fb008c2c43fd92951ef1b6d4db2b))
+* **java:** read a certificate entry once for the bag and the x5c ([d91a89f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d91a89f1aa93494c13af50a391f869f4e42d186e))
+* **java:** read data and summary through JsonFields' member loop ([aea6935](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/aea6935866a3c910fb268d58aecad04207ffc849))
+* **java:** refuse a slow digest by the label's digest, one list ([b05461f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b05461f368cfd62ade6a1f5837b21f7d92d59253))
+* **java:** remove the Version class ([2ca15b5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2ca15b50dc10924f16e9b798d12ab778014a3196))
+* **java:** split signerInfos into a shape predicate and a rebuild ([3f644d6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3f644d627973a1aa62ed3523324387d90b5f21bf))
+* **java:** split verifySignature and merge the base64 decoders ([ba08116](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ba08116e5c08204d8c21e5e488bba33f943bea47))
+* **rust:** correct three statements the core makes about itself ([3fdfd97](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3fdfd9736456a974b157e4174da8eddde5585cdd))
+* **rust:** drop restated library defaults and a test that pins none ([419079f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/419079fc104067e0653ec772595854bb9bb33510))
+* **rust:** drop the core's own path-length bound ([aedd9ed](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/aedd9ed6498702930c8aece482c5b8ab1b4f7af0))
+
+
+### Build & Dependencies
+
+* **dotnet:** regenerate lock files for the October SDK patches ([718c526](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/718c52639c8e0d024924615d4439630422d8c4aa))
+* **java-wasm:** pin lifecycle plugins and turn doclint back on ([3b80660](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3b806608c311f579bb46c9004f410271f9f89424))
+* **java:** pin lifecycle plugins and turn doclint back on ([53650a6](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/53650a6020de9498613a3ad8a86b5e5c7feddcee))
+
 ## [0.11.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.11.0...v0.11.1) (2026-10-12)
 
 
