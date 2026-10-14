@@ -824,6 +824,27 @@ class UnauthenticatedKeyCostTest {
         assertSaltRefusedQuickly(pss(223));
     }
 
+    @Test
+    void aSignerInfoWithANegativeSaltWhoseLowBitsFitIsRefused() throws Exception {
+        // The negative salts above have low 32 bits of 1,000,000,000: with
+        // the signer verifier's PSS refusal removed, BouncyCastle allocated
+        // them and the OutOfMemoryError ended the test JVM before any test
+        // failed by name. This one's low 32 bits are 20, which the key holds,
+        // so only the sign check refuses it, and without the refusal the
+        // verifier is built for 20 bytes and this assertion fails.
+        assertSaltRefusedQuickly(pss(-(1L << 32) + 20));
+    }
+
+    @Test
+    void aSignerInfoWithACompositeLabelOfOneSmallPartIsRefused() throws Exception {
+        // The composite labels above carry a huge salt or 1,000 parts: with
+        // the signer verifier's composite refusal removed, they cost an
+        // OutOfMemoryError or seconds before a test failed. One
+        // sha256WithRSAEncryption part costs nothing to build, so without the
+        // refusal this assertion fails on the message.
+        assertLabelRefusedQuickly(composite(SHA256_WITH_RSA, 1), COMPOSITE_REFUSED);
+    }
+
     /**
      * A negative saltLength fits no key (RFC 8017 9.1.1). Asserted first by
      * every test that sends one: without the sign check, BouncyCastle would
