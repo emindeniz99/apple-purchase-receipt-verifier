@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Set;
@@ -194,57 +195,72 @@ final class ReceiptCore {
                     Reason.MALFORMED,
                     "receipt carries " + raw.size() + " SignerInfos, more than the maximum of " + MAX_SIGNER_INFOS);
         }
-        // BouncyCastle's SignerInformationStore keys its signers by SignerId,
-        // comparing issuer names in time quadratic in their RDN count; a store
-        // of one signer compares nothing.
         List<SignerInformation> signers = new ArrayList<>();
         for (int i = 0; i < raw.size(); i++) {
-            // Hashing a SignerId, and comparing its issuer with each
-            // certificate's, re-encodes every issuer value that is not a
-            // string, at a cost that grows with its nesting: up to 10 s for
-            // one cap-sized value. Every name Apple issues holds strings, so
-            // such an issuer names no Apple certificate, and its SignerInfo
-            // is left out before either.
-            SignerInfo info = SignerInfo.getInstance(raw.getObjectAt(i));
-            SignerIdentifier sid = info.getSID();
-            if (!sid.isTagged()
-                    && !PreTrustScreen.stringsOnly(
-                            IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
-                continue;
-            }
-            // BouncyCastle compares these parameters with the
-            // CMSAlgorithmProtection attribute's, which sorts a SET on both
-            // sides, and no digest or signature algorithm defines one.
-            if (PreTrustScreen.holdsSet(info.getDigestAlgorithm().getParameters())
-                    || PreTrustScreen.holdsSet(
-                            info.getDigestEncryptionAlgorithm().getParameters())) {
-                continue;
-            }
-            // Counted before BouncyCastle builds its tables of them.
-            if (size(info.getAuthenticatedAttributes()) + size(info.getUnauthenticatedAttributes())
-                    > MAX_SIGNER_INFO_ATTRIBUTES) {
-                continue;
-            }
-            SignedData one = new SignedData(
-                    signedData.getDigestAlgorithms(),
-                    signedData.getEncapContentInfo(),
-                    signedData.getCertificates(),
-                    signedData.getCRLs(),
-                    new DERSet(raw.getObjectAt(i)));
-            try {
-                signers.add(new CMSSignedData(new ContentInfo(CMSObjectIdentifiers.signedData, one))
-                        .getSignerInfos()
-                        .getSigners()
-                        .iterator()
-                        .next());
-            } catch (CMSException e) {
-                throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
+            ASN1Encodable entry = raw.getObjectAt(i);
+            if (appleShaped(SignerInfo.getInstance(entry))) {
+                signers.add(oneSigner(signedData, entry));
             }
         }
         if (signers.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
         }
         return signers;
+    }
+
+    /**
+     * Whether {@code info} has a shape Apple issues. One that does not names
+     * no Apple certificate and is left out before BouncyCastle does
+     * super-linear work on it.
+     */
+    private static boolean appleShaped(SignerInfo info) {
+        // Hashing a SignerId, and comparing its issuer with each
+        // certificate's, re-encodes every issuer value that is not a
+        // string, at a cost that grows with its nesting: up to 10 s for
+        // one cap-sized value. Every name Apple issues holds strings, so
+        // such an issuer names no Apple certificate, and its SignerInfo
+        // is left out before either.
+        SignerIdentifier sid = info.getSID();
+        if (!sid.isTagged()
+                && !PreTrustScreen.stringsOnly(
+                        IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
+            return false;
+        }
+        // BouncyCastle compares these parameters with the
+        // CMSAlgorithmProtection attribute's, which sorts a SET on both
+        // sides, and no digest or signature algorithm defines one.
+        if (PreTrustScreen.holdsSet(info.getDigestAlgorithm().getParameters())
+                || PreTrustScreen.holdsSet(info.getDigestEncryptionAlgorithm().getParameters())) {
+            return false;
+        }
+        // Counted before BouncyCastle builds its tables of them.
+        return size(info.getAuthenticatedAttributes()) + size(info.getUnauthenticatedAttributes())
+                <= MAX_SIGNER_INFO_ATTRIBUTES;
+    }
+
+    /**
+     * {@code signerInfo} as the one signer of a copy of {@code signedData}.
+     * BouncyCastle's SignerInformationStore keys its signers by SignerId,
+     * comparing issuer names in time quadratic in their RDN count; a store
+     * of one signer compares nothing.
+     */
+    private static SignerInformation oneSigner(SignedData signedData, ASN1Encodable signerInfo)
+            throws VerificationException {
+        SignedData one = new SignedData(
+                signedData.getDigestAlgorithms(),
+                signedData.getEncapContentInfo(),
+                signedData.getCertificates(),
+                signedData.getCRLs(),
+                new DERSet(signerInfo));
+        try {
+            return new CMSSignedData(new ContentInfo(CMSObjectIdentifiers.signedData, one))
+                    .getSignerInfos()
+                    .getSigners()
+                    .iterator()
+                    .next();
+        } catch (CMSException e) {
+            throw new VerificationException(Reason.MALFORMED, "not a PKCS#7/CMS blob", e);
+        }
     }
 
     private static int size(@Nullable ASN1Set attributes) {
