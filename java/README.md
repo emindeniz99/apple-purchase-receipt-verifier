@@ -1049,12 +1049,14 @@ A time-zone database that has America/Los_Angeles, which the endpoint's
 Pacific-time dates need: a trimmed runtime (jlink, a slim container image)
 without it makes `Verifier.create` throw `IllegalStateException`.
 
-**What to re-check on a BouncyCastle upgrade.** The code relies on a few
-BouncyCastle behaviours that are not API contracts. Thread safety is not
-one of them: apart from the provider instance, every BouncyCastle object is
-built per call, including the CMS verifier builder, the PKIX validator and
-path builder (it keeps per-build counters), the `CertificateFactory` (it
-keeps stream state between calls) and every `Signature`.
+**What to re-check on a BouncyCastle upgrade.** The resource bounds rest
+on BouncyCastle 1.86 behaviours that are not API contracts. Each bullet
+names one, the class that relies on it, and the test that pins it, or
+"no test". Thread safety is not on the list: apart from the
+provider instance, every BouncyCastle object is built per call, including
+the CMS verifier builder, the PKIX validator and path builder (it keeps
+per-build counters), the `CertificateFactory` (it keeps stream state
+between calls) and every `Signature`.
 
 - BouncyCastle bounds the nesting of every constructed value, definite or
   indefinite length, at 64 by default (`org.bouncycastle.asn1.max_cons_depth`),
@@ -1064,12 +1066,86 @@ keeps stream state between calls) and every `Signature`.
   a certificate, for example), so it must still exist, and still throw an
   `IOException`, after an upgrade. `Verifier.create` checks only that the
   bound admits 9 levels, what a genuine receipt needs; that it exists at
-  all rests on the 1.86 floor.
+  all rests on the 1.86 floor. Tests:
+  `ReceiptDecoderTest.asn1NestedPastBouncyCastlesBoundIsRefusedAsADefect`,
+  `BouncyCastleFloorTest.createRefusesANestingBoundGenuineReceiptsDoNotFit`.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`PreTrustScreen.readCertificate`, for
-  the bag and for x5c).
+  the bag and for x5c). Tests:
+  `CertificateDecodeTest.aNonSignerCertificateWithAnUnalignedSignatureIsInvalidReceiptFormat`,
+  `CertificateDecodeTest.anX5cLeafWithAnUnalignedSignatureIsInvalidCertificate`.
 - `IA5String` does not check that its bytes are seven-bit, so
-  `ReceiptDecoder.decodeString` does.
+  `ReceiptDecoder.decodeString` does. Test:
+  `ReceiptDecoderTest.anIa5StringWithAByteFrom0x80UpIsKeptRaw`.
+- Converting a certificate to a JCA `X509Certificate`
+  (`JcaX509CertificateConverter`) does not decode its key;
+  `getPublicKey()` does. `ReceiptCertificates.decode` and
+  `JwsCore.decodeChain` convert every entry before any is vouched for, so
+  the top-down rule in `AppleTrust` rests on this. Tests:
+  `UnauthenticatedKeyCostTest.aGenuineReceiptPaddedWithHugeKeysVerifiesQuickly`,
+  `UnauthenticatedKeyCostTest.aJwsWhoseCertificatesHaveHugeKeysIsRefusedQuickly`.
+- A SignerId in subjectKeyIdentifier form matches on the extension's
+  octets, or on a SHA-1 of the encoded SubjectPublicKeyInfo, and decodes no
+  key (`ReceiptCertificates.signers`). No test.
+- `BCStrictStyle.areEqual` compares two names RDN by RDN, in order, in
+  linear time. `ReceiptCertificates.signers` uses it for the
+  issuer-and-serial form in place of `SignerId.match`. Test, for reordered
+  names only:
+  `UnauthenticatedKeyCostTest.aSignerIdWhoseIssuerReordersTheCertificatesRdnsIsRefusedQuickly`.
+  No test times two equal long names.
+- `SignerInformationStore` keys its signers by SignerId, and comparing two
+  issuer names costs time quadratic in their RDN count.
+  `ReceiptCore.oneSigner` gives each SignerInfo a store of its own, which
+  compares nothing. Test:
+  `UnauthenticatedKeyCostTest.twoSignerIdsWhoseIssuersReorderEachOthersRdnsAreRefusedQuickly`.
+- Of the digests the CMS layer resolves, the eight in
+  `ReceiptCore.REFUSED_DIGESTS` cost 2.9 to 25 times SHA-256 and every other
+  one at most 2.6 times. md2WithRSAEncryption is the one signature label whose digest is
+  slow (`AppleTrust.REFUSED_SIGNATURE_ALGORITHM`). A release that adds a slow
+  digest or label needs it on the list. Test: `DigestDenylistCostTest`.
+- `SignerInformation` reads its signed attributes for hashing through the
+  overridable `getEncodedSignedAttributes()`, and a subclass can read the
+  protected `signedAttributeSet`. `ReceiptCore.SignedAsSent` overrides it to
+  hash them as sent, not re-encoded to DER. Test:
+  `UnauthenticatedKeyCostTest.aSignerInfoWhoseSignedAttributesHoldNestedSetsIsHashedAsSent`.
+- The CMS verifier hands `ContentVerifierProvider.get` the algorithm it is
+  about to build: the one its name for the SignerInfo's labels resolves to,
+  with the signatureAlgorithm's unsigned parameters.
+  `ReceiptCore.signerVerifier` refuses the generic composite label and an
+  RSASSA-PSS salt the key cannot hold there. Tests:
+  `UnauthenticatedKeyCostTest.aSignerInfoWithAnEacPssLabelAndAHugeSaltIsRefusedBeforeAnythingIsAllocated`,
+  `UnauthenticatedKeyCostTest.aSignerInfoWithACompositeLabelOfManyPartsIsRefusedBeforeTheContentIsRead`.
+- A certificate's extensions and a SignerInfo's attributes go into a
+  `java.util.Hashtable` keyed by OID, where OIDs of one hash make building
+  the table quadratic. `PreTrustScreen.MAX_OID_TABLE_ENTRIES` is set from an
+  estimate read off the sources. No test times the table. These pin the cap:
+  `UnauthenticatedKeyCostTest.aSignerCertificateAtTheExtensionCapVerifiesAndOneOverIsPassedOver`,
+  `UnauthenticatedKeyCostTest.aSignerInfoAtTheAttributeCapVerifiesAndOneOverIsLeftOut`.
+- The certificate parser reads a tagged first TBS field as the version,
+  whatever its tag number, and reads extensions only from a later `[3]`
+  field. `PreTrustScreen.tooManyExtensions` counts every `[3]` after the
+  first field. Tests:
+  `UnauthenticatedKeyCostTest.everyExtensionsFieldOfTheTbsCounts`,
+  `UnauthenticatedKeyCostTest.aVersionTaggedThreeIsNotCountedAsExtensions`.
+- The X.509 object keeps extension values as octets until they are asked
+  for, so `PreTrustScreen.convertible` screens only names and algorithm
+  parameters. Test:
+  `UnauthenticatedKeyCostTest.aBagCertificateWithNestedSetsInsideAnExtensionStaysCheap`.
+- DER encoding of an RDN's SET OF values encodes each value once and sorts
+  the encodings in N log N. It is the one SET `PreTrustScreen.convertible`
+  cannot leave out. Test:
+  `UnauthenticatedKeyCostTest.aBagCertificateWithOneWideRdnStaysCheap`.
+- Parsing an EXTERNAL puts any element that is not an OID, an INTEGER or a
+  tagged object in its data value descriptor, so `PreTrustScreen.holdsSet`
+  looks there and in the content. Tests:
+  `UnauthenticatedKeyCostTest.aBagCertificateWhoseKeyParametersHoldNestedSetsInAnExternalIsPassedOverUnconverted`,
+  `UnauthenticatedKeyCostTest.aSignerInfoWhoseSignatureParametersHoldNestedSetsInAnExternalIsLeftOut`.
+- The PKIX path builder, under the JDK's default `maxPathLength` of 5,
+  returns a path of up to seven certificates below the anchor and refuses
+  an eighth. The library sets no length of its own
+  (`ReceiptCore.authenticatedTopDown`). Tests:
+  `ReceiptVerificationTest.acceptsAPathOfSevenTheBuilderValidates`,
+  `ReceiptVerificationTest.refusesAPathOfEightTheBuilderDoesNotReturn`.
 
 **The trust anchors are compiled in.** The three roots are base64
 constants in `AppleRootCerts`. To add a root Apple publishes, add its
