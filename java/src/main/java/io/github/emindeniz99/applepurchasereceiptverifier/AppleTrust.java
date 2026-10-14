@@ -44,14 +44,14 @@ import org.jspecify.annotations.Nullable;
  * <p>Rule: no key is ever decoded or used unless a pinned root, or a CA it
  * vouched for, has vouched for its certificate, so certificates are checked
  * top-down from the roots ({@link #signedByAny}, {@link #signedBy},
- * {@link #decodeKey}). An end
- * entity vouches for nothing: Apple's roots also vouch for developer
- * certificates, whose keys belong to the developers. BouncyCastle validates
- * an RSA key as it decodes it, which costs seconds for a 16384-bit modulus.
- * PKIX then verifies the same signatures again; that duplicate is the price
- * of never decoding an unvouched key. A signature label is the sender's
- * until its signature verifies, so the rule also refuses the labels that
- * cost work before a byte is compared ({@link #GENERIC_COMPOSITE_SIGNATURE},
+ * {@link #decodeKey}). An end entity vouches for nothing: Apple's roots also
+ * vouch for developer certificates, whose keys belong to the developers.
+ * BouncyCastle validates an RSA key as it decodes it, which costs seconds for
+ * a 16384-bit modulus. PKIX then verifies the same signatures again; that
+ * duplicate is the price of never decoding an unvouched key. A signature
+ * label is the sender's until its signature verifies, so the rule also
+ * refuses the labels that cost work before a byte is compared
+ * ({@link #GENERIC_COMPOSITE_SIGNATURE},
  * {@link #REFUSED_SIGNATURE_ALGORITHM}, {@link #saltFits},
  * {@link ReceiptCore#REFUSED_DIGESTS}).</p>
  *
@@ -69,19 +69,18 @@ final class AppleTrust {
     /**
      * The generic composite signature label (id-alg-composite) of the
      * individual draft draft-ounsworth-pq-composite-sigs, from -01 (January
-     * 2020) until -09 (May 2023) removed it, refused wherever BouncyCastle would build a
-     * verifier from it: a certificate with it is signed by nobody, and a
-     * SignerInfo with it is refused before a verifier is built. Its
-     * parameters are a SEQUENCE of algorithm identifiers with no bound on
+     * 2020) until -09 (May 2023) removed it, refused wherever BouncyCastle
+     * would build a verifier from it: a certificate with it is signed by
+     * nobody, and a SignerInfo with it is refused before a verifier is built.
+     * Its parameters are a SEQUENCE of algorithm identifiers with no bound on
      * their number, and BouncyCastle makes one JCA Signature per part. On a
-     * SignerInfo every part also takes its own pass over the signed
-     * content; on a certificate every part also compares the whole list of
-     * parts, a cost that grows with the square of a count the sender picks.
-     * Neither label nor parameters are signed, and no Apple certificate or
-     * receipt uses it. The per-pair composite OIDs of the LAMPS draft (IANA
-     * 1.3.6.1.5.5.7.6.37 to .54 since draft -13), which BouncyCastle
-     * verifies through their own SPI and not through this generic path,
-     * stay accepted.
+     * SignerInfo every part also takes its own pass over the signed content;
+     * on a certificate every part also compares the whole list of parts, a
+     * cost that grows with the square of a count the sender picks. Neither
+     * label nor parameters are signed, and no Apple certificate or receipt
+     * uses it. The per-pair composite OIDs of the LAMPS draft (IANA
+     * 1.3.6.1.5.5.7.6.37 to .54 since draft -13), which BouncyCastle verifies
+     * through their own SPI and not through this generic path, stay accepted.
      */
     static final String GENERIC_COMPOSITE_SIGNATURE = MiscObjectIdentifiers.id_alg_composite.getId();
 
@@ -112,8 +111,9 @@ final class AppleTrust {
      *       this asks no purpose of a CA, so no genuine chain is refused for
      *       it.</li>
      *   <li>cRLDistributionPoints (2.5.29.31): it only says where a CRL is.
-     *       Apple's intermediates carry it non-critical today. Revocation checking is off, so
-     *       a critical one would be acted on by nothing here.</li>
+     *       Apple's intermediates carry it non-critical today. Revocation
+     *       checking is off, so a critical one would be acted on by nothing
+     *       here.</li>
      * </ul>
      *
      * <p>Every other critical extension BouncyCastle does not process is

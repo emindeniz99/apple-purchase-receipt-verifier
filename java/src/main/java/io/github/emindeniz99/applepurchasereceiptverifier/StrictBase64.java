@@ -37,7 +37,8 @@ final class StrictBase64 {
         } catch (IllegalArgumentException e) {
             throw new VerificationException(reason, problem, e);
         }
-        // The URL decoder tolerates padding and non-zero unused bits; the re-encoded text refuses both.
+        // The URL decoder tolerates padding and non-zero unused bits; the
+        // re-encoded text refuses both.
         if (url && !text.equals(Base64.getUrlEncoder().withoutPadding().encodeToString(decoded))) {
             throw new VerificationException(reason, problem);
         }

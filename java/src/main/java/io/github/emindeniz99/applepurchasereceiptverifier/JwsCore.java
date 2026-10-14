@@ -41,8 +41,9 @@ final class JwsCore {
 
     /**
      * Verifies {@code jws} and returns its payload. A payload that is not a
-     * JSON object is judged only after the signature, as {@link Reason#UNREADABLE_PAYLOAD}: a
-     * parse problem in something Apple signed is never {@code MALFORMED}.
+     * JSON object is judged only after the signature, as
+     * {@link Reason#UNREADABLE_PAYLOAD}: a parse problem in something Apple
+     * signed is never {@code MALFORMED}.
      */
     static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
@@ -179,9 +180,10 @@ final class JwsCore {
 
     /**
      * What one read of a signed payload yields: its last top-level
-     * {@code signedDate} and {@code receiptCreationDate}, and the three places Apple documents for its
-     * environment. A repeated name keeps its last value, a repeated
-     * {@code data} or {@code summary} included, as everywhere in a payload.
+     * {@code signedDate} and {@code receiptCreationDate}, and the three
+     * places Apple documents for its environment. A repeated name keeps its
+     * last value, a repeated {@code data} or {@code summary} included, as
+     * everywhere in a payload.
      */
     static final class Payload {
         @Nullable
