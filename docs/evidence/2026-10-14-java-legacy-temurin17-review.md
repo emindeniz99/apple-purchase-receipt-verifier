@@ -1,392 +1,425 @@
-# Java BC legacy receipt — Temurin 17 review
+# Java BC legacy receipt: Temurin 17 review
 
-14 Ekim 2026. İncelenen main: `4c7941894cbebe21fc1238aac6b4edc8f06880f1`.
-İnceleme sonunda uzak main tekrar kontrol edildi; aynı commit'teydi.
+14 October 2026. Reviewed main: `4c7941894cbebe21fc1238aac6b4edc8f06880f1`.
+The remote main was checked again at the end of the review and was still
+at that commit. Review by Codex (GPT-6) in a local session; the note was
+written in Turkish and translated into English for the repository, with
+line references replaced by method and constant names, since #373 moved
+the certificate extension cap into `PreTrustScreen` after the review.
 
-Kapsam: `java/` içindeki legacy PKCS#7 receipt yolu, kullandığı ortak
-trust/config/result kodu ve 13–14 Ekim eklemeleri. Rust davranışı ölçüt
-olarak kullanılmadı. JWS bu raporun kapsamı dışında.
+Scope: the legacy PKCS#7 receipt path in `java/`, the shared
+trust/config/result code it uses, and the additions of 13 and 14 October.
+Rust behaviour was not used as a yardstick. JWS is out of scope.
 
-## Karar
+## Verdict
 
-**Temurin 17'de standart Apple legacy receipt doğrulaması için prod'a
-çıkmayı engelleyen bir imza veya trust açığı bulmadım. Yeni güvenlik
-korumalarını korurdum.** HTTP servisinde büyük girdilere karşı heap ve
-eşzamanlılık sınırı gerekir: byte sınırı tek başına küçük bir JVM'i
-korumuyor. Bu, mevcut README'de de belirtilen bir işletim koşulu.
+**No signature or trust hole was found that blocks going to production
+on Temurin 17 for standard Apple legacy receipt verification. The new
+resource guards should stay.** The HTTP service needs a heap and
+concurrency bound against large inputs: the byte cap alone does not
+protect a small JVM. This is an operating condition the README already
+states.
 
-Hedef “Apple'ın ürettiği geçerli receipt'leri kabul etmek” ise sonuç iyi:
-gerçek Apple imzalı SHA-1/G1 ve SHA-256/G5 sandbox receipt'ler geçiyor,
-imzası bozulmuş halleri reddediliyor ve signing date kullanıldığı için
-sonradan sona eren sertifikalar eski receipt'i bozmuyor.
+If the goal is "accept the valid receipts Apple produces", the result is
+good: the genuine Apple-signed SHA-1/G1 and SHA-256/G5 sandbox receipts
+pass, their corrupted-signature variants are refused, and because the
+signing date is used, certificates that expire later do not break an old
+receipt.
 
-“Apple'ın kabul ettiği her olası ASN.1/CMS yeniden paketlemesini kabul
-etmek” için daha geniş bir iddia kurulamıyor. Kütüphanenin kaynak sınırları
-var. Bu incelemede Apple'ın canlı `verifyReceipt` endpoint'ine karşı
-birebir kabul karşılaştırması yapılmadı. Production receipt sağlanmadı;
-production'a özgü alan kombinasyonları özel bir canary ile kontrol
-edilebilir. Gerçek Apple zincirleri sandbox verilerle test edildi.
+A wider claim, "accept every possible ASN.1/CMS repackaging Apple would
+accept", cannot be made. The library has resource limits. This review did
+not compare acceptance one to one against Apple's live `verifyReceipt`
+endpoint. No production receipt was supplied; production-only field
+combinations can be checked with a private canary. The genuine Apple
+chains were exercised with sandbox data.
 
-## Doğrulama
+## Validation
 
 - Eclipse Temurin **17.0.20.1+1**, HotSpot, Linux x86-64.
 - BouncyCastle **bcprov/bcutil/bcpkix 1.86**; Jackson **2.22.3**.
-- Maven **3.9.16**; kaynaklar Temurin 17 ile Java 8 hedefi için yeniden
-  derlendi. `clean verify` başarılı; ana jar ve tests jar üretildi.
-- **699 test, 0 failure, 0 error, 1 skip.** Skip, elle etkinleştirilen
-  fixture üretim testi. 444 ortak case'in 224'ü `verifyReceipt`, 62'si
-  `verifyReceiptEndpoint`; geri kalanı başka API ve base64 kontrolleri.
-  Tam suite'in geçmiş olması bütün testlerin legacy testi olduğu anlamına
-  gelmez.
-- Ek probe: gerçek iki Apple sandbox receipt'i, ileri clock, bozuk imza,
-  aynı imzaya eklenmiş 1.000/1.001 unsigned attribute.
-- Haritasız creation-date denemesi: fixture ve deterministik mutasyon
-  corpus'undan **3.344 payload, 2.210 okunabilen tarih, 0 fark**.
-- İlk Temurin 21 çalışması da geçti; prod kararı Temurin 17 sonucuna dayanıyor.
+- Maven **3.9.16**; the sources were recompiled with Temurin 17 for the
+  Java 8 target. `clean verify` passed; the main jar and the tests jar
+  were built.
+- **699 tests, 0 failures, 0 errors, 1 skipped.** The skip is the
+  fixture-generation test enabled by hand. Of the 444 shared cases, 224
+  go through `verifyReceipt` and 62 through `verifyReceiptEndpoint`; the
+  rest exercise other APIs and base64 checks. A green full suite does not
+  mean every test is a legacy-path test.
+- Extra probes: the two genuine Apple sandbox receipts, a clock moved
+  forward, a corrupted signature, 1,000 and 1,001 unsigned attributes
+  added beside the same signature.
+- Map-free creation-date trial: **3,344 payloads from the fixture and
+  deterministic mutation corpus, 2,210 readable dates, 0 differences.**
+- A first Temurin 21 run also passed; the production decision rests on
+  the Temurin 17 result.
 
-## Bulgular ve sadeleştirme adayları
+## Findings and simplification candidates
 
-### 1. Önemli işletim riski: imza öncesi payload ayrıştırma pahalı
+### 1. Main operating risk: parsing the payload before the signature is expensive
 
-[`ReceiptCore.java`](../../java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCore.java)
-satır 143 ve
-[`ReceiptDecoder.java`](../../java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptDecoder.java)
-satır 109–116.
+`ReceiptCore.verify` calls `ReceiptDecoder.readCreationDate` before any
+trust is established. `readCreationDate` uses only attribute 12, but it
+goes through `readAttributes`, which parses every top-level attribute and
+fills the `firsts` and `unknown` maps. Those maps are discarded at this
+stage. If the chain and the signature pass, the same payload is read again.
 
-`readCreationDate` yalnızca attribute 12'yi kullanıyor, fakat
-`readAttributes` tüm top-level attribute'ları parse ediyor ve `firsts` /
-`unknown` haritalarını dolduruyor. Bunlar bu aşamada atılıyor. Zincir ve
-imza geçerse aynı payload yeniden okunuyor.
+An attacker can trigger this work: for a receipt that carries its own
+chain and stays under the byte cap, the payload is read first and
+`UNTRUSTED_CHAIN` comes back afterwards because of the foreign root. The
+trial input is about 3 MiB of base64 and carries 195,562 extra small
+attributes.
 
-Bu işi bir saldırgan da tetikleyebilir: kendi zincirini taşıyan, byte
-sınırını aşmayan bir receipt için önce payload okunuyor, sonra yabancı
-root yüzünden `UNTRUSTED_CHAIN` dönüyor. Deneme girdisi yaklaşık 3 MiB
-base64 ve 195.562 ek küçük attribute içeriyor.
-
-| Temurin 17 ölçümü | Ortalama süre | Çağrı başına toplam tahsis |
+| Temurin 17 measurement | Mean time | Total allocation per call |
 |---|---:|---:|
-| Gerçek legacy sandbox, 187 purchase | 7,1 ms | 4,6 MiB |
-| Gerçek G5 sandbox | 2,9 ms | 0,4 MiB |
-| Küçük attribute'larla cap'e yakın sahte receipt, Apple root'ları altında ret | 128,3 ms | 135,2 MiB |
-| Aynı sentetik receipt, kendi test root'u altında kabul | 297,4 ms | 279,5 MiB |
-| Cap'e yakın tek unsigned attribute, sahte zincir | 94,4 ms | 75,8 MiB |
+| Genuine legacy sandbox receipt, 187 purchases | 7.1 ms | 4.6 MiB |
+| Genuine G5 sandbox receipt | 2.9 ms | 0.4 MiB |
+| Near-cap forged receipt with small attributes, refused under the Apple roots | 128.3 ms | 135.2 MiB |
+| The same synthetic receipt, accepted under its own test root | 297.4 ms | 279.5 MiB |
+| Near-cap single unsigned attribute, forged chain | 94.4 ms | 75.8 MiB |
 
-Bunlar 30 warm-up sonrası 20 çağrılık düz döngü ölçümleri; JMH veya
-throughput kapasite ölçümü değildir. Zamanlar makineye göre değişir.
-**Tahsis toplamı, aynı anda canlı heap değildir.**
+These are plain-loop measurements of 20 calls after 30 warm-up calls, not
+JMH or a throughput capacity measurement. Times vary by machine. **Total
+allocation is not live heap at one instant.**
 
-Aynı sahte receipt, tek bir çağrıda `-Xmx64m` ile `OutOfMemoryError`
-verdi, `-Xmx128m` ile düzgün reddedildi. Tek cold-process bisection'ında
-78 MiB başarısız, 79 MiB başarılıydı. Bu değer bütün girdiler için heap
-garantisi değildir. OOM bir `Error` olduğu için public API'den çıkar;
-normal `Failure` olmaz.
+The same forged receipt threw `OutOfMemoryError` in a single call at
+`-Xmx64m` and was refused cleanly at `-Xmx128m`. In a single cold-process
+bisection 78 MiB failed and 79 MiB passed. That value is not a heap
+guarantee for every input. An OOM is an `Error`, so it escapes the public
+API; it does not become a normal `Failure`.
 
-Öneri: HTTP tarafında byte sınırının yanında bounded executor / semaphore
-kullanmak ve heap'i aynı anda doğrulanan büyük girdilere göre ayırmak.
-Kütüphane içindeki en anlamlı performans adayı, creation date için
-gereksiz haritaları oluşturmamak. Deneme:
+Recommendation: on the HTTP side, a bounded executor or semaphore beside
+the byte cap, and a heap sized for the large inputs verified at once. The
+most meaningful performance candidate inside the library is not building
+the unused maps for the creation date. Trial:
 
-| Yalnızca creation-date adımı | Süre | Toplam tahsis |
+| Creation-date step alone | Time | Total allocation |
 |---|---:|---:|
-| Mevcut okuyucu | 119,08 ms | 114,28 MiB |
-| Tüm top-level yapıyı kontrol eden, harita oluşturmayan deneme | 62,57 ms | 85,93 MiB |
+| Current reader | 119.08 ms | 114.28 MiB |
+| Trial that checks the whole top-level structure and keeps no maps | 62.57 ms | 85.93 MiB |
 
-Deneme ilk attribute 12'nin kazanmasını ve sonraki bozuk bir attribute'ın
-tarihi geçersiz kılmasını koruyor. Corpus eşitliği iyi kanıt, bütün
-olası girdiler için ispat değil. Bu değişiklik daha fazla okuyucu kodu
-gerektirir; normal receipt'ler için zorunlu bir prod düzeltmesi saymıyorum.
-Önceki “payload'ı bir kez parse edip sonucu saklama” denemesi farklıdır:
-o yaklaşım imza öncesi maliyeti azaltmadığı için geri alınmıştı.
+The trial keeps the rule that the first attribute 12 wins and that a
+malformed later attribute invalidates the date. Corpus equality is good
+evidence, not a proof over every possible input. The change needs more
+reader code; it is not a mandatory production fix for normal receipts.
+The earlier "parse the payload once and keep the result" trial was a
+different thing: it was reverted because it did not reduce the
+pre-signature cost.
 
-### 2. Kabul sınırları bilinçli; “bütün geçerli imzalı paketler” iddiası fazla geniş
+Owner decision (Q160, 2026-10-14): not done. The README's heap and
+concurrency rule covers the risk, genuine receipts see no difference, and
+a second reader is more code than the gain is worth.
 
-[`ReceiptCore.java`](../../java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCore.java)
-satır 200–253 ve
-[`ReceiptCertificates.java`](../../java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCertificates.java)
-satır 25–42.
+### 2. The acceptance limits are deliberate; "every validly signed package" is too wide a claim
 
-Gerçek G1 ve G5 receipt'lerin payload ve imzasını koruyup yalnızca unsigned
-attribute ekledim. 1.000 attribute ile ikisi de `VERIFIED`, 1.001 ile
-ikisi de `MALFORMED`. İmza geçerliliği korunurken kütüphane kaynak
-politikası yüzünden paketi reddedebiliyor. Bu yeni bir gizli açık değil;
-mevcut sınırın somut sonucu.
+`ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES` and
+`ReceiptCertificates.MAX_EMBEDDED_CERTIFICATES`.
 
-10 embedded certificate, 4 SignerInfo, 1.000 certificate extension ve
-1.000 toplam SignerInfo attribute sınırları da aynı türden. Apple'ın
-mevcut receipt şekilleri bunların oldukça altında. Bunları kaldırmak
-önerim değil. Kabul hedefini “desteklenen kaynak sınırları içinde
-Apple-imzalı receipt” olarak ifade etmek daha doğru.
+Keeping the payload and signature of the genuine G1 and G5 receipts and
+adding only unsigned attributes: with 1,000 attributes both are
+`VERIFIED`, with 1,001 both are `MALFORMED`. The library can refuse a
+package whose signature is valid, because of its resource policy. This is
+not a new hidden hole; it is the concrete consequence of the existing cap.
 
-`SignedAsSent` ayrıca non-DER signed attribute'ların kabul davranışını
-değiştiriyor: BC'nin DER'e sıralama maliyetini önlüyor. DER biçimindeki
-signed attribute aynı bytes'a dönüşüyor. Non-DER input için önceki
-BC kanonikleştirmesiyle birebir aynı davranış yok; bu mevcut evidence'da
-da kayıtlı. İki gerçek Apple fixture'ında signed attribute bulunmuyor.
-Bu nedenle mevcut Apple receipt'leri için kırılma kanıtı bulmadım;
-genel CMS doğrulayıcısı için “tam RFC/BC davranışı” iddiası kurmam.
+The caps of 10 embedded certificates, 4 SignerInfos, 1,000 certificate
+extensions (`PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS`) and 1,000 total
+SignerInfo attributes are of the same kind. Apple's current receipt
+shapes sit well below them. Removing them is not my recommendation.
+Stating the acceptance goal as "Apple-signed receipts within the
+supported resource limits" is more accurate.
 
-### 3. Kaynakta tekrar eden uzun açıklamalar sadeleştirilebilir
+`SignedAsSent` also changes the acceptance behaviour for non-DER signed
+attributes: it avoids BC's cost of sorting them into DER. DER-form signed
+attributes encode to the same bytes. For non-DER input the behaviour is
+not identical to BC's earlier canonicalisation; the existing evidence
+records this. Neither genuine Apple fixture carries signed attributes. So
+I found no breakage evidence for current Apple receipts, and I would not
+claim "full RFC/BC behaviour" for a general CMS verifier.
 
-13 Ekim başındaki `1cb08f0e` ile incelenen main arasında, bütün Java
-değişikliklerinde 2.217 satır eklenmiş ve 67 silinmiş. Net büyümenin
-1.686 satırı testlerde, 464 satırı main/shared kaynaklarda.
+### 3. Long repeated explanations in the sources could be shortened
 
-JWS'yi çıkartıp legacy yoluyla ilgili yedi değişen üretim dosyasına
-bakınca net büyüme **440 fiziksel satır**. Yorum ve boş satırlar
-ayıklanarak sayılan net kod büyümesi **236 satır**. Sayım yaklaşık bir
-Java comment tokenizer'ıyla yapıldı; AST tabanlı complexity metriği değil.
+Between `1cb08f0e` at the start of 13 October and the reviewed main, all
+Java changes added 2,217 lines and removed 67. Of the net growth, 1,686
+lines are in tests and 464 in main/shared sources.
 
-Özellikle `AppleTrust` ve `ReceiptCore` içindeki uzun benchmark rakamları,
-draft tarihçesi ve aynı saldırının ayrıntılı açıklaması mevcut evidence
-belgelerinde tekrar bulunuyor. Kaynakta kısa “neden” açıklaması, RFC
-referansı ve ilgili evidence linki bırakmak okunabilirliği artırır.
-PSS formülü, güvenilmeyen key'in neden okunmadığı ve DER/DL farkı gibi
-kararı anlamak için gerekli notlar kalmalı.
+Taking JWS out and looking at the seven changed production files on the
+legacy path, the net growth is **440 physical lines**. Counted without
+comments and blank lines, the net code growth is **236 lines**. The count
+used an approximate Java comment tokenizer, not an AST-based complexity
+metric.
 
-Üretim yolunda açıkça kullanılmayan bir sınıf veya silinmesi güvenli bir
-güvenlik dalı tespit etmedim. Gözlenen büyümenin önemli kısmı çalışırken
-yüklenmeyen testler ve açıklamalar.
+In particular, long benchmark figures, draft history and detailed
+descriptions of the same attack in `AppleTrust` and `ReceiptCore` repeat
+what the evidence documents already hold. A short "why", an RFC reference
+and a link to the relevant evidence would read better. The notes needed
+to understand a decision, such as the PSS formula, why an untrusted key is
+not read and the DER/DL difference, should stay.
 
-### 4. Benchmark testlerinin bakım maliyeti var
+I found no class that is clearly unused on the production path and no
+security branch that is safe to delete. Most of the observed growth is
+tests, which are not loaded at run time, and explanations.
 
-[`DigestDenylistCostTest.java`](../../java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/DigestDenylistCostTest.java)
-satır 32–87, provider'ın OID'lerini ve BC'nin private digest tablolarını
-tarayıp çalışma zamanı oranlarına göre karar veriyor. Test yararlı:
-dependency upgrade yeni pahalı bir yol eklerse haber veriyor. Ancak
-normal fonksiyon testine göre JIT, runner yükü ve BC internal API'sine
-daha bağlı. Kaynakta daha önce Temurin 17'de bir oran yüzünden fail
-olduğu ve toleransın değiştirildiği de yazıyor.
+Owner decision (Q161, 2026-10-14): left as is. Two independent
+cleanliness audits of the same sources (Opus and Fable, 14 October)
+judged them clean, and the reviewed main carries one numeric figure in a
+production comment.
 
-Bu incelemede güncel test geçti; mevcut bir fail raporlamıyorum. Bakım
-önerim, bu geniş taramayı dependency upgrade / periyodik benchmark
-kontrolünde çalıştırmayı değerlendirmek. Deterministik negatif testler
-ve gerekli DoS regresyon testleri normal CI'da kalmalı. Bu kod shipped
-jar'a girmiyor; silmek prod kodunu küçültmez.
+### 4. The benchmark tests have a maintenance cost
 
-## Son eklemelerin hangileri gerekli?
+`DigestDenylistCostTest` scans the provider's OIDs and BC's private digest
+tables and decides on run-time ratios. The test is useful: it reports a
+new expensive path when a dependency upgrade adds one. But compared with a
+normal functional test it depends more on the JIT, runner load and BC's
+internal API. The source also records that it once failed on Temurin 17
+over a ratio and that the tolerance was changed.
 
-| Kod | Neden gerekli / karar |
+The current test passed in this review; I am not reporting a live
+failure. My maintenance suggestion is to consider running this wide scan
+on dependency upgrades or as a periodic benchmark. The deterministic
+negative tests and the required DoS regression tests should stay in
+normal CI. This code does not enter the shipped jar; deleting it would not
+shrink the production code.
+
+Owner decision (Q162, 2026-10-14): stays in CI; the tolerance is revisited
+only if the test flaps (Q154).
+
+## Which of the recent additions are necessary?
+
+| Code | Why it is needed / decision |
 |---|---|
-| `saltFits` ve content-verifier wrapper | Unsigned PSS salt uzunluğuyla devasa array tahsisini engelliyor. Wrapper BC'nin gerçekte çözdüğü algoritmayı kontrol ettiği için alias OID'lerini de kapsıyor. Kalsın. |
-| Generic composite label reddi | Sender'ın istediği sayıda signature verifier üretmesini ve tekrar tekrar content hash'lemesini engelliyor. Kalsın. |
-| Sekiz pahalı digest ve MD2 signature label reddi | Geçersiz signature karşılaştırılmadan önce yapılacak pahalı hash'i kesiyor. Signature label için ayrı kontrol tekrar değil. Kalsın. |
-| `stringsOnly`, `holdsSet`, `convertible` | Unsigned isim / parametre içindeki nested SET'lerin pahalı DER encoding'ini önlüyor. BC object conversion da encode yaptığı için sadece ilk encode'u kaldırmak yetmiyor. Kalsın. |
-| Extension ve attribute count sınırları | BC'nin OID keyed `Hashtable` yapısında collision maliyetini sınırlıyor. Varsayılan receipt byte sınırı bunun yerine geçmiyor. Kalsın. |
-| Signer ve issuer kopyalarını tekrar denememek | Unsigned bag'e eklenebilen aynı sertifikanın gereksiz chain / signature kontrollerini azaltıyor. Kalsın. |
-| Her signer için tek üyeli CMS oluşturmak | BC'nin çok signer'lı store'unda issuer karşılaştırmasının pahalı yolundan kaçıyor. Alışılmadık görünüyor ama gerekçesi var. Kalsın. |
-| `SignedAsSent` | Signed attribute'ların nested SET sıralamasını imza öncesinde çalıştırmayı önlüyor. DER/DL farkı ve non-DER kabul kapsamı açık tutulmalı. |
+| `saltFits` and the content-verifier wrapper | Stops the huge array allocation driven by an unsigned PSS salt length. The wrapper checks the algorithm BC actually resolves, so alias OIDs are covered too. Keep. |
+| Refusal of the generic composite label | Stops the sender from producing as many signature verifiers as it likes and hashing the content again and again. Keep. |
+| Refusal of eight expensive digests and the MD2 signature label | Cuts the expensive hash before an invalid signature is compared. The separate check on the signature label is not a duplicate. Keep. |
+| `stringsOnly`, `holdsSet`, `convertible` | Prevents the expensive DER encoding of nested SETs inside unsigned names and parameters. BC's object conversion also encodes, so removing only the first encode is not enough. Keep. |
+| Extension and attribute count caps | Bound the collision cost in BC's OID-keyed `Hashtable`. The default receipt byte cap does not stand in for them. Keep. |
+| Not retrying copies of the signer and the issuers | Cuts the needless chain and signature checks for the same certificate added to the unsigned bag. Keep. |
+| A single-member CMS per signer | Avoids the expensive path of issuer comparison in BC's multi-signer store. Looks unusual, but it has a reason. Keep. |
+| `SignedAsSent` | Keeps the nested SET sorting of signed attributes from running before the signature. The DER/DL difference and the non-DER acceptance scope should stay explicit. |
 
-PSS'yi tamamen reddetmek veya yalnızca bugün gözlenen SHA-1/SHA-256
-algoritmalarını allowlist'e almak kodu daraltabilir, ama yeni bir Apple
-signing algoritmasını gereksiz reddetme riskini artırır. Mevcut küçük
-resource guard'lar belirtilen kabul hedefiyle daha uyumlu.
+Refusing PSS altogether, or allowlisting only the SHA-1 and SHA-256
+algorithms observed today, could narrow the code but raises the risk of
+needlessly refusing a new Apple signing algorithm. The current small
+resource guards fit the stated acceptance goal better.
 
-## Akışın doğruluğu
+## Correctness of the flow
 
-- UTF-8 byte sınırı base64 decode'dan önce. Standard base64 padding
-  kontrolü mevcut; unused-bit kabulü repo'nun Apple ölçümünü izliyor.
-- CMS envelope bir kez parse ediliyor; trailing bytes ve detached
-  content reddediliyor. BER encapsulated content destekleniyor.
-- Creation date ilk attribute 12'den alınıyor. Eksik / okunamayan date
-  clock'a düşüyor. Şimdiki clock geçerli historical date'i override etmiyor.
-- Embedded certificate'lerin public key'leri, pinned root veya onun
-  imzasını doğruladığı CA tarafından vouch edilmeden kullanılmıyor.
-  End entity bir sonraki sertifikayı vouch edemiyor.
-- Top-down signature proof sonrası ayrıca PKIX validation yapılması
-  gerekli. İlk geçiş güvenilmeyen key decode maliyetini engelliyor;
-  PKIX ise date, CA, key usage, constraints ve critical extension'ları
-  değerlendiriyor. İlk geçişi PKIX yerine kullanmak güvenli sadeleştirme olmaz.
-- PKIX target tam signer certificate. Aynı issuer/serial/subject taşıyan
-  başka key'li twin ile trust kontrolünü başka key'e uygulama açığı yok.
-- Leaf ve signer'ı doğrudan izleyen intermediate Apple marker kontrolü
-  var. Sıradan developer certificate aynı root'a zincirlense bile receipt
-  signer olarak kabul edilmiyor.
-- Bir passing SignerInfo yeterli; sertifika eşleşmelerinin tamamı
-  deneniyor. Bozuk / desteklenmeyen signature'ın yanındaki geçerli signer
-  deterministic testlerle korunuyor.
-- Payload modeli yalnızca CMS signature geçtikten sonra üretiliyor.
-  Bundle, environment, product ve device hash verifier'ın iş politikası
-  değil; caller'a bırakılan alanlar. Bilinmeyen veya okunamayan alanların
-  raw değerleri korunuyor. Mutable byte array'lerin defensive copy'leri
-  gereksiz değil.
+- The UTF-8 byte cap comes before the base64 decode. Standard base64
+  padding is checked; the unused-bits acceptance follows the repository's
+  Apple measurement.
+- The CMS envelope is parsed once; trailing bytes and detached content are
+  refused. BER encapsulated content is supported.
+- The creation date is taken from the first attribute 12. A missing or
+  unreadable date falls back to the clock. The current clock does not
+  override a valid historical date.
+- The public keys of embedded certificates are not used until a pinned
+  root, or a CA whose signature it verified, has vouched for them. An end
+  entity cannot vouch for the next certificate.
+- Full PKIX validation after the top-down signature proof is necessary.
+  The first pass prevents the untrusted-key decode cost; PKIX evaluates
+  dates, CA, key usage, constraints and critical extensions. Using the
+  first pass instead of PKIX would not be a safe simplification.
+- The PKIX target is the exact signer certificate. There is no hole where
+  a twin with the same issuer/serial/subject but another key gets the
+  trust check applied to a different key.
+- The Apple marker checks on the leaf and on the intermediate directly
+  above the signer are present. An ordinary developer certificate chained
+  to the same root is not accepted as a receipt signer.
+- One passing SignerInfo is enough; every certificate match is tried. A
+  valid signer beside a corrupt or unsupported signature is protected by
+  deterministic tests.
+- The payload model is built only after the CMS signature passes. Bundle,
+  environment, product and device hash are not the verifier's business
+  policy; they are fields left to the caller. Raw values of unknown or
+  unreadable fields are preserved. The defensive copies of mutable byte
+  arrays are not superfluous.
 
-Apple'ın [receipt validation dokümanı](https://developer.apple.com/documentation/appstorereceipts/validating-receipts-on-the-device)
-özellikle SHA-1 ve SHA-256 zincir desteği, intermediate'ları hardcode
-etmeme ve signature doğrulamasında attribute 12 kullanma kurallarını
-belirtiyor. Bu üç noktayı mevcut Java yolunda doğru buldum. Dokümandaki
-bundle/version/device kontrolleri ise on-device app entitlement
-validation'ın parçaları; bu kütüphanenin “Apple imzası + payload”
-sözleşmesinde caller'ın sorumluluğu olarak açıkça belirtilmiş.
+Apple's [receipt validation document](https://developer.apple.com/documentation/appstorereceipts/validating-receipts-on-the-device)
+states in particular the SHA-1 and SHA-256 chain support, not hardcoding
+intermediates, and using attribute 12 in signature validation. I found
+these three points handled correctly in the current Java path. The
+bundle/version/device checks in that document are parts of on-device app
+entitlement validation; this library's "Apple signature plus payload"
+contract states them explicitly as the caller's responsibility.
 
-## Önerilen sıra
+## Suggested order
 
-1. Prod servisinde büyük girdiler için eşzamanlılık ve heap bütçesini
-   doğrula; örnekler gerçek receipt büyüklüklerinin garantisi değil.
-2. Mevcut crypto ve pre-trust guard'ları koru.
-3. Uzun açıklama tekrarlarını mevcut dokümantasyona taşı.
-4. Gerekirse creation-date harita tahsisini azalt; corpus eşitliği ve
-   imza öncesi / sonrası hata sırasını koruyan testlerle ayrı değerlendir.
-5. Algoritma tarama benchmark'ının CI konumunu değerlendir.
+1. Verify the concurrency and heap budget for large inputs in the
+   production service; the samples are no guarantee of real receipt sizes.
+2. Keep the current crypto and pre-trust guards.
+3. Move the long repeated explanations into the existing documentation.
+4. If needed, reduce the creation-date map allocation; evaluate it
+   separately with tests that keep corpus equality and the
+   before/after-signature error order.
+5. Decide where the algorithm-scan benchmark runs in CI.
 
-Üretim Java kaynakları değiştirilmedi. İnceleme kodu ve tekrar çalıştırma
-talimatları [bu klasörde](2026-10-14-java-legacy-temurin17-review/README.md).
-Deneme receipt'leri, JDK/BC indirmeleri, class dosyaları ve raw ölçüm
-logları repository dışında tutuldu.
+The production Java sources were not changed. The review code and the
+instructions to rerun it are in [this folder](2026-10-14-java-legacy-temurin17-review/README.md).
+Trial receipts, JDK/BC downloads, class files and raw measurement logs
+were kept outside the repository.
 
-## İkinci tur: legacy receipt güvenlik incelemesi
+## Second pass: legacy receipt security review
 
-Bu bölüm aynı `4c7941894cbebe21fc1238aac6b4edc8f06880f1` main üzerinde,
-Temurin 17.0.20.1+1 ve BC 1.86 ile yapılan ek incelemedir. Rust ve JWS
-bu turun kapsamı değildir. Tehdit modeli: saldırgan base64 girdisini,
-CMS envelope, certificate bag ve SignerInfo'ları değiştirebilir; Apple
-private key'ine, uygulamanın root config'ine veya JVM ayarlarına erişemez.
-Public sandbox receipt'leri ve sentetik test PKI kullanıldı.
+This section is an additional review on the same main
+`4c7941894cbebe21fc1238aac6b4edc8f06880f1`, with Temurin 17.0.20.1+1 and
+BC 1.86. Rust and JWS are out of scope for this pass. Threat model: the
+attacker can change the base64 input, the CMS envelope, the certificate
+bag and the SignerInfos; they cannot reach Apple's private key, the
+application's root config or the JVM settings. Public sandbox receipts
+and a synthetic test PKI were used.
 
-### Bulgular ve karar
+### Findings and decision
 
-**Yeni bir imza veya güven zinciri atlatması gösterilemedi.** İncelenen
-akışta `VERIFIED` döndürebilmek için aynı signer sertifikasının root'a
-zincirlenmesi, marker kontrollerinden geçmesi ve payload'ın CMS imzasını
-doğrulaması gerekiyor. Bu sonuç bütün olası girdilerin güvenli olduğuna
-dair bir ispat değildir; aşağıdaki testler ve kaynak incelemesiyle sınırlı.
+**No new signature or trust-chain bypass could be shown.** In the
+reviewed flow, returning `VERIFIED` requires the same signer certificate
+to chain to a root, pass the marker checks and verify the payload's CMS
+signature. This result is not a proof that every possible input is safe;
+it is bounded by the tests and source review below.
 
-**Prod için açık kalan konu: doğrulama öncesi bellek tüketimi.**
-[ReceiptCore](../../java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptCore.java)
-envelope'u, ardından `ReceiptDecoder.readCreationDate` bütün attribute
-SET'ini trust kurulmadan parse ediyor. Önceki turda cap altındaki sentetik
-bir forgery için 135.2 MiB toplam allocation ve 64 MiB heap'te OOM
-gösterildi. Bu bir entitlement veya signature bypass değil; saldırgan
-girdisi kabul eden servis için availability riski. `RuntimeException`
-yakalamak `OutOfMemoryError`'ı önlemez. Heap ve eşzamanlılık bütçesi
-doğrulanmadan koşulsuz "prod ready" kararı verilmemeli. README bu riski
-zaten belgeliyor; yeni keşfedilmiş bir tasarım kusuru olarak sunulmuyor.
-Concurrency'yi sadece CPU sayısından seçmek yerine uygulamanın boş heap
-bütçesine göre de sınırlandırmak gerekir. Allocation toplamı eşzamanlı
-istek sayısıyla çarpılıp peak heap tahmini olarak kullanılamaz.
+**The open item for production: memory consumption before verification.**
+`ReceiptCore` parses the envelope and then `ReceiptDecoder.readCreationDate`
+parses the whole attribute SET before any trust is established. The
+previous pass showed 135.2 MiB of total allocation for a synthetic forgery
+under the cap, and an OOM at a 64 MiB heap. This is not an entitlement or
+signature bypass; it is an availability risk for a service that accepts
+attacker input. Catching `RuntimeException` does not prevent
+`OutOfMemoryError`. An unconditional "production ready" verdict should
+not be given until the heap and concurrency budget is verified. The README
+already documents this risk; it is not presented as a newly discovered
+design flaw. Concurrency should be bounded by the application's free heap
+budget as well, not chosen from the CPU count alone. The allocation total
+cannot be multiplied by the concurrent request count and used as a peak
+heap estimate.
 
-**Sadeleştirme adayı: creation-date için geçici map'ler.**
-[ReceiptDecoder.readCreationDate](../../java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/ReceiptDecoder.java)
-tek tarih için diğer bütün attribute değerlerini map/list'lere topluyor.
-Önceki tarayıcı deneyi aynı corpus'ta aynı sonucu daha az allocation ile
-verdi. Bu değişiklik ASN.1 ağacının ilk parse maliyetini kaldırmaz ve
-tek başına DoS çözümü değildir. İlk attribute'un kazanması, hatalı sonraki
-attribute'un tarihi fallback'e götürmesi ve hata sırası korunmalı.
+**Simplification candidate: the temporary maps for the creation date.**
+`ReceiptDecoder.readCreationDate` collects every other attribute value
+into maps and lists for one date. The earlier scanner trial gave the same
+result on the same corpus with less allocation. That change does not
+remove the first parse cost of the ASN.1 tree and is not a DoS fix on its
+own. The first attribute winning, a malformed later attribute sending the
+date to the fallback, and the error order must be kept.
 
-**Apple kabulüyle bire bir eşitlik bugün yok.** Somut örnek:
-`ASN1Primitive.fromByteArray` CMS sonundaki ek baytları reddediyor.
-Repo'nun [2026-09-23 Apple endpoint ölçümü](2026-09-23-verifyreceipt-base64.md)
-aynı receipt'e eklenen baytların Apple tarafından yok sayıldığını
-belgeliyor; `receipt/reject-one-trailing-byte-after-the-der` bunu bilinçli
-fark olarak pinliyor. Bu tur Apple endpoint'ine tekrar istek yapılmadı.
-Bu, yalnızca olası bir gelecek uyumsuzluğu değil, kayda geçmiş kabul
-farkıdır. Kullanıcının hedefi tam Apple kabul eşitliğiyse bu davranış
-ayrıca karara bağlanmalı. Kaynak sınırlarını kaldırmak bu sorunu çözmez.
+**There is no one-to-one equality with Apple's acceptance today.** A
+concrete example: `ASN1Primitive.fromByteArray` refuses extra bytes at
+the end of the CMS. The repository's
+[2026-09-23 Apple endpoint measurement](2026-09-23-verifyreceipt-base64.md)
+records that bytes appended to the same receipt are ignored by Apple;
+`receipt/reject-one-trailing-byte-after-the-der` pins this as a deliberate
+difference. This pass made no new request to the Apple endpoint. This is
+not only a possible future incompatibility but a recorded acceptance
+difference. If the user's goal is full Apple acceptance equality, this
+behaviour needs its own decision. Removing the resource caps does not
+solve it.
 
-### Yeni deneyler
+### New experiments
 
-Kaynak:
+Source:
 [SecurityReviewProbe.java](2026-10-14-java-legacy-temurin17-review/SecurityReviewProbe.java).
-`run.py --security-only` ile tekrar çalışır. Derlenen üretim sınıfları
-değiştirilmedi. İlk sonuçlar `binding.log` ve `oid-costs.log`; tekrar
-çalıştırma `results.txt` olarak repository dışındaki scratch dizinine
-yazıldı. Loglar receipt alanlarını veya kullanıcı kimliklerini yazmaz.
+Rerun with `run.py --security-only`. The compiled production classes were
+not changed. The first results were `binding.log` and `oid-costs.log`; the
+rerun wrote `results.txt` to a scratch directory outside the repository.
+The logs print no receipt fields or user identifiers.
 
-| Deney | Sonuç |
+| Experiment | Result |
 |---|---|
-| Gerçek legacy ve G5 receipt'lerinde payload boyunca 128 konumda bir bit değiştirme | Hiçbiri `VERIFIED` olmadı |
-| Aynı receipt'lerin RSA signature'ında her byte konumunda bir bit değiştirme | Hiçbiri `VERIFIED` olmadı |
-| Detached content veya boş certificate bag | Kabul edilmedi |
-| Aynı signed content'i parçalara ayrılmış BER OCTET STRING olarak taşıma | İki gerçek receipt ve sentetik kontrol kabul edildi |
-| Signed-attribute'lu sentetik receipt'te payload ve messageDigest'i birlikte değiştirme, signature'ı koruma | Kabul edilmedi |
-| Signed messageDigest, contentType veya cmsAlgorithmProtect attribute'unu çoğaltma | Kabul edilmedi; bu deney signature'ı da değiştirdiği için tek başına duplicate kontrolünün çalıştığını ispatlamaz |
-| Sentetik PKI ile imzalanmış receipt'i default Apple root'larına sunma | Kabul edilmedi |
-| Test anahtarıyla üretilen RSA blokları: SHA-1 digest'inin her 20 byte'ını ayrı değiştirme ve dört bozuk padding/DigestInfo biçimi | 24 bozuk blok reddedildi; geçerli kontrol kabul edildi |
-| Aynı RSA deneyi SHA-256 için | 36 bozuk blok reddedildi; geçerli kontrol kabul edildi |
+| Flipping one bit at 128 positions across the payload of the genuine legacy and G5 receipts | None became `VERIFIED` |
+| Flipping one bit at every byte position of the same receipts' RSA signature | None became `VERIFIED` |
+| Detached content or an empty certificate bag | Not accepted |
+| Carrying the same signed content as a fragmented BER OCTET STRING | Both genuine receipts and the synthetic control accepted |
+| Changing the payload and the messageDigest together in a synthetic receipt with signed attributes, keeping the signature | Not accepted |
+| Duplicating the signed messageDigest, contentType or cmsAlgorithmProtect attribute | Not accepted; this experiment also changes the signature, so on its own it does not prove the duplicate check runs |
+| Presenting a receipt signed by the synthetic PKI to the default Apple roots | Not accepted |
+| RSA blocks produced with the test key: each of the 20 bytes of the SHA-1 digest changed separately, plus four malformed padding/DigestInfo forms | 24 malformed blocks refused; the valid control accepted |
+| The same RSA experiment for SHA-256 | 36 malformed blocks refused; the valid control accepted |
 
-Toplam **1,119 assertion** geçti. Başarısız doğrulamalarda payload
-dönmedi, `INTERNAL_ERROR` oluşmadı, unchecked exception kaçmadı. RSA
-deneyi yalnızca signature byte'ını bozmaz: test private key'iyle istenen
-EMSA-PKCS1-v1_5 bloğunu üreten signature hazırlanır. Böylece RSA işlemi
-sonrasındaki digest byte ve padding kontrolleri özellikle sınanır.
+**1,119 assertions** passed in total. Failed verifications returned no
+payload, produced no `INTERNAL_ERROR` and let no unchecked exception
+escape. The RSA experiment does not merely corrupt a signature byte: a
+signature is prepared with the test private key that yields the desired
+EMSA-PKCS1-v1_5 block. The digest-byte and padding checks after the RSA
+operation are thereby tested specifically.
 
-OID tablosu için önceki kaynak tahminini gerçek collision girdisiyle
-sınadım: BC `hashCode()` değeri aynı olan **1,000 farklı OID**, her biri
-**2,300 content octet**. OID'lerin uzun ortak prefix'i equality kontrolünü
-pahalı yapar. OID'ler gerçek G5 receipt'in imzasız attribute alanına
-eklendi; Apple'ın signed content'i ve signature'ı değişmedi. Kontrol
-grubu aynı sayıda ve uzunlukta farklı hash'li OID taşır.
+For the OID table I tested the earlier source-level estimate with real
+collision input: **1,000 distinct OIDs** with the same BC `hashCode()`,
+each of **2,300 content octets**. The OIDs' long common prefix makes the
+equality check expensive. The OIDs were added to the unsigned attribute
+area of the genuine G5 receipt; Apple's signed content and signature were
+unchanged. The control group carries the same number and length of OIDs
+with distinct hashes.
 
-| İmzasız attribute sayısı | Base64 byte | Kontrol, ms/çağrı | Hash collision, ms/çağrı |
+| Unsigned attributes | Base64 bytes | Control, ms/call | Hash collision, ms/call |
 |---|---:|---:|---:|
 | 250 | 778,236 | 11.3 | 10.8 |
 | 500 | 1,548,900 | 12.6 | 29.2 |
 | 1,000 | 3,090,236 | 20.5 | 82.4 |
 
-Her girdide sonuç `VERIFIED`; hepsi 3,145,728 byte cap altında. Beş
-warmup sonrası on çağrının ortalaması, 512 MiB heap. Bunlar JMH veya
-worst-case latency garantisi değil. Bu deney quadratic tablonun yalnızca
-teorik olmadığını ve mevcut cap'in bu saldırıda işi sınırladığını
-gösteriyor. 1,000 sınırını gereksiz kod diye kaldırmak için gerekçe yok.
+Every input gives `VERIFIED`; all are under the 3,145,728-byte cap. Mean
+of ten calls after five warm-ups, 512 MiB heap. These are not JMH or
+worst-case latency guarantees. The experiment shows that the quadratic
+table is not only theoretical and that the current cap bounds the work in
+this attack. There is no ground for removing the 1,000 limit as
+unnecessary code.
 
-### Güven sınırları: kaynak incelemesinin sonucu
+### Trust boundaries: the result of the source review
 
-| Sınır | Kontrol ve değerlendirme |
+| Boundary | Check and assessment |
 |---|---|
-| Payload ↔ CMS signature | Dönen payload, `CMSSignedData` içindeki aynı byte dizisidir. Signed attribute varsa BC messageDigest'i hesaplanan digest ile karşılaştırır; yoksa payload'ın doğrudan imzasını doğrular. |
-| Signer identity ↔ key | Issuer/serial veya SKI eşleşmesi yalnızca aday seçer. PKIX target tam certificate'tir; adayın kendi public key'i CMS için kullanılır. Aynı isim/serial taşıyan başka key trust yerine geçemez. |
-| Apple developer key ↔ receipt signing key | Top-down yürüyüşte end entity bir sonraki certificate'i onaylayamaz. Receipt leaf ve doğrudan issuer WWDR marker'ları ayrıca gerekir. |
-| Top-down ↔ tam PKIX | İlk aşama yalnızca issuer signature proof sağlar. İkinci aşama validity, CA/key usage/constraints/critical extensions içindir. Birini kaldırmak güvenli sadeleştirme değildir. |
-| Unsigned algorithm labels ↔ BC provider | PSS salt bound BC'nin çözdüğü gerçek algorithm üstünde, verifier kurulmadan uygulanır. Generic composite ayrıca reddedilir; raw OID kontrolü tek başına yeterli değildir. |
-| CMS attribute processing | `SignedAsSent` DER sorting maliyetinden kaçınır; BC'nin contentType, messageDigest, algorithm protection ve countersignature kontrolleri yine çalışır. DL kullanımı genel non-DER CMS kabulünde standart BC ile eşitlik garantisi vermez. |
-| Certificate URL ↔ network | İncelenen builder'a yalnızca Collection CertStore veriliyor, named store yok, revocation kapalı. BC issuer araması bu store'ları kullanıyor; bu yolda saldırgan certificate URL'sine HTTP fetch ekleyen bir çağrı bulmadım. Bu madde kaynak incelemesidir, network instrumentation sonucu değildir. |
-| Paylaşılan verifier ↔ çağrı state'i | Trust config sabit; CMS, signer verifier ve PKIX builder çağrıya özel. Critical-extension checker state tutmuyor. Mevcut concurrency/isolation testleri önceki Temurin 17 suite'inde geçti. |
+| Payload to CMS signature | The returned payload is the same byte array inside `CMSSignedData`. With signed attributes BC compares messageDigest with the computed digest; without them it verifies the payload's direct signature. |
+| Signer identity to key | Issuer/serial or SKI matching only selects candidates. The PKIX target is the exact certificate; the candidate's own public key is used for the CMS. Another key with the same name/serial cannot stand in for trust. |
+| Apple developer key to receipt signing key | In the top-down walk an end entity cannot approve the next certificate. The receipt leaf and direct issuer WWDR markers are required besides. |
+| Top-down to full PKIX | The first stage only provides the issuer signature proof. The second stage is for validity, CA/key usage/constraints/critical extensions. Removing either is not a safe simplification. |
+| Unsigned algorithm labels to the BC provider | The PSS salt bound is applied on the algorithm BC actually resolves, before a verifier is built. Generic composite is refused separately; a raw OID check alone is not enough. |
+| CMS attribute processing | `SignedAsSent` avoids the DER sorting cost; BC's contentType, messageDigest, algorithm protection and countersignature checks still run. DL use gives no equality guarantee with standard BC for general non-DER CMS acceptance. |
+| Certificate URL to network | The reviewed builder is given only a Collection CertStore, no named store, revocation off. BC's issuer search uses these stores; I found no call on this path that adds an HTTP fetch of an attacker's certificate URL. This item is a source review, not a network instrumentation result. |
+| Shared verifier to per-call state | The trust config is fixed; CMS, signer verifier and PKIX builder are per call. The critical-extension checker holds no state. The existing concurrency/isolation tests passed in the earlier Temurin 17 suite. |
 
-### Prod kararı ve gereksiz kod
+### Production decision and unnecessary code
 
-İmza/güven zinciri için bu incelemede yeni bir release blocker bulunmadı.
-Temurin 17 üzerindeki önceki **699 test / sıfır failure / bir skip**
-sonucuna bu turun 1,119 security assertion'ı ekleniyor; bunlar yeni JUnit
-test sayısı değildir. Public fixture'lerin gerçek Apple zincirlerini
-geçirmesi SHA-1 legacy ve G5 için önemli bir kontrol; bütün Apple receipt
-çeşitlerini kapsadığı anlamına gelmez.
+No new release blocker for the signature or the trust chain was found in
+this review. The 1,119 security assertions of this pass add to the
+earlier **699 tests / zero failures / one skip** on Temurin 17; they are
+not new JUnit test counts. The public fixtures passing the genuine Apple
+chains is an important check for SHA-1 legacy and G5; it does not mean
+every Apple receipt variant is covered.
 
 PSS, generic composite, unauthenticated key decode, strict signer lookup,
-tam certificate target, certificate/SignerInfo/attribute cap'leri ve
-top-down + PKIX korunmalı. Bu turda güvenle silinebilecek, açıkça ölü bir
-production security branch bulunmadı. Önceki sadeleştirme önerileri
-geçerli: creation-date map allocation'ı ve kanıt dokümanlarıyla tekrarlanan
-uzun yorumlar. BC signed-attribute verification'ını el yazımı bir CMS
-doğrulayıcıyla değiştirmek daha küçük bir güvenlik yüzeyi sağlamaz.
+the exact certificate target, the certificate/SignerInfo/attribute caps
+and top-down plus PKIX should stay. This pass found no clearly dead
+production security branch that can be deleted safely. The earlier
+simplification suggestions stand: the creation-date map allocation and
+the long comments repeating the evidence documents. Replacing BC's
+signed-attribute verification with a hand-written CMS verifier would not
+give a smaller security surface.
 
-`VERIFIED` yalnızca kütüphanenin belgelenmiş imza/trust sözleşmesidir.
-Bundle, sandbox/production, product, transaction'ın hangi kullanıcıya
-verildiği ve idempotency uygulamada kontrol edilmelidir. Offline doğrulama
-sonradan gerçekleşen refund/revocation veya en güncel abonelik durumunu
-öğrenmez. Bunlar yeni bulgu değil, güvenlik değerlendirmesinin sınırıdır.
+`VERIFIED` is only the library's documented signature/trust contract.
+Bundle, sandbox/production, product, which user a transaction was granted
+to, and idempotency must be checked in the application. Offline
+verification does not learn of a later refund/revocation or the latest
+subscription state. These are not new findings; they are the limits of
+the security assessment.
 
-## Hangi kod gerçekten fazla?
+## Which code is really surplus?
 
-Apple'ın normal receipt'inde kullanılmayan bir dal, saldırganın doğrulama
-öncesinde çalıştırabileceği bir BC yolunu sınırlıyorsa gereksiz değildir.
-Öte yandan her ek satır kriptografik zorunluluk da değildir. Bu ayrım
-üzerinden somut sadeleştirme kararı:
+A branch Apple's normal receipt never exercises is not surplus if it
+bounds a BC path the attacker can run before verification. On the other
+hand, not every added line is a cryptographic necessity. The concrete
+simplification decision along that distinction:
 
-| Kod | Apple imzasını doğrulamak için rolü | Öneri |
+| Code | Role in verifying Apple's signature | Suggestion |
 |---|---|---|
-| `readCreationDate` içindeki tüm attribute map/list'leri | Yalnızca ilk attribute 12 gerekli; diğer değerlerin bu aşamada biriktirilmesi gerekli değil | Tam structural kontrolü koruyan, map tutmayan taramayla sadeleştirme adayı. Deneyde allocation azaldı; production değişikliği bu branch'te yapılmadı. |
-| `DigestDenylistCostTest` (315 satır) | Runtime doğrulamaya katılmaz. Algoritma maliyetlerini tarayan bakım benchmark'ı | Normal test suite'inden ayrı, BC upgrade'inde veya planlı çalışan benchmark'a taşıma adayı. Deterministik kötü-input ret testlerini normal suite'te tut. Mevcut suite bu ortamda geçti; öneri gözlenmiş bakım karmaşıklığına dayanıyor. |
-| Production yorumlarındaki uzun benchmark/geçmiş anlatımı | Runtime davranışını değiştirmez; evidence dokümanlarında aynı gerekçeler zaten var | Kısa invariant + kanıt bağlantısı bırakılabilir. Güvenlik gerekçesini tamamen silme. |
-| `REFUSED_DIGESTS` ve MD2 signature label reddi | Apple'ın imza geçerliliği şartı değil; doğrulama öncesi CPU maliyetini sınırlayan yerel politika | Küçük tabloyu koru. Silmek imza güvenliğini doğrudan kaldırmaz ama ölçülmüş pahalı digest yollarını yeniden açar. Tabloyu genişletmek için ölçüm iste. |
-| `SignedAsSent`, tek SignerInfo'lu CMS wrapper, `stringsOnly` / `holdsSet` | BC'nin doğrulama öncesindeki sorting, hashing ve name comparison maliyetlerini sınırlar | Mevcut BC 1.86'da gerekçeleri var; sırf Apple normalde bu biçimleri üretmiyor diye kaldırma. Özellikle `SignedAsSent` genel CMS davranışına müdahale ettiği için BC upgrade'lerinde yeniden değerlendir. |
-| PSS salt kontrolü, generic composite reddi, top-down + PKIX, exact certificate target ve kaynak cap'leri | Bazıları trust bağını kurar, bazıları imza kontrolüne ulaşmadan OOM/aşırı CPU'yu engeller | Koru. İncelemede güvenle silinebilecek ölü bir branch bulunmadı. |
+| All attribute maps/lists inside `readCreationDate` | Only the first attribute 12 is needed; accumulating the other values at this stage is not | Simplification candidate: a map-free scan that keeps the full structural check. Allocation dropped in the trial; no production change was made on this branch. |
+| `DigestDenylistCostTest` (315 lines) | Takes no part in run-time verification. A maintenance benchmark that scans algorithm costs | Candidate for moving out of the normal test suite into a benchmark run on BC upgrades or on a schedule. Keep the deterministic bad-input refusal tests in the normal suite. The current suite passed in this environment; the suggestion rests on observed maintenance complexity. |
+| Long benchmark/history narration in production comments | Changes no run-time behaviour; the evidence documents already hold the same reasoning | A short invariant plus an evidence link could remain. Do not delete the security reasoning altogether. |
+| `REFUSED_DIGESTS` and the MD2 signature label refusal | Not a condition of Apple's signature validity; a local policy bounding pre-verification CPU cost | Keep the small table. Deleting it does not remove signature security directly but reopens the measured expensive digest paths. Ask for measurements before widening the table. |
+| `SignedAsSent`, the single-SignerInfo CMS wrapper, `stringsOnly` / `holdsSet` | Bound BC's sorting, hashing and name comparison costs before verification | They have their reasons on the current BC 1.86; do not remove them merely because Apple does not normally produce these forms. Re-evaluate `SignedAsSent` in particular on BC upgrades, since it intervenes in general CMS behaviour. |
+| PSS salt check, generic composite refusal, top-down plus PKIX, exact certificate target and the resource caps | Some establish the trust binding, others prevent OOM/excess CPU before the signature check is reached | Keep. The review found no dead branch that can be deleted safely. |
 
-13–14 Ekim karşılaştırmasında legacy ile ilgili production büyümesi
-yaklaşık **440 fiziksel satır**, yorum ve boşluklar çıkarılınca yaklaşık
-**236 kod satırı**. Java testlerindeki net büyüme **1,686 satır**.
-Dolayısıyla görünen büyümenin büyük kısmı runtime'a eklenen yeni doğrulama
-mantığı değil. Bu sayılar önceki bölümdeki aynı commit aralığına aittir;
-yorum ayrımı yaklaşık lexical ölçümdür.
+In the 13 to 14 October comparison, the legacy-related production growth
+is about **440 physical lines**, about **236 code lines** without comments
+and blanks. The net growth in the Java tests is **1,686 lines**. So most
+of the visible growth is not new verification logic added to the run
+time. These figures belong to the same commit range as the earlier
+section; the comment split is an approximate lexical measurement.
 
-Bu review branch'indeki probe'lar da yalnızca `docs/evidence/` altında
-kalır; Maven production kaynaklarına veya yayımlanan ana JAR'a girmez.
-Branch rapor ve tekrar üretilebilir kanıt taşır, production refactor taşımaz.
+The probes on this review branch also stay under `docs/evidence/` only;
+they enter neither the Maven production sources nor the published main
+JAR. The branch carries the report and reproducible evidence, not a
+production refactor.
