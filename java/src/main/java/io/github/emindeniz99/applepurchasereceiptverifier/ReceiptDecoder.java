@@ -95,7 +95,7 @@ final class ReceiptDecoder {
             IAP_IS_IN_INTRO_OFFER_PERIOD,
             IAP_CANCELLATION_REASON));
 
-    /** RFC 3339 §5.6 {@code date-time}, T and Z in either case; {@code \d} is ASCII only. */
+    /** RFC 3339 section 5.6 {@code date-time}, T and Z in either case; {@code \d} is ASCII only. */
     private static final Pattern RECEIPT_DATE = Pattern.compile(
             "(\\d{4})-(\\d{2})-(\\d{2})[Tt](\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d++))?(?:[Zz]|([+-])(\\d{2}):(\\d{2}))");
 
@@ -372,7 +372,7 @@ final class ReceiptDecoder {
      * calendar date, hours 00 to 23, minutes 00 to 59, seconds 00 to 60 with
      * 60 read as 59, {@code T} and {@code Z} in either case, a fraction of
      * any length truncated to the millisecond, and {@code Z} or an offset
-     * {@code ±hh:mm} (hours 00 to 23) converted to UTC, which can carry the
+     * {@code +/-hh:mm} (hours 00 to 23) converted to UTC, which can carry the
      * instant a day past either end of those years. Null when {@code text}
      * is not in that form.
      */

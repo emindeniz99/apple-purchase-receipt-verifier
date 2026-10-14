@@ -65,8 +65,10 @@ final class ReceiptCore {
      * number, and the unsigned attributes are anyone's to add. Apple's
      * receipt SignerInfos carry none. Each insert scans the bucket twice, so
      * at this cap the two tables cost at most about a million OID
-     * comparisons, a few milliseconds: an estimate from the sources, not
-     * timed. A SignerInfo over it is left out.
+     * comparisons, a few hundred milliseconds at the longest OIDs
+     * BouncyCastle admits (each comparison is {@code Arrays.equals} over up
+     * to 4,096 octets): an estimate from the sources, not timed. A
+     * SignerInfo over it is left out.
      */
     static final int MAX_SIGNER_INFO_ATTRIBUTES = 1000;
 

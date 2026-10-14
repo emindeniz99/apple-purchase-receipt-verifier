@@ -168,8 +168,8 @@ final class JwsCore {
 
     /**
      * Reads the payload as one JSON object with nothing after it, once, for
-     * everything this class needs of it. Package-private for the tests and
-     * the fuzz harness, which drive it directly.
+     * everything this class needs of it. Package-private so the class can be
+     * driven directly.
      */
     static Payload readPayload(byte[] payload) throws VerificationException {
         Payload read = new Payload();
