@@ -810,7 +810,7 @@ cRLDistributionPoints, 2026-10-06).
   serial so that `ReceiptCertificates.signers` compared its issuer; the
   receipt verified. The X.509 grammar leaves two places open to any
   ASN.1, a name's attribute values and the parameters of the three
-  AlgorithmIdentifiers, so `AppleTrust.convertible` requires every name
+  AlgorithmIdentifiers, so `PreTrustScreen.convertible` requires every name
   value to be a string and no parameters to hold a SET.
   `ReceiptCertificates.decode` skips an entry that fails, after the
   decode checks, so an entry that does not decode is still `MALFORMED`,
@@ -912,9 +912,9 @@ cRLDistributionPoints, 2026-10-06).
   and the attribute tables for a copy of Apple's SignerInfo that anyone
   relaying a receipt can append unsigned attributes to. The review
   estimated about 10^5 extensions under the 3 MiB cap; nothing was
-  measured. `ReceiptCertificates.MAX_CERTIFICATE_EXTENSIONS` (1,000) is
+  measured. `PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS` (1,000) is
   counted on the raw TBS before `Certificate.getInstance`: a bag entry
-  over it is skipped, as one `AppleTrust.convertible` rejects, and an x5c
+  over it is skipped, as one `PreTrustScreen.convertible` rejects, and an x5c
   leaf or intermediate over it stands for nothing (`UNTRUSTED_CHAIN`);
   an x5c[2] is never read. The count comes first because the parse is
   what builds the table, so an entry over the cap is passed over even

@@ -1058,8 +1058,8 @@ keeps stream state between calls) and every `Signature`.
   bound admits 9 levels, what a genuine receipt needs; that it exists at
   all rests on the 1.86 floor.
 - The signature BIT STRING of a certificate is decoded lazily, so the
-  decoders read it once on purpose (`JwsCore.decodeChain`,
-  `ReceiptCertificates.decode`).
+  decoders read it once on purpose (`PreTrustScreen.readCertificate`, for
+  the bag and for x5c).
 - `IA5String` does not check that its bytes are seven-bit, so
   `ReceiptDecoder.decodeString` does.
 
