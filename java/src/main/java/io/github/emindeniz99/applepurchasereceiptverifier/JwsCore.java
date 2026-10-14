@@ -83,8 +83,6 @@ final class JwsCore {
         }
         // x5c[2] is decoded but unused: the pinned anchor stands in for it.
         List<@Nullable X509Certificate> chain = decodeChain(header.x5c);
-        X509Certificate leaf = chain.get(0);
-        X509Certificate intermediate = chain.get(1);
 
         // The sender's signedDate picks the instant the chain must be valid at,
         // before anything is trusted. That only moves the validity window; the
@@ -93,9 +91,11 @@ final class JwsCore {
         // transaction carries stands in, as in Apple's library, then the clock.
         Payload read = readOrNull(payloadBytes);
         Long carried = read == null ? null : read.chainInstant();
-        authenticateTopDown(leaf, intermediate, trustAnchors);
+        List<X509Certificate> path = authenticateTopDown(chain.get(0), chain.get(1), trustAnchors);
+        X509Certificate leaf = path.get(0);
+        X509Certificate intermediate = path.get(1);
         PublicKey leafKey = AppleTrust.decodeKey(leaf, "x5c[0]");
-        validateChain(leaf, intermediate, new Date(carried != null ? carried : now), trustAnchors);
+        validateChain(path, new Date(carried != null ? carried : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
         AppleTrust.requireMarkers(leaf, intermediate, "x5c");
         verifyEs256(leafKey, parts[0] + "." + parts[1], signature);
@@ -326,9 +326,10 @@ final class JwsCore {
     /**
      * Checks both signatures from a pinned root down, decoding a key only once
      * it is vouched for; see {@link AppleTrust}. A null certificate, one
-     * {@link #decodeChain} passed over, is signed by nobody.
+     * {@link #decodeChain} passed over, is signed by nobody. Returns the two,
+     * leaf first.
      */
-    private static void authenticateTopDown(
+    private static List<X509Certificate> authenticateTopDown(
             @Nullable X509Certificate leaf, @Nullable X509Certificate intermediate, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         if (intermediate == null || !AppleTrust.signedByAny(intermediate, AppleTrust.roots(trustAnchors))) {
@@ -344,14 +345,14 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");
         }
+        return Arrays.asList(leaf, intermediate);
     }
 
-    private static void validateChain(
-            X509Certificate leaf, X509Certificate intermediate, Date at, Set<TrustAnchor> trustAnchors)
+    private static void validateChain(List<X509Certificate> chain, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         try {
             CertPath path = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER)
-                    .generateCertPath(Arrays.asList(leaf, intermediate));
+                    .generateCertPath(chain);
             PKIXParameters params = new PKIXParameters(trustAnchors);
             params.setRevocationEnabled(false);
             params.setDate(at);

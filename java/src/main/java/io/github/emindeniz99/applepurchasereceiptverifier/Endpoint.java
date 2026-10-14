@@ -81,7 +81,7 @@ final class Endpoint {
             throw new VerificationException(
                     Reason.TOO_LARGE, "request body exceeds the maximum of " + MAX_REQUEST_BYTES + " bytes");
         }
-        String[] receiptData = {null};
+        @Nullable String[] receiptData = {null};
         // One char array: Jackson reads a long String in chunks, and a long value in them slowly.
         try (JsonParser parser = JsonFields.JSON.createParser(requestJson.toCharArray())) {
             boolean object = JsonFields.read(parser, (name, value, p) -> {
