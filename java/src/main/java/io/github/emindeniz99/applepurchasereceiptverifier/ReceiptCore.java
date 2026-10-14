@@ -100,7 +100,7 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.TOO_LARGE, "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
         }
-        return verifyDer(StrictBase64.decode(base64, false, Reason.MALFORMED, "receipt"), trustAnchors, now);
+        return verifyDer(StrictBase64.standard(base64, Reason.MALFORMED, "receipt"), trustAnchors, now);
     }
 
     /** {@link #verify} after the base64 step. */

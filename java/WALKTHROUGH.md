@@ -520,7 +520,7 @@ algorithm in a page, and the rest are its steps.
 flowchart TD
     S["DefaultVerifier.verifyReceipt: read the clock once"] --> C1{"ReceiptCore.verify: empty, or over 3,145,728 bytes?"}
     C1 -->|yes| F1["MALFORMED or TOO_LARGE"]
-    C1 -->|no| C2["StrictBase64.decode"]
+    C1 -->|no| C2["StrictBase64.standard"]
     C2 --> C3["verifySignature: parseCms, encapsulatedPayload, signerInfos (at most 4, screened)"]
     C3 --> C4["ReceiptDecoder.readCreationDate: instant is attribute 12, else the clock"]
     C4 --> C5["ReceiptCertificates.decode: at most 10, no keys read"]
@@ -542,7 +542,7 @@ a genuine Apple sandbox receipt (case
 | Step | Method | What happens on g5 | Reason on failure |
 |---|---|---|---|
 | 1 | `DefaultVerifier.verifyReceipt` | Reads the clock once, 2026-10-06, before touching the input, so a throwing clock never lands in a catch that blames the input | `INTERNAL_ERROR` |
-| 2 | `verify` (1), `Utf8Length.exceeds`, `StrictBase64.decode` | 7,556 characters, under the cap; length divisible by 4, the JDK decoder refuses anything else; 5,665 bytes | `TOO_LARGE`, `MALFORMED` |
+| 2 | `verify` (1), `Utf8Length.exceeds`, `StrictBase64.standard` | 7,556 characters, under the cap; length divisible by 4, the JDK decoder refuses anything else; 5,665 bytes | `TOO_LARGE`, `MALFORMED` |
 | 3 | `verifyDer` (2) | Wraps steps 4 to 9: any `RuntimeException` BouncyCastle throws there becomes `MALFORMED` | `MALFORMED` |
 | 4 | `verifySignature` (4), `parseCms` (5), `encapsulatedPayload` (6), `signerInfos` (7), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs). Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
 | 5 | `ReceiptCertificates.decode`, `PreTrustScreen.readCertificate` | Counts the bag before decoding, skips `[0]` to `[3]` entries, reads no key: the leaf (valid to 2026-08-23), WWDR G5 (to 2030-12-10), a copy of Apple Root CA | `MALFORMED`: a broken entry |

@@ -70,9 +70,9 @@ final class JwsCore {
         if (parts.length != 3) {
             throw new VerificationException(Reason.MALFORMED, "expected 3 dot-separated segments, got " + parts.length);
         }
-        byte[] headerBytes = StrictBase64.decode(parts[0], true, Reason.MALFORMED, "header");
-        byte[] payloadBytes = StrictBase64.decode(parts[1], true, Reason.MALFORMED, "payload");
-        byte[] signature = StrictBase64.decode(parts[2], true, Reason.MALFORMED, "signature");
+        byte[] headerBytes = StrictBase64.url(parts[0], Reason.MALFORMED, "header");
+        byte[] payloadBytes = StrictBase64.url(parts[1], Reason.MALFORMED, "payload");
+        byte[] signature = StrictBase64.url(parts[2], Reason.MALFORMED, "signature");
 
         Header header = Header.read(headerBytes);
         if (!"ES256".equals(header.alg)) {
@@ -312,7 +312,7 @@ final class JwsCore {
         List<@Nullable X509Certificate> chain = new ArrayList<>();
         try {
             for (String entry : x5c) {
-                byte[] der = StrictBase64.decode(entry, false, Reason.INVALID_CERTIFICATE, "x5c entry");
+                byte[] der = StrictBase64.standard(entry, Reason.INVALID_CERTIFICATE, "x5c entry");
                 // The first object only, as a CertificateFactory reads one.
                 X509CertificateHolder holder = PreTrustScreen.readCertificate(new ASN1InputStream(der).readObject());
                 chain.add(holder == null ? null : converter.getCertificate(holder));
