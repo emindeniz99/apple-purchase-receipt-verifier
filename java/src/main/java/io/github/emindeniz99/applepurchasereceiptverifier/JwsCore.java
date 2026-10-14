@@ -246,14 +246,11 @@ final class JwsCore {
             if (token != JsonToken.START_OBJECT) {
                 return;
             }
-            while (parser.nextToken() == JsonToken.FIELD_NAME) {
-                String name = parser.currentName();
-                JsonToken member = parser.nextToken();
+            JsonFields.members(parser, (name, member, p) -> {
                 if ("environment".equals(name)) {
-                    state(member, parser);
+                    state(member, p);
                 }
-                parser.skipChildren();
-            }
+            });
         }
     }
 
