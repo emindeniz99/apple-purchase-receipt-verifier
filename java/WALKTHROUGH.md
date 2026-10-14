@@ -391,6 +391,7 @@ The checks, in the order Java runs them:
 | 3 | Envelope: no trailing bytes, eContent present, 1 to 4 SignerInfos | Garbage, smuggled bytes, amplification | `MALFORMED` |
 | 4 | Read attribute 12 from the unverified payload to pick the instant | Nothing: this never fails | none |
 | 5 | Decode the bag: at most 10 certificates, each decodes, no key read | Certificate flooding | `MALFORMED` |
+| 5a | Before trust, pass over a bag certificate and leave out a SignerInfo whose shape or labels would cost seconds to process, and refuse the slow SignerInfo labels at step 9 (below, and §8) | Costs an attacker chooses, paid before anything is trusted | passed over, left out; `INVALID_SIGNATURE` |
 | 6 | Authenticate the bag top-down from the pinned roots (see "Why top-down" below) | Attacker keys being decoded or used | feeds step 7 |
 | 7 | PKIX path from the signer through authenticated bag certificates to a pinned root, valid at the instant | Forged and foreign chains, expired certificates, CA rule violations | `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE` |
 | 8 | Marker OIDs on the signer and the intermediate above it | A developer certificate signing a fake receipt | `INVALID_CERTIFICATE_PURPOSE` |
@@ -541,7 +542,7 @@ a genuine Apple sandbox receipt (case
 | 6 | `authenticatedTopDown` (11), `AppleTrust.signedByAny` | Round 1 accepts WWDR G5 and the root copy, both signed by the pinned Apple Root CA; round 2 the leaf, which vouches for nothing: only an accepted CA checks the next round. DNs are compared before any issuer key is decoded | none: a stranger is left out |
 | 7 | `ReceiptCertificates.signers`, `verifySigner` (7), `validateChain` (10) | The `sid` matches one certificate, the leaf. It is authenticated; its key decodes; PKIX build at the instant, revocation off: leaf, then WWDR G5, 2 below the anchor. At the clock the same call answers `INVALID_CERTIFICATE`: the leaf expired on 2026-08-23 | `MALFORMED` if the `sid` matches nothing; `UNTRUSTED_CHAIN`; `INVALID_CERTIFICATE` if outside validity or the key does not decode |
 | 8 | `requireMarkers` (9) | The leaf carries `...6.11.1`; `path.get(1)`, WWDR G5, carries `...6.2.1` | `INVALID_CERTIFICATE_PURPOSE`, also for a signer issued directly by a root |
-| 9 | `verifyCmsSignature` (12), `signerVerifier` (13) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist, so a change on Apple's side cannot break genuine receipts. Valid | `INVALID_SIGNATURE` |
+| 9 | `verifyCmsSignature` (12), `signerVerifier` (13) | The verifier is built from the key, not the certificate, so a `signingTime` attribute decides nothing (RFC 5652 §11.3); no algorithm allowlist; a short denylist of costs (R20). Valid | `INVALID_SIGNATURE` |
 | 10 | `parseSignedPayload` (8), `ReceiptDecoder.parse` | `ProductionSandbox` (environment `SANDBOX`), 2 in-app purchases; types 6, 7, 8, 9, 10, 11, 13, 14, 20, 25 kept raw. An in-app purchase that does not parse would go raw under 17, not fail the receipt | `UNREADABLE_PAYLOAD` |
 
 Steps 7 to 9 run per (SignerInfo, certificate) pair. Step 6 has no
@@ -671,6 +672,7 @@ Fixed bounds (java/README.md, "Resource bounds"):
 | ASN.1 nesting | BouncyCastle's `max_cons_depth`, 64 by default | The parser recurses; genuine receipts nest 9 deep, which `Verifier.create` checks | `MALFORMED` in the envelope, `UNREADABLE_PAYLOAD` in signed content, `INVALID_CERTIFICATE` in `x5c` |
 | Bag certificates | 10 | Genuine receipts embed one to three | `MALFORMED` |
 | SignerInfos | 4 | Each costs a chain build and a signature check | `MALFORMED` |
+| Extensions per certificate; attributes per SignerInfo | 1,000 each, counted before BouncyCastle parses them | BouncyCastle keeps each in a table whose cost is quadratic under colliding OIDs; Apple's carry 3 to 8 and none | certificate passed over; SignerInfo left out (`MALFORMED` when none is left) |
 | Receipt signer below a pinned root | 7 certificates below the anchor: BouncyCastle 1.86's builder refuses an eighth (the JDK's default `maxPathLength`, 5). The walk has no round bound; the bag cap bounds its work | Bounds path building | `UNTRUSTED_CHAIN` |
 | JSON depth, name, number | 1,000, 50,000, 1,000 (Jackson defaults, in the library's own factories so a host-wide override cannot move them) | Bounded parsing | `MALFORMED`; `UNREADABLE_PAYLOAD` in a signed payload |
 
@@ -684,6 +686,25 @@ Two costs to know:
 - **Thread stack.** BouncyCastle's ASN.1 parser recurses. Keep worker stacks
   at 256 KB or more, or a hostile input can end a call with
   `StackOverflowError`, an `Error` outside the never-throws contract.
+
+**What is refused before trust, and why.** Some unsigned parts of a
+receipt choose how much work BouncyCastle does before any signer is
+trusted: a SignerInfo's digest and signature labels, a certificate's own
+signature label, and the shapes of names and algorithm parameters. Where
+that work costs seconds or gigabytes and no Apple input has the shape,
+Java refuses it first. A SignerInfo naming one of eight slow digests
+(GOST R 34.11-94, MD2, Whirlpool, Streebog, DSTU 7564), the
+md2WithRSAEncryption or generic composite label, or an RSASSA-PSS salt
+that is negative or longer than the signer's key can hold is
+`INVALID_SIGNATURE`. A bag certificate is passed over, signed by nobody,
+when a name value is not a string, an algorithm's parameters hold a SET,
+it carries more than 1,000 extensions, or its own label is one of those
+labels or a salt its issuer's key cannot hold. A SignerInfo is left out
+for the same name and parameter shapes or more than 1,000 attributes.
+Passing over or leaving out only removes something: the receipt still
+needs Apple's signature under a pinned chain. Each refusal, with what it
+cost and why no Apple input is affected, is in R20 of
+`docs/rust-core/DECISIONS.md`.
 
 **Startup checks.** `Verifier.create` (`DefaultVerifier`'s constructor)
 throws at deployment instead of failing per call: a Jackson or BouncyCastle
@@ -741,7 +762,8 @@ settings still apply; none can make a forged signature verify
    in one PR. Never edit a case to make the code pass.
 8. **Know the accepted risks.** No revocation; a back-dated payload under a
    leaked historical key; the pre-trust parse cost; SHA-1; no
-   signer-algorithm allowlist; `crit` and high-S. Each has a recorded
+   signer-algorithm allowlist, only a short denylist of costs (R20);
+   `crit` and high-S. Each has a recorded
    reason.
 
 Tests are in `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/`

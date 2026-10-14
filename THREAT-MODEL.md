@@ -128,7 +128,8 @@ step 3, §2.2 step 3). *Proof:* `transaction/reject-leaf-without-apple-marker-oi
 
 ES256 over `ASCII(header + "." + payload)` for JWS. For receipts, the CMS
 signature over the content. Since 0.7 (#160) neither implementation
-restricts the signer's key type, digest or signature algorithm (owner
+restricts the signer's key type, digest or signature algorithm, except
+the cost refusals in §3.7 (owner
 decision: a signer pinned to an Apple root and carrying Apple's marker is
 trusted whatever it signs with, so a change on Apple's side cannot reject
 genuine receipts; an RSA signature binds its hash algorithm in the
@@ -424,6 +425,12 @@ entry of 20,000 parts in a 0.5 MB receipt that still verified, 2.9 s for
 an x5c intermediate under the 256 KiB JWS cap. A certificate with that
 label is now signed by nobody (owner Q144 a;
 docs/evidence/2026-10-13-java-pretrust-reencoding.md).
+A certificate labelled md2WithRSAEncryption made BouncyCastle run MD2
+over its TBS once per issuer whose name matched, and every CA in the
+bag was an issuer, copies of the root included: 2.5 to 2.8 s a call for
+a cap-sized stranger beside seven root copies. Such a certificate is now
+signed by nobody and a copy is not tried as an issuer again, 0.05 to
+0.2 s; the core has no MD2, so both pass the stranger over (R20).
 Signed attributes were DER-encoded, and so sorted, before the signature
 was checked (2.8 to 4.9 s for one cap-sized nested attribute); Java now
 hashes them as sent, 0.5 to 0.9 s. The core refuses the nested shapes at
@@ -436,8 +443,10 @@ quadratic, read from the sources and not measured. Java counts both
 before BouncyCastle parses them and passes over a certificate with more
 than 1,000 extensions, or leaves out a SignerInfo with more than 1,000
 attributes, which bounds each table at about a million comparisons
-(each insert scans the bucket twice), a few milliseconds, estimated from
-the sources and not timed; Apple's
+(each insert scans the bucket twice), estimated from the sources. Each
+comparison runs over up to 4,096 octets (10^6 of them at 4,000 octets
+measured about 0.1 s), so a table at the cap costs roughly 85 to 170 ms and a receipt
+0.2 to 0.4 s at worst; Apple's
 certificates carry three to eight extensions and Apple's SignerInfo none
 (docs/evidence/2026-10-13-java-oid-tables.md).
 
