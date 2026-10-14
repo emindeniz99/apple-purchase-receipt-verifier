@@ -90,7 +90,7 @@ with SHA-1 or SHA-256 and chain to Apple Inc. Root CA.
 **The chain is always checked before the signature, and the payload is
 decoded last.** Each line is check → attack it stops → `Reason` on failure:
 
-1. At most 3,145,728 UTF-8 bytes, canonical base64 → memory exhaustion,
+1. At most 3,145,728 UTF-8 bytes, padded standard base64 → memory exhaustion,
    two decoders disagreeing → `TOO_LARGE`, `MALFORMED`
 2. Parse the envelope: nothing trailing, 1 to 4 SignerInfos → garbage,
    amplification → `MALFORMED`
@@ -139,7 +139,8 @@ cost and why no Apple input is affected, is in R20 of
 | `UNREADABLE_PAYLOAD` | Apple signed it, we cannot read it | Alert, do not retry |
 | `INTERNAL_ERROR` | The runtime or library broke | Alert, do not retry |
 
-**Unverified input must never produce the last two**, or anyone could page
+**Unverified input must never produce the last two on a healthy runtime**
+(only the runtime itself can, as a clock that throws), or anyone could page
 your on-call engineer.
 
 ## 5. JWS (StoreKit 2)

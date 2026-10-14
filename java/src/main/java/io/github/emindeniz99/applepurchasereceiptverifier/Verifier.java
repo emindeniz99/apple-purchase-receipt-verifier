@@ -9,8 +9,8 @@ import org.jspecify.annotations.Nullable;
  * idempotency are the caller's decisions; nothing here checks them.
  *
  * <p>Immutable and thread-safe: build one at startup with
- * {@link #create(Config)} and share it. An interface so callers can mock it
- * in their own tests.</p>
+ * {@link #create(Config)} and share it. An interface, so a caller can
+ * substitute its own.</p>
  *
  * <p><strong>No method throws for any input.</strong> A {@code null} or empty
  * input string fails as {@link Reason#MALFORMED}. An unexpected runtime

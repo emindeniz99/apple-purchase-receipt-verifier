@@ -258,7 +258,9 @@ basicConstraints.
 **Base64** encodes 3 bytes as 4 characters from `A-Z a-z 0-9 + /`, padded
 with `=` to a multiple of 4; `receipt-data` and JWS `x5c` entries use it.
 **Base64url** replaces `+ /` with `- _` and drops the padding; the three JWS
-segments use it. Only the canonical spelling of each is accepted (§8).
+segments use it. Base64url is accepted only in its canonical spelling,
+re-encoded and compared; standard base64 must carry its padding, and non-zero
+unused bits in its last character are accepted.
 
 **DER versus PEM.** The `.cer` files in `certs/` are raw DER. PEM is the
 same DER in base64 between `-----BEGIN CERTIFICATE-----` lines; the
@@ -456,7 +458,8 @@ byte-identical copy only once; §4.2 has the renewal example this protects.
 
 The first six blame the input: deny. The last two do not: alert, do not
 retry (the result is deterministic), and do not deny a paying user on that
-basis. So unverified input must never produce the last two, or anyone
+basis. So unverified input must never produce the last two on a healthy
+runtime (only the runtime itself can, as a clock that throws), or anyone
 could page the on-call engineer at will.
 
 ## 6. Our Java code, step by step (legacy)
