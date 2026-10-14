@@ -25,6 +25,8 @@ export MAVEN_ARGS="--settings $SCRATCH/settings.xml"
 if [[ -f /etc/ssl/certs/java/cacerts ]]; then
   export MAVEN_OPTS="${MAVEN_OPTS:-} -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts"
 fi
+# Absolute, so the paths below survive the cd into the copy.
+SCRATCH="$(cd "$SCRATCH" && pwd)"
 # Build an unmodified copy so Maven outputs never enter the working tree.
 git -C "$REPO" ls-files -z java fixtures certs | tar -C "$REPO" --null -T - -cf - | tar -x -C "$SCRATCH/tree"
 java -version > "$SCRATCH/runtime.log" 2>&1
