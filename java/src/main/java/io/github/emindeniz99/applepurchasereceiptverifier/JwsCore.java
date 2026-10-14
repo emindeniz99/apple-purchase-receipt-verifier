@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonToken;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
@@ -93,10 +94,11 @@ final class JwsCore {
         Payload read = readOrNull(payloadBytes);
         Long carried = read == null ? null : read.chainInstant();
         authenticateTopDown(leaf, intermediate, trustAnchors);
+        PublicKey leafKey = AppleTrust.decodeKey(leaf, "x5c[0]");
         validateChain(leaf, intermediate, new Date(carried != null ? carried : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
         AppleTrust.requireMarkers(leaf, intermediate, "x5c");
-        verifyEs256(leaf, parts[0] + "." + parts[1], signature);
+        verifyEs256(leafKey, parts[0] + "." + parts[1], signature);
         // A payload that did not read fails here, as UNREADABLE_PAYLOAD.
         Payload payload = read != null ? read : readPayload(payloadBytes);
         return new JsonPayload(new String(payloadBytes, StandardCharsets.UTF_8), payload.environment());
@@ -342,7 +344,6 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");
         }
-        AppleTrust.decodeKey(leaf, "x5c[0]");
     }
 
     private static void validateChain(
@@ -367,7 +368,7 @@ final class JwsCore {
      * takes twice the leaf curve's order, so without the length check a
      * P-384 leaf would verify a 96-byte signature.
      */
-    private static void verifyEs256(X509Certificate leaf, String signingInput, byte[] signature)
+    private static void verifyEs256(PublicKey leafKey, String signingInput, byte[] signature)
             throws VerificationException {
         if (signature.length != 64) {
             throw new VerificationException(
@@ -375,7 +376,7 @@ final class JwsCore {
         }
         try {
             Signature verifier = Signature.getInstance(ES256_ALGORITHM, BouncyCastle.PROVIDER);
-            verifier.initVerify(leaf.getPublicKey());
+            verifier.initVerify(leafKey);
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
             if (!verifier.verify(signature)) {
                 throw new VerificationException(
