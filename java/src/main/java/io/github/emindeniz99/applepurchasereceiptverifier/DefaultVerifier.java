@@ -37,6 +37,17 @@ import org.jspecify.annotations.Nullable;
  */
 final class DefaultVerifier implements Verifier {
 
+    /** The release named in BouncyCastle's provider info, "BouncyCastle Security Provider v1.86". */
+    private static final Pattern BOUNCY_CASTLE_RELEASE = Pattern.compile("v(\\d{1,4})\\.(\\d{1,4})");
+
+    /**
+     * How deep a genuine Apple receipt nests constructed ASN.1 values, as
+     * BouncyCastle's bound counts them: a genuine Apple receipt parses with
+     * {@code org.bouncycastle.asn1.max_cons_depth} at 9 and fails at 8,
+     * the same as {@link #RECEIPT_NESTING} SEQUENCEs around an INTEGER.
+     */
+    static final int RECEIPT_NESTING = 9;
+
     private final Set<TrustAnchor> trustAnchors;
     private final Clock clock;
 
@@ -108,17 +119,6 @@ final class DefaultVerifier implements Verifier {
             throw new IllegalStateException(e);
         }
     }
-
-    /** The release named in BouncyCastle's provider info, "BouncyCastle Security Provider v1.86". */
-    private static final Pattern BOUNCY_CASTLE_RELEASE = Pattern.compile("v(\\d{1,4})\\.(\\d{1,4})");
-
-    /**
-     * How deep a genuine Apple receipt nests constructed ASN.1 values, as
-     * BouncyCastle's bound counts them: a genuine Apple receipt parses with
-     * {@code org.bouncycastle.asn1.max_cons_depth} at 9 and fails at 8,
-     * the same as {@link #RECEIPT_NESTING} SEQUENCEs around an INTEGER.
-     */
-    static final int RECEIPT_NESTING = 9;
 
     /**
      * Refuses a bcprov older than 1.86, reading the release from the provider
