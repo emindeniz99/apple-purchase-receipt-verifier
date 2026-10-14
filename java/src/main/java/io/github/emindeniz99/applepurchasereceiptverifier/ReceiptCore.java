@@ -145,7 +145,8 @@ final class ReceiptCore {
             throws VerificationException {
         CMSSignedData cms = parseCms(receiptDer);
         byte[] payload = encapsulatedPayload(cms);
-        List<SignerInformation> signers = signerInfos(cms);
+        SignedData signedData = SignedData.getInstance(cms.toASN1Structure().getContent());
+        List<SignerInformation> signers = signerInfos(signedData);
         // The one payload read before trust: the sender's own creation date
         // picks the instant the chain must be valid at. That only moves the
         // validity window; the signature and the chain to a pinned root are
@@ -153,7 +154,7 @@ final class ReceiptCore {
         // moves the instant to the clock.
         Long creationDate = ReceiptDecoder.readCreationDate(payload);
         Date at = new Date(creationDate != null ? creationDate : now);
-        ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
+        ReceiptCertificates certificates = ReceiptCertificates.decode(signedData);
         // Signer-independent, so walked once for every SignerInfo.
         List<X509Certificate> authenticated = authenticatedTopDown(certificates.all(), trustAnchors);
         // Every SignerInfo signs the same content, so one passing is enough;
@@ -198,8 +199,7 @@ final class ReceiptCore {
         return (byte[]) content;
     }
 
-    private static List<SignerInformation> signerInfos(CMSSignedData cms) throws VerificationException {
-        SignedData signedData = SignedData.getInstance(cms.toASN1Structure().getContent());
+    private static List<SignerInformation> signerInfos(SignedData signedData) throws VerificationException {
         ASN1Set raw = signedData.getSignerInfos();
         if (raw.size() > MAX_SIGNER_INFOS) {
             throw new VerificationException(

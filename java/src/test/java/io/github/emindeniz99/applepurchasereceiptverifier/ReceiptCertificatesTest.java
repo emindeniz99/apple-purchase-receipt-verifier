@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Collections;
 import java.util.Date;
+import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.SignerInformation;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,8 @@ class ReceiptCertificatesTest {
         CMSSignedData cms = new CMSSignedData(pki.signReceiptWithLeafCopies(payload, 3));
         SignerInformation signer = cms.getSignerInfos().getSigners().iterator().next();
 
-        ReceiptCertificates certificates = ReceiptCertificates.decode(cms);
+        ReceiptCertificates certificates = ReceiptCertificates.decode(
+                SignedData.getInstance(cms.toASN1Structure().getContent()));
 
         assertEquals(5, certificates.all().size(), "the bag keeps every copy");
         assertEquals(1, certificates.signers(signer).size());
