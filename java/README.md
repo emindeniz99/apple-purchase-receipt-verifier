@@ -758,6 +758,26 @@ a config change, not a dependency bump.
 on the library's private BouncyCastle provider, so concurrent calls
 serialise on it.
 
+**Runtime notes: OpenJ9.** The vendor matrix in CI runs HotSpot JVMs only
+(Temurin, Zulu, Corretto and the rest). IBM Semeru is not in it: on OpenJ9
+0.61.0 (measured on 8.0.504, 21.0.12 and 25.0.4) the JIT can miscompile
+BouncyCastle 1.86's `DERSet.encode` once the method is hot enough to be
+recompiled at its highest optimisation levels. From then on every DER SET
+the JVM encodes carries the length byte `0xFF`. Certificate checks
+re-encode names, so signatures stop verifying: `Verifier.create` throws
+`IllegalStateException`, and a verifier built before the miscompile
+refuses genuine receipts. The failure is closed. No unsigned input was
+accepted in any of the measured runs. It happens in some processes and
+not in others, depending on when the JIT recompiles, and a second OpenJ9
+bug seen in the same runs hangs the JVM inside a JIT thread. The library
+is not tested on OpenJ9. If you run it there anyway, pass
+`-Xjit:exclude={org/bouncycastle/asn1/DERSet.*}`, which stopped the
+miscompile in every measured run, and keep the canary in the self-test
+above running: it is what detects this on a host that has not. OpenJ9
+honours only the last `-Xjit:` option, so merge the exclusion into any
+`-Xjit:` options you already pass. Evidence:
+[docs/evidence/2026-10-13-openj9-derset-jit.md](../docs/evidence/2026-10-13-openj9-derset-jit.md).
+
 The worst-case CPU for one call is measured in the next section.
 
 ## Measured worst-case CPU
