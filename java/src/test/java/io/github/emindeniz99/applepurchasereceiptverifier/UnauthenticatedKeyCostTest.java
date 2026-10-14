@@ -11,10 +11,14 @@ import java.io.UncheckedIOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPrivateKey;
+import java.security.spec.ECPrivateKeySpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -70,7 +74,6 @@ import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.bouncycastle.util.CollectionStore;
-import org.bouncycastle.util.Properties;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -633,6 +636,39 @@ class UnauthenticatedKeyCostTest {
         assertFalse(AppleTrust.signedBy(signed, pki.root.getPublicKey()));
     }
 
+    @Test
+    void aCertificateLabelledGost2001UnderAnEcRootIsSignedByNobody() throws Exception {
+        // gostR3411-94-with-gostR3410-2001 names GOST R 34.11-94, 25 times
+        // SHA-256, and BouncyCastle verifies it under any EC key: a stranger
+        // naming an EC root ran that digest over its TBS before the signature
+        // failed. Refused by the digest its label names, the stranger is
+        // passed over, as the md2WithRSAEncryption one is, and a certificate
+        // the root really signed under the label is signed by nobody.
+        TestPki ec = TestPki.jws();
+        TestPki rsa = TestPki.receipt();
+        AlgorithmIdentifier gost = new AlgorithmIdentifier(CryptoProObjectIdentifiers.gostR3411_94_with_gostR3410_2001);
+        Checks.receipt(
+                Checks.verifier(rsa.root, ec.root),
+                withBagEntry(rsa, certificateShaped(gost, subject(ec.root), new X500Name("CN=x"), key(ec.leaf))));
+
+        X509Certificate signed = bouncyCastle(new X509v3CertificateBuilder(
+                        subject(ec.root),
+                        new BigInteger(64, RANDOM),
+                        ec.leaf.getNotBefore(),
+                        ec.leaf.getNotAfter(),
+                        new X500Name("CN=x"),
+                        key(ec.leaf))
+                .build(new JcaContentSignerBuilder("GOST3411withECGOST3410")
+                        .setProvider(BouncyCastle.PROVIDER)
+                        .build(KeyFactory.getInstance("ECGOST3410", BouncyCastle.PROVIDER)
+                                .generatePrivate(new ECPrivateKeySpec(
+                                        ((ECPrivateKey) ec.rootKey).getS(),
+                                        ((ECPrivateKey) ec.rootKey).getParams())))));
+        assertEquals(gost.getAlgorithm().getId(), signed.getSigAlgOID());
+        signed.verify(ec.root.getPublicKey(), BouncyCastle.PROVIDER);
+        assertFalse(AppleTrust.signedBy(signed, ec.root.getPublicKey()));
+    }
+
     /**
      * {@code genuine} with its bag filled to the cap: its own certificates,
      * copies of {@code pki}'s root, and a stranger naming the root as its
@@ -701,10 +737,9 @@ class UnauthenticatedKeyCostTest {
         // RFC 5280 4.1.1.2: the outer signatureAlgorithm must equal the TBS
         // signature field, which the signature covers. The root signed this
         // TBS, labelled sha256WithRSAEncryption with NULL parameters, and the
-        // outer label is the same OID with none. BouncyCastle refuses a
-        // mismatch itself unless org.bouncycastle.x509.allow_absent_equiv_NULL
-        // is set, and then it verifies this one; signedBy compares the
-        // encodings, so its answer does not move with the property.
+        // outer label is the same OID with none. BouncyCastle refuses the
+        // mismatch before it builds a verifier, and signedBy leaves that
+        // check to it.
         TestPki pki = TestPki.receipt();
         org.bouncycastle.asn1.x509.Certificate signed = new X509v3CertificateBuilder(
                         subject(pki.root),
@@ -721,14 +756,9 @@ class UnauthenticatedKeyCostTest {
                     new AlgorithmIdentifier(PKCSObjectIdentifiers.sha256WithRSAEncryption),
                     signed.getSignature()
                 }))));
-        String absentIsNull = "org.bouncycastle.x509.allow_absent_equiv_NULL";
-        Properties.setThreadOverride(absentIsNull, true);
-        try {
-            relabelled.verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER);
-            assertFalse(AppleTrust.signedBy(relabelled, pki.root.getPublicKey()));
-        } finally {
-            Properties.removeThreadOverride(absentIsNull);
-        }
+        assertThrows(
+                CertificateException.class, () -> relabelled.verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER));
+        assertFalse(AppleTrust.signedBy(relabelled, pki.root.getPublicKey()));
     }
 
     /**

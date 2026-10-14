@@ -35,9 +35,10 @@ import org.junit.jupiter.api.Test;
 /**
  * {@link ReceiptCore#REFUSED_DIGESTS} is the slow cluster of the digests
  * BouncyCastle's CMS layer resolves, and md2WithRSAEncryption, refused by
- * {@link AppleTrust#REFUSED_SIGNATURE_ALGORITHM}, the one slow signature
- * label: every one refused for its cost costs more than {@link #REFUSED_ABOVE}
- * times the baseline, every one allowed less than {@link #ALLOWED_BELOW} times.
+ * {@link ReceiptCore#namesRefusedDigest}, the one slow signature label the
+ * CMS verifier builds: every one refused for its cost costs more than
+ * {@link #REFUSED_ABOVE} times the baseline, every one allowed less than
+ * {@link #ALLOWED_BELOW} times.
  *
  * <p>A SignerInfo's digestAlgorithm is unsigned, and BouncyCastle digests the
  * whole content with it before any signature is checked. Every digest the CMS
@@ -92,7 +93,7 @@ class DigestDenylistCostTest {
     private static final String RSA_ENCRYPTION = "1.2.840.113549.1.1.1";
     private static final String EC_PUBLIC_KEY = "1.2.840.10045.2.1";
 
-    /** The one signature label refused for what its digest costs. */
+    /** The one slow signature label the CMS verifier builds. */
     private static final String MD2_WITH_RSA = "1.2.840.113549.1.1.2";
 
     private static final Pattern OID = Pattern.compile("[0-2](\\.[0-9]+)+");
@@ -135,7 +136,8 @@ class DigestDenylistCostTest {
 
     @Test
     void md2WithRsaIsTheOneSlowSignatureLabel() throws Exception {
-        assertEquals(MD2_WITH_RSA, AppleTrust.REFUSED_SIGNATURE_ALGORITHM);
+        assertTrue(ReceiptCore.namesRefusedDigest(
+                new AlgorithmIdentifier(new ASN1ObjectIdentifier(MD2_WITH_RSA), DERNull.INSTANCE)));
         KeyPairGenerator rsa = KeyPairGenerator.getInstance("RSA", BouncyCastle.PROVIDER);
         rsa.initialize(2048);
         KeyPairGenerator ec = KeyPairGenerator.getInstance("EC", BouncyCastle.PROVIDER);
@@ -154,8 +156,8 @@ class DigestDenylistCostTest {
                     labels,
                     baseline,
                     (algorithm, content) -> labelNanos(verifier, algorithm, content),
-                    AppleTrust.REFUSED_SIGNATURE_ALGORITHM::equals,
-                    AppleTrust.REFUSED_SIGNATURE_ALGORITHM::equals);
+                    MD2_WITH_RSA::equals,
+                    oid -> ReceiptCore.namesRefusedDigest(labels.get(oid)));
         }
     }
 

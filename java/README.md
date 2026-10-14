@@ -91,13 +91,18 @@ String responseJson = verifier.verifyReceiptEndpoint(Environment.PRODUCTION, req
 **No method throws for any input.** A `null` or empty `base64` / `jws` /
 `requestJson` is input and fails as `Reason.MALFORMED` (status 21002 from the
 endpoint), the same as a garbled one. An unexpected runtime exception inside the library is reported by where
-it happened: in `verifyReceipt` or `verifySignedData` before the signature
-has verified, it is `Reason.MALFORMED` (input nobody vouched for must not be
-able to raise the internal-error alarm at will); while the signed content is
-read, `Reason.UNREADABLE_PAYLOAD`; and outside those, as from a clock that
-throws, `Reason.INTERNAL_ERROR`. Only a JVM error escapes (`OutOfMemoryError`,
-or `StackOverflowError` on a thread whose stack is smaller than about 160 KB;
-[Resource bounds](#resource-bounds)), besides the `NullPointerException` a
+it happened. In `verifyReceipt` or `verifySignedData`, before the signature
+has verified, it refuses the input with the reason of the step that threw:
+`Reason.UNTRUSTED_CHAIN` while the chain is walked, built or validated,
+`Reason.INVALID_CERTIFICATE` for an `x5c` entry or a certificate's key that
+does not decode, `Reason.INVALID_SIGNATURE` in a receipt's CMS signature
+check, and `Reason.MALFORMED` anywhere else, parsing and screening among
+them. It is never `Reason.INTERNAL_ERROR`: input nobody vouched for must not
+be able to raise the internal-error alarm at will. While the signed content
+is read, it is `Reason.UNREADABLE_PAYLOAD`; anywhere else (a clock that
+throws, for example), `Reason.INTERNAL_ERROR`. Only a JVM error escapes
+(`OutOfMemoryError`, or `StackOverflowError` on a thread whose stack is
+smaller than about 160 KB; [Resource bounds](#resource-bounds)), besides the `NullPointerException` a
 `null` `Environment` or `Config` throws: a programming mistake, not something
 a receipt can cause.
 
@@ -272,6 +277,7 @@ act on.
 
 ```java
 import io.github.emindeniz99.applepurchasereceiptverifier.Config;
+import io.github.emindeniz99.applepurchasereceiptverifier.Failure;
 import io.github.emindeniz99.applepurchasereceiptverifier.JsonPayload;
 import io.github.emindeniz99.applepurchasereceiptverifier.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationResult;
@@ -294,9 +300,7 @@ public class Notifications {
     public int handle(String signedPayload) {
         VerificationResult<JsonPayload> outer = verifier.verifySignedData(signedPayload);
         if (!outer.verified()) {
-            // INTERNAL_ERROR is not Apple's fault or an attack: page, and
-            // Apple's retries give you days to ship a fix. Anything else: deny.
-            return outer.failure().reason() == Reason.INTERNAL_ERROR ? 500 : 400;
+            return status(outer.failure());
         }
         ResponseBodyV2DecodedPayload notification;
         try {
@@ -324,7 +328,7 @@ public class Notifications {
         if (data.getSignedTransactionInfo() != null) {
             VerificationResult<JsonPayload> tx = verifier.verifySignedData(data.getSignedTransactionInfo());
             if (!tx.verified()) {
-                return 400;
+                return status(tx.failure());
             }
             try {
                 JWSTransactionDecodedPayload transaction =
@@ -337,7 +341,7 @@ public class Notifications {
         if (data.getSignedRenewalInfo() != null) {
             VerificationResult<JsonPayload> renewal = verifier.verifySignedData(data.getSignedRenewalInfo());
             if (!renewal.verified()) {
-                return 400;
+                return status(renewal.failure());
             }
             try {
                 JWSRenewalInfoDecodedPayload info =
@@ -349,6 +353,16 @@ public class Notifications {
         }
         markSeen(notification.getNotificationUUID());   // only after the work is done
         return 200;
+    }
+
+    /**
+     * INTERNAL_ERROR and UNREADABLE_PAYLOAD are not Apple's fault or an
+     * attack: the library failed, or Apple signed what it cannot read. Page,
+     * and Apple's retries give you days to ship a fix. Anything else: deny.
+     */
+    private static int status(Failure failure) {
+        Reason reason = failure.reason();
+        return reason == Reason.INTERNAL_ERROR || reason == Reason.UNREADABLE_PAYLOAD ? 500 : 400;
     }
 
     private void applyTransaction(String notificationType, JWSTransactionDecodedPayload transaction) { /* your code */ }
@@ -484,7 +498,7 @@ never by `ordinal()`.
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
 | `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or a receipt's signer is more than seven certificates below one, each signed by the one above (BouncyCastle 1.86's path builder refuses an eighth) |
 | `INVALID_CERTIFICATE` | A certificate the check depends on does not decode, or is expired or not yet valid at the signing instant |
-| `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, or the intermediate lacks Apple's WWDR marker OID. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
+| `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, the intermediate lacks Apple's WWDR marker OID, or a root issued the leaf with no intermediate between them. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
 | `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception when a parser threw one; a payload refused on its shape (not UTF-8 JSON text, not a JSON object, an attribute that is not a SET) has none. Deterministic: alert, do not retry |
 | `INTERNAL_ERROR` | The library itself failed before it could decide, for example a clock that threw. `Failure.cause()` carries the exception. Deterministic: alert, do not retry |
 
@@ -688,11 +702,10 @@ is not expected; if one were missing, both paths would answer a refusal
 (`MALFORMED`, `INVALID_CERTIFICATE`, `UNTRUSTED_CHAIN` or
 `INVALID_SIGNATURE`). And an
 unchecked exception BouncyCastle throws while parsing is reported as a
-verdict on the input (`MALFORMED` before the signature, `UNREADABLE_PAYLOAD` after it). That
-is by design, so hostile input cannot page you. It also means a broken host
-and an attack wave look alike in the counters. `Failure.cause()` carries the
-exception when there is one (`INTERNAL_ERROR`, and `UNREADABLE_PAYLOAD` when a
-parser threw), which explains one call but does not separate the two in
+verdict on the input. That is by design, so hostile input cannot page you.
+It also means a broken host and an attack wave look alike in the counters.
+`Failure.cause()` carries the exception when there is one (`INTERNAL_ERROR`,
+and `UNREADABLE_PAYLOAD` when a parser threw), which explains one call but does not separate the two in
 aggregate. A known-good input that must verify is what tells them apart.
 
 **Let `Verifier.create` fail a broken runtime at deployment.** By default
@@ -855,8 +868,10 @@ the root, in `THREAT-MODEL.md` at the repository root.
   for a receipt with four SignerInfos naming Apple's receipt-signing
   certificate: the digest runs once per SignerInfo whose certificate
   passes the chain and marker checks.
-- A SignerInfo labelled md2WithRSAEncryption is refused before its signed
-  attributes are hashed, as `INVALID_SIGNATURE`.
+- A SignerInfo whose signature label names one of those digests
+  (md2WithRSAEncryption, a GOST or Streebog label, RSASSA-PSS over one of
+  them) is refused before its signed attributes are hashed, as
+  `INVALID_SIGNATURE`.
 - A SignerInfo labelled RSASSA-PSS with a saltLength the signer's key
   cannot hold (RFC 8017) is refused before anything is allocated, as
   `INVALID_SIGNATURE`; a PSS signature whose salt fits verifies.
@@ -874,9 +889,12 @@ the root, in `THREAT-MODEL.md` at the repository root.
 - A certificate labelled RSASSA-PSS with a saltLength its issuer's key
   cannot hold, or labelled with the generic composite OID, is signed by
   nobody, before anything is built.
-- A certificate labelled md2WithRSAEncryption is signed by nobody, and a
-  copy of a root or of an accepted CA is not tried as an issuer again: a
-  cap-sized stranger beside seven copies of the root costs 0.05 to 0.2 s.
+- A certificate whose signature label names one of those digests
+  (md2WithRSAEncryption under an RSA root, a GOST label under an EC one) is
+  signed by nobody, before a byte is digested, and a copy of a root or of
+  an accepted CA is not tried as an issuer again: a cap-sized stranger
+  labelled md2WithRSAEncryption beside seven copies of the root costs 0.05
+  to 0.2 s.
 - A SignerInfo's signed attributes are hashed as sent, not re-encoded to
   DER: 0.5 to 0.9 s for one cap-sized nested attribute.
 
@@ -1073,9 +1091,12 @@ between calls) and every `Signature`.
   `UnauthenticatedKeyCostTest.twoSignerIdsWhoseIssuersReorderEachOthersRdnsAreRefusedQuickly`.
 - Of the digests the CMS layer resolves, the eight in
   `ReceiptCore.REFUSED_DIGESTS` cost 2.9 to 25 times SHA-256 and every other
-  one at most 2.6 times. md2WithRSAEncryption is the one signature label whose digest is
-  slow (`AppleTrust.REFUSED_SIGNATURE_ALGORITHM`). A release that adds a slow
-  digest or label needs it on the list. Test: `DigestDenylistCostTest`.
+  one at most 2.6 times. A signature label is refused by the digest
+  `DefaultDigestAlgorithmIdentifierFinder` finds for it
+  (`ReceiptCore.namesRefusedDigest`), so a release that adds a slow digest
+  needs it on the list, and one that adds a slow label needs the finder to
+  map it. Tests: `DigestDenylistCostTest`,
+  `UnauthenticatedKeyCostTest.aCertificateLabelledGost2001UnderAnEcRootIsSignedByNobody`.
 - `SignerInformation` reads its signed attributes for hashing through the
   overridable `getEncodedSignedAttributes()`, and a subclass can read the
   protected `signedAttributeSet`. `ReceiptCore.SignedAsSent` overrides it to
@@ -1088,6 +1109,12 @@ between calls) and every `Signature`.
   RSASSA-PSS salt the key cannot hold there. Tests:
   `UnauthenticatedKeyCostTest.aSignerInfoWithAnEacPssLabelAndAHugeSaltIsRefusedBeforeAnythingIsAllocated`,
   `UnauthenticatedKeyCostTest.aSignerInfoWithACompositeLabelOfManyPartsIsRefusedBeforeTheContentIsRead`.
+- `X509Certificate.verify` refuses a certificate whose outer
+  signatureAlgorithm differs from its TBS's before it builds a verifier
+  from the outer one. `AppleTrust.signedBy` screens the TBS label (the
+  composite and refused-digest labels, `AppleTrust.saltFits`) and relies
+  on this for the outer one. Test:
+  `UnauthenticatedKeyCostTest.aCertificateWhoseOuterLabelDiffersFromItsTbsLabelIsSignedByNobody`.
 - A certificate's extensions and a SignerInfo's attributes go into a
   `java.util.Hashtable` keyed by OID, where OIDs of one hash make building
   the table quadratic. `PreTrustScreen.MAX_OID_TABLE_ENTRIES` is set from an
@@ -1147,7 +1174,7 @@ the bcprov loaded; it is the one test to adapt to your own build. Declare
 that property in your pom and it passes unchanged. With hardcoded versions
 or a Gradle build, drop or rewrite that one method.
 
-**The generators are not tests, and `mvn test` writes nothing.** The 29
+**The generators are not tests, and `mvn test` writes nothing.** The
 classes named `*Fixture` or `*Fixtures` (other than `TestFixtures`) are
 `main` programs with no `@Test`, so Maven never runs them. They are what
 produced the committed files under `fixtures/`. Run one by hand and it
@@ -1173,8 +1200,8 @@ helpers they share: `TestPki`, `Checks`, `TestFixtures`,
 Two generators go with them, because a test compiles against each:
 `LargeReceiptFixture` (`InputSizeBoundsTest`) and `StandardShapeFixtures`
 (`StandardShapesTest`); both need only `TestPki` and `TestFixtures`.
-`FixtureGeneratorTest` and the other 27 `*Fixture(s)` classes can be left
-out: with them removed, the suite compiles and runs 696 tests with none
+`FixtureGeneratorTest` and the other `*Fixture(s)` classes can be left
+out: with them removed, the suite compiles and runs with no test
 skipped, `BouncyCastleFloorTest` among them, provided your pom declares that
 property. `HostPolicyTest` and
 `TrustStoreIsolationTest` start a child JVM from `java.home` and skip

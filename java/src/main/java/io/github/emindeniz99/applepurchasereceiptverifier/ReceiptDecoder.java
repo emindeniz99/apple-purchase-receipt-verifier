@@ -27,8 +27,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The receipt payload, the attribute SET inside the CMS envelope, as a
- * {@link ReceiptPayload}, by the decode rules in the README, "Decoding a
- * receipt". Before the signature only {@link #readCreationDate} runs; every
+ * {@link ReceiptPayload}, by the rules its javadoc states. Before the
+ * signature only {@link #readCreationDate} runs; every
  * failure of {@link #parse} is {@link Reason#UNREADABLE_PAYLOAD}.
  */
 final class ReceiptDecoder {

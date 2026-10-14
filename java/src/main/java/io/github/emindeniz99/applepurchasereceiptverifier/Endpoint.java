@@ -9,7 +9,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * {@link Verifier#verifyReceiptEndpoint}: Apple's verifyReceipt request and
- * response, verified offline. The README lists the statuses it answers.
+ * response, verified offline, answering the statuses {@link AppleStatus}
+ * names.
  */
 final class Endpoint {
 

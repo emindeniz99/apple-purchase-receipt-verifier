@@ -14,11 +14,17 @@ import org.jspecify.annotations.Nullable;
  *
  * <p><strong>No method throws for any input.</strong> A {@code null} or empty
  * input string fails as {@link Reason#MALFORMED}. An unexpected runtime
- * exception inside the library is reported by where it happened: in
- * {@link #verifyReceipt} or {@link #verifySignedData} before the signature
- * has verified, as {@link Reason#MALFORMED}; while the signed content is
- * read, as {@link Reason#UNREADABLE_PAYLOAD}; and outside those, as from a
- * clock that throws, as {@link Reason#INTERNAL_ERROR}. Only JVM errors such
+ * exception inside the library is reported by where it happened. In
+ * {@link #verifyReceipt} or {@link #verifySignedData}, before the signature
+ * has verified, it refuses the input with the reason of the step that
+ * threw: {@link Reason#UNTRUSTED_CHAIN} while the chain is walked, built
+ * or validated, {@link Reason#INVALID_CERTIFICATE} for an {@code x5c} entry or
+ * a certificate's key that does not decode, {@link Reason#INVALID_SIGNATURE}
+ * in a receipt's CMS signature check, and {@link Reason#MALFORMED}
+ * anywhere else, parsing and screening among them; never
+ * {@link Reason#INTERNAL_ERROR}. While the signed content is read, it is
+ * {@link Reason#UNREADABLE_PAYLOAD}; anywhere else (a clock that throws,
+ * for example), {@link Reason#INTERNAL_ERROR}. Only JVM errors such
  * as {@link OutOfMemoryError} escape, besides the
  * {@link NullPointerException} a {@code null} {@link Config} or
  * {@link Environment}, a programming error, throws.</p>
@@ -76,7 +82,11 @@ public interface Verifier {
      * none), Apple's marker OIDs on the signer and on the intermediate that
      * issued it, and the CMS signature. Up to four SignerInfos are tried in
      * order: the first that verifies decides, and when none does the first
-     * one's failure is the verdict. More than four is {@code MALFORMED}.</p>
+     * one's failure is the verdict. More than four is {@code MALFORMED}. A
+     * SignerInfo of a shape Apple never issues is left out before any is
+     * tried, so "first" means first among those kept, and each one is tried
+     * with every embedded certificate its SignerId names, in the same
+     * way.</p>
      */
     VerificationResult<ReceiptPayload> verifyReceipt(@Nullable String base64);
 

@@ -43,6 +43,7 @@ import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationVerifier;
 import org.bouncycastle.operator.ContentVerifier;
 import org.bouncycastle.operator.ContentVerifierProvider;
+import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
@@ -68,15 +69,15 @@ final class ReceiptCore {
     static final int MAX_RECEIPT_BYTES = 3145728;
 
     /**
-     * Digest algorithms a SignerInfo's digestAlgorithm or signatureAlgorithm
-     * may not name: GOST R 34.11-94, MD2, Whirlpool, GOST R 34.11-2012
-     * (Streebog, 256 and 512) and DSTU 7564 (256, 384, 512), none a hash
-     * Apple signs receipts with. Both fields are the sender's unsigned
-     * choice, and BouncyCastle 1.86 runs the digest they name over up to the
-     * whole receipt before any signature is checked, where these eight cost
-     * 2.9 to 25 times SHA-256 and every other digest it resolves at most 2.6
-     * times. {@link AppleTrust#REFUSED_SIGNATURE_ALGORITHM} is the one
-     * signature label that names one of them.
+     * Digest algorithms refused wherever the sender names one: in a
+     * SignerInfo's digestAlgorithm, and through the signature label of a
+     * SignerInfo or a certificate ({@link #namesRefusedDigest}). GOST R
+     * 34.11-94, MD2, Whirlpool, GOST R 34.11-2012 (Streebog, 256 and 512) and
+     * DSTU 7564 (256, 384, 512), none a hash Apple signs with. Each field is
+     * the sender's unsigned choice, and BouncyCastle 1.86 runs the digest it
+     * names over up to the whole receipt before any signature is checked, where
+     * these eight cost 2.9 to 25 times SHA-256 and every other digest it
+     * resolves at most 2.6 times.
      */
     static final Set<String> REFUSED_DIGESTS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             CryptoProObjectIdentifiers.gostR3411.getId(), // GOST R 34.11-94
@@ -89,6 +90,20 @@ final class ReceiptCore {
             UAObjectIdentifiers.dstu7564digest_512.getId()))); // DSTU 7564, 512 bits
 
     private ReceiptCore() {}
+
+    /**
+     * Whether the signature label {@code algorithm} names a digest in
+     * {@link #REFUSED_DIGESTS}, whichever label names it: md2WithRSAEncryption,
+     * a GOST or Streebog label, RSASSA-PSS by its hash parameter. Asked
+     * before BouncyCastle digests a byte. The digest is the one BouncyCastle's
+     * own table finds for the label; a label it finds none for names none.
+     * Throws for RSASSA-PSS parameters that do not parse, which BouncyCastle
+     * builds no verifier from either; both callers count that as a refusal.
+     */
+    static boolean namesRefusedDigest(AlgorithmIdentifier algorithm) {
+        AlgorithmIdentifier digest = new DefaultDigestAlgorithmIdentifierFinder().find(algorithm);
+        return digest != null && REFUSED_DIGESTS.contains(digest.getAlgorithm().getId());
+    }
 
     /** Verifies a base64 receipt and decodes it: the size cap, then base64, then the signature, then the payload. */
     static ReceiptPayload verify(@Nullable String base64, Set<TrustAnchor> trustAnchors, long now)
@@ -340,7 +355,6 @@ final class ReceiptCore {
         // genuine receipt signed with such an algorithm is rejected unless
         // another SignerInfo verifies.
         String digest = signer.getDigestAlgOID();
-        String signature = signer.getEncryptionAlgOID();
         // Both labels are the sender's unsigned choice, and BouncyCastle runs
         // the digest either one names before it compares a signature byte,
         // so both are checked before it digests a byte or builds a verifier,
@@ -349,12 +363,15 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.INVALID_SIGNATURE, "CMS verifier refused the signer info: digest " + digest + " is refused");
         }
-        if (AppleTrust.REFUSED_SIGNATURE_ALGORITHM.equals(signature)) {
-            throw new VerificationException(
-                    Reason.INVALID_SIGNATURE,
-                    "CMS verifier refused the signer info: signature algorithm " + signature + " is refused");
-        }
         try {
+            // Inside the try, so RSASSA-PSS parameters that do not parse get
+            // the catch's verdict.
+            if (namesRefusedDigest(signer.toASN1Structure().getDigestEncryptionAlgorithm())) {
+                throw new VerificationException(
+                        Reason.INVALID_SIGNATURE,
+                        "CMS verifier refused the signer info: signature algorithm " + signer.getEncryptionAlgOID()
+                                + " is refused");
+            }
             // Wrapped here, not when the SignerInfos are read: the copy reads
             // the attributes, and ones that do not decode fail this SignerInfo
             // alone.
