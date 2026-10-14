@@ -3,8 +3,9 @@
 Date: 2026-10-13. Measures what Java paid before any signer was trusted
 for three sender-chosen inputs, and what it pays after the fixes, for
 owner decisions Q135 a (the certificate bag and the SignerInfo's
-issuer), Q136 a (the md2WithRSAEncryption signature label) and Q137 a
-(the RSASSA-PSS label), and the figures in DECISIONS.md R20,
+issuer), Q136 a (the md2WithRSAEncryption signature label), Q137 a
+(the RSASSA-PSS label, a bound since Q142 a) and Q144 a (the generic
+composite label), and the figures in DECISIONS.md R20,
 java/README.md and THREAT-MODEL.md §3.7. Sources and commands:
 [`2026-10-13-java-pretrust-reencoding/`](2026-10-13-java-pretrust-reencoding/).
 
@@ -236,6 +237,134 @@ could notice. Java already refused the md2WithRSA label, after hashing.
 Apple never signs receipts with RSASSA-PSS (owner, 2026-09-27). The
 genuine receipts in the shared cases, the G5 and legacy sandbox receipts under
 the default roots among them, verify as before.
+
+## Later the same day: the PSS refusal became a bound (Q142 a)
+
+The owner replaced the RSASSA-PSS refusal with a bound (Q142 a): an
+input Apple signed must not be refused, including after a future change
+on Apple's side, and the refusal turned the genuine PSS signature of
+`receipt/signer-rsa-pss-does-not-crash` into `INVALID_SIGNATURE`. Java
+now requires a SignerInfo's saltLength to fit the signer's RSA key, at
+most emLen - hLen - 2 octets (RFC 8017 9.1.2, `AppleTrust.saltFits`,
+the check certificates already had), before BouncyCastle builds the
+verifier. The check sits in the content verifier provider Java hands
+BouncyCastle, so it sees the algorithm about to be built, not the label:
+`SignerInformationVerifier.getContentVerifier` resolves the label
+through BouncyCastle's CMS name tables and keeps the label's parameters,
+so the EAC labels id-TA-RSA-PSS-SHA-256 (0.4.0.127.0.7.2.2.2.1.4) and
+id-TA-RSA-PSS-SHA-1 (.3) reach the same PSS verifier, and so does
+id-alg-composite with a PSS part, which builds a verifier per part.
+
+`PssSaltProbe` takes the label as a third argument now, and
+`measure.sh ... routes` runs each route at a saltLength of 32 and
+1,000,000,000 (`results/pss-routes-before-jdk21.txt`, `-after-`; JDK
+21.0.10, default heap of 3,420 MiB, 4 vCPU, 15 GiB). Before, with the
+RSASSA-PSS label refused (`97dc9ce3`), the huge salt under either EAC
+label threw `OutOfMemoryError` out of `verifyReceipt` on every call,
+3.1 to 23.5 s, and under the composite cost 0.5 to 6.0 s a call before
+the composite signature failed to parse; at a salt of 32 every route
+took 6 to 17 ms warm. After, the huge salt is `INVALID_SIGNATURE`, "the
+RSASSA-PSS saltLength does not fit the signer's key", 7 to 16 ms warm,
+under all four labels. `UnauthenticatedKeyCostTest` pins the four
+routes, and the EAC and composite ones also ahead of the genuine
+SignerInfo, where the receipt verifies. The genuine PSS receipt is ok
+again in Java, as in the core, and the case now expects ok.
+
+## Later still: the generic composite label is refused (Q144 a)
+
+The round-6 review (F2) found that the composite route costs more than
+its PSS part. BouncyCastle 1.86 sends exactly one OID to
+`JcaContentVerifierProviderBuilder.createCompositeVerifier`:
+id-alg-composite, 1.3.6.1.4.1.18227.2.1, the generic composite that the
+individual draft draft-ounsworth-pq-composite-sigs defined from -01
+(January 2020) until -09 (May 2023) removed it. Its parameters are a SEQUENCE of
+AlgorithmIdentifiers of any length. The verifier builds one JCA
+`Signature` per part and chains them in nested `TeeOutputStream`s, and
+with no signed attributes `SignerInformation` streams the whole content
+into that chain before any signature is parsed. Apple's public chain in
+the bag vouches for the copy that carries the label, so no trust is
+needed.
+
+The per-pair composite OIDs of the LAMPS draft (IANA 1.3.6.1.5.5.7.6.37
+to .54 since draft -13), two fixed parts each, do not take this path,
+read in the 1.86 sources. `JcaContentVerifierProviderBuilder`'s
+provider sends only `MiscObjectIdentifiers.id_alg_composite` to
+`createCompositeVerifier` and builds every other algorithm through
+`createSignature`, an ordinary `Signature.getInstance`.
+`CompositeSignatures.configure` registers each of the 18 IANA OIDs that
+`CompositeIndex` lists as `Alg.Alias.Signature.<oid>` for its own
+per-pair `SignatureSpi`, so they arrive there as one Signature with a
+fixed pair. `X509CertificateImpl` likewise loops over parts only when
+`X509SignatureUtil.isCompositeAlgorithm` sees id_alg_composite. Java
+does not refuse the IANA OIDs.
+
+The certificate path reaches the same label. `AppleTrust.signedBy`
+calls `certificate.verify(key, provider)`, and `X509CertificateImpl`
+loops over the parts when the label is id-alg-composite and the key is
+not a `CompositePublicKey`. For each part it makes a `Signature`, then
+`checkSignature` compares the outer label with the TBS label,
+parameters included, which is the whole list of parts, before
+`initVerify`. A part the issuer's key does not fit (ecdsa-with-SHA256
+or Ed25519 under an RSA root) throws `InvalidKeyException`, which the
+loop ignores. The TBS is hashed at most once: the first part that hashes
+it fails to verify, and its `SignatureException` ends the loop. The cost
+is the comparison: N parts times a list of N, so it grows with the
+square of a count the sender picks, in a bag entry that needs no trust
+or in an x5c intermediate that names a pinned root.
+
+`CompositeLabelProbe` measures both (`measure.sh ... composite`,
+`results/composite-before-jdk21.txt` at `60f1a4df`,
+`composite-after-jdk21.txt` on the branch; JDK 21.0.10, default heap, 4
+vCPU). Each cell is the three calls of one JVM, cold first.
+
+| Shape | DER | Before | After | Verdict |
+|---|---:|---:|---:|---|
+| SignerInfo, 1 part, 1 MB content | 1.0 MB | 405 / 47 / 37 ms | 475 / 27 / 26 ms | `INVALID_SIGNATURE` |
+| SignerInfo, 1,000 parts, 1 MB content | 1.02 MB | 6,831 / 6,569 / 6,905 ms | 374 / 18 / 17 ms | the same |
+| SignerInfo, 3,000 parts, 1 MB content | 1.05 MB | 20,350 / 20,193 / 20,710 ms | 418 / 96 / 56 ms | the same |
+| SignerInfo, 50,000 parts, 1 KB content | 0.75 MB | 804 / 265 / 123 ms, `StackOverflowError` | 414 / 143 / 81 ms | after: `INVALID_SIGNATURE` |
+| bag entry, 1,000 ecdsa parts | 30 KB | 488 / 184 / 138 ms | 515 / 44 / 48 ms | ok |
+| bag entry, 10,000 ecdsa parts | 273 KB | 4,547 / 8,108 / 9,059 ms | 502 / 111 / 116 ms | ok |
+| bag entry, 20,000 ecdsa parts | 543 KB | 35,651 / 37,916 / 44,082 ms | 584 / 172 / 247 ms | ok |
+| bag entry, 8,500 Ed25519 parts | 148 KB | 3,857 / 4,895 / 3,268 ms | 364 / 106 / 161 ms | ok |
+| bag entry, 10,000 parts of an unknown OID | 293 KB | 1,170 / 301 / 393 ms | 567 / 142 / 160 ms | ok |
+| bag entry, 20,000 sha256WithRSA parts | 663 KB | 1,219 / 340 / 252 ms | 609 / 222 / 147 ms | ok |
+
+The review measured the same SignerInfo shapes first: 6.8 s for 1,000
+parts over 1 MB, 20 s for 3,000, and a `StackOverflowError`, an `Error`
+that leaves `verifyReceipt`, at 50,000. The `StackOverflowError` comes
+from the nested tees, so it needs no large content. A part of an unknown
+OID costs little (no `Signature` is made, so no comparison runs), and a
+part the key fits ends the loop at once. Other runs of the 20,000-part
+bag entry took 22.7 to 47.4 s, and `UnauthenticatedKeyCostTest`'s best
+of two 17.7 s, so the figure used elsewhere is 18 to 47 s. An x5c
+intermediate is held to the 256 KiB JWS cap, where the x5c entry is
+base64 inside base64; 8,400 Ed25519 parts fit and cost 2.9 s.
+
+Java now refuses the OID by name where BouncyCastle would build from it
+(`AppleTrust.GENERIC_COMPOSITE_SIGNATURE`): the SignerInfo's content
+verifier provider throws before anything is built, `INVALID_SIGNATURE`,
+"the composite signature label is refused", and `signedBy` treats a
+certificate with the label as signed by nobody. `saltFits` lost its
+composite recursion, since no caller can reach it. The PSS refusal's
+message is now "the RSASSA-PSS label does not fit the signer's key", so
+that it also describes a PSS label under a key that is not RSA (review
+F4).
+
+`UnauthenticatedKeyCostTest` pins three shapes against its 2 s bound:
+1,000 sha256WithRSA parts on a SignerInfo copy ahead of Apple's over
+content just under the cap (refused alone, and the receipt verifies
+beside the genuine one), a bag entry of 20,000 ecdsa parts (the receipt
+verifies), and an x5c intermediate of 8,400 Ed25519 parts
+(`UNTRUSTED_CHAIN`). Run once with both refusals removed, the three
+failed at 15,577 ms, 17,694 ms and 2,931 ms.
+
+The core has no verifier for the OID. Two shared cases built from the
+G5 receipt (`tools/generate-signer-info-fixtures.mjs`) agree in both,
+measured with `cargo test --test conformance`: Apple's SignerInfo
+relabelled with two sha256WithRSA parts, alone, is `INVALID_SIGNATURE`,
+and a bag stranger naming Apple Root CA with 300 ecdsa parts leaves the
+receipt ok.
 
 ## Where this stops holding
 

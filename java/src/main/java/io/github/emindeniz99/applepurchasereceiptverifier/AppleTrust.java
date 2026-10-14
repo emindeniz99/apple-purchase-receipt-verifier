@@ -29,7 +29,6 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
-import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
 import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
@@ -60,6 +59,25 @@ final class AppleTrust {
 
     /** Apple marker OID: Worldwide Developer Relations intermediate CA. */
     static final String INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
+
+    /**
+     * The generic composite signature label (id-alg-composite) of the
+     * individual draft draft-ounsworth-pq-composite-sigs, from -01 (January
+     * 2020) until -09 (May 2023) removed it, refused wherever BouncyCastle would build a
+     * verifier from it: a certificate with it is signed by nobody, and a
+     * SignerInfo with it is refused before a verifier is built. Its
+     * parameters are a SEQUENCE of algorithm identifiers with no bound on
+     * their number, and BouncyCastle makes one JCA Signature per part. On a
+     * SignerInfo every part also takes its own pass over the signed
+     * content; on a certificate every part also compares the whole list of
+     * parts, a cost that grows with the square of a count the sender picks.
+     * Neither label nor parameters are signed, and no Apple certificate or
+     * receipt uses it. The per-pair composite OIDs of the LAMPS draft (IANA
+     * 1.3.6.1.5.5.7.6.37 to .54 since draft -13), which BouncyCastle
+     * verifies through their own SPI and not through this generic path,
+     * stay accepted.
+     */
+    static final String GENERIC_COMPOSITE_SIGNATURE = "1.3.6.1.4.1.18227.2.1";
 
     /** The critical extensions {@link #HANDLED_CRITICAL_EXTENSIONS} marks processed. */
     private static final Set<String> HANDLED = Collections.unmodifiableSet(
@@ -156,7 +174,9 @@ final class AppleTrust {
      * 4.1.1.2). An RSASSA-PSS label may not name a saltLength longer than
      * {@code issuerKey} can hold, or a negative one, because BouncyCastle
      * allocates an array of saltLength bytes (the low 32 bits of it) while it
-     * builds the verifier, before it compares any signature byte.</p>
+     * builds the verifier, before it compares any signature byte. A
+     * certificate labelled {@link #GENERIC_COMPOSITE_SIGNATURE} is signed by
+     * nobody.</p>
      */
     static boolean signedBy(X509Certificate certificate, @Nullable PublicKey issuerKey) {
         try {
@@ -165,7 +185,8 @@ final class AppleTrust {
             AlgorithmIdentifier signed =
                     ((BCX509Certificate) certificate).getTBSCertificateNative().getSignature();
             ASN1Encodable parameters = signed.getParameters();
-            if (!signed.getAlgorithm().getId().equals(certificate.getSigAlgOID())
+            if (GENERIC_COMPOSITE_SIGNATURE.equals(signed.getAlgorithm().getId())
+                    || !signed.getAlgorithm().getId().equals(certificate.getSigAlgOID())
                     || !Arrays.equals(
                             parameters == null
                                     ? null
@@ -184,24 +205,16 @@ final class AppleTrust {
     }
 
     /**
-     * Whether an RSASSA-PSS {@code algorithm}, or each part of a composite
-     * one, names a saltLength {@code key} can hold: at most emLen - hLen - 2
-     * octets (RFC 8017 9.1.2), emLen from the modulus and hLen from the hash
-     * the parameters name. The salt is a non-negative integer (RFC 8017
-     * 9.1.1), so a negative one does not fit. Any other algorithm fits, and
-     * PSS under a key that is not RSA, or with no parameters, verifies
-     * nothing.
+     * Whether an RSASSA-PSS {@code algorithm} names a saltLength {@code key}
+     * can hold: at most emLen - hLen - 2 octets (RFC 8017 9.1.2), emLen from
+     * the modulus and hLen from the hash the parameters name. The salt is a
+     * non-negative integer (RFC 8017 9.1.1), so a negative one does not fit.
+     * Any other algorithm fits, and PSS under a key that is not RSA, or with
+     * no parameters, verifies nothing. That includes a composite with a PSS
+     * part, which this does not look inside: both callers refuse
+     * {@link #GENERIC_COMPOSITE_SIGNATURE} before they ask.
      */
-    private static boolean saltFits(AlgorithmIdentifier algorithm, @Nullable PublicKey key)
-            throws GeneralSecurityException {
-        if (MiscObjectIdentifiers.id_alg_composite.equals(algorithm.getAlgorithm())) {
-            for (ASN1Encodable part : ASN1Sequence.getInstance(algorithm.getParameters())) {
-                if (!saltFits(AlgorithmIdentifier.getInstance(part), key)) {
-                    return false;
-                }
-            }
-            return true;
-        }
+    static boolean saltFits(AlgorithmIdentifier algorithm, @Nullable PublicKey key) throws GeneralSecurityException {
         if (!PKCSObjectIdentifiers.id_RSASSA_PSS.equals(algorithm.getAlgorithm())) {
             return true;
         }

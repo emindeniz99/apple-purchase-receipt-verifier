@@ -372,11 +372,24 @@ accepted, RIPEMD-160, costs about 0.2 s warm at the cap
 (docs/evidence/2026-10-13-java-digest-cost.md). The signatureAlgorithm
 is unsigned too: Java refuses md2WithRSAEncryption, whose MD2
 BouncyCastle ran over the signed attributes before the signature was
-checked (0.26 s at the cap, against 0.03 s), and RSASSA-PSS, whose
-saltLength BouncyCastle allocated as an array while it built the
-verifier (an `OutOfMemoryError` at 1,000,000,000), before anything is
-hashed or built. Re-encoding ASN.1 to DER sorts every SET, so a cap-sized
-value of nested SETs cost seconds where Java re-encoded before trust: a
+checked (0.26 s at the cap, against 0.03 s), before anything is hashed.
+RSASSA-PSS is not refused: BouncyCastle allocated its saltLength as an
+array while it built the verifier (an `OutOfMemoryError` at
+1,000,000,000), so Java requires the saltLength to fit the signer's RSA
+key (RFC 8017 9.1.2) before anything is built. The check sits in the
+content verifier provider Java hands BouncyCastle, so it sees the
+algorithm about to be built rather than the label: two EAC labels reach
+the same PSS verifier (DECISIONS.md R20, owner Q142 a). A genuine PSS
+signature verifies. The generic composite label
+(1.3.6.1.4.1.18227.2.1), defined by an individual draft from January
+2020 until May 2023, names any number of parts, and
+BouncyCastle built a signature check per part and streamed the whole
+content into each: 15.6 s for 1,000 parts at the cap, and a
+`StackOverflowError` out of `verifyReceipt` at 50,000. Java refuses it
+in the same provider before anything is built (owner Q144 a); the core
+has no verifier for it. Re-encoding ASN.1 to DER sorts every SET, so a
+cap-sized value of nested SETs cost seconds where Java re-encoded
+before trust: a
 bag entry re-encoded before it was parsed (about 3 s), and a SignerInfo
 issuer value that is not a string, which BouncyCastle re-encodes to hash
 and compare the name (about 11 s). Java now reads bag entries as parsed
@@ -404,6 +417,13 @@ as is a negative one, which review found: BouncyCastle reads only the
 low 32 bits, so -3,294,967,296 allocated 1,000,000,000 bytes (an
 `OutOfMemoryError` at `-Xmx1g` in about 1 s, refused in milliseconds
 since).
+Under the generic composite label BouncyCastle made a signature check
+per part of a certificate and compared the whole list of parts for each,
+so the cost grew with the square of the parts: 18 to 47 s for a bag
+entry of 20,000 parts in a 0.5 MB receipt that still verified, 2.9 s for
+an x5c intermediate under the 256 KiB JWS cap. A certificate with that
+label is now signed by nobody (owner Q144 a;
+docs/evidence/2026-10-13-java-pretrust-reencoding.md).
 Signed attributes were DER-encoded, and so sorted, before the signature
 was checked (2.8 to 4.9 s for one cap-sized nested attribute); Java now
 hashes them as sent, 0.5 to 0.9 s. The core refuses the nested shapes at

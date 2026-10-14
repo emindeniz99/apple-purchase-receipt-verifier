@@ -327,6 +327,12 @@
       "codec": "raw",
       "contentSha256": "def6020aa5f315beb151a2f63920bf96111409768ad5754b4a04d3b5bf028e5a"
     },
+    "public-receipt-sandbox-g5-signer-infos-generic-composite-label-alone": {
+      "path": "public-receipts/signer-infos/generic-composite-label-alone.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "a5c705cb93a9f5ff4ec622f6f796717eeaec5e77182e1a0d2415859dc732c2f9"
+    },
     "public-receipt-sandbox-g5-certificates-rsa-pss-huge-salt-stranger": {
       "path": "public-receipts/certificates/rsa-pss-huge-salt-stranger.der",
       "role": "input",
@@ -338,6 +344,12 @@
       "role": "input",
       "codec": "raw",
       "contentSha256": "6cefb8d6bb742121d7b90231429349ed115c287d9e49ed9f3b9b55d8ca971089"
+    },
+    "public-receipt-sandbox-g5-certificates-generic-composite-stranger": {
+      "path": "public-receipts/certificates/generic-composite-stranger.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "66acdeccd17f7897de8bfbff9a16d5992b34100bcf94402e2589719805a8c524"
     },
     "public-receipt-sandbox-g5-certificates-thousand-and-one-extensions-stranger": {
       "path": "public-receipts/certificates/thousand-and-one-extensions-stranger.der",
@@ -9202,7 +9214,7 @@
     },
     {
       "id": "receipt/signer-rsa-pss-does-not-crash",
-      "description": "A receipt whose CMS signature is RSASSA-PSS with SHA-256 under the test PKI; the signature is genuine. Apple never signs receipts with RSA-PSS, so RSA-PSS support is port-defined (owner, 2026-09-27): the port may verify or refuse with one of the listed reasons, but must not crash and must finish within maxMillis. PHP refuses it, because its OpenSSL binding has no PSS mode and the owner rules out hand-written crypto.",
+      "description": "A receipt whose CMS signature is RSASSA-PSS with SHA-256 under the test PKI; the signature is genuine and its saltLength fits the signer's key, so it verifies, within maxMillis. Apple does not sign receipts with RSA-PSS today, but an input Apple signed must never be refused, including after a future change on Apple's side (owner Q142 a, 2026-10-13): Java bounds the saltLength by the signer's key (RFC 8017 9.1.2) instead of refusing the label, and the core hands the label and its parameters to OpenSSL. ok in both (DECISIONS.md R20).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "receipt-signer-rsa-pss"
@@ -9216,17 +9228,17 @@
         }
       },
       "expected": {
-        "oneOf": [
-          "ok",
-          "INVALID_SIGNATURE"
-        ]
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundle_id": "com.example.app"
+        }
       },
-      "fault": "signer-algorithm-is-rsa-pss",
       "maxMillis": 2000,
       "tags": [
         "receipt",
         "pkcs7",
-        "tolerant",
+        "positive",
         "signer-algorithm",
         "new-in-0-7"
       ]
@@ -10230,7 +10242,7 @@
     },
     {
       "id": "receipt/reject-a-signer-info-labelled-rsa-pss-with-a-huge-salt",
-      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to RSASSA-PSS (SHA-256, MGF1 with SHA-256) and a saltLength of 1,000,000,000, alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The signatureAlgorithm and its parameters are unsigned, and BouncyCastle allocates an array of saltLength bytes while it builds the verifier, before any signature byte is compared: an OutOfMemoryError. Java refuses RSASSA-PSS before building anything; Apple never signs receipts with it (owner Q137 a, 2026-10-13). The core hands the label and its parameters to OpenSSL, and Apple's PKCS#1 v1.5 signature does not verify as PSS under them, within maxMillis. INVALID_SIGNATURE in both (DECISIONS.md R20).",
+      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to RSASSA-PSS (SHA-256, MGF1 with SHA-256) and a saltLength of 1,000,000,000, alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The signatureAlgorithm and its parameters are unsigned, and BouncyCastle allocates an array of saltLength bytes while it builds the verifier, before any signature byte is compared: an OutOfMemoryError. Java bounds the saltLength by the signer's key before building anything (RFC 8017 9.1.2: at most emLen - hLen - 2 octets, owner Q142 a, 2026-10-13), and Apple's signer key holds far fewer than 1,000,000,000. The core hands the label and its parameters to OpenSSL, and Apple's PKCS#1 v1.5 signature does not verify as PSS under them, within maxMillis. INVALID_SIGNATURE in both (DECISIONS.md R20).",
       "operation": "verifyReceipt",
       "input": {
         "fixture": "public-receipt-sandbox-g5-signer-infos-rsa-pss-huge-salt-label-alone"
@@ -10293,6 +10305,65 @@
       "operation": "verifyReceipt",
       "input": {
         "fixture": "public-receipt-sandbox-g5-certificates-rsa-pss-negative-salt-stranger"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/receipt_type": "ProductionSandbox"
+        }
+      },
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "certificate",
+        "positive",
+        "dos",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/reject-a-signer-info-labelled-with-the-generic-composite-oid",
+      "description": "Apple's SignerInfo from the genuine G5 sandbox receipt with its signatureAlgorithm set to the generic composite label (id-alg-composite, 1.3.6.1.4.1.18227.2.1), defined by the individual draft draft-ounsworth-pq-composite-sigs from -01 (January 2020) until -09 (May 2023) removed it, whose parameters name two parts of sha256WithRSAEncryption, alone, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs). The label and its parameters are unsigned, and BouncyCastle builds one Signature per part and streams the whole content into each, with no bound on the number of parts. Java refuses the label before building anything (owner Q144 a, 2026-10-13); the core has no verifier for the OID. INVALID_SIGNATURE in both (DECISIONS.md R20).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-signer-infos-generic-composite-label-alone"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "defaults"
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "INVALID_SIGNATURE"
+      },
+      "fault": "no-signer-info-signature-verifies",
+      "maxMillis": 2000,
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "signers",
+        "negative",
+        "signer-algorithm",
+        "dos",
+        "public-receipts",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "receipt/accept-genuine-beside-a-stranger-labelled-with-the-generic-composite-oid",
+      "description": "The genuine G5 sandbox receipt with one more certificate-bag entry, every other byte as Apple wrote it (tools/generate-signer-info-fixtures.mjs): a stranger that names Apple Root CA as its issuer, is labelled with the generic composite label (id-alg-composite, 1.3.6.1.4.1.18227.2.1) holding 300 ecdsa-with-SHA256 parts, and carries the receipt signer's key and a SEQUENCE of 300 empty BIT STRINGs as its signature. The bag and the label are unsigned. Checking the stranger under Apple Root CA's RSA key, BouncyCastle made a Signature for each part and compared the whole list of parts for each, skipping the parts the key does not fit, a cost that grows with the square of the parts. Java treats a certificate with this label as signed by nobody (owner Q144 a, 2026-10-13); OpenSSL has no verifier for it. Nothing vouches for the stranger and Apple's own chain verifies, within maxMillis.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "public-receipt-sandbox-g5-certificates-generic-composite-stranger"
       },
       "config": {
         "trustedRoots": {
