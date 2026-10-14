@@ -258,7 +258,7 @@ final class AppleTrust {
         if (signer.getExtensionValue(SIGNING_LEAF_OID) == null) {
             throw new VerificationException(
                     Reason.INVALID_CERTIFICATE_PURPOSE,
-                    what + " signer certificate lacks Apple receipt-signing marker OID " + SIGNING_LEAF_OID);
+                    what + " signer certificate lacks Apple signing marker OID " + SIGNING_LEAF_OID);
         }
         if (intermediate == null) {
             throw new VerificationException(

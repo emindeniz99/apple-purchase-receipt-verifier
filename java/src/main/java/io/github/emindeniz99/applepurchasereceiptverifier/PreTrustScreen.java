@@ -21,8 +21,9 @@ import org.jspecify.annotations.Nullable;
  * super-linear work, refused or passed over first. It reads a certificate
  * entry of the receipt's bag or of an {@code x5c} header without its key
  * ({@link #readCertificate}), counting the entry's extensions before the
- * parse ({@link #tooManyExtensions}) and screening the parts of it the X.509
- * grammar leaves open ({@link #convertible}). {@link ReceiptCore} applies
+ * parse ({@link #tooManyExtensions}), decoding the signature BIT STRING
+ * BouncyCastle would otherwise read lazily, and screening the parts of it
+ * the X.509 grammar leaves open ({@link #convertible}). {@link ReceiptCore} applies
  * the same two screens to a SignerInfo's issuer name ({@link #stringsOnly})
  * and algorithm parameters ({@link #holdsSet}). None of it decides trust;
  * that is {@link AppleTrust}.
@@ -63,8 +64,10 @@ final class PreTrustScreen {
         // members' encodings, seconds for a cap-sized nested entry.
         X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(entry));
         // getOctets throws for a signature BIT STRING with unused bits, so
-        // such an entry fails here as one that does not decode, not later
-        // inside the path builder or validator.
+        // such an entry fails here as one that does not decode. Left to the
+        // top-down walk, signedBy would swallow the throw and count the
+        // entry as unsigned: a stranger passed over, an x5c leaf
+        // UNTRUSTED_CHAIN.
         holder.toASN1Structure().getSignature().getOctets();
         return convertible(holder.toASN1Structure()) ? holder : null;
     }
