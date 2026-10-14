@@ -490,7 +490,7 @@ if (result.verified()) {
 | `ReceiptCore` | The legacy algorithm (§6.3) |
 | `ReceiptCertificates` | `decode` reads the bag (cap 10) without keys; `signers` lists the certificates a `sid` matches, each byte-identical copy once |
 | `PreTrustScreen` | What runs before trust: `readCertificate` (extension cap, parse, signature decode, `convertible`) for a bag or x5c entry; `stringsOnly` and `holdsSet` for a SignerInfo |
-| `AppleTrust` | Trust policy and the top-down rule: anchors, `requireMarkers`, `HANDLED_CRITICAL_EXTENSIONS`, `chainFailure`, `signedByAny`, `signedBy`, `saltFits` |
+| `AppleTrust` | Trust policy and the top-down rule: anchors, `requireMarkers`, `HANDLED_CRITICAL_EXTENSIONS`, `chainFailure`, `signedByAny`, `signedBy`, `decodeKey`, `saltFits` |
 | `AppleRootCerts` | The three roots as base64 constants |
 | `ReceiptDecoder` | Payload grammar: `readCreationDate`, `parse`, `parseDate`, environment mapping |
 | `StrictBase64`, `Utf8Length` | The one base64 decoder: canonical padded base64, or unpadded base64url for JWS segments; UTF-8 byte length, for the caps |
@@ -505,7 +505,7 @@ if (result.verified()) {
 | File | Methods in file order |
 |---|---|
 | `ReceiptCore.java` | (1) `verify`, (2) `verifyDer`, (3) `parseSignedPayload`, (4) `verifySignature`, (5) `parseCms`, (6) `encapsulatedPayload`, (7) `signerInfos`, (8) `appleShaped`, (9) `oneSigner`, (10) `authenticatedTopDown`, (11) `verifySigner`, (12) `validateChain`, (13) `verifyCmsSignature`, (14) `signerVerifier` |
-| `JwsCore.java` | `verify`, `verifyUnguarded`, class `Header`, `readOrNull`, `readPayload`, classes `Payload` and `Place`, `jwsEnvironment`, `readObject`, `notAnObject`, `decodeChain`, `authenticateTopDown`, `decodeKey`, `validateChain`, `verifyEs256` |
+| `JwsCore.java` | `verify`, `verifyUnguarded`, class `Header`, `readOrNull`, `readPayload`, classes `Payload` and `Place`, `jwsEnvironment`, `readObject`, `notAnObject`, `decodeChain`, `authenticateTopDown`, `validateChain`, `verifyEs256` |
 
 Read `verifySignature` and `verifyUnguarded` first: each is the whole
 algorithm in a page, and the rest are its steps.

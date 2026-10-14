@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
@@ -42,7 +43,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Rule: no key is ever decoded or used unless a pinned root, or a CA it
  * vouched for, has vouched for its certificate, so certificates are checked
- * top-down from the roots ({@link #signedByAny}, {@link #signedBy}). An end
+ * top-down from the roots ({@link #signedByAny}, {@link #signedBy},
+ * {@link #decodeKey}). An end
  * entity vouches for nothing: Apple's roots also vouch for developer
  * certificates, whose keys belong to the developers. BouncyCastle validates
  * an RSA key as it decodes it, which costs seconds for a 16384-bit modulus.
@@ -214,6 +216,20 @@ final class AppleTrust {
             // Not signed by this key, or a key verify cannot use (null for
             // an algorithm BouncyCastle does not know, which verify refuses).
             return false;
+        }
+    }
+
+    /**
+     * The key of {@code certificate}, which a pinned root vouches for; one no
+     * decoder accepts is its verdict, {@code what} naming the certificate.
+     * BouncyCastle throws for a key that does not decode and returns null for
+     * a key algorithm it does not know; neither can check a signature.
+     */
+    static PublicKey decodeKey(X509Certificate certificate, String what) throws VerificationException {
+        try {
+            return Objects.requireNonNull(certificate.getPublicKey(), "unknown public key algorithm");
+        } catch (RuntimeException e) {
+            throw new VerificationException(Reason.INVALID_CERTIFICATE, what + " does not decode", e);
         }
     }
 

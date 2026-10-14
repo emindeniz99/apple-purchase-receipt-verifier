@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.JsonToken;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
@@ -18,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.cert.X509CertificateHolder;
@@ -343,24 +341,11 @@ final class JwsCore {
         if (intermediate.getBasicConstraints() == -1) {
             throw new VerificationException(Reason.UNTRUSTED_CHAIN, "intermediate certificate is not a CA");
         }
-        if (leaf == null || !AppleTrust.signedBy(leaf, decodeKey(intermediate, 1))) {
+        if (leaf == null || !AppleTrust.signedBy(leaf, AppleTrust.decodeKey(intermediate, "x5c[1]"))) {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");
         }
-        decodeKey(leaf, 0);
-    }
-
-    /**
-     * The key of an x5c entry whose signature has already verified; one no
-     * decoder accepts is its verdict. BouncyCastle throws for a key that does
-     * not decode and returns null for a key algorithm it does not know.
-     */
-    private static PublicKey decodeKey(X509Certificate certificate, int index) throws VerificationException {
-        try {
-            return Objects.requireNonNull(certificate.getPublicKey(), "unknown public key algorithm");
-        } catch (RuntimeException e) {
-            throw new VerificationException(Reason.INVALID_CERTIFICATE, "x5c[" + index + "] does not decode", e);
-        }
+        AppleTrust.decodeKey(leaf, "x5c[0]");
     }
 
     private static void validateChain(
