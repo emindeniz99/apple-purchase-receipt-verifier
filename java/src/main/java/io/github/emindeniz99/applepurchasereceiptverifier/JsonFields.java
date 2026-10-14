@@ -21,22 +21,18 @@ final class JsonFields {
 
     private JsonFields() {}
 
-    /** The one factory every reader and the endpoint writer use; immutable once built. */
-    static final JsonFactory JSON = factory();
-
     /**
-     * A factory with Jackson's own default constraints, built rather than
+     * The one factory every reader and the endpoint writer use; immutable once
+     * built. Its constraints are Jackson's own defaults, built rather than
      * inherited so a host's process-wide
      * {@code StreamReadConstraints.overrideDefaultStreamReadConstraints} (or
      * its {@code StreamWriteConstraints} twin) cannot change a verdict or
      * fail a response.
      */
-    static JsonFactory factory() {
-        return JsonFactory.builder()
-                .streamReadConstraints(StreamReadConstraints.builder().build())
-                .streamWriteConstraints(StreamWriteConstraints.builder().build())
-                .build();
-    }
+    static final JsonFactory JSON = JsonFactory.builder()
+            .streamReadConstraints(StreamReadConstraints.builder().build())
+            .streamWriteConstraints(StreamWriteConstraints.builder().build())
+            .build();
 
     /** Called with each member's name and first value token; may consume the value. */
     interface Visitor {

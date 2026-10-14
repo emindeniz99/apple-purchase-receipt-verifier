@@ -36,13 +36,14 @@ class JwsJsonReadTest {
     private static final int CASES = 20_000;
 
     /**
-     * The reference read: databind over the readers' factory, with one rule
-     * added: nothing but whitespace after the object.
+     * The reference read: databind over a copy of the readers' factory (an
+     * ObjectMapper makes itself the codec of the factory it is given), with
+     * one rule added: nothing but whitespace after the object.
      * Without it {@code {"alg":"ES256"} x} is a header, and a payload with
      * text after its object returns verified with that text in it.
      */
     private static final ObjectMapper MAPPER =
-            new ObjectMapper(JsonFields.factory()).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+            new ObjectMapper(JsonFields.JSON.copy()).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     @Test
     void readsEveryHeaderAsTheDatabindTreeDid() {

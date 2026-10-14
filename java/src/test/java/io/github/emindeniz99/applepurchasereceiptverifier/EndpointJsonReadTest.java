@@ -23,8 +23,11 @@ import org.junit.jupiter.api.Test;
  */
 class EndpointJsonReadTest {
 
-    /** The reference read: databind over the readers' factory. */
-    private static final ObjectMapper MAPPER = new ObjectMapper(JsonFields.factory());
+    /**
+     * The reference read: databind over a copy of the readers' factory (an
+     * ObjectMapper makes itself the codec of the factory it is given).
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper(JsonFields.JSON.copy());
 
     private static final long SEED = 0x7501_5EEDL;
     private static final int CASES = 3_000;
