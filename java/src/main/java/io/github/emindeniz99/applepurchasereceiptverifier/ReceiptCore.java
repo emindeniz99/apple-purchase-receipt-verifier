@@ -63,17 +63,11 @@ final class ReceiptCore {
 
     /**
      * The most attributes a SignerInfo may carry, signed and unsigned
-     * together, counted before BouncyCastle reads them. It keeps each set in
-     * a {@code java.util.Hashtable} keyed by OID, whose hash is an unkeyed
-     * function of the OID's octets and whose buckets are lists, so
-     * distinct OIDs of one hash make building the table quadratic in their
-     * number, and the unsigned attributes are anyone's to add. Apple's
-     * receipt SignerInfos carry none. Each insert scans the bucket twice, so
-     * at this cap the two tables cost at most about a million OID
-     * comparisons, a few hundred milliseconds at the longest OIDs
-     * BouncyCastle admits (each comparison is {@code Arrays.equals} over up
-     * to 4,096 octets): an estimate from the sources, not timed. A
-     * SignerInfo over it is left out.
+     * together, counted before BouncyCastle reads each set into the same
+     * OID-keyed table as a certificate's extensions, at the cost
+     * {@link PreTrustScreen#MAX_CERTIFICATE_EXTENSIONS} gives. The unsigned
+     * attributes are anyone's to add; Apple's receipt SignerInfos carry
+     * none. A SignerInfo over it is left out.
      */
     static final int MAX_SIGNER_INFO_ATTRIBUTES = 1000;
 
@@ -214,15 +208,16 @@ final class ReceiptCore {
             SignerInfo info = SignerInfo.getInstance(raw.getObjectAt(i));
             SignerIdentifier sid = info.getSID();
             if (!sid.isTagged()
-                    && !AppleTrust.stringsOnly(
+                    && !PreTrustScreen.stringsOnly(
                             IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
                 continue;
             }
             // BouncyCastle compares these parameters with the
             // CMSAlgorithmProtection attribute's, which sorts a SET on both
             // sides, and no digest or signature algorithm defines one.
-            if (AppleTrust.holdsSet(info.getDigestAlgorithm().getParameters())
-                    || AppleTrust.holdsSet(info.getDigestEncryptionAlgorithm().getParameters())) {
+            if (PreTrustScreen.holdsSet(info.getDigestAlgorithm().getParameters())
+                    || PreTrustScreen.holdsSet(
+                            info.getDigestEncryptionAlgorithm().getParameters())) {
                 continue;
             }
             // Counted before BouncyCastle builds its tables of them.
@@ -466,13 +461,9 @@ final class ReceiptCore {
      * content verifier provider the algorithm it is about to build: the one
      * its CMS name for the SignerInfo's labels resolves to, carrying the
      * signatureAlgorithm's unsigned parameters, whatever that label's OID.
-     * An RSASSA-PSS verifier allocates the saltLength as an array while it
-     * is built, before any signature byte is compared, so the provider
-     * first requires the saltLength to fit the signer's key
-     * ({@link AppleTrust#saltFits}). A PSS signature the key can make
-     * passes. The generic composite label
-     * ({@link AppleTrust#GENERIC_COMPOSITE_SIGNATURE}) is refused before
-     * anything is built.</p>
+     * So the provider first refuses
+     * {@link AppleTrust#GENERIC_COMPOSITE_SIGNATURE} and a saltLength the
+     * key cannot hold ({@link AppleTrust#saltFits}).</p>
      */
     private static SignerInformationVerifier signerVerifier(PublicKey signerKey) throws OperatorCreationException {
         ContentVerifierProvider built = new JcaContentVerifierProviderBuilder()

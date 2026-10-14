@@ -12,35 +12,17 @@ import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.x500.style.BCStrictStyle;
-import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.SignerId;
 import org.bouncycastle.cms.SignerInformation;
-import org.jspecify.annotations.Nullable;
 
 /** A receipt's embedded certificate bag, every entry decoded once except its public key. */
 final class ReceiptCertificates {
 
     /** Genuine receipts embed one to three; checked before any is decoded. */
     static final int MAX_EMBEDDED_CERTIFICATES = 10;
-
-    /**
-     * The most extensions a certificate may carry, counted before it is
-     * parsed. BouncyCastle keeps a certificate's extensions in a
-     * {@code java.util.Hashtable} keyed by OID, whose hash is an unkeyed
-     * function of the OID's octets and whose buckets are lists, so
-     * distinct OIDs of one hash make building the table quadratic in their
-     * number. Apple's certificates carry three to eight. Each insert scans
-     * the bucket twice, so at this cap one table costs at most about a
-     * million OID comparisons, a few hundred milliseconds at the longest
-     * OIDs BouncyCastle admits (each comparison is {@code Arrays.equals}
-     * over up to 4,096 octets), and a certificate's table is built at least
-     * twice: an estimate from the sources, not timed. A certificate over it
-     * is passed over, as one {@link AppleTrust#convertible} rejects.
-     */
-    static final int MAX_CERTIFICATE_EXTENSIONS = 1000;
 
     private final List<X509Certificate> all = new ArrayList<>();
     private final List<X509CertificateHolder> holders = new ArrayList<>();
@@ -58,10 +40,10 @@ final class ReceiptCertificates {
      * {@link #MAX_EMBEDDED_CERTIFICATES}. The other CertificateChoices
      * (RFC 5652 10.2.2: {@code [0]} to {@code [3]}, each a SEQUENCE) name no
      * signer and are skipped, and so is a certificate
-     * {@link #readCertificate} passes over. The bag is unsigned, so an
-     * entry under the cap that does not decode is a defect of the receipt:
-     * MALFORMED, whichever certificate it was meant to be. One over the cap
-     * is passed over before it is parsed, decodable or not.
+     * {@link PreTrustScreen#readCertificate} passes over. The bag is
+     * unsigned, so an entry under the cap that does not decode is a defect of
+     * the receipt: MALFORMED, whichever certificate it was meant to be. One
+     * over the cap is passed over before it is parsed, decodable or not.
      */
     static ReceiptCertificates decode(CMSSignedData cms) throws VerificationException {
         ASN1Set certificateSet =
@@ -89,7 +71,7 @@ final class ReceiptCertificates {
                     ASN1Sequence.getInstance((ASN1TaggedObject) entry, false);
                     continue;
                 }
-                X509CertificateHolder holder = readCertificate(entry);
+                X509CertificateHolder holder = PreTrustScreen.readCertificate(entry);
                 // A certificate Apple could not have issued names no signer
                 // and vouches for nothing: it is passed over, not refused.
                 if (holder == null) {
@@ -103,55 +85,6 @@ final class ReceiptCertificates {
             }
         }
         return certificates;
-    }
-
-    /**
-     * One Certificate entry, of the receipt's bag or of an {@code x5c}
-     * header, read without decoding its key, or null for an entry passed
-     * over: one over {@link #MAX_CERTIFICATE_EXTENSIONS}, counted before the
-     * parse builds BouncyCastle's table of them, or one
-     * {@link AppleTrust#convertible} passes over, which the conversion would
-     * spend seconds on. An entry under the cap that does not parse throws.
-     */
-    static @Nullable X509CertificateHolder readCertificate(ASN1Encodable entry) {
-        if (tooManyExtensions(entry)) {
-            return null;
-        }
-        // Read as parsed, not re-encoded: DER sorts every SET by its
-        // members' encodings, seconds for a cap-sized nested entry.
-        X509CertificateHolder holder = new X509CertificateHolder(Certificate.getInstance(entry));
-        // getOctets throws for a signature BIT STRING with unused bits, so
-        // such an entry fails here as one that does not decode, not later
-        // inside the path builder or validator.
-        holder.toASN1Structure().getSignature().getOctets();
-        return AppleTrust.convertible(holder.toASN1Structure()) ? holder : null;
-    }
-
-    /**
-     * Whether {@code certificate}, a Certificate not yet parsed, carries more
-     * than {@link #MAX_CERTIFICATE_EXTENSIONS} extensions. Every {@code [3]}
-     * field of the TBS after its first counts wherever it stands, a superset
-     * of the fields BouncyCastle parses as extensions, which it reads only
-     * after the subject's key. The first is not counted: BouncyCastle reads a
-     * tagged first field as the version whatever its tag number, so a
-     * {@code [3]} there is never an extensions table. Only the outer
-     * Certificate and TBS SEQUENCEs and the counted fields are checked, and a
-     * shape that fails those throws. The rest is not read, so an entry over
-     * the cap is passed over whether or not its parse would succeed: the
-     * count must come first, as the parse is what builds the table.
-     */
-    static boolean tooManyExtensions(ASN1Encodable certificate) {
-        ASN1Sequence tbs =
-                ASN1Sequence.getInstance(ASN1Sequence.getInstance(certificate).getObjectAt(0));
-        int count = 0;
-        for (int i = 1; i < tbs.size(); i++) {
-            ASN1Encodable field = tbs.getObjectAt(i);
-            if (field instanceof ASN1TaggedObject && ((ASN1TaggedObject) field).getTagNo() == 3) {
-                count +=
-                        ASN1Sequence.getInstance((ASN1TaggedObject) field, true).size();
-            }
-        }
-        return count > MAX_CERTIFICATE_EXTENSIONS;
     }
 
     /**

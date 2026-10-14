@@ -306,7 +306,7 @@ final class JwsCore {
 
     /**
      * Each entry as a certificate, or null for one
-     * {@link ReceiptCertificates#readCertificate} passes over: no Apple
+     * {@link PreTrustScreen#readCertificate} passes over: no Apple
      * certificate, so it stands for nothing in the chain. An entry under the
      * cap that does not decode is INVALID_CERTIFICATE; one over it is null
      * before it is parsed, decodable or not.
@@ -318,8 +318,7 @@ final class JwsCore {
             for (String entry : x5c) {
                 byte[] der = StrictBase64.decode(entry, false, Reason.INVALID_CERTIFICATE, "x5c entry");
                 // The first object only, as a CertificateFactory reads one.
-                X509CertificateHolder holder =
-                        ReceiptCertificates.readCertificate(new ASN1InputStream(der).readObject());
+                X509CertificateHolder holder = PreTrustScreen.readCertificate(new ASN1InputStream(der).readObject());
                 chain.add(holder == null ? null : converter.getCertificate(holder));
             }
         } catch (CertificateException | IOException | RuntimeException e) {
