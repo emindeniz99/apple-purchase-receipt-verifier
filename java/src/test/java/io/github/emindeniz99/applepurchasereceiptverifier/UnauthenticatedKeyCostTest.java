@@ -662,7 +662,8 @@ class UnauthenticatedKeyCostTest {
                         .setProvider(BouncyCastle.PROVIDER)
                         .build(KeyFactory.getInstance("ECGOST3410", BouncyCastle.PROVIDER)
                                 .generatePrivate(new ECPrivateKeySpec(
-                                        ((ECPrivateKey) ec.rootKey).getS(), ((ECPrivateKey) ec.rootKey).getParams())))));
+                                        ((ECPrivateKey) ec.rootKey).getS(),
+                                        ((ECPrivateKey) ec.rootKey).getParams())))));
         assertEquals(gost.getAlgorithm().getId(), signed.getSigAlgOID());
         signed.verify(ec.root.getPublicKey(), BouncyCastle.PROVIDER);
         assertFalse(AppleTrust.signedBy(signed, ec.root.getPublicKey()));
