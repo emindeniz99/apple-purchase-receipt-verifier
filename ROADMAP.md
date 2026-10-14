@@ -607,6 +607,17 @@ Still worth filing as issues:
 
 ## Later / hardening
 
+- **JWS chain shape and algorithm generality (owner, 2026-10-14, Q170).**
+  Java pins a JWS to exactly three `x5c` entries and ES256, and matches a
+  receipt issuer name with `X500Principal.equals`. Two Codex reviews
+  (docs/evidence/2026-10-14-java-vendor-review.md and its follow-up)
+  showed BouncyCastle 1.86 validates a two- or four-entry chain, ES384
+  and a BMPString issuer. Kept as is because Apple's own App Store
+  Server Library refuses the same shapes (R20). Revisit when that
+  library changes: ES384 is about 20 lines plus a P-384 fixture; a
+  general path is about 50 lines in `JwsCore` plus three fixtures and
+  the same change in the core; the name filter is BouncyCastle's
+  `X500Name` comparison plus one fixture.
 - **Coverage reports with Codecov (owner, 2026-09-27).** Upload each
   package's coverage from CI so a pull request shows which lines its tests
   miss, across the core, Java and every wrapper in one place. The free Developer plan

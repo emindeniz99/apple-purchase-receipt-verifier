@@ -258,7 +258,9 @@ basicConstraints.
 **Base64** encodes 3 bytes as 4 characters from `A-Z a-z 0-9 + /`, padded
 with `=` to a multiple of 4; `receipt-data` and JWS `x5c` entries use it.
 **Base64url** replaces `+ /` with `- _` and drops the padding; the three JWS
-segments use it. Only the canonical spelling of each is accepted (§8).
+segments use it. Base64url is accepted only in its canonical spelling,
+re-encoded and compared; standard base64 must carry its padding, and non-zero
+unused bits in its last character are accepted.
 
 **DER versus PEM.** The `.cer` files in `certs/` are raw DER. PEM is the
 same DER in base64 between `-----BEGIN CERTIFICATE-----` lines; the
@@ -389,7 +391,7 @@ The checks, in the order Java runs them:
 | # | Check | What it stops | Fails as |
 |---|---|---|---|
 | 1 | Non-empty, at most 3,145,728 UTF-8 bytes, before any decoding | Memory and CPU exhaustion | `MALFORMED`, `TOO_LARGE` |
-| 2 | Canonical padded base64 | Two decoders reading one string differently; Apple's own rule | `MALFORMED` |
+| 2 | Padded standard base64 | Two decoders reading one string differently; Apple's own rule | `MALFORMED` |
 | 3 | Envelope: no trailing bytes, eContent present, at most 4 SignerInfos; leave out a SignerInfo whose issuer name is not strings only, whose algorithm parameters hold a SET, or that carries more than 1,000 attributes; at least one left | Garbage, smuggled bytes, amplification, costs an attacker chooses | `MALFORMED`; left out |
 | 4 | Read attribute 12 from the unverified payload to pick the instant | Nothing: this never fails | none |
 | 5 | Decode the bag: at most 10 certificates, each decodes, no key read | Certificate flooding | `MALFORMED` |
@@ -456,8 +458,10 @@ byte-identical copy only once; §4.2 has the renewal example this protects.
 
 The first six blame the input: deny. The last two do not: alert, do not
 retry (the result is deterministic), and do not deny a paying user on that
-basis. So unverified input must never produce the last two, or anyone
-could page the on-call engineer at will.
+basis. So unverified input must never produce the last two on a healthy
+runtime (`UNREADABLE_PAYLOAD` follows only a payload whose signature
+verified and that does not parse; `INTERNAL_ERROR` only the runtime itself,
+as a clock that throws), or anyone could page the on-call engineer at will.
 
 ## 6. Our Java code, step by step (legacy)
 

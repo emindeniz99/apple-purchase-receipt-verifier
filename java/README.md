@@ -278,6 +278,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.VerificationResult;
 import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;
 
 import com.apple.itunes.storekit.model.Data;
+import com.apple.itunes.storekit.model.Environment;
 import com.apple.itunes.storekit.model.JWSRenewalInfoDecodedPayload;
 import com.apple.itunes.storekit.model.JWSTransactionDecodedPayload;
 import com.apple.itunes.storekit.model.ResponseBodyV2DecodedPayload;
@@ -315,6 +316,9 @@ public class Notifications {
         }
         if (!"com.example.app".equals(data.getBundleId())) {
             return 400;   // verifySignedData checked no claim: check identity yourself
+        }
+        if (data.getEnvironment() != Environment.PRODUCTION) {
+            return 400;   // a sandbox notification reached the production handler
         }
 
         if (data.getSignedTransactionInfo() != null) {
